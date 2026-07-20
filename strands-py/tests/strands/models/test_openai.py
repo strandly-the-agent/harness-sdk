@@ -1427,12 +1427,13 @@ async def test_stream_context_overflow_exception(openai_client, model, messages)
 )
 async def test_stream_alternative_context_overflow_messages(openai_client, model, messages, error_message):
     """Test that alternative context overflow messages in APIError are properly converted."""
-    # Create a mock OpenAI APIError with alternative context overflow message
-    mock_error = openai.APIError(
+    # Real HTTP 400 responses use BadRequestError, a subclass of APIError.
+    mock_error = openai.BadRequestError(
         message=error_message,
-        request=unittest.mock.MagicMock(),
-        body={"error": {"message": error_message}},
+        response=unittest.mock.MagicMock(),
+        body={"error": {"code": "invalid_prompt", "message": error_message}},
     )
+    mock_error.code = "invalid_prompt"
 
     # Configure the mock client to raise the APIError
     openai_client.chat.completions.create.side_effect = mock_error
@@ -1461,12 +1462,13 @@ async def test_structured_output_alternative_context_overflow_messages(
     openai_client, model, messages, test_output_model_cls, error_message
 ):
     """Test that alternative context overflow messages in APIError are properly converted in structured output."""
-    # Create a mock OpenAI APIError with alternative context overflow message
-    mock_error = openai.APIError(
+    # Real HTTP 400 responses use BadRequestError, a subclass of APIError.
+    mock_error = openai.BadRequestError(
         message=error_message,
-        request=unittest.mock.MagicMock(),
-        body={"error": {"message": error_message}},
+        response=unittest.mock.MagicMock(),
+        body={"error": {"code": "invalid_prompt", "message": error_message}},
     )
+    mock_error.code = "invalid_prompt"
 
     # Configure the mock client to raise the APIError
     openai_client.beta.chat.completions.parse.side_effect = mock_error

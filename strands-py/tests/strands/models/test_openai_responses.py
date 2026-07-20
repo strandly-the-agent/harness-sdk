@@ -1020,7 +1020,8 @@ async def test_stream_response_failed_preserves_message_and_code(openai_client, 
     assert exc_info.value.code == "server_error"
 
 
-def test_agent_reduces_context_and_retries_response_failed(openai_client, model, agenerator):
+@pytest.mark.asyncio
+async def test_agent_reduces_context_and_retries_response_failed(openai_client, model, agenerator, alist):
     """A streamed overflow reaches the agent's reactive context-management path."""
     overflow_message = "prompt tokens (320666) exceed customer model maximum (278528) for model-id"
     failed_event = unittest.mock.Mock(
@@ -1054,8 +1055,10 @@ def test_agent_reduces_context_and_retries_response_failed(openai_client, model,
         callback_handler=None,
     )
 
-    result = agent("new question")
+    events = await alist(agent.stream_async("new question"))
+    result = events[-1]["result"]
 
+    assert not any(event.get("force_stop") for event in events)
     assert result.message["role"] == "assistant"
     assert result.message["content"] == [{"text": "Recovered"}]
     assert openai_client.responses.create.call_count == 2
@@ -1070,21 +1073,32 @@ def test_agent_reduces_context_and_retries_response_failed(openai_client, model,
 
 
 @pytest.mark.asyncio
-async def test_stream_response_failed_context_overflow(openai_client, model, messages, agenerator):
-    """Mantle's response.failed context-limit message maps to the SDK exception."""
-    message = "prompt tokens (320666) exceed customer model maximum (278528) for model-id"
+@pytest.mark.parametrize(
+    ("message", "code"),
+    [
+        (
+            "prompt tokens (320666) exceed customer model maximum (278528) for model-id",
+            "invalid_prompt",
+        ),
+        ("This model's maximum context length is 4096 tokens.", "invalid_prompt"),
+        ("request rejected", "Context_Length_Exceeded"),
+    ],
+)
+async def test_stream_response_failed_context_overflow(openai_client, model, messages, agenerator, message, code):
+    """response.failed context-limit variants map to the SDK exception."""
     event = unittest.mock.Mock(
         type="response.failed",
-        response=unittest.mock.Mock(error=unittest.mock.Mock(code="invalid_prompt", message=message)),
+        response=unittest.mock.Mock(error=unittest.mock.Mock(code=code, message=message)),
     )
     openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator([event]))
 
-    with pytest.raises(ContextWindowOverflowException, match="exceed customer model maximum") as exc_info:
+    with pytest.raises(ContextWindowOverflowException) as exc_info:
         async for _ in model.stream(messages):
             pass
 
+    assert str(exc_info.value) == message
     assert isinstance(exc_info.value.__cause__, _OpenAIResponsesStreamError)
-    assert exc_info.value.__cause__.code == "invalid_prompt"
+    assert exc_info.value.__cause__.code == code
 
 
 @pytest.mark.asyncio

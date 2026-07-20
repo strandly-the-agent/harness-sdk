@@ -559,8 +559,7 @@ async def _handle_model_execution(
 
             if last_event is None:
                 raise RuntimeError(
-                    "Middleware chain did not yield a result event. "
-                    "Ensure middleware forwards events from next()."
+                    "Middleware chain did not yield a result event. Ensure middleware forwards events from next()."
                 )
 
             # Write the post-stream model state back to the agent. Skipped on error
@@ -627,8 +626,11 @@ async def _handle_model_execution(
 
                 continue  # Retry the model call
 
-            # No retry requested, raise the exception
-            yield ForceStopEvent(reason=e)
+            # Context overflow is recoverable by Agent._execute_event_loop_cycle, which
+            # reduces the conversation and retries. Do not expose a terminal force_stop
+            # before that retry has a chance to succeed.
+            if not isinstance(e, ContextWindowOverflowException):
+                yield ForceStopEvent(reason=e)
             raise e
 
     try:

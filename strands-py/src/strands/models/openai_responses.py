@@ -61,6 +61,7 @@ from ..types.streaming import StreamEvent  # noqa: E402
 from ..types.tools import ToolChoice, ToolResult, ToolSpec, ToolUse  # noqa: E402
 from ._defaults import resolve_config_metadata  # noqa: E402
 from ._openai_bedrock import BedrockMantleConfig, resolve_bedrock_client_args  # noqa: E402
+from ._openai_errors import classify_openai_error  # noqa: E402
 from ._validation import validate_config_keys  # noqa: E402
 from .model import BaseModelConfig, Model  # noqa: E402
 
@@ -74,8 +75,6 @@ _MAX_MEDIA_SIZE_LABEL = "20MB"
 _DEFAULT_MIME_TYPE = "application/octet-stream"
 _CONTEXT_WINDOW_OVERFLOW_MSG = "OpenAI Responses API threw context window overflow error"
 _RATE_LIMIT_MSG = "OpenAI Responses API threw rate limit error"
-_CONTEXT_WINDOW_OVERFLOW_MESSAGES = ("exceed customer model maximum",)
-_RATE_LIMIT_MESSAGES = ("rate limit", "too many requests")
 
 
 class _OpenAIResponsesStreamError(Exception):
@@ -84,26 +83,6 @@ class _OpenAIResponsesStreamError(Exception):
     def __init__(self, message: str | None, code: str | None) -> None:
         super().__init__(message or "OpenAI Responses API response failed")
         self.code = code
-
-
-def _is_context_window_overflow_error(error: BaseException) -> bool:
-    """Return whether an OpenAI error indicates context-window overflow."""
-    code = getattr(error, "code", None)
-    message = str(error).lower()
-    return code == "context_length_exceeded" or any(pattern in message for pattern in _CONTEXT_WINDOW_OVERFLOW_MESSAGES)
-
-
-def _is_rate_limit_error(error: BaseException) -> bool:
-    """Return whether an OpenAI error indicates throttling."""
-    code = getattr(error, "code", None)
-    status = getattr(error, "status_code", None)
-    message = str(error).lower()
-    return (
-        isinstance(error, openai.RateLimitError)
-        or status == 429
-        or code == "rate_limit_exceeded"
-        or any(pattern in message for pattern in _RATE_LIMIT_MESSAGES)
-    )
 
 
 def _encode_media_to_data_url(data: bytes, format_ext: str, media_type: str = "image") -> str:
@@ -471,10 +450,11 @@ class OpenAIResponsesModel(Model):
                                 final_usage = event.response.usage
                             break
             except (openai.APIError, _OpenAIResponsesStreamError) as e:
-                if _is_context_window_overflow_error(e):
+                error_kind = classify_openai_error(e)
+                if error_kind == "context_overflow":
                     logger.warning(_CONTEXT_WINDOW_OVERFLOW_MSG)
                     raise ContextWindowOverflowException(str(e)) from e
-                if _is_rate_limit_error(e):
+                if error_kind == "throttling":
                     logger.warning(_RATE_LIMIT_MSG)
                     raise ModelThrottledException(str(e)) from e
                 raise
@@ -538,10 +518,11 @@ class OpenAIResponsesModel(Model):
                 request.pop("stream", None)
                 response = await client.responses.parse(**request, text_format=output_model)
             except openai.APIError as e:
-                if _is_context_window_overflow_error(e):
+                error_kind = classify_openai_error(e)
+                if error_kind == "context_overflow":
                     logger.warning(_CONTEXT_WINDOW_OVERFLOW_MSG)
                     raise ContextWindowOverflowException(str(e)) from e
-                if _is_rate_limit_error(e):
+                if error_kind == "throttling":
                     logger.warning(_RATE_LIMIT_MSG)
                     raise ModelThrottledException(str(e)) from e
                 raise

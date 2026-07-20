@@ -23,22 +23,13 @@ from ..types.streaming import StreamEvent
 from ..types.tools import ToolChoice, ToolResult, ToolSpec, ToolUse
 from ._defaults import resolve_config_metadata
 from ._openai_bedrock import BedrockMantleConfig, resolve_bedrock_client_args
+from ._openai_errors import classify_openai_error
 from ._validation import _has_location_source, validate_config_keys
 from .model import BaseModelConfig, Model
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
-
-# Alternative context overflow error messages
-# These are commonly returned by OpenAI-compatible endpoints wrapping other providers
-# (e.g., Databricks serving Bedrock models)
-_CONTEXT_OVERFLOW_MESSAGES = [
-    "Input is too long for requested model",
-    "input length and `max_tokens` exceed context limit",
-    "too many total text bytes",
-    "exceed customer model maximum",
-]
 
 
 class Client(Protocol):
@@ -717,25 +708,14 @@ class OpenAIModel(Model):
         async with self._get_client() as client:
             try:
                 response = await client.chat.completions.create(**request)
-            except openai.BadRequestError as e:
-                # Check if this is a context length exceeded error
-                if hasattr(e, "code") and e.code == "context_length_exceeded":
+            except openai.APIError as e:
+                error_kind = classify_openai_error(e)
+                if error_kind == "context_overflow":
                     logger.warning("OpenAI threw context window overflow error")
                     raise ContextWindowOverflowException(str(e)) from e
-                # Re-raise other BadRequestError exceptions
-                raise
-            except openai.RateLimitError as e:
-                # All rate limit errors should be treated as throttling, not context overflow
-                # Rate limits (including TPM) require waiting/retrying, not context reduction
-                logger.warning("OpenAI threw rate limit error")
-                raise ModelThrottledException(str(e)) from e
-            except openai.APIError as e:
-                # Check for alternative context overflow error messages
-                error_message = str(e)
-                if any(overflow_msg in error_message for overflow_msg in _CONTEXT_OVERFLOW_MESSAGES):
-                    logger.warning("context window overflow error detected")
-                    raise ContextWindowOverflowException(error_message) from e
-                # Re-raise other APIError exceptions
+                if error_kind == "throttling":
+                    logger.warning("OpenAI threw rate limit error")
+                    raise ModelThrottledException(str(e)) from e
                 raise
 
             if not request["stream"]:
@@ -859,25 +839,14 @@ class OpenAIModel(Model):
                 response: ParsedChatCompletion = await client.beta.chat.completions.parse(
                     **request, response_format=output_model
                 )
-            except openai.BadRequestError as e:
-                # Check if this is a context length exceeded error
-                if hasattr(e, "code") and e.code == "context_length_exceeded":
+            except openai.APIError as e:
+                error_kind = classify_openai_error(e)
+                if error_kind == "context_overflow":
                     logger.warning("OpenAI threw context window overflow error")
                     raise ContextWindowOverflowException(str(e)) from e
-                # Re-raise other BadRequestError exceptions
-                raise
-            except openai.RateLimitError as e:
-                # All rate limit errors should be treated as throttling, not context overflow
-                # Rate limits (including TPM) require waiting/retrying, not context reduction
-                logger.warning("OpenAI threw rate limit error")
-                raise ModelThrottledException(str(e)) from e
-            except openai.APIError as e:
-                # Check for alternative context overflow error messages
-                error_message = str(e)
-                if any(overflow_msg in error_message for overflow_msg in _CONTEXT_OVERFLOW_MESSAGES):
-                    logger.warning("context window overflow error detected")
-                    raise ContextWindowOverflowException(error_message) from e
-                # Re-raise other APIError exceptions
+                if error_kind == "throttling":
+                    logger.warning("OpenAI threw rate limit error")
+                    raise ModelThrottledException(str(e)) from e
                 raise
 
         parsed: T | None = None
