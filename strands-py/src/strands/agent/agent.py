@@ -75,7 +75,14 @@ from ..tools.executors._executor import ToolExecutor
 from ..tools.registry import ToolRegistry
 from ..tools.structured_output._structured_output_context import StructuredOutputContext
 from ..tools.watcher import ToolWatcher
-from ..types._events import AgentResultEvent, EventLoopStopEvent, InitEventLoopEvent, ModelStreamChunkEvent, TypedEvent
+from ..types._events import (
+    AgentResultEvent,
+    EventLoopStopEvent,
+    ForceStopEvent,
+    InitEventLoopEvent,
+    ModelStreamChunkEvent,
+    TypedEvent,
+)
 from ..types.agent import AgentInput, ConcurrentInvocationMode, Limits
 from ..types.content import (
     ContentBlock,
@@ -1354,6 +1361,7 @@ class Agent(AgentBase):
         if structured_output_context:
             structured_output_context.register_tool(self.tool_registry)
 
+        pending_force_stops: list[ForceStopEvent] = []
         try:
             events = event_loop_cycle(
                 agent=self,
@@ -1362,11 +1370,22 @@ class Agent(AgentBase):
                 limits=limits,
             )
             async for event in events:
-                yield event
+                # event_loop_cycle emits force_stop immediately before raising. Buffer it
+                # until we know whether a context overflow is recoverable so consumers do
+                # not observe a terminal event before a successful context-reduction retry.
+                if isinstance(event, ForceStopEvent):
+                    pending_force_stops.append(event)
+                else:
+                    yield event
 
         except ContextWindowOverflowException as e:
-            # Try reducing the context size and retrying
-            self.conversation_manager.reduce_context(self, e=e)
+            try:
+                # Try reducing the context size and retrying
+                self.conversation_manager.reduce_context(self, e=e)
+            except Exception:
+                for event in pending_force_stops:
+                    yield event
+                raise
 
             # Sync agent after reduce_context to keep conversation_manager_state up to date in the session
             if self._session_manager:
@@ -1374,6 +1393,15 @@ class Agent(AgentBase):
 
             events = self._execute_event_loop_cycle(invocation_state, structured_output_context, limits)
             async for event in events:
+                yield event
+
+        except Exception:
+            for event in pending_force_stops:
+                yield event
+            raise
+
+        else:
+            for event in pending_force_stops:
                 yield event
 
         finally:

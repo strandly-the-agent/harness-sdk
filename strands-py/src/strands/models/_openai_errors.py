@@ -23,9 +23,15 @@ def classify_openai_error(error: BaseException) -> OpenAIErrorKind | None:
     message = str(error).lower()
     raw_code = getattr(error, "code", None)
     code = raw_code.lower() if isinstance(raw_code, str) else ""
-    status = getattr(error, "status_code", getattr(error, "status", None))
+    status_code = getattr(error, "status_code", None)
+    status = getattr(error, "status", None)
 
-    if status == 429 or code == "rate_limit_exceeded" or any(pattern in message for pattern in _RATE_LIMIT_PATTERNS):
+    if (
+        status_code == 429
+        or status == 429
+        or code == "rate_limit_exceeded"
+        or any(pattern in message for pattern in _RATE_LIMIT_PATTERNS)
+    ):
         return "throttling"
 
     if code == "context_length_exceeded" or any(pattern in message for pattern in _CONTEXT_WINDOW_OVERFLOW_PATTERNS):

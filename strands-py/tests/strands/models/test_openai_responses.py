@@ -1073,6 +1073,31 @@ async def test_agent_reduces_context_and_retries_response_failed(openai_client, 
 
 
 @pytest.mark.asyncio
+async def test_agent_emits_force_stop_when_response_failed_overflow_cannot_reduce(openai_client, model, agenerator):
+    """An unrecoverable streamed overflow still emits one terminal force_stop."""
+    message = "prompt tokens (320666) exceed customer model maximum (278528) for model-id"
+    event = unittest.mock.Mock(
+        type="response.failed",
+        response=unittest.mock.Mock(error=unittest.mock.Mock(code="invalid_prompt", message=message)),
+    )
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator([event]))
+    agent = strands.Agent(
+        model=model,
+        conversation_manager=strands.agent.conversation_manager.NullConversationManager(),
+        callback_handler=None,
+    )
+    events = []
+
+    with pytest.raises(ContextWindowOverflowException, match="exceed customer model maximum"):
+        async for streamed_event in agent.stream_async("new question"):
+            events.append(streamed_event)
+
+    force_stops = [streamed_event for streamed_event in events if streamed_event.get("force_stop")]
+    assert force_stops == [{"force_stop": True, "force_stop_reason": message}]
+    assert openai_client.responses.create.call_count == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("message", "code"),
     [

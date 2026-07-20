@@ -626,11 +626,8 @@ async def _handle_model_execution(
 
                 continue  # Retry the model call
 
-            # Context overflow is recoverable by Agent._execute_event_loop_cycle, which
-            # reduces the conversation and retries. Do not expose a terminal force_stop
-            # before that retry has a chance to succeed.
-            if not isinstance(e, ContextWindowOverflowException):
-                yield ForceStopEvent(reason=e)
+            # No retry requested, raise the exception
+            yield ForceStopEvent(reason=e)
             raise e
 
     try:

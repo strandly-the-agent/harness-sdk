@@ -42,8 +42,14 @@ def test_classify_openai_error_throttling_codes_are_case_insensitive(code):
     assert classify_openai_error(StubOpenAIError("request rejected", code=code)) == "throttling"
 
 
-def test_classify_openai_error_throttling_status():
+def test_classify_openai_error_throttling_status_code():
     assert classify_openai_error(StubOpenAIError("request rejected", status_code=429)) == "throttling"
+
+
+def test_classify_openai_error_throttling_status_when_status_code_is_none():
+    error = StubOpenAIError("request rejected")
+    error.status = 429
+    assert classify_openai_error(error) == "throttling"
 
 
 def test_classify_openai_error_ignores_non_string_code():
