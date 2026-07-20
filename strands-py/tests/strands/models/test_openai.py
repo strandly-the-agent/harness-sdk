@@ -1422,6 +1422,7 @@ async def test_stream_context_overflow_exception(openai_client, model, messages)
         "Input is too long for requested model",
         "input length and `max_tokens` exceed context limit",
         "too many total text bytes",
+        "prompt tokens (320666) exceed customer model maximum (278528) for model-id",
     ],
 )
 async def test_stream_alternative_context_overflow_messages(openai_client, model, messages, error_message):
@@ -1453,6 +1454,7 @@ async def test_stream_alternative_context_overflow_messages(openai_client, model
         "Input is too long for requested model",
         "input length and `max_tokens` exceed context limit",
         "too many total text bytes",
+        "prompt tokens (320666) exceed customer model maximum (278528) for model-id",
     ],
 )
 async def test_structured_output_alternative_context_overflow_messages(

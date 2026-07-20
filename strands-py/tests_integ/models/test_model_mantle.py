@@ -59,8 +59,32 @@ def test_responses_server_side_conversation(stateful_model):
     assert "alice" in str(result).lower()
 
 
+def test_responses_context_overflow_reduces_history_and_retries(bedrock_mantle_config):
+    """A live Mantle response.failed overflow triggers reactive history reduction."""
+    model = OpenAIResponsesModel(
+        model_id=_MODEL_ID,
+        bedrock_mantle_config=bedrock_mantle_config,
+        # Keep proactive token estimates from trimming before Mantle returns response.failed.
+        context_window_limit=10_000_000,
+    )
+    agent = Agent(
+        model=model,
+        messages=[
+            {"role": "user", "content": [{"text": "token " * 300_000}]},
+            {"role": "assistant", "content": [{"text": "Previous answer."}]},
+        ],
+        system_prompt="Reply in one short sentence.",
+        callback_handler=None,
+    )
+
+    result = agent("What is 2+2?")
+
+    assert "4" in str(result) or "four" in str(result).lower()
+    assert len(agent.messages) == 2
+
+
 def test_reasoning_content_multi_turn(bedrock_mantle_config):
-    """Test that reasoning content from gpt-oss models doesn't break multi-turn conversations."""
+    """Stateless assistant history round-trips through Mantle's strict Responses schema."""
     model = OpenAIResponsesModel(
         model_id=_MODEL_ID,
         bedrock_mantle_config=bedrock_mantle_config,
@@ -77,5 +101,7 @@ def test_reasoning_content_multi_turn(bedrock_mantle_config):
     )
     assert has_reasoning
 
-    # Second turn should not raise despite reasoningContent in message history
-    agent("What about 3+3?")
+    # Text-only assistant history must use the EasyInputMessage string form. Mantle rejects
+    # output_text arrays in assistant input with a terminal response.failed event.
+    result2 = agent("What about 3+3?")
+    assert "6" in str(result2)

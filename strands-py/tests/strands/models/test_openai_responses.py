@@ -6,7 +6,11 @@ import pydantic
 import pytest
 
 import strands
-from strands.models.openai_responses import _MAX_MEDIA_SIZE_BYTES, OpenAIResponsesModel
+from strands.models.openai_responses import (
+    _MAX_MEDIA_SIZE_BYTES,
+    OpenAIResponsesModel,
+    _OpenAIResponsesStreamError,
+)
 from strands.types.exceptions import ContextWindowOverflowException, ModelThrottledException
 
 
@@ -300,7 +304,7 @@ def test_format_request_messages(system_prompt):
         },
         {
             "role": "assistant",
-            "content": [{"type": "output_text", "text": "call tool"}],
+            "content": "call tool",
         },
         {
             "type": "function_call",
@@ -317,20 +321,15 @@ def test_format_request_messages(system_prompt):
     assert tru_result == exp_result
 
 
-def test_format_request_messages_assistant_text_uses_output_text():
-    """Assistant text content must use output_text, not input_text.
-
-    Regression test for multi-turn conversations failing because the OpenAI
-    Responses API rejects input_text in assistant messages.
-    See: https://github.com/strands-agents/harness-sdk/issues/1850
-    """
+def test_format_request_messages_assistant_text_uses_easy_input_message():
+    """Text-only assistant history uses the strict-schema-compatible string form."""
     messages = [
         {
             "content": [{"text": "Say hello"}],
             "role": "user",
         },
         {
-            "content": [{"text": "Hello!"}],
+            "content": [{"text": "Hello!"}, {"text": " How are you?"}],
             "role": "assistant",
         },
         {
@@ -341,18 +340,45 @@ def test_format_request_messages_assistant_text_uses_output_text():
 
     result = OpenAIResponsesModel._format_request_messages(messages)
 
-    assert result[0] == {
-        "role": "user",
-        "content": [{"type": "input_text", "text": "Say hello"}],
-    }
-    assert result[1] == {
-        "role": "assistant",
-        "content": [{"type": "output_text", "text": "Hello!"}],
-    }
-    assert result[2] == {
-        "role": "user",
-        "content": [{"type": "input_text", "text": "Say goodbye"}],
-    }
+    assert result == [
+        {
+            "role": "user",
+            "content": [{"type": "input_text", "text": "Say hello"}],
+        },
+        {
+            "role": "assistant",
+            "content": "Hello! How are you?",
+        },
+        {
+            "role": "user",
+            "content": [{"type": "input_text", "text": "Say goodbye"}],
+        },
+    ]
+
+
+def test_format_request_messages_assistant_media_keeps_content_array():
+    """Assistant history containing media retains the content-array form."""
+    messages = [
+        {
+            "content": [
+                {"text": "Look at this"},
+                {"image": {"format": "png", "source": {"bytes": b"image"}}},
+            ],
+            "role": "assistant",
+        }
+    ]
+
+    result = OpenAIResponsesModel._format_request_messages(messages)
+
+    assert result == [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "output_text", "text": "Look at this"},
+                {"type": "input_image", "image_url": "data:image/png;base64,aW1hZ2U="},
+            ],
+        }
+    ]
 
 
 def test_format_request_message_content_role_assistant():
@@ -624,9 +650,7 @@ async def test_stream(openai_client, model_id, model, agenerator, alist):
     mock_complete_event = unittest.mock.Mock(
         type="response.completed",
         response=unittest.mock.Mock(
-            usage=unittest.mock.Mock(
-                input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None
-            )
+            usage=unittest.mock.Mock(input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None)
         ),
     )
 
@@ -737,9 +761,7 @@ async def test_stream_with_tool_calls(openai_client, model, agenerator, alist):
     mock_complete_event = unittest.mock.Mock(
         type="response.completed",
         response=unittest.mock.Mock(
-            usage=unittest.mock.Mock(
-                input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None
-            )
+            usage=unittest.mock.Mock(input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None)
         ),
     )
 
@@ -774,9 +796,7 @@ async def test_stream_with_tool_calls_done_event(openai_client, model, agenerato
     mock_complete_event = unittest.mock.Mock(
         type="response.completed",
         response=unittest.mock.Mock(
-            usage=unittest.mock.Mock(
-                input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None
-            )
+            usage=unittest.mock.Mock(input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None)
         ),
     )
 
@@ -835,9 +855,7 @@ async def test_stream_reasoning_content(openai_client, model, agenerator, alist,
     mock_complete_event = unittest.mock.Mock(
         type="response.completed",
         response=unittest.mock.Mock(
-            usage=unittest.mock.Mock(
-                input_tokens=10, output_tokens=20, total_tokens=30, input_tokens_details=None
-            )
+            usage=unittest.mock.Mock(input_tokens=10, output_tokens=20, total_tokens=30, input_tokens_details=None)
         ),
     )
 
@@ -883,9 +901,7 @@ async def test_stream_citation_annotations(openai_client, model, agenerator, ali
     mock_complete_event = unittest.mock.Mock(
         type="response.completed",
         response=unittest.mock.Mock(
-            usage=unittest.mock.Mock(
-                input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None
-            )
+            usage=unittest.mock.Mock(input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None)
         ),
     )
 
@@ -923,9 +939,7 @@ async def test_stream_unsupported_annotation_type(openai_client, model, agenerat
     mock_complete_event = unittest.mock.Mock(
         type="response.completed",
         response=unittest.mock.Mock(
-            usage=unittest.mock.Mock(
-                input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None
-            )
+            usage=unittest.mock.Mock(input_tokens=10, output_tokens=5, total_tokens=15, input_tokens_details=None)
         ),
     )
 
@@ -983,6 +997,125 @@ async def test_structured_output_forwards_request_params(openai_client, model_id
     assert parse_kwargs["store"] is False
     assert parse_kwargs["text_format"] is test_output_model_cls
     assert "stream" not in parse_kwargs
+
+
+@pytest.mark.asyncio
+async def test_stream_response_failed_preserves_message_and_code(openai_client, model, messages, agenerator):
+    """Terminal response.failed events are raised instead of finalized as success."""
+    event = unittest.mock.Mock(
+        type="response.failed",
+        response=unittest.mock.Mock(
+            error=unittest.mock.Mock(
+                code="server_error",
+                message="The model failed while processing the request.",
+            )
+        ),
+    )
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator([event]))
+
+    with pytest.raises(_OpenAIResponsesStreamError, match="The model failed while processing the request") as exc_info:
+        async for _ in model.stream(messages):
+            pass
+
+    assert exc_info.value.code == "server_error"
+
+
+def test_agent_reduces_context_and_retries_response_failed(openai_client, model, agenerator):
+    """A streamed overflow reaches the agent's reactive context-management path."""
+    overflow_message = "prompt tokens (320666) exceed customer model maximum (278528) for model-id"
+    failed_event = unittest.mock.Mock(
+        type="response.failed",
+        response=unittest.mock.Mock(error=unittest.mock.Mock(code="invalid_prompt", message=overflow_message)),
+    )
+    completed_events = [
+        unittest.mock.Mock(type="response.output_text.delta", delta="Recovered"),
+        unittest.mock.Mock(
+            type="response.completed",
+            response=unittest.mock.Mock(
+                usage=unittest.mock.Mock(
+                    input_tokens=1,
+                    output_tokens=1,
+                    total_tokens=2,
+                    input_tokens_details=None,
+                )
+            ),
+        ),
+    ]
+    openai_client.responses.create.side_effect = [
+        agenerator([failed_event]),
+        agenerator(completed_events),
+    ]
+    agent = strands.Agent(
+        model=model,
+        messages=[
+            {"role": "user", "content": [{"text": "old question"}]},
+            {"role": "assistant", "content": [{"text": "old answer"}]},
+        ],
+        callback_handler=None,
+    )
+
+    result = agent("new question")
+
+    assert result.message["role"] == "assistant"
+    assert result.message["content"] == [{"text": "Recovered"}]
+    assert openai_client.responses.create.call_count == 2
+    assert openai_client.responses.create.call_args_list[0].kwargs["input"] == [
+        {"role": "user", "content": [{"type": "input_text", "text": "old question"}]},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": [{"type": "input_text", "text": "new question"}]},
+    ]
+    assert openai_client.responses.create.call_args_list[1].kwargs["input"] == [
+        {"role": "user", "content": [{"type": "input_text", "text": "new question"}]}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stream_response_failed_context_overflow(openai_client, model, messages, agenerator):
+    """Mantle's response.failed context-limit message maps to the SDK exception."""
+    message = "prompt tokens (320666) exceed customer model maximum (278528) for model-id"
+    event = unittest.mock.Mock(
+        type="response.failed",
+        response=unittest.mock.Mock(error=unittest.mock.Mock(code="invalid_prompt", message=message)),
+    )
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator([event]))
+
+    with pytest.raises(ContextWindowOverflowException, match="exceed customer model maximum") as exc_info:
+        async for _ in model.stream(messages):
+            pass
+
+    assert isinstance(exc_info.value.__cause__, _OpenAIResponsesStreamError)
+    assert exc_info.value.__cause__.code == "invalid_prompt"
+
+
+@pytest.mark.asyncio
+async def test_stream_response_failed_without_error_details(openai_client, model, messages, agenerator):
+    """response.failed uses a stable fallback when the provider omits details."""
+    event = unittest.mock.Mock(type="response.failed", response=unittest.mock.Mock(error=None))
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator([event]))
+
+    with pytest.raises(_OpenAIResponsesStreamError, match="OpenAI Responses API response failed") as exc_info:
+        async for _ in model.stream(messages):
+            pass
+
+    assert exc_info.value.code is None
+
+
+@pytest.mark.asyncio
+async def test_stream_error_event_maps_to_throttling(openai_client, model, messages, agenerator):
+    """Responses error events flow through the existing throttling mapping."""
+    event = unittest.mock.Mock(
+        type="error",
+        code="rate_limit_exceeded",
+        message="Rate limit exceeded while streaming.",
+    )
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator([event]))
+
+    with pytest.raises(ModelThrottledException, match="Rate limit exceeded while streaming") as exc_info:
+        async for _ in model.stream(messages):
+            pass
+
+    assert isinstance(exc_info.value.__cause__, _OpenAIResponsesStreamError)
+    assert exc_info.value.__cause__.code == "rate_limit_exceeded"
 
 
 @pytest.mark.asyncio
@@ -1311,7 +1444,7 @@ def test_format_request_messages_with_citations_content():
     assistant_msg = [m for m in formatted if m.get("role") == "assistant"][0]
     assert assistant_msg == {
         "role": "assistant",
-        "content": [{"type": "output_text", "text": "The answer with citations."}],
+        "content": "The answer with citations.",
     }
 
 
@@ -1462,7 +1595,7 @@ def test_format_request_messages_excludes_reasoning_content(caplog):
 
     assert result == [
         {"role": "user", "content": [{"type": "input_text", "text": "Hello"}]},
-        {"role": "assistant", "content": [{"type": "output_text", "text": "The answer is 42"}]},
+        {"role": "assistant", "content": "The answer is 42"},
         {"role": "user", "content": [{"type": "input_text", "text": "Thanks"}]},
     ]
     assert "reasoningContent is not yet supported" in caplog.text

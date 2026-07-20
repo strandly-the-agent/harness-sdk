@@ -37,6 +37,7 @@ _CONTEXT_OVERFLOW_MESSAGES = [
     "Input is too long for requested model",
     "input length and `max_tokens` exceed context limit",
     "too many total text bytes",
+    "exceed customer model maximum",
 ]
 
 
