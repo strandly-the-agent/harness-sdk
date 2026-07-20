@@ -1073,6 +1073,39 @@ async def test_agent_reduces_context_and_retries_response_failed(openai_client, 
 
 
 @pytest.mark.asyncio
+async def test_agent_emits_force_stop_when_overflow_session_sync_fails(openai_client, model, agenerator):
+    """A failed post-reduction session sync preserves the buffered terminal event."""
+    message = "prompt tokens (320666) exceed customer model maximum (278528) for model-id"
+    event = unittest.mock.Mock(
+        type="response.failed",
+        response=unittest.mock.Mock(error=unittest.mock.Mock(code="invalid_prompt", message=message)),
+    )
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator([event]))
+    agent = strands.Agent(
+        model=model,
+        messages=[
+            {"role": "user", "content": [{"text": "old question"}]},
+            {"role": "assistant", "content": [{"text": "old answer"}]},
+            {"role": "user", "content": [{"text": "new question"}]},
+        ],
+        callback_handler=None,
+    )
+    agent._session_manager = unittest.mock.Mock()
+    agent._session_manager.sync_agent.side_effect = RuntimeError("session sync failed")
+    events = []
+    agent.event_loop_metrics.reset_usage_metrics()
+
+    with pytest.raises(RuntimeError, match="session sync failed"):
+        async for streamed_event in agent._execute_event_loop_cycle({}):
+            events.append(streamed_event)
+
+    force_stops = [streamed_event for streamed_event in events if streamed_event.get("force_stop")]
+    assert force_stops == [{"force_stop": True, "force_stop_reason": message}]
+    agent._session_manager.sync_agent.assert_called_once_with(agent)
+    assert openai_client.responses.create.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_agent_emits_force_stop_when_response_failed_overflow_cannot_reduce(openai_client, model, agenerator):
     """An unrecoverable streamed overflow still emits one terminal force_stop."""
     message = "prompt tokens (320666) exceed customer model maximum (278528) for model-id"

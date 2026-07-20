@@ -1382,14 +1382,14 @@ class Agent(AgentBase):
             try:
                 # Try reducing the context size and retrying
                 self.conversation_manager.reduce_context(self, e=e)
+
+                # Sync agent after reduce_context to keep conversation_manager_state up to date in the session
+                if self._session_manager:
+                    self._session_manager.sync_agent(self)
             except Exception:
                 for event in pending_force_stops:
                     yield event
                 raise
-
-            # Sync agent after reduce_context to keep conversation_manager_state up to date in the session
-            if self._session_manager:
-                self._session_manager.sync_agent(self)
 
             events = self._execute_event_loop_cycle(invocation_state, structured_output_context, limits)
             async for event in events:
