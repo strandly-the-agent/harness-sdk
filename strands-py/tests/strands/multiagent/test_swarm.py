@@ -1127,6 +1127,7 @@ async def test_swarm_persistence(mock_strands_tracer, mock_use_span):
     assert state["id"] == "default_swarm"
     assert state["_internal_state"] == {
         "interrupt_state": {"activated": False, "context": {}, "interrupts": {}},
+        "handoff_pending": False,
     }
     assert "status" in state
     assert "node_history" in state
@@ -1346,6 +1347,7 @@ def resume_payload(
     handoff_message=None,
     shared_context=None,
     interrupt_state=None,
+    handoff_pending=None,
     task="test",
 ):
     """Build a persisted swarm payload for the resume tests."""
@@ -1362,6 +1364,7 @@ def resume_payload(
         },
         "_internal_state": {
             "interrupt_state": interrupt_state or {"activated": False, "context": {}, "interrupts": {}},
+            "handoff_pending": handoff_pending if handoff_pending is not None else handoff_node is not None,
         },
     }
 
@@ -2085,3 +2088,121 @@ def test_swarm_interrupt_on_agent(agenerator):
     assert tru_status == exp_status
 
     agent.stream_async.assert_called_once_with(responses, invocation_state={})
+
+
+@pytest.mark.asyncio
+async def test_swarm_resume_pending_self_handoff_survives_second_restart(mock_strands_tracer, mock_use_span):
+    """A self-handoff still owing a turn survives repeated crash-restart generations.
+
+    The resume frontier equals the handoff target both when the frontier already satisfied the handoff and
+    when a self-handoff is merely pending, so the checkpoint records which of the two it is.
+    """
+    first_agent = create_mock_agent("first")
+    second_agent = create_mock_agent("second")
+    swarm = Swarm([first_agent, second_agent])
+
+    async def self_handoff_then_interrupt(*args, **kwargs):
+        yield {"agent_start": True}
+        swarm._handle_handoff(swarm.nodes["first"], "loop back to first", {})
+        first_agent._interrupt_state.activate()
+        yield {"result": build_interrupt_result("interrupt-first")}
+
+    first_agent.stream_async = Mock(side_effect=self_handoff_then_interrupt)
+
+    interrupted_result = await swarm.invoke_async("test")
+    assert interrupted_result.status == Status.INTERRUPTED
+    first_generation = swarm.serialize_state()
+    responses = [
+        {"interruptResponse": {"interruptId": interrupted_result.interrupts[0].id, "response": "test_response"}},
+    ]
+
+    # Generation two: restore, resume, and tear the resumed turn down before it commits.
+    resumed_swarm = Swarm([create_mock_agent("first"), create_mock_agent("second")])
+    resumed_swarm.deserialize_state(first_generation)
+
+    async def block_before_node(event):
+        await asyncio.sleep(1)
+
+    resumed_swarm.hooks.add_callback(BeforeNodeCallEvent, block_before_node)
+    stream = resumed_swarm.stream_async(responses)
+    pending_first_event = asyncio.ensure_future(stream.asend(None))
+    await asyncio.sleep(0.01)
+    pending_first_event.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending_first_event
+    second_generation = resumed_swarm.serialize_state()
+
+    tru_frontier = second_generation["next_nodes_to_execute"]
+    exp_frontier = ["first"]
+    assert tru_frontier == exp_frontier
+
+    # Generation three: the handoff first requested is still owed, so it runs.
+    final_first = create_mock_agent("first")
+    final_swarm = Swarm([final_first, create_mock_agent("second")])
+    final_swarm.deserialize_state(second_generation)
+
+    assert final_swarm.state.handoff_node is not None
+    assert final_swarm.state.handoff_node.node_id == "first"
+
+    final_result = await final_swarm.invoke_async(responses)
+
+    tru_node_order = [node.node_id for node in final_result.node_history]
+    exp_node_order = ["first", "first"]
+    assert tru_node_order == exp_node_order
+
+
+@pytest.mark.asyncio
+async def test_swarm_stream_closed_at_node_stop_event_keeps_committed_turn(mock_strands_tracer, mock_use_span):
+    """A node that finished keeps its handoff and shared context when the stream closes on its stop event.
+
+    The node's result and metrics are already recorded by the time that event is forwarded, so the turn is
+    committed and teardown has nothing to roll back.
+    """
+    first_agent = create_mock_agent("first")
+    second_agent = create_mock_agent("second")
+    swarm = Swarm([first_agent, second_agent])
+
+    async def handoff_then_finish(*args, **kwargs):
+        yield {"agent_start": True}
+        swarm._handle_handoff(swarm.nodes["second"], "message for second", {"finding": "value"})
+        yield {"result": first_agent.return_value}
+
+    first_agent.stream_async = Mock(side_effect=handoff_then_finish)
+
+    stream = swarm.stream_async("test")
+    async for event in stream:
+        if event.get("type") == "multiagent_node_stop":
+            break
+    await stream.aclose()
+
+    assert swarm.state.handoff_node is not None
+    tru_handoff = (swarm.state.handoff_node.node_id, swarm.state.handoff_message, swarm.shared_context.context)
+    exp_handoff = ("second", "message for second", {"first": {"finding": "value"}})
+    assert tru_handoff == exp_handoff
+
+    persisted = swarm.serialize_state()
+    tru_resume = (persisted["next_nodes_to_execute"], persisted["node_history"])
+    exp_resume = (["second"], ["first"])
+    assert tru_resume == exp_resume
+
+
+@pytest.mark.asyncio
+async def test_swarm_resume_checkpoint_without_commit_flag_infers_handoff_state(mock_strands_tracer, mock_use_span):
+    """A checkpoint written before the commit flag existed still resolves its handoff from the frontier."""
+    consumed = resume_payload(frontier=["second"], node_history=["first"], handoff_node="second")
+    del consumed["_internal_state"]["handoff_pending"]
+
+    consumed_swarm = Swarm([create_mock_agent("first"), create_mock_agent("second")])
+    consumed_swarm.deserialize_state(consumed)
+
+    assert consumed_swarm.state.current_node.node_id == "second"
+    assert consumed_swarm.state.handoff_node is None
+
+    pending = resume_payload(status="interrupted", frontier=["first"], node_history=["first"], handoff_node="first")
+    del pending["_internal_state"]["handoff_pending"]
+
+    pending_swarm = Swarm([create_mock_agent("first"), create_mock_agent("second")])
+    pending_swarm.deserialize_state(pending)
+
+    assert pending_swarm.state.handoff_node is not None
+    assert pending_swarm.state.handoff_node.node_id == "first"
