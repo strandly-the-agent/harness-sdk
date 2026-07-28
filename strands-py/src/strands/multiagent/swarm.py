@@ -1034,8 +1034,10 @@ class Swarm(MultiAgentBase):
         # Only a committed turn earns its handoff target the frontier; a handoff standing mid-turn was
         # inherited, and resuming its target would skip the node that never finished.
         turn_committed = self._turn is not None and self._turn.outcome == "committed"
+        frontier_carries_handoff = False
         if self.state.completion_status == Status.EXECUTING and turn_committed and self.state.handoff_node:
             next_nodes = [self.state.handoff_node.node_id]
+            frontier_carries_handoff = True
         elif self.state.completion_status in (Status.EXECUTING, Status.INTERRUPTED) and self.state.current_node:
             next_nodes = [self.state.current_node.node_id]
         else:
@@ -1054,7 +1056,16 @@ class Swarm(MultiAgentBase):
             "execution_time": self._execution_time_with_active_interval(self.state.execution_time),
             "context": {
                 "shared_context": getattr(self.state.shared_context, "context", {}) or {},
-                "handoff_node": self.state.handoff_node.node_id if self.state.handoff_node else None,
+                # A handoff the resume frontier already carries owes nothing further, so it is not
+                # recorded: a persisted handoff always means its target still owes a turn. Deciding that
+                # here, where the turn's outcome is known, is what keeps restore from having to guess - a
+                # frontier equals its handoff target both when it carries it and when a self-handoff is
+                # merely pending, and those two are indistinguishable after the fact.
+                "handoff_node": (
+                    self.state.handoff_node.node_id
+                    if self.state.handoff_node and not frontier_carries_handoff
+                    else None
+                ),
                 "handoff_message": self.state.handoff_message,
             },
             "_internal_state": {
@@ -1156,15 +1167,6 @@ class Swarm(MultiAgentBase):
 
         # Only reached for a frontier that names a node this swarm defines.
         self.state.current_node = self.nodes[payload["next_nodes_to_execute"][0]]
-
-        # Clear a handoff the resume frontier already satisfies so the target is not re-run. Skip INTERRUPTED:
-        # there the frontier is the current node, so a self-handoff equality is coincidental and still pending.
-        if (
-            self.state.completion_status != Status.INTERRUPTED
-            and self.state.handoff_node is not None
-            and self.state.handoff_node == self.state.current_node
-        ):
-            self.state.handoff_node = None
 
     def _initial_node(self) -> SwarmNode:
         if self.entry_point:
