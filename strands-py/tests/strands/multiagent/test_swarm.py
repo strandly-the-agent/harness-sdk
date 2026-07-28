@@ -2192,25 +2192,31 @@ async def test_swarm_stream_closed_at_node_stop_event_keeps_committed_turn(mock_
 
 
 @pytest.mark.asyncio
-async def test_swarm_resume_checkpoint_without_pending_flag_infers_handoff_state(mock_strands_tracer, mock_use_span):
+@pytest.mark.parametrize(
+    ("status", "frontier", "handoff_node", "exp_handoff_node"),
+    [
+        # A frontier that is the handoff target already carries it, so the target is not run twice.
+        ("executing", ["second"], "second", None),
+        # An interrupted checkpoint's frontier is the current node, so a self-handoff is still owed.
+        ("interrupted", ["first"], "first", "first"),
+    ],
+)
+async def test_swarm_resume_checkpoint_without_pending_flag_infers_handoff_state(
+    status, frontier, handoff_node, exp_handoff_node, mock_strands_tracer, mock_use_span
+):
     """A checkpoint carrying no `handoff_pending` resolves its handoff from the frontier instead."""
-    consumed = resume_payload(frontier=["second"], node_history=["first"], handoff_node="second")
-    del consumed["_internal_state"]["handoff_pending"]
+    payload = resume_payload(status=status, frontier=frontier, node_history=["first"], handoff_node=handoff_node)
+    del payload["_internal_state"]["handoff_pending"]
 
-    consumed_swarm = Swarm([create_mock_agent("first"), create_mock_agent("second")])
-    consumed_swarm.deserialize_state(consumed)
+    swarm = Swarm([create_mock_agent("first"), create_mock_agent("second")])
+    swarm.deserialize_state(payload)
 
-    assert consumed_swarm.state.current_node.node_id == "second"
-    assert consumed_swarm.state.handoff_node is None
-
-    pending = resume_payload(status="interrupted", frontier=["first"], node_history=["first"], handoff_node="first")
-    del pending["_internal_state"]["handoff_pending"]
-
-    pending_swarm = Swarm([create_mock_agent("first"), create_mock_agent("second")])
-    pending_swarm.deserialize_state(pending)
-
-    assert pending_swarm.state.handoff_node is not None
-    assert pending_swarm.state.handoff_node.node_id == "first"
+    tru_restored = (
+        swarm.state.current_node.node_id,
+        swarm.state.handoff_node.node_id if swarm.state.handoff_node else None,
+    )
+    exp_restored = (frontier[0], exp_handoff_node)
+    assert tru_restored == exp_restored
 
 
 @pytest.mark.asyncio

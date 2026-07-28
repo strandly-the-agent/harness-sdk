@@ -845,7 +845,7 @@ class Swarm(MultiAgentBase):
                             node_result = event["node_result"]
                             # A failure commits nothing: the raise that follows this event rolls the
                             # turn back. An interrupt commits below, where the interrupt is recorded.
-                            if node_result.status == Status.COMPLETED:
+                            if node_result.status == Status.COMPLETED and self._turn.outcome == "open":
                                 self._interrupt_state.deactivate()
                                 self.state.node_history.append(current_node)
                                 self._turn.outcome = "committed"
@@ -1069,7 +1069,11 @@ class Swarm(MultiAgentBase):
             "execution_time": self._execution_time_with_active_interval(self.state.execution_time),
             "context": {
                 "shared_context": getattr(self.state.shared_context, "context", {}) or {},
-                "handoff_node": self.state.handoff_node.node_id if self.state.handoff_node else None,
+                # A handoff the frontier already carries owes nothing further, so it is not persisted:
+                # a reader that ignores handoff_pending would otherwise run its target a second time.
+                "handoff_node": (
+                    self.state.handoff_node.node_id if self.state.handoff_node and handoff_pending else None
+                ),
                 "handoff_message": self.state.handoff_message,
             },
             "_internal_state": {
