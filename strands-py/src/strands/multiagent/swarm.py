@@ -843,19 +843,20 @@ class Swarm(MultiAgentBase):
                         # arriving at that yield must not roll back work the node already finished.
                         if isinstance(event, MultiAgentNodeStopEvent):
                             node_result = event["node_result"]
+                            # A failure commits nothing: the raise that follows this event rolls the
+                            # turn back. An interrupt commits below, where the interrupt is recorded.
                             if node_result.status == Status.COMPLETED:
                                 self._interrupt_state.deactivate()
                                 self.state.node_history.append(current_node)
-                                self._turn.outcome = "committed"
-                            elif node_result.status == Status.INTERRUPTED:
-                                # An interrupt commits the turn too: resume continues past it, so a
-                                # handoff the node requested stands. A failure commits nothing - the
-                                # raise that follows this event rolls the turn back.
                                 self._turn.outcome = "committed"
                         yield event
 
                     node_result = cast(NodeResult, node_result)
                     if node_result.status == Status.INTERRUPTED:
+                        # An interrupt commits the turn - resume continues past the node, so the handoff
+                        # it requested stands - but only once the interrupt itself is recorded, so commit
+                        # and activation stay adjacent.
+                        self._turn.outcome = "committed"
                         yield self._activate_interrupt(current_node, node_result.interrupts)
                         break
 
