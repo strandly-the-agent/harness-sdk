@@ -837,21 +837,28 @@ class Swarm(MultiAgentBase):
                         self.node_timeout,
                         f"Node '{current_node.node_id}' execution timed out after {self.node_timeout}s",
                     )
+                    node_result: NodeResult | None = None
                     async for event in node_stream:
+                        # Commit a completed turn before its terminal event is forwarded: the node's
+                        # result, metrics and shared context are already recorded, so a teardown
+                        # arriving at this yield must not roll the turn back. A failure commits
+                        # nothing - the raise from _execute_node reaches the handler below.
+                        if isinstance(event, MultiAgentNodeStopEvent):
+                            node_result = event["node_result"]
+                            if node_result.status == Status.COMPLETED:
+                                self._interrupt_state.deactivate()
+                                self.state.node_history.append(current_node)
+                                self._turn.outcome = "committed"
                         yield event
 
-                    stop_event = cast(MultiAgentNodeStopEvent, event)
-                    node_result = stop_event["node_result"]
+                    node_result = cast(NodeResult, node_result)
                     if node_result.status == Status.INTERRUPTED:
-                        # An interrupt commits the turn: resume continues past it, so the handoff stands.
+                        # An interrupt commits the turn - resume continues past the node, so a handoff it
+                        # requested stands - but only once the interrupt is recorded, so the commit stays
+                        # adjacent to the activation that makes it true.
                         self._turn.outcome = "committed"
                         yield self._activate_interrupt(current_node, node_result.interrupts)
                         break
-
-                    self._interrupt_state.deactivate()
-
-                    self.state.node_history.append(current_node)
-                    self._turn.outcome = "committed"
 
                 except (asyncio.CancelledError, GeneratorExit):
                     self._rollback_uncommitted_turn()
@@ -1058,8 +1065,8 @@ class Swarm(MultiAgentBase):
                 "shared_context": getattr(self.state.shared_context, "context", {}) or {},
                 # A handoff the resume frontier already carries owes nothing further, so it is not
                 # recorded: a persisted handoff always means its target still owes a turn. Deciding that
-                # here, where the turn's outcome is known, is what keeps restore from having to guess - a
-                # frontier equals its handoff target both when it carries it and when a self-handoff is
+                # here, where the turn's outcome is known, is what keeps restore from having to guess -
+                # a frontier equals its handoff target both when it carries it and when a self-handoff is
                 # merely pending, and those two are indistinguishable after the fact.
                 "handoff_node": (
                     self.state.handoff_node.node_id

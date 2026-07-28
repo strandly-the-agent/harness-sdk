@@ -1989,6 +1989,84 @@ async def test_swarm_resume_pending_self_handoff_survives_second_restart(mock_st
     assert tru_node_order == exp_node_order
 
 
+@pytest.mark.asyncio
+async def test_swarm_stream_closed_at_node_stop_event_keeps_committed_turn(mock_strands_tracer, mock_use_span):
+    """A node that finished keeps its handoff and shared context when the stream closes on its stop event.
+
+    The node's result and metrics are already recorded by the time that event is forwarded, so the turn is
+    committed and teardown has nothing to roll back.
+    """
+    first_agent = create_mock_agent("first")
+    second_agent = create_mock_agent("second")
+    swarm = Swarm([first_agent, second_agent])
+
+    async def handoff_then_finish(*args, **kwargs):
+        yield {"agent_start": True}
+        swarm._handle_handoff(swarm.nodes["second"], "message for second", {"finding": "value"})
+        yield {"result": first_agent.return_value}
+
+    first_agent.stream_async = Mock(side_effect=handoff_then_finish)
+
+    stream = swarm.stream_async("test")
+    async for event in stream:
+        if event.get("type") == "multiagent_node_stop":
+            break
+    await stream.aclose()
+
+    assert swarm.state.handoff_node is not None
+    tru_handoff = (swarm.state.handoff_node.node_id, swarm.state.handoff_message, swarm.shared_context.context)
+    exp_handoff = ("second", "message for second", {"first": {"finding": "value"}})
+    assert tru_handoff == exp_handoff
+
+    persisted = swarm.serialize_state()
+    tru_resume = (persisted["next_nodes_to_execute"], persisted["node_history"])
+    exp_resume = (["second"], ["first"])
+    assert tru_resume == exp_resume
+
+
+@pytest.mark.asyncio
+async def test_swarm_stream_closed_at_interrupt_stop_event_replays_source(mock_strands_tracer, mock_use_span):
+    """A node whose interrupt was never recorded replays on restore rather than being skipped.
+
+    An interrupt commits its turn because resume continues past the node, which only holds once the
+    interrupt is durable; a teardown before that leaves the node still owing its turn.
+    """
+    first_agent = create_mock_agent("first")
+    second_agent = create_mock_agent("second")
+    swarm = Swarm([first_agent, second_agent])
+
+    async def handoff_then_interrupt(*args, **kwargs):
+        yield {"agent_start": True}
+        swarm._handle_handoff(swarm.nodes["second"], "message for second", {})
+        first_agent._interrupt_state.activate()
+        yield {"result": build_interrupt_result("interrupt-first")}
+
+    first_agent.stream_async = Mock(side_effect=handoff_then_interrupt)
+
+    stream = swarm.stream_async("test")
+    async for event in stream:
+        if event.get("type") == "multiagent_node_stop":
+            break
+    await stream.aclose()
+
+    persisted = swarm.serialize_state()
+    tru_resume = (persisted["next_nodes_to_execute"], persisted["_internal_state"]["interrupt_state"]["activated"])
+    exp_resume = (["first"], False)
+    assert tru_resume == exp_resume
+
+    resumed_first = create_mock_agent("first")
+    resumed_second = create_mock_agent("second")
+    resumed_swarm = Swarm([resumed_first, resumed_second])
+    resumed_swarm.deserialize_state(persisted)
+
+    result = await resumed_swarm.invoke_async("test")
+
+    tru_node_order = [node.node_id for node in result.node_history]
+    exp_node_order = ["first"]
+    assert tru_node_order == exp_node_order
+    resumed_first.stream_async.assert_called_once()
+
+
 def test_swarm_serialize_omits_handoff_the_resume_frontier_carries(mock_strands_tracer, mock_use_span):
     """A checkpoint whose frontier is the handoff target records no handoff.
 
