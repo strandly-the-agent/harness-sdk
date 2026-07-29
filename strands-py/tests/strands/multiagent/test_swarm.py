@@ -1916,7 +1916,7 @@ def test_swarm_serialize_omits_handoff_the_resume_frontier_carries():
     )
     swarm.state.handoff_node = swarm.nodes["second"]
     swarm.state.handoff_message = "message for second"
-    swarm._turn = _TurnCheckpoint(None, None, {}, outcome="committed")
+    swarm._turn = _TurnCheckpoint(swarm.nodes["first"], None, None, {}, outcome="committed")
 
     snapshot = swarm.serialize_state()
 
@@ -2106,6 +2106,71 @@ async def test_swarm_resume_interrupted_self_handoff_preserved(mock_strands_trac
     assert resumed_swarm.state.current_node.node_id == "first"
     assert resumed_swarm.state.handoff_node is not None
     assert resumed_swarm.state.handoff_node.node_id == "first"
+
+
+@pytest.mark.asyncio
+async def test_swarm_repeated_crash_at_terminal_stop_event_does_not_grow_history(mock_strands_tracer, mock_use_span):
+    """Crashing at the terminal event of a node that requested no handoff owes nothing on restore.
+
+    That node is already recorded as done, so keeping it as the resume frontier would re-run it and
+    append it again on every crash, charging the repeat against the iteration budget.
+    """
+    payload = None
+    for _ in range(3):
+        solo_agent = create_mock_agent("solo")
+        swarm = Swarm([solo_agent, create_mock_agent("other")])
+        if payload is not None:
+            swarm.deserialize_state(payload)
+
+        stream = swarm.stream_async("test")
+        async for event in stream:
+            if event.get("type") == "multiagent_node_stop":
+                break
+        await stream.aclose()
+        payload = swarm.serialize_state()
+
+        tru_resume = (payload["next_nodes_to_execute"], payload["node_history"])
+        exp_resume = ([], ["solo"])
+        assert tru_resume == exp_resume
+
+
+@pytest.mark.asyncio
+async def test_swarm_crash_after_handoff_transition_keeps_the_target_owed(mock_strands_tracer, mock_use_span):
+    """A handoff target that has not started its turn stays the frontier.
+
+    The transition advances the current node before the target runs, so the committed turn belongs to
+    the source: reading it as the target's own outcome would drop the turn the target still owes.
+    """
+    first_agent = create_mock_agent("first")
+    second_agent = create_mock_agent("second")
+    swarm = Swarm([first_agent, second_agent])
+
+    async def hand_off_to_second(*args, **kwargs):
+        yield {"agent_start": True}
+        swarm._handle_handoff(swarm.nodes["second"], "message for second", {})
+        yield {"result": first_agent.return_value}
+
+    first_agent.stream_async = Mock(side_effect=hand_off_to_second)
+
+    stream = swarm.stream_async("test")
+    async for event in stream:
+        if event.get("type") == "multiagent_handoff":
+            break
+    await stream.aclose()
+
+    payload = swarm.serialize_state()
+    tru_resume = (payload["next_nodes_to_execute"], payload["node_history"])
+    exp_resume = (["second"], ["first"])
+    assert tru_resume == exp_resume
+
+    resumed_second = create_mock_agent("second")
+    resumed_swarm = Swarm([create_mock_agent("first"), resumed_second])
+    resumed_swarm.deserialize_state(payload)
+
+    result = await resumed_swarm.invoke_async("test")
+
+    assert result.status == Status.COMPLETED
+    resumed_second.stream_async.assert_called_once()
 
 
 @pytest.mark.parametrize(

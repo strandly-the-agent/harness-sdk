@@ -242,12 +242,15 @@ class _TurnCheckpoint:
     handoff is ambiguous on its own: the node may have committed that handoff or merely inherited it.
 
     Attributes:
+        node: The node whose turn this is. A committed turn says nothing about the node that runs next,
+            so the frontier logic only reads the outcome while this is still the current node.
         handoff_node: Handoff target as it stood before the node ran.
         handoff_message: Handoff message as it stood before the node ran.
         shared_context: Shared context as it stood before the node ran.
         outcome: "open" until the turn either commits or is rolled back.
     """
 
+    node: SwarmNode
     handoff_node: SwarmNode | None
     handoff_message: str | None
     shared_context: dict[str, dict[str, Any]]
@@ -827,6 +830,7 @@ class Swarm(MultiAgentBase):
                         break
 
                     self._turn = _TurnCheckpoint(
+                        current_node,
                         self.state.handoff_node,
                         self.state.handoff_message,
                         copy.deepcopy(self.shared_context.context),
@@ -1041,14 +1045,24 @@ class Swarm(MultiAgentBase):
         status_str = self.state.completion_status.value
         # Only a committed turn earns its handoff target the frontier; a handoff standing mid-turn was
         # inherited, and resuming its target would skip the node that never finished.
-        turn_committed = self._turn is not None and self._turn.outcome == "committed"
+        # A committed turn describes the node that ran it, so it only speaks for the current node while
+        # that node is still current: once a handoff transition advances to the target, the target's own
+        # turn has not started and owes its work.
+        turn_committed = (
+            self._turn is not None and self._turn.outcome == "committed" and self._turn.node == self.state.current_node
+        )
         frontier_carries_handoff = False
         if self.state.completion_status == Status.EXECUTING and turn_committed and self.state.handoff_node:
             next_nodes = [self.state.handoff_node.node_id]
             frontier_carries_handoff = True
-        elif self.state.completion_status in (Status.EXECUTING, Status.INTERRUPTED) and self.state.current_node:
+        elif self.state.completion_status == Status.INTERRUPTED and self.state.current_node:
+            # An interrupted node owes the rest of its own turn, so it stays the frontier.
+            next_nodes = [self.state.current_node.node_id]
+        elif self.state.completion_status == Status.EXECUTING and self.state.current_node and not turn_committed:
             next_nodes = [self.state.current_node.node_id]
         else:
+            # A committed turn that requested no handoff owes nothing further. Recording its node as the
+            # frontier would re-run work this same checkpoint reports as done, once per crash.
             next_nodes = []
 
         return {
