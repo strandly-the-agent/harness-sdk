@@ -2173,6 +2173,63 @@ async def test_swarm_crash_after_handoff_transition_keeps_the_target_owed(mock_s
     resumed_second.stream_async.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_swarm_crash_after_self_handoff_transition_keeps_the_turn_owed(mock_strands_tracer, mock_use_span):
+    """A node handed its own next turn still owes that turn after a crash at the transition.
+
+    The transition advances the current node to the target, which for a self-handoff is the node that
+    just ran, so its finished turn must stop speaking for the turn it was handed.
+    """
+    first_agent = create_mock_agent("first")
+    second_agent = create_mock_agent("second")
+    swarm = Swarm([first_agent, second_agent])
+    passes = {"second": 0}
+
+    async def hand_off_to_second(*args, **kwargs):
+        yield {"agent_start": True}
+        swarm._handle_handoff(swarm.nodes["second"], "for second", {})
+        yield {"result": first_agent.return_value}
+
+    async def second_hands_to_itself(*args, **kwargs):
+        yield {"agent_start": True}
+        passes["second"] += 1
+        if passes["second"] == 1:
+            swarm._handle_handoff(swarm.nodes["second"], "second again", {})
+        yield {"result": second_agent.return_value}
+
+    first_agent.stream_async = Mock(side_effect=hand_off_to_second)
+    second_agent.stream_async = Mock(side_effect=second_hands_to_itself)
+
+    stream = swarm.stream_async("test")
+    handoffs = 0
+    async for event in stream:
+        if event.get("type") == "multiagent_handoff":
+            handoffs += 1
+            if handoffs == 2:
+                break
+    await stream.aclose()
+
+    payload = swarm.serialize_state()
+    tru_resume = (payload["next_nodes_to_execute"], payload["node_history"])
+    exp_resume = (["second"], ["first", "second"])
+    assert tru_resume == exp_resume
+
+    resumed_first = create_mock_agent("first")
+    resumed_second = create_mock_agent("second")
+    resumed_swarm = Swarm([resumed_first, resumed_second])
+    resumed_swarm.deserialize_state(payload)
+
+    result = await resumed_swarm.invoke_async("test")
+
+    tru_run = (
+        [node.node_id for node in result.node_history],
+        resumed_first.stream_async.call_count,
+        resumed_second.stream_async.call_count,
+    )
+    exp_run = (["first", "second", "second"], 0, 1)
+    assert tru_run == exp_run
+
+
 @pytest.mark.parametrize(
     ("cancel_node", "cancel_message"),
     [(True, "node cancelled by user"), ("custom cancel message", "custom cancel message")],

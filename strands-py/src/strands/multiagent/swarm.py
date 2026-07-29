@@ -890,6 +890,10 @@ class Swarm(MultiAgentBase):
 
                     self.state.handoff_node = None
                     self.state.current_node = current_node
+                    # The committed turn described the node that just ran. Once the transition advances
+                    # to the target - itself, for a self-handoff - that outcome no longer speaks for the
+                    # current node, which owes the turn it was handed.
+                    self._turn = None
 
                     handoff_event = MultiAgentHandoffEvent(
                         from_node_ids=[previous_node.node_id],
