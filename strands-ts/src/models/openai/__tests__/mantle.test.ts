@@ -198,6 +198,7 @@ describe('OpenAIModel bedrockMantleConfig', () => {
       ['google.gemma-4-26b-a4b', '/openai/v1'],
       ['google.gemma-4-e2b', '/openai/v1'],
       ['openai.gpt-5.6-terra', '/openai/v1'],
+      ['openai.gpt-6-astra', '/openai/v1'],
       // Gemma 3 is served from /v1 while Gemma 4 is not, so `google.` cannot be a prefix.
       ['google.gemma-3-27b-it', '/v1'],
       ['google.gemma-3-4b-it', '/v1'],
