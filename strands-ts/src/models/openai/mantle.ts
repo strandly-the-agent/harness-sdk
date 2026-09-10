@@ -16,7 +16,7 @@ const MANTLE_DOCS_URL = 'https://docs.aws.amazon.com/bedrock/latest/userguide/in
  * Mantle model lines served from `/openai/v1`; every other Mantle model uses
  * `/v1`, and the wrong base path fails with HTTP 400. The base path is a
  * per-model property that no Mantle API reports, so these prefixes were
- * verified against the `us-east-1` catalog on 2026-09-10. Scope each prefix to
+ * verified against the `us-east-1` catalog on 2026-08-05. Scope each prefix to
  * a single model line, never a vendor: one vendor's lines can split across base
  * paths (`google.gemma-4-*` is on `/openai/v1`, `google.gemma-3-*` is on
  * `/v1`). An unmatched new line falls through to `/v1`; the `mantle-routing`
