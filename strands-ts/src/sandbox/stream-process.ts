@@ -140,6 +140,7 @@ export async function* streamProcess(
   const timeout = options?.timeout
   if (timeout !== undefined) {
     timeoutHandle = setTimeout(() => {
+      if (done || terminating) return
       timedOut = true
       terminate()
     }, timeout * 1000)
@@ -174,8 +175,8 @@ export async function* streamProcess(
       return
     }
 
-    if (timedOut) throw new SandboxTimeoutError(timeout!, { stdout, stderr, exitCode })
     if (error) throw error
+    if (timedOut) throw new SandboxTimeoutError(timeout!, { stdout, stderr, exitCode })
 
     yield {
       type: 'executionResult',
