@@ -54,7 +54,9 @@ export async function* streamProcess(
   let stdout = ''
   let stderr = ''
   let done = false
+  let exited = false
   let terminating = false
+  let timedOut = false
   let exitCode = 0
   let error: Error | undefined
   let enoent = false
@@ -69,7 +71,7 @@ export async function* streamProcess(
     }
   }
 
-  const terminate = (reason: Error): void => {
+  const terminate = (reason?: Error): void => {
     if (terminating || done) return
     terminating = true
     error = reason
@@ -94,15 +96,20 @@ export async function* streamProcess(
     wake()
   })
 
-  proc.on('close', (code, signal) => {
+  proc.on('exit', (code, signal) => {
+    if (code !== null) {
+      exitCode = code
+    } else if (signal) {
+      exitCode = 128 + (SIGNAL_CODES[signal] ?? 1)
+    } else {
+      exitCode = 1
+    }
+    exited = true
+    wake()
+  })
+
+  proc.on('close', () => {
     if (!done) {
-      if (code !== null) {
-        exitCode = code
-      } else if (signal) {
-        exitCode = 128 + (SIGNAL_CODES[signal] ?? 1)
-      } else {
-        exitCode = 1
-      }
       done = true
       wake()
     }
@@ -130,10 +137,12 @@ export async function* streamProcess(
     }
   }
 
-  if (options?.timeout !== undefined) {
+  const timeout = options?.timeout
+  if (timeout !== undefined) {
     timeoutHandle = setTimeout(() => {
-      terminate(new SandboxTimeoutError(options.timeout!))
-    }, options.timeout * 1000)
+      timedOut = true
+      terminate()
+    }, timeout * 1000)
   }
 
   try {
@@ -145,7 +154,8 @@ export async function* streamProcess(
         }
       }
 
-      if (done || terminating) break
+      // A timed-out process is awaited until it exits so the error carries its real exit code.
+      if (done || (terminating && (!timedOut || exited))) break
 
       await new Promise<void>((resolve) => {
         resolveWait = resolve
@@ -164,6 +174,7 @@ export async function* streamProcess(
       return
     }
 
+    if (timedOut) throw new SandboxTimeoutError(timeout!, { stdout, stderr, exitCode })
     if (error) throw error
 
     yield {

@@ -63,7 +63,16 @@ export function makeShell(
         return { output: result.stdout, error: result.stderr, exit_code: result.exitCode } as ShellOutput
       } catch (err) {
         // Shell* extends Bash* so pre-rename catch clauses keep matching.
-        if (err instanceof SandboxTimeoutError) throw new ShellTimeoutError(err.message)
+        if (err instanceof SandboxTimeoutError) {
+          // Thrown errors reach the model as `Error: <message>`, so the partial output rides in the message.
+          const partial: ShellOutput = {
+            output: err.stdout,
+            error: err.stderr,
+            exit_code: err.exitCode,
+            message: err.message,
+          }
+          throw new ShellTimeoutError(JSON.stringify(partial))
+        }
         throw new ShellExecutionError((err as Error).message)
       }
     },
