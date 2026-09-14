@@ -118,7 +118,9 @@ describe('ContextOffloader', () => {
       const agent = createMockAgent()
       plugin.initAgent(agent)
 
-      const event = makeEvent([new TextBlock('x'.repeat(1000))], { invocationState: { [SKIP_CONTEXT_OFFLOAD_KEY]: true } })
+      const event = makeEvent([new TextBlock('x'.repeat(1000))], {
+        invocationState: { [SKIP_CONTEXT_OFFLOAD_KEY]: true },
+      })
       await invokeTrackedHook(agent, event)
 
       expect((event.result.content[0] as TextBlock).text).toBe('x'.repeat(1000))
@@ -130,7 +132,9 @@ describe('ContextOffloader', () => {
       const agent = createMockAgent()
       plugin.initAgent(agent)
 
-      const event = makeEvent([new TextBlock('x'.repeat(1000))], { invocationState: { [SKIP_CONTEXT_OFFLOAD_KEY]: false } })
+      const event = makeEvent([new TextBlock('x'.repeat(1000))], {
+        invocationState: { [SKIP_CONTEXT_OFFLOAD_KEY]: false },
+      })
       await invokeTrackedHook(agent, event)
 
       expect((event.result.content[0] as TextBlock).text).toContain('[Offloaded:')
