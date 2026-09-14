@@ -150,6 +150,14 @@ _DEFAULT_PREVIEW_TOKENS = 1_000
 _CHARS_PER_TOKEN = 4
 """Approximate characters per token, fallback for preview slicing without tiktoken."""
 
+SKIP_OFFLOAD_KEY = "strands:skip_offload"
+"""``invocation_state`` key that, when truthy, exempts a tool call's result from offloading.
+
+Set it on the ``invocation_state`` of a tool call whose result is consumed by code rather than
+by the model — for example, tools invoked directly by another tool — so the caller receives the
+full result instead of a preview.
+"""
+
 
 class ShouldOffload(Protocol):
     """Callback protocol for deciding whether a tool result should be offloaded."""
@@ -198,6 +206,9 @@ class ContextOffloader(Plugin):
             Defaults to True.
         should_offload: Callback to control which tool results are offloaded.
             Defaults to None (all oversized results offloaded).
+
+    A tool call whose ``invocation_state`` has :data:`SKIP_OFFLOAD_KEY` set is never offloaded,
+    regardless of size. Use this when the result is consumed by code rather than the model.
 
     Example:
         ```python
@@ -469,6 +480,9 @@ class ContextOffloader(Plugin):
     async def _handle_tool_result(self, event: AfterToolCallEvent) -> None:
         """Intercept oversized tool results, offload per-block, and replace with preview."""
         if event.cancel_message is not None:
+            return
+
+        if event.invocation_state.get(SKIP_OFFLOAD_KEY):
             return
 
         if self._include_retrieval_tool and event.tool_use.get("name") == self.retrieve_offloaded_content.tool_name:

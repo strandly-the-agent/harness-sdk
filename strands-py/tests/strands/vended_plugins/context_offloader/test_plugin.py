@@ -10,6 +10,7 @@ import pytest
 from strands.hooks.events import AfterToolCallEvent, BeforeModelCallEvent
 from strands.types.tools import ToolContext, ToolUse
 from strands.vended_plugins.context_offloader import (
+    SKIP_OFFLOAD_KEY,
     ContextOffloader,
     FileStorage,
     InMemoryStorage,
@@ -201,6 +202,25 @@ class TestContextOffloader:
         await plugin._handle_tool_result(event)
 
         # Tool is disabled, so the result should be offloaded normally
+        assert "[Offloaded:" in event.result["content"][0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_skips_when_invocation_state_has_skip_key(self, plugin, mock_agent):
+        large_text = "x" * 200
+        event = _make_event(mock_agent, large_text)
+        event.invocation_state[SKIP_OFFLOAD_KEY] = True
+
+        await plugin._handle_tool_result(event)
+
+        assert event.result["content"][0]["text"] == large_text
+
+    @pytest.mark.asyncio
+    async def test_offloads_when_skip_key_is_falsy(self, plugin, mock_agent):
+        event = _make_event(mock_agent, "x" * 200)
+        event.invocation_state[SKIP_OFFLOAD_KEY] = False
+
+        await plugin._handle_tool_result(event)
+
         assert "[Offloaded:" in event.result["content"][0]["text"]
 
     @pytest.mark.asyncio
