@@ -21,7 +21,6 @@ class SandboxTimeoutError(TimeoutError):
             stderr: Standard error captured before the kill.
         """
         super().__init__(f"Execution timed out after {seconds} seconds")
-        self.seconds = seconds
         self.stdout = stdout
         self.stderr = stderr
 

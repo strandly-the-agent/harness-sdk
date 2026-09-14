@@ -12,12 +12,13 @@ shell-specific syntax.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from ...sandbox.errors import SandboxTimeoutError
 from ...tools.decorator import tool
 from ...types.tools import ToolContext
-from .types import SANDBOX_SHELL_DESCRIPTION, ShellExecutionError, ShellOutput, ShellTimeoutError
+from .types import SANDBOX_SHELL_DESCRIPTION, ShellExecutionError, ShellOutput
 
 if TYPE_CHECKING:
     from ...sandbox.base import Sandbox
@@ -62,7 +63,10 @@ def make_shell(
         try:
             result = await active.execute(command, timeout=timeout)
         except SandboxTimeoutError as e:
-            raise ShellTimeoutError(e.seconds, e.stdout, e.stderr) from e
+            # The model only sees str(e), so the partial output rides in the message with the success field names.
+            partial: ShellOutput = {"output": e.stdout, "error": e.stderr, "exit_code": 124}
+            e.args = (f"{e}\n{json.dumps(partial)}",)
+            raise
         except Exception as e:
             # ShellExecutionError subclasses RuntimeError, so prior handlers still match.
             raise ShellExecutionError(str(e)) from e
