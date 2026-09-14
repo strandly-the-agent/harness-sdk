@@ -74,7 +74,7 @@ const RETRIEVAL_TOOL_NAME = 'retrieve_offloaded_content'
  * by the model — for example, tools invoked directly by another tool — so the caller receives
  * the full result instead of a preview.
  */
-export const SKIP_OFFLOAD_KEY = 'strands:skip_offload'
+export const SKIP_OFFLOAD_KEY = 'strands:skipOffload'
 
 const retrievalInputSchema = z.object({
   reference: z.string().describe('The reference string from the offload placeholder (e.g. "mem_1_tool-123_0").'),
