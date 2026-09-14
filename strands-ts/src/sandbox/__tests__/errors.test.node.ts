@@ -19,7 +19,7 @@ describe('sandbox errors', () => {
     })
 
     it('carries the partial output captured before the kill', () => {
-      const error = new SandboxTimeoutError(30, { stdout: 'so far', stderr: 'warn' })
+      const error = new SandboxTimeoutError(30, 'so far', 'warn')
       expect(error.stdout).toBe('so far')
       expect(error.stderr).toBe('warn')
     })

@@ -6,30 +6,18 @@
  */
 
 /**
- * Output captured from a process up to the point it was killed.
- */
-export interface PartialExecution {
-  /** Standard output captured before the kill. */
-  stdout: string
-  /** Standard error captured before the kill. */
-  stderr: string
-}
-
-/**
  * Thrown by sandbox execution when the configured `timeout` elapses.
  *
- * Carries whatever the process wrote before it was killed so callers can surface
- * partial output; empty when the sandbox cannot report what was captured.
+ * `stdout` and `stderr` hold whatever the process wrote before it was killed.
  */
 export class SandboxTimeoutError extends Error {
-  readonly stdout: string
-  readonly stderr: string
-
-  constructor(seconds: number, partial?: PartialExecution) {
+  constructor(
+    seconds: number,
+    readonly stdout = '',
+    readonly stderr = ''
+  ) {
     super(`Execution timed out after ${seconds} seconds`)
     this.name = 'SandboxTimeoutError'
-    this.stdout = partial?.stdout ?? ''
-    this.stderr = partial?.stderr ?? ''
   }
 }
 
