@@ -185,7 +185,9 @@ def make_web_fetch(
         host = tool_context.agent if tool_context else None
         try:
             if isinstance(host, Agent):
-                result = await host.invoke_auxiliary_async("web_fetch", analyst, invoke_prompt)
+                result = await host.invoke_auxiliary_async(
+                    analyst, invoke_prompt, source="web_fetch", cancel_signal=cancel_signal
+                )
             else:
                 result = await analyst.invoke_async(invoke_prompt, cancel_signal=cancel_signal)
         except Exception as exc:

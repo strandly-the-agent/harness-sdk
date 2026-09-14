@@ -1000,7 +1000,7 @@ class TestBuiltInClassifier:
         assert result.reason == "destructive"
         mock_agent_cls.assert_called_once()
         event.agent.invoke_auxiliary_async.assert_called_once_with(
-            "hitl_classifier", mock_agent, ANY, structured_output_model=_RiskDecision
+            mock_agent, ANY, source="hitl_classifier", structured_output_model=_RiskDecision
         )
 
     @pytest.mark.asyncio

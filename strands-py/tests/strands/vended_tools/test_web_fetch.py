@@ -300,9 +300,9 @@ class TestAnalyst:
         auxiliary_calls: list[tuple[str, str]] = []
         original = host_agent.invoke_auxiliary_async
 
-        async def spy(source, auxiliary_agent, prompt, **kwargs):
+        async def spy(auxiliary_agent, prompt, *, source, **kwargs):
             auxiliary_calls.append((source, auxiliary_agent.model is analyst_model))
-            return await original(source, auxiliary_agent, prompt, **kwargs)
+            return await original(auxiliary_agent, prompt, source=source, **kwargs)
 
         monkeypatch.setattr(host_agent, "invoke_auxiliary_async", spy)
         ctx = ToolContext(

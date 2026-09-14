@@ -182,7 +182,7 @@ async def generate_summary(
         callback_handler=None,
     )
     if agent is not None:
-        result = await agent.invoke_auxiliary_async("summarization", summarizer, SUMMARIZATION_REQUEST)
+        result = await agent.invoke_auxiliary_async(summarizer, SUMMARIZATION_REQUEST, source="summarization")
     else:
         result = await summarizer.invoke_async(SUMMARIZATION_REQUEST)
 

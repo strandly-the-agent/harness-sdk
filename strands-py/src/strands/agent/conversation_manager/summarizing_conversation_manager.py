@@ -258,7 +258,7 @@ class SummarizingConversationManager(ConversationManager):
 
             summarization_agent.messages = messages
 
-            result = agent.invoke_auxiliary("summarization", summarization_agent, SUMMARIZATION_REQUEST)
+            result = agent.invoke_auxiliary(summarization_agent, SUMMARIZATION_REQUEST, source="summarization")
             return cast(Message, {**result.message, "role": "user"})
 
         finally:

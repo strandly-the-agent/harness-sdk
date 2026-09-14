@@ -122,7 +122,7 @@ def _create_llm_risk_classifier(config: LLMClassifierConfig | None = None) -> Hu
             f"Input: {json.dumps(tool_use['input'], indent=2)}"
         )
         result = await event.agent.invoke_auxiliary_async(
-            "hitl_classifier", inner, prompt, structured_output_model=_RiskDecision
+            inner, prompt, source="hitl_classifier", structured_output_model=_RiskDecision
         )
         decision = result.structured_output
         if not isinstance(decision, _RiskDecision):

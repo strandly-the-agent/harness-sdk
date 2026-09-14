@@ -53,7 +53,7 @@ def mock_model(summary_text="Summary of older messages"):
     return model
 
 
-async def _invoke_auxiliary_async(source, auxiliary_agent, prompt, **kwargs):
+async def _invoke_auxiliary_async(auxiliary_agent, prompt, *, source, **kwargs):
     """Stand in for ``Agent.invoke_auxiliary_async``: run the auxiliary agent, skip the telemetry."""
     return await auxiliary_agent.invoke_async(prompt)
 

@@ -35,7 +35,7 @@ async def _mock_model_stream_error(error):
     yield  # pragma: no cover – makes this a generator
 
 
-async def _invoke_auxiliary_async(source, auxiliary_agent, prompt, **kwargs):
+async def _invoke_auxiliary_async(auxiliary_agent, prompt, *, source, **kwargs):
     """Stand in for ``Agent.invoke_auxiliary_async``: run the auxiliary agent, skip the telemetry."""
     return await auxiliary_agent.invoke_async(prompt)
 
@@ -47,7 +47,7 @@ def _stream_system_prompt(model):
 
 def _route_auxiliary_calls(host):
     """Wire a bare mock host so auxiliary invocations reach the auxiliary agent."""
-    host.invoke_auxiliary = lambda source, auxiliary_agent, prompt, **kwargs: auxiliary_agent(prompt)
+    host.invoke_auxiliary = lambda auxiliary_agent, prompt, *, source, **kwargs: auxiliary_agent(prompt)
     host.invoke_auxiliary_async = _invoke_auxiliary_async
     return host
 
@@ -80,11 +80,11 @@ class MockAgent:
         result.message = {"role": "assistant", "content": [{"text": self.summary_response}]}
         return result
 
-    def invoke_auxiliary(self, source, auxiliary_agent, prompt, **kwargs):
+    def invoke_auxiliary(self, auxiliary_agent, prompt, *, source, **kwargs):
         """Stand in for ``Agent.invoke_auxiliary``: run the auxiliary agent, skip the telemetry."""
         return auxiliary_agent(prompt)
 
-    async def invoke_auxiliary_async(self, source, auxiliary_agent, prompt, **kwargs):
+    async def invoke_auxiliary_async(self, auxiliary_agent, prompt, *, source, **kwargs):
         """Stand in for ``Agent.invoke_auxiliary_async``: run the auxiliary agent, skip the telemetry."""
         return await auxiliary_agent.invoke_async(prompt)
 

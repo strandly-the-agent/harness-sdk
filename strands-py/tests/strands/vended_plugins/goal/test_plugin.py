@@ -22,7 +22,7 @@ def _make_mock_agent():
     ]
     agent.model = MagicMock()
 
-    async def invoke_auxiliary_async(source, auxiliary_agent, prompt, **kwargs):
+    async def invoke_auxiliary_async(auxiliary_agent, prompt, *, source, **kwargs):
         return await auxiliary_agent.invoke_async(prompt, **kwargs)
 
     agent.invoke_auxiliary_async = invoke_auxiliary_async

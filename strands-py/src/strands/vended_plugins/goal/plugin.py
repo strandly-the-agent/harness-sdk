@@ -395,7 +395,7 @@ class GoalLoop(Plugin):
                 structured_output_model=JudgeOutcome,
             )
             result = await host_agent.invoke_auxiliary_async(
-                "goal_judge", judge, build_judge_prompt(goal_description, host_agent.messages)
+                judge, build_judge_prompt(goal_description, host_agent.messages), source="goal_judge"
             )
             if result.structured_output and isinstance(result.structured_output, JudgeOutcome):
                 return ValidationOutcome(

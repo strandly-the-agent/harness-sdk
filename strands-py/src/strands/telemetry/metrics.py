@@ -203,6 +203,10 @@ def _total_prompt_tokens(usage: Usage) -> int:
     return input_tokens + usage.get("cacheReadInputTokens", 0) + usage.get("cacheWriteInputTokens", 0)
 
 
+MAIN_USAGE_SOURCE = "main"
+"""``accumulated_usage_by_source`` key for the agent's own model calls."""
+
+
 @dataclass
 class EventLoopMetrics:
     """Aggregated metrics for an event loop's execution.
@@ -216,7 +220,9 @@ class EventLoopMetrics:
         accumulated_usage: Accumulated token usage across all model invocations (across all requests),
             including usage rolled up from auxiliary agents via :meth:`record_auxiliary_usage`.
         accumulated_usage_by_source: ``accumulated_usage`` broken down by source. The agent's own model
-            calls land under ``"main"``; auxiliary agents land under the source they were recorded with.
+            calls land under :data:`MAIN_USAGE_SOURCE`; auxiliary agents land under the source they were
+            recorded with (SDK sources: ``summarization``, ``web_fetch``, ``hitl_classifier``,
+            ``goal_judge``, ``steering``). Keys are ``snake_case`` in every SDK.
         accumulated_metrics: Accumulated performance metrics across all model invocations.
     """
 
@@ -398,7 +404,7 @@ class EventLoopMetrics:
             self._metrics_client.event_loop_cache_write_input_tokens.record(usage["cacheWriteInputTokens"])
 
         self._accumulate_usage(self.accumulated_usage, usage)
-        self._accumulate_usage(self._usage_bucket("main"), usage)
+        self._accumulate_usage(self._usage_bucket(MAIN_USAGE_SOURCE), usage)
         self._accumulate_usage(self.agent_invocations[-1].usage, usage)
 
         if self.agent_invocations[-1].cycles:
@@ -416,7 +422,12 @@ class EventLoopMetrics:
         Args:
             usage: The auxiliary agent's usage for one call.
             source: Which auxiliary feature spent it (e.g. ``"summarization"``, ``"web_fetch"``).
+
+        Raises:
+            ValueError: If ``source`` is :data:`MAIN_USAGE_SOURCE`.
         """
+        if source == MAIN_USAGE_SOURCE:
+            raise ValueError(f"source={source!r} is reserved for the agent's own model calls")
         self._accumulate_usage(self.accumulated_usage, usage)
         self._accumulate_usage(self._usage_bucket(source), usage)
         if self.agent_invocations:

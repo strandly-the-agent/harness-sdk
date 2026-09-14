@@ -368,6 +368,11 @@ def test_event_loop_metrics_record_auxiliary_usage(usage, event_loop_metrics, mo
     metrics_client.event_loop_input_tokens.record.assert_not_called()
 
 
+def test_event_loop_metrics_record_auxiliary_usage_rejects_main_source(event_loop_metrics, mock_get_meter_provider):
+    with pytest.raises(ValueError, match="reserved"):
+        event_loop_metrics.record_auxiliary_usage(Usage(inputTokens=1, outputTokens=1, totalTokens=2), "main")
+
+
 def test_event_loop_metrics_record_auxiliary_usage_without_invocation(event_loop_metrics, mock_get_meter_provider):
     auxiliary_usage = Usage(inputTokens=5, outputTokens=5, totalTokens=10, cacheReadInputTokens=3)
     event_loop_metrics.record_auxiliary_usage(auxiliary_usage, "web_fetch")

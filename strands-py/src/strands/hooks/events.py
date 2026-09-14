@@ -401,7 +401,8 @@ class BeforeAuxiliaryCallEvent(HookEvent):
     Auxiliary agents do side work for the host agent — summarizing history, classifying a tool
     call for approval, judging a goal, analyzing a fetched page — via
     :meth:`~strands.agent.Agent.invoke_auxiliary_async`. Their model calls do not fire the host's
-    ``Before/AfterModelCallEvent``; subscribe to this pair to observe them.
+    ``Before/AfterModelCallEvent``; subscribe to this pair to observe them. This event is
+    observation-only: its fields are read-only and it cannot cancel the call.
 
     Attributes:
         source: Which auxiliary feature is calling (e.g. ``"summarization"``, ``"web_fetch"``).

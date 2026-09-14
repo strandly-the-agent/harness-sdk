@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from strands import Agent, tool
 from strands.hooks import AfterAuxiliaryCallEvent, BeforeAuxiliaryCallEvent, BeforeModelCallEvent
+from strands.telemetry.metrics import MAIN_USAGE_SOURCE
 from strands.types.event_loop import Usage
-from strands.types.exceptions import LimitExceededException
 from tests.fixtures.mocked_model_provider import MockedModelProvider
 
 HOST_USAGE = Usage(inputTokens=10, outputTokens=1, totalTokens=11)
@@ -50,7 +50,7 @@ def recording_host(recorded_events):
 async def test_invoke_auxiliary_async_returns_result_and_fires_hook_pair(recording_host, recorded_events):
     auxiliary = _auxiliary(_text("summary"))
 
-    result = await recording_host.invoke_auxiliary_async("summarization", auxiliary, "summarize")
+    result = await recording_host.invoke_auxiliary_async(auxiliary, "summarize", source="summarization")
 
     assert str(result).strip() == "summary"
     before, after = recorded_events
@@ -78,7 +78,7 @@ async def test_before_event_fires_before_the_auxiliary_model_call(recording_host
     recording_host.hooks.add_callback(BeforeAuxiliaryCallEvent, lambda _event: order.append("before"))
     auxiliary.hooks.add_callback(BeforeModelCallEvent, lambda _event: order.append("model"))
 
-    await recording_host.invoke_auxiliary_async("summarization", auxiliary, "summarize")
+    await recording_host.invoke_auxiliary_async(auxiliary, "summarize", source="summarization")
 
     assert order == ["before", "model"]
 
@@ -88,15 +88,15 @@ async def test_auxiliary_model_calls_do_not_fire_host_model_call_hooks(recording
     host_model_calls = []
     recording_host.hooks.add_callback(BeforeModelCallEvent, lambda event: host_model_calls.append(event))
 
-    await recording_host.invoke_auxiliary_async("summarization", _auxiliary(_text("summary")), "summarize")
+    await recording_host.invoke_auxiliary_async(_auxiliary(_text("summary")), "summarize", source="summarization")
 
     assert host_model_calls == []
 
 
 @pytest.mark.asyncio
 async def test_usage_rolls_up_into_host_metrics_by_source(recording_host):
-    await recording_host.invoke_auxiliary_async("summarization", _auxiliary(_text("a")), "x")
-    await recording_host.invoke_auxiliary_async("web_fetch", _auxiliary(_text("b")), "y")
+    await recording_host.invoke_auxiliary_async(_auxiliary(_text("a")), "x", source="summarization")
+    await recording_host.invoke_auxiliary_async(_auxiliary(_text("b")), "y", source="web_fetch")
 
     metrics = recording_host.event_loop_metrics
     assert metrics.accumulated_usage == Usage(inputTokens=200, outputTokens=20, totalTokens=220)
@@ -107,8 +107,8 @@ async def test_usage_rolls_up_into_host_metrics_by_source(recording_host):
 async def test_reused_auxiliary_agent_only_rolls_up_the_delta(recording_host):
     auxiliary = _auxiliary(_text("a"), _text("b"))
 
-    await recording_host.invoke_auxiliary_async("summarization", auxiliary, "x")
-    await recording_host.invoke_auxiliary_async("summarization", auxiliary, "y")
+    await recording_host.invoke_auxiliary_async(auxiliary, "x", source="summarization")
+    await recording_host.invoke_auxiliary_async(auxiliary, "y", source="summarization")
 
     assert recording_host.event_loop_metrics.accumulated_usage_by_source["summarization"] == Usage(
         inputTokens=200, outputTokens=20, totalTokens=220
@@ -118,7 +118,7 @@ async def test_reused_auxiliary_agent_only_rolls_up_the_delta(recording_host):
 def test_usage_spent_inside_a_tool_lands_in_the_invocation_but_not_the_cycle():
     @tool(context=True)
     async def fetch(tool_context) -> str:  # noqa: ANN001
-        result = await tool_context.agent.invoke_auxiliary_async("web_fetch", _auxiliary(_text("page")), "read")
+        result = await tool_context.agent.invoke_auxiliary_async(_auxiliary(_text("page")), "read", source="web_fetch")
         return str(result)
 
     tool_use = {"role": "assistant", "content": [{"toolUse": {"toolUseId": "t1", "name": "fetch", "input": {}}}]}
@@ -153,7 +153,7 @@ async def test_failure_still_rolls_up_usage_and_reports_the_exception(recording_
     auxiliary.hooks.add_callback(BeforeModelCallEvent, explode)
 
     with pytest.raises(Boom):
-        await recording_host.invoke_auxiliary_async("goal_judge", auxiliary, "judge")
+        await recording_host.invoke_auxiliary_async(auxiliary, "judge", source="goal_judge")
 
     after = recorded_events[-1]
     assert isinstance(after, AfterAuxiliaryCallEvent)
@@ -171,7 +171,7 @@ async def test_failure_still_rolls_up_usage_and_reports_the_exception(recording_
 async def test_host_cancellation_cancels_the_auxiliary_agent(recording_host):
     recording_host.cancel()
 
-    result = await recording_host.invoke_auxiliary_async("steering", _auxiliary(_text("never")), "go")
+    result = await recording_host.invoke_auxiliary_async(_auxiliary(_text("never")), "go", source="steering")
 
     assert result.stop_reason == "cancelled"
 
@@ -182,7 +182,7 @@ async def test_explicit_cancel_signal_wins_over_the_host_signal(recording_host):
     explicit.set()
 
     result = await recording_host.invoke_auxiliary_async(
-        "steering", _auxiliary(_text("never")), "go", cancel_signal=explicit
+        _auxiliary(_text("never")), "go", source="steering", cancel_signal=explicit
     )
 
     assert result.stop_reason == "cancelled"
@@ -201,48 +201,69 @@ async def test_kwargs_are_forwarded_to_the_auxiliary_invocation(recording_host):
     auxiliary = _auxiliary(structured)
 
     result = await recording_host.invoke_auxiliary_async(
-        "hitl_classifier", auxiliary, "classify", structured_output_model=Decision
+        auxiliary, "classify", source="hitl_classifier", structured_output_model=Decision
     )
 
     assert result.structured_output == Decision(approve=True)
 
 
-def test_limit_pre_check_refuses_the_auxiliary_call_once_the_host_is_over_budget():
-    outcomes = []
-
+def test_auxiliary_usage_counts_toward_host_limits():
     @tool(context=True)
     async def fetch(tool_context) -> str:  # noqa: ANN001
-        try:
-            await tool_context.agent.invoke_auxiliary_async("web_fetch", _auxiliary(_text("page")), "read")
-            outcomes.append("ran")
-        except LimitExceededException as error:
-            outcomes.append(error.stop_reason)
+        await tool_context.agent.invoke_auxiliary_async(_auxiliary(_text("page")), "read", source="web_fetch")
         return "ok"
 
     tool_use = {"role": "assistant", "content": [{"toolUse": {"toolUseId": "t1", "name": "fetch", "input": {}}}]}
     model = MockedModelProvider([tool_use, tool_use, _text("done")], usages=[HOST_USAGE] * 3)
     host = Agent(name="host", model=model, tools=[fetch], callback_handler=None)
 
-    # Cap of 11 total tokens: the first model call spends exactly that, so the tool's auxiliary call is refused.
-    result = host("go", limits={"total_tokens": 11})
+    # The host alone would spend 22 tokens over two cycles; the auxiliary's 110 trips the cap after the first tool.
+    result = host("go", limits={"total_tokens": 100})
 
-    assert outcomes == ["limit_total_tokens"]
     assert result.stop_reason == "limit_total_tokens"
-    assert "web_fetch" not in result.metrics.accumulated_usage_by_source
+    assert result.metrics.accumulated_usage_by_source["web_fetch"] == AUX_USAGE
+    assert model.index == 1
 
 
 @pytest.mark.asyncio
-async def test_no_active_limits_means_no_pre_check(recording_host):
-    recording_host.event_loop_metrics.reset_usage_metrics()
-    recording_host.event_loop_metrics.update_usage(Usage(inputTokens=10**6, outputTokens=10**6, totalTokens=2 * 10**6))
+async def test_rejects_self_and_the_main_source(recording_host, recorded_events):
+    with pytest.raises(ValueError, match="own auxiliary"):
+        await recording_host.invoke_auxiliary_async(recording_host, "x", source="summarization")
+    with pytest.raises(ValueError, match="reserved"):
+        await recording_host.invoke_auxiliary_async(_auxiliary(_text("a")), "x", source=MAIN_USAGE_SOURCE)
 
-    result = await recording_host.invoke_auxiliary_async("summarization", _auxiliary(_text("ok")), "x")
+    assert recorded_events == []
 
-    assert str(result).strip() == "ok"
+
+@pytest.mark.asyncio
+async def test_failing_after_hook_does_not_mask_the_auxiliary_failure(recording_host):
+    def explode_model(_event):
+        raise RuntimeError("model exploded")
+
+    def explode_hook(_event):
+        raise RuntimeError("hook exploded")
+
+    auxiliary = _auxiliary(_text("never"))
+    auxiliary.hooks.add_callback(BeforeModelCallEvent, explode_model)
+    recording_host.hooks.add_callback(AfterAuxiliaryCallEvent, explode_hook)
+
+    with pytest.raises(RuntimeError, match="model exploded"):
+        await recording_host.invoke_auxiliary_async(auxiliary, "x", source="goal_judge")
+
+
+@pytest.mark.asyncio
+async def test_failing_after_hook_surfaces_when_the_call_succeeded(recording_host):
+    def explode_hook(_event):
+        raise RuntimeError("hook exploded")
+
+    recording_host.hooks.add_callback(AfterAuxiliaryCallEvent, explode_hook)
+
+    with pytest.raises(RuntimeError, match="hook exploded"):
+        await recording_host.invoke_auxiliary_async(_auxiliary(_text("ok")), "x", source="goal_judge")
 
 
 def test_invoke_auxiliary_sync_wrapper(recording_host, recorded_events):
-    result = recording_host.invoke_auxiliary("summarization", _auxiliary(_text("summary")), "summarize")
+    result = recording_host.invoke_auxiliary(_auxiliary(_text("summary")), "summarize", source="summarization")
 
     assert str(result).strip() == "summary"
     assert [type(event) for event in recorded_events] == [BeforeAuxiliaryCallEvent, AfterAuxiliaryCallEvent]
@@ -260,7 +281,7 @@ def test_auxiliary_span_nests_the_auxiliary_agent_under_the_host_tool_span():
         @tool(context=True)
         async def fetch(tool_context) -> str:  # noqa: ANN001
             auxiliary = _auxiliary(_text("page"), name="analyst")
-            return str(await tool_context.agent.invoke_auxiliary_async("web_fetch", auxiliary, "read"))
+            return str(await tool_context.agent.invoke_auxiliary_async(auxiliary, "read", source="web_fetch"))
 
         tool_use = {"role": "assistant", "content": [{"toolUse": {"toolUseId": "t1", "name": "fetch", "input": {}}}]}
         host = Agent(
