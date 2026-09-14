@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { ContextOffloader, SKIP_OFFLOAD_KEY } from '../plugin.js'
+import { ContextOffloader, SKIP_CONTEXT_OFFLOAD_KEY } from '../plugin.js'
 import { InMemoryStorage } from '../storage.js'
 import { AfterToolCallEvent, BeforeModelCallEvent } from '../../../hooks/events.js'
 import { TextBlock, JsonBlock, ToolResultBlock } from '../../../types/messages.js'
@@ -112,25 +112,25 @@ describe('ContextOffloader', () => {
       expect((event.result.content[0] as TextBlock).text).toBe('x'.repeat(1000))
     })
 
-    it('does not offload when invocationState carries SKIP_OFFLOAD_KEY', async () => {
+    it('does not offload when invocationState carries SKIP_CONTEXT_OFFLOAD_KEY', async () => {
       const storage = new InMemoryStorage()
       const plugin = new ContextOffloader({ storage, maxResultTokens: 10, previewTokens: 5 })
       const agent = createMockAgent()
       plugin.initAgent(agent)
 
-      const event = makeEvent([new TextBlock('x'.repeat(1000))], { invocationState: { [SKIP_OFFLOAD_KEY]: true } })
+      const event = makeEvent([new TextBlock('x'.repeat(1000))], { invocationState: { [SKIP_CONTEXT_OFFLOAD_KEY]: true } })
       await invokeTrackedHook(agent, event)
 
       expect((event.result.content[0] as TextBlock).text).toBe('x'.repeat(1000))
     })
 
-    it('offloads when SKIP_OFFLOAD_KEY is falsy', async () => {
+    it('offloads when SKIP_CONTEXT_OFFLOAD_KEY is falsy', async () => {
       const storage = new InMemoryStorage()
       const plugin = new ContextOffloader({ storage, maxResultTokens: 10, previewTokens: 5 })
       const agent = createMockAgent()
       plugin.initAgent(agent)
 
-      const event = makeEvent([new TextBlock('x'.repeat(1000))], { invocationState: { [SKIP_OFFLOAD_KEY]: false } })
+      const event = makeEvent([new TextBlock('x'.repeat(1000))], { invocationState: { [SKIP_CONTEXT_OFFLOAD_KEY]: false } })
       await invokeTrackedHook(agent, event)
 
       expect((event.result.content[0] as TextBlock).text).toContain('[Offloaded:')
