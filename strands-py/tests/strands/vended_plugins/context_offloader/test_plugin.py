@@ -205,23 +205,27 @@ class TestContextOffloader:
         assert "[Offloaded:" in event.result["content"][0]["text"]
 
     @pytest.mark.asyncio
-    async def test_skips_when_invocation_state_has_skip_key(self, plugin, mock_agent):
+    async def test_skips_when_invocation_state_has_skip_key(self, plugin, storage, mock_agent):
         large_text = "x" * 200
         event = _make_event(mock_agent, large_text)
         event.invocation_state[SKIP_OFFLOAD_KEY] = True
 
         await plugin._handle_tool_result(event)
 
-        assert event.result["content"][0]["text"] == large_text
+        tru_result = event.result
+        exp_result = {"toolUseId": "tool_123", "status": "success", "content": [{"text": large_text}]}
+        assert tru_result == exp_result
+        assert storage._store == {}
 
     @pytest.mark.asyncio
-    async def test_offloads_when_skip_key_is_falsy(self, plugin, mock_agent):
+    async def test_offloads_when_skip_key_is_falsy(self, plugin, storage, mock_agent):
         event = _make_event(mock_agent, "x" * 200)
         event.invocation_state[SKIP_OFFLOAD_KEY] = False
 
         await plugin._handle_tool_result(event)
 
         assert "[Offloaded:" in event.result["content"][0]["text"]
+        assert len(storage._store) == 1
 
     @pytest.mark.asyncio
     async def test_image_only_content_passes_through(self, plugin, mock_agent):

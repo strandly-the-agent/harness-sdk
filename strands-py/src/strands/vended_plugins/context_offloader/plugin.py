@@ -151,11 +151,12 @@ _CHARS_PER_TOKEN = 4
 """Approximate characters per token, fallback for preview slicing without tiktoken."""
 
 SKIP_OFFLOAD_KEY = "strands:skip_offload"
-"""``invocation_state`` key that, when truthy, exempts a tool call's result from offloading.
+"""``invocation_state`` key that, when truthy, exempts tool results from offloading.
 
-Set it on the ``invocation_state`` of a tool call whose result is consumed by code rather than
-by the model — for example, tools invoked directly by another tool — so the caller receives the
-full result instead of a preview.
+Meant for tool calls whose result is consumed by code rather than by the model — for example a
+tool that invokes other tools — so the caller receives the full result instead of a preview.
+The key applies to every tool call sharing that ``invocation_state`` (the agent loop passes one
+dict to all tool calls of an invocation), so scope it to a single call by passing a copy.
 """
 
 
@@ -198,6 +199,14 @@ class ContextOffloader(Plugin):
     before the result enters the conversation — unlike ``SlidingWindowConversationManager``
     which truncates reactively after context overflow.
 
+    A tool call whose ``invocation_state`` has :data:`SKIP_OFFLOAD_KEY` set is never offloaded,
+    regardless of size. Use this when the result is consumed by code rather than the model; a
+    direct tool call takes it as a keyword argument:
+
+    ```python
+    result = agent.tool.fetch_report(**{SKIP_OFFLOAD_KEY: True}, record_direct_tool_call=False)
+    ```
+
     Args:
         storage: Backend for storing offloaded content (required).
         max_result_tokens: Offload results whose estimated token count exceeds this threshold.
@@ -206,9 +215,6 @@ class ContextOffloader(Plugin):
             Defaults to True.
         should_offload: Callback to control which tool results are offloaded.
             Defaults to None (all oversized results offloaded).
-
-    A tool call whose ``invocation_state`` has :data:`SKIP_OFFLOAD_KEY` set is never offloaded,
-    regardless of size. Use this when the result is consumed by code rather than the model.
 
     Example:
         ```python
