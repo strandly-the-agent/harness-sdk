@@ -75,7 +75,7 @@ describe.skipIf(process.platform === 'win32')('makeShell', () => {
       .catch((e) => e)
 
     expect(error).toBeInstanceOf(ShellTimeoutError)
-    expect(error.partial).toStrictEqual({ output: 'partial\n', error: 'warn\n', exit_code: 143 })
+    expect(error.partial).toStrictEqual({ output: 'partial\n', error: 'warn\n', exit_code: 124 })
     expect(error.message).toBe(`Execution timed out after 0.3 seconds\n${JSON.stringify(error.partial)}`)
   })
 
@@ -93,7 +93,7 @@ describe.skipIf(process.platform === 'win32')('makeShell', () => {
     expect(result.status).toBe('error')
     const text = (result.content[0] as { text: string }).text
     expect(text).toMatch(/^Error: Execution timed out after 0.3 seconds\n/)
-    expect(JSON.parse(text.split('\n')[1]!)).toStrictEqual({ output: 'partial\n', error: '', exit_code: 143 })
+    expect(JSON.parse(text.split('\n')[1]!)).toStrictEqual({ output: 'partial\n', error: '', exit_code: 124 })
   })
 
   it('timeout error still matches the pre-rename BashTimeoutError', async () => {

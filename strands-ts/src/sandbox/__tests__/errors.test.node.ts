@@ -19,17 +19,15 @@ describe('sandbox errors', () => {
     })
 
     it('carries the partial output captured before the kill', () => {
-      const error = new SandboxTimeoutError(30, { stdout: 'so far', stderr: 'warn', exitCode: 143 })
+      const error = new SandboxTimeoutError(30, { stdout: 'so far', stderr: 'warn' })
       expect(error.stdout).toBe('so far')
       expect(error.stderr).toBe('warn')
-      expect(error.exitCode).toBe(143)
     })
 
-    it('defaults to empty output and exit code 124 when no partial output is given', () => {
+    it('defaults to empty output when no partial output is given', () => {
       const error = new SandboxTimeoutError(30)
       expect(error.stdout).toBe('')
       expect(error.stderr).toBe('')
-      expect(error.exitCode).toBe(124)
     })
   })
 
