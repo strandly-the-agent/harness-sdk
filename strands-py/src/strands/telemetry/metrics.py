@@ -213,7 +213,10 @@ class EventLoopMetrics:
         cycle_durations: List of durations for each cycle in seconds.
         agent_invocations: Agent invocation metrics containing cycles and usage data.
         traces: List of execution traces.
-        accumulated_usage: Accumulated token usage across all model invocations (across all requests).
+        accumulated_usage: Accumulated token usage across all model invocations (across all requests),
+            including usage rolled up from auxiliary agents via :meth:`record_auxiliary_usage`.
+        accumulated_usage_by_source: ``accumulated_usage`` broken down by source. The agent's own model
+            calls land under ``"main"``; auxiliary agents land under the source they were recorded with.
         accumulated_metrics: Accumulated performance metrics across all model invocations.
     """
 
@@ -223,6 +226,7 @@ class EventLoopMetrics:
     agent_invocations: list[AgentInvocation] = field(default_factory=list)
     traces: list[Trace] = field(default_factory=list)
     accumulated_usage: Usage = field(default_factory=lambda: Usage(inputTokens=0, outputTokens=0, totalTokens=0))
+    accumulated_usage_by_source: dict[str, Usage] = field(default_factory=dict)
     accumulated_metrics: Metrics = field(default_factory=lambda: Metrics(latencyMs=0))
 
     @property
@@ -394,11 +398,32 @@ class EventLoopMetrics:
             self._metrics_client.event_loop_cache_write_input_tokens.record(usage["cacheWriteInputTokens"])
 
         self._accumulate_usage(self.accumulated_usage, usage)
+        self._accumulate_usage(self._usage_bucket("main"), usage)
         self._accumulate_usage(self.agent_invocations[-1].usage, usage)
 
         if self.agent_invocations[-1].cycles:
             current_cycle = self.agent_invocations[-1].cycles[-1]
             self._accumulate_usage(current_cycle.usage, usage)
+
+    def record_auxiliary_usage(self, usage: Usage, source: str) -> None:
+        """Roll usage spent by an auxiliary agent into this agent's totals.
+
+        Adds to ``accumulated_usage``, to the ``source`` bucket of ``accumulated_usage_by_source``,
+        and to the current invocation's usage so per-invocation limits see it. Cycle usage is left
+        alone because it drives context-size projection, and no OTel histograms are recorded because
+        the auxiliary agent already recorded its own.
+
+        Args:
+            usage: The auxiliary agent's usage for one call.
+            source: Which auxiliary feature spent it (e.g. ``"summarization"``, ``"web_fetch"``).
+        """
+        self._accumulate_usage(self.accumulated_usage, usage)
+        self._accumulate_usage(self._usage_bucket(source), usage)
+        if self.agent_invocations:
+            self._accumulate_usage(self.agent_invocations[-1].usage, usage)
+
+    def _usage_bucket(self, source: str) -> Usage:
+        return self.accumulated_usage_by_source.setdefault(source, Usage(inputTokens=0, outputTokens=0, totalTokens=0))
 
     def reset_usage_metrics(self) -> None:
         """Start a new agent invocation by creating a new AgentInvocation.
@@ -450,6 +475,7 @@ class EventLoopMetrics:
             },
             "traces": [trace.to_dict() for trace in self.traces],
             "accumulated_usage": self.accumulated_usage,
+            "accumulated_usage_by_source": self.accumulated_usage_by_source,
             "accumulated_metrics": self.accumulated_metrics,
             "agent_invocations": [
                 {

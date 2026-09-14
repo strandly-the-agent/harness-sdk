@@ -34,7 +34,7 @@ from .. import _identifier
 from .._async import run_async
 from ..background_tasks import BackgroundTasksConfig
 from ..event_loop._retry import ModelRetryStrategy
-from ..event_loop.event_loop import INITIAL_DELAY, MAX_ATTEMPTS, MAX_DELAY, event_loop_cycle
+from ..event_loop.event_loop import INITIAL_DELAY, MAX_ATTEMPTS, MAX_DELAY, _check_limits, event_loop_cycle
 from ..experimental.checkpoint import Checkpoint, CheckpointPosition
 from ..tools._tool_helpers import generate_missing_tool_result_content
 from ..types._snapshot import (
@@ -54,8 +54,10 @@ from .._middleware import MiddlewareRegistry
 from .._middleware.stages import AgentStreamContext, AgentStreamStage
 from ..handlers.callback_handler import PrintingCallbackHandler, null_callback_handler
 from ..hooks import (
+    AfterAuxiliaryCallEvent,
     AfterInvocationEvent,
     AgentInitializedEvent,
+    BeforeAuxiliaryCallEvent,
     BeforeInvocationEvent,
     BeforeModelCallEvent,
     HookCallback,
@@ -96,7 +98,8 @@ from ..types.content import (
     _ensure_tracking_id,
     split_system_prompt,
 )
-from ..types.exceptions import ConcurrencyException, ContextWindowOverflowException
+from ..types.event_loop import Usage
+from ..types.exceptions import ConcurrencyException, ContextWindowOverflowException, LimitExceededException
 from ..types.tools import AgentTool
 from ..types.traces import AttributeValue
 from . import _continuation
@@ -135,6 +138,20 @@ async def _link_cancel_signal(external: threading.Event, internal: threading.Eve
 
 # TypeVar for generic structured output
 T = TypeVar("T", bound=BaseModel)
+
+
+def _usage_delta(before: Usage, after: Usage) -> Usage:
+    """Usage spent between two snapshots of an accumulated ``Usage``."""
+    delta = Usage(
+        inputTokens=after["inputTokens"] - before["inputTokens"],
+        outputTokens=after["outputTokens"] - before["outputTokens"],
+        totalTokens=after["totalTokens"] - before["totalTokens"],
+    )
+    if "cacheReadInputTokens" in after:
+        delta["cacheReadInputTokens"] = after["cacheReadInputTokens"] - before.get("cacheReadInputTokens", 0)
+    if "cacheWriteInputTokens" in after:
+        delta["cacheWriteInputTokens"] = after["cacheWriteInputTokens"] - before.get("cacheWriteInputTokens", 0)
+    return delta
 
 
 # Sentinel class and object to distinguish between explicit None and default parameter value
@@ -416,6 +433,7 @@ class Agent(AgentBase, LocalAgent):
         self._cancel_signal = threading.Event()
         # Caller-owned external cancel signal for the current invocation, if any.
         self._external_cancel_signal: threading.Event | None = None
+        self._active_limits: Limits | None = None
 
         self.tool_registry = ToolRegistry()
 
@@ -937,6 +955,114 @@ class Agent(AgentBase, LocalAgent):
 
         return cast(AgentResult, event["result"])
 
+    def invoke_auxiliary(
+        self,
+        source: str,
+        auxiliary_agent: "Agent",
+        prompt: AgentInput = None,
+        *,
+        invocation_state: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Invoke an auxiliary agent on this agent's behalf. Sync form of :meth:`invoke_auxiliary_async`.
+
+        Args:
+            source: Which auxiliary feature is calling (e.g. ``"summarization"``, ``"web_fetch"``).
+            auxiliary_agent: The agent to invoke.
+            prompt: Prompt for the auxiliary agent.
+            invocation_state: State passed through the auxiliary invocation.
+            **kwargs: Forwarded to ``auxiliary_agent.invoke_async``.
+
+        Returns:
+            The auxiliary agent's result.
+
+        Raises:
+            LimitExceededException: If this agent's active invocation limits are already reached.
+        """
+        return run_async(
+            lambda: self.invoke_auxiliary_async(
+                source, auxiliary_agent, prompt, invocation_state=invocation_state, **kwargs
+            )
+        )
+
+    async def invoke_auxiliary_async(
+        self,
+        source: str,
+        auxiliary_agent: "Agent",
+        prompt: AgentInput = None,
+        *,
+        invocation_state: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Invoke an auxiliary agent on this agent's behalf.
+
+        Use this for side work the agent does outside its own turn — summarizing history, classifying a
+        tool call, judging a goal, analyzing a fetched page. It fires ``Before/AfterAuxiliaryCallEvent``
+        on this agent, wraps the call in an ``invoke_auxiliary`` span tagged with ``source``, forwards this
+        agent's cancel signal, and rolls the auxiliary agent's usage into this agent's
+        ``event_loop_metrics`` (``accumulated_usage`` and ``accumulated_usage_by_source[source]``), so
+        ``result.metrics`` reflects everything the invocation spent.
+
+        The auxiliary agent's own model calls do not fire this agent's ``Before/AfterModelCallEvent``.
+
+        Args:
+            source: Which auxiliary feature is calling (e.g. ``"summarization"``, ``"web_fetch"``).
+            auxiliary_agent: The agent to invoke.
+            prompt: Prompt for the auxiliary agent.
+            invocation_state: State passed through the auxiliary invocation.
+            **kwargs: Forwarded to ``auxiliary_agent.invoke_async`` (e.g. ``structured_output_model``).
+                ``cancel_signal`` defaults to this agent's cancel signal.
+
+        Returns:
+            The auxiliary agent's result.
+
+        Raises:
+            LimitExceededException: If this agent's active invocation limits are already reached.
+        """
+        tripped = _check_limits(self, self._active_limits)
+        if tripped is not None:
+            raise LimitExceededException(tripped)
+
+        invocation_state = invocation_state if invocation_state is not None else {}
+        kwargs.setdefault("cancel_signal", self.cancel_signal)
+
+        await self.hooks.invoke_callbacks_async(
+            BeforeAuxiliaryCallEvent(
+                agent=self,
+                source=source,
+                auxiliary_agent=auxiliary_agent,
+                prompt=prompt,
+                invocation_state=invocation_state,
+            )
+        )
+
+        span = self.tracer.start_auxiliary_span(source, auxiliary_agent.name)
+        usage_before = copy.copy(auxiliary_agent.event_loop_metrics.accumulated_usage)
+        result: AgentResult | None = None
+        error: BaseException | None = None
+        try:
+            with trace_api.use_span(span, end_on_exit=False):
+                result = await auxiliary_agent.invoke_async(prompt, invocation_state=invocation_state, **kwargs)
+            return result
+        except BaseException as exception:
+            error = exception
+            raise
+        finally:
+            # Delta, not total: the auxiliary agent may be reused across calls.
+            spent = _usage_delta(usage_before, auxiliary_agent.event_loop_metrics.accumulated_usage)
+            self.event_loop_metrics.record_auxiliary_usage(spent, source)
+            self.tracer.end_auxiliary_span(span, error)
+            await self.hooks.invoke_callbacks_async(
+                AfterAuxiliaryCallEvent(
+                    agent=self,
+                    source=source,
+                    auxiliary_agent=auxiliary_agent,
+                    invocation_state=invocation_state,
+                    result=result,
+                    exception=error,
+                )
+            )
+
     def structured_output(self, output_model: type[T], prompt: AgentInput = None) -> T:
         """This method allows you to get structured output from the agent.
 
@@ -1305,6 +1431,7 @@ class Agent(AgentBase, LocalAgent):
 
         try:
             self._external_cancel_signal = cancel_signal
+            self._active_limits = limits
             cancel_watcher = self._start_cancel_watcher(cancel_signal)
 
             self._interrupt_state.resume(prompt)
@@ -1387,6 +1514,7 @@ class Agent(AgentBase, LocalAgent):
                 # here would let a second cancellation skip the cleanup below and wedge the agent.
                 cancel_watcher.cancel()
             self._external_cancel_signal = None
+            self._active_limits = None
 
             # Clear cancel signal to allow agent reuse after cancellation
             self._cancel_signal.clear()

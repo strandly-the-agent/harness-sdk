@@ -18,6 +18,23 @@ class EventLoopException(Exception):
         super().__init__(str(original_exception))
 
 
+class LimitExceededException(Exception):
+    """Exception raised when an operation is refused because an invocation limit is already reached.
+
+    Attributes:
+        stop_reason: The ``limit_*`` stop reason that tripped.
+    """
+
+    def __init__(self, stop_reason: str):
+        """Initialize the exception.
+
+        Args:
+            stop_reason: The ``limit_*`` stop reason that tripped.
+        """
+        super().__init__(f"invocation limit reached: {stop_reason}")
+        self.stop_reason = stop_reason
+
+
 class MaxTokensReachedException(Exception):
     """Exception raised when the model reaches its maximum token generation limit.
 
