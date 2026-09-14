@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { ContextOffloader } from '../plugin.js'
+import { ContextOffloader, SKIP_OFFLOAD_KEY } from '../plugin.js'
 import { InMemoryStorage } from '../storage.js'
 import { AfterToolCallEvent, BeforeModelCallEvent } from '../../../hooks/events.js'
 import { TextBlock, JsonBlock, ToolResultBlock } from '../../../types/messages.js'
@@ -18,7 +18,7 @@ function makeEvent(
   content: InstanceType<
     typeof TextBlock | typeof JsonBlock | typeof ImageBlock | typeof VideoBlock | typeof DocumentBlock
   >[],
-  overrides?: { status?: 'success' | 'error'; toolName?: string }
+  overrides?: { status?: 'success' | 'error'; toolName?: string; invocationState?: Record<string, unknown> }
 ) {
   const agent = makeMockAgent()
   const result = new ToolResultBlock({
@@ -31,7 +31,7 @@ function makeEvent(
     toolUse: { name: overrides?.toolName ?? 'some_tool', toolUseId: 'tool-123', input: {} },
     tool: undefined,
     result,
-    invocationState: {},
+    invocationState: overrides?.invocationState ?? {},
   })
 }
 
@@ -110,6 +110,30 @@ describe('ContextOffloader', () => {
       await invokeTrackedHook(agent, event)
 
       expect((event.result.content[0] as TextBlock).text).toBe('x'.repeat(1000))
+    })
+
+    it('does not offload when invocationState carries SKIP_OFFLOAD_KEY', async () => {
+      const storage = new InMemoryStorage()
+      const plugin = new ContextOffloader({ storage, maxResultTokens: 10, previewTokens: 5 })
+      const agent = createMockAgent()
+      plugin.initAgent(agent)
+
+      const event = makeEvent([new TextBlock('x'.repeat(1000))], { invocationState: { [SKIP_OFFLOAD_KEY]: true } })
+      await invokeTrackedHook(agent, event)
+
+      expect((event.result.content[0] as TextBlock).text).toBe('x'.repeat(1000))
+    })
+
+    it('offloads when SKIP_OFFLOAD_KEY is falsy', async () => {
+      const storage = new InMemoryStorage()
+      const plugin = new ContextOffloader({ storage, maxResultTokens: 10, previewTokens: 5 })
+      const agent = createMockAgent()
+      plugin.initAgent(agent)
+
+      const event = makeEvent([new TextBlock('x'.repeat(1000))], { invocationState: { [SKIP_OFFLOAD_KEY]: false } })
+      await invokeTrackedHook(agent, event)
+
+      expect((event.result.content[0] as TextBlock).text).toContain('[Offloaded:')
     })
 
     it('does not offload retrieval tool results', async () => {

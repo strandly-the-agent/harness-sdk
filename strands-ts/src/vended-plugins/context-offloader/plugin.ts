@@ -67,6 +67,15 @@ const DEFAULT_MAX_RESULT_TOKENS = 2_500
 const DEFAULT_PREVIEW_TOKENS = 1_000
 const RETRIEVAL_TOOL_NAME = 'retrieve_offloaded_content'
 
+/**
+ * `invocationState` key that, when truthy, exempts a tool call's result from offloading.
+ *
+ * Set it on the `invocationState` of a tool call whose result is consumed by code rather than
+ * by the model — for example, tools invoked directly by another tool — so the caller receives
+ * the full result instead of a preview.
+ */
+export const SKIP_OFFLOAD_KEY = 'strands:skip_offload'
+
 const retrievalInputSchema = z.object({
   reference: z.string().describe('The reference string from the offload placeholder (e.g. "mem_1_tool-123_0").'),
   pattern: z
@@ -444,6 +453,7 @@ export class ContextOffloader implements Plugin {
 
   private async _handleToolResult(event: AfterToolCallEvent): Promise<void> {
     if (event.result.status === 'error') return
+    if (event.invocationState[SKIP_OFFLOAD_KEY]) return
 
     // Skip delegation tool results — their content is the final delegated answer
     // and must not be truncated/offloaded. The delegation plugin transforms this
