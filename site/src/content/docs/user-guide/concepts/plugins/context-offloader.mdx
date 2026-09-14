@@ -250,7 +250,7 @@ agent = Agent(plugins=[
 
 ### Opting a call out
 
-Some tool results are consumed by code rather than by the model — a tool that invokes other tools and processes their output, for example. Offloading those would hand the code a preview instead of the data. Set <Syntax py="SKIP_OFFLOAD_KEY" ts="SKIP_OFFLOAD_KEY" /> (exported from the plugin module) to a truthy value in the call's <Syntax py="invocation_state" ts="invocationState" /> and the result passes through untouched, regardless of size. The agent loop shares one <Syntax py="invocation_state" ts="invocationState" /> across all tool calls of an invocation, so pass a copy to scope the flag to a single call.
+Some tool results are consumed by code rather than by the model — a tool that invokes other tools and processes their output, for example. Offloading those would hand the code a preview instead of the data. Set <Syntax py="SKIP_CONTEXT_OFFLOAD_KEY" ts="SKIP_CONTEXT_OFFLOAD_KEY" /> (exported from the plugin module) to a truthy value in the call's <Syntax py="invocation_state" ts="invocationState" /> and the result passes through untouched, regardless of size. The agent loop shares one <Syntax py="invocation_state" ts="invocationState" /> across all tool calls of an invocation, so pass a copy to scope the flag to a single call.
 
 ## Retrieval Tool
 

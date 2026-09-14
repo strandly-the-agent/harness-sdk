@@ -150,7 +150,7 @@ _DEFAULT_PREVIEW_TOKENS = 1_000
 _CHARS_PER_TOKEN = 4
 """Approximate characters per token, fallback for preview slicing without tiktoken."""
 
-SKIP_OFFLOAD_KEY = "strands:skip_offload"
+SKIP_CONTEXT_OFFLOAD_KEY = "strands:skip_context_offload"
 """``invocation_state`` key that, when truthy, exempts tool results from offloading.
 
 Meant for tool calls whose result is consumed by code rather than by the model — for example a
@@ -199,12 +199,12 @@ class ContextOffloader(Plugin):
     before the result enters the conversation — unlike ``SlidingWindowConversationManager``
     which truncates reactively after context overflow.
 
-    A tool call whose ``invocation_state`` has :data:`SKIP_OFFLOAD_KEY` set is never offloaded,
+    A tool call whose ``invocation_state`` has :data:`SKIP_CONTEXT_OFFLOAD_KEY` set is never offloaded,
     regardless of size. Use this when the result is consumed by code rather than the model; a
     direct tool call takes it as a keyword argument:
 
     ```python
-    result = agent.tool.fetch_report(**{SKIP_OFFLOAD_KEY: True}, record_direct_tool_call=False)
+    result = agent.tool.fetch_report(**{SKIP_CONTEXT_OFFLOAD_KEY: True}, record_direct_tool_call=False)
     ```
 
     Args:
@@ -488,7 +488,7 @@ class ContextOffloader(Plugin):
         if event.cancel_message is not None:
             return
 
-        if event.invocation_state.get(SKIP_OFFLOAD_KEY):
+        if event.invocation_state.get(SKIP_CONTEXT_OFFLOAD_KEY):
             return
 
         if self._include_retrieval_tool and event.tool_use.get("name") == self.retrieve_offloaded_content.tool_name:
