@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from ...sandbox.errors import SandboxTimeoutError
 from ...tools.decorator import tool
 from ...types.tools import ToolContext
-from .types import SANDBOX_SHELL_DESCRIPTION, ShellExecutionError, ShellOutput
+from .types import SANDBOX_SHELL_DESCRIPTION, ShellExecutionError, ShellOutput, ShellTimeoutError
 
 if TYPE_CHECKING:
     from ...sandbox.base import Sandbox
@@ -61,8 +61,8 @@ def make_shell(
         active = sandbox if sandbox is not None else tool_context.agent.sandbox
         try:
             result = await active.execute(command, timeout=timeout)
-        except SandboxTimeoutError:
-            raise
+        except SandboxTimeoutError as e:
+            raise ShellTimeoutError(e.seconds, e.stdout, e.stderr) from e
         except Exception as e:
             # ShellExecutionError subclasses RuntimeError, so prior handlers still match.
             raise ShellExecutionError(str(e)) from e
