@@ -8,7 +8,7 @@ messages by type.
 """
 
 import logging
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 from ....event_loop.streaming import process_stream
 from ....types.content import Message
@@ -188,8 +188,22 @@ async def generate_summary(
     if result_message is None:
         raise RuntimeError("Failed to generate summary: no response from model")
 
-    # Return the summary as a user-role message so it's valid as conversation history
-    return cast(Message, {**result_message, "role": "user"})
+    return as_user_summary(result_message)
+
+
+def as_user_summary(message: Message) -> Message:
+    """Re-role a model reply as the user-role summary message kept in history.
+
+    Only text blocks are kept: providers reject reasoning and tool-use blocks in user
+    messages (Bedrock: "User messages cannot contain reasoning content").
+
+    Raises:
+        RuntimeError: If the reply carries no text.
+    """
+    text_blocks = [block for block in message["content"] if "text" in block]
+    if not text_blocks:
+        raise RuntimeError("Failed to generate summary: model response contained no text")
+    return {"role": "user", "content": text_blocks}
 
 
 def matches_message_type(message: Message, filter: MessageType) -> bool:
