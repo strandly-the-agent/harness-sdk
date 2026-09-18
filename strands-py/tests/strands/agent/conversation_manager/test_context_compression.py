@@ -241,6 +241,17 @@ class TestAsUserSummary:
         exp_result = {"role": "user", "content": [{"text": "Summary"}]}
         assert tru_result == exp_result
 
+    def test_unwraps_text_from_citations_blocks(self):
+        message: Message = {
+            "role": "assistant",
+            "content": [{"citationsContent": {"citations": [], "content": [{"text": "Cited summary"}]}}],
+        }
+
+        tru_result = as_user_summary(message)
+
+        exp_result = {"role": "user", "content": [{"text": "Cited summary"}]}
+        assert tru_result == exp_result
+
     def test_raises_when_the_reply_has_no_text(self):
         message: Message = {
             "role": "assistant",
