@@ -224,7 +224,7 @@ describe('generateSummary', () => {
 
   it('drops reasoning blocks from the summary', async () => {
     // A reasoning model's reply must not leak into the user-role summary;
-    // Bedrock rejects it with "User messages cannot contain reasoning content".
+    // Bedrock rejects it with "User messages cannot contain reasoning content" (#4402).
     const message = new Message({
       role: 'assistant',
       content: [new ReasoningBlock({ text: 'thinking', signature: 'sig' }), new TextBlock('Summary')],
@@ -272,8 +272,23 @@ describe('asUserSummary', () => {
     expect(result.content).toEqual([new TextBlock('Cited summary')])
   })
 
+  it('skips blank cited text', () => {
+    const message = new Message({
+      role: 'assistant',
+      content: [new CitationsBlock({ citations: [], content: [{ text: 'Cited summary' }, { text: '' }] })],
+    })
+
+    expect(asUserSummary(message).content).toEqual([new TextBlock('Cited summary')])
+  })
+
   it('throws when the reply has no text', () => {
-    const message = new Message({ role: 'assistant', content: [new ReasoningBlock({ text: 'thinking' })] })
+    const message = new Message({
+      role: 'assistant',
+      content: [
+        new ReasoningBlock({ text: 'thinking' }),
+        new CitationsBlock({ citations: [], content: [{ text: '' }] }),
+      ],
+    })
 
     expect(() => asUserSummary(message)).toThrow('no text')
   })

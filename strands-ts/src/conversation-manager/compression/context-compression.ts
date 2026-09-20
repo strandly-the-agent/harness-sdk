@@ -161,6 +161,7 @@ export async function generateSummary(
  * @param message - The summarizer's reply
  * @returns A user-role message holding the reply's text blocks
  * @throws If the reply carries no text
+ * @internal
  */
 export function asUserSummary(message: Message): Message {
   const textBlocks: TextBlock[] = []
@@ -168,8 +169,10 @@ export function asUserSummary(message: Message): Message {
     if (block.type === 'textBlock') {
       textBlocks.push(new TextBlock(block.text))
     } else if (block.type === 'citationsBlock') {
-      // A cited reply carries its text nested inside the citations block.
-      textBlocks.push(...block.content.map((cited) => new TextBlock(cited.text)))
+      // A cited reply carries its text nested inside the citations block; URL citations may carry none.
+      for (const cited of block.content) {
+        if (cited.text) textBlocks.push(new TextBlock(cited.text))
+      }
     }
   }
   if (textBlocks.length === 0) {
