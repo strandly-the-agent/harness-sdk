@@ -211,8 +211,10 @@ def as_user_summary(message: Message) -> Message:
         if "text" in block:
             text_blocks.append({"text": block["text"]})
         elif "citationsContent" in block:
-            # A cited reply carries its text nested inside the citations block.
-            text_blocks.extend({"text": cited["text"]} for cited in block["citationsContent"].get("content", []))
+            # A cited reply carries its text nested inside the citations block; URL citations may carry none.
+            text_blocks.extend(
+                {"text": cited["text"]} for cited in block["citationsContent"].get("content", []) if cited.get("text")
+            )
     if not text_blocks:
         raise RuntimeError("Failed to generate summary: model response contained no text")
     return {"role": "user", "content": text_blocks}
