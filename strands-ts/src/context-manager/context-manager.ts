@@ -36,7 +36,8 @@ export type ContextManagerPreset = (typeof CONTEXT_MANAGER_PRESETS)[number]
  * - `"auto"`: Managed context with proactive compression + offloading.
  * - `"agentic"`: Model-driven context management via injected tools.
  * - {@link ContextManagerConfig}: Custom strategy pipeline and stash configuration.
- * - {@link ContextManager}: A pre-built instance, used as-is.
+ * - {@link ContextManager}: A pre-built instance, used as-is. An instance binds to one agent;
+ *   construct one per `Agent`.
  * - `false`: Explicitly disable all context management (no compression, no offloading).
  */
 export type ContextManagerStrategy = ContextManagerPreset | ContextManagerConfig | ContextManager | false
