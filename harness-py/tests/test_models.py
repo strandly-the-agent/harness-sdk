@@ -1,6 +1,7 @@
 import pytest
 from strands.models import BedrockModel, CacheConfig, Model, ModelRouter
 
+from strands_harness.defaults import DEFAULT_EFFORT
 from strands_harness.models import (
     _claude_extended_thinking,
     _supports_media,
@@ -156,6 +157,21 @@ def test_explicit_effort_on_model_instance_warns_and_builds(caplog):
         model = resolve(instance, effort="low")
     assert model is instance
     assert any("effort='low' not applied" in r.message for r in caplog.records)
+
+
+def test_default_effort_on_model_instance_does_not_warn(caplog):
+    import logging
+
+    instance = BedrockModel(model_id="anything")
+    with caplog.at_level(logging.WARNING, logger="strands_harness.models"):
+        assert resolve(instance, effort=DEFAULT_EFFORT) is instance
+    assert not any("not applied" in r.message for r in caplog.records)
+
+
+# https://github.com/strands-agents/harness-sdk/issues/4472
+def test_default_effort_resolves_on_models_with_no_reasoning_levels():
+    assert "additional_request_fields" not in resolve("bedrock/amazon.nova-pro-v1:0", effort=DEFAULT_EFFORT).config
+    assert isinstance(resolve("ollama/llama3", effort=DEFAULT_EFFORT), Model)
 
 
 def test_effort_explicit_level():

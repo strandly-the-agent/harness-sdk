@@ -10,6 +10,7 @@ import {
   supportsWebSearch,
 } from '../src/models.js'
 import type { Effort } from '../src/types/agent.js'
+import { DEFAULT_EFFORT } from '../src/defaults.js'
 import { configureLogging, resetWarnOnce } from '../src/logging.js'
 
 const DEFAULT = 'bedrock/global.anthropic.claude-opus-4-8'
@@ -487,8 +488,16 @@ describe('resolveModel', () => {
     const warn = vi.fn()
     configureLogging({ debug: () => {}, info: () => {}, warn, error: () => {} })
     const instance = new BedrockModel({ modelId: 'anything' })
-    expect(await resolve(instance)).toBe(instance)
+    expect(await resolve(instance, DEFAULT_EFFORT)).toBe(instance)
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  // https://github.com/strands-agents/harness-sdk/issues/4472
+  it('resolves the default effort on models with no reasoning levels', async () => {
+    await expect(resolve('ollama/llama3', DEFAULT_EFFORT)).resolves.toBeInstanceOf(Model)
+    expect((await resolve('bedrock/amazon.nova-pro-v1:0', DEFAULT_EFFORT)).getConfig()).not.toHaveProperty(
+      'additionalRequestFields'
+    )
   })
 
   it('enables prompt caching for anthropic direct when requested', async () => {
