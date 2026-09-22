@@ -320,12 +320,12 @@ model provider has its own search (OpenAI, Google, GPT-5/GPT-6 models on `bedroc
 Bedrock Web Search, and Anthropic in Python; TypeScript Anthropic support follows in a coming
 `@strands-agents/sdk` release) the harness turns that on and there is no extra service involved. Elsewhere (Amazon Bedrock
 Converse, other Mantle models, a `Model` instance) `web_search` is off by default with a logged
-warning, and naming it explicitly throws. To search there anyway, opt into the Exa fallback with
+warning, and naming it explicitly throws. To search there anyway, opt into Exa with
 `{ web_search: 'exa' }`: the model gets a `web_search` tool backed by Exa's hosted search. It is
-keyless to start; `EXA_API_KEY` in the environment lifts the rate limit. On a model with native
-search the same setting keeps using the provider's search. Bedrock Web Search also needs the
-`bedrock-websearch` IAM actions (in `AmazonBedrockFullAccess`); without them the request succeeds but
-each search fails.
+keyless to start; `EXA_API_KEY` in the environment lifts the rate limit. `'exa'` is honoured on
+every model, so it also replaces the provider's own search where there is one. Bedrock Web Search
+also needs the `bedrock-websearch` IAM actions (in `AmazonBedrockFullAccess`); without them the
+request succeeds but each search fails.
 
 > [!WARNING]
 > Web search through Exa sends every search query the model writes to Exa (exa.ai), a third-party

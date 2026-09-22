@@ -128,9 +128,9 @@ export interface HarnessAgentOptions extends Omit<
    * `false` drops a tool, `true` adds one, and a config object enables and configures one
    * (`ToolConfig`; the keys per tool are `BUILTIN_TOOL_CONFIG_KEYS`). `web_search` turns on the
    * provider's native web search (OpenAI, Google, GPT-5/GPT-6 models on bedrock-mantle); elsewhere it
-   * is off unless `{ web_search: 'exa' }` opts into a `web_search` tool backed by Exa's hosted
-   * search, a third party that receives the queries (keyless; `EXA_API_KEY` lifts its rate limit),
-   * and naming it without the fallback there throws. A `subagent` child inherits this agent's
+   * is off, and naming it there throws. `{ web_search: 'exa' }` instead gives the model a
+   * `web_search` tool backed by Exa's hosted search on any model, a third party that receives the
+   * queries (keyless; `EXA_API_KEY` lifts its rate limit). A `subagent` child inherits this agent's
    * configuration, bounded by a delegation-depth guard.
    */
   builtinTools?: readonly BuiltinToolName[] | BuiltinToolsConfig

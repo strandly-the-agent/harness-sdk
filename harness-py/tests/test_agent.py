@@ -497,10 +497,11 @@ def test_web_search_exa_fallback_builds_the_tool_and_warns_about_the_third_party
     assert not any("has no native web search" in r.message for r in caplog.records)
 
 
-def test_web_search_exa_fallback_yields_to_native_search():
+def test_web_search_exa_wins_over_native_search():
+    # https://github.com/strands-agents/harness-sdk/issues/4480
     agent = create_harness(model="openai/gpt-5.6-sol", builtin_tools={"web_search": "exa"})
-    assert "web_search" not in agent.tool_names
-    assert agent.model.config["params"]["tools"] == [{"type": "web_search"}]
+    assert "web_search" in agent.tool_names
+    assert "tools" not in agent.model.config["params"]
 
 
 def test_web_search_exa_fallback_works_on_a_model_instance():
