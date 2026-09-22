@@ -492,14 +492,6 @@ describe('resolveModel', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
-  // https://github.com/strands-agents/harness-sdk/issues/4472
-  it('resolves the default effort on models with no reasoning levels', async () => {
-    await expect(resolve('ollama/llama3', DEFAULT_EFFORT)).resolves.toBeInstanceOf(Model)
-    expect((await resolve('bedrock/amazon.nova-pro-v1:0', DEFAULT_EFFORT)).getConfig()).not.toHaveProperty(
-      'additionalRequestFields'
-    )
-  })
-
   it('enables prompt caching for anthropic direct when requested', async () => {
     const model = await resolve('anthropic/claude-opus-4-8', 'auto', false, true)
     expect(model.getConfig().cacheConfig).toEqual({ strategy: 'auto' })
@@ -544,6 +536,56 @@ describe('resolveModel', () => {
   it('builds litellm with explicit caching and sets no cacheConfig', async () => {
     const model = await resolve('litellm/gpt-4o', 'auto', false, true, true)
     expect(model.getConfig().cacheConfig).toBeUndefined()
+  })
+})
+
+// https://github.com/strands-agents/harness-sdk/issues/4472
+describe('default effort', () => {
+  // [model spec, path of the effort field in the resolved config]
+  const HIGH_BY_DEFAULT: [string, string[]][] = [
+    ['bedrock/global.anthropic.claude-opus-5', ['additionalRequestFields', 'output_config', 'effort']],
+    ['bedrock/global.anthropic.claude-sonnet-5', ['additionalRequestFields', 'output_config', 'effort']],
+    ['bedrock/us.anthropic.claude-sonnet-4-6', ['additionalRequestFields', 'output_config', 'effort']],
+    ['bedrock/global.anthropic.claude-fable-5-1', ['additionalRequestFields', 'output_config', 'effort']],
+    ['bedrock/openai.gpt-5.6-sol', ['additionalRequestFields', 'reasoning', 'effort']],
+    ['bedrock/global.openai.gpt-6-astra', ['additionalRequestFields', 'reasoning', 'effort']],
+    ['bedrock/openai.gpt-oss-120b-1:0', ['additionalRequestFields', 'reasoning_effort']],
+    ['bedrock/qwen.qwen3-32b-v1:0', ['additionalRequestFields', 'reasoning_effort']],
+    ['bedrock/us.xai.grok-4', ['additionalRequestFields', 'reasoning_effort']],
+    ['anthropic/claude-opus-5', ['params', 'output_config', 'effort']],
+    ['openai/gpt-5.6-sol', ['params', 'reasoning', 'effort']],
+    ['bedrock-mantle/openai.gpt-5.6-sol', ['params', 'reasoning', 'effort']],
+    ['google/gemini-3.5-flash', ['params', 'thinkingConfig', 'thinkingLevel']],
+  ]
+
+  it.each(HIGH_BY_DEFAULT)('is high on %s', async (spec, path) => {
+    const config = (await resolve(spec, DEFAULT_EFFORT)).getConfig() as Record<string, unknown>
+    const at = path.reduce<unknown>((value, key) => (value as Record<string, unknown> | undefined)?.[key], config)
+    expect(at).toBe('high')
+    expect(config).toEqual((await resolve(spec, 'high')).getConfig())
+  })
+
+  it.each(['bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0', 'anthropic/claude-haiku-4-5-20251001'])(
+    'is the high budget on extended-thinking %s',
+    async (spec) => {
+      const config = (await resolve(spec, DEFAULT_EFFORT)).getConfig()
+      const block = spec.startsWith('bedrock/') ? config.additionalRequestFields : config.params
+      expect(block).toEqual({ thinking: { type: 'enabled', budget_tokens: 16_384 } })
+      expect(config).toEqual((await resolve(spec, 'high')).getConfig())
+    }
+  )
+
+  it.each([
+    'ollama/llama3',
+    'litellm/gpt-4o',
+    'bedrock/amazon.nova-pro-v1:0',
+    'bedrock/us.anthropic.claude-3-haiku-20240307-v1:0',
+    'anthropic/claude-3-haiku-20240307',
+  ])('sends no reasoning field to %s, where high would be rejected', async (spec) => {
+    const config = (await resolve(spec, DEFAULT_EFFORT)).getConfig()
+    expect(config).not.toHaveProperty('additionalRequestFields')
+    expect(config).not.toHaveProperty('params')
+    await expect(resolve(spec, 'high')).rejects.toThrow(/not supported/)
   })
 })
 
