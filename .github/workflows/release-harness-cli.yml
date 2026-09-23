@@ -8,7 +8,9 @@ name: "Harness CLI: Release"
 #        approve -> tag + release -> publish -> verify.
 #
 # The CLI depends on @strands-agents/harness and @strands-agents/sdk as version
-# RANGES (< 2.0.0 / < 1.18.0), resolved from the registry at install time -- so
+# RANGES (harness ~0.X.0 -- a harness minor is a breaking change pre-1.0, so the
+# CLI opts into each one; sdk >=1.x <2.0.0), resolved from the registry at
+# install time -- so
 # there is no exact-pin or check-library-published gate. Exported projects pull
 # the harness from npm / PyPI too, so the tarball carries no vendored library.
 #

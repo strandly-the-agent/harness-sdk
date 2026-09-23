@@ -1,0 +1,62 @@
+---
+title: Versioning and Support Policy
+description: "How Strands harness (strands-harness on PyPI, @strands-agents/harness on npm) is versioned while pre-1.0: what patch and minor mean, what counts as breaking, and how it relates to the Strands Harness SDK."
+sidebar:
+  label: "Versioning & Support"
+---
+
+## Overview
+
+Strands harness is a **0.x product**, versioned separately from the [Strands Harness SDK](../sdk/versioning-and-support/).
+It ships opinionated defaults (tools, prompt, context management, sessions, memory) that will change
+shape as we learn what works. Keeping it at 0.x lets those defaults evolve without forcing major
+releases on SDK users who never touch the harness.
+
+This page covers `strands-harness` (Python) and `@strands-agents/harness` (TypeScript). The
+[Strands CLI](https://github.com/strands-agents/harness-sdk/tree/main/strands-cli#versioning) follows the same rule.
+
+## Version numbers
+
+Versions are `0.MINOR.PATCH`.
+
+* **Patch (0.x.Y)**: bug fixes *and* new features, including new built-in tools and plugins.
+* **Minor (0.X.0)**: breaking changes. Every minor release lists what broke and how to move.
+* **No major bump.** Reaching 1.0 is a separate decision made on customer signal, not on a date.
+  At 1.0, Strands harness adopts the [SDK versioning policy](../sdk/versioning-and-support/).
+
+The Python and TypeScript packages are versioned and released independently. Matching version
+numbers do not mean matching features.
+
+## What counts as breaking
+
+A change is breaking if existing code or configuration stops working, or starts doing something
+different, without you changing it:
+
+* Removing or renaming a public factory option, config key, or exported symbol
+* Removing or renaming a built-in tool or plugin
+* Changing a default so an existing agent behaves differently, or so a default tool can reach
+  something it could not before
+
+These are **not** breaking and may change in any release:
+
+* System prompt text, tool descriptions, and other tuning of the defaults
+* Adding new built-in tools or plugins. Opting out is a configuration change, not a version change.
+* Changes covered by the SDK's [pay-for-play exception](../sdk/versioning-and-support/#opt-in-breaking-changes)
+
+## Relationship to the Strands Harness SDK
+
+Each Strands harness release pins a version range of the Strands Harness SDK. If an SDK major
+release forces a harness change, that change ships as a harness minor.
+
+## Deprecation
+
+Where practical, a feature is deprecated in one minor release and removed in the next, with a
+warning that names the replacement. Pre-1.0 there is no fixed support window for deprecated
+features.
+
+## Staying informed
+
+* **Release notes**: [GitHub Releases](https://github.com/strands-agents/harness-sdk/releases),
+  tagged `harness-python/v*` and `harness-typescript/v*`
+* **Pin to a minor** if you want no surprises between upgrades:
+  `strands-harness~=0.1.0` (pip) or `@strands-agents/harness@~0.1.0` (npm)
