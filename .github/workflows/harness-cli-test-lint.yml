@@ -5,7 +5,7 @@ name: "Harness CLI: Test and Lint"
 # at release time. Mirrors harness-ts-test-lint.yml.
 #
 # The CLI installs standalone (its own package-lock.json) against the published
-# @strands-agents/harness (~0.1.0) and @strands-agents/sdk, not the repo-root
+# @strands-agents/harness (< 2.0.0) and @strands-agents/sdk, not the repo-root
 # workspace. `npm run build` also bundles the sibling harness-py source
 # (scripts/bundle-python.js reads ../harness-py), so this needs a full checkout.
 
