@@ -566,6 +566,8 @@ The Strands CLI is 0.x. Patch releases (0.x.Y) carry bug fixes and new features;
 Human-readable terminal output is not a stable interface. The CLI follows the same rule as
 [Strands harness](https://strandsagents.com/docs/user-guide/harness/versioning/) and pins the
 harness library to a minor, so a harness breaking change never lands in an existing CLI install.
+Release notes: [GitHub Releases](https://github.com/strands-agents/harness-sdk/releases), tagged
+`harness-cli/v*`.
 
 ## Contributing ❤️
 

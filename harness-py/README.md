@@ -535,7 +535,7 @@ prompt = build_system_prompt(
 Strands harness is 0.x and versioned separately from the Strands Harness SDK. Patch releases
 (0.x.Y) carry bug fixes and new features, including new built-in tools; minor releases (0.X.0)
 carry breaking changes and say so in the release notes. Pin to a minor (`strands-harness~=0.1.0`)
-if you want no surprises between upgrades. Full policy:
+to avoid breaking changes; patch releases still add features and tools. Full policy:
 [Versioning and Support](https://strandsagents.com/docs/user-guide/harness/versioning/).
 
 ## Contributing ❤️

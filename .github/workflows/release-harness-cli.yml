@@ -8,11 +8,12 @@ name: "Harness CLI: Release"
 #        approve -> tag + release -> publish -> verify.
 #
 # The CLI depends on @strands-agents/harness and @strands-agents/sdk as version
-# RANGES (harness ~0.X.0 -- a harness minor is a breaking change pre-1.0, so the
-# CLI opts into each one; sdk >=1.x <2.0.0), resolved from the registry at
-# install time -- so
-# there is no exact-pin or check-library-published gate. Exported projects pull
-# the harness from npm / PyPI too, so the tarball carries no vendored library.
+# RANGES (harness ~0.1.0, sdk >=1.19.0 <2.0.0), resolved from the registry at
+# install time -- so there is no exact-pin or check-library-published gate.
+# A harness minor is a breaking change pre-1.0, so the harness range is a tilde
+# range and must be bumped by hand (package.json + package-lock.json) when the
+# harness ships a new minor. Exported projects pull the harness from npm / PyPI
+# too, so the tarball carries no vendored library.
 #
 # One-time setup before the first non-dry run:
 #   - GitHub environments `release-gate` and `npm` (already used by other releases).

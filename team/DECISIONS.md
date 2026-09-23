@@ -122,26 +122,6 @@ This doesn't apply when existing code breaks without any user action, or when th
 See also: [Raymond Chen on "pay for play" in API design](https://devblogs.microsoft.com/oldnewthing/20260127-00/?p=112018)
 
 
-## Strands Harness Products Are Versioned Separately From the SDK, at 0.x
-
-**Date**: Sep 23, 2026
-
-### Decision
-
-Strands harness (`strands-harness`, `@strands-agents/harness`) and the Strands CLI (`@strands-agents/cli`) are 0.x products with their own version lines and tag prefixes. They do not follow the SDK's semver policy in `FEATURE_LIFECYCLE.md` and `COMPATIBILITY.md`. Pre-1.0 rule:
-
-- **Patch (0.x.Y)**: bug fixes and new features, including new built-in tools and plugins.
-- **Minor (0.X.0)**: breaking changes — removing or renaming something public, changing a default in a way that alters existing behavior, or changing what a default tool can reach. Each gets a release-notes entry saying what broke.
-- **No major bump.** What earns 1.0 is a separate decision made on customer signal. At 1.0 the harness products adopt the SDK policy.
-
-New built-in tools and plugins are additive, not breaking. Prompt text, tool descriptions, and default tuning are not a versioned surface. The CLI pins the harness library to a minor range so a harness break cannot land in an existing CLI install.
-
-### Rationale
-
-The harness ships defaults that will change shape as we learn what works. Tying it to the SDK's version would either freeze those defaults or force SDK majors on customers who never touch the harness. Pre-1.0 harnesses that write their rule down (deepagents, pi, Vercel eve, OpenAI Agents SDK) all use "patch = fixes + additions, minor = breaking, no major", and LangChain's release policy explicitly carves Deep Agents out of its 1.x guarantees — so this is what users of this kind of product already expect. SDKs follow strict semver; CLIs mostly write no policy at all, or (Terraform) define which surfaces are stable rather than promising semver on everything, which is why the CLI gets a short README note instead of a full page until it has a scriptable surface worth promising.
-
-User-facing policy: `site/src/content/docs/user-guide/harness/versioning.mdx`.
-
 ## Provide Both Low-Level and High-Level APIs
 
 **Date**: Jan 30, 2026
@@ -239,3 +219,23 @@ It does **not** govern **feature enablement**. Parameters that switch an SDK-man
 Users need a way to say "don't send this field at all" that is distinct from "I didn't specify this field." Collapsing the two either makes SDK-managed defaults impossible to opt out of, or forces the SDK to treat every unspecified field as a deliberate removal.
 
 For example, the TypeScript `OpenAIModel` manages `stream_options: { include_usage: true }` on streaming requests, but some OpenAI-compatible endpoints — e.g. Cohere's Compatibility API — reject the field entirely. [#3872](https://github.com/strands-agents/harness-sdk/pull/3872) applies this decision: an explicit `params.stream_options: null` omits the field from the wire request, while leaving it undefined keeps the managed default.
+
+## Strands Harness Products Are Versioned Separately From the SDK, at 0.x
+
+**Date**: Sep 23, 2026
+
+### Decision
+
+Strands harness (`strands-harness`, `@strands-agents/harness`) and the Strands CLI (`@strands-agents/cli`) are 0.x products with their own version lines and tag prefixes. They do not follow the SDK's semver policy in `FEATURE_LIFECYCLE.md` and `COMPATIBILITY.md`. Pre-1.0 rule:
+
+- **Patch (0.x.Y)**: bug fixes and new features, including new built-in tools and plugins.
+- **Minor (0.X.0)**: breaking changes — removing or renaming something public, changing the value of a documented default so existing agents behave differently, or changing what a default tool can reach. Each gets a release-notes entry saying what broke.
+- **No major bump.** What earns 1.0 is a separate decision made on customer signal. At 1.0 the harness products adopt the SDK policy.
+
+New built-in tools and plugins are additive, not breaking. Bug fixes that bring behavior in line with the documentation are patches. Prompt text, tool descriptions, undocumented tuning, and `@strands-agents/harness/internal` are not a versioned surface. Raising the SDK floor within the same SDK major is a patch; an SDK major forcing a harness change is a harness minor. The CLI pins the harness library to a minor range (`~0.X.0`) so a harness break cannot land in an existing CLI install; the range is bumped by hand on each harness minor.
+
+### Rationale
+
+The harness ships defaults that will change shape as we learn what works. Tying it to the SDK's version would either freeze those defaults or force SDK majors on customers who never touch the harness. Pre-1.0 harnesses that write their rule down (deepagents, pi, Vercel eve, OpenAI Agents SDK) all use "patch = fixes + additions, minor = breaking, no major", and LangChain's release policy explicitly carves Deep Agents out of its 1.x guarantees — so this is what users of this kind of product already expect. SDKs follow strict semver; CLIs mostly write no policy at all, or (Terraform) define which surfaces are stable rather than promising semver on everything, which is why the CLI gets a short README note instead of a full page until it has a scriptable surface worth promising.
+
+User-facing policy: `site/src/content/docs/user-guide/harness/versioning.mdx`.
