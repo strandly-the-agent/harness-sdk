@@ -4,7 +4,7 @@
 
 This document establishes a standardized process for adding new features and deprecating existing functionality in the Strands SDK while maintaining semantic versioning compliance and community trust.
 
-It applies to the SDK packages (`strands-py`, `strands-ts`). Strands harness and the Strands CLI are 0.x and follow a different rule; see [Strands harness versioning](../site/src/content/docs/user-guide/harness/versioning.mdx) and the entry in [DECISIONS.md](./DECISIONS.md#strands-harness-products-are-versioned-separately-from-the-sdk-at-0x).
+It applies to the SDK packages (`strands-py`, `strands-ts`). Strands harness and the Strands CLI are 0.x and follow a different rule; see [Strands harness versioning](../site/src/content/docs/user-guide/harness/versioning.mdx).
 
 ## Vision for Major Releases
 
