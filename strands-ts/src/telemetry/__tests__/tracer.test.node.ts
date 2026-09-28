@@ -313,6 +313,51 @@ describe('Tracer', () => {
     })
   })
 
+  // Regression tests for #4666: per-invocation traceAttributes passed to startAgentSpan
+  // (for users with a pre-configured tracer) must reach the child spans too.
+  describe('per-invocation trace attributes', () => {
+    const attributesOfCall = (index: number) =>
+      (mockStartSpan.mock.calls[index]![1] as { attributes: Record<string, SpanAttributeValue | undefined> }).attributes
+
+    it('applies startAgentSpan traceAttributes to cycle, chat, and tool spans', () => {
+      const tracer = new Tracer()
+
+      tracer.startAgentSpan({ messages: [], agentName: 'agent', traceAttributes: { 'session.id': 'sess-1' } })
+      tracer.startAgentLoopSpan({ cycleId: 'cycle-1', messages: [] })
+      tracer.startModelInvokeSpan({ messages: [] })
+      tracer.startToolCallSpan({ tool: { name: 'calculator', toolUseId: 'call-1', input: {} } })
+
+      expect(mockStartSpan.mock.calls.map(([name]) => name)).toEqual([
+        'invoke_agent agent',
+        'execute_agent_loop_cycle',
+        'chat',
+        'execute_tool calculator',
+      ])
+      for (let i = 0; i < 4; i++) expect(attributesOfCall(i)['session.id']).toBe('sess-1')
+    })
+
+    it('overrides constructor-level attributes on collision', () => {
+      const tracer = new Tracer({ 'session.id': 'from-constructor', 'app.name': 'demo' })
+
+      tracer.startAgentSpan({ messages: [], agentName: 'agent', traceAttributes: { 'session.id': 'from-invoke' } })
+      tracer.startModelInvokeSpan({ messages: [] })
+
+      expect(attributesOfCall(1)).toMatchObject({ 'session.id': 'from-invoke', 'app.name': 'demo' })
+    })
+
+    it('does not leak into the next invocation after endAgentSpan', () => {
+      const tracer = new Tracer()
+
+      const span = tracer.startAgentSpan({ messages: [], agentName: 'agent', traceAttributes: { 'session.id': 's1' } })
+      tracer.endAgentSpan(span)
+      tracer.startAgentSpan({ messages: [], agentName: 'agent' })
+      tracer.startModelInvokeSpan({ messages: [] })
+
+      expect(attributesOfCall(1)['session.id']).toBeUndefined()
+      expect(attributesOfCall(2)['session.id']).toBeUndefined()
+    })
+  })
+
   describe('startModelInvokeSpan', () => {
     it('creates span with chat operation name and model id', () => {
       const tracer = new Tracer()
