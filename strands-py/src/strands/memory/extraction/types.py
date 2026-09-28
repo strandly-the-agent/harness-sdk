@@ -48,8 +48,8 @@ class ExtractorContext:
     """Context passed to :meth:`Extractor.extract`.
 
     Attributes:
-        default_model: The agent's model, supplied so an extractor can default to
-            it.
+        default_model: The agent's ``aux_model``, supplied so an extractor can default
+            to it.
     """
 
     default_model: Model | None = None

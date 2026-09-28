@@ -123,7 +123,7 @@ class JudgeConfig:
     Harmlessly ignored when ``goal`` is a validator function — no judge is built in that case.
 
     Attributes:
-        model: Model the judge agent uses. Defaults to the host agent's model.
+        model: Model the judge agent uses. Defaults to the host agent's ``aux_model``.
         system_prompt: System prompt for the judge agent. Defaults to JUDGE_SYSTEM_PROMPT.
     """
 

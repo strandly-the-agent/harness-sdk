@@ -169,6 +169,7 @@ class _PassProgress:
 
 
 def _validate_aux_model(aux_model: Model | None) -> Model | None:
+    """Reject an ``aux_model`` that is not a concrete, stateless ``Model``."""
     if aux_model is not None and not isinstance(aux_model, Model):
         raise TypeError(f"aux_model must be a Model instance or None, got {type(aux_model).__name__}")
     if aux_model is not None and aux_model.stateful:
@@ -692,7 +693,7 @@ class Agent(AgentBase, LocalAgent):
         The ``aux_model`` passed at construction, or ``model`` when none was. A component with its
         own explicitly configured model takes precedence over this.
         """
-        return self._aux_model or self.model
+        return self._aux_model if self._aux_model is not None else self.model
 
     @property
     def context_manager(self) -> "ContextManager | None":

@@ -49,7 +49,7 @@ class LLMSteeringHandler(SteeringHandler):
         Args:
             system_prompt: System prompt defining steering guidance rules
             prompt_mapper: Custom prompt mapper for evaluation prompts
-            model: Optional model override for steering evaluation
+            model: Optional model override for steering evaluation; defaults to the agent's ``aux_model``
             context_providers: List of context providers for populating steering context.
                 Defaults to [LedgerProvider()] if None. Pass an empty list to disable
                 context providers.

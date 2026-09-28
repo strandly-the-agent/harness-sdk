@@ -939,6 +939,7 @@ def test_proactive_compression_swallows_errors():
     agent.model._utilization_limit_warned = False
     agent.model.estimate_utilization = lambda input_tokens: Model.estimate_utilization(agent.model, input_tokens)
     agent.model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream_error(RuntimeError("model failed")))
+    agent.aux_model = agent.model
 
     registry = HookRegistry()
     manager.register_hooks(registry)

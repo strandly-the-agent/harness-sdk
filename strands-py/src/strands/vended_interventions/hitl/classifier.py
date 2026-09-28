@@ -48,7 +48,7 @@ class LLMClassifierConfig:
 
     Args:
         system_prompt: Risk criteria prompt. Defaults to a general-purpose risk prompt.
-        model: Model for risk evaluation. Defaults to the parent agent's model.
+        model: Model for risk evaluation. Defaults to the parent agent's ``aux_model``.
     """
 
     system_prompt: str | None = field(default=None)

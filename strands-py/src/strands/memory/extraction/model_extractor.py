@@ -50,9 +50,8 @@ class ModelExtractor:
         """Initialize the extractor.
 
         Args:
-            model: Model used to extract facts. Defaults to the agent's own model
-                (via :attr:`ExtractorContext.default_model`); set a cheaper one to
-                cut cost.
+            model: Model used to extract facts. Defaults to the agent's ``aux_model``
+                (via :attr:`ExtractorContext.default_model`).
             system_prompt: System prompt steering what counts as a fact. Defaults
                 to a general fact-extraction prompt.
         """
