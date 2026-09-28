@@ -168,13 +168,13 @@ class _PassProgress:
     event_loop_produced_result: bool = False
 
 
-def _validate_aux_model(aux_model: Model | None) -> Model | None:
-    """Reject an ``aux_model`` that is not a concrete, stateless ``Model``."""
-    if aux_model is not None and not isinstance(aux_model, Model):
-        raise TypeError(f"aux_model must be a Model instance or None, got {type(aux_model).__name__}")
-    if aux_model is not None and aux_model.stateful:
-        raise ValueError("aux_model must not be a stateful model; auxiliary calls are one-shot")
-    return aux_model
+def _resolve_aux_model(aux_model: Model | str | None) -> Model | None:
+    """Resolve ``aux_model`` like ``model``: a string is a Bedrock model id; a ``ModelRouter`` is rejected."""
+    if aux_model is None or isinstance(aux_model, Model):
+        return aux_model
+    if isinstance(aux_model, str):
+        return BedrockModel(model_id=aux_model)
+    raise TypeError(f"aux_model must be a Model, a Bedrock model id, or None, got {type(aux_model).__name__}")
 
 
 class Agent(AgentBase, LocalAgent):
@@ -208,7 +208,7 @@ class Agent(AgentBase, LocalAgent):
         load_tools_from_directory: bool = False,
         trace_attributes: Mapping[str, AttributeValue] | None = None,
         *,
-        aux_model: Model | None = None,
+        aux_model: Model | str | None = None,
         agent_id: str | None = None,
         name: str | None = None,
         description: str | None = None,
@@ -238,11 +238,11 @@ class Agent(AgentBase, LocalAgent):
                 exposed as ``agent.model``. Defaults to strands.models.BedrockModel if None.
             aux_model: Model for the agent's auxiliary calls: model calls the SDK makes outside the main
                 loop, such as context summarization, memory extraction, the LLM risk classifier, LLM
-                steering, and the goal judge. A component configured with its own model keeps it;
-                otherwise it uses this one, and when this is ``None`` (the default) it uses ``model``.
-                Typically a smaller, cheaper model than ``model``. Must be a concrete ``Model``; a
-                ``ModelRouter`` is not accepted because auxiliary calls run outside the agent loop
-                the router attaches to.
+                steering, the goal judge, and the ``web_fetch`` analyst. A component configured with its
+                own model keeps it; otherwise it uses this one, and when this is ``None`` (the default)
+                it uses ``model``. Typically a smaller, cheaper model than ``model``. Accepts a ``Model``
+                or a Bedrock model id string, like ``model``; a ``ModelRouter`` is not accepted because
+                auxiliary calls run outside the agent loop the router attaches to.
             messages: List of initial messages to pre-load into the conversation.
                 Defaults to an empty list if None.
             tools: List of tools to make available to the agent.
@@ -350,8 +350,8 @@ class Agent(AgentBase, LocalAgent):
                 None (disabled).
 
         Raises:
-            ValueError: If agent id contains path separators, or if ``aux_model`` is a stateful model.
-            TypeError: If ``aux_model`` is not a ``Model``.
+            ValueError: If agent id contains path separators.
+            TypeError: If ``aux_model`` is not a ``Model``, a string, or ``None``.
         """
         self._model_router: ModelRouter | None = None
         if isinstance(model, ModelRouter):
@@ -363,7 +363,7 @@ class Agent(AgentBase, LocalAgent):
             self.model = BedrockModel(model_id=model)
         else:
             self.model = model
-        self._aux_model: Model | None = _validate_aux_model(aux_model)
+        self._aux_model: Model | None = _resolve_aux_model(aux_model)
         self.messages = messages if messages is not None else []
         if sandbox is not None and not isinstance(sandbox, Sandbox):
             raise TypeError(f"sandbox must be a Sandbox instance or None, got {type(sandbox).__name__}")

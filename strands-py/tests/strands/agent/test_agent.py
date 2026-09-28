@@ -329,24 +329,16 @@ def test_agent__init__aux_model_explicit(mock_model):
     assert agent.model is mock_model
 
 
-@pytest.mark.parametrize(
-    ("aux_model", "type_name"),
-    [
-        ("us.anthropic.claude-haiku-4-5-20251001-v1:0", "str"),
-        (ModelRouter([MockedModelProvider([])]), "ModelRouter"),
-    ],
-)
-def test_agent__init__aux_model_rejects_non_model(aux_model, type_name):
-    with pytest.raises(TypeError, match=f"aux_model must be a Model instance or None, got {type_name}"):
-        Agent(aux_model=aux_model)
+def test_agent__init__aux_model_with_string_model_id(mock_model):
+    agent = Agent(model=mock_model, aux_model="us.anthropic.claude-haiku-4-5-20251001-v1:0")
+
+    assert isinstance(agent.aux_model, BedrockModel)
+    assert agent.aux_model.config["model_id"] == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 
-def test_agent__init__aux_model_rejects_stateful():
-    aux_model = MockedModelProvider([])
-    with unittest.mock.patch.object(type(aux_model), "stateful", new_callable=unittest.mock.PropertyMock) as stateful:
-        stateful.return_value = True
-        with pytest.raises(ValueError, match="aux_model must not be a stateful model"):
-            Agent(aux_model=aux_model)
+def test_agent__init__aux_model_rejects_model_router():
+    with pytest.raises(TypeError, match="aux_model must be a Model, a Bedrock model id, or None, got ModelRouter"):
+        Agent(aux_model=ModelRouter([MockedModelProvider([])]))
 
 
 def test_agent__init__nested_tools_flattening(tool_decorated, tool_module, tool_imported, tool_registry):
