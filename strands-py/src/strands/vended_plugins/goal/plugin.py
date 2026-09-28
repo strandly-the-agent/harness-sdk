@@ -389,7 +389,7 @@ class GoalLoop(Plugin):
             from ...agent.agent import Agent as _Agent
 
             judge = _Agent(
-                model=self._judge_model or host_agent.model,
+                model=self._judge_model or host_agent.aux_model,
                 callback_handler=None,
                 system_prompt=self._judge_system_prompt,
                 structured_output_model=JudgeOutcome,

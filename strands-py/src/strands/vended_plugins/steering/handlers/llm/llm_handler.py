@@ -79,7 +79,9 @@ class LLMSteeringHandler(SteeringHandler):
         # Create isolated agent for steering evaluation (no shared conversation state)
         from .....agent import Agent
 
-        steering_agent = Agent(system_prompt=self.system_prompt, model=self.model or agent.model, callback_handler=None)
+        steering_agent = Agent(
+            system_prompt=self.system_prompt, model=self.model or agent.aux_model, callback_handler=None
+        )
 
         # Get LLM decision
         llm_result: _LLMSteering = cast(

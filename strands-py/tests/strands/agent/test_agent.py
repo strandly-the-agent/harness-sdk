@@ -30,6 +30,7 @@ from strands.hooks import BeforeInvocationEvent, BeforeModelCallEvent, BeforeToo
 from strands.interrupt import Interrupt, PendingToolExecution
 from strands.memory import MemoryManager, MemoryManagerConfig
 from strands.models.bedrock import DEFAULT_BEDROCK_MODEL_ID, BedrockModel
+from strands.models.routing import ModelRouter
 from strands.session.repository_session_manager import RepositorySessionManager
 from strands.telemetry.tracer import Tracer, serialize
 from strands.types._events import EventLoopStopEvent, ModelStreamEvent
@@ -312,6 +313,40 @@ def test_agent__init__with_string_model_id():
 
     assert isinstance(agent.model, BedrockModel)
     assert agent.model.config["model_id"] == "nonsense"
+
+
+def test_agent__init__aux_model_defaults_to_model(mock_model):
+    agent = Agent(model=mock_model)
+
+    assert agent.aux_model is mock_model
+
+
+def test_agent__init__aux_model_explicit(mock_model):
+    aux_model = MockedModelProvider([])
+    agent = Agent(model=mock_model, aux_model=aux_model)
+
+    assert agent.aux_model is aux_model
+    assert agent.model is mock_model
+
+
+@pytest.mark.parametrize(
+    ("aux_model", "type_name"),
+    [
+        ("us.anthropic.claude-haiku-4-5-20251001-v1:0", "str"),
+        (ModelRouter([MockedModelProvider([])]), "ModelRouter"),
+    ],
+)
+def test_agent__init__aux_model_rejects_non_model(aux_model, type_name):
+    with pytest.raises(TypeError, match=f"aux_model must be a Model instance or None, got {type_name}"):
+        Agent(aux_model=aux_model)
+
+
+def test_agent__init__aux_model_rejects_stateful():
+    aux_model = MockedModelProvider([])
+    with unittest.mock.patch.object(type(aux_model), "stateful", new_callable=unittest.mock.PropertyMock) as stateful:
+        stateful.return_value = True
+        with pytest.raises(ValueError, match="aux_model must not be a stateful model"):
+            Agent(aux_model=aux_model)
 
 
 def test_agent__init__nested_tools_flattening(tool_decorated, tool_module, tool_imported, tool_registry):

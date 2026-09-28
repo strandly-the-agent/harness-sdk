@@ -107,7 +107,7 @@ def _create_llm_risk_classifier(config: LLMClassifierConfig | None = None) -> Hu
     async def classifier(event: BeforeToolCallEvent, **kwargs: Any) -> ClassifierResult:
         from ...agent import Agent
 
-        model = configured_model or event.agent.model
+        model = configured_model or event.agent.aux_model
         if not model:
             raise ValueError(
                 "LLM risk classifier has no model — pass `model` in "
