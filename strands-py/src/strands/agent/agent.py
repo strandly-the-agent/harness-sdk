@@ -236,13 +236,13 @@ class Agent(AgentBase, LocalAgent):
             model: Provider for running inference or a string representing the model-id for Bedrock to use.
                 May also be a ``ModelRouter``, whose first candidate is resolved to a concrete model and
                 exposed as ``agent.model``. Defaults to strands.models.BedrockModel if None.
-            aux_model: Model for the agent's auxiliary calls: model calls the SDK makes outside the main
-                loop, such as context summarization, memory extraction, the LLM risk classifier, LLM
-                steering, the goal judge, and the ``web_fetch`` analyst. A component configured with its
-                own model keeps it; otherwise it uses this one, and when this is ``None`` (the default)
-                it uses ``model``. Typically a smaller, cheaper model than ``model``. Accepts a ``Model``
-                or a Bedrock model id string, like ``model``; a ``ModelRouter`` is not accepted because
-                auxiliary calls run outside the agent loop the router attaches to.
+            aux_model: Optional model for auxiliary side calls the SDK makes outside the main agent loop:
+                context summarization, memory extraction, the HITL risk classifier, LLM steering, the
+                goal judge, and the ``web_fetch`` analyst. Defaults to ``model``, so leaving it unset
+                changes nothing; set it (typically to a smaller, cheaper model) to move every side call
+                off the main model at once. A component configured with its own model keeps that model.
+                Accepts a ``Model`` or a Bedrock model id string, like ``model``; a ``ModelRouter`` is
+                not accepted because auxiliary calls run outside the agent loop the router attaches to.
             messages: List of initial messages to pre-load into the conversation.
                 Defaults to an empty list if None.
             tools: List of tools to make available to the agent.
@@ -688,10 +688,10 @@ class Agent(AgentBase, LocalAgent):
 
     @property
     def aux_model(self) -> Model:
-        """Model for auxiliary calls (summarization, extraction, classification, judging).
+        """Model for auxiliary side calls (summarization, memory extraction, classification, steering, web fetch).
 
-        The ``aux_model`` passed at construction, or ``model`` when none was. A component with its
-        own explicitly configured model takes precedence over this.
+        The ``aux_model`` passed at construction, or ``model`` when none was, so with no configuration
+        this is the same model the agent uses. A component configured with its own model keeps that model.
         """
         return self._aux_model if self._aux_model is not None else self.model
 

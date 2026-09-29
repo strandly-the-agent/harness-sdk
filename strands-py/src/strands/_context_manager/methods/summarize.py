@@ -49,7 +49,9 @@ class SummarizeConfig(TypedDict, total=False):
     """Configuration for the summarize method.
 
     Attributes:
-        model: Model to use for summarization. When omitted, uses the agent's ``aux_model``.
+        model: Model used for summarization. Resolution order: this model if provided, else the
+            agent's ``aux_model``, which itself defaults to the agent's main ``model``. With no
+            configuration this is the same model the agent uses.
         system_prompt: Custom system prompt for the summarization model.
     """
 

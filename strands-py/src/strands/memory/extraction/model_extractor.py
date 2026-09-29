@@ -50,8 +50,10 @@ class ModelExtractor:
         """Initialize the extractor.
 
         Args:
-            model: Model used to extract facts. Defaults to the agent's ``aux_model``
-                (via :attr:`ExtractorContext.default_model`).
+            model: Model used to extract facts. Resolution order: this model if provided, else
+                the agent's ``aux_model`` (via :attr:`ExtractorContext.default_model`), which
+                itself defaults to the agent's main ``model``. With no configuration this is the
+                same model the agent uses.
             system_prompt: System prompt steering what counts as a fact. Defaults
                 to a general fact-extraction prompt.
         """

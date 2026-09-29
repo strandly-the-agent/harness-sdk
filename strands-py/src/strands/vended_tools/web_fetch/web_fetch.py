@@ -80,8 +80,9 @@ def make_web_fetch(
             When ``None``, a new client is created per request with
             ``follow_redirects=True`` and httpx's default timeout (5s).
         model: Optional model for the analyst. Only used when ``mode='agentic'``.
-            Resolution order: this model, then the host agent's ``aux_model``
-            (which falls back to its ``model``), then ``WebFetchError`` if none is available.
+            Resolution order: this model if provided, else the host agent's ``aux_model``,
+            which itself defaults to the agent's main ``model``; ``WebFetchError`` if no
+            model is available at all.
         mode: Extraction mode. Defaults to ``agentic``.
 
     Returns:

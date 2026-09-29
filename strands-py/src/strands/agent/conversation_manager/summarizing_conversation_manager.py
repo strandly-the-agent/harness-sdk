@@ -205,9 +205,10 @@ class SummarizingConversationManager(ConversationManager):
         When a dedicated summarization_agent was provided at init time, it is invoked as before
         (full agent pipeline, tool execution, etc.).
 
-        In the default case (no summarization_agent), the parent agent's ``aux_model`` is called
-        directly via ``model.stream()``.  This avoids re-entering the agent pipeline which
-        would deadlock on ``_invocation_lock`` and corrupt metrics / traces / interrupt state.
+        In the default case (no summarization_agent), the parent agent's ``aux_model`` (which
+        defaults to its main ``model``) is called directly via ``model.stream()``. This avoids
+        re-entering the agent pipeline which would deadlock on ``_invocation_lock`` and corrupt
+        metrics / traces / interrupt state.
 
         Args:
             messages: The messages to summarize.
@@ -275,7 +276,7 @@ class SummarizingConversationManager(ConversationManager):
     # ------------------------------------------------------------------
 
     def _generate_summary_with_model(self, messages: list[Message], agent: "Agent") -> Message:
-        """Generate a summary by calling the agent's ``aux_model`` directly.
+        """Generate a summary by calling the agent's summarization model directly.
 
         This bypasses the full agent pipeline (lock, metrics, traces, tool loop) and
         simply asks the underlying model to summarize the conversation. Delegates the
@@ -284,7 +285,8 @@ class SummarizingConversationManager(ConversationManager):
 
         Args:
             messages: The messages to summarize.
-            agent: The parent agent whose ``aux_model`` is used.
+            agent: The parent agent. Summarizes with its ``aux_model``, which defaults to its main
+                ``model``.
 
         Returns:
             A message containing the conversation summary.
