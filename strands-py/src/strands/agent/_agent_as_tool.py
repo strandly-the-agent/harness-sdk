@@ -111,6 +111,9 @@ class _ParentCall:
         Returns:
             Interrupts that have to outlive a failed restore.
         """
+        # The turn is a Snapshot.to_dict() taken with preset="session"; Agent.take_snapshot owns the
+        # "interrupt_state" field and _InterruptState.to_dict its shape. Tolerant on purpose: this is the
+        # fallback for a turn that failed to load, so it must not raise itself.
         turn = self.interrupted_turn() or {}
         interrupt_state: dict[str, Any] = (turn.get("data") or {}).get("interrupt_state") or {}
         awaited_ids = set(interrupt_state.get("interrupts") or {})
@@ -344,56 +347,12 @@ class _AgentAsTool(AgentTool):
             return
 
         try:
-            # Determine if we are resuming the sub-agent from an interrupt.
             if parent_call is not None and parent_call.is_resuming:
-                # The interrupted turn comes from one of two places: an ephemeral sub-agent's turn is
-                # stored on the orchestrator, so restoring it reads the orchestrator's interrupt record,
-                # while a preserve_context=True sub-agent restores its own from its session manager and
-                # so arrives already activated.
-                restored = self._restore_interrupted_turn(parent_call) or self._agent._interrupt_state.activated
-
-                if not restored:
-                    pending = parent_call.pending_interrupts()
-                    if pending:
-                        # The response cannot be applied yet, but the turn is still stored, so raise the
-                        # interrupt again instead of failing the call: the orchestrator holds it once more,
-                        # keeping both the turn and the pending interrupt for another attempt. Failing here
-                        # would end the orchestrator's turn, and the event loop clears the whole interrupt
-                        # record when a turn ends - taking the stored turn and the response with it.
-                        logger.error(
-                            "tool_name=<%s>, agent_name=<%s>, tool_use_id=<%s>, interrupt_ids=<%s> | the "
-                            "interrupted turn could not be restored, so the response cannot be applied yet: "
-                            "raising the interrupt again so it survives to be answered once more",
-                            self._tool_name,
-                            self._agent_name,
-                            tool_use_id,
-                            [interrupt.id for interrupt in pending],
-                        )
-                        yield ToolInterruptEvent(tool_use, pending)
-                        return
-
-                    logger.error(
-                        "tool_name=<%s>, agent_name=<%s>, tool_use_id=<%s> | cannot resume: the sub-agent's "
-                        "interrupted turn is not available, so the interrupt response cannot be applied",
-                        self._tool_name,
-                        self._agent_name,
-                        tool_use_id,
-                    )
-                    yield ToolResultEvent(
-                        {
-                            "toolUseId": tool_use_id,
-                            "status": "error",
-                            "content": [{"text": self._unresumable_message(parent_call)}],
-                        }
-                    )
+                resumed = self._resume_from_interrupt(parent_call, tool_use)
+                if not isinstance(resumed, list):
+                    yield resumed
                     return
-
-                prompt = parent_call.responses()
-                logger.debug(
-                    "tool_name=<%s>, tool_use_id=<%s> | resuming sub-agent from interrupt",
-                    self._tool_name,
-                    tool_use_id,
-                )
+                prompt = resumed
             elif not self._preserve_context:
                 self._reset_agent_state(tool_use_id)
 
@@ -600,6 +559,60 @@ class _AgentAsTool(AgentTool):
             "tool_name=<%s>, tool_use_id=<%s> | stored interrupted sub-agent turn for resume",
             self._tool_name,
             parent_call.tool_use_id,
+        )
+
+    def _resume_from_interrupt(
+        self, parent_call: _ParentCall, tool_use: ToolUse
+    ) -> list[InterruptResponseContent] | ToolInterruptEvent | ToolResultEvent:
+        """Prepare the sub-agent to resume the interrupt the orchestrator is holding for this call.
+
+        Returns:
+            The responses to resume the sub-agent with, or the event that ends the call instead: the
+            interrupt raised again when the stored turn cannot be restored yet, or an error result when
+            there is no turn to restore.
+        """
+        tool_use_id = tool_use["toolUseId"]
+        # The interrupted turn comes from one of two places: an ephemeral sub-agent's turn is
+        # stored on the orchestrator, so restoring it reads the orchestrator's interrupt record,
+        # while a preserve_context=True sub-agent restores its own from its session manager and
+        # so arrives already activated.
+        if self._restore_interrupted_turn(parent_call) or self._agent._interrupt_state.activated:
+            logger.debug(
+                "tool_name=<%s>, tool_use_id=<%s> | resuming sub-agent from interrupt", self._tool_name, tool_use_id
+            )
+            return parent_call.responses()
+
+        pending = parent_call.pending_interrupts()
+        if pending:
+            # The response cannot be applied yet, but the turn is still stored, so raise the
+            # interrupt again instead of failing the call: the orchestrator holds it once more,
+            # keeping both the turn and the pending interrupt for another attempt. Failing here
+            # would end the orchestrator's turn, and the event loop clears the whole interrupt
+            # record when a turn ends - taking the stored turn and the response with it.
+            logger.error(
+                "tool_name=<%s>, agent_name=<%s>, tool_use_id=<%s>, interrupt_ids=<%s> | the "
+                "interrupted turn could not be restored, so the response cannot be applied yet: "
+                "raising the interrupt again so it survives to be answered once more",
+                self._tool_name,
+                self._agent_name,
+                tool_use_id,
+                [interrupt.id for interrupt in pending],
+            )
+            return ToolInterruptEvent(tool_use, pending)
+
+        logger.error(
+            "tool_name=<%s>, agent_name=<%s>, tool_use_id=<%s> | cannot resume: the sub-agent's "
+            "interrupted turn is not available, so the interrupt response cannot be applied",
+            self._tool_name,
+            self._agent_name,
+            tool_use_id,
+        )
+        return ToolResultEvent(
+            {
+                "toolUseId": tool_use_id,
+                "status": "error",
+                "content": [{"text": self._unresumable_message(parent_call)}],
+            }
         )
 
     def _restore_interrupted_turn(self, parent_call: _ParentCall) -> bool:
