@@ -125,7 +125,7 @@ Everything above is a default, not a constraint. Here's how to adjust each piece
 Pass a `provider/model` string, a bare model id, or a ready-made `Model` instance:
 
 ```python
-create_harness(model="anthropic/claude-opus-5")  # Anthropic's API directly
+create_harness(model="anthropic/claude-opus-5-5")  # Anthropic's API directly
 create_harness(model="openai/gpt-5.6-sol")         # OpenAI
 create_harness(model="google/gemini-3.5-flash")    # Google
 create_harness(model="bedrock/global.anthropic.claude-opus-5-5")  # the default, spelled out

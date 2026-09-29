@@ -128,7 +128,7 @@ Everything above is a default, not a constraint. Here's how to adjust each piece
 Pass a `provider/model` string, a bare model id, or a ready-made `Model` instance:
 
 ```typescript
-await createHarness({ model: 'anthropic/claude-opus-5' }) // Anthropic's API directly
+await createHarness({ model: 'anthropic/claude-opus-5-5' }) // Anthropic's API directly
 await createHarness({ model: 'openai/gpt-5.6-sol' }) // OpenAI
 await createHarness({ model: 'google/gemini-3.5-flash' }) // Google
 await createHarness({ model: 'bedrock/global.anthropic.claude-opus-5-5' }) // the default, spelled out
