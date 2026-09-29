@@ -240,9 +240,10 @@ class Agent(AgentBase, LocalAgent):
                 context summarization, memory extraction, the HITL risk classifier, LLM steering, the
                 goal judge, and the ``web_fetch`` analyst. Defaults to ``model``, so leaving it unset
                 changes nothing; set it (typically to a smaller, cheaper model) to move every side call
-                off the main model at once. A component configured with its own model keeps that model.
-                Accepts a ``Model`` or a Bedrock model id string, like ``model``; a ``ModelRouter`` is
-                not accepted because auxiliary calls run outside the agent loop the router attaches to.
+                off the main model at once. Each side call resolves its model as: the component's own
+                ``model=`` > ``aux_model`` > ``model``. Accepts a ``Model`` or a Bedrock model id string,
+                like ``model``; a ``ModelRouter`` is not accepted because auxiliary calls run outside the
+                agent loop the router attaches to.
             messages: List of initial messages to pre-load into the conversation.
                 Defaults to an empty list if None.
             tools: List of tools to make available to the agent.
@@ -690,8 +691,7 @@ class Agent(AgentBase, LocalAgent):
     def aux_model(self) -> Model:
         """Model for auxiliary side calls (summarization, memory extraction, classification, steering, web fetch).
 
-        The ``aux_model`` passed at construction, or ``model`` when none was, so with no configuration
-        this is the same model the agent uses. A component configured with its own model keeps that model.
+        Resolution order: the ``aux_model`` passed at construction > ``model``.
         """
         return self._aux_model if self._aux_model is not None else self.model
 

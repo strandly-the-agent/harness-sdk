@@ -71,8 +71,8 @@ class ExtractionCoordinator:
         Args:
             bindings: The extraction-configured stores this coordinator manages,
                 each paired with its fully-resolved config.
-            default_model: Model for extractors that do not configure their own: the agent's
-                ``aux_model``, which itself defaults to the agent's main ``model``.
+            default_model: Model for extractors that do not configure their own
+                (``agent.aux_model`` > ``agent.model``).
         """
         self._stores = [binding.store for binding in bindings]
         # Per store: its resolved extraction config (triggers, extractor, filter).
