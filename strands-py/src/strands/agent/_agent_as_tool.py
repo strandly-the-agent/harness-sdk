@@ -28,6 +28,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DELEGATION_DESCRIPTION_SUFFIX = (
+    " Calling this tool will return its response directly to the user as the final answer."
+    " It should be the only tool called in the turn."
+)
+
 _INTERRUPTED_TURNS_KEY = "sub_agent_interrupted_turns"
 """Key under which an orchestrator's interrupt context holds interrupted sub-agent turns, keyed by tool use ID."""
 
@@ -155,11 +160,6 @@ class _ParentCall:
         """Free the stored turn once it has been restored."""
         stored: dict[str, Any] = self._parent._interrupt_state.context.get(_INTERRUPTED_TURNS_KEY) or {}
         stored.pop(self._tool_use_id, None)
-
-DELEGATION_DESCRIPTION_SUFFIX = (
-    " Calling this tool will return its response directly to the user as the final answer."
-    " It should be the only tool called in the turn."
-)
 
 
 class _AgentAsTool(AgentTool):
