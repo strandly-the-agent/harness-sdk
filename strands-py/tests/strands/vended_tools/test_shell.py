@@ -5,6 +5,7 @@ Each call runs in a fresh shell; state does not persist across calls. These
 spawn ``sh`` and require POSIX, so they are skipped on Windows.
 """
 
+import json
 import sys
 from types import SimpleNamespace
 
@@ -37,11 +38,18 @@ class TestMakeShell:
         result = await sandbox_shell(command='echo "hello sandbox"', tool_context=_tool_context())
         assert "hello sandbox" in result["output"]
         assert result["error"] == ""
+        assert result["exit_code"] == 0
 
     @pytest.mark.asyncio
     async def test_captures_stderr_via_sandbox(self, sandbox_shell):
         result = await sandbox_shell(command='echo "oops" >&2', tool_context=_tool_context())
         assert "oops" in result["error"]
+        assert result["exit_code"] == 0
+
+    @pytest.mark.asyncio
+    async def test_reports_nonzero_exit_code(self, sandbox_shell):
+        result = await sandbox_shell(command="exit 42", tool_context=_tool_context())
+        assert result["exit_code"] == 42
 
     @pytest.mark.asyncio
     async def test_does_not_persist_state_between_calls(self, sandbox_shell):
@@ -53,6 +61,15 @@ class TestMakeShell:
     async def test_respects_timeout(self, sandbox_shell):
         with pytest.raises(SandboxTimeoutError):
             await sandbox_shell(command="sleep 10", tool_context=_tool_context(), timeout=0.1)
+
+    @pytest.mark.asyncio
+    async def test_timeout_error_carries_partial_output_with_success_field_names(self, sandbox_shell):
+        with pytest.raises(SandboxTimeoutError) as exc_info:
+            await sandbox_shell(
+                command="echo partial; echo warn >&2; sleep 5", tool_context=_tool_context(), timeout=0.3
+            )
+        partial = {"output": "partial\n", "error": "warn\n", "exit_code": 124}
+        assert str(exc_info.value) == f"Execution timed out after 0.3 seconds\n{json.dumps(partial)}"
 
     @pytest.mark.asyncio
     async def test_wraps_sandbox_error_as_shell_execution_error(self):
@@ -107,20 +124,42 @@ class TestToolMetadata:
 
 
 class TestDeprecatedBashAliases:
-    """The ``bash`` name is retained until v2.0.0 but warns and resolves to ``shell``."""
+    """The ``bash`` aliases are retained until v2.0.0, warn, and keep the pre-rename name.
 
-    def test_bash_alias_warns_and_returns_shell(self):
+    Keeping ``tool_name == "bash"`` is what makes the alias backwards compatible:
+    consumers key registries, hooks, and defaults lists on the runtime name, so an
+    alias that returned a tool named ``shell`` would still break them.
+    """
+
+    def test_bash_alias_warns_and_keeps_its_name(self):
         import strands.vended_tools as vended_tools
 
         with pytest.deprecated_call(match="bash is deprecated"):
-            assert vended_tools.bash is shell
+            tool = vended_tools.bash
+        assert tool.tool_name == "bash"
 
-    def test_make_bash_alias_warns_and_builds_a_shell_tool(self):
+    def test_bash_alias_returns_the_same_instance_each_time(self):
+        import strands.vended_tools as vended_tools
+
+        with pytest.deprecated_call(match="bash is deprecated"):
+            first = vended_tools.bash
+        with pytest.deprecated_call(match="bash is deprecated"):
+            second = vended_tools.bash
+        assert first is second
+
+    def test_bash_alias_matches_shell_apart_from_the_name(self):
+        import strands.vended_tools as vended_tools
+
+        with pytest.deprecated_call(match="bash is deprecated"):
+            tool = vended_tools.bash
+        assert tool.tool_spec == {**shell.tool_spec, "name": "bash"}
+
+    def test_make_bash_alias_warns_and_builds_a_bash_named_tool(self):
         import strands.vended_tools as vended_tools
 
         with pytest.deprecated_call(match="make_bash is deprecated"):
             tool = vended_tools.make_bash()
-        assert tool.tool_name == "shell"
+        assert tool.tool_name == "bash"
 
     def test_make_bash_alias_forwards_arguments(self):
         import strands.vended_tools as vended_tools
@@ -134,6 +173,29 @@ class TestDeprecatedBashAliases:
         import strands.vended_tools as vended_tools
 
         assert "make_shell" in vended_tools.make_bash.__deprecated__
+
+    def test_make_bash_deprecation_message_is_a_literal(self):
+        """PEP 702 checkers only honor @deprecated when the argument is a string literal.
+
+        An f-string over _RENAME_RATIONALE keeps the runtime warning and __deprecated__
+        attribute working while mypy silently reports nothing, so guard the source.
+        """
+        import ast
+        import inspect
+
+        import strands.vended_tools._bash as _bash
+
+        tree = ast.parse(inspect.getsource(_bash))
+        decorators = [
+            decorator
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "make_bash"
+            for decorator in node.decorator_list
+            if isinstance(decorator, ast.Call) and getattr(decorator.func, "id", None) == "deprecated"
+        ]
+
+        assert len(decorators) == 1
+        assert isinstance(decorators[0].args[0], ast.Constant)
 
     def test_unknown_attribute_still_raises(self):
         import strands.vended_tools as vended_tools

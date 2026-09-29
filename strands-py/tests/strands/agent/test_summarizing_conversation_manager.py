@@ -10,6 +10,7 @@ from strands.agent.conversation_manager.summarizing_conversation_manager import 
 )
 from strands.hooks.events import BeforeModelCallEvent
 from strands.hooks.registry import HookRegistry
+from strands.models.model import Model
 from strands.types.content import Messages
 from strands.types.exceptions import ContextWindowOverflowException
 from tests.fixtures.mocked_model_provider import MockedModelProvider
@@ -325,6 +326,33 @@ def test_apply_management_no_op(summarizing_manager, mock_agent):
 
     # Should never modify messages - summarization only happens on context overflow
     assert mock_agent.messages == original_messages
+
+
+def test_summarization_agent_reasoning_blocks_are_dropped_from_summary():
+    """A reasoning summarizer's reply is re-roled as user with only its text kept."""
+
+    class ReasoningMockAgent(MockAgent):
+        def __call__(self, prompt):
+            result = Mock()
+            result.message = {
+                "role": "assistant",
+                "content": [
+                    {"reasoningContent": {"reasoningText": {"text": "thinking", "signature": "sig"}}},
+                    {"text": "Summary"},
+                ],
+            }
+            return result
+
+    manager = SummarizingConversationManager(summarization_agent=cast("Agent", ReasoningMockAgent()))
+    messages: Messages = [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [{"text": "Hi there"}]},
+    ]
+
+    tru_summary = manager._generate_summary(messages, create_mock_agent())
+
+    exp_summary = {"role": "user", "content": [{"text": "Summary"}]}
+    assert tru_summary == exp_summary
 
 
 def test_init_with_custom_parameters():
@@ -838,6 +866,8 @@ def _make_summarizing_threshold_agent(messages, summary_response="Summary of con
     agent.messages = messages
     agent.model = MagicMock()
     agent.model.context_window_limit = context_window_limit
+    agent.model._utilization_limit_warned = False
+    agent.model.estimate_utilization = lambda input_tokens: Model.estimate_utilization(agent.model, input_tokens)
     agent.model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream(summary_response))
     return agent
 
@@ -900,6 +930,8 @@ def test_proactive_compression_swallows_errors():
     agent.messages = messages
     agent.model = MagicMock()
     agent.model.context_window_limit = 1000
+    agent.model._utilization_limit_warned = False
+    agent.model.estimate_utilization = lambda input_tokens: Model.estimate_utilization(agent.model, input_tokens)
     agent.model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream_error(RuntimeError("model failed")))
 
     registry = HookRegistry()

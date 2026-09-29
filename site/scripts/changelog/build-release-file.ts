@@ -15,7 +15,7 @@ export interface BuildDeps {
 
 function fileNameFor(sdk: string, language: string | undefined, version: string): string {
   if (sdk === 'evals') return `evals/v${version}.md`
-  return `harness/${language}-v${version}.md`
+  return `sdk/${language}-v${version}.md`
 }
 
 export async function buildReleaseFile(
@@ -37,13 +37,13 @@ export async function buildReleaseFile(
   // preserved as curated narrative via mergePreserving below).
   const { entries: parsed, warning } = await deps.deriveEntries(repo, release)
 
-  // Entry gates: docs-only PRs drop on every stream; monorepo streams also
-  // drop a PR that touches ONLY the other language's dir. Only a POSITIVE dir
-  // signal gates -- empty/unknown languages are kept (pre-monorepo PRs have no
-  // strands-py/strands-ts dirs; gating on empty would wrongly empty those
-  // releases).
+  // Entry gates: docs-only PRs drop on every stream; monorepo streams also drop
+  // a PR whose paths point ONLY at the other language (see languagesFromFiles).
+  // Only a POSITIVE language signal gates -- empty/unknown languages are kept
+  // (pre-monorepo PRs have no strands-py/strands-ts dirs; gating on empty would
+  // wrongly empty those releases).
   const isMonorepoStream =
-    meta.sdk === 'harness' && (release.tag_name.startsWith('python/') || release.tag_name.startsWith('typescript/'))
+    meta.sdk === 'sdk' && (release.tag_name.startsWith('python/') || release.tag_name.startsWith('typescript/'))
 
   const dropFromStream = (enr: Enrichment) =>
     enr.docsOnly ||

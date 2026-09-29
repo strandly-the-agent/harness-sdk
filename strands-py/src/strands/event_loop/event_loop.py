@@ -12,14 +12,16 @@ import copy
 import logging
 import uuid
 from collections.abc import AsyncGenerator, Callable
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace as trace_api
 
 from .._middleware.stages import InvokeModelContext, InvokeModelStage
+from ..agent import _continuation
 from ..experimental.checkpoint import Checkpoint, CheckpointPosition
 from ..hooks import AfterModelCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolsEvent
-from ..telemetry.metrics import Trace
+from ..interrupt import InterruptException, PendingToolExecution
+from ..telemetry.metrics import Trace, _total_prompt_tokens
 from ..telemetry.tracer import Tracer, get_tracer
 from ..tools._validator import validate_and_prepare_tools
 from ..tools.structured_output._structured_output_context import StructuredOutputContext
@@ -123,10 +125,11 @@ def _has_tool_use_in_latest_message(messages: "Messages") -> bool:
 async def _estimate_input_tokens(agent: "Agent") -> int:
     """Estimate the input token count for the next model call.
 
-    Reads inputTokens + outputTokens from the last assistant message's metadata as a known
-    baseline, then estimates only new messages added after it. Falls back to full estimation
-    when no metadata is available (cold start or first call). On cold start, tool specs are
-    resolved lazily so that the caller does not need to resolve them before BeforeModelCallEvent.
+    Reads the total prompt the model processed (including cached tokens) plus outputTokens from the
+    last assistant message's metadata as a known baseline, then estimates only new messages added
+    after it. Falls back to full estimation when no metadata is available (cold start or first call).
+    On cold start, tool specs are resolved lazily so that the caller does not need to resolve them
+    before BeforeModelCallEvent.
 
     Args:
         agent: The agent instance with messages and model.
@@ -145,7 +148,7 @@ async def _estimate_input_tokens(agent: "Agent") -> int:
 
     if last_assistant_idx >= 0:
         usage = messages[last_assistant_idx]["metadata"]["usage"]
-        known_baseline = usage["inputTokens"] + usage["outputTokens"]
+        known_baseline = _total_prompt_tokens(usage) + usage["outputTokens"]
         new_messages = messages[last_assistant_idx + 1 :]
         if not new_messages:
             return known_baseline
@@ -283,10 +286,11 @@ async def event_loop_cycle(
 
     with trace_api.use_span(cycle_span, end_on_exit=False):
         try:
-            # Skipping model invocation if in interrupt state as interrupts are currently only supported for tool calls.
-            if agent._interrupt_state.activated:
+            # Resume a tool interrupt by replaying its stored message instead of calling the model.
+            pending_tool_execution = agent._interrupt_state.pending_tool_execution
+            if agent._interrupt_state.activated and pending_tool_execution is not None:
                 stop_reason: StopReason = "tool_use"
-                message = agent._interrupt_state.context["tool_use_message"]
+                message = pending_tool_execution.assistant_message
             # Skip model invocation if the latest message contains ToolUse
             elif _has_tool_use_in_latest_message(agent.messages):
                 stop_reason = "tool_use"
@@ -318,8 +322,12 @@ async def event_loop_cycle(
                 )
 
             if stop_reason == "tool_use":
-                # Emit after_model checkpoint, unless we just resumed from one or an interrupt.
-                if agent._checkpointing and not agent._cancel_signal.is_set() and not agent._interrupt_state.activated:
+                # Emit after_model checkpoint, unless we just resumed from one or a tool interrupt.
+                if (
+                    agent._checkpointing
+                    and not agent._observe_cancellation()
+                    and agent._interrupt_state.pending_tool_execution is None
+                ):
                     resume_position = agent._checkpoint_resume_position
                     agent._checkpoint_resume_position = None
                     if resume_position != "after_model":
@@ -363,7 +371,8 @@ async def event_loop_cycle(
                     raise StructuredOutputException(
                         "The model failed to invoke the structured output tool even after it was forced."
                     )
-                structured_output_context.set_forced_mode()
+                tool_spec = structured_output_context.get_tool_spec()
+                structured_output_context.set_forced_mode({"tool": {"name": tool_spec["name"]}} if tool_spec else None)
                 logger.debug("Forcing structured output tool")
                 await agent._append_messages(
                     {"role": "user", "content": [{"text": structured_output_context.structured_output_prompt}]}
@@ -387,6 +396,7 @@ async def event_loop_cycle(
             EventLoopException,
             ContextWindowOverflowException,
             MaxTokensReachedException,
+            InterruptException,
         ) as e:
             # These exceptions should bubble up directly rather than get wrapped in an EventLoopException
             tracer.end_span_with_error(cycle_span, str(e), e)
@@ -444,6 +454,19 @@ async def recurse_event_loop(
     recursive_trace.end()
 
 
+async def _invoke_before_model_call_hooks(agent: "Agent", event: BeforeModelCallEvent) -> BeforeModelCallEvent:
+    """Run BeforeModelCallEvent hooks, raising any interrupt they registered.
+
+    No tool execution is pending at this point, so resuming re-enters the same model call.
+    """
+    event, interrupts = await agent.hooks.invoke_callbacks_async(event)
+    if not interrupts:
+        return event
+    for interrupt in interrupts:
+        agent._interrupt_state.interrupts.setdefault(interrupt.id, interrupt)
+    raise InterruptException(interrupts[0])
+
+
 async def _handle_model_execution(
     agent: "Agent",
     cycle_span: Any,
@@ -492,9 +515,27 @@ async def _handle_model_execution(
                 invocation_state=invocation_state,
                 projected_input_tokens=projected_input_tokens,
             )
-            await agent.hooks.invoke_callbacks_async(before_model_call_event)
+            model_continuation: Messages | None = None
+            try:
+                before_model_call_event = await _invoke_before_model_call_hooks(agent, before_model_call_event)
+                model_continuation = await _continuation.prepare(
+                    before_model_call_event,
+                    agent._convert_prompt_to_messages,
+                )
+            finally:
+                if model_continuation is None:
+                    await _continuation.abandon(
+                        before_model_call_event,
+                        RuntimeError(
+                            "Agent stream closed before continuation input was incorporated into agent history"
+                        ),
+                    )
 
             if before_model_call_event.cancel:
+                await _continuation.abandon(
+                    before_model_call_event,
+                    RuntimeError("Continuation abandoned by BeforeModelCallEvent"),
+                )
                 cancel_text = (
                     before_model_call_event.cancel
                     if isinstance(before_model_call_event.cancel, str)
@@ -519,6 +560,17 @@ async def _handle_model_execution(
                     continue
                 yield ModelStopReason(stop_reason=stop_reason, message=message, usage=usage, metrics=metrics)
                 break
+
+            if model_continuation is not None:
+                await agent._append_continuation_messages(model_continuation, before_model_call_event)
+                try:
+                    projected_input_tokens = await _estimate_input_tokens(agent)
+                except Exception as error:
+                    projected_input_tokens = None
+                    logger.debug(
+                        "error=<%s> | token estimation failed after continuation input, proceeding without estimate",
+                        error,
+                    )
 
             if structured_output_context.forced_mode:
                 tool_spec = structured_output_context.get_tool_spec()
@@ -608,6 +660,8 @@ async def _handle_model_execution(
 
             break  # Success! Break out of retry loop
 
+        except InterruptException:
+            raise
         except Exception as e:
             after_model_call_event = AfterModelCallEvent(
                 agent=agent,
@@ -666,6 +720,10 @@ def _make_invoke_model_terminal(
     """
 
     async def terminal(ctx: InvokeModelContext) -> AsyncGenerator[Any, None]:
+        # Observe a linked external cancel signal before the model call so the stream's
+        # first between-chunk checkpoint sees a cancellation requested by an earlier hook.
+        agent._observe_cancellation()
+
         system_prompt_str, system_prompt_content = split_system_prompt(ctx.system_prompt)
 
         model_id = ctx.model.config.get("model_id") if hasattr(ctx.model, "config") else None
@@ -688,7 +746,9 @@ def _make_invoke_model_terminal(
                     tool_choice=ctx.tool_choice,
                     invocation_state=ctx.invocation_state,
                     model_state=model_state,
+                    dynamic_trailing_blocks=ctx.dynamic_trailing_blocks,
                     cancel_signal=agent._cancel_signal,
+                    agent_metadata=agent._metadata,
                 ):
                     yield event
 
@@ -699,33 +759,6 @@ def _make_invoke_model_terminal(
                 raise
 
     return terminal
-
-
-_LOOP_OWNED_CONTEXT_KEYS: Final = ("tool_use_message", "tool_results", "responses")
-"""Interrupt-context keys the event loop owns and refreshes on every park.
-
-Every other key in an agent's interrupt context belongs to whoever put it there - an agent-as-tool
-parks an ephemeral sub-agent's interrupted turn that way - and has to survive parking.
-"""
-
-
-def _park_interrupt_context(agent: "Agent", message: Message, tool_results: list[ToolResult]) -> None:
-    """Rebuild an agent's interrupt context for a parked turn, keeping keys the event loop does not own.
-
-    ``tool_use_message`` and ``tool_results`` describe this park, and ``responses`` belongs to the
-    resume that has just been consumed, so all three are refreshed here. Any other key belongs to
-    whoever put it there — an agent-as-tool parks the interrupted turn of an ephemeral sub-agent this
-    way — and has to survive so it is still there on the next resume.
-
-    Args:
-        agent: Agent whose turn is being parked.
-        message: Tool use message that triggered the interrupt.
-        tool_results: Results of the tools that did complete.
-    """
-    carried = {
-        key: value for key, value in agent._interrupt_state.context.items() if key not in _LOOP_OWNED_CONTEXT_KEYS
-    }
-    agent._interrupt_state.context = {**carried, "tool_use_message": message, "tool_results": tool_results}
 
 
 async def _stop_for_interrupts(
@@ -746,7 +779,10 @@ async def _stop_for_interrupts(
     so interrupt persistence logic lives in one place.
     """
     # Session state stored on AfterInvocationEvent.
-    _park_interrupt_context(agent, message, tool_results)
+    agent._interrupt_state.pending_tool_execution = PendingToolExecution(
+        assistant_message=message,
+        completed_tool_results=tool_results,
+    )
     agent._interrupt_state.activate()
 
     agent.event_loop_metrics.end_cycle(cycle_start_time, cycle_trace)
@@ -800,8 +836,10 @@ async def _handle_tool_execution(
     tool_uses: list[ToolUse] = [content["toolUse"] for content in message["content"] if "toolUse" in content]
     tool_results: list[ToolResult] = []
 
-    if agent._interrupt_state.activated:
-        tool_results.extend(agent._interrupt_state.context["tool_results"])
+    # Merge tool results from a resumed tool interrupt.
+    pending_tool_execution = agent._interrupt_state.pending_tool_execution
+    if agent._interrupt_state.activated and pending_tool_execution is not None:
+        tool_results.extend(pending_tool_execution.completed_tool_results)
 
         # Filter to only the interrupted tools when resuming from interrupt (tool uses without results)
         tool_use_ids = {tool_result["toolUseId"] for tool_result in tool_results}
@@ -834,7 +872,7 @@ async def _handle_tool_execution(
         cancel_message = (
             before_tools_event.cancel if isinstance(before_tools_event.cancel, str) else "Tool cancelled by hook"
         )
-    elif agent._cancel_signal.is_set():
+    elif agent._observe_cancellation():
         cancel_message = "Tool execution cancelled"
 
     structured_output_result = None
@@ -887,7 +925,10 @@ async def _handle_tool_execution(
         except Exception:
             # Persist pending interrupts before re-raising so they aren't lost.
             if interrupts:
-                _park_interrupt_context(agent, message, tool_results)
+                agent._interrupt_state.pending_tool_execution = PendingToolExecution(
+                    assistant_message=message,
+                    completed_tool_results=tool_results,
+                )
                 agent._interrupt_state.activate()
             raise
 
@@ -909,7 +950,12 @@ async def _handle_tool_execution(
             yield interrupt_event
         return
 
-    agent._interrupt_state.deactivate()
+    # Reset interrupt state if tools ran so the next cycle starts clean.
+    if not agent._observe_cancellation():
+        agent._interrupt_state.end_tool_cycle()
+    # Update stored results so replay filter skips already-executed tools on next resume.
+    elif cancel_message is None:
+        agent._interrupt_state.set_pending_tool_results(tool_results)
 
     await agent._append_messages(tool_result_message)
 
@@ -923,12 +969,14 @@ async def _handle_tool_execution(
 
     # Hook requested halt: exit without calling the model again.
     if after_tools_event.end_turn:
-        end_turn_text = (
-            after_tools_event.end_turn
-            if isinstance(after_tools_event.end_turn, str)
-            else "Turn ended early by hook after tool execution"
-        )
-        end_turn_message: Message = {"role": "assistant", "content": [{"text": end_turn_text}]}
+        end_turn_value = after_tools_event.end_turn
+        if isinstance(end_turn_value, list):
+            end_turn_content = list(end_turn_value)
+        elif isinstance(end_turn_value, str):
+            end_turn_content = [{"text": end_turn_value}]
+        else:
+            end_turn_content = [{"text": "Turn ended early by hook after tool execution"}]
+        end_turn_message: Message = {"role": "assistant", "content": end_turn_content}
         await agent._append_messages(end_turn_message)
         yield EventLoopStopEvent(
             "end_turn",
@@ -949,7 +997,7 @@ async def _handle_tool_execution(
         )
         return
 
-    if agent._cancel_signal.is_set():
+    if agent._observe_cancellation():
         yield EventLoopStopEvent(
             "cancelled",
             message,

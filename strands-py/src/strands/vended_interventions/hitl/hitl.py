@@ -180,9 +180,7 @@ class HumanInTheLoop(InterventionHandler):
         self._allowed_tools = set(allowed_tools or [])
         self._classifier = self._resolve_classifier(classifier)
         if self._classifier and "*" in self._allowed_tools:
-            logger.warning(
-                "classifier has no effect when allowed_tools contains '*' — all tools are already allowed"
-            )
+            logger.warning("classifier has no effect when allowed_tools contains '*' — all tools are already allowed")
         self._classified_tool_use_ids: set[str] = set()
         self._enable_trust = enable_trust
         self._evaluate_trust = evaluate_trust if evaluate_trust is not None else self._is_trust_response
@@ -296,6 +294,14 @@ class HumanInTheLoop(InterventionHandler):
                     logger.warning(
                         "tool=<%s> | classifier returned malformed result, defaulting to approval required",
                         tool_name,
+                    )
+                    return ClassifierResult(requires_human_in_the_loop=True)
+                decision: Any = raw_result.requires_human_in_the_loop
+                if not isinstance(decision, bool):
+                    logger.warning(
+                        "tool=<%s> | classifier returned a non-boolean decision (%r), defaulting to approval required",
+                        tool_name,
+                        decision,
                     )
                     return ClassifierResult(requires_human_in_the_loop=True)
                 return raw_result
