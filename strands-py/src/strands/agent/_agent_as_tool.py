@@ -408,13 +408,13 @@ class _AgentAsTool(AgentTool):
                     return ToolInterruptEvent(tool_use, pending)
             else:
                 del turns[tool_use_id]
-        if turn is None and not self._agent._interrupt_state.activated:
-            logger.error(
-                "tool_name=<%s>, tool_use_id=<%s> | cannot resume: the sub-agent's interrupted turn is not available",
-                self._tool_name,
-                tool_use_id,
-            )
         if not self._agent._interrupt_state.activated:
+            if turn is None:
+                logger.error(
+                    "tool_name=<%s>, tool_use_id=<%s> | cannot resume: the sub-agent's interrupted turn is not available",
+                    self._tool_name,
+                    tool_use_id,
+                )
             return ToolResultEvent(
                 {
                     "toolUseId": tool_use_id,
@@ -429,6 +429,9 @@ class _AgentAsTool(AgentTool):
                 }
             )
 
+        logger.debug(
+            "tool_name=<%s>, tool_use_id=<%s> | resuming sub-agent from interrupt", self._tool_name, tool_use_id
+        )
         return [
             {
                 "interruptResponse": {

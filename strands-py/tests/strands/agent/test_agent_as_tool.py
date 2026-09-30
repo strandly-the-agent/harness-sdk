@@ -1211,3 +1211,32 @@ async def test_stream_resets_stale_interrupt_state_on_a_fresh_call(fake_agent, o
 
     assert fake_agent._interrupt_state.activated is False
     assert fake_agent._interrupt_state.interrupts == {}
+
+
+@pytest.mark.asyncio
+async def test_stream_resume_maps_only_this_calls_responses_when_the_tool_use_id_bears_the_separator(
+    fake_agent, orchestrator
+):
+    """A tool use id containing ':' is escaped, so a longer call's answers are not adopted."""
+    fake_agent._interrupt_state.interrupts["interrupt-1"] = Interrupt(id="interrupt-1", name="approval", reason="r")
+    fake_agent._interrupt_state.activate()
+
+    mine = namespaced_id("tool:123", "interrupt-1")
+    other = namespaced_id("tool:123:extra", "interrupt-1")
+    orchestrator._interrupt_state.interrupts[mine] = Interrupt(id=mine, name="approval", reason="r")
+    orchestrator._interrupt_state.context["responses"] = [
+        {"interruptResponse": {"interruptId": other, "response": "DENY"}},
+        {"interruptResponse": {"interruptId": mine, "response": "APPROVE"}},
+    ]
+    orchestrator._interrupt_state.activate()
+
+    fake_agent.stream_async = MagicMock(return_value=_mock_stream_async(interrupt_result_for("interrupt-1")))
+    tool = _AgentAsTool(fake_agent, name="fake_agent", description="desc", preserve_context=True)
+    tool_use = {"toolUseId": "tool:123", "name": "fake_agent", "input": {"input": "go"}}
+
+    async for _ in tool.stream(tool_use, {"agent": orchestrator}):
+        pass
+
+    tru_prompt = fake_agent.stream_async.call_args[0][0]
+    exp_prompt = [{"interruptResponse": {"interruptId": "interrupt-1", "response": "APPROVE"}}]
+    assert tru_prompt == exp_prompt
