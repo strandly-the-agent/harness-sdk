@@ -42,6 +42,7 @@ def _make_empty_stream():
 def mock_agent():
     agent = unittest.mock.MagicMock()
     agent.model = unittest.mock.AsyncMock()
+    agent.model.supports_compaction = False
     agent.model.count_tokens = unittest.mock.AsyncMock(return_value=5000)
     agent.model.estimate_utilization = unittest.mock.MagicMock(return_value=0.9)
     agent.model.stream = _make_stream_events("Summary of content.")

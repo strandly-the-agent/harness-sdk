@@ -47,6 +47,7 @@ async def _mock_model_stream_error(error):
 
 def mock_model(summary_text="Summary of older messages"):
     model = Mock()
+    model.supports_compaction = False
     model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream(summary_text))
     return model
 
@@ -54,7 +55,7 @@ def mock_model(summary_text="Summary of older messages"):
 def make_agent(messages, model=None):
     agent = Mock()
     agent.messages = messages
-    agent.model = model if model is not None else Mock()
+    agent.model = model if model is not None else mock_model()
     agent.aux_model = agent.model
     return agent
 
@@ -160,7 +161,7 @@ class TestSummarizeContext:
         assert messages[0]["role"] == "user"
 
     async def test_returns_failure_message_when_model_throws(self, alist):
-        model = Mock()
+        model = mock_model()
         model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream_error(RuntimeError("model error")))
         messages = make_messages(20)
         agent = make_agent(messages, model)

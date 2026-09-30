@@ -15,7 +15,9 @@ from .compression.context_compression import (
     DEFAULT_SUMMARIZATION_PROMPT,
     adjust_split_point_for_tool_pairs,
     as_user_summary,
+    compact_messages,
     generate_summary,
+    strip_reasoning,
 )
 from .compression.pin_message import apply_pin_first, partition_pinned
 from .conversation_manager import ConversationManager, ProactiveCompressionConfig
@@ -191,8 +193,15 @@ class SummarizingConversationManager(ConversationManager):
         if self._summary_message:
             self.removed_message_count -= 1
 
-        # Generate summary
-        self._summary_message = self._generate_summary(to_summarize, agent)
+        # The provider's signed summary must open the conversation, so pinned messages ahead of it rule it out.
+        compacted = None
+        if not protected_to_preserve and self.summarization_agent is None:
+            compacted = run_async(lambda: compact_messages(agent, to_summarize, self.summarization_system_prompt))
+        if compacted is not None:
+            self._summary_message = compacted
+        else:
+            self._summary_message = self._generate_summary(to_summarize, agent)
+            strip_reasoning(protected_to_preserve + remaining_messages)
         # Assign tracking id to the summary message since it bypasses the append method.
         _ensure_tracking_id(self._summary_message)
 

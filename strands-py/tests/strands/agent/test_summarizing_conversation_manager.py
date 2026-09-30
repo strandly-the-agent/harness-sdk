@@ -50,6 +50,7 @@ class MockAgent:
         self.system_prompt = None
         self.messages = []
         self.model = Mock()
+        self.model.supports_compaction = False
         self.model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream(self.summary_response))
         self.aux_model = self.model
         self.call_tracker = Mock()
@@ -207,6 +208,7 @@ def test_reduce_context_raises_on_summarization_failure():
     """Test that reduce_context raises exception when model.stream() fails."""
     failing_agent = Mock()
     failing_agent.model = Mock()
+    failing_agent.model.supports_compaction = False
     failing_agent.model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream_error(Exception("Agent failed")))
     failing_agent.aux_model = failing_agent.model
     failing_agent_messages: Messages = [
@@ -870,6 +872,7 @@ def _make_summarizing_threshold_agent(messages, summary_response="Summary of con
     agent = MagicMock()
     agent.messages = messages
     agent.model = MagicMock()
+    agent.model.supports_compaction = False
     agent.model.context_window_limit = context_window_limit
     agent.model._utilization_limit_warned = False
     agent.model.estimate_utilization = lambda input_tokens: Model.estimate_utilization(agent.model, input_tokens)
