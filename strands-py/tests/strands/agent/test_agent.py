@@ -341,6 +341,23 @@ def test_agent__init__aux_model_rejects_model_router():
         Agent(aux_model=ModelRouter([MockedModelProvider([])]))
 
 
+def test_agent_aux_model_setter(mock_model):
+    agent = Agent(model=mock_model)
+    aux_model = MockedModelProvider([])
+
+    agent.aux_model = aux_model
+    assert agent.aux_model is aux_model
+
+    agent.aux_model = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    assert isinstance(agent.aux_model, BedrockModel)
+
+    agent.aux_model = None
+    assert agent.aux_model is mock_model
+
+    with pytest.raises(TypeError, match="aux_model must be a Model"):
+        agent.aux_model = ModelRouter([MockedModelProvider([])])
+
+
 def test_agent__init__nested_tools_flattening(tool_decorated, tool_module, tool_imported, tool_registry):
     _ = tool_registry
     # Nested structure: [tool_decorated, [tool_module, [tool_imported]]]

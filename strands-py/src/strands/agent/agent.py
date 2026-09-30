@@ -695,6 +695,11 @@ class Agent(AgentBase, LocalAgent):
         """
         return self._aux_model if self._aux_model is not None else self.model
 
+    @aux_model.setter
+    def aux_model(self, aux_model: Model | str | None) -> None:
+        """Reassign the auxiliary model; ``None`` reverts to following ``model``."""
+        self._aux_model = _resolve_aux_model(aux_model)
+
     @property
     def context_manager(self) -> "ContextManager | None":
         """The ContextManager plugin, if one is registered on this agent."""
