@@ -197,21 +197,12 @@ describe("concurrentInvocationMode 'inject'", () => {
     expect(step.value).toBe(await first)
   })
 
-  it('rejects an absorbed inject with the error that ended the invocation it joined', async () => {
+  it('rejects an absorbed inject with the same error that ended the invocation it joined', async () => {
     const gate = createGate()
-    const failing = tool({
-      name: 'boom',
-      description: 'fails after the fold',
-      callback: async () => {
-        throw new Error('tool exploded')
-      },
-    })
     const model = new MockMessageModel()
       .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
-      .addTurn({ type: 'toolUseBlock', name: 'boom', toolUseId: 't2', input: {} })
-      .addTurn({ type: 'textBlock', text: 'unreached' })
-    const agent = new Agent({ model, tools: [gate.tool, failing], printer: false, concurrentInvocationMode: 'inject' })
-    agent.addHook(AfterInvocationEvent, () => {})
+      .addTurn(new Error('model exploded'))
+    const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'inject' })
 
     const first = agent.invoke('first')
     await gate.started
@@ -220,10 +211,68 @@ describe("concurrentInvocationMode 'inject'", () => {
     gate.release()
 
     const [firstOutcome, injectedOutcome] = await Promise.allSettled([first, injected])
-    // Whatever the running caller observes, the absorbed caller observes the same.
-    expect(injectedOutcome.status).toBe(firstOutcome.status)
-    if (firstOutcome.status === 'fulfilled' && injectedOutcome.status === 'fulfilled') {
-      expect(injectedOutcome.value).toBe(firstOutcome.value)
-    }
+    expect(firstOutcome.status).toBe('rejected')
+    expect(injectedOutcome.status).toBe('rejected')
+    expect((injectedOutcome as PromiseRejectedResult).reason).toBe((firstOutcome as PromiseRejectedResult).reason)
+    expect(agent.pendingInvocations).toHaveLength(0)
+  })
+
+  it('still resolves an already-absorbed inject when a hook denies a later continuation pass', async () => {
+    const gate = createGate()
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'answered both' })
+      .addTurn({ type: 'textBlock', text: 'unreached' })
+    const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'inject' })
+    let resumed = false
+    agent.addHook(AfterInvocationEvent, (event) => {
+      // Force one more pass after the fold, like a plugin resuming the invocation.
+      if (!resumed) {
+        resumed = true
+        event.resume = []
+      }
+    })
+    agent.addHook(BeforeInvocationEvent, (event) => {
+      if (model.callCount === 2) event.cancel = 'denied'
+    })
+
+    const first = agent.invoke('first')
+    await gate.started
+    const injected = agent.invoke('also this')
+    await until(() => agent.pendingInvocations.length === 1, 'inject queued')
+    gate.release()
+
+    const [firstResult, injectedResult] = await Promise.all([first, injected])
+    expect(resultText(firstResult)).toBe('denied')
+    expect(injectedResult).toBe(firstResult)
+    expect(historyShape(agent)[2]).toBe('user: <toolResult> | also this')
+  })
+
+  it('an inject left pending behind a cancelPrevious winner runs on its own instead of joining the winner', async () => {
+    const gate = createGate()
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'winner' })
+      .addTurn({ type: 'textBlock', text: 'own invocation' })
+    const agent = new Agent({ model, tools: [gate.tool], printer: false })
+
+    const first = agent.invoke('first')
+    await gate.started
+    const injected = agent.invoke('follow-up', { ifBusy: 'inject' })
+    await until(() => agent.pendingInvocations.length === 1, 'inject queued')
+    const winner = agent.invoke('urgent', { ifBusy: 'cancelPrevious' })
+
+    expect((await first).stopReason).toBe('cancelled')
+    const winnerResult = await winner
+    expect(resultText(winnerResult)).toBe('winner')
+    const injectedResult = await injected
+    expect(injectedResult).not.toBe(winnerResult)
+    expect(resultText(injectedResult)).toBe('own invocation')
+    expect(historyShape(agent).slice(-4)).toEqual([
+      'user: urgent',
+      'assistant: winner',
+      'user: follow-up',
+      'assistant: own invocation',
+    ])
   })
 })

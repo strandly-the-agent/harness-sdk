@@ -1359,13 +1359,14 @@ export class Agent implements LocalAgent, InvokableAgent {
           continuationEvent = afterEvent
           await this._invokeCallbacks(afterEvent)
           yield afterEvent
-          return new AgentResult({
+          finalResult = new AgentResult({
             stopReason: 'endTurn',
             lastMessage: message,
             traces: this._tracer.localTraces,
             metrics: this._meter.metrics,
             invocationState,
           })
+          return finalResult
         }
 
         let result: AgentResult | undefined

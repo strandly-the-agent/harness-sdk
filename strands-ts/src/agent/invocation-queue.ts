@@ -48,7 +48,8 @@ export interface InjectedInvocation {
   /**
    * Returns the call to the front of the queue as a `'queue'` entry, so it runs as its
    * own invocation once the turn is released. Used when the absorbing invocation ends
-   * before the input reached the model.
+   * before the input reached the model. A call whose `cancelSignal` aborted meanwhile
+   * rejects instead.
    */
   readonly requeue: () => void
 }
@@ -75,11 +76,6 @@ export class InvocationQueue {
 
   get size(): number {
     return this._entries.length
-  }
-
-  /** Whether any `'inject'` call is waiting. */
-  get hasInjects(): boolean {
-    return this._entries.some((entry) => entry.mode === 'inject')
   }
 
   /** Immutable view of the queued entries, in run order. */
@@ -147,14 +143,18 @@ export class InvocationQueue {
   }
 
   /**
-   * Hands the invocation lock to the next waiter, if any. An `'inject'` entry still
-   * queued here missed the invocation it meant to join and runs as its own invocation.
+   * Hands the invocation lock to the next waiter, if any. `'inject'` entries still
+   * queued here missed the invocation they meant to join: they become `'queue'` entries
+   * and run as their own invocations rather than joining the next turn owner.
    *
    * @returns `true` when a waiter took ownership, `false` when the queue is empty
    */
   handoff(): boolean {
     const next = this._entries.shift()
     if (!next) return false
+    for (const entry of this._entries) {
+      if (entry.mode === 'inject') entry.mode = 'queue'
+    }
     next.cleanup()
     next.resolve()
     return true
@@ -176,6 +176,10 @@ export class InvocationQueue {
       resolve: entry.resolve,
       reject: entry.reject,
       requeue: (): void => {
+        if (entry.signal?.aborted) {
+          entry.reject(new PendingInvocationCancelledError(entry.id))
+          return
+        }
         entry.mode = 'queue'
         if (entry.signal) this._armAbort(entry)
         this._entries.unshift(entry)

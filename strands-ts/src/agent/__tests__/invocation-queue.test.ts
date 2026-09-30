@@ -144,12 +144,10 @@ describe('InvocationQueue', () => {
       void queue.wait('i1', { mode: 'inject' }).catch(() => {})
       void queue.wait('q2', { mode: 'queue' }).catch(() => {})
       void queue.wait('i2', { mode: 'inject' }).catch(() => {})
-      expect(queue.hasInjects).toBe(true)
 
       const taken = queue.takeInjects()
       expect(taken.map((inject) => inject.args)).toEqual(['i1', 'i2'])
       expect(queue.list().map((entry) => entry.id)).toEqual(['pending-1', 'pending-3'])
-      expect(queue.hasInjects).toBe(false)
     })
 
     it('an absorbed inject resolves its waiter with the absorbing result', async () => {
@@ -202,6 +200,27 @@ describe('InvocationQueue', () => {
       const waiting = queue.wait('missed', { mode: 'inject' })
       expect(queue.handoff()).toBe(true)
       await expect(waiting).resolves.toBeUndefined()
+    })
+
+    it('handoff demotes injects left behind to queue entries so they do not join the next turn owner', () => {
+      const queue = new InvocationQueue()
+      void queue.wait('missed', { mode: 'inject' }).catch(() => {})
+      void queue.wait('urgent', { mode: 'cancelPrevious' }).catch(() => {})
+
+      expect(queue.handoff()).toBe(true)
+      expect(queue.list().map((entry) => [entry.id, entry.mode])).toEqual([['pending-1', 'queue']])
+      expect(queue.takeInjects()).toEqual([])
+    })
+
+    it('requeue rejects a call whose cancelSignal already aborted instead of queueing it', async () => {
+      const queue = new InvocationQueue()
+      const controller = new AbortController()
+      const waiting = queue.wait('joined', { mode: 'inject', cancelSignal: controller.signal })
+      const [inject] = queue.takeInjects()
+      controller.abort()
+      inject!.requeue()
+      await expect(waiting).rejects.toThrow(PendingInvocationCancelledError)
+      expect(queue.size).toBe(0)
     })
   })
 })
