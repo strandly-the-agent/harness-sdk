@@ -260,3 +260,132 @@ class TestSummarizeStrategyMessageLevel:
         mock_agent.messages = messages
         context = ContextState(messages=messages, agent=mock_agent, utilization=0.9)
         assert await strategy.apply(context) is False
+
+
+def _reasoning(text: str) -> Message:
+    return Message(
+        role="assistant",
+        content=[
+            ContentBlock(reasoningContent={"reasoningText": {"text": "thinking", "signature": "s"}}),
+            ContentBlock(text=text),
+        ],
+    )
+
+
+@pytest.fixture
+def compaction_agent(mock_agent):
+    mock_agent.model.supports_compaction = True
+    mock_agent.model.compact = unittest.mock.AsyncMock(
+        return_value=Message(role="assistant", content=[ContentBlock(text="Compacted", signature="sig-1")])
+    )
+    mock_agent.system_prompt_content = None
+    mock_agent.tool_registry.get_all_tool_specs.return_value = []
+    return mock_agent
+
+
+class TestSummarizeStrategyCompaction:
+    @pytest.mark.asyncio
+    async def test_provider_summary_replaces_the_prefix(self, compaction_agent):
+        strategy = Offload.summarize("*").when(utilization=0.8, preserve_recent=2)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")]),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            _reasoning("old3"),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+            _reasoning("recent-reply"),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        assert await strategy.apply(context) is True
+
+        tru_messages = messages
+        exp_messages = [
+            Message(role="assistant", content=[ContentBlock(text="Compacted", signature="sig-1")]),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+            _reasoning("recent-reply"),
+        ]
+        assert tru_messages == exp_messages
+        compacted = compaction_agent.model.compact.call_args.args[0]
+        assert [msg["content"][-1]["text"] for msg in compacted] == ["first", "old1", "old2", "old3"]
+
+    @pytest.mark.asyncio
+    async def test_provider_summary_merges_with_following_assistant_turn(self, compaction_agent):
+        strategy = Offload.summarize("*").when(utilization=0.8, preserve_recent=1)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")]),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(role="assistant", content=[ContentBlock(text="recent-reply")]),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        assert await strategy.apply(context) is True
+
+        assert messages == [
+            Message(
+                role="assistant",
+                content=[ContentBlock(text="Compacted", signature="sig-1"), ContentBlock(text="recent-reply")],
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_client_summary_and_strips_kept_reasoning(self, compaction_agent):
+        compaction_agent.model.compact = unittest.mock.AsyncMock(return_value=None)
+        strategy = Offload.summarize("*").when(utilization=0.8, preserve_recent=2)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")]),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(role="assistant", content=[ContentBlock(text="old3")]),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+            _reasoning("recent-reply"),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        assert await strategy.apply(context) is True
+
+        assert messages[0]["content"][0]["text"] == "first"
+        assert any("[Summarized:" in block.get("text", "") for msg in messages for block in msg["content"])
+        assert messages[-1] == Message(role="assistant", content=[ContentBlock(text="recent-reply")])
+
+    @pytest.mark.asyncio
+    async def test_pinned_message_in_prefix_skips_provider_compaction(self, compaction_agent):
+        strategy = Offload.summarize("*").when(utilization=0.8, preserve_recent=1)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")]),
+            Message(role="assistant", content=[ContentBlock(text="pinned")], metadata={"custom": {"pinned": True}}),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(role="assistant", content=[ContentBlock(text="old3")]),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        assert await strategy.apply(context) is True
+
+        compaction_agent.model.compact.assert_not_called()
+        assert any("[Summarized:" in block.get("text", "") for msg in messages for block in msg["content"])
+
+    @pytest.mark.asyncio
+    async def test_dedicated_summarization_model_skips_provider_compaction(self, compaction_agent):
+        summarizer = unittest.mock.AsyncMock()
+        summarizer.stream = compaction_agent.model.stream
+        summarizer.count_tokens = unittest.mock.AsyncMock(return_value=10)
+        strategy = Offload.summarize("*", {"model": summarizer}).when(utilization=0.8, preserve_recent=1)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")]),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(role="assistant", content=[ContentBlock(text="old3")]),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        assert await strategy.apply(context) is True
+
+        compaction_agent.model.compact.assert_not_called()

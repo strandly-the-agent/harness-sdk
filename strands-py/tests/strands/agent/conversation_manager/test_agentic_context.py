@@ -1,6 +1,6 @@
 """Tests for the agentic context-management tools."""
 
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -412,3 +412,71 @@ class TestPinContextEmptyConversation:
         agent = make_agent([])
         result = await invoke_tool(pin_context, agent, alist, select="last_turn", action="pin")
         assert result == "No messages in the conversation."
+
+
+def reasoning_msg(text: str) -> Message:
+    return {
+        "role": "assistant",
+        "content": [{"reasoningContent": {"reasoningText": {"text": "thinking", "signature": "s"}}}, {"text": text}],
+    }
+
+
+def compaction_model(summary_text="Compacted"):
+    model = mock_model()
+    model.supports_compaction = True
+    model.compact = AsyncMock(
+        return_value={"role": "assistant", "content": [{"text": summary_text, "signature": "sig-1"}]}
+    )
+    return model
+
+
+@pytest.mark.asyncio
+class TestSummarizeContextCompaction:
+    async def test_provider_summary_replaces_the_prefix_including_the_first_user_message(self, alist):
+        messages = make_messages(20)
+        agent = make_agent(messages, compaction_model())
+
+        result = await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+
+        assert "Summarized 10 message(s)" in result
+        assert messages[0]["role"] == "assistant"
+        assert messages[0]["content"] == [{"text": "Compacted", "signature": "sig-1"}]
+        assert "tracking_id" in messages[0]
+        assert messages[1]["content"][0]["text"] == "Message 11"
+        agent.model.stream.assert_not_called()
+        compacted = agent.model.compact.call_args.args[0]
+        assert [msg["content"][0]["text"] for msg in compacted] == [f"Message {i}" for i in range(1, 11)]
+
+    async def test_falls_back_to_client_summary_and_strips_kept_reasoning(self, alist):
+        messages = make_messages(20)
+        messages[19] = reasoning_msg("Message 20")
+        model = compaction_model()
+        model.compact = AsyncMock(return_value=None)
+        agent = make_agent(messages, model)
+
+        result = await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+
+        assert "Summarized" in result
+        assert messages[0]["role"] == "user"
+        agent.model.stream.assert_called_once()
+        assert messages[-1] == {"role": "assistant", "content": [{"text": "Message 20"}]}
+
+    async def test_client_summary_strips_reasoning_when_model_cannot_compact(self, alist):
+        messages = make_messages(20)
+        messages[19] = reasoning_msg("Message 20")
+        agent = make_agent(messages)
+
+        await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+
+        assert messages[-1] == {"role": "assistant", "content": [{"text": "Message 20"}]}
+
+    async def test_pinned_message_in_range_skips_provider_compaction(self, alist):
+        messages = make_messages(20)
+        pin_message(messages, 2)
+        agent = make_agent(messages, compaction_model())
+
+        await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+
+        agent.model.compact.assert_not_called()
+        agent.model.stream.assert_called_once()
+        assert messages[0]["content"][0]["text"] == "Message 3"
