@@ -1,12 +1,13 @@
 /**
- * Invocation queueing for agents using `'enqueue'` or `'cancelPrevious'` concurrency.
+ * Invocation queueing for agents using `'queue'`, `'cancelPrevious'`, or `'inject'`
+ * concurrency.
  */
 
 import { PendingInvocationCancelledError } from '../errors.js'
-import type { InvokeArgs } from '../types/agent.js'
+import type { AgentResult, InvokeArgs } from '../types/agent.js'
 
 /** Supported values for the `concurrentInvocationMode` parameter. */
-export const CONCURRENT_INVOCATION_MODES = ['throw', 'enqueue', 'cancelPrevious'] as const
+export const CONCURRENT_INVOCATION_MODES = ['throw', 'cancelPrevious', 'queue', 'inject'] as const
 
 /**
  * Behavior when `invoke()` or `stream()` is called while an invocation is already in
@@ -14,12 +15,17 @@ export const CONCURRENT_INVOCATION_MODES = ['throw', 'enqueue', 'cancelPrevious'
  * `InvokeOptions.ifBusy`.
  *
  * - `'throw'`: reject the new call with `ConcurrentInvocationError` (default).
- * - `'enqueue'`: queue the new call FIFO; it runs as its own invocation when the
- *   current one finishes.
- * - `'cancelPrevious'`: cancel the running invocation via `agent.cancel()` and run
- *   this call next, ahead of any queued invocations.
+ * - `'cancelPrevious'`: latest wins — cancel the running invocation, displace queued
+ *   `'cancelPrevious'` predecessors, and run this call next.
+ * - `'queue'`: wait FIFO; the call runs as its own invocation when the current one
+ *   finishes.
+ * - `'inject'`: join the running invocation — the input is added to the conversation
+ *   before its next model request, and the call resolves with that invocation's result.
  */
 export type ConcurrentInvocationMode = (typeof CONCURRENT_INVOCATION_MODES)[number]
+
+/** Concurrency modes under which a busy-time call waits in the queue. */
+export type PendingInvocationMode = Exclude<ConcurrentInvocationMode, 'throw'>
 
 /** A queued invocation, as surfaced by `agent.pendingInvocations`. */
 export interface PendingInvocation {
@@ -27,40 +33,33 @@ export interface PendingInvocation {
   readonly id: string
   /** When the call entered the queue. */
   readonly submittedAt: Date
-  /** Short text preview of the call's input. */
-  readonly preview: string
+  /** How the call asked to be handled once the agent is free. */
+  readonly mode: PendingInvocationMode
+}
+
+/** A pending `'inject'` call removed from the queue by the running invocation. */
+export interface InjectedInvocation {
+  readonly id: string
+  readonly args: InvokeArgs
+  /** Settles the caller with the absorbing invocation's result. */
+  readonly resolve: (result: AgentResult) => void
+  /** Settles the caller with the absorbing invocation's error. */
+  readonly reject: (error: Error) => void
+  /**
+   * Returns the call to the front of the queue as a `'queue'` entry, so it runs as its
+   * own invocation once the turn is released. Used when the absorbing invocation ends
+   * before the input reached the model.
+   */
+  readonly requeue: () => void
 }
 
 interface QueueEntry extends PendingInvocation {
-  supersedes: boolean
-  resolve: () => void
+  mode: PendingInvocationMode
+  args: InvokeArgs
+  signal?: AbortSignal
+  resolve: (absorbed?: AgentResult) => void
   reject: (error: Error) => void
   cleanup: () => void
-}
-
-const PREVIEW_MAX_CHARS = 500
-
-function truncatePreview(text: string): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim()
-  const codePoints = [...collapsed]
-  return codePoints.length <= PREVIEW_MAX_CHARS ? collapsed : `${codePoints.slice(0, PREVIEW_MAX_CHARS).join('')}\u2026`
-}
-
-function textOf(element: unknown): string[] {
-  if (typeof element !== 'object' || element === null) return []
-  if ('text' in element && typeof element.text === 'string') return [element.text]
-  if ('content' in element && Array.isArray(element.content)) return element.content.flatMap(textOf)
-  return []
-}
-
-/** Derives a short preview from invocation arguments. */
-export function previewInvokeArgs(args: InvokeArgs): string {
-  if (typeof args === 'string') return truncatePreview(args)
-  if (Array.isArray(args)) {
-    const text = args.flatMap(textOf).join(' ').trim()
-    if (text.length > 0) return truncatePreview(text)
-  }
-  return '[structured input]'
 }
 
 /**
@@ -78,9 +77,14 @@ export class InvocationQueue {
     return this._entries.length
   }
 
+  /** Whether any `'inject'` call is waiting. */
+  get hasInjects(): boolean {
+    return this._entries.some((entry) => entry.mode === 'inject')
+  }
+
   /** Immutable view of the queued entries, in run order. */
   list(): readonly PendingInvocation[] {
-    return this._entries.map(({ id, submittedAt, preview }) => Object.freeze({ id, submittedAt, preview }))
+    return this._entries.map(({ id, submittedAt, mode }) => Object.freeze({ id, submittedAt, mode }))
   }
 
   /**
@@ -96,41 +100,44 @@ export class InvocationQueue {
   }
 
   /**
-   * Adds a waiter and returns a promise that resolves when the invocation lock is
-   * handed to it (via {@link handoff}), or rejects when the entry is removed first.
+   * Adds a waiter. The promise resolves with `undefined` when the invocation lock is
+   * handed to it (via {@link handoff}), with the absorbing invocation's result when an
+   * `'inject'` entry is taken by the running invocation (via {@link takeInjects}), or
+   * rejects when the entry is removed first.
    *
-   * @param args - The invocation arguments, used to derive the entry's preview
-   * @param options - `supersede` inserts at the front of the queue and displaces any
-   *   queued superseding entries (they reject as cancelled); aborting `cancelSignal`
-   *   while queued removes the entry and rejects with
-   *   {@link PendingInvocationCancelledError}
+   * @param args - The invocation arguments
+   * @param options - `mode` selects the queue behavior: `'cancelPrevious'` inserts at
+   *   the front and displaces queued `'cancelPrevious'` entries (they reject as
+   *   cancelled); aborting `cancelSignal` while queued removes the entry and rejects
+   *   with {@link PendingInvocationCancelledError}
    */
-  wait(args: InvokeArgs, options?: { supersede?: boolean; cancelSignal?: AbortSignal }): Promise<void> {
+  wait(
+    args: InvokeArgs,
+    options: { mode: PendingInvocationMode; cancelSignal?: AbortSignal }
+  ): Promise<AgentResult | undefined> {
     const id = `pending-${this._nextSequence++}`
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<AgentResult | undefined>((resolve, reject) => {
       const entry: QueueEntry = {
         id,
         submittedAt: new Date(),
-        preview: previewInvokeArgs(args),
-        supersedes: options?.supersede === true,
+        mode: options.mode,
+        args,
         resolve,
         reject,
         cleanup: () => {},
       }
 
-      const signal = options?.cancelSignal
-      if (signal) {
-        if (signal.aborted) {
-          reject(new PendingInvocationCancelledError(id))
-          return
-        }
-        const onAbort = (): void => this._remove(entry)
-        signal.addEventListener('abort', onAbort, { once: true })
-        entry.cleanup = (): void => signal.removeEventListener('abort', onAbort)
+      if (options.cancelSignal?.aborted) {
+        reject(new PendingInvocationCancelledError(id))
+        return
+      }
+      if (options.cancelSignal) {
+        entry.signal = options.cancelSignal
+        this._armAbort(entry)
       }
 
-      if (entry.supersedes) {
-        for (const displaced of this._entries.filter((e) => e.supersedes)) this._remove(displaced)
+      if (entry.mode === 'cancelPrevious') {
+        for (const displaced of this._entries.filter((e) => e.mode === 'cancelPrevious')) this._remove(displaced)
         this._entries.unshift(entry)
       } else {
         this._entries.push(entry)
@@ -140,7 +147,8 @@ export class InvocationQueue {
   }
 
   /**
-   * Hands the invocation lock to the next waiter, if any.
+   * Hands the invocation lock to the next waiter, if any. An `'inject'` entry still
+   * queued here missed the invocation it meant to join and runs as its own invocation.
    *
    * @returns `true` when a waiter took ownership, `false` when the queue is empty
    */
@@ -150,6 +158,36 @@ export class InvocationQueue {
     next.cleanup()
     next.resolve()
     return true
+  }
+
+  /**
+   * Removes every queued `'inject'` entry, in submission order, for the running
+   * invocation to absorb. Their callers settle via the returned handles.
+   */
+  takeInjects(): InjectedInvocation[] {
+    const injects = this._entries.filter((entry) => entry.mode === 'inject')
+    for (const entry of injects) {
+      this._entries.splice(this._entries.indexOf(entry), 1)
+      entry.cleanup()
+    }
+    return injects.map((entry) => ({
+      id: entry.id,
+      args: entry.args,
+      resolve: entry.resolve,
+      reject: entry.reject,
+      requeue: (): void => {
+        entry.mode = 'queue'
+        if (entry.signal) this._armAbort(entry)
+        this._entries.unshift(entry)
+      },
+    }))
+  }
+
+  private _armAbort(entry: QueueEntry): void {
+    const signal = entry.signal!
+    const onAbort = (): void => this._remove(entry)
+    signal.addEventListener('abort', onAbort, { once: true })
+    entry.cleanup = (): void => signal.removeEventListener('abort', onAbort)
   }
 
   /**

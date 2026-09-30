@@ -278,7 +278,10 @@ describe('BackgroundTasks', () => {
       status: 'success',
       content: [
         new JsonBlock({
-          json: { ...(inspectedMetadata as JsonBlock).json as object, startedBy: 'an earlier request in this conversation' },
+          json: {
+            ...((inspectedMetadata as JsonBlock).json as object),
+            startedBy: 'an earlier request in this conversation',
+          },
         }),
         ...inspectedResult,
       ],

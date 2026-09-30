@@ -407,7 +407,10 @@ export class BackgroundTasks implements Plugin {
 
 function taskResultContent(task: BackgroundTask, dispatchedHere: boolean): ToolResultContent[] {
   const { result, ...metadata } = task
-  const json = deepCopy({ ...metadata, ...(!dispatchedHere && { startedBy: 'an earlier request in this conversation' }) })
+  const json = deepCopy({
+    ...metadata,
+    ...(!dispatchedHere && { startedBy: 'an earlier request in this conversation' }),
+  })
   return [new JsonBlock({ json }), ...(result?.content.map(toolResultContentFromData) ?? [])]
 }
 

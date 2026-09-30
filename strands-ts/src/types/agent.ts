@@ -140,7 +140,7 @@ export interface InvokeOptions {
   /**
    * Behavior when the agent is already processing an invocation, overriding the
    * agent's `concurrentInvocationMode` for this call only. Same values: `'throw'`,
-   * `'enqueue'`, or `'cancelPrevious'`.
+   * `'cancelPrevious'`, `'queue'`, or `'inject'`.
    */
   ifBusy?: ConcurrentInvocationMode
 

@@ -47,11 +47,11 @@ import { PluginRegistry } from '../plugins/registry.js'
 import { SlidingWindowConversationManager } from '../conversation-manager/sliding-window-conversation-manager.js'
 import { NullConversationManager } from '../conversation-manager/null-conversation-manager.js'
 import { ConversationManager } from '../conversation-manager/conversation-manager.js'
-import { PendingInvocations } from '../vended-plugins/pending-invocations/plugin.js'
 import {
   CONCURRENT_INVOCATION_MODES,
   InvocationQueue,
   type ConcurrentInvocationMode,
+  type InjectedInvocation,
   type PendingInvocation,
 } from './invocation-queue.js'
 import { AgentDelegation } from './agent-delegation.js'
@@ -335,16 +335,20 @@ export type AgentConfig = {
    * in progress.
    *
    * - `'throw'` (default): reject the new call with {@link ConcurrentInvocationError}.
-   * - `'enqueue'`: queue the new call FIFO; it runs as its own invocation when the
-   *   current one finishes. The queue is unbounded — bound it host-side by checking
-   *   `pendingInvocations.length` before submitting.
    * - `'cancelPrevious'`: latest wins — cancel the running invocation and displace any
    *   queued `'cancelPrevious'` predecessors (they reject with
-   *   {@link PendingInvocationCancelledError}); the new call runs next. Callers queued
-   *   with `'enqueue'` are never displaced and run afterwards.
+   *   {@link PendingInvocationCancelledError}); the new call runs next.
+   * - `'queue'`: wait FIFO; the call runs as its own invocation when the current one
+   *   finishes. The queue is unbounded — bound it host-side by checking
+   *   `pendingInvocations.length` before submitting.
+   * - `'inject'`: join the running invocation. The input is added to the conversation
+   *   before that invocation's next model request (after in-flight tool execution),
+   *   and the call resolves with the running invocation's result. If the running
+   *   invocation ends by cancellation, error, or interrupt before the input is
+   *   incorporated, the call falls back to `'queue'` and runs on its own.
    *
-   * Callers can override per call via {@link InvokeOptions.ifBusy}. Under `'enqueue'`
-   * and `'cancelPrevious'`, a tool or hook of the running invocation must not `await`
+   * Callers can override per call via {@link InvokeOptions.ifBusy}. Under any mode
+   * other than `'throw'`, a tool or hook of the running invocation must not `await`
    * its own agent's `invoke()`/`stream()` — the inner call would wait for the
    * invocation it is part of (cancellation is cooperative and cannot rescue it) and
    * deadlock.
@@ -518,6 +522,8 @@ export class Agent implements LocalAgent, InvokableAgent {
   _invocationId: number = 0
   private readonly _concurrentInvocationMode: ConcurrentInvocationMode
   private readonly _invocationQueue: InvocationQueue
+  /** `'inject'` calls whose input the current invocation has incorporated; settled with its outcome. */
+  private _absorbedInjects: InjectedInvocation[] = []
   private _abortController = new AbortController()
   private _abortSignal: AbortSignal = this._abortController.signal
   private _printer?: Printer
@@ -638,7 +644,6 @@ export class Agent implements LocalAgent, InvokableAgent {
     }
     this._concurrentInvocationMode = concurrentInvocationMode
     this._invocationQueue = new InvocationQueue()
-    const hasPendingInvocations = (config?.plugins ?? []).some((p) => p.name === 'strands:pending-invocations')
 
     this._backgroundTasks = config?.backgroundTasks
       ? new BackgroundTasks(
@@ -672,7 +677,6 @@ export class Agent implements LocalAgent, InvokableAgent {
       ...(config?.plugins ?? []),
       ...(this._backgroundTasks ? [this._backgroundTasks] : []),
       ...(!hasAgentDelegation ? [new AgentDelegation()] : []),
-      ...(concurrentInvocationMode !== 'throw' && !hasPendingInvocations ? [new PendingInvocations()] : []),
       ...(this.memoryManager ? [this.memoryManager] : []),
       ...(this.contextManager ? [this.contextManager] : []),
       ...(config?.sessionManager ? [config.sessionManager] : []),
@@ -897,8 +901,11 @@ export class Agent implements LocalAgent, InvokableAgent {
    * Acquires the invocation turn, following `options.ifBusy` (falling back to the
    * agent's `concurrentInvocationMode`) when the agent is busy. Callers must release
    * via try/finally with {@link _releaseTurn}.
+   *
+   * @returns The running invocation's result when this call was absorbed by it under
+   *   `'inject'`; `undefined` when the caller now owns the turn
    */
-  private async _acquireTurn(args: InvokeArgs, options?: InvokeOptions): Promise<void> {
+  private async _acquireTurn(args: InvokeArgs, options?: InvokeOptions): Promise<AgentResult | undefined> {
     if (options?.ifBusy !== undefined && !CONCURRENT_INVOCATION_MODES.includes(options.ifBusy)) {
       throw new Error(
         `Unsupported ifBusy value: ${JSON.stringify(options.ifBusy)}. Supported values: ${CONCURRENT_INVOCATION_MODES.map((v) => `"${v}"`).join(', ')}`
@@ -907,33 +914,24 @@ export class Agent implements LocalAgent, InvokableAgent {
     if (!this._isInvoking) {
       this._isInvoking = true
       this._installTurnController()
-      return
+      return undefined
     }
     const strategy = options?.ifBusy ?? this._concurrentInvocationMode
-    switch (strategy) {
-      case 'throw':
-        throw new ConcurrentInvocationError(
-          "Agent is already processing an invocation. Wait for the current invoke() or stream() call to complete, or set concurrentInvocationMode / ifBusy to 'enqueue' to queue instead."
-        )
-      case 'enqueue':
-      case 'cancelPrevious': {
-        const turn = this._invocationQueue.wait(args, {
-          supersede: strategy === 'cancelPrevious',
-          ...(options?.cancelSignal !== undefined && { cancelSignal: options.cancelSignal }),
-        })
-        // An already-aborted caller never enters the queue; don't cancel the running
-        // invocation on its behalf.
-        if (strategy === 'cancelPrevious' && options?.cancelSignal?.aborted !== true) {
-          this.cancel()
-        }
-        await turn
-        return
-      }
-      default: {
-        const exhaustive: never = strategy
-        throw new Error(`Unsupported concurrency mode: ${String(exhaustive)}`)
-      }
+    if (strategy === 'throw') {
+      throw new ConcurrentInvocationError(
+        "Agent is already processing an invocation. Wait for the current invoke() or stream() call to complete, or set concurrentInvocationMode / ifBusy to 'queue', 'inject', or 'cancelPrevious'."
+      )
     }
+    const turn = this._invocationQueue.wait(args, {
+      mode: strategy,
+      ...(options?.cancelSignal !== undefined && { cancelSignal: options.cancelSignal }),
+    })
+    // An already-aborted caller never enters the queue; don't cancel the running
+    // invocation on its behalf.
+    if (strategy === 'cancelPrevious' && options?.cancelSignal?.aborted !== true) {
+      this.cancel()
+    }
+    return turn
   }
 
   /**
@@ -964,6 +962,33 @@ export class Agent implements LocalAgent, InvokableAgent {
   private _installTurnController(): void {
     this._abortController = new AbortController()
     this._abortSignal = this._abortController.signal
+  }
+
+  /**
+   * Moves every pending `'inject'` call into `event`'s continuation input so the next
+   * model request carries it. A call whose input is never incorporated (the invocation
+   * ended first) goes back to the queue and runs on its own.
+   */
+  private _absorbPendingInjects(event: AfterInvocationEvent | BeforeModelCallEvent): void {
+    for (const inject of this._invocationQueue.takeInjects()) {
+      continuations.addInput(event, {
+        args: inject.args,
+        onAppended: () => {
+          this._absorbedInjects.push(inject)
+        },
+        onAbandoned: () => inject.requeue(),
+      })
+    }
+  }
+
+  /** Settles every `'inject'` call absorbed by the invocation that just ended. */
+  private _settleAbsorbedInjects(outcome: { result: AgentResult } | { error: Error }): void {
+    const absorbed = this._absorbedInjects
+    this._absorbedInjects = []
+    for (const inject of absorbed) {
+      if ('result' in outcome) inject.resolve(outcome.result)
+      else inject.reject(outcome.error)
+    }
   }
 
   /**
@@ -1278,8 +1303,10 @@ export class Agent implements LocalAgent, InvokableAgent {
     args: InvokeArgs,
     options?: InvokeOptions
   ): AsyncGenerator<AgentStreamEvent, AgentResult, undefined> {
-    await this._acquireTurn(args, options)
+    const absorbed = await this._acquireTurn(args, options)
+    if (absorbed) return absorbed
     let continuationEvent: AfterInvocationEvent | undefined
+    let finalResult: AgentResult | undefined
     try {
       await this.initialize()
 
@@ -1376,6 +1403,10 @@ export class Agent implements LocalAgent, InvokableAgent {
           await continuations.abandon(afterInvocationEvent, new Error(`Continuation abandoned after ${stopReason}`))
         }
 
+        // Pending 'inject' calls join this invocation as its next pass. Under any other
+        // stop reason they stay queued and fall back to running on their own.
+        if (allowsContinuation) this._absorbPendingInjects(afterInvocationEvent)
+
         const hasContinuation =
           (await continuations.prepare(
             afterInvocationEvent,
@@ -1402,12 +1433,21 @@ export class Agent implements LocalAgent, InvokableAgent {
             invocationState,
           })
         )
-        return result!
+        finalResult = result!
+        return finalResult
       }
+    } catch (error) {
+      this._settleAbsorbedInjects({ error: error as Error })
+      throw error
     } finally {
       await continuations.abandon(
         continuationEvent,
         new Error('Agent stream closed before continuation input was incorporated into agent history')
+      )
+      this._settleAbsorbedInjects(
+        finalResult
+          ? { result: finalResult }
+          : { error: new Error('Agent stream closed before the invocation completed') }
       )
       this._releaseTurn()
     }
@@ -2261,6 +2301,7 @@ export class Agent implements LocalAgent, InvokableAgent {
         invocationState,
         ...(projectedInputTokens !== undefined && { projectedInputTokens }),
       })
+      this._absorbPendingInjects(beforeModelCallEvent)
       let modelContinuation: readonly Message[] | undefined
       try {
         yield beforeModelCallEvent

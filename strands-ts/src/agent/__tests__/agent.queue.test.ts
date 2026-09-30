@@ -57,7 +57,7 @@ describe('concurrentInvocationMode', () => {
     })
 
     it('rejects the deleted object form', () => {
-      expect(() => new Agent({ concurrentInvocationMode: { mode: 'enqueue' } as never })).toThrow(
+      expect(() => new Agent({ concurrentInvocationMode: { mode: 'queue' } as never })).toThrow(
         /Unsupported concurrentInvocationMode/
       )
     })
@@ -88,8 +88,8 @@ describe('concurrentInvocationMode', () => {
     it('exposes the resolved mode and defaults to throw', () => {
       expect(new Agent({ model: new MockMessageModel() }).concurrentInvocationMode).toBe('throw')
       expect(
-        new Agent({ model: new MockMessageModel(), concurrentInvocationMode: 'enqueue' }).concurrentInvocationMode
-      ).toBe('enqueue')
+        new Agent({ model: new MockMessageModel(), concurrentInvocationMode: 'queue' }).concurrentInvocationMode
+      ).toBe('queue')
       expect(
         new Agent({ model: new MockMessageModel(), concurrentInvocationMode: 'cancelPrevious' })
           .concurrentInvocationMode
@@ -115,7 +115,7 @@ describe('concurrentInvocationMode', () => {
       expect(resultText(resultB)).toBe('B')
     })
 
-    it("per-call ifBusy: 'enqueue' opts a single call back into waiting", async () => {
+    it("per-call ifBusy: 'queue' opts a single call back into waiting", async () => {
       const gate = createGate()
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
@@ -125,7 +125,7 @@ describe('concurrentInvocationMode', () => {
 
       const first = agent.invoke('a')
       await gate.started
-      const second = agent.invoke('b', { ifBusy: 'enqueue' })
+      const second = agent.invoke('b', { ifBusy: 'queue' })
       await until(() => agent.pendingInvocations.length === 1, 'b queued')
 
       gate.release()
@@ -157,7 +157,7 @@ describe('concurrentInvocationMode', () => {
       expect(agent.pendingInvocations).toHaveLength(0)
     })
 
-    it("displacement spares callers queued with ifBusy: 'enqueue'", async () => {
+    it("displacement spares callers queued with ifBusy: 'queue'", async () => {
       const gate = createGate()
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
@@ -167,7 +167,7 @@ describe('concurrentInvocationMode', () => {
 
       const first = agent.invoke('a')
       await gate.started
-      const waiter = agent.invoke('b', { ifBusy: 'enqueue' })
+      const waiter = agent.invoke('b', { ifBusy: 'queue' })
       await until(() => agent.pendingInvocations.length === 1, 'b queued')
       const urgent = agent.invoke('c')
 
@@ -193,7 +193,7 @@ describe('concurrentInvocationMode', () => {
       await first
     })
 
-    it("per-call ifBusy: 'enqueue' queues on a 'throw'-mode agent", async () => {
+    it("per-call ifBusy: 'queue' queues on a 'throw'-mode agent", async () => {
       const gate = createGate()
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
@@ -203,7 +203,7 @@ describe('concurrentInvocationMode', () => {
 
       const first = agent.invoke('a')
       await gate.started
-      const second = agent.invoke('b', { ifBusy: 'enqueue' })
+      const second = agent.invoke('b', { ifBusy: 'queue' })
       await until(() => agent.pendingInvocations.length === 1, 'b to enter the queue')
 
       gate.release()
@@ -212,14 +212,14 @@ describe('concurrentInvocationMode', () => {
     })
   })
 
-  describe("'enqueue' behavior", () => {
+  describe("'queue' behavior", () => {
     it('runs a second call after the first, each with its own result', async () => {
       const gate = createGate()
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'B' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('review the PR')
       await gate.started
@@ -243,7 +243,7 @@ describe('concurrentInvocationMode', () => {
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'B' })
         .addTurn({ type: 'textBlock', text: 'C' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -258,13 +258,13 @@ describe('concurrentInvocationMode', () => {
       expect(resultText(await first)).toBe('A')
     })
 
-    it('surfaces queued calls on pendingInvocations with id and preview', async () => {
+    it('surfaces queued calls on pendingInvocations with id, submittedAt, and mode', async () => {
       const gate = createGate()
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'B' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -272,7 +272,7 @@ describe('concurrentInvocationMode', () => {
       await until(() => agent.pendingInvocations.length === 1, 'queue entry visible')
 
       const [pending] = agent.pendingInvocations
-      expect(pending).toMatchObject({ preview: 'stop — wrong repo' })
+      expect(pending).toMatchObject({ mode: 'queue' })
       expect(pending!.id).toMatch(/^pending-/)
       expect(pending!.submittedAt).toBeInstanceOf(Date)
 
@@ -286,7 +286,7 @@ describe('concurrentInvocationMode', () => {
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'B' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
       // Record the ordered event sequence keyed by invocation identity.
       const invocations: object[] = []
       const sequence: string[] = []
@@ -318,7 +318,7 @@ describe('concurrentInvocationMode', () => {
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'B' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -334,12 +334,12 @@ describe('concurrentInvocationMode', () => {
       expect(agent.isInvoking).toBe(false)
     })
 
-    it("per-call ifBusy: 'throw' opts back into fail-fast on an 'enqueue' agent", async () => {
+    it("per-call ifBusy: 'throw' opts back into fail-fast on an 'queue' agent", async () => {
       const gate = createGate()
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -355,7 +355,7 @@ describe('concurrentInvocationMode', () => {
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'C' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -380,7 +380,7 @@ describe('concurrentInvocationMode', () => {
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -407,7 +407,7 @@ describe('concurrentInvocationMode', () => {
         tools: [gate.tool],
         printer: false,
         retryStrategy: null,
-        concurrentInvocationMode: 'enqueue',
+        concurrentInvocationMode: 'queue',
       })
 
       const first = agent.invoke('a')
@@ -426,7 +426,7 @@ describe('concurrentInvocationMode', () => {
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'B' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const stream = agent.stream('a')
       // Drive the stream until the gate tool is executing; the in-flight next() then
@@ -454,7 +454,7 @@ describe('concurrentInvocationMode', () => {
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -470,7 +470,7 @@ describe('concurrentInvocationMode', () => {
       const model = new MockMessageModel()
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'LATE' })
-      const agent = new Agent({ model, printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, printer: false, concurrentInvocationMode: 'queue' })
 
       let late: Promise<{ lastMessage: { content: readonly unknown[] } }> | undefined
       agent.addHook(AfterInvocationEvent, () => {
@@ -487,7 +487,7 @@ describe('concurrentInvocationMode', () => {
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'B' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -510,7 +510,7 @@ describe('concurrentInvocationMode', () => {
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'C' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -530,7 +530,7 @@ describe('concurrentInvocationMode', () => {
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'C' })
         .addTurn({ type: 'textBlock', text: 'B' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
@@ -539,7 +539,7 @@ describe('concurrentInvocationMode', () => {
       const interrupter = agent.invoke('c', { ifBusy: 'cancelPrevious' })
       await until(() => agent.pendingInvocations.length === 2, 'c queued at front')
 
-      expect(agent.pendingInvocations[0]!.preview).toBe('c')
+      expect(agent.pendingInvocations[0]!.mode).toBe('cancelPrevious')
 
       expect((await first).stopReason).toBe('cancelled')
       expect(resultText(await interrupter)).toBe('C')
@@ -561,7 +561,7 @@ describe('concurrentInvocationMode', () => {
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
         .addTurn({ type: 'textBlock', text: 'A' })
         .addTurn({ type: 'textBlock', text: 'C' })
-      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'enqueue' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
 
       const first = agent.invoke('a')
       await gate.started
