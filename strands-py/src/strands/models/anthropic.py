@@ -86,6 +86,13 @@ def _carries_compaction(messages: Messages) -> bool:
     return any("signature" in block and "text" in block for message in messages for block in message["content"])
 
 
+def _format_text(content: ContentBlock) -> dict[str, Any]:
+    """Format a text block, or the compaction block it stands for when it carries a signature."""
+    if "signature" in content:
+        return {"content": content["text"], "signature": content["signature"], "type": "compaction"}
+    return {"text": content["text"], "type": "text"}
+
+
 def _with_beta(extra_headers: dict[str, str] | None, beta: str) -> dict[str, str]:
     """Return ``extra_headers`` with ``beta`` appended to its ``anthropic-beta`` header."""
     headers = dict(extra_headers or {})
@@ -254,11 +261,8 @@ class AnthropicModel(Model):
                 "type": "thinking",
             }
 
-        if "text" in content and "signature" in content:
-            return {"content": content["text"], "signature": content["signature"], "type": "compaction"}
-
         if "text" in content:
-            return {"text": content["text"], "type": "text"}
+            return _format_text(content)
 
         if "citationsContent" in content:
             text = "".join(c["text"] for c in content["citationsContent"].get("content", []) if "text" in c)
