@@ -16,7 +16,7 @@ The interfaces mirror those used for [single-agent interrupts](./interrupts.md).
 
 ## Agents as Tools
 
-An agent exposed as a tool with [Agents as Tools](./multi-agent/agents-as-tools.md) propagates its interrupts up to the orchestrator, so the orchestrator's caller sees them and answers them like any other interrupt. A sub-agent's interrupt arrives with an id scoped to the orchestrator's tool call, which keeps two sub-agents interrupting in the same turn distinct. Treat the id as opaque: pass it back unchanged to resume, and use `name` and `reason` for anything you show a human.
+An agent used as a tool with [Agents as Tools](./multi-agent/agents-as-tools.md) propagates its interrupts to the orchestrator, where they are raised and answered like any other interrupt. The interrupt ids are scoped to the orchestrator's tool call; treat them as opaque.
 
 ## Swarm
 

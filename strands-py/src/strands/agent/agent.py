@@ -1108,12 +1108,9 @@ class Agent(AgentBase, LocalAgent):
                 values they had at construction time before each call, ensuring every
                 invocation starts from the same baseline regardless of any external
                 interactions with the agent. Defaults to False.
-
-                Interrupts raised inside the sub-agent resume automatically. When False, the
-                orchestrator carries the sub-agent's interrupted turn, so the resume survives a
-                process restart. When True the sub-agent owns its state: give it its own session
-                manager if the resume has to survive a restart, otherwise the interrupt resumes
-                only within the same process.
+                When False, the orchestrator also stores the agent's interrupted turn so a
+                sub-agent interrupt can be resumed after a restart; when True the agent keeps
+                its own state, so it needs its own session manager for that.
             delegate: When True, the orchestrator treats this tool's result as the final
                 response and exits without an additional model call. The tool's description
                 is automatically suffixed with an instruction telling the model that this
