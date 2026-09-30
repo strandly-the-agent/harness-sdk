@@ -411,7 +411,7 @@ class _AgentAsTool(AgentTool):
         if not self._agent._interrupt_state.activated:
             if turn is None:
                 logger.error(
-                    "tool_name=<%s>, tool_use_id=<%s> | cannot resume: the sub-agent's interrupted turn is not available",
+                    "tool_name=<%s>, tool_use_id=<%s> | cannot resume: the interrupted sub-agent turn is not available",
                     self._tool_name,
                     tool_use_id,
                 )
