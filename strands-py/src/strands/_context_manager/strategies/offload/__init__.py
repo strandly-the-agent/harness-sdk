@@ -49,9 +49,14 @@ class _OffloadNamespace:
     def summarize(self, target: OffloadTarget, config: SummarizeConfig | None = None) -> SummarizeStrategy:
         """Replace oversized content with an LLM-generated summary.
 
+        At message level, a model that supports ``Model.compact`` writes the summary itself (as an assistant
+        message) when the summarized messages form an unbroken, unpinned prefix of the conversation and no
+        dedicated ``model`` is configured; otherwise the summary is generated client-side.
+
         Args:
             target: What content to target for summarization.
-            config: Method-specific config (model, system_prompt).
+            config: Method-specific config (model, system_prompt). ``system_prompt`` is also sent as the
+                instructions when the model writes the summary itself.
 
         Returns:
             A SummarizeStrategy builder (usable directly or with .when()).

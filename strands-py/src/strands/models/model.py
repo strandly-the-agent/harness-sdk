@@ -220,7 +220,8 @@ class Model(abc.ABC):
         """Ask the provider to summarize ``messages`` into a single signed summary message.
 
         The summary replaces ``messages`` in the conversation; turns after it are kept unchanged. Callers fall back
-        to client-side summarization when this returns None.
+        to client-side summarization when this returns None. Providers overriding this must also override
+        :attr:`supports_compaction`.
 
         Args:
             messages: The messages to summarize. Must end at a valid boundary (no unanswered tool call).

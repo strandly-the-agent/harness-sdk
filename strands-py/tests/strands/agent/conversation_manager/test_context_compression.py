@@ -337,3 +337,12 @@ async def test_compact_messages_sends_agent_system_prompt_and_tools():
     agent.model.compact.assert_awaited_once_with(
         messages, tool_specs=[{"name": "t"}], system_prompt_content=[{"text": "sys"}], instructions="keep paths"
     )
+
+
+@pytest.mark.asyncio
+async def test_compact_messages_returns_none_when_compact_raises(caplog):
+    agent = _compaction_agent()
+    agent.model.compact = AsyncMock(side_effect=RuntimeError("gateway rejected beta"))
+
+    assert await compact_messages(agent, [text_msg("user", "q")]) is None
+    assert "provider compaction failed" in caplog.text

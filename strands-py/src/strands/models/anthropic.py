@@ -940,7 +940,8 @@ class AnthropicModel(Model):
 
         Returns:
             An assistant message with one text block carrying the summary and its ``signature``, or None when the
-            API produced no summary (e.g. the summarizer hit ``max_tokens`` or refused the instructions).
+            API produced no summary (e.g. the summarizer hit ``max_tokens`` or refused the instructions) or
+            rejected the compaction request.
 
         Raises:
             ContextWindowOverflowException: If the input exceeds the model's context window.
@@ -965,7 +966,9 @@ class AnthropicModel(Model):
         except anthropic.BadRequestError as error:
             if any(overflow_message in str(error).lower() for overflow_message in AnthropicModel.OVERFLOW_MESSAGES):
                 raise ContextWindowOverflowException(str(error)) from error
-            raise error
+            # The model, account or gateway does not offer compaction; the caller's summarizer takes over.
+            logger.warning("model_id=<%s>, error=<%s> | compaction rejected", self.config["model_id"], error)
+            return None
 
         result = response.model_dump()
         logger.debug(

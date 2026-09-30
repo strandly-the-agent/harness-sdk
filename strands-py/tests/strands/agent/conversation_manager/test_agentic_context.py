@@ -512,3 +512,15 @@ class TestSummarizeContextCompaction:
 
         agent.model.compact.assert_not_called()
         assert messages[0]["content"][0]["text"] == "Message 1"
+
+    async def test_compaction_error_falls_back_to_client_summary(self, alist):
+        messages = make_messages(20)
+        model = compaction_model()
+        model.compact = AsyncMock(side_effect=RuntimeError("compaction unavailable"))
+        agent = make_agent(messages, model)
+
+        result = await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+
+        assert "Summarized" in result
+        agent.model.stream.assert_called_once()
+        assert messages[0]["content"][0]["text"] == "Message 1"

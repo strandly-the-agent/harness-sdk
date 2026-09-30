@@ -232,16 +232,21 @@ async def compact_messages(
         instructions: Custom summarization instructions passed to the provider.
 
     Returns:
-        The provider's summary message, or None when the model cannot compact or produced no summary.
+        The provider's summary message, or None when the model cannot compact, produced no summary, or failed;
+        the caller's own summarizer then takes over.
     """
     if not agent.model.supports_compaction:
         return None
-    return await agent.model.compact(
-        messages_to_summarize,
-        tool_specs=agent.tool_registry.get_all_tool_specs(),
-        system_prompt_content=agent.system_prompt_content,
-        instructions=instructions,
-    )
+    try:
+        return await agent.model.compact(
+            messages_to_summarize,
+            tool_specs=agent.tool_registry.get_all_tool_specs(),
+            system_prompt_content=agent.system_prompt_content,
+            instructions=instructions,
+        )
+    except Exception as error:
+        logger.warning("error=<%s> | provider compaction failed, falling back to client summary", error)
+        return None
 
 
 def strip_reasoning(messages: list[Message]) -> None:

@@ -419,3 +419,22 @@ class TestSummarizeStrategyCompaction:
         await strategy.apply(context)
 
         assert messages[0]["content"] == [ContentBlock(text="Compacted " * 100, signature="sig-1")]
+
+    @pytest.mark.asyncio
+    async def test_compaction_error_falls_back_to_client_summary(self, compaction_agent):
+        compaction_agent.model.compact = unittest.mock.AsyncMock(side_effect=RuntimeError("compaction unavailable"))
+        strategy = Offload.summarize("*").when(utilization=0.8, preserve_recent=1)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")]),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(role="assistant", content=[ContentBlock(text="old3")]),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        assert await strategy.apply(context) is True
+
+        assert messages[0]["content"][0]["text"] == "first"
+        assert any("[Summarized:" in block.get("text", "") for msg in messages for block in msg["content"])

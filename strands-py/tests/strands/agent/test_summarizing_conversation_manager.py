@@ -1025,3 +1025,14 @@ def test_reduce_context_with_summarization_agent_skips_provider_compaction():
 
     agent.model.compact.assert_not_called()
     assert "Agent summary" in agent.messages[0]["content"][0]["text"]
+
+
+def test_reduce_context_compaction_error_falls_back_to_client_summary(summarizing_manager):
+    agent = _compaction_agent()
+    agent.model.compact = AsyncMock(side_effect=RuntimeError("compaction unavailable"))
+
+    summarizing_manager.reduce_context(agent)
+
+    agent.model.stream.assert_called_once()
+    assert "This is a summary of the conversation." in agent.messages[0]["content"][0]["text"]
+    assert len(agent.messages) == 4

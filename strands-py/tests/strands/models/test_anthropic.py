@@ -2984,3 +2984,16 @@ async def test_count_tokens_native_keeps_compact_beta_header(anthropic_client, m
     exp_headers = {"anthropic-beta": "compact-2026-09-04"}
 
     assert tru_headers == exp_headers
+
+
+@pytest.mark.asyncio
+async def test_compact_returns_none_when_compaction_is_rejected(anthropic_client, model, messages, caplog):
+    caplog.set_level(logging.WARNING, logger="strands.models.anthropic")
+    anthropic_client.beta.messages.create = unittest.mock.AsyncMock(
+        side_effect=anthropic.BadRequestError(
+            "The compact beta feature is not currently supported", response=unittest.mock.Mock(), body=None
+        )
+    )
+
+    assert await model.compact(messages) is None
+    assert "compaction rejected" in caplog.text

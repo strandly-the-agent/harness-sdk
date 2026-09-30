@@ -39,6 +39,10 @@ class SummarizingConversationManager(ConversationManager):
     This manager provides a configurable option to summarize older context instead of
     simply trimming it, helping preserve important information while staying within
     context limits.
+
+    When the model supports ``Model.compact`` and no ``summarization_agent`` is set, the model writes the summary
+    itself as an assistant message, provided nothing ahead of the summarized range is pinned. Otherwise the
+    summary is generated client-side as a user message.
     """
 
     def __init__(
@@ -61,7 +65,8 @@ class SummarizingConversationManager(ConversationManager):
             summarization_agent: Optional agent to use for summarization instead of the parent agent.
                 If provided, this agent can use tools as part of the summarization process.
             summarization_system_prompt: Optional system prompt override for summarization.
-                If None, uses the default summarization prompt.
+                If None, uses the default summarization prompt. Also sent as the instructions when the model
+                writes the summary itself (see ``Model.compact``), replacing the provider's default prompt.
             pin_first: Number of messages at the start of the conversation to permanently pin.
                 Pinned messages are protected from summarization and compacted to the front.
             proactive_compression: Enable proactive context compression before the model call.
