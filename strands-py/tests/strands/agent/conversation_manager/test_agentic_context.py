@@ -479,4 +479,36 @@ class TestSummarizeContextCompaction:
 
         agent.model.compact.assert_not_called()
         agent.model.stream.assert_called_once()
-        assert messages[0]["content"][0]["text"] == "Message 3"
+        assert messages[0]["content"][0]["text"] == "Message 1"
+        assert messages[1]["content"][0]["text"] == "Message 3"
+
+    async def test_message_type_filter_keeps_first_user_message_without_compaction(self, alist):
+        messages = [text_msg("user", "Message 1"), tool_use_msg("t1"), tool_result_msg("t1"), *make_messages(17)[3:]]
+        agent = make_agent(messages, compaction_model())
+
+        await invoke_tool(summarize_context, agent, alist, keep_recent=4, summary_ratio=0.5, message_type="messages")
+
+        agent.model.compact.assert_not_called()
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"][0]["text"] == "Message 1"
+
+    async def test_failed_compaction_keeps_first_user_message(self, alist):
+        messages = make_messages(20)
+        model = compaction_model()
+        model.compact = AsyncMock(return_value=None)
+        agent = make_agent(messages, model)
+
+        await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+
+        assert messages[0]["content"][0]["text"] == "Message 1"
+        assert messages[1]["role"] == "user"
+
+    async def test_pinned_first_message_skips_provider_compaction(self, alist):
+        messages = make_messages(20)
+        pin_message(messages, 0)
+        agent = make_agent(messages, compaction_model())
+
+        await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+
+        agent.model.compact.assert_not_called()
+        assert messages[0]["content"][0]["text"] == "Message 1"

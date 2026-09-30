@@ -46,25 +46,24 @@ _MIN_MESSAGES_FOR_COMPRESSION = 2
 
 
 def _collect_preserved(
-    messages: list[Message], range_end: int, filter: MessageType, keep_first_user: bool = True
+    messages: list[Message], range_end: int, filter: MessageType
 ) -> tuple[list[Message], list[Message]]:
     """Identify eligible messages in [0, range_end) and return (eligible, preserved) in original order.
 
-    The first user message is preserved by default to maintain a valid conversation start
+    The first user message is always preserved to maintain a valid conversation start
     (many providers reject conversations that don't begin with a user message).
 
     Args:
         messages: The full conversation history.
         range_end: Exclusive upper bound of the range to consider.
         filter: Message-type filter selecting which messages are eligible for compression.
-        keep_first_user: Whether the first user message is preserved.
 
     Returns:
         A tuple of (eligible, preserved) message lists.
     """
     eligible: list[Message] = []
     preserved: list[Message] = []
-    found_first_user = not keep_first_user
+    found_first_user = False
 
     for i in range(range_end):
         msg = messages[i]
@@ -128,10 +127,7 @@ async def summarize_context(
             f'summary_ratio, or use truncate_context with message_type="tools" instead.'
         )
 
-    # A provider's signed summary may open the conversation, so the first user message can be folded into it.
-    eligible, preserved = _collect_preserved(
-        messages, split_point, filter, keep_first_user=not agent.model.supports_compaction
-    )
+    eligible, preserved = _collect_preserved(messages, split_point, filter)
 
     if not eligible:
         descriptor = "eligible" if filter == "all" else f'"{filter}"'
@@ -141,9 +137,14 @@ async def summarize_context(
         )
 
     try:
-        # The provider's signed summary must stand first, so it only replaces an unbroken prefix.
-        summary_message = await compact_messages(agent, eligible) if not preserved else None
-        if summary_message is None:
+        # The provider's signed summary may open the conversation, so it folds in the first user message too,
+        # but only when nothing else in the range is preserved: the block must come first.
+        summary_message = None
+        if preserved == [messages[0]] and not is_pinned(messages, 0):
+            summary_message = await compact_messages(agent, messages[:split_point])
+        if summary_message is not None:
+            eligible, preserved = messages[:split_point], []
+        else:
             summary_message = await generate_summary(eligible, agent.aux_model)
             strip_reasoning(preserved + messages[split_point:])
     except Exception as err:

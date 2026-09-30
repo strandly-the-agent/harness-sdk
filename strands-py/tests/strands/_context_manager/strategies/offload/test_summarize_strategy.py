@@ -389,3 +389,33 @@ class TestSummarizeStrategyCompaction:
         assert await strategy.apply(context) is True
 
         compaction_agent.model.compact.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pinned_first_message_skips_provider_compaction(self, compaction_agent):
+        strategy = Offload.summarize("*").when(utilization=0.8, preserve_recent=1)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")], metadata={"custom": {"pinned": True}}),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(role="assistant", content=[ContentBlock(text="old3")]),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        assert await strategy.apply(context) is True
+
+        compaction_agent.model.compact.assert_not_called()
+        assert messages[0]["content"][0]["text"] == "first"
+
+    @pytest.mark.asyncio
+    async def test_per_block_strategy_leaves_signed_summary_untouched(self, compaction_agent):
+        strategy = Offload.summarize("*").when(threshold=10)
+        summary = Message(role="assistant", content=[ContentBlock(text="Compacted " * 100, signature="sig-1")])
+        messages: Messages = [summary, Message(role="user", content=[ContentBlock(text="recent " * 100)])]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        await strategy.apply(context)
+
+        assert messages[0]["content"] == [ContentBlock(text="Compacted " * 100, signature="sig-1")]

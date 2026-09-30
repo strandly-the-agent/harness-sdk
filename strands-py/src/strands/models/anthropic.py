@@ -97,7 +97,7 @@ def _with_beta(extra_headers: dict[str, str] | None, beta: str) -> dict[str, str
     """Return ``extra_headers`` with ``beta`` appended to its ``anthropic-beta`` header."""
     headers = dict(extra_headers or {})
     existing = headers.get("anthropic-beta")
-    if existing and beta not in existing.split(","):
+    if existing and beta not in [part.strip() for part in existing.split(",")]:
         headers["anthropic-beta"] = f"{existing},{beta}"
     elif not existing:
         headers["anthropic-beta"] = beta
@@ -956,7 +956,10 @@ class AnthropicModel(Model):
             compaction["instructions"] = instructions
 
         try:
-            response = await self.client.beta.messages.create(**request, extra_body={"compaction": compaction})
+            # An explicit timeout keeps the SDK from refusing a non-streaming call with a large max_tokens.
+            response = await self.client.beta.messages.create(
+                **request, extra_body={"compaction": compaction}, timeout=self.client.timeout
+            )
         except anthropic.RateLimitError as error:
             raise ModelThrottledException(str(error)) from error
         except anthropic.BadRequestError as error:
@@ -971,11 +974,12 @@ class AnthropicModel(Model):
             (result.get("usage") or {}).get("iterations"),
         )
         blocks = [block for block in result.get("content") or [] if block.get("type") == "compaction"]
-        if result.get("stop_reason") != "compaction" or not blocks or not blocks[0].get("content"):
+        block = blocks[0] if blocks else {}
+        if result.get("stop_reason") != "compaction" or not block.get("content") or not block.get("signature"):
             logger.warning("stop_reason=<%s> | compaction produced no summary", result.get("stop_reason"))
             return None
 
-        return {"role": "assistant", "content": [{"text": blocks[0]["content"], "signature": blocks[0]["signature"]}]}
+        return {"role": "assistant", "content": [{"text": block["content"], "signature": block["signature"]}]}
 
     @override
     async def stream(

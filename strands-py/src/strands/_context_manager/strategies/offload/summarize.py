@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from ....agent.conversation_manager.compression.context_compression import compact_messages, strip_reasoning
+from ....agent.conversation_manager.compression.pin_message import is_pinned
 from ....types.content import ContentBlock, Message
 from ....types.tools import ToolResult, ToolResultContent
 from ...methods.summarize import (
@@ -134,7 +135,7 @@ class SummarizeStrategy(BaseOffloadStrategy):
             return False
 
         cut = max(index for index, msg in enumerate(messages) if id(msg) in safe_ids) + 1
-        if any(id(msg) not in safe_ids for msg in messages[1:cut]):
+        if is_pinned(messages, 0) or any(id(msg) not in safe_ids for msg in messages[1:cut]):
             return False
 
         summary_message = await compact_messages(agent, messages[:cut], self._config.get("system_prompt"))

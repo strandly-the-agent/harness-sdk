@@ -2864,12 +2864,13 @@ def test_format_request_sends_signed_summary_as_compaction_block(model, model_id
     assert tru_request == exp_request
 
 
-def test_format_request_appends_compact_beta_to_existing_header(model):
-    model.update_config(params={"extra_headers": {"anthropic-beta": "other-beta"}})
+@pytest.mark.parametrize("existing", ["other-beta", "other-beta, compact-2026-09-04"])
+def test_format_request_appends_compact_beta_to_existing_header(model, existing):
+    model.update_config(params={"extra_headers": {"anthropic-beta": existing}})
     messages = [_compaction_summary(), {"role": "user", "content": [{"text": "next"}]}]
 
     tru_headers = model.format_request(messages)["extra_headers"]
-    exp_headers = {"anthropic-beta": "other-beta,compact-2026-09-04"}
+    exp_headers = {"anthropic-beta": existing if "compact" in existing else f"{existing},compact-2026-09-04"}
 
     assert tru_headers == exp_headers
 
@@ -2918,6 +2919,7 @@ async def test_compact_returns_signed_summary(anthropic_client, model, model_id,
         tools=[{"name": "t", "description": "d", "input_schema": {"type": "object"}}],
         extra_headers={"anthropic-beta": "compact-2026-09-04"},
         extra_body={"compaction": {"type": "summarize", "instructions": "keep the paths"}},
+        timeout=anthropic_client.timeout,
     )
 
 
@@ -2939,6 +2941,7 @@ async def test_compact_omits_instructions_when_not_given(anthropic_client, model
         ("max_tokens", []),
         ("refusal", []),
         ("compaction", [{"type": "compaction", "content": None, "signature": "sig-1"}]),
+        ("compaction", [{"type": "compaction", "content": "Summary so far."}]),
     ],
 )
 @pytest.mark.asyncio
