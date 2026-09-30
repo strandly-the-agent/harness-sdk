@@ -202,13 +202,17 @@ describe('InvocationQueue', () => {
       await expect(waiting).resolves.toBeUndefined()
     })
 
-    it('handoff demotes injects left behind to queue entries so they do not join the next turn owner', () => {
+    it('handoff demotes every inject left behind to a queue entry so none joins the next turn owner', () => {
       const queue = new InvocationQueue()
-      void queue.wait('missed', { mode: 'inject' }).catch(() => {})
+      void queue.wait('missed-1', { mode: 'inject' }).catch(() => {})
+      void queue.wait('missed-2', { mode: 'inject' }).catch(() => {})
       void queue.wait('urgent', { mode: 'cancelPrevious' }).catch(() => {})
 
       expect(queue.handoff()).toBe(true)
-      expect(queue.list().map((entry) => [entry.id, entry.mode])).toEqual([['pending-1', 'queue']])
+      expect(queue.list().map((entry) => [entry.id, entry.mode])).toEqual([
+        ['pending-1', 'queue'],
+        ['pending-2', 'queue'],
+      ])
       expect(queue.takeInjects()).toEqual([])
     })
 

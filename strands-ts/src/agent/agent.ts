@@ -345,7 +345,9 @@ export type AgentConfig = {
    *   before that invocation's next model request (after in-flight tool execution),
    *   and the call resolves with the running invocation's result. If the running
    *   invocation ends by cancellation, error, or interrupt before the input is
-   *   incorporated, the call falls back to `'queue'` and runs on its own.
+   *   incorporated, the call falls back to `'queue'` and runs on its own. Aborting the
+   *   call's `cancelSignal` removes it only while it is still waiting; once its input
+   *   is being incorporated the abort has no effect.
    *
    * Callers can override per call via {@link InvokeOptions.ifBusy}. Under any mode
    * other than `'throw'`, a tool or hook of the running invocation must not `await`

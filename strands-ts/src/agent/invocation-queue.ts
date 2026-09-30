@@ -33,7 +33,10 @@ export interface PendingInvocation {
   readonly id: string
   /** When the call entered the queue. */
   readonly submittedAt: Date
-  /** How the call asked to be handled once the agent is free. */
+  /**
+   * How the call will be handled once the agent is free. An `'inject'` call that missed
+   * the invocation it meant to join is reported as `'queue'`.
+   */
   readonly mode: PendingInvocationMode
 }
 
