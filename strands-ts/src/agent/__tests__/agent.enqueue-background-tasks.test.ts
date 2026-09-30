@@ -6,7 +6,7 @@ import { AfterInvocationEvent } from '../../hooks/events.js'
 import { ExecuteToolStage } from '../../middleware/index.js'
 import { tool } from '../../tools/tool-factory.js'
 import { InterruptResponseContent } from '../../types/interrupt.js'
-import { TextBlock, ToolUseBlock } from '../../types/messages.js'
+import { JsonBlock, TextBlock, ToolResultBlock } from '../../types/messages.js'
 import { Agent } from '../agent.js'
 
 import type { BackgroundTask } from '../../background-tasks/types.js'
@@ -70,7 +70,7 @@ function hasBackgroundDelivery(content: readonly unknown[]): boolean {
       typeof block === 'object' &&
       block !== null &&
       'name' in block &&
-      (block as { name?: string }).name === 'strands_background_task_result'
+      (block as { name?: string }).name === 'strands_manage_background_task'
   )
 }
 
@@ -78,12 +78,13 @@ function persistedTasks(agent: Agent): BackgroundTask[] | undefined {
   return agent.appState.get(BACKGROUND_TASKS_STATE_KEY) as unknown as BackgroundTask[] | undefined
 }
 
-/** The input of the first delivered background-task synthetic tool use, if any. */
+/** `{ toolName, startedBy? }` from the first delivered background-task result's metadata, if any. */
 function deliveryInput(agent: Agent): Record<string, unknown> | undefined {
   for (const message of agent.messages) {
     for (const block of message.content) {
-      if (block instanceof ToolUseBlock && block.name === 'strands_background_task_result') {
-        return block.input as Record<string, unknown>
+      if (block instanceof ToolResultBlock && block.content[0] instanceof JsonBlock) {
+        const { toolName, startedBy } = block.content[0].json as { toolName: string; startedBy?: string }
+        return { toolName, ...(startedBy !== undefined && { startedBy }) }
       }
     }
   }

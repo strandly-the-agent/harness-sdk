@@ -3,7 +3,7 @@ import { Agent } from '../agent.js'
 import { AfterInvocationEvent, AfterModelCallEvent, BeforeModelCallEvent } from '../../hooks/index.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { createMockTool } from '../../__fixtures__/tool-helpers.js'
-import { TextBlock, ToolResultBlock } from '../../types/messages.js'
+import { JsonBlock, TextBlock, ToolResultBlock } from '../../types/messages.js'
 import { tool } from '../../tools/tool-factory.js'
 import { z } from 'zod'
 
@@ -544,8 +544,8 @@ describe('cancel during background-task settlement', () => {
     expect(model.callCount).toBe(3)
     const deliveredTools = agent.messages
       .flatMap((m) => m.content)
-      .filter((b) => b.type === 'toolUseBlock' && b.name === 'strands_background_task_result')
-      .map((b) => ((b as unknown as { input: { toolName: string } }).input ?? {}).toolName)
+      .filter((b): b is ToolResultBlock => b instanceof ToolResultBlock && b.content[0] instanceof JsonBlock)
+      .map((b) => ((b.content[0] as JsonBlock).json as { toolName: string }).toolName)
     expect(deliveredTools.sort()).toEqual(['fast_work', 'slow_work'])
     expect(tasks(agent)).toBeUndefined()
   })

@@ -53,6 +53,7 @@ except Exception as e:
 
 import openai  # noqa: E402 - must import after version check
 
+from ..agent.agent_metadata import AgentMetadata  # noqa: E402
 from ..types.citations import WebLocationDict  # noqa: E402
 from ..types.content import ContentBlock, Messages, Role, SystemContentBlock  # noqa: E402
 from ..types.event_loop import Usage  # noqa: E402
@@ -63,7 +64,7 @@ from ._defaults import resolve_config_metadata  # noqa: E402
 from ._openai_bedrock import BedrockMantleConfig, resolve_bedrock_client_args  # noqa: E402
 from ._openai_cache import apply_cache_config  # noqa: E402
 from ._openai_errors import classify_openai_error  # noqa: E402
-from ._validation import validate_config_keys  # noqa: E402
+from ._validation import _has_location_source, validate_config_keys  # noqa: E402
 from .model import BaseModelConfig, CacheConfig, Model  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -175,9 +176,11 @@ class OpenAIResponsesModel(Model):
                 For a complete list of supported arguments, see https://pypi.org/project/openai/.
                 May be combined with ``bedrock_mantle_config``; when both are set, the config
                 derives ``base_url`` and ``api_key`` (which must not appear in ``client_args``).
-            bedrock_mantle_config: Route requests through Amazon Bedrock's Mantle
-                (OpenAI-compatible) endpoint. See :class:`BedrockMantleConfig` for accepted
-                keys. When set, a fresh bearer token is minted on every request.
+            bedrock_mantle_config: Route requests through one of Amazon Bedrock's
+                OpenAI-compatible endpoints, ``bedrock-mantle`` (the default) or
+                ``bedrock-runtime`` via the config's ``endpoint`` key. See
+                :class:`BedrockMantleConfig` for accepted keys. When set, a fresh bearer
+                token is minted on every request.
             **model_config: Configuration options for the OpenAI Responses API model.
         """
         validate_config_keys(model_config, self.OpenAIResponsesConfig)
@@ -299,6 +302,7 @@ class OpenAIResponsesModel(Model):
         *,
         tool_choice: ToolChoice | None = None,
         model_state: dict[str, Any] | None = None,
+        agent_metadata: AgentMetadata | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream conversation with the OpenAI Responses API model.
@@ -309,6 +313,7 @@ class OpenAIResponsesModel(Model):
             system_prompt: System prompt to provide context to the model.
             tool_choice: Selection strategy for tool invocation.
             model_state: Runtime state for model providers (e.g., server-side response ids).
+            agent_metadata: Invoking agent's metadata.
             **kwargs: Additional keyword arguments for future extensibility.
 
         Yields:
@@ -319,7 +324,7 @@ class OpenAIResponsesModel(Model):
             ModelThrottledException: If the request is throttled by OpenAI (rate limits).
         """
         logger.debug("formatting request for OpenAI Responses API")
-        request = self._format_request(messages, tool_specs, system_prompt, tool_choice, model_state)
+        request = self._format_request(messages, tool_specs, system_prompt, tool_choice, model_state, agent_metadata)
         logger.debug("formatted request=<%s>", request)
 
         logger.debug("invoking OpenAI Responses API model")
@@ -483,11 +488,13 @@ class OpenAIResponsesModel(Model):
                 yield self._format_chunk({"chunk_type": "content_delta", "data_type": "tool", "data": tool_call})
                 yield self._format_chunk({"chunk_type": "content_stop", "data_type": "tool"})
 
-            # Determine finish reason: tool_calls > max_tokens (length) > normal stop
-            if tool_calls:
-                finish_reason = "tool_calls"
-            elif stop_reason == "length":
+            # Determine finish reason: max_tokens (length) > tool_calls > normal stop.
+            # A function call that is still in flight when the response is cut off has truncated
+            # arguments, so it must surface as max_tokens rather than be executed.
+            if stop_reason == "length":
                 finish_reason = "length"
+            elif tool_calls:
+                finish_reason = "tool_calls"
             else:
                 finish_reason = "stop"
             yield self._format_chunk({"chunk_type": "message_stop", "data": finish_reason})
@@ -543,6 +550,7 @@ class OpenAIResponsesModel(Model):
         system_prompt: str | None = None,
         tool_choice: ToolChoice | None = None,
         model_state: dict[str, Any] | None = None,
+        agent_metadata: AgentMetadata | None = None,
     ) -> dict[str, Any]:
         """Format an OpenAI Responses API compatible response streaming request.
 
@@ -552,6 +560,7 @@ class OpenAIResponsesModel(Model):
             system_prompt: System prompt to provide context to the model.
             tool_choice: Selection strategy for tool invocation.
             model_state: Runtime state for model providers (e.g., server-side response ids).
+            agent_metadata: Invoking agent's metadata.
 
         Returns:
             An OpenAI Responses API compatible response streaming request.
@@ -596,7 +605,7 @@ class OpenAIResponsesModel(Model):
             ]
             request.update(self._format_request_tool_choice(tool_choice))
 
-        apply_cache_config(request, cast(CacheConfig | None, self.config.get("cache_config")))
+        apply_cache_config(request, cast(CacheConfig | None, self.config.get("cache_config")), agent_metadata)
 
         return request
 
@@ -648,12 +657,19 @@ class OpenAIResponsesModel(Model):
             if any("cachePoint" in content for content in contents):
                 logger.warning("cachePoint content block is not supported by OpenAI Responses | skipping")
 
-            formatted_contents = [
-                cls._format_request_message_content(content, role=role)
-                for content in contents
-                if not any(
+            filtered_contents = []
+            for content in contents:
+                if any(
                     block_type in content for block_type in ["toolResult", "toolUse", "reasoningContent", "cachePoint"]
-                )
+                ):
+                    continue
+                if _has_location_source(content):
+                    logger.warning("Location sources are not supported by OpenAI Responses | skipping content block")
+                    continue
+                filtered_contents.append(content)
+
+            formatted_contents = [
+                cls._format_request_message_content(content, role=role) for content in filtered_contents
             ]
 
             formatted_tool_calls = [
@@ -913,6 +929,11 @@ class OpenAIResponsesModel(Model):
                     cached = getattr(tokens_details, "cached_tokens", None)
                     if isinstance(cached, int) and cached:
                         usage_data["cacheReadInputTokens"] = cached
+
+                    # Reported first-party from GPT-5.6
+                    cache_write = getattr(tokens_details, "cache_write_tokens", None)
+                    if isinstance(cache_write, int) and cache_write:
+                        usage_data["cacheWriteInputTokens"] = cache_write
 
                 return {
                     "metadata": {
