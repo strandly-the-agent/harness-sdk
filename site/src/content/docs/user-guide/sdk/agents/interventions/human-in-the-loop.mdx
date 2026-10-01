@@ -125,7 +125,8 @@ the classifier entirely (fast path for known-safe tools).
 </Tab>
 </Tabs>
 
-You can customize the classifier's system prompt or model, or
+You can customize the classifier's system prompt or model (resolution order: that
+`model` > <Syntax py="agent.aux_model" ts="agent.auxModel" /> > `agent.model`), or
 provide your own classification function:
 
 <Tabs>
