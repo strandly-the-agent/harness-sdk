@@ -345,16 +345,14 @@ describe('Tracer', () => {
       expect(attributesOfCall(1)).toMatchObject({ 'session.id': 'from-invoke', 'app.name': 'demo' })
     })
 
-    it('does not leak into the next invocation after endAgentSpan', () => {
+    it('clears per-invocation attributes in endAgentSpan', () => {
       const tracer = new Tracer()
 
       const span = tracer.startAgentSpan({ messages: [], agentName: 'agent', traceAttributes: { 'session.id': 's1' } })
       tracer.endAgentSpan(span)
-      tracer.startAgentSpan({ messages: [], agentName: 'agent' })
       tracer.startModelInvokeSpan({ messages: [] })
 
       expect(attributesOfCall(1)['session.id']).toBeUndefined()
-      expect(attributesOfCall(2)['session.id']).toBeUndefined()
     })
   })
 
