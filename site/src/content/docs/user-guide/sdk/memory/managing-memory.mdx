@@ -17,7 +17,7 @@ Once a [memory manager is attached to an agent](./overview), the manager decides
 Writing is opt-in, and comes in two modes:
 
 - **The `add_memory` tool** lets the agent decide what to save. Enable it on the manager with <Syntax py="add_tool_config=True" ts="addToolConfig: true" />.
-- **Automatic extraction** captures memories from the conversation without tool call. Enable it on a writable store, where it runs every 5 turns by default using <Syntax py="agent.aux_model" ts="agent.auxModel" /> (which falls back to `agent.model`).
+- **Automatic extraction** captures memories from the conversation without tool call. Enable it on a writable store, where it runs every 5 turns by default using your agent's model.
 
 <Tabs>
 <Tab label="Python">
@@ -245,7 +245,7 @@ store = BedrockKnowledgeBaseStore(
 </Tab>
 </Tabs>
 
-The `ModelExtractor` distills messages into discrete facts with a model call. Resolution order for its model: the extractor's `model` > <Syntax py="agent.aux_model" ts="agent.auxModel" /> > `agent.model`. Pass a cheaper model to cut cost, or a system prompt to steer what information you want to save as memories. Some backends extract server-side instead: a store that implements the <Syntax py="add_messages" ts="addMessages" /> sink receives the raw message batch with no model call, so for those you omit the extractor.
+The `ModelExtractor` distills messages into discrete facts with a model call. It uses <Syntax py="agent.aux_model" ts="agent.auxModel" /> by default. Pass a cheaper model to cut cost, or a system prompt to steer what information you want to save as memories. Some backends extract server-side instead: a store that implements the <Syntax py="add_messages" ts="addMessages" /> sink receives the raw message batch with no model call, so for those you omit the extractor.
 
 Two triggers ship with the SDK. `InvocationTrigger` runs after every turn, `IntervalTrigger` runs every N turns. For a custom trigger, extend `ExtractionTrigger`. A trigger registers a hook on the agent and calls `fire()` when extraction should run. Tying it to agent state can let a tool decide the moment, rather than extracting on a turn cadence:
 
