@@ -83,6 +83,8 @@ interface AgentToolConfig extends AgentAsToolOptions {
   agent: Agent
 }
 
+const INTERRUPTED_TURNS_KEY = 'subAgentInterruptedTurns'
+
 /**
  * @internal Not for external use. Use {@link Agent.asTool} to create instances.
  *
@@ -111,8 +113,6 @@ interface AgentToolConfig extends AgentAsToolOptions {
  * const result = await writer.invoke('Write about AI agents')
  * ```
  */
-const INTERRUPTED_TURNS_KEY = 'subAgentInterruptedTurns'
-
 export class AgentAsTool extends Tool {
   readonly name: string
   readonly description: string
@@ -199,8 +199,9 @@ export class AgentAsTool extends Tool {
       const parentState = (toolContext.agent as unknown as { _interruptState?: InterruptState })._interruptState
 
       let input: string | InterruptResponseContent[]
-      if (parentState && this._isResuming(parentState, prefix)) {
-        const resumed = this._resumeFromInterrupt(parentState, toolUseId, prefix)
+      const resuming = parentState !== undefined && this._isResuming(parentState, prefix)
+      if (resuming) {
+        const resumed = await this._resumeFromInterrupt(parentState, toolUseId, prefix)
         if (resumed instanceof ToolResultBlock) {
           return resumed
         }
@@ -233,21 +234,32 @@ export class AgentAsTool extends Tool {
       }
       const result = next.value
 
-      if (result.stopReason === 'interrupt' && result.interrupts?.length) {
-        if (parentState) {
-          this._storeInterruptedTurn(parentState, toolUseId)
+      if (result.stopReason === 'interrupt') {
+        if (!result.interrupts?.length) {
+          return createErrorResult(`Agent '${this.name}' interrupted without any interrupts`, toolUseId)
         }
-        throw new InterruptError(
-          result.interrupts.map(
-            (i) =>
-              new Interrupt({
-                id: `${prefix}${i.id}`,
-                name: i.name,
-                ...(i.reason !== undefined && { reason: i.reason }),
-                source: 'tool',
-              })
+        if (!parentState) {
+          throw new InterruptError(result.interrupts)
+        }
+        this._storeInterruptedTurn(parentState, toolUseId)
+        // Registered here, not only when the orchestrator catches the error: the concurrent executor keeps
+        // one InterruptError per batch, so a second interrupting agent-tool would otherwise be dropped.
+        const raised = result.interrupts.map((i) =>
+          parentState.registerInterrupt(
+            new Interrupt({
+              id: `${prefix}${i.id}`,
+              name: i.name,
+              ...(i.reason !== undefined && { reason: i.reason }),
+              source: 'tool',
+            })
           )
         )
+        throw new InterruptError(raised)
+      }
+
+      if (resuming) {
+        // The turn is consumed only once the sub-agent has finished with it; a re-interrupt overwrote it above.
+        delete (parentState.context[INTERRUPTED_TURNS_KEY] as Record<string, JSONValue> | undefined)?.[toolUseId]
       }
 
       if (result.stopReason === 'cancelled') {
@@ -308,15 +320,30 @@ export class AgentAsTool extends Tool {
    * Restore the sub-agent's interrupted turn and map the parent's responses back to its interrupt ids.
    *
    * Returns the responses to resume with, or an error result if there is no turn to restore. A stored
-   * turn that fails to load raises its interrupts again, so the response can be applied on a later attempt.
+   * turn that fails to load, or one whose interrupts have no answer yet, raises its interrupts again so
+   * the turn stays stored and the response can be applied on a later attempt.
    */
-  private _resumeFromInterrupt(
+  private async _resumeFromInterrupt(
     parentState: InterruptState,
     toolUseId: string,
     prefix: string
-  ): InterruptResponseContent[] | ToolResultBlock {
-    const turns = (parentState.context[INTERRUPTED_TURNS_KEY] ?? {}) as Record<string, JSONValue>
-    const turn = turns[toolUseId]
+  ): Promise<InterruptResponseContent[] | ToolResultBlock> {
+    const responses = (parentState.resumeResponses ?? [])
+      .filter((r) => r.interruptResponse.interruptId.startsWith(prefix))
+      .map(
+        (r) =>
+          new InterruptResponseContent({
+            interruptId: r.interruptResponse.interruptId.slice(prefix.length),
+            response: r.interruptResponse.response,
+          })
+      )
+    if (responses.length === 0) {
+      throw new InterruptError(
+        Object.values(parentState.interrupts).filter((i) => i.id.startsWith(prefix) && i.response === undefined)
+      )
+    }
+
+    const turn = (parentState.context[INTERRUPTED_TURNS_KEY] as Record<string, JSONValue> | undefined)?.[toolUseId]
     if (turn !== undefined) {
       try {
         this._agent.loadSnapshot(turn as unknown as Snapshot)
@@ -333,11 +360,14 @@ export class AgentAsTool extends Tool {
           throw new InterruptError(pending)
         }
       }
-      delete turns[toolUseId]
+    } else {
+      // A context-preserving sub-agent restores its own turn from its session on initialization.
+      await this._agent.initialize()
     }
 
     const subState = (this._agent as unknown as { _interruptState: InterruptState })._interruptState
     if (!subState.activated) {
+      logger.error(`Agent '${this.name}' cannot resume: its interrupted turn is not available`)
       return createErrorResult(
         `Agent '${this.name}' did NOT run and the human's response was NOT applied: its interrupted turn ` +
           'is not available. Do not report the requested action as completed; tell the user it failed and ' +
@@ -346,14 +376,6 @@ export class AgentAsTool extends Tool {
       )
     }
 
-    return (parentState.resumeResponses ?? [])
-      .filter((r) => r.interruptResponse.interruptId.startsWith(prefix))
-      .map(
-        (r) =>
-          new InterruptResponseContent({
-            interruptId: r.interruptResponse.interruptId.slice(prefix.length),
-            response: r.interruptResponse.response,
-          })
-      )
+    return responses
   }
 }

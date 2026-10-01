@@ -5,6 +5,7 @@ import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { MockSnapshotStorage } from '../../__fixtures__/mock-storage-provider.js'
 import { createMockTool } from '../../__fixtures__/tool-helpers.js'
 import { Interrupt, InterruptState } from '../../interrupt.js'
+import { logger } from '../../logging/logger.js'
 import { SessionManager } from '../../session/session-manager.js'
 import { InterruptResponseContent } from '../../types/interrupt.js'
 import type { ToolContext } from '../../tools/tool.js'
@@ -14,7 +15,14 @@ const INNER_ID = 'tool:inner-1:confirm'
 const OUTER_ID = 'agent_as_tool:outer-1:tool:inner-1:confirm'
 
 /** A sub-agent whose only tool asks for confirmation, and the orchestrator that calls it once. */
-function nested(options: { preserveContext?: boolean; sessionStorage?: MockSnapshotStorage; rebuilt?: boolean } = {}) {
+function nested(
+  options: {
+    preserveContext?: boolean
+    sessionStorage?: MockSnapshotStorage
+    subSessionStorage?: MockSnapshotStorage
+    rebuilt?: boolean
+  } = {}
+) {
   let confirmed = 0
   // A rebuilt process has a fresh mock model, so it starts at the turn that follows the interrupted tool call.
   const subModel = new MockMessageModel()
@@ -25,7 +33,16 @@ function nested(options: { preserveContext?: boolean; sessionStorage?: MockSnaps
     confirmed += 1
     return 'ok'
   })
-  const sub = new Agent({ id: 'sub', name: 'sub', model: subModel, tools: [confirmTool], printer: false })
+  const sub = new Agent({
+    id: 'sub',
+    name: 'sub',
+    model: subModel,
+    tools: [confirmTool],
+    printer: false,
+    ...(options.subSessionStorage && {
+      sessionManager: new SessionManager({ sessionId: 's1', storage: { snapshot: options.subSessionStorage } }),
+    }),
+  })
 
   const orchModel = new MockMessageModel()
   if (!options.rebuilt)
@@ -59,6 +76,7 @@ describe('AgentAsTool interrupts', () => {
 
     expect(result.stopReason).toBe('interrupt')
     expect(result.interrupts).toMatchObject([{ id: OUTER_ID, name: 'confirm', reason: 'Please confirm' }])
+    expect(JSON.stringify(orch.messages)).not.toContain('toolResult')
   })
 
   it('resumes the sub-agent in process and runs the confirmed tool once', async () => {
@@ -85,7 +103,7 @@ describe('AgentAsTool interrupts', () => {
   })
 
   it('stores nothing for a context-preserving sub-agent and warns when it has no session manager', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
     const { orch } = nested({ preserveContext: true })
 
     await orch.invoke('Test')
@@ -186,6 +204,98 @@ describe('AgentAsTool interrupts', () => {
 
     expect(stream.mock.calls[0]![0]).toEqual([
       new InterruptResponseContent({ interruptId: 'interrupt-1', response: 'yes' }),
+    ])
+  })
+
+  it('resumes a context-preserving sub-agent with its own session manager after both are rebuilt', async () => {
+    const storage = new MockSnapshotStorage()
+    const first = nested({ preserveContext: true, sessionStorage: storage, subSessionStorage: storage })
+    expect((await first.orch.invoke('Test')).stopReason).toBe('interrupt')
+    expect(interruptState(first.orch).context).toEqual({})
+
+    const second = nested({ preserveContext: true, sessionStorage: storage, subSessionStorage: storage, rebuilt: true })
+    const result = await second.orch.invoke([new InterruptResponseContent({ interruptId: OUTER_ID, response: 'yes' })])
+
+    expect(result.stopReason).toBe('endTurn')
+    expect(second.confirmedCount()).toBe(1)
+  })
+
+  it('does not adopt an interrupt that belongs to another tool call', async () => {
+    const { orch, sub, confirmedCount } = nested()
+    const foreign = 'agent_as_tool:tool-999:tool:inner-1:confirm'
+    interruptState(orch).registerInterrupt(new Interrupt({ id: foreign, name: 'confirm' }))
+    interruptState(orch).activate()
+    interruptState(sub).registerInterrupt(new Interrupt({ id: 'stale', name: 'stale' }))
+    interruptState(sub).activate()
+
+    const result = await orch.invoke([new InterruptResponseContent({ interruptId: foreign, response: 'yes' })])
+
+    // A fresh call: stale sub-agent interrupt state is reset, the prompt runs and interrupts normally.
+    expect(result.stopReason).toBe('interrupt')
+    expect(result.interrupts?.map((i) => i.id)).toEqual([OUTER_ID])
+    expect(interruptState(sub).interrupts['stale']).toBeUndefined()
+    expect(confirmedCount()).toBe(0)
+  })
+
+  it('raises the interrupt again when only another interrupt was answered, and keeps the turn', async () => {
+    const { orch } = nested()
+    await orch.invoke('Test')
+    const sibling = 'tool:other-1:confirm'
+    interruptState(orch).registerInterrupt(new Interrupt({ id: sibling, name: 'confirm' }))
+
+    const result = await orch.invoke([new InterruptResponseContent({ interruptId: sibling, response: 'yes' })])
+
+    expect(result.stopReason).toBe('interrupt')
+    expect(result.interrupts?.map((i) => i.id)).toContain(OUTER_ID)
+    expect(Object.keys(storedTurns(orch))).toEqual(['outer-1'])
+  })
+
+  it('re-raises only the interrupts the stored turn still awaits', async () => {
+    const { orch, sub } = nested()
+    await orch.invoke('Test')
+    const finished = 'agent_as_tool:outer-1:tool:inner-0:earlier'
+    interruptState(orch).registerInterrupt(new Interrupt({ id: finished, name: 'earlier' }))
+    const unloadable = sub.takeSnapshot({ preset: 'session' })
+    storedTurns(orch)['outer-1'] = { ...unloadable, schemaVersion: '0.0' } as unknown as JSONValue
+
+    const result = await orch.invoke([
+      new InterruptResponseContent({ interruptId: finished, response: 'yes' }),
+      new InterruptResponseContent({ interruptId: OUTER_ID, response: 'yes' }),
+    ])
+
+    expect(result.stopReason).toBe('interrupt')
+    expect(result.interrupts?.map((i) => i.id)).toEqual([OUTER_ID])
+    expect(Object.keys(storedTurns(orch))).toEqual(['outer-1'])
+  })
+
+  it('surfaces the interrupts of two sub-agents that pause in the same turn', async () => {
+    const mkSub = (id: string) =>
+      new Agent({
+        id,
+        name: id,
+        printer: false,
+        model: new MockMessageModel()
+          .addTurn({ type: 'toolUseBlock', name: 'confirmTool', toolUseId: `${id}-inner`, input: {} })
+          .addTurn({ type: 'textBlock', text: 'done' }),
+        tools: [createMockTool('confirmTool', (context) => context.interrupt({ name: 'confirm' }))],
+      })
+    const orch = new Agent({
+      printer: false,
+      model: new MockMessageModel()
+        .addTurn([
+          { type: 'toolUseBlock', name: 'a', toolUseId: 'call-a', input: { input: 'go' } },
+          { type: 'toolUseBlock', name: 'b', toolUseId: 'call-b', input: { input: 'go' } },
+        ])
+        .addTurn({ type: 'textBlock', text: 'done' }),
+      tools: [mkSub('a').asTool(), mkSub('b').asTool()],
+    })
+
+    const result = await orch.invoke('Test')
+
+    expect(result.stopReason).toBe('interrupt')
+    expect(result.interrupts?.map((i) => i.id).sort()).toEqual([
+      'agent_as_tool:call-a:tool:a-inner:confirm',
+      'agent_as_tool:call-b:tool:b-inner:confirm',
     ])
   })
 })
