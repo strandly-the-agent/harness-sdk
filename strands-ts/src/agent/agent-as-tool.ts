@@ -8,7 +8,7 @@
 
 import type { Agent } from './agent.js'
 import type { Snapshot } from '../types/snapshot.js'
-import { Interrupt, InterruptError, type InterruptState } from '../interrupt.js'
+import { Interrupt, InterruptError, InterruptState, type InterruptStateData } from '../interrupt.js'
 import { logger } from '../logging/logger.js'
 import { InterruptResponseContent } from '../types/interrupt.js'
 import { deepCopy, type JSONValue } from '../types/json.js'
@@ -84,6 +84,16 @@ interface AgentToolConfig extends AgentAsToolOptions {
 }
 
 const INTERRUPTED_TURNS_KEY = 'subAgentInterruptedTurns'
+
+/** Ids of the interrupts a stored sub-agent turn is waiting on, or undefined if its interrupt state is unreadable. */
+function awaitedInterruptIds(turn: JSONValue): string[] | undefined {
+  try {
+    const data = (turn as unknown as Snapshot).data.interrupts as unknown as InterruptStateData
+    return Object.keys(InterruptState.fromJSON(data).interrupts)
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * @internal Not for external use. Use {@link Agent.asTool} to create instances.
@@ -241,20 +251,7 @@ export class AgentAsTool extends Tool {
         if (!parentState) {
           throw new InterruptError(result.interrupts)
         }
-        this._storeInterruptedTurn(parentState, toolUseId)
-        // Registered here, not only when the orchestrator catches the error: the concurrent executor keeps
-        // one InterruptError per batch, so a second interrupting agent-tool would otherwise be dropped.
-        const raised = result.interrupts.map((i) =>
-          parentState.registerInterrupt(
-            new Interrupt({
-              id: `${prefix}${i.id}`,
-              name: i.name,
-              ...(i.reason !== undefined && { reason: i.reason }),
-              source: 'tool',
-            })
-          )
-        )
-        throw new InterruptError(raised)
+        this._raiseInterrupts(parentState, toolUseId, prefix, result.interrupts)
       }
 
       if (resuming) {
@@ -293,6 +290,29 @@ export class AgentAsTool extends Tool {
   /** Whether the parent is holding an interrupt raised by this tool call. */
   private _isResuming(parentState: InterruptState, prefix: string): boolean {
     return parentState.activated && Object.keys(parentState.interrupts).some((id) => id.startsWith(prefix))
+  }
+
+  /** Store the sub-agent's interrupted turn and raise its interrupts in the parent, namespaced to this tool call. */
+  private _raiseInterrupts(
+    parentState: InterruptState,
+    toolUseId: string,
+    prefix: string,
+    interrupts: Interrupt[]
+  ): never {
+    this._storeInterruptedTurn(parentState, toolUseId)
+    // Registered here, not only when the orchestrator catches the error: the concurrent executor keeps
+    // one InterruptError per batch, so a second interrupting agent-tool would otherwise be dropped.
+    const raised = interrupts.map((i) =>
+      parentState.registerInterrupt(
+        new Interrupt({
+          id: `${prefix}${i.id}`,
+          name: i.name,
+          ...(i.reason !== undefined && { reason: i.reason }),
+          source: 'tool',
+        })
+      )
+    )
+    throw new InterruptError(raised)
   }
 
   /**
@@ -349,10 +369,12 @@ export class AgentAsTool extends Tool {
         this._agent.loadSnapshot(turn as unknown as Snapshot)
       } catch (error) {
         logger.error(`Agent '${this.name}' failed to restore its interrupted turn: ${String(error)}`)
-        const awaited = ((turn as { data?: { interrupts?: { interrupts?: Record<string, JSONValue> } } }).data
-          ?.interrupts?.interrupts ?? {}) as Record<string, JSONValue>
+        const awaited = awaitedInterruptIds(turn)
+        if (awaited === undefined) {
+          logger.error(`Agent '${this.name}': the stored turn has no readable interrupt state to raise again`)
+        }
         const pending = Object.values(parentState.interrupts).filter(
-          (i) => i.id.startsWith(prefix) && i.id.slice(prefix.length) in awaited
+          (i) => i.id.startsWith(prefix) && awaited?.includes(i.id.slice(prefix.length))
         )
         if (pending.length > 0) {
           // The answer could not be applied, so the interrupts are unanswered again and the turn stays stored.
@@ -365,8 +387,7 @@ export class AgentAsTool extends Tool {
       await this._agent.initialize()
     }
 
-    const subState = (this._agent as unknown as { _interruptState: InterruptState })._interruptState
-    if (!subState.activated) {
+    if (!this._agent._interruptState.activated) {
       logger.error(`Agent '${this.name}' cannot resume: its interrupted turn is not available`)
       return createErrorResult(
         `Agent '${this.name}' did NOT run and the human's response was NOT applied: its interrupted turn ` +

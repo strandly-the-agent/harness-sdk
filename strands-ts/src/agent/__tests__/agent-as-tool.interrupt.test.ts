@@ -151,6 +151,18 @@ describe('AgentAsTool interrupts', () => {
     expect(Object.keys(storedTurns(orch))).toEqual(['outer-1'])
   })
 
+  it('logs instead of re-raising when an unloadable stored turn has no readable interrupt state', async () => {
+    const { orch } = nested()
+    await orch.invoke('Test')
+    storedTurns(orch)['outer-1'] = { data: { messages: 'not-a-list' } }
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {})
+
+    const result = await orch.invoke([new InterruptResponseContent({ interruptId: OUTER_ID, response: 'yes' })])
+
+    expect(result.stopReason).toBe('endTurn')
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('no readable interrupt state'))
+  })
+
   it('returns an error result when there is no turn to resume', async () => {
     const sub = new Agent({ name: 'sub', model: new MockMessageModel(), printer: false })
     const tool = new AgentAsTool({ agent: sub })
