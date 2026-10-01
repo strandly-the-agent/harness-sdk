@@ -328,7 +328,7 @@ export class AgentAsTool extends Tool {
         )
         if (pending.length > 0) {
           // The answer could not be applied, so the interrupts are unanswered again and the turn stays stored.
-          for (const interrupt of pending) interrupt.response = undefined
+          for (const interrupt of pending) delete interrupt.response
           throw new InterruptError(pending)
         }
       }

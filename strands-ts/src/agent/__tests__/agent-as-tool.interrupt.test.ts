@@ -23,12 +23,13 @@ function nested(options: { preserveContext?: boolean; sessionStorage?: MockSnaps
   const confirmTool = createMockTool('confirmTool', (context) => {
     context.interrupt({ name: 'confirm', reason: 'Please confirm' })
     confirmed += 1
-    return { toolUseId: context.toolUse.toolUseId, status: 'success', content: [{ text: 'ok' }] }
+    return 'ok'
   })
   const sub = new Agent({ id: 'sub', name: 'sub', model: subModel, tools: [confirmTool], printer: false })
 
   const orchModel = new MockMessageModel()
-  if (!options.rebuilt) orchModel.addTurn({ type: 'toolUseBlock', name: 'sub', toolUseId: 'outer-1', input: { input: 'go' } })
+  if (!options.rebuilt)
+    orchModel.addTurn({ type: 'toolUseBlock', name: 'sub', toolUseId: 'outer-1', input: { input: 'go' } })
   orchModel.addTurn({ type: 'textBlock', text: 'orch done' })
   const orch = new Agent({
     id: 'orch',
@@ -152,8 +153,12 @@ describe('AgentAsTool interrupts', () => {
     expect(JSON.stringify(next.value.content)).toContain('NOT applied')
   })
 
-  it('maps only this call\'s responses, with the tool use id escaped', async () => {
-    const sub = new Agent({ name: 'sub', model: new MockMessageModel().addTurn({ type: 'textBlock', text: 'done' }), printer: false })
+  it("maps only this call's responses, with the tool use id escaped", async () => {
+    const sub = new Agent({
+      name: 'sub',
+      model: new MockMessageModel().addTurn({ type: 'textBlock', text: 'done' }),
+      printer: false,
+    })
     interruptState(sub).registerInterrupt(new Interrupt({ id: 'interrupt-1', name: 'confirm' }))
     interruptState(sub).activate()
     const stream = vi.spyOn(sub, 'stream')
@@ -179,7 +184,8 @@ describe('AgentAsTool interrupts', () => {
     let next = await gen.next()
     while (!next.done) next = await gen.next()
 
-    expect(stream.mock.calls[0]![0]).toEqual([new InterruptResponseContent({ interruptId: 'interrupt-1', response: 'yes' })])
+    expect(stream.mock.calls[0]![0]).toEqual([
+      new InterruptResponseContent({ interruptId: 'interrupt-1', response: 'yes' }),
+    ])
   })
 })
-
