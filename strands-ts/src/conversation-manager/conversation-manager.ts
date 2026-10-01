@@ -32,7 +32,8 @@ export type ConversationManagerReduceOptions = {
 
   /**
    * Model for conversation managers that perform model-based reduction (e.g. summarization):
-   * `agent.auxModel > agent.model`.
+   * `agent.auxModel` when one is configured, otherwise the model of the call that triggered
+   * the reduction.
    */
   model: Model
 
@@ -103,6 +104,11 @@ export type ConversationManagerOptions = {
  * }
  * ```
  */
+/** An unset `auxModel` keeps the routed model of the call that triggered reduction. */
+function reductionModel(event: AfterModelCallEvent | BeforeModelCallEvent): Model {
+  return event.agent.auxModel === event.agent.model ? event.model : event.agent.auxModel
+}
+
 export abstract class ConversationManager implements Plugin {
   /**
    * A stable string identifier for this conversation manager.
@@ -167,7 +173,7 @@ export abstract class ConversationManager implements Plugin {
     // Reactive overflow recovery
     agent.addHook(AfterModelCallEvent, async (event) => {
       if (event.error instanceof ContextWindowOverflowError) {
-        if (await this.reduce({ agent: event.agent, model: event.agent.auxModel, error: event.error })) {
+        if (await this.reduce({ agent: event.agent, model: reductionModel(event), error: event.error })) {
           event.retry = true
         }
       }
@@ -190,7 +196,7 @@ export abstract class ConversationManager implements Plugin {
         )
         // Proactive compression is best-effort: swallow errors so the model call can still proceed.
         try {
-          await this.reduce({ agent: event.agent, model: event.agent.auxModel })
+          await this.reduce({ agent: event.agent, model: reductionModel(event) })
         } catch (e) {
           logger.warn(`conversation_manager=<${this.name}> | proactive compression failed, continuing | error=<${e}>`)
         }

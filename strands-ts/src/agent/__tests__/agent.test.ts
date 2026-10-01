@@ -35,6 +35,7 @@ import {
 } from '../../hooks/events.js'
 import { BedrockModel } from '../../models/bedrock.js'
 import { ModelRouter } from '../../models/routing/router.js'
+import type { Model } from '../../models/model.js'
 import { StructuredOutputError } from '../../errors.js'
 import { expectLoopMetrics } from '../../__fixtures__/metrics-helpers.js'
 import { expectAgentResult } from '../../__fixtures__/agent-helpers.js'
@@ -1407,7 +1408,7 @@ describe('Agent', () => {
     it('rejects a ModelRouter', () => {
       const router = new ModelRouter([new MockMessageModel()])
 
-      expect(() => new Agent({ auxModel: router as unknown as string })).toThrow(/ModelRouter/)
+      expect(() => new Agent({ auxModel: router as unknown as Model })).toThrow(/ModelRouter/)
     })
 
     it('is reassignable at runtime', () => {
@@ -1425,7 +1426,7 @@ describe('Agent', () => {
       expect(agent.auxModel).toBe(model)
 
       expect(() => {
-        agent.auxModel = new ModelRouter([new MockMessageModel()]) as unknown as string
+        agent.auxModel = new ModelRouter([new MockMessageModel()]) as unknown as Model
       }).toThrow(/ModelRouter/)
     })
   })

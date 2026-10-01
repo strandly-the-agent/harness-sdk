@@ -474,6 +474,7 @@ describe('HumanInTheLoop', () => {
         .addTurn({ type: 'toolUseBlock', name: 'deleteFile', toolUseId: 'tool-1', input: { path: '/data' } })
         .addTurn({ type: 'textBlock', text: 'Done' })
       const auxStreamSpy = vi.spyOn(auxModel, 'stream')
+      const agentStreamSpy = vi.spyOn(agentModel, 'stream')
 
       const agent = new Agent({
         model: agentModel,
@@ -487,6 +488,7 @@ describe('HumanInTheLoop', () => {
 
       expect(result.stopReason).toBe('interrupt')
       expect(auxStreamSpy).toHaveBeenCalledTimes(1)
+      expect(agentStreamSpy).toHaveBeenCalledTimes(1)
     })
 
     it('classifier: true allows tool when LLM says no approval needed', async () => {
