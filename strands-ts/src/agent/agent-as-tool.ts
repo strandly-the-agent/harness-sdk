@@ -9,6 +9,7 @@
 import type { Agent } from './agent.js'
 import type { Snapshot } from '../types/snapshot.js'
 import { Interrupt, InterruptError, type InterruptState } from '../interrupt.js'
+import { logger } from '../logging/logger.js'
 import { InterruptResponseContent } from '../types/interrupt.js'
 import { deepCopy, type JSONValue } from '../types/json.js'
 import { JsonBlock, TextBlock, ToolResultBlock } from '../types/messages.js'
@@ -291,7 +292,7 @@ export class AgentAsTool extends Tool {
   private _storeInterruptedTurn(parentState: InterruptState, toolUseId: string): void {
     if (this._preserveContext) {
       if (this._agent.sessionManager == null) {
-        console.warn(
+        logger.warn(
           `Agent '${this.name}' interrupted with preserveContext=true and no session manager, ` +
             'so its interrupt cannot be resumed after a restart'
         )
@@ -320,7 +321,7 @@ export class AgentAsTool extends Tool {
       try {
         this._agent.loadSnapshot(turn as unknown as Snapshot)
       } catch (error) {
-        console.error(`Agent '${this.name}' failed to restore its interrupted turn: ${String(error)}`)
+        logger.error(`Agent '${this.name}' failed to restore its interrupted turn: ${String(error)}`)
         const awaited = ((turn as { data?: { interrupts?: { interrupts?: Record<string, JSONValue> } } }).data
           ?.interrupts?.interrupts ?? {}) as Record<string, JSONValue>
         const pending = Object.values(parentState.interrupts).filter(
