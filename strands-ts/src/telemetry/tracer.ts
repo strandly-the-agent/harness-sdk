@@ -197,8 +197,6 @@ export class Tracer {
    * Custom attributes to include on all spans created by this tracer.
    */
   private readonly _traceAttributes: Record<string, AttributeValue>
-  /** Per-invocation attributes from startAgentSpan, applied to child spans until endAgentSpan. */
-  private _invocationTraceAttributes: Record<string, AttributeValue> = {}
 
   /** Root span for the current agent invocation. */
   private _agentSpan: Span | undefined
@@ -279,7 +277,6 @@ export class Tracer {
     this._traceState.currentCycle = undefined
     this._traceState.currentModel = undefined
     this._traceState.currentTool = undefined
-    this._invocationTraceAttributes = traceAttributes ?? {}
 
     try {
       const spanName = `invoke_agent ${agentName}`
@@ -326,7 +323,6 @@ export class Tracer {
     // Clear stale state from any previous invocation
     this._agentSpan = undefined
     this._loopSpan = undefined
-    this._invocationTraceAttributes = {}
 
     // Clear local trace state
     this._traceState.currentCycle = undefined
@@ -375,7 +371,7 @@ export class Tracer {
 
       const span = this._startSpan({
         name: 'chat',
-        attributes: { ...attributes, ...this._traceAttributes, ...this._invocationTraceAttributes },
+        attributes: { ...attributes, ...this._traceAttributes },
         spanKind: SpanKind.INTERNAL,
         ...(this._loopSpan && { parentSpan: this._loopSpan }),
       })
@@ -449,7 +445,7 @@ export class Tracer {
 
       const span = this._startSpan({
         name: `execute_tool ${tool.name}`,
-        attributes: { ...attributes, ...this._traceAttributes, ...this._invocationTraceAttributes },
+        attributes: { ...attributes, ...this._traceAttributes },
         spanKind: SpanKind.INTERNAL,
         ...(this._loopSpan && { parentSpan: this._loopSpan }),
       })
@@ -921,7 +917,7 @@ export class Tracer {
       const attributes: Record<string, AttributeValue> = { 'agent_loop.cycle_id': cycleId }
       const span = this._startSpan({
         name: 'execute_agent_loop_cycle',
-        attributes: { ...attributes, ...this._traceAttributes, ...this._invocationTraceAttributes },
+        attributes: { ...attributes, ...this._traceAttributes },
         ...(this._agentSpan && { parentSpan: this._agentSpan }),
       })
       this._addEventMessages(span, messages)
