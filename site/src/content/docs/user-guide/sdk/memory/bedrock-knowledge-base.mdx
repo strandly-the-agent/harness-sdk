@@ -239,7 +239,7 @@ The score metric is a property of the vector store behind the knowledge base. Fi
 
 ## Extraction
 
-Enable [automatic extraction](./managing-memory#automatic-extraction) on a writable store to capture memories from the conversation. By default it runs every 5 turns, distilling facts client-side with a `ModelExtractor` that uses <Syntax py="agent.aux_model" ts="agent.auxModel" /> (which falls back to `agent.model`):
+Enable [automatic extraction](./managing-memory#automatic-extraction) on a writable store to capture memories from the conversation. By default it runs every 5 turns, distilling facts client-side with a `ModelExtractor` that uses the agent's own model:
 
 <Tabs>
 <Tab label="Python">
