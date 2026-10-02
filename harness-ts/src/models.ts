@@ -24,7 +24,9 @@ import type { Effort } from './types/agent.js'
 
 const ANTHROPIC_MAX_TOKENS = 32_000
 // Claude calls the search directly (not from code execution), so results come back as citations
-// and the tool works on every Claude model, not only those with programmatic tool calling.
+// and the tool works on every Claude model, not only those with programmatic tool calling. The
+// type is a dated version; the current ones are listed at
+// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
 const ANTHROPIC_WEB_SEARCH = {
   type: 'web_search_20260318' as const,
   name: 'web_search' as const,
