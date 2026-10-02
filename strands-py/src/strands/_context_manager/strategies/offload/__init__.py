@@ -51,7 +51,9 @@ class _OffloadNamespace:
 
         At message level, a model that supports ``Model.compact`` writes the summary itself (as an assistant
         message) when the summarized messages form an unbroken, unpinned prefix of the conversation and no
-        dedicated ``model`` is configured; otherwise the summary is generated client-side.
+        dedicated ``model`` is configured; the opening user message is folded into that summary even though
+        message-level offload never summarizes it otherwise. In every other case the summary is generated
+        client-side.
 
         Args:
             target: What content to target for summarization.

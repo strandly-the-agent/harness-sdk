@@ -79,6 +79,23 @@ def _collect_preserved(
     return eligible, preserved
 
 
+def _only_first_user_preserved(messages: list[Message], range_end: int, preserved: list[Message]) -> bool:
+    """True when the provider may compact [0, range_end): nothing is held back except an unpinned first user message.
+
+    After a compaction the range opens with the provider's assistant block, so the first user message is not
+    necessarily at index 0.
+    """
+    if not preserved:
+        return True
+    first_user = next((i for i in range(range_end) if messages[i]["role"] == "user"), None)
+    return (
+        first_user is not None
+        and len(preserved) == 1
+        and preserved[0] is messages[first_user]
+        and not is_pinned(messages, first_user)
+    )
+
+
 @tool(context=True)
 async def summarize_context(
     tool_context: ToolContext,
@@ -140,7 +157,7 @@ async def summarize_context(
         # The provider's signed summary may open the conversation, so it folds in the first user message too,
         # but only when nothing else in the range is preserved: the block must come first.
         summary_message = None
-        if preserved == [messages[0]] and not is_pinned(messages, 0):
+        if _only_first_user_preserved(messages, split_point, preserved):
             summary_message = await compact_messages(agent, messages[:split_point])
         if summary_message is not None:
             eligible, preserved = messages[:split_point], []

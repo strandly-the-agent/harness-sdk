@@ -2954,6 +2954,18 @@ async def test_compact_returns_none_without_summary(anthropic_client, model, mes
 
 
 @pytest.mark.asyncio
+async def test_compact_keeps_client_kwargs_from_params(anthropic_client, model, messages):
+    anthropic_client.beta.messages.create = unittest.mock.AsyncMock(return_value=_compaction_response())
+    model.update_config(params={"timeout": 30, "extra_body": {"foo": 1}})
+
+    await model.compact(messages)
+
+    kwargs = anthropic_client.beta.messages.create.call_args.kwargs
+    assert kwargs["timeout"] == 30
+    assert kwargs["extra_body"] == {"foo": 1, "compaction": {"type": "summarize"}}
+
+
+@pytest.mark.asyncio
 async def test_compact_rate_limit_error(anthropic_client, model, messages):
     anthropic_client.beta.messages.create = unittest.mock.AsyncMock(
         side_effect=anthropic.RateLimitError("rate limit", response=unittest.mock.Mock(), body=None)

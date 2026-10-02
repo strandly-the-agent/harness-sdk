@@ -955,12 +955,12 @@ class AnthropicModel(Model):
         compaction: dict[str, Any] = {"type": "summarize"}
         if instructions:
             compaction["instructions"] = instructions
+        request["extra_body"] = {**(request.get("extra_body") or {}), "compaction": compaction}
+        # An explicit timeout keeps the SDK from refusing a non-streaming call with a large max_tokens.
+        request.setdefault("timeout", self.client.timeout)
 
         try:
-            # An explicit timeout keeps the SDK from refusing a non-streaming call with a large max_tokens.
-            response = await self.client.beta.messages.create(
-                **request, extra_body={"compaction": compaction}, timeout=self.client.timeout
-            )
+            response = await self.client.beta.messages.create(**request)
         except anthropic.RateLimitError as error:
             raise ModelThrottledException(str(error)) from error
         except anthropic.BadRequestError as error:

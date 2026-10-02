@@ -503,6 +503,21 @@ class TestSummarizeContextCompaction:
         assert messages[0]["content"][0]["text"] == "Message 1"
         assert messages[1]["role"] == "user"
 
+    async def test_compacts_again_after_a_previous_compaction(self, alist):
+        messages = make_messages(20)
+        agent = make_agent(messages, compaction_model())
+        await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+        messages.extend(make_messages(10))
+
+        result = await invoke_tool(summarize_context, agent, alist, keep_recent=10, summary_ratio=0.5)
+
+        assert "Summarized" in result
+        assert agent.model.compact.call_count == 2
+        agent.model.stream.assert_not_called()
+        compacted = agent.model.compact.call_args.args[0]
+        assert compacted[0]["content"] == [{"text": "Compacted", "signature": "sig-1"}]
+        assert messages[0]["content"] == [{"text": "Compacted", "signature": "sig-1"}]
+
     async def test_pinned_first_message_skips_provider_compaction(self, alist):
         messages = make_messages(20)
         pin_message(messages, 0)
