@@ -3009,3 +3009,4 @@ async def test_compact_returns_none_when_compaction_is_rejected(anthropic_client
 
     assert await model.compact(messages) is None
     assert "compaction rejected" in caplog.text
+    assert model.supports_compaction is False

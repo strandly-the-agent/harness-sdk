@@ -173,6 +173,7 @@ class AnthropicModel(Model):
 
         client_args = client_args or {}
         self.client = anthropic.AsyncAnthropic(**client_args)
+        self._compaction_rejected = False
 
     @override
     def update_config(self, **model_config: Unpack[AnthropicConfig]) -> None:  # type: ignore[override]
@@ -916,8 +917,8 @@ class AnthropicModel(Model):
     @property
     @override
     def supports_compaction(self) -> bool:
-        """Anthropic writes signed summaries through the compaction API."""
-        return True
+        """Anthropic writes signed summaries through the compaction API, unless this model has rejected it."""
+        return not self._compaction_rejected
 
     @override
     async def compact(
@@ -968,6 +969,7 @@ class AnthropicModel(Model):
                 raise ContextWindowOverflowException(str(error)) from error
             # The model, account or gateway does not offer compaction; the caller's summarizer takes over.
             logger.warning("model_id=<%s>, error=<%s> | compaction rejected", self.config["model_id"], error)
+            self._compaction_rejected = True
             return None
 
         result = response.model_dump()

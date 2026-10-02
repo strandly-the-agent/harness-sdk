@@ -311,6 +311,51 @@ class TestSummarizeStrategyCompaction:
         assert [msg["content"][-1]["text"] for msg in compacted] == ["first", "old1", "old2", "old3"]
 
     @pytest.mark.asyncio
+    async def test_provider_summary_keeps_the_pending_user_turn(self, compaction_agent):
+        strategy = Offload.summarize("*").when(utilization=0.8)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")]),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(role="assistant", content=[ContentBlock(text="old3")]),
+            Message(role="user", content=[ContentBlock(text="pending question")]),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        assert await strategy.apply(context) is True
+
+        compacted = compaction_agent.model.compact.call_args.args[0]
+        assert [msg["content"][0]["text"] for msg in compacted] == ["first", "old1", "old2", "old3"]
+        assert messages == [
+            Message(role="assistant", content=[ContentBlock(text="Compacted", signature="sig-1")]),
+            Message(role="user", content=[ContentBlock(text="pending question")]),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_provider_summary_declines_when_keeping_the_last_message_splits_a_tool_pair(self, compaction_agent):
+        strategy = Offload.summarize("*").when(utilization=0.8)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="first")]),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(
+                role="assistant",
+                content=[ContentBlock(toolUse={"toolUseId": "t1", "name": "tool", "input": {}})],
+            ),
+            Message(
+                role="user",
+                content=[ContentBlock(toolResult={"toolUseId": "t1", "status": "success", "content": []})],
+            ),
+        ]
+        compaction_agent.messages = messages
+        context = ContextState(messages=messages, agent=compaction_agent, utilization=0.9)
+
+        await strategy.apply(context)
+
+        compaction_agent.model.compact.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_provider_summary_merges_with_following_assistant_turn(self, compaction_agent):
         strategy = Offload.summarize("*").when(utilization=0.8, preserve_recent=1)
         messages: Messages = [

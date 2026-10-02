@@ -129,13 +129,16 @@ class SummarizeStrategy(BaseOffloadStrategy):
         """Replace the leading messages with the provider's signed summary when it can write one.
 
         The provider's block must open the conversation, so this only applies when every message before the last
-        removable one is itself removable (the first message is folded in as well).
+        removable one is itself removable (the first message is folded in as well). The final message, usually the
+        pending user turn, is always kept.
         """
         if self._config.get("model") is not None or not agent.model.supports_compaction:
             return False
 
-        cut = max(index for index, msg in enumerate(messages) if id(msg) in safe_ids) + 1
-        if is_pinned(messages, 0) or any(id(msg) not in safe_ids for msg in messages[1:cut]):
+        cut = min(max(index for index, msg in enumerate(messages) if id(msg) in safe_ids) + 1, len(messages) - 1)
+        if cut < 2 or is_pinned(messages, 0) or any(id(msg) not in safe_ids for msg in messages[1:cut]):
+            return False
+        if any("toolUse" in block for block in messages[cut - 1]["content"]):
             return False
 
         summary_message = await compact_messages(agent, messages[:cut], self._config.get("system_prompt"))
