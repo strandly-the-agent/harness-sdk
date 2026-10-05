@@ -11,9 +11,9 @@ import threading
 import pytest
 
 from strands.experimental.sandbox import StrandsShellSandbox
+from strands.experimental.sandbox.strands_shell import STRANDS_SHELL_TOOL_DESCRIPTION
 from strands.sandbox.errors import SandboxPathNotFoundError
 from strands.sandbox.types import ExecutionResult, FileInfo, StreamChunk
-from strands.vended_tools.shell.types import SANDBOX_SHELL_DESCRIPTION
 
 strands_shell = pytest.importorskip("strands_shell")
 
@@ -56,15 +56,25 @@ async def test_execute_streaming_yields_chunks_then_result(sandbox):
 
 
 @pytest.mark.asyncio
-async def test_execute_respects_cwd_option(sandbox):
-    result = await sandbox.execute("pwd", cwd="/ws")
-    assert result.stdout == "/ws\n"
+async def test_execute_cwd_option_applies_to_that_call_only(sandbox):
+    home = (await sandbox.execute("pwd")).stdout
+    assert (await sandbox.execute("pwd", cwd="/ws")).stdout == "/ws\n"
+    assert (await sandbox.execute("pwd")).stdout == home
 
 
 @pytest.mark.asyncio
-async def test_execute_applies_env_option(sandbox):
-    result = await sandbox.execute("echo $GREETING", env={"GREETING": "hi there"})
-    assert result.stdout == "hi there\n"
+async def test_execute_cwd_option_restores_after_failure(sandbox):
+    home = (await sandbox.execute("pwd")).stdout
+    assert (await sandbox.execute("false", cwd="/ws")).exit_code == 1
+    assert (await sandbox.execute("pwd")).stdout == home
+
+
+@pytest.mark.asyncio
+async def test_execute_env_option_applies_to_that_call_only(sandbox):
+    await sandbox.execute("export KEEP=original")
+    result = await sandbox.execute("echo $GREETING $KEEP", env={"GREETING": "hi 'there'", "KEEP": "override"})
+    assert result.stdout == "hi 'there' override\n"
+    assert (await sandbox.execute("echo GREETING=$GREETING KEEP=$KEEP")).stdout == "GREETING= KEEP=original\n"
 
 
 @pytest.mark.asyncio
@@ -74,10 +84,23 @@ async def test_execute_rejects_invalid_env_key(sandbox):
 
 
 @pytest.mark.asyncio
-async def test_execute_does_not_leak_state_between_calls(sandbox):
-    await sandbox.execute("cd /tmp; FOO=1; export BAR=2")
-    result = await sandbox.execute("pwd; echo FOO=$FOO BAR=$BAR")
-    assert result.stdout == "/home/lash\nFOO= BAR=\n"
+async def test_session_state_persists_between_calls(sandbox):
+    await sandbox.execute("cd /ws; FOO=1; greet() { echo hello $1; }")
+    result = await sandbox.execute("pwd; echo FOO=$FOO; greet world")
+    assert result.stdout == "/ws\nFOO=1\nhello world\n"
+
+
+@pytest.mark.asyncio
+async def test_execute_heredoc_writes_file(sandbox):
+    # Regression: a subshell wrapper around the command broke here-docs in strands-shell 0.3.3.
+    result = await sandbox.execute("cat > /tmp/notes.txt << 'EOF'\nline one\nline two\nEOF")
+    assert result.exit_code == 0
+    assert await sandbox.read_text("/tmp/notes.txt") == "line one\nline two\n"
+
+
+@pytest.mark.asyncio
+async def test_execute_empty_command_succeeds(sandbox):
+    assert (await sandbox.execute("")).exit_code == 0
 
 
 @pytest.mark.asyncio
@@ -198,6 +221,40 @@ async def test_usable_from_multiple_threads(sandbox):
 
 
 @pytest.mark.asyncio
+async def test_concurrent_first_use_from_many_threads_starts_one_worker(sandbox):
+    def workers() -> set[threading.Thread]:
+        return {thread for thread in threading.enumerate() if thread.name == "strands-shell"}
+
+    workers_before = workers()
+    results: list[ExecutionResult] = []
+    threads = [
+        threading.Thread(target=lambda: results.append(asyncio.run(sandbox.execute("echo $$")))) for _ in range(8)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(results) == 8
+    assert len(workers() - workers_before) == 1
+
+
+@pytest.mark.asyncio
+async def test_shell_construction_failure_raises_on_every_call():
+    sandbox = StrandsShellSandbox(binds=[strands_shell.Bind("/definitely/not/here", "/ws")])
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="not found"):
+            await sandbox.execute("echo hi")
+
+
+@pytest.mark.asyncio
+async def test_cancelled_call_does_not_break_the_sandbox():
+    sandbox = StrandsShellSandbox(timeout=5)
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(sandbox.execute("sleep 1"), timeout=0.1)
+    assert (await sandbox.execute("echo again")).stdout == "again\n"
+
+
+@pytest.mark.asyncio
 async def test_worker_thread_exits_when_sandbox_is_collected():
     sandbox = StrandsShellSandbox()
     # Drain the generator fully; a suspended one would hold a reference to the sandbox.
@@ -225,5 +282,5 @@ def test_get_tools_vends_sandbox_tools(sandbox, host_dir):
     tools = {tool.tool_name: tool for tool in sandbox.get_tools()}
     assert set(tools) == {"sandbox_file_editor", "sandbox_shell"}
     description = tools["sandbox_shell"].tool_spec["description"]
-    assert description.startswith(SANDBOX_SHELL_DESCRIPTION)
+    assert description.startswith(STRANDS_SHELL_TOOL_DESCRIPTION)
     assert f"{host_dir} -> /ws" in description

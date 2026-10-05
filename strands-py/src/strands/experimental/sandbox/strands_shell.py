@@ -9,6 +9,7 @@ Requires the ``strands-shell`` extra: ``pip install 'strands-agents[strands-shel
 """
 
 import asyncio
+import contextlib
 import functools
 import logging
 import queue
@@ -23,13 +24,12 @@ from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar
 from ...sandbox.base import Sandbox
 from ...sandbox.constants import LANGUAGE_PATTERN
 from ...sandbox.errors import SandboxPathNotFoundError
-from ...sandbox.posix_shell import build_shell_env_prefix
+from ...sandbox.posix_shell import validate_env_keys
 from ...sandbox.types import ExecutionResult, FileInfo, StreamChunk
 from ...types.tools import AgentTool
 from ...vended_tools.file_editor import make_file_editor
 from ...vended_tools.file_editor.file_editor import DEFAULT_FILE_EDITOR_DESCRIPTION
 from ...vended_tools.shell import make_shell
-from ...vended_tools.shell.types import SANDBOX_SHELL_DESCRIPTION
 
 if TYPE_CHECKING:
     import strands_shell
@@ -39,34 +39,80 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 _RequestQueue: TypeAlias = "queue.SimpleQueue[tuple[Callable[[Any], Any], Future[Any]] | None]"
 
+STRANDS_SHELL_TOOL_DESCRIPTION = (
+    "Executes shell commands in an in-process Strands Shell and returns output (stdout), error (stderr), and "
+    "exit_code (non-zero means the command failed). The shell session persists across calls: the working "
+    "directory, variables, and functions carry over. Only the mounted host paths are reachable."
+)
+"""Description for the shell tool vended by :class:`StrandsShellSandbox`."""
+
 
 def _serve_shell(make_shell: "Callable[[], strands_shell.Shell]", requests: _RequestQueue) -> None:
     """Own the native shell for the worker thread's lifetime, serving queued operations until ``None``."""
-    shell = make_shell()
+    shell = None
+    startup_error: BaseException | None = None
+    try:
+        shell = make_shell()
+    except BaseException as error:  # noqa: BLE001 - pyo3 panics are BaseExceptions
+        startup_error = error
     while (request := requests.get()) is not None:
         operation, future = request
+        # Claim the future first: a still-pending future can be cancelled mid-operation, and set_result
+        # on a cancelled future raises and would kill this thread.
+        if not future.set_running_or_notify_cancel():
+            continue
+        if startup_error is not None:
+            future.set_exception(startup_error)
+            continue
         try:
             future.set_result(operation(shell))
         except BaseException as error:  # noqa: BLE001 - pyo3 panics are BaseExceptions
             future.set_exception(error)
 
 
+def _run_scoped(shell: "strands_shell.Shell", command: str, cwd: str | None, env: dict[str, str]) -> Any:
+    """Run ``command`` with ``cwd``/``env`` applied for this call only, restoring the session afterwards."""
+    previous_env = {key: shell.get_env(key) for key in env}
+    previous_cwd = shell.get_env("PWD")
+    for key, value in env.items():
+        shell.set_env(key, value)
+    try:
+        if cwd is not None:
+            command = f"cd {shlex.quote(cwd)} && {command}"
+        return shell.run(command)
+    finally:
+        if cwd is not None and previous_cwd is not None:
+            shell.run(f"cd {shlex.quote(previous_cwd)}")
+        for key, value in previous_env.items():
+            if value is None:
+                shell.run(f"unset {key}")
+            else:
+                shell.set_env(key, value)
+
+
 class StrandsShellSandbox(Sandbox):
     """Execute commands and file operations in an in-process Strands Shell.
 
-    Constructor arguments mirror :class:`strands_shell.Shell`. Each command runs in
-    a subshell, so working directory and variable changes do not leak between
-    calls. File operations go straight to the shell's virtual filesystem; host
-    paths are visible only through ``binds``.
+    Constructor arguments mirror :class:`strands_shell.Shell`. Unlike the Docker
+    and SSH backends, the shell session persists across calls: ``cd``, variables,
+    and functions carry over, like a terminal. The per-call ``cwd`` and ``env``
+    arguments are applied for that call only and restored afterwards. File
+    operations go straight to the shell's virtual filesystem; host paths are
+    visible only through ``binds``.
 
-    The per-command ``timeout`` on ``execute``/``execute_code`` is not supported by
-    the native shell and is ignored; use the constructor's ``timeout`` (Strands
-    Shell defaults to 30 seconds). A timed-out command returns a normal result
-    with a non-zero exit code and the shell's timeout message on stderr.
+    .. warning::
+        The native shell runs in-process and holds the GIL while a command runs,
+        so a running command blocks the whole process -- the event loop, other
+        threads, and ``asyncio.wait_for`` timers included. Keep the constructor
+        ``timeout`` low; it is the only bound on a command (Strands Shell
+        defaults to 30 seconds). The per-call ``timeout`` on ``execute`` and
+        ``execute_code`` is not supported and is ignored. A timed-out command
+        returns a normal result with a non-zero exit code and the shell's
+        timeout message on stderr rather than raising.
 
     The native shell object may only be used (and dropped) on the thread that
     created it, so it lives on a dedicated worker thread owned by this sandbox and
-    every call is dispatched there. The native call holds the GIL for its duration.
+    every call is dispatched there.
     """
 
     def __init__(
@@ -89,8 +135,8 @@ class StrandsShellSandbox(Sandbox):
             allowed_urls: URL prefixes commands such as ``curl`` may reach.
             env: Environment variables seeded into the shell.
             umask: File-creation mask for the virtual filesystem.
-            timeout: Per-command wall-clock timeout in seconds. ``None`` uses the
-                Strands Shell default.
+            timeout: Per-command wall-clock timeout in seconds; the only bound on how long a
+                command can block the process. ``None`` uses the Strands Shell default (30s).
             limits: Resource caps (output size, file size, inodes, ...).
             config_file: Path to a Strands Shell TOML config; explicit arguments win.
 
@@ -107,30 +153,32 @@ class StrandsShellSandbox(Sandbox):
 
         self._strands_shell = strands_shell
         self._binds = binds or []
-        self._shell_kwargs: dict[str, Any] = {
-            "binds": binds,
-            "credentials": credentials,
-            "allowed_urls": allowed_urls,
-            "env": env,
-            "umask": umask,
-            "timeout": timeout,
-            "limits": limits,
-            "config_file": config_file,
-        }
+        self._make_shell = functools.partial(
+            strands_shell.Shell,
+            binds=binds,
+            credentials=credentials,
+            allowed_urls=allowed_urls,
+            env=env,
+            umask=umask,
+            timeout=timeout,
+            limits=limits,
+            config_file=config_file,
+        )
         self._requests: _RequestQueue = queue.SimpleQueue()
         self._worker: threading.Thread | None = None
+        self._worker_lock = threading.Lock()
         # Stop the worker (and drop the shell on its own thread) once the sandbox is collected.
         weakref.finalize(self, self._requests.put, None)
 
     async def _call(self, operation: "Callable[[strands_shell.Shell], T]") -> T:
         """Run ``operation`` against the native shell on the worker thread."""
-        if self._worker is None:
-            # The worker must not reference self, or the sandbox could never be collected.
-            make_shell = functools.partial(self._strands_shell.Shell, **self._shell_kwargs)
-            self._worker = threading.Thread(
-                target=_serve_shell, args=(make_shell, self._requests), name="strands-shell", daemon=True
-            )
-            self._worker.start()
+        with self._worker_lock:
+            if self._worker is None:
+                # The worker must not reference self, or the sandbox could never be collected.
+                self._worker = threading.Thread(
+                    target=_serve_shell, args=(self._make_shell, self._requests), name="strands-shell", daemon=True
+                )
+                self._worker.start()
         future: Future[T] = Future()
         self._requests.put((operation, future))
         return await asyncio.wrap_future(future)
@@ -144,7 +192,7 @@ class StrandsShellSandbox(Sandbox):
         env: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[StreamChunk | ExecutionResult, None]:
-        """Execute a command in a subshell, yielding its output once it completes.
+        """Execute a command in the persistent shell session, yielding its output once it completes.
 
         The native shell buffers output, so this yields at most one stdout chunk and
         one stderr chunk, then the final :class:`ExecutionResult`.
@@ -152,8 +200,8 @@ class StrandsShellSandbox(Sandbox):
         Args:
             command: The shell command to execute.
             timeout: Ignored; see the class docstring.
-            cwd: Working directory for this command.
-            env: Environment variables exported for this command only.
+            cwd: Working directory for this command only.
+            env: Environment variables set for this command only.
             **kwargs: Additional keyword arguments for forward compatibility.
 
         Yields:
@@ -165,10 +213,9 @@ class StrandsShellSandbox(Sandbox):
         """
         if timeout is not None:
             logger.debug("timeout=<%s> | per-command timeout ignored by StrandsShellSandbox", timeout)
-        prefix = build_shell_env_prefix(env)
-        if cwd is not None:
-            prefix += f"cd {shlex.quote(cwd)} && "
-        output = await self._call(lambda shell: shell.run(f"( {prefix}{command}\n)"))
+        if env:
+            validate_env_keys(env)
+        output = await self._call(lambda shell: _run_scoped(shell, command, cwd, env or {}))
 
         if output.stdout:
             yield StreamChunk(data=output.stdout, stream_type="stdout")
@@ -195,8 +242,8 @@ class StrandsShellSandbox(Sandbox):
             code: The source code to execute.
             language: The interpreter to use (e.g. ``"lua"``).
             timeout: Ignored; see the class docstring.
-            cwd: Working directory for execution.
-            env: Environment variables exported for this execution only.
+            cwd: Working directory for this execution only.
+            env: Environment variables set for this execution only.
             **kwargs: Additional keyword arguments for forward compatibility.
 
         Yields:
@@ -216,7 +263,8 @@ class StrandsShellSandbox(Sandbox):
             stream = self.execute_streaming(f"{language} {script_path}", timeout=timeout, cwd=cwd, env=env, **kwargs)
             chunks = [chunk async for chunk in stream]
         finally:
-            await self._call(lambda shell: shell.remove_file(script_path))
+            with contextlib.suppress(OSError):
+                await self.remove_file(script_path)
         for chunk in chunks:
             yield chunk
 
@@ -279,7 +327,7 @@ class StrandsShellSandbox(Sandbox):
             **kwargs: Additional keyword arguments for forward compatibility.
 
         Returns:
-            :class:`FileInfo` entries with name, ``is_dir``, and ``size``.
+            :class:`FileInfo` entries with name, ``is_dir``, and ``size``, sorted by name.
 
         Raises:
             SandboxPathNotFoundError: If the directory does not exist or ``path`` is not a directory.
@@ -320,6 +368,6 @@ class StrandsShellSandbox(Sandbox):
             make_shell(
                 sandbox=self,
                 name="sandbox_shell",
-                description=f"{SANDBOX_SHELL_DESCRIPTION} Runs in a Strands Shell virtual environment.{location}",
+                description=f"{STRANDS_SHELL_TOOL_DESCRIPTION}{location}",
             ),
         ]
