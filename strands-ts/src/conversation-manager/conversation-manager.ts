@@ -31,9 +31,9 @@ export type ConversationManagerReduceOptions = {
   agent: LocalAgent
 
   /**
-   * Model for conversation managers that perform model-based reduction (e.g. summarization):
-   * `agent.auxModel` when one is configured, otherwise the model of the call that triggered
-   * the reduction.
+   * The model of the call that triggered the reduction (the routed model under a
+   * `ModelRouter`). Use it to size the reduction (`countTokens`, `estimateUtilization`);
+   * managers that reduce via a model call should resolve their own, typically `agent.auxModel`.
    */
   model: Model
 
@@ -104,11 +104,6 @@ export type ConversationManagerOptions = {
  * }
  * ```
  */
-/** An unset `auxModel` keeps the routed model of the call that triggered reduction. */
-function reductionModel(event: AfterModelCallEvent | BeforeModelCallEvent): Model {
-  return event.agent.auxModel === event.agent.model ? event.model : event.agent.auxModel
-}
-
 export abstract class ConversationManager implements Plugin {
   /**
    * A stable string identifier for this conversation manager.
@@ -173,7 +168,7 @@ export abstract class ConversationManager implements Plugin {
     // Reactive overflow recovery
     agent.addHook(AfterModelCallEvent, async (event) => {
       if (event.error instanceof ContextWindowOverflowError) {
-        if (await this.reduce({ agent: event.agent, model: reductionModel(event), error: event.error })) {
+        if (await this.reduce({ agent: event.agent, model: event.model, error: event.error })) {
           event.retry = true
         }
       }
@@ -196,7 +191,7 @@ export abstract class ConversationManager implements Plugin {
         )
         // Proactive compression is best-effort: swallow errors so the model call can still proceed.
         try {
-          await this.reduce({ agent: event.agent, model: reductionModel(event) })
+          await this.reduce({ agent: event.agent, model: event.model })
         } catch (e) {
           logger.warn(`conversation_manager=<${this.name}> | proactive compression failed, continuing | error=<${e}>`)
         }

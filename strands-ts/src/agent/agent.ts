@@ -488,8 +488,8 @@ export class Agent implements LocalAgent, InvokableAgent {
    * web fetch). Resolution order: `configured auxModel > model`.
    *
    * Reading always yields a resolved {@link Model}. Assigning accepts a Model, a Bedrock model ID
-   * string, or `undefined` to revert to following `model`. Components that resolve their model
-   * when attached to the agent (memory extraction, LLM steering) keep the model they attached with.
+   * string, or `undefined` to revert to following `model`. Memory extraction resolves its model when
+   * attached to the agent and keeps it; every other side call resolves it at call time.
    *
    * @throws Error if assigned a {@link ModelRouter}.
    */
