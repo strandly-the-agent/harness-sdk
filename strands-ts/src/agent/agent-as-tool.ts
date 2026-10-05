@@ -51,14 +51,12 @@ export interface AgentAsToolOptions {
    *
    * When `false` (default), the agent's messages and state are reset to the
    * values they had at the time the tool was created, ensuring every call
-   * starts from the same baseline.
+   * starts from the same baseline. The orchestrator also stores the agent's
+   * interrupted turn, so a sub-agent interrupt can be resumed after a restart.
    *
    * When `true`, the agent retains its conversation history across invocations,
-   * allowing it to build context over multiple calls.
-   *
-   * When `false`, the orchestrator also stores the agent's interrupted turn so a sub-agent
-   * interrupt can be resumed after a restart; when `true` the agent keeps its own state, so
-   * it needs its own session manager for that.
+   * allowing it to build context over multiple calls. It keeps its own state on
+   * an interrupt too, so it needs its own session manager to resume after a restart.
    *
    * @defaultValue false
    */
@@ -88,7 +86,8 @@ const INTERRUPTED_TURNS_KEY = 'subAgentInterruptedTurns'
 /** Ids of the interrupts a stored sub-agent turn is waiting on, or undefined if its interrupt state is unreadable. */
 function awaitedInterruptIds(turn: JSONValue): string[] | undefined {
   try {
-    const data = (turn as unknown as Snapshot).data.interrupts as unknown as InterruptStateData
+    const snapshot = turn as unknown as Snapshot
+    const data = snapshot.data.interrupts as unknown as InterruptStateData
     return Object.keys(InterruptState.fromJSON(data).interrupts)
   } catch {
     return undefined
