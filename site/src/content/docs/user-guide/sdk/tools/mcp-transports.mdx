@@ -14,7 +14,7 @@ and how to configure it, including authentication for HTTP servers.
 
 To connect an agent to a server and use its tools, see
 [Connect your agent to MCP tools](mcp-tools.md). The connection pattern is the same
-for every transport; only the transport object you hand to the client changes.
+for every transport; only how you point the client at the server changes.
 
 ## Standard I/O (stdio)
 
@@ -64,11 +64,13 @@ with stdio_mcp_client:
 
 ## Streamable HTTP
 
-For HTTP-based MCP servers that use the Streamable HTTP transport, pass the server
-`url` and `MCPClient` builds the transport for you:
+For HTTP-based MCP servers that use the Streamable HTTP transport:
 
 <Tabs>
 <Tab label="Python">
+
+Pass the server `url` and `MCPClient` builds the transport from the installed `mcp`
+package:
 
 ```python
 from strands import Agent
@@ -93,11 +95,9 @@ github_mcp_client = MCPClient(
 )
 ```
 
-`MCPClient` builds the transport from the installed `mcp` package, so this works on
-both `mcp` 1.x and 2.x. To configure the transport yourself, pass a callback that
-opens it instead: `mcp` 1.24 and later expose `streamable_http_client(url, http_client=...)`
-in `mcp.client.streamable_http`, which takes a pre-configured `httpx.AsyncClient` for
-headers and auth.
+To configure the transport yourself, pass a callback that opens it instead, as in the
+stdio example; for Streamable HTTP that is `streamable_http_client` from
+`mcp.client.streamable_http`.
 
 #### OAuth Authentication
 
