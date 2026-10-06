@@ -484,7 +484,7 @@ async def test_event_loop_cycle_deferred_cancel_stops_after_tools(agent, model, 
     executor._execute = MagicMock(wraps=executor._execute)
 
     def request_stop(event):
-        agent.cancel("all done", after_current_tools=True)
+        agent.cancel(message="all done", after_current_tools=True)
 
     agent.hooks.add_callback(BeforeToolCallEvent, request_stop)
 
@@ -517,7 +517,7 @@ async def test_event_loop_cycle_deferred_cancel_without_message_keeps_model_mess
 
 @pytest.mark.asyncio
 async def test_event_loop_cycle_cancel_message_replaces_streaming_cancel_text(agent, model, agenerator, alist):
-    agent.cancel("stopped by caller")
+    agent.cancel(message="stopped by caller")
     model.stream.return_value = agenerator([{"contentBlockDelta": {"delta": {"text": "partial"}}}])
 
     events = await alist(strands.event_loop.event_loop.event_loop_cycle(agent=agent, invocation_state={}))

@@ -3,7 +3,7 @@
 This tool is experimental and subject to change in future revisions without notice.
 
 Provides :func:`make_stop` (a factory for customized stop tools) and :data:`stop`
-(the default instance). The tool calls ``agent.cancel(message, after_current_tools=True)``:
+(the default instance). The tool calls ``agent.cancel(message=..., after_current_tools=True)``:
 any sibling tools in the same batch run to completion, then the loop exits with
 ``stop_reason == "cancelled"`` and the message as the final assistant message.
 The same message is returned as the tool result the model sees for its stop request.
@@ -63,7 +63,7 @@ def make_stop(
 ) -> DecoratedFunctionTool:
     """Create a stop tool that gracefully ends the agent loop.
 
-    The tool calls ``agent.cancel(message, after_current_tools=True)`` so the loop
+    The tool calls ``agent.cancel(message=..., after_current_tools=True)`` so the loop
     ends after the current tool batch without invoking the model again.
 
     Args:
@@ -94,7 +94,7 @@ def make_stop(
                 values are rejected.
         """
         final_message = _validate_message(message, max_message_length)
-        tool_context.agent.cancel(final_message, after_current_tools=True)
+        tool_context.agent.cancel(message=final_message, after_current_tools=True)
         return final_message
 
     return stop_tool

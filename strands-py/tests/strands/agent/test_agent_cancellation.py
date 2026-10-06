@@ -699,7 +699,7 @@ async def test_deferred_cancel_state_is_cleared_between_invocations():
     @tool(context=True)
     def finish(tool_context: ToolContext) -> str:
         """Stop the loop after this batch."""
-        tool_context.agent.cancel("done", after_current_tools=True)
+        tool_context.agent.cancel(message="done", after_current_tools=True)
         return "done"
 
     agent = Agent(
@@ -720,13 +720,13 @@ async def test_cancel_message_last_write_wins():
     @tool(context=True)
     def first(tool_context: ToolContext) -> str:
         """First stop request."""
-        tool_context.agent.cancel("first", after_current_tools=True)
+        tool_context.agent.cancel(message="first", after_current_tools=True)
         return "first"
 
     @tool(context=True)
     def second(tool_context: ToolContext) -> str:
         """Second stop request."""
-        tool_context.agent.cancel("second", after_current_tools=True)
+        tool_context.agent.cancel(message="second", after_current_tools=True)
         return "second"
 
     agent = Agent(
@@ -744,7 +744,7 @@ async def test_cancel_message_last_write_wins():
 async def test_immediate_cancel_message_becomes_final_message():
     agent = Agent(model=MockedModelProvider([DEFAULT_RESPONSE]))
 
-    agent.cancel("shutting down")
+    agent.cancel(message="shutting down")
     result = await agent.invoke_async("Hello")
 
     assert result.stop_reason == "cancelled"
@@ -762,7 +762,7 @@ async def test_immediate_cancel_message_before_tools_becomes_final_message():
 
     async def cancel_after_model(event: AfterModelCallEvent):
         if event.stop_response and event.stop_response.stop_reason == "tool_use":
-            agent.cancel("aborted")
+            agent.cancel(message="aborted")
 
     agent.add_hook(cancel_after_model, AfterModelCallEvent)
 

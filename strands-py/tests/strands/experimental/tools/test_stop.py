@@ -1,6 +1,6 @@
 """Tests for the ``stop`` tool.
 
-The stop tool calls ``agent.cancel(message, after_current_tools=True)``. Tests
+The stop tool calls ``agent.cancel(message=..., after_current_tools=True)``. Tests
 exercise that call, input validation, and metadata rather than running a full
 event loop end-to-end (that is covered by
 :mod:`tests.strands.event_loop.test_event_loop`).

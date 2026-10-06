@@ -284,7 +284,7 @@ class BidiAgent(LocalAgent):
     def event_loop_metrics(self, value: "EventLoopMetrics") -> None:
         raise NotImplementedError("event_loop_metrics is not supported by bidirectional agents yet")
 
-    def cancel(self, message: str | None = None, *, after_current_tools: bool = False) -> None:
+    def cancel(self, *, message: str | None = None, after_current_tools: bool = False) -> None:
         """Request cancellation of the current conversation.
 
         Thread-safe and idempotent. Cancellation takes effect only after a tool

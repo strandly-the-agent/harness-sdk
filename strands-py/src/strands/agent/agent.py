@@ -624,7 +624,7 @@ class Agent(AgentBase, LocalAgent):
             return MemoryManager(**memory_manager)
         raise ValueError("memory_manager must be a MemoryManager or MemoryManagerConfig")
 
-    def cancel(self, message: str | None = None, *, after_current_tools: bool = False) -> None:
+    def cancel(self, *, message: str | None = None, after_current_tools: bool = False) -> None:
         """Cancel the currently running agent invocation.
 
         This method is thread-safe and can be called from any context
@@ -670,7 +670,7 @@ class Agent(AgentBase, LocalAgent):
             ```python
             @tool
             def finish(tool_context: ToolContext, summary: str) -> str:
-                tool_context.agent.cancel(summary, after_current_tools=True)
+                tool_context.agent.cancel(message=summary, after_current_tools=True)
                 return summary
             ```
 
