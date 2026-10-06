@@ -64,19 +64,17 @@ with stdio_mcp_client:
 
 ## Streamable HTTP
 
-For HTTP-based MCP servers that use the Streamable HTTP transport:
+For HTTP-based MCP servers that use the Streamable HTTP transport, pass the server
+`url` and `MCPClient` builds the transport for you:
 
 <Tabs>
 <Tab label="Python">
 
 ```python
-from mcp.client.streamable_http import streamablehttp_client
 from strands import Agent
 from strands.tools.mcp import MCPClient
 
-streamable_http_mcp_client = MCPClient(
-    lambda: streamablehttp_client("http://localhost:8000/mcp")
-)
+streamable_http_mcp_client = MCPClient(url="http://localhost:8000/mcp")
 
 with streamable_http_mcp_client:
     tools = streamable_http_mcp_client.list_tools_sync()
@@ -87,16 +85,19 @@ Pass `headers` to send authentication or other request headers:
 
 ```python
 import os
-from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp import MCPClient
 
 github_mcp_client = MCPClient(
-    lambda: streamablehttp_client(
-        url="https://api.githubcopilot.com/mcp/",
-        headers={"Authorization": f"Bearer {os.getenv('MCP_PAT')}"}
-    )
+    url="https://api.githubcopilot.com/mcp/",
+    headers={"Authorization": f"Bearer {os.getenv('MCP_PAT')}"},
 )
 ```
+
+`MCPClient` builds the transport from the installed `mcp` package, so this works on
+both `mcp` 1.x and 2.x. To configure the transport yourself, pass a callback that
+opens it instead: `mcp` 1.24 and later expose `streamable_http_client(url, http_client=...)`
+in `mcp.client.streamable_http`, which takes a pre-configured `httpx.AsyncClient` for
+headers and auth.
 
 #### OAuth Authentication
 
