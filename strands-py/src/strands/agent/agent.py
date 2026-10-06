@@ -677,7 +677,8 @@ class Agent(AgentBase, LocalAgent):
         Note:
             Multiple calls to cancel() are safe and idempotent.
         """
-        self._cancel_message = message
+        if message is not None:
+            self._cancel_message = message
         if after_current_tools:
             self._deferred_cancel = True
         else:
