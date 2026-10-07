@@ -90,7 +90,7 @@ it.each(['typescript', 'python'] as const)(
     execute.mockImplementation((_command, args, _options, callback) => {
       expect(args).toEqual(
         language === 'typescript'
-          ? ['install', '--no-audit', '--no-fund']
+          ? npmInvocation(['install', '--no-audit', '--no-fund']).args
           : ['-m', 'pip', 'install', '-r', 'requirements.txt']
       )
       if (language === 'typescript') {
