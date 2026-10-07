@@ -1,0 +1,30 @@
+name: win-write-repro
+on: { push: { branches: [strandly/win-write-repro] } }
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+        working-directory: repro
+      - name: powershell (no sh on PATH?)
+        shell: pwsh
+        working-directory: repro
+        run: |
+          Write-Host "where sh:"; Get-Command sh -ErrorAction SilentlyContinue | Format-List Source
+          node repro.mjs powershell
+      - name: powershell with Git Bash removed from PATH (plain Windows dev box)
+        shell: pwsh
+        working-directory: repro
+        run: |
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch 'Git' }) -join ';'
+          Write-Host "where sh:"; Get-Command sh -ErrorAction SilentlyContinue | Format-List Source
+          node repro.mjs powershell-no-git-on-path
+      - name: git bash
+        shell: bash
+        working-directory: repro
+        run: |
+          echo "sh=$(command -v sh) pwd=$(pwd) HOME=$HOME"; ls -ld "/Users" 2>&1 || true; echo "root / maps to: $(cygpath -w /)"
+          node repro.mjs gitbash
