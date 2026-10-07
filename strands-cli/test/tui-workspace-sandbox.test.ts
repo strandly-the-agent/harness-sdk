@@ -59,10 +59,31 @@ describe('WorkspaceSandbox', () => {
     })
     const windows = new WorkspaceSandbox('/work', { platform: 'win32' }).shellInvocation('Get-ChildItem "a b"')
     expect(windows.command).toBe('powershell.exe')
-    expect(windows.args.slice(0, 3)).toEqual(['-NoProfile', '-NonInteractive', '-EncodedCommand'])
-    const script = Buffer.from(windows.args[3]!, 'base64').toString('utf16le')
-    expect(script).toContain('Get-ChildItem "a b"')
-    expect(script).toContain('exit $LASTEXITCODE')
+    expect(windows.args).toEqual(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'])
+    expect(windows.script).toContain('Get-ChildItem "a b"')
+    expect(windows.script).toContain('exit $LASTEXITCODE')
+    expect(windows.script).not.toContain("$ErrorActionPreference = 'Stop'")
+  })
+
+  // PowerShell semantics the model relies on: native exit codes propagate, stderr output alone is not a failure,
+  // a failing cmdlet is, and a long command is not capped by the command-line length limit.
+  it.runIf(process.platform === 'win32')('mirrors sh exit-code semantics through PowerShell', async () => {
+    const sandbox = new WorkspaceSandbox(process.cwd())
+    await expect(sandbox.execute('cmd /c "echo warn 1>&2"')).resolves.toMatchObject({ exitCode: 0 })
+    expect((await sandbox.execute('cmd /c "echo warn 1>&2"')).stderr).toContain('warn')
+    await expect(sandbox.execute('cmd /c "exit 3"')).resolves.toMatchObject({ exitCode: 3 })
+    const failedCmdlet = await sandbox.execute('Get-Item C:\\strands-definitely-missing')
+    expect(failedCmdlet.exitCode).toBe(1)
+    expect(failedCmdlet.stderr).not.toBe('')
+    await expect(sandbox.execute('Get-Item C:\\strands-definitely-missing; Write-Output after')).resolves.toMatchObject(
+      {
+        exitCode: 0,
+        stdout: expect.stringContaining('after'),
+      }
+    )
+    const long = `Write-Output '${'x'.repeat(40_000)}'`
+    expect((await sandbox.execute(long)).stdout.trim()).toHaveLength(40_000)
+    await expect(sandbox.execute('Write-Output "€"')).resolves.toMatchObject({ stdout: expect.stringContaining('€') })
   })
 
   it('runs code by feeding the interpreter on stdin, without a shell', async () => {

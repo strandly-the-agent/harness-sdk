@@ -211,15 +211,16 @@ async def test_fetch_text_truncates_the_body_in_the_sandbox():
     assert "--max-filesize" not in command
 
 
-async def test_fetch_text_uses_curl_exe_and_truncates_after_reading_under_powershell():
-    sandbox = _Sandbox(body=b"x" * (6 * 1024 * 1024), content_type="text/plain")
-    sandbox.environment = {"platform": "Windows", "cwd": "C:\\work", "shell": "PowerShell"}
-    _, text = await web_fetch_module._fetch_text(sandbox, "https://example.com/it's", "curl")
+async def test_fetch_text_uses_curl_exe_and_truncates_in_powershell_under_powershell():
+    sandbox = _Sandbox(body=b"body", content_type="text/plain")
+    sandbox.environment = {"platform": "Windows", "cwd": "C:\\work", "shell": "pwsh"}
+    await web_fetch_module._fetch_text(sandbox, "https://example.com/it's", "curl")
     command = sandbox.commands[0]
     assert command.startswith("curl.exe ")
     assert "head -c" not in command
     assert "'https://example.com/it''s'" in command
-    assert len(text) <= web_fetch_module._MAX_BYTES
+    assert "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }" in command
+    assert f"SetLength([Math]::Min($f.Length, {web_fetch_module._MAX_BYTES}))" in command
     assert len(sandbox.removed) == 2
 
 

@@ -20,7 +20,7 @@ import { TextDecoder } from 'node:util'
 import { Agent, type Model, type Sandbox, tool, type Tool } from '@strands-agents/sdk'
 import { z } from 'zod'
 
-import { describedEnvironment } from '../sandbox-environment.js'
+import { describedEnvironment, isPowerShell } from '../sandbox-environment.js'
 import type { WebFetchTransport } from '../types/agent.js'
 
 const USER_AGENT = 'strands-harness/1.0'
@@ -89,16 +89,19 @@ function curlCommand(url: string, output: string, shell: 'sh' | 'PowerShell'): s
   // http(s) (curl would otherwise follow a redirect to ftp://); --fail turns HTTP errors into a non-zero
   // exit; -sS keeps curl's own error text on stderr. The body goes to a file (stdout is decoded text,
   // which would lose the charset and split multi-byte characters); stdout carries only the final hop's
-  // content type and URL. In `sh` the body is truncated in the sandbox before it is read back; PowerShell
-  // has no `head`, so there the file is read whole and truncated afterwards (`curl.exe`, because PowerShell
-  // aliases `curl` to Invoke-WebRequest).
+  // content type and URL. The body is truncated in the sandbox before it is read back: `head` in `sh`;
+  // in PowerShell (`curl.exe`, because PowerShell aliases `curl` to Invoke-WebRequest) by shortening the
+  // file in place, since there is no `head`.
   const quote = shell === 'PowerShell' ? powershellQuote : shellQuote
   const out = quote(output)
   const fetch =
     `${shell === 'PowerShell' ? 'curl.exe' : 'curl'} -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' ` +
     `--max-time ${TIMEOUT_SECONDS} -A ${quote(USER_AGENT)} -o ${out} -w '%{content_type}\\n%{url_effective}' -- ${quote(url)}`
   if (shell === 'PowerShell') {
-    return fetch
+    return (
+      `${fetch}; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; ` +
+      `$f = [System.IO.File]::Open(${out}, 'Open'); $f.SetLength([Math]::Min($f.Length, ${MAX_BYTES})); $f.Dispose()`
+    )
   }
   const part = shellQuote(`${output}.part`)
   return `${fetch} && head -c ${MAX_BYTES} ${out} > ${part} && mv -f ${part} ${out}`
@@ -124,7 +127,7 @@ function toText(data: Uint8Array, contentType: string, resolvedUrl: string, url:
 /** Fetch a validated `url` with `curl` inside `sandbox`; throws when curl fails. */
 async function fetchCurl(sandbox: Sandbox, url: string): Promise<Fetched> {
   const output = `${TEMP_DIR}/strands-web-fetch-${randomUUID().replaceAll('-', '')}`
-  const shell = describedEnvironment(sandbox)?.shell === 'PowerShell' ? 'PowerShell' : 'sh'
+  const shell = isPowerShell(describedEnvironment(sandbox)?.shell) ? 'PowerShell' : 'sh'
   let contentType: string
   let resolvedUrl: string
   let data: Uint8Array

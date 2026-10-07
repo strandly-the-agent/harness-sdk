@@ -32,7 +32,7 @@ from strands.sandbox import Sandbox
 from strands.tools.decorator import tool
 from strands.types.tools import ToolContext
 
-from strands_harness.sandbox_environment import described_environment
+from strands_harness.sandbox_environment import described_environment, is_powershell
 from strands_harness.types.agent import WebFetchTransport
 
 _USER_AGENT = "strands-harness/1.0"
@@ -89,9 +89,9 @@ def _curl_command(url: str, output: str, shell: str) -> str:
     # http(s) (curl would otherwise follow a redirect to ftp://); --fail turns HTTP errors into a non-zero
     # exit; -sS keeps curl's own error text on stderr. The body goes to a file (stdout is decoded text,
     # which would lose the charset and split multi-byte characters); stdout carries only the final hop's
-    # content type and URL. In ``sh`` the body is truncated in the sandbox before it is read back;
-    # PowerShell has no ``head``, so there the file is read whole and truncated afterwards (``curl.exe``,
-    # because PowerShell aliases ``curl`` to Invoke-WebRequest).
+    # content type and URL. The body is truncated in the sandbox before it is read back: ``head`` in ``sh``;
+    # in PowerShell (``curl.exe``, because PowerShell aliases ``curl`` to Invoke-WebRequest) by shortening
+    # the file in place, since there is no ``head``.
     quote = _powershell_quote if shell == "PowerShell" else shlex.quote
     out = quote(output)
     fetch = (
@@ -100,7 +100,11 @@ def _curl_command(url: str, output: str, shell: str) -> str:
         f"-w '%{{content_type}}\\n%{{url_effective}}' -- {quote(url)}"
     )
     if shell == "PowerShell":
-        return fetch
+        return (
+            f"{fetch}; if ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }}; "
+            f"$f = [System.IO.File]::Open({out}, 'Open'); "
+            f"$f.SetLength([Math]::Min($f.Length, {_MAX_BYTES})); $f.Dispose()"
+        )
     part = shlex.quote(output + ".part")
     return f"{fetch} && head -c {_MAX_BYTES} {out} > {part} && mv -f {part} {out}"
 
@@ -122,7 +126,7 @@ def _to_text(data: bytes, content_type: str, resolved_url: str, url: str) -> tup
 async def _fetch_curl(sandbox: Sandbox, url: str) -> tuple[str, str]:
     """Fetch a validated ``url`` with ``curl`` inside ``sandbox``; raises ``RuntimeError`` when curl fails."""
     output = f"{_TEMP_DIR}/strands-web-fetch-{uuid.uuid4().hex}"
-    shell = "PowerShell" if described_environment(sandbox)["shell"] == "PowerShell" else "sh"
+    shell = "PowerShell" if is_powershell(described_environment(sandbox)["shell"]) else "sh"
     try:
         result = await sandbox.execute(_curl_command(url, output, shell), timeout=_TIMEOUT + 5)
         if result.exit_code != 0:

@@ -7,9 +7,16 @@
 import type { Sandbox } from '@strands-agents/sdk'
 
 export interface SandboxEnvironment {
+  /** Human-readable, as `uname -s` would print it: `Linux`, `Darwin`, `Windows`. */
   platform: string | undefined
+  /** Absolute, in the sandbox's own path syntax. */
   cwd: string | undefined
+  /** The shell `execute()` runs commands in: `sh`, or `PowerShell`/`pwsh` (matched case-insensitively). */
   shell: string | undefined
+}
+
+export function isPowerShell(shell: string | undefined): boolean {
+  return shell !== undefined && /^(powershell|pwsh)/i.test(shell)
 }
 
 export function describedEnvironment(sandbox: Sandbox): SandboxEnvironment | undefined {

@@ -104,16 +104,17 @@ describe('web_fetch', () => {
     expect(prompt).not.toContain('<script>')
   })
 
-  it('uses curl.exe and truncates after reading when the sandbox shell is PowerShell', async () => {
-    const sandbox = new FakeSandbox({ body: 'x'.repeat(6 * 1024 * 1024), contentType: 'text/plain' })
-    Object.assign(sandbox, { environment: { platform: 'Windows', cwd: 'C:\\work', shell: 'PowerShell' } })
+  it('uses curl.exe and truncates in PowerShell when the sandbox shell is PowerShell', async () => {
+    const sandbox = new FakeSandbox({ body: 'body', contentType: 'text/plain' })
+    Object.assign(sandbox, { environment: { platform: 'Windows', cwd: 'C:\\work', shell: 'pwsh' } })
     const tool = makeWebFetch({ model })
-    const answer = await invoke(tool, { url: "https://example.com/it's" }, sandbox)
+    await invoke(tool, { url: "https://example.com/it's" }, sandbox)
     const command = sandbox.commands[0]!
     expect(command.startsWith('curl.exe ')).toBe(true)
     expect(command).not.toContain('head -c')
     expect(command).toContain("'https://example.com/it''s'")
-    expect(answer.length).toBeLessThanOrEqual(5 * 1024 * 1024)
+    expect(command).toContain('if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }')
+    expect(command).toContain(`SetLength([Math]::Min($f.Length, ${5 * 1024 * 1024}))`)
     expect(sandbox.removed).toHaveLength(2)
   })
 
