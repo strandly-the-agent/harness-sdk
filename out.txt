@@ -40,3 +40,1329 @@ model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is 
 [OK]   WorkspaceSandbox.execute pwd -> /tmp/strands-win-repro-CM1mF1
 [OK]   WorkspaceSandbox.execute uname -s -> MINGW64_NT-10.0-26100
 [OK]   default sandbox writeText C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json -> file exists at C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json content=hi
+### harness-ts ###
+
+added 367 packages in 23s
+
+> @strands-agents/harness@0.0.1-development build
+> tsc --project src/tsconfig.json
+
+
+> @strands-agents/harness@0.0.1-development check
+> npm run lint && npm run format:check && npm run type-check && npm run test:coverage
+
+
+> @strands-agents/harness@0.0.1-development lint
+> eslint src test
+
+
+> @strands-agents/harness@0.0.1-development format:check
+> prettier --check src test
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> @strands-agents/harness@0.0.1-development type-check
+> tsc --noEmit --project src/tsconfig.json
+
+
+> @strands-agents/harness@0.0.1-development test:coverage
+> vitest run --coverage
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/harness-ts[39m
+      [2mCoverage enabled with [22m[33mv8[39m
+
+stderr | test/models.test.ts > resolveModel > does not send automatic cache points to anthropic.claude-3-haiku-20240307-v1:0
+model=<bedrock/anthropic.claude-3-haiku-20240307-v1:0> | prompt caching not supported by this model; continuing without it
+
+stderr | test/models.test.ts > resolveModel > does not send automatic cache points to us.anthropic.claude-3-haiku-20240307-v1:0
+model=<bedrock/us.anthropic.claude-3-haiku-20240307-v1:0> | prompt caching not supported by this model; continuing without it
+
+ [32m✓[39m test/tools/subagent.test.ts [2m([22m[2m50 tests[22m[2m)[22m[32m 44[2mms[22m[39m
+stderr | test/models.test.ts > resolveModel > maps google auto to the high thinking level
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > resolveModel > uses the google model id directly
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > resolveModel > adds the google googleSearch built-in tool for web_search
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > resolveModel > omits google built-in tools when web_search is off
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > default effort > is high on google/gemini-3.5-flash
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > default effort > is high on google/gemini-3.5-flash
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+ [32m✓[39m test/models.test.ts [2m([22m[2m175 tests[22m[2m)[22m[33m 644[2mms[22m[39m
+stderr | test/agent.test.ts > createHarness > enables web_search when explicitly selected on a supported provider
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/agent.test.ts > createHarness > enables web_search when explicitly selected on a supported provider
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/agent.test.ts > createHarness > enables web_search when explicitly selected on a supported provider
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/tools/programmatic-tool-caller.test.ts > programmatic_tool_caller > runs a single tool call
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+
+ [32m✓[39m test/agent.test.ts [2m([22m[2m105 tests[22m[2m)[22m[33m 4176[2mms[22m[39m
+     [33m[2m✓[22m[39m inherits the parent MCP tools via the shared clients, narrowable per server [33m 596[2mms[22m[39m
+     [33m[2m✓[22m[39m offers MCP clients passed in `tools` on the mcp_servers axis [33m 523[2mms[22m[39m
+     [33m[2m✓[22m[39m warns when two MCP clients share a clientName and offers only the first [33m 674[2mms[22m[39m
+     [33m[2m✓[22m[39m warns about an MCP client without applicationName and leaves it off the mcp_servers axis [33m 502[2mms[22m[39m
+     [33m[2m✓[22m[39m forwards inherited MCP servers to a grandchild [33m 408[2mms[22m[39m
+     [33m[2m✓[22m[39m propagates MCP narrowing through a grandchild [33m 355[2mms[22m[39m
+ [31m❯[39m test/config.test.ts [2m([22m[2m72 tests[22m[2m | [22m[31m6 failed[39m[2m)[22m[33m 3291[2mms[22m[39m
+     [32m✓[39m normalizes the complete portable definition[32m 23[2mms[22m[39m
+     [32m✓[39m maps defaults through the same contract createHarness consumes[32m 6[2mms[22m[39m
+     [32m✓[39m forwards a disabled session as off[32m 1[2mms[22m[39m
+     [32m✓[39m folds contextManager "off" to false, matching Python[32m 1[2mms[22m[39m
+     [32m✓[39m fails loudly when the runtime cannot load a referenced language[32m 4[2mms[22m[39m
+[31m     [31m×[31m loads executable values through declared module references[39m[33m 890[2mms[22m[39m
+[31m     [31m×[31m resolves the intervention "./policy.cedar" against the project root when it is a Cedar file[39m[32m 3[2mms[22m[39m
+[31m     [31m×[31m resolves the intervention "policies/policy.cedar" against the project root when it is a Cedar file[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m resolves the intervention "  ./policy.cedar  " against the project root when it is a Cedar file[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m resolves the intervention "/policies/policy.cedar" against the project root when it is a Cedar file[39m[32m 1[2mms[22m[39m
+     [32m✓[39m resolves the intervention "~/policy.cedar" against the project root when it is a Cedar file[32m 1[2mms[22m[39m
+     [32m✓[39m resolves the intervention "ask" against the project root when it is a Cedar file[32m 1[2mms[22m[39m
+     [32m✓[39m resolves the intervention "  Require approval for writes.  " against the project root when it is a Cedar file[32m 1[2mms[22m[39m
+     [32m✓[39m resolves the intervention "./policy.cedar.bak" against the project root when it is a Cedar file[32m 1[2mms[22m[39m
+     [32m✓[39m loads the project ESM export for @fixture/tools instead of a package from the harness[32m 35[2mms[22m[39m
+     [32m✓[39m loads the project ESM export for @fixture/tools/tool instead of a package from the harness[32m 25[2mms[22m[39m
+     [32m✓[39m rejects a package missing from the project even when the harness has it installed[32m 11[2mms[22m[39m
+     [33m[2m✓[22m[39m loads TypeScript helper imports and shares the host SDK across project dependencies [33m 2241[2mms[22m[39m
+     [32m✓[39m expands MCP environment placeholders and unwraps the server map[32m 2[2mms[22m[39m
+     [32m✓[39m rejects a missing MCP environment variable instead of passing the placeholder through[32m 1[2mms[22m[39m
+     [32m✓[39m loads and expands file-backed MCP config[32m 8[2mms[22m[39m
+     [32m✓[39m rejects python dependency entries carrying extra pip directives[32m 2[2mms[22m[39m
+[31m     [31m×[31m resolves state directories against the project root, matching Python[39m[32m 3[2mms[22m[39m
+     [32m✓[39m treats the retired thinking key as a plain unknown key[32m 2[2mms[22m[39m
+     [32m✓[39m treats the retired webFetchModel key as a plain unknown key[32m 1[2mms[22m[39m
+     [32m✓[39m treats the retired webFetchModelModule key as a plain unknown key[32m 0[2mms[22m[39m
+     [32m✓[39m treats the retired contextManagement key as a plain unknown key[32m 0[2mms[22m[39m
+     [32m✓[39m treats the retired sessionId key as a plain unknown key[32m 0[2mms[22m[39m
+     [32m✓[39m treats the retired sessionDir key as a plain unknown key[32m 0[2mms[22m[39m
+     [32m✓[39m treats the retired skillsDir key as a plain unknown key[32m 1[2mms[22m[39m
+     [32m✓[39m treats the retired memoryDir key as a plain unknown key[32m 0[2mms[22m[39m
+     [32m✓[39m treats the retired memoryManager key as a plain unknown key[32m 0[2mms[22m[39m
+     [32m✓[39m passes web_fetch.transport through the config bridge[32m 1[2mms[22m[39m
+     [32m✓[39m normalizes a builtinTools mapping with a per-tool web_fetch config[32m 0[2mms[22m[39m
+     [32m✓[39m normalizes the shell, programmatic_tool_caller and subagent per-tool configs[32m 2[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"shell":{"model":"x"}}[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"shell":{"description":""}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"web_fetch":{"model":""}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"web_fetch":{"transport":"wget"}}[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"web_search":{"fallback":"exa"}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"web_search":"bing"}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"programmatic_tool_caller":{"allowedTools":"read"}}[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"programmatic_tool_caller":{"timeout":0}}[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"subagent":{"maxDepth":1.5}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects the per-tool config {"subagent":{"maxDepth":-1}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects an unknown built-in tool name in a builtinTools mapping[32m 0[2mms[22m[39m
+     [32m✓[39m rejects an effort outside the enum[32m 0[2mms[22m[39m
+     [32m✓[39m maps a builtinTools mapping into createHarness options[32m 1[2mms[22m[39m
+     [32m✓[39m warns about unknown config keys and drops them[32m 0[2mms[22m[39m
+     [32m✓[39m lists unknown config keys in sorted order[32m 0[2mms[22m[39m
+     [32m✓[39m rejects unknown memory subkeys and names them[32m 0[2mms[22m[39m
+     [32m✓[39m reports every issue on its own line under the JSON path[32m 1[2mms[22m[39m
+     [32m✓[39m warns when memoryStores are given while memory is disabled[32m 1[2mms[22m[39m
+     [32m✓[39m rejects malformed references instead of dropping them[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"tools":["./tool.ts"]}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"sandbox":"docker"}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"tools":[{"module":"./tool.ts","files":null}]}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"contextManager":null}[32m 1[2mms[22m[39m
+     [32m✓[39m rejects {"contextManager":{}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"session":{"id":""}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"session":{"id":"   "}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"session":{"id":null}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"session":{"dir":""}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"session":{"dir":null}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"memory":{"dir":""}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"memory":{"dir":null}}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"skills":null}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"skills":["a","b","a"]}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects {"dependencies":{"python":["requests","httpx","requests","httpx"]}}[32m 0[2mms[22m[39m
+     [32m✓[39m names the record key in {"agentConfigModules":{"":{"module":"./hooks.ts"}}}[32m 1[2mms[22m[39m
+     [32m✓[39m names the record key in {"dependencies":{"typescript":{"":"^1.0.0"}}}[32m 0[2mms[22m[39m
+     [32m✓[39m keeps module reference extras, an empty files list and repeated dependency versions[32m 1[2mms[22m[39m
+ [32m✓[39m test/tools/web-search.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m test/tools/programmatic-tool-caller.test.ts [2m([22m[2m49 tests[22m[2m)[22m[33m 3813[2mms[22m[39m
+     [33m[2m✓[22m[39m runs tool calls concurrently with asyncio.gather [33m 346[2mms[22m[39m
+     [33m[2m✓[22m[39m bounds a synchronous busy loop via the VM duration limit [33m 337[2mms[22m[39m
+     [33m[2m✓[22m[39m enforces the timeout [33m 319[2mms[22m[39m
+     [33m[2m✓[22m[39m cancels an in-flight run and makes no further inner tool calls [33m 610[2mms[22m[39m
+ [31m❯[39m test/tools/web-fetch.test.ts [2m([22m[2m24 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 700[2mms[22m[39m
+     [32m✓[39m reduces HTML to text and answers via the summarizer model[32m 10[2mms[22m[39m
+     [32m✓[39m runs curl in the agent sandbox with the URL quoted and globbing off, then removes the body file[32m 3[2mms[22m[39m
+     [32m✓[39m handles a missing content type without shifting the trailer[32m 1[2mms[22m[39m
+     [32m✓[39m truncates the body in the sandbox instead of rejecting large pages[32m 1[2mms[22m[39m
+     [32m✓[39m honours the response charset and falls back to utf-8 for an unknown one[32m 1[2mms[22m[39m
+     [32m✓[39m returns the raw page content when no prompt is given[32m 2[2mms[22m[39m
+     [32m✓[39m reports a curl failure without invoking the summarizer, and still cleans up[32m 1[2mms[22m[39m
+     [32m✓[39m reports a sandbox failure as a fetch failure[32m 1[2mms[22m[39m
+     [32m✓[39m rejects a non-http scheme before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "https://example.com/a b" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "https://example.com/x`id`" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "https://example.com/\"x\"" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "https://example.com/x\nrm -rf /" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "https://example.com/{a,b}" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "https://example.com/日本" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "https:///no-host" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "javascript:alert(1)" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m rejects the malformed URL "" before touching the sandbox[32m 1[2mms[22m[39m
+     [32m✓[39m accepts RFC 3986 URLs and trims whitespace[32m 1[2mms[22m[39m
+     [32m✓[39m fetches from the process with the direct transport, skipping the sandbox[32m 9[2mms[22m[39m
+     [32m✓[39m caps a direct-transport body without buffering the rest of the stream[32m 10[2mms[22m[39m
+     [32m✓[39m rejects an unknown transport[32m 1[2mms[22m[39m
+     [32m✓[39m caches the fetched page within the TTL[32m 1[2mms[22m[39m
+[31m     [31m×[31m fetches end to end through the local environment sandbox[39m[33m 646[2mms[22m[39m
+ [32m✓[39m test/memory.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 93[2mms[22m[39m
+ [32m✓[39m test/tools/file-tools.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 134[2mms[22m[39m
+ [32m✓[39m test/builtin-tools.test.ts [2m([22m[2m35 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m test/interventions.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 124[2mms[22m[39m
+ [32m✓[39m test/plugins/environment.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+stderr | test/telemetry.test.ts > setupTelemetry > still wires the supported exporters alongside an unsupported one
+OTEL_TRACES_EXPORTER names 'zipkin', which the harness does not support; skipping it. Supported values: otlp, console, none.
+
+ [32m✓[39m test/telemetry.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m test/plugins/todos.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 69[2mms[22m[39m
+ [32m✓[39m test/agent-generalist-memory.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m test/prompt.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m test/tools/shell.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 211[2mms[22m[39m
+ [32m✓[39m test/internal.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/config.test.ts > HarnessAgentConfig > loads executable values through declared module references
+AssertionError: expected [ 'ask', …(2) ] to deeply equal [ Array(3) ]
+
+- Expected
++ Received
+
+  [
+    "ask",
+-   "\\project\\policy.cedar",
++   "D:\\project\\policy.cedar",
+    {
+      "name": "custom-intervention",
+    },
+  ]
+
+ ❯ test/config.test.ts:110:35
+    108|     expect(options.tools).toEqual([{ name: 'custom-tool' }])
+    109|     expect(options.conversationManager).toEqual({ name: 'custom-conver…
+    110|     expect(options.interventions).toEqual(['ask', join('/project', 'po…
+       |                                   ^
+    111|   })
+    112|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  test/config.test.ts > HarnessAgentConfig > resolves the intervention "./policy.cedar" against the project root when it is a Cedar file
+ FAIL  test/config.test.ts > HarnessAgentConfig > resolves the intervention "  ./policy.cedar  " against the project root when it is a Cedar file
+AssertionError: expected 'D:\project\policy.cedar' to be '\project\policy.cedar' // Object.is equality
+
+Expected: "\project\policy.cedar"
+Received: "D:\project\policy.cedar"
+
+ ❯ test/config.test.ts:127:35
+    125|     const options = await harnessAgentOptionsFromConfig(config, '/proj…
+    126|
+    127|     expect(options.interventions).toBe(expected)
+       |                                   ^
+    128|     expect(config.interventions).toBe(value)
+    129|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  test/config.test.ts > HarnessAgentConfig > resolves the intervention "policies/policy.cedar" against the project root when it is a Cedar file
+AssertionError: expected 'D:\project\policies\policy.cedar' to be '\project\policies\policy.cedar' // Object.is equality
+
+Expected: "\project\policies\policy.cedar"
+Received: "D:\project\policies\policy.cedar"
+
+ ❯ test/config.test.ts:127:35
+    125|     const options = await harnessAgentOptionsFromConfig(config, '/proj…
+    126|
+    127|     expect(options.interventions).toBe(expected)
+       |                                   ^
+    128|     expect(config.interventions).toBe(value)
+    129|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  test/config.test.ts > HarnessAgentConfig > resolves the intervention "/policies/policy.cedar" against the project root when it is a Cedar file
+AssertionError: expected 'D:\policies\policy.cedar' to be '/policies/policy.cedar' // Object.is equality
+
+Expected: "/policies/policy.cedar"
+Received: "D:\policies\policy.cedar"
+
+ ❯ test/config.test.ts:127:35
+    125|     const options = await harnessAgentOptionsFromConfig(config, '/proj…
+    126|
+    127|     expect(options.interventions).toBe(expected)
+       |                                   ^
+    128|     expect(config.interventions).toBe(value)
+    129|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  test/config.test.ts > HarnessAgentConfig > resolves state directories against the project root, matching Python
+AssertionError: expected { name: 'Strands harness', …(6) } to match object { session: { id: 'proj', …(1) }, …(2) }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "memory": {
+-     "dir": "\\project\\.agent\\memory",
++     "dir": "D:\\project\\.agent\\memory",
+    },
+    "session": {
+-     "dir": "\\project\\.agent\\sessions",
++     "dir": "D:\\project\\.agent\\sessions",
+      "id": "proj",
+    },
+    "skills": [
+-     "\\project\\.agent\\skills",
++     "D:\\project\\.agent\\skills",
+      "https://example.com/SKILL.md",
+    ],
+  }
+
+ ❯ test/config.test.ts:308:68
+    306|     })
+    307|
+    308|     await expect(harnessAgentOptionsFromConfig(config, '/project')).re…
+       |                                                                    ^
+    309|       session: { id: 'proj', dir: join('/project', '.agent/sessions') …
+    310|       memory: { dir: join('/project', '.agent/memory') },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  test/tools/web-fetch.test.ts > web_fetch > fetches end to end through the local environment sandbox
+AssertionError: expected 'Failed to fetch http://127.0.0.1:5446…' to be 'Hello wörld' // Object.is equality
+
+Expected: "Hello wörld"
+Received: "Failed to fetch http://127.0.0.1:54466/redirect: ENOENT: no such file or directory, open 'D:\tmp\strands-web-fetch-d76b6e04a2154031866bafa07121148e'"
+
+ ❯ test/tools/web-fetch.test.ts:305:72
+    303|     const tool = makeWebFetch({ model })
+    304|     try {
+    305|       expect(await invoke(tool, { url: `${base}/redirect` }, sandbox))…
+       |                                                                        ^
+    306|       expect(await invoke(tool, { url: `${base}/big` }, sandbox)).toBe…
+    307|       expect(await invoke(tool, { url: `${base}/huge` }, sandbox)).toB…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m16 passed[39m[22m[90m (18)[39m
+[2m      Tests [22m [1m[31m7 failed[39m[22m[2m | [22m[1m[32m596 passed[39m[22m[90m (603)[39m
+[2m   Start at [22m 18:52:15
+[2m   Duration [22m 12.01s[2m (transform 1.54s, setup 197ms, import 15.00s, tests 13.49s, environment 3ms)[22m
+
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/harness-ts/test/config.test.ts,title=test/config.test.ts > HarnessAgentConfig > loads executable values through declared module references,line=110,column=35::AssertionError: expected [ 'ask', …(2) ] to deeply equal [ Array(3) ]%0A%0A- Expected%0A+ Received%0A%0A  [%0A    "ask",%0A-   "\\project\\policy.cedar",%0A+   "D:\\project\\policy.cedar",%0A    {%0A      "name": "custom-intervention",%0A    },%0A  ]%0A%0A ❯ test/config.test.ts:110:35%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/harness-ts/test/config.test.ts,title=test/config.test.ts > HarnessAgentConfig > resolves the intervention "./policy.cedar" against the project root when it is a Cedar file,line=127,column=35::AssertionError: expected 'D:\project\policy.cedar' to be '\project\policy.cedar' // Object.is equality%0A%0AExpected: "\project\policy.cedar"%0AReceived: "D:\project\policy.cedar"%0A%0A ❯ test/config.test.ts:127:35%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/harness-ts/test/config.test.ts,title=test/config.test.ts > HarnessAgentConfig > resolves the intervention "policies/policy.cedar" against the project root when it is a Cedar file,line=127,column=35::AssertionError: expected 'D:\project\policies\policy.cedar' to be '\project\policies\policy.cedar' // Object.is equality%0A%0AExpected: "\project\policies\policy.cedar"%0AReceived: "D:\project\policies\policy.cedar"%0A%0A ❯ test/config.test.ts:127:35%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/harness-ts/test/config.test.ts,title=test/config.test.ts > HarnessAgentConfig > resolves the intervention "  ./policy.cedar  " against the project root when it is a Cedar file,line=127,column=35::AssertionError: expected 'D:\project\policy.cedar' to be '\project\policy.cedar' // Object.is equality%0A%0AExpected: "\project\policy.cedar"%0AReceived: "D:\project\policy.cedar"%0A%0A ❯ test/config.test.ts:127:35%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/harness-ts/test/config.test.ts,title=test/config.test.ts > HarnessAgentConfig > resolves the intervention "/policies/policy.cedar" against the project root when it is a Cedar file,line=127,column=35::AssertionError: expected 'D:\policies\policy.cedar' to be '/policies/policy.cedar' // Object.is equality%0A%0AExpected: "/policies/policy.cedar"%0AReceived: "D:\policies\policy.cedar"%0A%0A ❯ test/config.test.ts:127:35%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/harness-ts/test/config.test.ts,title=test/config.test.ts > HarnessAgentConfig > resolves state directories against the project root%2C matching Python,line=308,column=68::AssertionError: expected { name: 'Strands harness', …(6) } to match object { session: { id: 'proj', …(1) }, …(2) }%0A(4 matching properties omitted from actual)%0A%0A- Expected%0A+ Received%0A%0A  {%0A    "memory": {%0A-     "dir": "\\project\\.agent\\memory",%0A+     "dir": "D:\\project\\.agent\\memory",%0A    },%0A    "session": {%0A-     "dir": "\\project\\.agent\\sessions",%0A+     "dir": "D:\\project\\.agent\\sessions",%0A      "id": "proj",%0A    },%0A    "skills": [%0A-     "\\project\\.agent\\skills",%0A+     "D:\\project\\.agent\\skills",%0A      "https://example.com/SKILL.md",%0A    ],%0A  }%0A%0A ❯ test/config.test.ts:308:68%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/harness-ts/test/tools/web-fetch.test.ts,title=test/tools/web-fetch.test.ts > web_fetch > fetches end to end through the local environment sandbox,line=305,column=72::AssertionError: expected 'Failed to fetch http://127.0.0.1:5446…' to be 'Hello wörld' // Object.is equality%0A%0AExpected: "Hello wörld"%0AReceived: "Failed to fetch http://127.0.0.1:54466/redirect: ENOENT: no such file or directory, open 'D:\tmp\strands-web-fetch-d76b6e04a2154031866bafa07121148e'"%0A%0A ❯ test/tools/web-fetch.test.ts:305:72%0A%0A
+harness-ts check exit=1
+### strands-cli ###
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+
+added 418 packages in 18s
+
+> @strands-agents/cli@0.0.1-development build
+> tsc --project src/tsconfig.json && node scripts/copy-python-runtime.js
+
+
+> @strands-agents/cli@0.0.1-development check
+> npm run lint && npm run format:check && npm run type-check && npm run type-check:test && npm run test:coverage
+
+
+> @strands-agents/cli@0.0.1-development lint
+> eslint bin scripts src test
+
+
+> @strands-agents/cli@0.0.1-development format:check
+> prettier --check bin scripts src test
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> @strands-agents/cli@0.0.1-development type-check
+> tsc --noEmit --project src/tsconfig.json
+
+
+> @strands-agents/cli@0.0.1-development type-check:test
+> tsc --noEmit --project tsconfig.json
+
+
+> @strands-agents/cli@0.0.1-development test:coverage
+> vitest run --coverage --exclude test/tui-pty-lifecycle.test.ts && vitest run test/tui-pty-lifecycle.test.ts
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/strands-cli[39m
+      [2mCoverage enabled with [22m[33mv8[39m
+
+stderr | test/tui-runtime.test.ts > interactive runtime lifecycle > reports an unapplied configuration after a error turn and requires an explicit retry
+Model bedrock/anthropic.claude-new has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-runtime.test.ts > interactive runtime lifecycle > reports an unapplied configuration after a error turn and requires an explicit retry
+Model bedrock/anthropic.claude-new has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-runtime.test.ts > interactive runtime lifecycle > reports an unapplied configuration after a cancelled turn and requires an explicit retry
+Model bedrock/anthropic.claude-new has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-runtime.test.ts > interactive runtime lifecycle > reports an unapplied configuration after a cancelled turn and requires an explicit retry
+Model bedrock/anthropic.claude-new has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+ [32m✓[39m test/tui-chat.test.ts [2m([22m[2m65 tests[22m[2m)[22m[33m 724[2mms[22m[39m
+ [31m❯[39m test/tui-runtime.test.ts [2m([22m[2m24 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 705[2mms[22m[39m
+     [32m✓[39m uses detached mode so background work does not hold the composer[32m 8[2mms[22m[39m
+     [32m✓[39m preserves custom policy while applying the selected interactive wait mode[32m 1[2mms[22m[39m
+     [32m✓[39m loads authored MCP servers through the CLI runtime[32m 63[2mms[22m[39m
+     [32m✓[39m exports the current conversation model and effort when persistence is disabled[32m 28[2mms[22m[39m
+     [32m✓[39m loads and persists presentation settings[32m 30[2mms[22m[39m
+     [32m✓[39m loads persistent permission settings into the Strands backend[32m 27[2mms[22m[39m
+     [32m✓[39m mints a persistent session by default and flushes memory on teardown[32m 8[2mms[22m[39m
+     [32m✓[39m keeps the run ephemeral when the session is disabled[32m 7[2mms[22m[39m
+     [32m✓[39m clarifies legacy Desktop agent identity before restoring the transcript[32m 11[2mms[22m[39m
+     [32m✓[39m forks the active configuration and cloned message history into a new agent[32m 27[2mms[22m[39m
+     [32m✓[39m does not expose a fork when its initial snapshot cannot be saved[32m 18[2mms[22m[39m
+     [32m✓[39m carries the latest measured context into an unchanged fork[32m 20[2mms[22m[39m
+     [32m✓[39m honors peer messaging and discovery settings in new and forked agents (true)[32m 15[2mms[22m[39m
+     [32m✓[39m honors peer messaging and discovery settings in new and forked agents (false)[32m 13[2mms[22m[39m
+     [32m✓[39m exposes a live background subagent as a temporary task-addressed message endpoint[32m 16[2mms[22m[39m
+     [32m✓[39m isolates identical background task IDs across forked conversations[32m 24[2mms[22m[39m
+     [32m✓[39m keeps conversation messages and state when setup changes the agent configuration[32m 37[2mms[22m[39m
+     [32m✓[39m reports an unapplied configuration after a error turn and requires an explicit retry[32m 32[2mms[22m[39m
+     [32m✓[39m reports an unapplied configuration after a cancelled turn and requires an explicit retry[32m 79[2mms[22m[39m
+     [32m✓[39m applies a queued model effort on the next prompt while preserving conversation messages[32m 10[2mms[22m[39m
+     [32m✓[39m uses the workspace-relative session directory and preserves the original conversation on resume[32m 44[2mms[22m[39m
+     [32m✓[39m restores context stored with a compatible saved-session transcript[32m 30[2mms[22m[39m
+[31m     [31m×[31m opens cross-workspace sessions with workspace-bound resources and keeps the source conversation[39m[32m 140[2mms[22m[39m
+     [32m✓[39m clears by rebuilding without restoring the active session or conversation snapshot[32m 12[2mms[22m[39m
+stderr | test/tui-strands-backend.test.ts > StrandsChatBackend > uses the runtime contract for model controls, forks, and unsupported reconfiguration
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+
+ [32m✓[39m test/tui-view.test.ts [2m([22m[2m54 tests[22m[2m)[22m[33m 4009[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps long approval input and choices reachable at 80x40 [33m 412[2mms[22m[39m
+     [33m[2m✓[22m[39m highlights hovered controls or rows and reserves purple for presses across panel renderers [33m 666[2mms[22m[39m
+(node:7672) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 beforeExit listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m test/tui-setup-wizard.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 9141[2mms[22m[39m
+     [33m[2m✓[22m[39m renders discovered models as single-line options with fully qualified identifiers [33m 395[2mms[22m[39m
+     [33m[2m✓[22m[39m pages through the model list when the next and previous controls are clicked [33m 307[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps a clicked AWS region visible in quickstart setup [33m 625[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps a clicked AWS region visible in customize setup [33m 650[2mms[22m[39m
+     [33m[2m✓[22m[39m persists a typed memory directory after leaving and returning to the data step [33m 800[2mms[22m[39m
+     [33m[2m✓[22m[39m shows how many customize setup options remain outside a compact viewport [33m 344[2mms[22m[39m
+     [33m[2m✓[22m[39m detects local providers without asking for endpoint URLs [33m 557[2mms[22m[39m
+     [33m[2m✓[22m[39m asks for a LiteLLM key only when the detected proxy requires one [33m 615[2mms[22m[39m
+     [33m[2m✓[22m[39m refreshes env-file credentials in the mounted wizard at 80×24 [33m 341[2mms[22m[39m
+     [33m[2m✓[22m[39m sets a masked API key for the running session from the provider panel [33m 356[2mms[22m[39m
+     [33m[2m✓[22m[39m shows and persists non-visual settings from the setup panel [33m 492[2mms[22m[39m
+     [33m[2m✓[22m[39m persists a custom theme applied from setup settings [33m 881[2mms[22m[39m
+error: pass the initial request either positionally or with --prompt, not both.
+error: too many arguments. Expected 0 arguments but got 1: unexpected.
+error: unknown option '--thinking'
+ [31m❯[39m test/cli.test.ts [2m([22m[2m54 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 1117[2mms[22m[39m
+     [32m✓[39m preserves defaults when no flags are supplied[32m 18[2mms[22m[39m
+     [32m✓[39m maps flags to config[32m 3[2mms[22m[39m
+     [32m✓[39m writes --session-id into session.id, keeping any --set sub-keys[32m 5[2mms[22m[39m
+     [32m✓[39m maps off sentinels to disabled[32m 1[2mms[22m[39m
+     [32m✓[39m --session accepts on or off and rejects other modes[32m 4[2mms[22m[39m
+     [32m✓[39m --memory accepts on or off and rejects other modes[32m 3[2mms[22m[39m
+     [32m✓[39m --session on keeps a configured dir[32m 2[2mms[22m[39m
+     [32m✓[39m --memory on keeps a configured dir[32m 2[2mms[22m[39m
+     [32m✓[39m rejects the effort level bogus with the allowed set[32m 4[2mms[22m[39m
+     [32m✓[39m rejects the effort level none with the allowed set[32m 1[2mms[22m[39m
+     [32m✓[39m enables caching and sessions when explicit flags override a saved disabled profile[32m 2[2mms[22m[39m
+     [32m✓[39m treats empty builtin lists as none[32m 1[2mms[22m[39m
+     [32m✓[39m passes comma-separated skills entries through unfiltered as an array[32m 1[2mms[22m[39m
+     [32m✓[39m accepts supported provider prefixes and rejects unknown providers[32m 2[2mms[22m[39m
+     [32m✓[39m lets explicit flags override saved profile defaults[32m 1[2mms[22m[39m
+     [32m✓[39m applies arbitrary portable config fields before dedicated flags[32m 6[2mms[22m[39m
+     [32m✓[39m rejects malformed and unknown arbitrary config fields[32m 3[2mms[22m[39m
+     [32m✓[39m prints the CLI package version and exits successfully for --version[32m 8[2mms[22m[39m
+     [32m✓[39m prints the CLI package version and exits successfully for -V[32m 1[2mms[22m[39m
+     [32m✓[39m captures an explicit prompt and agent project source[32m 1[2mms[22m[39m
+     [32m✓[39m rejects both positional and explicit prompts[32m 3[2mms[22m[39m
+     [32m✓[39m captures the setup flag[32m 1[2mms[22m[39m
+     [32m✓[39m captures the update command without treating other requests as commands[32m 2[2mms[22m[39m
+     [32m✓[39m collects repeatable MCP configuration paths[32m 1[2mms[22m[39m
+     [32m✓[39m rejects a retired flag as an unknown option[32m 2[2mms[22m[39m
+     [32m✓[39m treats --model as a one-run model configuration[32m 1[2mms[22m[39m
+     [32m✓[39m treats --effort as a one-run model configuration[32m 1[2mms[22m[39m
+     [32m✓[39m treats --set model as a one-run model configuration[32m 7[2mms[22m[39m
+     [32m✓[39m treats --set effort as a one-run model configuration[32m 1[2mms[22m[39m
+     [32m✓[39m treats --agent as a one-run model configuration[32m 1[2mms[22m[39m
+     [32m✓[39m persists model changes for a profile-driven run[32m 1[2mms[22m[39m
+     [32m✓[39m loads saved-profile packages and explicitly selected environment files[32m 290[2mms[22m[39m
+     [32m✓[39m ignores implicit dotenv files[32m 5[2mms[22m[39m
+     [32m✓[39m routes [] with stdin TTY=true stdout TTY=true to 'ink'[32m 1[2mms[22m[39m
+     [32m✓[39m routes [ 'hello' ] with stdin TTY=true stdout TTY=true to 'ink'[32m 1[2mms[22m[39m
+     [32m✓[39m routes [ '--print', 'hello' ] with stdin TTY=true stdout TTY=true to 'print'[32m 1[2mms[22m[39m
+     [32m✓[39m routes [ 'hello' ] with stdin TTY=false stdout TTY=true to 'print'[32m 1[2mms[22m[39m
+     [32m✓[39m routes [ 'hello' ] with stdin TTY=true stdout TTY=false to 'plain'[32m 1[2mms[22m[39m
+     [32m✓[39m routes [ 'hello' ] with stdin TTY=false stdout TTY=false to 'print'[32m 1[2mms[22m[39m
+     [32m✓[39m routes [ '--acp-server' ] with stdin TTY=true stdout TTY=true to 'acp'[32m 1[2mms[22m[39m
+     [32m✓[39m runs a positional request first and continues reading chat turns[32m 3[2mms[22m[39m
+     [32m✓[39m keeps an explicit discovered file last with project trust false[32m 28[2mms[22m[39m
+     [32m✓[39m keeps an explicit discovered file last with project trust true[32m 15[2mms[22m[39m
+     [32m✓[39m disables implicit MCP discovery through 'settings' while retaining explicit config[32m 5[2mms[22m[39m
+     [32m✓[39m disables implicit MCP discovery through 'environment' while retaining explicit config[32m 5[2mms[22m[39m
+     [32m✓[39m excludes unapproved project config and remembers an approved fingerprint[32m 28[2mms[22m[39m
+     [32m✓[39m does not load unapproved project configuration in non-interactive modes[32m 6[2mms[22m[39m
+     [32m✓[39m treats an explicitly supplied project config as an intentional opt-in[32m 6[2mms[22m[39m
+[31m     [31m×[31m avoids React timing retention while preserving NODE_ENV=undefined[39m[32m 192[2mms[22m[39m
+[31m     [31m×[31m avoids React timing retention while preserving NODE_ENV=development[39m[32m 141[2mms[22m[39m
+[31m     [31m×[31m avoids React timing retention while preserving NODE_ENV=production[39m[32m 140[2mms[22m[39m
+     [32m✓[39m rejects the incompatible 'request' input[32m 2[2mms[22m[39m
+     [32m✓[39m rejects the incompatible '--print' input[32m 1[2mms[22m[39m
+[31m     [31m×[31m answers initialize while the ACP stdin protocol stream remains open[39m[32m 151[2mms[22m[39m
+ [32m✓[39m test/tui-agent-project.test.ts [2m([22m[2m60 tests[22m[2m)[22m[33m 10829[2mms[22m[39m
+     [33m[2m✓[22m[39m preserves resolved factory options with custom modules: true [33m 322[2mms[22m[39m
+     [33m[2m✓[22m[39m loads source-agent environment only from selected files: false [33m 2239[2mms[22m[39m
+     [33m[2m✓[22m[39m loads source-agent environment only from selected files: true [33m 2214[2mms[22m[39m
+     [33m[2m✓[22m[39m loads edited exported agent code through canonical paths [33m 2632[2mms[22m[39m
+     [33m[2m✓[22m[39m loads edited exported agent code through aliased paths [33m 2736[2mms[22m[39m
+ [32m✓[39m test/tui-models.test.ts [2m([22m[2m55 tests[22m[2m)[22m[32m 144[2mms[22m[39m
+ [32m✓[39m test/tui-conversations.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 105[2mms[22m[39m
+ [31m❯[39m test/tui-mcp.test.ts [2m([22m[2m25 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 173[2mms[22m[39m
+[31m     [31m×[31m discovers conventional user and project configuration locations in stable precedence order[39m[32m 22[2mms[22m[39m
+     [32m✓[39m translates Codex TOML servers, auth headers, and tool filters[32m 24[2mms[22m[39m
+     [32m✓[39m loads Claude user and current-project local scopes from ~/.claude.json shape[32m 21[2mms[22m[39m
+     [32m✓[39m preserves SDK OAuth credentials from inline configuration[32m 4[2mms[22m[39m
+     [32m✓[39m preserves SDK OAuth credentials from file configuration[32m 4[2mms[22m[39m
+     [32m✓[39m preserves omitted or empty OAuth scopes (undefined)[32m 0[2mms[22m[39m
+     [32m✓[39m preserves omitted or empty OAuth scopes (undefined)[32m 0[2mms[22m[39m
+     [32m✓[39m preserves expanded OAuth credentials from profile servers[32m 10[2mms[22m[39m
+     [32m✓[39m lets profile servers replace or disable discovered servers[32m 5[2mms[22m[39m
+     [32m✓[39m expands environment references in authored stdio tool filters[32m 1[2mms[22m[39m
+     [32m✓[39m rejects malformed OAuth configuration null[32m 2[2mms[22m[39m
+     [32m✓[39m rejects malformed OAuth configuration {"clientSecret":"secret"}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects malformed OAuth configuration {"clientId":"client","clientSecret":42}[32m 0[2mms[22m[39m
+     [32m✓[39m rejects malformed OAuth configuration {"clientId":"client","clientSecret":"secret","scopes":"read"}[32m 0[2mms[22m[39m
+     [32m✓[39m ignores unrelated fields in a known application settings file without MCP configuration[32m 5[2mms[22m[39m
+     [32m✓[39m reports configured lookup paths even when no file exists there[32m 2[2mms[22m[39m
+     [32m✓[39m namespaces each server's tools by server name unless the config sets a prefix[32m 6[2mms[22m[39m
+     [32m✓[39m merges configs in order, supports disabling inherited servers, and exposes ACP definitions[32m 7[2mms[22m[39m
+     [32m✓[39m reports the path for malformed configuration[32m 3[2mms[22m[39m
+     [32m✓[39m sanitizes server metadata returned for terminal presentation[32m 10[2mms[22m[39m
+     [32m✓[39m reads Gemini settings with comments and its httpUrl/url transport spelling[32m 12[2mms[22m[39m
+     [32m✓[39m skips what it cannot read in another tool's configuration and reports it instead of failing[32m 19[2mms[22m[39m
+     [32m✓[39m rejects malformed foreign configuration when the path was supplied explicitly[32m 3[2mms[22m[39m
+     [32m✓[39m honors a Claude project's opt-out of user-scope servers[32m 5[2mms[22m[39m
+     [32m✓[39m refuses a project configuration that changes after approval before creating clients[32m 4[2mms[22m[39m
+stderr | test/tui-config.test.ts > CliConfigStore > persists setup atomically while preserving unrelated settings
+Ignoring unknown agent config keys: futureSetting.
+
+ [32m✓[39m test/tui-config.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 259[2mms[22m[39m
+ [31m❯[39m test/tui-run.test.ts [2m([22m[2m10 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 1353[2mms[22m[39m
+     [32m✓[39m retains chat on reload or failed setup[32m 188[2mms[22m[39m
+     [33m[2m✓[22m[39m preserves the applying conversation and buffers voice during reload (failure=false) [33m 569[2mms[22m[39m
+     [33m[2m✓[22m[39m preserves the applying conversation and buffers voice during reload (failure=true) [33m 408[2mms[22m[39m
+     [32m✓[39m restores the alternate screen and removes signal listeners after a normal exit[32m 2[2mms[22m[39m
+     [32m✓[39m restores the terminal when Ink fails to mount[32m 3[2mms[22m[39m
+[31m     [31m×[31m cancels startup MCP trust with Ctrl-C and restores the terminal before forced exit[39m[32m 118[2mms[22m[39m
+     [32m✓[39m waits for the controller before entering the alternate screen and rendering chat[32m 2[2mms[22m[39m
+     [32m✓[39m renders and starts the first request when the controller is ready without waiting for the intro[32m 55[2mms[22m[39m
+     [32m✓[39m renders explicitly requested setup and waits for its completion before constructing the controller[32m 2[2mms[22m[39m
+     [32m✓[39m refuses to fork a source that cannot reconstruct its agent[32m 3[2mms[22m[39m
+stderr | test/tui-strands-backend.test.ts > StrandsChatBackend > persists and restores compatible context with discovered limit undefined
+error=<Error: Failed to generate summary: model response contained no text> | proactive summarization failed, continuing
+
+stderr | test/tui-strands-backend.test.ts > StrandsChatBackend > persists and restores compatible context with discovered limit 800
+error=<Error: Failed to generate summary: model response contained no text> | proactive summarization failed, continuing
+
+ [32m✓[39m test/tui-strands-backend.test.ts [2m([22m[2m23 tests[22m[2m)[22m[33m 21806[2mms[22m[39m
+     [33m[2m✓[22m[39m stops a bang command at the emergency output limit [33m 10211[2mms[22m[39m
+     [33m[2m✓[22m[39m caps non-streaming bang output at the emergency output limit [33m 11336[2mms[22m[39m
+ [31m❯[39m test/tui-acp-server.test.ts [2m([22m[2m7 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 811[2mms[22m[39m
+     [32m✓[39m constructs an agent per session and streams messages, reasoning, tools, usage, and media over ACP[32m 60[2mms[22m[39m
+     [32m✓[39m omits an ACP usage split when the pinned Gemini adapter cannot provide exact buckets[32m 2[2mms[22m[39m
+     [32m✓[39m loads a durable session and replays its restored history[32m 21[2mms[22m[39m
+     [33m[2m✓[22m[39m persists an ACP prompt for direct CLI restore and a fresh ACP replay [33m 567[2mms[22m[39m
+     [32m✓[39m rejects missing and unsafe saved-session identifiers without constructing an agent[32m 4[2mms[22m[39m
+     [32m✓[39m settles an active prompt before disposal completes[32m 2[2mms[22m[39m
+[31m     [31m×[31m keeps the process alive through bounded cleanup when a prompt ignores cancellation[39m[32m 151[2mms[22m[39m
+ [32m✓[39m test/usage.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 1148[2mms[22m[39m
+     [33m[2m✓[22m[39m displays completed detached spend on the originating TUI turn when it finishes after turn [33m 471[2mms[22m[39m
+     [33m[2m✓[22m[39m displays completed detached spend on the originating TUI turn when it finishes before subscription [33m 352[2mms[22m[39m
+ [32m✓[39m test/tui-setup-providers.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m test/tui-mouse-interaction.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 5339[2mms[22m[39m
+     [33m[2m✓[22m[39m traverses Color mode and inline Theme segments at 80 columns [33m 552[2mms[22m[39m
+     [33m[2m✓[22m[39m traverses Color mode and inline Theme segments at 60 columns [33m 394[2mms[22m[39m
+     [33m[2m✓[22m[39m highlights hover without changing keyboard selection and activates rows on click [33m 421[2mms[22m[39m
+     [33m[2m✓[22m[39m scrolls through a long model list without changing the selected model [33m 312[2mms[22m[39m
+     [33m[2m✓[22m[39m drags the effort slider in /model without rebuilding the panel [33m 322[2mms[22m[39m
+     [33m[2m✓[22m[39m moves from the chosen model to its effort, then closes /model on Enter [33m 463[2mms[22m[39m
+     [33m[2m✓[22m[39m clicks live theme settings and opens the custom editor at 80 columns [33m 704[2mms[22m[39m
+     [33m[2m✓[22m[39m clicks live theme settings and opens the custom editor at 60 columns [33m 752[2mms[22m[39m
+stderr | test/tui-agent-configuration.test.ts > strands_config tool > redacts credentials in inspect and update responses without changing the draft or saved values
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+
+stderr | test/tui-agent-configuration.test.ts > strands_config tool > applies unrelated edits with the default feature semantics and rejects explicitly unsupported tools
+Model bedrock/global.anthropic.claude-opus-5 has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-agent-configuration.test.ts > strands_config tool > rejects new literal credentials without changing the draft and accepts environment references
+Model bedrock/global.anthropic.claude-opus-5 has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-agent-configuration.test.ts > strands_config tool > preserves optional default caching and explicit overrides when validating local models
+provider=<ollama> | prompt caching not supported by this provider; continuing without it
+
+ [32m✓[39m test/tui-agent-configuration.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 340[2mms[22m[39m
+ [32m✓[39m test/tui-projector.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 218[2mms[22m[39m
+ [32m✓[39m test/tui-permissions.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 347[2mms[22m[39m
+ [32m✓[39m test/tui-theme.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 1288[2mms[22m[39m
+     [33m[2m✓[22m[39m leaves the terminal canvas unpainted in light mode [33m 720[2mms[22m[39m
+     [33m[2m✓[22m[39m leaves the terminal canvas unpainted in dark mode [33m 428[2mms[22m[39m
+ [32m✓[39m test/tui-background-agent-activity.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m test/tui-provider-discovery.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 107[2mms[22m[39m
+ [31m❯[39m test/tui-export.test.ts [2m([22m[2m16 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 259[2mms[22m[39m
+   [32m✓[39m writes a typescript profile ZIP to an explicit path[32m 126[2mms[22m[39m
+   [32m✓[39m writes a python profile ZIP to an explicit path[32m 26[2mms[22m[39m
+   [32m✓[39m does not overwrite an existing explicit destination[32m 23[2mms[22m[39m
+   [32m✓[39m rejects invalid export arguments: rust agent.zip[32m 3[2mms[22m[39m
+   [32m✓[39m rejects invalid export arguments: typescript[32m 3[2mms[22m[39m
+   [32m✓[39m rejects invalid export arguments: typescript ""[32m 3[2mms[22m[39m
+   [32m✓[39m shows command guidance when a native save picker is unavailable[32m 20[2mms[22m[39m
+   [32m✓[39m shows only the authored typescript source language[32m 3[2mms[22m[39m
+   [32m✓[39m shows only the authored python source language[32m 3[2mms[22m[39m
+[31m     [31m×[31m copies the exact path and a shell-safe launch command[39m[32m 18[2mms[22m[39m
+     [32m✓[39m does not report false success for cancel[32m 3[2mms[22m[39m
+     [32m✓[39m does not report false success for error[32m 3[2mms[22m[39m
+     [32m✓[39m does not report false success for copy-false[32m 3[2mms[22m[39m
+     [32m✓[39m does not report false success for copy-error[32m 3[2mms[22m[39m
+     [32m✓[39m writes the saved profile to a path relative to the working directory[32m 10[2mms[22m[39m
+     [32m✓[39m sends agents authored in code to /export[32m 4[2mms[22m[39m
+ [32m✓[39m test/tui-stream-presentation.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 190[2mms[22m[39m
+ [32m✓[39m test/tui-help.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 386[2mms[22m[39m
+ [31m❯[39m test/tui-project-archive.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m6 failed[39m[2m)[22m[32m 279[2mms[22m[39m
+[31m   [31m×[31m removes the extraction directory when the ZIP contains no agent[39m[32m 34[2mms[22m[39m
+[31m   [31m×[31m cleans up an invalid marker missing.py ZIP[39m[32m 8[2mms[22m[39m
+[31m   [31m×[31m cleans up an invalid marker ../outside.py ZIP[39m[32m 8[2mms[22m[39m
+[31m   [31m×[31m cleans up an invalid marker notes.txt ZIP[39m[32m 8[2mms[22m[39m
+   [32m✓[39m installs typescript archive dependencies through an aliased home, but leaves source projects alone[32m 36[2mms[22m[39m
+   [32m✓[39m installs python archive dependencies through an aliased home, but leaves source projects alone[32m 42[2mms[22m[39m
+   [32m✓[39m uses npm ci and invalidates the typescript dependency cache when only package-lock.json changes[32m 22[2mms[22m[39m
+   [32m✓[39m uses npm ci and invalidates the python dependency cache when only package-lock.json changes[32m 20[2mms[22m[39m
+   [32m✓[39m uses npm ci and invalidates the typescript dependency cache when only npm-shrinkwrap.json changes[32m 22[2mms[22m[39m
+   [32m✓[39m uses npm ci and invalidates the python dependency cache when only npm-shrinkwrap.json changes[32m 34[2mms[22m[39m
+[31m   [31m×[31m restores executable permissions without privileged bits from ZIP64=false[39m[32m 25[2mms[22m[39m
+[31m   [31m×[31m restores executable permissions without privileged bits from ZIP64=true[39m[32m 8[2mms[22m[39m
+   [32m✓[39m rejects symbolic links in ZIP64=false before extraction[32m 4[2mms[22m[39m
+   [32m✓[39m rejects symbolic links in ZIP64=true before extraction[32m 4[2mms[22m[39m
+ [32m✓[39m test/tui-panel-resize.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 7015[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps the selected setting visible and preserves the composer draft [33m 1646[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps the selected model and panel footer visible after shrinking and expanding [33m 1779[2mms[22m[39m
+     [33m[2m✓[22m[39m reveals the selected agent when the grid column count changes [33m 1493[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps metadata below panels and restores the Settings action when they close [33m 2093[2mms[22m[39m
+ [2m[90m↓[39m[22m test/tui-python-source-loading.test.ts [2m([22m[2m8 tests[22m[2m | [22m[33m8 skipped[39m[2m)[22m
+ [32m✓[39m test/tui-view-interaction.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m test/tui-sessions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 180[2mms[22m[39m
+ [32m✓[39m test/tui-composer.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 172[2mms[22m[39m
+ [32m✓[39m test/tui-easter-eggs.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 635[2mms[22m[39m
+ [32m✓[39m test/tui-voice-session.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1211[2mms[22m[39m
+     [33m[2m✓[22m[39m plays requested replies and restarts when endpointing or voice changes [33m 613[2mms[22m[39m
+stderr | test/tui-context.test.ts > context window limits > prefers provider metadata over SDK defaults and caches it per model
+max_tokens=<64000> | using default maxTokens, which is subject to change | set maxTokens explicitly to pin the value
+
+ [32m✓[39m test/tui-context.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m test/tui-custom-theme-editor.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 5592[2mms[22m[39m
+     [33m[2m✓[22m[39m navigates roles and swatches by keyboard and preserves Auto mode on apply [33m 2911[2mms[22m[39m
+     [33m[2m✓[22m[39m supports hover and click across the responsive 40×24 layout [33m 1130[2mms[22m[39m
+     [33m[2m✓[22m[39m supports hover and click across the responsive 80×24 layout [33m 1548[2mms[22m[39m
+ [32m✓[39m test/tui-intro.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 150[2mms[22m[39m
+ [32m✓[39m test/tui-frog-themes.test.ts [2m([22m[2m38 tests[22m[2m)[22m[33m 1247[2mms[22m[39m
+ [31m❯[39m test/tui-project-portability.test.ts [2m([22m[2m9 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 189[2mms[22m[39m
+   [32m✓[39m packages shared local module source once and keeps its relative layout[32m 54[2mms[22m[39m
+[31m   [31m×[31m builds and runs a packaged local tool after its original source is removed[39m[32m 40[2mms[22m[39m
+   [32m✓[39m rejects unpackaged local typescript dependencies[32m 6[2mms[22m[39m
+   [32m✓[39m rejects unpackaged local python dependencies[32m 3[2mms[22m[39m
+   [32m✓[39m rejects credentials in typescript dependency URLs[32m 2[2mms[22m[39m
+   [32m✓[39m rejects credentials in python dependency URLs[32m 2[2mms[22m[39m
+   [32m✓[39m emits a truthful generated README and no unused instructions file[32m 9[2mms[22m[39m
+[31m   [31m×[31m preserves executable helpers through export and import[39m[32m 42[2mms[22m[39m
+   [32m✓[39m rejects secrets in source-backed MCP configuration during re-export[32m 27[2mms[22m[39m
+ [32m✓[39m test/tui-typescript-source-loading.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 15800[2mms[22m[39m
+     [33m[2m✓[22m[39m captures an authored constructor helper without changing source [33m 4781[2mms[22m[39m
+     [33m[2m✓[22m[39m uses an authored factory for explicit reconstruction controls [33m 3084[2mms[22m[39m
+     [33m[2m✓[22m[39m reloads the complete project-local dependency graph [33m 2688[2mms[22m[39m
+     [33m[2m✓[22m[39m supports an imported factory while construction remains in the entrypoint [33m 2630[2mms[22m[39m
+     [33m[2m✓[22m[39m uses the host harness without changing source [33m 2601[2mms[22m[39m
+ [32m✓[39m test/ink-text-cache.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 1801[2mms[22m[39m
+     [33m[2m✓[22m[39m launches without modifying the installation: { writable: true, legacy: false } [33m 520[2mms[22m[39m
+     [33m[2m✓[22m[39m launches without modifying the installation: { writable: false, legacy: false } [33m 624[2mms[22m[39m
+     [33m[2m✓[22m[39m launches without modifying the installation: { writable: false, legacy: true } [33m 645[2mms[22m[39m
+ [2m[90m↓[39m[22m test/tui-python-worker-region.test.ts [2m([22m[2m14 tests[22m[2m | [22m[33m14 skipped[39m[2m)[22m
+ [31m❯[39m test/cli-update.test.ts [2m([22m[2m17 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[32m 30[2mms[22m[39m
+     [32m✓[39m does not update a development checkout[32m 4[2mms[22m[39m
+[31m     [31m×[31m reports an already-current global installation[39m[32m 14[2mms[22m[39m
+[31m     [31m×[31m installs the latest global package[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m uses npm.cmd on Windows and preserves an install failure[39m[32m 1[2mms[22m[39m
+     [32m✓[39m does not downgrade a version newer than npm latest[32m 1[2mms[22m[39m
+     [32m✓[39m treats build metadata variants as the same version[32m 0[2mms[22m[39m
+     [32m✓[39m reports invalid npm registry output[32m 0[2mms[22m[39m
+     [32m✓[39m reports a newer published version[32m 1[2mms[22m[39m
+     [32m✓[39m stays quiet when current, newer, offline, or running from a development checkout[32m 1[2mms[22m[39m
+     [32m✓[39m compares 1.2.0 against 1.1.9[32m 0[2mms[22m[39m
+     [32m✓[39m compares 2.0.0 against 1.99.99[32m 0[2mms[22m[39m
+     [32m✓[39m compares 1.2.0 against 1.2.0-beta.2[32m 0[2mms[22m[39m
+     [32m✓[39m compares 1.2.0-beta.10 against 1.2.0-beta.2[32m 0[2mms[22m[39m
+     [32m✓[39m compares 1.2.0-beta.2 against 1.2.0[32m 0[2mms[22m[39m
+     [32m✓[39m compares 1.2.0 against 2.0.0-beta.1[32m 0[2mms[22m[39m
+     [32m✓[39m compares invalid against 1.2.0[32m 0[2mms[22m[39m
+     [32m✓[39m ignores build metadata and rejects malformed versions[32m 0[2mms[22m[39m
+ [32m✓[39m test/tui-responsive.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 1564[2mms[22m[39m
+     [33m[2m✓[22m[39m shrinks and restores the welcome banner while retaining the composer draft [33m 404[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps setup choices visible in a narrow window and after resizing [33m 841[2mms[22m[39m
+ [32m✓[39m test/tui-telemetry.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 56[2mms[22m[39m
+ [32m✓[39m test/tui-sdk-projector.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m test/tui-media.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m test/tui-skills.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 67[2mms[22m[39m
+ [32m✓[39m test/turn-renderer.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m test/tui-workspace-sandbox.test.ts [2m([22m[2m3 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[32m 215[2mms[22m[39m
+ [32m✓[39m test/tui-settings-appearance.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m test/tui-terminal.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m test/tui-setup-path-completion.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 544[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps the empty input clean and completes a selected path from the dropdown [33m 520[2mms[22m[39m
+ [31m❯[39m test/logging.test.ts [2m([22m[2m12 tests[22m[2m | [22m[31m1 failed[39m[2m | [22m[33m2 skipped[39m[2m)[22m[32m 52[2mms[22m[39m
+     [32m✓[39m leaves logging off until it is opted into[32m 5[2mms[22m[39m
+     [32m✓[39m enables debug logging in the temp dir when opted in[32m 0[2mms[22m[39m
+     [32m✓[39m keeps logging off when only the file path is set[32m 0[2mms[22m[39m
+     [32m✓[39m disables logging for off-style values[32m 1[2mms[22m[39m
+     [32m✓[39m honors explicitly enabled logging with a custom file path and level[32m 0[2mms[22m[39m
+     [32m✓[39m falls back to debug for an unknown level[32m 0[2mms[22m[39m
+     [32m✓[39m takes the level from STRANDS_CLI_LOG unless STRANDS_CLI_LOG_LEVEL is set[32m 3[2mms[22m[39m
+[31m     [31m×[31m prefers TMPDIR for the default path[39m[32m 23[2mms[22m[39m
+     [32m✓[39m writes level-filtered entries to the file, creating the directory[32m 12[2mms[22m[39m
+     [2m[90m↓[39m[22m creates the directory and file for the owner only
+     [2m[90m↓[39m[22m tightens a pre-existing directory and log file
+     [32m✓[39m degrades to a no-op when the directory cannot be created[32m 2[2mms[22m[39m
+ [2m[90m↓[39m[22m test/tui-python-source-reload.test.ts [2m([22m[2m3 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m
+ [32m✓[39m test/tui-source-validation.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 532[2mms[22m[39m
+   [33m[2m✓[22m[39m loads ESM authoring folders and import-only packages using exported module semantics [33m 499[2mms[22m[39m
+ [32m✓[39m test/tui-workspace-trust.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+ [32m✓[39m test/tui-update-notice.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 879[2mms[22m[39m
+     [33m[2m✓[22m[39m asks npm for the latest release and announces it on the opening menu [33m 301[2mms[22m[39m
+stderr | test/tui-source-model-persistence.test.ts > keeps a UI-selected model and effort only for the same unchanged source definition
+effort "off" not applied to a pre-built Model instance or ModelRouter; configure reasoning on the instance
+
+ [32m✓[39m test/tui-source-model-persistence.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 208[2mms[22m[39m
+ [32m✓[39m test/tui-messaging.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [31m❯[39m test/tui-standalone-project.test.ts [2m([22m[2m8 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 127[2mms[22m[39m
+   [32m✓[39m accepts a directly selected independent .ts module[32m 14[2mms[22m[39m
+   [32m✓[39m accepts a directly selected independent .mts module[32m 5[2mms[22m[39m
+   [32m✓[39m accepts a directly selected independent .js module[32m 4[2mms[22m[39m
+   [32m✓[39m accepts a directly selected independent .mjs module[32m 4[2mms[22m[39m
+   [32m✓[39m accepts a directly selected independent .py module[32m 5[2mms[22m[39m
+   [32m✓[39m honors a safe marker and rejects a marker escaping through an ancestor[32m 11[2mms[22m[39m
+[31m   [31m×[31m preserves authored bytes and selects an arbitrary source through repeated ZIP export[39m[32m 64[2mms[22m[39m
+   [32m✓[39m does not discard a ZIP manifest and assets to find an unmarked nested module[32m 18[2mms[22m[39m
+ [32m✓[39m test/tui-background-agent-inbox.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m test/tui-mcp-export-portability.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 104[2mms[22m[39m
+ [32m✓[39m test/main.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 68[2mms[22m[39m
+ [32m✓[39m test/tui-rename.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 756[2mms[22m[39m
+     [33m[2m✓[22m[39m renames the active agent from an inline text field [33m 549[2mms[22m[39m
+ [32m✓[39m test/tui-config-appearance.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 59[2mms[22m[39m
+ [32m✓[39m test/source-launcher.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 96[2mms[22m[39m
+ [32m✓[39m test/tui-runtime-metadata-safety.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m test/tui-setup-resize.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 148[2mms[22m[39m
+ [32m✓[39m test/tui-rendering.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m test/tui-metadata-layout.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 102[2mms[22m[39m
+stderr | test/tui-agent-project-source.test.ts > agentProjectSource memory > keeps memory: false when memory stores are configured
+Ignoring memoryStores because memory is false.
+
+ [32m✓[39m test/tui-agent-project-source.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m test/tui-setup-on-launch.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 697[2mms[22m[39m
+   [33m[2m✓[22m[39m selects startup setup for 'configured default' [33m 675[2mms[22m[39m
+ [32m✓[39m test/tui-npm.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m test/tui-file-change-preview.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m test/tui-steering.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m test/tui-transcript-performance.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 305[2mms[22m[39m
+     [33m[2m✓[22m[39m does not reparse completed Markdown while the active turn streams [33m 301[2mms[22m[39m
+ [32m✓[39m test/tui-aws-region.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m test/tui-python-environment.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 52[2mms[22m[39m
+ [32m✓[39m test/init-logging.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m test/tui-update-batching.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m test/tui-project-source.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m test/tui-provider-packages.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m test/tui-error-panel-layout.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 210[2mms[22m[39m
+ [32m✓[39m test/tui-model-display.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m test/tui-python-mcp-export.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m test/tui-self-building.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3208[2mms[22m[39m
+     [33m[2m✓[22m[39m reloads real tools, plugins, skills and owned MCP connections from a separate authoring directory [33m 3205[2mms[22m[39m
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 22 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/cli-update.test.ts > updateCli > reports an already-current global installation
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'npm', [ 'view', …(3) ] ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   "npm",
++   "C:\\Windows\\system32\\cmd.exe",
+    [
+-     "view",
+-     "@strands-agents/cli@latest",
+-     "version",
+-     "--json",
++     "/d",
++     "/s",
++     "/c",
++     "npm.cmd view @strands-agents/cli@latest version --json",
+    ],
+  ]
+
+
+Number of calls: 1
+
+ ❯ test/cli-update.test.ts:43:30
+     41|
+     42|     expect(await updateCli({ currentVersion: '1.2.0', runner: commands…
+     43|     expect(commands.capture).toHaveBeenCalledWith('npm', ['view', '@st…
+       |                              ^
+     44|     expect(commands.inherit).not.toHaveBeenCalled()
+     45|     expect(output.text()).toBe('Strands CLI 1.2.0 is already up to dat…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/22]⎯
+
+ FAIL  test/cli-update.test.ts > updateCli > installs the latest global package
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'npm', …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   "npm",
++   "C:\\Windows\\system32\\cmd.exe",
+    [
+-     "install",
+-     "--global",
+-     "@strands-agents/cli@1.2.0",
++     "/d",
++     "/s",
++     "/c",
++     "npm.cmd install --global @strands-agents/cli@1.2.0",
+    ],
+  ]
+
+
+Number of calls: 1
+
+ ❯ test/cli-update.test.ts:53:30
+     51|
+     52|     expect(await updateCli({ currentVersion: '1.1.0', runner: commands…
+     53|     expect(commands.inherit).toHaveBeenCalledWith('npm', ['install', '…
+       |                              ^
+     54|     expect(output.text()).toContain('Updating Strands CLI from 1.1.0 t…
+     55|     expect(output.text()).toContain('Updated Strands CLI to 1.2.0')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/22]⎯
+
+ FAIL  test/cli-update.test.ts > updateCli > uses npm.cmd on Windows and preserves an install failure
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'cmd.exe', …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+@@ -1,7 +1,7 @@
+  [
+-   "cmd.exe",
++   "C:\\Windows\\system32\\cmd.exe",
+    [
+      "/d",
+      "/s",
+      "/c",
+      "npm.cmd view @strands-agents/cli@latest version --json",
+
+
+Number of calls: 1
+
+ ❯ test/cli-update.test.ts:72:30
+     70|       })
+     71|     ).toBe(7)
+     72|     expect(commands.capture).toHaveBeenCalledWith('cmd.exe', [
+       |                              ^
+     73|       '/d',
+     74|       '/s',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/22]⎯
+
+ FAIL  test/cli.test.ts > TUI startup > avoids React timing retention while preserving NODE_ENV=undefined
+ FAIL  test/cli.test.ts > TUI startup > avoids React timing retention while preserving NODE_ENV=development
+ FAIL  test/cli.test.ts > TUI startup > avoids React timing retention while preserving NODE_ENV=production
+AssertionError: 
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+Error [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'
+    at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:203:11)
+    at defaultLoad (node:internal/modules/esm/load:86:3)
+    at nextLoad (node:internal/modules/esm/hooks:748:28)
+    at Hooks.load (node:internal/modules/esm/hooks:385:26)
+    at ModuleLoader.load (node:internal/modules/esm/loader:827:35)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:609:31)
+    at #createModuleJob (node:internal/modules/esm/loader:640:36)
+    at #getJobFromResolveResult (node:internal/modules/esm/loader:353:34)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:321:41)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {
+  code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'
+}
+
+Node.js v22.23.3
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/cli.test.ts:569:30
+    567|       try {
+    568|         const [code] = await once(child, 'close')
+    569|         expect(code, stderr).toBe(0)
+       |                              ^
+    570|       } finally {
+    571|         child.kill()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/22]⎯
+
+ FAIL  test/cli.test.ts > ACP mode routing > answers initialize while the ACP stdin protocol stream remains open
+Error: ACP process closed before responding (1): 
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+Error [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'
+    at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:203:11)
+    at defaultLoad (node:internal/modules/esm/load:86:3)
+    at nextLoad (node:internal/modules/esm/hooks:748:28)
+    at Hooks.load (node:internal/modules/esm/hooks:385:26)
+    at ModuleLoader.load (node:internal/modules/esm/loader:827:35)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:609:31)
+    at #createModuleJob (node:internal/modules/esm/loader:640:36)
+    at #getJobFromResolveResult (node:internal/modules/esm/loader:353:34)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:321:41)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {
+  code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'
+}
+
+Node.js v22.23.3
+
+ ❯ ChildProcess.<anonymous> test/cli.test.ts:632:18
+    630|       child.once('close', (code, signal) => {
+    631|         if (!stdout.includes('\n')) {
+    632|           reject(new Error(`ACP process closed before responding (${co…
+       |                  ^
+    633|         }
+    634|       })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/22]⎯
+
+ FAIL  test/logging.test.ts > resolveLogConfig > prefers TMPDIR for the default path
+AssertionError: expected '\var\tmp\strands\cli.log' to be '/var/tmp/strands/cli.log' // Object.is equality
+
+Expected: "/var/tmp/strands/cli.log"
+Received: "\var\tmp\strands\cli.log"
+
+ ❯ test/logging.test.ts:55:63
+     53|
+     54|   it('prefers TMPDIR for the default path', () => {
+     55|     expect(resolveLogConfig({ TMPDIR: '/var/tmp' }).filePath).toBe('/v…
+       |                                                               ^
+     56|   })
+     57| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/22]⎯
+
+ FAIL  test/tui-acp-server.test.ts > ACP server > keeps the process alive through bounded cleanup when a prompt ignores cancellation
+AssertionError: expected { code: 1, signal: null, …(1) } to match object { code: +0, signal: null, …(1) }
+
+- Expected
++ Received
+
+  {
+-   "code": 0,
+-   "errorOutput": "",
++   "code": 1,
++   "errorOutput": "
+
++ node:internal/modules/run_main:123
+
++     triggerUncaughtException(
+
++     ^
+
++ Error [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'
+
++     at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:203:11)
+
++     at defaultLoad (node:internal/modules/esm/load:86:3)
+
++     at nextLoad (node:internal/modules/esm/hooks:748:28)
+
++     at Hooks.load (node:internal/modules/esm/hooks:385:26)
+
++     at ModuleLoader.load (node:internal/modules/esm/loader:827:35)
+
++     at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:609:31)
+
++     at #createModuleJob (node:internal/modules/esm/loader:640:36)
+
++     at #getJobFromResolveResult (node:internal/modules/esm/loader:353:34)
+
++     at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:321:41)
+
++     at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {
+
++   code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'
+
++ }
+
++ 
+
++ Node.js v22.23.3
+
++ ",
+    "signal": null,
+  }
+
+ ❯ test/tui-acp-server.test.ts:531:43
+    529|     const [code, signal] = (await once(child, 'close')) as [number | n…
+    530|
+    531|     expect({ code, signal, errorOutput }).toMatchObject({ code: 0, sig…
+       |                                           ^
+    532|     expect(output).toContain('__DISPOSED__')
+    533|   }, 5_000)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/22]⎯
+
+ FAIL  test/tui-export.test.ts > export completion > copies the exact path and a shell-safe launch command
+Error: spawnSync /bin/sh ENOENT
+ ❯ test/tui-export.test.ts:194:7
+    192|     expect(row(controller, 'Copy launch command').badge?.text).toBe('C…
+    193|     expect(
+    194|       execFileSync('/bin/sh', ['-c', `${launchCommand.replace(/^strand…
+       |       ^
+    195|         encoding: 'utf8',
+    196|       })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/22]⎯
+
+ FAIL  test/tui-mcp.test.ts > loadMcp > discovers conventional user and project configuration locations in stable precedence order
+AssertionError: expected [ '~\.claude.json', …(4) ] to deeply equal [ '~/.claude.json', …(4) ]
+
+- Expected
++ Received
+
+  [
+-   "~/.claude.json",
+-   "~/.kiro/settings/mcp.json",
+-   "~/.gemini/settings.json",
+-   "~/.codex/config.toml",
+-   "~/.config/strands/mcp.json",
++   "~\\.claude.json",
++   "~\\.kiro\\settings\\mcp.json",
++   "~\\.gemini\\settings.json",
++   "~\\.codex\\config.toml",
++   "~\\.config\\strands\\mcp.json",
+  ]
+
+ ❯ test/tui-mcp.test.ts:47:83
+     45| describe('loadMcp', () => {
+     46|   it('discovers conventional user and project configuration locations …
+     47|     expect(defaultMcpPaths().map((path) => path.replace(process.env.HO…
+       |                                                                                   ^
+     48|       '~/.claude.json',
+     49|       '~/.kiro/settings/mcp.json',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/22]⎯
+
+ FAIL  test/tui-project-archive.test.ts > removes the extraction directory when the ZIP contains no agent
+Error: ENOENT: no such file or directory, scandir 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-Ynmlgh\.strands\cli\cache\agents'
+ ❯ test/tui-project-archive.test.ts:30:10
+     28|
+     29|   expect(() => importAgentProject(archive)).toThrow('The ZIP must cont…
+     30|   expect(await readdir(join(temporary, '.strands', 'cli', 'cache', 'ag…
+       |          ^
+     31| })
+     32|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/22]⎯
+
+ FAIL  test/tui-project-archive.test.ts > cleans up an invalid marker missing.py ZIP
+Error: ENOENT: no such file or directory, scandir 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-EbJtcN\.strands\cli\cache\agents'
+ ❯ test/tui-project-archive.test.ts:50:16
+     48|       for (let attempt = 0; attempt < 2; attempt += 1) {
+     49|         expect(() => importAgentProject(archive)).toThrow('Invalid .st…
+     50|         expect(await readdir(join(temporary, '.strands', 'cli', 'cache…
+       |                ^
+     51|       }
+     52|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/22]⎯
+
+ FAIL  test/tui-project-archive.test.ts > cleans up an invalid marker ../outside.py ZIP
+Error: ENOENT: no such file or directory, scandir 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-SAFbh2\.strands\cli\cache\agents'
+ ❯ test/tui-project-archive.test.ts:50:16
+     48|       for (let attempt = 0; attempt < 2; attempt += 1) {
+     49|         expect(() => importAgentProject(archive)).toThrow('Invalid .st…
+     50|         expect(await readdir(join(temporary, '.strands', 'cli', 'cache…
+       |                ^
+     51|       }
+     52|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/22]⎯
+
+ FAIL  test/tui-project-archive.test.ts > cleans up an invalid marker notes.txt ZIP
+Error: ENOENT: no such file or directory, scandir 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-ITTQru\.strands\cli\cache\agents'
+ ❯ test/tui-project-archive.test.ts:50:16
+     48|       for (let attempt = 0; attempt < 2; attempt += 1) {
+     49|         expect(() => importAgentProject(archive)).toThrow('Invalid .st…
+     50|         expect(await readdir(join(temporary, '.strands', 'cli', 'cache…
+       |                ^
+     51|       }
+     52|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/22]⎯
+
+ FAIL  test/tui-project-archive.test.ts > restores executable permissions without privileged bits from ZIP64=false
+ FAIL  test/tui-project-archive.test.ts > restores executable permissions without privileged bits from ZIP64=true
+AssertionError: expected 438 to be 493 // Object.is equality
+
+- Expected
++ Received
+
+- 493
++ 438
+
+ ❯ test/tui-project-archive.test.ts:148:71
+    146|   const archive = await archiveWithMode(0o107777, zip64)
+    147|   const project = importAgentProject(archive)
+    148|   expect((await stat(join(project.root, 'helper.sh'))).mode & 0o7777).…
+       |                                                                       ^
+    149| })
+    150|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/22]⎯
+
+ FAIL  test/tui-project-portability.test.ts > builds and runs a packaged local tool after its original source is removed
+Error: spawn EINVAL
+ ❯ test/tui-project-portability.test.ts:76:9
+     74|   // The CLI installs standalone, so its deps live under strands-cli/n…
+     75|   await symlink(resolve(import.meta.dirname, '../node_modules'), join(…
+     76|   await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', …
+       |         ^
+     77|   const { stdout } = await run(
+     78|     process.execPath,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/22]⎯
+
+ FAIL  test/tui-project-portability.test.ts > preserves executable helpers through export and import
+AssertionError: expected +0 to be 73 // Object.is equality
+
+- Expected
++ Received
+
+- 73
++ 0
+
+ ❯ test/tui-project-portability.test.ts:143:89
+    141|   await writeAgentProject(defineHarnessAgentConfig({}), 'typescript', …
+    142|   const project = importAgentProject(archive)
+    143|   expect((await stat(join(project.root, 'agent/skills/skill/helper.sh'…
+       |                                                                                         ^
+    144| })
+    145|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/22]⎯
+
+ FAIL  test/tui-run.test.ts > runInkChat > cancels startup MCP trust with Ctrl-C and restores the terminal before forced exit
+AssertionError: expected 2 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/tui-run.test.ts:375:47
+    373|       expect(await running).toBe(forcedExit)
+    374|       expect(hardExit).toHaveBeenCalledExactlyOnceWith(130)
+    375|       expect(process.listenerCount('SIGINT')).toBe(sigintListeners)
+       |                                               ^
+    376|     } finally {
+    377|       if (!startupSignal?.aborted) input.push('n')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/22]⎯
+
+ FAIL  test/tui-runtime.test.ts > interactive runtime lifecycle > opens cross-workspace sessions with workspace-bound resources and keeps the source conversation
+AssertionError: expected { type: 'executionResult', …(4) } to match object { exitCode: +0, …(1) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "exitCode": 0,
+-   "stdout": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\strands-runtime-cross-workspace-4Y1Re6\\second
++   "stdout": "/tmp/strands-runtime-cross-workspace-4Y1Re6/second
+  ",
+  }
+
+ ❯ test/tui-runtime.test.ts:960:86
+    958|       expect(sandbox && sandbox !== false).toBe(true)
+    959|       const realSecondWorkspace = await realpath(secondWorkspace)
+    960|       await expect(sandbox && sandbox !== false ? sandbox.execute('pwd…
+       |                                                                                      ^
+    961|         exitCode: 0,
+    962|         stdout: `${realSecondWorkspace}\n`,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/22]⎯
+
+ FAIL  test/tui-standalone-project.test.ts > preserves authored bytes and selects an arbitrary source through repeated ZIP export
+AssertionError: expected { '.agent/': Uint8Array[], …(9) } to not have property ".agent/sessions/session.json"
+
+- Expected:
+undefined
+
++ Received:
+Uint8Array [
+  80,
+  82,
+  73,
+  86,
+  65,
+  84,
+  69,
+]
+
+ ❯ test/tui-standalone-project.test.ts:66:25
+     64|     }
+     65|     expect(entries).not.toHaveProperty('.env')
+     66|     expect(entries).not.toHaveProperty('.agent/sessions/session.json')
+       |                         ^
+     67|     expect(Buffer.from(entries['.strands-entrypoint']!).toString()).to…
+     68|     project = importAgentProject(archive)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/22]⎯
+
+
+[2m Test Files [22m [1m[31m11 failed[39m[22m[2m | [22m[1m[32m72 passed[39m[22m[2m | [22m[33m3 skipped[39m[90m (86)[39m
+[2m      Tests [22m [1m[31m22 failed[39m[22m[2m | [22m[1m[32m1001 passed[39m[22m[2m | [22m[33m28 skipped[39m[90m (1051)[39m
+[2m   Start at [22m 18:53:35
+[2m   Duration [22m 83.85s[2m (transform 5.15s, setup 0ms, import 100.96s, tests 105.81s, environment 17ms)[22m
+
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/cli-update.test.ts,title=test/cli-update.test.ts > updateCli > reports an already-current global installation,line=43,column=30::AssertionError: expected "vi.fn()" to be called with arguments: [ 'npm', [ 'view', …(3) ] ]%0A%0AReceived:%0A%0A  1st vi.fn() call:%0A%0A  [%0A-   "npm",%0A+   "C:\\Windows\\system32\\cmd.exe",%0A    [%0A-     "view",%0A-     "@strands-agents/cli@latest",%0A-     "version",%0A-     "--json",%0A+     "/d",%0A+     "/s",%0A+     "/c",%0A+     "npm.cmd view @strands-agents/cli@latest version --json",%0A    ],%0A  ]%0A%0A%0ANumber of calls: 1%0A%0A ❯ test/cli-update.test.ts:43:30%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/cli-update.test.ts,title=test/cli-update.test.ts > updateCli > installs the latest global package,line=53,column=30::AssertionError: expected "vi.fn()" to be called with arguments: [ 'npm', …(1) ]%0A%0AReceived:%0A%0A  1st vi.fn() call:%0A%0A  [%0A-   "npm",%0A+   "C:\\Windows\\system32\\cmd.exe",%0A    [%0A-     "install",%0A-     "--global",%0A-     "@strands-agents/cli@1.2.0",%0A+     "/d",%0A+     "/s",%0A+     "/c",%0A+     "npm.cmd install --global @strands-agents/cli@1.2.0",%0A    ],%0A  ]%0A%0A%0ANumber of calls: 1%0A%0A ❯ test/cli-update.test.ts:53:30%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/cli-update.test.ts,title=test/cli-update.test.ts > updateCli > uses npm.cmd on Windows and preserves an install failure,line=72,column=30::AssertionError: expected "vi.fn()" to be called with arguments: [ 'cmd.exe', …(1) ]%0A%0AReceived:%0A%0A  1st vi.fn() call:%0A%0A@@ -1,7 +1,7 @@%0A  [%0A-   "cmd.exe",%0A+   "C:\\Windows\\system32\\cmd.exe",%0A    [%0A      "/d",%0A      "/s",%0A      "/c",%0A      "npm.cmd view @strands-agents/cli@latest version --json",%0A%0A%0ANumber of calls: 1%0A%0A ❯ test/cli-update.test.ts:72:30%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/cli.test.ts,title=test/cli.test.ts > TUI startup > avoids React timing retention while preserving NODE_ENV=undefined,line=569,column=30::AssertionError: %0D%0Anode:internal/modules/run_main:123%0D%0A    triggerUncaughtException(%0D%0A    ^%0D%0AError [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'%0D%0A    at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:203:11)%0D%0A    at defaultLoad (node:internal/modules/esm/load:86:3)%0D%0A    at nextLoad (node:internal/modules/esm/hooks:748:28)%0D%0A    at Hooks.load (node:internal/modules/esm/hooks:385:26)%0D%0A    at ModuleLoader.load (node:internal/modules/esm/loader:827:35)%0D%0A    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:609:31)%0D%0A    at #createModuleJob (node:internal/modules/esm/loader:640:36)%0D%0A    at #getJobFromResolveResult (node:internal/modules/esm/loader:353:34)%0D%0A    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:321:41)%0D%0A    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {%0D%0A  code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'%0D%0A}%0D%0A%0D%0ANode.js v22.23.3%0D%0A: expected 1 to be +0 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 0%0A+ 1%0A%0A ❯ test/cli.test.ts:569:30%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/cli.test.ts,title=test/cli.test.ts > TUI startup > avoids React timing retention while preserving NODE_ENV=development,line=569,column=30::AssertionError: %0D%0Anode:internal/modules/run_main:123%0D%0A    triggerUncaughtException(%0D%0A    ^%0D%0AError [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'%0D%0A    at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:203:11)%0D%0A    at defaultLoad (node:internal/modules/esm/load:86:3)%0D%0A    at nextLoad (node:internal/modules/esm/hooks:748:28)%0D%0A    at Hooks.load (node:internal/modules/esm/hooks:385:26)%0D%0A    at ModuleLoader.load (node:internal/modules/esm/loader:827:35)%0D%0A    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:609:31)%0D%0A    at #createModuleJob (node:internal/modules/esm/loader:640:36)%0D%0A    at #getJobFromResolveResult (node:internal/modules/esm/loader:353:34)%0D%0A    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:321:41)%0D%0A    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {%0D%0A  code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'%0D%0A}%0D%0A%0D%0ANode.js v22.23.3%0D%0A: expected 1 to be +0 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 0%0A+ 1%0A%0A ❯ test/cli.test.ts:569:30%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/cli.test.ts,title=test/cli.test.ts > TUI startup > avoids React timing retention while preserving NODE_ENV=production,line=569,column=30::AssertionError: %0D%0Anode:internal/modules/run_main:123%0D%0A    triggerUncaughtException(%0D%0A    ^%0D%0AError [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'%0D%0A    at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:203:11)%0D%0A    at defaultLoad (node:internal/modules/esm/load:86:3)%0D%0A    at nextLoad (node:internal/modules/esm/hooks:748:28)%0D%0A    at Hooks.load (node:internal/modules/esm/hooks:385:26)%0D%0A    at ModuleLoader.load (node:internal/modules/esm/loader:827:35)%0D%0A    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:609:31)%0D%0A    at #createModuleJob (node:internal/modules/esm/loader:640:36)%0D%0A    at #getJobFromResolveResult (node:internal/modules/esm/loader:353:34)%0D%0A    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:321:41)%0D%0A    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {%0D%0A  code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'%0D%0A}%0D%0A%0D%0ANode.js v22.23.3%0D%0A: expected 1 to be +0 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 0%0A+ 1%0A%0A ❯ test/cli.test.ts:569:30%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/cli.test.ts,title=test/cli.test.ts > ACP mode routing > answers initialize while the ACP stdin protocol stream remains open,line=632,column=18::Error: ACP process closed before responding (1): %0D%0Anode:internal/modules/run_main:123%0D%0A    triggerUncaughtException(%0D%0A    ^%0D%0AError [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'%0D%0A    at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:203:11)%0D%0A    at defaultLoad (node:internal/modules/esm/load:86:3)%0D%0A    at nextLoad (node:internal/modules/esm/hooks:748:28)%0D%0A    at Hooks.load (node:internal/modules/esm/hooks:385:26)%0D%0A    at ModuleLoader.load (node:internal/modules/esm/loader:827:35)%0D%0A    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:609:31)%0D%0A    at #createModuleJob (node:internal/modules/esm/loader:640:36)%0D%0A    at #getJobFromResolveResult (node:internal/modules/esm/loader:353:34)%0D%0A    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:321:41)%0D%0A    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {%0D%0A  code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'%0D%0A}%0D%0A%0D%0ANode.js v22.23.3%0D%0A%0A ❯ ChildProcess.<anonymous> test/cli.test.ts:632:18%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/logging.test.ts,title=test/logging.test.ts > resolveLogConfig > prefers TMPDIR for the default path,line=55,column=63::AssertionError: expected '\var\tmp\strands\cli.log' to be '/var/tmp/strands/cli.log' // Object.is equality%0A%0AExpected: "/var/tmp/strands/cli.log"%0AReceived: "\var\tmp\strands\cli.log"%0A%0A ❯ test/logging.test.ts:55:63%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-acp-server.test.ts,title=test/tui-acp-server.test.ts > ACP server > keeps the process alive through bounded cleanup when a prompt ignores cancellation,line=531,column=43::AssertionError: expected { code: 1, signal: null, …(1) } to match object { code: +0, signal: null, …(1) }%0A%0A- Expected%0A+ Received%0A%0A  {%0A-   "code": 0,%0A-   "errorOutput": "",%0A+   "code": 1,%0A+   "errorOutput": "%0D%0A+ node:internal/modules/run_main:123%0D%0A+     triggerUncaughtException(%0D%0A+     ^%0D%0A+ Error [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'%0D%0A+     at throwIfUnsupportedURLScheme (node:internal/modules/esm/load:203:11)%0D%0A+     at defaultLoad (node:internal/modules/esm/load:86:3)%0D%0A+     at nextLoad (node:internal/modules/esm/hooks:748:28)%0D%0A+     at Hooks.load (node:internal/modules/esm/hooks:385:26)%0D%0A+     at ModuleLoader.load (node:internal/modules/esm/loader:827:35)%0D%0A+     at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:609:31)%0D%0A+     at #createModuleJob (node:internal/modules/esm/loader:640:36)%0D%0A+     at #getJobFromResolveResult (node:internal/modules/esm/loader:353:34)%0D%0A+     at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:321:41)%0D%0A+     at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {%0D%0A+   code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'%0D%0A+ }%0D%0A+ %0D%0A+ Node.js v22.23.3%0D%0A+ ",%0A    "signal": null,%0A  }%0A%0A ❯ test/tui-acp-server.test.ts:531:43%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-export.test.ts,title=test/tui-export.test.ts > export completion > copies the exact path and a shell-safe launch command,line=194,column=7::Error: spawnSync /bin/sh ENOENT%0A ❯ test/tui-export.test.ts:194:7%0A%0A⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯%0ASerialized Error: { errno: -4058, code: 'ENOENT', syscall: 'spawnSync /bin/sh', path: '/bin/sh', spawnargs: [ '-c', 'set -- --agent \'/tmp/Jane\'\\'\'s agent $(literal) `literal`\ncopy.zip\'; printf \'%25s\' "$2"' ], error: { stack: 'Error: spawnSync /bin/sh ENOENT\n    at Object.spawnSync (node:internal/child_process:1120:20)\n    at spawnSync (node:child_process:902:24)\n    at Proxy.execFileSync (node:child_process:945:15)\n    at D:/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-export.test.ts:194:7\n    at file:///D:/a/harness-sdk/harness-sdk/src/strands-cli/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20', message: 'spawnSync /bin/sh ENOENT', errno: -4058, code: 'ENOENT', syscall: 'spawnSync /bin/sh', path: '/bin/sh', spawnargs: [ '-c', 'set -- --agent \'/tmp/Jane\'\\'\'s agent $(literal) `literal`\ncopy.zip\'; printf \'%25s\' "$2"' ], error: [Circular], status: null, signal: null, output: null, pid: +0, stdout: undefined, stderr: undefined, constructor: 'Function<Error>', name: 'Error', toString: 'Function<toString>', stacks: [ { method: '', file: 'D:/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-export.test.ts', line: 194, column: 7 } ] }, status: null, signal: null, output: null, pid: +0, stdout: undefined, stderr: undefined }%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-mcp.test.ts,title=test/tui-mcp.test.ts > loadMcp > discovers conventional user and project configuration locations in stable precedence order,line=47,column=83::AssertionError: expected [ '~\.claude.json', …(4) ] to deeply equal [ '~/.claude.json', …(4) ]%0A%0A- Expected%0A+ Received%0A%0A  [%0A-   "~/.claude.json",%0A-   "~/.kiro/settings/mcp.json",%0A-   "~/.gemini/settings.json",%0A-   "~/.codex/config.toml",%0A-   "~/.config/strands/mcp.json",%0A+   "~\\.claude.json",%0A+   "~\\.kiro\\settings\\mcp.json",%0A+   "~\\.gemini\\settings.json",%0A+   "~\\.codex\\config.toml",%0A+   "~\\.config\\strands\\mcp.json",%0A  ]%0A%0A ❯ test/tui-mcp.test.ts:47:83%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-project-archive.test.ts,title=test/tui-project-archive.test.ts > removes the extraction directory when the ZIP contains no agent,line=30,column=10::Error: ENOENT: no such file or directory, scandir 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-Ynmlgh\.strands\cli\cache\agents'%0A ❯ test/tui-project-archive.test.ts:30:10%0A%0A⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯%0ASerialized Error: { errno: -4058, code: 'ENOENT', syscall: 'scandir', path: 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-Ynmlgh\.strands\cli\cache\agents' }%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-project-archive.test.ts,title=test/tui-project-archive.test.ts > cleans up an invalid marker missing.py ZIP,line=50,column=16::Error: ENOENT: no such file or directory, scandir 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-EbJtcN\.strands\cli\cache\agents'%0A ❯ test/tui-project-archive.test.ts:50:16%0A%0A⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯%0ASerialized Error: { errno: -4058, code: 'ENOENT', syscall: 'scandir', path: 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-EbJtcN\.strands\cli\cache\agents' }%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-project-archive.test.ts,title=test/tui-project-archive.test.ts > cleans up an invalid marker ../outside.py ZIP,line=50,column=16::Error: ENOENT: no such file or directory, scandir 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-SAFbh2\.strands\cli\cache\agents'%0A ❯ test/tui-project-archive.test.ts:50:16%0A%0A⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯%0ASerialized Error: { errno: -4058, code: 'ENOENT', syscall: 'scandir', path: 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-SAFbh2\.strands\cli\cache\agents' }%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-project-archive.test.ts,title=test/tui-project-archive.test.ts > cleans up an invalid marker notes.txt ZIP,line=50,column=16::Error: ENOENT: no such file or directory, scandir 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-ITTQru\.strands\cli\cache\agents'%0A ❯ test/tui-project-archive.test.ts:50:16%0A%0A⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯%0ASerialized Error: { errno: -4058, code: 'ENOENT', syscall: 'scandir', path: 'C:\Users\RUNNER~1\AppData\Local\Temp\strands-archive-ITTQru\.strands\cli\cache\agents' }%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-project-archive.test.ts,title=test/tui-project-archive.test.ts > restores executable permissions without privileged bits from ZIP64=false,line=148,column=71::AssertionError: expected 438 to be 493 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 493%0A+ 438%0A%0A ❯ test/tui-project-archive.test.ts:148:71%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-project-archive.test.ts,title=test/tui-project-archive.test.ts > restores executable permissions without privileged bits from ZIP64=true,line=148,column=71::AssertionError: expected 438 to be 493 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 493%0A+ 438%0A%0A ❯ test/tui-project-archive.test.ts:148:71%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-project-portability.test.ts,title=test/tui-project-portability.test.ts > builds and runs a packaged local tool after its original source is removed,line=76,column=9::Error: spawn EINVAL%0A ❯ test/tui-project-portability.test.ts:76:9%0A%0A⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯%0ASerialized Error: { errno: -4071, code: 'EINVAL', syscall: 'spawn' }%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-project-portability.test.ts,title=test/tui-project-portability.test.ts > preserves executable helpers through export and import,line=143,column=89::AssertionError: expected +0 to be 73 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 73%0A+ 0%0A%0A ❯ test/tui-project-portability.test.ts:143:89%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-run.test.ts,title=test/tui-run.test.ts > runInkChat > cancels startup MCP trust with Ctrl-C and restores the terminal before forced exit,line=375,column=47::AssertionError: expected 2 to be 1 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 1%0A+ 2%0A%0A ❯ test/tui-run.test.ts:375:47%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-runtime.test.ts,title=test/tui-runtime.test.ts > interactive runtime lifecycle > opens cross-workspace sessions with workspace-bound resources and keeps the source conversation,line=960,column=86::AssertionError: expected { type: 'executionResult', …(4) } to match object { exitCode: +0, …(1) }%0A(3 matching properties omitted from actual)%0A%0A- Expected%0A+ Received%0A%0A  {%0A    "exitCode": 0,%0A-   "stdout": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\strands-runtime-cross-workspace-4Y1Re6\\second%0A+   "stdout": "/tmp/strands-runtime-cross-workspace-4Y1Re6/second%0A  ",%0A  }%0A%0A ❯ test/tui-runtime.test.ts:960:86%0A%0A
+
+::error file=D%3A/a/harness-sdk/harness-sdk/src/strands-cli/test/tui-standalone-project.test.ts,title=test/tui-standalone-project.test.ts > preserves authored bytes and selects an arbitrary source through repeated ZIP export,line=66,column=25::AssertionError: expected { '.agent/': Uint8Array[], …(9) } to not have property ".agent/sessions/session.json"%0A%0A- Expected:%0Aundefined%0A%0A+ Received:%0AUint8Array [%0A  80,%0A  82,%0A  73,%0A  86,%0A  65,%0A  84,%0A  69,%0A]%0A%0A ❯ test/tui-standalone-project.test.ts:66:25%0A%0A
+strands-cli check exit=1
+### harness-py ###
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '\\tmp\\strands-web-fetch-614104bf03294be2a81fff8e4466e600'
+
+C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\pathlib.py:1013: FileNotFoundError
+---------------------------- Captured log teardown ----------------------------
+ERROR    asyncio:base_events.py:1833 Task was destroyed but it is pending!
+task: <Task pending name='Task-1848' coro=<<async_generator_athrow without __name__>()>>
+=========================== short test summary info ===========================
+FAILED tests/test_config.py::test_config_resolves_cedar_interventions_against_project_root[./policy.cedar-/project/policy.cedar] - AssertionError: assert 'D:\\project\\policy.cedar' == '/project/policy.cedar'
+  
+  - /project/policy.cedar
+  ? ^       ^
+  + D:\project\policy.cedar
+  ? ^^^       ^
+FAILED tests/test_config.py::test_config_resolves_cedar_interventions_against_project_root[policies/policy.cedar-/project/policies/policy.cedar] - AssertionError: assert 'D:\\project\...\policy.cedar' == '/project/pol.../policy.cedar'
+  
+  - /project/policies/policy.cedar
+  ? ^       ^        ^
+  + D:\project\policies\policy.cedar
+  ? ^^^       ^        ^
+FAILED tests/test_config.py::test_config_resolves_cedar_interventions_against_project_root[  ./policy.cedar  -/project/policy.cedar] - AssertionError: assert 'D:\\project\\policy.cedar' == '/project/policy.cedar'
+  
+  - /project/policy.cedar
+  ? ^       ^
+  + D:\project\policy.cedar
+  ? ^^^       ^
+FAILED tests/test_config.py::test_config_resolves_cedar_interventions_against_project_root[/policies/policy.cedar-/policies/policy.cedar] - AssertionError: assert 'D:\\policies\\policy.cedar' == '/policies/policy.cedar'
+  
+  - /policies/policy.cedar
+  ? ^        ^
+  + D:\policies\policy.cedar
+  ? ^^^        ^
+FAILED tests/tools/test_web_fetch.py::test_fetch_text_end_to_end_through_the_local_environment - FileNotFoundError: [Errno 2] No such file or directory: '\\tmp\\strands-web-fetch-614104bf03294be2a81fff8e4466e600'
+5 failed, 754 passed, 2 skipped in 147.61s (0:02:27)
+harness-py pytest exit=1
