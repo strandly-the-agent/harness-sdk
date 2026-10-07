@@ -372,7 +372,8 @@ describe('runInkChat', () => {
       await vi.waitFor(() => expect(startupSignal?.aborted).toBe(true))
       expect(await running).toBe(forcedExit)
       expect(hardExit).toHaveBeenCalledExactlyOnceWith(130)
-      expect(process.listenerCount('SIGINT')).toBe(sigintListeners)
+      // Signal-listener teardown lands a tick later on Windows; the invariant is that nothing leaks.
+      await vi.waitFor(() => expect(process.listenerCount('SIGINT')).toBe(sigintListeners))
     } finally {
       if (!startupSignal?.aborted) input.push('n')
       await running
