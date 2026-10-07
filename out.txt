@@ -1,0 +1,42 @@
+### powershell (runner default PATH) ###
+where sh: C:\Program Files\Git\bin\sh.exe
+== powershell | node v22.23.3 | win32 | cwd D:\a\harness-sdk\harness-sdk\repro | tmp C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+[FAIL] harness write tool, path=C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\novel.json -> Error: The path C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\novel.json is not absolute; it should start with '/'.
+[FAIL] harness write tool, path=C:/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-B8kHAy/novel.json -> Error: The path C:/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-B8kHAy/novel.json is not absolute; it should start with '/'.
+[OK]   harness write tool, path=/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-B8kHAy/novel.json -> file exists at /Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-B8kHAy/novel.json / file exists at D:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\novel.json
+[OK]   WorkspaceSandbox.writeText C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\novel.json -> file exists at C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\novel.json
+[OK]   WorkspaceSandbox.writeText /Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-B8kHAy/novel.json -> file exists at /Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-B8kHAy/novel.json / file exists at D:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\novel.json
+[OK]   WorkspaceSandbox.writeText relative chapter.md -> file exists at C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\chapter.md
+[OK]   WorkspaceSandbox.execute pwd -> /tmp/strands-win-repro-B8kHAy
+[OK]   WorkspaceSandbox.execute uname -s -> MINGW64_NT-10.0-26100
+[OK]   default sandbox writeText C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\novel.json -> file exists at C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-B8kHAy\novel.json content=hi
+### powershell, Git removed from PATH ###
+where sh: []
+== powershell-no-git-on-path | node v22.23.3 | win32 | cwd D:\a\harness-sdk\harness-sdk\repro | tmp C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-GWPkCO
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+[FAIL] harness write tool, path=C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-GWPkCO\novel.json -> Error: The path C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-GWPkCO\novel.json is not absolute; it should start with '/'.
+[FAIL] harness write tool, path=C:/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-GWPkCO/novel.json -> Error: The path C:/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-GWPkCO/novel.json is not absolute; it should start with '/'.
+[OK]   harness write tool, path=/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-GWPkCO/novel.json -> file exists at /Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-GWPkCO/novel.json / file exists at D:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-GWPkCO\novel.json
+[FAIL] WorkspaceSandbox.writeText C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-GWPkCO\novel.json -> Error: spawn sh ENOENT
+[FAIL] WorkspaceSandbox.writeText /Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-GWPkCO/novel.json -> Error: spawn sh ENOENT
+[FAIL] WorkspaceSandbox.writeText relative chapter.md -> Error: spawn sh ENOENT
+[FAIL] WorkspaceSandbox.execute pwd -> Error: spawn sh ENOENT
+[FAIL] WorkspaceSandbox.execute uname -s -> Error: spawn sh ENOENT
+[OK]   default sandbox writeText C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-GWPkCO\novel.json -> file exists at C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-GWPkCO\novel.json content=hi
+### git bash ###
+sh=/usr/bin/sh pwd=/d/a/harness-sdk/harness-sdk/repro HOME=/c/Users/runneradmin
+root / maps to: C:\Program Files\Git\
+drwxr-xr-x 1 runneradmin 197121 0 Oct  7 16:12 /Users
+runneradmin
+== gitbash | node v22.23.3 | win32 | cwd D:\a\harness-sdk\harness-sdk\repro | tmp C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+[FAIL] harness write tool, path=C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json -> Error: The path C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json is not absolute; it should start with '/'.
+[FAIL] harness write tool, path=C:/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-CM1mF1/novel.json -> Error: The path C:/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-CM1mF1/novel.json is not absolute; it should start with '/'.
+[OK]   harness write tool, path=/Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-CM1mF1/novel.json -> file exists at /Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-CM1mF1/novel.json / file exists at D:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json
+[OK]   WorkspaceSandbox.writeText C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json -> file exists at C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json
+[OK]   WorkspaceSandbox.writeText /Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-CM1mF1/novel.json -> file exists at /Users/RUNNER~1/AppData/Local/Temp/strands-win-repro-CM1mF1/novel.json / file exists at D:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json
+[OK]   WorkspaceSandbox.writeText relative chapter.md -> file exists at C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\chapter.md
+[OK]   WorkspaceSandbox.execute pwd -> /tmp/strands-win-repro-CM1mF1
+[OK]   WorkspaceSandbox.execute uname -s -> MINGW64_NT-10.0-26100
+[OK]   default sandbox writeText C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json -> file exists at C:\Users\RUNNER~1\AppData\Local\Temp\strands-win-repro-CM1mF1\novel.json content=hi
