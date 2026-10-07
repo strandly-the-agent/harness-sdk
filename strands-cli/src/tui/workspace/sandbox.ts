@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promi
 import { dirname, join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import {
-  PosixShellSandbox,
+  Sandbox,
   SandboxAbortError,
   SandboxPathNotFoundError,
   SandboxTimeoutError,
@@ -12,6 +12,7 @@ import {
   type FileInfo,
   type StreamChunk,
 } from '@strands-agents/sdk'
+import { LANGUAGE_PATTERN } from '@strands-agents/sdk/sandbox'
 
 import { terminateProcessTree } from '../terminal/process-tree.js'
 
@@ -26,12 +27,40 @@ const SIGNAL_CODES: Partial<Record<NodeJS.Signals, number>> = {
   SIGTERM: 15,
 }
 
-export class WorkspaceSandbox extends PosixShellSandbox {
-  readonly cwd: string
+const PLATFORM_LABELS: Partial<Record<NodeJS.Platform, string>> = { win32: 'Windows', darwin: 'Darwin', linux: 'Linux' }
 
-  constructor(cwd: string) {
+/** What the harness's environment plugin surfaces to the model instead of probing with `uname`/`pwd`. */
+export interface WorkspaceEnvironment {
+  readonly platform: string
+  readonly cwd: string
+  readonly shell: 'sh' | 'PowerShell'
+}
+
+interface Invocation {
+  command: string
+  args: string[]
+  input?: string
+}
+
+/**
+ * Local sandbox anchored to the TUI's workspace. Files go through `fs`; commands run in `sh` on POSIX and in
+ * PowerShell on Windows (plain Windows has no `sh`); code runs by feeding the interpreter on stdin, so no shell
+ * is involved. Cancellation kills the whole process tree, not just the shell.
+ */
+export class WorkspaceSandbox extends Sandbox {
+  readonly cwd: string
+  readonly environment: WorkspaceEnvironment
+  private readonly _platform: NodeJS.Platform
+
+  constructor(cwd: string, options: { platform?: NodeJS.Platform } = {}) {
     super()
     this.cwd = resolve(cwd)
+    this._platform = options.platform ?? process.platform
+    this.environment = {
+      platform: PLATFORM_LABELS[this._platform] ?? this._platform,
+      cwd: this.cwd,
+      shell: this._platform === 'win32' ? 'PowerShell' : 'sh',
+    }
   }
 
   override readFile(path: string): Promise<Uint8Array> {
@@ -78,14 +107,51 @@ export class WorkspaceSandbox extends PosixShellSandbox {
     )
   }
 
-  async *executeStreaming(
+  /** The argv that runs `command` in this sandbox's shell. Exposed for tests; no process is started. */
+  shellInvocation(command: string): Invocation {
+    if (this._platform !== 'win32') {
+      return { command: 'sh', args: ['-c', command] }
+    }
+    // -EncodedCommand sidesteps PowerShell's command-line quoting entirely. UTF-8 output keeps native commands
+    // readable, `Stop` turns cmdlet errors into a non-zero exit, and $LASTEXITCODE propagates native exit codes.
+    const script = [
+      '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8',
+      "$ErrorActionPreference = 'Stop'",
+      command,
+      'if ($LASTEXITCODE -ne $null) { exit $LASTEXITCODE }',
+    ].join('\n')
+    return {
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+    }
+  }
+
+  executeStreaming(
     command: string,
     options: ExecuteOptions = {}
   ): AsyncGenerator<StreamChunk | ExecutionResult, void, undefined> {
-    const child = spawn('sh', ['-c', command], {
+    return this._run(this.shellInvocation(command), options)
+  }
+
+  executeCodeStreaming(
+    code: string,
+    language: string,
+    options: ExecuteOptions = {}
+  ): AsyncGenerator<StreamChunk | ExecutionResult, void, undefined> {
+    if (!LANGUAGE_PATTERN.test(language)) {
+      throw new Error(`language parameter contains invalid characters: ${language}`)
+    }
+    return this._run({ command: language, args: [], input: code }, options)
+  }
+
+  private async *_run(
+    invocation: Invocation,
+    options: ExecuteOptions
+  ): AsyncGenerator<StreamChunk | ExecutionResult, void, undefined> {
+    const child = spawn(invocation.command, invocation.args, {
       cwd: options.cwd ? resolve(this.cwd, options.cwd) : this.cwd,
       env: { ...process.env, ...options.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [invocation.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
     })
     const stdoutDecoder = new StringDecoder('utf8')
@@ -125,14 +191,14 @@ export class WorkspaceSandbox extends PosixShellSandbox {
       notify()
     }
 
-    child.stdout.on('data', (data: Buffer) => {
+    child.stdout!.on('data', (data: Buffer) => {
       appendOutput(stdoutDecoder.write(data), 'stdout')
     })
-    child.stderr.on('data', (data: Buffer) => {
+    child.stderr!.on('data', (data: Buffer) => {
       appendOutput(stderrDecoder.write(data), 'stderr')
     })
-    child.stdout.on('end', () => appendOutput(stdoutDecoder.end(), 'stdout'))
-    child.stderr.on('end', () => appendOutput(stderrDecoder.end(), 'stderr'))
+    child.stdout!.on('end', () => appendOutput(stdoutDecoder.end(), 'stdout'))
+    child.stderr!.on('end', () => appendOutput(stderrDecoder.end(), 'stderr'))
     child.on('error', (error) => {
       failure = error
       done = true
@@ -143,6 +209,11 @@ export class WorkspaceSandbox extends PosixShellSandbox {
       done = true
       notify()
     })
+    if (invocation.input !== undefined) {
+      // A missing interpreter surfaces through 'error' above; EPIPE here would only duplicate it.
+      child.stdin!.on('error', () => {})
+      child.stdin!.end(invocation.input)
+    }
 
     const onAbort = (): void => terminate(new SandboxAbortError())
     if (options.signal?.aborted) {

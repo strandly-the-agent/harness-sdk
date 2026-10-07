@@ -43,12 +43,14 @@ class FakeSandbox {
       stderr?: string
     } = {}
   ) {}
+  removed: string[] = []
+  removeFile(path: string): Promise<void> {
+    this.removed.push(path)
+    if (!this.files.delete(path)) return Promise.reject(new Error(`ENOENT: ${path}`))
+    return Promise.resolve()
+  }
   execute(command: string): Promise<ExecutionResult> {
     this.commands.push(command)
-    if (command.startsWith('rm -f ')) {
-      for (const path of command.slice('rm -f '.length).split(' ')) this.files.delete(path.replaceAll("'", ''))
-      return Promise.resolve({ type: 'executionResult', exitCode: 0, stdout: '', stderr: '', outputFiles: [] })
-    }
     const exitCode = this.response.exitCode ?? 0
     if (exitCode === 0) {
       const body = this.response.body ?? ''
@@ -102,6 +104,19 @@ describe('web_fetch', () => {
     expect(prompt).not.toContain('<script>')
   })
 
+  it('uses curl.exe and truncates after reading when the sandbox shell is PowerShell', async () => {
+    const sandbox = new FakeSandbox({ body: 'x'.repeat(6 * 1024 * 1024), contentType: 'text/plain' })
+    Object.assign(sandbox, { environment: { platform: 'Windows', cwd: 'C:\\work', shell: 'PowerShell' } })
+    const tool = makeWebFetch({ model })
+    const answer = await invoke(tool, { url: "https://example.com/it's" }, sandbox)
+    const command = sandbox.commands[0]!
+    expect(command.startsWith('curl.exe ')).toBe(true)
+    expect(command).not.toContain('head -c')
+    expect(command).toContain("'https://example.com/it''s'")
+    expect(answer.length).toBeLessThanOrEqual(5 * 1024 * 1024)
+    expect(sandbox.removed).toHaveLength(2)
+  })
+
   it('runs curl in the agent sandbox with the URL quoted and globbing off, then removes the body file', async () => {
     const sandbox = new FakeSandbox({ body: 'body', contentType: 'text/plain' })
     const tool = makeWebFetch({ model })
@@ -123,7 +138,7 @@ describe('web_fetch', () => {
     ]) {
       expect(command).toContain(flag)
     }
-    expect(sandbox.commands.at(-1)!.startsWith('rm -f ')).toBe(true)
+    expect(sandbox.removed).toHaveLength(2)
     expect(sandbox.files.size).toBe(0)
   })
 
@@ -171,11 +186,11 @@ describe('web_fetch', () => {
     expect(answer).toContain('Failed to fetch https://example.com')
     expect(answer).toContain('500')
     expect(invokeCalls).toHaveLength(0)
-    expect(sandbox.commands.at(-1)!.startsWith('rm -f ')).toBe(true)
+    expect(sandbox.removed).toHaveLength(2)
   })
 
   it('reports a sandbox failure as a fetch failure', async () => {
-    const sandbox = { execute: () => Promise.reject(new Error('sandbox gone')) }
+    const sandbox = { execute: () => Promise.reject(new Error('sandbox gone')), removeFile: () => Promise.resolve() }
     const tool = makeWebFetch({ model })
     const answer = await invoke(tool, { url: 'https://example.com' }, sandbox)
     expect(answer).toBe('Failed to fetch https://example.com: sandbox gone')

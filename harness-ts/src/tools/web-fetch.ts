@@ -20,6 +20,7 @@ import { TextDecoder } from 'node:util'
 import { Agent, type Model, type Sandbox, tool, type Tool } from '@strands-agents/sdk'
 import { z } from 'zod'
 
+import { describedEnvironment } from '../sandbox-environment.js'
 import type { WebFetchTransport } from '../types/agent.js'
 
 const USER_AGENT = 'strands-harness/1.0'
@@ -78,19 +79,29 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
-function curlCommand(url: string, output: string): string {
+/** PowerShell single-quoted literal: only `'` needs escaping, by doubling. */
+function powershellQuote(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`
+}
+
+function curlCommand(url: string, output: string, shell: 'sh' | 'PowerShell'): string {
   // -g keeps `{}`/`[]` in the URL literal; --proto/--proto-redir keep the request and any redirect on
   // http(s) (curl would otherwise follow a redirect to ftp://); --fail turns HTTP errors into a non-zero
   // exit; -sS keeps curl's own error text on stderr. The body goes to a file (stdout is decoded text,
-  // which would lose the charset and split multi-byte characters) and is truncated in the sandbox before
-  // it is read back; stdout carries only the final hop's content type and URL.
-  const out = shellQuote(output)
+  // which would lose the charset and split multi-byte characters); stdout carries only the final hop's
+  // content type and URL. In `sh` the body is truncated in the sandbox before it is read back; PowerShell
+  // has no `head`, so there the file is read whole and truncated afterwards (`curl.exe`, because PowerShell
+  // aliases `curl` to Invoke-WebRequest).
+  const quote = shell === 'PowerShell' ? powershellQuote : shellQuote
+  const out = quote(output)
+  const fetch =
+    `${shell === 'PowerShell' ? 'curl.exe' : 'curl'} -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' ` +
+    `--max-time ${TIMEOUT_SECONDS} -A ${quote(USER_AGENT)} -o ${out} -w '%{content_type}\\n%{url_effective}' -- ${quote(url)}`
+  if (shell === 'PowerShell') {
+    return fetch
+  }
   const part = shellQuote(`${output}.part`)
-  return (
-    `curl -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time ${TIMEOUT_SECONDS} ` +
-    `-A ${shellQuote(USER_AGENT)} -o ${out} -w '%{content_type}\\n%{url_effective}' -- ${shellQuote(url)} ` +
-    `&& head -c ${MAX_BYTES} ${out} > ${part} && mv -f ${part} ${out}`
-  )
+  return `${fetch} && head -c ${MAX_BYTES} ${out} > ${part} && mv -f ${part} ${out}`
 }
 
 function decode(data: Uint8Array, contentType: string): string {
@@ -113,11 +124,12 @@ function toText(data: Uint8Array, contentType: string, resolvedUrl: string, url:
 /** Fetch a validated `url` with `curl` inside `sandbox`; throws when curl fails. */
 async function fetchCurl(sandbox: Sandbox, url: string): Promise<Fetched> {
   const output = `${TEMP_DIR}/strands-web-fetch-${randomUUID().replaceAll('-', '')}`
+  const shell = describedEnvironment(sandbox)?.shell === 'PowerShell' ? 'PowerShell' : 'sh'
   let contentType: string
   let resolvedUrl: string
   let data: Uint8Array
   try {
-    const result = await sandbox.execute(curlCommand(url, output), { timeout: TIMEOUT_SECONDS + 5 })
+    const result = await sandbox.execute(curlCommand(url, output, shell), { timeout: TIMEOUT_SECONDS + 5 })
     if (result.exitCode !== 0) {
       throw new Error(result.stderr.trim() || `curl exited with code ${result.exitCode}`)
     }
@@ -125,11 +137,10 @@ async function fetchCurl(sandbox: Sandbox, url: string): Promise<Fetched> {
     const lines = result.stdout.replace(/\n+$/, '').split('\n')
     resolvedUrl = (lines.pop() ?? '').trim()
     contentType = (lines.pop() ?? '').trim()
-    data = await sandbox.readFile(output)
+    data = (await sandbox.readFile(output)).slice(0, MAX_BYTES)
   } finally {
-    await sandbox
-      .execute(`rm -f ${shellQuote(output)} ${shellQuote(`${output}.part`)}`, { timeout: 10 })
-      .catch(() => undefined)
+    // The sandbox's own file op, not `rm`: it works whatever shell (if any) the sandbox has.
+    await Promise.all([output, `${output}.part`].map((path) => sandbox.removeFile(path).catch(() => undefined)))
   }
   return toText(data, contentType, resolvedUrl, url)
 }

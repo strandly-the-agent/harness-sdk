@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { SandboxAbortError, SandboxPathNotFoundError } from '@strands-agents/sdk'
 import { describe, expect, it } from 'vitest'
 
@@ -38,6 +38,43 @@ describe('WorkspaceSandbox', () => {
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
+  })
+
+  it('describes its environment without shelling out', () => {
+    expect(new WorkspaceSandbox('/work', { platform: 'linux' }).environment).toEqual({
+      platform: 'Linux',
+      cwd: resolve('/work'),
+      shell: 'sh',
+    })
+    expect(new WorkspaceSandbox('/work', { platform: 'win32' }).environment).toMatchObject({
+      platform: 'Windows',
+      shell: 'PowerShell',
+    })
+  })
+
+  it('runs commands through sh on POSIX and PowerShell on Windows', () => {
+    expect(new WorkspaceSandbox('/work', { platform: 'linux' }).shellInvocation('echo hi')).toEqual({
+      command: 'sh',
+      args: ['-c', 'echo hi'],
+    })
+    const windows = new WorkspaceSandbox('/work', { platform: 'win32' }).shellInvocation('Get-ChildItem "a b"')
+    expect(windows.command).toBe('powershell.exe')
+    expect(windows.args.slice(0, 3)).toEqual(['-NoProfile', '-NonInteractive', '-EncodedCommand'])
+    const script = Buffer.from(windows.args[3]!, 'base64').toString('utf16le')
+    expect(script).toContain('Get-ChildItem "a b"')
+    expect(script).toContain('exit $LASTEXITCODE')
+  })
+
+  it('runs code by feeding the interpreter on stdin, without a shell', async () => {
+    const sandbox = new WorkspaceSandbox(process.cwd())
+    sandbox.shellInvocation = () => {
+      throw new Error('executeCode must not go through the shell')
+    }
+    const result = await sandbox.executeCode('process.stdout.write("ok " + process.cwd())', 'node')
+    expect(result).toMatchObject({ exitCode: 0, stdout: `ok ${process.cwd()}` })
+    await expect(sandbox.executeCode('x', 'python; rm -rf /')).rejects.toThrow('invalid characters')
+    const missing = await sandbox.executeCode('x', 'definitely-not-an-interpreter').catch((error) => error)
+    expect(missing).toMatchObject({ code: 'ENOENT' })
   })
 
   it('decodes UTF-8 characters split across stdout and stderr chunks', async () => {

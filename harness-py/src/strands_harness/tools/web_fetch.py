@@ -32,6 +32,7 @@ from strands.sandbox import Sandbox
 from strands.tools.decorator import tool
 from strands.types.tools import ToolContext
 
+from strands_harness.sandbox_environment import described_environment
 from strands_harness.types.agent import WebFetchTransport
 
 _USER_AGENT = "strands-harness/1.0"
@@ -78,18 +79,30 @@ def _validate_url(url: str) -> str:
     return url
 
 
-def _curl_command(url: str, output: str) -> str:
+def _powershell_quote(value: str) -> str:
+    """PowerShell single-quoted literal: only ``'`` needs escaping, by doubling."""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _curl_command(url: str, output: str, shell: str) -> str:
     # -g keeps ``{}``/``[]`` in the URL literal; --proto/--proto-redir keep the request and any redirect on
     # http(s) (curl would otherwise follow a redirect to ftp://); --fail turns HTTP errors into a non-zero
     # exit; -sS keeps curl's own error text on stderr. The body goes to a file (stdout is decoded text,
-    # which would lose the charset and split multi-byte characters) and is truncated in the sandbox before
-    # it is read back; stdout carries only the final hop's content type and URL.
-    out, part = shlex.quote(output), shlex.quote(output + ".part")
-    return (
-        f"curl -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time {_TIMEOUT} "
-        f"-A {shlex.quote(_USER_AGENT)} -o {out} -w '%{{content_type}}\\n%{{url_effective}}' -- {shlex.quote(url)} "
-        f"&& head -c {_MAX_BYTES} {out} > {part} && mv -f {part} {out}"
+    # which would lose the charset and split multi-byte characters); stdout carries only the final hop's
+    # content type and URL. In ``sh`` the body is truncated in the sandbox before it is read back;
+    # PowerShell has no ``head``, so there the file is read whole and truncated afterwards (``curl.exe``,
+    # because PowerShell aliases ``curl`` to Invoke-WebRequest).
+    quote = _powershell_quote if shell == "PowerShell" else shlex.quote
+    out = quote(output)
+    fetch = (
+        f"{'curl.exe' if shell == 'PowerShell' else 'curl'} -sSL -g --fail --proto '=http,https' "
+        f"--proto-redir '=http,https' --max-time {_TIMEOUT} -A {quote(_USER_AGENT)} -o {out} "
+        f"-w '%{{content_type}}\\n%{{url_effective}}' -- {quote(url)}"
     )
+    if shell == "PowerShell":
+        return fetch
+    part = shlex.quote(output + ".part")
+    return f"{fetch} && head -c {_MAX_BYTES} {out} > {part} && mv -f {part} {out}"
 
 
 def _decode(data: bytes, content_type: str) -> str:
@@ -109,18 +122,21 @@ def _to_text(data: bytes, content_type: str, resolved_url: str, url: str) -> tup
 async def _fetch_curl(sandbox: Sandbox, url: str) -> tuple[str, str]:
     """Fetch a validated ``url`` with ``curl`` inside ``sandbox``; raises ``RuntimeError`` when curl fails."""
     output = f"{_TEMP_DIR}/strands-web-fetch-{uuid.uuid4().hex}"
+    shell = "PowerShell" if described_environment(sandbox)["shell"] == "PowerShell" else "sh"
     try:
-        result = await sandbox.execute(_curl_command(url, output), timeout=_TIMEOUT + 5)
+        result = await sandbox.execute(_curl_command(url, output, shell), timeout=_TIMEOUT + 5)
         if result.exit_code != 0:
             raise RuntimeError(result.stderr.strip() or f"curl exited with code {result.exit_code}")
         # The trailer is the last two lines; the content-type line is empty when the header is absent.
         lines = result.stdout.splitlines()
         content_type = lines[-2].strip() if len(lines) >= 2 else ""
         resolved_url = lines[-1].strip() if lines else ""
-        data = await sandbox.read_file(output)
+        data = (await sandbox.read_file(output))[:_MAX_BYTES]
     finally:
-        with contextlib.suppress(Exception):
-            await sandbox.execute(f"rm -f {shlex.quote(output)} {shlex.quote(output + '.part')}", timeout=10)
+        # The sandbox's own file op, not ``rm``: it works whatever shell (if any) the sandbox has.
+        for path in (output, output + ".part"):
+            with contextlib.suppress(Exception):
+                await sandbox.remove_file(path)
     return _to_text(data, content_type, resolved_url, url)
 
 
