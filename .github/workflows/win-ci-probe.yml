@@ -1,0 +1,51 @@
+name: win-ci-probe
+on: { push: { branches: [strandly/win-ci-probe] } }
+permissions: { contents: write }
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: strandly/windows-file-tools, path: src }
+      - uses: actions/checkout@v4
+        with: { ref: strandly/win-ci-probe, path: probe }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: harness-ts check
+        shell: pwsh
+        working-directory: src/harness-ts
+        continue-on-error: true
+        run: |
+          "### harness-ts ###" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          npm ci --no-audit --no-fund 2>&1 | Select-Object -Last 3 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          npm run build 2>&1 | Select-Object -Last 5 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          npm run check 2>&1 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "harness-ts check exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+      - name: strands-cli check
+        shell: pwsh
+        working-directory: src/strands-cli
+        continue-on-error: true
+        run: |
+          "### strands-cli ###" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          npm ci --no-audit --no-fund 2>&1 | Select-Object -Last 3 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          npm run build 2>&1 | Select-Object -Last 5 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          npm run check 2>&1 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "strands-cli check exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+      - name: harness-py tests
+        shell: pwsh
+        working-directory: src/harness-py
+        continue-on-error: true
+        run: |
+          "### harness-py ###" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          pip install -q -e '.[dev]' 2>&1 | Select-Object -Last 3 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          python -m pytest tests -q -p no:cacheprovider 2>&1 | Select-Object -Last 40 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "harness-py pytest exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+      - name: publish output
+        shell: bash
+        working-directory: probe
+        run: |
+          git config user.name strandly-the-agent; git config user.email strandly-the-agent@users.noreply.github.com
+          git add out.txt && git commit -m "probe output [skip ci]" && git push
