@@ -374,11 +374,10 @@ describe('runInkChat', () => {
       expect(hardExit).toHaveBeenCalledExactlyOnceWith(130)
       // Signal-listener teardown lands a tick later on Windows; the invariant is that nothing leaks.
       // Comparing sources, not counts, names the leaked listener when this fails.
-      await vi.waitFor(() =>
-        expect(process.listeners('SIGINT').map((listener) => listener.toString().slice(0, 120))).toHaveLength(
-          sigintListeners
-        )
-      )
+      await vi.waitFor(() => {
+        const sources = process.listeners('SIGINT').map((listener) => listener.toString().slice(0, 200))
+        expect(sources, `SIGINT listeners: ${JSON.stringify(sources)}`).toHaveLength(sigintListeners)
+      })
     } finally {
       if (!startupSignal?.aborted) input.push('n')
       await running
