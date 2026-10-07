@@ -86,7 +86,11 @@ describe('WorkspaceSandbox', () => {
       '  process.stderr.write(Buffer.from([0xa3]))',
       '}, 20)',
     ].join(';')
-    const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`
+    // sh takes JSON-style double quotes; PowerShell needs the call operator and single-quoted literals.
+    const command =
+      process.platform === 'win32'
+        ? `& '${process.execPath}' -e '${script}'`
+        : `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`
     const sandbox = new WorkspaceSandbox(process.cwd())
     const streamed = { stdout: '', stderr: '' }
     let result
