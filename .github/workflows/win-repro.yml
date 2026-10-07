@@ -1,5 +1,6 @@
 name: win-write-repro
 on: { push: { branches: [strandly/win-write-repro] } }
+permissions: { contents: write }
 jobs:
   windows:
     runs-on: windows-latest
@@ -9,22 +10,28 @@ jobs:
         with: { node-version: 22 }
       - run: npm install --no-audit --no-fund
         working-directory: repro
-      - name: powershell (no sh on PATH?)
+      - name: powershell (runner default PATH, Git for Windows present)
         shell: pwsh
         working-directory: repro
         run: |
-          Write-Host "where sh:"; Get-Command sh -ErrorAction SilentlyContinue | Format-List Source
-          node repro.mjs powershell
-      - name: powershell with Git Bash removed from PATH (plain Windows dev box)
+          "### powershell (runner default PATH) ###" | Out-File -Append -Encoding utf8 ..\out.txt
+          $sh = Get-Command sh -ErrorAction SilentlyContinue; "where sh: $($sh.Source)" | Out-File -Append -Encoding utf8 ..\out.txt
+          node repro.mjs powershell 2>&1 | Out-File -Append -Encoding utf8 ..\out.txt
+      - name: powershell with Git removed from PATH (plain Windows dev box)
         shell: pwsh
         working-directory: repro
         run: |
           $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch 'Git' }) -join ';'
-          Write-Host "where sh:"; Get-Command sh -ErrorAction SilentlyContinue | Format-List Source
-          node repro.mjs powershell-no-git-on-path
+          "### powershell, Git removed from PATH ###" | Out-File -Append -Encoding utf8 ..\out.txt
+          $sh = Get-Command sh -ErrorAction SilentlyContinue; "where sh: [$($sh.Source)]" | Out-File -Append -Encoding utf8 ..\out.txt
+          node repro.mjs powershell-no-git-on-path 2>&1 | Out-File -Append -Encoding utf8 ..\out.txt
       - name: git bash
         shell: bash
         working-directory: repro
         run: |
-          echo "sh=$(command -v sh) pwd=$(pwd) HOME=$HOME"; ls -ld "/Users" 2>&1 || true; echo "root / maps to: $(cygpath -w /)"
-          node repro.mjs gitbash
+          { echo "### git bash ###"; echo "sh=$(command -v sh) pwd=$(pwd) HOME=$HOME"; echo "root / maps to: $(cygpath -w /)"; ls -ld /Users 2>&1 || true; id -u -n; node repro.mjs gitbash 2>&1; } >> ../out.txt
+      - name: publish output to branch
+        shell: bash
+        run: |
+          git config user.name strandly-the-agent; git config user.email strandly-the-agent@users.noreply.github.com
+          git add out.txt && git commit -m "repro output [skip ci]" && git push
