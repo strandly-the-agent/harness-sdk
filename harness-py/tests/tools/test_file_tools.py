@@ -78,7 +78,10 @@ async def test_windows_drive_letter_path_is_absolute():
     win_ctx = _Ctx(_Agent())
     await write._tool_func(path="C:\\Users\\me\\novel.json", content="{}", tool_context=win_ctx)
     await write._tool_func(path="C:/Users/me/novel.json", content="{}", tool_context=win_ctx)
-    assert written == ["C:\\Users\\me\\novel.json", "C:/Users/me/novel.json"]
+    await write._tool_func(path="\\\\server\\share\\novel.json", content="{}", tool_context=win_ctx)
+    assert written == ["C:\\Users\\me\\novel.json", "C:/Users/me/novel.json", "\\\\server\\share\\novel.json"]
+    with pytest.raises(ValueError, match="not absolute"):
+        await write._tool_func(path="\\Users\\me\\novel.json", content="", tool_context=win_ctx)
     with pytest.raises(ValueError, match="path traversal"):
         await write._tool_func(path="C:\\Users\\..\\secret", content="", tool_context=win_ctx)
 

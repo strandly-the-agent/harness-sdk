@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { WorkspaceSandbox } from '../src/tui/workspace/sandbox.js'
 
 describe('WorkspaceSandbox', () => {
-  it('uses native filesystem operations for local reads and directory listings', async () => {
+  it('uses native filesystem operations for reads, listings, writes, and removes', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'strands-workspace-sandbox-'))
     const sandbox = new WorkspaceSandbox(directory)
     sandbox.executeStreaming = async function* () {
