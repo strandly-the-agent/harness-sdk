@@ -3343,3 +3343,592 @@ strands-cli check exit=0
 ............................................                             [100%]
 762 passed, 2 skipped in 118.21s (0:01:58)
 harness-py pytest exit=0
+### harness-ts ###
+
+added 367 packages in 27s
+
+> @strands-agents/harness@0.0.1-development build
+> tsc --project src/tsconfig.json
+
+
+> @strands-agents/harness@0.0.1-development check
+> npm run lint && npm run format:check && npm run type-check && npm run test:coverage
+
+
+> @strands-agents/harness@0.0.1-development lint
+> eslint src test
+
+
+> @strands-agents/harness@0.0.1-development format:check
+> prettier --check src test
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> @strands-agents/harness@0.0.1-development type-check
+> tsc --noEmit --project src/tsconfig.json
+
+
+> @strands-agents/harness@0.0.1-development test:coverage
+> vitest run --coverage
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/harness-ts[39m
+      [2mCoverage enabled with [22m[33mv8[39m
+
+stderr | test/models.test.ts > resolveModel > does not send automatic cache points to anthropic.claude-3-haiku-20240307-v1:0
+model=<bedrock/anthropic.claude-3-haiku-20240307-v1:0> | prompt caching not supported by this model; continuing without it
+
+stderr | test/models.test.ts > resolveModel > does not send automatic cache points to us.anthropic.claude-3-haiku-20240307-v1:0
+model=<bedrock/us.anthropic.claude-3-haiku-20240307-v1:0> | prompt caching not supported by this model; continuing without it
+
+ [32m✓[39m test/tools/subagent.test.ts [2m([22m[2m50 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+stderr | test/models.test.ts > resolveModel > maps google auto to the high thinking level
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > resolveModel > uses the google model id directly
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > resolveModel > adds the google googleSearch built-in tool for web_search
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > resolveModel > omits google built-in tools when web_search is off
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > default effort > is high on google/gemini-3.5-flash
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/models.test.ts > default effort > is high on google/gemini-3.5-flash
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+ [32m✓[39m test/models.test.ts [2m([22m[2m175 tests[22m[2m)[22m[33m 660[2mms[22m[39m
+stderr | test/agent.test.ts > createHarness > enables web_search when explicitly selected on a supported provider
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/agent.test.ts > createHarness > enables web_search when explicitly selected on a supported provider
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/agent.test.ts > createHarness > enables web_search when explicitly selected on a supported provider
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+
+stderr | test/tools/programmatic-tool-caller.test.ts > programmatic_tool_caller > runs a single tool call
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+
+ [32m✓[39m test/agent.test.ts [2m([22m[2m105 tests[22m[2m)[22m[33m 4790[2mms[22m[39m
+     [33m[2m✓[22m[39m inherits the parent MCP tools via the shared clients, narrowable per server [33m 659[2mms[22m[39m
+     [33m[2m✓[22m[39m offers MCP clients passed in `tools` on the mcp_servers axis [33m 562[2mms[22m[39m
+     [33m[2m✓[22m[39m warns when two MCP clients share a clientName and offers only the first [33m 667[2mms[22m[39m
+     [33m[2m✓[22m[39m warns about an MCP client without applicationName and leaves it off the mcp_servers axis [33m 618[2mms[22m[39m
+     [33m[2m✓[22m[39m forwards inherited MCP servers to a grandchild [33m 467[2mms[22m[39m
+     [33m[2m✓[22m[39m propagates MCP narrowing through a grandchild [33m 461[2mms[22m[39m
+ [32m✓[39m test/config.test.ts [2m([22m[2m72 tests[22m[2m)[22m[33m 4432[2mms[22m[39m
+     [33m[2m✓[22m[39m loads executable values through declared module references [33m 1187[2mms[22m[39m
+     [33m[2m✓[22m[39m loads TypeScript helper imports and shares the host SDK across project dependencies [33m 3044[2mms[22m[39m
+ [32m✓[39m test/tools/programmatic-tool-caller.test.ts [2m([22m[2m49 tests[22m[2m)[22m[33m 4356[2mms[22m[39m
+     [33m[2m✓[22m[39m runs tool calls concurrently with asyncio.gather [33m 360[2mms[22m[39m
+     [33m[2m✓[22m[39m bounds a synchronous busy loop via the VM duration limit [33m 325[2mms[22m[39m
+     [33m[2m✓[22m[39m enforces the timeout [33m 365[2mms[22m[39m
+     [33m[2m✓[22m[39m cancels an in-flight run and makes no further inner tool calls [33m 617[2mms[22m[39m
+ [32m✓[39m test/tools/web-search.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+ [32m✓[39m test/memory.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 115[2mms[22m[39m
+ [32m✓[39m test/tools/file-tools.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 222[2mms[22m[39m
+ [32m✓[39m test/builtin-tools.test.ts [2m([22m[2m35 tests[22m[2m)[22m[32m 66[2mms[22m[39m
+ [32m✓[39m test/tools/web-fetch.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 3968[2mms[22m[39m
+     [33m[2m✓[22m[39m fetches end to end through the local environment sandbox [33m 3870[2mms[22m[39m
+ [32m✓[39m test/plugins/environment.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 58[2mms[22m[39m
+ [32m✓[39m test/interventions.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 129[2mms[22m[39m
+stderr | test/telemetry.test.ts > setupTelemetry > still wires the supported exporters alongside an unsupported one
+OTEL_TRACES_EXPORTER names 'zipkin', which the harness does not support; skipping it. Supported values: otlp, console, none.
+
+ [32m✓[39m test/telemetry.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m test/plugins/todos.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 82[2mms[22m[39m
+ [32m✓[39m test/agent-generalist-memory.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 51[2mms[22m[39m
+ [32m✓[39m test/tools/shell.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 243[2mms[22m[39m
+ [32m✓[39m test/prompt.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m test/internal.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m18 passed[39m[22m[90m (18)[39m
+[2m      Tests [22m [1m[32m606 passed[39m[22m[90m (606)[39m
+[2m   Start at [22m 22:18:17
+[2m   Duration [22m 15.81s[2m (transform 1.77s, setup 230ms, import 18.34s, tests 19.32s, environment 4ms)[22m
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   90.58 |     82.5 |   92.41 |    91.2 |                   
+ src               |   88.64 |    81.92 |   90.71 |   88.91 |                   
+  agent.ts         |   99.08 |    96.21 |     100 |   99.03 | 233               
+  builtin-tools.ts |   98.03 |    96.46 |   95.65 |   98.91 | 283               
+  ...ule-loader.ts |    26.5 |    12.74 |      40 |   27.84 | ...,89,98,110-257 
+  config.ts        |    90.9 |    80.78 |   98.41 |   90.99 | ...75,591,596,697 
+  defaults.ts      |     100 |      100 |     100 |     100 |                   
+  internal.ts      |       0 |        0 |       0 |       0 |                   
+  interventions.ts |     100 |      100 |     100 |     100 |                   
+  logging.ts       |   81.81 |       50 |   71.42 |   81.81 | 15,30             
+  memory.ts        |     100 |      100 |     100 |     100 |                   
+  models.ts        |   96.24 |    92.68 |   97.14 |   96.15 | ...46-449,618-625 
+  prompt.ts        |     100 |      100 |     100 |     100 |                   
+  ...nvironment.ts |     100 |      100 |     100 |     100 |                   
+  telemetry.ts     |     100 |      100 |     100 |     100 |                   
+ src/plugins       |   94.56 |    92.98 |    91.3 |    95.4 |                   
+  environment.ts   |   95.52 |     92.5 |   92.85 |   95.31 | 79,130,180        
+  index.ts         |       0 |        0 |       0 |       0 |                   
+  todos.ts         |      92 |    94.11 |   88.88 |   95.65 | 71                
+ src/tools         |    92.7 |    82.93 |   94.73 |   93.75 |                   
+  file-tools.ts    |    94.2 |    79.54 |     100 |   98.48 | 117               
+  index.ts         |       0 |        0 |       0 |       0 |                   
+  ...ool-caller.ts |   90.68 |    80.18 |   94.87 |   90.35 | ...14,507,557-560 
+  subagent.ts      |   92.25 |    84.39 |   90.74 |   93.54 | ...50,568,670-671 
+  web-fetch.ts     |      93 |    80.59 |     100 |   94.62 | 66,160-163,166    
+  web-search.ts    |     100 |    88.57 |     100 |     100 | 45,69,106,134     
+ src/types         |       0 |        0 |       0 |       0 |                   
+  agent.ts         |       0 |        0 |       0 |       0 |                   
+ test              |   72.22 |       50 |     100 |   72.22 |                   
+  ...-internals.ts |   72.22 |       50 |     100 |   72.22 | 11,20,30,39,42    
+ test/fixtures     |     100 |      100 |     100 |     100 |                   
+  config-values.ts |     100 |      100 |     100 |     100 |                   
+-------------------|---------|----------|---------|---------|-------------------
+harness-ts check exit=0
+### strands-cli ###
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+
+added 418 packages in 21s
+
+> @strands-agents/cli@0.0.1-development build
+> tsc --project src/tsconfig.json && node scripts/copy-python-runtime.js
+
+
+> @strands-agents/cli@0.0.1-development check
+> npm run lint && npm run format:check && npm run type-check && npm run type-check:test && npm run test:coverage
+
+
+> @strands-agents/cli@0.0.1-development lint
+> eslint bin scripts src test
+
+
+> @strands-agents/cli@0.0.1-development format:check
+> prettier --check bin scripts src test
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> @strands-agents/cli@0.0.1-development type-check
+> tsc --noEmit --project src/tsconfig.json
+
+
+> @strands-agents/cli@0.0.1-development type-check:test
+> tsc --noEmit --project tsconfig.json
+
+
+> @strands-agents/cli@0.0.1-development test:coverage
+> vitest run --coverage --exclude test/tui-pty-lifecycle.test.ts && vitest run test/tui-pty-lifecycle.test.ts
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/strands-cli[39m
+      [2mCoverage enabled with [22m[33mv8[39m
+
+stderr | test/tui-runtime.test.ts > interactive runtime lifecycle > reports an unapplied configuration after a error turn and requires an explicit retry
+Model bedrock/anthropic.claude-new has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-runtime.test.ts > interactive runtime lifecycle > reports an unapplied configuration after a error turn and requires an explicit retry
+Model bedrock/anthropic.claude-new has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-runtime.test.ts > interactive runtime lifecycle > reports an unapplied configuration after a cancelled turn and requires an explicit retry
+Model bedrock/anthropic.claude-new has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-runtime.test.ts > interactive runtime lifecycle > reports an unapplied configuration after a cancelled turn and requires an explicit retry
+Model bedrock/anthropic.claude-new has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+ [32m✓[39m test/tui-chat.test.ts [2m([22m[2m65 tests[22m[2m)[22m[33m 693[2mms[22m[39m
+ [32m✓[39m test/tui-runtime.test.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 3193[2mms[22m[39m
+     [33m[2m✓[22m[39m opens cross-workspace sessions with workspace-bound resources and keeps the source conversation [33m 2619[2mms[22m[39m
+stderr | test/tui-strands-backend.test.ts > StrandsChatBackend > uses the runtime contract for model controls, forks, and unsupported reconfiguration
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+
+ [32m✓[39m test/tui-view.test.ts [2m([22m[2m54 tests[22m[2m)[22m[33m 4497[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps long approval input and choices reachable at 80x40 [33m 411[2mms[22m[39m
+     [33m[2m✓[22m[39m highlights hovered controls or rows and reserves purple for presses across panel renderers [33m 914[2mms[22m[39m
+(node:10044) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 beforeExit listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m test/tui-setup-wizard.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 9457[2mms[22m[39m
+     [33m[2m✓[22m[39m fits model setup and responsive actions/footer at 80×24 [33m 335[2mms[22m[39m
+     [33m[2m✓[22m[39m clears the model-search placeholder and starts input at the left edge when clicked [33m 361[2mms[22m[39m
+     [33m[2m✓[22m[39m renders discovered models as single-line options with fully qualified identifiers [33m 411[2mms[22m[39m
+     [33m[2m✓[22m[39m hides fully qualified model identifiers when the reasoning pane is visible [33m 319[2mms[22m[39m
+     [33m[2m✓[22m[39m pages through the model list when the next and previous controls are clicked [33m 368[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps a clicked AWS region visible in quickstart setup [33m 638[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps a clicked AWS region visible in customize setup [33m 647[2mms[22m[39m
+     [33m[2m✓[22m[39m persists a typed memory directory after leaving and returning to the data step [33m 809[2mms[22m[39m
+     [33m[2m✓[22m[39m shows how many customize setup options remain outside a compact viewport [33m 388[2mms[22m[39m
+     [33m[2m✓[22m[39m detects local providers without asking for endpoint URLs [33m 613[2mms[22m[39m
+     [33m[2m✓[22m[39m asks for a LiteLLM key only when the detected proxy requires one [33m 658[2mms[22m[39m
+     [33m[2m✓[22m[39m refreshes env-file credentials in the mounted wizard at 80×24 [33m 304[2mms[22m[39m
+     [33m[2m✓[22m[39m sets a masked API key for the running session from the provider panel [33m 444[2mms[22m[39m
+     [33m[2m✓[22m[39m shows and persists non-visual settings from the setup panel [33m 432[2mms[22m[39m
+     [33m[2m✓[22m[39m persists a custom theme applied from setup settings [33m 739[2mms[22m[39m
+error: pass the initial request either positionally or with --prompt, not both.
+error: too many arguments. Expected 0 arguments but got 1: unexpected.
+error: unknown option '--thinking'
+ [32m✓[39m test/tui-agent-project.test.ts [2m([22m[2m60 tests[22m[2m)[22m[33m 11589[2mms[22m[39m
+     [33m[2m✓[22m[39m preserves resolved factory options with custom modules: true [33m 334[2mms[22m[39m
+     [33m[2m✓[22m[39m loads source-agent environment only from selected files: false [33m 2474[2mms[22m[39m
+     [33m[2m✓[22m[39m loads source-agent environment only from selected files: true [33m 2375[2mms[22m[39m
+     [33m[2m✓[22m[39m loads edited exported agent code through canonical paths [33m 2617[2mms[22m[39m
+     [33m[2m✓[22m[39m loads edited exported agent code through aliased paths [33m 3109[2mms[22m[39m
+ [32m✓[39m test/tui-models.test.ts [2m([22m[2m55 tests[22m[2m)[22m[32m 244[2mms[22m[39m
+ [32m✓[39m test/tui-conversations.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 124[2mms[22m[39m
+ [32m✓[39m test/tui-mcp.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 181[2mms[22m[39m
+stderr | test/tui-config.test.ts > CliConfigStore > persists setup atomically while preserving unrelated settings
+Ignoring unknown agent config keys: futureSetting.
+
+ [32m✓[39m test/tui-config.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 215[2mms[22m[39m
+stderr | test/tui-strands-backend.test.ts > StrandsChatBackend > persists and restores compatible context with discovered limit undefined
+error=<Error: Failed to generate summary: model response contained no text> | proactive summarization failed, continuing
+
+stderr | test/tui-strands-backend.test.ts > StrandsChatBackend > persists and restores compatible context with discovered limit 800
+error=<Error: Failed to generate summary: model response contained no text> | proactive summarization failed, continuing
+
+ [32m✓[39m test/tui-strands-backend.test.ts [2m([22m[2m23 tests[22m[2m)[22m[33m 24949[2mms[22m[39m
+     [33m[2m✓[22m[39m stops a bang command at the emergency output limit [33m 10692[2mms[22m[39m
+     [33m[2m✓[22m[39m caps non-streaming bang output at the emergency output limit [33m 13993[2mms[22m[39m
+ [32m✓[39m test/tui-run.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 1386[2mms[22m[39m
+     [33m[2m✓[22m[39m preserves the applying conversation and buffers voice during reload (failure=false) [33m 505[2mms[22m[39m
+     [33m[2m✓[22m[39m preserves the applying conversation and buffers voice during reload (failure=true) [33m 495[2mms[22m[39m
+ [32m✓[39m test/tui-acp-server.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 5356[2mms[22m[39m
+     [33m[2m✓[22m[39m persists an ACP prompt for direct CLI restore and a fresh ACP replay [33m 642[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps the process alive through bounded cleanup when a prompt ignores cancellation [33m 4596[2mms[22m[39m
+ [32m✓[39m test/tui-mouse-interaction.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 6666[2mms[22m[39m
+     [33m[2m✓[22m[39m traverses Color mode and inline Theme segments at 80 columns [33m 906[2mms[22m[39m
+     [33m[2m✓[22m[39m traverses Color mode and inline Theme segments at 60 columns [33m 528[2mms[22m[39m
+     [33m[2m✓[22m[39m highlights hover without changing keyboard selection and activates rows on click [33m 557[2mms[22m[39m
+     [33m[2m✓[22m[39m scrolls through a long model list without changing the selected model [33m 428[2mms[22m[39m
+     [33m[2m✓[22m[39m drags the effort slider in /model without rebuilding the panel [33m 328[2mms[22m[39m
+     [33m[2m✓[22m[39m moves from the chosen model to its effort, then closes /model on Enter [33m 639[2mms[22m[39m
+     [33m[2m✓[22m[39m clicks live theme settings and opens the custom editor at 80 columns [33m 668[2mms[22m[39m
+     [33m[2m✓[22m[39m clicks live theme settings and opens the custom editor at 60 columns [33m 511[2mms[22m[39m
+     [33m[2m✓[22m[39m dismisses a non-permission panel only when clicking outside its bounds [33m 373[2mms[22m[39m
+ [32m✓[39m test/tui-setup-providers.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m test/cli.test.ts [2m([22m[2m54 tests[22m[2m)[22m[33m 27378[2mms[22m[39m
+     [33m[2m✓[22m[39m avoids React timing retention while preserving NODE_ENV=undefined [33m 7762[2mms[22m[39m
+     [33m[2m✓[22m[39m avoids React timing retention while preserving NODE_ENV=development [33m 7274[2mms[22m[39m
+     [33m[2m✓[22m[39m avoids React timing retention while preserving NODE_ENV=production [33m 8599[2mms[22m[39m
+     [33m[2m✓[22m[39m answers initialize while the ACP stdin protocol stream remains open [33m 3313[2mms[22m[39m
+stderr | test/tui-agent-configuration.test.ts > strands_config tool > redacts credentials in inspect and update responses without changing the draft or saved values
+model_id=<global.anthropic.claude-sonnet-4-6> | using default modelId, which is subject to change | set modelId explicitly to pin the value
+
+stderr | test/tui-agent-configuration.test.ts > strands_config tool > applies unrelated edits with the default feature semantics and rejects explicitly unsupported tools
+Model bedrock/global.anthropic.claude-opus-5 has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-agent-configuration.test.ts > strands_config tool > rejects new literal credentials without changing the draft and accepts environment references
+Model bedrock/global.anthropic.claude-opus-5 has no native web search. Pass builtinTools: { web_search: 'exa' } to search through Exa (a third party), or drop 'web_search'.
+
+stderr | test/tui-agent-configuration.test.ts > strands_config tool > preserves optional default caching and explicit overrides when validating local models
+provider=<ollama> | prompt caching not supported by this provider; continuing without it
+
+ [32m✓[39m test/usage.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 1116[2mms[22m[39m
+     [33m[2m✓[22m[39m displays completed detached spend on the originating TUI turn when it finishes after turn [33m 481[2mms[22m[39m
+     [33m[2m✓[22m[39m displays completed detached spend on the originating TUI turn when it finishes before subscription [33m 316[2mms[22m[39m
+ [32m✓[39m test/tui-agent-configuration.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 373[2mms[22m[39m
+ [32m✓[39m test/tui-projector.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 242[2mms[22m[39m
+ [32m✓[39m test/tui-theme.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 1294[2mms[22m[39m
+     [33m[2m✓[22m[39m leaves the terminal canvas unpainted in light mode [33m 676[2mms[22m[39m
+     [33m[2m✓[22m[39m leaves the terminal canvas unpainted in dark mode [33m 406[2mms[22m[39m
+ [32m✓[39m test/tui-permissions.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 274[2mms[22m[39m
+ [32m✓[39m test/tui-background-agent-activity.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m test/tui-export.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 362[2mms[22m[39m
+ [32m✓[39m test/tui-provider-discovery.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 145[2mms[22m[39m
+ [32m✓[39m test/tui-project-archive.test.ts [2m([22m[2m14 tests[22m[2m | [22m[33m2 skipped[39m[2m)[22m[33m 456[2mms[22m[39m
+ [32m✓[39m test/tui-stream-presentation.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 153[2mms[22m[39m
+ [32m✓[39m test/tui-help.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 346[2mms[22m[39m
+ [32m✓[39m test/tui-panel-resize.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 6212[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps the selected setting visible and preserves the composer draft [33m 1571[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps the selected model and panel footer visible after shrinking and expanding [33m 1775[2mms[22m[39m
+     [33m[2m✓[22m[39m reveals the selected agent when the grid column count changes [33m 1642[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps metadata below panels and restores the Settings action when they close [33m 1220[2mms[22m[39m
+ [32m✓[39m test/tui-workspace-sandbox.test.ts [2m([22m[2m7 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 3689[2mms[22m[39m
+     [33m[2m✓[22m[39m mirrors sh exit-code semantics through PowerShell [33m 3139[2mms[22m[39m
+     [33m[2m✓[22m[39m decodes UTF-8 characters split across stdout and stderr chunks [33m 388[2mms[22m[39m
+ [2m[90m↓[39m[22m test/tui-python-source-loading.test.ts [2m([22m[2m8 tests[22m[2m | [22m[33m8 skipped[39m[2m)[22m
+ [32m✓[39m test/tui-sessions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 166[2mms[22m[39m
+ [32m✓[39m test/tui-view-interaction.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m test/tui-composer.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 169[2mms[22m[39m
+ [32m✓[39m test/tui-easter-eggs.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 611[2mms[22m[39m
+ [32m✓[39m test/tui-voice-session.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1081[2mms[22m[39m
+     [33m[2m✓[22m[39m plays requested replies and restarts when endpointing or voice changes [33m 539[2mms[22m[39m
+stderr | test/tui-context.test.ts > context window limits > prefers provider metadata over SDK defaults and caches it per model
+max_tokens=<64000> | using default maxTokens, which is subject to change | set maxTokens explicitly to pin the value
+
+ [32m✓[39m test/tui-context.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 88[2mms[22m[39m
+ [32m✓[39m test/tui-custom-theme-editor.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 5837[2mms[22m[39m
+     [33m[2m✓[22m[39m navigates roles and swatches by keyboard and preserves Auto mode on apply [33m 2882[2mms[22m[39m
+     [33m[2m✓[22m[39m supports hover and click across the responsive 40×24 layout [33m 1284[2mms[22m[39m
+     [33m[2m✓[22m[39m supports hover and click across the responsive 80×24 layout [33m 1667[2mms[22m[39m
+ [32m✓[39m test/tui-typescript-source-loading.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 13822[2mms[22m[39m
+     [33m[2m✓[22m[39m captures an authored constructor helper without changing source [33m 2764[2mms[22m[39m
+     [33m[2m✓[22m[39m uses an authored factory for explicit reconstruction controls [33m 2875[2mms[22m[39m
+     [33m[2m✓[22m[39m reloads the complete project-local dependency graph [33m 2922[2mms[22m[39m
+     [33m[2m✓[22m[39m supports an imported factory while construction remains in the entrypoint [33m 2568[2mms[22m[39m
+     [33m[2m✓[22m[39m uses the host harness without changing source [33m 2669[2mms[22m[39m
+ [32m✓[39m test/tui-intro.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 157[2mms[22m[39m
+ [32m✓[39m test/tui-frog-themes.test.ts [2m([22m[2m38 tests[22m[2m)[22m[33m 1186[2mms[22m[39m
+ [32m✓[39m test/ink-text-cache.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 1837[2mms[22m[39m
+     [33m[2m✓[22m[39m launches without modifying the installation: { writable: true, legacy: false } [33m 695[2mms[22m[39m
+     [33m[2m✓[22m[39m launches without modifying the installation: { writable: false, legacy: false } [33m 624[2mms[22m[39m
+     [33m[2m✓[22m[39m launches without modifying the installation: { writable: false, legacy: true } [33m 507[2mms[22m[39m
+ [32m✓[39m test/cli-update.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m test/tui-project-portability.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 4672[2mms[22m[39m
+   [33m[2m✓[22m[39m builds and runs a packaged local tool after its original source is removed [33m 4539[2mms[22m[39m
+ [32m✓[39m test/tui-responsive.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 1586[2mms[22m[39m
+     [33m[2m✓[22m[39m shrinks and restores the welcome banner while retaining the composer draft [33m 457[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps setup choices visible in a narrow window and after resizing [33m 785[2mms[22m[39m
+ [2m[90m↓[39m[22m test/tui-python-worker-region.test.ts [2m([22m[2m14 tests[22m[2m | [22m[33m14 skipped[39m[2m)[22m
+ [32m✓[39m test/tui-sdk-projector.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m test/tui-telemetry.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 63[2mms[22m[39m
+ [32m✓[39m test/tui-media.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m test/tui-skills.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 74[2mms[22m[39m
+ [32m✓[39m test/turn-renderer.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m test/tui-settings-appearance.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m test/logging.test.ts [2m([22m[2m12 tests[22m[2m | [22m[33m2 skipped[39m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m test/tui-terminal.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m test/tui-setup-path-completion.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 589[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps the empty input clean and completes a selected path from the dropdown [33m 570[2mms[22m[39m
+ [2m[90m↓[39m[22m test/tui-python-source-reload.test.ts [2m([22m[2m3 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m
+ [32m✓[39m test/tui-source-validation.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 457[2mms[22m[39m
+   [33m[2m✓[22m[39m loads ESM authoring folders and import-only packages using exported module semantics [33m 428[2mms[22m[39m
+ [32m✓[39m test/tui-update-notice.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 958[2mms[22m[39m
+     [33m[2m✓[22m[39m asks npm for the latest release and announces it on the opening menu [33m 317[2mms[22m[39m
+ [32m✓[39m test/tui-workspace-trust.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 63[2mms[22m[39m
+stderr | test/tui-source-model-persistence.test.ts > keeps a UI-selected model and effort only for the same unchanged source definition
+effort "off" not applied to a pre-built Model instance or ModelRouter; configure reasoning on the instance
+
+ [32m✓[39m test/tui-source-model-persistence.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 194[2mms[22m[39m
+ [32m✓[39m test/tui-messaging.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 46[2mms[22m[39m
+ [32m✓[39m test/tui-standalone-project.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 134[2mms[22m[39m
+ [32m✓[39m test/tui-background-agent-inbox.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m test/tui-mcp-export-portability.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 159[2mms[22m[39m
+ [32m✓[39m test/main.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 57[2mms[22m[39m
+ [32m✓[39m test/tui-rename.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 793[2mms[22m[39m
+     [33m[2m✓[22m[39m renames the active agent from an inline text field [33m 558[2mms[22m[39m
+ [32m✓[39m test/tui-config-appearance.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 63[2mms[22m[39m
+ [32m✓[39m test/source-launcher.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 87[2mms[22m[39m
+ [32m✓[39m test/tui-runtime-metadata-safety.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m test/tui-setup-resize.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 158[2mms[22m[39m
+ [32m✓[39m test/tui-rendering.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 54[2mms[22m[39m
+ [32m✓[39m test/tui-metadata-layout.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 100[2mms[22m[39m
+stderr | test/tui-agent-project-source.test.ts > agentProjectSource memory > keeps memory: false when memory stores are configured
+Ignoring memoryStores because memory is false.
+
+ [32m✓[39m test/tui-agent-project-source.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m test/tui-setup-on-launch.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 805[2mms[22m[39m
+   [33m[2m✓[22m[39m selects startup setup for 'configured default' [33m 784[2mms[22m[39m
+ [32m✓[39m test/tui-file-change-preview.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m test/tui-npm.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m test/tui-steering.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m test/tui-transcript-performance.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 333[2mms[22m[39m
+     [33m[2m✓[22m[39m does not reparse completed Markdown while the active turn streams [33m 330[2mms[22m[39m
+ [32m✓[39m test/tui-aws-region.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m test/tui-python-environment.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m test/init-logging.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m test/tui-update-batching.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m test/tui-provider-packages.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m test/tui-project-source.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m test/tui-error-panel-layout.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 222[2mms[22m[39m
+ [32m✓[39m test/tui-model-display.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m test/tui-python-mcp-export.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m test/tui-self-building.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2978[2mms[22m[39m
+     [33m[2m✓[22m[39m reloads real tools, plugins, skills and owned MCP connections from a separate authoring directory [33m 2975[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m83 passed[39m[22m[2m | [22m[33m3 skipped[39m[90m (86)[39m
+[2m      Tests [22m [1m[32m1024 passed[39m[22m[2m | [22m[33m31 skipped[39m[90m (1055)[39m
+[2m   Start at [22m 22:19:42
+[2m   Duration [22m 99.93s[2m (transform 4.16s, setup 0ms, import 104.73s, tests 150.75s, environment 20ms)[22m
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   80.06 |    74.43 |   82.92 |   80.85 |                   
+ src               |   89.73 |    78.65 |   85.71 |   90.07 |                   
+  console.ts       |    81.2 |    67.25 |   83.33 |   81.81 | ...44,267-268,271 
+  logging.ts       |      95 |    93.33 |   78.57 |      95 | 84,118            
+  usage.ts         |     100 |    86.36 |     100 |     100 | ...47-150,194-199 
+ src/cli           |   58.04 |    53.64 |   54.54 |   59.93 |                   
+  arguments.ts     |   84.04 |    89.33 |   78.57 |   87.35 | ...54,265,269,274 
+  invocation.ts    |   22.58 |    21.56 |   28.57 |   25.45 | 40-53,78-144      
+  run.ts           |    50.8 |    40.33 |   57.14 |   51.21 | ...66,191,206-273 
+  update.ts        |   75.67 |    72.41 |      20 |   75.67 | 44,75-85          
+ src/tui           |   87.25 |    79.01 |   88.92 |   87.83 |                   
+  ...figuration.ts |   82.17 |    79.61 |   83.33 |   83.47 | ...95,334,344,385 
+  builtin-tools.ts |   79.48 |    55.88 |   92.85 |   79.41 | ...,85-86,125-126 
+  config.ts        |    86.6 |    83.54 |   94.33 |   86.13 | ...08,517,555,559 
+  ...structions.ts |     100 |      100 |     100 |     100 |                   
+  mcp.ts           |   85.29 |    74.46 |     100 |   83.87 | 46,101-104,123    
+  ...ry-options.ts |       0 |        0 |       0 |       0 | 7-10              
+  messaging.ts     |   85.88 |    75.43 |     100 |   86.74 | ...05,211,214,217 
+  npm.ts           |     100 |      100 |     100 |     100 |                   
+  ...ge-version.ts |   85.71 |       80 |     100 |      85 | 13,31,51          
+  run.tsx          |   85.81 |    81.17 |   76.66 |   88.57 | ...52,257,272-273 
+  runtime.ts       |   88.49 |     82.4 |   84.61 |   89.25 | ...56,588,627,634 
+  settings.ts      |   85.26 |    74.07 |     100 |   84.61 | ...92,403-406,416 
+  skills.ts        |   82.85 |    70.58 |   80.95 |   84.12 | 61,123,156-169    
+  steering.ts      |   91.66 |       75 |     100 |   91.66 | 24,34,45          
+  ...ds-backend.ts |   92.93 |    78.57 |   88.13 |   93.29 | ...17,340,503,513 
+  ...esentation.ts |   89.88 |    89.13 |   66.66 |   89.77 | 153,159-169       
+  telemetry.ts     |     100 |    92.59 |     100 |     100 | 48,59             
+  update-check.ts  |     100 |      100 |     100 |     100 |                   
+ src/tui/acp       |   59.54 |     41.2 |   73.91 |   60.76 |                   
+  projection.ts    |   44.55 |    31.25 |   72.22 |   46.23 | ...43-246,268-274 
+  server.ts        |   72.26 |    57.14 |      75 |   72.41 | ...20-254,263-281 
+ ...tui/background |   83.45 |     65.4 |      96 |   83.33 |                   
+  activity.ts      |   82.89 |    66.36 |     100 |   82.66 | ...82,290,307-316 
+  inbox.ts         |    91.3 |    75.67 |    92.3 |    91.3 | ...76,103,109,145 
+  tasks.ts         |   73.33 |    57.81 |      90 |   73.33 | 44,73,80,85-97    
+ src/tui/chat      |   85.79 |    81.55 |    94.2 |   85.75 |                   
+  commands.ts      |   91.89 |    83.87 |     100 |   91.17 | 65,69,107         
+  ...er-helpers.ts |   86.66 |     92.3 |     100 |   86.66 | 6,11              
+  controller.ts    |   85.17 |     80.1 |   95.68 |   85.11 | ...2027,2044-2046 
+  help.ts          |     100 |       95 |     100 |     100 | 95                
+  panels.ts        |   85.22 |    77.36 |   94.23 |   86.07 | 53,87,100-110     
+  projector.ts     |   92.57 |    89.01 |   96.87 |   92.53 | ...40,349-358,369 
+  sdk-projector.ts |     100 |    97.34 |     100 |     100 | 73,114,251        
+  shell.ts         |   71.22 |    59.49 |      60 |   71.22 | ...47-249,271-280 
+  types.ts         |       0 |        0 |       0 |       0 |                   
+ src/tui/mcp       |   86.16 |       83 |   97.22 |   85.71 |                   
+  config.ts        |   86.16 |       83 |   97.22 |   85.71 | ...02,409,415-418 
+ src/tui/model     |   88.23 |     79.5 |   98.43 |   87.83 |                   
+  context.ts       |     100 |    88.88 |     100 |     100 | 23                
+  display.ts       |   89.28 |       80 |     100 |   89.28 | 29,41,46          
+  runtime.ts       |   84.35 |    68.87 |   97.56 |      84 | ...15,434-440,451 
+  selection.ts     |   94.62 |    94.17 |     100 |   94.25 | ...34,152,190,204 
+ ...ui/permissions |   80.09 |    78.08 |   93.18 |   81.38 |                   
+  ...ge-preview.ts |   68.22 |    65.78 |    87.5 |   69.79 | ...65,171,203-208 
+  policy.ts        |   93.25 |    92.42 |      96 |   93.18 | ...30,137,240,258 
+  settings.ts      |     100 |       75 |     100 |     100 | 22                
+ src/tui/project   |   59.11 |    59.14 |    56.2 |   60.65 |                   
+  acp.ts           |       0 |        0 |       0 |       0 | 16-101            
+  archive.ts       |   90.41 |    79.64 |     100 |   93.28 | ...32,191,201-207 
+  ...on-secrets.ts |   96.36 |    95.65 |     100 |   96.29 | 36,109            
+  configuration.ts |   82.85 |       71 |   85.71 |   81.25 | ...76,185-219,235 
+  export.ts        |   82.11 |    68.42 |    88.7 |   84.31 | ...42,676-677,696 
+  import.ts        |   88.23 |    81.35 |     100 |   90.69 | 42,49,58,67       
+  module-loader.ts |       0 |        0 |       0 |       0 | 11-182            
+  packaging.ts     |   89.18 |    73.52 |     100 |   88.23 | 13,46-47,61       
+  ...pendencies.ts |   84.21 |    77.27 |     100 |   88.88 | 19-20             
+  portable-mcp.ts  |   83.13 |    67.74 |   92.85 |   81.57 | ...89,101-102,137 
+  python.ts        |    6.19 |     6.03 |       0 |    6.98 | 41-142,177-513    
+  run.ts           |       0 |        0 |       0 |       0 | 22-142            
+  source.ts        |    89.3 |    86.91 |     100 |   90.19 | ...93,241,255,295 
+  typescript.ts    |   18.51 |       20 |   17.64 |      20 | ...30-146,169-171 
+ src/tui/provider  |   84.02 |    73.05 |   69.35 |   84.93 |                   
+  aws-client.ts    |   80.76 |     62.5 |      60 |    87.5 | 11,32,44          
+  aws-config.ts    |   96.77 |    89.47 |     100 |     100 | 24,46,72-74       
+  ...ck-catalog.ts |   95.34 |    73.91 |   85.71 |   95.34 | 87,126            
+  discovery.ts     |    72.9 |    62.96 |   57.89 |    73.2 | ...04,409,418-426 
+  environment.ts   |   95.31 |    88.67 |     100 |   95.31 | 55,139,164        
+  packages.ts      |   94.73 |    83.33 |     100 |   94.73 | 29                
+ src/tui/session   |   86.75 |    81.15 |   92.52 |   86.53 |                   
+  ...definition.ts |   88.37 |    82.22 |    87.5 |   88.37 | 33,88,117-119     
+  catalog.ts       |   87.34 |    71.42 |     100 |   86.84 | ...35,161-162,168 
+  context.ts       |    93.1 |    91.07 |     100 |   92.98 | 90,101,118,141    
+  ...on-helpers.ts |      76 |    65.38 |     100 |      76 | 14,22,37,43,46,49 
+  conversations.ts |   86.61 |    85.23 |   84.61 |   86.45 | ...24,435,446-447 
+  ...op-profile.ts |   96.22 |    83.33 |     100 |   95.91 | 60,73             
+  options.ts       |      95 |    96.55 |     100 |   94.44 | 20                
+  sessions.ts      |    87.7 |    75.65 |   97.05 |   87.06 | ...72,278,288-291 
+  voice.ts         |   80.51 |    78.33 |   91.17 |   80.92 | ...53-359,388-389 
+ src/tui/terminal  |   62.65 |    62.59 |   58.02 |   62.87 |                   
+  composer.tsx     |   75.36 |    71.25 |   82.35 |      75 | ...36,241,293-315 
+  ...ory-picker.ts |      25 |        0 |   14.28 |      25 | 51-59,65-81       
+  ink.ts           |       0 |        0 |       0 |       0 | 6-187             
+  mouse-input.ts   |   94.23 |    83.72 |     100 |   94.11 | 38,41,69          
+  open-url.ts      |   55.55 |      100 |   33.33 |   55.55 | 17-24             
+  process-tree.ts  |    1.58 |        0 |       0 |    1.69 | 7-140             
+  sanitize.ts      |   88.88 |    77.96 |     100 |   88.88 | 19,24-25,33,62    
+  shell-output.ts  |    92.3 |    77.77 |     100 |    92.3 | 51,56             
+  size.ts          |     100 |    66.66 |     100 |     100 | 7-11              
+  terminal.ts      |   87.14 |    68.33 |     100 |   88.88 | 106-107,110-121   
+ src/tui/view      |   84.82 |    78.16 |   87.75 |   85.89 |                   
+  agents-panel.tsx |     100 |    98.07 |     100 |     100 | 44                
+  app.tsx          |   63.11 |    55.24 |   59.01 |   64.15 | ...1176,1270-1276 
+  chat-root.tsx    |   62.96 |       50 |      50 |   62.96 | ...59-60,64-72,77 
+  chat-view.tsx    |     100 |    86.17 |     100 |     100 | ...00,511-524,566 
+  ...d-palette.tsx |     100 |      100 |     100 |     100 |                   
+  ...me-editor.tsx |   84.84 |    73.63 |   91.48 |   94.44 | 150-160,169,211   
+  effort-panel.tsx |     100 |    83.33 |     100 |     100 | 24-26             
+  export-panel.tsx |   88.88 |    95.45 |      75 |   88.88 | 23                
+  fade-in.tsx      |   87.35 |    94.44 |   78.94 |   89.02 | ...33,158-161,168 
+  frog-canvas.ts   |   99.35 |    96.93 |     100 |    99.3 | 301               
+  frog-drawing.ts  |   92.23 |    91.47 |   89.65 |   92.19 | ...45,493,500-503 
+  ...aster-egg.tsx |   93.54 |    68.42 |     100 |   93.33 | 63-64             
+  ...o-renderer.ts |   96.36 |    93.11 |     100 |   96.23 | ...53-566,575,580 
+  help-footer.tsx  |     100 |    95.45 |     100 |     100 | 40,85             
+  interaction.ts   |   89.84 |    80.71 |   97.36 |   89.63 | ...40,479,483-486 
+  markdown.tsx     |   71.42 |    49.15 |   76.92 |   71.42 | ...52-153,166,176 
+  ...st-prompt.tsx |   77.77 |    71.42 |     100 |     100 | 18-19             
+  media.tsx        |   71.05 |    58.82 |      90 |   71.05 | ...99,124-128,132 
+  model-panel.tsx  |     100 |     87.7 |     100 |     100 | ...20-323,333,391 
+  ...omponents.tsx |     100 |      100 |     100 |     100 |                   
+  panels.tsx       |   92.95 |     78.4 |   82.35 |   92.95 | 38-48,428         
+  presentation.ts  |   86.44 |    79.14 |    92.5 |   86.58 | ...90-493,499,502 
+  ...pt-editor.tsx |     100 |    93.24 |     100 |     100 | ...91,211,241-244 
+  ...ider-list.tsx |     100 |      100 |     100 |     100 |                   
+  rename-panel.tsx |     100 |       50 |     100 |     100 | 26-29             
+  ...ons-panel.tsx |     100 |    61.53 |     100 |     100 | 28-45             
+  ...ngs-panel.tsx |   98.57 |    84.88 |     100 |   98.57 | 460               
+  startup-view.tsx |      72 |    71.92 |   66.66 |   76.59 | ...38,161,165-168 
+  text-input.tsx   |    91.3 |    92.85 |   71.42 |     100 | 33-36             
+  ...-detection.ts |   95.23 |    94.11 |     100 |   95.23 | 18                
+  theme.tsx        |     100 |    93.18 |     100 |     100 | 147-151           
+  ...ipt-layout.ts |   97.22 |      100 |      90 |     100 |                   
+  ...ript-turn.tsx |   96.29 |    73.26 |   89.47 |   96.05 | 38,258,336        
+  transcript.tsx   |   95.34 |    85.07 |    90.9 |   96.34 | 130,135,226       
+  ...arty-frame.ts |   83.33 |      100 |      60 |     100 |                   
+  use-spinner.ts   |   81.81 |      100 |      60 |     100 |                   
+ ...w/setup-wizard |   79.12 |    74.47 |   79.81 |   79.87 |                   
+  brand.tsx        |     100 |    66.66 |     100 |     100 | 53-61             
+  index.tsx        |    76.4 |    73.52 |   85.05 |   76.74 | ...2484,2520,2577 
+  opening-menu.tsx |   98.57 |    90.38 |     100 |     100 | 64,74,142,178-184 
+  ...completion.ts |    87.5 |    69.69 |     100 |    87.5 | 22,40,43          
+  ...ile-fields.ts |   83.33 |    56.25 |     100 |      90 | 14                
+  progress.tsx     |   78.12 |    77.77 |      75 |   77.41 | 39-45             
+  providers.ts     |   89.36 |    85.21 |   96.29 |   89.13 | ...90-393,410,413 
+  ...ngs-panel.tsx |   80.55 |     62.5 |    92.3 |   81.25 | 84-85,87-92       
+  steps.ts         |   69.46 |    74.28 |   40.32 |   73.91 | ...27-628,656-662 
+  types.ts         |       0 |        0 |       0 |       0 |                   
+  ...-discovery.ts |   94.52 |    83.33 |   96.15 |   95.52 | 190-196,215       
+ src/tui/voice     |   87.05 |    67.64 |   89.09 |   87.22 |                   
+  session.ts       |   87.05 |    67.64 |   89.09 |   87.22 | ...86,531-532,603 
+ src/tui/workspace |   85.16 |    77.45 |   81.81 |    86.2 |                   
+  sandbox.ts       |   87.73 |    72.41 |   80.76 |      90 | ...11,252,257,285 
+  trust.ts         |   81.57 |    84.09 |   83.33 |   81.08 | ...58,169,180,184 
+ test/fixtures     |     100 |       80 |     100 |     100 |                   
+  chat-snapshot.ts |     100 |      100 |     100 |     100 |                   
+  ...on-runtime.ts |     100 |       75 |     100 |     100 | 8                 
+  terminal.ts      |     100 |      100 |     100 |     100 |                   
+-------------------|---------|----------|---------|---------|-------------------
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/strands-cli[39m
+
+ [2m[90m↓[39m[22m test/tui-pty-lifecycle.test.ts [2m([22m[2m7 tests[22m[2m | [22m[33m7 skipped[39m[2m)[22m
+
+[2m Test Files [22m [33m1 skipped[39m[90m (1)[39m
+[2m      Tests [22m [33m7 skipped[39m[90m (7)[39m
+[2m   Start at [22m 22:21:23
+[2m   Duration [22m 264ms[2m (transform 47ms, setup 0ms, import 67ms, tests 0ms, environment 0ms)[22m
+
+strands-cli check exit=0
+### harness-py ###
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 28%]
+........................................................................ [ 37%]
+...................................................................s...s [ 47%]
+........................................................................ [ 56%]
+........................................................................ [ 65%]
+........................................................................ [ 75%]
+........................................................................ [ 84%]
+........................................................................ [ 94%]
+............................................                             [100%]
+762 passed, 2 skipped in 152.05s (0:02:32)
+harness-py pytest exit=0
