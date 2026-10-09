@@ -314,10 +314,13 @@ opt out.
 Two of the built-ins put the web in reach. `web_fetch` is always on: it fetches a URL,
 reduces it to text, and asks a small fast model to answer your prompt over the content, returning
 the answer rather than the raw page so a long article never floods the conversation. The
-summarizer runs on the small model for your main provider by default (so credentials line up);
-override it with the tool's own config in `builtinTools`:
+summarizer runs on the agent's `auxModel`, which defaults to the small model for your main
+provider (so credentials line up) and also serves the SDK's other side calls (context summarization,
+memory extraction). Pick it with `auxModel`, or override the summarizer alone with the tool's own
+config in `builtinTools`:
 
 ```typescript
+await createHarness({ auxModel: 'anthropic/claude-haiku-4-5-20251001' })
 await createHarness({ builtinTools: { web_fetch: { model: 'anthropic/claude-haiku-4-5-20251001' } } })
 ```
 

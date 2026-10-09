@@ -297,10 +297,13 @@ exposing the same tool don't clash; set a server's `"prefix"` to choose the name
 Two of the built-ins put the web in reach. `web_fetch` is always on: it fetches a URL,
 reduces it to text, and asks a small fast model to answer your prompt over the content, returning
 the answer rather than the raw page so a long article never floods the conversation. The
-summarizer runs on the small model for your main provider by default (so credentials line up);
-override it through the tool's config in `builtin_tools`:
+summarizer runs on the agent's `aux_model`, which defaults to the small model for your main
+provider (so credentials line up) and also serves the SDK's other side calls (context summarization,
+memory extraction). Pick it with `aux_model`, or override the summarizer alone through the tool's
+config in `builtin_tools`:
 
 ```python
+create_harness(aux_model="anthropic/claude-haiku-4-5-20251001")
 create_harness(builtin_tools={"web_fetch": {"model": "anthropic/claude-haiku-4-5-20251001"}})
 ```
 
