@@ -191,6 +191,12 @@ def test_aux_model_instance_is_used_verbatim():
     assert agent.aux_model is aux
 
 
+def test_aux_model_rejects_a_router_like_the_sdk():
+    router = ModelRouter([BedrockModel(model_id="fast"), BedrockModel(model_id="deep")])
+    with pytest.raises(TypeError, match="ModelRouter"):
+        create_harness(aux_model=router)
+
+
 def test_aux_model_is_reused_for_memory_extraction(tmp_path):
     aux = BedrockModel(model_id="us.amazon.nova-lite-v1:0")
     agent = create_harness(aux_model=aux, memory={"dir": str(tmp_path)})
@@ -208,6 +214,19 @@ def test_aux_model_is_forwarded_to_subagent_children(monkeypatch):
     monkeypatch.setattr(agent_module, "build_default_subagent", spy)
     create_harness(aux_model=aux)
     assert seen["aux_model"] is aux
+
+
+def test_subagent_child_with_its_own_model_resolves_aux_model_for_that_provider(monkeypatch):
+    seen: dict = {}
+
+    def spy(build_agent, parent_config, **config):
+        seen["parent_config"] = parent_config
+        return build_default_subagent(build_agent, parent_config, **config)
+
+    monkeypatch.setattr(agent_module, "build_default_subagent", spy)
+    create_harness()
+    child = create_harness(**{**seen["parent_config"], "model": "openai/gpt-5.6-sol"})
+    assert child.aux_model.get_config()["model_id"] == "gpt-5.6-luna"
 
 
 def test_instructions_appended():

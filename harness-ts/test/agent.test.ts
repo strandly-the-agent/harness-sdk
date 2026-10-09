@@ -229,13 +229,25 @@ describe('createHarness', () => {
     expect(vi.mocked(makeWebFetch).mock.lastCall?.[0].model.getConfig().modelId).toBe('gpt-5-mini')
   })
 
-  it('forwards auxModel to subagent children', async () => {
+  it('rejects a ModelRouter as auxModel like the SDK does', async () => {
+    const router = new ModelRouter([new BedrockModel({ modelId: 'fast' }), new BedrockModel({ modelId: 'deep' })])
+    await expect(createHarness({ auxModel: router as unknown as Model })).rejects.toThrow(/ModelRouter/)
+  })
+
+  it('forwards auxModel to subagent children, and a child with its own model re-resolves it', async () => {
     const { makeSubagent, AgentSpec } = await import('../src/tools/subagent.js')
     const aux = new BedrockModel({ modelId: 'us.amazon.nova-lite-v1:0' })
     await createHarness({ auxModel: aux })
     const builder = vi.mocked(makeSubagent).mock.lastCall?.[0].builder
     const child = await builder!(new AgentSpec('go'))
     expect(child.auxModel).toBe(aux)
+
+    await createHarness()
+    const rebuilder = vi.mocked(makeSubagent).mock.lastCall?.[0].builder
+    const spec = new AgentSpec('go')
+    spec.model = 'openai/gpt-5.6-sol'
+    const rerouted = await rebuilder!(spec)
+    expect(rerouted.auxModel.getConfig().modelId).toBe('gpt-5.6-luna')
   })
 
   it('backgrounds the subagent and leaves other compatible tools agent-selectable', async () => {

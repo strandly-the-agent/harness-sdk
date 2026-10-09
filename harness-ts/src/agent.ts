@@ -15,7 +15,7 @@ import {
   type McpServerConfig,
   MemoryManager,
   type Model,
-  type ModelRouter,
+  ModelRouter,
   type Plugin,
   SessionManager,
   Tool,
@@ -391,6 +391,9 @@ export async function createHarness(options: HarnessAgentOptions = {}): Promise<
     cachingOn,
     cachingExplicit
   )
+  if (auxModel instanceof ModelRouter) {
+    throw new TypeError("auxModel must be a Model or a 'provider/name' string, not a ModelRouter")
+  }
   const resolvedAuxModel = await resolveAuxModel(model, auxModel)
 
   if (agentConfig.systemPrompt === undefined) {

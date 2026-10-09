@@ -422,6 +422,8 @@ def create_harness(
         caching=caching_on,
         caching_explicit=caching_explicit,
     )
+    if isinstance(aux_model, ModelRouter):
+        raise TypeError("aux_model must be a Model, a 'provider/name' string, or None, not a ModelRouter")
     resolved_aux_model = resolve_aux_model(model, aux_model)
 
     if "system_prompt" not in agent_kwargs:
