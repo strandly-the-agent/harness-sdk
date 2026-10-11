@@ -36,7 +36,7 @@ function internals(tracer: Tracer): TracerInternals {
 export function startSessionSpan(
   tracer: Tracer,
   agentName: string,
-  options?: { modelId?: string; tools?: string[]; systemPrompt?: string },
+  options?: { modelId?: string; tools?: string[]; systemPrompt?: string }
 ): Span {
   const tracerInternals = internals(tracer)
   const attributes = tracerInternals._getCommonAttributes('bidi_session')
@@ -74,7 +74,7 @@ export function endSessionSpan(
     totalTokens?: number
     cacheReadInputTokens?: number
     error?: Error
-  },
+  }
 ): void {
   const tracerInternals = internals(tracer)
   const cacheReadInputTokens = options?.cacheReadInputTokens ?? 0
@@ -113,7 +113,7 @@ export function startResponseSpan(tracer: Tracer, responseId: string, parentSpan
 
   // Static span name (responseId is recorded as an attribute) to avoid high-cardinality names.
   return tracerInternals._startSpan(
-    parentSpan ? { name: 'bidi_response', attributes, parentSpan } : { name: 'bidi_response', attributes },
+    parentSpan ? { name: 'bidi_response', attributes, parentSpan } : { name: 'bidi_response', attributes }
   )
 }
 
@@ -128,7 +128,7 @@ export function startResponseSpan(tracer: Tracer, responseId: string, parentSpan
 export function endResponseSpan(
   tracer: Tracer,
   span: Span,
-  options?: { timeToFirstAudioMs?: number; error?: Error },
+  options?: { timeToFirstAudioMs?: number; error?: Error }
 ): void {
   const attributes: Record<string, AttributeValue> = {}
 
@@ -150,7 +150,7 @@ export function endResponseSpan(
  */
 export function startRestartSpan(
   tracer: Tracer,
-  options?: { parentSpan?: Span; reason?: string; errorMessage?: string },
+  options?: { parentSpan?: Span; reason?: string; errorMessage?: string }
 ): Span {
   const tracerInternals = internals(tracer)
   const attributes = tracerInternals._getCommonAttributes('bidi_connection_restart')
@@ -165,7 +165,7 @@ export function startRestartSpan(
 
   const spanOptions = { name: 'bidi_connection_restart', attributes }
   return tracerInternals._startSpan(
-    options?.parentSpan ? { ...spanOptions, parentSpan: options.parentSpan } : spanOptions,
+    options?.parentSpan ? { ...spanOptions, parentSpan: options.parentSpan } : spanOptions
   )
 }
 
@@ -199,7 +199,7 @@ export function startConnectionSpan(tracer: Tracer, options?: { parentSpan?: Spa
 
   const spanOptions = { name: 'bidi_connect', attributes }
   return tracerInternals._startSpan(
-    options?.parentSpan ? { ...spanOptions, parentSpan: options.parentSpan } : spanOptions,
+    options?.parentSpan ? { ...spanOptions, parentSpan: options.parentSpan } : spanOptions
   )
 }
 

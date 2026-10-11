@@ -66,11 +66,7 @@ export class RestartTimer {
    * @param onDeadline - Called when the restart deadline elapses.
    * @param sleep - Injectable async sleep (for tests). Defaults to a `setTimeout` sleep.
    */
-  constructor(
-    onWarning: (timeLeftS: number) => Promise<void>,
-    onDeadline: () => Promise<void>,
-    sleep?: SleepFn,
-  ) {
+  constructor(onWarning: (timeLeftS: number) => Promise<void>, onDeadline: () => Promise<void>, sleep?: SleepFn) {
     this._onWarning = onWarning
     this._onDeadline = onDeadline
     this._sleep = sleep
@@ -88,7 +84,7 @@ export class RestartTimer {
     this._controller = controller
     void this._run(deadlineS, warningLeadS, controller)
     logger.debug(
-      `deadline_s=<${deadlineS.toFixed(1)}>, warning_lead_s=<${warningLeadS.toFixed(1)}> | proactive restart timer armed`,
+      `deadline_s=<${deadlineS.toFixed(1)}>, warning_lead_s=<${warningLeadS.toFixed(1)}> | proactive restart timer armed`
     )
   }
 
