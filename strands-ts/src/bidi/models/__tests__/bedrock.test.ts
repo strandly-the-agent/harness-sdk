@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { ModelThrottledError } from '../../../errors.js'
-import { Message, TextBlock, ToolResultBlock, JsonBlock } from '../../../types/messages.js'
+import { JsonBlock, Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../../types/messages.js'
 import { ImageBlock } from '../../../types/media.js'
 import { AudioDelta } from '../../types/media.js'
 import { BedrockNovaSonicModel } from '../bedrock.js'
@@ -30,13 +30,14 @@ class FakeClient {
   send = vi.fn(async (command: any) => {
     this.commands.push(command)
     void this._drain(command.input.body)
-    return { body: this._stream() }
+    return { body: this._stream(this.commands.length - 1) }
   })
 
-  constructor(private readonly _outputs: unknown[] = []) {}
+  /** @param _outputs - Response-stream events for each successive connection. */
+  constructor(private readonly _outputs: unknown[][] = []) {}
 
-  private async *_stream(): AsyncGenerator<unknown> {
-    for (const output of this._outputs) {
+  private async *_stream(call: number): AsyncGenerator<unknown> {
+    for (const output of this._outputs[call] ?? []) {
       yield output
     }
   }
@@ -49,7 +50,7 @@ class FakeClient {
 }
 
 function newModel(outputs: unknown[] = [], options: Record<string, unknown> = {}): [BedrockNovaSonicModel, FakeClient] {
-  const client = new FakeClient(outputs)
+  const client = new FakeClient([outputs])
   const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient, ...options })
   return [model, client]
 }
@@ -70,7 +71,7 @@ async function collect(events: AsyncIterable<BidiOutputEvent>): Promise<BidiOutp
 const toolSpec: ToolSpec = {
   name: 'time_tool',
   description: 'Get the time',
-  inputSchema: { type: 'object', properties: { zone: { type: 'string' } } } as ToolSpec['inputSchema'],
+  inputSchema: { type: 'object', properties: { zone: { type: 'string' } } },
 }
 
 describe('BedrockNovaSonicModel', () => {
@@ -140,7 +141,7 @@ describe('BedrockNovaSonicModel', () => {
       const [model, client] = newModel([], { audio: { output: { sampleRate: 24000 } }, voice: 'tiffany' })
       await model.start()
       await tick()
-      expect(client.sent[1].promptStart.audioOutputConfiguration).toEqual({
+      expect(client.sent[1]!.promptStart.audioOutputConfiguration).toEqual({
         mediaType: 'audio/lpcm',
         sampleRateHertz: 24000,
         sampleSizeBits: 16,
@@ -166,13 +167,13 @@ describe('BedrockNovaSonicModel', () => {
         'textInput',
         'contentEnd',
       ])
-      expect(client.sent[2].contentStart).toMatchObject({
+      expect(client.sent[2]!.contentStart).toMatchObject({
         type: 'TEXT',
         role: 'SYSTEM',
         interactive: false,
         textInputConfiguration: { mediaType: 'text/plain' },
       })
-      expect(client.sent[3].textInput.content).toBe('be brief')
+      expect(client.sent[3]!.textInput.content).toBe('be brief')
     })
 
     it('adds tool configuration when tools are provided', async () => {
@@ -180,7 +181,7 @@ describe('BedrockNovaSonicModel', () => {
       await model.start({ tools: [toolSpec] })
       await tick()
 
-      const promptStart = client.sent[1].promptStart
+      const promptStart = client.sent[1]!.promptStart
       expect(promptStart.toolUseOutputConfiguration).toEqual({ mediaType: 'application/json' })
       expect(promptStart.toolConfiguration.tools).toEqual([
         {
@@ -293,7 +294,11 @@ describe('BedrockNovaSonicModel', () => {
         interactive: false,
         type: 'TOOL',
         role: 'TOOL',
-        toolResultInputConfiguration: { toolUseId: 't1', type: 'TEXT', textInputConfiguration: { mediaType: 'text/plain' } },
+        toolResultInputConfiguration: {
+          toolUseId: 't1',
+          type: 'TEXT',
+          textInputConfiguration: { mediaType: 'text/plain' },
+        },
       })
     })
 
@@ -330,8 +335,8 @@ describe('BedrockNovaSonicModel', () => {
       const [model, client] = newModel()
       await model.start({
         messages: [
-          new Message({ role: 'user', content: [{ text: 'hello' }] }),
-          new Message({ role: 'assistant', content: [{ text: 'hi' }] }),
+          new Message({ role: 'user', content: [new TextBlock('hello')] }),
+          new Message({ role: 'assistant', content: [new TextBlock('hi')] }),
         ],
       })
       await tick()
@@ -346,8 +351,8 @@ describe('BedrockNovaSonicModel', () => {
       const [model, client] = newModel()
       await model.start({
         messages: [
-          new Message({ role: 'assistant', content: [{ text: 'first' }] }),
-          new Message({ role: 'user', content: [{ text: 'second' }] }),
+          new Message({ role: 'assistant', content: [new TextBlock('first')] }),
+          new Message({ role: 'user', content: [new TextBlock('second')] }),
         ],
       })
       await tick()
@@ -360,8 +365,8 @@ describe('BedrockNovaSonicModel', () => {
       const [model, client] = newModel()
       await model.start({
         messages: [
-          new Message({ role: 'user', content: [{ text: 'keep' }] }),
-          new Message({ role: 'user', content: [{ toolUse: { toolUseId: 't', name: 'x', input: {} } }] }),
+          new Message({ role: 'user', content: [new TextBlock('keep')] }),
+          new Message({ role: 'user', content: [new ToolUseBlock({ toolUseId: 't', name: 'x', input: {} })] }),
         ],
       })
       await tick()
@@ -603,13 +608,13 @@ describe('BedrockNovaSonicModel', () => {
       const client = new FakeClient()
       const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
       const error = Object.assign(new Error('slow down'), { name: 'ThrottlingException' })
-      client.send.mockImplementation(async () => ({
+      client.send.mockImplementation((async () => ({
         body: {
-          async *[Symbol.asyncIterator]() {
-            throw error
-          },
+          [Symbol.asyncIterator]: () => ({
+            next: () => Promise.reject(error),
+          }),
         },
-      }))
+      })) as unknown as typeof client.send)
       await model.start()
       await expect(collect(model.receive())).rejects.toThrow(ModelThrottledError)
     })
@@ -620,7 +625,7 @@ describe('BedrockNovaSonicModel', () => {
       const [model, client] = newModel()
       await model.start()
       const first = model.getConfig().modelId
-      await model.restart({ messages: [new Message({ role: 'user', content: [{ text: 'replayed' }] })] })
+      await model.restart({ messages: [new Message({ role: 'user', content: [new TextBlock('replayed')] })] })
       await tick()
 
       expect(first).toBe('amazon.nova-2-5-sonic')
@@ -637,17 +642,18 @@ describe('BedrockNovaSonicModel', () => {
     })
 
     it('sends a tool result from an earlier connection as user text', async () => {
-      const [model, client] = newModel([
-        chunk({ toolUse: { toolUseId: 't1', toolName: 'time_tool', content: '{"zone":"UTC"}' } }),
+      const client = new FakeClient([
+        [chunk({ toolUse: { toolUseId: 't1', toolName: 'time_tool', content: '{"zone":"UTC"}' } })],
       ])
+      const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
       await model.start()
       await collect(model.receive())
       await model.restart()
+      // The new connection's reader reports the connection idle, releasing the deferred result.
+      await collect(model.receive())
 
       await model.send({
-        content: [
-          new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('12:00')] }),
-        ],
+        content: [new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('12:00')] })],
       })
       await tick()
 
@@ -661,9 +667,8 @@ describe('BedrockNovaSonicModel', () => {
     })
 
     it('clears tool uses on stop', async () => {
-      const [model, client] = newModel([
-        chunk({ toolUse: { toolUseId: 't1', toolName: 'time_tool', content: '{}' } }),
-      ])
+      const client = new FakeClient([[chunk({ toolUse: { toolUseId: 't1', toolName: 'time_tool', content: '{}' } })]])
+      const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
       await model.start()
       await collect(model.receive())
       await model.stop()

@@ -291,7 +291,7 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
     if (typeof merged.modelId !== 'string' || merged.modelId.length === 0) {
       throw new Error('modelId must be a non-empty string')
     }
-    this._config = merged
+    Object.assign(this._config, config)
   }
 
   /**
