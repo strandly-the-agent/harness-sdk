@@ -15,3 +15,10 @@ export type {
   GoogleGeminiLiveAudioConfig,
   GoogleGeminiLiveAudioStreamConfig,
 } from './configs.js'
+
+export { GoogleGeminiLiveModel } from './google.js'
+export type {
+  GoogleGeminiLiveModelConfig,
+  GoogleGeminiLiveModelOptions,
+  GoogleGeminiLiveStartOptions,
+} from './google.js'
