@@ -15,6 +15,7 @@ import { Tracer } from '../../telemetry/tracer.js'
 import { TaskGroup } from '../async/task-group.js'
 import { TaskPool } from '../async/task-pool.js'
 import { stopAll } from '../async/stop-all.js'
+import { MessageAddedEvent } from '../../hooks/events.js'
 import {
   BidiAfterConnectionRestartEvent,
   BidiAgentStopEvent,
@@ -138,6 +139,9 @@ class Latch {
 /** Sentinel resolved by {@link whenAborted} so a pending await can be abandoned. */
 const ABORTED = Symbol('aborted')
 
+/** One aborted-promise per signal; a task awaits thousands of times and must not stack listeners. */
+const abortedPromises = new WeakMap<AbortSignal, Promise<typeof ABORTED>>()
+
 /**
  * Resolve once a signal aborts.
  *
@@ -147,18 +151,36 @@ const ABORTED = Symbol('aborted')
  * @returns Promise resolving to the {@link ABORTED} sentinel.
  */
 function whenAborted(signal: AbortSignal): Promise<typeof ABORTED> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve(ABORTED)
-      return
-    }
-    signal.addEventListener('abort', () => resolve(ABORTED), { once: true })
-  })
+  if (signal.aborted) return Promise.resolve(ABORTED)
+
+  let aborted = abortedPromises.get(signal)
+  if (aborted === undefined) {
+    aborted = new Promise<typeof ABORTED>((resolve) => {
+      signal.addEventListener('abort', () => resolve(ABORTED), { once: true })
+    })
+    abortedPromises.set(signal, aborted)
+  }
+  return aborted
 }
 
-/** Resolve after the given seconds. */
-function sleep(seconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, seconds * 1000))
+/** A pending sleep whose timer can be cleared when the race it entered is already decided. */
+interface Sleep {
+  promise: Promise<void>
+  cancel: () => void
+}
+
+/** Resolve after the given seconds, leaving the timer clearable. */
+function sleep(seconds: number): Sleep {
+  let handle: ReturnType<typeof setTimeout> | undefined
+  const promise = new Promise<void>((resolve) => {
+    handle = setTimeout(resolve, seconds * 1000)
+  })
+  return {
+    promise,
+    cancel: (): void => {
+      if (handle !== undefined) clearTimeout(handle)
+    },
+  }
 }
 
 /**
@@ -179,7 +201,6 @@ export class AgentLoop {
 
   private readonly _tracer = new Tracer()
   private _sessionSpan: Span | undefined
-  private _connectionSpan: Span | undefined
   private _responseSpan: Span | undefined
 
   // Session totals = baseline (finished connections) + current (this connection).
@@ -232,7 +253,7 @@ export class AgentLoop {
       tools: agent.toolNames,
       ...(systemPrompt !== undefined && { systemPrompt }),
     })
-    this._connectionSpan = startConnectionSpan(this._tracer, {
+    const connectionSpan = startConnectionSpan(this._tracer, {
       ...(this._sessionSpan !== undefined && { parentSpan: this._sessionSpan }),
       ...(agent.model.modelId !== undefined && { modelId: agent.model.modelId }),
     })
@@ -241,15 +262,19 @@ export class AgentLoop {
       await agent.model.start(this._startOptions())
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error))
-      if (this._connectionSpan !== undefined) {
-        endConnectionSpan(this._tracer, this._connectionSpan, failure)
-        this._connectionSpan = undefined
+      if (connectionSpan !== undefined) {
+        endConnectionSpan(this._tracer, connectionSpan, failure)
       }
       if (this._sessionSpan !== undefined) {
         endSessionSpan(this._tracer, this._sessionSpan, { error: failure })
         this._sessionSpan = undefined
       }
       throw error
+    }
+
+    // The connection span measures the connect, not the session: end it as soon as start succeeds.
+    if (connectionSpan !== undefined) {
+      endConnectionSpan(this._tracer, connectionSpan)
     }
 
     this._resetTokenTracking()
@@ -280,6 +305,7 @@ export class AgentLoop {
     this._sendGate.clear()
     this._restartTimer.cancel()
     this._turnComplete.set()
+    const invocationState = this._invocationState
     this._invocationState = {}
     // Dispose before cancelling: a producer blocked on back-pressure would never see the abort.
     this._eventQueue.dispose()
@@ -299,14 +325,7 @@ export class AgentLoop {
         })
         this._sessionSpan = undefined
       }
-      if (this._connectionSpan !== undefined) {
-        endConnectionSpan(this._tracer, this._connectionSpan)
-        this._connectionSpan = undefined
-      }
-
-      await this._agent._invokeCallbacks(
-        new BidiAgentStopEvent({ agent: this._agent, invocationState: this._invocationState })
-      )
+      await this._agent._invokeCallbacks(new BidiAgentStopEvent({ agent: this._agent, invocationState }))
     }
   }
 
@@ -411,8 +430,10 @@ export class AgentLoop {
   }
 
   /** Queue the advance warning ahead of a scheduled restart. */
-  private async _onRestartWarning(timeLeftS: number): Promise<void> {
-    await this._eventQueue.send(new BidiConnectionWarningEvent({ type: 'bidiConnectionWarning', timeLeftS }))
+  private _onRestartWarning(timeLeftS: number): Promise<void> {
+    // Push, like the restart event: an ack-wait would stall the timer behind an idle receiver.
+    this._eventQueue.push(new BidiConnectionWarningEvent({ type: 'bidiConnectionWarning', timeLeftS }))
+    return Promise.resolve()
   }
 
   /** Swap the connection at the next turn boundary, or force it after the turn timeout. */
@@ -436,7 +457,12 @@ export class AgentLoop {
   /** Wait at most {@link MODEL_RESTART_TURN_TIMEOUT_S} for the current turn to finish. */
   private async _awaitTurnBoundary(): Promise<void> {
     if (this._turnComplete.isSet()) return
-    await Promise.race([this._turnComplete.wait(), sleep(MODEL_RESTART_TURN_TIMEOUT_S)])
+    const timer = sleep(MODEL_RESTART_TURN_TIMEOUT_S)
+    try {
+      await Promise.race([this._turnComplete.wait(), timer.promise])
+    } finally {
+      timer.cancel()
+    }
     if (!this._turnComplete.isSet()) {
       logger.warn(`timeout_s=<${MODEL_RESTART_TURN_TIMEOUT_S}> | forcing restart without a turn boundary`)
     }
@@ -569,10 +595,13 @@ export class AgentLoop {
   /** Reap a superseded reader, bounded by {@link MODEL_RESTART_STOP_TIMEOUT_S}. */
   private async _waitForModelTask(task: Promise<void> | undefined): Promise<void> {
     if (task === undefined) return
+    const timer = sleep(MODEL_RESTART_STOP_TIMEOUT_S)
     try {
-      await Promise.race([task, sleep(MODEL_RESTART_STOP_TIMEOUT_S)])
+      await Promise.race([task, timer.promise])
     } catch (error) {
       logger.debug(`error=<${String(error)}> | superseded model reader failed`)
+    } finally {
+      timer.cancel()
     }
   }
 
@@ -675,11 +704,14 @@ export class AgentLoop {
     const blocks = new Map<string, StreamedTextBlock>()
     let failure: Error | undefined
     const reader = agent.model.receive()[Symbol.asyncIterator]()
+    let pendingNext: Promise<IteratorResult<BidiOutputEvent, unknown>> | undefined
 
     try {
       while (true) {
-        const next = await Promise.race([reader.next(), whenAborted(signal)])
+        pendingNext = reader.next()
+        const next = await Promise.race([pendingNext, whenAborted(signal)])
         if (next === ABORTED || signal.aborted) return
+        pendingNext = undefined
         if (next.done === true) break
         const event = next.value
         if (generation !== this._generation) return
@@ -827,6 +859,20 @@ export class AgentLoop {
       failure = error instanceof Error ? error : new Error(String(error))
       this._eventQueue.push(new ReaderError(generation, error))
     } finally {
+      // Close the provider generator so its own `finally` runs; an abandoned `next()` keeps the
+      // generator busy, so the close request can only be fired, never awaited.
+      const closing = reader.return?.()
+      if (pendingNext !== undefined) {
+        pendingNext.catch(() => {})
+        void closing?.catch(() => {})
+      } else if (closing !== undefined) {
+        try {
+          await closing
+        } catch (error) {
+          logger.debug(`error=<${String(error)}> | model reader close failed`)
+        }
+      }
+
       for (const block of blocks.values()) {
         await agent._updateMessage(block.toMessage({ complete: false }), { strict: false })
       }
@@ -877,6 +923,7 @@ export class AgentLoop {
 
         const pending = Object.values(agent._interruptState.interrupts)
         if (pending.length > 0) {
+          agent._interruptState.deactivate()
           throw new Error(
             `interrupts=<${pending.map((interrupt) => interrupt.name).join(', ')}> | tool interrupts are not supported in bidi`
           )
@@ -884,14 +931,30 @@ export class AgentLoop {
       })
       await group.join()
 
-      await agent._appendMessages(
-        assistantMessage,
-        new Message({
-          role: 'user',
-          content: [...toolResultBlocks],
-          metadata: { custom: { bidi: { ...toolMetadata } } },
-        })
-      )
+      // Python builds the results from the task list, i.e. in request order; the executor streams
+      // them in completion order, so re-pair them with their tool uses before recording.
+      const orderedResults = this._orderToolResults(toolUses, toolResultBlocks)
+      const toolResultMessage = new Message({
+        role: 'user',
+        content: orderedResults,
+        metadata: { custom: { bidi: { ...toolMetadata } } },
+      })
+      await agent._appendMessages(assistantMessage, toolResultMessage)
+
+      // Python queues `ToolResultMessageEvent` here; `strands.types._events` has no TS counterpart,
+      // so the TS core event for a recorded tool-result message is used instead.
+      if (
+        !(await this._queue(
+          new MessageAddedEvent({
+            agent,
+            message: toolResultMessage,
+            invocationState: this._invocationState,
+          }) as unknown as BidiOutputEvent,
+          signal
+        ))
+      ) {
+        return
+      }
 
       if (agent.cancelSignal.aborted) {
         await this._queue(
@@ -907,9 +970,10 @@ export class AgentLoop {
 
       if (signal.aborted) return
 
-      await this.send({ content: [...toolResultBlocks] })
+      await this.send({ content: orderedResults })
     } catch (error) {
       if (error instanceof InterruptError) {
+        agent._interruptState.deactivate()
         this._eventQueue.push(
           new Error(
             `interrupts=<${error.interrupts.map((interrupt) => interrupt.name).join(', ')}> | tool interrupts are not supported in bidi`
@@ -919,6 +983,24 @@ export class AgentLoop {
       }
       this._eventQueue.push(error instanceof Error ? error : new Error(String(error)))
     }
+  }
+
+  /**
+   * Re-order tool results into the order their tool uses were requested in.
+   *
+   * @param toolUses - Tool calls requested in a single model turn.
+   * @param results - Tool results in executor completion order.
+   * @returns The results paired with `toolUses`, with any unmatched result appended.
+   */
+  private _orderToolResults(toolUses: ToolUseBlock[], results: ToolResultBlock[]): ToolResultBlock[] {
+    const remaining = [...results]
+    const ordered: ToolResultBlock[] = []
+    for (const toolUse of toolUses) {
+      const index = remaining.findIndex((result) => result.toolUseId === toolUse.toolUseId)
+      if (index === -1) continue
+      ordered.push(...remaining.splice(index, 1))
+    }
+    return [...ordered, ...remaining]
   }
 
   /**

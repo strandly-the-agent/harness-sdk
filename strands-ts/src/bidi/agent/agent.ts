@@ -85,6 +85,9 @@ const BIDI_SNAPSHOT_PRESETS: Record<SnapshotPreset, readonly SnapshotField[]> = 
 /** Sentinel resolved by {@link whenAborted} so a pending read can be abandoned. */
 const ABORTED = Symbol('aborted')
 
+/** One aborted-promise per signal; a loop awaits repeatedly and must not stack `abort` listeners. */
+const abortedPromises = new WeakMap<AbortSignal, Promise<typeof ABORTED>>()
+
 /**
  * Resolve once a signal aborts.
  *
@@ -92,13 +95,16 @@ const ABORTED = Symbol('aborted')
  * @returns Promise resolving to the {@link ABORTED} sentinel
  */
 function whenAborted(signal: AbortSignal): Promise<typeof ABORTED> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve(ABORTED)
-      return
-    }
-    signal.addEventListener('abort', () => resolve(ABORTED), { once: true })
-  })
+  if (signal.aborted) return Promise.resolve(ABORTED)
+
+  let aborted = abortedPromises.get(signal)
+  if (aborted === undefined) {
+    aborted = new Promise<typeof ABORTED>((resolve) => {
+      signal.addEventListener('abort', () => resolve(ABORTED), { once: true })
+    })
+    abortedPromises.set(signal, aborted)
+  }
+  return aborted
 }
 
 /**
@@ -722,10 +728,16 @@ export class BidiAgent implements LocalAgent {
         await stream.start?.(this)
       }
 
-      inputsTask = this._runInputs(inputs, inputsController.signal)
-      outputsTask = this._runOutputs(outputs).finally(() => inputsController.abort())
+      // A task group, like Python's: a failure on either side cancels the sibling before teardown.
+      const taskGroup = new TaskGroup()
+      inputsTask = taskGroup.createTask((taskSignal) =>
+        this._runInputs(inputs, AbortSignal.any([inputsController.signal, taskSignal]))
+      )
+      outputsTask = taskGroup
+        .createTask((taskSignal) => this._runOutputs(outputs, taskSignal))
+        .finally(() => inputsController.abort())
 
-      await Promise.all([inputsTask, outputsTask])
+      await taskGroup.join()
     } finally {
       inputsController.abort()
       // A read already in flight cannot be cancelled in JavaScript, so it is abandoned.
@@ -754,13 +766,30 @@ export class BidiAgent implements LocalAgent {
   }
 
   /** Fan each output event out to every output stream. */
-  private async _runOutputs(outputs: BidiOutputStream[]): Promise<void> {
-    for await (const event of this.receive()) {
-      const taskGroup = new TaskGroup()
-      for (const output of outputs) {
-        taskGroup.createTask(() => output.write(event))
+  private async _runOutputs(outputs: BidiOutputStream[], signal: AbortSignal): Promise<void> {
+    // Driven as a raw iterator so a sibling failure can abandon a `receive()` that is parked on
+    // the event queue instead of leaving it to block teardown.
+    const reader = this.receive()[Symbol.asyncIterator]()
+    let pendingNext: Promise<IteratorResult<BidiOutputEvent, unknown>> | undefined
+
+    try {
+      while (!signal.aborted) {
+        pendingNext = reader.next()
+        const next = await Promise.race([pendingNext, whenAborted(signal)])
+        if (next === ABORTED || signal.aborted) return
+        pendingNext = undefined
+        if (next.done === true) return
+
+        const taskGroup = new TaskGroup()
+        for (const output of outputs) {
+          taskGroup.createTask(() => output.write(next.value))
+        }
+        await taskGroup.join()
       }
-      await taskGroup.join()
+    } finally {
+      // An abandoned `next()` keeps the generator busy, so the close request is fired, not awaited.
+      pendingNext?.catch(() => {})
+      void reader.return?.(undefined).catch(() => {})
     }
   }
 
