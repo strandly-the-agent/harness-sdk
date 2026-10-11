@@ -791,9 +791,11 @@ export class BidiAgent implements LocalAgent {
   }
 }
 
-/** Whether a value is a plain record (and not a content-block instance). */
+/** Whether a value is a plain object, the analog of Python's `case dict()`. */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  if (typeof value !== 'object' || value === null) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
 }
 
 /**
