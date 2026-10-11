@@ -2,7 +2,7 @@
  * Tests for device audio input and output streams.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   BidiAudioDeltaEvent,
@@ -26,19 +26,25 @@ const rtAudio = vi.hoisted(() => ({
   stop: vi.fn(),
   closeStream: vi.fn(),
   write: vi.fn(),
+  clearOutputQueue: vi.fn(),
   isStreamOpen: vi.fn(() => true),
   getDevices: vi.fn(() => []),
   getDefaultInputDevice: vi.fn(() => 0),
   getDefaultOutputDevice: vi.fn(() => 0),
 }))
 
-vi.mock('audify', () => ({
-  RtAudio: vi.fn(function RtAudioMock() {
-    rtAudio.construct()
-    return rtAudio
-  }),
-  RtAudioFormat: { RTAUDIO_SINT16: 0x2 },
-}))
+/** The `audify` module shape, reusable when a test reloads the module graph. */
+const audifyFactory = vi.hoisted(
+  () => () => ({
+    RtAudio: vi.fn(function RtAudioMock() {
+      rtAudio.construct()
+      return rtAudio
+    }),
+    RtAudioFormat: { RTAUDIO_SINT16: 0x2 },
+  })
+)
+
+vi.mock('audify', audifyFactory)
 
 /** Arguments captured from the single `openStream` call. */
 function openStreamCall(): {
@@ -208,6 +214,15 @@ describe('AudioIO', () => {
   })
 
   describe('output', () => {
+    // The pump writes on an interval, so playback assertions need control over the clock.
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
     /** Started output stream that plays two-sample frames. */
     async function createOutput(console?: ConsoleIO): Promise<ReturnType<AudioIO['output']>> {
       const output = new AudioIO({
@@ -226,6 +241,45 @@ describe('AudioIO', () => {
       openStreamCall().frameOutputCallback?.()
 
       expect(lastPlayedFrame()).toEqual(new TextEncoder().encode('test-aud'))
+
+      await output.stop?.()
+    })
+
+    it('keeps playing when the device never reports a played frame', async () => {
+      const output = await createOutput()
+      const primed = rtAudio.write.mock.calls.length
+
+      await output.write(audioDeltaEvent)
+      // audify fires frameOutputCallback only after popping a non-empty queue, so none arrives here.
+      await vi.advanceTimersByTimeAsync(10)
+
+      const played = rtAudio.write.mock.calls.slice(primed).map((call) => new Uint8Array(call[0] as Uint8Array))
+      expect(played.length).toBeGreaterThan(0)
+      expect(played).toContainEqual(new TextEncoder().encode('test-aud'))
+
+      await output.stop?.()
+    })
+
+    it('stops the playback pump on stop', async () => {
+      const output = await createOutput()
+      await output.stop?.()
+      const written = rtAudio.write.mock.calls.length
+
+      await vi.advanceTimersByTimeAsync(10)
+
+      expect(rtAudio.write).toHaveBeenCalledTimes(written)
+    })
+
+    it('plays frames sized by the frame size openStream reports', async () => {
+      rtAudio.openStream.mockReturnValueOnce(4)
+      const output = await createOutput()
+
+      await output.write(audioDeltaEvent)
+      openStreamCall().frameOutputCallback?.()
+
+      const expected = new Uint8Array(16)
+      expected.set(new TextEncoder().encode('test-audio'))
+      expect(lastPlayedFrame()).toEqual(expected)
 
       await output.stop?.()
     })
@@ -259,6 +313,7 @@ describe('AudioIO', () => {
 
       openStreamCall().frameOutputCallback?.()
       expect(lastPlayedFrame()).toEqual(new Uint8Array(8))
+      expect(rtAudio.clearOutputQueue).toHaveBeenCalledOnce()
 
       await output.stop?.()
     })
@@ -354,13 +409,31 @@ describe('AudioIO', () => {
       expect(rtAudio.construct).not.toHaveBeenCalled()
     })
 
-    it('reports the install instruction when audify cannot be loaded', async () => {
+    it('reports the install instruction when the audify module cannot be imported', async () => {
+      vi.doMock('audify', () => {
+        throw new Error("Cannot find module 'audify'")
+      })
+      vi.resetModules()
+
+      try {
+        const { AudioIO: ReloadedAudioIO } = await import('../audio.js')
+
+        await expect(new ReloadedAudioIO().input().start?.(createAgent(audioConfig))).rejects.toThrow(
+          'Audio I/O requires this optional dependency. Install it with: npm install audify'
+        )
+      } finally {
+        vi.doMock('audify', audifyFactory)
+        vi.resetModules()
+      }
+    })
+
+    it('surfaces a device failure unchanged', async () => {
       rtAudio.construct.mockImplementationOnce(() => {
         throw new Error('cannot open shared object file: libasound.so.2')
       })
 
       await expect(new AudioIO().input().start?.(createAgent(audioConfig))).rejects.toThrow(
-        'Audio I/O requires this optional dependency. Install it with: npm install audify'
+        'cannot open shared object file: libasound.so.2'
       )
     })
   })

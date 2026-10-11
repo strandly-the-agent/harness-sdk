@@ -155,7 +155,7 @@ describe('WebSocketIO', () => {
 
       await expect(input.read()).resolves.toBe('hello there')
       expect(warn).toHaveBeenCalledTimes(2)
-      expect(warn).toHaveBeenCalledWith('frame=<{ not json> | ignoring malformed websocket frame')
+      expect(warn).toHaveBeenCalledWith('type=<string>, length=<10> | ignoring malformed websocket frame')
       warn.mockRestore()
     })
 

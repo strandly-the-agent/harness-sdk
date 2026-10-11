@@ -315,14 +315,12 @@ export class AudioOutputStream implements BidiOutputStream {
    * @param sampleRate - Playback sample rate used to derive the frame period
    */
   private _startPump(sampleRate: number): void {
-    this._pump = setInterval(
-      () => {
-        if (!this._framePlayed) this._queuedFrames = Math.max(0, this._queuedFrames - 1)
-        this._framePlayed = false
-        this._fillQueue()
-      },
-      (this._framesPerBuffer / sampleRate) * 1000
-    )
+    const periodMs = Math.max(1, Math.floor((this._framesPerBuffer / sampleRate) * 1000))
+    this._pump = setInterval(() => {
+      if (!this._framePlayed) this._queuedFrames = Math.max(0, this._queuedFrames - 1)
+      this._framePlayed = false
+      this._fillQueue()
+    }, periodMs)
     this._fillQueue()
   }
 
