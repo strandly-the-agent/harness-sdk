@@ -672,8 +672,7 @@ describe('GoogleGeminiLiveModel', () => {
   })
 
   describe('turn bracketing', () => {
-    const serverContent = (content: Record<string, unknown>): LiveServerMessage =>
-      ({ serverContent: content }) as never
+    const serverContent = (content: Record<string, unknown>): LiveServerMessage => ({ serverContent: content }) as never
     const audio = (bytes: number[], content?: Record<string, unknown>): LiveServerMessage =>
       ({
         data: encodeBase64(new Uint8Array(bytes)),
