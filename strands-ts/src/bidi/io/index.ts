@@ -3,4 +3,5 @@
  */
 
 export { ConsoleIO } from './console.js'
-export type { ConsoleIOConfig } from './configs.js'
+export { WebSocketIO } from './websocket.js'
+export type { BidiWebSocket, BidiWebSocketEvent, ConsoleIOConfig, WebSocketIOConfig } from './configs.js'
