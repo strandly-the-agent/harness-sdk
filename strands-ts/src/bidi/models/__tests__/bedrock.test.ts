@@ -13,38 +13,116 @@ import { ConnectionTimeoutError } from '../model.js'
 
 import type { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime'
 import type { ToolSpec } from '../../../tools/types.js'
-import type { BidiOutputEvent } from '../../types/events.js'
+import type { BidiMessage } from '../../types/content.js'
+import type {
+  BidiAudioDeltaEvent,
+  BidiAudioStopEvent,
+  BidiOutputEvent,
+  BidiToolUseBlocksEvent,
+  BidiTranscriptDeltaEvent,
+} from '../../types/events.js'
 
-type NovaEvent = Record<string, any>
+type NovaEvent = Record<string, unknown>
+
+/** One request chunk as the fake client sees it. */
+interface NovaChunk {
+  chunk: { bytes: Uint8Array }
+}
+
+/** The subset of the bidirectional stream command the fake client reads. */
+interface NovaCommand {
+  input: { modelId: string; body: AsyncIterable<NovaChunk> }
+}
 
 /** Wrap a Nova wire event in the response-stream chunk shape. */
-function chunk(event: NovaEvent): { chunk: { bytes: Uint8Array } } {
+function chunk(event: Record<string, unknown>): NovaChunk {
   return { chunk: { bytes: new TextEncoder().encode(JSON.stringify({ event })) } }
+}
+
+/** Read a dot-separated path out of a recorded Nova wire event. */
+function field(event: unknown, path: string): unknown {
+  return path
+    .split('.')
+    .reduce<unknown>((value, key) => (value == null ? undefined : (value as Record<string, unknown>)[key]), event)
+}
+
+/** Consume a request body so producers waiting on an ack are released. */
+async function drain(body: AsyncIterable<NovaChunk>): Promise<void> {
+  for await (const part of body) {
+    void part
+  }
+}
+
+/** Response stream the test feeds event by event, staying open until closed. */
+class PushStream implements AsyncIterable<unknown> {
+  private readonly _pending: unknown[] = []
+  private _notify: (() => void) | undefined
+  private _closed = false
+
+  push(event: unknown): void {
+    this._pending.push(event)
+    this._notify?.()
+    this._notify = undefined
+  }
+
+  close(): void {
+    this._closed = true
+    this._notify?.()
+    this._notify = undefined
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<unknown> {
+    while (true) {
+      const next = this._pending.shift()
+      if (next !== undefined) {
+        yield next
+        continue
+      }
+      if (this._closed) {
+        return
+      }
+      await new Promise<void>((resolve) => {
+        this._notify = resolve
+      })
+    }
+  }
 }
 
 /** Stand-in for `BedrockRuntimeClient` that scripts the response stream and records the request. */
 class FakeClient {
   /** Nova wire events pushed onto the request stream, in order. */
   readonly sent: NovaEvent[] = []
-  readonly commands: { input: { modelId: string; body: AsyncIterable<{ chunk: { bytes: Uint8Array } }> } }[] = []
-  send = vi.fn(async (command: any) => {
+  readonly commands: NovaCommand[] = []
+  readonly signals: (AbortSignal | undefined)[] = []
+  send = vi.fn(async (command: NovaCommand, options?: { abortSignal?: AbortSignal }) => {
     this.commands.push(command)
+    this.signals.push(options?.abortSignal)
     void this._drain(command.input.body)
     return { body: this._stream(this.commands.length - 1) }
   })
 
-  /** @param _outputs - Response-stream events for each successive connection. */
-  constructor(private readonly _outputs: unknown[][] = []) {}
+  /** @param _outputs - Response-stream events, or an open stream, for each successive connection. */
+  constructor(private readonly _outputs: (unknown[] | PushStream)[] = []) {}
 
-  private async *_stream(call: number): AsyncGenerator<unknown> {
-    for (const output of this._outputs[call] ?? []) {
+  /** Nova wire events pushed onto the request stream, filtered to one event key. */
+  texts(): string[] {
+    return this.sent.filter((event) => 'textInput' in event).map((event) => String(field(event, 'textInput.content')))
+  }
+
+  private _stream(call: number): AsyncIterable<unknown> {
+    const output = this._outputs[call]
+    return output instanceof PushStream ? output : this._iterate(output ?? [])
+  }
+
+  private async *_iterate(outputs: unknown[]): AsyncGenerator<unknown> {
+    for (const output of outputs) {
       yield output
     }
   }
 
-  private async _drain(body: AsyncIterable<{ chunk: { bytes: Uint8Array } }>): Promise<void> {
+  private async _drain(body: AsyncIterable<NovaChunk>): Promise<void> {
     for await (const part of body) {
-      this.sent.push(JSON.parse(new TextDecoder().decode(part.chunk.bytes)).event)
+      this.sent.push((JSON.parse(new TextDecoder().decode(part.chunk.bytes)) as { event: NovaEvent }).event)
     }
   }
 }
@@ -60,12 +138,35 @@ async function tick(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+/** Let the receive loop and any deferred sends run to a standstill. */
+async function settle(): Promise<void> {
+  for (let index = 0; index < 5; index += 1) {
+    await tick()
+  }
+}
+
 async function collect(events: AsyncIterable<BidiOutputEvent>): Promise<BidiOutputEvent[]> {
   const collected: BidiOutputEvent[] = []
   for await (const event of events) {
     collected.push(event)
   }
   return collected
+}
+
+/** `count` user messages, each over the 50KB per-message cap and tagged with its index. */
+function historyMessages(count: number): Message[] {
+  return Array.from(
+    { length: count },
+    (_unused, index) => new Message({ role: 'user', content: [new TextBlock(`m${index + 1}${'y'.repeat(60 * 1024)}`)] })
+  )
+}
+
+/** The `mN` tag of every history message the model replayed, oldest first. */
+function replayedMarkers(client: FakeClient): string[] {
+  return client
+    .texts()
+    .filter((text) => text.includes('y'))
+    .map((text) => text.slice(0, 2))
 }
 
 const toolSpec: ToolSpec = {
@@ -108,6 +209,27 @@ describe('BedrockNovaSonicModel', () => {
       expect(model.getConnectionConfig()).toEqual({ restartAfterS: 420, autoRestart: false })
     })
 
+    it('replaces params on update', async () => {
+      const [model, client] = newModel([], { params: { inferenceConfiguration: { temperature: 0.8 } } })
+      model.updateConfig({ params: { inferenceConfiguration: { topP: 0.9 } } })
+      await model.start()
+      await tick()
+      expect(client.sent[0]).toEqual({ sessionStart: { inferenceConfiguration: { topP: 0.9 } } })
+    })
+
+    it('accepts a well-formed region', () => {
+      for (const region of ['us-east-1', 'ap-southeast-1', 'us-gov-east-1']) {
+        const [model] = newModel([], { region })
+        expect(model.region).toBe(region)
+      }
+    })
+
+    it('rejects a malformed region', () => {
+      for (const region of ['', 'x@attacker.com:443/#', 'us-east-1\n']) {
+        expect(() => newModel([], { region })).toThrow('invalid AWS region')
+      }
+    })
+
     it('passes params to sessionStart', async () => {
       const [model, client] = newModel([], { params: { inferenceConfiguration: { maxTokens: 512 } } })
       await model.start()
@@ -131,6 +253,12 @@ describe('BedrockNovaSonicModel', () => {
       expect(model.getAudioConfig().output.sampleRate).toBe(24000)
     })
 
+    it('requires a sample rate on a configured stream', () => {
+      for (const direction of ['input', 'output']) {
+        expect(() => newModel([], { audio: { [direction]: {} } })).toThrow(`audio.${direction}.sampleRate is required`)
+      }
+    })
+
     it.each(['input', 'output'])('rejects an unsupported %s sample rate', (direction) => {
       expect(() => newModel([], { audio: { [direction]: { sampleRate: 44100 } } })).toThrow(
         'Unsupported sample rate: 44100. Expected 8000, 16000, or 24000.'
@@ -141,7 +269,7 @@ describe('BedrockNovaSonicModel', () => {
       const [model, client] = newModel([], { audio: { output: { sampleRate: 24000 } }, voice: 'tiffany' })
       await model.start()
       await tick()
-      expect(client.sent[1]!.promptStart.audioOutputConfiguration).toEqual({
+      expect(field(client.sent[1], 'promptStart.audioOutputConfiguration')).toEqual({
         mediaType: 'audio/lpcm',
         sampleRateHertz: 24000,
         sampleSizeBits: 16,
@@ -159,7 +287,7 @@ describe('BedrockNovaSonicModel', () => {
       await model.start({ systemPrompt: 'be brief' })
       await tick()
 
-      expect(client.commands[0]!.input.modelId).toBe('amazon.nova-2-5-sonic')
+      expect(field(client.commands[0], 'input.modelId')).toBe('amazon.nova-2-5-sonic')
       expect(client.sent.map((event) => Object.keys(event)[0])).toEqual([
         'sessionStart',
         'promptStart',
@@ -167,13 +295,13 @@ describe('BedrockNovaSonicModel', () => {
         'textInput',
         'contentEnd',
       ])
-      expect(client.sent[2]!.contentStart).toMatchObject({
+      expect(field(client.sent[2], 'contentStart')).toMatchObject({
         type: 'TEXT',
         role: 'SYSTEM',
         interactive: false,
         textInputConfiguration: { mediaType: 'text/plain' },
       })
-      expect(client.sent[3]!.textInput.content).toBe('be brief')
+      expect(field(client.sent[3], 'textInput.content')).toBe('be brief')
     })
 
     it('adds tool configuration when tools are provided', async () => {
@@ -181,9 +309,9 @@ describe('BedrockNovaSonicModel', () => {
       await model.start({ tools: [toolSpec] })
       await tick()
 
-      const promptStart = client.sent[1]!.promptStart
-      expect(promptStart.toolUseOutputConfiguration).toEqual({ mediaType: 'application/json' })
-      expect(promptStart.toolConfiguration.tools).toEqual([
+      const promptStart = field(client.sent[1], 'promptStart')
+      expect(field(promptStart, 'toolUseOutputConfiguration')).toEqual({ mediaType: 'application/json' })
+      expect(field(promptStart, 'toolConfiguration.tools')).toEqual([
         {
           toolSpec: {
             name: 'time_tool',
@@ -227,6 +355,40 @@ describe('BedrockNovaSonicModel', () => {
       expect(client.sent.at(-1)).toEqual({ connectionEnd: {} })
     })
 
+    it('aborts the request on stop', async () => {
+      const [model, client] = newModel()
+      await model.start()
+      const signal = client.signals[0]
+
+      expect(signal?.aborted).toBe(false)
+      await model.stop()
+      expect(signal?.aborted).toBe(true)
+    })
+
+    it('destroys a client it created itself', async () => {
+      const client = new FakeClient([[]])
+      const destroy = vi.fn()
+      const model = new BedrockNovaSonicModel({ region: 'us-east-1' })
+      model['_createClient'] = () => Object.assign(client, { destroy }) as unknown as BedrockRuntimeClient
+      await model.start()
+      await model.stop()
+
+      expect(destroy).toHaveBeenCalledTimes(1)
+      // A later start() builds a fresh client rather than reusing the destroyed one.
+      await model.start()
+      expect(destroy).toHaveBeenCalledTimes(1)
+    })
+
+    it('stops cleanly after a failed start', async () => {
+      const [model, client] = newModel()
+      client.send.mockRejectedValueOnce(new Error('connection failed'))
+
+      await expect(model.start()).rejects.toThrow('connection failed')
+      await expect(model.stop()).resolves.toBeUndefined()
+      // No cleanup events are sent into a stream that was never established.
+      expect(client.sent).toEqual([])
+    })
+
     it('is idempotent on stop', async () => {
       const [model] = newModel()
       await model.start()
@@ -242,7 +404,9 @@ describe('BedrockNovaSonicModel', () => {
       await model.send({ content: [new TextBlock('one'), new TextBlock('two')] })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
+      const texts = client.sent
+        .filter((event) => 'textInput' in event)
+        .map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'one\ntwo'])
     })
 
@@ -260,9 +424,9 @@ describe('BedrockNovaSonicModel', () => {
       await model.send(new AudioDelta({ format: 'pcm', source: { bytes: new Uint8Array([3]) } }))
       await tick()
 
-      const audioStarts = client.sent.filter((event) => event.contentStart?.type === 'AUDIO')
+      const audioStarts = client.sent.filter((event) => field(event, 'contentStart.type') === 'AUDIO')
       expect(audioStarts).toHaveLength(1)
-      expect(audioStarts[0]!.contentStart.audioInputConfiguration).toEqual({
+      expect(field(audioStarts[0], 'contentStart.audioInputConfiguration')).toEqual({
         mediaType: 'audio/lpcm',
         sampleRateHertz: 16000,
         sampleSizeBits: 16,
@@ -272,8 +436,8 @@ describe('BedrockNovaSonicModel', () => {
       })
 
       const audioInputs = client.sent.filter((event) => 'audioInput' in event)
-      expect(audioInputs.map((event) => event.audioInput.content)).toEqual(['AAEC', 'Aw=='])
-      expect(audioInputs[0]!.audioInput.contentName).toBe(audioStarts[0]!.contentStart.contentName)
+      expect(audioInputs.map((event) => field(event, 'audioInput.content'))).toEqual(['AAEC', 'Aw=='])
+      expect(field(audioInputs[0], 'audioInput.contentName')).toBe(field(audioStarts[0], 'contentStart.contentName'))
     })
 
     it('unwraps a single tool result content block', async () => {
@@ -287,9 +451,12 @@ describe('BedrockNovaSonicModel', () => {
       await tick()
 
       const toolResult = client.sent.find((event) => 'toolResult' in event)!.toolResult
-      expect(JSON.parse(toolResult.content)).toEqual({ json: { time: 12 } })
+      expect(JSON.parse(String(field(toolResult, 'content')))).toEqual({ json: { time: 12 } })
 
-      const toolStart = client.sent.find((event) => event.contentStart?.type === 'TOOL')!.contentStart
+      const toolStart = field(
+        client.sent.find((event) => field(event, 'contentStart.type') === 'TOOL'),
+        'contentStart'
+      )
       expect(toolStart).toMatchObject({
         interactive: false,
         type: 'TOOL',
@@ -317,7 +484,7 @@ describe('BedrockNovaSonicModel', () => {
       await tick()
 
       const toolResult = client.sent.find((event) => 'toolResult' in event)!.toolResult
-      expect(JSON.parse(toolResult.content)).toEqual({ content: [{ text: 'a' }, { text: 'b' }] })
+      expect(JSON.parse(String(field(toolResult, 'content')))).toEqual({ content: [{ text: 'a' }, { text: 'b' }] })
     })
 
     it('rejects unsupported tool result content', async () => {
@@ -341,9 +508,11 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const history = client.sent.filter((event) => event.contentStart?.interactive === false)
-      expect(history.map((event) => event.contentStart.role)).toEqual(['SYSTEM', 'USER', 'ASSISTANT'])
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
+      const history = client.sent.filter((event) => field(event, 'contentStart.interactive') === false)
+      expect(history.map((event) => field(event, 'contentStart.role'))).toEqual(['SYSTEM', 'USER', 'ASSISTANT'])
+      const texts = client.sent
+        .filter((event) => 'textInput' in event)
+        .map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'hello', 'hi'])
     })
 
@@ -357,7 +526,9 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
+      const texts = client.sent
+        .filter((event) => 'textInput' in event)
+        .map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'second'])
     })
 
@@ -371,7 +542,9 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
+      const texts = client.sent
+        .filter((event) => 'textInput' in event)
+        .map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'keep'])
     })
   })
@@ -407,7 +580,7 @@ describe('BedrockNovaSonicModel', () => {
         'bidiTranscriptDelta',
       ])
       // Word boundaries are preserved between chunks.
-      expect(events.slice(3).map((event: any) => event.delta)).toEqual(['hello', ' there'])
+      expect(events.slice(3).map((event) => (event as BidiTranscriptDeltaEvent).delta)).toEqual(['hello', ' there'])
       expect(events[2]).toMatchObject({ role: 'user', contentId: 'c1' })
     })
 
@@ -441,7 +614,7 @@ describe('BedrockNovaSonicModel', () => {
         'bidiTranscriptStart',
         'bidiTranscriptDelta',
       ])
-      expect((events[3] as any).delta).toBe('kept')
+      expect((events[3] as BidiTranscriptDeltaEvent).delta).toBe('kept')
     })
 
     it('decodes audio output into bytes with the output format', async () => {
@@ -464,10 +637,10 @@ describe('BedrockNovaSonicModel', () => {
         'bidiAudioStop',
         'bidiResponseStop',
       ])
-      const delta = events[3] as any
+      const delta = events[3] as BidiAudioDeltaEvent
       expect(delta.audio).toEqual(new Uint8Array([0, 1, 2]))
       expect(delta).toMatchObject({ contentId: 'a1', format: 'pcm', sampleRate: 24000, channels: 1 })
-      expect((events[4] as any).contentId).toBe('a1')
+      expect((events[4] as BidiAudioStopEvent).contentId).toBe('a1')
     })
 
     it('emits a barge-in and closes the open response', async () => {
@@ -495,7 +668,7 @@ describe('BedrockNovaSonicModel', () => {
       await model.start()
       const events = await collect(model.receive())
 
-      const toolEvent = events[1] as any
+      const toolEvent = events[1] as BidiToolUseBlocksEvent
       expect(toolEvent.type).toBe('bidiToolUseBlocks')
       expect(toolEvent.toolUses).toHaveLength(1)
       expect(toolEvent.toolUses[0]).toMatchObject({ toolUseId: 't1', name: 'time_tool', input: { zone: 'UTC' } })
@@ -608,15 +781,286 @@ describe('BedrockNovaSonicModel', () => {
       const client = new FakeClient()
       const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
       const error = Object.assign(new Error('slow down'), { name: 'ThrottlingException' })
-      client.send.mockImplementation((async () => ({
-        body: {
-          [Symbol.asyncIterator]: () => ({
-            next: () => Promise.reject(error),
-          }),
-        },
-      })) as unknown as typeof client.send)
+      client.send.mockImplementation((async (command: NovaCommand) => {
+        void drain(command.input.body)
+        return {
+          body: {
+            [Symbol.asyncIterator]: () => ({
+              next: () => Promise.reject(error),
+            }),
+          },
+        }
+      }) as unknown as typeof client.send)
       await model.start()
       await expect(collect(model.receive())).rejects.toThrow(ModelThrottledError)
+    })
+  })
+
+  describe('history limits', () => {
+    it('truncates a message over the 50KB per-message cap', async () => {
+      const [model, client] = newModel()
+      await model.start({ messages: [new Message({ role: 'user', content: [new TextBlock('x'.repeat(60 * 1024))] })] })
+      await tick()
+
+      const replayed = client.texts().find((text) => text.startsWith('x'))!
+      expect(replayed).toHaveLength(50 * 1024)
+    })
+
+    it('replays every message that fits the 200KB total cap', async () => {
+      const [model, client] = newModel()
+      await model.start({ messages: historyMessages(4) })
+      await tick()
+
+      // Four messages truncated to 50KB each land exactly on the 200KB cap.
+      expect(replayedMarkers(client)).toEqual(['m1', 'm2', 'm3', 'm4'])
+    })
+
+    it('drops the oldest messages over the 200KB total cap', async () => {
+      const [model, client] = newModel()
+      await model.start({ messages: historyMessages(5) })
+      await tick()
+
+      // The fifth message would push the total past 200KB, so the oldest is dropped.
+      expect(replayedMarkers(client)).toEqual(['m2', 'm3', 'm4', 'm5'])
+    })
+  })
+
+  describe('transcript formatting', () => {
+    it('inserts a space between chunks that would otherwise run together', async () => {
+      const [model] = newModel([
+        chunk({ contentStart: { role: 'USER', type: 'TEXT', contentId: 'c1' } }),
+        chunk({ textOutput: { role: 'USER', content: 'hello' } }),
+        chunk({ textOutput: { role: 'USER', content: 'there' } }),
+        chunk({ textOutput: { role: 'USER', content: ' friend' } }),
+        chunk({ textOutput: { role: 'USER', content: 'ok ' } }),
+        chunk({ textOutput: { role: 'USER', content: 'done' } }),
+      ])
+      await model.start()
+      const deltas = (await collect(model.receive()))
+        .filter((event) => event.type === 'bidiTranscriptDelta')
+        .map((event) => (event as BidiTranscriptDeltaEvent).delta)
+
+      expect(deltas).toEqual(['hello', ' there', ' friend', ' ok ', 'done'])
+    })
+  })
+
+  describe('deferred tool results', () => {
+    const USER_TEXT_START = { contentStart: { role: 'USER', type: 'TEXT', contentId: 'user-1' } }
+    const ASSISTANT_AUDIO_START = { contentStart: { role: 'ASSISTANT', type: 'AUDIO', contentId: 'audio-1' } }
+    const ASSISTANT_AUDIO_END = { contentEnd: { type: 'AUDIO', contentId: 'audio-1', stopReason: 'END_TURN' } }
+    const BARGE_IN = { contentEnd: { type: 'TEXT', stopReason: 'INTERRUPTED' } }
+
+    function toolUseEvent(toolUseId: string): Record<string, unknown> {
+      return { toolUse: { toolUseId, toolName: 'time_tool', content: '{"zone": "UTC"}' } }
+    }
+
+    function toolResult(toolUseId: string): BidiMessage {
+      return { content: [new ToolResultBlock({ toolUseId, status: 'success', content: [new TextBlock('12:00')] })] }
+    }
+
+    /**
+     * Record tool uses on one connection, then restart onto an open stream the test drives.
+     *
+     * @returns The model, the fake client, and the previous and current connections' streams
+     */
+    async function startWithToolUseBeforeRestart(
+      ...toolUseIds: string[]
+    ): Promise<{ model: BedrockNovaSonicModel; client: FakeClient; previous: PushStream; current: PushStream }> {
+      const previous = new PushStream()
+      const current = new PushStream()
+      const client = new FakeClient([previous, current])
+      const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
+
+      await model.start()
+      const draining = collect(model.receive())
+      for (const toolUseId of toolUseIds) {
+        previous.push(chunk(toolUseEvent(toolUseId)))
+      }
+      await settle()
+      previous.close()
+      await draining
+
+      await model.restart()
+      client.sent.length = 0
+      return { model, client, previous, current }
+    }
+
+    it('tracks idle on the current connection', async () => {
+      const stream = new PushStream()
+      const client = new FakeClient([stream])
+      const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
+      await model.start()
+
+      const receiving = collect(model.receive())
+      stream.push(chunk(USER_TEXT_START))
+      await settle()
+      // The user holds the turn, so the connection is no longer idle.
+      stream.close()
+      await receiving
+
+      await model.send(toolResult('t1'))
+      await tick()
+      // No tool use was recorded, so the result goes out natively without waiting for idle.
+      expect(client.sent.some((event) => 'toolResult' in event)).toBe(true)
+      await model.stop()
+    })
+
+    it.each([false, true])('waits for the response to finish (bargeIn=%s)', async (bargeIn) => {
+      const { model, client, current } = await startWithToolUseBeforeRestart('t1')
+      const receiving = collect(model.receive())
+      current.push(chunk(USER_TEXT_START))
+      if (bargeIn) {
+        current.push(chunk(ASSISTANT_AUDIO_START))
+        current.push(chunk(BARGE_IN))
+      }
+      await settle()
+
+      const sending = model.send(toolResult('t1'))
+      await settle()
+      expect(client.texts()).toEqual([])
+
+      if (bargeIn) {
+        // The user holds the turn after a barge-in until Nova answers.
+        current.push(chunk(USER_TEXT_START))
+        await settle()
+        expect(client.texts()).toEqual([])
+      }
+
+      current.push(chunk(ASSISTANT_AUDIO_START))
+      current.push(chunk(ASSISTANT_AUDIO_END))
+      await sending
+      expect(client.texts()).toHaveLength(1)
+
+      current.close()
+      await receiving
+      await model.stop()
+    })
+
+    it('sends one deferred result per idle turn', async () => {
+      const { model, client, current } = await startWithToolUseBeforeRestart('t1', 't2')
+      const receiving = collect(model.receive())
+      current.push(chunk(USER_TEXT_START))
+      await settle()
+
+      const sending = Promise.all([model.send(toolResult('t1')), model.send(toolResult('t2'))])
+      await settle()
+
+      for (const expected of [1, 2]) {
+        current.push(chunk(ASSISTANT_AUDIO_START))
+        current.push(chunk(ASSISTANT_AUDIO_END))
+        await settle()
+        expect(client.texts()).toHaveLength(expected)
+      }
+
+      await sending
+      current.close()
+      await receiving
+      await model.stop()
+    })
+
+    it('ignores an idle turn from the previous connection reader', async () => {
+      const { model, client, previous, current } = await startWithToolUseBeforeRestart('t1')
+      const draining = collect(model.receive())
+      current.push(chunk(USER_TEXT_START))
+      await settle()
+
+      const sending = model.send(toolResult('t1'))
+      await settle()
+
+      // A draining reader from the previous connection finishes its response.
+      previous.push(chunk(ASSISTANT_AUDIO_START))
+      previous.push(chunk(ASSISTANT_AUDIO_END))
+      await settle()
+      expect(client.texts()).toEqual([])
+
+      current.push(chunk(ASSISTANT_AUDIO_START))
+      current.push(chunk(ASSISTANT_AUDIO_END))
+      await sending
+      expect(client.texts()).toHaveLength(1)
+
+      current.close()
+      await draining
+      await model.stop()
+    })
+
+    it('waits on the next connection across a restart', async () => {
+      const previous = new PushStream()
+      const current = new PushStream()
+      const next = new PushStream()
+      const client = new FakeClient([previous, current, next])
+      const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
+      await model.start()
+      const draining = collect(model.receive())
+      previous.push(chunk(toolUseEvent('t1')))
+      await settle()
+      previous.close()
+      await draining
+      await model.restart()
+      client.sent.length = 0
+
+      const receiving = collect(model.receive())
+      current.push(chunk(USER_TEXT_START))
+      await settle()
+      const sending = model.send(toolResult('t1'))
+      await settle()
+
+      current.close()
+      await receiving
+      await model.restart()
+      client.sent.length = 0
+      await settle()
+      expect(client.texts()).toEqual([])
+
+      // The next connection's reader reports it idle, releasing the deferred result.
+      const resumed = collect(model.receive())
+      await sending
+      expect(client.texts()).toHaveLength(1)
+
+      next.close()
+      await resumed
+      await model.stop()
+    })
+
+    it('sends the result anyway after the idle wait times out', async () => {
+      // Real timers still advance, so the request-stream drain runs while the 30s wait is skipped.
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        const { model, client, current } = await startWithToolUseBeforeRestart('t1', 't2')
+        const receiving = collect(model.receive())
+        current.push(chunk(USER_TEXT_START))
+        await settle()
+
+        const sending = model.send(toolResult('t1'))
+        await vi.advanceTimersByTimeAsync(30_000)
+        await sending
+        expect(client.texts()).toHaveLength(1)
+
+        // The timed-out wait is cancelled, so it cannot steal the next idle turn.
+        current.push(chunk(ASSISTANT_AUDIO_START))
+        current.push(chunk(ASSISTANT_AUDIO_END))
+        await settle()
+        await model.send(toolResult('t2'))
+        expect(client.texts()).toHaveLength(2)
+
+        current.close()
+        await receiving
+        await model.stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('logs a send failure instead of raising', async () => {
+      const { model, current } = await startWithToolUseBeforeRestart('t1')
+      const receiving = collect(model.receive())
+      await settle()
+      // The connection is idle, so the deferred result is sent immediately - into a closed stream.
+      model['_inputQueue'] = undefined
+
+      await expect(model.send(toolResult('t1'))).resolves.toBeUndefined()
+
+      current.close()
+      await receiving
     })
   })
 
@@ -630,8 +1074,7 @@ describe('BedrockNovaSonicModel', () => {
 
       expect(first).toBe('amazon.nova-2-5-sonic')
       expect(client.send).toHaveBeenCalledTimes(2)
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
-      expect(texts).toContain('replayed')
+      expect(client.texts()).toContain('replayed')
     })
 
     it('does not raise when restarted twice', async () => {
@@ -657,8 +1100,7 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
-      const replayed = texts.find((text) => text.includes('A tool call finished'))
+      const replayed = client.texts().find((text) => text.includes('A tool call finished'))
       expect(replayed).toContain('Tool: time_tool')
       expect(replayed).toContain('Arguments: {"zone":"UTC"}')
       expect(replayed).toContain('Status: success')
