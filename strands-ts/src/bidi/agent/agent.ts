@@ -58,6 +58,7 @@ import { Message, TextBlock, systemPromptFromData } from '../../types/messages.j
 import type { Snapshot } from '../../types/snapshot.js'
 import { TaskGroup } from '../async/task-group.js'
 import { stopAll } from '../async/stop-all.js'
+import { BedrockNovaSonicModel } from '../models/bedrock.js'
 import { BidiModel } from '../models/model.js'
 import type { BidiAgentInput } from '../types/agent.js'
 import type { BidiMessage } from '../types/content.js'
@@ -264,9 +265,11 @@ export class BidiAgent implements LocalAgent {
     const configuredModel = config?.model
     if (configuredModel instanceof BidiModel) {
       this.model = configuredModel
+    } else if (typeof configuredModel === 'string') {
+      this.model = new BedrockNovaSonicModel({ modelId: configuredModel })
+    } else if (configuredModel === undefined) {
+      this.model = new BedrockNovaSonicModel()
     } else {
-      // TODO(port): resolve a string to BedrockNovaSonicModel({ modelId }) and undefined to
-      // BedrockNovaSonicModel({ modelId: 'amazon.nova-2-5-sonic' }) once bidi/models/bedrock.ts lands.
       throw new Error('model must be a BidiModel, string, or undefined')
     }
 

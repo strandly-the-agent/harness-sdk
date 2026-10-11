@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BidiAgent } from '../agent.js'
+import { BedrockNovaSonicModel } from '../../models/bedrock.js'
 import { BidiModel } from '../../models/model.js'
 import type { BidiModelConfig } from '../../models/configs.js'
 import type { BidiMessage, BidiContentDelta } from '../../types/content.js'
@@ -137,6 +138,20 @@ describe('BidiAgent', () => {
       expect(agent.messages).toHaveLength(1)
       expect(agent.messages[0]).toBeInstanceOf(Message)
       expect(agent.messages[0]?.role).toBe('user')
+    })
+
+    it('defaults to Nova Sonic when no model is given', () => {
+      const agent = new BidiAgent()
+
+      expect(agent.model).toBeInstanceOf(BedrockNovaSonicModel)
+      expect(agent.model.getConfig().modelId).toBe('amazon.nova-2-5-sonic')
+    })
+
+    it('resolves a model id string to Nova Sonic', () => {
+      const agent = new BidiAgent({ model: 'custom-model' })
+
+      expect(agent.model).toBeInstanceOf(BedrockNovaSonicModel)
+      expect(agent.model.getConfig().modelId).toBe('custom-model')
     })
 
     it('rejects an unsupported model', () => {
