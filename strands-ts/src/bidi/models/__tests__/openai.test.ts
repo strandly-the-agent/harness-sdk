@@ -410,7 +410,7 @@ describe('OpenAIRealtimeModel', () => {
             }),
           ],
         })
-      ).rejects.toThrow(/content_types=<\["image"\]> \| Content type not supported by OpenAI Realtime API/)
+      ).rejects.toThrow(/content_types=<\['image'\]> \| Content type not supported by OpenAI Realtime API/)
     })
   })
 
