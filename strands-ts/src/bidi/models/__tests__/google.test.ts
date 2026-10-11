@@ -13,7 +13,8 @@ const fakeSession = {
   sendClientContent: vi.fn(),
   sendRealtimeInput: vi.fn(),
   sendToolResponse: vi.fn(),
-  close: vi.fn(),
+  // The SDK fires onclose once the socket is torn down; stop() waits for it.
+  close: vi.fn(() => closeConnection()),
 }
 
 let connectParams: Record<string, unknown>
