@@ -29,7 +29,7 @@ promise, which is what py's `_model_task` handle needs; `cancel()` aborts + awai
 - `start(invocationState?)` py:149-205 — throw `'loop already started | call stop before starting again'`;
   `startSessionSpan(tracer, agent.name, { modelId, tools: agent.toolNames, systemPrompt })`;
   `startConnectionSpan(tracer, { parentSpan, modelId })`; `model.start({ systemPrompt, tools:
-  agent.toolRegistry.getAllToolSpecs(), messages: agent.messages })`; on throw end connection +
+agent.toolRegistry.getAllToolSpecs(), messages: agent.messages })`; on throw end connection +
   session span with the error, null the session span, rethrow. Then reset token/turn state, new
   queue + pool, `_modelTask = pool.create(() => this._runModel(generation))`, default
   `invocationState.request_state = {}`, open the send gate, `_started = true`, `_armRestartTimer()`.
@@ -44,7 +44,7 @@ promise, which is what py's `_model_task` handle needs; `cancel()` aborts + awai
 - `receive()` py:278-331 — throw `'loop not started | call start before receiving'`; loop the queue:
   stale `_ReaderError` (generation mismatch) is dropped; `ConnectionTimeoutError` surfaces to the
   caller when auto-restart is off, otherwise queues `BidiConnectionRestartEvent({ reason: 'timeout',
-  timeoutError, turnInterrupted: !_turnComplete.isSet() })` and calls `_restartConnection` — if that
+timeoutError, turnInterrupted: !_turnComplete.isSet() })` and calls `_restartConnection` — if that
   throws, yield the already-queued restart event first, then rethrow. Other `Error` values raise.
   `BidiConnectionStopEvent` with `reason === 'user_request'` is yielded and ends the generator.
 - `_autoRestartEnabled()` py:333-339 = `model.getConnectionConfig().autoRestart ?? true`.
@@ -75,7 +75,7 @@ promise, which is what py's `_model_task` handle needs; `cancel()` aborts + awai
   stop events pop the block, `agent._updateMessage(block.toMessage())`, and append `block.toEvent()`
   to the events emitted for that model event; `BidiToolUseBlocksEvent` appends the assistant tool-use
   message plus a placeholder tool-result message (`'Tool call started. Its result will follow in a
-  separate tool exchange.'`, `metadata.custom.bidi = { kind: 'tool_dispatch' }`); barge-in adds the
+separate tool exchange.'`, `metadata.custom.bidi = { kind: 'tool_dispatch' }`); barge-in adds the
   span event, clears `_responseActive`, fires `BidiBargeInEvent` hook; response-stop ends the span,
   clears both turn latches, fires `BidiResponseStopEvent` hook; usage accumulates. After the puts, a
   tool-use event spawns `_runTools`. `catch` queues a generation-tagged `_ReaderError`; `finally`
@@ -87,7 +87,7 @@ promise, which is what py's `_model_task` handle needs; `cancel()` aborts + awai
   queue `BidiConnectionStopEvent({ reason: 'user_request' })` when `agent.cancelSignal` is aborted or
   `send()` a `BidiMessage` of `ToolResultBlock`s. Any failure is queued as the error itself.
 - `_runTool(toolUse)` py:776-821 — tool-call span, stream `agent._toolExecutor._stream(agent, toolUse,
-  toolResults, invocationState, { structuredOutputContext: null })`, queue each tool event, reject
+toolResults, invocationState, { structuredOutputContext: null })`, queue each tool event, reject
   `ToolInterruptEvent` with `interrupts=<names> | tool interrupts are not supported in bidi`, return
   the last `ToolResultEvent`'s result; end the span in `finally`. **Open question for the next
   chunk:** the TS `Agent` has no `_toolExecutor._stream` analog — find the equivalent
@@ -112,15 +112,15 @@ promise, which is what py's `_model_task` handle needs; `cancel()` aborts + awai
   `{ reason, timeoutError?, turnInterrupted }`. Bidi metadata keys are camelCase too, so
   `BidiToolMetadata` kinds are `'toolDispatch'` / `'toolResult'`.
 - **The tool path is the open design question.** TS has no `_tool_executor._stream(agent, tool_use,
-  …)`: `src/tools/executors/executor.ts` exposes `abstract execute(options: ToolExecutorOptions,
-  input: ToolExecutionInput)` where `ToolExecutionInput` is `{ toolUseBlocks, toolResultBlocks,
-  invocationState, assistantMessage, completedToolResults? }` — i.e. it is per-turn (a whole group of
+…)`: `src/tools/executors/executor.ts` exposes `abstract execute(options: ToolExecutorOptions,
+input: ToolExecutionInput)` where `ToolExecutionInput` is `{ toolUseBlocks, toolResultBlocks,
+invocationState, assistantMessage, completedToolResults? }` — i.e. it is per-turn (a whole group of
   tool uses), not per-tool-use, and it needs the `ToolExecutorOptions` dependency bag the core agent
   builds at its call-site. Decide first whether `_runTools` drives one `execute()` for the group
   (closer to the TS grain, and `ConcurrentToolExecutor` already parallelises) instead of py's
   per-tool-use `TaskGroup` of `_runTool`s. There is also `executeBackground(...)` which may fit the
   bidi fire-and-forget shape better. Read the `src/agent/agent.ts` call-site before writing either.
-- `TaskPool.size` drops a finished task one microtask *after* its promise settles (`create()` chains
+- `TaskPool.size` drops a finished task one microtask _after_ its promise settles (`create()` chains
   the removal), so a test that asserts `size === 0` right after `await task` must flush a tick —
   see `async/__tests__/task-pool.test.ts`. Python's `len()` is synchronous there.
 
