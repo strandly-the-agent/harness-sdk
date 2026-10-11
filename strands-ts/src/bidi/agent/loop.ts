@@ -135,6 +135,27 @@ class Latch {
   }
 }
 
+/** Sentinel resolved by {@link whenAborted} so a pending await can be abandoned. */
+const ABORTED = Symbol('aborted')
+
+/**
+ * Resolve once a signal aborts.
+ *
+ * Cancellation is cooperative in TypeScript, so every await inside a pooled task races this.
+ *
+ * @param signal - Signal to watch.
+ * @returns Promise resolving to the {@link ABORTED} sentinel.
+ */
+function whenAborted(signal: AbortSignal): Promise<typeof ABORTED> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(ABORTED)
+      return
+    }
+    signal.addEventListener('abort', () => resolve(ABORTED), { once: true })
+  })
+}
+
 /** Resolve after the given seconds. */
 function sleep(seconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, seconds * 1000))
@@ -242,7 +263,7 @@ export class AgentLoop {
     this._invocationState['requestState'] ??= {}
 
     const generation = this._generation
-    this._modelTask = this._taskPool.create(() => this._runModel(generation))
+    this._modelTask = this._taskPool.create((signal) => this._runModel(generation, signal))
 
     this._sendGate.set()
     this._started = true
@@ -260,13 +281,14 @@ export class AgentLoop {
     this._restartTimer.cancel()
     this._turnComplete.set()
     this._invocationState = {}
+    // Dispose before cancelling: a producer blocked on back-pressure would never see the abort.
+    this._eventQueue.dispose()
 
     try {
       await stopAll(
         () => this._taskPool.cancel(),
         () => this._agent.model.stop()
       )
-      this._eventQueue.dispose()
     } finally {
       if (this._sessionSpan !== undefined) {
         endSessionSpan(this._tracer, this._sessionSpan, {
@@ -452,7 +474,9 @@ export class AgentLoop {
       this._restartTimer.cancel()
       this._sendGate.clear()
 
-      await this._eventQueue.send(options.restartEvent)
+      // Pushed, not sent: a reactive restart runs inside receive(), so waiting for the
+      // receiver to acknowledge this event would deadlock against its own consumer.
+      this._eventQueue.push(options.restartEvent)
       if (!this._started) {
         logger.debug('loop stopped | declining connection restart')
         return false
@@ -508,7 +532,7 @@ export class AgentLoop {
       await this._restartModel(timeoutError)
       await this._waitForModelTask(previousReader)
 
-      this._modelTask = this._taskPool.create(() => this._runModel(generation))
+      this._modelTask = this._taskPool.create((signal) => this._runModel(generation, signal))
     } catch (error) {
       failure = error instanceof Error ? error : new Error(String(error))
       throw error
@@ -642,16 +666,22 @@ export class AgentLoop {
    * Read model events, maintain history, and queue output for `receive()`.
    *
    * @param generation - The connection generation this reader belongs to.
+   * @param signal - Cancellation signal from the task pool.
    */
-  private async _runModel(generation: number): Promise<void> {
+  private async _runModel(generation: number, signal: AbortSignal): Promise<void> {
     if (generation !== this._generation) return
 
     const agent = this._agent
     const blocks = new Map<string, StreamedTextBlock>()
     let failure: Error | undefined
+    const reader = agent.model.receive()[Symbol.asyncIterator]()
 
     try {
-      for await (const event of agent.model.receive()) {
+      while (true) {
+        const next = await Promise.race([reader.next(), whenAborted(signal)])
+        if (next === ABORTED || signal.aborted) return
+        if (next.done === true) break
+        const event = next.value
         if (generation !== this._generation) return
 
         const emitted: BidiOutputEvent[] = [event]
@@ -785,12 +815,12 @@ export class AgentLoop {
 
         for (const output of emitted) {
           if (generation !== this._generation) return
-          await this._eventQueue.send(output)
+          if (!(await this._queue(output, signal))) return
         }
 
         if (event.type === 'bidiToolUseBlocks') {
           const toolUses = [...event.toolUses]
-          this._taskPool.create(() => this._runTools(toolUses))
+          void this._taskPool.create((toolSignal) => this._runTools(toolUses, toolSignal))
         }
       }
     } catch (error) {
@@ -816,8 +846,9 @@ export class AgentLoop {
    * Execute one group of tool calls and send their results back to the model.
    *
    * @param toolUses - Tool calls requested in a single model turn.
+   * @param signal - Cancellation signal from the task pool.
    */
-  private async _runTools(toolUses: ToolUseBlock[]): Promise<void> {
+  private async _runTools(toolUses: ToolUseBlock[], signal: AbortSignal): Promise<void> {
     const agent = this._agent
     const toolMetadata: BidiToolMetadata = { kind: 'toolResult' }
     const assistantMessage = new Message({ role: 'assistant', content: [...toolUses] })
@@ -841,7 +872,7 @@ export class AgentLoop {
             assistantMessage,
           }
         )) {
-          await this._eventQueue.send(event as unknown as BidiOutputEvent)
+          if (!(await this._queue(event as unknown as BidiOutputEvent, signal))) return
         }
 
         const pending = Object.values(agent._interruptState.interrupts)
@@ -863,15 +894,18 @@ export class AgentLoop {
       )
 
       if (agent.cancelSignal.aborted) {
-        await this._eventQueue.send(
+        await this._queue(
           new BidiConnectionStopEvent({
             type: 'bidiConnectionStop',
             connectionId: this._connectionId(),
             reason: 'userRequest',
-          })
+          }),
+          signal
         )
         return
       }
+
+      if (signal.aborted) return
 
       await this.send({ content: [...toolResultBlocks] })
     } catch (error) {
@@ -885,6 +919,18 @@ export class AgentLoop {
       }
       this._eventQueue.push(error instanceof Error ? error : new Error(String(error)))
     }
+  }
+
+  /**
+   * Queue one entry for `receive()`, abandoning the wait when the task is cancelled.
+   *
+   * @param item - Entry to hand to the receiver.
+   * @param signal - Cancellation signal from the task pool.
+   * @returns Whether the entry was consumed rather than abandoned.
+   */
+  private async _queue(item: LoopQueueItem, signal: AbortSignal): Promise<boolean> {
+    const delivered = await Promise.race([this._eventQueue.send(item).then(() => true), whenAborted(signal)])
+    return delivered === true && !signal.aborted
   }
 
   /** Identifier reported on connection lifecycle events. */
