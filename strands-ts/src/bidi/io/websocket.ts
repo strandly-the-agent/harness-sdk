@@ -28,6 +28,15 @@ const OPEN = 1
 /** Queued in place of a frame when the socket closes, to wake a pending `read()`. */
 const closed = Symbol('closed')
 
+/** Parse a frame, returning undefined instead of throwing on malformed JSON. */
+function parseJSON(frame: string): unknown {
+  try {
+    return JSON.parse(frame)
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Convert one JSON text or image block form to its block class.
  *
@@ -156,15 +165,6 @@ export class WebSocketInputStream implements BidiInputStream {
     }
 
     this._frames.push(input)
-  }
-}
-
-/** Parse a frame, returning undefined instead of throwing on malformed JSON. */
-function parseJSON(frame: string): unknown {
-  try {
-    return JSON.parse(frame)
-  } catch {
-    return undefined
   }
 }
 
