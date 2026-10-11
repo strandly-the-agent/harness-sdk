@@ -80,9 +80,16 @@ function labels(events: BidiOutputEvent[]): string[] {
   })
 }
 
-/** Content ids of every event that carries one, in receive order. */
-function contentIds(events: BidiOutputEvent[]): (string | undefined)[] {
-  return events.map((event) => (event as { contentId?: string }).contentId)
+/** Content id of one event, for identity assertions across a sequence. */
+function contentIdOf(event: BidiOutputEvent | undefined): string | undefined {
+  return (event as { contentId?: string } | undefined)?.contentId
+}
+
+/** Response ids of every response-start event, in receive order. */
+function responseIds(events: BidiOutputEvent[]): string[] {
+  return events
+    .filter((event) => event.type === 'bidiResponseStart')
+    .map((event) => (event as { responseId: string }).responseId)
 }
 
 describe('GoogleGeminiLiveModel', () => {
@@ -666,12 +673,12 @@ describe('GoogleGeminiLiveModel', () => {
 
   describe('turn bracketing', () => {
     const serverContent = (content: Record<string, unknown>): LiveServerMessage =>
-      ({ serverContent: content }) as LiveServerMessage
+      ({ serverContent: content }) as never
     const audio = (bytes: number[], content?: Record<string, unknown>): LiveServerMessage =>
       ({
         data: encodeBase64(new Uint8Array(bytes)),
         ...(content === undefined ? {} : { serverContent: content }),
-      }) as LiveServerMessage
+      }) as never
 
     it.each(['generationComplete', 'interrupted', 'turnComplete'])(
       'stops audio once at the %s boundary',
@@ -700,8 +707,8 @@ describe('GoogleGeminiLiveModel', () => {
           'bidiAudioDelta',
         ])
         const [first, second] = events.filter((event) => event.type === 'bidiAudioStart')
-        expect(contentIds([first as BidiOutputEvent])[0]).toBeTypeOf('string')
-        expect(contentIds([second as BidiOutputEvent])[0]).not.toBe(contentIds([first as BidiOutputEvent])[0])
+        expect(contentIdOf(first)).toBeTypeOf('string')
+        expect(contentIdOf(second)).not.toBe(contentIdOf(first))
       }
     )
 
@@ -723,8 +730,7 @@ describe('GoogleGeminiLiveModel', () => {
         'bidiTranscriptStart:assistant',
         'bidiTranscriptDelta:assistant',
       ])
-      const ids = contentIds(events.slice(1, 4))
-      expect(new Set(ids).size).toBe(1)
+      expect(new Set(events.slice(1, 4).map(contentIdOf)).size).toBe(1)
     })
 
     it('completes transcription fragments at the turn boundary', async () => {
@@ -790,17 +796,11 @@ describe('GoogleGeminiLiveModel', () => {
         'bidiTranscriptStop:assistant',
         'bidiResponseStop',
       ])
-      const [firstId, secondId] = contentIds(events.filter((event) => labels([event])[0] === 'bidiTranscriptStart:user'))
-      const [firstStop, secondStop] = contentIds(
-        events.filter((event) => labels([event])[0] === 'bidiTranscriptStop:user')
-      )
+      const starts = events.filter((event) => labels([event])[0] === 'bidiTranscriptStart:user').map(contentIdOf)
+      const stops = events.filter((event) => labels([event])[0] === 'bidiTranscriptStop:user').map(contentIdOf)
       // The completing turn closes its own utterance; the newer one survives until the next turn.
-      expect(firstStop).toBe(firstId)
-      expect(secondStop).toBe(secondId)
-      const responseIds = events
-        .filter((event) => event.type === 'bidiResponseStart')
-        .map((event) => (event as { responseId: string }).responseId)
-      expect(responseIds[0]).not.toBe(responseIds[1])
+      expect(stops).toEqual(starts)
+      expect(responseIds(events)[0]).not.toBe(responseIds(events)[1])
     })
 
     it('preserves a user transcription already in progress on barge-in', async () => {
@@ -815,7 +815,7 @@ describe('GoogleGeminiLiveModel', () => {
 
       expect(labels(events.slice(-2))).toEqual(['bidiBargeIn', 'bidiTranscriptDelta:user'])
       const started = events.find((event) => labels([event])[0] === 'bidiTranscriptStart:user')
-      expect(contentIds(events.slice(-1))[0]).toBe(contentIds([started as BidiOutputEvent])[0])
+      expect(contentIdOf(events.at(-1))).toBe(contentIdOf(started))
       expect(events.at(-1)).toMatchObject({ delta: ' second' })
     })
 
@@ -829,20 +829,20 @@ describe('GoogleGeminiLiveModel', () => {
       ])
 
       expect(labels(events)).toEqual(['bidiConnectionStart', 'bidiTranscriptStart:user', 'bidiTranscriptStop:user'])
-      expect(contentIds(events.slice(1))[0]).toBe(contentIds(events.slice(2))[0])
+      expect(contentIdOf(events[1])).toBe(contentIdOf(events[2]))
     })
 
-    it.each([false, true])('emits nothing for a turn complete without an open response (interrupted=%s)', async (interrupted) => {
-      const model = createModel()
-      await model.start()
+    it.each([false, true])(
+      'emits nothing for a turn complete without an open response (interrupted=%s)',
+      async (interrupted) => {
+        const model = createModel()
+        await model.start()
 
-      const events = await collect(model, [
-        serverContent({ interrupted }),
-        serverContent({ turnComplete: true }),
-      ])
+        const events = await collect(model, [serverContent({ interrupted }), serverContent({ turnComplete: true })])
 
-      expect(labels(events)).toEqual(['bidiConnectionStart', ...(interrupted ? ['bidiBargeIn'] : [])])
-    })
+        expect(labels(events)).toEqual(['bidiConnectionStart', ...(interrupted ? ['bidiBargeIn'] : [])])
+      }
+    )
 
     it('emits nothing for an empty message', async () => {
       const model = createModel()
@@ -885,9 +885,7 @@ describe('GoogleGeminiLiveModel', () => {
           'bidiTranscriptStop:assistant',
           'bidiResponseStop',
         ])
-        const [handoffId, continuationId] = events
-          .filter((event) => event.type === 'bidiResponseStart')
-          .map((event) => (event as { responseId: string }).responseId)
+        const [handoffId, continuationId] = responseIds(events)
         expect(handoffId).not.toBe(continuationId)
       }
     )
@@ -911,8 +909,9 @@ describe('GoogleGeminiLiveModel', () => {
           'bidiTranscriptDelta:assistant',
           'bidiTranscriptStart:user',
           'bidiTranscriptDelta:user',
-          ...(finished ? ['bidiTranscriptStop:user'] : []),
-          ...(finished ? [] : ['bidiTranscriptStop:user']),
+          // `finished` only moves the stop between batches (transcription vs turn complete),
+          // so the order a reader observes is the same either way.
+          'bidiTranscriptStop:user',
           'bidiTranscriptStop:assistant',
           'bidiResponseStop',
         ])
