@@ -32,6 +32,9 @@ const FRAMES_PER_BUFFER = 512
 /** Bytes per sample of signed 16-bit PCM. */
 const SAMPLE_SIZE = 2
 
+/** Frames kept queued inside RtAudio so an event-loop stall cannot starve the output device. */
+const OUTPUT_QUEUE_DEPTH = 4
+
 /** Device selection and channel count passed to `RtAudio.openStream`. */
 interface StreamParameters {
   deviceId?: number
@@ -58,18 +61,21 @@ interface RtAudioModule {
  * @throws Error if the optional `audify` dependency is not installed
  */
 async function loadRtAudio(): Promise<RtAudioModule> {
+  let audify: AudifyModule
+  // Only a failed import means the dependency is missing; device failures must surface as they are.
   try {
-    const audify = (await import('audify')) as unknown as AudifyModule
-    const { Buffer: nodeBuffer } = await import('node:buffer')
-    return {
-      rtAudio: new audify.RtAudio(),
-      format: audify.RtAudioFormat.RTAUDIO_SINT16,
-      toPcm: (data) => nodeBuffer.from(data.buffer, data.byteOffset, data.byteLength),
-    }
+    audify = (await import('audify')) as unknown as AudifyModule
   } catch (error: unknown) {
     throw new Error('Audio I/O requires this optional dependency. Install it with: npm install audify', {
       cause: error,
     })
+  }
+
+  const { Buffer: nodeBuffer } = await import('node:buffer')
+  return {
+    rtAudio: new audify.RtAudio(),
+    format: audify.RtAudioFormat.RTAUDIO_SINT16,
+    toPcm: (data) => nodeBuffer.from(data.buffer, data.byteOffset, data.byteLength),
   }
 }
 
@@ -203,10 +209,13 @@ export class AudioOutputStream implements BidiOutputStream {
   private readonly _buffer: AudioBuffer
   private readonly _consoleOutput: BidiOutputStream
   private readonly _deviceIndex: number | undefined
-  private readonly _framesPerBuffer: number
+  private _framesPerBuffer: number
   private _audioConfig: AudioStreamConfig | undefined
   private _rtAudio: RtAudio | undefined
   private _toPcm: ((data: Uint8Array) => Buffer) | undefined
+  private _queuedFrames = 0
+  private _framePlayed = false
+  private _pump: ReturnType<typeof setInterval> | undefined
 
   /**
    * Initialize output settings.
@@ -238,7 +247,7 @@ export class AudioOutputStream implements BidiOutputStream {
     this._buffer.start()
     this._rtAudio = rtAudio
     this._toPcm = toPcm
-    rtAudio.openStream(
+    const frameSize = rtAudio.openStream(
       this._streamParameters(audioConfig),
       null,
       format,
@@ -250,9 +259,10 @@ export class AudioOutputStream implements BidiOutputStream {
         this._callback()
       }
     )
+    // openStream reports the frame size the device settled on; write() rejects any other size.
+    if (frameSize > 0) this._framesPerBuffer = frameSize
     rtAudio.start()
-    // RtAudio pulls the next frame only after one finished playing, so prime the first frame.
-    this._callback()
+    this._startPump(audioConfig.sampleRate)
     await this._consoleOutput.start?.(agent)
 
     logger.debug('audio output stream started')
@@ -262,6 +272,9 @@ export class AudioOutputStream implements BidiOutputStream {
   async stop(): Promise<void> {
     logger.debug('stopping audio output stream')
 
+    if (this._pump !== undefined) clearInterval(this._pump)
+    this._pump = undefined
+    this._queuedFrames = 0
     await this._consoleOutput.stop?.()
     closeStream(this._rtAudio)
     this._rtAudio = undefined
@@ -287,16 +300,49 @@ export class AudioOutputStream implements BidiOutputStream {
     } else if (event.type === 'bidiBargeIn') {
       logger.debug('clearing audio buffer due to barge-in')
       this._buffer.clear()
+      this._rtAudio?.clearOutputQueue()
+      this._queuedFrames = 0
     }
   }
 
-  /** Send the next frame of buffered audio data to RtAudio. */
+  /**
+   * Refill the device queue at the frame period.
+   *
+   * RtAudio reports a played frame only when it popped a non-empty queue, so a callback-driven pump
+   * stalls for good once the queue runs dry. The interval keeps writing regardless, matching the
+   * pull semantics of Python's pyaudio callback.
+   *
+   * @param sampleRate - Playback sample rate used to derive the frame period
+   */
+  private _startPump(sampleRate: number): void {
+    this._pump = setInterval(
+      () => {
+        if (!this._framePlayed) this._queuedFrames = Math.max(0, this._queuedFrames - 1)
+        this._framePlayed = false
+        this._fillQueue()
+      },
+      (this._framesPerBuffer / sampleRate) * 1000
+    )
+    this._fillQueue()
+  }
+
+  /** Count the frame RtAudio just played and top the queue back up. */
   private _callback(): void {
+    this._queuedFrames = Math.max(0, this._queuedFrames - 1)
+    this._framePlayed = true
+    this._fillQueue()
+  }
+
+  /** Write buffered audio, zero-padded with silence, until the device holds `OUTPUT_QUEUE_DEPTH` frames. */
+  private _fillQueue(): void {
+    if (!this._rtAudio || !this._toPcm) return
+
     const channels = this._audioConfig?.channels ?? 1
     const byteCount = this._framesPerBuffer * channels * SAMPLE_SIZE
-    const data = this._buffer.take(byteCount)
-
-    if (this._rtAudio && this._toPcm) this._rtAudio.write(this._toPcm(data))
+    while (this._queuedFrames < OUTPUT_QUEUE_DEPTH) {
+      this._rtAudio.write(this._toPcm(this._buffer.take(byteCount)))
+      this._queuedFrames += 1
+    }
   }
 
   /**

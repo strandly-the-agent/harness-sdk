@@ -112,6 +112,8 @@ export class WebSocketInputStream implements BidiInputStream {
    * @param _agent - The agent that owns this stream
    */
   async start(_agent: BidiAgent): Promise<void> {
+    // A socket that is already closing or closed will never emit `close`, so a read must not park.
+    this._closed = this._socket.readyState > OPEN
     const onMessage = (event: BidiWebSocketEvent): void => this._queueFrame(event.data)
     const onClose = (): void => {
       this._closed = true
@@ -134,6 +136,9 @@ export class WebSocketInputStream implements BidiInputStream {
 
   /** Detach the socket listeners, leaving the socket open for its owner to close. */
   async stop(): Promise<void> {
+    // No `close` event can arrive once detached, so wake any read parked on the queue.
+    this._closed = true
+    this._frames.push(closed)
     this._detach?.()
     this._detach = undefined
   }
@@ -160,7 +165,8 @@ export class WebSocketInputStream implements BidiInputStream {
   private _queueFrame(data: unknown): void {
     const input = typeof data === 'string' ? toAgentInput(parseJSON(data)) : undefined
     if (input === undefined) {
-      logger.warn(`frame=<${String(data)}> | ignoring malformed websocket frame`)
+      const length = typeof data === 'string' ? data.length : undefined
+      logger.warn(`type=<${typeof data}>, length=<${length}> | ignoring malformed websocket frame`)
       return
     }
 
