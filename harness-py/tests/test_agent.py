@@ -197,10 +197,11 @@ def test_aux_model_rejects_a_router_like_the_sdk():
         create_harness(aux_model=router)
 
 
-def test_aux_model_is_reused_for_memory_extraction(tmp_path):
+def test_memory_extractor_pins_no_model_so_it_follows_aux_model(tmp_path):
     aux = BedrockModel(model_id="us.amazon.nova-lite-v1:0")
     agent = create_harness(aux_model=aux, memory={"dir": str(tmp_path)})
-    assert agent.memory_manager._extraction_stores[0].config.extractor._model is aux
+    assert agent.memory_manager._extraction_stores[0].config.extractor._model is None
+    assert agent.aux_model is aux
 
 
 def test_aux_model_is_forwarded_to_subagent_children(monkeypatch):
@@ -382,8 +383,8 @@ class TestBuiltinToolsUnion:
         assert [m.get_config()["model_id"] for m in seen] == ["gpt-5-mini"]
         assert agent.aux_model.get_config()["model_id"] == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
         seen.clear()
-        agent = create_harness(builtin_tools=["web_fetch"])
-        assert seen == [agent.aux_model]
+        create_harness(builtin_tools=["web_fetch"])
+        assert seen == [None]
 
     @pytest.mark.parametrize(
         ("name", "factory", "config"),

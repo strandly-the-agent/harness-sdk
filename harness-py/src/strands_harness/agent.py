@@ -76,7 +76,7 @@ _ALWAYS_BACKGROUND_TOOL_NAMES = frozenset({"subagent"})
 _UNSET: Any = object()
 
 
-def _builtin_tools(parent_config: dict[str, Any], aux_model: Model) -> dict[str, Any]:
+def _builtin_tools(parent_config: dict[str, Any]) -> dict[str, Any]:
     """The built-in tools by name. Each configurable one is built from its factory with the config it
     was enabled with (``{}`` for ``True``, see ``_BUILTIN_TOOL_CONFIG_KEYS``); ``web_fetch`` summarizes
     on its own ``model`` override or else the agent's ``aux_model``, ``subagent`` takes the whole parent
@@ -86,9 +86,7 @@ def _builtin_tools(parent_config: dict[str, Any], aux_model: Model) -> dict[str,
     enabled = parent_config["builtin_tools"]
     web_fetch_config = _builtin_tool_config(enabled, "web_fetch")
     web_fetch_override = web_fetch_config.pop("model", None)
-    web_fetch_model = (
-        aux_model if web_fetch_override is None else resolve_aux_model(parent_config["model"], web_fetch_override)
-    )
+    web_fetch_model = None if web_fetch_override is None else resolve_aux_model(None, web_fetch_override)
     tools = (
         make_shell(**_builtin_tool_config(enabled, "shell")),
         make_read(**{"media": _supports_media(parent_config["model"]), **_builtin_tool_config(enabled, "read")}),
@@ -469,9 +467,7 @@ def create_harness(
         "sandbox": agent_kwargs.get("sandbox"),
     }
 
-    builtin = _select_builtin_tools(
-        {**enabled_tools, "web_search": web_search == "exa"}, _builtin_tools(parent_config, resolved_aux_model)
-    )
+    builtin = _select_builtin_tools({**enabled_tools, "web_search": web_search == "exa"}, _builtin_tools(parent_config))
     context_enabled = context_manager is not None and context_manager is not False
     # The SDK's Agent rejects a bare config dict; build the instance from it here.
     if isinstance(context_manager, Mapping):
@@ -512,9 +508,7 @@ def create_harness(
     if memory_manager is None and child_memory is not False:
         memory_manager = resolve_memory(
             stores=child_memory.get("stores"),
-            model=model,
             memory_dir=child_memory.get("dir") or defaults.DEFAULT_MEMORY_DIR,
-            aux_model=resolved_aux_model,
         )
     memory_tools = memory_manager.tools if isinstance(memory_manager, MemoryManager) else []
 

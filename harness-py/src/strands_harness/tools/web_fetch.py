@@ -159,8 +159,9 @@ async def _fetch_text(sandbox: Sandbox, url: str, transport: WebFetchTransport) 
     return await _fetch_direct(url)
 
 
-def make_web_fetch(*, model: Model, transport: WebFetchTransport = "curl") -> Any:
-    """Build a ``web_fetch`` tool whose summarizer answers over the fetched page using ``model``.
+def make_web_fetch(*, model: Model | None = None, transport: WebFetchTransport = "curl") -> Any:
+    """Build a ``web_fetch`` tool whose summarizer answers over the fetched page using ``model``, or
+    the agent's ``aux_model`` when ``None``.
 
     ``transport`` is ``"curl"`` (run inside the agent's sandbox, the default) or ``"direct"`` (from the
     harness process).
@@ -197,7 +198,9 @@ def make_web_fetch(*, model: Model, transport: WebFetchTransport = "curl") -> An
         if not prompt.strip():
             return text
 
-        summarizer = Agent(model=model, system_prompt=_SUMMARIZER_PROMPT, callback_handler=None)
+        summarizer = Agent(
+            model=model or tool_context.agent.aux_model, system_prompt=_SUMMARIZER_PROMPT, callback_handler=None
+        )
         result = await summarizer.invoke_async(
             f"Fetched URL: {resolved_url}\n\nRequest: {prompt}\n\n--- Content ---\n{text}"
         )

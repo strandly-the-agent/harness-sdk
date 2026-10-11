@@ -439,7 +439,7 @@ export async function createHarness(options: HarnessAgentOptions = {}): Promise<
 
   const builtin = selectBuiltinTools(
     enabledBuiltinTools({ ...resolvedBuiltins, web_search: webSearch === 'exa' }),
-    await buildBuiltinTools(createHarness, parentConfig, resolvedBuiltins, resolvedAuxModel)
+    await buildBuiltinTools(createHarness, parentConfig, resolvedBuiltins)
   )
 
   // Assemble plugins before the collision check so plugin-vended tools are checked too; consumer
@@ -488,9 +488,7 @@ export async function createHarness(options: HarnessAgentOptions = {}): Promise<
       const memoryConfig: MemoryConfig = memory === true ? {} : memory
       memoryManager = await resolveMemory({
         stores: memoryConfig.stores,
-        model,
         dir: memoryConfig.dir,
-        auxModel: resolvedAuxModel,
       })
     }
   }

@@ -4,7 +4,7 @@
  * from the same record.
  */
 
-import { type Agent, McpClient, MemoryManager, type Model, Tool, type ToolList } from '@strands-agents/sdk'
+import { type Agent, McpClient, MemoryManager, Tool, type ToolList } from '@strands-agents/sdk'
 import { makeShell } from '@strands-agents/sdk/vended-tools/bash'
 
 import type { HarnessAgentOptions } from './agent.js'
@@ -151,8 +151,7 @@ export type BuildAgent = (options: HarnessAgentOptions) => Promise<Agent>
 export async function buildBuiltinTools(
   buildAgent: BuildAgent,
   parentConfig: HarnessAgentOptions,
-  builtins: ResolvedBuiltinTools,
-  auxModel: Model
+  builtins: ResolvedBuiltinTools
 ): Promise<Record<BuiltinToolName, Tool>> {
   const webFetch = builtinToolConfig(builtins, 'web_fetch')
   const caller = builtinToolConfig(builtins, 'programmatic_tool_caller') ?? {}
@@ -167,7 +166,7 @@ export async function buildBuiltinTools(
     write,
     edit,
     web_fetch: makeWebFetch({
-      model: webFetch?.model === undefined ? auxModel : await resolveAuxModel(parentConfig.model, webFetch.model),
+      model: webFetch?.model === undefined ? undefined : await resolveAuxModel(undefined, webFetch.model),
       transport: webFetch?.transport,
     }),
     web_search: exaWebSearch,
@@ -257,7 +256,6 @@ export function buildDefaultSubagent(
       const memoryConfig = parentMemory === true ? {} : parentMemory
       childConfig.memoryManager = await resolveMemory({
         stores: memoryConfig.stores,
-        model: parentConfig.model,
         dir: memoryConfig.dir,
         writable: false,
       })

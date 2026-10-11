@@ -179,14 +179,14 @@ async function fetchText(sandbox: Sandbox, url: string, transport: WebFetchTrans
 
 /** Options for {@link makeWebFetch}. */
 export interface MakeWebFetchOptions {
-  /** The summarizer that answers the prompt over the fetched page. */
-  model: Model
+  /** The summarizer that answers the prompt over the fetched page; defaults to the agent's `auxModel`. */
+  model?: Model | undefined
   /** `'curl'` runs inside the agent's sandbox (the default); `'direct'` fetches from the harness process. */
   transport?: WebFetchTransport | undefined
 }
 
-/** Build a `web_fetch` tool whose summarizer answers over the fetched page using `model`. */
-export function makeWebFetch({ model, transport = 'curl' }: MakeWebFetchOptions): Tool {
+/** Build a `web_fetch` tool whose summarizer answers over the fetched page using `model`, or the agent's `auxModel`. */
+export function makeWebFetch({ model, transport = 'curl' }: MakeWebFetchOptions = {}): Tool {
   if (transport !== 'curl' && transport !== 'direct') {
     throw new Error(`web_fetch transport must be 'curl' or 'direct', got ${JSON.stringify(transport)}.`)
   }
@@ -230,7 +230,11 @@ export function makeWebFetch({ model, transport = 'curl' }: MakeWebFetchOptions)
         return text
       }
 
-      const summarizer = new Agent({ model, systemPrompt: SUMMARIZER_PROMPT, printer: false })
+      const summarizer = new Agent({
+        model: model ?? context.agent.auxModel,
+        systemPrompt: SUMMARIZER_PROMPT,
+        printer: false,
+      })
       const result = await summarizer.invoke(
         `Fetched URL: ${resolvedUrl}\n\nRequest: ${input.prompt}\n\n--- Content ---\n${text}`
       )

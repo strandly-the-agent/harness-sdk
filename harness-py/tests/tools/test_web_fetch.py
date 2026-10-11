@@ -50,8 +50,8 @@ class _Sandbox:
         return next(c for c in self.commands if c.startswith("curl "))
 
 
-def _context(sandbox):
-    return SimpleNamespace(agent=SimpleNamespace(sandbox=sandbox))
+def _context(sandbox, aux_model=None):
+    return SimpleNamespace(agent=SimpleNamespace(sandbox=sandbox, aux_model=aux_model))
 
 
 async def test_fetch_text_rejects_non_http_scheme():
@@ -320,6 +320,10 @@ async def test_web_fetch_returns_summarizer_answer(monkeypatch):
     assert captured["model"] is sentinel
     assert "Why is the sky blue?" in captured["prompt"]
     assert "Rayleigh scattering" in captured["prompt"]
+
+    aux = object()
+    await make_web_fetch()._tool_func(url="https://example.com", prompt="?", tool_context=_context(_Sandbox(), aux))
+    assert captured["model"] is aux
 
 
 async def test_web_fetch_uses_the_agents_sandbox():

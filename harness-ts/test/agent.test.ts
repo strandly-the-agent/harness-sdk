@@ -214,19 +214,20 @@ describe('createHarness', () => {
     expect(fromInstance.auxModel).toBe(aux)
   })
 
-  it('runs memory extraction and the web_fetch summarizer on auxModel unless web_fetch overrides it', async () => {
+  it('leaves memory extraction and the web_fetch summarizer on auxModel unless web_fetch overrides it', async () => {
     const { makeWebFetch } = await import('../src/tools/web-fetch.js')
     const aux = new BedrockModel({ modelId: 'us.amazon.nova-lite-v1:0' })
     const agent = await createHarness({ auxModel: aux, memory: { dir: makeTempDir() } })
-    expect(extractionModel(agent.memoryManager as MemoryManager)).toBe(aux)
-    expect(vi.mocked(makeWebFetch).mock.lastCall?.[0].model).toBe(aux)
+    expect(agent.auxModel).toBe(aux)
+    expect(extractionModel(agent.memoryManager as MemoryManager)).toBeUndefined()
+    expect(vi.mocked(makeWebFetch).mock.lastCall?.[0]?.model).toBeUndefined()
 
     const overridden = await createHarness({
       auxModel: aux,
       builtinTools: { web_fetch: { model: 'openai/gpt-5-mini' } },
     })
     expect(overridden.auxModel).toBe(aux)
-    expect(vi.mocked(makeWebFetch).mock.lastCall?.[0].model.getConfig().modelId).toBe('gpt-5-mini')
+    expect(vi.mocked(makeWebFetch).mock.lastCall?.[0]?.model?.getConfig().modelId).toBe('gpt-5-mini')
   })
 
   it('rejects a ModelRouter as auxModel like the SDK does', async () => {
