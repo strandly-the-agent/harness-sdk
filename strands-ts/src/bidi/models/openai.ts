@@ -61,6 +61,8 @@ export const OPENAI_PROACTIVE_RESTART_MARGIN_S = 300
 const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime'
 const DEFAULT_SAMPLE_RATE = 24000
 const RECV_POLL_TIMEOUT_MS = 10_000
+const SEND_BUFFER_HIGH_WATER_BYTES = 1_048_576
+const SEND_DRAIN_POLL_MS = 5
 
 const DEFAULT_SESSION_CONFIG: Record<string, unknown> = {
   type: 'realtime',
@@ -103,6 +105,9 @@ export interface OpenAIRealtimeWebSocket {
   /** Current connection state, following the WebSocket readyState values. */
   readyState: number
 
+  /** Bytes queued but not yet written to the network, when the implementation reports it. */
+  bufferedAmount?: number
+
   /** Send a serialized client event. */
   send(data: string): void
 
@@ -111,6 +116,9 @@ export interface OpenAIRealtimeWebSocket {
 
   /** Register a listener for `open`, `message`, `close`, or `error`. */
   addEventListener(type: string, listener: (event: any) => void): void // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  /** Remove a previously registered listener. */
+  removeEventListener?(type: string, listener: (event: any) => void): void // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
 /**
@@ -311,6 +319,9 @@ export class SessionState {
 class WebSocketReader {
   private readonly _messages: string[] = []
   private _closed = false
+  private _closeCode: number | undefined
+  private _closeReason: string | undefined
+  private _error: unknown
   private _notify: (() => void) | undefined
 
   constructor(socket: OpenAIRealtimeWebSocket) {
@@ -318,8 +329,16 @@ class WebSocketReader {
       this._messages.push(typeof event.data === 'string' ? event.data : String(event.data))
       this._notify?.()
     })
-    socket.addEventListener('close', () => {
+    // Mid-session socket errors have no other observer, so the reader keeps the last one and
+    // reports it as the cause of the close that follows.
+    socket.addEventListener('error', (event: { message?: string; error?: unknown }) => {
+      this._error = event.error ?? event
+      this._notify?.()
+    })
+    socket.addEventListener('close', (event: { code?: number; reason?: string }) => {
       this._closed = true
+      this._closeCode = event?.code
+      this._closeReason = event?.reason
       this._notify?.()
     })
   }
@@ -329,15 +348,15 @@ class WebSocketReader {
    *
    * @param timeoutMs - How long to wait before giving up
    * @returns The next message, or undefined when the wait times out
-   * @throws {@link ModelError} If the connection closed with no buffered messages
+   * @throws {@link ModelError} If the connection closed or errored with no buffered messages
    */
   async recv(timeoutMs: number): Promise<string | undefined> {
     const message = this._messages.shift()
     if (message !== undefined) {
       return message
     }
-    if (this._closed) {
-      throw new ModelError('openai realtime connection closed')
+    if (this._closed || this._error !== undefined) {
+      throw this._closedError()
     }
 
     const received = await new Promise<boolean>((resolve) => {
@@ -354,8 +373,33 @@ class WebSocketReader {
     if (!received) {
       return undefined
     }
-    return this._messages.shift()
+    const next = this._messages.shift()
+    if (next === undefined && (this._closed || this._error !== undefined)) {
+      throw this._closedError()
+    }
+    return next
   }
+
+  /** Build the close error, carrying the close code/reason and the last socket error as cause. */
+  private _closedError(): ModelError {
+    const details = `code=<${String(this._closeCode)}>, reason=<${this._closeReason ?? ''}>`
+    const message = `${details} | openai realtime connection closed`
+    return this._error !== undefined ? new ModelError(message, { cause: this._error }) : new ModelError(message)
+  }
+}
+
+/** Name an unsupported content value for an error message, standing in for Python's `type(...)`. */
+function describeContentType(content: unknown): string {
+  if (content === null || typeof content !== 'object') {
+    return typeof content
+  }
+  const type = (content as { type?: unknown }).type
+  return typeof type === 'string' ? type : content.constructor.name
+}
+
+/** Render keys the way Python's `list(...)` repr does, so error text matches. */
+function formatKeyList(keys: string[]): string {
+  return `[${keys.map((key) => `'${key}'`).join(', ')}]`
 }
 
 function defaultWebSocketFactory(url: string, headers: Record<string, string>): OpenAIRealtimeWebSocket {
@@ -646,7 +690,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
     } else if (typeof content === 'object' && content !== null && Array.isArray(content.content)) {
       await this._sendMessage(content)
     } else {
-      throw new Error(`content_type=${typeof content} | content not supported`)
+      throw new Error(`content_type=${describeContentType(content)} | content not supported`)
     }
   }
 
@@ -710,8 +754,12 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
     }
 
     await new Promise<void>((resolve, reject) => {
-      socket.addEventListener('open', () => resolve())
-      socket.addEventListener('error', (event: { message?: string; error?: unknown }) => {
+      const onOpen = (): void => {
+        cleanup()
+        resolve()
+      }
+      const onError = (event: { message?: string; error?: unknown }): void => {
+        cleanup()
         const message = event.message ?? String(event.error ?? event)
         reject(
           /429|rate limit/i.test(message)
@@ -722,7 +770,16 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
                 cause: event.error ?? event,
               })
         )
-      })
+      }
+      // Drop the handshake listeners once settled so mid-session errors reach the reader instead
+      // of rejecting an already-settled promise.
+      const cleanup = (): void => {
+        socket.removeEventListener?.('open', onOpen)
+        socket.removeEventListener?.('error', onError)
+      }
+
+      socket.addEventListener('open', onOpen)
+      socket.addEventListener('error', onError)
     })
     return socket
   }
@@ -1074,7 +1131,11 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
   }
 
   private _sessionAudioContentId(state: SessionState, responseId: string | undefined): string {
-    return state.audioContentIds.get(responseId) as string
+    const contentId = state.audioContentIds.get(responseId)
+    if (contentId === undefined) {
+      throw new ModelError(`response_id=<${String(responseId)}> | no audio stream open for response`)
+    }
+    return contentId
   }
 
   /** Close audio, text, and transcripts before stopping the response. */
@@ -1148,9 +1209,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
       } else if (block instanceof ToolResultBlock) {
         await this._sendToolResult(block)
       } else {
-        throw new Error(
-          `content_type=${String((block as { type?: string }).type)} | content not supported by OpenAI Realtime`
-        )
+        throw new Error(`content_type=${describeContentType(block)} | content not supported by OpenAI Realtime`)
       }
     }
 
@@ -1186,7 +1245,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
       if (!(block instanceof TextBlock) && !(block instanceof JsonBlock)) {
         const contentTypes = Object.keys(block.toJSON() as Record<string, unknown>)
         throw new Error(
-          `tool_use_id=<${toolResult.toolUseId}>, content_types=<${JSON.stringify(contentTypes)}> | ` +
+          `tool_use_id=<${toolResult.toolUseId}>, content_types=<${formatKeyList(contentTypes)}> | ` +
             `Content type not supported by OpenAI Realtime API`
         )
       }
@@ -1247,9 +1306,30 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
   }
 
   private async _sendEvent(event: Record<string, unknown>): Promise<void> {
+    const socket = this._socket
+    if (!socket) {
+      throw new ModelError('model not started | no websocket')
+    }
     const message = JSON.stringify(event)
-    this._socket?.send(message)
+    socket.send(message)
+    await this._drain(socket)
     logger.debug(`event_type=<${String(event['type'])}> | openai event sent`)
+  }
+
+  /**
+   * Yield until the socket's write buffer drains below the threshold.
+   *
+   * Python's `await websocket.send(...)` yields to the websockets write-buffer drain, which paces
+   * the `input_audio_buffer.append` hot path. The DOM-style `send` is fire-and-forget, so poll
+   * `bufferedAmount` when the socket reports it; sockets that don't are sent without pacing.
+   */
+  private async _drain(socket: OpenAIRealtimeWebSocket): Promise<void> {
+    if (socket.bufferedAmount === undefined) {
+      return
+    }
+    while (socket.bufferedAmount > SEND_BUFFER_HIGH_WATER_BYTES && socket.readyState === 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, SEND_DRAIN_POLL_MS))
+    }
   }
 }
 
