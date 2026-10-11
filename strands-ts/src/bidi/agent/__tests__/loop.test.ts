@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { BidiAgent } from '../agent.js'
 import { BidiModel, ConnectionTimeoutError } from '../../models/model.js'
+import { BidiConnectionRestartEvent } from '../../types/events.js'
 import {
   BidiAfterConnectionRestartEvent,
   BidiAgentStopEvent,
@@ -114,6 +115,119 @@ function drain(agent: BidiAgent): BidiOutputEvent[] {
     }
   })().catch(() => {})
   return seen
+}
+
+/** One-shot latch a test opens to release a waiter. */
+class Gate {
+  private _open = false
+  private readonly _waiters: (() => void)[] = []
+
+  /** Whether the gate has been opened. */
+  isOpen(): boolean {
+    return this._open
+  }
+
+  /** Release every waiter. */
+  open(): void {
+    this._open = true
+    for (const waiter of this._waiters.splice(0)) waiter()
+  }
+
+  /** Wait until the gate opens. */
+  wait(): Promise<void> {
+    if (this._open) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      this._waiters.push(resolve)
+    })
+  }
+}
+
+/** Model whose reader blocks on a live stream and raises when the stream closes, like Nova. */
+class StreamScriptedModel extends BidiModel {
+  restartCalls = 0
+  private _closed = new Gate()
+  private _inbox: BidiOutputEvent[] = []
+  private _arrived = new Gate()
+
+  getConfig(): BidiModelConfig {
+    return { modelId: 'stream-model' }
+  }
+
+  override getConnectionConfig(): ConnectionConfig {
+    return {}
+  }
+
+  updateConfig(): void {}
+
+  async start(): Promise<void> {
+    this._closed = new Gate()
+    this._inbox = []
+    this._arrived = new Gate()
+  }
+
+  async stop(): Promise<void> {
+    this._closed.open()
+  }
+
+  async restart(): Promise<void> {
+    this.restartCalls += 1
+    await this.stop()
+    await this.start()
+  }
+
+  async send(): Promise<void> {}
+
+  /** Queue one event for the live stream. */
+  emit(event: BidiOutputEvent): void {
+    this._inbox.push(event)
+    this._arrived.open()
+  }
+
+  async *receive(): AsyncGenerator<BidiOutputEvent> {
+    const closed = this._closed
+    const inbox = this._inbox
+    let arrived = this._arrived
+    while (true) {
+      while (inbox.length > 0) {
+        if (closed.isOpen()) throw new Error('stream closed')
+        yield inbox.shift()!
+      }
+      if (closed.isOpen()) throw new Error('stream closed')
+      arrived = this._arrived === arrived ? new Gate() : this._arrived
+      this._arrived = arrived
+      await Promise.race([arrived.wait(), closed.wait()])
+      if (closed.isOpen() && inbox.length === 0) throw new Error('stream closed')
+    }
+  }
+}
+
+/** Read the loop's internals; the Python tests drive the same private surface. */
+interface LoopInternals {
+  _generation: number
+  _started: boolean
+  _restarting: boolean
+  _eventQueue: { push: (item: BidiOutputEvent) => void; send: (item: BidiOutputEvent) => Promise<void> }
+  _restartTimer: { cancel: () => void }
+  _restartConnection: (
+    timeoutError: undefined,
+    generation: number,
+    options: { restartEvent: BidiConnectionRestartEvent }
+  ) => Promise<boolean>
+  _onRestartDeadline: () => Promise<void>
+  _onRestartWarning: (timeLeftS: number) => Promise<void>
+  _accumulatedInputTokens: () => number
+  _accumulatedOutputTokens: () => number
+  _accumulatedTotalTokens: () => number
+}
+
+/** Reach the loop behind an agent. */
+function internals(agent: BidiAgent): LoopInternals {
+  return (agent as unknown as { _loop: LoopInternals })._loop
+}
+
+/** A connection stop event tagged with a reason the test can identify. */
+function stopEvent(connectionId: string): BidiOutputEvent {
+  return { type: 'bidiConnectionStop', connectionId, reason: 'userRequest' }
 }
 
 describe('AgentLoop', () => {
@@ -434,6 +548,275 @@ describe('AgentLoop', () => {
 
       expect(model.start).toHaveBeenCalledTimes(2)
       await agent.stop()
+    })
+  })
+})
+
+describe('AgentLoop fencing and pairing', () => {
+  describe('restart', () => {
+    it('drops the stream-close error raised by a superseded reader', async () => {
+      const model = new StreamScriptedModel()
+      const agent = new BidiAgent({ model, systemPrompt: 'hi' })
+      await agent.start()
+      const loop = internals(agent)
+      const reader = agent.receive()[Symbol.asyncIterator]()
+
+      const first = stopEvent('first')
+      model.emit(first)
+      expect((await reader.next()).value).toBe(first)
+
+      // The restart closes the old stream, so the superseded reader raises; the error is fenced.
+      await loop._restartConnection(undefined, loop._generation, {
+        restartEvent: new BidiConnectionRestartEvent({
+          type: 'bidiConnectionRestart',
+          reason: 'scheduled',
+          turnInterrupted: false,
+        }),
+      })
+      expect(model.restartCalls).toBe(1)
+      expect((await reader.next()).value).toMatchObject({ type: 'bidiConnectionRestart' })
+
+      const second = stopEvent('second')
+      model.emit(second)
+      expect((await reader.next()).value).toBe(second)
+
+      await reader.return?.(undefined)
+      await agent.stop()
+    })
+
+    it('counts usage once per event across a restart', async () => {
+      const model = new StreamScriptedModel()
+      const agent = new BidiAgent({ model })
+      await agent.start()
+      const loop = internals(agent)
+      loop._restartTimer.cancel()
+      const reader = agent.receive()[Symbol.asyncIterator]()
+
+      model.emit({ type: 'bidiUsage', inputTokens: 60, outputTokens: 40, totalTokens: 100 })
+      model.emit({ type: 'bidiUsage', inputTokens: 30, outputTokens: 20, totalTokens: 50 })
+      await reader.next()
+      await vi.waitFor(() => {
+        expect(loop._accumulatedTotalTokens()).toBe(150)
+      })
+
+      // The old reader is parked mid-queue; resuming it must not re-record onto the new connection.
+      const swap = loop._restartConnection(undefined, loop._generation, {
+        restartEvent: new BidiConnectionRestartEvent({
+          type: 'bidiConnectionRestart',
+          reason: 'scheduled',
+          turnInterrupted: false,
+        }),
+      })
+      await reader.next()
+      await swap
+      expect(loop._accumulatedTotalTokens()).toBe(150)
+
+      model.emit({ type: 'bidiUsage', inputTokens: 5, outputTokens: 5, totalTokens: 10 })
+      await vi.waitFor(() => {
+        expect(loop._accumulatedTotalTokens()).toBe(160)
+      })
+      expect(loop._accumulatedInputTokens()).toBe(95)
+      expect(loop._accumulatedOutputTokens()).toBe(65)
+
+      await reader.return?.(undefined)
+      await agent.stop()
+    })
+
+    it('does not restart the model when the deadline fires after stop', async () => {
+      const model = new RestartableScriptedModel()
+      const agent = new BidiAgent({ model })
+      await agent.start()
+      const loop = internals(agent)
+      loop._restartTimer.cancel()
+
+      const queued: BidiOutputEvent = {
+        type: 'bidiTranscriptDelta',
+        delta: 'queued',
+        role: 'assistant',
+        contentId: 'assistant-transcript',
+      }
+      void loop._eventQueue.send(queued)
+      const deadline = loop._onRestartDeadline()
+      await vi.waitFor(() => {
+        expect(loop._restarting || !loop._started).toBe(true)
+      })
+
+      await agent.stop()
+      await deadline
+
+      expect(model.restart).not.toHaveBeenCalled()
+    })
+
+    it('yields the restart event before surfacing a failed reactive restart', async () => {
+      const model = new RestartableScriptedModel()
+      model.receive = vi.fn((): AsyncIterable<BidiOutputEvent> => {
+        throw new ConnectionTimeoutError('test timeout')
+      })
+      model.restart = vi.fn(async (): Promise<void> => {
+        throw new Error('restart failed')
+      })
+      const agent = new BidiAgent({ model })
+      await agent.start()
+      const reader = agent.receive()[Symbol.asyncIterator]()
+
+      expect((await reader.next()).value).toMatchObject({ type: 'bidiConnectionRestart', reason: 'timeout' })
+      await expect(reader.next()).rejects.toThrow('restart failed')
+
+      await agent.stop()
+    })
+  })
+
+  describe('event queue', () => {
+    it('delivers connection events in order on the shared queue', async () => {
+      const model = new ScriptedBidiModel()
+      const agent = new BidiAgent({ model })
+      await agent.start()
+      const loop = internals(agent)
+      loop._restartTimer.cancel()
+
+      const data: BidiOutputEvent = {
+        type: 'bidiTranscriptDelta',
+        delta: 'new-connection output',
+        role: 'assistant',
+        contentId: 'assistant-transcript',
+      }
+      let acked = false
+      void loop._eventQueue.send(data).then(() => {
+        acked = true
+      })
+      // The warning is pushed, not acked (it comes from the restart timer, which must not stall).
+      await loop._onRestartWarning(10)
+      expect(acked).toBe(false)
+
+      const reader = agent.receive()[Symbol.asyncIterator]()
+      expect((await reader.next()).value).toBe(data)
+      expect((await reader.next()).value).toMatchObject({ type: 'bidiConnectionWarning', timeLeftS: 10 })
+      expect(acked).toBe(true)
+
+      await reader.return?.(undefined)
+      await agent.stop()
+    })
+  })
+
+  describe('tools', () => {
+    it('keeps tool exchanges paired when groups finish out of order', async () => {
+      const gates = new Map<string, Gate>([
+        ['first', new Gate()],
+        ['second', new Gate()],
+      ])
+      const delayed = tool({
+        name: 'delayed',
+        description: 'Waits until the caller releases this tool',
+        callback: async (input: unknown) => {
+          const name = (input as { name: string }).name
+          await gates.get(name)!.wait()
+          return name
+        },
+      })
+      const model = new ScriptedBidiModel()
+      const agent = new BidiAgent({ model, tools: [delayed] })
+      await agent.start()
+      const reader = agent.receive()[Symbol.asyncIterator]()
+
+      const names = ['first', 'second']
+      for (const name of names) {
+        model.channel.push({
+          type: 'bidiToolUseBlocks',
+          toolUses: [new ToolUseBlock({ toolUseId: name, name: 'delayed', input: { name } })],
+        })
+        expect((await reader.next()).value).toMatchObject({ type: 'bidiToolUseBlocks' })
+      }
+
+      const expected: [string, string[]][] = names.flatMap((name): [string, string[]][] => [
+        ['assistant', [name]],
+        ['user', [name]],
+      ])
+      for (const name of [...names].reverse()) {
+        gates.get(name)!.open()
+        await vi.waitFor(() => {
+          expect(agent.messages.filter((message) => message.role === 'user').length).toBeGreaterThan(
+            expected.filter(([role]) => role === 'user').length
+          )
+        })
+        expected.push(['assistant', [name]], ['user', [name]])
+      }
+
+      expect(
+        agent.messages.map((message): [string, string[]] => [
+          message.role,
+          message.content.flatMap((block) =>
+            block.type === 'toolUseBlock' || block.type === 'toolResultBlock' ? [block.toolUseId] : []
+          ),
+        ])
+      ).toEqual(expected)
+
+      await reader.return?.(undefined)
+      await agent.stop()
+    })
+
+    it('records a tool group results in tool-use request order', async () => {
+      const gates = new Map<string, Gate>([
+        ['slow', new Gate()],
+        ['fast', new Gate()],
+      ])
+      const delayed = tool({
+        name: 'delayed',
+        description: 'Waits until the caller releases this tool',
+        callback: async (input: unknown) => {
+          const name = (input as { name: string }).name
+          await gates.get(name)!.wait()
+          return name
+        },
+      })
+      const model = new ScriptedBidiModel()
+      const agent = new BidiAgent({ model, tools: [delayed] })
+      await agent.start()
+      const seen = drain(agent)
+
+      model.channel.push({
+        type: 'bidiToolUseBlocks',
+        toolUses: [
+          new ToolUseBlock({ toolUseId: 'slow', name: 'delayed', input: { name: 'slow' } }),
+          new ToolUseBlock({ toolUseId: 'fast', name: 'delayed', input: { name: 'fast' } }),
+        ],
+      })
+
+      // Completion order is the reverse of the request order.
+      gates.get('fast')!.open()
+      gates.get('slow')!.open()
+
+      await vi.waitFor(() => {
+        expect(model.send).toHaveBeenCalled()
+      })
+
+      const resultMessage = agent.messages.at(-1)!
+      expect(resultMessage.content.map((block) => (block.type === 'toolResultBlock' ? block.toolUseId : ''))).toEqual([
+        'slow',
+        'fast',
+      ])
+      expect(seen.some((event) => (event as { type: string }).type === 'messageAddedEvent')).toBe(true)
+      await agent.stop()
+    })
+  })
+
+  describe('stop', () => {
+    it('fires the agent stop hook even when cleanup fails', async () => {
+      const model = new ScriptedBidiModel()
+      model.stop = vi.fn(async (): Promise<void> => {
+        throw new Error('cleanup failed')
+      })
+      const agent = new BidiAgent({ model })
+      const received: string[] = []
+      agent.addHook(BidiAgentStopEvent, () => {
+        received.push('stop')
+      })
+      await agent.start()
+      expect(received).toEqual([])
+
+      await expect(agent.stop()).rejects.toThrow('cleanup failed')
+
+      expect(model.stop).toHaveBeenCalledTimes(1)
+      expect(received).toEqual(['stop'])
     })
   })
 })
