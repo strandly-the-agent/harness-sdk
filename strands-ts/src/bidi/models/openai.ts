@@ -120,10 +120,7 @@ export interface OpenAIRealtimeWebSocket {
  * @param headers - Authorization and account headers for the handshake
  * @returns An unopened WebSocket
  */
-export type OpenAIRealtimeWebSocketFactory = (
-  url: string,
-  headers: Record<string, string>
-) => OpenAIRealtimeWebSocket
+export type OpenAIRealtimeWebSocketFactory = (url: string, headers: Record<string, string>) => OpenAIRealtimeWebSocket
 
 /**
  * Configuration for {@link OpenAIRealtimeModel}.
@@ -348,7 +345,7 @@ class WebSocketReader {
         this._notify = undefined
         resolve(false)
       }, timeoutMs)
-      this._notify = () => {
+      this._notify = (): void => {
         clearTimeout(timer)
         this._notify = undefined
         resolve(true)
@@ -384,10 +381,7 @@ function defaultWebSocketFactory(url: string, headers: Record<string, string>): 
  * await model.start({ systemPrompt: 'You are a helpful assistant' })
  * ```
  */
-export class OpenAIRealtimeModel
-  extends BidiModel<OpenAIRealtimeModelConfig>
-  implements AudioCapable, Restartable
-{
+export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> implements AudioCapable, Restartable {
   /** Resolved OpenAI API key. */
   readonly apiKey: string
 
@@ -439,9 +433,7 @@ export class OpenAIRealtimeModel
 
     const resolvedApiKey = apiKey ?? globalThis?.process?.env?.OPENAI_API_KEY
     if (!resolvedApiKey) {
-      throw new Error(
-        'OpenAI API key is required. Provide via api_key or set OPENAI_API_KEY environment variable.'
-      )
+      throw new Error('OpenAI API key is required. Provide via api_key or set OPENAI_API_KEY environment variable.')
     }
     this.apiKey = resolvedApiKey
 
@@ -456,9 +448,7 @@ export class OpenAIRealtimeModel
 
     this.timeoutS = timeoutS
     if (timeoutS > OPENAI_MAX_TIMEOUT_S) {
-      throw new Error(
-        `timeout_s=<${timeoutS}>, max_timeout_s=<${OPENAI_MAX_TIMEOUT_S}> | timeout exceeds max limit`
-      )
+      throw new Error(`timeout_s=<${timeoutS}>, max_timeout_s=<${OPENAI_MAX_TIMEOUT_S}> | timeout exceeds max limit`)
     }
 
     // OpenAI emits no approaching-limit warning, so restart proactively a margin below the
@@ -1158,7 +1148,9 @@ export class OpenAIRealtimeModel
       } else if (block instanceof ToolResultBlock) {
         await this._sendToolResult(block)
       } else {
-        throw new Error(`content_type=${String((block as { type?: string }).type)} | content not supported by OpenAI Realtime`)
+        throw new Error(
+          `content_type=${String((block as { type?: string }).type)} | content not supported by OpenAI Realtime`
+        )
       }
     }
 
