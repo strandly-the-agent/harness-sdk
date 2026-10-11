@@ -2,6 +2,9 @@
  * Bidirectional model interfaces and configuration types.
  */
 
+export { BedrockNovaSonicModel } from './bedrock.js'
+export type { BedrockNovaSonicModelConfig, BedrockNovaSonicModelOptions } from './bedrock.js'
+
 export { BidiModel, ConnectionTimeoutError, isAudioCapable, isRestartable } from './model.js'
 export type { AudioCapable, BidiModelStartOptions, Restartable } from './model.js'
 
