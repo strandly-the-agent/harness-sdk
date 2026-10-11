@@ -507,9 +507,7 @@ describe('GoogleGeminiLiveModel', () => {
 
       await expect(
         model.send({
-          content: [
-            { type: 'toolResultBlock', toolUseId: 'call-1', content: [{ type: 'imageBlock', format: 'png' }] },
-          ],
+          content: [{ type: 'toolResultBlock', toolUseId: 'call-1', content: [{ type: 'imageBlock', format: 'png' }] }],
         } as never)
       ).rejects.toThrow('Content type not supported by Gemini Live API')
     })

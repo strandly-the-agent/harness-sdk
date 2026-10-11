@@ -230,10 +230,7 @@ class MessageQueue {
  * }
  * ```
  */
-export class GoogleGeminiLiveModel
-  extends BidiModel<GoogleGeminiLiveModelConfig>
-  implements Restartable, AudioCapable
-{
+export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig> implements Restartable, AudioCapable {
   private _config: GoogleGeminiLiveModelConfig
   private _client: GoogleGenAI
   private _audioConfig: AudioConfig
