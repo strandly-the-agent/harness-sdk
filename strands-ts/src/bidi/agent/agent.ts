@@ -776,6 +776,8 @@ export class BidiAgent implements LocalAgent {
 
       const streamTasks = Promise.all([inputsTask, outputsTask])
       if (cancelSignal !== undefined) {
+        // Abandoning the combined promise on abort would otherwise reject unhandled.
+        streamTasks.catch(() => {})
         await Promise.race([streamTasks, whenAborted(cancelSignal)])
       } else {
         await streamTasks
