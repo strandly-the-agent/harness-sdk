@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { ImageBlock } from '../../../types/media.js'
+import { ImageBlock, decodeBase64 } from '../../../types/media.js'
 import { JsonBlock, Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../../types/messages.js'
 import { AudioDelta } from '../../types/media.js'
 import {
@@ -156,7 +156,7 @@ function convert(
 function audioDelta(base64: string, contentId: string): BidiAudioDeltaEvent {
   return new BidiAudioDeltaEvent({
     type: 'bidiAudioDelta',
-    audio: Uint8Array.from(Buffer.from(base64, 'base64')),
+    audio: decodeBase64(base64),
     format: 'pcm',
     sampleRate: 24000,
     channels: 1,
