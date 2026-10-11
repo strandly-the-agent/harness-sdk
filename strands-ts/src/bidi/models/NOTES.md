@@ -20,6 +20,7 @@ Still to port:
   image-block sending, `test_start_passes_merged_config_to_genai` variants.
 - `test_update_config_warns_invalid_keys` has no TS analog: there is no `validate_config_keys`
   equivalent in `strands-ts`, so unknown keys are a type error instead of a runtime warning.
+
 # Handoff — `bidi/models/bedrock.ts`
 
 Implementation is complete and green (tsc / eslint / prettier / 48 vitest tests).
@@ -70,6 +71,7 @@ per connection (`new FakeClient([[...conn1], [...conn2]])`), records the request
 `client.sent`, and the `chunk()` helper wraps a Nova wire event. `await tick()` after a send lets the
 background request-stream drain catch up. The idle gate used by the "tool result after restart" path
 is released by running `collect(model.receive())` on the new connection.
+
 # NOTES — bidi OpenAI provider (chunk O1)
 
 Implementation (`openai.ts`) is complete and ported line-for-line from

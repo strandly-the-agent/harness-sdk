@@ -690,7 +690,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
     } else if (typeof content === 'object' && content !== null && Array.isArray(content.content)) {
       await this._sendMessage(content)
     } else {
-      throw new Error(`content_type=${typeof content} | content not supported`)
+      throw new Error(`content_type=${describeContentType(content)} | content not supported`)
     }
   }
 
@@ -1209,9 +1209,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
       } else if (block instanceof ToolResultBlock) {
         await this._sendToolResult(block)
       } else {
-        throw new Error(
-          `content_type=${describeContentType(block)} | content not supported by OpenAI Realtime`
-        )
+        throw new Error(`content_type=${describeContentType(block)} | content not supported by OpenAI Realtime`)
       }
     }
 
