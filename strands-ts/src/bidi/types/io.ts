@@ -5,7 +5,7 @@
  * methods managed by `BidiAgent.run()`.
  */
 
-import type { LocalAgent } from '../../types/agent.js'
+import type { BidiAgent } from '../agent/agent.js'
 import type { BidiAgentInput } from './agent.js'
 import type { BidiOutputEvent } from './events.js'
 
@@ -20,7 +20,7 @@ export interface BidiInputStream {
    *
    * @param agent - The agent that owns this stream
    */
-  start?(agent: LocalAgent): Promise<void>
+  start?(agent: BidiAgent): Promise<void>
 
   /** Stop input. */
   stop?(): Promise<void>
@@ -44,7 +44,7 @@ export interface BidiOutputStream {
    *
    * @param agent - The agent that owns this stream
    */
-  start?(agent: LocalAgent): Promise<void>
+  start?(agent: BidiAgent): Promise<void>
 
   /** Stop output. */
   stop?(): Promise<void>
