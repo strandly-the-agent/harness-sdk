@@ -13,38 +13,113 @@ import { ConnectionTimeoutError } from '../model.js'
 
 import type { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime'
 import type { ToolSpec } from '../../../tools/types.js'
-import type { BidiOutputEvent } from '../../types/events.js'
+import type {
+  BidiAudioDeltaEvent,
+  BidiAudioStopEvent,
+  BidiOutputEvent,
+  BidiToolUseBlocksEvent,
+  BidiTranscriptDeltaEvent,
+} from '../../types/events.js'
 
-type NovaEvent = Record<string, any>
+type NovaEvent = Record<string, unknown>
+
+/** One request chunk as the fake client sees it. */
+interface NovaChunk {
+  chunk: { bytes: Uint8Array }
+}
+
+/** The subset of the bidirectional stream command the fake client reads. */
+interface NovaCommand {
+  input: { modelId: string; body: AsyncIterable<NovaChunk> }
+}
 
 /** Wrap a Nova wire event in the response-stream chunk shape. */
-function chunk(event: NovaEvent): { chunk: { bytes: Uint8Array } } {
+function chunk(event: Record<string, unknown>): NovaChunk {
   return { chunk: { bytes: new TextEncoder().encode(JSON.stringify({ event })) } }
+}
+
+/** Read a dot-separated path out of a recorded Nova wire event. */
+function field(event: unknown, path: string): unknown {
+  return path
+    .split('.')
+    .reduce<unknown>((value, key) => (value == null ? undefined : (value as Record<string, unknown>)[key]), event)
+}
+
+/** Consume a request body so producers waiting on an ack are released. */
+async function drain(body: AsyncIterable<NovaChunk>): Promise<void> {
+  for await (const part of body) {
+    void part
+  }
+}
+
+/** Response stream the test feeds event by event, staying open until closed. */
+class PushStream implements AsyncIterable<unknown> {
+  private readonly _pending: unknown[] = []
+  private _notify: (() => void) | undefined
+  private _closed = false
+
+  push(event: unknown): void {
+    this._pending.push(event)
+    this._notify?.()
+    this._notify = undefined
+  }
+
+  close(): void {
+    this._closed = true
+    this._notify?.()
+    this._notify = undefined
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<unknown> {
+    while (true) {
+      const next = this._pending.shift()
+      if (next !== undefined) {
+        yield next
+        continue
+      }
+      if (this._closed) {
+        return
+      }
+      await new Promise<void>((resolve) => {
+        this._notify = resolve
+      })
+    }
+  }
 }
 
 /** Stand-in for `BedrockRuntimeClient` that scripts the response stream and records the request. */
 class FakeClient {
   /** Nova wire events pushed onto the request stream, in order. */
   readonly sent: NovaEvent[] = []
-  readonly commands: { input: { modelId: string; body: AsyncIterable<{ chunk: { bytes: Uint8Array } }> } }[] = []
-  send = vi.fn(async (command: any) => {
+  readonly commands: NovaCommand[] = []
+  send = vi.fn(async (command: NovaCommand) => {
     this.commands.push(command)
     void this._drain(command.input.body)
     return { body: this._stream(this.commands.length - 1) }
   })
 
-  /** @param _outputs - Response-stream events for each successive connection. */
-  constructor(private readonly _outputs: unknown[][] = []) {}
+  /** @param _outputs - Response-stream events, or an open stream, for each successive connection. */
+  constructor(private readonly _outputs: (unknown[] | PushStream)[] = []) {}
 
-  private async *_stream(call: number): AsyncGenerator<unknown> {
-    for (const output of this._outputs[call] ?? []) {
+  /** Nova wire events pushed onto the request stream, filtered to one event key. */
+  texts(): string[] {
+    return this.sent.filter((event) => 'textInput' in event).map((event) => String(field(event, 'textInput.content')))
+  }
+
+  private _stream(call: number): AsyncIterable<unknown> {
+    const output = this._outputs[call]
+    return output instanceof PushStream ? output : this._iterate(output ?? [])
+  }
+
+  private async *_iterate(outputs: unknown[]): AsyncGenerator<unknown> {
+    for (const output of outputs) {
       yield output
     }
   }
 
-  private async _drain(body: AsyncIterable<{ chunk: { bytes: Uint8Array } }>): Promise<void> {
+  private async _drain(body: AsyncIterable<NovaChunk>): Promise<void> {
     for await (const part of body) {
-      this.sent.push(JSON.parse(new TextDecoder().decode(part.chunk.bytes)).event)
+      this.sent.push((JSON.parse(new TextDecoder().decode(part.chunk.bytes)) as { event: NovaEvent }).event)
     }
   }
 }
@@ -58,6 +133,13 @@ function newModel(outputs: unknown[] = [], options: Record<string, unknown> = {}
 /** Let the background request-stream drain catch up. */
 async function tick(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** Let the receive loop and any deferred sends run to a standstill. */
+async function settle(): Promise<void> {
+  for (let index = 0; index < 5; index += 1) {
+    await tick()
+  }
 }
 
 async function collect(events: AsyncIterable<BidiOutputEvent>): Promise<BidiOutputEvent[]> {
@@ -141,7 +223,7 @@ describe('BedrockNovaSonicModel', () => {
       const [model, client] = newModel([], { audio: { output: { sampleRate: 24000 } }, voice: 'tiffany' })
       await model.start()
       await tick()
-      expect(client.sent[1]!.promptStart.audioOutputConfiguration).toEqual({
+      expect(field(client.sent[1], 'promptStart.audioOutputConfiguration')).toEqual({
         mediaType: 'audio/lpcm',
         sampleRateHertz: 24000,
         sampleSizeBits: 16,
@@ -159,7 +241,7 @@ describe('BedrockNovaSonicModel', () => {
       await model.start({ systemPrompt: 'be brief' })
       await tick()
 
-      expect(client.commands[0]!.input.modelId).toBe('amazon.nova-2-5-sonic')
+      expect(field(client.commands[0], 'input.modelId')).toBe('amazon.nova-2-5-sonic')
       expect(client.sent.map((event) => Object.keys(event)[0])).toEqual([
         'sessionStart',
         'promptStart',
@@ -167,13 +249,13 @@ describe('BedrockNovaSonicModel', () => {
         'textInput',
         'contentEnd',
       ])
-      expect(client.sent[2]!.contentStart).toMatchObject({
+      expect(field(client.sent[2], 'contentStart')).toMatchObject({
         type: 'TEXT',
         role: 'SYSTEM',
         interactive: false,
         textInputConfiguration: { mediaType: 'text/plain' },
       })
-      expect(client.sent[3]!.textInput.content).toBe('be brief')
+      expect(field(client.sent[3], 'textInput.content')).toBe('be brief')
     })
 
     it('adds tool configuration when tools are provided', async () => {
@@ -181,9 +263,9 @@ describe('BedrockNovaSonicModel', () => {
       await model.start({ tools: [toolSpec] })
       await tick()
 
-      const promptStart = client.sent[1]!.promptStart
-      expect(promptStart.toolUseOutputConfiguration).toEqual({ mediaType: 'application/json' })
-      expect(promptStart.toolConfiguration.tools).toEqual([
+      const promptStart = field(client.sent[1], 'promptStart')
+      expect(field(promptStart, 'toolUseOutputConfiguration')).toEqual({ mediaType: 'application/json' })
+      expect(field(promptStart, 'toolConfiguration.tools')).toEqual([
         {
           toolSpec: {
             name: 'time_tool',
@@ -242,7 +324,7 @@ describe('BedrockNovaSonicModel', () => {
       await model.send({ content: [new TextBlock('one'), new TextBlock('two')] })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
+      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'one\ntwo'])
     })
 
@@ -260,9 +342,9 @@ describe('BedrockNovaSonicModel', () => {
       await model.send(new AudioDelta({ format: 'pcm', source: { bytes: new Uint8Array([3]) } }))
       await tick()
 
-      const audioStarts = client.sent.filter((event) => event.contentStart?.type === 'AUDIO')
+      const audioStarts = client.sent.filter((event) => field(event, 'contentStart.type') === 'AUDIO')
       expect(audioStarts).toHaveLength(1)
-      expect(audioStarts[0]!.contentStart.audioInputConfiguration).toEqual({
+      expect(field(audioStarts[0], 'contentStart.audioInputConfiguration')).toEqual({
         mediaType: 'audio/lpcm',
         sampleRateHertz: 16000,
         sampleSizeBits: 16,
@@ -272,8 +354,8 @@ describe('BedrockNovaSonicModel', () => {
       })
 
       const audioInputs = client.sent.filter((event) => 'audioInput' in event)
-      expect(audioInputs.map((event) => event.audioInput.content)).toEqual(['AAEC', 'Aw=='])
-      expect(audioInputs[0]!.audioInput.contentName).toBe(audioStarts[0]!.contentStart.contentName)
+      expect(audioInputs.map((event) => field(event, 'audioInput.content'))).toEqual(['AAEC', 'Aw=='])
+      expect(field(audioInputs[0], 'audioInput.contentName')).toBe(field(audioStarts[0], 'contentStart.contentName'))
     })
 
     it('unwraps a single tool result content block', async () => {
@@ -287,9 +369,12 @@ describe('BedrockNovaSonicModel', () => {
       await tick()
 
       const toolResult = client.sent.find((event) => 'toolResult' in event)!.toolResult
-      expect(JSON.parse(toolResult.content)).toEqual({ json: { time: 12 } })
+      expect(JSON.parse(String(field(toolResult, 'content')))).toEqual({ json: { time: 12 } })
 
-      const toolStart = client.sent.find((event) => event.contentStart?.type === 'TOOL')!.contentStart
+      const toolStart = field(
+        client.sent.find((event) => field(event, 'contentStart.type') === 'TOOL'),
+        'contentStart'
+      )
       expect(toolStart).toMatchObject({
         interactive: false,
         type: 'TOOL',
@@ -317,7 +402,7 @@ describe('BedrockNovaSonicModel', () => {
       await tick()
 
       const toolResult = client.sent.find((event) => 'toolResult' in event)!.toolResult
-      expect(JSON.parse(toolResult.content)).toEqual({ content: [{ text: 'a' }, { text: 'b' }] })
+      expect(JSON.parse(String(field(toolResult, 'content')))).toEqual({ content: [{ text: 'a' }, { text: 'b' }] })
     })
 
     it('rejects unsupported tool result content', async () => {
@@ -341,9 +426,9 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const history = client.sent.filter((event) => event.contentStart?.interactive === false)
-      expect(history.map((event) => event.contentStart.role)).toEqual(['SYSTEM', 'USER', 'ASSISTANT'])
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
+      const history = client.sent.filter((event) => field(event, 'contentStart.interactive') === false)
+      expect(history.map((event) => field(event, 'contentStart.role'))).toEqual(['SYSTEM', 'USER', 'ASSISTANT'])
+      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'hello', 'hi'])
     })
 
@@ -357,7 +442,7 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
+      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'second'])
     })
 
@@ -371,7 +456,7 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
+      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'keep'])
     })
   })
@@ -407,7 +492,7 @@ describe('BedrockNovaSonicModel', () => {
         'bidiTranscriptDelta',
       ])
       // Word boundaries are preserved between chunks.
-      expect(events.slice(3).map((event: any) => event.delta)).toEqual(['hello', ' there'])
+      expect(events.slice(3).map((event) => (event as BidiTranscriptDeltaEvent).delta)).toEqual(['hello', ' there'])
       expect(events[2]).toMatchObject({ role: 'user', contentId: 'c1' })
     })
 
@@ -441,7 +526,7 @@ describe('BedrockNovaSonicModel', () => {
         'bidiTranscriptStart',
         'bidiTranscriptDelta',
       ])
-      expect((events[3] as any).delta).toBe('kept')
+      expect((events[3] as BidiTranscriptDeltaEvent).delta).toBe('kept')
     })
 
     it('decodes audio output into bytes with the output format', async () => {
@@ -464,10 +549,10 @@ describe('BedrockNovaSonicModel', () => {
         'bidiAudioStop',
         'bidiResponseStop',
       ])
-      const delta = events[3] as any
+      const delta = events[3] as BidiAudioDeltaEvent
       expect(delta.audio).toEqual(new Uint8Array([0, 1, 2]))
       expect(delta).toMatchObject({ contentId: 'a1', format: 'pcm', sampleRate: 24000, channels: 1 })
-      expect((events[4] as any).contentId).toBe('a1')
+      expect((events[4] as BidiAudioStopEvent).contentId).toBe('a1')
     })
 
     it('emits a barge-in and closes the open response', async () => {
@@ -495,7 +580,7 @@ describe('BedrockNovaSonicModel', () => {
       await model.start()
       const events = await collect(model.receive())
 
-      const toolEvent = events[1] as any
+      const toolEvent = events[1] as BidiToolUseBlocksEvent
       expect(toolEvent.type).toBe('bidiToolUseBlocks')
       expect(toolEvent.toolUses).toHaveLength(1)
       expect(toolEvent.toolUses[0]).toMatchObject({ toolUseId: 't1', name: 'time_tool', input: { zone: 'UTC' } })
@@ -608,13 +693,16 @@ describe('BedrockNovaSonicModel', () => {
       const client = new FakeClient()
       const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
       const error = Object.assign(new Error('slow down'), { name: 'ThrottlingException' })
-      client.send.mockImplementation((async () => ({
-        body: {
-          [Symbol.asyncIterator]: () => ({
-            next: () => Promise.reject(error),
-          }),
-        },
-      })) as unknown as typeof client.send)
+      client.send.mockImplementation((async (command: NovaCommand) => {
+        void drain(command.input.body)
+        return {
+          body: {
+            [Symbol.asyncIterator]: () => ({
+              next: () => Promise.reject(error),
+            }),
+          },
+        }
+      }) as unknown as typeof client.send)
       await model.start()
       await expect(collect(model.receive())).rejects.toThrow(ModelThrottledError)
     })
@@ -630,8 +718,7 @@ describe('BedrockNovaSonicModel', () => {
 
       expect(first).toBe('amazon.nova-2-5-sonic')
       expect(client.send).toHaveBeenCalledTimes(2)
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
-      expect(texts).toContain('replayed')
+      expect(client.texts()).toContain('replayed')
     })
 
     it('does not raise when restarted twice', async () => {
@@ -657,8 +744,7 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => event.textInput.content)
-      const replayed = texts.find((text) => text.includes('A tool call finished'))
+      const replayed = client.texts().find((text) => text.includes('A tool call finished'))
       expect(replayed).toContain('Tool: time_tool')
       expect(replayed).toContain('Arguments: {"zone":"UTC"}')
       expect(replayed).toContain('Status: success')
