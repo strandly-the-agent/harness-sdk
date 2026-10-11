@@ -56,15 +56,15 @@ Supporting edits made in A3:
 `src/bidi/agent/__tests__/loop.test.ts` has 29 tests (`npx vitest run --project unit-node
 src/bidi/agent` = 102 passed). The seven tests the loop review named are ported:
 
-| `test_loop.py` | `loop.test.ts` |
-| --- | --- |
-| `test_restart_fences_superseded_reader_stream_close_error` | restart > drops the stream-close error raised by a superseded reader |
-| `test_stale_reader_event_does_not_corrupt_state_across_restart` | restart > counts usage once per event across a restart |
-| `test_deadline_callback_does_not_restart_after_stop_while_queue_full` | restart > does not restart the model when the deadline fires after stop |
-| `test_connection_events_share_bounded_event_queue` | event queue > delivers connection events in order on the shared queue |
-| `test_tool_exchanges_remain_paired_when_results_finish_out_of_order` | tools > keeps tool exchanges paired when groups finish out of order (+ records a tool group results in tool-use request order) |
-| `test_agent_stop_hook[cleanup_fails]` | stop > fires the agent stop hook even when cleanup fails |
-| `test_reactive_restart_failure_yields_event_before_raising` | restart > yields the restart event before surfacing a failed reactive restart |
+| `test_loop.py`                                                        | `loop.test.ts`                                                                                                                 |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `test_restart_fences_superseded_reader_stream_close_error`            | restart > drops the stream-close error raised by a superseded reader                                                           |
+| `test_stale_reader_event_does_not_corrupt_state_across_restart`       | restart > counts usage once per event across a restart                                                                         |
+| `test_deadline_callback_does_not_restart_after_stop_while_queue_full` | restart > does not restart the model when the deadline fires after stop                                                        |
+| `test_connection_events_share_bounded_event_queue`                    | event queue > delivers connection events in order on the shared queue                                                          |
+| `test_tool_exchanges_remain_paired_when_results_finish_out_of_order`  | tools > keeps tool exchanges paired when groups finish out of order (+ records a tool group results in tool-use request order) |
+| `test_agent_stop_hook[cleanup_fails]`                                 | stop > fires the agent stop hook even when cleanup fails                                                                       |
+| `test_reactive_restart_failure_yields_event_before_raising`           | restart > yields the restart event before surfacing a failed reactive restart                                                  |
 
 Still not ported, by area:
 
