@@ -12,6 +12,7 @@ import { BidiModel } from '../../models/model.js'
 import type { BidiModelConfig } from '../../models/configs.js'
 import type { BidiMessage, BidiContentDelta } from '../../types/content.js'
 import type { BidiOutputEvent } from '../../types/events.js'
+import type { BidiAgentInput } from '../../types/agent.js'
 import type { BidiInputStream, BidiOutputStream } from '../../types/io.js'
 import { AudioDelta } from '../../types/media.js'
 import { BidiConnectionStartEvent } from '../../types/events.js'
@@ -239,6 +240,25 @@ describe('BidiAgent', () => {
       expect(signal.aborted).toBe(true)
     })
 
+    it('composes an external cancel signal passed to start', async () => {
+      const agent = new BidiAgent({ model: new FakeBidiModel() })
+      const external = new AbortController()
+
+      await agent.start({ cancelSignal: external.signal })
+      expect(agent.cancelSignal.aborted).toBe(false)
+      external.abort()
+
+      expect(agent.cancelSignal.aborted).toBe(true)
+    })
+
+    it('reports an already-aborted external signal as cancelled', async () => {
+      const agent = new BidiAgent({ model: new FakeBidiModel() })
+
+      await agent.start({ cancelSignal: AbortSignal.abort() })
+
+      expect(agent.cancelSignal.aborted).toBe(true)
+    })
+
     it('clears the signal on stop so the agent can be reused', async () => {
       const agent = await startedAgent()
       agent.cancel()
@@ -254,7 +274,7 @@ describe('BidiAgent', () => {
       const agent = new BidiAgent({ model: new FakeBidiModel() })
       const invocationState = { userId: 'user_123' }
 
-      await agent.start(invocationState)
+      await agent.start({ invocationState })
 
       expect(loop.start).toHaveBeenCalledWith(invocationState)
     })
@@ -431,6 +451,25 @@ describe('BidiAgent', () => {
       expect(input.start).toHaveBeenCalledWith(agent)
       expect(output.start).toHaveBeenCalledWith(agent)
       expect(written).toEqual([event])
+      expect(input.stop).toHaveBeenCalledOnce()
+      expect(output.stop).toHaveBeenCalledOnce()
+      expect(loop.stop).toHaveBeenCalledOnce()
+    })
+
+    it('ends the run and stops the agent when the cancel signal aborts', async () => {
+      const agent = new BidiAgent({ model: new FakeBidiModel() })
+      const controller = new AbortController()
+      const input: BidiInputStream = {
+        stop: vi.fn(async () => {}),
+        read: vi.fn(() => new Promise<BidiAgentInput>(() => {})),
+      }
+      const output: BidiOutputStream = { stop: vi.fn(async () => {}), write: vi.fn(async () => {}) }
+
+      const run = agent.run({ inputs: [input], outputs: [output], cancelSignal: controller.signal })
+      controller.abort()
+      await run
+
+      expect(agent.cancelSignal.aborted).toBe(false)
       expect(input.stop).toHaveBeenCalledOnce()
       expect(output.stop).toHaveBeenCalledOnce()
       expect(loop.stop).toHaveBeenCalledOnce()

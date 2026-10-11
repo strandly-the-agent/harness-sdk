@@ -67,7 +67,7 @@ const MAX_HISTORY_MESSAGE_BYTES = 50 * 1024
 const MAX_HISTORY_TOTAL_BYTES = 200 * 1024
 
 /** Nova caps a connection at ~8 min; restart at 7 min, leaving headroom below the cap. */
-const DEFAULT_RESTART_AFTER_S = 420
+const DEFAULT_RESTART_AFTER_MS = 420_000
 
 /** Bound on waiting for Nova to go idle before sending a tool result after restart anyway. */
 const TOOL_RESULT_AFTER_RESTART_WAIT_S = 30
@@ -265,7 +265,7 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
       modelId: MODEL_DEFAULTS.bedrockNovaSonic.modelId,
       ...modelConfig,
       params: { ...(modelConfig.params ?? {}) },
-      connection: { restartAfterS: DEFAULT_RESTART_AFTER_S, ...(modelConfig.connection ?? {}) },
+      connection: { restartAfterMs: DEFAULT_RESTART_AFTER_MS, ...(modelConfig.connection ?? {}) },
     }
     if (audio !== undefined) {
       this._config.audio = audio
@@ -658,7 +658,7 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
     if (!claimed) {
       cancelled.value = true
       logger.warn(
-        `tool_use_id=<${toolResult.toolUseId}>, timeout_s=<${TOOL_RESULT_AFTER_RESTART_WAIT_S}> | nova did not go idle | sending tool result after restart`
+        `tool_use_id=<${toolResult.toolUseId}>, timeout_ms=<${TOOL_RESULT_AFTER_RESTART_WAIT_S}> | nova did not go idle | sending tool result after restart`
       )
       this._responseIdle.clear()
     }

@@ -48,15 +48,19 @@ import type { AudioConfig, BidiModelConfig, ConnectionConfig } from './configs.j
  * does not emit any warnings when approaching the limit. As a workaround, we configure a max timeout client side to
  * gracefully handle the connection closure. We set the max to 50 minutes to provide enough buffer before hitting the
  * real limit.
+ *
+ * @internal
  */
-export const OPENAI_MAX_TIMEOUT_S = 3000
+export const OPENAI_MAX_TIMEOUT_MS = 3_000_000
 
 /**
- * Proactive restart fires this many seconds below the reader's reactive timeout, leaving room for
- * the turn-boundary alignment wait so a mid-turn swap stays graceful instead of being preempted by
- * the reactive timeout firing at the same instant.
+ * Proactive restart fires this many milliseconds below the reader's reactive timeout, leaving room
+ * for the turn-boundary alignment wait so a mid-turn swap stays graceful instead of being preempted
+ * by the reactive timeout firing at the same instant.
+ *
+ * @internal
  */
-export const OPENAI_PROACTIVE_RESTART_MARGIN_S = 300
+export const OPENAI_PROACTIVE_RESTART_MARGIN_MS = 300_000
 
 const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime'
 const DEFAULT_SAMPLE_RATE = 24000
@@ -100,6 +104,8 @@ type RealtimeEvent = Record<string, any> // eslint-disable-line @typescript-esli
  * Minimal WebSocket surface used by the provider.
  *
  * Satisfied by the global `WebSocket` and by test doubles.
+ *
+ * @internal
  */
 export interface OpenAIRealtimeWebSocket {
   /** Current connection state, following the WebSocket readyState values. */
@@ -127,6 +133,8 @@ export interface OpenAIRealtimeWebSocket {
  * @param url - Realtime endpoint including the model query parameter
  * @param headers - Authorization and account headers for the handshake
  * @returns An unopened WebSocket
+ *
+ * @internal
  */
 export type OpenAIRealtimeWebSocketFactory = (url: string, headers: Record<string, string>) => OpenAIRealtimeWebSocket
 
@@ -158,11 +166,11 @@ export interface OpenAIRealtimeModelOptions extends OpenAIRealtimeModelConfig {
   project?: string
 
   /**
-   * Maximum connection duration in seconds. Unless `connection.restartAfterS` is set, the agent
-   * restarts the connection 5 minutes before this limit, so a value of 300 or less disables the
-   * proactive restart.
+   * Maximum connection duration in milliseconds. Unless `connection.restartAfterMs` is set, the
+   * agent restarts the connection 5 minutes before this limit, so a value of 300,000 or less
+   * disables the proactive restart.
    */
-  timeoutS?: number
+  timeoutMs?: number
 
   /** Output voice identifier. Defaults to `alloy`. */
   voice?: string
@@ -435,8 +443,8 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
   /** Resolved OpenAI project. */
   readonly project?: string
 
-  /** Maximum connection duration in seconds. */
-  readonly timeoutS: number
+  /** Maximum connection duration in milliseconds. */
+  readonly timeoutMs: number
 
   private readonly _config: OpenAIRealtimeModelConfig
   private readonly _transcriptionModelId: string | null
@@ -454,7 +462,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
    *
    * @param options - Model configuration and connection options
    * @throws {@link Error} If `modelId` is not a non-empty string, the API key is missing,
-   *   `timeoutS` exceeds the maximum, or the configured audio formats are unsupported
+   *   `timeoutMs` exceeds the maximum, or the configured audio formats are unsupported
    */
   constructor(options: OpenAIRealtimeModelOptions) {
     super()
@@ -464,7 +472,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
       apiKey,
       organization,
       project,
-      timeoutS = OPENAI_MAX_TIMEOUT_S,
+      timeoutMs = OPENAI_MAX_TIMEOUT_MS,
       voice = 'alloy',
       websocket,
       ...modelConfig
@@ -490,16 +498,18 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
       this.project = resolvedProject
     }
 
-    this.timeoutS = timeoutS
-    if (timeoutS > OPENAI_MAX_TIMEOUT_S) {
-      throw new Error(`timeout_s=<${timeoutS}>, max_timeout_s=<${OPENAI_MAX_TIMEOUT_S}> | timeout exceeds max limit`)
+    this.timeoutMs = timeoutMs
+    if (timeoutMs > OPENAI_MAX_TIMEOUT_MS) {
+      throw new Error(
+        `timeout_ms=<${timeoutMs}>, max_timeout_ms=<${OPENAI_MAX_TIMEOUT_MS}> | timeout exceeds max limit`
+      )
     }
 
     // OpenAI emits no approaching-limit warning, so restart proactively a margin below the
     // reader's reactive timeout: the swap can then align to a turn boundary before the reactive
-    // path fires. Deriving from timeoutS keeps that headroom when a caller lowers it.
+    // path fires. Deriving from timeoutMs keeps that headroom when a caller lowers it.
     this._config.connection = {
-      restartAfterS: timeoutS - OPENAI_PROACTIVE_RESTART_MARGIN_S,
+      restartAfterMs: timeoutMs - OPENAI_PROACTIVE_RESTART_MARGIN_MS,
       ...(this._config.connection ?? {}),
     } satisfies ConnectionConfig
 
@@ -564,7 +574,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
     logger.debug('openai realtime connection starting')
 
     this._connectionId = globalThis.crypto.randomUUID()
-    this._startTime = Math.floor(Date.now() / 1000)
+    this._startTime = Date.now()
 
     this._sessionState = new SessionState()
 
@@ -596,7 +606,7 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
    *
    * @returns Async iterable of standardized bidirectional output events
    * @throws {@link Error} If the model was not started
-   * @throws {@link ConnectionTimeoutError} If the connection exceeded `timeoutS`
+   * @throws {@link ConnectionTimeoutError} If the connection exceeded `timeoutMs`
    */
   async *receive(): AsyncGenerator<BidiOutputEvent> {
     if (!this._connectionId) {
@@ -617,9 +627,9 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
     const state = this._sessionState
 
     for (;;) {
-      const duration = Date.now() / 1000 - startTime
-      if (duration >= this.timeoutS) {
-        throw new ConnectionTimeoutError(`timeout_s=<${this.timeoutS}>`)
+      const duration = Date.now() - startTime
+      if (duration >= this.timeoutMs) {
+        throw new ConnectionTimeoutError(`timeout_ms=<${this.timeoutMs}>`)
       }
 
       const message = await reader?.recv(RECV_POLL_TIMEOUT_MS)

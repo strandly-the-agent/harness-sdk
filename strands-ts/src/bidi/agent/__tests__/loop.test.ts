@@ -214,7 +214,7 @@ interface LoopInternals {
     options: { restartEvent: BidiConnectionRestartEvent }
   ) => Promise<boolean>
   _onRestartDeadline: () => Promise<void>
-  _onRestartWarning: (timeLeftS: number) => Promise<void>
+  _onRestartWarning: (timeLeftMs: number) => Promise<void>
   _accumulatedInputTokens: () => number
   _accumulatedOutputTokens: () => number
   _accumulatedTotalTokens: () => number
@@ -682,7 +682,7 @@ describe('AgentLoop fencing and pairing', () => {
 
       const reader = agent.receive()[Symbol.asyncIterator]()
       expect((await reader.next()).value).toBe(data)
-      expect((await reader.next()).value).toMatchObject({ type: 'bidiConnectionWarning', timeLeftS: 10 })
+      expect((await reader.next()).value).toMatchObject({ type: 'bidiConnectionWarning', timeLeftMs: 10 })
       expect(acked).toBe(true)
 
       await reader.return?.(undefined)

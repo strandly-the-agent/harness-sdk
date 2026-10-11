@@ -7,10 +7,16 @@
  * Hook events live in the `@strands-agents/sdk/bidi/hooks` subpath: `BidiResponseStopEvent` and
  * `BidiBargeInEvent` name both an output event and a hook event, so the two sets cannot share a
  * barrel.
+ *
+ * @example
+ * ```typescript
+ * import { BidiAgent, BedrockNovaSonicModel, ConsoleIO } from '@strands-agents/sdk/bidi'
+ * import { BidiBargeInEvent } from '@strands-agents/sdk/bidi/hooks'
+ * ```
  */
 
 export * from './types/index.js'
 export * from './models/index.js'
 export * from './io/index.js'
 export { BidiAgent } from './agent/agent.js'
-export type { BidiAgentConfig } from './agent/agent.js'
+export type { BidiAgentConfig, BidiStartOptions } from './agent/agent.js'

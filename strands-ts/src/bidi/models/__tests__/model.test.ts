@@ -60,8 +60,8 @@ describe('BidiModel', () => {
       const model = new TestBidiModel()
       expect(model.getConnectionConfig()).toEqual({})
 
-      model.updateConfig({ connection: { restartAfterS: 420, autoRestart: false } })
-      expect(model.getConnectionConfig()).toEqual({ restartAfterS: 420, autoRestart: false })
+      model.updateConfig({ connection: { restartAfterMs: 420, autoRestart: false } })
+      expect(model.getConnectionConfig()).toEqual({ restartAfterMs: 420, autoRestart: false })
     })
   })
 })

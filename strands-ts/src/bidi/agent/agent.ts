@@ -37,7 +37,7 @@ import type {
   MiddlewareWrapPhase,
 } from '../../middleware/types.js'
 import { BedrockModel } from '../../models/bedrock.js'
-import type { Model } from '../../models/model.js'
+import type { BaseModelConfig, Model } from '../../models/model.js'
 import type { Plugin } from '../../plugins/plugin.js'
 import { PluginRegistry } from '../../plugins/registry.js'
 import { ToolRegistry } from '../../registry/tool-registry.js'
@@ -139,7 +139,25 @@ function flattenTools(toolList: ToolList): { tools: Tool[]; mcpClients: McpClien
  */
 export interface BidiAgentConfig {
   /**
-   * BidiModel instance, Bedrock model ID string, or omitted to use Nova Sonic 2.5.
+   * The bidirectional model instance the agent will use.
+   * Accepts a BidiModel or a string representing a Bedrock Nova Sonic model ID
+   * (creates `BedrockNovaSonicModel`). Defaults to Nova Sonic 2.5.
+   *
+   * @example
+   * ```typescript
+   * // Using a string model ID (creates BedrockNovaSonicModel)
+   * const agent = new BidiAgent({
+   *   model: 'amazon.nova-2-5-sonic'
+   * })
+   *
+   * // Using an explicit BedrockNovaSonicModel instance with configuration
+   * const agent = new BidiAgent({
+   *   model: new BedrockNovaSonicModel({
+   *     modelId: 'amazon.nova-2-5-sonic',
+   *     region: 'us-east-1'
+   *   })
+   * })
+   * ```
    */
   model?: BidiModel | string
 
@@ -165,7 +183,7 @@ export interface BidiAgentConfig {
   /** Description of what the agent does. */
   description?: string
 
-  /** Plugins registering hook callbacks and tools for lifecycle events. */
+  /** Plugins to register with the agent. */
   plugins?: Plugin[]
 
   /** Initial app state accessible to tools and application logic. */
@@ -189,8 +207,29 @@ export interface BidiAgentConfig {
   /** Execution environment for tool code. Defaults to the host with no isolation. */
   sandbox?: Sandbox
 
-  /** Model for auxiliary side calls. Defaults to a {@link BedrockModel}. */
-  auxModel?: Model | string
+  /**
+   * Model for auxiliary side calls. Defaults to a {@link BedrockModel} — bidirectional models
+   * cannot serve auxiliary calls, so unlike `AgentConfig.auxModel` this does not default to
+   * `model`. Accepts a Model or a string representing a Bedrock model ID.
+   */
+  auxModel?: Model<BaseModelConfig> | string
+}
+
+/**
+ * Options for {@link BidiAgent.start}.
+ */
+export interface BidiStartOptions {
+  /**
+   * Context shared by reference with tools and hooks until stop(), including across connection
+   * restarts. Defaults to a new empty object.
+   */
+  invocationState?: InvocationState
+
+  /**
+   * External cancellation signal composed with the agent's own. Aborting it is equivalent to
+   * calling {@link BidiAgent.cancel}.
+   */
+  cancelSignal?: AbortSignal
 }
 
 /**
@@ -295,6 +334,7 @@ export class BidiAgent implements LocalAgent {
   private _auxModel: Model | undefined
   private _sessionId?: string
   private _abortController = new AbortController()
+  private _cancelSignal: AbortSignal = this._abortController.signal
   private _started = false
   /** Serializes history mutations so paired messages stay adjacent. */
   private _messageLock: Promise<void> = Promise.resolve()
@@ -436,7 +476,7 @@ export class BidiAgent implements LocalAgent {
    * Treat as read-only; call {@link BidiAgent.cancel} to request cancellation.
    */
   get cancelSignal(): AbortSignal {
-    return this._abortController.signal
+    return this._cancelSignal
   }
 
   /**
@@ -547,11 +587,10 @@ export class BidiAgent implements LocalAgent {
    * Initializes the streaming connection and starts background tasks for processing model
    * events, tool execution, and connection management.
    *
-   * @param invocationState - Context shared by reference with tools and hooks until stop(),
-   *   including across connection restarts. Defaults to a new empty object.
+   * @param options - Invocation state and an optional external cancellation signal
    * @throws {@link Error} If the agent is already started.
    */
-  async start(invocationState?: InvocationState): Promise<void> {
+  async start(options?: BidiStartOptions): Promise<void> {
     if (this._started) {
       throw new Error('agent already started | call stop before starting again')
     }
@@ -564,7 +603,12 @@ export class BidiAgent implements LocalAgent {
     )
 
     logger.debug('agent starting')
-    await this._loop.start(invocationState)
+    // Compose the external signal with the agent's own, as Agent.stream does.
+    this._cancelSignal =
+      options?.cancelSignal !== undefined
+        ? AbortSignal.any([this._abortController.signal, options.cancelSignal])
+        : this._abortController.signal
+    await this._loop.start(options?.invocationState)
     this._started = true
   }
 
@@ -646,6 +690,7 @@ export class BidiAgent implements LocalAgent {
       await this._loop.stop()
     } finally {
       this._abortController = new AbortController()
+      this._cancelSignal = this._abortController.signal
     }
   }
 
@@ -701,8 +746,8 @@ export class BidiAgent implements LocalAgent {
   /**
    * Run the agent using the provided I/O streams for bidirectional communication.
    *
-   * @param options - Input streams, output streams, and optional invocation state shared by
-   *   reference with tools and hooks for the duration of the run.
+   * @param options - Input streams, output streams, invocation state, and an optional external
+   *   cancellation signal. Aborting the signal cancels the conversation and ends the run.
    *
    * @example
    * ```typescript
@@ -715,14 +760,18 @@ export class BidiAgent implements LocalAgent {
     inputs: BidiInputStream[]
     outputs: BidiOutputStream[]
     invocationState?: InvocationState
+    cancelSignal?: AbortSignal
   }): Promise<void> {
-    const { inputs, outputs, invocationState } = options
+    const { inputs, outputs, invocationState, cancelSignal } = options
     const inputsController = new AbortController()
 
     let inputsTask: Promise<void> | undefined
     let outputsTask: Promise<void> | undefined
     try {
-      await this.start(invocationState)
+      await this.start({
+        ...(invocationState !== undefined && { invocationState }),
+        ...(cancelSignal !== undefined && { cancelSignal }),
+      })
 
       for (const stream of [...inputs, ...outputs]) {
         await stream.start?.(this)
@@ -737,7 +786,14 @@ export class BidiAgent implements LocalAgent {
         .createTask((taskSignal) => this._runOutputs(outputs, taskSignal))
         .finally(() => inputsController.abort())
 
-      await taskGroup.join()
+      const streamTasks = taskGroup.join()
+      if (cancelSignal !== undefined) {
+        // Abandoning the joined promise on abort would otherwise reject unhandled.
+        streamTasks.catch(() => {})
+        await Promise.race([streamTasks, whenAborted(cancelSignal)])
+      } else {
+        await streamTasks
+      }
     } finally {
       inputsController.abort()
       // A read already in flight cannot be cancelled in JavaScript, so it is abandoned.

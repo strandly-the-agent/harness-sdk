@@ -80,17 +80,17 @@ export interface GoogleGeminiLiveAudioConfig {
  * config) keeps reactive-only behavior: no proactive timer, restart only after the provider
  * reports a timeout.
  *
- * All fields are optional. The proactive timer arms only when `restartAfterS` is positive and
+ * All fields are optional. The proactive timer arms only when `restartAfterMs` is positive and
  * automatic restarts are enabled.
  */
 export interface ConnectionConfig {
   /**
-   * Seconds after a connection is established at which to proactively restart. Set it at least
-   * ~10s below the provider's own connection limit: the restart may wait briefly for the current
-   * turn to finish (aligning the swap to a turn boundary), and that wait plus the swap must
-   * complete before the provider's limit.
+   * Milliseconds after a connection is established at which to proactively restart. Set it at
+   * least ~10s below the provider's own connection limit: the restart may wait briefly for the
+   * current turn to finish (aligning the swap to a turn boundary), and that wait plus the swap
+   * must complete before the provider's limit.
    */
-  restartAfterS?: number
+  restartAfterMs?: number
 
   /** Whether the loop restarts the connection automatically (default true). */
   autoRestart?: boolean
