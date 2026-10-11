@@ -26,4 +26,5 @@ npm start
 | [mcp](./mcp/) | Model Context Protocol integration with external tool servers |
 | [agents-as-tools](./agents-as-tools/) | Agents as tools pattern (orchestrator delegates to specialized tool agents) |
 | [browser-agent](./browser-agent/) | Browser-based agent with DOM manipulation canvas (OpenAI, Anthropic, Bedrock) |
+| [bidi-console](./bidi-console/) | Bidirectional streaming agent with console (text) input and output |
 | [telemetry](./telemetry/) | OpenTelemetry tracing with Jaeger (requires Docker, see its [README](./telemetry/README.md)) |
