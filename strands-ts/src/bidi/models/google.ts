@@ -62,6 +62,9 @@ const DEFAULT_RESTART_AFTER_S = 540
 /** Output audio sample rate fixed by the Gemini Live API. */
 const OUTPUT_SAMPLE_RATE = 24000
 
+/** Upper bound on waiting for the websocket close callback during `stop()`. */
+const CLOSE_TIMEOUT_MS = 1000
+
 /**
  * Configuration for the Google Gemini Live model.
  */
@@ -167,7 +170,14 @@ class MessageQueue {
   private _messages: LiveServerMessage[] = []
   private _error?: unknown
   private _closed = false
+  private _aborted = false
   private _notify?: (() => void) | undefined
+  private _resolveClosed: () => void = () => {}
+
+  /** Resolves once the connection has closed or failed. */
+  readonly closed: Promise<void> = new Promise<void>((resolve) => {
+    this._resolveClosed = resolve
+  })
 
   /** Buffer one server message and wake a waiting reader. */
   push(message: LiveServerMessage): void {
@@ -179,30 +189,42 @@ class MessageQueue {
   fail(error: unknown): void {
     this._error = error
     this._closed = true
+    this._resolveClosed()
     this._wake()
   }
 
   /** End the stream after buffered messages drain. */
   close(): void {
     this._closed = true
+    this._resolveClosed()
     this._wake()
   }
 
-  /** Yield buffered messages until the connection closes or errors. */
+  /** Abandon the stream immediately, settling a reader parked on an empty queue. */
+  abort(): void {
+    this._aborted = true
+    this._wake()
+  }
+
+  /** Yield buffered messages until the connection closes, errors, or the reader abandons it. */
   async *drain(): AsyncGenerator<LiveServerMessage> {
-    for (;;) {
-      while (this._messages.length > 0) {
-        yield this._messages.shift() as LiveServerMessage
+    try {
+      for (;;) {
+        while (this._messages.length > 0) {
+          yield this._messages.shift() as LiveServerMessage
+        }
+        if (this._error !== undefined) {
+          throw this._error
+        }
+        if (this._closed || this._aborted) {
+          return
+        }
+        await new Promise<void>((resolve) => {
+          this._notify = resolve
+        })
       }
-      if (this._error !== undefined) {
-        throw this._error
-      }
-      if (this._closed) {
-        return
-      }
-      await new Promise<void>((resolve) => {
-        this._notify = resolve
-      })
+    } finally {
+      this._notify = undefined
     }
   }
 
@@ -380,13 +402,28 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
     // Bind the message queue and turn state to this reader so that after a restart swaps the
     // session, a still-draining reader keeps its own closing stream and turn state rather than
     // mutating the connection that replaced it.
-    const queue = this._messages as MessageQueue
+    const queue = this._messages
+    if (!queue) {
+      throw new Error('model not started | call start before receiving')
+    }
     const turnState = this._turnState
 
-    for await (const message of queue.drain()) {
-      for (const event of this._convertGeminiLiveEvent(message, turnState)) {
-        yield event
+    // Pull messages through an explicit iterator so the queue can be aborted before the
+    // generator is unwound; a reader parked inside `drain()` would otherwise never settle.
+    const messages = queue.drain()
+    try {
+      for (;;) {
+        const next = await messages.next()
+        if (next.done === true) {
+          return
+        }
+        for (const event of this._convertGeminiLiveEvent(next.value, turnState)) {
+          yield event
+        }
       }
+    } finally {
+      queue.abort()
+      await messages.return(undefined)
     }
   }
 
@@ -394,7 +431,8 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
    * Send a complete message or an individual audio delta to the Gemini Live API.
    *
    * @param content - A complete message or an individual audio delta
-   * @throws {@link Error} If the model has not been started or the content is unsupported
+   * @throws {@link Error} If the model has not been started, the session is closed, or the content is
+   *   unsupported
    */
   override async send(content: BidiMessage | BidiContentDelta): Promise<void> {
     if (!this._connectionId) {
@@ -413,17 +451,30 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
   /** Close the Gemini Live API connection. */
   override async stop(): Promise<void> {
     const stopSession = async (): Promise<void> => {
-      if (!this._liveSession) {
+      const session = this._liveSession
+      const queue = this._messages
+      // Clear first so a second stop() during restart does not close an already-closed session.
+      this._liveSession = undefined
+      this._messages = undefined
+      if (!session) {
         return
       }
 
       try {
-        this._liveSession.close()
+        session.close()
+        // Python awaits the session's __aexit__ and therefore the socket teardown. Wait for the
+        // close callback so a restart cannot connect while the old socket is still closing,
+        // bounded so a socket that never closes cannot hang stop().
+        if (queue) {
+          await Promise.race([
+            queue.closed,
+            new Promise<void>((resolve) => {
+              setTimeout(resolve, CLOSE_TIMEOUT_MS)
+            }),
+          ])
+        }
       } finally {
-        // Clear so a second stop() during restart does not close an already-closed session.
-        this._liveSession = undefined
-        this._messages?.close()
-        this._messages = undefined
+        queue?.close()
       }
     }
 
@@ -447,7 +498,7 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
    */
   async restart(options: GoogleGeminiLiveStartOptions = {}): Promise<void> {
     const { liveSessionHandle, messages, ...rest } = options
-    const handle = liveSessionHandle ?? this._liveSessionHandle
+    const handle = liveSessionHandle || this._liveSessionHandle
     logger.debug(`session_handle=<${String(handle)}> | gemini restart starting`)
     const snapshot = this._turnState.takeSnapshot()
     await this.stop()
@@ -515,8 +566,21 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
     }
 
     if (turns.length > 0) {
-      this._liveSession?.sendClientContent({ turns, turnComplete: true })
+      this._requireLiveSession().sendClientContent({ turns, turnComplete: true })
     }
+  }
+
+  /**
+   * Return the live session, failing loudly when it has already been torn down.
+   *
+   * @throws {@link ModelError} If the session is closed
+   */
+  private _requireLiveSession(): Session {
+    if (!this._liveSession) {
+      throw new ModelError('model session closed | call start before sending')
+    }
+
+    return this._liveSession
   }
 
   /** Send one user turn or tool results. */
@@ -543,13 +607,13 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
     }
 
     if (functionResponses.length > 0) {
-      this._liveSession?.sendToolResponse({ functionResponses })
+      this._requireLiveSession().sendToolResponse({ functionResponses })
       for (const response of functionResponses) {
         this._turnState.toolNames.delete(response.id as string)
       }
     }
     if (parts.length > 0) {
-      this._liveSession?.sendClientContent({ turns: [{ role: 'user', parts }], turnComplete: true })
+      this._requireLiveSession().sendClientContent({ turns: [{ role: 'user', parts }], turnComplete: true })
     }
   }
 
@@ -564,7 +628,7 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
       throw new Error('audio source must contain bytes for Gemini Live')
     }
 
-    this._liveSession?.sendRealtimeInput({
+    this._requireLiveSession().sendRealtimeInput({
       audio: {
         data: encodeBase64(audioInput.source.bytes),
         mimeType: `audio/pcm;rate=${this._audioConfig.input.sampleRate}`,
@@ -585,7 +649,7 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
         return { json: block.json }
       }
       throw new Error(
-        `tool_use_id=<${toolUseId}>, content_types=<${block.type}> | Content type not supported by Gemini Live API`
+        `toolUseId=<${toolUseId}>, contentType=<${block.type}> | Content type not supported by Gemini Live API`
       )
     })
 
@@ -595,7 +659,12 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
         ? (serialized[0] as Record<string, unknown>)
         : ({ result: serialized } as Record<string, unknown>)
 
-    return { id: toolUseId, name: this._turnState.toolNames.get(toolUseId) as string, response }
+    const name = this._turnState.toolNames.get(toolUseId)
+    if (name === undefined) {
+      throw new ModelError(`toolUseId=<${toolUseId}> | unknown tool use id`)
+    }
+
+    return { id: toolUseId, name, response }
   }
 
   /**
@@ -951,7 +1020,7 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
   /** Map a transport error so vendor errors never escape the provider. */
   private static _mapError(event: ErrorEvent): Error {
     const message = event.message || String(event.error ?? 'gemini live connection error')
-    if (/RESOURCE_EXHAUSTED|429|exhausted/i.test(message)) {
+    if (/RESOURCE_EXHAUSTED|\b429\b/i.test(message)) {
       return new ModelThrottledError(message, { cause: event.error ?? event })
     }
     return new ModelError(message, { cause: event.error ?? event })
