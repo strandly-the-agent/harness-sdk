@@ -203,8 +203,8 @@ export interface BidiAgentConfig {
 
   /**
    * Model for auxiliary side calls. Defaults to a {@link BedrockModel} — bidirectional models
-   * cannot serve auxiliary calls, so unlike {@link AgentConfig.auxModel} this does not default
-   * to `model`. Accepts a Model or a string representing a Bedrock model ID.
+   * cannot serve auxiliary calls, so unlike `AgentConfig.auxModel` this does not default to
+   * `model`. Accepts a Model or a string representing a Bedrock model ID.
    */
   auxModel?: Model<BaseModelConfig> | string
 }

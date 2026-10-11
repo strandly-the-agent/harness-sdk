@@ -438,7 +438,7 @@ export class AgentLoop {
     if (this._turnComplete.isSet()) return
     await Promise.race([this._turnComplete.wait(), sleep(MODEL_RESTART_TURN_TIMEOUT_S)])
     if (!this._turnComplete.isSet()) {
-      logger.warn(`timeout_ms=<${MODEL_RESTART_TURN_TIMEOUT_S}> | forcing restart without a turn boundary`)
+      logger.warn(`timeout_s=<${MODEL_RESTART_TURN_TIMEOUT_S}> | forcing restart without a turn boundary`)
     }
   }
 
