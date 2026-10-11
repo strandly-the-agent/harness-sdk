@@ -60,7 +60,7 @@ import { TaskGroup } from '../async/task-group.js'
 import { stopAll } from '../async/stop-all.js'
 import { BidiModel } from '../models/model.js'
 import type { BidiAgentInput } from '../types/agent.js'
-import type { BidiContentBlock, BidiMessage } from '../types/content.js'
+import type { BidiMessage } from '../types/content.js'
 import type { BidiOutputEvent } from '../types/events.js'
 import type { BidiInputStream, BidiOutputStream } from '../types/io.js'
 import { AudioDelta } from '../types/media.js'
@@ -291,7 +291,8 @@ export class BidiAgent implements LocalAgent {
     this._toolRegistry = new ToolRegistry(tools)
     this._mcpClients = mcpClients
 
-    this._auxModel = typeof config?.auxModel === 'string' ? new BedrockModel({ modelId: config.auxModel }) : config?.auxModel
+    this._auxModel =
+      typeof config?.auxModel === 'string' ? new BedrockModel({ modelId: config.auxModel }) : config?.auxModel
 
     this._hooksRegistry = new HookRegistryImplementation()
     this._middlewareRegistry = new MiddlewareRegistry()
@@ -456,7 +457,8 @@ export class BidiAgent implements LocalAgent {
       | MiddlewareInputPhase<TContext, TResult, TEvent>
       | MiddlewareWrapPhase<TContext, TResult, TEvent>
       | MiddlewareOutputPhase<TContext, TResult, TEvent>,
-    handler: MiddlewareHandler<TContext, TResult, TEvent> | MiddlewareInputHandler<TContext> | MiddlewareOutputHandler<TResult>
+    handler:
+      MiddlewareHandler<TContext, TResult, TEvent> | MiddlewareInputHandler<TContext> | MiddlewareOutputHandler<TResult>
   ): () => void {
     if ('_phase' in stageOrPhase) {
       const phase = stageOrPhase as { _phase: MiddlewarePhaseKind; _stage: MiddlewareStage<TContext, TResult, TEvent> }

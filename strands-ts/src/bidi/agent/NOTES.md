@@ -1,54 +1,28 @@
-# CHUNK A1 handoff — BidiAgent helpers + agent class
+# CHUNK A1 handoff — what the loop chunk still needs
 
-## Done (commit 5cb0b7921)
+`agent/agent.ts` is complete (`BidiAgentConfig` + `BidiAgent implements LocalAgent`), with
+`__tests__/agent.test.ts` (43) and `__tests__/snapshot.test.ts` (21) passing. Remaining work
+belongs to the loop chunk:
 
-- `blocks.ts` — ported from `_blocks.py`. Classes renamed `StreamedTextBlock` /
-  `StreamedReasoningBlock` / `StreamedTranscriptBlock` to avoid clashing with the core
-  `TextBlock` / `ReasoningBlock` content-block classes in `src/types/messages.ts`.
-  TS `Message` is an immutable-ish class (readonly `role`/`content`), so `toMessage()`
-  builds a new `Message` reusing the pending message's `trackingId` instead of spreading
-  a dict like Python.
-- `restart-timer.ts` — ported from `_restart_timer.py`. `resolveDeadlineS` returns
-  `undefined` (not `None`). `RestartTimer` uses an `AbortController` per armed cycle in
-  place of the Python `asyncio.Task`; the default sleep is `setTimeout` + abort listener;
-  `sleep` is still injectable for tests.
-- `telemetry.ts` (at `src/bidi/telemetry.ts`, matching `_telemetry.py`'s location at
-  `strands/bidi/_telemetry.py`) — ported. Tracer's `_startSpan`/`_endSpan`/
-  `_getCommonAttributes`/`_useLatestConventions` are `private` in TS, so the module casts
-  the tracer through a local `TracerInternals` interface (same intent as Python's
-  underscore access; no edit to `src/telemetry/tracer.ts`). Two gaps vs Python:
-  - no `serialize` helper in the TS telemetry module → `JSON.stringify(tools)`.
-  - no `Tracer._redact` analog in TS → `gen_ai.system_instructions` is set unredacted.
-    FLAG for review.
-- `loop.ts` — skeleton only: `AgentLoop` with `start`/`stop`/`send`/`receive`, each
-  throwing `new Error('not implemented')`. Next chunk fills it in.
-
-## NOT done
-
-1. **`agent/agent.ts`** — `BidiAgentConfig` + `class BidiAgent implements LocalAgent`
-   per `api-design.md` §5. Not started. Python source: `strands-py/src/strands/bidi/agent/agent.py`
-   (ctor lines 95–215, properties 217–300, `start`/`send`/`receive`/`stop` 337–463,
-   `take_snapshot`/`load_snapshot` 465–544, `__aenter__`/`__aexit__` 545–581,
-   `run` 582–660, `_append_messages`/`_update_message` 662–701).
-   `send()` normalisation table is at agent.py:399–427 — note the Python error types:
-   `RuntimeError("agent not started | call start before sending")`,
-   `ValueError("invalid input | expected one text or image key")`,
-   `ValueError("invalid input | input list cannot be empty")`,
-   `TypeError("invalid input | expected a string, TextBlock, or ImageBlock")`.
-2. **`types/io.ts`** — still types `start(agent: LocalAgent)`; must be narrowed to
-   `BidiAgent` (import type) once `agent.ts` exists.
-3. **`src/bidi/index.ts`** — does not yet export `./agent/index.js` (BidiAgent,
-   BidiAgentConfig).
-4. **Tests.** `__tests__/restart-timer.test.ts` is DONE (7 passing). Still to port:
-
-   - pure-helper tests from `tests/strands/bidi/agent/test_loop_telemetry.py` → `telemetry.test.ts`
-   - `tests/strands/bidi/agent/test_agent.py` + `test_snapshot.py` → `agent.test.ts`,
-     `snapshot.test.ts` (loop-dependent cases → mark DEFERRED)
-   - `_blocks.py` has no dedicated Python test file; cover `blocks.ts` directly.
-5. **`ToolCaller.create` widening** — not needed yet (no `agent.ts`); if it requires a
-   concrete `Agent`, widen its param to the minimal structural type. That is the one
-   allowed edit outside `src/bidi`.
-
-## Gates at handoff
-
-`npx tsc --noEmit -p src/tsconfig.json` → clean. eslint/prettier/vitest not yet run.
+1. **`loop.ts`** is still a skeleton (`start`/`stop`/`send`/`receive` throw). It now takes the
+   owning agent: `new AgentLoop(agent)`. The agent exposes internals the loop needs:
+   `_appendMessages(...messages)` and `_updateMessage(message, { strict })` (promise-chain
+   message lock, `MessageAddedEvent` fired per message).
+2. **Model resolution** — the constructor throws `'model must be a BidiModel, string, or
+   undefined'` for anything that is not a `BidiModel`. Once `bidi/models/bedrock.ts` lands,
+   wire string → `new BedrockNovaSonicModel({ modelId })` and undefined →
+   `modelId: 'amazon.nova-2-5-sonic'` (see the `TODO(port)` in the constructor) and add the two
+   `test_bidi_agent_init_with_default_model` / `_with_model_id` tests.
+3. **Loop-dependent Python tests not ported** (they assert on `agent.model.send` /
+   `model.start` kwargs / history written by the loop, which the mocked loop cannot produce):
+   `test_bidi_agent_tool_emits_shared_hook_events_and_retries`,
+   `test_bidi_agent_tool_injects_local_agent`, `test_bidi_agent_tool_context_receives_cancel_signal`,
+   `test_bidi_agent_tool_integration`, `test_run_cancel_cleans_up_and_allows_reuse`,
+   `test_send_normalizes_media` (history assertions), `test_send_preserves_input_identity`,
+   `test_send_concurrent_text`, `test_send_list_preserves_order_and_history` (history half),
+   `test_bidi_agent_receive_events_from_model`, `test_bidi_agent_start_receive_propagates_model_errors`,
+   `test_bidi_agent_state_consistency`, `test_update_message_finds_copied_message_after_history_edit`,
+   `test_update_message_when_message_removed`,
+   `test_load_snapshot_history_is_sent_on_next_start`.
+4. **`telemetry.test.ts`** — pure-helper tests from `test_loop_telemetry.py` are still unported;
+   `blocks.ts` has no tests (no Python test file either).

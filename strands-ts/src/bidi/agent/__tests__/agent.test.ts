@@ -14,7 +14,8 @@ import type { BidiOutputEvent } from '../../types/events.js'
 import type { BidiInputStream, BidiOutputStream } from '../../types/io.js'
 import { AudioDelta } from '../../types/media.js'
 import { BidiConnectionStartEvent } from '../../types/events.js'
-import { Message, TextBlock } from '../../../types/messages.js'
+import { Message, TextBlock, systemPromptFromData, systemPromptToData } from '../../../types/messages.js'
+import type { SystemContentBlockData } from '../../../types/messages.js'
 import { ImageBlock } from '../../../types/media.js'
 import { NotASandboxLocalEnvironment } from '../../../sandbox/not-a-sandbox-local-environment.js'
 import { InitializedEvent } from '../../../hooks/events.js'
@@ -120,9 +121,11 @@ describe('BidiAgent', () => {
     it('retains system prompt content blocks', () => {
       const agent = new BidiAgent({ model: new FakeBidiModel(), systemPrompt: 'initial prompt' })
 
-      agent.systemPrompt = [{ text: 'updated prompt' }, { cachePoint: { type: 'default' } }]
+      const blocks: SystemContentBlockData[] = [{ text: 'updated prompt' }, { cachePoint: { cacheType: 'default' } }]
 
-      expect(agent.systemPrompt).toEqual([{ text: 'updated prompt' }, { cachePoint: { type: 'default' } }])
+      agent.systemPrompt = systemPromptFromData(blocks)
+
+      expect(systemPromptToData(agent.systemPrompt!)).toEqual(blocks)
     })
 
     it('accepts conversation history as messages or their JSON form', () => {
@@ -331,7 +334,10 @@ describe('BidiAgent', () => {
       ['an empty object', {}],
       ['an empty list', []],
       ['a nested list', [new TextBlock('Hello'), [new TextBlock('Nested')]]],
-      ['a delta inside a list', [new TextBlock('Hello'), new AudioDelta({ format: 'pcm', source: { bytes: new Uint8Array([1]) } })]],
+      [
+        'a delta inside a list',
+        [new TextBlock('Hello'), new AudioDelta({ format: 'pcm', source: { bytes: new Uint8Array([1]) } })],
+      ],
     ])('rejects %s', async (_name, input) => {
       const agent = await startedAgent()
 
@@ -358,7 +364,11 @@ describe('BidiAgent', () => {
 
   describe('receive', () => {
     it('yields the events the loop produces', async () => {
-      const event = new BidiConnectionStartEvent({ connectionId: 'connection-1', model: 'mock-model' })
+      const event = new BidiConnectionStartEvent({
+        type: 'bidiConnectionStart',
+        connectionId: 'connection-1',
+        model: 'mock-model',
+      })
       loop.events = [event]
       const agent = await startedAgent()
 
@@ -379,7 +389,11 @@ describe('BidiAgent', () => {
 
   describe('run', () => {
     it('pumps inputs into the model and events into the outputs', async () => {
-      const event = new BidiConnectionStartEvent({ connectionId: 'connection-1', model: 'mock-model' })
+      const event = new BidiConnectionStartEvent({
+        type: 'bidiConnectionStart',
+        connectionId: 'connection-1',
+        model: 'mock-model',
+      })
       loop.events = [event]
       const agent = new BidiAgent({ model: new FakeBidiModel() })
 
