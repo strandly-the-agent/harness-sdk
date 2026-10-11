@@ -11,5 +11,6 @@
 
 export * from './types/index.js'
 export * from './models/index.js'
+export * from './io/index.js'
 export { BidiAgent } from './agent/agent.js'
 export type { BidiAgentConfig } from './agent/agent.js'
