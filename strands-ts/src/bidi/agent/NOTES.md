@@ -39,8 +39,8 @@
    `BidiAgent` (import type) once `agent.ts` exists.
 3. **`src/bidi/index.ts`** — does not yet export `./agent/index.js` (BidiAgent,
    BidiAgentConfig).
-4. **All tests.** Nothing under `src/bidi/agent/__tests__/` yet. To port:
-   - `tests/strands/bidi/agent/test_restart_timer.py` → `restart-timer.test.ts`
+4. **Tests.** `__tests__/restart-timer.test.ts` is DONE (7 passing). Still to port:
+
    - pure-helper tests from `tests/strands/bidi/agent/test_loop_telemetry.py` → `telemetry.test.ts`
    - `tests/strands/bidi/agent/test_agent.py` + `test_snapshot.py` → `agent.test.ts`,
      `snapshot.test.ts` (loop-dependent cases → mark DEFERRED)

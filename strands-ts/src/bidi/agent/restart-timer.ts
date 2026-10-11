@@ -60,6 +60,8 @@ export class RestartTimer {
   private readonly _onDeadline: () => Promise<void>
   private readonly _sleep: SleepFn | undefined
   private _controller: AbortController | undefined
+  /** The in-flight cycle, exposed for tests to await. */
+  private _task: Promise<void> | undefined
 
   /**
    * @param onWarning - Called with seconds-left when the warning lead elapses.
@@ -82,7 +84,7 @@ export class RestartTimer {
     this.cancel()
     const controller = new AbortController()
     this._controller = controller
-    void this._run(deadlineS, warningLeadS, controller)
+    this._task = this._run(deadlineS, warningLeadS, controller)
     logger.debug(
       `deadline_s=<${deadlineS.toFixed(1)}>, warning_lead_s=<${warningLeadS.toFixed(1)}> | proactive restart timer armed`
     )

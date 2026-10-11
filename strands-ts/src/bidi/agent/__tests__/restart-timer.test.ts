@@ -1,0 +1,145 @@
+/**
+ * Unit tests for the proactive restart timer.
+ *
+ * The timer is exercised with an injected fake clock so timing is deterministic and does
+ * not depend on wall time or a running provider.
+ */
+
+import { describe, expect, it } from 'vitest'
+import { RestartTimer, resolveDeadlineS } from '../restart-timer.js'
+
+/** A promise plus its resolver, standing in for an `asyncio.Event`. */
+function gate(): { wait: Promise<void>; set: () => void } {
+  let set!: () => void
+  const wait = new Promise<void>((resolve) => {
+    set = resolve
+  })
+  return { wait, set }
+}
+
+/** Await the timer's in-flight cycle; it is private, as in Python. */
+function task(timer: RestartTimer): Promise<void> | undefined {
+  return (timer as unknown as { _task: Promise<void> | undefined })._task
+}
+
+describe('restart-timer', () => {
+  describe('resolveDeadlineS', () => {
+    it('returns undefined when not declared', () => {
+      expect(resolveDeadlineS({})).toBeUndefined()
+      expect(resolveDeadlineS({ autoRestart: true })).toBeUndefined()
+    })
+
+    it('returns the declared restartAfterS', () => {
+      expect(resolveDeadlineS({ restartAfterS: 540 })).toBe(540)
+    })
+
+    it('returns undefined when not positive', () => {
+      expect(resolveDeadlineS({ restartAfterS: 0 })).toBeUndefined()
+      expect(resolveDeadlineS({ restartAfterS: -5 })).toBeUndefined()
+    })
+  })
+
+  describe('RestartTimer', () => {
+    it('fires the warning then the deadline', async () => {
+      const warnings: number[] = []
+      const deadlines: null[] = []
+      const sleeps: number[] = []
+
+      const timer = new RestartTimer(
+        async (timeLeftS) => {
+          warnings.push(timeLeftS)
+        },
+        async () => {
+          deadlines.push(null)
+        },
+        async (seconds) => {
+          sleeps.push(seconds)
+        }
+      )
+
+      // deadline 420, warning 30 before it => sleep 390 then 30.
+      timer.arm(420, 30)
+      await task(timer)
+
+      expect(sleeps).toEqual([390, 30])
+      expect(warnings).toEqual([30]) // timeLeftS at warning === warningLeadS
+      expect(deadlines).toEqual([null])
+    })
+
+    it('keeps the deadline countdown running while the warning is blocked', async () => {
+      const warningStarted = gate()
+      const releaseWarning = gate()
+      const deadlineSleepStarted = gate()
+      const deadlineElapsed = gate()
+      const deadlines: null[] = []
+      let sleepCount = 0
+
+      const timer = new RestartTimer(
+        async () => {
+          warningStarted.set()
+          await releaseWarning.wait
+        },
+        async () => {
+          deadlines.push(null)
+        },
+        async () => {
+          sleepCount += 1
+          if (sleepCount === 2) {
+            deadlineSleepStarted.set()
+            await deadlineElapsed.wait
+          }
+        }
+      )
+      timer.arm(420, 30)
+
+      await warningStarted.wait
+      await deadlineSleepStarted.wait
+      deadlineElapsed.set()
+      await Promise.resolve()
+      // warning ordering is preserved even after the deadline elapses
+      expect(deadlines).toEqual([])
+
+      releaseWarning.set()
+      await task(timer)
+
+      expect(deadlines).toEqual([null])
+    })
+
+    it('tolerates cancel while idle', () => {
+      const timer = new RestartTimer(
+        async () => {},
+        async () => {}
+      )
+      expect(() => timer.cancel()).not.toThrow()
+    })
+
+    it('cancels the previous cycle when re-armed', async () => {
+      const deadlines: null[] = []
+      const started = gate()
+      const never = new Promise<void>(() => {})
+
+      const timer = new RestartTimer(
+        async () => {},
+        async () => {
+          deadlines.push(null)
+        },
+        async () => {
+          started.set()
+          await never
+        }
+      )
+
+      timer.arm(420, 30)
+      await started.wait
+      const firstTask = task(timer)
+
+      timer.arm(420, 30)
+
+      await Promise.resolve()
+      expect(task(timer)).not.toBe(firstTask)
+      expect(deadlines).toEqual([])
+
+      timer.cancel()
+    })
+  })
+})
