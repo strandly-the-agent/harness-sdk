@@ -30,7 +30,7 @@ describe('restart-timer', () => {
     })
 
     it('returns the declared restartAfterMs', () => {
-      expect(resolveDeadlineMs({ restartAfterMs: 540 })).toBe(540)
+      expect(resolveDeadlineMs({ restartAfterMs: 540_000 })).toBe(540_000)
     })
 
     it('returns undefined when not positive', () => {
@@ -52,17 +52,17 @@ describe('restart-timer', () => {
         async () => {
           deadlines.push(null)
         },
-        async (seconds) => {
-          sleeps.push(seconds)
+        async (milliseconds) => {
+          sleeps.push(milliseconds)
         }
       )
 
-      // deadline 420, warning 30 before it => sleep 390 then 30.
-      timer.arm(420, 30)
+      // deadline 420s, warning 30s before it => sleep 390_000 then 30_000.
+      timer.arm(420_000, 30_000)
       await task(timer)
 
-      expect(sleeps).toEqual([390, 30])
-      expect(warnings).toEqual([30]) // timeLeftMs at warning === warningLeadMs
+      expect(sleeps).toEqual([390_000, 30_000])
+      expect(warnings).toEqual([30_000]) // timeLeftMs at warning === warningLeadMs
       expect(deadlines).toEqual([null])
     })
 
@@ -90,7 +90,7 @@ describe('restart-timer', () => {
           }
         }
       )
-      timer.arm(420, 30)
+      timer.arm(420_000, 30_000)
 
       await warningStarted.wait
       await deadlineSleepStarted.wait
@@ -129,11 +129,11 @@ describe('restart-timer', () => {
         }
       )
 
-      timer.arm(420, 30)
+      timer.arm(420_000, 30_000)
       await started.wait
       const firstTask = task(timer)
 
-      timer.arm(420, 30)
+      timer.arm(420_000, 30_000)
 
       await Promise.resolve()
       expect(task(timer)).not.toBe(firstTask)

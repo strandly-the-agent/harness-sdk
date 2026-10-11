@@ -500,7 +500,9 @@ export class OpenAIRealtimeModel extends BidiModel<OpenAIRealtimeModelConfig> im
 
     this.timeoutMs = timeoutMs
     if (timeoutMs > OPENAI_MAX_TIMEOUT_MS) {
-      throw new Error(`timeout_ms=<${timeoutMs}>, max_timeout_ms=<${OPENAI_MAX_TIMEOUT_MS}> | timeout exceeds max limit`)
+      throw new Error(
+        `timeout_ms=<${timeoutMs}>, max_timeout_ms=<${OPENAI_MAX_TIMEOUT_MS}> | timeout exceeds max limit`
+      )
     }
 
     // OpenAI emits no approaching-limit warning, so restart proactively a margin below the

@@ -781,7 +781,6 @@ export class BidiAgent implements LocalAgent {
         await streamTasks
       }
     } finally {
-
       inputsController.abort()
       // A read already in flight cannot be cancelled in JavaScript, so it is abandoned.
       inputsTask?.catch(() => {})
