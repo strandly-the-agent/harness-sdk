@@ -7,6 +7,8 @@ import { logger } from '../../logging/logger.js'
 /**
  * Buffer chunks of audio data between an agent and the audio device.
  *
+ * Single-consumer: only one reader may await `get()` or `take()` at a time.
+ *
  * @internal
  */
 export class AudioBuffer {
@@ -44,6 +46,7 @@ export class AudioBuffer {
    * @param chunk - Audio samples to buffer
    */
   put(chunk: Uint8Array): void {
+    // A parked reader means the queue is already drained, so hand the chunk straight over.
     const waiter = this._waiter
     if (waiter) {
       this._waiter = undefined

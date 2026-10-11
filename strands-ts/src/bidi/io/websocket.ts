@@ -222,7 +222,8 @@ export class WebSocketOutputStream implements BidiOutputStream {
  * ["look at this", { "image": { "format": "png", "source": { "bytes": "<base64>" } } }]
  * ```
  *
- * A frame that is not valid JSON or not one of these forms is logged and skipped. Outbound frames
+ * Text frames only: a binary frame, a frame that is not valid JSON, or a frame that is not one of
+ * these forms is logged and skipped. Outbound frames
  * (agent to client) are the JSON form of one `BidiOutputEvent`, discriminated by `type`, with
  * `bidiAudioDelta` audio base64-encoded.
  *

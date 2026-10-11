@@ -34,15 +34,13 @@ const rtAudio = vi.hoisted(() => ({
 }))
 
 /** The `audify` module shape, reusable when a test reloads the module graph. */
-const audifyFactory = vi.hoisted(
-  () => () => ({
-    RtAudio: vi.fn(function RtAudioMock() {
-      rtAudio.construct()
-      return rtAudio
-    }),
-    RtAudioFormat: { RTAUDIO_SINT16: 0x2 },
-  })
-)
+const audifyFactory = vi.hoisted(() => () => ({
+  RtAudio: vi.fn(function RtAudioMock() {
+    rtAudio.construct()
+    return rtAudio
+  }),
+  RtAudioFormat: { RTAUDIO_SINT16: 0x2 },
+}))
 
 vi.mock('audify', audifyFactory)
 

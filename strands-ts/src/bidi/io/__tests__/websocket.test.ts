@@ -195,6 +195,26 @@ describe('WebSocketIO', () => {
       await expect(input.read()).rejects.toThrow('websocket closed')
     })
 
+    it('wakes a pending read on stop', async () => {
+      const socket = new FakeSocket()
+      const input = new WebSocketIO({ socket }).input()
+      await input.start?.(agent)
+      const read = input.read()
+
+      await input.stop?.()
+
+      await expect(read).rejects.toThrow('websocket closed')
+    })
+
+    it('rejects a read when the socket is already closed at start', async () => {
+      const socket = new FakeSocket()
+      socket.readyState = 3
+      const input = new WebSocketIO({ socket }).input()
+      await input.start?.(agent)
+
+      await expect(input.read()).rejects.toThrow('websocket closed')
+    })
+
     it('removes its listeners on stop and leaves the socket open', async () => {
       const socket = new FakeSocket()
       const input = new WebSocketIO({ socket }).input()
