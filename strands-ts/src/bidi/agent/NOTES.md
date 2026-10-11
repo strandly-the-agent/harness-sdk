@@ -95,6 +95,35 @@ promise, which is what py's `_model_task` handle needs; `cancel()` aborts + awai
   `/mnt/workspace/port-notes/ts-sdk-analogs.md` §2.2–2.3) before writing this method; it is the one
   piece with no mechanical translation.
 
+## API intel gathered in A2 (saves the next chunk the lookups)
+
+- Hook events in `bidi/hooks/events.ts` all take an option bag and **require** `invocationState`:
+  `new BidiAgentStopEvent({ agent, invocationState })`, `BidiResponseStopEvent({ …, responseId })`,
+  `BidiBargeInEvent({ agent, invocationState })`,
+  `BidiBeforeConnectionRestartEvent({ agent, invocationState, reason, timeoutError? })`,
+  `BidiAfterConnectionRestartEvent({ agent, invocationState, reason, error? })` — note `error`,
+  not py's `exception`.
+- `BidiAgent._hooksRegistry` is **private**, so the loop cannot invoke callbacks yet: add an internal
+  `_invokeCallbacks(event)` to `agent.ts` next to `_appendMessages` / `_updateMessage` (the core
+  `Agent` has the same internal, `src/agent/agent.ts:1211`), and extend `agent.test.ts` accordingly.
+- Field renames vs. Python in `bidi/types/events.ts`: `BidiConnectionStopEvent.reason` is
+  `'userRequest'` (camelCase, not `'user_request'`); `BidiUsageEvent.inputTokenDetails` is optional;
+  `BidiToolUseBlocksEvent.toolUses` is `ToolUseBlock[]`. `BidiConnectionRestartEvent` carries
+  `{ reason, timeoutError?, turnInterrupted }`. Bidi metadata keys are camelCase too, so
+  `BidiToolMetadata` kinds are `'toolDispatch'` / `'toolResult'`.
+- **The tool path is the open design question.** TS has no `_tool_executor._stream(agent, tool_use,
+  …)`: `src/tools/executors/executor.ts` exposes `abstract execute(options: ToolExecutorOptions,
+  input: ToolExecutionInput)` where `ToolExecutionInput` is `{ toolUseBlocks, toolResultBlocks,
+  invocationState, assistantMessage, completedToolResults? }` — i.e. it is per-turn (a whole group of
+  tool uses), not per-tool-use, and it needs the `ToolExecutorOptions` dependency bag the core agent
+  builds at its call-site. Decide first whether `_runTools` drives one `execute()` for the group
+  (closer to the TS grain, and `ConcurrentToolExecutor` already parallelises) instead of py's
+  per-tool-use `TaskGroup` of `_runTool`s. There is also `executeBackground(...)` which may fit the
+  bidi fire-and-forget shape better. Read the `src/agent/agent.ts` call-site before writing either.
+- `TaskPool.size` drops a finished task one microtask *after* its promise settles (`create()` chains
+  the removal), so a test that asserts `size === 0` right after `await task` must flush a tick —
+  see `async/__tests__/task-pool.test.ts`. Python's `len()` is synchronous there.
+
 ## Tests still to port
 
 - `strands-py/tests/strands/bidi/agent/test_loop.py` — all 56, into `__tests__/loop.test.ts`
