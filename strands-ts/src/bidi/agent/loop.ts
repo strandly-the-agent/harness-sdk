@@ -5,6 +5,7 @@
  */
 
 import type { InvocationState } from '../../types/agent.js'
+import type { BidiAgent } from './agent.js'
 import type { AudioDelta } from '../types/media.js'
 import type { BidiMessage } from '../types/content.js'
 import type { BidiOutputEvent } from '../types/events.js'
@@ -15,6 +16,15 @@ import type { BidiOutputEvent } from '../types/events.js'
  * @internal
  */
 export class AgentLoop {
+  private readonly _agent: BidiAgent
+
+  /**
+   * @param agent - The agent that owns this loop.
+   */
+  constructor(agent: BidiAgent) {
+    this._agent = agent
+  }
+
   /**
    * Connect to the model and start the loop's background tasks.
    *
