@@ -209,7 +209,9 @@ export class AudioOutputStream implements BidiOutputStream {
   private readonly _buffer: AudioBuffer
   private readonly _consoleOutput: BidiOutputStream
   private readonly _deviceIndex: number | undefined
-  private _framesPerBuffer: number
+  private readonly _framesPerBuffer: number
+  /** Frame size the device settled on, which `RtAudio.write` requires every frame to match. */
+  private _deviceFramesPerBuffer: number
   private _audioConfig: AudioStreamConfig | undefined
   private _rtAudio: RtAudio | undefined
   private _toPcm: ((data: Uint8Array) => Buffer) | undefined
@@ -228,6 +230,7 @@ export class AudioOutputStream implements BidiOutputStream {
     this._consoleOutput = console.output()
     this._deviceIndex = config.outputDeviceIndex
     this._framesPerBuffer = config.outputFramesPerBuffer ?? FRAMES_PER_BUFFER
+    this._deviceFramesPerBuffer = this._framesPerBuffer
   }
 
   /**
@@ -260,7 +263,7 @@ export class AudioOutputStream implements BidiOutputStream {
       }
     )
     // openStream reports the frame size the device settled on; write() rejects any other size.
-    if (frameSize > 0) this._framesPerBuffer = frameSize
+    this._deviceFramesPerBuffer = frameSize > 0 ? frameSize : this._framesPerBuffer
     rtAudio.start()
     this._startPump(audioConfig.sampleRate)
     await this._consoleOutput.start?.(agent)
@@ -315,7 +318,7 @@ export class AudioOutputStream implements BidiOutputStream {
    * @param sampleRate - Playback sample rate used to derive the frame period
    */
   private _startPump(sampleRate: number): void {
-    const periodMs = Math.max(1, Math.floor((this._framesPerBuffer / sampleRate) * 1000))
+    const periodMs = Math.max(1, Math.floor((this._deviceFramesPerBuffer / sampleRate) * 1000))
     this._pump = setInterval(() => {
       if (!this._framePlayed) this._queuedFrames = Math.max(0, this._queuedFrames - 1)
       this._framePlayed = false
@@ -336,7 +339,7 @@ export class AudioOutputStream implements BidiOutputStream {
     if (!this._rtAudio || !this._toPcm) return
 
     const channels = this._audioConfig?.channels ?? 1
-    const byteCount = this._framesPerBuffer * channels * SAMPLE_SIZE
+    const byteCount = this._deviceFramesPerBuffer * channels * SAMPLE_SIZE
     while (this._queuedFrames < OUTPUT_QUEUE_DEPTH) {
       this._rtAudio.write(this._toPcm(this._buffer.take(byteCount)))
       this._queuedFrames += 1
