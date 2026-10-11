@@ -28,15 +28,19 @@ describe('stopAll', () => {
       throw new Error('stop 4 failed')
     })
 
-    await expect(stopAll(stop1, stop2, stop3, stop4)).rejects.toThrow(/failed stop sequence/)
+    const error = await stopAll(stop1, stop2, stop3, stop4).then(
+      () => undefined,
+      (reason: unknown) => reason as Error
+    )
 
     expect(stop1).toHaveBeenCalledOnce()
     expect(stop2).toHaveBeenCalledOnce()
     expect(stop3).toHaveBeenCalledOnce()
     expect(stop4).toHaveBeenCalledOnce()
 
-    const error = await stopAll(stop1, stop2, stop3, stop4).catch((reason: unknown) => reason as Error)
-    expect(error.message).toContain('stop 2 failed')
-    expect(error.message).toContain('stop 4 failed')
+    expect(error).toBeInstanceOf(Error)
+    expect(error?.message).toContain('failed stop sequence')
+    expect(error?.message).toContain('stop 2 failed')
+    expect(error?.message).toContain('stop 4 failed')
   })
 })
