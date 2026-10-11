@@ -72,6 +72,9 @@ const DEFAULT_RESTART_AFTER_S = 420
 /** Bound on waiting for Nova to go idle before sending a tool result after restart anyway. */
 const TOOL_RESULT_AFTER_RESTART_WAIT_S = 30
 
+/** Well-formed AWS region identifier (e.g. `us-east-1`, `us-gov-east-1`). */
+const VALID_REGION = /^[a-z]{2}(-[a-z]+)+-[0-9]+$/
+
 /**
  * Nova Sonic model configuration.
  */
@@ -218,7 +221,13 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
   private _config: BedrockNovaSonicModelConfig
   private _audioConfig!: AudioConfig
   private readonly _voice: string
-  private readonly _client: BedrockRuntimeClient
+
+  /** Bedrock client, created on demand when the caller did not supply one. */
+  private _client: BedrockRuntimeClient | undefined
+
+  /** Whether this model constructed `_client` itself and may therefore destroy it. */
+  private readonly _ownsClient: boolean
+  private readonly _clientConfig: BedrockRuntimeClientConfig
 
   /** API-provided identifiers. */
   private _connectionId: string | undefined
@@ -228,6 +237,9 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
   /** Request and response halves of the open bidirectional stream. */
   private _inputQueue: Queue<Uint8Array | undefined> | undefined
   private _outputStream: AsyncIterable<InvokeModelWithBidirectionalStreamOutput> | undefined
+
+  /** Aborts the in-flight bidirectional request so a wedged HTTP/2 stream can be torn down. */
+  private _abortController: AbortController | undefined
 
   /** Ensure certain events are sent in sequence when required. */
   private _sendLock: Promise<void> = Promise.resolve()
@@ -242,7 +254,7 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
    * Initialize the Nova Sonic bidirectional model.
    *
    * @param options - Model configuration, audio options, and client or region settings
-   * @throws {@link Error} If an audio sample rate is unsupported
+   * @throws {@link Error} If an audio sample rate is missing or unsupported, or the region is malformed
    */
   constructor(options?: BedrockNovaSonicModelOptions) {
     super()
@@ -263,21 +275,35 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
 
     this._resolveAudioConfig(audio)
 
-    this._client =
-      client ??
-      new BedrockRuntimeClient({
-        ...(clientConfig ?? {}),
-        // Nova Sonic needs a duplex HTTP/2 transport; the default Node handler is HTTP/1.1.
-        requestHandler: clientConfig?.requestHandler ?? new NodeHttp2Handler({ requestTimeout: 0, sessionTimeout: 0 }),
-        // region takes precedence over clientConfig
-        ...(region ? { region } : {}),
-        customUserAgent: clientConfig?.customUserAgent
-          ? `${clientConfig.customUserAgent} strands-agents-ts-sdk`
-          : 'strands-agents-ts-sdk',
-      })
-    this.region = region ?? (typeof clientConfig?.region === 'string' ? clientConfig.region : undefined)
+    this.region = validateRegion(region ?? (typeof clientConfig?.region === 'string' ? clientConfig.region : undefined))
+
+    this._ownsClient = client === undefined
+    this._client = client
+    this._clientConfig = {
+      ...(clientConfig ?? {}),
+      // region takes precedence over clientConfig
+      ...(region ? { region } : {}),
+      customUserAgent: clientConfig?.customUserAgent
+        ? `${clientConfig.customUserAgent} strands-agents-ts-sdk`
+        : 'strands-agents-ts-sdk',
+    }
 
     logger.debug(`model_id=<${this._config.modelId}> | nova sonic model initialized`)
+  }
+
+  /**
+   * Create the Bedrock client this model owns.
+   *
+   * One client per connection mirrors Python and leaves {@link stop} free to destroy the previous
+   * client's HTTP/2 sessions.
+   */
+  private _createClient(): BedrockRuntimeClient {
+    return new BedrockRuntimeClient({
+      ...this._clientConfig,
+      // Nova Sonic needs a duplex HTTP/2 transport; the default Node handler is HTTP/1.1.
+      requestHandler:
+        this._clientConfig.requestHandler ?? new NodeHttp2Handler({ requestTimeout: 0, sessionTimeout: 0 }),
+    })
   }
 
   /**
@@ -314,8 +340,8 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
 
   /** Resolve and validate input and output audio settings. */
   private _resolveAudioConfig(config: BedrockNovaSonicAudioConfig | undefined): void {
-    const inputRate = config?.input?.sampleRate ?? 16000
-    const outputRate = config?.output?.sampleRate ?? 16000
+    const inputRate = resolveSampleRate(config, 'input')
+    const outputRate = resolveSampleRate(config, 'output')
 
     for (const sampleRate of [inputRate, outputRate]) {
       if (![8000, 16000, 24000].includes(sampleRate)) {
@@ -345,12 +371,16 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
 
     const inputQueue = new Queue<Uint8Array | undefined>()
     this._inputQueue = inputQueue
+    const abortController = new AbortController()
+    this._abortController = abortController
+    this._client ??= this._createClient()
 
     const response = await this._client.send(
       new InvokeModelWithBidirectionalStreamCommand({
         modelId: this._config.modelId as string,
         body: requestBody(inputQueue),
-      })
+      }),
+      { abortSignal: abortController.signal }
     )
     this._outputStream = response.body
     logger.debug(`region=<${this.region}> | nova sonic bidirectional stream established`)
@@ -405,12 +435,17 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
     responseState.idle.set()
 
     const outputStream = this._outputStream
+    const signal = this._abortController?.signal
     const iterator = outputStream[Symbol.asyncIterator]()
     while (true) {
       let result: IteratorResult<InvokeModelWithBidirectionalStreamOutput>
       try {
         result = await iterator.next()
       } catch (error) {
+        if (signal?.aborted) {
+          logger.debug('request aborted by stop | ending nova receive loop')
+          break
+        }
         throw mapStreamError(error)
       }
 
@@ -606,16 +641,22 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
    * user or model turn.
    */
   private async _sendToolResultAfterRestart(toolUse: ToolUseBlock, toolResult: ToolResultBlock): Promise<void> {
+    // Cancelled on timeout so the orphaned waiter cannot clear a later connection's idle turn.
+    const cancelled = { value: false }
     const claimIdle = async (): Promise<void> => {
       // Re-read on every wake: stop() wakes waiters and swaps in the next connection's event.
       while (!this._responseIdle.isSet()) {
         await this._responseIdle.wait()
+        if (cancelled.value) {
+          return
+        }
       }
       this._responseIdle.clear()
     }
 
     const claimed = await withTimeout(claimIdle(), TOOL_RESULT_AFTER_RESTART_WAIT_S * 1000)
     if (!claimed) {
+      cancelled.value = true
       logger.warn(
         `tool_use_id=<${toolResult.toolUseId}>, timeout_s=<${TOOL_RESULT_AFTER_RESTART_WAIT_S}> | nova did not go idle | sending tool result after restart`
       )
@@ -641,7 +682,7 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
     logger.debug('nova connection cleanup starting')
 
     const stopEvents = async (): Promise<void> => {
-      if (!this._connectionId || !this._inputQueue) {
+      if (!this._connectionId || !this._outputStream) {
         return
       }
 
@@ -656,8 +697,22 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
       }
       this._inputQueue = undefined
       this._outputStream = undefined
+      const abortController = this._abortController
+      this._abortController = undefined
       // Push the end-of-stream sentinel so the request generator returns and the HTTP/2 stream closes.
       inputQueue.push(undefined)
+      // Abort so a wedged or half-open HTTP/2 request is torn down instead of leaking.
+      abortController?.abort()
+    }
+
+    const stopClient = async (): Promise<void> => {
+      const client = this._client
+      if (!this._ownsClient || !client) {
+        return
+      }
+      // Dropped first so a later start() builds a fresh client instead of reusing a destroyed one.
+      this._client = undefined
+      client.destroy()
     }
 
     const stopConnection = async (): Promise<void> => {
@@ -670,7 +725,7 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
       this._responseIdle = new AsyncEvent()
     }
 
-    await stopAll(stopEvents, stopStream, stopConnection)
+    await stopAll(stopEvents, stopStream, stopClient, stopConnection)
 
     logger.debug('nova connection closed')
   }
@@ -1069,7 +1124,8 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
         throw new Error('model not started | call start before sending')
       }
       for (const event of events) {
-        inputQueue.push(new TextEncoder().encode(event))
+        // send() resolves on the body generator's ack, so a stalled stream back-pressures the caller.
+        await inputQueue.send(new TextEncoder().encode(event))
       }
     } finally {
       release()
@@ -1085,17 +1141,27 @@ interface NovaTokenCounts {
 
 /** Drain the input queue into the request body the AWS SDK consumes. */
 async function* requestBody(queue: Queue<Uint8Array | undefined>): AsyncGenerator<NovaInputChunk> {
-  while (true) {
-    await queue.wait()
-    const entry = queue.shift()
-    if (entry === undefined) {
-      continue
+  try {
+    while (true) {
+      await queue.wait()
+      const entry = queue.shift()
+      if (entry === undefined) {
+        continue
+      }
+      if (entry.data === undefined) {
+        entry.ack()
+        return
+      }
+      try {
+        yield { chunk: { bytes: entry.data } } as NovaInputChunk
+      } finally {
+        // Acked once the transport has taken the chunk, releasing the waiting producer.
+        entry.ack()
+      }
     }
-    entry.ack()
-    if (entry.data === undefined) {
-      return
-    }
-    yield { chunk: { bytes: entry.data } } as NovaInputChunk
+  } finally {
+    // Release anything still waiting on an ack this generator will no longer deliver.
+    queue.dispose()
   }
 }
 
@@ -1150,6 +1216,31 @@ function formatToolResultAfterRestart(toolUse: ToolUseBlock, toolResult: ToolRes
     'Result:\n' +
     rendered.join('\n')
   )
+}
+
+/**
+ * Validate an AWS region before it reaches the Bedrock endpoint.
+ *
+ * A malformed region containing URL control characters (`@`, `:`, `/`, `#`) can re-point a signed
+ * request at a non-AWS host.
+ */
+function validateRegion(region: string | undefined): string | undefined {
+  if (region !== undefined && !VALID_REGION.test(region)) {
+    throw new Error(`invalid AWS region: '${region}'`)
+  }
+  return region
+}
+
+/** Read a required audio sample rate, defaulting the stream only when it is absent entirely. */
+function resolveSampleRate(config: BedrockNovaSonicAudioConfig | undefined, direction: 'input' | 'output'): number {
+  const stream = config?.[direction]
+  if (stream === undefined) {
+    return 16000
+  }
+  if (stream.sampleRate === undefined) {
+    throw new Error(`audio.${direction}.sampleRate is required`)
+  }
+  return stream.sampleRate
 }
 
 /** Resolve to true when the promise settles first, false on timeout. */
