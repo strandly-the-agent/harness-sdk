@@ -703,10 +703,13 @@ export class AgentLoop {
     const agent = this._agent
     const blocks = new Map<string, StreamedTextBlock>()
     let failure: Error | undefined
-    const reader = agent.model.receive()[Symbol.asyncIterator]()
+    let reader: AsyncIterator<BidiOutputEvent> | undefined
     let pendingNext: Promise<IteratorResult<BidiOutputEvent, unknown>> | undefined
 
     try {
+      // Opened inside the try, like Python: a provider that raises on `receive()` must surface
+      // through the event queue rather than rejecting the pooled task.
+      reader = agent.model.receive()[Symbol.asyncIterator]()
       while (true) {
         pendingNext = reader.next()
         const next = await Promise.race([pendingNext, whenAborted(signal)])
@@ -861,7 +864,7 @@ export class AgentLoop {
     } finally {
       // Close the provider generator so its own `finally` runs; an abandoned `next()` keeps the
       // generator busy, so the close request can only be fired, never awaited.
-      const closing = reader.return?.()
+      const closing = reader?.return?.()
       if (pendingNext !== undefined) {
         pendingNext.catch(() => {})
         void closing?.catch(() => {})

@@ -225,9 +225,9 @@ function internals(agent: BidiAgent): LoopInternals {
   return (agent as unknown as { _loop: LoopInternals })._loop
 }
 
-/** A connection stop event tagged with a reason the test can identify. */
-function stopEvent(connectionId: string): BidiOutputEvent {
-  return { type: 'bidiConnectionStop', connectionId, reason: 'userRequest' }
+/** A reader event tagged so a test can tell which connection produced it. */
+function taggedEvent(tag: string): BidiOutputEvent {
+  return { type: 'bidiTranscriptDelta', delta: tag, role: 'assistant', contentId: 'assistant-transcript' }
 }
 
 describe('AgentLoop', () => {
@@ -561,7 +561,7 @@ describe('AgentLoop fencing and pairing', () => {
       const loop = internals(agent)
       const reader = agent.receive()[Symbol.asyncIterator]()
 
-      const first = stopEvent('first')
+      const first = taggedEvent('first')
       model.emit(first)
       expect((await reader.next()).value).toBe(first)
 
@@ -576,7 +576,7 @@ describe('AgentLoop fencing and pairing', () => {
       expect(model.restartCalls).toBe(1)
       expect((await reader.next()).value).toMatchObject({ type: 'bidiConnectionRestart' })
 
-      const second = stopEvent('second')
+      const second = taggedEvent('second')
       model.emit(second)
       expect((await reader.next()).value).toBe(second)
 
@@ -629,22 +629,14 @@ describe('AgentLoop fencing and pairing', () => {
       const loop = internals(agent)
       loop._restartTimer.cancel()
 
-      const queued: BidiOutputEvent = {
-        type: 'bidiTranscriptDelta',
-        delta: 'queued',
-        role: 'assistant',
-        contentId: 'assistant-transcript',
-      }
-      void loop._eventQueue.send(queued)
-      const deadline = loop._onRestartDeadline()
-      await vi.waitFor(() => {
-        expect(loop._restarting || !loop._started).toBe(true)
-      })
-
+      void loop._eventQueue.send(taggedEvent('queued'))
       await agent.stop()
-      await deadline
+
+      // The timer callback can still be in flight when stop() lands; it must decline the swap.
+      await loop._onRestartDeadline()
 
       expect(model.restart).not.toHaveBeenCalled()
+      expect(loop._restarting).toBe(false)
     })
 
     it('yields the restart event before surfacing a failed reactive restart', async () => {
@@ -716,29 +708,28 @@ describe('AgentLoop fencing and pairing', () => {
       const model = new ScriptedBidiModel()
       const agent = new BidiAgent({ model, tools: [delayed] })
       await agent.start()
-      const reader = agent.receive()[Symbol.asyncIterator]()
+      drain(agent)
 
       const names = ['first', 'second']
+      const expected: [string, string[]][] = []
       for (const name of names) {
         model.channel.push({
           type: 'bidiToolUseBlocks',
           toolUses: [new ToolUseBlock({ toolUseId: name, name: 'delayed', input: { name } })],
         })
-        expect((await reader.next()).value).toMatchObject({ type: 'bidiToolUseBlocks' })
+        expected.push(['assistant', [name]], ['user', [name]])
+        await vi.waitFor(() => {
+          expect(agent.messages).toHaveLength(expected.length)
+        })
       }
 
-      const expected: [string, string[]][] = names.flatMap((name): [string, string[]][] => [
-        ['assistant', [name]],
-        ['user', [name]],
-      ])
+      // Released in reverse: each group's exchange must still be recorded as an adjacent pair.
       for (const name of [...names].reverse()) {
         gates.get(name)!.open()
-        await vi.waitFor(() => {
-          expect(agent.messages.filter((message) => message.role === 'user').length).toBeGreaterThan(
-            expected.filter(([role]) => role === 'user').length
-          )
-        })
         expected.push(['assistant', [name]], ['user', [name]])
+        await vi.waitFor(() => {
+          expect(agent.messages).toHaveLength(expected.length)
+        })
       }
 
       expect(
@@ -750,7 +741,6 @@ describe('AgentLoop fencing and pairing', () => {
         ])
       ).toEqual(expected)
 
-      await reader.return?.(undefined)
       await agent.stop()
     })
 
