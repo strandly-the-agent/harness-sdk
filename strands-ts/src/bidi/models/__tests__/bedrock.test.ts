@@ -93,8 +93,10 @@ class FakeClient {
   /** Nova wire events pushed onto the request stream, in order. */
   readonly sent: NovaEvent[] = []
   readonly commands: NovaCommand[] = []
-  send = vi.fn(async (command: NovaCommand) => {
+  readonly signals: (AbortSignal | undefined)[] = []
+  send = vi.fn(async (command: NovaCommand, options?: { abortSignal?: AbortSignal }) => {
     this.commands.push(command)
+    this.signals.push(options?.abortSignal)
     void this._drain(command.input.body)
     return { body: this._stream(this.commands.length - 1) }
   })
@@ -155,8 +157,7 @@ async function collect(events: AsyncIterable<BidiOutputEvent>): Promise<BidiOutp
 function historyMessages(count: number): Message[] {
   return Array.from(
     { length: count },
-    (_unused, index) =>
-      new Message({ role: 'user', content: [new TextBlock(`m${index + 1}${'y'.repeat(60 * 1024)}`)] })
+    (_unused, index) => new Message({ role: 'user', content: [new TextBlock(`m${index + 1}${'y'.repeat(60 * 1024)}`)] })
   )
 }
 
@@ -208,6 +209,27 @@ describe('BedrockNovaSonicModel', () => {
       expect(model.getConnectionConfig()).toEqual({ restartAfterS: 420, autoRestart: false })
     })
 
+    it('replaces params on update', async () => {
+      const [model, client] = newModel([], { params: { inferenceConfiguration: { temperature: 0.8 } } })
+      model.updateConfig({ params: { inferenceConfiguration: { topP: 0.9 } } })
+      await model.start()
+      await tick()
+      expect(client.sent[0]).toEqual({ sessionStart: { inferenceConfiguration: { topP: 0.9 } } })
+    })
+
+    it('accepts a well-formed region', () => {
+      for (const region of ['us-east-1', 'ap-southeast-1', 'us-gov-east-1']) {
+        const [model] = newModel([], { region })
+        expect(model.region).toBe(region)
+      }
+    })
+
+    it('rejects a malformed region', () => {
+      for (const region of ['', 'x@attacker.com:443/#', 'us-east-1\n']) {
+        expect(() => newModel([], { region })).toThrow('invalid AWS region')
+      }
+    })
+
     it('passes params to sessionStart', async () => {
       const [model, client] = newModel([], { params: { inferenceConfiguration: { maxTokens: 512 } } })
       await model.start()
@@ -229,6 +251,12 @@ describe('BedrockNovaSonicModel', () => {
       const [model] = newModel([], { audio: { input: { sampleRate: 8000 }, output: { sampleRate: 24000 } } })
       expect(model.getAudioConfig().input.sampleRate).toBe(8000)
       expect(model.getAudioConfig().output.sampleRate).toBe(24000)
+    })
+
+    it('requires a sample rate on a configured stream', () => {
+      for (const direction of ['input', 'output']) {
+        expect(() => newModel([], { audio: { [direction]: {} } })).toThrow(`audio.${direction}.sampleRate is required`)
+      }
     })
 
     it.each(['input', 'output'])('rejects an unsupported %s sample rate', (direction) => {
@@ -327,6 +355,40 @@ describe('BedrockNovaSonicModel', () => {
       expect(client.sent.at(-1)).toEqual({ connectionEnd: {} })
     })
 
+    it('aborts the request on stop', async () => {
+      const [model, client] = newModel()
+      await model.start()
+      const signal = client.signals[0]
+
+      expect(signal?.aborted).toBe(false)
+      await model.stop()
+      expect(signal?.aborted).toBe(true)
+    })
+
+    it('destroys a client it created itself', async () => {
+      const client = new FakeClient([[]])
+      const destroy = vi.fn()
+      const model = new BedrockNovaSonicModel({ region: 'us-east-1' })
+      model['_createClient'] = () => Object.assign(client, { destroy }) as unknown as BedrockRuntimeClient
+      await model.start()
+      await model.stop()
+
+      expect(destroy).toHaveBeenCalledTimes(1)
+      // A later start() builds a fresh client rather than reusing the destroyed one.
+      await model.start()
+      expect(destroy).toHaveBeenCalledTimes(1)
+    })
+
+    it('stops cleanly after a failed start', async () => {
+      const [model, client] = newModel()
+      client.send.mockRejectedValueOnce(new Error('connection failed'))
+
+      await expect(model.start()).rejects.toThrow('connection failed')
+      await expect(model.stop()).resolves.toBeUndefined()
+      // No cleanup events are sent into a stream that was never established.
+      expect(client.sent).toEqual([])
+    })
+
     it('is idempotent on stop', async () => {
       const [model] = newModel()
       await model.start()
@@ -342,7 +404,9 @@ describe('BedrockNovaSonicModel', () => {
       await model.send({ content: [new TextBlock('one'), new TextBlock('two')] })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => field(event, 'textInput.content'))
+      const texts = client.sent
+        .filter((event) => 'textInput' in event)
+        .map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'one\ntwo'])
     })
 
@@ -446,7 +510,9 @@ describe('BedrockNovaSonicModel', () => {
 
       const history = client.sent.filter((event) => field(event, 'contentStart.interactive') === false)
       expect(history.map((event) => field(event, 'contentStart.role'))).toEqual(['SYSTEM', 'USER', 'ASSISTANT'])
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => field(event, 'textInput.content'))
+      const texts = client.sent
+        .filter((event) => 'textInput' in event)
+        .map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'hello', 'hi'])
     })
 
@@ -460,7 +526,9 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => field(event, 'textInput.content'))
+      const texts = client.sent
+        .filter((event) => 'textInput' in event)
+        .map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'second'])
     })
 
@@ -474,7 +542,9 @@ describe('BedrockNovaSonicModel', () => {
       })
       await tick()
 
-      const texts = client.sent.filter((event) => 'textInput' in event).map((event) => field(event, 'textInput.content'))
+      const texts = client.sent
+        .filter((event) => 'textInput' in event)
+        .map((event) => field(event, 'textInput.content'))
       expect(texts).toEqual(['', 'keep'])
     })
   })
@@ -725,7 +795,6 @@ describe('BedrockNovaSonicModel', () => {
       await expect(collect(model.receive())).rejects.toThrow(ModelThrottledError)
     })
   })
-
 
   describe('history limits', () => {
     it('truncates a message over the 50KB per-message cap', async () => {
