@@ -65,6 +65,26 @@ async function collect(model: GoogleGeminiLiveModel, messages: LiveServerMessage
   return events
 }
 
+/** Flush pending microtasks and timers so a parked `stop()` can be observed. */
+function tick(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, 0)
+  })
+}
+
+/** `type` plus `role` for role-bearing events, so a long bracketing sequence reads compactly. */
+function labels(events: BidiOutputEvent[]): string[] {
+  return events.map((event) => {
+    const role = (event as { role?: string }).role
+    return role === undefined ? event.type : `${event.type}:${role}`
+  })
+}
+
+/** Content ids of every event that carries one, in receive order. */
+function contentIds(events: BidiOutputEvent[]): (string | undefined)[] {
+  return events.map((event) => (event as { contentId?: string }).contentId)
+}
+
 describe('GoogleGeminiLiveModel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -521,9 +541,54 @@ describe('GoogleGeminiLiveModel', () => {
         'content not supported by Gemini Live'
       )
     })
+
+    it('rejects a tool result for an unknown tool use id', async () => {
+      const model = createModel()
+      await model.start()
+
+      await expect(
+        model.send({
+          content: [{ type: 'toolResultBlock', toolUseId: 'missing-1', content: [{ type: 'textBlock', text: 'ok' }] }],
+        } as never)
+      ).rejects.toThrow('toolUseId=<missing-1> | unknown tool use id')
+    })
+
+    it('rejects a send once the session is gone', async () => {
+      const model = createModel()
+      await model.start()
+      // A socket that never reports closed keeps stop() parked after it dropped the session.
+      fakeSession.close.mockImplementationOnce(() => {})
+      const stopping = model.stop()
+      await tick()
+
+      await expect(model.send({ content: [{ type: 'textBlock', text: 'hi' }] } as never)).rejects.toThrow(
+        'model session closed'
+      )
+
+      closeConnection()
+      await stopping
+    })
   })
 
   describe('stop', () => {
+    it('waits for the socket close callback', async () => {
+      const model = createModel()
+      await model.start()
+      fakeSession.close.mockImplementationOnce(() => {})
+      let stopped = false
+
+      const stopping = model.stop().then(() => {
+        stopped = true
+      })
+      await tick()
+      expect(stopped).toBe(false)
+
+      closeConnection()
+      await stopping
+
+      expect(stopped).toBe(true)
+    })
+
     it('closes the session and clears the connection', async () => {
       const model = createModel()
       await model.start()
@@ -597,5 +662,261 @@ describe('GoogleGeminiLiveModel', () => {
         functionResponses: [{ id: 'call-1', name: 'weather', response: { text: 'ok' } }],
       })
     })
+  })
+
+  describe('turn bracketing', () => {
+    const serverContent = (content: Record<string, unknown>): LiveServerMessage =>
+      ({ serverContent: content }) as LiveServerMessage
+    const audio = (bytes: number[], content?: Record<string, unknown>): LiveServerMessage =>
+      ({
+        data: encodeBase64(new Uint8Array(bytes)),
+        ...(content === undefined ? {} : { serverContent: content }),
+      }) as LiveServerMessage
+
+    it.each(['generationComplete', 'interrupted', 'turnComplete'])(
+      'stops audio once at the %s boundary',
+      async (ending) => {
+        const model = createModel()
+        await model.start()
+
+        const events = await collect(model, [
+          audio([1]),
+          audio([2], { [ending]: true }),
+          serverContent({ turnComplete: true }),
+          audio([3]),
+        ])
+
+        expect(labels(events)).toEqual([
+          'bidiConnectionStart',
+          'bidiResponseStart',
+          'bidiAudioStart',
+          'bidiAudioDelta',
+          ...(ending === 'interrupted' ? ['bidiBargeIn'] : []),
+          'bidiAudioDelta',
+          'bidiAudioStop',
+          'bidiResponseStop',
+          'bidiResponseStart',
+          'bidiAudioStart',
+          'bidiAudioDelta',
+        ])
+        const [first, second] = events.filter((event) => event.type === 'bidiAudioStart')
+        expect(contentIds([first as BidiOutputEvent])[0]).toBeTypeOf('string')
+        expect(contentIds([second as BidiOutputEvent])[0]).not.toBe(contentIds([first as BidiOutputEvent])[0])
+      }
+    )
+
+    it('emits a finished input transcription before the turn completes', async () => {
+      const model = createModel()
+      await model.start()
+
+      const events = await collect(model, [
+        serverContent({ inputTranscription: { text: 'Question', finished: true } }),
+        serverContent({ outputTranscription: { text: 'Answer' } }),
+      ])
+
+      expect(labels(events)).toEqual([
+        'bidiConnectionStart',
+        'bidiTranscriptStart:user',
+        'bidiTranscriptDelta:user',
+        'bidiTranscriptStop:user',
+        'bidiResponseStart',
+        'bidiTranscriptStart:assistant',
+        'bidiTranscriptDelta:assistant',
+      ])
+      const ids = contentIds(events.slice(1, 4))
+      expect(new Set(ids).size).toBe(1)
+    })
+
+    it('completes transcription fragments at the turn boundary', async () => {
+      const model = createModel()
+      await model.start()
+
+      const events = await collect(model, [
+        serverContent({ inputTranscription: { text: 'how ' } }),
+        serverContent({ inputTranscription: { text: 'are you?' } }),
+        serverContent({ outputTranscription: { text: 'I am ' } }),
+        serverContent({ outputTranscription: { text: 'doing well.' } }),
+        serverContent({ turnComplete: true }),
+      ])
+
+      expect(labels(events)).toEqual([
+        'bidiConnectionStart',
+        'bidiTranscriptStart:user',
+        'bidiTranscriptDelta:user',
+        'bidiTranscriptDelta:user',
+        'bidiResponseStart',
+        'bidiTranscriptStart:assistant',
+        'bidiTranscriptDelta:assistant',
+        'bidiTranscriptDelta:assistant',
+        'bidiTranscriptStop:user',
+        'bidiTranscriptStop:assistant',
+        'bidiResponseStop',
+      ])
+    })
+
+    it('preserves a new utterance when the previous turn completes', async () => {
+      const model = createModel()
+      await model.start()
+
+      const events = await collect(model, [
+        { voiceActivity: { voiceActivityType: 'ACTIVITY_START' } } as LiveServerMessage,
+        serverContent({ inputTranscription: { text: 'First question' } }),
+        serverContent({ outputTranscription: { text: 'First answer' } }),
+        { voiceActivity: { voiceActivityType: 'ACTIVITY_END' } } as LiveServerMessage,
+        { voiceActivity: { voiceActivityType: 'ACTIVITY_START' } } as LiveServerMessage,
+        serverContent({ inputTranscription: { text: 'Second question' }, interrupted: true }),
+        serverContent({ turnComplete: true }),
+        serverContent({ outputTranscription: { text: 'Second answer' } }),
+        serverContent({ turnComplete: true }),
+      ])
+
+      expect(labels(events)).toEqual([
+        'bidiConnectionStart',
+        'bidiTranscriptStart:user',
+        'bidiTranscriptDelta:user',
+        'bidiResponseStart',
+        'bidiTranscriptStart:assistant',
+        'bidiTranscriptDelta:assistant',
+        'bidiTranscriptStart:user',
+        'bidiBargeIn',
+        'bidiTranscriptDelta:user',
+        'bidiTranscriptStop:user',
+        'bidiTranscriptStop:assistant',
+        'bidiResponseStop',
+        'bidiResponseStart',
+        'bidiTranscriptStart:assistant',
+        'bidiTranscriptDelta:assistant',
+        'bidiTranscriptStop:user',
+        'bidiTranscriptStop:assistant',
+        'bidiResponseStop',
+      ])
+      const [firstId, secondId] = contentIds(events.filter((event) => labels([event])[0] === 'bidiTranscriptStart:user'))
+      const [firstStop, secondStop] = contentIds(
+        events.filter((event) => labels([event])[0] === 'bidiTranscriptStop:user')
+      )
+      // The completing turn closes its own utterance; the newer one survives until the next turn.
+      expect(firstStop).toBe(firstId)
+      expect(secondStop).toBe(secondId)
+      const responseIds = events
+        .filter((event) => event.type === 'bidiResponseStart')
+        .map((event) => (event as { responseId: string }).responseId)
+      expect(responseIds[0]).not.toBe(responseIds[1])
+    })
+
+    it('preserves a user transcription already in progress on barge-in', async () => {
+      const model = createModel()
+      await model.start()
+
+      const events = await collect(model, [
+        serverContent({ modelTurn: { parts: [{ text: 'Answer' }] } }),
+        serverContent({ inputTranscription: { text: 'Just one', finished: false } }),
+        serverContent({ interrupted: true, inputTranscription: { text: ' second', finished: false } }),
+      ])
+
+      expect(labels(events.slice(-2))).toEqual(['bidiBargeIn', 'bidiTranscriptDelta:user'])
+      const started = events.find((event) => labels([event])[0] === 'bidiTranscriptStart:user')
+      expect(contentIds(events.slice(-1))[0]).toBe(contentIds([started as BidiOutputEvent])[0])
+      expect(events.at(-1)).toMatchObject({ delta: ' second' })
+    })
+
+    it('completes an activity that carried no transcript text', async () => {
+      const model = createModel()
+      await model.start()
+
+      const events = await collect(model, [
+        { voiceActivity: { voiceActivityType: 'ACTIVITY_START' } } as LiveServerMessage,
+        serverContent({ turnComplete: true }),
+      ])
+
+      expect(labels(events)).toEqual(['bidiConnectionStart', 'bidiTranscriptStart:user', 'bidiTranscriptStop:user'])
+      expect(contentIds(events.slice(1))[0]).toBe(contentIds(events.slice(2))[0])
+    })
+
+    it.each([false, true])('emits nothing for a turn complete without an open response (interrupted=%s)', async (interrupted) => {
+      const model = createModel()
+      await model.start()
+
+      const events = await collect(model, [
+        serverContent({ interrupted }),
+        serverContent({ turnComplete: true }),
+      ])
+
+      expect(labels(events)).toEqual(['bidiConnectionStart', ...(interrupted ? ['bidiBargeIn'] : [])])
+    })
+
+    it('emits nothing for an empty message', async () => {
+      const model = createModel()
+      await model.start()
+
+      const events = await collect(model, [{} as LiveServerMessage])
+
+      expect(labels(events)).toEqual(['bidiConnectionStart'])
+    })
+
+    it.each([false, true])(
+      'gives the tool handoff and its continuation separate responses (completeWithToolCall=%s)',
+      async (completeWithToolCall) => {
+        const model = createModel()
+        await model.start()
+
+        const toolCall = {
+          toolCall: { functionCalls: [{ id: 'tool-1', name: 'time_tool', args: {} }] },
+          ...(completeWithToolCall ? { serverContent: { turnComplete: true } } : {}),
+        } as LiveServerMessage
+        const events = await collect(model, [
+          serverContent({ inputTranscription: { text: 'What time is it?' } }),
+          toolCall,
+          ...(completeWithToolCall ? [] : [serverContent({ turnComplete: true })]),
+          serverContent({ outputTranscription: { text: 'It is noon.' } }),
+          serverContent({ turnComplete: true }),
+        ])
+
+        expect(labels(events)).toEqual([
+          'bidiConnectionStart',
+          'bidiTranscriptStart:user',
+          'bidiTranscriptDelta:user',
+          'bidiResponseStart',
+          'bidiToolUseBlocks',
+          'bidiTranscriptStop:user',
+          'bidiResponseStop',
+          'bidiResponseStart',
+          'bidiTranscriptStart:assistant',
+          'bidiTranscriptDelta:assistant',
+          'bidiTranscriptStop:assistant',
+          'bidiResponseStop',
+        ])
+        const [handoffId, continuationId] = events
+          .filter((event) => event.type === 'bidiResponseStart')
+          .map((event) => (event as { responseId: string }).responseId)
+        expect(handoffId).not.toBe(continuationId)
+      }
+    )
+
+    it.each([false, true])(
+      'keeps receive order for the first transcript after assistant output (finished=%s)',
+      async (finished) => {
+        const model = createModel()
+        await model.start()
+
+        const events = await collect(model, [
+          serverContent({ outputTranscription: { text: 'Answer' } }),
+          serverContent({ inputTranscription: { text: 'Question', finished } }),
+          serverContent({ turnComplete: true }),
+        ])
+
+        expect(labels(events)).toEqual([
+          'bidiConnectionStart',
+          'bidiResponseStart',
+          'bidiTranscriptStart:assistant',
+          'bidiTranscriptDelta:assistant',
+          'bidiTranscriptStart:user',
+          'bidiTranscriptDelta:user',
+          ...(finished ? ['bidiTranscriptStop:user'] : []),
+          ...(finished ? [] : ['bidiTranscriptStop:user']),
+          'bidiTranscriptStop:assistant',
+          'bidiResponseStop',
+        ])
+      }
+    )
   })
 })
