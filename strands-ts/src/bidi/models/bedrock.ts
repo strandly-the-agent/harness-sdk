@@ -211,10 +211,7 @@ class ResponseState {
  * }
  * ```
  */
-export class BedrockNovaSonicModel
-  extends BidiModel<BedrockNovaSonicModelConfig>
-  implements Restartable, AudioCapable
-{
+export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig> implements Restartable, AudioCapable {
   /** AWS region of the Bedrock endpoint. */
   readonly region: string | undefined
 
@@ -459,9 +456,7 @@ export class BedrockNovaSonicModel
 
     if (content instanceof AudioDelta) {
       const audioBytes = 'bytes' in content.source ? content.source.bytes : undefined
-      logger.debug(
-        `audio_bytes=<${audioBytes?.length ?? 0}>, format=<${content.format}> | sending audio content`
-      )
+      logger.debug(`audio_bytes=<${audioBytes?.length ?? 0}>, format=<${content.format}> | sending audio content`)
       await this._sendAudioContent(content)
       return
     }
@@ -729,9 +724,8 @@ export class BedrockNovaSonicModel
 
       let generationStage: string | undefined
       if (contentType === 'TEXT') {
-        generationStage = (
-          JSON.parse(contentStart.additionalModelFields ?? '{}') as { generationStage?: string }
-        ).generationStage
+        generationStage = (JSON.parse(contentStart.additionalModelFields ?? '{}') as { generationStage?: string })
+          .generationStage
       }
       responseState.generationStage = generationStage
       if (role === 'assistant' && generationStage === 'FINAL') {
