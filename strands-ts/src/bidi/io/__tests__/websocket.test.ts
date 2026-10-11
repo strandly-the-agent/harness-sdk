@@ -54,18 +54,18 @@ class FakeSocket implements BidiWebSocket {
 
   /** Deliver one inbound text frame. */
   receive(frame: string): void {
-    this._dispatch('message', { data: frame })
+    this._dispatch('message', { type: 'message', data: frame })
   }
 
   /** Close the connection from the far end. */
   remoteClose(): void {
     this.readyState = 3
-    this._dispatch('close', {})
+    this._dispatch('close', { type: 'close' })
   }
 
   /** Report a transport error. */
   fail(message: string): void {
-    this._dispatch('error', { message })
+    this._dispatch('error', { type: 'error', message })
   }
 
   private _dispatch(type: string, event: BidiWebSocketEvent): void {
@@ -216,7 +216,7 @@ describe('WebSocketIO', () => {
       const socket = new FakeSocket()
       const output = new WebSocketIO({ socket }).output()
 
-      await output.write(new BidiTextDeltaEvent({ delta: 'hi', contentId: 'c1' }))
+      await output.write(new BidiTextDeltaEvent({ type: 'bidiTextDelta', delta: 'hi', contentId: 'c1' }))
 
       expect(JSON.parse(socket.sent[0]!)).toEqual({ type: 'bidiTextDelta', delta: 'hi', contentId: 'c1' })
     })
@@ -227,6 +227,7 @@ describe('WebSocketIO', () => {
 
       await output.write(
         new BidiAudioDeltaEvent({
+          type: 'bidiAudioDelta',
           audio: new Uint8Array([1, 2, 3]),
           format: 'pcm',
           sampleRate: 24000,
@@ -273,9 +274,13 @@ describe('WebSocketIO', () => {
       const socket = new FakeSocket()
       const output = new WebSocketIO({ socket }).output()
 
-      await output.write({ type: 'bidiConnectionStop' })
+      await output.write({ type: 'bidiConnectionStop', connectionId: 'x1', reason: 'userRequest' })
 
-      expect(JSON.parse(socket.sent[0]!)).toEqual({ type: 'bidiConnectionStop' })
+      expect(JSON.parse(socket.sent[0]!)).toEqual({
+        type: 'bidiConnectionStop',
+        connectionId: 'x1',
+        reason: 'userRequest',
+      })
     })
 
     it('drops an event when the socket is not open', async () => {
@@ -283,7 +288,7 @@ describe('WebSocketIO', () => {
       socket.readyState = 3
       const output = new WebSocketIO({ socket }).output()
 
-      await output.write({ type: 'bidiConnectionStop' })
+      await output.write({ type: 'bidiConnectionStop', connectionId: 'x1', reason: 'userRequest' })
 
       expect(socket.sent).toEqual([])
     })

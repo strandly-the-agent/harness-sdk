@@ -9,6 +9,9 @@
  * and `ErrorEvent` all satisfy it, as do the `ws` package's equivalents.
  */
 export interface BidiWebSocketEvent {
+  /** Event name: `message`, `close`, or `error`. */
+  type: string
+
   /** Frame payload of a `message` event. */
   data?: unknown
 
