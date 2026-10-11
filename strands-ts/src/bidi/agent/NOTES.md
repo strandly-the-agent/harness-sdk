@@ -107,5 +107,5 @@ promise, which is what py's `_model_task` handle needs; `cancel()` aborts + awai
   `test_send_preserves_input_identity`, `test_send_concurrent_text`,
   `test_send_list_preserves_order_and_history` (history half), `test_bidi_agent_receive_events_from_model`,
   `test_bidi_agent_start_receive_propagates_model_errors`.
-- Phase 1 shipped `src/bidi/async/{task-group,task-pool,stop-all}.ts` with no tests; port
+- DONE in A2: `src/bidi/async/__tests__/{task-group,task-pool,stop-all}.test.ts` (9 tests) port
   `strands-py/tests/strands/bidi/_async/{test_task_group,test_task_pool,test__init__}.py`.
