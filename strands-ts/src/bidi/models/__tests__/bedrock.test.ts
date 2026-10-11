@@ -13,6 +13,7 @@ import { ConnectionTimeoutError } from '../model.js'
 
 import type { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime'
 import type { ToolSpec } from '../../../tools/types.js'
+import type { BidiMessage } from '../../types/content.js'
 import type {
   BidiAudioDeltaEvent,
   BidiAudioStopEvent,
@@ -771,6 +772,226 @@ describe('BedrockNovaSonicModel', () => {
         .map((event) => (event as BidiTranscriptDeltaEvent).delta)
 
       expect(deltas).toEqual(['hello', ' there', ' friend', ' ok ', 'done'])
+    })
+  })
+
+  describe('deferred tool results', () => {
+    const USER_TEXT_START = { contentStart: { role: 'USER', type: 'TEXT', contentId: 'user-1' } }
+    const ASSISTANT_AUDIO_START = { contentStart: { role: 'ASSISTANT', type: 'AUDIO', contentId: 'audio-1' } }
+    const ASSISTANT_AUDIO_END = { contentEnd: { type: 'AUDIO', contentId: 'audio-1', stopReason: 'END_TURN' } }
+    const BARGE_IN = { contentEnd: { type: 'TEXT', stopReason: 'INTERRUPTED' } }
+
+    function toolUseEvent(toolUseId: string): Record<string, unknown> {
+      return { toolUse: { toolUseId, toolName: 'time_tool', content: '{"zone": "UTC"}' } }
+    }
+
+    function toolResult(toolUseId: string): BidiMessage {
+      return { content: [new ToolResultBlock({ toolUseId, status: 'success', content: [new TextBlock('12:00')] })] }
+    }
+
+    /**
+     * Record tool uses on one connection, then restart onto an open stream the test drives.
+     *
+     * @returns The model, the fake client, and the previous and current connections' streams
+     */
+    async function startWithToolUseBeforeRestart(
+      ...toolUseIds: string[]
+    ): Promise<{ model: BedrockNovaSonicModel; client: FakeClient; previous: PushStream; current: PushStream }> {
+      const previous = new PushStream()
+      const current = new PushStream()
+      const client = new FakeClient([previous, current])
+      const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
+
+      await model.start()
+      const draining = collect(model.receive())
+      for (const toolUseId of toolUseIds) {
+        previous.push(chunk(toolUseEvent(toolUseId)))
+      }
+      await settle()
+      previous.close()
+      await draining
+
+      await model.restart()
+      client.sent.length = 0
+      return { model, client, previous, current }
+    }
+
+    it('tracks idle on the current connection', async () => {
+      const stream = new PushStream()
+      const client = new FakeClient([stream])
+      const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
+      await model.start()
+
+      const receiving = collect(model.receive())
+      stream.push(chunk(USER_TEXT_START))
+      await settle()
+      // The user holds the turn, so the connection is no longer idle.
+      stream.close()
+      await receiving
+
+      await model.send(toolResult('t1'))
+      await tick()
+      // No tool use was recorded, so the result goes out natively without waiting for idle.
+      expect(client.sent.some((event) => 'toolResult' in event)).toBe(true)
+      await model.stop()
+    })
+
+    it.each([false, true])('waits for the response to finish (bargeIn=%s)', async (bargeIn) => {
+      const { model, client, current } = await startWithToolUseBeforeRestart('t1')
+      const receiving = collect(model.receive())
+      current.push(chunk(USER_TEXT_START))
+      if (bargeIn) {
+        current.push(chunk(ASSISTANT_AUDIO_START))
+        current.push(chunk(BARGE_IN))
+      }
+      await settle()
+
+      const sending = model.send(toolResult('t1'))
+      await settle()
+      expect(client.texts()).toEqual([])
+
+      if (bargeIn) {
+        // The user holds the turn after a barge-in until Nova answers.
+        current.push(chunk(USER_TEXT_START))
+        await settle()
+        expect(client.texts()).toEqual([])
+      }
+
+      current.push(chunk(ASSISTANT_AUDIO_START))
+      current.push(chunk(ASSISTANT_AUDIO_END))
+      await sending
+      expect(client.texts()).toHaveLength(1)
+
+      current.close()
+      await receiving
+      await model.stop()
+    })
+
+    it('sends one deferred result per idle turn', async () => {
+      const { model, client, current } = await startWithToolUseBeforeRestart('t1', 't2')
+      const receiving = collect(model.receive())
+      current.push(chunk(USER_TEXT_START))
+      await settle()
+
+      const sending = Promise.all([model.send(toolResult('t1')), model.send(toolResult('t2'))])
+      await settle()
+
+      for (const expected of [1, 2]) {
+        current.push(chunk(ASSISTANT_AUDIO_START))
+        current.push(chunk(ASSISTANT_AUDIO_END))
+        await settle()
+        expect(client.texts()).toHaveLength(expected)
+      }
+
+      await sending
+      current.close()
+      await receiving
+      await model.stop()
+    })
+
+    it('ignores an idle turn from the previous connection reader', async () => {
+      const { model, client, previous, current } = await startWithToolUseBeforeRestart('t1')
+      const draining = collect(model.receive())
+      current.push(chunk(USER_TEXT_START))
+      await settle()
+
+      const sending = model.send(toolResult('t1'))
+      await settle()
+
+      // A draining reader from the previous connection finishes its response.
+      previous.push(chunk(ASSISTANT_AUDIO_START))
+      previous.push(chunk(ASSISTANT_AUDIO_END))
+      await settle()
+      expect(client.texts()).toEqual([])
+
+      current.push(chunk(ASSISTANT_AUDIO_START))
+      current.push(chunk(ASSISTANT_AUDIO_END))
+      await sending
+      expect(client.texts()).toHaveLength(1)
+
+      current.close()
+      await draining
+      await model.stop()
+    })
+
+    it('waits on the next connection across a restart', async () => {
+      const previous = new PushStream()
+      const current = new PushStream()
+      const next = new PushStream()
+      const client = new FakeClient([previous, current, next])
+      const model = new BedrockNovaSonicModel({ client: client as unknown as BedrockRuntimeClient })
+      await model.start()
+      const draining = collect(model.receive())
+      previous.push(chunk(toolUseEvent('t1')))
+      await settle()
+      previous.close()
+      await draining
+      await model.restart()
+      client.sent.length = 0
+
+      const receiving = collect(model.receive())
+      current.push(chunk(USER_TEXT_START))
+      await settle()
+      const sending = model.send(toolResult('t1'))
+      await settle()
+
+      current.close()
+      await receiving
+      await model.restart()
+      client.sent.length = 0
+      await settle()
+      expect(client.texts()).toEqual([])
+
+      // The next connection's reader reports it idle, releasing the deferred result.
+      const resumed = collect(model.receive())
+      await sending
+      expect(client.texts()).toHaveLength(1)
+
+      next.close()
+      await resumed
+      await model.stop()
+    })
+
+    it('sends the result anyway after the idle wait times out', async () => {
+      // Real timers still advance, so the request-stream drain runs while the 30s wait is skipped.
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        const { model, client, current } = await startWithToolUseBeforeRestart('t1', 't2')
+        const receiving = collect(model.receive())
+        current.push(chunk(USER_TEXT_START))
+        await settle()
+
+        const sending = model.send(toolResult('t1'))
+        await vi.advanceTimersByTimeAsync(30_000)
+        await sending
+        expect(client.texts()).toHaveLength(1)
+
+        // The timed-out wait is cancelled, so it cannot steal the next idle turn.
+        current.push(chunk(ASSISTANT_AUDIO_START))
+        current.push(chunk(ASSISTANT_AUDIO_END))
+        await settle()
+        await model.send(toolResult('t2'))
+        expect(client.texts()).toHaveLength(2)
+
+        current.close()
+        await receiving
+        await model.stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('logs a send failure instead of raising', async () => {
+      const { model, current } = await startWithToolUseBeforeRestart('t1')
+      const receiving = collect(model.receive())
+      await settle()
+      // The connection is idle, so the deferred result is sent immediately - into a closed stream.
+      model['_inputQueue'] = undefined
+
+      await expect(model.send(toolResult('t1'))).resolves.toBeUndefined()
+
+      current.close()
+      await receiving
     })
   })
 
