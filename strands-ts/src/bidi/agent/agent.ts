@@ -24,6 +24,7 @@ import type { HookCallback, HookableEventConstructor, HookCallbackOptions, HookC
 import { HookRegistryImplementation } from '../../hooks/registry.js'
 import { logger } from '../../logging/logger.js'
 import { McpClient } from '../../mcp/client.js'
+import { InterruptState } from '../../interrupt.js'
 import { MiddlewareRegistry } from '../../middleware/index.js'
 import type {
   MiddlewareHandler,
@@ -47,6 +48,9 @@ import { StateStore } from '../../state-store.js'
 import type { Storage } from '../../storage/storage.js'
 import type { AgentMetrics } from '../../telemetry/meter.js'
 import { Meter } from '../../telemetry/meter.js'
+import { Tracer } from '../../telemetry/tracer.js'
+import { ConcurrentToolExecutor } from '../../tools/executors/concurrent.js'
+import { ToolExecutor } from '../../tools/executors/executor.js'
 import type { Tool } from '../../tools/tool.js'
 import type { InvocationState, LocalAgent, localAgentSymbol } from '../../types/agent.js'
 import type { JSONValue } from '../../types/json.js'
@@ -242,9 +246,43 @@ export class BidiAgent implements LocalAgent {
   private readonly _toolRegistry: ToolRegistry
   private readonly _mcpClients: McpClient[]
   private readonly _hooksRegistry: HookRegistryImplementation
-  private readonly _middlewareRegistry: MiddlewareRegistry
   private readonly _pluginRegistry: PluginRegistry
-  private readonly _meter: Meter
+
+  /**
+   * Middleware registry supplied to the shared tool executor.
+   *
+   * @internal
+   */
+  readonly _middlewareRegistry: MiddlewareRegistry
+
+  /**
+   * Meter recording tool-call metrics.
+   *
+   * @internal
+   */
+  readonly _meter: Meter
+
+  /**
+   * Tracer recording tool-call spans.
+   *
+   * @internal
+   */
+  readonly _tracer: Tracer
+
+  /**
+   * Interrupt state read by the shared tool executor. Bidirectional agents never resume from
+   * an interrupt; the loop rejects any interrupt a tool raises.
+   *
+   * @internal
+   */
+  readonly _interruptState: InterruptState = new InterruptState()
+
+  /**
+   * Executor running the tool calls of one model turn concurrently.
+   *
+   * @internal
+   */
+  readonly _toolExecutor: ToolExecutor = new ConcurrentToolExecutor()
   private readonly _toolCaller: ToolCallerProxy
   private readonly _loop: AgentLoop
   private readonly _initialized: Promise<void>
@@ -300,6 +338,7 @@ export class BidiAgent implements LocalAgent {
     this._hooksRegistry = new HookRegistryImplementation()
     this._middlewareRegistry = new MiddlewareRegistry()
     this._meter = new Meter()
+    this._tracer = new Tracer()
 
     this.sessionManager = config?.sessionManager
     this._pluginRegistry = new PluginRegistry([
@@ -731,6 +770,16 @@ export class BidiAgent implements LocalAgent {
   async [Symbol.asyncDispose](): Promise<void> {
     logger.debug('context_manager=<exit> | stopping agent')
     await this.stop()
+  }
+
+  /**
+   * Invoke the registered hook callbacks for an event.
+   *
+   * @param event - Event to dispatch to the hook registry
+   * @internal
+   */
+  async _invokeCallbacks<T extends HookableEvent>(event: T): Promise<T> {
+    return this._hooksRegistry.invokeCallbacks(event)
   }
 
   /**
