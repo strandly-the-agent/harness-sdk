@@ -2,7 +2,7 @@
  * Proactive restart timer for bidirectional streaming.
  *
  * `RestartTimer` fires a warning then a deadline callback at caller-supplied offsets; it holds no
- * restart policy. `resolveDeadlineS` reads the deadline from a provider's declared
+ * restart policy. `resolveDeadlineMs` reads the deadline from a provider's declared
  * `ConnectionConfig`.
  *
  * @internal
@@ -11,26 +11,26 @@
 import { logger } from '../../logging/index.js'
 import type { ConnectionConfig } from '../models/configs.js'
 
-/** Injectable async sleep, in seconds. */
-export type SleepFn = (seconds: number) => Promise<void>
+/** Injectable async sleep, in milliseconds. */
+export type SleepFn = (milliseconds: number) => Promise<void>
 
 /**
- * Resolve the proactive restart deadline in seconds from a connection config.
+ * Resolve the proactive restart deadline in milliseconds from a connection config.
  *
  * @param connectionConfig - Provider-declared restart timing.
- * @returns `restartAfterS` if declared and positive, else `undefined` (no proactive timer).
+ * @returns `restartAfterMs` if declared and positive, else `undefined` (no proactive timer).
  * @internal
  */
-export function resolveDeadlineS(connectionConfig: ConnectionConfig): number | undefined {
-  const restartAfterS = connectionConfig.restartAfterS
-  if (restartAfterS === undefined || restartAfterS <= 0) {
+export function resolveDeadlineMs(connectionConfig: ConnectionConfig): number | undefined {
+  const restartAfterMs = connectionConfig.restartAfterMs
+  if (restartAfterMs === undefined || restartAfterMs <= 0) {
     return undefined
   }
-  return restartAfterS
+  return restartAfterMs
 }
 
 /** Default sleep backed by `setTimeout`, abortable through the supplied signal. */
-function defaultSleep(seconds: number, signal: AbortSignal): Promise<void> {
+function defaultSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
       reject(signal.reason)
@@ -39,7 +39,7 @@ function defaultSleep(seconds: number, signal: AbortSignal): Promise<void> {
     const timer = setTimeout(() => {
       signal.removeEventListener('abort', onAbort)
       resolve()
-    }, seconds * 1000)
+    }, milliseconds)
     function onAbort(): void {
       clearTimeout(timer)
       reject(signal.reason)
@@ -56,7 +56,7 @@ function defaultSleep(seconds: number, signal: AbortSignal): Promise<void> {
  * @internal
  */
 export class RestartTimer {
-  private readonly _onWarning: (timeLeftS: number) => Promise<void>
+  private readonly _onWarning: (timeLeftMs: number) => Promise<void>
   private readonly _onDeadline: () => Promise<void>
   private readonly _sleep: SleepFn | undefined
   private _controller: AbortController | undefined
@@ -64,11 +64,11 @@ export class RestartTimer {
   private _task: Promise<void> | undefined
 
   /**
-   * @param onWarning - Called with seconds-left when the warning lead elapses.
+   * @param onWarning - Called with milliseconds-left when the warning lead elapses.
    * @param onDeadline - Called when the restart deadline elapses.
    * @param sleep - Injectable async sleep (for tests). Defaults to a `setTimeout` sleep.
    */
-  constructor(onWarning: (timeLeftS: number) => Promise<void>, onDeadline: () => Promise<void>, sleep?: SleepFn) {
+  constructor(onWarning: (timeLeftMs: number) => Promise<void>, onDeadline: () => Promise<void>, sleep?: SleepFn) {
     this._onWarning = onWarning
     this._onDeadline = onDeadline
     this._sleep = sleep
@@ -77,16 +77,16 @@ export class RestartTimer {
   /**
    * Arm the warning and deadline timers, cancelling any previously armed cycle.
    *
-   * @param deadlineS - Seconds from now until the deadline callback fires.
-   * @param warningLeadS - Seconds before the deadline to fire the warning callback.
+   * @param deadlineMs - Milliseconds from now until the deadline callback fires.
+   * @param warningLeadMs - Milliseconds before the deadline to fire the warning callback.
    */
-  arm(deadlineS: number, warningLeadS: number): void {
+  arm(deadlineMs: number, warningLeadMs: number): void {
     this.cancel()
     const controller = new AbortController()
     this._controller = controller
-    this._task = this._run(deadlineS, warningLeadS, controller)
+    this._task = this._run(deadlineMs, warningLeadMs, controller)
     logger.debug(
-      `deadline_s=<${deadlineS.toFixed(1)}>, warning_lead_s=<${warningLeadS.toFixed(1)}> | proactive restart timer armed`
+      `deadline_ms=<${deadlineMs.toFixed(0)}>, warning_lead_ms=<${warningLeadMs.toFixed(0)}> | proactive restart timer armed`
     )
   }
 
@@ -101,27 +101,27 @@ export class RestartTimer {
   /**
    * Sleep until the warning lead, fire the warning, then fire the deadline.
    *
-   * The warning fires `warningLeadS` before the deadline. When the lead is zero or exceeds the
+   * The warning fires `warningLeadMs` before the deadline. When the lead is zero or exceeds the
    * deadline, the warning is emitted immediately and the remaining wait runs down to the deadline.
    * The deadline countdown continues while warning delivery is backpressured, but the deadline
    * callback still follows the warning.
    */
-  private async _run(deadlineS: number, warningLeadS: number, controller: AbortController): Promise<void> {
-    const sleep = (seconds: number): Promise<void> =>
-      this._sleep ? this._sleep(seconds) : defaultSleep(seconds, controller.signal)
-    const warningAtS = Math.max(deadlineS - warningLeadS, 0)
+  private async _run(deadlineMs: number, warningLeadMs: number, controller: AbortController): Promise<void> {
+    const sleep = (milliseconds: number): Promise<void> =>
+      this._sleep ? this._sleep(milliseconds) : defaultSleep(milliseconds, controller.signal)
+    const warningAtMs = Math.max(deadlineMs - warningLeadMs, 0)
 
     try {
-      await sleep(warningAtS)
+      await sleep(warningAtMs)
       if (controller.signal.aborted) return
 
-      const timeLeftS = deadlineS - warningAtS
+      const timeLeftMs = deadlineMs - warningAtMs
       // Start the deadline countdown before awaiting the warning so backpressure on warning
       // delivery does not push the deadline out.
-      const deadlineSleep = sleep(timeLeftS)
+      const deadlineSleep = sleep(timeLeftMs)
       deadlineSleep.catch(() => {})
 
-      await this._onWarning(timeLeftS)
+      await this._onWarning(timeLeftMs)
       await deadlineSleep
       if (controller.signal.aborted) return
 

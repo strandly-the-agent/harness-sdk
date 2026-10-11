@@ -22,8 +22,8 @@ import {
 } from '../../types/events.js'
 import { ConnectionTimeoutError } from '../model.js'
 import {
-  OPENAI_MAX_TIMEOUT_S,
-  OPENAI_PROACTIVE_RESTART_MARGIN_S,
+  OPENAI_MAX_TIMEOUT_MS,
+  OPENAI_PROACTIVE_RESTART_MARGIN_MS,
   OpenAIRealtimeModel,
   RESTART_INSTRUCTION,
 } from '../openai.js'
@@ -188,16 +188,16 @@ describe('OpenAIRealtimeModel', () => {
       expect(model.getConfig()).toEqual({
         modelId: MODEL_ID,
         params: {},
-        connection: { restartAfterS: OPENAI_MAX_TIMEOUT_S - OPENAI_PROACTIVE_RESTART_MARGIN_S },
+        connection: { restartAfterMs: OPENAI_MAX_TIMEOUT_MS - OPENAI_PROACTIVE_RESTART_MARGIN_MS },
       })
-      expect(model.timeoutS).toBe(OPENAI_MAX_TIMEOUT_S)
+      expect(model.timeoutMs).toBe(OPENAI_MAX_TIMEOUT_MS)
       expect(model.apiKey).toBe(API_KEY)
     })
 
     it('keeps an explicit connection override', () => {
-      const { model } = createModel({ timeoutS: 600, connection: { restartAfterS: 60, autoRestart: false } })
+      const { model } = createModel({ timeoutMs: 600, connection: { restartAfterMs: 60, autoRestart: false } })
 
-      expect(model.getConfig().connection).toEqual({ restartAfterS: 60, autoRestart: false })
+      expect(model.getConfig().connection).toEqual({ restartAfterMs: 60, autoRestart: false })
     })
 
     it('resolves the audio config', () => {
@@ -225,7 +225,7 @@ describe('OpenAIRealtimeModel', () => {
     it.each([
       ['missing api key', { apiKey: '' }, /OpenAI API key is required/],
       ['empty model id', { modelId: '' }, /model_id must be a non-empty string/],
-      ['timeout above the max', { timeoutS: OPENAI_MAX_TIMEOUT_S + 1 }, /timeout exceeds max limit/],
+      ['timeout above the max', { timeoutMs: OPENAI_MAX_TIMEOUT_MS + 1 }, /timeout exceeds max limit/],
       [
         'unsupported input format',
         { params: { audio: { input: { format: { type: 'audio/pcmu' } } } } },
@@ -671,7 +671,7 @@ describe('OpenAIRealtimeModel', () => {
     })
 
     it('throws ConnectionTimeoutError past the configured timeout', async () => {
-      const { model } = createModel({ timeoutS: 1 })
+      const { model } = createModel({ timeoutMs: 1 })
       await model.start()
 
       const receiver = model.receive()

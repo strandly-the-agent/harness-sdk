@@ -36,7 +36,7 @@ import {
   startSessionSpan,
 } from '../telemetry.js'
 import { StreamedReasoningBlock, StreamedTextBlock, StreamedTranscriptBlock } from './blocks.js'
-import { RestartTimer, resolveDeadlineS } from './restart-timer.js'
+import { RestartTimer, resolveDeadlineMs } from './restart-timer.js'
 
 import type { Span } from '@opentelemetry/api'
 import type { InvocationState } from '../../types/agent.js'
@@ -51,8 +51,8 @@ import type { BidiAgent } from './agent.js'
 /** Bound on awaiting a superseded reader after its stream is closed before cancelling it. */
 const MODEL_RESTART_STOP_TIMEOUT_S = 2
 
-/** Fixed advance notice, in seconds before a scheduled restart, for the warning event. */
-const MODEL_RESTART_WARNING_S = 10
+/** Fixed advance notice, in milliseconds before a scheduled restart, for the warning event. */
+const MODEL_RESTART_WARNING_MS = 10_000
 
 /** Max seconds a proactive restart waits for a turn boundary before forcing the swap. */
 const MODEL_RESTART_TURN_TIMEOUT_S = 10
@@ -209,7 +209,7 @@ export class AgentLoop {
   constructor(agent: BidiAgent) {
     this._agent = agent
     this._restartTimer = new RestartTimer(
-      (timeLeftS) => this._onRestartWarning(timeLeftS),
+      (timeLeftMs) => this._onRestartWarning(timeLeftMs),
       () => this._onRestartDeadline()
     )
   }
@@ -405,14 +405,14 @@ export class AgentLoop {
   /** Arm the proactive restart timer when the provider declares a deadline. */
   private _armRestartTimer(): void {
     if (!this._autoRestartEnabled()) return
-    const deadlineS = resolveDeadlineS(this._agent.model.getConnectionConfig())
-    if (deadlineS === undefined) return
-    this._restartTimer.arm(deadlineS, MODEL_RESTART_WARNING_S)
+    const deadlineMs = resolveDeadlineMs(this._agent.model.getConnectionConfig())
+    if (deadlineMs === undefined) return
+    this._restartTimer.arm(deadlineMs, MODEL_RESTART_WARNING_MS)
   }
 
   /** Queue the advance warning ahead of a scheduled restart. */
-  private async _onRestartWarning(timeLeftS: number): Promise<void> {
-    await this._eventQueue.send(new BidiConnectionWarningEvent({ type: 'bidiConnectionWarning', timeLeftS }))
+  private async _onRestartWarning(timeLeftMs: number): Promise<void> {
+    await this._eventQueue.send(new BidiConnectionWarningEvent({ type: 'bidiConnectionWarning', timeLeftMs }))
   }
 
   /** Swap the connection at the next turn boundary, or force it after the turn timeout. */
@@ -438,7 +438,7 @@ export class AgentLoop {
     if (this._turnComplete.isSet()) return
     await Promise.race([this._turnComplete.wait(), sleep(MODEL_RESTART_TURN_TIMEOUT_S)])
     if (!this._turnComplete.isSet()) {
-      logger.warn(`timeout_s=<${MODEL_RESTART_TURN_TIMEOUT_S}> | forcing restart without a turn boundary`)
+      logger.warn(`timeout_ms=<${MODEL_RESTART_TURN_TIMEOUT_S}> | forcing restart without a turn boundary`)
     }
   }
 

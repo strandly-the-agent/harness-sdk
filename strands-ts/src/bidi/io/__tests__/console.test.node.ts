@@ -24,7 +24,7 @@ import {
 import { ConsoleIO } from '../console.js'
 
 import type { BidiAgent } from '../../agent/agent.js'
-import type { ConsoleInputStream, ConsoleOutputStream } from '../console.js'
+import type { BidiInputStream, BidiOutputStream } from '../../types/io.js'
 
 const agent = {} as BidiAgent
 
@@ -84,22 +84,22 @@ describe('ConsoleIO', () => {
 
   describe('input', () => {
     let console_: ConsoleIO
-    let input: ConsoleInputStream
+    let input: BidiInputStream
 
     beforeEach(async () => {
       console_ = new ConsoleIO()
       input = console_.input()
-      await input.start(agent)
+      await input.start?.(agent)
     })
 
     afterEach(async () => {
-      await input.stop()
+      await input.stop?.()
     })
 
     it('preserves draft during output', async () => {
       Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true })
       const output = console_.output()
-      await output.start(agent)
+      await output.start?.(agent)
       const reader = input.read()
 
       terminal.sendText('draft')
@@ -151,7 +151,7 @@ describe('ConsoleIO', () => {
     })
 
     it('releases the keyboard on stop', async () => {
-      await input.stop()
+      await input.stop?.()
 
       expect(terminal.listenerCount('keypress')).toBe(0)
     })
@@ -173,7 +173,7 @@ describe('ConsoleIO', () => {
     ])('completes interleaved content in order ($toolCount tools)', async ({ toolCount, expTools }) => {
       const console_ = new ConsoleIO()
       const output = console_.output()
-      await output.start(agent)
+      await output.start?.(agent)
 
       const toolUses = [
         new ToolUseBlock({ name: 'weather', toolUseId: 'weather', input: {} }),
@@ -219,14 +219,14 @@ describe('ConsoleIO', () => {
       const console_ = new ConsoleIO()
       const input = console_.input()
       const output = console_.output()
-      await input.start(agent)
-      await output.start(agent)
+      await input.start?.(agent)
+      await output.start?.(agent)
 
       await output.write(new BidiTextStartEvent({ type: 'bidiTextStart', contentId: 'text' }))
       await output.write(new BidiTextDeltaEvent({ type: 'bidiTextDelta', delta: 'Partial', contentId: 'text' }))
 
-      await input.stop()
-      await output.stop()
+      await input.stop?.()
+      await output.stop?.()
 
       expect(writes.join('')).toBe('Partial\n\n')
     })
@@ -234,7 +234,7 @@ describe('ConsoleIO', () => {
     it('pads the user block', async () => {
       const console_ = new ConsoleIO()
       const output = console_.output()
-      await output.start(agent)
+      await output.start?.(agent)
 
       await output.write(new BidiTranscriptStartEvent({ type: 'bidiTranscriptStart', role: 'user', contentId: 'user' }))
       await output.write(
@@ -253,7 +253,7 @@ describe('ConsoleIO', () => {
     it('flushes partial content on connection stop', async () => {
       const console_ = new ConsoleIO()
       const output = console_.output()
-      await output.start(agent)
+      await output.start?.(agent)
 
       await output.write(new BidiTextStartEvent({ type: 'bidiTextStart', contentId: 'text' }))
       await output.write(new BidiTextDeltaEvent({ type: 'bidiTextDelta', delta: 'Partial', contentId: 'text' }))
@@ -278,7 +278,7 @@ describe('ConsoleIO', () => {
         showTools: enabled === 'tools',
       })
       const output = console_.output()
-      await output.start(agent)
+      await output.start?.(agent)
 
       for (const event of [
         new BidiReasoningStartEvent({ type: 'bidiReasoningStart', contentId: 'reasoning' }),
@@ -308,13 +308,13 @@ describe('ConsoleIO', () => {
 
       expect(writes.join('').trim()).toBe(expOutput)
 
-      await output.stop()
+      await output.stop?.()
     })
 
     it('ignores tool use events without tool uses', async () => {
       const console_ = new ConsoleIO()
-      const output: ConsoleOutputStream = console_.output()
-      await output.start(agent)
+      const output: BidiOutputStream = console_.output()
+      await output.start?.(agent)
 
       await output.write(new BidiToolUseBlocksEvent({ type: 'bidiToolUseBlocks', toolUses: [] }))
 

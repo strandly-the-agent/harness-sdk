@@ -57,7 +57,7 @@ import type { AudioConfig, BidiModelConfig, GoogleGeminiLiveAudioConfig } from '
 import type { AudioCapable, BidiModelStartOptions, Restartable } from './model.js'
 
 /** Gemini caps a single connection at ~10 min; restart before that and resume the same session. */
-const DEFAULT_RESTART_AFTER_S = 540
+const DEFAULT_RESTART_AFTER_MS = 540_000
 
 /** Output audio sample rate fixed by the Gemini Live API. */
 const OUTPUT_SAMPLE_RATE = 24000
@@ -280,7 +280,7 @@ export class GoogleGeminiLiveModel extends BidiModel<GoogleGeminiLiveModelConfig
       params: { ...(modelConfig.params ?? {}) },
       // Gemini caps a single connection at ~10 min; restart before that, resuming the same
       // session via its handle. The GoAway message remains the reactive backstop.
-      connection: { restartAfterS: DEFAULT_RESTART_AFTER_S, ...(modelConfig.connection ?? {}) },
+      connection: { restartAfterMs: DEFAULT_RESTART_AFTER_MS, ...(modelConfig.connection ?? {}) },
     }
     this._audioConfig = GoogleGeminiLiveModel._resolveAudioConfig(audio)
     if (voice !== undefined) {

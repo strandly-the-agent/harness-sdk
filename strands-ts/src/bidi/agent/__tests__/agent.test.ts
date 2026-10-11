@@ -254,7 +254,7 @@ describe('BidiAgent', () => {
       const agent = new BidiAgent({ model: new FakeBidiModel() })
       const invocationState = { userId: 'user_123' }
 
-      await agent.start(invocationState)
+      await agent.start({ invocationState })
 
       expect(loop.start).toHaveBeenCalledWith(invocationState)
     })

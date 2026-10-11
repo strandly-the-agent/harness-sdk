@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { RestartTimer, resolveDeadlineS } from '../restart-timer.js'
+import { RestartTimer, resolveDeadlineMs } from '../restart-timer.js'
 
 /** A promise plus its resolver, standing in for an `asyncio.Event`. */
 function gate(): { wait: Promise<void>; set: () => void } {
@@ -23,19 +23,19 @@ function task(timer: RestartTimer): Promise<void> | undefined {
 }
 
 describe('restart-timer', () => {
-  describe('resolveDeadlineS', () => {
+  describe('resolveDeadlineMs', () => {
     it('returns undefined when not declared', () => {
-      expect(resolveDeadlineS({})).toBeUndefined()
-      expect(resolveDeadlineS({ autoRestart: true })).toBeUndefined()
+      expect(resolveDeadlineMs({})).toBeUndefined()
+      expect(resolveDeadlineMs({ autoRestart: true })).toBeUndefined()
     })
 
-    it('returns the declared restartAfterS', () => {
-      expect(resolveDeadlineS({ restartAfterS: 540 })).toBe(540)
+    it('returns the declared restartAfterMs', () => {
+      expect(resolveDeadlineMs({ restartAfterMs: 540 })).toBe(540)
     })
 
     it('returns undefined when not positive', () => {
-      expect(resolveDeadlineS({ restartAfterS: 0 })).toBeUndefined()
-      expect(resolveDeadlineS({ restartAfterS: -5 })).toBeUndefined()
+      expect(resolveDeadlineMs({ restartAfterMs: 0 })).toBeUndefined()
+      expect(resolveDeadlineMs({ restartAfterMs: -5 })).toBeUndefined()
     })
   })
 
@@ -46,8 +46,8 @@ describe('restart-timer', () => {
       const sleeps: number[] = []
 
       const timer = new RestartTimer(
-        async (timeLeftS) => {
-          warnings.push(timeLeftS)
+        async (timeLeftMs) => {
+          warnings.push(timeLeftMs)
         },
         async () => {
           deadlines.push(null)
@@ -62,7 +62,7 @@ describe('restart-timer', () => {
       await task(timer)
 
       expect(sleeps).toEqual([390, 30])
-      expect(warnings).toEqual([30]) // timeLeftS at warning === warningLeadS
+      expect(warnings).toEqual([30]) // timeLeftMs at warning === warningLeadMs
       expect(deadlines).toEqual([null])
     })
 

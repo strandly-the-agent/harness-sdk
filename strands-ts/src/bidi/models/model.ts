@@ -82,7 +82,7 @@ export function isAudioCapable(model: unknown): model is AudioCapable {
  */
 export class ConnectionTimeoutError extends ModelError {
   /** Provider options forwarded to `restart()`, or to `start()` on the fallback path. */
-  readonly restartConfig: Record<string, unknown>
+  readonly restartConfig: BidiModelStartOptions & Record<string, unknown>
 
   /**
    * Creates a new ConnectionTimeoutError.
@@ -91,7 +91,11 @@ export class ConnectionTimeoutError extends ModelError {
    * @param restartConfig - Provider options forwarded to the restart
    * @param options - Optional error options including the cause
    */
-  constructor(message: string, restartConfig: Record<string, unknown> = {}, options?: { cause?: unknown }) {
+  constructor(
+    message: string,
+    restartConfig: BidiModelStartOptions & Record<string, unknown> = {},
+    options?: { cause?: unknown }
+  ) {
     super(message, options)
     this.name = 'ConnectionTimeoutError'
     this.restartConfig = restartConfig

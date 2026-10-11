@@ -459,7 +459,7 @@ export class ConsoleIO {
    *
    * @returns Input stream that reads typed messages
    */
-  input(): ConsoleInputStream {
+  input(): BidiInputStream {
     return new ConsoleInputStream(this._display, this._keyboard)
   }
 
@@ -468,7 +468,7 @@ export class ConsoleIO {
    *
    * @returns Output stream that renders content to the terminal
    */
-  output(): ConsoleOutputStream {
+  output(): BidiOutputStream {
     return new ConsoleOutputStream(this._config, this._display)
   }
 }

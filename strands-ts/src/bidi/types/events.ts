@@ -218,8 +218,8 @@ export interface BidiConnectionWarningEventData {
   /** Discriminator for connection warning events. */
   type: 'bidiConnectionWarning'
 
-  /** Approximate seconds until the scheduled restart. */
-  timeLeftS: number
+  /** Approximate milliseconds until the scheduled restart. */
+  timeLeftMs: number
 }
 
 /**
@@ -231,11 +231,11 @@ export class BidiConnectionWarningEvent implements BidiConnectionWarningEventDat
   /** Discriminator for connection warning events. */
   readonly type = 'bidiConnectionWarning' as const
 
-  /** Approximate seconds until the scheduled restart. */
-  readonly timeLeftS: number
+  /** Approximate milliseconds until the scheduled restart. */
+  readonly timeLeftMs: number
 
   constructor(data: BidiConnectionWarningEventData) {
-    this.timeLeftS = data.timeLeftS
+    this.timeLeftMs = data.timeLeftMs
   }
 }
 
