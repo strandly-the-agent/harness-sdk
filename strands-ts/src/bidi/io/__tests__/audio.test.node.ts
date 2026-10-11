@@ -67,7 +67,7 @@ function openStreamCall(): {
 function lastPlayedFrame(): Uint8Array {
   const calls = rtAudio.write.mock.calls
   expect(calls.length).toBeGreaterThan(0)
-  return new Uint8Array(calls[calls.length - 1]![0] as Buffer)
+  return new Uint8Array(calls[calls.length - 1]![0] as Uint8Array)
 }
 
 /** Agent whose model reports the given audio configuration. */
@@ -325,45 +325,34 @@ describe('AudioIO', () => {
   })
 
   describe('validation', () => {
-    it.each(['input', 'output'] as const)(
-      'rejects a model without audio capability (%s)',
-      async (direction) => {
-        const audioIO = new AudioIO()
-        const stream = direction === 'input' ? audioIO.input() : audioIO.output()
-        const agent = { model: {} } as unknown as BidiAgent
+    it.each(['input', 'output'] as const)('rejects a model without audio capability (%s)', async (direction) => {
+      const audioIO = new AudioIO()
+      const stream = direction === 'input' ? audioIO.input() : audioIO.output()
+      const agent = { model: {} } as unknown as BidiAgent
 
-        await expect(stream.start?.(agent)).rejects.toThrow(
-          'AudioIO requires a model that implements AudioCapable'
-        )
-        expect(rtAudio.construct).not.toHaveBeenCalled()
-      }
-    )
+      await expect(stream.start?.(agent)).rejects.toThrow('AudioIO requires a model that implements AudioCapable')
+      expect(rtAudio.construct).not.toHaveBeenCalled()
+    })
 
-    it.each(['wav', 'opus', 'mp3'] as const)(
-      'rejects unsupported input encoding (%s)',
-      async (format) => {
-        const audioIO = new AudioIO()
-        const agent = createAgent({ ...audioConfig, input: { ...audioConfig.input, format } })
+    it.each(['wav', 'opus', 'mp3'] as const)('rejects unsupported input encoding (%s)', async (format) => {
+      const audioIO = new AudioIO()
+      const agent = createAgent({ ...audioConfig, input: { ...audioConfig.input, format } })
 
-        await expect(audioIO.input().start?.(agent)).rejects.toThrow(
-          `AudioIO requires signed 16-bit PCM, received ${format}`
-        )
-        expect(rtAudio.construct).not.toHaveBeenCalled()
-      }
-    )
+      await expect(audioIO.input().start?.(agent)).rejects.toThrow(
+        `AudioIO requires signed 16-bit PCM, received ${format}`
+      )
+      expect(rtAudio.construct).not.toHaveBeenCalled()
+    })
 
-    it.each(['wav', 'opus', 'mp3'] as const)(
-      'rejects unsupported output encoding (%s)',
-      async (format) => {
-        const audioIO = new AudioIO()
-        const agent = createAgent({ ...audioConfig, output: { ...audioConfig.output, format } })
+    it.each(['wav', 'opus', 'mp3'] as const)('rejects unsupported output encoding (%s)', async (format) => {
+      const audioIO = new AudioIO()
+      const agent = createAgent({ ...audioConfig, output: { ...audioConfig.output, format } })
 
-        await expect(audioIO.output().start?.(agent)).rejects.toThrow(
-          `AudioIO requires signed 16-bit PCM, received ${format}`
-        )
-        expect(rtAudio.construct).not.toHaveBeenCalled()
-      }
-    )
+      await expect(audioIO.output().start?.(agent)).rejects.toThrow(
+        `AudioIO requires signed 16-bit PCM, received ${format}`
+      )
+      expect(rtAudio.construct).not.toHaveBeenCalled()
+    })
 
     it('reports the install instruction when audify cannot be loaded', async () => {
       rtAudio.construct.mockImplementationOnce(() => {

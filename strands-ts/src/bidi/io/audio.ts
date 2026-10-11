@@ -10,6 +10,8 @@
  * dependency installed.
  */
 
+import type { Buffer } from 'node:buffer'
+
 import type { RtAudio } from 'audify'
 
 import type { BidiAgent } from '../agent/agent.js'
@@ -42,10 +44,11 @@ interface AudifyModule {
   RtAudioFormat: { RTAUDIO_SINT16: number }
 }
 
-/** RtAudio instance and the format constant needed to open a stream. */
+/** RtAudio instance, the format constant needed to open a stream, and a PCM buffer wrapper. */
 interface RtAudioModule {
   rtAudio: RtAudio
   format: number
+  toPcm: (data: Uint8Array) => Buffer
 }
 
 /**
@@ -57,12 +60,16 @@ interface RtAudioModule {
 async function loadRtAudio(): Promise<RtAudioModule> {
   try {
     const audify = (await import('audify')) as unknown as AudifyModule
-    return { rtAudio: new audify.RtAudio(), format: audify.RtAudioFormat.RTAUDIO_SINT16 }
+    const { Buffer: nodeBuffer } = await import('node:buffer')
+    return {
+      rtAudio: new audify.RtAudio(),
+      format: audify.RtAudioFormat.RTAUDIO_SINT16,
+      toPcm: (data) => nodeBuffer.from(data.buffer, data.byteOffset, data.byteLength),
+    }
   } catch (error: unknown) {
-    throw new Error(
-      'Audio I/O requires this optional dependency. Install it with: npm install audify',
-      { cause: error }
-    )
+    throw new Error('Audio I/O requires this optional dependency. Install it with: npm install audify', {
+      cause: error,
+    })
   }
 }
 
@@ -199,6 +206,7 @@ export class AudioOutputStream implements BidiOutputStream {
   private readonly _framesPerBuffer: number
   private _audioConfig: AudioStreamConfig | undefined
   private _rtAudio: RtAudio | undefined
+  private _toPcm: ((data: Uint8Array) => Buffer) | undefined
 
   /**
    * Initialize output settings.
@@ -226,9 +234,10 @@ export class AudioOutputStream implements BidiOutputStream {
     validateAudioConfig(audioConfig)
     this._audioConfig = audioConfig
 
-    const { rtAudio, format } = await loadRtAudio()
+    const { rtAudio, format, toPcm } = await loadRtAudio()
     this._buffer.start()
     this._rtAudio = rtAudio
+    this._toPcm = toPcm
     rtAudio.openStream(
       this._streamParameters(audioConfig),
       null,
@@ -287,7 +296,7 @@ export class AudioOutputStream implements BidiOutputStream {
     const byteCount = this._framesPerBuffer * channels * SAMPLE_SIZE
     const data = this._buffer.take(byteCount)
 
-    this._rtAudio?.write(Buffer.from(data.buffer, data.byteOffset, data.byteLength))
+    if (this._rtAudio && this._toPcm) this._rtAudio.write(this._toPcm(data))
   }
 
   /**
@@ -303,9 +312,7 @@ export class AudioOutputStream implements BidiOutputStream {
       event.sampleRate !== config.sampleRate ||
       event.channels !== config.channels
     ) {
-      throw new Error(
-        'Audio output does not match the playback format. Restart audio I/O to reconfigure it.'
-      )
+      throw new Error('Audio output does not match the playback format. Restart audio I/O to reconfigure it.')
     }
   }
 
@@ -365,9 +372,7 @@ export class AudioIO {
    */
   constructor(config: AudioIOConfig = {}) {
     this._config = config
-    this._console =
-      config.console ??
-      new ConsoleIO({ placeholder: 'Speak…', showText: false, showReasoning: false })
+    this._console = config.console ?? new ConsoleIO({ placeholder: 'Speak…', showText: false, showReasoning: false })
   }
 
   /**
