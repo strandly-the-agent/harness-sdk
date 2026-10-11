@@ -22,9 +22,5 @@ export type {
   GoogleGeminiLiveAudioStreamConfig,
 } from './configs.js'
 
-export { GoogleGeminiLiveModel } from './google.js'
-export type {
-  GoogleGeminiLiveModelConfig,
-  GoogleGeminiLiveModelOptions,
-  GoogleGeminiLiveStartOptions,
-} from './google.js'
+// GoogleGeminiLiveModel is intentionally omitted: it statically imports the optional peer
+// `@google/genai`, so it ships on the `@strands-agents/sdk/bidi/models/google` subpath instead.

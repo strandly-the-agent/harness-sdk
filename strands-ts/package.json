@@ -60,6 +60,10 @@
       "types": "./dist/src/bidi/hooks/index.d.ts",
       "default": "./dist/src/bidi/hooks/index.js"
     },
+    "./bidi/models/google": {
+      "types": "./dist/src/bidi/models/google.d.ts",
+      "default": "./dist/src/bidi/models/google.js"
+    },
     "./experimental": {
       "types": "./dist/src/experimental/index.d.ts",
       "default": "./dist/src/experimental/index.js"

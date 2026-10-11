@@ -8,10 +8,14 @@
  * `BidiBargeInEvent` name both an output event and a hook event, so the two sets cannot share a
  * barrel.
  *
+ * `GoogleGeminiLiveModel` lives in the `@strands-agents/sdk/bidi/models/google` subpath so that
+ * importing this barrel does not require the optional `@google/genai` peer dependency.
+ *
  * @example
  * ```typescript
  * import { BidiAgent, BedrockNovaSonicModel, ConsoleIO } from '@strands-agents/sdk/bidi'
  * import { BidiBargeInEvent } from '@strands-agents/sdk/bidi/hooks'
+ * import { GoogleGeminiLiveModel } from '@strands-agents/sdk/bidi/models/google'
  * ```
  */
 

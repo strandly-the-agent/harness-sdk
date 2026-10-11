@@ -242,8 +242,13 @@ class MessageQueue {
  * to the Gemini Live API using the official SDK, eliminating custom WebSocket handling and
  * providing robust error handling.
  *
+ * Exported from `@strands-agents/sdk/bidi/models/google`, not the `@strands-agents/sdk/bidi`
+ * barrel, because it requires the optional `@google/genai` peer dependency.
+ *
  * @example
  * ```typescript
+ * import { GoogleGeminiLiveModel } from '@strands-agents/sdk/bidi/models/google'
+ *
  * const model = new GoogleGeminiLiveModel({ modelId: 'gemini-live-2.5-flash-preview' })
  *
  * await model.start({ systemPrompt: 'You are a helpful assistant.' })
