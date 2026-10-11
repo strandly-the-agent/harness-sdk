@@ -52,6 +52,14 @@
       "types": "./dist/src/multiagent/index.d.ts",
       "default": "./dist/src/multiagent/index.js"
     },
+    "./bidi": {
+      "types": "./dist/src/bidi/index.d.ts",
+      "default": "./dist/src/bidi/index.js"
+    },
+    "./bidi/hooks": {
+      "types": "./dist/src/bidi/hooks/index.d.ts",
+      "default": "./dist/src/bidi/hooks/index.js"
+    },
     "./experimental": {
       "types": "./dist/src/experimental/index.d.ts",
       "default": "./dist/src/experimental/index.js"

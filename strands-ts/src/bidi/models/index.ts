@@ -1,0 +1,17 @@
+/**
+ * Bidirectional model interfaces and configuration types.
+ */
+
+export { BidiModel, ConnectionTimeoutError, isAudioCapable, isRestartable } from './model.js'
+export type { AudioCapable, BidiModelStartOptions, Restartable } from './model.js'
+
+export type {
+  AudioConfig,
+  AudioStreamConfig,
+  BedrockNovaSonicAudioConfig,
+  BedrockNovaSonicAudioStreamConfig,
+  BidiModelConfig,
+  ConnectionConfig,
+  GoogleGeminiLiveAudioConfig,
+  GoogleGeminiLiveAudioStreamConfig,
+} from './configs.js'
