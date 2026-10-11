@@ -201,12 +201,12 @@ describe('BedrockNovaSonicModel', () => {
 
     it('declares the default restart timing', () => {
       const [model] = newModel()
-      expect(model.getConnectionConfig()).toEqual({ restartAfterMs: 420 })
+      expect(model.getConnectionConfig()).toEqual({ restartAfterMs: 420_000 })
     })
 
     it('merges connection overrides over the defaults', () => {
       const [model] = newModel([], { connection: { autoRestart: false } })
-      expect(model.getConnectionConfig()).toEqual({ restartAfterMs: 420, autoRestart: false })
+      expect(model.getConnectionConfig()).toEqual({ restartAfterMs: 420_000, autoRestart: false })
     })
 
     it('replaces params on update', async () => {

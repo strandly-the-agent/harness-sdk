@@ -108,7 +108,7 @@ describe('GoogleGeminiLiveModel', () => {
     })
 
     it('declares a proactive restart window', () => {
-      expect(createModel().getConfig().connection).toEqual({ restartAfterMs: 540 })
+      expect(createModel().getConfig().connection).toEqual({ restartAfterMs: 540_000 })
     })
 
     it('allows overriding the restart window', () => {
