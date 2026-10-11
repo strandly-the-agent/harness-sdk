@@ -105,10 +105,11 @@ describe('ConsoleIO', () => {
       terminal.sendText('draft')
       await waitFor(() => writes.join('').includes('> draft'))
 
-      await output.write(new BidiTextStartEvent({ contentId: 'text' }))
-      await output.write(new BidiTextDeltaEvent({ delta: 'Answer', contentId: 'text' }))
+      await output.write(new BidiTextStartEvent({ type: 'bidiTextStart', contentId: 'text' }))
+      await output.write(new BidiTextDeltaEvent({ type: 'bidiTextDelta', delta: 'Answer', contentId: 'text' }))
       await output.write(
         new BidiToolUseBlocksEvent({
+          type: 'bidiToolUseBlocks',
           toolUses: [
             new ToolUseBlock({ name: 'weather', toolUseId: 'weather', input: {} }),
             new ToolUseBlock({ name: 'time', toolUseId: 'time', input: {} }),
@@ -180,26 +181,36 @@ describe('ConsoleIO', () => {
       ].slice(0, toolCount)
 
       for (const event of [
-        new BidiTranscriptStartEvent({ role: 'user', contentId: 'user' }),
-        new BidiTranscriptDeltaEvent({ delta: 'Question', role: 'user', contentId: 'user' }),
-        new BidiReasoningStartEvent({ contentId: 'reasoning' }),
-        new BidiReasoningDeltaEvent({ delta: 'Thinking', contentId: 'reasoning' }),
-        new BidiToolUseBlocksEvent({ toolUses }),
-        new BidiTextStartEvent({ contentId: 'text' }),
-        new BidiTextDeltaEvent({ delta: 'Answer', contentId: 'text' }),
-        new BidiTranscriptStartEvent({ role: 'assistant', contentId: 'speech' }),
-        new BidiTranscriptDeltaEvent({ delta: 'Spoken answer', role: 'assistant', contentId: 'speech' }),
-        new BidiReasoningStopEvent({ contentId: 'reasoning' }),
-        new BidiTextStopEvent({ contentId: 'text' }),
-        new BidiTextBlockEvent({ text: 'Answer', contentId: 'text' }),
-        new BidiTranscriptStopEvent({ role: 'assistant', contentId: 'speech' }),
+        new BidiTranscriptStartEvent({ type: 'bidiTranscriptStart', role: 'user', contentId: 'user' }),
+        new BidiTranscriptDeltaEvent({
+          type: 'bidiTranscriptDelta',
+          delta: 'Question',
+          role: 'user',
+          contentId: 'user',
+        }),
+        new BidiReasoningStartEvent({ type: 'bidiReasoningStart', contentId: 'reasoning' }),
+        new BidiReasoningDeltaEvent({ type: 'bidiReasoningDelta', delta: 'Thinking', contentId: 'reasoning' }),
+        new BidiToolUseBlocksEvent({ type: 'bidiToolUseBlocks', toolUses }),
+        new BidiTextStartEvent({ type: 'bidiTextStart', contentId: 'text' }),
+        new BidiTextDeltaEvent({ type: 'bidiTextDelta', delta: 'Answer', contentId: 'text' }),
+        new BidiTranscriptStartEvent({ type: 'bidiTranscriptStart', role: 'assistant', contentId: 'speech' }),
+        new BidiTranscriptDeltaEvent({
+          type: 'bidiTranscriptDelta',
+          delta: 'Spoken answer',
+          role: 'assistant',
+          contentId: 'speech',
+        }),
+        new BidiReasoningStopEvent({ type: 'bidiReasoningStop', contentId: 'reasoning' }),
+        new BidiTextStopEvent({ type: 'bidiTextStop', contentId: 'text' }),
+        new BidiTextBlockEvent({ type: 'bidiTextBlock', text: 'Answer', contentId: 'text' }),
+        new BidiTranscriptStopEvent({ type: 'bidiTranscriptStop', role: 'assistant', contentId: 'speech' }),
       ]) {
         await output.write(event)
       }
 
       expect(writes.join('')).toBe('')
 
-      await output.write(new BidiTranscriptStopEvent({ role: 'user', contentId: 'user' }))
+      await output.write(new BidiTranscriptStopEvent({ type: 'bidiTranscriptStop', role: 'user', contentId: 'user' }))
 
       expect(lines()).toEqual(['> Question', 'Reasoning: Thinking', expTools, 'Answer', 'Spoken answer'])
     })
@@ -211,8 +222,8 @@ describe('ConsoleIO', () => {
       await input.start(agent)
       await output.start(agent)
 
-      await output.write(new BidiTextStartEvent({ contentId: 'text' }))
-      await output.write(new BidiTextDeltaEvent({ delta: 'Partial', contentId: 'text' }))
+      await output.write(new BidiTextStartEvent({ type: 'bidiTextStart', contentId: 'text' }))
+      await output.write(new BidiTextDeltaEvent({ type: 'bidiTextDelta', delta: 'Partial', contentId: 'text' }))
 
       await input.stop()
       await output.stop()
@@ -225,9 +236,16 @@ describe('ConsoleIO', () => {
       const output = console_.output()
       await output.start(agent)
 
-      await output.write(new BidiTranscriptStartEvent({ role: 'user', contentId: 'user' }))
-      await output.write(new BidiTranscriptDeltaEvent({ delta: 'Question', role: 'user', contentId: 'user' }))
-      await output.write(new BidiTranscriptStopEvent({ role: 'user', contentId: 'user' }))
+      await output.write(new BidiTranscriptStartEvent({ type: 'bidiTranscriptStart', role: 'user', contentId: 'user' }))
+      await output.write(
+        new BidiTranscriptDeltaEvent({
+          type: 'bidiTranscriptDelta',
+          delta: 'Question',
+          role: 'user',
+          contentId: 'user',
+        })
+      )
+      await output.write(new BidiTranscriptStopEvent({ type: 'bidiTranscriptStop', role: 'user', contentId: 'user' }))
 
       expect(writes.join('')).toBe('> Question\n\n')
     })
@@ -237,9 +255,11 @@ describe('ConsoleIO', () => {
       const output = console_.output()
       await output.start(agent)
 
-      await output.write(new BidiTextStartEvent({ contentId: 'text' }))
-      await output.write(new BidiTextDeltaEvent({ delta: 'Partial', contentId: 'text' }))
-      await output.write(new BidiConnectionStopEvent({ connectionId: 'connection', reason: 'userRequest' }))
+      await output.write(new BidiTextStartEvent({ type: 'bidiTextStart', contentId: 'text' }))
+      await output.write(new BidiTextDeltaEvent({ type: 'bidiTextDelta', delta: 'Partial', contentId: 'text' }))
+      await output.write(
+        new BidiConnectionStopEvent({ type: 'bidiConnectionStop', connectionId: 'connection', reason: 'userRequest' })
+      )
 
       expect(writes.join('').trim()).toBe('Partial')
     })
@@ -261,21 +281,27 @@ describe('ConsoleIO', () => {
       await output.start(agent)
 
       for (const event of [
-        new BidiReasoningStartEvent({ contentId: 'reasoning' }),
-        new BidiReasoningDeltaEvent({ delta: 'Thinking', contentId: 'reasoning' }),
-        new BidiTextStartEvent({ contentId: 'text' }),
-        new BidiTextDeltaEvent({ delta: 'Answer', contentId: 'text' }),
-        new BidiTranscriptStartEvent({ role: 'assistant', contentId: 'speech' }),
-        new BidiTranscriptDeltaEvent({ delta: 'Spoken', role: 'assistant', contentId: 'speech' }),
+        new BidiReasoningStartEvent({ type: 'bidiReasoningStart', contentId: 'reasoning' }),
+        new BidiReasoningDeltaEvent({ type: 'bidiReasoningDelta', delta: 'Thinking', contentId: 'reasoning' }),
+        new BidiTextStartEvent({ type: 'bidiTextStart', contentId: 'text' }),
+        new BidiTextDeltaEvent({ type: 'bidiTextDelta', delta: 'Answer', contentId: 'text' }),
+        new BidiTranscriptStartEvent({ type: 'bidiTranscriptStart', role: 'assistant', contentId: 'speech' }),
+        new BidiTranscriptDeltaEvent({
+          type: 'bidiTranscriptDelta',
+          delta: 'Spoken',
+          role: 'assistant',
+          contentId: 'speech',
+        }),
         new BidiToolUseBlocksEvent({
+          type: 'bidiToolUseBlocks',
           toolUses: [
             new ToolUseBlock({ name: 'weather', toolUseId: 'weather', input: {} }),
             new ToolUseBlock({ name: 'time', toolUseId: 'time', input: {} }),
           ],
         }),
-        new BidiReasoningStopEvent({ contentId: 'reasoning' }),
-        new BidiTextStopEvent({ contentId: 'text' }),
-        new BidiTranscriptStopEvent({ role: 'assistant', contentId: 'speech' }),
+        new BidiReasoningStopEvent({ type: 'bidiReasoningStop', contentId: 'reasoning' }),
+        new BidiTextStopEvent({ type: 'bidiTextStop', contentId: 'text' }),
+        new BidiTranscriptStopEvent({ type: 'bidiTranscriptStop', role: 'assistant', contentId: 'speech' }),
       ]) {
         await output.write(event)
       }
@@ -290,7 +316,7 @@ describe('ConsoleIO', () => {
       const output: ConsoleOutputStream = console_.output()
       await output.start(agent)
 
-      await output.write(new BidiToolUseBlocksEvent({ toolUses: [] }))
+      await output.write(new BidiToolUseBlocksEvent({ type: 'bidiToolUseBlocks', toolUses: [] }))
 
       expect(writes.join('')).toBe('')
     })
