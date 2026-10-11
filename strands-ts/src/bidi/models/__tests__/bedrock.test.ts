@@ -150,6 +150,23 @@ async function collect(events: AsyncIterable<BidiOutputEvent>): Promise<BidiOutp
   return collected
 }
 
+/** `count` user messages, each over the 50KB per-message cap and tagged with its index. */
+function historyMessages(count: number): Message[] {
+  return Array.from(
+    { length: count },
+    (_unused, index) =>
+      new Message({ role: 'user', content: [new TextBlock(`m${index + 1}${'y'.repeat(60 * 1024)}`)] })
+  )
+}
+
+/** The `mN` tag of every history message the model replayed, oldest first. */
+function replayedMarkers(client: FakeClient): string[] {
+  return client
+    .texts()
+    .filter((text) => text.includes('y'))
+    .map((text) => text.slice(0, 2))
+}
+
 const toolSpec: ToolSpec = {
   name: 'time_tool',
   description: 'Get the time',
@@ -705,6 +722,55 @@ describe('BedrockNovaSonicModel', () => {
       }) as unknown as typeof client.send)
       await model.start()
       await expect(collect(model.receive())).rejects.toThrow(ModelThrottledError)
+    })
+  })
+
+
+  describe('history limits', () => {
+    it('truncates a message over the 50KB per-message cap', async () => {
+      const [model, client] = newModel()
+      await model.start({ messages: [new Message({ role: 'user', content: [new TextBlock('x'.repeat(60 * 1024))] })] })
+      await tick()
+
+      const replayed = client.texts().find((text) => text.startsWith('x'))!
+      expect(replayed).toHaveLength(50 * 1024)
+    })
+
+    it('replays every message that fits the 200KB total cap', async () => {
+      const [model, client] = newModel()
+      await model.start({ messages: historyMessages(4) })
+      await tick()
+
+      // Four messages truncated to 50KB each land exactly on the 200KB cap.
+      expect(replayedMarkers(client)).toEqual(['m1', 'm2', 'm3', 'm4'])
+    })
+
+    it('drops the oldest messages over the 200KB total cap', async () => {
+      const [model, client] = newModel()
+      await model.start({ messages: historyMessages(5) })
+      await tick()
+
+      // The fifth message would push the total past 200KB, so the oldest is dropped.
+      expect(replayedMarkers(client)).toEqual(['m2', 'm3', 'm4', 'm5'])
+    })
+  })
+
+  describe('transcript formatting', () => {
+    it('inserts a space between chunks that would otherwise run together', async () => {
+      const [model] = newModel([
+        chunk({ contentStart: { role: 'USER', type: 'TEXT', contentId: 'c1' } }),
+        chunk({ textOutput: { role: 'USER', content: 'hello' } }),
+        chunk({ textOutput: { role: 'USER', content: 'there' } }),
+        chunk({ textOutput: { role: 'USER', content: ' friend' } }),
+        chunk({ textOutput: { role: 'USER', content: 'ok ' } }),
+        chunk({ textOutput: { role: 'USER', content: 'done' } }),
+      ])
+      await model.start()
+      const deltas = (await collect(model.receive()))
+        .filter((event) => event.type === 'bidiTranscriptDelta')
+        .map((event) => (event as BidiTranscriptDeltaEvent).delta)
+
+      expect(deltas).toEqual(['hello', ' there', ' friend', ' ok ', 'done'])
     })
   })
 
