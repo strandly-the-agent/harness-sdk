@@ -67,7 +67,7 @@ import { BidiModel } from '../models/model.js'
 import type { BidiAgentInput } from '../types/agent.js'
 import type { BidiMessage } from '../types/content.js'
 import type { BidiOutputEvent } from '../types/events.js'
-import type { BidiInputStream, BidiOutputStream } from '../types/io.js'
+import type { BidiInputStream, BidiOutputStream, BidiRunInput, BidiRunOutput } from '../types/io.js'
 import { AudioDelta } from '../types/media.js'
 import type { AudioDeltaData } from '../types/media.js'
 import { AgentLoop } from './loop.js'
@@ -94,6 +94,38 @@ const abortedPromises = new WeakMap<AbortSignal, Promise<typeof ABORTED>>()
  * @param signal - Signal to watch
  * @returns Promise resolving to the {@link ABORTED} sentinel
  */
+
+/** Adapt a `run()` input to the stream protocol; an exhausted iterable parks like an idle device. */
+function toInputStream(input: BidiRunInput): BidiInputStream {
+  if (!(Symbol.asyncIterator in input)) return input
+  const iterator = input[Symbol.asyncIterator]()
+  let exhausted: Promise<never> | undefined
+  return {
+    async read(): Promise<BidiAgentInput> {
+      if (exhausted !== undefined) return exhausted
+      const next = await iterator.next()
+      if (next.done === true) {
+        exhausted = new Promise<never>(() => {})
+        return exhausted
+      }
+      return next.value
+    },
+    async stop(): Promise<void> {
+      await iterator.return?.()
+    },
+  }
+}
+
+/** Adapt a `run()` output to the stream protocol. */
+function toOutputStream(output: BidiRunOutput): BidiOutputStream {
+  if (typeof output !== 'function') return output
+  return {
+    async write(event: BidiOutputEvent): Promise<void> {
+      await output(event)
+    },
+  }
+}
+
 function whenAborted(signal: AbortSignal): Promise<typeof ABORTED> {
   if (signal.aborted) return Promise.resolve(ABORTED)
 
@@ -746,23 +778,29 @@ export class BidiAgent implements LocalAgent {
   /**
    * Run the agent using the provided I/O streams for bidirectional communication.
    *
-   * @param options - Input streams, output streams, invocation state, and an optional external
-   *   cancellation signal. Aborting the signal cancels the conversation and ends the run.
+   * @param options - Inputs (streams or async iterables), outputs (streams or callbacks), invocation
+   *   state, and an optional external cancellation signal. Aborting the signal cancels the
+   *   conversation and ends the run.
    *
    * @example
    * ```typescript
    * const audioIo = new AudioIO()
    * const agent = new BidiAgent({ model, tools: [calculator] })
    * await agent.run({ inputs: [audioIo.input()], outputs: [audioIo.output()] })
+   *
+   * // Async iterables and callbacks work too
+   * await agent.run({ inputs: [micChunks()], outputs: [(event) => console.log(event.type)] })
    * ```
    */
   async run(options: {
-    inputs: BidiInputStream[]
-    outputs: BidiOutputStream[]
+    inputs: BidiRunInput[]
+    outputs: BidiRunOutput[]
     invocationState?: InvocationState
     cancelSignal?: AbortSignal
   }): Promise<void> {
-    const { inputs, outputs, invocationState, cancelSignal } = options
+    const { invocationState, cancelSignal } = options
+    const inputs = options.inputs.map(toInputStream)
+    const outputs = options.outputs.map(toOutputStream)
     const inputsController = new AbortController()
 
     let inputsTask: Promise<void> | undefined

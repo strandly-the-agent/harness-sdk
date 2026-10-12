@@ -56,3 +56,16 @@ export interface BidiOutputStream {
    */
   write(event: BidiOutputEvent): Promise<void>
 }
+
+/**
+ * An input accepted by `BidiAgent.run()`: a {@link BidiInputStream}, or any async iterable of
+ * agent input (for example an async generator). An iterable has no `start`/`stop` lifecycle; once
+ * it is exhausted the run keeps going until another stream ends it or the run is cancelled.
+ */
+export type BidiRunInput = BidiInputStream | AsyncIterable<BidiAgentInput>
+
+/**
+ * An output accepted by `BidiAgent.run()`: a {@link BidiOutputStream}, or a callback invoked with
+ * every event the agent produces.
+ */
+export type BidiRunOutput = BidiOutputStream | ((event: BidiOutputEvent) => void | Promise<void>)

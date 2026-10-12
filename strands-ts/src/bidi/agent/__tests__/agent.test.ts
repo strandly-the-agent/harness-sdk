@@ -30,6 +30,8 @@ const loop = vi.hoisted(() => ({
   send: vi.fn<(content: unknown) => void>(),
   receive: vi.fn<() => void>(),
   events: [] as unknown[],
+  /** When set, the fake receive() parks on this promise after draining `events`. */
+  hold: undefined as Promise<void> | undefined,
 }))
 
 vi.mock('../loop.js', () => ({
@@ -48,6 +50,7 @@ vi.mock('../loop.js', () => ({
       for (const event of loop.events) {
         yield event
       }
+      if (loop.hold !== undefined) await loop.hold
     }
   },
 }))
@@ -89,6 +92,7 @@ describe('BidiAgent', () => {
     loop.send.mockClear()
     loop.receive.mockClear()
     loop.events = []
+    loop.hold = undefined
   })
 
   describe('constructor', () => {
@@ -452,6 +456,54 @@ describe('BidiAgent', () => {
       expect(output.start).toHaveBeenCalledWith(agent)
       expect(written).toEqual([event])
       expect(input.stop).toHaveBeenCalledOnce()
+      expect(output.stop).toHaveBeenCalledOnce()
+      expect(loop.stop).toHaveBeenCalledOnce()
+    })
+
+    it('accepts an async iterable input and a callback output', async () => {
+      const event = new BidiConnectionStartEvent({
+        type: 'bidiConnectionStart',
+        connectionId: 'connection-1',
+        model: 'mock-model',
+      })
+      loop.events = [event]
+      const agent = new BidiAgent({ model: new FakeBidiModel() })
+      const returned = vi.fn()
+      async function* chunks(): AsyncGenerator<BidiAgentInput> {
+        try {
+          yield 'first'
+          yield 'second'
+        } finally {
+          returned()
+        }
+      }
+      const seen: BidiOutputEvent[] = []
+
+      await agent.run({ inputs: [chunks()], outputs: [(value) => void seen.push(value)] })
+
+      expect(loop.send.mock.calls.map(([content]) => content)).toEqual([
+        { content: [new TextBlock('first')] },
+        { content: [new TextBlock('second')] },
+      ])
+      expect(seen).toEqual([event])
+      expect(returned).toHaveBeenCalledOnce()
+    })
+
+    it('keeps running after an iterable input is exhausted until cancelled', async () => {
+      const agent = new BidiAgent({ model: new FakeBidiModel() })
+      const controller = new AbortController()
+      async function* chunks(): AsyncGenerator<BidiAgentInput> {
+        yield 'only'
+      }
+      const output: BidiOutputStream = { stop: vi.fn(async () => {}), write: vi.fn(async () => {}) }
+      loop.hold = new Promise<void>(() => {})
+
+      const run = agent.run({ inputs: [chunks()], outputs: [output], cancelSignal: controller.signal })
+      await vi.waitFor(() => expect(loop.send).toHaveBeenCalledOnce())
+      expect(loop.stop).not.toHaveBeenCalled()
+      controller.abort()
+      await run
+
       expect(output.stop).toHaveBeenCalledOnce()
       expect(loop.stop).toHaveBeenCalledOnce()
     })

@@ -77,4 +77,4 @@ export type {
 
 export type { BidiAgentInput } from './agent.js'
 
-export type { BidiInputStream, BidiOutputStream } from './io.js'
+export type { BidiInputStream, BidiOutputStream, BidiRunInput, BidiRunOutput } from './io.js'
