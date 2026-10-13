@@ -17,5 +17,5 @@ pub use agent::{Agent, AgentResult, InvocationState, InvokeInput};
 pub use error::{Error, Result};
 pub use models::Model;
 pub use plugins::Plugin;
-pub use tools::{Tool, ToolContext};
+pub use tools::{tool, FunctionTool, Tool, ToolContext};
 pub use types::{ContentBlock, Message, Role, StopReason, SystemPrompt};

@@ -109,6 +109,21 @@ pub fn is_valid_tool_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
+/// Test-only context backed by [`crate::agent::test_agent`].
+#[cfg(test)]
+pub(crate) fn test_context(name: &str, tool_use_id: &str, input: JsonValue) -> ToolContext {
+    ToolContext::new(
+        ToolUse {
+            name: name.to_owned(),
+            tool_use_id: tool_use_id.to_owned(),
+            input,
+        },
+        crate::agent::test_agent(),
+        InvocationState::new(),
+        CancellationToken::new(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,6 +150,65 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ToolStreamEvent { data: None }).unwrap(),
             serde_json::json!({"type": "toolStreamEvent"})
+        );
+    }
+}
+
+#[cfg(test)]
+mod name_and_event_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_valid_tool_names() {
+        for name in [
+            "simple",
+            "with_underscore",
+            "with-hyphen",
+            "Mixed-Case_123",
+            "a",
+            &"a".repeat(64),
+        ] {
+            assert!(is_valid_tool_name(name), "{name} should be valid");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_tool_names() {
+        for name in [
+            "",
+            &"a".repeat(65),
+            "has space",
+            "has.dot",
+            "has/slash",
+            "has:colon",
+            "emoji🚀",
+        ] {
+            assert!(!is_valid_tool_name(name), "{name} should be invalid");
+        }
+    }
+
+    #[test]
+    fn creates_tool_stream_event_with_data() {
+        let event = ToolStreamEvent {
+            data: Some(serde_json::json!("progress")),
+        };
+        assert_eq!(event.data, Some(serde_json::json!("progress")));
+    }
+
+    #[test]
+    fn creates_tool_stream_event_without_data() {
+        assert_eq!(ToolStreamEvent { data: None }.data, None);
+    }
+
+    #[test]
+    fn creates_tool_stream_event_with_structured_data() {
+        let data = serde_json::json!({ "progress": 0.5, "message": "halfway" });
+        let event = ToolStreamEvent {
+            data: Some(data.clone()),
+        };
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            serde_json::json!({ "type": "toolStreamEvent", "data": data })
         );
     }
 }
