@@ -12,6 +12,8 @@ pub mod models;
 pub mod plugins;
 pub mod session;
 pub mod state_store;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 pub mod tools;
 pub mod types;
 
@@ -24,5 +26,7 @@ pub use error::{Error, Result};
 pub use models::Model;
 pub use plugins::Plugin;
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
-pub use tools::{tool, FunctionTool, Tool, ToolContext};
+pub use tools::{
+    tool, ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
+};
 pub use types::{ContentBlock, Message, Role, StopReason, SystemPrompt};

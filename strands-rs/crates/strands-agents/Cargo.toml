@@ -13,6 +13,7 @@ workspace = true
 
 [features]
 default = ["bedrock"]
+test-support = []
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-smithy-runtime-api"]
 
 [dependencies]
