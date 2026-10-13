@@ -43,7 +43,7 @@ impl ConversationManager for NullConversationManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::test_agent_with_messages;
+    use crate::conversation_manager::test_support::test_agent_with_messages;
     use crate::conversation_manager::test_support::{after_model_call, overflow};
     use crate::hooks::{AfterModelCallEvent, BeforeModelCallEvent};
     use crate::types::{ContentBlock, Message};

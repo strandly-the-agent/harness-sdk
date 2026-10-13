@@ -204,10 +204,14 @@ impl Plugin for SlidingWindowConversationManager {
         self.register_base_hooks(agent);
 
         let manager = self.clone();
-        agent.hooks().add_sync_callback(move |event: &mut AfterInvocationEvent| {
-            event.agent.with_messages(|messages| manager.apply_management(messages));
-            Ok(())
-        });
+        agent
+            .hooks()
+            .add_sync_callback(move |event: &mut AfterInvocationEvent| {
+                event
+                    .agent
+                    .with_messages(|messages| manager.apply_management(messages));
+                Ok(())
+            });
         Ok(())
     }
 }
@@ -375,8 +379,7 @@ fn find_tool_pair_user_anchor(messages: &[Message], tool_pair_index: usize) -> O
 
 /// Oldest unpinned message carrying a tool result.
 fn find_oldest_message_with_tool_results(messages: &[Message]) -> Option<usize> {
-    (0..messages.len())
-        .find(|index| !is_pinned(messages, *index) && has_tool_result(&messages[*index]))
+    (0..messages.len()).find(|index| !is_pinned(messages, *index) && has_tool_result(&messages[*index]))
 }
 
 fn utf16_len(text: &str) -> usize {
@@ -426,7 +429,10 @@ fn document_placeholder(document: &DocumentBlock) -> String {
     let name = &document.name;
     match &document.source {
         DocumentSource::Bytes(bytes) => {
-            format!("[document: {name}, {format}, source: bytes, {} bytes]", bytes.len())
+            format!(
+                "[document: {name}, {format}, source: bytes, {} bytes]",
+                bytes.len()
+            )
         }
         _ => format!("[document: {name}, {format}, source: s3]"),
     }
@@ -524,11 +530,11 @@ fn truncate_tool_results(messages: &mut [Message], msg_idx: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::test_agent_with_messages;
+    use crate::conversation_manager::test_support::test_agent_with_messages;
     use crate::conversation_manager::test_support::{after_invocation, after_model_call, model, overflow};
     use crate::conversation_manager::ReduceTrigger;
     use crate::types::{
-        DocumentCitations, DocumentFormat, ImageFormat, S3Location, ToolResultStatus, ToolUseBlock, VideoFormat,
+        DocumentFormat, ImageFormat, S3Location, ToolResultStatus, ToolUseBlock, VideoFormat,
     };
     use serde_json::json;
 
@@ -552,10 +558,15 @@ mod tests {
     fn tool_use_message(name: &str, tool_use_id: &str) -> Message {
         Message::new(
             Role::Assistant,
-            vec![ContentBlock::ToolUse(ToolUseBlock::new(name, tool_use_id, json!({})))],
+            vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                name,
+                tool_use_id,
+                json!({}),
+            ))],
         )
     }
 
+    #[allow(dead_code)]
     fn tool_result_message(tool_use_id: &str, text: &str) -> Message {
         Message::new(
             Role::User,
@@ -569,10 +580,14 @@ mod tests {
     fn tool_result_user(tool_use_id: &str, content: Vec<ToolResultContent>) -> Message {
         Message::new(
             Role::User,
-            vec![ContentBlock::ToolResult(ToolResultBlock::success(tool_use_id, content))],
+            vec![ContentBlock::ToolResult(ToolResultBlock::success(
+                tool_use_id,
+                content,
+            ))],
         )
     }
 
+    #[allow(dead_code)]
     fn tool_heavy_history() -> Vec<Message> {
         vec![
             user("Review this PR"),
@@ -586,10 +601,12 @@ mod tests {
         ]
     }
 
+    #[allow(dead_code)]
     fn texts(messages: &[Message]) -> Vec<String> {
         messages.iter().map(Message::text).collect()
     }
 
+    #[allow(dead_code)]
     fn roles(messages: &[Message]) -> Vec<Role> {
         messages.iter().map(|message| message.role).collect()
     }
@@ -744,7 +761,7 @@ mod tests {
             "B".repeat(200)
         );
         let mut messages = vec![
-            tool_result_user("tool-1", vec![ToolResultContent::text(original)]).with_tracking_id("durable-1")
+            tool_result_user("tool-1", vec![ToolResultContent::text(original)]).with_tracking_id("durable-1"),
         ];
 
         assert!(truncate_tool_results(&mut messages, 0));
@@ -772,7 +789,11 @@ mod tests {
 
         trigger_context_overflow(&manager(40, true), &agent).await;
 
-        let expected = format!("{}\n<truncated chars=\"100\"/>\n{}", "F".repeat(200), "F".repeat(200));
+        let expected = format!(
+            "{}\n<truncated chars=\"100\"/>\n{}",
+            "F".repeat(200),
+            "F".repeat(200)
+        );
         let messages = agent.messages();
         assert_eq!(
             messages[1].content[0],
@@ -821,7 +842,10 @@ mod tests {
         assert_eq!(messages[0].role, Role::User);
         assert_eq!(
             messages[2].content[0],
-            ContentBlock::ToolResult(ToolResultBlock::success("tool-1", vec![ToolResultContent::text(long)]))
+            ContentBlock::ToolResult(ToolResultBlock::success(
+                "tool-1",
+                vec![ToolResultContent::text(long)]
+            ))
         );
     }
 
@@ -890,7 +914,11 @@ mod tests {
 
         assert!(truncate_tool_results(&mut messages, 0));
 
-        let expected = format!("{}\n<truncated chars=\"100\"/>\n{}", "x".repeat(200), "x".repeat(200));
+        let expected = format!(
+            "{}\n<truncated chars=\"100\"/>\n{}",
+            "x".repeat(200),
+            "x".repeat(200)
+        );
         let ContentBlock::ToolResult(result) = &messages[0].content[0] else {
             panic!("expected a tool result block");
         };
@@ -1101,7 +1129,11 @@ mod tests {
 
         assert!(truncate_tool_results(&mut messages, 0));
 
-        let expected = format!("{}\n<truncated chars=\"240\"/>\n{}", "A".repeat(200), "B".repeat(200));
+        let expected = format!(
+            "{}\n<truncated chars=\"240\"/>\n{}",
+            "A".repeat(200),
+            "B".repeat(200)
+        );
         assert_eq!(
             messages[0].content[0],
             ContentBlock::ToolResult(ToolResultBlock::success(

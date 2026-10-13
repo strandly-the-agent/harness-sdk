@@ -172,38 +172,44 @@ impl Agent {
 }
 
 #[cfg(test)]
-mod test_support {
+#[allow(unused_imports)]
+pub(crate) use test_fixtures::{test_agent, test_agent_for_session, test_agent_with};
+
+#[cfg(test)]
+#[allow(dead_code)]
+mod test_fixtures {
     use super::*;
     use crate::error::Result;
     use crate::models::{ModelStreamEvent, StreamOptions};
     use futures::stream::BoxStream;
 
-    /// Agent carrying `messages`, backed by a model that streams nothing.
-    pub(crate) fn test_agent_with_messages(messages: Vec<Message>) -> Agent {
-        struct EmptyModel;
+    pub(crate) struct EmptyStreamModel;
 
-        #[async_trait::async_trait]
-        impl Model for EmptyModel {
-            fn model_id(&self) -> Option<String> {
-                None
-            }
-
-            fn stream<'a>(
-                &'a self,
-                _messages: &'a [Message],
-                _options: &'a StreamOptions,
-            ) -> BoxStream<'a, Result<ModelStreamEvent>> {
-                Box::pin(futures::stream::empty())
-            }
+    #[async_trait::async_trait]
+    impl Model for EmptyStreamModel {
+        fn model_id(&self) -> Option<String> {
+            Some("empty-stream-model".to_owned())
         }
 
+        fn stream<'a>(
+            &'a self,
+            _messages: &'a [Message],
+            _options: &'a StreamOptions,
+        ) -> BoxStream<'a, Result<ModelStreamEvent>> {
+            Box::pin(futures::stream::empty())
+        }
+    }
+
+    /// Agent with the given id, optional system prompt and initial messages, a model that
+    /// streams nothing, and empty registries.
+    pub(crate) fn test_agent_with(id: &str, system_prompt: Option<&str>, messages: Vec<Message>) -> Agent {
         Agent {
             inner: Arc::new(AgentInner {
-                id: "test-agent".to_owned(),
-                name: "test-agent".to_owned(),
+                id: id.to_owned(),
+                name: id.to_owned(),
                 description: None,
-                model: RwLock::new(Arc::new(EmptyModel)),
-                system_prompt: RwLock::new(None),
+                model: RwLock::new(Arc::new(EmptyStreamModel)),
+                system_prompt: RwLock::new(system_prompt.map(|p| SystemPrompt::Text(p.to_owned()))),
                 messages: RwLock::new(messages),
                 state: StateStore::new(),
                 hooks: HookRegistry::new(),
@@ -211,7 +217,14 @@ mod test_support {
             }),
         }
     }
-}
 
-#[cfg(test)]
-pub(crate) use test_support::test_agent_with_messages;
+    /// Agent backed by a model that streams nothing, with empty registries.
+    pub(crate) fn test_agent() -> Agent {
+        test_agent_with("test-agent", None, Vec::new())
+    }
+
+    /// Agent with `id`/`name` set and a `'Test prompt'` system prompt (session tests).
+    pub(crate) fn test_agent_for_session(id: &str) -> Agent {
+        test_agent_with(id, Some("Test prompt"), Vec::new())
+    }
+}

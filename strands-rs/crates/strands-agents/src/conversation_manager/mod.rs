@@ -111,30 +111,32 @@ pub trait ConversationManager: Plugin + 'static {
         Self: Sized + Clone,
     {
         let manager = self.clone();
-        agent.hooks().add_callback(move |event: &mut AfterModelCallEvent| {
-            let manager = manager.clone();
-            let overflow = event
-                .error
-                .clone()
-                .filter(|error| matches!(**error, Error::ContextWindowOverflow(_)));
-            let agent = event.agent.clone();
-            let model = event.model.clone();
-            Box::pin(async move {
-                if let Some(error) = overflow {
-                    let reduced = manager
-                        .reduce(ReduceOptions {
-                            agent: &agent,
-                            model,
-                            trigger: ReduceTrigger::Overflow(error),
-                        })
-                        .await?;
-                    if reduced {
-                        event.retry = true;
+        agent
+            .hooks()
+            .add_callback(move |event: &mut AfterModelCallEvent| {
+                let manager = manager.clone();
+                let overflow = event
+                    .error
+                    .clone()
+                    .filter(|error| matches!(**error, Error::ContextWindowOverflow(_)));
+                let agent = event.agent.clone();
+                let model = event.model.clone();
+                Box::pin(async move {
+                    if let Some(error) = overflow {
+                        let reduced = manager
+                            .reduce(ReduceOptions {
+                                agent: &agent,
+                                model,
+                                trigger: ReduceTrigger::Overflow(error),
+                            })
+                            .await?;
+                        if reduced {
+                            event.retry = true;
+                        }
                     }
-                }
-                Ok(())
-            })
-        });
+                    Ok(())
+                })
+            });
 
         let manager = self.clone();
         agent.hooks().add_callback(move |event: &mut BeforeModelCallEvent| {
@@ -235,6 +237,10 @@ pub(crate) mod test_support {
         }
     }
 
+    pub(crate) fn test_agent_with_messages(messages: Vec<Message>) -> Agent {
+        crate::agent::test_agent_with("test-agent", None, messages)
+    }
+
     pub(crate) fn after_invocation(agent: &Agent) -> AfterInvocationEvent {
         AfterInvocationEvent {
             agent: agent.clone(),
@@ -248,7 +254,6 @@ pub(crate) mod test_support {
 mod tests {
     use super::test_support::*;
     use super::*;
-    use crate::agent::test_agent_with_messages;
     use crate::types::Message;
     use parking_lot::Mutex;
 
@@ -352,7 +357,8 @@ mod tests {
 
     #[tokio::test]
     async fn calls_reduce_and_sets_retry_true_on_context_window_overflow_error_when_reduce_returns_true() {
-        let agent = test_agent_with_messages(vec![Message::user("Message 1"), Message::assistant("Response 1")]);
+        let agent =
+            test_agent_with_messages(vec![Message::user("Message 1"), Message::assistant("Response 1")]);
         let manager = TestManager::new();
         manager.init_agent(&agent).await.unwrap();
 
@@ -538,7 +544,10 @@ mod tests {
 
     #[test]
     fn accepts_compression_threshold_of_exactly_1() {
-        assert_eq!(ProactiveCompression::Threshold(1.0).threshold().unwrap(), Some(1.0));
+        assert_eq!(
+            ProactiveCompression::Threshold(1.0).threshold().unwrap(),
+            Some(1.0)
+        );
     }
 
     #[test]
