@@ -290,7 +290,10 @@ mod tests {
 
     #[test]
     fn bedrock_defaults_match_ts() {
-        assert_eq!(MODEL_DEFAULTS.bedrock.model_id, "global.anthropic.claude-sonnet-4-6");
+        assert_eq!(
+            MODEL_DEFAULTS.bedrock.model_id,
+            "global.anthropic.claude-sonnet-4-6"
+        );
         assert_eq!(MODEL_DEFAULTS.bedrock.region, Some("us-west-2"));
         assert_eq!(MODEL_DEFAULTS.anthropic.max_tokens, Some(64_000));
     }

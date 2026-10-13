@@ -114,7 +114,10 @@ pub struct ResolvedCacheSection {
 }
 
 /// `enabled` unless the section is explicitly disabled; `ttl` is the first non-empty candidate.
-pub fn resolve_cache_section(section: Option<&CacheSection>, ttl_fallbacks: &[Option<&str>]) -> ResolvedCacheSection {
+pub fn resolve_cache_section(
+    section: Option<&CacheSection>,
+    ttl_fallbacks: &[Option<&str>],
+) -> ResolvedCacheSection {
     let enabled = !matches!(section, Some(CacheSection::Disabled));
     let section_ttl = match section {
         Some(CacheSection::Ttl(ttl)) => Some(ttl.as_str()),
@@ -346,7 +349,9 @@ impl BedrockModelBuilder {
         if let Some(api_key) = self.api_key {
             client_config = client_config
                 .bearer_token(Token::new(api_key, None))
-                .auth_scheme_preference([aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID]);
+                .auth_scheme_preference([
+                    aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID,
+                ]);
         }
 
         Ok(BedrockModel {
@@ -543,7 +548,10 @@ fn map_stream_event_error(
             }
         }
         other => {
-            let message = other.message().map(str::to_owned).unwrap_or_else(|| other.to_string());
+            let message = other
+                .message()
+                .map(str::to_owned)
+                .unwrap_or_else(|| other.to_string());
             if is_context_window_overflow(&message) {
                 return Error::ContextWindowOverflow(message);
             }
@@ -554,7 +562,11 @@ fn map_stream_event_error(
 
 impl BedrockModel {
     /// Format a Converse request from the current config (`_formatRequest`).
-    pub(crate) fn format_request(&self, messages: &[Message], options: &StreamOptions) -> Result<FormattedRequest> {
+    pub(crate) fn format_request(
+        &self,
+        messages: &[Message],
+        options: &StreamOptions,
+    ) -> Result<FormattedRequest> {
         format::format_request(&self.config.read(), messages, options)
     }
 
@@ -721,7 +733,9 @@ impl BedrockModel {
                             .expect("count tokens cache not poisoned")
                             .insert(model_id.to_owned());
                     }
-                    _ => tracing::debug!("error=<{message}> | native token counting failed, falling back to estimation"),
+                    _ => tracing::debug!(
+                        "error=<{message}> | native token counting failed, falling back to estimation"
+                    ),
                 }
                 Err(model_error(message, error))
             }

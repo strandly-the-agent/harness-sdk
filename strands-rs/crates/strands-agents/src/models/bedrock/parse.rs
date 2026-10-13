@@ -8,10 +8,12 @@ use super::{
     BedrockGuardrailConfig, BedrockModelConfig, DEFAULT_REDACT_INPUT_MESSAGE, DEFAULT_REDACT_OUTPUT_MESSAGE,
 };
 use crate::error::{Error, Result};
-use crate::models::streaming::{ContentBlockDelta, ContentBlockStart, ModelStreamEvent, RedactInputContent,
-    RedactOutputContent};
+use crate::models::streaming::{
+    ContentBlockDelta, ContentBlockStart, ModelStreamEvent, RedactInputContent, RedactOutputContent,
+};
 use crate::types::{
-    Citation, CitationGeneratedContent, CitationLocation, CitationSourceContent, Metrics, Role, StopReason, Usage,
+    Citation, CitationGeneratedContent, CitationLocation, CitationSourceContent, Metrics, Role, StopReason,
+    Usage,
 };
 
 /// Bedrock raw stop reason → SDK stop reason (`STOP_REASON_MAP`).
@@ -60,7 +62,9 @@ pub(crate) fn transform_stop_reason(raw: &str, output: Option<&ConverseOutput>) 
         Some(mapped) => mapped,
         None => {
             let camel = snake_to_camel(raw);
-            tracing::warn!("stop_reason=<{raw}>, fallback=<{camel}> | unknown stop reason, converting to camelCase");
+            tracing::warn!(
+                "stop_reason=<{raw}>, fallback=<{camel}> | unknown stop reason, converting to camelCase"
+            );
             StopReason::from(camel.as_str())
         }
     };
@@ -77,7 +81,9 @@ pub(crate) fn transform_stop_reason(raw: &str, output: Option<&ConverseOutput>) 
             })
             .unwrap_or(false);
         if has_tool_use {
-            tracing::warn!("stop_reason=<end_turn> | adjusting to tool_use due to tool use in content blocks");
+            tracing::warn!(
+                "stop_reason=<end_turn> | adjusting to tool_use due to tool use in content blocks"
+            );
             return StopReason::ToolUse;
         }
     }
@@ -243,7 +249,9 @@ pub(crate) fn map_streamed_event(
                                         .source_content()
                                         .iter()
                                         .filter_map(|entry| entry.text())
-                                        .map(|text| CitationSourceContent { text: text.to_owned() })
+                                        .map(|text| CitationSourceContent {
+                                            text: text.to_owned(),
+                                        })
                                         .collect(),
                                     source: citation.source().unwrap_or_default().to_owned(),
                                     title: citation.title().unwrap_or_default().to_owned(),
@@ -270,7 +278,9 @@ pub(crate) fn map_streamed_event(
             let raw = data.stop_reason().as_str().to_owned();
             events.push(ModelStreamEvent::MessageStop {
                 stop_reason: transform_stop_reason(&raw, None),
-                additional_model_response_fields: data.additional_model_response_fields().map(document_to_json),
+                additional_model_response_fields: data
+                    .additional_model_response_fields()
+                    .map(document_to_json),
             });
             stop_reason = Some(raw);
         }
@@ -337,11 +347,13 @@ pub(crate) fn map_converse_output(
             bt::ContentBlock::ReasoningContent(reasoning) => {
                 events.push(ModelStreamEvent::ContentBlockStart { start: None });
                 let delta = match reasoning {
-                    bt::ReasoningContentBlock::ReasoningText(text) => Some(ContentBlockDelta::ReasoningContent {
-                        text: Some(text.text().to_owned()),
-                        signature: text.signature().filter(|s| !s.is_empty()).map(str::to_owned),
-                        redacted_content: None,
-                    }),
+                    bt::ReasoningContentBlock::ReasoningText(text) => {
+                        Some(ContentBlockDelta::ReasoningContent {
+                            text: Some(text.text().to_owned()),
+                            signature: text.signature().filter(|s| !s.is_empty()).map(str::to_owned),
+                            redacted_content: None,
+                        })
+                    }
                     bt::ReasoningContentBlock::RedactedContent(blob) if !blob.as_ref().is_empty() => {
                         Some(ContentBlockDelta::ReasoningContent {
                             text: None,
@@ -538,7 +550,10 @@ mod tests {
 
     #[test]
     fn snake_to_camel_matches_ts_regex() {
-        assert_eq!(snake_to_camel("model_context_window_exceeded"), "modelContextWindowExceeded");
+        assert_eq!(
+            snake_to_camel("model_context_window_exceeded"),
+            "modelContextWindowExceeded"
+        );
         assert_eq!(snake_to_camel("new_stop_reason"), "newStopReason");
         assert_eq!(snake_to_camel("plain"), "plain");
         assert_eq!(snake_to_camel("_leading"), "Leading");
