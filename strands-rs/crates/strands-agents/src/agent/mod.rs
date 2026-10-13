@@ -176,6 +176,7 @@ impl Agent {
 pub(crate) use test_fixtures::{test_agent, test_agent_for_session, test_agent_with};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod test_fixtures {
     use super::*;
     use crate::error::Result;
