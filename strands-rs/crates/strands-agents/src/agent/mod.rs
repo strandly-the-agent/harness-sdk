@@ -170,3 +170,39 @@ impl Agent {
         f(&mut self.inner.tools.write())
     }
 }
+
+#[cfg(test)]
+struct MockModel;
+
+#[cfg(test)]
+impl Model for MockModel {
+    fn model_id(&self) -> Option<String> {
+        Some("mock".to_owned())
+    }
+
+    fn stream<'a>(
+        &'a self,
+        _messages: &'a [Message],
+        _options: &'a crate::models::StreamOptions,
+    ) -> futures::stream::BoxStream<'a, crate::error::Result<crate::models::ModelStreamEvent>> {
+        futures::StreamExt::boxed(futures::stream::empty())
+    }
+}
+
+/// Agent backed by a model that streams nothing, with empty registries.
+#[cfg(test)]
+pub(crate) fn test_agent() -> Agent {
+    Agent {
+        inner: Arc::new(AgentInner {
+            id: "test-agent".to_owned(),
+            name: "test".to_owned(),
+            description: None,
+            model: RwLock::new(Arc::new(MockModel)),
+            system_prompt: RwLock::new(None),
+            messages: RwLock::new(Vec::new()),
+            state: StateStore::new(),
+            hooks: HookRegistry::new(),
+            tools: RwLock::new(ToolRegistry::new()),
+        }),
+    }
+}
