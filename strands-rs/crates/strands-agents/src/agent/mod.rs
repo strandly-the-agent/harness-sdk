@@ -172,41 +172,8 @@ impl Agent {
 }
 
 #[cfg(test)]
-<<<<<<< HEAD
-struct MockModel;
-
-#[cfg(test)]
-impl Model for MockModel {
-    fn model_id(&self) -> Option<String> {
-        Some("mock".to_owned())
-    }
-
-    fn stream<'a>(
-        &'a self,
-        _messages: &'a [Message],
-        _options: &'a crate::models::StreamOptions,
-    ) -> futures::stream::BoxStream<'a, crate::error::Result<crate::models::ModelStreamEvent>> {
-        futures::StreamExt::boxed(futures::stream::empty())
-    }
-}
-
-/// Agent backed by a model that streams nothing, with empty registries.
-#[cfg(test)]
-pub(crate) fn test_agent() -> Agent {
-    Agent {
-        inner: Arc::new(AgentInner {
-            id: "test-agent".to_owned(),
-            name: "test".to_owned(),
-            description: None,
-            model: RwLock::new(Arc::new(MockModel)),
-            system_prompt: RwLock::new(None),
-            messages: RwLock::new(Vec::new()),
-            state: StateStore::new(),
-            hooks: HookRegistry::new(),
-            tools: RwLock::new(ToolRegistry::new()),
-        }),
-=======
-pub(crate) use test_fixtures::test_agent_for_session;
+#[allow(unused_imports)]
+pub(crate) use test_fixtures::{test_agent, test_agent_for_session, test_agent_with};
 
 #[cfg(test)]
 mod test_fixtures {
@@ -215,7 +182,7 @@ mod test_fixtures {
     use crate::models::{ModelStreamEvent, StreamOptions};
     use futures::stream::BoxStream;
 
-    struct EmptyStreamModel;
+    pub(crate) struct EmptyStreamModel;
 
     #[async_trait::async_trait]
     impl Model for EmptyStreamModel {
@@ -232,22 +199,31 @@ mod test_fixtures {
         }
     }
 
-    /// An agent with `id`/`name` set, a `'Test prompt'` system prompt and a model that streams
-    /// nothing. Used by the `session` module tests.
-    pub(crate) fn test_agent_for_session(id: &str) -> Agent {
+    /// Agent with the given id, optional system prompt and initial messages, a model that
+    /// streams nothing, and empty registries.
+    pub(crate) fn test_agent_with(id: &str, system_prompt: Option<&str>, messages: Vec<Message>) -> Agent {
         Agent {
             inner: Arc::new(AgentInner {
                 id: id.to_owned(),
                 name: id.to_owned(),
                 description: None,
                 model: RwLock::new(Arc::new(EmptyStreamModel)),
-                system_prompt: RwLock::new(Some(SystemPrompt::Text("Test prompt".to_owned()))),
-                messages: RwLock::new(Vec::new()),
+                system_prompt: RwLock::new(system_prompt.map(|p| SystemPrompt::Text(p.to_owned()))),
+                messages: RwLock::new(messages),
                 state: StateStore::new(),
                 hooks: HookRegistry::new(),
                 tools: RwLock::new(ToolRegistry::new()),
             }),
         }
->>>>>>> agent-tasks/strands-rs-session
+    }
+
+    /// Agent backed by a model that streams nothing, with empty registries.
+    pub(crate) fn test_agent() -> Agent {
+        test_agent_with("test-agent", None, Vec::new())
+    }
+
+    /// Agent with `id`/`name` set and a `'Test prompt'` system prompt (session tests).
+    pub(crate) fn test_agent_for_session(id: &str) -> Agent {
+        test_agent_with(id, Some("Test prompt"), Vec::new())
     }
 }
