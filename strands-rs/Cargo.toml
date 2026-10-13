@@ -30,6 +30,7 @@ jsonschema = { version = "0.33", default-features = false }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-bedrockruntime = "1"
 aws-smithy-types = "1"
+aws-smithy-runtime-api = { version = "1", features = ["client"] }
 tempfile = "3"
 tokio-stream = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
