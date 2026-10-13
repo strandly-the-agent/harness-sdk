@@ -79,7 +79,10 @@ impl PluginRegistry {
     }
 
     async fn drain_pending(&self, agent: &Agent) -> Result<()> {
-        while let Some(plugin) = self.inner.pending.lock().pop_front() {
+        loop {
+            // Pop in its own statement so the guard is dropped before awaiting.
+            let next = self.inner.pending.lock().pop_front();
+            let Some(plugin) = next else { break };
             self.add_and_init(plugin, agent).await?;
         }
         Ok(())
