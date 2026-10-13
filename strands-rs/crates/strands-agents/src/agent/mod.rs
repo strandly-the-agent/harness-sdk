@@ -173,7 +173,10 @@ impl Agent {
 
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(crate) use test_fixtures::{test_agent, test_agent_for_session, test_agent_with};
+pub(crate) use test_fixtures::{
+    test_agent, test_agent_for_plugins, test_agent_for_plugins_stateful, test_agent_for_session,
+    test_agent_with,
+};
 
 #[cfg(test)]
 #[allow(dead_code)]
@@ -183,12 +186,18 @@ mod test_fixtures {
     use crate::models::{ModelStreamEvent, StreamOptions};
     use futures::stream::BoxStream;
 
-    pub(crate) struct EmptyStreamModel;
+    pub(crate) struct EmptyStreamModel {
+        pub(crate) stateful: bool,
+    }
 
     #[async_trait::async_trait]
     impl Model for EmptyStreamModel {
         fn model_id(&self) -> Option<String> {
             Some("empty-stream-model".to_owned())
+        }
+
+        fn stateful(&self) -> bool {
+            self.stateful
         }
 
         fn stream<'a>(
@@ -203,12 +212,21 @@ mod test_fixtures {
     /// Agent with the given id, optional system prompt and initial messages, a model that
     /// streams nothing, and empty registries.
     pub(crate) fn test_agent_with(id: &str, system_prompt: Option<&str>, messages: Vec<Message>) -> Agent {
+        test_agent_full(id, system_prompt, messages, false)
+    }
+
+    pub(crate) fn test_agent_full(
+        id: &str,
+        system_prompt: Option<&str>,
+        messages: Vec<Message>,
+        stateful: bool,
+    ) -> Agent {
         Agent {
             inner: Arc::new(AgentInner {
                 id: id.to_owned(),
                 name: id.to_owned(),
                 description: None,
-                model: RwLock::new(Arc::new(EmptyStreamModel)),
+                model: RwLock::new(Arc::new(EmptyStreamModel { stateful })),
                 system_prompt: RwLock::new(system_prompt.map(|p| SystemPrompt::Text(p.to_owned()))),
                 messages: RwLock::new(messages),
                 state: StateStore::new(),
@@ -226,5 +244,15 @@ mod test_fixtures {
     /// Agent with `id`/`name` set and a `'Test prompt'` system prompt (session tests).
     pub(crate) fn test_agent_for_session(id: &str) -> Agent {
         test_agent_with(id, Some("Test prompt"), Vec::new())
+    }
+
+    /// Bare agent for plugin, hook and retry tests.
+    pub(crate) fn test_agent_for_plugins() -> Agent {
+        test_agent_with("plugin-test-agent", None, Vec::new())
+    }
+
+    /// Like [`test_agent_for_plugins`] but the model reports `stateful() == true`.
+    pub(crate) fn test_agent_for_plugins_stateful() -> Agent {
+        test_agent_full("plugin-test-agent", None, Vec::new(), true)
     }
 }

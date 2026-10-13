@@ -10,6 +10,7 @@ pub mod hooks;
 pub mod logging;
 pub mod models;
 pub mod plugins;
+pub mod retry;
 pub mod session;
 pub mod state_store;
 #[cfg(any(test, feature = "test-support"))]
@@ -24,7 +25,7 @@ pub use conversation_manager::{
 };
 pub use error::{Error, Result};
 pub use models::Model;
-pub use plugins::Plugin;
+pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use tools::{
     tool, ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
