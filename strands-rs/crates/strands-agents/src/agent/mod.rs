@@ -170,3 +170,57 @@ impl Agent {
         f(&mut self.inner.tools.write())
     }
 }
+
+/// Minimal model for plugin/retry tests: no id, empty stream, configurable statefulness.
+#[cfg(test)]
+pub(crate) struct PluginTestModel {
+    stateful: bool,
+}
+
+#[cfg(test)]
+impl crate::models::Model for PluginTestModel {
+    fn model_id(&self) -> Option<String> {
+        Some("plugin-test-model".to_owned())
+    }
+
+    fn stateful(&self) -> bool {
+        self.stateful
+    }
+
+    fn stream<'a>(
+        &'a self,
+        _messages: &'a [Message],
+        _options: &'a crate::models::StreamOptions,
+    ) -> futures::stream::BoxStream<'a, crate::error::Result<crate::models::ModelStreamEvent>> {
+        Box::pin(futures::stream::empty())
+    }
+}
+
+#[cfg(test)]
+fn agent_with_plugin_test_model(stateful: bool) -> Agent {
+    Agent {
+        inner: Arc::new(AgentInner {
+            id: "plugin-test-agent".to_owned(),
+            name: "plugin-test-agent".to_owned(),
+            description: None,
+            model: RwLock::new(Arc::new(PluginTestModel { stateful })),
+            system_prompt: RwLock::new(None),
+            messages: RwLock::new(Vec::new()),
+            state: StateStore::new(),
+            hooks: HookRegistry::new(),
+            tools: RwLock::new(ToolRegistry::new()),
+        }),
+    }
+}
+
+/// Bare agent for plugin, hook and retry tests: stateless [`PluginTestModel`], no tools.
+#[cfg(test)]
+pub(crate) fn test_agent_for_plugins() -> Agent {
+    agent_with_plugin_test_model(false)
+}
+
+/// Like [`test_agent_for_plugins`] but the model reports `stateful() == true`.
+#[cfg(test)]
+pub(crate) fn test_agent_for_plugins_stateful() -> Agent {
+    agent_with_plugin_test_model(true)
+}

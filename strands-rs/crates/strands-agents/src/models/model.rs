@@ -1,8 +1,5 @@
 //! The `Model` trait and stream aggregation (`strands-ts/src/models/model.ts`).
 
-use std::collections::HashSet;
-use std::sync::Mutex;
-
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use futures::StreamExt;
@@ -400,16 +397,6 @@ pub fn estimate_tokens_heuristic(messages: &[Message], options: &CountTokensOpti
         .sum::<u64>();
     total += options.tool_specs.iter().map(heuristic_json).sum::<u64>();
     total
-}
-
-static WARNED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
-
-/// Log a warning once per distinct message for the process lifetime.
-pub(crate) fn warn_once_impl(message: &str) {
-    let mut guard = WARNED.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.get_or_insert_with(HashSet::new).insert(message.to_owned()) {
-        tracing::warn!("{message}");
-    }
 }
 
 #[cfg(test)]
