@@ -566,7 +566,6 @@ mod tests {
         )
     }
 
-    #[allow(dead_code)]
     fn tool_result_message(tool_use_id: &str, text: &str) -> Message {
         Message::new(
             Role::User,
@@ -587,7 +586,6 @@ mod tests {
         )
     }
 
-    #[allow(dead_code)]
     fn tool_heavy_history() -> Vec<Message> {
         vec![
             user("Review this PR"),
@@ -601,12 +599,10 @@ mod tests {
         ]
     }
 
-    #[allow(dead_code)]
     fn texts(messages: &[Message]) -> Vec<String> {
         messages.iter().map(Message::text).collect()
     }
 
-    #[allow(dead_code)]
     fn roles(messages: &[Message]) -> Vec<Role> {
         messages.iter().map(|message| message.role).collect()
     }
@@ -1196,5 +1192,257 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, Role::User);
         assert_eq!(messages[0].text(), "Message 2");
+    }
+    #[tokio::test]
+    async fn trims_oldest_messages_when_tool_results_cannot_be_truncated() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            assistant("Response 1"),
+            user("Message 2"),
+            assistant("Response 2"),
+            user("Message 3"),
+        ]);
+        trigger_context_overflow(&manager(3, false), &agent).await;
+
+        assert_eq!(agent.messages().len(), 3);
+        assert_eq!(agent.messages()[0].text(), "Message 2");
+    }
+
+    #[tokio::test]
+    async fn calculates_correct_trim_index_messages_length_minus_window_size() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            assistant("Response 1"),
+            user("Message 2"),
+            assistant("Response 2"),
+        ]);
+        trigger_context_overflow(&manager(2, true), &agent).await;
+
+        assert_eq!(agent.messages().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn removes_all_messages_when_window_size_is_0_on_context_overflow() {
+        let agent = test_agent_with_messages(vec![user("Message 1"), assistant("Response 1")]);
+        trigger_context_overflow(&manager(0, false), &agent).await;
+
+        assert!(agent.messages().is_empty());
+    }
+
+    #[tokio::test]
+    async fn uses_default_trim_index_of_2_when_messages_le_window_size() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            assistant("Response 1"),
+            user("Message 2"),
+        ]);
+        trigger_context_overflow(&manager(5, true), &agent).await;
+
+        assert_eq!(agent.messages().len(), 1);
+        assert_eq!(agent.messages()[0].text(), "Message 2");
+    }
+
+    #[tokio::test]
+    async fn removes_messages_from_start_of_array_using_splice() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            assistant("Response 1"),
+            user("Message 2"),
+            assistant("Response 2"),
+        ]);
+        trigger_context_overflow(&manager(2, true), &agent).await;
+
+        assert_eq!(texts(&agent.messages()), vec!["Message 2", "Response 2"]);
+    }
+
+    #[test]
+    fn returns_correct_index_when_tool_results_exist() {
+        let messages = tool_heavy_history();
+        assert_eq!(find_oldest_message_with_tool_results(&messages), Some(2));
+    }
+
+    #[test]
+    fn returns_undefined_when_no_tool_results_exist() {
+        let messages = vec![user("Message 1"), assistant("Response 1")];
+        assert_eq!(find_oldest_message_with_tool_results(&messages), None);
+    }
+
+    #[test]
+    fn iterates_forward_from_start() {
+        let messages = vec![
+            user("Message 1"),
+            tool_result_message("id-2", "Second"),
+            tool_result_message("id-1", "First"),
+        ];
+        assert_eq!(find_oldest_message_with_tool_results(&messages), Some(1));
+    }
+
+    #[test]
+    fn returns_true_when_changes_are_made() {
+        let mut messages = vec![tool_result_message("tool-1", &"x".repeat(1000))];
+        assert!(truncate_tool_results(&mut messages, 0));
+    }
+
+    #[test]
+    fn returns_false_when_already_truncated() {
+        let already = format!(
+            "{}\n<truncated chars=\"600\"/>\n{}",
+            "a".repeat(200),
+            "b".repeat(200)
+        );
+        let mut messages = vec![tool_result_message("tool-1", &already)];
+        assert!(!truncate_tool_results(&mut messages, 0));
+    }
+
+    #[test]
+    fn returns_false_when_no_tool_results_found() {
+        let mut messages = vec![user("Message 1")];
+        assert!(!truncate_tool_results(&mut messages, 0));
+    }
+
+    #[test]
+    fn truncation_marker_slices_on_utf16_code_units() {
+        let text = format!(
+            "{}{}{}",
+            "\u{1F600}".repeat(200),
+            "m".repeat(100),
+            "\u{1F600}".repeat(200)
+        );
+        let mut messages = vec![tool_result_message("tool-1", &text)];
+        assert!(truncate_tool_results(&mut messages, 0));
+
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let expected = format!(
+            "{}\n<truncated chars=\"{}\"/>\n{}",
+            String::from_utf16_lossy(&units[..200]),
+            units.len() - 400,
+            String::from_utf16_lossy(&units[units.len() - 200..]),
+        );
+        assert_eq!(
+            messages[0].content[0],
+            ContentBlock::ToolResult(ToolResultBlock::success(
+                "tool-1",
+                vec![ToolResultContent::text(expected)]
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn does_not_trim_at_index_where_oldest_message_is_tool_result() {
+        let agent = test_agent_with_messages(vec![
+            tool_use_message("tool1", "id-1"),
+            tool_result_message("id-1", "Result"),
+            assistant("Response"),
+            user("Message"),
+        ]);
+        trigger_context_overflow(&manager(2, false), &agent).await;
+
+        assert_eq!(texts(&agent.messages()), vec!["Message"]);
+    }
+
+    #[tokio::test]
+    async fn does_not_trim_at_index_where_oldest_message_is_tool_use_without_following_tool_result() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            tool_use_message("tool1", "id-1"),
+            assistant("Response"),
+            user("Message 2"),
+        ]);
+        trigger_context_overflow(&manager(2, false), &agent).await;
+
+        assert_eq!(texts(&agent.messages()), vec!["Message 2"]);
+    }
+
+    #[tokio::test]
+    async fn returns_false_when_no_valid_trim_point_exists() {
+        let agent = test_agent_with_messages(vec![
+            tool_result_message("tool-1", "Orphan"),
+            assistant("Response"),
+        ]);
+        let retry = trigger_context_overflow(&manager(1, false), &agent).await;
+
+        assert!(!retry);
+        assert_eq!(agent.messages().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn skips_assistant_message_to_ensure_trimmed_conversation_starts_with_user() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            assistant("Response 1"),
+            assistant("Response 2"),
+            user("Message 2"),
+            assistant("Response 3"),
+        ]);
+        trigger_context_overflow(&manager(3, false), &agent).await;
+
+        assert_eq!(agent.messages()[0].role, Role::User);
+    }
+
+    #[tokio::test]
+    async fn allows_trim_when_oldest_message_is_text_or_other_non_tool_content() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            assistant("Response 1"),
+            user("Message 2"),
+            assistant("Response 2"),
+        ]);
+        let retry = trigger_context_overflow(&manager(2, false), &agent).await;
+
+        assert!(retry);
+        assert_eq!(texts(&agent.messages()), vec!["Message 2", "Response 2"]);
+    }
+
+    #[tokio::test]
+    async fn protects_first_n_messages_from_trimming() {
+        let config = SlidingWindowConfig {
+            window_size: 2,
+            should_truncate_results: false,
+            pin_first: Some(2),
+            ..Default::default()
+        };
+        let pinning = SlidingWindowConversationManager::with_config(config).unwrap();
+        let agent = test_agent_with_messages(vec![
+            user("Pinned 1"),
+            assistant("Pinned 2"),
+            user("Message 2"),
+            assistant("Response 2"),
+        ]);
+        trigger_context_overflow(&pinning, &agent).await;
+
+        let kept = texts(&agent.messages());
+        assert!(kept.contains(&"Pinned 1".to_owned()));
+        assert!(kept.contains(&"Pinned 2".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn pin_first_latch_applies_only_once() {
+        let config = SlidingWindowConfig {
+            window_size: 2,
+            should_truncate_results: false,
+            pin_first: Some(1),
+            ..Default::default()
+        };
+        let pinning = SlidingWindowConversationManager::with_config(config).unwrap();
+        let agent = test_agent_with_messages(vec![
+            user("Pinned 1"),
+            assistant("Response 1"),
+            user("Message 2"),
+            assistant("Response 2"),
+        ]);
+        trigger_context_overflow(&pinning, &agent).await;
+        assert!(is_pinned(&agent.messages(), 0));
+
+        let extra = user("Message 3");
+        agent.with_messages(|v| v.push(extra));
+        trigger_context_overflow(&pinning, &agent).await;
+        let messages = agent.messages();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|m| is_pinned(std::slice::from_ref(m), 0))
+                .count(),
+            1
+        );
     }
 }
