@@ -8,8 +8,8 @@ use futures::stream::BoxStream;
 
 use crate::error::{Error, Result};
 use crate::models::{ContentBlockDelta, ContentBlockStart, Model, ModelStreamEvent, StreamOptions};
-use crate::types::{Metrics, Usage};
 use crate::types::{ContentBlock, Message, StopReason};
+use crate::types::{Metrics, Usage};
 
 fn model_error(message: String) -> Error {
     Error::Model {
@@ -19,6 +19,7 @@ fn model_error(message: String) -> Error {
 }
 
 /// One queued response for [`MockMessageModel`].
+#[allow(clippy::large_enum_variant)]
 pub enum MockResponse {
     /// A message replayed as a stream event sequence.
     Message {
@@ -127,9 +128,7 @@ pub fn events_for_message(
     stop_reason: Option<StopReason>,
     usage: Option<Usage>,
 ) -> Vec<ModelStreamEvent> {
-    let mut events = vec![ModelStreamEvent::MessageStart {
-        role: message.role.clone(),
-    }];
+    let mut events = vec![ModelStreamEvent::MessageStart { role: message.role }];
 
     for block in &message.content {
         match block {
@@ -248,4 +247,114 @@ impl Model for TestModelProvider {
 /// Model that streams nothing.
 pub fn empty_model() -> Arc<dyn Model> {
     Arc::new(TestModelProvider::new(Vec::new()))
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::StreamExt;
+    use serde_json::json;
+
+    use super::*;
+    use crate::types::{ContentBlock, Role, ToolUseBlock};
+
+    async fn collect(model: &dyn Model, messages: &[Message]) -> Vec<Result<ModelStreamEvent>> {
+        model.stream(messages, &StreamOptions::default()).collect().await
+    }
+
+    #[tokio::test]
+    async fn replays_a_text_message_as_a_stream_event_sequence() {
+        let model = MockMessageModel::new(vec![MockResponse::message(Message::assistant("hello"))]);
+        let events = collect(&model, &[]).await;
+        let types: Vec<&str> = events.iter().map(|e| e.as_ref().unwrap().type_name()).collect();
+        assert_eq!(
+            types,
+            [
+                "modelMessageStartEvent",
+                "modelContentBlockStartEvent",
+                "modelContentBlockDeltaEvent",
+                "modelContentBlockStopEvent",
+                "modelMessageStopEvent"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn infers_the_tool_use_stop_reason_and_streams_input_as_json_text() {
+        let message = Message::new(
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                "a",
+                "1",
+                json!({"value": 1}),
+            ))],
+        );
+        let model = MockMessageModel::new(vec![MockResponse::message(message)]);
+        let events = collect(&model, &[]).await;
+        assert!(matches!(
+            events[2].as_ref().unwrap(),
+            ModelStreamEvent::ContentBlockDelta {
+                delta: ContentBlockDelta::ToolUseInput { input }
+            } if input == "{\"value\":1}"
+        ));
+        assert!(matches!(
+            events.last().unwrap().as_ref().unwrap(),
+            ModelStreamEvent::MessageStop { stop_reason, .. } if *stop_reason == StopReason::ToolUse
+        ));
+    }
+
+    #[tokio::test]
+    async fn records_every_call_and_advances_through_multiple_responses() {
+        let model = MockMessageModel::new(vec![
+            MockResponse::message(Message::assistant("one")),
+            MockResponse::message(Message::assistant("two")),
+        ]);
+        collect(&model, &[Message::user("hi")]).await;
+        collect(&model, &[Message::user("again")]).await;
+        let exhausted = collect(&model, &[]).await;
+        assert_eq!(model.call_count(), 3);
+        assert_eq!(model.calls()[0].0.len(), 1);
+        assert!(exhausted[0].is_err());
+    }
+
+    #[tokio::test]
+    async fn reuses_a_single_response_indefinitely() {
+        let model = MockMessageModel::new(vec![MockResponse::message(Message::assistant("hi"))]);
+        assert!(collect(&model, &[]).await.iter().all(|e| e.is_ok()));
+        assert!(collect(&model, &[]).await.iter().all(|e| e.is_ok()));
+    }
+
+    #[tokio::test]
+    async fn queued_errors_are_streamed_as_errors() {
+        let model = MockMessageModel::new(vec![MockResponse::Error(Error::other("boom"))]);
+        let events = collect(&model, &[]).await;
+        assert!(events[0].as_ref().err().unwrap().to_string().contains("boom"));
+    }
+
+    #[tokio::test]
+    async fn emits_trailing_metadata_when_usage_is_supplied() {
+        let model = MockMessageModel::new(vec![MockResponse::with_usage(
+            Message::assistant("hi"),
+            Usage::default(),
+        )]);
+        let events = collect(&model, &[]).await;
+        assert_eq!(
+            events.last().unwrap().as_ref().unwrap().type_name(),
+            "modelMetadataEvent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_model_provider_replays_the_exact_sequence() {
+        let model = TestModelProvider::new(vec![Ok(ModelStreamEvent::MessageStart {
+            role: Role::Assistant,
+        })]);
+        let events = collect(&model, &[]).await;
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].as_ref().unwrap().type_name(), "modelMessageStartEvent");
+    }
+
+    #[tokio::test]
+    async fn empty_model_streams_nothing() {
+        assert!(collect(empty_model().as_ref(), &[]).await.is_empty());
+    }
 }

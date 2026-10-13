@@ -21,5 +21,7 @@ pub use error::{Error, Result};
 pub use models::Model;
 pub use plugins::Plugin;
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
-pub use tools::{tool, ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor};
+pub use tools::{
+    tool, ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
+};
 pub use types::{ContentBlock, Message, Role, StopReason, SystemPrompt};
