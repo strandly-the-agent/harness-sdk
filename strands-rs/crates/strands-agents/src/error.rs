@@ -27,7 +27,7 @@ pub enum Error {
         /// Provider message.
         message: String,
         /// Assistant message truncated at the token cap.
-        partial_message: Message,
+        partial_message: Box<Message>,
     },
     /// The provider throttled the request (`ModelThrottledError`); retryable by default.
     #[error("{message}")]
