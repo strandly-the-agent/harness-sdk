@@ -548,6 +548,319 @@ fn guardrail_trace_to_json(trace: &bt::GuardrailTraceAssessment) -> crate::types
 mod tests {
     use super::*;
 
+    use aws_smithy_types::Blob;
+
+    use crate::models::bedrock::{BedrockGuardrailConfig, BedrockGuardrailRedactionConfig};
+    use crate::models::streaming::{ContentBlockDelta as Delta, ContentBlockStart as Start};
+    use crate::types::StopReason;
+
+    fn stream_event(chunk: bt::ConverseStreamOutput) -> Vec<ModelStreamEvent> {
+        map_streamed_event(&chunk, None).expect("map_streamed_event").0
+    }
+
+    #[test]
+    fn handles_all_stop_reason_types() {
+        let cases = [
+            ("end_turn", "endTurn"),
+            ("tool_use", "toolUse"),
+            ("max_tokens", "maxTokens"),
+            ("stop_sequence", "stopSequence"),
+            ("content_filtered", "contentFiltered"),
+            ("guardrail_intervened", "guardrailIntervened"),
+            ("model_context_window_exceeded", "modelContextWindowExceeded"),
+            ("new_stop_reason", "newStopReason"),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(transform_stop_reason(raw, None).as_str(), expected, "raw={raw}");
+        }
+    }
+
+    #[test]
+    fn maps_message_start_and_content_block_stop() {
+        let events = stream_event(bt::ConverseStreamOutput::MessageStart(
+            bt::MessageStartEvent::builder()
+                .role(bt::ConversationRole::Assistant)
+                .build()
+                .expect("messageStart"),
+        ));
+        assert_eq!(
+            events,
+            vec![ModelStreamEvent::MessageStart {
+                role: Role::Assistant
+            }]
+        );
+
+        let events = stream_event(bt::ConverseStreamOutput::ContentBlockStop(
+            bt::ContentBlockStopEvent::builder()
+                .content_block_index(0)
+                .build()
+                .expect("contentBlockStop"),
+        ));
+        assert_eq!(events, vec![ModelStreamEvent::ContentBlockStop {}]);
+    }
+
+    #[test]
+    fn yields_and_validates_tool_use_events_correctly() {
+        let events = stream_event(bt::ConverseStreamOutput::ContentBlockStart(
+            bt::ContentBlockStartEvent::builder()
+                .content_block_index(0)
+                .start(bt::ContentBlockStart::ToolUse(
+                    bt::ToolUseBlockStart::builder()
+                        .name("calc")
+                        .tool_use_id("tu-1")
+                        .build()
+                        .expect("toolUseStart"),
+                ))
+                .build()
+                .expect("contentBlockStart"),
+        ));
+        assert_eq!(
+            events,
+            vec![ModelStreamEvent::ContentBlockStart {
+                start: Some(Start::ToolUse {
+                    name: "calc".into(),
+                    tool_use_id: "tu-1".into(),
+                    reasoning_signature: None,
+                })
+            }]
+        );
+    }
+
+    fn delta_event(delta: bt::ContentBlockDelta) -> Vec<ModelStreamEvent> {
+        stream_event(bt::ConverseStreamOutput::ContentBlockDelta(
+            bt::ContentBlockDeltaEvent::builder()
+                .content_block_index(0)
+                .delta(delta)
+                .build()
+                .expect("contentBlockDelta"),
+        ))
+    }
+
+    #[test]
+    fn yields_and_validates_text_events_correctly() {
+        assert_eq!(
+            delta_event(bt::ContentBlockDelta::Text("hello".into())),
+            vec![ModelStreamEvent::ContentBlockDelta {
+                delta: Delta::Text { text: "hello".into() }
+            }]
+        );
+    }
+
+    #[test]
+    fn handles_tool_use_input_delta() {
+        assert_eq!(
+            delta_event(bt::ContentBlockDelta::ToolUse(
+                bt::ToolUseBlockDelta::builder()
+                    .input("{\"a\":")
+                    .build()
+                    .expect("toolUseDelta")
+            )),
+            vec![ModelStreamEvent::ContentBlockDelta {
+                delta: Delta::ToolUseInput {
+                    input: "{\"a\":".into()
+                }
+            }]
+        );
+        assert!(delta_event(bt::ContentBlockDelta::ToolUse(
+            bt::ToolUseBlockDelta::builder()
+                .input("")
+                .build()
+                .expect("toolUseDelta")
+        ))
+        .is_empty());
+    }
+
+    #[test]
+    fn handles_reasoning_content_deltas() {
+        assert_eq!(
+            delta_event(bt::ContentBlockDelta::ReasoningContent(
+                bt::ReasoningContentBlockDelta::Text("thinking".into())
+            )),
+            vec![ModelStreamEvent::ContentBlockDelta {
+                delta: Delta::ReasoningContent {
+                    text: Some("thinking".into()),
+                    signature: None,
+                    redacted_content: None,
+                }
+            }]
+        );
+        assert_eq!(
+            delta_event(bt::ContentBlockDelta::ReasoningContent(
+                bt::ReasoningContentBlockDelta::Signature("sig".into())
+            )),
+            vec![ModelStreamEvent::ContentBlockDelta {
+                delta: Delta::ReasoningContent {
+                    text: None,
+                    signature: Some("sig".into()),
+                    redacted_content: None,
+                }
+            }]
+        );
+        assert_eq!(
+            delta_event(bt::ContentBlockDelta::ReasoningContent(
+                bt::ReasoningContentBlockDelta::RedactedContent(Blob::new(vec![1u8, 2]))
+            )),
+            vec![ModelStreamEvent::ContentBlockDelta {
+                delta: Delta::ReasoningContent {
+                    text: None,
+                    signature: None,
+                    redacted_content: Some(vec![1u8, 2]),
+                }
+            }]
+        );
+        assert!(delta_event(bt::ContentBlockDelta::ReasoningContent(
+            bt::ReasoningContentBlockDelta::Text(String::new())
+        ))
+        .is_empty());
+    }
+
+    #[test]
+    fn throws_when_content_block_delta_has_no_delta() {
+        let chunk = bt::ConverseStreamOutput::ContentBlockDelta(
+            bt::ContentBlockDeltaEvent::builder()
+                .content_block_index(0)
+                .build()
+                .expect("contentBlockDelta"),
+        );
+        let error = map_streamed_event(&chunk, None).expect_err("missing delta must fail");
+        assert!(matches!(error, Error::Model { .. }), "got {error:?}");
+    }
+
+    #[test]
+    fn handles_message_stop_with_additional_model_response_fields() {
+        let chunk = bt::ConverseStreamOutput::MessageStop(
+            bt::MessageStopEvent::builder()
+                .stop_reason(bt::StopReason::EndTurn)
+                .additional_model_response_fields(
+                    super::super::format::json_to_document(&serde_json::json!({"a": 1})).expect("document"),
+                )
+                .build()
+                .expect("messageStop"),
+        );
+        let (events, stop_reason) = map_streamed_event(&chunk, None).expect("map");
+        assert_eq!(stop_reason.as_deref(), Some("end_turn"));
+        assert_eq!(
+            events,
+            vec![ModelStreamEvent::MessageStop {
+                stop_reason: StopReason::from("endTurn"),
+                additional_model_response_fields: Some(serde_json::json!({"a": 1})),
+            }]
+        );
+    }
+
+    #[test]
+    fn handles_cache_usage_metrics_and_latency_in_metadata() {
+        let chunk = bt::ConverseStreamOutput::Metadata(
+            bt::ConverseStreamMetadataEvent::builder()
+                .usage(
+                    bt::TokenUsage::builder()
+                        .input_tokens(10)
+                        .output_tokens(5)
+                        .total_tokens(15)
+                        .cache_read_input_tokens(3)
+                        .cache_write_input_tokens(4)
+                        .build()
+                        .expect("usage"),
+                )
+                .metrics(
+                    bt::ConverseStreamMetrics::builder()
+                        .latency_ms(42)
+                        .build()
+                        .expect("metrics"),
+                )
+                .build(),
+        );
+        let events = stream_event(chunk);
+        match &events[0] {
+            ModelStreamEvent::Metadata {
+                usage,
+                metrics,
+                trace,
+            } => {
+                let usage = usage.as_ref().expect("usage");
+                assert_eq!(usage.input_tokens, 10);
+                assert_eq!(usage.output_tokens, 5);
+                assert_eq!(usage.total_tokens, 15);
+                assert_eq!(usage.cache_read_input_tokens, Some(3));
+                assert_eq!(usage.cache_write_input_tokens, Some(4));
+                assert_eq!(metrics.as_ref().expect("metrics").latency_ms, 42);
+                assert!(trace.is_none());
+            }
+            other => panic!("expected metadata event, got {other:?}"),
+        }
+    }
+
+    fn guardrail(redaction: Option<BedrockGuardrailRedactionConfig>) -> BedrockGuardrailConfig {
+        BedrockGuardrailConfig {
+            guardrail_identifier: "gr-1".into(),
+            guardrail_version: "1".into(),
+            redaction,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn emits_input_redaction_with_default_message() {
+        let events = generate_redaction_events(&guardrail(None), None);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ModelStreamEvent::Redaction {
+                input_redaction,
+                output_redaction,
+            } => {
+                assert_eq!(
+                    input_redaction.as_ref().expect("input").replace_content,
+                    "[User input redacted.]"
+                );
+                assert!(output_redaction.is_none());
+            }
+            other => panic!("expected redaction event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn emits_both_input_and_output_redaction_when_both_are_enabled() {
+        let events = generate_redaction_events(
+            &guardrail(Some(BedrockGuardrailRedactionConfig {
+                input: Some(true),
+                input_message: Some("IN".into()),
+                output: Some(true),
+                output_message: Some("OUT".into()),
+            })),
+            None,
+        );
+        assert_eq!(events.len(), 2);
+        match (&events[0], &events[1]) {
+            (
+                ModelStreamEvent::Redaction {
+                    input_redaction: Some(input),
+                    ..
+                },
+                ModelStreamEvent::Redaction {
+                    output_redaction: Some(output),
+                    ..
+                },
+            ) => {
+                assert_eq!(input.replace_content, "IN");
+                assert_eq!(output.replace_content, "OUT");
+                assert!(output.redacted_content.is_none());
+            }
+            other => panic!("expected input then output redaction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn does_not_emit_input_redaction_when_redact_input_is_false() {
+        let events = generate_redaction_events(
+            &guardrail(Some(BedrockGuardrailRedactionConfig {
+                input: Some(false),
+                ..Default::default()
+            })),
+            None,
+        );
+        assert!(events.is_empty());
+    }
+
     #[test]
     fn snake_to_camel_matches_ts_regex() {
         assert_eq!(

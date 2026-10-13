@@ -742,3 +742,117 @@ impl BedrockModel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model(config: BedrockModelConfig) -> BedrockModel {
+        let client = Client::from_conf(
+            aws_sdk_bedrockruntime::Config::builder()
+                .behavior_version(BehaviorVersion::latest())
+                .region(aws_sdk_bedrockruntime::config::Region::new("us-west-2"))
+                .build(),
+        );
+        BedrockModel::from_client(client, resolve_config(config))
+    }
+
+    #[test]
+    fn creates_an_instance_with_default_configuration() {
+        let model = model(BedrockModelConfig::default());
+        let config = model.config();
+        assert_eq!(
+            config.model_id.as_deref(),
+            Some("global.anthropic.claude-sonnet-4-6")
+        );
+        assert_eq!(config.context_window_limit, Some(1_000_000));
+        assert_eq!(
+            model.model_id().as_deref(),
+            Some("global.anthropic.claude-sonnet-4-6")
+        );
+    }
+
+    #[test]
+    fn auto_populates_context_window_limit_from_model_id_lookup() {
+        let config = model(BedrockModelConfig::new("anthropic.claude-opus-4-5-20251101-v1:0")).config();
+        assert_eq!(config.context_window_limit, Some(200_000));
+    }
+
+    #[test]
+    fn auto_populates_context_window_limit_for_cross_region_model_ids() {
+        let config = model(BedrockModelConfig::new("us.anthropic.claude-sonnet-4-6")).config();
+        assert_eq!(config.context_window_limit, Some(1_000_000));
+    }
+
+    #[test]
+    fn re_resolves_context_window_limit_when_model_id_changes_and_it_was_auto_resolved() {
+        let model = model(BedrockModelConfig::new("anthropic.claude-opus-4-5-20251101-v1:0"));
+        assert_eq!(model.config().context_window_limit, Some(200_000));
+        model.update_config(BedrockModelConfig::new("amazon.nova-micro-v1:0"));
+        assert_eq!(model.config().context_window_limit, Some(128_000));
+    }
+
+    #[test]
+    fn clears_context_window_limit_when_model_id_changes_to_unknown_model() {
+        let model = model(BedrockModelConfig::new("anthropic.claude-opus-4-5-20251101-v1:0"));
+        model.update_config(BedrockModelConfig::new("acme.unknown-model-v9"));
+        assert_eq!(model.config().context_window_limit, None);
+    }
+
+    #[test]
+    fn preserves_explicit_context_window_limit_when_model_id_changes() {
+        let mut config = BedrockModelConfig::new("anthropic.claude-opus-4-5-20251101-v1:0");
+        config.context_window_limit = Some(42);
+        let model = model(config);
+        model.update_config(BedrockModelConfig::new("amazon.nova-micro-v1:0"));
+        assert_eq!(model.config().context_window_limit, Some(42));
+        assert_eq!(model.context_window_limit(), Some(42));
+    }
+
+    #[test]
+    fn leaves_context_window_limit_undefined_for_unknown_model_ids() {
+        let config = model(BedrockModelConfig::new("acme.unknown-model-v9")).config();
+        assert_eq!(config.context_window_limit, None);
+    }
+
+    #[test]
+    fn does_not_override_explicit_context_window_limit() {
+        let mut input = BedrockModelConfig::new("anthropic.claude-opus-4-5-20251101-v1:0");
+        input.context_window_limit = Some(42);
+        assert_eq!(resolve_config(input).context_window_limit, Some(42));
+    }
+
+    #[test]
+    fn merges_new_config_with_existing_config_and_preserves_other_fields() {
+        let mut config = BedrockModelConfig::new("anthropic.claude-opus-4-5-20251101-v1:0");
+        config.temperature = Some(0.3);
+        config.max_tokens = Some(10);
+        config.merge(BedrockModelConfig {
+            max_tokens: Some(20),
+            ..Default::default()
+        });
+        assert_eq!(config.max_tokens, Some(20));
+        assert_eq!(config.temperature, Some(0.3));
+        assert_eq!(
+            config.model_id.as_deref(),
+            Some("anthropic.claude-opus-4-5-20251101-v1:0")
+        );
+    }
+
+    #[test]
+    fn maps_every_context_overflow_message_substring() {
+        for message in BEDROCK_CONTEXT_WINDOW_OVERFLOW_MESSAGES {
+            assert!(
+                is_context_window_overflow(&format!("ValidationException: {message} (request id 1)")),
+                "{message}"
+            );
+        }
+        assert!(!is_context_window_overflow("ValidationException: something else"));
+    }
+
+    #[test]
+    fn warns_when_model_id_is_not_explicitly_set() {
+        let warning = default_model_warning_message(MODEL_DEFAULTS.bedrock.model_id);
+        assert!(warning.contains(MODEL_DEFAULTS.bedrock.model_id), "{warning}");
+    }
+}
