@@ -170,3 +170,48 @@ impl Agent {
         f(&mut self.inner.tools.write())
     }
 }
+
+#[cfg(test)]
+mod test_support {
+    use super::*;
+    use crate::error::Result;
+    use crate::models::{ModelStreamEvent, StreamOptions};
+    use futures::stream::BoxStream;
+
+    /// Agent carrying `messages`, backed by a model that streams nothing.
+    pub(crate) fn test_agent_with_messages(messages: Vec<Message>) -> Agent {
+        struct EmptyModel;
+
+        #[async_trait::async_trait]
+        impl Model for EmptyModel {
+            fn model_id(&self) -> Option<String> {
+                None
+            }
+
+            fn stream<'a>(
+                &'a self,
+                _messages: &'a [Message],
+                _options: &'a StreamOptions,
+            ) -> BoxStream<'a, Result<ModelStreamEvent>> {
+                Box::pin(futures::stream::empty())
+            }
+        }
+
+        Agent {
+            inner: Arc::new(AgentInner {
+                id: "test-agent".to_owned(),
+                name: "test-agent".to_owned(),
+                description: None,
+                model: RwLock::new(Arc::new(EmptyModel)),
+                system_prompt: RwLock::new(None),
+                messages: RwLock::new(messages),
+                state: StateStore::new(),
+                hooks: HookRegistry::new(),
+                tools: RwLock::new(ToolRegistry::new()),
+            }),
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) use test_support::test_agent_with_messages;

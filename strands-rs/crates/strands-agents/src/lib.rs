@@ -4,6 +4,7 @@
 //! and a list of [`Tool`](tools::Tool)s composed into an agent loop.
 
 pub mod agent;
+pub mod conversation_manager;
 pub mod error;
 pub mod hooks;
 pub mod logging;
@@ -14,6 +15,10 @@ pub mod tools;
 pub mod types;
 
 pub use agent::{Agent, AgentResult, InvocationState, InvokeInput};
+pub use conversation_manager::{
+    ConversationManager, NullConversationManager, ProactiveCompression, ReduceOptions, ReduceTrigger,
+    SlidingWindowConfig, SlidingWindowConversationManager,
+};
 pub use error::{Error, Result};
 pub use models::Model;
 pub use plugins::Plugin;
