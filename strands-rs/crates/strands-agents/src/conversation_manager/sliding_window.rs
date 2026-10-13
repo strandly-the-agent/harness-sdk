@@ -1376,7 +1376,7 @@ mod tests {
         ]);
         trigger_context_overflow(&manager(3, false), &agent).await;
 
-        assert_eq!(agent.messages()[0].role, Role::User);
+        assert_eq!(roles(&agent.messages())[0], Role::User);
     }
 
     #[tokio::test]
