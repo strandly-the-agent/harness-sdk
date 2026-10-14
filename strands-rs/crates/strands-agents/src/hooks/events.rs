@@ -143,6 +143,24 @@ pub struct BeforeToolCallEvent {
 }
 impl HookEvent for BeforeToolCallEvent {}
 
+impl BeforeToolCallEvent {
+    /// Ask the caller for input before this tool runs: the answer on resume, otherwise
+    /// [`Error::Interrupt`](crate::error::Error::Interrupt).
+    pub fn interrupt<T: serde::de::DeserializeOwned>(
+        &self,
+        params: crate::types::InterruptParams,
+    ) -> crate::error::Result<T> {
+        let id = crate::interrupt::before_tool_call_interrupt_id(&self.tool_use.tool_use_id, &params.name);
+        let response = crate::interrupt::raise(
+            &self.agent.interrupt_state(),
+            &id,
+            params,
+            crate::interrupt::InterruptSource::Hook,
+        )?;
+        serde_json::from_value(response).map_err(|e| Error::other(e.to_string()))
+    }
+}
+
 /// A tool finished. `result` is replaceable; set `retry` to run it again.
 #[derive(Clone)]
 pub struct AfterToolCallEvent {
@@ -298,6 +316,23 @@ pub struct BeforeToolsEvent {
     pub cancel: Cancel,
 }
 impl HookEvent for BeforeToolsEvent {}
+
+impl BeforeToolsEvent {
+    /// Ask the caller for input before the whole batch runs.
+    pub fn interrupt<T: serde::de::DeserializeOwned>(
+        &self,
+        params: crate::types::InterruptParams,
+    ) -> crate::error::Result<T> {
+        let id = crate::interrupt::before_tools_interrupt_id(&params.name);
+        let response = crate::interrupt::raise(
+            &self.agent.interrupt_state(),
+            &id,
+            params,
+            crate::interrupt::InterruptSource::Hook,
+        )?;
+        serde_json::from_value(response).map_err(|e| Error::other(e.to_string()))
+    }
+}
 
 /// How `AfterToolsEvent` may end the turn.
 #[derive(Clone, Debug, PartialEq, Default)]

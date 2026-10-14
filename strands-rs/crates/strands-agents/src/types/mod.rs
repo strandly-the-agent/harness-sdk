@@ -1,6 +1,7 @@
 //! Core data types: messages, content blocks, tool specs, stop reasons.
 
 mod citations;
+mod interrupt;
 mod media;
 mod messages;
 mod stop_reason;
@@ -10,6 +11,7 @@ mod tool;
 pub use citations::{
     Citation, CitationGeneratedContent, CitationLocation, CitationSourceContent, CitationsBlock,
 };
+pub use interrupt::{InterruptParams, InterruptResponse, InterruptResponseContent};
 pub use media::{
     AudioBlock, AudioFormat, AudioSource, DocumentBlock, DocumentCitations, DocumentFormat, DocumentSource,
     ImageBlock, ImageFormat, ImageSource, S3Location, TextContent, VideoBlock, VideoFormat, VideoSource,

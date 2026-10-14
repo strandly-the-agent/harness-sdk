@@ -9,6 +9,8 @@ use futures::{Stream, StreamExt};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use std::collections::HashMap;
+
 use super::{Agent, AgentResult, InvocationState, InvokeInput};
 use crate::error::{Error, Result};
 use crate::hooks::events::{
@@ -17,6 +19,7 @@ use crate::hooks::events::{
     ModelMessageEvent, ModelStopData, ModelStreamUpdateEvent, ToolResultEvent, ToolStreamUpdateEvent,
 };
 use crate::hooks::HookEvent;
+use crate::interrupt::{Interrupt, PendingToolExecution};
 use crate::middleware::{EventSink, EventTarget, InvokeModelContext, InvokeModelStage};
 use crate::models::{
     AggregatedItem, CountTokensOptions, Model, ModelStreamEvent, StreamAggregatedResult, StreamOptions,
@@ -43,6 +46,14 @@ const NO_TOOL_USE_BLOCKS_MESSAGE: &str = "Model indicated toolUse but no tool us
 
 /// Error text when a forced structured-output tool call is still not made.
 #[doc(hidden)]
+pub const INTERRUPT_RESUME_REQUIRED_MESSAGE: &str =
+    "Agent is in an interrupted state. Resume by invoking with interruptResponse content blocks.";
+/// Message when `InvokeInput::InterruptResponses` is mixed with other input.
+pub const INTERRUPT_RESPONSES_ONLY_MESSAGE: &str =
+    "Must resume from interrupt with a list of interruptResponse content blocks only";
+/// Text of the synthetic last message when an agent interrupts with an empty conversation.
+pub const INTERRUPTED_MESSAGE: &str = "Interrupted";
+/// Message when a forced structured-output call still fails.
 pub const STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE: &str =
     "The model failed to invoke the structured output tool even after it was forced.";
 
@@ -451,6 +462,7 @@ async fn run_invocation(
                     structured_output: None,
                     metrics: agent.meter().metrics(),
                     traces: agent.tracer().local_traces(),
+                    interrupts: Vec::new(),
                     checkpoint: None,
                 },
             )
@@ -538,22 +550,28 @@ async fn run_cycles(
         crate::types::SystemPrompt::Text(text) => Some(text),
         _ => None,
     });
-    let agent_span = agent.tracer().start_agent_span(crate::telemetry::tracer::AgentSpanOptions {
-        agent_name: agent.name(),
-        agent_id: Some(agent.id()),
-        model_id: model_id.as_deref(),
-        tools: &tool_names,
-        tool_specs: &tool_specs,
-        system_prompt: system_prompt.as_deref(),
-        messages: &agent.messages(),
-        provider: None,
-    });
+    let agent_span = agent
+        .tracer()
+        .start_agent_span(crate::telemetry::tracer::AgentSpanOptions {
+            agent_name: agent.name(),
+            agent_id: Some(agent.id()),
+            model_id: model_id.as_deref(),
+            tools: &tool_names,
+            tool_specs: &tool_specs,
+            system_prompt: system_prompt.as_deref(),
+            messages: &agent.messages(),
+            provider: None,
+        });
 
     let outcome = run_cycles_inner(agent, input, state, cancel, tx, options, structured, &agent_span).await;
 
     match &outcome {
-        Ok(result) => agent.tracer().end_agent_span(&agent_span, Some(&result.last_message), None),
-        Err(error) => agent.tracer().end_agent_span(&agent_span, None, Some(&error.to_string())),
+        Ok(result) => agent
+            .tracer()
+            .end_agent_span(&agent_span, Some(&result.last_message), None),
+        Err(error) => agent
+            .tracer()
+            .end_agent_span(&agent_span, None, Some(&error.to_string())),
     }
     agent.meter().end_invocation();
 
@@ -574,6 +592,18 @@ async fn run_cycles_inner(
     structured: bool,
     agent_span: &crate::telemetry::SpanHandle,
 ) -> Result<AgentResult> {
+    // Resume responses land before anything else runs, so a raiser's `interrupt(..)` on this pass
+    // returns its answer instead of raising again.
+    let responses = input.interrupt_responses();
+    {
+        let interrupt_state = agent.interrupt_state();
+        let mut interrupt_state = interrupt_state.lock();
+        if responses.is_empty() && interrupt_state.activated() {
+            return Err(Error::other(INTERRUPT_RESUME_REQUIRED_MESSAGE));
+        }
+        interrupt_state.resume(responses)?;
+    }
+
     let resume = super::checkpoint::resume_checkpoint(agent, &input)?;
     let mut cycle_index = resume
         .as_ref()
@@ -600,6 +630,7 @@ async fn run_cycles_inner(
                 structured_output: None,
                 metrics: agent.meter().metrics(),
                 traces: agent.tracer().local_traces(),
+                interrupts: Vec::new(),
                 checkpoint: None,
             });
         }
@@ -611,14 +642,56 @@ async fn run_cycles_inner(
             }
         }
 
+        // A resumed tool batch replays the stored assistant message: no second model call.
+        let pending_tools = agent.interrupt_state().lock().pending_tool_execution().cloned();
+        if let Some(pending_tools) = pending_tools {
+            let assistant_message = pending_tools.assistant_message.clone();
+            let restored = pending_tools.completed_tool_results.clone();
+            let tools = match execute_tools(agent, &assistant_message, state, cancel, tx, &restored).await {
+                Ok(tools) => tools,
+                Err(Error::Interrupt(interrupts)) => return interrupt_result(agent, state, interrupts),
+                Err(Error::Cancelled) => return cancelled_result(agent, tx, state).await,
+                Err(error) => return Err(error),
+            };
+            append_message(agent, tx, state, assistant_message.clone()).await?;
+            append_message(agent, tx, state, tools.message.clone()).await?;
+            {
+                let interrupt_state = agent.interrupt_state();
+                let mut interrupt_state = interrupt_state.lock();
+                interrupt_state.clear_pending_tool_execution();
+                interrupt_state.deactivate();
+            }
+            match tools.end_turn {
+                EndTurn::No => continue,
+                _ => {
+                    let last = Message::new(
+                        Role::Assistant,
+                        vec![ContentBlock::Text(HOOK_END_TURN_MESSAGE.to_owned())],
+                    );
+                    append_message(agent, tx, state, last.clone()).await?;
+                    return Ok(AgentResult {
+                        stop_reason: StopReason::EndTurn,
+                        last_message: last,
+                        invocation_state: state.clone(),
+                        structured_output: None,
+                        interrupts: Vec::new(),
+                        metrics: agent.meter().metrics(),
+                        traces: agent.tracer().local_traces(),
+                        checkpoint: None,
+                    });
+                }
+            }
+        }
+
         let cycle = crate::telemetry::CycleScope::start(agent, agent_span);
-        let model_span = agent
-            .tracer()
-            .start_model_invoke_span(cycle.span(), crate::telemetry::tracer::ModelSpanOptions {
+        let model_span = agent.tracer().start_model_invoke_span(
+            cycle.span(),
+            crate::telemetry::tracer::ModelSpanOptions {
                 model_id: agent.model().model_id().as_deref(),
                 provider: None,
                 messages: &agent.messages(),
-            });
+            },
+        );
         let model_result = match invoke_model(agent, state, cancel, tx, forced_choice.clone()).await {
             Ok(result) => {
                 agent.tracer().end_model_invoke_span(
@@ -674,6 +747,7 @@ async fn run_cycles_inner(
                 structured_output: None,
                 metrics: agent.meter().metrics(),
                 traces: agent.tracer().local_traces(),
+                interrupts: Vec::new(),
                 checkpoint: None,
             });
         }
@@ -702,6 +776,7 @@ async fn run_cycles_inner(
                 structured_output: None,
                 metrics: agent.meter().metrics(),
                 traces: agent.tracer().local_traces(),
+                interrupts: Vec::new(),
                 checkpoint: None,
             });
         }
@@ -716,14 +791,22 @@ async fn run_cycles_inner(
             return Ok(result);
         }
 
-        let tools = match execute_tools(agent, &assistant_message, state, cancel, tx).await {
+        let tools = match execute_tools(agent, &assistant_message, state, cancel, tx, &HashMap::new()).await {
             Ok(tools) => tools,
+            // Nothing is appended: history never holds a `toolUse` without its `toolResult`, which
+            // is what makes an interrupted agent re-invokable.
+            Err(Error::Interrupt(interrupts)) => return interrupt_result(agent, state, interrupts),
             Err(Error::Cancelled) => return cancelled_result(agent, tx, state).await,
             Err(error) => return Err(error),
         };
 
         append_message(agent, tx, state, assistant_message.clone()).await?;
         append_message(agent, tx, state, tools.message.clone()).await?;
+
+        // Stale-state sweeper: a resumed agent that finished its tools is no longer interrupted.
+        if agent.interrupt_state().lock().activated() {
+            agent.interrupt_state().lock().deactivate();
+        }
 
         match tools.end_turn {
             EndTurn::No => {}
@@ -743,6 +826,7 @@ async fn run_cycles_inner(
                     structured_output: None,
                     metrics: agent.meter().metrics(),
                     traces: agent.tracer().local_traces(),
+                    interrupts: Vec::new(),
                     checkpoint: None,
                 });
             }
@@ -757,6 +841,7 @@ async fn run_cycles_inner(
                     structured_output: Some(output),
                     metrics: agent.meter().metrics(),
                     traces: agent.tracer().local_traces(),
+                    interrupts: Vec::new(),
                     checkpoint: None,
                 });
             }
@@ -773,6 +858,35 @@ async fn run_cycles_inner(
         }
         cycle_index += 1;
     }
+}
+
+/// The result an interrupted invocation returns: unanswered interrupts and nothing appended.
+fn interrupt_result(
+    agent: &Agent,
+    state: &InvocationState,
+    interrupts: Vec<Interrupt>,
+) -> Result<AgentResult> {
+    let unanswered = {
+        let interrupt_state = agent.interrupt_state();
+        let mut interrupt_state = interrupt_state.lock();
+        for interrupt in &interrupts {
+            interrupt_state.register(interrupt);
+        }
+        interrupt_state.activate();
+        interrupt_state.unanswered()
+    };
+    Ok(AgentResult {
+        stop_reason: StopReason::Interrupt,
+        last_message: agent
+            .with_messages(|m| m.last().cloned())
+            .unwrap_or_else(|| Message::assistant(INTERRUPTED_MESSAGE)),
+        invocation_state: state.clone(),
+        structured_output: None,
+        interrupts: unanswered,
+        metrics: agent.meter().metrics(),
+        traces: agent.tracer().local_traces(),
+        checkpoint: None,
+    })
 }
 
 fn tool_use_blocks(message: &Message) -> Vec<ToolUseBlock> {
@@ -819,6 +933,7 @@ async fn cancelled_result(agent: &Agent, tx: &Sink, state: &InvocationState) -> 
         structured_output: None,
         metrics: agent.meter().metrics(),
         traces: agent.tracer().local_traces(),
+        interrupts: Vec::new(),
         checkpoint: None,
     })
 }
@@ -1206,8 +1321,9 @@ async fn execute_tools(
     state: &InvocationState,
     cancel: &CancellationToken,
     tx: &Sink,
+    restored: &HashMap<String, ToolResultBlock>,
 ) -> Result<ToolsOutcome> {
-    let before = emit(
+    let before = match emit(
         agent,
         tx,
         BeforeToolsEvent {
@@ -1218,7 +1334,15 @@ async fn execute_tools(
         },
         AgentStreamEvent::BeforeTools,
     )
-    .await?;
+    .await
+    {
+        Ok(before) => before,
+        Err(Error::Interrupt(interrupts)) => {
+            store_pending_tools(agent, assistant_message, restored.clone());
+            return Err(Error::Interrupt(interrupts));
+        }
+        Err(error) => return Err(error),
+    };
 
     let tool_uses: Vec<ToolUseBlock> = assistant_message
         .content
@@ -1227,6 +1351,13 @@ async fn execute_tools(
             ContentBlock::ToolUse(tool_use) => Some(tool_use.clone()),
             _ => None,
         })
+        .collect();
+
+    // Already-finished tools are spliced back in without replaying their lifecycle events.
+    let unfinished: Vec<ToolUseBlock> = tool_uses
+        .iter()
+        .filter(|tool_use| !restored.contains_key(&tool_use.tool_use_id))
+        .cloned()
         .collect();
 
     let mut results = Vec::new();
@@ -1260,12 +1391,37 @@ async fn execute_tools(
             .await?;
         }
     } else {
-        outcome = run_executor(agent, tool_uses, state, cancel, tx, &mut results).await;
+        outcome = run_executor(agent, unfinished, state, cancel, tx, &mut results).await;
     }
+
+    if let Err(Error::Interrupt(interrupts)) = outcome {
+        let mut completed = restored.clone();
+        completed.extend(
+            results
+                .into_iter()
+                .map(|result| (result.tool_use_id.clone(), result)),
+        );
+        store_pending_tools(agent, assistant_message, completed);
+        return Err(Error::Interrupt(interrupts));
+    }
+
+    let by_id: HashMap<String, ToolResultBlock> = results
+        .into_iter()
+        .map(|result| (result.tool_use_id.clone(), result))
+        .collect();
+    let ordered: Vec<ToolResultBlock> = tool_uses
+        .iter()
+        .filter_map(|tool_use| {
+            by_id
+                .get(&tool_use.tool_use_id)
+                .or_else(|| restored.get(&tool_use.tool_use_id))
+                .cloned()
+        })
+        .collect();
 
     let message = Message::new(
         Role::User,
-        results.into_iter().map(ContentBlock::ToolResult).collect(),
+        ordered.into_iter().map(ContentBlock::ToolResult).collect(),
     );
     let after = emit(
         agent,
@@ -1285,6 +1441,21 @@ async fn execute_tools(
         message: after.message,
         end_turn: after.end_turn,
     })
+}
+
+/// Records the halted batch so a resume replays it with the results that already finished.
+fn store_pending_tools(
+    agent: &Agent,
+    assistant_message: &Message,
+    completed_tool_results: HashMap<String, ToolResultBlock>,
+) {
+    agent
+        .interrupt_state()
+        .lock()
+        .set_pending_tool_execution(PendingToolExecution {
+            assistant_message: assistant_message.clone(),
+            completed_tool_results,
+        });
 }
 
 async fn run_executor(

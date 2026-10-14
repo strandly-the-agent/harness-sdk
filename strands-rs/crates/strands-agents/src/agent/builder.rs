@@ -41,6 +41,7 @@ pub struct AgentBuilder {
     session_manager: Option<Arc<SessionManager>>,
     background_tasks: Option<crate::background_tasks::BackgroundTasksConfig>,
     storage: Option<crate::storage::StorageRef>,
+    sandbox: Option<Option<crate::sandbox::SandboxRef>>,
     memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     retry_strategy: Option<Option<Arc<dyn Plugin>>>,
     telemetry: Option<crate::telemetry::TelemetryConfig>,
@@ -127,6 +128,16 @@ impl AgentBuilder {
         self
     }
 
+    /// Gate the agent's lifecycle with [`InterventionHandler`](crate::interventions::InterventionHandler)s.
+    ///
+    /// Returns an error if two handlers share a name.
+    pub fn interventions(
+        self,
+        handlers: impl IntoIterator<Item = Arc<dyn crate::interventions::InterventionHandler>>,
+    ) -> Result<Self> {
+        Ok(self.plugin(crate::interventions::InterventionRegistry::new(handlers)?))
+    }
+
     /// Add one user plugin.
     pub fn plugin(self, plugin: impl Plugin + 'static) -> Self {
         self.plugin_arc(Arc::new(plugin))
@@ -150,6 +161,26 @@ impl AgentBuilder {
     /// session snapshots).
     pub fn storage(mut self, storage: impl crate::storage::Storage + 'static) -> Self {
         self.storage = Some(Arc::new(storage));
+        self
+    }
+
+    /// Where the agent runs commands and file operations; its vended tools are registered at
+    /// build time unless a user tool already has the same name.
+    pub fn sandbox(mut self, sandbox: impl crate::sandbox::Sandbox + 'static) -> Self {
+        self.sandbox = Some(Some(Arc::new(sandbox)));
+        self
+    }
+
+    /// [`AgentBuilder::sandbox`] for an already shared handle.
+    pub fn sandbox_arc(mut self, sandbox: crate::sandbox::SandboxRef) -> Self {
+        self.sandbox = Some(Some(sandbox));
+        self
+    }
+
+    /// Opt out of a sandbox entirely (TS `sandbox: false`): no sandbox-vended tools are
+    /// registered and [`Agent::sandbox`] falls back to the default slot.
+    pub fn no_sandbox(mut self) -> Self {
+        self.sandbox = Some(None);
         self
     }
 
@@ -297,14 +328,17 @@ impl AgentBuilder {
                 cancel: RwLock::new(CancellationToken::new()),
                 initialized: AsyncMutex::new(false),
                 storage: self.storage,
+                sandbox: self.sandbox,
                 session_id: RwLock::new(None),
                 memory_manager: self.memory_manager,
                 tracer: crate::telemetry::Tracer::new(
-                    self.telemetry.unwrap_or_else(crate::telemetry::TelemetryConfig::from_env),
+                    self.telemetry
+                        .unwrap_or_else(crate::telemetry::TelemetryConfig::from_env),
                 ),
                 meter: crate::telemetry::Meter::new(),
                 background_tasks,
                 continuation_input: RwLock::new(Vec::new()),
+                interrupt_state: Default::default(),
                 middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
         };

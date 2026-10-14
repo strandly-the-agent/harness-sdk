@@ -165,6 +165,7 @@ fn checkpoint_result(
         structured_output: None,
         metrics: agent.meter().metrics(),
         traces: agent.tracer().local_traces(),
+        interrupts: Vec::new(),
         checkpoint: Some(Checkpoint::new(position, cycle_index)),
     }
 }

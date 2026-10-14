@@ -1,11 +1,22 @@
 //! Model providers and the `Model` contract.
 
+#[cfg(feature = "anthropic")]
+pub mod anthropic;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;
 pub mod defaults;
 mod model;
+#[cfg(feature = "openai")]
+pub mod openai;
+pub mod sse;
 pub mod streaming;
 
+#[cfg(feature = "anthropic")]
+pub use anthropic::{
+    AnthropicCacheConfig, AnthropicCacheSection, AnthropicCacheStrategy, AnthropicModel,
+    AnthropicModelConfig, AnthropicTransport, ReqwestTransport as AnthropicReqwestTransport,
+    TransportResponse as AnthropicTransportResponse,
+};
 #[cfg(feature = "bedrock")]
 pub use bedrock::{
     BedrockGuardrailConfig, BedrockGuardrailRedactionConfig, BedrockModel, BedrockModelBuilder,
@@ -20,6 +31,12 @@ pub use model::{
     estimate_tokens_heuristic, stream_aggregated, AgentMetadata, AggregatedItem, CountTokensOptions, Model,
     ModelEventStream, Redaction, StreamAggregatedResult, StreamOptions, DEFAULT_CONTEXT_WINDOW_LIMIT,
 };
+#[cfg(feature = "openai")]
+pub use openai::{
+    classify_openai_error, BedrockMantleConfig, OpenAIApi, OpenAIModel, OpenAIModelConfig, OpenAIRequest,
+    OpenAITransport, ReqwestTransport as OpenAIReqwestTransport,
+};
+pub use sse::{SseEvent, SseParser};
 pub use streaming::{
     accumulate_usage, total_prompt_tokens, ContentBlockDelta, ContentBlockStart, ModelStreamEvent,
     RedactInputContent, RedactOutputContent,

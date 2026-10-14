@@ -22,14 +22,15 @@ use crate::models::Model;
 use crate::plugins::PluginRegistry;
 use crate::state_store::StateStore;
 use crate::tools::{ToolExecutor, ToolRef, ToolRegistry};
-use crate::types::{ContentBlock, Message, Role, SystemPrompt};
+use crate::types::{ContentBlock, InterruptResponseContent, Message, Role, SystemPrompt};
 
 pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
 pub use checkpoint::{
     Checkpoint, CheckpointData, CheckpointPosition, CheckpointResumeContent, CHECKPOINT_SCHEMA_VERSION,
 };
 pub use event_loop::{
-    AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE,
+    AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE, INTERRUPTED_MESSAGE,
+    INTERRUPT_RESPONSES_ONLY_MESSAGE, INTERRUPT_RESUME_REQUIRED_MESSAGE,
     STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE,
 };
 pub use invocation_state::InvocationState;
@@ -37,7 +38,8 @@ pub use result::AgentResult;
 pub use snapshot::{SnapshotField, SnapshotPreset, TakeSnapshotOptions, ALL_SNAPSHOT_FIELDS};
 pub use tool_caller::{CallOptions, ToolHandle, DIRECT_CALL_DURING_INVOCATION_MESSAGE};
 
-/// Input accepted by `invoke`/`stream`: text, content blocks, or whole messages.
+/// Input accepted by `invoke`/`stream`: text, content blocks, whole messages, or interrupt
+/// responses that resume an interrupted agent.
 #[derive(Clone, Debug, PartialEq)]
 pub enum InvokeInput {
     /// No new input (continue from the current conversation).
@@ -48,6 +50,8 @@ pub enum InvokeInput {
     Blocks(Vec<ContentBlock>),
     /// Messages appended as-is.
     Messages(Vec<Message>),
+    /// Answers to the interrupts the last invocation stopped on. Appends no user message.
+    InterruptResponses(Vec<InterruptResponseContent>),
     /// Resume from a checkpoint; appends no new input.
     CheckpointResume(CheckpointResumeContent),
 }
@@ -61,8 +65,32 @@ impl InvokeInput {
             InvokeInput::Blocks(b) if b.is_empty() => vec![],
             InvokeInput::Blocks(b) => vec![Message::new(Role::User, b)],
             InvokeInput::Messages(m) => m,
+            // Resume appends no user message (`_normalizeInput` in TS).
+            InvokeInput::InterruptResponses(_) => vec![],
             InvokeInput::CheckpointResume(_) => vec![],
         }
+    }
+
+    /// The interrupt responses carried by this input, if any.
+    pub fn interrupt_responses(&self) -> Vec<crate::types::InterruptResponse> {
+        match self {
+            InvokeInput::InterruptResponses(blocks) => {
+                blocks.iter().map(|b| b.interrupt_response.clone()).collect()
+            }
+            _ => vec![],
+        }
+    }
+}
+
+impl From<Vec<InterruptResponseContent>> for InvokeInput {
+    fn from(responses: Vec<InterruptResponseContent>) -> Self {
+        InvokeInput::InterruptResponses(responses)
+    }
+}
+
+impl From<InterruptResponseContent> for InvokeInput {
+    fn from(response: InterruptResponseContent) -> Self {
+        InvokeInput::InterruptResponses(vec![response])
     }
 }
 
@@ -110,12 +138,15 @@ pub(crate) struct AgentInner {
     pub(crate) cancel: RwLock<CancellationToken>,
     pub(crate) initialized: AsyncMutex<bool>,
     pub(crate) storage: Option<crate::storage::StorageRef>,
+    /// Configured sandbox; `None` falls back to the default slot, `Some(None)` opts out.
+    pub(crate) sandbox: Option<Option<crate::sandbox::SandboxRef>>,
     pub(crate) session_id: RwLock<Option<String>>,
     pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
     pub(crate) continuation_input: RwLock<Vec<Message>>,
     pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     pub(crate) tracer: crate::telemetry::Tracer,
     pub(crate) meter: crate::telemetry::Meter,
+    pub(crate) interrupt_state: crate::interrupt::InterruptStateHandle,
     pub(crate) middleware: crate::middleware::MiddlewareRegistry,
 }
 
@@ -255,6 +286,16 @@ impl Agent {
         std::mem::take(&mut *self.inner.continuation_input.write())
     }
 
+    /// Shared handle to this agent's interrupt state.
+    pub fn interrupt_state(&self) -> crate::interrupt::InterruptStateHandle {
+        Arc::clone(&self.inner.interrupt_state)
+    }
+
+    /// Interrupts the last invocation stopped on that are still unanswered.
+    pub fn unanswered_interrupts(&self) -> Vec<crate::interrupt::Interrupt> {
+        self.inner.interrupt_state.lock().unanswered()
+    }
+
     /// Hook registry.
     pub fn hooks(&self) -> &HookRegistry {
         &self.inner.hooks
@@ -300,6 +341,18 @@ impl Agent {
         self.inner.tools.read().list()
     }
 
+    /// Where this agent runs commands and file operations.
+    ///
+    /// The configured sandbox, else the process-wide default
+    /// ([`crate::sandbox::set_default_sandbox`]); errors with [`Error::DefaultNotConfigured`]
+    /// when neither is set, as the TS getter throws.
+    pub fn sandbox(&self) -> Result<crate::sandbox::SandboxRef> {
+        match &self.inner.sandbox {
+            Some(Some(sandbox)) => Ok(Arc::clone(sandbox)),
+            _ => crate::sandbox::default_sandbox(),
+        }
+    }
+
     /// Access the tool registry.
     pub fn with_tool_registry<R>(&self, f: impl FnOnce(&mut ToolRegistry) -> R) -> R {
         f(&mut self.inner.tools.write())
@@ -322,10 +375,29 @@ impl Agent {
             return Ok(());
         }
         self.inner.plugins.initialize(self).await?;
+        self.register_sandbox_tools();
         let mut event = InitializedEvent { agent: self.clone() };
         self.inner.hooks.invoke_callbacks(&mut event).await?;
         *initialized = true;
         Ok(())
+    }
+
+    /// Add the sandbox's vended tools, skipping names a user tool already owns (TS
+    /// `initialize()` step 2). Skipped when the sandbox was explicitly opted out of.
+    fn register_sandbox_tools(&self) {
+        let Some(Some(sandbox)) = self.inner.sandbox.as_ref() else {
+            return;
+        };
+        for tool in sandbox.tools() {
+            let name = tool.name().to_owned();
+            let added = self.with_tool_registry(|registry| registry.add(tool).is_ok());
+            if !added {
+                tracing::warn!(
+                    tool_name = %name,
+                    "sandbox-vended tool skipped, user already registered a tool with this name"
+                );
+            }
+        }
     }
 
     /// Whether an invocation is currently running.
@@ -405,6 +477,7 @@ pub(crate) mod test_fixtures {
                 system_prompt: RwLock::new(system_prompt.map(|p| SystemPrompt::Text(p.to_owned()))),
                 messages: RwLock::new(messages),
                 state: StateStore::new(),
+                interrupt_state: Default::default(),
                 model_state: StateStore::new(),
                 checkpointing: false,
                 hooks: HookRegistry::new(),
@@ -415,6 +488,7 @@ pub(crate) mod test_fixtures {
                 cancel: RwLock::new(CancellationToken::new()),
                 initialized: AsyncMutex::new(false),
                 storage: None,
+                sandbox: None,
                 session_id: RwLock::new(None),
                 memory_manager: None,
                 tracer: crate::telemetry::Tracer::new(crate::telemetry::TelemetryConfig::from_env()),

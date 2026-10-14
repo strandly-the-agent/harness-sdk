@@ -85,7 +85,9 @@ pub struct Tracer {
 
 impl std::fmt::Debug for Tracer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tracer").field("config", &self.config).finish_non_exhaustive()
+        f.debug_struct("Tracer")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
     }
 }
 
@@ -125,7 +127,11 @@ impl Tracer {
             attr(&mut attrs, "gen_ai.agent.tools", to_telemetry_json(options.tools));
         }
         if self.config.include_tool_definitions && !options.tool_specs.is_empty() {
-            attr(&mut attrs, "gen_ai.tool.definitions", to_telemetry_json(options.tool_specs));
+            attr(
+                &mut attrs,
+                "gen_ai.tool.definitions",
+                to_telemetry_json(options.tool_specs),
+            );
         }
         if let Some(prompt) = options.system_prompt {
             attr(&mut attrs, "system_prompt", to_telemetry_json(prompt));
@@ -159,7 +165,12 @@ impl Tracer {
         let mut attrs = self.common_attributes(None, None);
         attr(&mut attrs, "agent_loop.cycle_id", cycle_id);
         self.apply_custom(&mut attrs);
-        let mut span = self.begin("execute_agent_loop_cycle", backend::Kind::Default, attrs, Some(parent));
+        let mut span = self.begin(
+            "execute_agent_loop_cycle",
+            backend::Kind::Default,
+            attrs,
+            Some(parent),
+        );
         let trace = AgentTrace::new("Cycle", parent.local_trace.clone());
         let id = self.push_trace(trace, parent.local_trace.as_deref());
         {
@@ -240,7 +251,11 @@ impl Tracer {
         attr(&mut attrs, "gen_ai.tool.name", tool_use.name.as_str());
         attr(&mut attrs, "gen_ai.tool.call.id", tool_use.tool_use_id.as_str());
         if self.config.include_tool_definitions {
-            attr(&mut attrs, "gen_ai.tool.call.arguments", to_telemetry_json(&tool_use.input));
+            attr(
+                &mut attrs,
+                "gen_ai.tool.call.arguments",
+                to_telemetry_json(&tool_use.input),
+            );
         }
         self.apply_custom(&mut attrs);
         let mut span = self.begin(&name, backend::Kind::Default, attrs, parent);
@@ -249,13 +264,22 @@ impl Tracer {
     }
 
     /// Close the tool span, recording status and (opt-in) the result payload.
-    pub fn end_tool_call_span(&self, span: &SpanHandle, result: Option<&ToolResultBlock>, error: Option<&str>) {
+    pub fn end_tool_call_span(
+        &self,
+        span: &SpanHandle,
+        result: Option<&ToolResultBlock>,
+        error: Option<&str>,
+    ) {
         let mut attrs = Attrs::new();
         if let Some(result) = result {
             let status = tool_status(&result.status).to_string();
             attr(&mut attrs, "gen_ai.tool.status", status);
             if self.config.include_tool_definitions {
-                attr(&mut attrs, "gen_ai.tool.call.result", to_telemetry_json(&result.content));
+                attr(
+                    &mut attrs,
+                    "gen_ai.tool.call.result",
+                    to_telemetry_json(&result.content),
+                );
             }
         }
         backend::set_attributes(&span.inner, &attrs);
@@ -289,8 +313,16 @@ impl Tracer {
         }
     }
 
-    fn begin(&self, name: &str, kind: backend::Kind, attrs: Attrs, parent: Option<&SpanHandle>) -> SpanHandle {
-        let implicit = parent.is_none().then(|| self.state.lock().current_cycle_span.clone());
+    fn begin(
+        &self,
+        name: &str,
+        kind: backend::Kind,
+        attrs: Attrs,
+        parent: Option<&SpanHandle>,
+    ) -> SpanHandle {
+        let implicit = parent
+            .is_none()
+            .then(|| self.state.lock().current_cycle_span.clone());
         let parent_raw = parent.map(|p| p.inner.clone()).or(implicit);
         SpanHandle {
             inner: self.inner.start(name, kind, &attrs, parent_raw.as_ref()),
@@ -482,11 +514,22 @@ mod backend {
 
     impl Backend {
         pub(super) fn new() -> Self {
-            Self(Arc::new(opentelemetry::global::tracer(super::super::service_name())))
+            Self(Arc::new(opentelemetry::global::tracer(
+                super::super::service_name(),
+            )))
         }
 
-        pub(super) fn start(&self, name: &str, kind: Kind, attrs: &Attrs, parent: Option<&RawSpan>) -> RawSpan {
-            let mut builder = self.0.span_builder(name.to_string()).with_attributes(key_values(attrs));
+        pub(super) fn start(
+            &self,
+            name: &str,
+            kind: Kind,
+            attrs: &Attrs,
+            parent: Option<&RawSpan>,
+        ) -> RawSpan {
+            let mut builder = self
+                .0
+                .span_builder(name.to_string())
+                .with_attributes(key_values(attrs));
             if matches!(kind, Kind::Internal) {
                 builder = builder.with_kind(SpanKind::Internal);
             }
@@ -566,7 +609,14 @@ mod backend {
             Self
         }
 
-        pub(super) fn start(&self, _name: &str, _kind: Kind, _attrs: &Attrs, _parent: Option<&RawSpan>) -> RawSpan {}
+        pub(super) fn start(
+            &self,
+            _name: &str,
+            _kind: Kind,
+            _attrs: &Attrs,
+            _parent: Option<&RawSpan>,
+        ) -> RawSpan {
+        }
     }
 
     pub(super) fn set_attributes(_span: &RawSpan, _attrs: &Attrs) {}

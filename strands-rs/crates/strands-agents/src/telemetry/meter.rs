@@ -94,7 +94,11 @@ impl Meter {
         }
         let mut state = self.state.lock();
         state.total_duration += duration;
-        if let Some(entry) = state.current_cycles.iter_mut().find(|c| c.cycle_id == cycle.cycle_id) {
+        if let Some(entry) = state
+            .current_cycles
+            .iter_mut()
+            .find(|c| c.cycle_id == cycle.cycle_id)
+        {
             entry.duration = duration;
         }
     }

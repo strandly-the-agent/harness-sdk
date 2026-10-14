@@ -131,10 +131,13 @@ pub fn service_name() -> String {
 }
 
 fn detect_langfuse() -> bool {
-    ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"]
-        .iter()
-        .filter_map(|k| std::env::var(k).ok())
-        .any(|v| v.to_lowercase().contains("langfuse"))
+    [
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+    ]
+    .iter()
+    .filter_map(|k| std::env::var(k).ok())
+    .any(|v| v.to_lowercase().contains("langfuse"))
 }
 
 #[cfg(test)]

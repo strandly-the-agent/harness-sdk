@@ -23,10 +23,12 @@ fn string_attr(span: &SpanData, key: &str) -> String {
 }
 
 fn find<'a>(spans: &'a [SpanData], name: &str) -> &'a SpanData {
-    spans
-        .iter()
-        .find(|s| s.name == name)
-        .unwrap_or_else(|| panic!("no span named {name} in {:?}", spans.iter().map(|s| &s.name).collect::<Vec<_>>()))
+    spans.iter().find(|s| s.name == name).unwrap_or_else(|| {
+        panic!(
+            "no span named {name} in {:?}",
+            spans.iter().map(|s| &s.name).collect::<Vec<_>>()
+        )
+    })
 }
 
 fn echo_tool() -> ToolRef {
@@ -124,11 +126,26 @@ async fn agent_loop_emits_the_gen_ai_span_tree_with_attributes_and_metrics() {
     assert_eq!(chat_spans.len(), 2, "one chat span per cycle");
     let first_chat = chat_spans[0];
     assert_eq!(string_attr(first_chat, "gen_ai.operation.name"), "chat");
-    assert_eq!(attr(first_chat, "gen_ai.usage.prompt_tokens"), Some(&Value::I64(12)));
-    assert_eq!(attr(first_chat, "gen_ai.usage.input_tokens"), Some(&Value::I64(12)));
-    assert_eq!(attr(first_chat, "gen_ai.usage.completion_tokens"), Some(&Value::I64(3)));
-    assert_eq!(attr(first_chat, "gen_ai.usage.output_tokens"), Some(&Value::I64(3)));
-    assert_eq!(attr(first_chat, "gen_ai.usage.total_tokens"), Some(&Value::I64(15)));
+    assert_eq!(
+        attr(first_chat, "gen_ai.usage.prompt_tokens"),
+        Some(&Value::I64(12))
+    );
+    assert_eq!(
+        attr(first_chat, "gen_ai.usage.input_tokens"),
+        Some(&Value::I64(12))
+    );
+    assert_eq!(
+        attr(first_chat, "gen_ai.usage.completion_tokens"),
+        Some(&Value::I64(3))
+    );
+    assert_eq!(
+        attr(first_chat, "gen_ai.usage.output_tokens"),
+        Some(&Value::I64(3))
+    );
+    assert_eq!(
+        attr(first_chat, "gen_ai.usage.total_tokens"),
+        Some(&Value::I64(15))
+    );
     assert_eq!(
         attr(first_chat, "gen_ai.usage.cache_read.input_tokens"),
         Some(&Value::I64(4))
@@ -184,7 +201,11 @@ async fn agent_loop_emits_the_gen_ai_span_tree_with_attributes_and_metrics() {
     let root = &result.traces[0];
     assert_eq!(root.name, "invoke_agent my-agent");
     assert_eq!(root.children.len(), 2, "one cycle per model call");
-    let child_names: Vec<&str> = root.children[0].children.iter().map(|c| c.name.as_str()).collect();
+    let child_names: Vec<&str> = root.children[0]
+        .children
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect();
     assert!(child_names.contains(&"Model invoke"), "{child_names:?}");
     assert!(child_names.contains(&"Tool: echo"), "{child_names:?}");
     assert!(root.end_time.is_some());
@@ -230,7 +251,11 @@ async fn metrics_are_collected_without_a_provider() {
             ..Usage::default()
         },
     )]);
-    let agent = Agent::builder().model_arc(model).build().await.expect("agent builds");
+    let agent = Agent::builder()
+        .model_arc(model)
+        .build()
+        .await
+        .expect("agent builds");
     let result = agent.invoke("hello").await.expect("invocation succeeds");
     assert_eq!(result.metrics.cycle_count, 1);
     assert_eq!(result.metrics.accumulated_usage.total_tokens, 9);

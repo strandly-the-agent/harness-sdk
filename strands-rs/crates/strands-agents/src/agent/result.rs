@@ -5,6 +5,7 @@ use std::fmt;
 use serde::Serialize;
 
 use super::InvocationState;
+use crate::interrupt::Interrupt;
 use crate::telemetry::{AgentMetrics, AgentTrace};
 use crate::types::{ContentBlock, JsonValue, Message, StopReason};
 
@@ -27,6 +28,10 @@ pub struct AgentResult {
     pub metrics: AgentMetrics,
     /// Local trace tree collected during the invocation.
     pub traces: Vec<AgentTrace>,
+    /// Unanswered interrupts; non-empty exactly when `stop_reason` is
+    /// [`StopReason::Interrupt`](crate::types::StopReason::Interrupt).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub interrupts: Vec<Interrupt>,
     /// The cycle boundary the loop paused at, when `stop_reason` is `checkpoint`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkpoint: Option<super::Checkpoint>,
@@ -42,6 +47,7 @@ impl AgentResult {
             structured_output: None,
             metrics: AgentMetrics::default(),
             traces: Vec::new(),
+            interrupts: Vec::new(),
             checkpoint: None,
         }
     }
@@ -87,6 +93,7 @@ impl PartialEq for AgentResult {
         self.stop_reason == other.stop_reason
             && self.last_message == other.last_message
             && self.structured_output == other.structured_output
+            && self.interrupts == other.interrupts
             && self.checkpoint == other.checkpoint
     }
 }
@@ -95,6 +102,10 @@ impl PartialEq for AgentResult {
 /// blocks joined by newlines (`AgentResult.toString()` in TS).
 impl fmt::Display for AgentResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.interrupts.is_empty() {
+            let json = serde_json::to_string(&self.interrupts).unwrap_or_default();
+            return f.write_str(&json);
+        }
         if let Some(out) = &self.structured_output {
             return f.write_str(&out.to_string());
         }
@@ -135,6 +146,7 @@ mod tests {
             structured_output: structured,
             metrics: AgentMetrics::default(),
             traces: Vec::new(),
+            interrupts: Vec::new(),
             checkpoint: None,
         }
     }

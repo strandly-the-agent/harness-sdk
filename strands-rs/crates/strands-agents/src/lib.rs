@@ -8,12 +8,17 @@ pub mod background_tasks;
 pub mod context_manager;
 pub mod error;
 pub mod hooks;
+pub mod interrupt;
+pub mod interventions;
 pub mod logging;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod memory;
 pub mod middleware;
 pub mod models;
 pub mod plugins;
 pub mod retry;
+pub mod sandbox;
 pub mod session;
 pub mod state_store;
 pub mod storage;
@@ -34,20 +39,35 @@ pub use context_manager::{
     StashOption,
 };
 pub use error::{Error, Result};
+pub use interrupt::{Interrupt, InterruptSource, InterruptState};
+pub use interventions::{InterventionHandler, InterventionRegistry};
+#[cfg(feature = "mcp")]
+pub use mcp::{McpClient, McpServerConfig, McpTool};
 pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
 };
+#[cfg(feature = "anthropic")]
+pub use models::anthropic::{AnthropicModel, AnthropicModelConfig};
 pub use models::Model;
+#[cfg(feature = "openai")]
+pub use models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
+pub use sandbox::{
+    ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError, SandboxEvent, SandboxRef,
+    StreamChunk, StreamType,
+};
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
 pub use tools::vended::ShellTool;
 pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
 };
-pub use types::{ContentBlock, Message, Role, StopReason, SystemPrompt};
+pub use types::{
+    ContentBlock, InterruptParams, InterruptResponse, InterruptResponseContent, Message, Role, StopReason,
+    SystemPrompt,
+};
 
 /// Turns a function into a [`tools::Tool`] implementation (requires the `macros` feature).
 #[cfg(feature = "macros")]
@@ -66,9 +86,13 @@ pub mod __private {
 pub mod prelude {
     pub use crate::agent::{Agent, AgentBuilder, AgentResult, InvokeOptions};
     pub use crate::error::{Error, Result};
+    pub use crate::interrupt::{Interrupt, InterruptSource};
     pub use crate::models::Model;
     pub use crate::tools::{FunctionTool, Tool, ToolContext};
-    pub use crate::types::{ContentBlock, Message, Role, StopReason, SystemPrompt};
+    pub use crate::types::{
+        ContentBlock, InterruptParams, InterruptResponse, InterruptResponseContent, Message, Role,
+        StopReason, SystemPrompt,
+    };
     #[cfg(feature = "macros")]
     pub use strands_agents_macros::tool;
 }

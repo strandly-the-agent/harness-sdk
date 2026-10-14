@@ -138,6 +138,9 @@ impl ToolExecutor for ConcurrentToolExecutor {
             .collect();
 
         let mut collected: Vec<Option<ToolResultBlock>> = vec![None; input.tool_uses.len()];
+        // Interrupts are deferred: siblings run to completion so their results can be reused on
+        // resume. Last interrupt wins when several tools in a batch raise.
+        let mut interrupt: Option<Error> = None;
 
         while let Some((index, outcome)) = pending.next().await {
             let tool_use = &input.tool_uses[index];
@@ -145,6 +148,10 @@ impl ToolExecutor for ConcurrentToolExecutor {
                 Ok(result) => result,
                 Err(Error::Cancelled) => {
                     ToolResultBlock::error(&tool_use.tool_use_id, EXECUTION_CANCELLED_MESSAGE)
+                }
+                Err(error) if error.is_control_flow() => {
+                    interrupt = Some(error);
+                    continue;
                 }
                 Err(error) => ToolResultBlock::error(&tool_use.tool_use_id, error.to_string()),
             };
@@ -158,7 +165,10 @@ impl ToolExecutor for ConcurrentToolExecutor {
         }
 
         results.extend(collected.into_iter().flatten());
-        Ok(())
+        match interrupt {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 }
 
@@ -403,6 +413,9 @@ async fn run_tool(
             Ok((result, error))
         }
         Err(Error::Cancelled) => Err(Error::Cancelled),
+        // An interrupt is control flow: turning it into an error result would answer it with a
+        // failure and lose the pause.
+        Err(error) if error.is_control_flow() => Err(error),
         Err(error) => {
             let message = error.to_string();
             Ok((
