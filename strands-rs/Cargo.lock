@@ -2162,6 +2162,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strands-agents",
+ "strands-agents-macros",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2170,6 +2171,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "strands-agents-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

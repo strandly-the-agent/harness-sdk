@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/strands-agents"]
+members = ["crates/strands-agents", "crates/strands-agents-macros"]
 
 [workspace.package]
 version = "0.1.0"
@@ -26,6 +26,9 @@ tokio-util = "0.7"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4", "v7"] }
 schemars = "1"
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
 jsonschema = { version = "0.33", default-features = false }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-bedrockruntime = "1"
