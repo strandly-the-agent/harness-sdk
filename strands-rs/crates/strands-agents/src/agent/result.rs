@@ -22,6 +22,9 @@ pub struct AgentResult {
     /// Parsed structured output, when requested.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub structured_output: Option<JsonValue>,
+    /// The cycle boundary the loop paused at, when `stop_reason` is `checkpoint`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<super::Checkpoint>,
 }
 
 impl AgentResult {
@@ -32,6 +35,7 @@ impl AgentResult {
             last_message,
             invocation_state,
             structured_output: None,
+            checkpoint: None,
         }
     }
 
@@ -58,6 +62,7 @@ impl PartialEq for AgentResult {
         self.stop_reason == other.stop_reason
             && self.last_message == other.last_message
             && self.structured_output == other.structured_output
+            && self.checkpoint == other.checkpoint
     }
 }
 
@@ -103,6 +108,7 @@ mod tests {
             last_message: Message::new(Role::Assistant, content),
             invocation_state: InvocationState::new(),
             structured_output: structured,
+            checkpoint: None,
         }
     }
 
