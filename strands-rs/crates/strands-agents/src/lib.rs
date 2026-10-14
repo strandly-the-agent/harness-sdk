@@ -41,8 +41,8 @@ pub use models::Model;
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use sandbox::{
-    ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError, SandboxEvent,
-    SandboxRef, StreamChunk, StreamType,
+    ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError, SandboxEvent, SandboxRef,
+    StreamChunk, StreamType,
 };
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};

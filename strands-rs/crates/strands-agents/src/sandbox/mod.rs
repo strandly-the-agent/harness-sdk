@@ -185,11 +185,7 @@ pub trait Sandbox: std::fmt::Debug + Send + Sync {
     }
 
     /// Run `command` and return its terminal result.
-    async fn execute(
-        &self,
-        command: &str,
-        options: ExecuteOptions,
-    ) -> SandboxResult<ExecutionResult>;
+    async fn execute(&self, command: &str, options: ExecuteOptions) -> SandboxResult<ExecutionResult>;
 
     /// Run `command`, yielding output as it arrives and the terminal result last.
     fn execute_streaming<'a>(
@@ -251,7 +247,8 @@ pub trait Sandbox: std::fmt::Debug + Send + Sync {
 pub type SandboxRef = Arc<dyn Sandbox>;
 
 /// Message of [`Error::DefaultNotConfigured`] when no sandbox is available (verbatim from TS).
-pub const NO_SANDBOX_MESSAGE: &str = "No Sandbox configured. Pass a `sandbox` to the Agent to use sandbox features in this environment.";
+pub const NO_SANDBOX_MESSAGE: &str =
+    "No Sandbox configured. Pass a `sandbox` to the Agent to use sandbox features in this environment.";
 
 fn slot() -> &'static RwLock<Option<SandboxRef>> {
     static SLOT: OnceLock<RwLock<Option<SandboxRef>>> = OnceLock::new();

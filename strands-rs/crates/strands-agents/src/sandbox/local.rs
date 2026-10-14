@@ -11,8 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
 use super::{
-    is_valid_env_key, ExecuteOptions, ExecutionResult, FileInfo, Sandbox, SandboxError,
-    SandboxResult,
+    is_valid_env_key, ExecuteOptions, ExecutionResult, FileInfo, Sandbox, SandboxError, SandboxResult,
 };
 
 /// How long the pipe collectors get to finish after the command ended, before their buffers are
@@ -78,11 +77,7 @@ impl Sandbox for LocalSandbox {
         "the local host environment (no isolation)"
     }
 
-    async fn execute(
-        &self,
-        command: &str,
-        options: ExecuteOptions,
-    ) -> SandboxResult<ExecutionResult> {
+    async fn execute(&self, command: &str, options: ExecuteOptions) -> SandboxResult<ExecutionResult> {
         for key in options.env.iter().flat_map(|env| env.keys()) {
             if !is_valid_env_key(key) {
                 return Err(SandboxError::Other(format!(
@@ -141,9 +136,7 @@ impl Sandbox for LocalSandbox {
         };
         let waited = async {
             match options.timeout {
-                Some(timeout) => tokio::time::timeout(timeout, child.wait())
-                    .await
-                    .map_err(|_| ()),
+                Some(timeout) => tokio::time::timeout(timeout, child.wait()).await.map_err(|_| ()),
                 None => Ok(child.wait().await),
             }
         };
@@ -201,11 +194,8 @@ impl Sandbox for LocalSandbox {
                 "Language interpreter not found: {language}"
             )));
         }
-        self.execute(
-            &format!("{language} -c {}", super::shell_quote(code)),
-            options,
-        )
-        .await
+        self.execute(&format!("{language} -c {}", super::shell_quote(code)), options)
+            .await
     }
 
     async fn read_file(&self, path: &str) -> SandboxResult<Vec<u8>> {
@@ -569,7 +559,10 @@ mod tests {
 
     #[tokio::test]
     async fn throws_when_reading_a_nonexistent_file() {
-        let error = LocalSandbox::new().read_file("/nope/missing.txt").await.unwrap_err();
+        let error = LocalSandbox::new()
+            .read_file("/nope/missing.txt")
+            .await
+            .unwrap_err();
         assert_eq!(error.to_string(), "Path not found: /nope/missing.txt");
     }
 
