@@ -16,6 +16,7 @@ pub mod middleware;
 pub mod models;
 pub mod plugins;
 pub mod retry;
+pub mod sandbox;
 pub mod session;
 pub mod state_store;
 pub mod storage;
@@ -42,8 +43,14 @@ pub use memory::{
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
 };
 pub use models::Model;
+#[cfg(feature = "openai")]
+pub use models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
+pub use sandbox::{
+    ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError, SandboxEvent, SandboxRef,
+    StreamChunk, StreamType,
+};
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
 pub use tools::vended::ShellTool;
