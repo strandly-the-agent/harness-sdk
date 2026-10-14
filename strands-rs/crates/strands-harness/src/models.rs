@@ -742,6 +742,7 @@ mod tests {
 
     #[test]
     fn does_not_send_automatic_cache_points_to_claude_3_haiku() {
+        let _warn_guard = WARN_LOCK.blocking_lock();
         for id in [
             "anthropic.claude-3-haiku-20240307-v1:0",
             "us.anthropic.claude-3-haiku-20240307-v1:0",
@@ -829,6 +830,7 @@ mod tests {
 
     #[test]
     fn enables_prompt_caching_for_bedrock_when_requested() {
+        let _warn_guard = WARN_LOCK.blocking_lock();
         let config = resolve_caching(DEFAULT, Effort::Auto, true, false).expect("resolves");
         assert_eq!(
             config.cache_config,
@@ -841,6 +843,7 @@ mod tests {
 
     #[test]
     fn enables_bedrock_caching_even_with_effort_off() {
+        let _warn_guard = WARN_LOCK.blocking_lock();
         let config = resolve_caching(DEFAULT, Effort::Off, true, false).expect("resolves");
         assert_eq!(
             config.cache_config.and_then(|c| c.strategy),

@@ -13,8 +13,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use strands_agents::memory::{
-    AddMessagesContext, ExtractionConfig, FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryManager,
-    MemoryManagerConfig, MemoryStore, MemoryStoreRef, Metadata, ModelExtractor, SearchOptions,
+    AddMessagesContext, ExtractionConfig, FileMemoryStore, FileMemoryStoreConfig, MemoryEntry,
+    MemoryInjectionConfig, MemoryManager, MemoryManagerConfig, MemoryStore, MemoryStoreRef, MemoryToolConfig,
+    Metadata, ModelExtractor, SearchOptions,
 };
 use strands_agents::models::Model;
 use strands_agents::storage::LocalFileStorage;
@@ -69,7 +70,10 @@ pub async fn resolve_memory(options: ResolveMemoryOptions) -> Result<Arc<MemoryM
     };
     MemoryManager::shared(MemoryManagerConfig {
         stores,
-        ..Default::default()
+        search_tool: Some(MemoryToolConfig::default()),
+        add_tool: None,
+        injection: Some(MemoryInjectionConfig::default()),
+        extraction_trigger: None,
     })
 }
 
