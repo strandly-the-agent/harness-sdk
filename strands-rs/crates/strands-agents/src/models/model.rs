@@ -22,7 +22,11 @@ pub struct AgentMetadata {
     pub session_id: Option<String>,
 }
 
-/// Per-call options for [`Model::stream`].
+/// A boxed stream of raw provider events, as returned by [`Model::stream`].
+pub type ModelEventStream<'a> = BoxStream<'a, Result<ModelStreamEvent>>;
+
+/// Per-call options for [`Model::stream`]. Construct with `StreamOptions { .., ..Default::default() }`
+/// so added fields stay non-breaking (`#[non_exhaustive]` would forbid that syntax outside the crate).
 #[derive(Clone, Debug, Default)]
 pub struct StreamOptions {
     /// Cancellation token for the request.
@@ -39,7 +43,7 @@ pub struct StreamOptions {
     pub agent_metadata: Option<AgentMetadata>,
 }
 
-/// Options for [`Model::count_tokens`].
+/// Options for [`Model::count_tokens`]. Construct with `..Default::default()`.
 #[derive(Clone, Debug, Default)]
 pub struct CountTokensOptions {
     /// System prompt.
@@ -56,8 +60,10 @@ pub struct Redaction {
     pub user_message: String,
 }
 
-/// Final value of [`Model::stream_aggregated`].
+/// Final value of [`Model::stream_aggregated`]; `#[non_exhaustive]`, so new fields are not
+/// breaking changes (no `Default`: `message`/`stop_reason` have no meaningful default).
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct StreamAggregatedResult {
     /// The complete assistant message.
     pub message: Message,
@@ -99,11 +105,7 @@ pub trait Model: Send + Sync {
     }
 
     /// Stream raw events for a request.
-    fn stream<'a>(
-        &'a self,
-        messages: &'a [Message],
-        options: &'a StreamOptions,
-    ) -> BoxStream<'a, Result<ModelStreamEvent>>;
+    fn stream<'a>(&'a self, messages: &'a [Message], options: &'a StreamOptions) -> ModelEventStream<'a>;
 
     /// Count prompt tokens; defaults to a character heuristic.
     async fn count_tokens(&self, messages: &[Message], options: &CountTokensOptions) -> Result<u64> {
@@ -129,6 +131,22 @@ pub trait Model: Send + Sync {
     ) -> BoxStream<'a, Result<AggregatedItem>> {
         stream_aggregated(self.stream(messages, options))
     }
+
+    /// Run a request to completion, returning only the final aggregated result.
+    async fn aggregate(
+        &self,
+        messages: &[Message],
+        options: &StreamOptions,
+    ) -> Result<StreamAggregatedResult> {
+        let mut items = self.stream_aggregated(messages, options);
+        let mut last = None;
+        while let Some(item) = items.next().await {
+            if let AggregatedItem::Result(result) = item? {
+                last = Some(result);
+            }
+        }
+        last.ok_or_else(|| Error::model("model stream ended without an aggregated result"))
+    }
 }
 
 /// Shared models are models too, so `Arc<M>` can be passed wherever `impl Model` is expected.
@@ -146,11 +164,7 @@ impl<M: Model + ?Sized> Model for std::sync::Arc<M> {
         (**self).stateful()
     }
 
-    fn stream<'a>(
-        &'a self,
-        messages: &'a [Message],
-        options: &'a StreamOptions,
-    ) -> BoxStream<'a, Result<ModelStreamEvent>> {
+    fn stream<'a>(&'a self, messages: &'a [Message], options: &'a StreamOptions) -> ModelEventStream<'a> {
         (**self).stream(messages, options)
     }
 
@@ -455,6 +469,31 @@ mod tests {
             }
             (items, result.expect("stream must end with a result"))
         })
+    }
+
+    struct TestModel(Vec<E>);
+
+    #[async_trait]
+    impl Model for TestModel {
+        fn model_id(&self) -> Option<String> {
+            Some("test".into())
+        }
+
+        fn stream<'a>(
+            &'a self,
+            _messages: &'a [Message],
+            _options: &'a StreamOptions,
+        ) -> ModelEventStream<'a> {
+            stream::iter(self.0.clone().into_iter().map(Ok)).boxed()
+        }
+    }
+
+    #[tokio::test]
+    async fn aggregate_returns_the_final_aggregated_result() {
+        let model = TestModel(text_message(StopReason::EndTurn));
+        let result = model.aggregate(&[], &StreamOptions::default()).await.unwrap();
+        assert_eq!(result.message.text(), "Hello");
+        assert_eq!(result.stop_reason, StopReason::EndTurn);
     }
 
     #[test]

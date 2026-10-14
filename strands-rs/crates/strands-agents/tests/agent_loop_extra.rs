@@ -11,7 +11,7 @@ use strands_agents::hooks::{
 };
 use strands_agents::plugins::Plugin;
 use strands_agents::test_support::{MockMessageModel, MockResponse};
-use strands_agents::tools::{tool, ToolRef};
+use strands_agents::tools::{function_tool, ToolRef};
 use strands_agents::types::{ContentBlock, Role, StopReason, SystemPrompt, ToolResultStatus, ToolUseBlock};
 use strands_agents::{Agent, AgentStreamEvent, Message};
 
@@ -33,7 +33,7 @@ fn tool_use_message(name: &str, id: &str, input: serde_json::Value) -> Message {
 
 fn echo_tool(name: &str) -> ToolRef {
     Arc::new(
-        tool(name)
+        function_tool(name)
             .description("Echoes its input")
             .handler(|input, _ctx| async move { Ok(json!({ "echoed": input })) }),
     )
@@ -433,7 +433,7 @@ async fn before_tool_call_selected_tool_overrides_the_tool_that_runs() {
         .unwrap();
 
     let replacement: ToolRef = Arc::new(
-        tool("replacement")
+        function_tool("replacement")
             .description("Replacement")
             .handler(|_input, _ctx| async move { Ok(json!("replaced")) }),
     );

@@ -32,6 +32,15 @@ pub use models::Model;
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use tools::{
-    tool, ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
+    ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
 };
 pub use types::{ContentBlock, Message, Role, StopReason, SystemPrompt};
+
+/// The types most agents need: `use strands_agents::prelude::*;`.
+pub mod prelude {
+    pub use crate::agent::{Agent, AgentBuilder, AgentResult, InvokeOptions};
+    pub use crate::error::{Error, Result};
+    pub use crate::models::Model;
+    pub use crate::tools::{FunctionTool, Tool, ToolContext};
+    pub use crate::types::{ContentBlock, Message, Role, StopReason, SystemPrompt};
+}

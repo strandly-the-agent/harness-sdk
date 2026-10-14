@@ -59,7 +59,7 @@ pub struct FunctionToolBuilder {
 }
 
 /// Start building a tool named `name` (the `tool()` factory in TS).
-pub fn tool(name: impl Into<String>) -> FunctionToolBuilder {
+pub fn function_tool(name: impl Into<String>) -> FunctionToolBuilder {
     FunctionTool::builder(name)
 }
 
@@ -1111,14 +1111,14 @@ mod tests {
 
     #[test]
     fn tool_factory_defaults_description_to_the_empty_string() {
-        let t = tool("sync").handler(|_, _| async { Ok("ok") });
+        let t = function_tool("sync").handler(|_, _| async { Ok("ok") });
         assert_eq!(t.description(), "");
     }
 
     #[tokio::test]
     async fn tool_factory_builds_an_untyped_tool() {
         let schema = json!({ "type": "object", "properties": { "x": { "type": "string" } } });
-        let t = tool("json")
+        let t = function_tool("json")
             .description("JSON")
             .input_schema(schema.clone())
             .handler(|input: JsonValue, _| async move { Ok(input["x"].clone()) });
@@ -1133,7 +1133,7 @@ mod tests {
 
     #[tokio::test]
     async fn tool_factory_untyped_invoke_handles_values_and_progress() {
-        let t = tool("sync").handler(|input: JsonValue, ctx: ToolContext| async move {
+        let t = function_tool("sync").handler(|input: JsonValue, ctx: ToolContext| async move {
             ctx.progress("step").await;
             tokio::task::yield_now().await;
             Ok(input["a"].as_i64().unwrap_or(0) + input["b"].as_i64().unwrap_or(0))

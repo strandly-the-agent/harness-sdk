@@ -10,7 +10,7 @@ use strands_agents::hooks::{
     ModelMessageEvent,
 };
 use strands_agents::test_support::{MockMessageModel, MockResponse};
-use strands_agents::tools::{tool, ToolRef};
+use strands_agents::tools::{function_tool, ToolRef};
 use strands_agents::types::{ContentBlock, Role, StopReason, ToolResultStatus, ToolUseBlock, Usage};
 use strands_agents::{Agent, AgentStreamEvent, Limits, Message};
 
@@ -32,7 +32,7 @@ fn tool_use_message(name: &str, id: &str, input: serde_json::Value) -> Message {
 
 fn echo_tool() -> ToolRef {
     Arc::new(
-        tool("echo")
+        function_tool("echo")
             .description("Echoes its input")
             .handler(|input, _ctx| async move { Ok(json!({ "echoed": input })) }),
     )
@@ -628,7 +628,7 @@ async fn cancel_during_tool_execution_stops_after_the_results() {
     let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
     let cancelling = agent.clone();
     let cancel_tool: ToolRef = Arc::new(
-        tool("cancels")
+        function_tool("cancels")
             .description("Cancels the invocation, then succeeds")
             .handler(move |_input: serde_json::Value, _ctx| {
                 let agent = cancelling.clone();
@@ -845,12 +845,14 @@ async fn dropping_the_stream_cancels_the_invocation() {
         MockResponse::message(Message::assistant("never reached")),
     ]);
     let agent = Agent::builder().model(model.clone()).build().await.unwrap();
-    let slow: ToolRef = Arc::new(tool("slow").description("Sleeps before succeeding").handler(
-        |_input: serde_json::Value, _ctx| async move {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            Ok(json!({ "ok": true }))
-        },
-    ));
+    let slow: ToolRef = Arc::new(
+        function_tool("slow")
+            .description("Sleeps before succeeding")
+            .handler(|_input: serde_json::Value, _ctx| async move {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                Ok(json!({ "ok": true }))
+            }),
+    );
     agent.with_tool_registry(|registry| registry.add(slow)).unwrap();
 
     let mut stream = agent.stream("go");
@@ -908,7 +910,7 @@ async fn a_tool_cancellation_leaves_results_for_every_tool_use() {
     let agent = Agent::builder().model(model.clone()).build().await.unwrap();
     let cancelling = agent.clone();
     let cancels: ToolRef = Arc::new(
-        tool("cancels")
+        function_tool("cancels")
             .description("Cancels the invocation and reports cancellation")
             .handler(move |_input: serde_json::Value, _ctx| {
                 let agent = cancelling.clone();

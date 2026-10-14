@@ -386,6 +386,16 @@ impl BedrockModel {
         BedrockModelBuilder::default().config(config).build().await
     }
 
+    /// Model with the default model id, resolving credentials and region from the AWS chain.
+    pub async fn default_model() -> Result<Self> {
+        BedrockModelBuilder::default().build().await
+    }
+
+    /// Model for `model_id`, resolving credentials and region from the AWS chain.
+    pub async fn with_model_id(model_id: impl Into<String>) -> Result<Self> {
+        BedrockModelBuilder::default().model_id(model_id).build().await
+    }
+
     /// Builder for region / bearer token / timeout overrides.
     pub fn builder() -> BedrockModelBuilder {
         BedrockModelBuilder::default()
@@ -849,6 +859,22 @@ mod tests {
             );
         }
         assert!(!is_context_window_overflow("ValidationException: something else"));
+    }
+
+    #[test]
+    fn default_model_and_with_model_id_resolve_the_expected_config() {
+        assert_eq!(
+            resolve_config(BedrockModelBuilder::default().config)
+                .model_id
+                .as_deref(),
+            Some(MODEL_DEFAULTS.bedrock.model_id)
+        );
+        assert_eq!(
+            resolve_config(BedrockModelBuilder::default().model_id("m-1").config)
+                .model_id
+                .as_deref(),
+            Some("m-1")
+        );
     }
 
     #[test]
