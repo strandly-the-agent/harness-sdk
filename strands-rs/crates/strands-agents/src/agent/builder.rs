@@ -40,6 +40,7 @@ pub struct AgentBuilder {
     plugins: Vec<Arc<dyn Plugin>>,
     conversation_manager: Option<Option<Arc<dyn Plugin>>>,
     session_manager: Option<Arc<SessionManager>>,
+    background_tasks: Option<crate::background_tasks::BackgroundTasksConfig>,
     storage: Option<crate::storage::StorageRef>,
     retry_strategy: Option<Option<Arc<dyn Plugin>>>,
     executor: Option<Arc<dyn ToolExecutor>>,
@@ -187,6 +188,15 @@ impl AgentBuilder {
         self
     }
 
+    /// Run tool calls as background tasks (`backgroundTasks` in TS).
+    pub fn background_tasks(
+        mut self,
+        config: impl Into<crate::background_tasks::BackgroundTasksConfig>,
+    ) -> Self {
+        self.background_tasks = Some(config.into());
+        self
+    }
+
     /// Build and initialize the agent.
     ///
     /// Plugin order (observable through hook order): conversation manager, retry strategy,
@@ -213,6 +223,15 @@ impl AgentBuilder {
         }
         plugins.push(Arc::new(ModelPlugin::new(Arc::clone(&model))));
 
+        let background_tasks = match self.background_tasks {
+            Some(config) => {
+                let plugin = Arc::new(crate::background_tasks::BackgroundTasks::new(config)?);
+                plugins.push(Arc::clone(&plugin) as Arc<dyn Plugin>);
+                Some(plugin)
+            }
+            None => None,
+        };
+
         let mut registry = ToolRegistry::new();
         for tool in self.tools {
             registry.add(tool)?;
@@ -236,6 +255,8 @@ impl AgentBuilder {
                 initialized: AsyncMutex::new(false),
                 storage: self.storage,
                 session_id: RwLock::new(None),
+                background_tasks,
+                continuation_input: RwLock::new(Vec::new()),
             }),
         };
         agent.initialize().await?;
