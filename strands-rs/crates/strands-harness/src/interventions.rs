@@ -53,7 +53,9 @@ mod tests {
     #[test]
     fn resolves_no_interventions_by_default() {
         assert!(resolve_interventions(None).unwrap().is_empty());
-        assert!(resolve_interventions(Some(&InterventionsOption::Off)).unwrap().is_empty());
+        assert!(resolve_interventions(Some(&InterventionsOption::Off))
+            .unwrap()
+            .is_empty());
         assert!(resolve_interventions(Some(&InterventionsOption::Presets(vec![])))
             .unwrap()
             .is_empty());

@@ -11,20 +11,18 @@ use strands_agents::memory::{MemoryManager, MemoryStoreRef};
 use strands_agents::models::Model;
 use strands_agents::plugins::vended::{AgentSkills, SkillSource};
 use strands_agents::plugins::Plugin;
-use strands_agents::session::{FileStorage, SessionManager, SessionManagerOptions, SaveLatestStrategy};
+use strands_agents::session::{FileStorage, SaveLatestStrategy, SessionManager, SessionManagerOptions};
 use strands_agents::storage::LocalFileStorage;
 use strands_agents::tools::ToolRef;
 use strands_agents::ShellTool;
 use strands_agents::{Agent, Error, Result};
 
 use crate::builtin_tools::{
-    builtin_tool_config, enabled_builtin_tools, resolve_builtin_tools, select_builtin_plugins, select_builtin_tools,
-    web_search_explicit, web_search_mode, BuiltinToolName, BuiltinToolSetting, BuiltinToolsConfig, WebSearchMode,
-    WebSearchModel,
+    builtin_tool_config, enabled_builtin_tools, resolve_builtin_tools, select_builtin_plugins,
+    select_builtin_tools, web_search_explicit, web_search_mode, BuiltinToolName, BuiltinToolSetting,
+    BuiltinToolsConfig, WebSearchMode, WebSearchModel,
 };
-use crate::defaults::{
-    DEFAULT_BUILTIN_PLUGINS, DEFAULT_MODEL, DEFAULT_SESSION_DIR, DEFAULT_SKILLS_DIR,
-};
+use crate::defaults::{DEFAULT_BUILTIN_PLUGINS, DEFAULT_MODEL, DEFAULT_SESSION_DIR, DEFAULT_SKILLS_DIR};
 use crate::interventions::{resolve_interventions, InterventionHandler, InterventionsOption};
 use crate::memory::{resolve_memory, ResolveMemoryOptions};
 use crate::models::{resolve_model, supports_web_search, Effort, ModelOption};
@@ -314,9 +312,9 @@ fn build_builtin_tools(
     {
         tools.insert(
             BuiltinToolName::WebFetch,
-            Arc::new(crate::tools::make_web_fetch(crate::tools::MakeWebFetchOptions::new(
-                model.clone(),
-            ))),
+            Arc::new(crate::tools::make_web_fetch(
+                crate::tools::MakeWebFetchOptions::new(model.clone()),
+            )),
         );
         tools.insert(
             BuiltinToolName::WebSearch,
@@ -338,7 +336,10 @@ fn build_builtin_tools(
             .presets
             .insert("generalist".to_string(), Preset::generalist());
         subagent_options.inherited_tools = inherited;
-        tools.insert(BuiltinToolName::Subagent, Arc::new(make_subagent(subagent_options)?));
+        tools.insert(
+            BuiltinToolName::Subagent,
+            Arc::new(make_subagent(subagent_options)?),
+        );
     }
 
     Ok(select_builtin_tools(&names, &tools))
@@ -383,27 +384,34 @@ fn subagent_builder(
         ..options.clone()
     };
 
-    Arc::new(move |spec: ChildAgentConfig| -> BoxFuture<'static, Result<Agent>> {
-        let mut child = parent.clone();
-        let forwarded = forwarded.clone();
-        child.instructions = spec.instructions.clone();
-        if let Some(model) = spec.model.clone() {
-            child.model = Some(ModelOption::Id(model));
-        }
-        let selected = spec.tools.clone();
-        let entries = forwarded.into_iter().map(|(name, setting)| {
-            let keep = selected.is_none() || name == "*" || selected.as_ref().is_some_and(|s| s.contains(&name));
-            let value = if keep { setting_value(&setting) } else { serde_json::Value::Bool(false) };
-            (name, value)
-        });
-        child.builtin_tools = Some(BuiltinToolsConfig::Mapping(entries.collect()));
-        if let Some(selected) = selected {
-            child
-                .tools
-                .retain(|tool| selected.iter().any(|name| name == tool.name()));
-        }
-        Box::pin(create_harness(child))
-    })
+    Arc::new(
+        move |spec: ChildAgentConfig| -> BoxFuture<'static, Result<Agent>> {
+            let mut child = parent.clone();
+            let forwarded = forwarded.clone();
+            child.instructions = spec.instructions.clone();
+            if let Some(model) = spec.model.clone() {
+                child.model = Some(ModelOption::Id(model));
+            }
+            let selected = spec.tools.clone();
+            let entries = forwarded.into_iter().map(|(name, setting)| {
+                let keep =
+                    selected.is_none() || name == "*" || selected.as_ref().is_some_and(|s| s.contains(&name));
+                let value = if keep {
+                    setting_value(&setting)
+                } else {
+                    serde_json::Value::Bool(false)
+                };
+                (name, value)
+            });
+            child.builtin_tools = Some(BuiltinToolsConfig::Mapping(entries.collect()));
+            if let Some(selected) = selected {
+                child
+                    .tools
+                    .retain(|tool| selected.iter().any(|name| name == tool.name()));
+            }
+            Box::pin(create_harness(child))
+        },
+    )
 }
 
 /// The session manager and the agent storage its stash lives in.
@@ -423,7 +431,10 @@ fn resolve_session(
                     return Err(Error::other("session.id must be a non-empty string."));
                 }
             }
-            let dir = config.dir.clone().unwrap_or_else(|| DEFAULT_SESSION_DIR.to_string());
+            let dir = config
+                .dir
+                .clone()
+                .unwrap_or_else(|| DEFAULT_SESSION_DIR.to_string());
             let id = match &config.id {
                 Some(id) => sanitize_session_id(id),
                 None => uuid::Uuid::new_v4().simple().to_string()[..8].to_string(),
@@ -450,7 +461,9 @@ fn skills_plugin(skills: &SkillsOption, existing: &[Arc<dyn Plugin>]) -> Option<
     if let SkillsOption::Instance(plugin) = skills {
         return Some(plugin.clone());
     }
-    let already = existing.iter().any(|plugin| plugin.name() == AgentSkills::new(Vec::<String>::new()).name());
+    let already = existing
+        .iter()
+        .any(|plugin| plugin.name() == AgentSkills::new(Vec::<String>::new()).name());
     if already {
         return None;
     }
@@ -561,7 +574,13 @@ fn sanitize_session_id(id: &str) -> String {
         .trim()
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     if sanitized.is_empty() {
         "default".to_string()
@@ -576,5 +595,176 @@ fn setting_value(setting: &BuiltinToolSetting) -> serde_json::Value {
         BuiltinToolSetting::Enabled(on) => serde_json::Value::Bool(*on),
         BuiltinToolSetting::Exa => serde_json::Value::String("exa".to_string()),
         BuiltinToolSetting::Config(config) => serde_json::Value::Object(config.clone()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strands_agents::test_support::MockMessageModel;
+    use strands_agents::tools::FunctionTool;
+
+    fn mock_model() -> ModelOption {
+        ModelOption::Instance(MockMessageModel::shared(vec![]))
+    }
+
+    /// Options that never touch the real cwd: temp session/memory dirs, skills off.
+    fn options(dir: &std::path::Path) -> HarnessAgentOptions {
+        HarnessAgentOptions {
+            model: Some(mock_model()),
+            skills: SkillsOption::Off,
+            session: SessionOption::Config(SessionConfig {
+                id: Some("test-session".to_string()),
+                dir: Some(dir.join("sessions").to_string_lossy().to_string()),
+            }),
+            memory: MemoryOption::Config(MemoryConfig {
+                dir: Some(dir.join("memory").to_string_lossy().to_string()),
+                stores: Vec::new(),
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn tool_names(agent: &Agent) -> Vec<String> {
+        agent.tools().iter().map(|tool| tool.name().to_string()).collect()
+    }
+
+    #[tokio::test]
+    async fn builds_an_agent_with_the_harness_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent = create_harness(options(dir.path())).await.unwrap();
+
+        let prompt = agent.system_prompt().unwrap().text();
+        assert!(
+            prompt.starts_with(crate::prompt::HARNESS_CONTRACT.trim_start()) || prompt.contains("# Acting"),
+            "{prompt}"
+        );
+
+        let names = tool_names(&agent);
+        assert_eq!(
+            names[..6],
+            ["shell", "read", "write", "edit", "web_fetch", "subagent"].map(String::from),
+            "built-ins in registration order, minus programmatic_tool_caller: {names:?}"
+        );
+
+        assert!(
+            names.iter().any(|name| name == "todo_write"),
+            "the todos plugin is registered: {names:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn persists_the_session_under_the_configured_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent = create_harness(options(dir.path())).await.unwrap();
+        assert!(
+            agent.storage().is_some(),
+            "session storage is wired as agent storage"
+        );
+        let (manager, storage) = resolve_session(&options(dir.path()).session).unwrap();
+        assert!(manager.is_some() && storage.is_some());
+    }
+
+    #[tokio::test]
+    async fn rejects_a_blank_session_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut opts = options(dir.path());
+        opts.session = SessionOption::Config(SessionConfig {
+            id: Some("   ".to_string()),
+            dir: None,
+        });
+        let err = create_harness(opts).await.unwrap_err().to_string();
+        assert!(err.contains("session.id must be a non-empty string."), "{err}");
+    }
+
+    #[tokio::test]
+    async fn rejects_a_consumer_tool_that_collides_with_a_builtin() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut opts = options(dir.path());
+        opts.tools = vec![Arc::new(
+            FunctionTool::builder("read")
+                .description("mine")
+                .handler(|_input: serde_json::Value, _ctx| async move { Ok("ok") }),
+        )];
+        let err = create_harness(opts).await.unwrap_err().to_string();
+        assert!(
+            err.contains(
+                "Tool name \"read\" is registered more than once (from a built-in tool and tools). Rename the tool you passed, or drop the built-in via builtinTools / builtinPlugins."
+            ),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn runs_without_session_memory_or_skills() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut opts = options(dir.path());
+        opts.session = SessionOption::Off;
+        opts.memory = MemoryOption::Off;
+        opts.skills = SkillsOption::Off;
+        let agent = create_harness(opts).await.unwrap();
+        assert!(!tool_names(&agent).contains(&"search_memory".to_string()));
+        assert!(agent.storage().is_none());
+        assert!(!dir.path().join("sessions").exists());
+    }
+
+    #[tokio::test]
+    async fn registers_the_memory_search_tool_when_memory_is_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent = create_harness(options(dir.path())).await.unwrap();
+        assert!(
+            tool_names(&agent).contains(&"search_memory".to_string()),
+            "{:?}",
+            tool_names(&agent)
+        );
+    }
+
+    #[tokio::test]
+    async fn pins_the_builtin_tools_named_in_a_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut opts = options(dir.path());
+        opts.builtin_tools = Some(BuiltinToolsConfig::list(["read", "shell"]));
+        let agent = create_harness(opts).await.unwrap();
+        assert_eq!(tool_names(&agent)[..2], ["shell", "read"].map(String::from));
+        assert!(!tool_names(&agent).contains(&"subagent".to_string()));
+    }
+
+    #[tokio::test]
+    async fn edits_the_defaults_with_a_mapping() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut opts = options(dir.path());
+        opts.builtin_tools = Some(BuiltinToolsConfig::mapping([(
+            "shell",
+            serde_json::Value::Bool(false),
+        )]));
+        let agent = create_harness(opts).await.unwrap();
+        let names = tool_names(&agent);
+        assert!(!names.contains(&"shell".to_string()), "{names:?}");
+        assert!(names.contains(&"read".to_string()), "{names:?}");
+    }
+
+    #[tokio::test]
+    async fn rejects_mcp_servers() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut opts = options(dir.path());
+        opts.mcp_servers = vec!["./mcp.json".to_string()];
+        let err = create_harness(opts).await.unwrap_err().to_string();
+        assert!(err.contains("MCP not supported yet"), "{err}");
+    }
+
+    #[test]
+    fn sanitizes_a_session_id() {
+        assert_eq!(sanitize_session_id("  My Session!  "), "my-session-");
+        assert_eq!(sanitize_session_id("***"), "---");
+    }
+
+    #[test]
+    fn forces_subagent_into_the_always_axis() {
+        let policy = resolve_background_tasks(None, &["subagent".to_string()]).unwrap();
+        assert_eq!(policy.agentic, Some(vec!["*".to_string()]));
+        assert_eq!(policy.always, vec!["subagent".to_string()]);
+        assert!(
+            resolve_background_tasks(Some(&BackgroundTasksOption::Off), &["subagent".to_string()]).is_none()
+        );
     }
 }
