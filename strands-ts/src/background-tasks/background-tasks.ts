@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { continuations } from '../agent/continuation.js'
 import { AgentAsTool } from '../agent/agent-as-tool.js'
+import type { Invocation } from '../agent/invocation.js'
 import { AfterInvocationEvent, BeforeModelCallEvent, InitializedEvent } from '../hooks/events.js'
 import { HookOrder } from '../hooks/types.js'
 import { InterruptError } from '../interrupt.js'
@@ -54,10 +55,10 @@ export class BackgroundTasks implements Plugin {
   private readonly _manageTool: Tool
   private readonly _tasks = new Map<string, BackgroundTask>()
   /**
-   * Dispatching invocation id by task id, used to mark results delivered in a later
+   * Dispatching invocation by task id, used to mark results delivered in a later
    * invocation with `startedBy`. Recovered tasks have no entry and count as earlier.
    */
-  private readonly _taskDispatchInvocation = new Map<string, number>()
+  private readonly _taskDispatchInvocation = new Map<string, Invocation | undefined>()
   private _agent!: Agent
   private _manager!: BackgroundTaskManager
 
@@ -193,13 +194,14 @@ export class BackgroundTasks implements Plugin {
     toolUse: ToolUseData,
     invocationState: InvocationState,
     passId: string,
-    tool: Tool
+    tool: Tool,
+    invocation?: Invocation
   ): Promise<ToolResultBlock> {
     if (this._agent.cancelSignal.aborted) return toolError(toolUse.toolUseId, 'Tool execution cancelled')
 
     try {
-      const task = await this._manager.submit(toolUse, invocationState, passId, tool)
-      this._taskDispatchInvocation.set(task.taskId, this._agent._invocationId)
+      const task = await this._manager.submit(toolUse, invocationState, passId, tool, invocation)
+      this._taskDispatchInvocation.set(task.taskId, invocation)
       return new ToolResultBlock({
         toolUseId: toolUse.toolUseId,
         status: 'success',
@@ -328,7 +330,7 @@ export class BackgroundTasks implements Plugin {
       args: terminalTasks.flatMap((task) => {
         // Results delivered in a later invocation carry provenance, so the model does
         // not fold them into its answer to the current caller.
-        const dispatchedHere = this._taskDispatchInvocation.get(task.taskId) === this._agent._invocationId
+        const dispatchedHere = this._taskDispatchInvocation.get(task.taskId) === event.invocation
         return [
           new Message({
             role: 'assistant',
