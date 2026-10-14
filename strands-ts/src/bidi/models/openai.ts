@@ -156,7 +156,12 @@ export interface OpenAIRealtimeModelOptions extends OpenAIRealtimeModelConfig {
   /** Input transcription model identifier. Pass `null` to disable user transcription. */
   transcriptionModelId: string | null
 
-  /** OpenAI API key. Defaults to `OPENAI_API_KEY`. */
+  /**
+   * OpenAI API key. Defaults to `OPENAI_API_KEY` in Node.
+   *
+   * In browsers, prefer a short-lived client secret minted by your server (`POST /v1/realtime/client_secrets`)
+   * so a long-lived key never reaches the page.
+   */
   apiKey?: string
 
   /** OpenAI organization. Defaults to `OPENAI_ORGANIZATION`. */
@@ -410,10 +415,27 @@ function formatKeyList(keys: string[]): string {
   return `[${keys.map((key) => `'${key}'`).join(', ')}]`
 }
 
-function defaultWebSocketFactory(url: string, headers: Record<string, string>): OpenAIRealtimeWebSocket {
-  // Node's global WebSocket accepts handshake headers, which the DOM type does not describe.
-  const options = { headers } as unknown as string[]
-  return new WebSocket(url, options) as unknown as OpenAIRealtimeWebSocket
+/**
+ * Open the realtime WebSocket with the runtime's native WebSocket.
+ *
+ * Node's global WebSocket accepts handshake headers. Browsers cannot set headers on a WebSocket, so
+ * there the API key (or an ephemeral client secret) travels as a subprotocol, the same way the
+ * official `openai` package authenticates in browsers.
+ *
+ * @internal
+ */
+export function defaultWebSocketFactory(url: string, headers: Record<string, string>): OpenAIRealtimeWebSocket {
+  if (globalThis?.process?.versions?.node) {
+    // The DOM type does not describe the Node-only options form.
+    const options = { headers } as unknown as string[]
+    return new WebSocket(url, options) as unknown as OpenAIRealtimeWebSocket
+  }
+
+  if (headers['OpenAI-Organization'] || headers['OpenAI-Project']) {
+    logger.warn('organization and project cannot be sent from a browser websocket | ignoring')
+  }
+  const apiKey = (headers['Authorization'] ?? '').replace(/^Bearer /, '')
+  return new WebSocket(url, ['realtime', `openai-insecure-api-key.${apiKey}`]) as unknown as OpenAIRealtimeWebSocket
 }
 
 /**
