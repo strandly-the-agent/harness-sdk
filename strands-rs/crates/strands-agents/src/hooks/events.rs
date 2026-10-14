@@ -145,7 +145,7 @@ impl HookEvent for BeforeToolCallEvent {}
 
 impl BeforeToolCallEvent {
     /// Ask the caller for input before this tool runs: the answer on resume, otherwise
-    /// [`Error::Interrupt`](crate::error::Error::Interrupt).
+    /// `Error::Interrupt`.
     pub fn interrupt<T: serde::de::DeserializeOwned>(
         &self,
         params: crate::types::InterruptParams,

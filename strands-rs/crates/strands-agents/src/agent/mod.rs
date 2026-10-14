@@ -375,7 +375,7 @@ impl Agent {
     /// Where this agent runs commands and file operations.
     ///
     /// The configured sandbox, else the process-wide default
-    /// ([`crate::sandbox::set_default_sandbox`]); errors with [`Error::DefaultNotConfigured`]
+    /// ([`crate::sandbox::set_default_sandbox`]); errors with [`Error::DefaultNotConfigured`](crate::error::Error::DefaultNotConfigured)
     /// when neither is set, as the TS getter throws.
     pub fn sandbox(&self) -> Result<crate::sandbox::SandboxRef> {
         match &self.inner.sandbox {
