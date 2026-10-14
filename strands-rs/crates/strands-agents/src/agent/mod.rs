@@ -140,7 +140,12 @@ impl Agent {
     }
 
     /// Replace the model.
-    pub fn set_model(&self, model: Arc<dyn Model>) {
+    pub fn set_model(&self, model: impl Model + 'static) {
+        self.set_model_arc(Arc::new(model));
+    }
+
+    /// [`Agent::set_model`] with an already shared model.
+    pub fn set_model_arc(&self, model: Arc<dyn Model>) {
         *self.inner.model.write() = model;
     }
 

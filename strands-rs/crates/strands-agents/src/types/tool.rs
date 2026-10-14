@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
-use super::{JsonSchema, JsonValue};
+use super::JsonValue;
 
 /// Describes a tool to the model.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -15,10 +15,10 @@ pub struct ToolSpec {
     pub description: String,
     /// JSON Schema for the input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input_schema: Option<JsonSchema>,
+    pub input_schema: Option<JsonValue>,
     /// JSON Schema for the output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_schema: Option<JsonSchema>,
+    pub output_schema: Option<JsonValue>,
     /// Optional metadata (MCP hints); absent key = unknown. Not sent to providers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<Map<String, JsonValue>>,
@@ -37,14 +37,14 @@ impl ToolSpec {
     }
 
     /// Set the input schema (builder style).
-    pub fn with_input_schema(mut self, schema: JsonSchema) -> Self {
+    pub fn with_input_schema(mut self, schema: JsonValue) -> Self {
         self.input_schema = Some(schema);
         self
     }
 }
 
 /// The schema `FunctionTool` uses when none is given.
-pub fn default_input_schema() -> JsonSchema {
+pub fn default_input_schema() -> JsonValue {
     serde_json::json!({ "type": "object", "properties": {}, "additionalProperties": false })
 }
 
@@ -63,6 +63,7 @@ pub struct ToolUse {
 /// How the model may choose tools. Wire: `{"auto":{}}`, `{"any":{}}`, `{"tool":{"name":"x"}}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ToolChoice {
     /// Model decides.
     Auto {},

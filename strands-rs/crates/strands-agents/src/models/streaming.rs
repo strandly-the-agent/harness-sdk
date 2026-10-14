@@ -9,6 +9,7 @@ use crate::types::{
 /// A raw streaming event from a model provider.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ModelStreamEvent {
     /// A message started.
     #[serde(rename = "modelMessageStartEvent")]
@@ -91,6 +92,7 @@ impl ModelStreamEvent {
 /// Content block start payload.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ContentBlockStart {
     /// A tool-use block is starting.
     #[serde(rename = "toolUseStart", rename_all = "camelCase")]
@@ -108,6 +110,7 @@ pub enum ContentBlockStart {
 /// Content block delta payload.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ContentBlockDelta {
     /// Text.
     #[serde(rename = "textDelta")]

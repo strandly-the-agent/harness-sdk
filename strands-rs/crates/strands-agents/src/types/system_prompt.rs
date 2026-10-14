@@ -7,6 +7,7 @@ use super::{CachePointBlock, GuardContentBlock};
 /// A system prompt block: text, cache point, or guard content.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum SystemContentBlock {
     /// Plain text.
     Text(String),

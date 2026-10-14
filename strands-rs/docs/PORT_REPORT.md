@@ -1,0 +1,114 @@
+# Port report: `strands-ts` → `strands-agents` (Rust)
+
+Branch: `agent-tasks/strands-rs` on `strandly-the-agent/harness-sdk` (no PR by request).
+Source: `strands-ts/src` @ `041a47f68`. Scope: option 1 — the core SDK subset that makes an
+agent run; see [DESIGN.md](DESIGN.md) for in/out of scope.
+
+## Status
+
+<!-- GATES -->
+
+## Structural map
+
+| TS (`strands-ts/src`) | Rust (`crates/strands-agents/src`) | Notes |
+|---|---|---|
+| `types/messages.ts`, `media.ts`, `citations.ts`, `json.ts` | `types/{messages,media,citations,stop_reason,system_prompt,tool}.rs` | serde enums, externally tagged |
+| `tools/types.ts` | `types/tool.rs` | `ToolSpec`, `ToolUse`, `ToolChoice` |
+| `errors.ts` | `error.rs` | one `Error` enum; `Error::name()` = TS class name |
+| `models/model.ts`, `streaming.ts` | `models/{model,streaming}.rs` | `Model` trait, `stream_aggregated`, token heuristic |
+| `models/defaults.ts` | `models/defaults.rs` | context-window table + region-prefix strip |
+| `models/bedrock.ts` | `models/bedrock/{mod,format,parse}.rs` | feature `bedrock` (default) |
+| `tools/tool.ts` | `tools/tool.rs` | `Tool` trait, `ToolContext`, `create_error_result` |
+| `tools/function-tool.ts`, `zod-tool.ts`, `tool-factory.ts` | `tools/function_tool.rs` | builder + `typed_handler` (schemars/jsonschema) |
+| `tools/noop-tool.ts`, `structured-output-tool.ts` | `tools/{noop_tool,structured_output}.rs` | |
+| `registry/tool-registry.ts` | `tools/registry.rs` | `IndexMap`, fuzzy `resolve` |
+| `tools/executors/*` | `tools/executor.rs` | sequential + concurrent |
+| `hooks/*` | `hooks/{registry,events}.rs` | `TypeId`-keyed registry, 16 event structs |
+| `plugins/*` | `plugins/{mod,registry,model_plugin}.rs` | |
+| `retry/*` | `retry/*.rs` | injectable sleeper |
+| `logging/*` | `logging.rs` | `tracing` + `warn_once` |
+| `state-store.ts` | `state_store.rs` | |
+| `conversation-manager/{conversation-manager,null-*,sliding-window-*}.ts` | `conversation_manager/{mod,null_manager,sliding_window}.rs` | UTF-16 slicing for truncation |
+| `session/{types,storage,file-storage,validation,session-manager}.ts` | `session/{types,storage,file_storage,validation,session_manager,agent_snapshot}.rs` | snapshot design, wire-compatible files |
+| `agent/agent.ts`, `tool-caller.ts`, `continuation.ts` (resume), `types/agent.ts` | `agent/{mod,builder,event_loop,tool_caller,result,invocation_state}.rs` | spawned task + mpsc stream |
+| `__fixtures__/mock-message-model.ts`, `model-test-helpers.ts` | `test_support.rs` (feature `test-support`) | |
+
+Not ported (seams kept): interrupts/HITL, checkpoints/snapshots of agent state beyond sessions,
+background tasks, middleware, agent-as-tool/delegation, MCP, A2A, multiagent, sandbox, printer,
+telemetry, memory manager, summarizing conversation manager, S3 storage, non-Bedrock providers,
+`AWS_BEARER_TOKEN_BEDROCK` auth.
+
+## Traceability
+
+Per-module matrices (TS `it(...)` → Rust test → status) are in `docs/matrices/`. Summary:
+
+| Module | TS tests in scope | Ported | Skipped (reason class) |
+|---|---|---|---|
+| function-tool / zod-tool / factory / noop / structured-output | 78 | 72 | 6 — not portable (JS aliasing, stack traces, type guards) |
+| session (file-storage, session-manager, validation) | 79 | 59 + 32 extra | 20 — stash/multi-agent/context-manager not ported |
+| bedrock + defaults | 237 | ~130 | ~105 — need live AWS / mocked SdkError / log capture / clientConfig surface |
+| conversation-manager (null, sliding window, base) | 87 | 86 | 1 — needs loop (now covered by `tests/agent_loop.rs` overflow test) |
+| executors | 3 groups | 3 (18 tests) | interrupt / telemetry / middleware groups |
+| agent loop (`agent.test.ts` core, tool-caller, `AgentResult`) | ~120 in scope | ~75 (53 integration + 21 tool caller) | Proxy accessor, `Tool.stream`, out-of-scope features |
+| retry, plugins, hooks, types, models/model.rs | — | matrices built by the validator: retry 33/34, plugins 17/21; types/model/hooks covered by grouped tests | 5 retry names to confirm (see validation.md) |
+
+Independent validation verdict: **PASS-WITH-FINDINGS** (wire-compat round-trip of TS fixtures:
+3/3 byte-identical; sensitive-surface diff: nothing Rust does that TS doesn't).
+
+## Decision log (deviations from TS and why)
+
+1. **`Agent` is a `Clone` handle** (`Arc<AgentInner>` + `parking_lot` locks); `invoke`/`stream`
+   take `&self`. TS mutates a single object from hooks mid-loop; Rust can't hand `&mut Agent` to
+   `'static` callbacks. No lock guard crosses an `.await` (reviewed).
+2. **Streams end with the result.** `stream()` yields `AgentStreamEvent`s and the last item is
+   `AgentResult(..)`; `invoke()` drains it. Mirrors TS where `AgentResultEvent` is the last yield.
+   The loop runs in a spawned task feeding an `mpsc` channel; cleanup events are emitted
+   explicitly. Dropping the stream cancels the invocation (TS stops at the abandoned `yield`).
+3. **`ConcurrentInvocation` arrives as the stream's first `Err`** (and `Err` from `invoke`),
+   not a call-time throw, because `stream()` returns the stream, not `Result<_>`.
+4. **No middleware/interrupt layers** (`_streamWithMiddleware`/`_streamCore`): hook dispatch is
+   inline. Hook errors abort the invocation; TS's cleanup-phase warn-and-swallow is not reproduced.
+5. **Tools return `Result<ToolResultBlock>`**; progress via `ctx.progress(v).await`. `Err` is
+   reserved for `Cancelled`; tool failures are `Ok(status: error)` exactly as TS.
+   `Tool '<name>' did not return a result` is unrepresentable.
+6. **Typed tools use `schemars` + `jsonschema`** instead of zod; validation messages are
+   `jsonschema`'s (same path/message shape, different wording). `FunctionTool` (untyped) does no
+   validation, as in TS.
+7. **Direct tool calls** (`agent.tool(name).call(..)`) follow TS `tool-caller.ts`: no executor,
+   no Before/AfterToolCall hooks, three recorded messages when `record_direct_tool_call`.
+8. **Concurrent executor** uses `FuturesUnordered` (one in-flight step per tool). A tool's
+   `Err(Cancelled)` becomes an `EXECUTION_CANCELLED_MESSAGE` error result (matches Sequential/TS).
+9. **Session module is snapshot-based** (`FileStorage`, `SnapshotStorage`, `SessionManager`)
+   because that is what `strands-ts/src/session` actually is; files are wire-compatible.
+10. **Sliding-window truncation slices on UTF-16 code units** to match JS `slice`/`.length`.
+11. **Bedrock**: no `clientConfig`/requestHandler surface (region/timeout + `from_client`);
+    `context_window_limit` resolves lazily; input/output redaction are two events; reasoning
+    deltas are one-of in the Rust SDK so a combined TS delta becomes two; `additionalArgs`
+    unsupported (`warn_once`).
+12. **Plugin init order** follows TS `agent.ts` (survey §8.2): conversation manager, retry
+    strategy, user plugins, session manager, `ModelPlugin`.
+13. **`Error::MaxTokens` boxes the partial message** (clippy `result_large_err`).
+14. **Logging is `tracing`**; log-assertion tests are dropped (no capture layer).
+
+## Review findings (independent passes)
+
+<!-- REVIEWS -->
+
+## Known gaps / follow-ups
+
+- Bedrock: throttling/rethrow/mid-stream error mapping and the non-streaming path are untested
+  (no mocked transport); bearer-token auth untested; `AWS_BEARER_TOKEN_BEDROCK` not supported.
+- Session: stash / multi-agent snapshot parts not ported.
+- Retry: confirm "no backoff timer when already cancelled" case (validator flag).
+- Hooks: events are compile-checked and exercised by the loop tests, but have no written matrix.
+- `projected_input_tokens` uses the heuristic estimator only (no provider `count_tokens`).
+- Doc tests: 2 ignored (`add_callback` example needs a runtime).
+
+## How this was built
+
+Foundation (types, errors, `Model`/`Tool`/hook traits, `Agent` handle) was written first on the
+integration branch; six modules were then ported in parallel on per-module branches
+(`agent-tasks/strands-rs-<module>`, one git worktree each) and merged; the agent loop followed in
+three passes; test-gap passes closed sliding-window and Bedrock cache-point coverage; three
+independent review passes (correctness reviewer, API bar-raiser, port validator) produced the
+findings above, which were fixed on `-fix-loop`/`-fix-api` branches and merged.

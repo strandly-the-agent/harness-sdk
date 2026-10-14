@@ -49,7 +49,8 @@ pub struct CountTokensOptions {
 }
 
 /// Guardrail redaction of the user's input.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Redaction {
     /// Replacement text for the user message.
     pub user_message: String,
@@ -127,6 +128,38 @@ pub trait Model: Send + Sync {
         options: &'a StreamOptions,
     ) -> BoxStream<'a, Result<AggregatedItem>> {
         stream_aggregated(self.stream(messages, options))
+    }
+}
+
+/// Shared models are models too, so `Arc<M>` can be passed wherever `impl Model` is expected.
+#[async_trait]
+impl<M: Model + ?Sized> Model for std::sync::Arc<M> {
+    fn model_id(&self) -> Option<String> {
+        (**self).model_id()
+    }
+
+    fn context_window_limit(&self) -> Option<u64> {
+        (**self).context_window_limit()
+    }
+
+    fn stateful(&self) -> bool {
+        (**self).stateful()
+    }
+
+    fn stream<'a>(
+        &'a self,
+        messages: &'a [Message],
+        options: &'a StreamOptions,
+    ) -> BoxStream<'a, Result<ModelStreamEvent>> {
+        (**self).stream(messages, options)
+    }
+
+    async fn count_tokens(&self, messages: &[Message], options: &CountTokensOptions) -> Result<u64> {
+        (**self).count_tokens(messages, options).await
+    }
+
+    fn estimate_utilization(&self, input_tokens: u64) -> f64 {
+        (**self).estimate_utilization(input_tokens)
     }
 }
 

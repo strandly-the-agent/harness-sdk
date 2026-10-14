@@ -62,13 +62,7 @@ impl From<String> for Cancel {
     }
 }
 
-/// Guardrail redaction of the user's input.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Redaction {
-    /// Replacement user message.
-    pub user_message: String,
-}
+pub use crate::models::Redaction;
 
 /// The model's final message and stop reason.
 #[derive(Clone, Debug, PartialEq, Serialize)]

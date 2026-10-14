@@ -26,7 +26,10 @@ pub use tool::{ToolChoice, ToolSpec, ToolUse};
 /// Arbitrary JSON (`JSONValue` in TS).
 pub type JsonValue = serde_json::Value;
 /// A JSON Schema document, kept as raw JSON (`JSONSchema` in TS).
-pub type JsonSchema = serde_json::Value;
+///
+/// An alias for documentation only; public signatures use [`JsonValue`] so this never shadows
+/// the `schemars::JsonSchema` trait at a call site.
+pub type JsonSchema = JsonValue;
 
 /// serde helpers for `Vec<u8>` ⇄ standard base64 strings (TS `Uint8Array` wire form).
 pub(crate) mod base64_bytes {

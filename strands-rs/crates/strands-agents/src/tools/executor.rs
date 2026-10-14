@@ -15,11 +15,14 @@ use crate::tools::tool::{ToolContext, ToolRef, ToolStreamEvent};
 use crate::types::{ToolResultBlock, ToolUse, ToolUseBlock};
 
 /// Text of the result produced when a hook cancels a tool call without a message.
+#[doc(hidden)]
 pub const HOOK_CANCELLED_MESSAGE: &str = "Tool cancelled by hook";
 /// Text of the result produced when the invocation is cancelled before a tool runs.
+#[doc(hidden)]
 pub const EXECUTION_CANCELLED_MESSAGE: &str = "Tool execution cancelled";
 
 /// One tool-executor invocation.
+#[non_exhaustive]
 pub struct ExecuteToolsInput {
     /// Agent whose tools are being executed.
     pub agent: Agent,
@@ -31,8 +34,26 @@ pub struct ExecuteToolsInput {
     pub cancel: CancellationToken,
 }
 
+impl ExecuteToolsInput {
+    /// One executor invocation over `tool_uses`.
+    pub fn new(
+        agent: Agent,
+        tool_uses: Vec<ToolUseBlock>,
+        invocation_state: InvocationState,
+        cancel: CancellationToken,
+    ) -> Self {
+        Self {
+            agent,
+            tool_uses,
+            invocation_state,
+            cancel,
+        }
+    }
+}
+
 /// Events an executor emits while running tools.
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum ToolExecutorEvent {
     /// A tool is about to run (hooks have already seen it).
     BeforeToolCall(BeforeToolCallEvent),
@@ -419,7 +440,7 @@ mod tests {
         agent.with_tool_registry(|r| {
             r.add_or_replace([echo_tool("a"), echo_tool("b")]).unwrap();
         });
-        agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
+        let _ = agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
             e.tool_use.name = "b".to_owned();
             Ok(())
         });
@@ -442,7 +463,7 @@ mod tests {
         let agent = test_agent();
         agent.with_tool_registry(|r| r.add(echo_tool("a")).unwrap());
         let replacement = echo_tool("replacement");
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback(move |e: &mut BeforeToolCallEvent| {
                 e.selected_tool = Some(replacement.clone());
@@ -478,7 +499,7 @@ mod tests {
             )) as ToolRef)
                 .unwrap()
         });
-        agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
+        let _ = agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
             e.cancel = Cancel::Reason("nope".to_owned());
             Ok(())
         });
@@ -493,7 +514,7 @@ mod tests {
     async fn hook_cancel_without_a_message_uses_the_default_text() {
         let agent = test_agent();
         agent.with_tool_registry(|r| r.add(echo_tool("a")).unwrap());
-        agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
+        let _ = agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
             e.cancel = Cancel::Yes;
             Ok(())
         });
@@ -506,7 +527,7 @@ mod tests {
     async fn after_hook_can_replace_the_result() {
         let agent = test_agent();
         agent.with_tool_registry(|r| r.add(echo_tool("a")).unwrap());
-        agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
+        let _ = agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
             e.result = ToolResultBlock::error(&e.result.tool_use_id, "replaced");
             Ok(())
         });
@@ -534,7 +555,7 @@ mod tests {
         });
         let attempts = Arc::new(AtomicUsize::new(0));
         let hook_attempts = attempts.clone();
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback(move |e: &mut AfterToolCallEvent| {
                 e.retry = hook_attempts.fetch_add(1, Ordering::SeqCst) == 0;
@@ -550,7 +571,7 @@ mod tests {
     async fn normalizes_a_result_id_rewritten_by_a_hook() {
         let agent = test_agent();
         agent.with_tool_registry(|r| r.add(echo_tool("a")).unwrap());
-        agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
+        let _ = agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
             e.result.tool_use_id = "hijacked".to_owned();
             Ok(())
         });
@@ -692,7 +713,7 @@ mod tests {
             ) as ToolRef)
                 .unwrap()
         });
-        agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
+        let _ = agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
             e.retry = true;
             Ok(())
         });

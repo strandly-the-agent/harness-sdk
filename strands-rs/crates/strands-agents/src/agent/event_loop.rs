@@ -28,6 +28,7 @@ use crate::types::{
 };
 
 /// Error text when `invoke`/`stream` is called while another invocation runs.
+#[doc(hidden)]
 pub const CONCURRENT_INVOCATION_MESSAGE: &str = "Agent is already processing an invocation. Wait for the \
      current invoke() or stream() call to complete before invoking again.";
 
@@ -38,6 +39,7 @@ const CANCELLED_MESSAGE: &str = "Cancelled by user";
 const NO_TOOL_USE_BLOCKS_MESSAGE: &str = "Model indicated toolUse but no tool use blocks found in message";
 
 /// Error text when a forced structured-output tool call is still not made.
+#[doc(hidden)]
 pub const STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE: &str =
     "The model failed to invoke the structured output tool even after it was forced.";
 
@@ -45,6 +47,7 @@ const NO_STRUCTURED_OUTPUT_MESSAGE: &str = "The agent stopped without producing 
 
 /// Per-invocation caps (§9.4 step 9). A `None` field is uncapped; comparison is "at most".
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Limits {
     /// Maximum model↔tool cycles in this invocation.
     pub turns: Option<u64>,
@@ -55,6 +58,27 @@ pub struct Limits {
 }
 
 impl Limits {
+    /// Cap the number of model↔tool cycles.
+    #[must_use]
+    pub fn with_turns(mut self, turns: u64) -> Self {
+        self.turns = Some(turns);
+        self
+    }
+
+    /// Cap accumulated output tokens.
+    #[must_use]
+    pub fn with_output_tokens(mut self, tokens: u64) -> Self {
+        self.output_tokens = Some(tokens);
+        self
+    }
+
+    /// Cap accumulated total tokens.
+    #[must_use]
+    pub fn with_total_tokens(mut self, tokens: u64) -> Self {
+        self.total_tokens = Some(tokens);
+        self
+    }
+
     /// `_validateLimits`: every present cap must be positive.
     pub fn validate(&self) -> Result<()> {
         for (key, value) in [
@@ -87,7 +111,10 @@ impl Limits {
 }
 
 /// Options for one invocation.
+///
+/// Build from [`InvokeOptions::default`] and the `with_*` setters.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct InvokeOptions {
     /// Shared per-invocation state; every event carries this handle.
     pub invocation_state: Option<InvocationState>,
@@ -97,6 +124,36 @@ pub struct InvokeOptions {
     pub limits: Option<Limits>,
     /// JSON Schema the final answer must satisfy, via the structured-output tool.
     pub structured_output_schema: Option<JsonValue>,
+}
+
+impl InvokeOptions {
+    /// Set the shared per-invocation state.
+    #[must_use]
+    pub fn with_invocation_state(mut self, state: InvocationState) -> Self {
+        self.invocation_state = Some(state);
+        self
+    }
+
+    /// Set external cancellation; the loop's own token is a child of it.
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = Some(cancel);
+        self
+    }
+
+    /// Set the per-invocation caps.
+    #[must_use]
+    pub fn with_limits(mut self, limits: Limits) -> Self {
+        self.limits = Some(limits);
+        self
+    }
+
+    /// Set the JSON Schema the final answer must satisfy.
+    #[must_use]
+    pub fn with_structured_output_schema(mut self, schema: JsonValue) -> Self {
+        self.structured_output_schema = Some(schema);
+        self
+    }
 }
 
 /// An event yielded by [`Agent::stream`]; `AgentResult` is always last.
@@ -175,6 +232,7 @@ impl std::fmt::Debug for AgentStreamEvent {
 }
 
 /// Stream of [`AgentStreamEvent`]s produced by a running invocation.
+#[must_use = "an AgentStream does nothing unless polled"]
 pub struct AgentStream {
     rx: mpsc::Receiver<Result<AgentStreamEvent>>,
     cancel: Option<CancellationToken>,
@@ -252,7 +310,7 @@ impl Agent {
         input: impl Into<InvokeInput>,
         options: InvokeOptions,
     ) -> Result<AgentResult> {
-        let mut stream = self.stream(input, options);
+        let mut stream = self.stream_with(input, options);
         let mut result = None;
         while let Some(event) = stream.next().await {
             if let Some(agent_result) = event?.result() {
@@ -270,10 +328,7 @@ impl Agent {
         let result = self
             .invoke_with(
                 input,
-                InvokeOptions {
-                    structured_output_schema: Some(crate::tools::input_schema_for::<T>()),
-                    ..InvokeOptions::default()
-                },
+                InvokeOptions::default().with_structured_output_schema(crate::tools::input_schema_for::<T>()),
             )
             .await?;
         let value = result
@@ -284,11 +339,17 @@ impl Agent {
 
     /// Run the loop, streaming every event as it happens.
     ///
-    /// The loop runs in a spawned task. Dropping the stream cancels the invocation.
+    /// The loop runs in a spawned task, so cleanup events are emitted even when the consumer stops
+    /// reading. Dropping the stream cancels the invocation.
     ///
     /// # Panics
     /// Panics if called outside a tokio runtime (it spawns the invocation task).
-    pub fn stream(&self, input: impl Into<InvokeInput>, options: InvokeOptions) -> AgentStream {
+    pub fn stream(&self, input: impl Into<InvokeInput>) -> AgentStream {
+        self.stream_with(input, InvokeOptions::default())
+    }
+
+    /// [`Agent::stream`] with options.
+    pub fn stream_with(&self, input: impl Into<InvokeInput>, options: InvokeOptions) -> AgentStream {
         let (tx, rx) = mpsc::channel(64);
         if self.inner.invoking.swap(true, Ordering::SeqCst) {
             let _ = tx.try_send(Err(Error::ConcurrentInvocation(
@@ -739,12 +800,9 @@ async fn invoke_model(
                         stop_data: Some(ModelStopData {
                             message: result.message.clone(),
                             stop_reason: result.stop_reason.clone(),
-                            redaction: result
-                                .redaction
-                                .as_ref()
-                                .map(|r| crate::hooks::events::Redaction {
-                                    user_message: r.user_message.clone(),
-                                }),
+                            redaction: result.redaction.as_ref().map(|r| crate::models::Redaction {
+                                user_message: r.user_message.clone(),
+                            }),
                         }),
                         error: None,
                         invocation_state: state.clone(),

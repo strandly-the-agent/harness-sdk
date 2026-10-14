@@ -85,7 +85,7 @@ pub(crate) mod test_plugins {
         async fn init_agent(&self, agent: &Agent) -> Result<()> {
             self.initialized.store(true, Ordering::SeqCst);
             let fired = Arc::clone(&self.hook_fired);
-            agent
+            let _ = agent
                 .hooks()
                 .add_sync_callback::<BeforeInvocationEvent, _>(move |_| {
                     fired.store(true, Ordering::SeqCst);
