@@ -108,6 +108,7 @@ mod tests {
             last_message: Message::new(Role::Assistant, content),
             invocation_state: InvocationState::new(),
             structured_output: structured,
+            checkpoint: None,
         }
     }
 
