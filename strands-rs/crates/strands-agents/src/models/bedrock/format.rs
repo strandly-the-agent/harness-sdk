@@ -2080,4 +2080,794 @@ mod tests {
             .expect_err("reasoning block without content must fail");
         assert!(matches!(error, Error::Model { .. }), "got {error:?}");
     }
+
+    fn auto_cache(messages_ttl: Option<CacheSection>) -> BedrockModelConfig {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                strategy: Some(CacheStrategy::Auto),
+                messages_ttl,
+                ..Default::default()
+            },
+        );
+        config
+    }
+
+    fn cp_block(ttl: Option<&str>) -> ContentBlock {
+        ContentBlock::CachePoint(CachePointBlock {
+            cache_type: Default::default(),
+            ttl: ttl.map(str::to_owned),
+        })
+    }
+
+    fn doc_block(name: &str, format: crate::types::DocumentFormat) -> ContentBlock {
+        ContentBlock::Document(DocumentBlock {
+            name: name.to_owned(),
+            format,
+            source: DocumentSource::Bytes(vec![1]),
+            citations: None,
+            context: None,
+        })
+    }
+
+    fn img_block(format: crate::types::ImageFormat, source: ImageSource) -> ContentBlock {
+        ContentBlock::Image(ImageBlock { format, source })
+    }
+
+    fn block_tag(block: &bt::ContentBlock) -> String {
+        match block {
+            bt::ContentBlock::Text(text) => format!("text:{text}"),
+            bt::ContentBlock::CachePoint(point) => match point.ttl() {
+                Some(ttl) => format!("cachePoint:{}", ttl.as_str()),
+                None => "cachePoint".to_owned(),
+            },
+            bt::ContentBlock::Document(doc) => format!("document:{}", doc.name()),
+            bt::ContentBlock::Image(image) => format!("image:{}", image.format().as_str()),
+            bt::ContentBlock::ToolResult(_) => "toolResult".to_owned(),
+            bt::ContentBlock::ReasoningContent(_) => "reasoning".to_owned(),
+            bt::ContentBlock::GuardContent(guard) => match guard {
+                bt::GuardrailConverseContentBlock::Text(text) => format!("guardText:{}", text.text()),
+                bt::GuardrailConverseContentBlock::Image(image) => {
+                    format!("guardImage:{}", image.format().as_str())
+                }
+                other => format!("guardOther:{other:?}"),
+            },
+            other => format!("other:{other:?}"),
+        }
+    }
+
+    fn tags(request: &FormattedRequest, index: usize) -> Vec<String> {
+        request.messages[index].content().iter().map(block_tag).collect()
+    }
+
+    #[test]
+    fn replaces_a_leading_caller_placed_cache_point_with_automatic_placement() {
+        let config = auto_cache(None);
+        let messages = [user(vec![cp_block(None), ContentBlock::text("durable ask")])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["text:durable ask", "cachePoint"]);
+    }
+
+    #[test]
+    fn leaves_a_message_that_was_only_a_cache_point_empty() {
+        let config = auto_cache(None);
+        let request = format(&config, &[user(vec![cp_block(None)])], &StreamOptions::default());
+        assert!(tags(&request, 0).is_empty());
+    }
+
+    #[test]
+    fn honors_a_cache_point_the_caller_placed_in_the_last_user_message() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(None),
+            ContentBlock::text("<context-status>rebuilt each call</context-status>"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:durable ask",
+                "cachePoint",
+                "text:<context-status>rebuilt each call</context-status>",
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_only_the_first_of_three_cache_points_and_gives_it_the_configured_ttl() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(None),
+            ContentBlock::text("per-call"),
+            cp_block(None),
+            ContentBlock::text("more per-call"),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:durable ask",
+                "cachePoint:1h",
+                "text:per-call",
+                "text:more per-call",
+            ]
+        );
+    }
+
+    #[test]
+    fn relocates_an_honored_cache_point_over_the_adjacent_document_run_only() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze these"),
+            doc_block("earlier", crate::types::DocumentFormat::Md),
+            ContentBlock::text("notes"),
+            doc_block("adjacent", crate::types::DocumentFormat::Md),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:analyze these",
+                "document:earlier",
+                "text:notes",
+                "cachePoint",
+                "document:adjacent",
+            ]
+        );
+    }
+
+    #[test]
+    fn still_strips_cache_points_in_earlier_messages() {
+        let config = auto_cache(None);
+        let messages = [
+            user(vec![ContentBlock::text("old ask"), cp_block(None)]),
+            Message::new(Role::Assistant, vec![ContentBlock::text("reply")]),
+            user(vec![ContentBlock::text("new ask"), cp_block(None)]),
+        ];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["text:old ask"]);
+        assert_eq!(tags(&request, 1), ["text:reply"]);
+        assert_eq!(tags(&request, 2), ["text:new ask", "cachePoint"]);
+    }
+
+    #[test]
+    fn applies_the_configured_messages_ttl_to_an_honored_cache_point_without_one() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(None),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint:1h", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn does_not_forward_an_empty_configured_messages_ttl() {
+        let config = auto_cache(Some(CacheSection::Ttl(String::new())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(Some("1h")),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn normalizes_the_ttl_of_a_relocated_cache_point() {
+        let config = auto_cache(Some(CacheSection::Ttl("5m".into())));
+        let messages = [user(vec![
+            ContentBlock::text("analyze"),
+            doc_block("d", crate::types::DocumentFormat::Md),
+            cp_block(Some("1h")),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:analyze", "cachePoint:5m", "document:d", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn normalizes_a_hand_placed_ttl_to_the_configured_one() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(Some("5m")),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint:1h", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn drops_a_hand_placed_ttl_when_no_messages_ttl_is_configured() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(Some("1h")),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn applies_the_configured_messages_ttl_over_a_null_ttl_on_the_caller_point() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![ContentBlock::text("durable ask"), cp_block(None)])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["text:durable ask", "cachePoint:1h"]);
+    }
+
+    #[test]
+    fn relocates_an_honored_cache_point_ahead_of_a_directly_preceding_non_pdf_document() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze this"),
+            doc_block("readme", crate::types::DocumentFormat::Md),
+            cp_block(None),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:analyze this",
+                "cachePoint",
+                "document:readme",
+                "text:per-call",
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_relocate_an_honored_cache_point_a_document_does_not_directly_precede() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze this"),
+            doc_block("readme", crate::types::DocumentFormat::Md),
+            ContentBlock::text("notes"),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:analyze this", "document:readme", "text:notes", "cachePoint",]
+        );
+    }
+
+    #[test]
+    fn leaves_an_honored_cache_point_after_a_pdf_document() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze this"),
+            doc_block("report", crate::types::DocumentFormat::Pdf),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:analyze this", "document:report", "cachePoint"]
+        );
+    }
+
+    #[test]
+    fn drops_an_honored_cache_point_when_a_non_pdf_document_leads_the_message() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            doc_block("readme", crate::types::DocumentFormat::Md),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["document:readme"]);
+    }
+
+    fn tools_cache_ttls(request: &FormattedRequest) -> Vec<Option<String>> {
+        request
+            .tool_config
+            .as_ref()
+            .map(|tools| {
+                tools
+                    .tools()
+                    .iter()
+                    .filter_map(|tool| tool.as_cache_point().ok())
+                    .map(|point| point.ttl().map(|ttl| ttl.as_str().to_owned()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn with_tools_and_system(system: SystemPrompt) -> StreamOptions {
+        StreamOptions {
+            tool_specs: vec![tool_spec("t1")],
+            system_prompt: Some(system),
+            ..Default::default()
+        }
+    }
+
+    fn system_with_cache_point(ttl: Option<&str>) -> SystemPrompt {
+        SystemPrompt::Blocks(vec![
+            SystemContentBlock::Text("be brief".into()),
+            SystemContentBlock::CachePoint(CachePointBlock {
+                cache_type: Default::default(),
+                ttl: ttl.map(str::to_owned),
+            }),
+        ])
+    }
+
+    #[test]
+    fn caches_every_section_when_no_strategy_is_given() {
+        let mut config = claude();
+        with_cache(&mut config, CacheConfig::default());
+        let options = with_tools_and_system(SystemPrompt::Text("be brief".into()));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(tools_cache_ttls(&request), vec![None]);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+        assert_eq!(msg_cache_ttls(&request, 0), vec![None]);
+    }
+
+    #[test]
+    fn caches_only_the_conversation_when_tools_ttl_is_false() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                tools_ttl: Some(CacheSection::Disabled),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(SystemPrompt::Text("be brief".into()));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert!(tools_cache_ttls(&request).is_empty());
+        assert_eq!(msg_cache_ttls(&request, 0), vec![None]);
+    }
+
+    #[test]
+    fn emits_nothing_when_every_section_is_disabled() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                tools_ttl: Some(CacheSection::Disabled),
+                system_prompt_ttl: Some(CacheSection::Disabled),
+                messages_ttl: Some(CacheSection::Disabled),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(SystemPrompt::Text("be brief".into()));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert!(tools_cache_ttls(&request).is_empty());
+        assert!(system_cache_ttls(&request).is_empty());
+        assert!(msg_cache_ttls(&request, 0).is_empty());
+    }
+
+    #[test]
+    fn propagates_only_tools_ttl_when_messages_ttl_is_not_set() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                tools_ttl: Some(CacheSection::Ttl("1h".into())),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            tool_specs: vec![tool_spec("t1")],
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(tools_cache_ttls(&request), vec![Some("1h".to_owned())]);
+        assert_eq!(msg_cache_ttls(&request, 0), vec![None]);
+    }
+
+    #[test]
+    fn propagates_only_messages_ttl_when_tools_ttl_is_not_set() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                messages_ttl: Some(CacheSection::Ttl("5m".into())),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            tool_specs: vec![tool_spec("t1")],
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(tools_cache_ttls(&request), vec![None]);
+        assert_eq!(msg_cache_ttls(&request, 0), vec![Some("5m".to_owned())]);
+    }
+
+    #[test]
+    fn applies_the_shared_ttl_to_a_caller_placed_system_cache_point() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![Some("1h".to_owned())]);
+    }
+
+    #[test]
+    fn leaves_a_system_cache_point_ttl_the_caller_wrote_as_written() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(Some("5m"))),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![Some("5m".to_owned())]);
+    }
+
+    #[test]
+    fn leaves_a_system_cache_point_alone_when_no_ttl_is_configured() {
+        let mut config = claude();
+        with_cache(&mut config, CacheConfig::default());
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+    }
+
+    #[test]
+    fn treats_an_empty_shared_ttl_as_unconfigured_for_system_points() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some(String::new()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(Some(""))),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+    }
+
+    #[test]
+    fn leaves_a_system_cache_point_alone_when_the_model_does_not_support_caching() {
+        let mut config = BedrockModelConfig::new("amazon.titan-text-v1");
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+    }
+
+    #[test]
+    fn leaves_a_system_cache_point_alone_when_the_tools_checkpoint_ahead_of_it_is_shorter() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                tools_ttl: Some(CacheSection::Ttl("5m".into())),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(system_with_cache_point(None));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(tools_cache_ttls(&request), vec![Some("5m".to_owned())]);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+    }
+
+    #[test]
+    fn applies_the_shared_ttl_when_the_tools_section_carries_it_too() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                tools_ttl: Some(CacheSection::Ttl("1h".into())),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(system_with_cache_point(None));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![Some("1h".to_owned())]);
+    }
+
+    #[test]
+    fn applies_the_shared_ttl_when_the_tools_section_is_disabled() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                tools_ttl: Some(CacheSection::Disabled),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(system_with_cache_point(None));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert!(tools_cache_ttls(&request).is_empty());
+        assert_eq!(system_cache_ttls(&request), vec![Some("1h".to_owned())]);
+    }
+
+    #[test]
+    fn applies_the_shared_ttl_when_the_request_carries_no_tools_at_all() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                tools_ttl: Some(CacheSection::Ttl("5m".into())),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![Some("1h".to_owned())]);
+    }
+
+    #[test]
+    fn does_not_mutate_the_system_prompt_blocks_the_caller_owns() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let snapshot = options.system_prompt.clone();
+        let _ = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(options.system_prompt, snapshot);
+    }
+
+    #[test]
+    fn places_the_cache_point_ahead_of_every_block_of_a_multi_block_tail() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            ContentBlock::text("injected"),
+            ContentBlock::text("status"),
+        ])];
+        let options = StreamOptions {
+            dynamic_trailing_blocks: Some(2),
+            ..Default::default()
+        };
+        let request = format(&config, &messages, &options);
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint", "text:injected", "text:status",]
+        );
+    }
+
+    #[test]
+    fn steps_a_per_call_boundary_back_over_a_directly_preceding_non_pdf_document() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze this"),
+            doc_block("readme", crate::types::DocumentFormat::Md),
+            ContentBlock::text("per-call"),
+        ])];
+        let options = StreamOptions {
+            dynamic_trailing_blocks: Some(1),
+            ..Default::default()
+        };
+        let request = format(&config, &messages, &options);
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:analyze this",
+                "cachePoint",
+                "document:readme",
+                "text:per-call",
+            ]
+        );
+    }
+
+    #[test]
+    fn applies_the_configured_messages_ttl_to_a_per_call_boundary() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            ContentBlock::text("per-call"),
+        ])];
+        let options = StreamOptions {
+            dynamic_trailing_blocks: Some(1),
+            ..Default::default()
+        };
+        let request = format(&config, &messages, &options);
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint:1h", "text:per-call"]
+        );
+    }
+
+    fn guarding() -> BedrockModelConfig {
+        let mut config = claude();
+        config.guardrail_config = Some(BedrockGuardrailConfig {
+            guardrail_identifier: "gr-1".into(),
+            guardrail_version: "1".into(),
+            guard_latest_user_message: Some(true),
+            ..Default::default()
+        });
+        config
+    }
+
+    #[test]
+    fn wraps_latest_user_message_image_content_in_guard_content_when_enabled() {
+        let messages = [user(vec![img_block(
+            crate::types::ImageFormat::Png,
+            ImageSource::Bytes(vec![1, 2, 3]),
+        )])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["guardImage:png"]);
+    }
+
+    #[test]
+    fn wraps_supported_image_formats_png_and_jpeg_with_bytes_source() {
+        for (image_format, tag) in [
+            (crate::types::ImageFormat::Png, "guardImage:png"),
+            (crate::types::ImageFormat::Jpeg, "guardImage:jpeg"),
+        ] {
+            let messages = [user(vec![img_block(image_format, ImageSource::Bytes(vec![1]))])];
+            let request = format(&guarding(), &messages, &StreamOptions::default());
+            assert_eq!(tags(&request, 0), [tag]);
+        }
+    }
+
+    #[test]
+    fn skips_wrapping_images_with_unsupported_formats() {
+        for (image_format, tag) in [
+            (crate::types::ImageFormat::Gif, "image:gif"),
+            (crate::types::ImageFormat::Webp, "image:webp"),
+        ] {
+            let messages = [user(vec![img_block(image_format, ImageSource::Bytes(vec![1]))])];
+            let request = format(&guarding(), &messages, &StreamOptions::default());
+            assert_eq!(tags(&request, 0), [tag]);
+        }
+    }
+
+    #[test]
+    fn skips_wrapping_images_with_a_non_bytes_source() {
+        let sources = [
+            ImageSource::Location(crate::types::S3Location {
+                uri: "s3://bucket/key.png".into(),
+                bucket_owner: None,
+            }),
+            ImageSource::Url("s3://bucket/key.png".into()),
+        ];
+        for source in sources {
+            let messages = [user(vec![img_block(crate::types::ImageFormat::Png, source)])];
+            let request = format(&guarding(), &messages, &StreamOptions::default());
+            assert_eq!(tags(&request, 0), ["image:png"]);
+        }
+    }
+
+    #[test]
+    fn does_not_wrap_assistant_messages() {
+        let messages = [
+            user(vec![ContentBlock::text("ask")]),
+            Message::new(Role::Assistant, vec![ContentBlock::text("reply")]),
+        ];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["guardText:ask"]);
+        assert_eq!(tags(&request, 1), ["text:reply"]);
+    }
+
+    #[test]
+    fn wraps_only_the_last_user_text_or_image_message_in_multi_turn_conversation() {
+        let messages = [
+            user(vec![ContentBlock::text("older")]),
+            Message::new(Role::Assistant, vec![ContentBlock::text("reply")]),
+            user(vec![ContentBlock::text("newer")]),
+        ];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["text:older"]);
+        assert_eq!(tags(&request, 2), ["guardText:newer"]);
+    }
+
+    #[test]
+    fn wraps_all_text_and_image_blocks_in_the_latest_user_message() {
+        let messages = [user(vec![
+            ContentBlock::text("first"),
+            img_block(crate::types::ImageFormat::Png, ImageSource::Bytes(vec![1])),
+            ContentBlock::text("second"),
+        ])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["guardText:first", "guardImage:png", "guardText:second"]
+        );
+    }
+
+    #[test]
+    fn handles_no_user_messages_with_text_or_image_content_gracefully() {
+        let messages = [user(vec![ContentBlock::ToolResult(ToolResultBlock::success(
+            "t1",
+            vec![ToolResultContent::Text("done".into())],
+        ))])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["toolResult"]);
+    }
+
+    #[test]
+    fn preserves_explicit_guard_content_block_in_messages_without_double_wrapping() {
+        let messages = [user(vec![
+            ContentBlock::GuardContent(GuardContentBlock {
+                text: Some(crate::types::GuardContentText {
+                    qualifiers: vec![],
+                    text: "grounding".into(),
+                }),
+                image: None,
+            }),
+            ContentBlock::text("ask"),
+        ])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["guardText:grounding", "guardText:ask"]);
+    }
+
+    #[test]
+    fn does_not_wrap_reasoning_or_cache_point_blocks() {
+        let messages = [user(vec![
+            ContentBlock::text("ask"),
+            ContentBlock::Reasoning(ReasoningBlock {
+                text: Some("thinking".into()),
+                signature: Some("sig".into()),
+                redacted_content: None,
+            }),
+            cp_block(None),
+        ])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["guardText:ask", "reasoning", "cachePoint"]);
+    }
 }
