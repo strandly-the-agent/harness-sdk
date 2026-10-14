@@ -612,6 +612,9 @@ mod tests {
     fn options(dir: &std::path::Path) -> HarnessAgentOptions {
         HarnessAgentOptions {
             model: Some(mock_model()),
+            // Explicitly off so these tests never touch the process-wide `warn_once` set that the
+            // `models` tests assert on.
+            caching: Some(CachingOption::Off),
             skills: SkillsOption::Off,
             session: SessionOption::Config(SessionConfig {
                 id: Some("test-session".to_string()),
