@@ -8,12 +8,14 @@
 //! A consumer can swap the backend by passing their own `stores`; the harness still owns the
 //! manager, so its tool policy (`search_memory` on, `add_memory` off) applies either way.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use strands_agents::memory::{
-    AddMessagesContext, ExtractionConfig, FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryManager,
-    MemoryStore, MemoryStoreRef, Metadata, ModelExtractor, SearchOptions,
+    AddMessagesContext, ExtractionConfig, FileMemoryStore, FileMemoryStoreConfig, MemoryEntry,
+    MemoryInjectionConfig, MemoryManager, MemoryManagerConfig, MemoryStore, MemoryStoreRef, MemoryToolConfig,
+    Metadata, ModelExtractor, SearchOptions,
 };
 use strands_agents::models::Model;
 use strands_agents::storage::LocalFileStorage;
@@ -35,7 +37,7 @@ pub struct ResolveMemoryOptions {
     /// The agent's resolved model, used as the extraction model for the default store.
     pub model: Option<Arc<dyn Model>>,
     /// Directory the default store's memory files live in (`memory.dir`).
-    pub dir: Option<String>,
+    pub dir: Option<PathBuf>,
     /// The agent's `builtin_tools.web_fetch` model override; it wins over `model` for extraction.
     pub web_fetch_model: Option<Arc<dyn Model>>,
     /// Whether the manager may write to its stores. `true` (the default) builds a writable default
@@ -51,9 +53,9 @@ pub struct ResolveMemoryOptions {
 ///
 /// The default store's keys are pre-namespaced to `dir` itself, so files land at `dir/<slug>.md`
 /// without the store's own `memory/<name>/` scoping doubling the path.
-pub async fn resolve_memory(options: ResolveMemoryOptions) -> Result<MemoryManager> {
+pub async fn resolve_memory(options: ResolveMemoryOptions) -> Result<Arc<MemoryManager>> {
     let writable = options.writable.unwrap_or(true);
-    let dir = options.dir.unwrap_or_else(|| DEFAULT_MEMORY_DIR.to_string());
+    let dir = options.dir.unwrap_or_else(|| PathBuf::from(DEFAULT_MEMORY_DIR));
     let stores: Vec<MemoryStoreRef> = if options.stores.is_empty() {
         let extractor = if writable {
             options.web_fetch_model.clone().or_else(|| options.model.clone())
@@ -66,14 +68,22 @@ pub async fn resolve_memory(options: ResolveMemoryOptions) -> Result<MemoryManag
     } else {
         options.stores.iter().map(|s| read_only(s.clone())).collect()
     };
-    MemoryManager::new(stores)
+    MemoryManager::shared(MemoryManagerConfig {
+        stores,
+        search_tool: Some(MemoryToolConfig::default()),
+        add_tool: None,
+        injection: Some(MemoryInjectionConfig::default()),
+        extraction_trigger: None,
+    })
 }
 
 /// The default file-backed store, writing markdown directly under `dir`.
-fn build_default_store(dir: &str, writable: bool, extractor: Option<Arc<dyn Model>>) -> FileMemoryStore {
+fn build_default_store(dir: &Path, writable: bool, extractor: Option<Arc<dyn Model>>) -> FileMemoryStore {
     FileMemoryStore::with_config(FileMemoryStoreConfig {
         name: MEMORY_STORE_NAME.to_string(),
-        storage: Some(Arc::new(LocalFileStorage::new(dir).namespaced(""))),
+        storage: Some(Arc::new(
+            LocalFileStorage::new(dir.to_string_lossy().as_ref()).namespaced(""),
+        )),
         writable: Some(writable),
         extraction: extractor.map(|model| ExtractionConfig {
             extractor: Some(Arc::new(ModelExtractor::new(model))),

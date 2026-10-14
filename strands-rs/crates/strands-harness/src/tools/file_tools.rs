@@ -153,11 +153,11 @@ fn read_schema() -> JsonValue {
         "properties": {
             "path": { "type": "string", "description": "Absolute path to the file." },
             "offset": {
-                "type": "number",
+                "type": "integer",
                 "description": "1-indexed line to start from. Defaults to the first line. Text files only.",
             },
             "limit": {
-                "type": "number",
+                "type": "integer",
                 "description": "Maximum number of lines to return. Defaults to 2000. Text files only.",
             },
         },

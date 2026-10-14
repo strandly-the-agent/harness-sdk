@@ -1,7 +1,7 @@
 //! `create_harness` (`harness-ts/src/agent.ts`): the preconfigured agent in one call.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -19,24 +19,28 @@ use strands_agents::{Agent, Error, Result};
 
 use crate::builtin_tools::{
     builtin_tool_config, enabled_builtin_tools, resolve_builtin_tools, select_builtin_plugins,
-    select_builtin_tools, web_search_explicit, web_search_mode, BuiltinToolName, BuiltinToolSetting,
-    BuiltinToolsConfig, WebSearchMode, WebSearchModel,
+    select_builtin_tools, web_search_explicit, web_search_mode, BuiltinPluginName, BuiltinToolName,
+    BuiltinToolSetting, BuiltinToolsConfig, WebSearchMode, WebSearchModel,
 };
 use crate::defaults::{DEFAULT_BUILTIN_PLUGINS, DEFAULT_MODEL, DEFAULT_SESSION_DIR, DEFAULT_SKILLS_DIR};
 use crate::interventions::{resolve_interventions, InterventionHandler, InterventionsOption};
 use crate::memory::{resolve_memory, ResolveMemoryOptions};
-use crate::models::{resolve_model, supports_web_search, Effort, ModelOption};
+use crate::models::{resolve_model, supports_web_search, Effort, ModelOption, ResolveModelOptions};
 use crate::prompt::build_system_prompt;
-use crate::tools::subagent::{make_subagent, AgentBuilderFn, ChildAgentConfig, MakeSubagentOptions, Preset};
+use crate::tools::subagent::{
+    make_subagent, AgentBuilderFn, ChildAgentConfig, Choice, ContextAxis, MakeSubagentOptions, Opt, Preset,
+    CONTEXT_MODES,
+};
 use crate::tools::{edit, make_read, write as write_tool, ReadConfig};
 
 /// Tools that always run in the background, whatever the configured policy says.
 const ALWAYS_BACKGROUND_TOOL_NAMES: &[&str] = &["subagent"];
 
-/// The `caching` option. Unset (`None`) means "on, but implicitly".
+/// The `caching` option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CachingOption {
-    /// On where the provider supports it (the default).
+    /// On where the provider supports it, warning (not erroring) where it does not — the default,
+    /// and what TS does for an unset `caching`.
     #[default]
     Auto,
     /// On, explicitly.
@@ -46,11 +50,12 @@ pub enum CachingOption {
 }
 
 /// The `background_tasks` option.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum BackgroundTasksOption {
     /// Background execution disabled entirely (forced tools are *not* re-added).
     Off,
     /// The default policy: every tool is agentically backgroundable.
+    #[default]
     On,
     /// An explicit policy.
     Config(BackgroundTasksConfig),
@@ -62,7 +67,7 @@ pub struct SessionConfig {
     /// Session id; sanitized to `[a-z0-9_-]`. Defaults to a random 8-character id.
     pub id: Option<String>,
     /// Directory sessions are written to (default [`DEFAULT_SESSION_DIR`]).
-    pub dir: Option<String>,
+    pub dir: Option<PathBuf>,
 }
 
 /// The `session` option.
@@ -76,7 +81,7 @@ pub enum SessionOption {
     /// Persist with explicit settings.
     Config(SessionConfig),
     /// A pre-built manager.
-    Manager(Arc<SessionManager>),
+    Instance(Arc<SessionManager>),
 }
 
 /// The `skills` option.
@@ -97,7 +102,7 @@ pub enum SkillsOption {
 #[derive(Default, Clone)]
 pub struct MemoryConfig {
     /// Directory the default file store writes to (default `./.agent/memory`).
-    pub dir: Option<String>,
+    pub dir: Option<PathBuf>,
     /// Consumer stores to manage instead of the default file store.
     pub stores: Vec<MemoryStoreRef>,
 }
@@ -113,7 +118,7 @@ pub enum MemoryOption {
     /// File-backed memory with explicit settings.
     Config(MemoryConfig),
     /// A pre-built manager.
-    Manager(Arc<MemoryManager>),
+    Instance(Arc<MemoryManager>),
 }
 
 impl MemoryOption {
@@ -141,12 +146,13 @@ pub struct HarnessAgentOptions {
     pub mcp_servers: Vec<String>,
     /// Which built-ins to enable, and their config. Defaults to [`crate::defaults::DEFAULT_BUILTIN_TOOLS`].
     pub builtin_tools: Option<BuiltinToolsConfig>,
-    /// Which built-in plugins to add. Defaults to `["todos", "environment"]`.
-    pub builtin_plugins: Option<Vec<String>>,
+    /// Which built-in plugins to add. Defaults to [`crate::defaults::DEFAULT_BUILTIN_PLUGINS`];
+    /// an explicit empty list adds none.
+    pub builtin_plugins: Option<Vec<BuiltinPluginName>>,
     /// Background-task policy. Defaults to `{ agentic: ["*"] }` with `subagent` forced to `always`.
-    pub background_tasks: Option<BackgroundTasksOption>,
-    /// Prompt caching. Unset means on-where-supported with a warning instead of an error.
-    pub caching: Option<CachingOption>,
+    pub background_tasks: BackgroundTasksOption,
+    /// Prompt caching; [`CachingOption::Auto`] (on where supported, warn where not) by default.
+    pub caching: CachingOption,
     /// Context management; [`ContextManagerOption::Auto`] by default.
     pub context_manager: ContextManagerOption,
     /// Session persistence; on by default.
@@ -156,7 +162,7 @@ pub struct HarnessAgentOptions {
     /// Long-term memory; on by default.
     pub memory: MemoryOption,
     /// Intervention presets. Not supported yet; see [`resolve_interventions`].
-    pub interventions: Option<InterventionsOption>,
+    pub interventions: InterventionsOption,
     /// Full system-prompt override, replacing the harness contract and `instructions`.
     pub system_prompt: Option<String>,
     /// Agent id.
@@ -189,17 +195,13 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
     )?;
     let web_fetch_config = builtin_tool_config(&resolved_builtins, BuiltinToolName::WebFetch);
 
-    let caching_explicit = options.caching.is_some();
-    let caching_on = !matches!(options.caching, Some(CachingOption::Off));
-
-    let model = resolve_model(
-        options.model.clone(),
-        DEFAULT_MODEL,
-        options.effort,
-        web_search == Some(WebSearchMode::Native),
-        caching_on,
-        caching_explicit,
-    )
+    let model = resolve_model(ResolveModelOptions {
+        model: options.model.clone(),
+        default: DEFAULT_MODEL.to_string(),
+        effort: options.effort,
+        web_search: web_search == Some(WebSearchMode::Native),
+        caching: options.caching,
+    })
     .await?;
 
     let system_prompt = match &options.system_prompt {
@@ -219,7 +221,7 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
         plugins.push(plugin);
     }
     let builtin_plugin_names: Vec<&str> = match &options.builtin_plugins {
-        Some(names) => names.iter().map(String::as_str).collect(),
+        Some(names) => names.iter().map(|name| name.as_str()).collect(),
         None => DEFAULT_BUILTIN_PLUGINS.to_vec(),
     };
     plugins.extend(select_builtin_plugins(&builtin_plugin_names, &plugins)?);
@@ -242,14 +244,14 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
     let mut agent_tools = builtin;
     agent_tools.extend(consumer_tools);
 
-    let _interventions: Vec<InterventionHandler> = resolve_interventions(options.interventions.as_ref())?;
+    let _interventions: Vec<InterventionHandler> = resolve_interventions(&options.interventions)?;
 
     let forced: Vec<String> = agent_tools
         .iter()
         .map(|tool| tool.name().to_string())
         .filter(|name| ALWAYS_BACKGROUND_TOOL_NAMES.contains(&name.as_str()))
         .collect();
-    let background = resolve_background_tasks(options.background_tasks.as_ref(), &forced);
+    let background = resolve_background_tasks(&options.background_tasks, &forced);
 
     let mut builder = Agent::builder()
         .model_arc(model)
@@ -325,10 +327,17 @@ fn build_builtin_tools(
     let _ = model;
 
     if names.contains(&BuiltinToolName::Subagent) {
+        // TS inherits the enabled built-in *names* (so `subagent` itself is selectable, bounded by
+        // the depth guard); `web_search` is a model flag, and `programmatic_tool_caller` is unported.
         let inherited: Vec<String> = names
             .iter()
-            .filter(|name| **name != BuiltinToolName::WebSearch)
-            .filter_map(|name| tools.get(name).map(|tool| tool.name().to_string()))
+            .filter(|name| {
+                !matches!(
+                    name,
+                    BuiltinToolName::WebSearch | BuiltinToolName::ProgrammaticToolCaller
+                )
+            })
+            .map(|name| name.as_str().to_string())
             .chain(consumer_tools.iter().map(|tool| tool.name().to_string()))
             .collect();
         let mut subagent_options = MakeSubagentOptions::new(subagent_builder(options, resolved, web_search));
@@ -336,6 +345,13 @@ fn build_builtin_tools(
             .presets
             .insert("generalist".to_string(), Preset::generalist());
         subagent_options.inherited_tools = inherited;
+        // Offer context sharing; the generalist preset still defaults to `none` (isolated).
+        subagent_options.context = ContextAxis::Choice(Choice::new(
+            CONTEXT_MODES
+                .iter()
+                .map(|mode| Opt::new(mode.as_str(), *mode))
+                .collect(),
+        ));
         tools.insert(
             BuiltinToolName::Subagent,
             Arc::new(make_subagent(subagent_options)?),
@@ -368,7 +384,7 @@ fn subagent_builder(
         Some(_) => {}
     }
 
-    let memory = if matches!(options.memory, MemoryOption::Manager(_)) {
+    let memory = if matches!(options.memory, MemoryOption::Instance(_)) {
         MemoryOption::Off
     } else {
         options.memory.clone()
@@ -420,7 +436,7 @@ fn resolve_session(
 ) -> Result<(Option<Arc<SessionManager>>, Option<LocalFileStorage>)> {
     match session {
         SessionOption::Off => Ok((None, None)),
-        SessionOption::Manager(manager) => Ok((Some(manager.clone()), None)),
+        SessionOption::Instance(manager) => Ok((Some(manager.clone()), None)),
         SessionOption::On | SessionOption::Config(_) => {
             let config = match session {
                 SessionOption::Config(config) => config.clone(),
@@ -434,7 +450,7 @@ fn resolve_session(
             let dir = config
                 .dir
                 .clone()
-                .unwrap_or_else(|| DEFAULT_SESSION_DIR.to_string());
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR));
             let id = match &config.id {
                 Some(id) => sanitize_session_id(id),
                 None => uuid::Uuid::new_v4().simple().to_string()[..8].to_string(),
@@ -447,7 +463,7 @@ fn resolve_session(
                     snapshot_trigger: None,
                 },
             )?;
-            let storage = LocalFileStorage::new(Path::new(&dir).join(&id).to_string_lossy().as_ref());
+            let storage = LocalFileStorage::new(dir.join(&id).to_string_lossy().as_ref());
             Ok((Some(Arc::new(manager)), Some(storage)))
         }
     }
@@ -491,23 +507,33 @@ async fn resolve_memory_option(
     if options.memory.is_off() {
         return Ok(None);
     }
-    if let MemoryOption::Manager(manager) = &options.memory {
+    if let MemoryOption::Instance(manager) = &options.memory {
         return Ok(Some(manager.clone()));
     }
     let config = match &options.memory {
         MemoryOption::Config(config) => config.clone(),
         _ => MemoryConfig::default(),
     };
-    let _ = web_fetch;
+    // TS passes `builtinTools.web_fetch` into `resolveMemory`; its `model` wins for extraction.
+    let web_fetch_model = match web_fetch.and_then(|config| config.get("model")) {
+        Some(serde_json::Value::String(id)) => Some(
+            resolve_model(ResolveModelOptions {
+                model: Some(ModelOption::Id(id.clone())),
+                ..Default::default()
+            })
+            .await?,
+        ),
+        _ => None,
+    };
     let manager = resolve_memory(ResolveMemoryOptions {
         stores: config.stores,
         model: Some(model.clone()),
         dir: config.dir,
-        web_fetch_model: None,
+        web_fetch_model,
         writable: None,
     })
     .await?;
-    Ok(Some(Arc::new(manager)))
+    Ok(Some(manager))
 }
 
 fn plugin_tools(plugins: &[Arc<dyn Plugin>]) -> Vec<ToolRef> {
@@ -545,13 +571,13 @@ fn check_name_collisions(sources: &[(&str, bool, &Vec<ToolRef>)]) -> Result<()> 
 /// The background-task policy: `{ agentic: ["*"] }` by default, with `forced` tools moved to
 /// `always` and removed from the other axes. `Off` disables background execution outright.
 fn resolve_background_tasks(
-    configured: Option<&BackgroundTasksOption>,
+    configured: &BackgroundTasksOption,
     forced: &[String],
 ) -> Option<BackgroundTasksConfig> {
     let mut policy = match configured {
-        Some(BackgroundTasksOption::Off) => return None,
-        Some(BackgroundTasksOption::Config(config)) => config.clone(),
-        None | Some(BackgroundTasksOption::On) => BackgroundTasksConfig {
+        BackgroundTasksOption::Off => return None,
+        BackgroundTasksOption::Config(config) => config.clone(),
+        BackgroundTasksOption::On => BackgroundTasksConfig {
             agentic: Some(vec!["*".to_string()]),
             ..Default::default()
         },
@@ -614,14 +640,14 @@ mod tests {
             model: Some(mock_model()),
             // Explicitly off so these tests never touch the process-wide `warn_once` set that the
             // `models` tests assert on.
-            caching: Some(CachingOption::Off),
+            caching: CachingOption::Off,
             skills: SkillsOption::Off,
             session: SessionOption::Config(SessionConfig {
                 id: Some("test-session".to_string()),
-                dir: Some(dir.join("sessions").to_string_lossy().to_string()),
+                dir: Some(dir.join("sessions")),
             }),
             memory: MemoryOption::Config(MemoryConfig {
-                dir: Some(dir.join("memory").to_string_lossy().to_string()),
+                dir: Some(dir.join("memory")),
                 stores: Vec::new(),
             }),
             ..Default::default()
@@ -763,11 +789,10 @@ mod tests {
 
     #[test]
     fn forces_subagent_into_the_always_axis() {
-        let policy = resolve_background_tasks(None, &["subagent".to_string()]).unwrap();
+        let policy =
+            resolve_background_tasks(&BackgroundTasksOption::default(), &["subagent".to_string()]).unwrap();
         assert_eq!(policy.agentic, Some(vec!["*".to_string()]));
         assert_eq!(policy.always, vec!["subagent".to_string()]);
-        assert!(
-            resolve_background_tasks(Some(&BackgroundTasksOption::Off), &["subagent".to_string()]).is_none()
-        );
+        assert!(resolve_background_tasks(&BackgroundTasksOption::Off, &["subagent".to_string()]).is_none());
     }
 }

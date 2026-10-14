@@ -33,6 +33,25 @@ pub const BUILTIN_TOOL_NAMES: &[BuiltinToolName] = &[
 /// Every built-in plugin name.
 pub const BUILTIN_PLUGIN_NAMES: &[&str] = &["todos", "environment"];
 
+/// A built-in plugin the harness can add (`builtin_plugins`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BuiltinPluginName {
+    /// The `todo_write` plugin.
+    Todos,
+    /// The environment-context injector.
+    Environment,
+}
+
+impl BuiltinPluginName {
+    /// Wire name, as it appears in `BUILTIN_PLUGIN_NAMES`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Todos => "todos",
+            Self::Environment => "environment",
+        }
+    }
+}
+
 /// A built-in tool the harness can offer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BuiltinToolName {

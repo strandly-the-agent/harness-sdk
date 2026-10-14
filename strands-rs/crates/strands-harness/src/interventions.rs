@@ -2,8 +2,8 @@
 //!
 //! In TypeScript, `interventions` coerces presets (`'approve-writes'`, a Cedar policy, a handler)
 //! into SDK `InterventionHandler`s that gate tool calls. The Rust SDK has no intervention seam
-//! yet, so this module ports the option shape and the resolver's contract only: `None`/
-//! [`InterventionsOption::Off`]/an empty list resolve to "no handlers", and anything else is a
+//! yet, so this module ports the option shape and the resolver's contract only:
+//! [`InterventionsOption::Off`] (the default) and an empty list resolve to "no handlers", and anything else is a
 //! configuration error instead of being silently ignored (an intervention that does not run is a
 //! missing guardrail, not a cosmetic gap).
 
@@ -33,13 +33,13 @@ pub enum InterventionsOption {
 
 /// Coerce the `interventions` sugar into handlers.
 ///
-/// `None`, [`InterventionsOption::Off`] and an empty preset list yield no handlers; any named
-/// preset is rejected, because the Rust SDK cannot enforce it yet.
-pub fn resolve_interventions(value: Option<&InterventionsOption>) -> Result<Vec<InterventionHandler>> {
+/// [`InterventionsOption::Off`] and an empty preset list yield no handlers; any named preset is
+/// rejected, because the Rust SDK cannot enforce it yet.
+pub fn resolve_interventions(value: &InterventionsOption) -> Result<Vec<InterventionHandler>> {
     match value {
-        None | Some(InterventionsOption::Off) => Ok(Vec::new()),
-        Some(InterventionsOption::Presets(presets)) if presets.is_empty() => Ok(Vec::new()),
-        Some(InterventionsOption::Presets(presets)) => Err(Error::other(format!(
+        InterventionsOption::Off => Ok(Vec::new()),
+        InterventionsOption::Presets(presets) if presets.is_empty() => Ok(Vec::new()),
+        InterventionsOption::Presets(presets) => Err(Error::other(format!(
             "interventions are not supported by the Rust SDK yet (requested: {}). Remove the option or gate the tool calls in your own plugin.",
             presets.join(", ")
         ))),
@@ -52,22 +52,22 @@ mod tests {
 
     #[test]
     fn resolves_no_interventions_by_default() {
-        assert!(resolve_interventions(None).unwrap().is_empty());
-        assert!(resolve_interventions(Some(&InterventionsOption::Off))
+        assert!(resolve_interventions(&InterventionsOption::default())
             .unwrap()
             .is_empty());
-        assert!(resolve_interventions(Some(&InterventionsOption::Presets(vec![])))
+        assert!(resolve_interventions(&InterventionsOption::Off)
+            .unwrap()
+            .is_empty());
+        assert!(resolve_interventions(&InterventionsOption::Presets(vec![]))
             .unwrap()
             .is_empty());
     }
 
     #[test]
     fn rejects_a_requested_preset() {
-        let err = resolve_interventions(Some(&InterventionsOption::Presets(vec![
-            "approve-writes".to_string()
-        ])))
-        .unwrap_err()
-        .to_string();
+        let err = resolve_interventions(&InterventionsOption::Presets(vec!["approve-writes".to_string()]))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("not supported by the Rust SDK yet"), "{err}");
         assert!(err.contains("approve-writes"), "{err}");
     }

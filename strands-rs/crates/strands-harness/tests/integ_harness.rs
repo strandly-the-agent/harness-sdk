@@ -13,25 +13,20 @@
 use std::sync::Arc;
 
 use strands_agents::memory::MemoryManager;
-use strands_harness::defaults::DEFAULT_MODEL;
 use strands_harness::{
-    create_harness, resolve_memory, resolve_model, Effort, HarnessAgentOptions, MemoryOption,
-    ResolveMemoryOptions, SessionConfig, SessionOption, SkillsOption,
+    create_harness, resolve_memory, resolve_model, HarnessAgentOptions, MemoryOption, ResolveMemoryOptions,
+    ResolveModelOptions, SessionConfig, SessionOption, SkillsOption,
 };
 
-async fn memory_manager(dir: &str) -> Arc<MemoryManager> {
-    let model = resolve_model(None, DEFAULT_MODEL, Effort::Auto, false, true, false)
-        .await
-        .unwrap();
-    Arc::new(
-        resolve_memory(ResolveMemoryOptions {
-            dir: Some(dir.to_owned()),
-            model: Some(model),
-            ..Default::default()
-        })
-        .await
-        .unwrap(),
-    )
+async fn memory_manager(dir: &std::path::Path) -> Arc<MemoryManager> {
+    let model = resolve_model(ResolveModelOptions::default()).await.unwrap();
+    resolve_memory(ResolveMemoryOptions {
+        dir: Some(dir.to_path_buf()),
+        model: Some(model),
+        ..Default::default()
+    })
+    .await
+    .unwrap()
 }
 
 const TESTING: &str = "You are an automated integration test. Do exactly what is asked and nothing else.";
@@ -41,7 +36,7 @@ fn base(dir: &std::path::Path) -> HarnessAgentOptions {
         instructions: Some(TESTING.to_owned()),
         session: SessionOption::Config(SessionConfig {
             id: None,
-            dir: Some(dir.join("sessions").to_string_lossy().into_owned()),
+            dir: Some(dir.join("sessions")),
         }),
         skills: SkillsOption::Off,
         memory: MemoryOption::Off,
@@ -114,7 +109,7 @@ async fn uses_the_file_tools_in_one_turn() {
 #[ignore = "live Bedrock"]
 async fn persists_sessions_across_agents() {
     let dir = tempfile::tempdir().unwrap();
-    let session_dir = dir.path().join("sessions").to_string_lossy().into_owned();
+    let session_dir = dir.path().join("sessions");
     let session = SessionOption::Config(SessionConfig {
         id: Some("e2e-session".into()),
         dir: Some(session_dir.clone()),
@@ -167,10 +162,10 @@ async fn persists_a_session_with_a_minted_id() {
 #[ignore = "live Bedrock"]
 async fn persists_memory_across_agents() {
     let dir = tempfile::tempdir().unwrap();
-    let memory_dir = dir.path().join("memory").to_string_lossy().into_owned();
+    let memory_dir = dir.path().join("memory");
     let manager = memory_manager(&memory_dir).await;
     let first = create_harness(HarnessAgentOptions {
-        memory: MemoryOption::Manager(Arc::clone(&manager)),
+        memory: MemoryOption::Instance(Arc::clone(&manager)),
         session: SessionOption::Off,
         ..base(dir.path())
     })
@@ -196,7 +191,7 @@ async fn persists_memory_across_agents() {
 
     let second_manager = memory_manager(&memory_dir).await;
     let second = create_harness(HarnessAgentOptions {
-        memory: MemoryOption::Manager(second_manager),
+        memory: MemoryOption::Instance(second_manager),
         session: SessionOption::Off,
         ..base(dir.path())
     })

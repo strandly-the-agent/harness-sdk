@@ -8,7 +8,12 @@
 //! The TS tool runs the request as `curl` inside `context.agent.sandbox` by default
 //! (`transport: 'direct'` opts into a process-local fetch). The Rust SDK has no sandbox seam, so
 //! the transport is a [`WebFetchTransport`] trait and the default implementation is the `reqwest`
-//! equivalent of TS's `'direct'`.
+//! equivalent of TS's `'direct'`: **egress leaves the host process, not a sandbox**, so link-local
+//! and host-local addresses TS could not reach are reachable here. Pass your own transport to
+//! confine it.
+//!
+//! Redirects mirror curl's `--proto-redir '=http,https'`: at most 10 hops, each to an http(s)
+//! target, so a redirect cannot hand the fetch to another scheme.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -65,6 +70,22 @@ pub trait WebFetchTransport: Send + Sync {
     async fn fetch(&self, url: &str) -> Result<FetchedPage>;
 }
 
+/// Hop limit for redirects, matching curl's default and TS's `--max-redirs` behaviour.
+const MAX_REDIRECTS: usize = 10;
+
+/// `--proto-redir '=http,https'`: follow at most `max` hops, each to an http(s) target.
+fn http_only_redirects(max: usize) -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(move |attempt| {
+        if !matches!(attempt.url().scheme(), "http" | "https") {
+            attempt.stop()
+        } else if attempt.previous().len() >= max {
+            attempt.error(format!("too many redirects (> {max})"))
+        } else {
+            attempt.follow()
+        }
+    })
+}
+
 /// The default transport: a plain `reqwest` GET from the harness process.
 #[derive(Debug, Default)]
 pub struct ReqwestTransport;
@@ -74,6 +95,7 @@ impl WebFetchTransport for ReqwestTransport {
     async fn fetch(&self, url: &str) -> Result<FetchedPage> {
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
+            .redirect(http_only_redirects(MAX_REDIRECTS))
             .timeout(Duration::from_secs(TIMEOUT_SECONDS))
             .build()
             .map_err(|e| Error::other(e.to_string()))?;
