@@ -378,6 +378,7 @@ pub(crate) mod test_fixtures {
                 system_prompt: RwLock::new(system_prompt.map(|p| SystemPrompt::Text(p.to_owned()))),
                 messages: RwLock::new(messages),
                 state: StateStore::new(),
+                interrupt_state: Default::default(),
                 hooks: HookRegistry::new(),
                 tools: RwLock::new(ToolRegistry::new()),
                 plugins: PluginRegistry::new(Vec::new()),

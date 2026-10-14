@@ -290,7 +290,10 @@ mod tests {
     #[test]
     fn duplicate_handler_names_are_rejected() {
         let handlers: Vec<Arc<dyn InterventionHandler>> = vec![Arc::new(Named("a")), Arc::new(Named("a"))];
-        let err = InterventionRegistry::new(handlers).unwrap_err();
+        let err = match InterventionRegistry::new(handlers) {
+            Err(err) => err,
+            Ok(_) => panic!("expected a duplicate-name error"),
+        };
         assert_eq!(err.to_string(), "Duplicate intervention handler name: 'a'");
     }
 
