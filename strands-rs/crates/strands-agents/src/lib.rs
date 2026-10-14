@@ -33,6 +33,7 @@ pub use models::Model;
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
+pub use tools::vended::ShellTool;
 pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
 };
