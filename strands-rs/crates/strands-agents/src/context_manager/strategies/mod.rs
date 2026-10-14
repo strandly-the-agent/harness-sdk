@@ -429,3 +429,243 @@ mod tests {
         assert_eq!(messages[0].content.len(), 2);
     }
 }
+
+#[cfg(test)]
+mod strategy_tests {
+    use super::*;
+    use crate::agent::test_agent_with;
+    use crate::context_manager::{ContextState, ContextStrategy};
+    use crate::test_support::{MockMessageModel, MockResponse};
+    use crate::types::{Message, Role, ToolResultBlock, ToolResultContent, ToolUseBlock};
+    use std::sync::Arc;
+
+    fn tool_result(tool_use_id: &str, chars: usize) -> Message {
+        Message::new(
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock::success(
+                tool_use_id,
+                vec![ToolResultContent::Text("x".repeat(chars))],
+            ))],
+        )
+    }
+
+    fn tool_use(tool_use_id: &str) -> Message {
+        Message::new(
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(ToolUseBlock {
+                tool_use_id: tool_use_id.to_owned(),
+                name: "big_tool".to_owned(),
+                input: serde_json::json!({}),
+                reasoning_signature: None,
+            })],
+        )
+    }
+
+    // --- Offload.truncate ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn truncate_replaces_oversized_tool_results_with_a_marker() {
+        let agent = test_agent_with("t", None, Vec::new());
+        let mut messages = vec![
+            Message::user("start"),
+            tool_use("tool-1"),
+            tool_result("tool-1", 4_000),
+        ];
+        let strategy = Offload::truncate(
+            OffloadTarget::ToolResults,
+            TruncateConfig {
+                preview_tokens: Some(50),
+                preview: None,
+            },
+        )
+        .when(OffloadConditions {
+            threshold: Some(100.0),
+            ..Default::default()
+        });
+        let mut ctx = ContextState {
+            messages: &mut messages,
+            agent: &agent,
+            utilization: 0.1,
+            overflow: false,
+            stash: None,
+        };
+        assert!(strategy.apply(&mut ctx).await.unwrap());
+
+        let text = messages[2].tool_results().next().unwrap().text();
+        assert!(text.starts_with("[Truncated: 1 block, ~1,000 tokens]"), "{text}");
+        assert!(text.contains("chars elided ..."), "{text}");
+        assert!(text.chars().count() < 4_000);
+    }
+
+    #[tokio::test]
+    async fn truncate_leaves_blocks_under_the_threshold_alone() {
+        let agent = test_agent_with("t", None, Vec::new());
+        let mut messages = vec![
+            Message::user("start"),
+            tool_use("tool-1"),
+            tool_result("tool-1", 40),
+        ];
+        let before = messages.clone();
+        let strategy = Offload::truncate(
+            OffloadTarget::ToolResults,
+            TruncateConfig {
+                preview_tokens: Some(50),
+                preview: None,
+            },
+        )
+        .when(OffloadConditions {
+            threshold: Some(1_500.0),
+            ..Default::default()
+        });
+        let mut ctx = ContextState {
+            messages: &mut messages,
+            agent: &agent,
+            utilization: 0.1,
+            overflow: false,
+            stash: None,
+        };
+        assert!(!strategy.apply(&mut ctx).await.unwrap());
+        assert_eq!(messages, before);
+    }
+
+    #[test]
+    fn head_tail_preview_splits_sixty_forty() {
+        let text = "a".repeat(500) + &"b".repeat(500);
+        let preview = build_preview(&text, 1, 25, PreviewMode::HeadTail);
+        let body = preview.split("\n\n").nth(1).expect("head segment");
+        assert_eq!(body.chars().count(), 60, "60% of 25 tokens * 4 chars");
+        assert!(preview.ends_with(&"b".repeat(40)), "remaining 40% is the tail");
+    }
+
+    // --- EmergencyTruncateStrategy ---------------------------------------------------------
+
+    async fn run_emergency(messages: &mut Vec<Message>, overflow: bool) -> bool {
+        let agent = test_agent_with("t", None, Vec::new());
+        let strategy = EmergencyTruncateStrategy::new();
+        let mut ctx = ContextState {
+            messages,
+            agent: &agent,
+            utilization: if overflow { 1.2 } else { 0.1 },
+            overflow,
+            stash: None,
+        };
+        strategy.apply(&mut ctx).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn emergency_truncate_preserves_the_first_message() {
+        let mut messages: Vec<Message> = (0..10)
+            .map(|index| {
+                if index % 2 == 0 {
+                    Message::user(format!("user {index}"))
+                } else {
+                    Message::assistant(format!("assistant {index}"))
+                }
+            })
+            .collect();
+        assert!(run_emergency(&mut messages, true).await);
+        // Removing the second message makes two user turns adjacent, so repair_alternation
+        // merges them onto message 0 — the head content itself is never dropped.
+        assert!(messages[0].text().starts_with("user 0"), "{}", messages[0].text());
+        assert!(messages.len() < 10);
+    }
+
+    #[tokio::test]
+    async fn emergency_truncate_is_a_noop_for_three_or_fewer_messages() {
+        let mut messages = vec![
+            Message::user("one"),
+            Message::assistant("two"),
+            Message::user("three"),
+        ];
+        assert!(!run_emergency(&mut messages, true).await);
+        assert_eq!(messages.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn emergency_truncate_does_not_fire_below_full_utilization_without_overflow() {
+        let mut messages: Vec<Message> = (0..6).map(|index| Message::user(format!("m{index}"))).collect();
+        assert!(!run_emergency(&mut messages, false).await);
+        assert_eq!(messages.len(), 6);
+    }
+
+    #[tokio::test]
+    async fn emergency_truncate_keeps_tool_use_and_result_paired() {
+        let mut messages = vec![
+            Message::user("start"),
+            tool_use("tool-1"),
+            tool_result("tool-1", 10),
+            Message::assistant("a"),
+            Message::user("b"),
+            Message::assistant("c"),
+            Message::user("d"),
+        ];
+        assert!(run_emergency(&mut messages, true).await);
+        let uses: Vec<String> = messages
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .filter_map(|block| match block {
+                ContentBlock::ToolUse(use_block) => Some(use_block.tool_use_id.clone()),
+                _ => None,
+            })
+            .collect();
+        let results: Vec<String> = messages
+            .iter()
+            .flat_map(|message| message.tool_results())
+            .map(|result| result.tool_use_id.clone())
+            .collect();
+        assert_eq!(uses, results, "no orphaned tool use/result");
+    }
+
+    // --- Offload.summarize -----------------------------------------------------------------
+
+    #[tokio::test]
+    async fn summarize_calls_the_model_with_the_verbatim_prompt_and_leaves_a_marker() {
+        let agent = test_agent_with("t", None, Vec::new());
+        let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant(
+            "They discussed widgets.",
+        ))]);
+        let strategy = Offload::summarize(OffloadTarget::All)
+            .when(OffloadConditions {
+                utilization: Some(0.0),
+                preserve_recent: Some(1.0),
+                ..Default::default()
+            })
+            .with_model(Arc::clone(&model) as Arc<dyn crate::models::Model>);
+
+        let mut messages = vec![
+            Message::user("first thing"),
+            Message::assistant("second thing"),
+            Message::user("keep me"),
+        ];
+        let mut ctx = ContextState {
+            messages: &mut messages,
+            agent: &agent,
+            utilization: 0.9,
+            overflow: false,
+            stash: None,
+        };
+        assert!(strategy.apply(&mut ctx).await.unwrap());
+
+        let calls = model.calls();
+        assert_eq!(calls.len(), 1);
+        let system = match calls[0].1.system_prompt.as_ref().expect("system prompt") {
+            crate::types::SystemPrompt::Text(text) => text.clone(),
+            other => panic!("unexpected system prompt: {other:?}"),
+        };
+        assert_eq!(system, offload::SUMMARIZATION_SYSTEM_PROMPT);
+        let sent = calls[0].0[0].text();
+        assert!(sent.contains("<content>"), "content is delimited: {sent}");
+
+        let summarized = messages
+            .iter()
+            .any(|message| message.text().contains("[Summarized:"));
+        assert!(
+            summarized,
+            "a [Summarized: …] marker replaces the compressed span"
+        );
+        assert!(
+            messages.last().unwrap().text().contains("keep me"),
+            "preserveRecent keeps the tail"
+        );
+    }
+}
