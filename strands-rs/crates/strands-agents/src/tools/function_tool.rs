@@ -167,6 +167,7 @@ impl Tool for FunctionTool {
         match (self.handler)(input, ctx).await {
             Ok(value) => Ok(wrap_in_tool_result(value, &tool_use_id)),
             Err(Error::Cancelled) => Err(Error::Cancelled),
+            Err(err) if err.is_control_flow() => Err(err),
             Err(err) => Ok(create_error_result(&err, &tool_use_id).with_error(err)),
         }
     }

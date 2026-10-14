@@ -33,9 +33,8 @@ fn approve_tool(runs: Arc<AtomicUsize>) -> Arc<FunctionTool> {
             .handler(move |_input, ctx| {
                 let runs = Arc::clone(&runs);
                 async move {
-                    let answer: String = ctx.interrupt(
-                        InterruptParams::new("confirm").with_reason("approve the write?"),
-                    )?;
+                    let answer: String =
+                        ctx.interrupt(InterruptParams::new("confirm").with_reason("approve the write?"))?;
                     runs.fetch_add(1, Ordering::SeqCst);
                     Ok(json!(format!("did it: {answer}")))
                 }
@@ -140,10 +139,7 @@ async fn hook_interrupt_stops_the_loop_before_the_tool_runs() {
 
     let interrupted = agent.invoke("go").await.unwrap();
     assert_eq!(interrupted.stop_reason, StopReason::Interrupt);
-    assert_eq!(
-        interrupted.interrupts[0].id,
-        "hook:beforeToolCall:call-1:gate"
-    );
+    assert_eq!(interrupted.interrupts[0].id, "hook:beforeToolCall:call-1:gate");
     assert_eq!(runs.load(Ordering::SeqCst), 0);
 
     let resumed = agent
@@ -226,12 +222,11 @@ async fn hitl_with_a_scripted_ask_approves_and_denies_inline() {
             tool_use_message(&[("ok", "call-1")]),
             Message::assistant("finished"),
         ]);
-        let hitl: Arc<dyn InterventionHandler> = Arc::new(HumanInTheLoop::new().ask(Arc::new(
-            move |prompt: String| {
+        let hitl: Arc<dyn InterventionHandler> =
+            Arc::new(HumanInTheLoop::new().ask(Arc::new(move |prompt: String| {
                 assert_eq!(prompt, "Approve \"ok\"?\n  Input: {}");
                 Box::pin(async move { Ok(json!(answer)) }) as _
-            },
-        )));
+            })));
         let agent = Agent::builder()
             .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
             .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
