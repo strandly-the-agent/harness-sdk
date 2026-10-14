@@ -391,7 +391,7 @@ impl Model for AnthropicModel {
                         }
                     }
                     let chunk = chunk?;
-                    for sse in parser.push(&String::from_utf8_lossy(&chunk)) {
+                    for sse in parser.push(&chunk) {
                         for event in state.handle(&sse)? {
                             yield event;
                         }

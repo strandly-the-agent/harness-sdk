@@ -312,3 +312,37 @@ async fn hitl_allowed_tools_skip_approval_entirely() {
     assert_eq!(result.stop_reason, StopReason::EndTurn);
     assert_eq!(runs.load(Ordering::SeqCst), 1);
 }
+
+/// Every trace in the tree, flattened.
+fn flatten(traces: &[strands_agents::telemetry::types::AgentTrace]) -> Vec<(String, Option<u64>)> {
+    traces
+        .iter()
+        .flat_map(|t| std::iter::once((t.name.clone(), t.end_time)).chain(flatten(&t.children)))
+        .collect()
+}
+
+#[tokio::test]
+async fn an_interrupted_tool_still_ends_its_tool_span() {
+    let runs = Arc::new(AtomicUsize::new(0));
+    let model = model(vec![tool_use_message(&[("approve", "call-1")])]);
+    let agent = Agent::builder()
+        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool_ref(approve_tool(Arc::clone(&runs)))
+        .build()
+        .await
+        .unwrap();
+
+    let interrupted = agent.invoke("write the file").await.unwrap();
+    assert_eq!(interrupted.stop_reason, StopReason::Interrupt);
+
+    let traces = flatten(&agent.tracer().local_traces());
+    let tool_spans: Vec<_> = traces
+        .iter()
+        .filter(|(name, _)| name == "Tool: approve")
+        .collect();
+    assert_eq!(tool_spans.len(), 1, "expected one tool trace, got {traces:?}");
+    assert!(
+        tool_spans[0].1.is_some(),
+        "interrupted tool span was left open: {traces:?}"
+    );
+}

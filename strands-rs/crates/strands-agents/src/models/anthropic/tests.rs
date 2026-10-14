@@ -581,6 +581,70 @@ fn honors_an_explicit_cache_point_block() {
 
 // --- SSE parsing ----------------------------------------------------------------------------
 
+/// Transport that replays one body as caller-chosen byte chunks.
+struct ChunkedTransport {
+    chunks: Mutex<Option<Vec<Vec<u8>>>>,
+}
+
+#[async_trait]
+impl AnthropicTransport for ChunkedTransport {
+    async fn post(
+        &self,
+        _url: &str,
+        _headers: Vec<(String, String)>,
+        _body: JsonValue,
+    ) -> Result<TransportResponse> {
+        let chunks = self.chunks.lock().unwrap().take().unwrap_or_default();
+        let chunks: Vec<Result<Vec<u8>>> = chunks.into_iter().map(Ok).collect();
+        Ok(TransportResponse {
+            status: 200,
+            body: futures::stream::iter(chunks).boxed(),
+        })
+    }
+}
+
+#[tokio::test]
+async fn multi_byte_text_split_across_body_chunks_is_not_corrupted() {
+    let body = sse(&[
+        (
+            "message_start",
+            json!({"type": "message_start", "message": {"usage": {}}}),
+        ),
+        (
+            "content_block_delta",
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "café"}}),
+        ),
+        ("message_stop", json!({"type": "message_stop"})),
+    ]);
+    // Split between the two bytes of `é`, and again right after a `\r` of a CRLF frame terminator.
+    let bytes = body.replace('\n', "\r\n").into_bytes();
+    let split = bytes
+        .windows(2)
+        .position(|w| w == "é".as_bytes())
+        .expect("body contains é")
+        + 1;
+    let cr = bytes[split..]
+        .windows(2)
+        .position(|w| w == b"\r\n")
+        .expect("body contains CRLF")
+        + split
+        + 1;
+    let chunks = vec![
+        bytes[..split].to_vec(),
+        bytes[split..cr].to_vec(),
+        bytes[cr..].to_vec(),
+    ];
+    let transport = Arc::new(ChunkedTransport {
+        chunks: Mutex::new(Some(chunks)),
+    });
+    let model = AnthropicModel::with_transport(config(), transport).unwrap();
+    let events = collect(&model, &[user("hi")], &StreamOptions::default()).await;
+    assert!(
+        events.contains(&ModelStreamEvent::text_delta("café")),
+        "expected an unmangled text delta, got {events:?}"
+    );
+}
+
 #[tokio::test]
 async fn streams_text_metadata_and_stop_reason() {
     let (model, _) = model_with(config(), vec![(200, text_stream())]);
@@ -894,9 +958,9 @@ async fn fails_after_too_many_pause_turn_continuations() {
 fn parses_sse_frames_split_across_chunks() {
     let mut parser = SseParser::new();
     assert!(parser
-        .push("event: message_stop\ndata: {\"type\":\"mes")
+        .push(b"event: message_stop\ndata: {\"type\":\"mes")
         .is_empty());
-    let events = parser.push("sage_stop\"}\n\n");
+    let events = parser.push(b"sage_stop\"}\n\n");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event.as_deref(), Some("message_stop"));
     assert_eq!(events[0].data, "{\"type\":\"message_stop\"}");

@@ -635,3 +635,88 @@ async fn stream_yields_the_agent_result_last() {
 
     assert!(matches!(last, Some(AgentStreamEvent::AgentResult(_))));
 }
+
+// --- continuation inputs --------------------------------------------------------------------
+
+/// `on_appended` fires only once the messages are in history, and two user inputs merge into one
+/// user message (TS `_appendMessages`).
+#[tokio::test]
+async fn continuation_input_merges_with_the_prompt_and_reports_after_appending() {
+    let model = text_model(&["done"]);
+    let agent = Agent::builder()
+        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .build()
+        .await
+        .unwrap();
+
+    let seen: Arc<Mutex<Option<usize>>> = Arc::new(Mutex::new(None));
+    let sink = Arc::clone(&seen);
+    let observer = agent.clone();
+    agent.continuations().add_input(
+        strands_agents::agent::ContinuationInput::new(vec![Message::user("background note")])
+            .on_appended(move || *sink.lock().unwrap() = Some(observer.messages().len())),
+    );
+
+    agent.invoke("and the prompt").await.unwrap();
+
+    let users: Vec<_> = agent
+        .messages()
+        .into_iter()
+        .filter(|m| m.role == Role::User)
+        .collect();
+    assert_eq!(users.len(), 1, "expected one merged user message, got {users:?}");
+    assert_eq!(users[0].content.len(), 2);
+    // The callback observed the user message already in history (TS order).
+    assert_eq!(*seen.lock().unwrap(), Some(1));
+}
+
+/// An invocation that bails before the append loop abandons the prepared input instead of
+/// silently dropping it.
+#[tokio::test]
+async fn continuation_input_is_abandoned_when_the_pass_never_appends() {
+    let model = MockMessageModel::shared(vec![MockResponse::message(tool_use_message(
+        "approve",
+        "call-1",
+        json!({}),
+    ))]);
+    let agent = Agent::builder()
+        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool_ref(Arc::new(
+            strands_agents::tools::FunctionTool::builder("approve")
+                .description("Interrupts for approval")
+                .input_schema(json!({ "type": "object", "properties": {} }))
+                .handler(|_input, ctx| async move {
+                    let _: String = ctx.interrupt(strands_agents::InterruptParams::new("confirm"))?;
+                    Ok(json!("ok"))
+                }),
+        ) as ToolRef)
+        .build()
+        .await
+        .unwrap();
+
+    // Put the agent into the "resume required" state: a tool interrupt stops the loop.
+    let stopped = agent.invoke("write it").await.unwrap();
+    assert_eq!(stopped.stop_reason, StopReason::Interrupt);
+
+    let reason: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let sink = Arc::clone(&reason);
+    let appended = Arc::new(Mutex::new(false));
+    let appended_flag = Arc::clone(&appended);
+    agent.continuations().add_input(
+        strands_agents::agent::ContinuationInput::new(vec![Message::user("late note")])
+            .on_appended(move || *appended_flag.lock().unwrap() = true)
+            .on_abandoned(move |r| *sink.lock().unwrap() = Some(r)),
+    );
+
+    // A fresh prompt while interrupted is rejected before anything is appended.
+    let err = agent.invoke("new prompt").await.unwrap_err();
+    assert!(
+        err.to_string().contains("interrupted state"),
+        "unexpected error: {err}"
+    );
+    assert!(!*appended.lock().unwrap(), "input must not report as appended");
+    assert!(
+        reason.lock().unwrap().is_some(),
+        "input was dropped silently instead of abandoned"
+    );
+}
