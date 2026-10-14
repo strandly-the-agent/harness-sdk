@@ -259,7 +259,6 @@ fn format_system_prompt(config: &AnthropicModelConfig, prompt: Option<&SystemPro
                              system prompt | skipping",
                         );
                     }
-                    _ => {}
                 }
             }
             if out.is_empty() {
@@ -272,7 +271,6 @@ fn format_system_prompt(config: &AnthropicModelConfig, prompt: Option<&SystemPro
             }
             Some(Value::Array(out))
         }
-        _ => None,
     }
 }
 
@@ -392,7 +390,6 @@ fn format_content_block(block: &ContentBlock) -> Result<Option<Vec<Value>>> {
                 );
                 return Ok(None);
             }
-            _ => return Ok(None),
         },
         ContentBlock::Document(doc) => match (&doc.format, &doc.source) {
             (DocumentFormat::Pdf, DocumentSource::Bytes(bytes)) => json!({
