@@ -810,3 +810,143 @@ async fn max_tokens_from_the_model_surfaces_as_an_error() {
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].role, Role::User);
 }
+
+// ---- cancellation and invocation-lock regressions -------------------------
+
+#[tokio::test]
+async fn a_panicking_hook_releases_the_invocation_lock() {
+    let agent = Agent::new(text_model(&["after the panic"])).await.unwrap();
+    let panicked = Arc::new(Mutex::new(false));
+    let flag = Arc::clone(&panicked);
+    agent
+        .hooks()
+        .add_sync_callback(move |_: &mut BeforeInvocationEvent| {
+            if !*flag.lock().unwrap() {
+                *flag.lock().unwrap() = true;
+                panic!("boom");
+            }
+            Ok(())
+        });
+
+    let error = agent.invoke("go").await.unwrap_err();
+
+    assert!(
+        error.to_string().contains("agent invocation task failed"),
+        "unexpected error: {error}"
+    );
+    assert!(!agent.is_invoking());
+    let result = agent.invoke("again").await.unwrap();
+    assert_eq!(result.to_string(), "after the panic");
+}
+
+#[tokio::test]
+async fn dropping_the_stream_cancels_the_invocation() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::with_stop_reason(tool_use_message("slow", "t1", json!({})), StopReason::ToolUse),
+        MockResponse::message(Message::assistant("never reached")),
+    ]);
+    let agent = Agent::builder().model(model.clone()).build().await.unwrap();
+    let slow: ToolRef = Arc::new(tool("slow").description("Sleeps before succeeding").handler(
+        |_input: serde_json::Value, _ctx| async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            Ok(json!({ "ok": true }))
+        },
+    ));
+    agent.with_tool_registry(|registry| registry.add(slow)).unwrap();
+
+    let mut stream = agent.stream("go", InvokeOptions::default());
+    stream.next().await.unwrap().unwrap();
+    drop(stream);
+
+    let released = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        while agent.is_invoking() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(released.is_ok(), "invocation outlived the dropped stream");
+    assert!(agent.cancel_token().is_cancelled());
+    assert!(
+        model.call_count() <= 1,
+        "model kept running: {}",
+        model.call_count()
+    );
+}
+
+#[tokio::test]
+async fn cancel_right_after_stream_cancels_the_new_invocation() {
+    let model = text_model(&["never reached"]);
+    let agent = Agent::builder().model(model.clone()).build().await.unwrap();
+
+    let mut stream = agent.stream("go", InvokeOptions::default());
+    agent.cancel();
+
+    let mut result = None;
+    while let Some(event) = stream.next().await {
+        if let Some(agent_result) = event.unwrap().result() {
+            result = Some(agent_result.clone());
+        }
+    }
+    assert_eq!(result.unwrap().stop_reason, StopReason::Cancelled);
+    assert_eq!(model.call_count(), 0);
+}
+
+#[tokio::test]
+async fn a_tool_cancellation_leaves_results_for_every_tool_use() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::with_stop_reason(
+            Message::new(
+                Role::Assistant,
+                vec![
+                    ContentBlock::ToolUse(ToolUseBlock::new("cancels", "t1", json!({}))),
+                    ContentBlock::ToolUse(ToolUseBlock::new("echo", "t2", json!({ "value": 1 }))),
+                ],
+            ),
+            StopReason::ToolUse,
+        ),
+        MockResponse::message(Message::assistant("never reached")),
+    ]);
+    let agent = Agent::builder().model(model.clone()).build().await.unwrap();
+    let cancelling = agent.clone();
+    let cancels: ToolRef = Arc::new(
+        tool("cancels")
+            .description("Cancels the invocation and reports cancellation")
+            .handler(move |_input: serde_json::Value, _ctx| {
+                let agent = cancelling.clone();
+                async move {
+                    agent.cancel();
+                    Err::<serde_json::Value, _>(strands_agents::Error::Cancelled)
+                }
+            }),
+    );
+    agent
+        .with_tool_registry(|registry| registry.add_or_replace([cancels, echo_tool()]))
+        .unwrap();
+
+    let result = agent.invoke("go").await.unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::Cancelled);
+    assert_eq!(result.to_string(), "Cancelled by user");
+    let messages = agent.messages();
+    assert_eq!(messages.len(), 4);
+    assert_eq!(messages[1].role, Role::Assistant);
+    assert_eq!(messages[1].content.len(), 2);
+    assert_eq!(messages[2].role, Role::User);
+    let ids: Vec<String> = messages[2]
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::ToolResult(result) => Some(result.tool_use_id.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ids, vec!["t1".to_owned(), "t2".to_owned()]);
+    match &messages[2].content[0] {
+        ContentBlock::ToolResult(result) => {
+            assert_eq!(result.status, ToolResultStatus::Error);
+            assert_eq!(result.text(), "Tool execution cancelled");
+        }
+        other => panic!("expected a tool result, got {other:?}"),
+    }
+    assert_eq!(model.call_count(), 1);
+}

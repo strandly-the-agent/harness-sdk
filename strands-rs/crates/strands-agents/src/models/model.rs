@@ -424,6 +424,16 @@ mod tests {
         })
     }
 
+    #[test]
+    fn cancellation_from_the_provider_is_not_wrapped_as_a_model_error() {
+        futures::executor::block_on(async {
+            let s = stream::iter(vec![Err(Error::Cancelled)]).boxed();
+            let items: Vec<Result<AggregatedItem>> = stream_aggregated(s).collect().await;
+            assert_eq!(items.len(), 1);
+            assert!(matches!(items[0], Err(Error::Cancelled)), "{:?}", items[0]);
+        });
+    }
+
     fn text_message(stop: StopReason) -> Vec<E> {
         vec![
             E::MessageStart {
