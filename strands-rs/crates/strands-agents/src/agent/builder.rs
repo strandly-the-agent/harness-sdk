@@ -270,6 +270,7 @@ impl AgentBuilder {
                 memory_manager: self.memory_manager,
                 background_tasks,
                 continuation_input: RwLock::new(Vec::new()),
+                middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
         };
         agent.initialize().await?;

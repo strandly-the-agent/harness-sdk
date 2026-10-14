@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::Result;
 use crate::hooks::{HookRegistry, InitializedEvent};
+use crate::middleware::{Middleware, MiddlewareHandle, Stage};
 use crate::models::Model;
 use crate::plugins::PluginRegistry;
 use crate::state_store::StateStore;
@@ -102,6 +103,7 @@ pub(crate) struct AgentInner {
     pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
     pub(crate) continuation_input: RwLock<Vec<Message>>,
     pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
+    pub(crate) middleware: crate::middleware::MiddlewareRegistry,
 }
 
 /// An agent: a model, a system prompt, tools, and the conversation they share.
@@ -152,6 +154,48 @@ impl Agent {
     /// [`Agent::set_model`] with an already shared model.
     pub fn set_model_arc(&self, model: Arc<dyn Model>) {
         *self.inner.model.write() = model;
+    }
+
+    /// The middleware registered on this agent.
+    pub fn middleware(&self) -> &crate::middleware::MiddlewareRegistry {
+        &self.inner.middleware
+    }
+
+    /// Register a wrap-phase middleware for `S` (the bare-stage TS overload).
+    pub fn add_middleware<S: Stage>(
+        &self,
+        handler: impl Middleware<S> + 'static,
+    ) -> MiddlewareHandle {
+        self.inner.middleware.add::<S>(handler)
+    }
+
+    /// Register a wrap-phase middleware for `S`.
+    pub fn add_wrap_middleware<S: Stage>(
+        &self,
+        handler: impl Middleware<S> + 'static,
+    ) -> MiddlewareHandle {
+        self.inner.middleware.add::<S>(handler)
+    }
+
+    /// Register an input-phase middleware for `S`.
+    pub fn add_input_middleware<S: Stage>(
+        &self,
+        handler: impl Fn(S::Context) -> Result<S::Context> + Send + Sync + 'static,
+    ) -> MiddlewareHandle {
+        self.inner.middleware.add_input::<S>(handler)
+    }
+
+    /// Register an output-phase middleware for `S`.
+    pub fn add_output_middleware<S: Stage>(
+        &self,
+        handler: impl Fn(S::Result) -> Result<S::Result> + Send + Sync + 'static,
+    ) -> MiddlewareHandle {
+        self.inner.middleware.add_output::<S>(handler)
+    }
+
+    /// Remove a middleware registered earlier; a no-op if it is already gone.
+    pub fn remove_middleware(&self, handle: MiddlewareHandle) {
+        self.inner.middleware.remove(handle);
     }
 
     /// The system prompt.
@@ -351,6 +395,7 @@ pub(crate) mod test_fixtures {
                 memory_manager: None,
                 background_tasks: None,
                 continuation_input: RwLock::new(Vec::new()),
+                middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
         }
     }
