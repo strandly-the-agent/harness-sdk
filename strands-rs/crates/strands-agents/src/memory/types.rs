@@ -201,7 +201,7 @@ pub type MemoryStoreRef = Arc<dyn MemoryStore>;
 ///
 /// `search` is required. `add`, `add_messages`, `initialize` and `tools` are optional
 /// capabilities: override the matching `supports_*` flag when you implement one, otherwise the
-/// default body returns [`Error::Unsupported`]-style `Other` error and the manager refuses to
+/// default body returns an `Error::Other` ("unsupported") error and the manager refuses to
 /// route to you.
 #[async_trait]
 pub trait MemoryStore: Send + Sync {
