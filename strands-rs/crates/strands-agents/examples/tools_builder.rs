@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder().model(model).tool(weather).build().await?;
+    let agent = Agent::builder().model(model).tool(weather).build()?;
 
     let result = agent.invoke("What is the weather in Seattle?").await?;
     println!("{result}");

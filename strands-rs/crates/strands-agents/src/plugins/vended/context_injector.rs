@@ -365,7 +365,6 @@ mod tests {
             .model(Arc::clone(&model) as Arc<dyn Model>)
             .plugin(ContextInjector::inject("ephemeral note"))
             .build()
-            .await
             .unwrap();
 
         agent.invoke("hello").await.unwrap();

@@ -105,7 +105,6 @@ async fn agent_with(builder: strands_agents::AgentBuilder) -> Agent {
             Message::assistant("done"),
         )]))
         .build()
-        .await
         .unwrap()
 }
 
@@ -186,7 +185,6 @@ async fn the_shell_tool_runs_through_the_agents_sandbox_in_the_loop() {
         .model_arc(model)
         .sandbox_arc(Arc::clone(&sandbox) as Arc<dyn Sandbox>)
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("run echo hi").await.unwrap();

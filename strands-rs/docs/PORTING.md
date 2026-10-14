@@ -27,7 +27,7 @@ is the lookup table for *what*.
 | `agent.state` (`StateStore`) | `agent.state()` | |
 | `agent.tool.xxx(args)` proxy | `agent.tool(name)?.call(args)` | `ToolHandle`; `CallOptions::default().with_record_direct_tool_call(false)` |
 | `agent.stream(input, options?)` | `agent.stream(input)` / `agent.stream_with(input, options)` | same split as `invoke`/`invoke_with` |
-| `new Agent({ model, tools, plugins })` | `Agent::builder().model(m).tool(t).plugin(p).build().await?` | takes `impl Model`/`impl Tool`/`impl Plugin`; `model_arc`/`tool_ref`/`plugin_arc` for shared `Arc`s |
+| `new Agent({ model, tools, plugins })` | `Agent::builder().model(m).tool(t).plugin(p).build()?` | takes `impl Model`/`impl Tool`/`impl Plugin`; `model_arc`/`tool_ref`/`plugin_arc` for shared `Arc`s |
 | `AbortController` returned by `hooks.addCallback` | `HookCleanup` (`#[must_use]`) | dropping it keeps the hook registered |
 | `InvocationState = Record<string, unknown>` | `InvocationState` (type-erased bag, cloned handle) | identity preserved across events |
 | `Plugin` interface | `#[async_trait] trait Plugin` | |

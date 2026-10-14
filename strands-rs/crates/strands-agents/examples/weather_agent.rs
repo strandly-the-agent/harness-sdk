@@ -21,8 +21,7 @@ async fn main() -> Result<()> {
     let agent = Agent::builder()
         .model(BedrockModel::default_model().await?)
         .tool(weather)
-        .build()
-        .await?;
+        .build()?;
 
     println!(
         "{}",

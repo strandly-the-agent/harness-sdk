@@ -47,7 +47,6 @@ async fn dispatches_a_flagged_tool_call_and_delivers_the_result_on_the_next_invo
         .tool_ref(slow_tool())
         .background_tasks(BackgroundTasksConfig::new().wait_for_completion(false))
         .build()
-        .await
         .unwrap();
 
     let first = agent.invoke("forecast for Berlin?").await.unwrap();
@@ -130,7 +129,6 @@ async fn offers_the_background_flag_only_for_agentic_tools() {
         .tool_ref(slow_tool())
         .background_tasks(BackgroundTasksConfig::new())
         .build()
-        .await
         .unwrap();
     agent.invoke("hi").await.unwrap();
 
@@ -166,7 +164,6 @@ async fn waits_for_outstanding_tasks_before_the_invocation_finishes() {
         .tool_ref(slow_tool())
         .background_tasks(true)
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("go").await.unwrap();
@@ -207,7 +204,6 @@ async fn a_denying_before_tool_call_hook_beats_background_routing() {
         .tool_ref(tool)
         .background_tasks(BackgroundTasksConfig::new())
         .build()
-        .await
         .unwrap();
     let _ = agent
         .hooks()
@@ -291,7 +287,6 @@ async fn max_concurrency_one_runs_background_calls_sequentially() {
                 .max_concurrency(1),
         )
         .build()
-        .await
         .unwrap();
 
     agent.invoke("two forecasts please").await.unwrap();
@@ -332,7 +327,6 @@ async fn a_timed_out_background_task_is_delivered_as_failed() {
                 .timeout(Duration::from_millis(10)),
         )
         .build()
-        .await
         .unwrap();
 
     agent.invoke("forecast for Berlin?").await.unwrap();

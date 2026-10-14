@@ -384,6 +384,8 @@ impl Agent {
     }
 
     /// Access the tool registry.
+    ///
+    /// Not reentrant: do not call other `Agent` methods from `f`; the registry lock is held.
     pub fn with_tool_registry<R>(&self, f: impl FnOnce(&mut ToolRegistry) -> R) -> R {
         f(&mut self.inner.tools.write())
     }
@@ -399,6 +401,10 @@ impl Agent {
     }
 
     /// Initialize plugins and fire [`InitializedEvent`]. Idempotent.
+    ///
+    /// [`AgentBuilder::build`](crate::agent::AgentBuilder::build) does not call this; the first
+    /// `invoke`/`stream` does. Call it yourself to observe plugin or session state (restored
+    /// messages, registered tools) before invoking.
     pub async fn initialize(&self) -> Result<()> {
         let mut initialized = self.inner.initialized.lock().await;
         if *initialized {

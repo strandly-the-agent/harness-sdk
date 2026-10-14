@@ -11,7 +11,7 @@ use strands_agents::{Agent, AgentStreamEvent};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::new(model).await?;
+    let agent = Agent::new(model)?;
 
     let mut stream = agent.stream("Write a haiku about Rust.");
     while let Some(event) = stream.next().await {

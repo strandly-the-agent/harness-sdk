@@ -62,7 +62,6 @@ async fn checkpointing_agent(model: Arc<MockMessageModel>, tool: ToolRef) -> Age
         .tool_ref(tool)
         .checkpointing(true)
         .build()
-        .await
         .unwrap()
 }
 
@@ -77,7 +76,6 @@ async fn does_not_checkpoint_by_default() {
         .model_arc(tool_then_text_model())
         .tool_ref(tool)
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("Hi").await.unwrap();
@@ -165,7 +163,6 @@ async fn resume_requires_checkpointing_to_be_enabled() {
         .model_arc(tool_then_text_model())
         .tool_ref(tool)
         .build()
-        .await
         .unwrap();
 
     let error = agent

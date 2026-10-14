@@ -58,7 +58,6 @@ async fn truncates_an_oversized_tool_result_in_the_call_that_triggers_it() {
         .messages(oversized_history())
         .context_manager(manager)
         .build()
-        .await
         .unwrap();
 
     agent.invoke("and now?").await.unwrap();

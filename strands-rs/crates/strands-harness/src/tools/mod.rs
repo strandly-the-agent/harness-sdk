@@ -33,7 +33,6 @@ pub(crate) mod test_support {
                 Message::assistant(reply),
             )]))
             .build()
-            .await
             .expect("agent builds")
     }
 

@@ -1466,7 +1466,6 @@ mod tests {
             .model(Arc::clone(&model) as Arc<dyn Model>)
             .memory_manager(Arc::clone(&manager))
             .build()
-            .await
             .unwrap();
 
         agent.invoke("what do I drink?").await.unwrap();

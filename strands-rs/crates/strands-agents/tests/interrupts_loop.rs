@@ -78,7 +78,6 @@ async fn tool_interrupt_stops_the_loop_and_resume_finishes_the_tool() {
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .tool_ref(approve_tool(Arc::clone(&runs)))
         .build()
-        .await
         .unwrap();
 
     let interrupted = agent.invoke("write the file").await.unwrap();
@@ -128,7 +127,6 @@ async fn hook_interrupt_stops_the_loop_before_the_tool_runs() {
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
         .build()
-        .await
         .unwrap();
     let _cleanup = agent
         .hooks()
@@ -159,7 +157,6 @@ async fn invoking_with_new_input_while_interrupted_is_rejected() {
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .tool_ref(approve_tool(Arc::new(AtomicUsize::new(0))))
         .build()
-        .await
         .unwrap();
 
     assert_eq!(
@@ -183,7 +180,6 @@ async fn a_sibling_interrupt_keeps_the_completed_tool_result() {
         .tool_ref(approve_tool(Arc::clone(&approve_runs)))
         .tool_ref(sibling_tool("ok", Arc::clone(&sibling_runs)))
         .build()
-        .await
         .unwrap();
 
     let interrupted = agent.invoke("do both").await.unwrap();
@@ -232,7 +228,6 @@ async fn hitl_with_a_scripted_ask_approves_and_denies_inline() {
             .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
             .interventions([hitl])
             .build()
-            .await
             .unwrap();
 
         let result = agent.invoke("go").await.unwrap();
@@ -267,7 +262,6 @@ async fn hitl_without_an_ask_interrupts_and_resumes() {
         .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
         .interventions([hitl])
         .build()
-        .await
         .unwrap();
 
     let interrupted = agent.invoke("go").await.unwrap();
@@ -305,7 +299,6 @@ async fn hitl_allowed_tools_skip_approval_entirely() {
         .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
         .interventions([hitl])
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("go").await.unwrap();
@@ -329,7 +322,6 @@ async fn an_interrupted_tool_still_ends_its_tool_span() {
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .tool_ref(approve_tool(Arc::clone(&runs)))
         .build()
-        .await
         .unwrap();
 
     let interrupted = agent.invoke("write the file").await.unwrap();

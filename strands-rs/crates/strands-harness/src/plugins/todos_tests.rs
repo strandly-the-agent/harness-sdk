@@ -31,7 +31,6 @@ async fn agent_with_todos(todos: &Todos) -> Agent {
         .model(MockMessageModel::shared(vec![]) as Arc<dyn Model>)
         .plugin(todos.clone())
         .build()
-        .await
         .expect("agent builds")
 }
 
@@ -94,7 +93,6 @@ async fn re_surfaces_the_list_as_a_reminder_when_todos_are_present() {
         .model(model.clone() as Arc<dyn Model>)
         .plugin(todos.clone())
         .build()
-        .await
         .expect("agent builds");
     agent.state().set("todos", serde_json::to_value(items()).unwrap());
     agent.invoke("hi").await.expect("invoke");
@@ -115,7 +113,6 @@ async fn renders_no_reminder_when_there_are_no_todos() {
         .model(model.clone() as Arc<dyn Model>)
         .plugin(Todos::default())
         .build()
-        .await
         .expect("agent builds");
     agent.invoke("hi").await.expect("invoke");
     let (messages, _) = model.calls().remove(0);
@@ -152,7 +149,6 @@ async fn registers_a_context_injector_on_init_agent() {
         .model(model as Arc<dyn Model>)
         .plugin(Todos::default())
         .build()
-        .await
         .expect("agent builds");
     assert!(agent.tools().iter().any(|t| t.name() == "todo_write"));
 }

@@ -245,7 +245,6 @@ mod tests {
             .tool(delegate_tool("handoff", "specialist says hi"))
             .plugin(AgentDelegation::new(["handoff"]))
             .build()
-            .await
             .unwrap();
 
         let result = agent.invoke("go").await.unwrap();
@@ -268,7 +267,6 @@ mod tests {
             .tool(delegate_tool("plain", "tool output"))
             .plugin(AgentDelegation::new(["handoff"]))
             .build()
-            .await
             .unwrap();
 
         let result = agent.invoke("go").await.unwrap();
@@ -295,7 +293,6 @@ mod tests {
             .tool(delegate_tool("plain", "tool output"))
             .plugin(AgentDelegation::new(["handoff"]))
             .build()
-            .await
             .unwrap();
 
         let result = agent.invoke("go").await.unwrap();
@@ -339,7 +336,6 @@ mod tests {
             .tool(delegate_tool("handoff", "   "))
             .plugin(AgentDelegation::new(["handoff"]))
             .build()
-            .await
             .unwrap();
 
         let result = agent.invoke("go").await.unwrap();
@@ -362,7 +358,6 @@ mod tests {
             .tool(delegate_tool("handoff", "specialist says hi"))
             .plugin(AgentDelegation::default())
             .build()
-            .await
             .unwrap();
 
         let result = agent.invoke("go").await.unwrap();

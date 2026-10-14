@@ -111,7 +111,6 @@ async fn memoizes_discovery_across_turns() {
             root: root_of(&dir),
         }))
         .build()
-        .await
         .expect("agent builds");
     agent.invoke("hi").await.expect("first turn");
     write_file(dir.path(), "AGENTS.md", "changed").await;

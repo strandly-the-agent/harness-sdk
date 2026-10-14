@@ -22,8 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(model)
         .system_prompt("You are a terse assistant.")
         .tool(WeatherTool::new())
-        .build()
-        .await?;
+        .build()?;
 
     let result = agent.invoke("What's the weather in Seattle?").await?;
     println!("{result}");

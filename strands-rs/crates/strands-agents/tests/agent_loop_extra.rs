@@ -79,7 +79,6 @@ async fn keeps_existing_messages_passed_to_the_builder() {
             Message::assistant("earlier reply"),
         ])
         .build()
-        .await
         .unwrap();
 
     agent.invoke("now").await.unwrap();
@@ -96,7 +95,6 @@ async fn set_messages_replaces_the_conversation() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     agent.invoke("one").await.unwrap();
 
@@ -111,7 +109,6 @@ async fn state_is_readable_and_writable() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
 
     agent.state().set("key", json!("value"));
@@ -126,7 +123,6 @@ async fn set_system_prompt_changes_what_the_model_sees() {
         .model_arc(Arc::clone(&model) as Arc<_>)
         .system_prompt("first")
         .build()
-        .await
         .unwrap();
 
     agent.invoke("one").await.unwrap();
@@ -150,7 +146,6 @@ async fn fires_message_added_for_each_appended_message() {
         .model_arc(tool_use_then_text("echo"))
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
 
     let roles = Arc::new(Mutex::new(Vec::new()));
@@ -175,7 +170,6 @@ async fn after_invocation_callbacks_run_in_reverse_order() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     let order = Arc::new(Mutex::new(Vec::new()));
 
@@ -211,7 +205,6 @@ async fn after_model_call_callbacks_run_in_reverse_order() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     let order = Arc::new(Mutex::new(Vec::new()));
 
@@ -242,7 +235,6 @@ async fn after_invocation_resume_runs_another_invocation() {
     let agent = Agent::builder()
         .model_arc(text_model(&["first", "second"]))
         .build()
-        .await
         .unwrap();
     let resumed = Arc::new(Mutex::new(false));
     let captured = Arc::clone(&resumed);
@@ -273,7 +265,6 @@ async fn after_invocation_resume_is_ignored_when_the_invocation_errored() {
     let agent = Agent::builder()
         .model_arc(MockMessageModel::shared(Vec::new()))
         .build()
-        .await
         .unwrap();
     let _ = agent
         .hooks()
@@ -299,7 +290,6 @@ async fn rejects_concurrent_invocations() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi", "there"]))
         .build()
-        .await
         .unwrap();
     let mut first = agent.stream("one");
 
@@ -321,7 +311,6 @@ async fn is_invoking_is_false_before_and_after_an_invocation() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     assert!(!agent.is_invoking());
     agent.invoke("go").await.unwrap();
@@ -333,7 +322,6 @@ async fn initialize_is_idempotent_and_fires_initialized_once() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     let count = Arc::new(Mutex::new(0usize));
     let captured = Arc::clone(&count);
@@ -371,7 +359,6 @@ async fn registers_tools_contributed_by_plugins() {
         .model_arc(text_model(&["hi"]))
         .plugin(ToolPlugin)
         .build()
-        .await
         .unwrap();
 
     let names: Vec<String> = agent.tools().iter().map(|t| t.name().to_owned()).collect();
@@ -384,7 +371,6 @@ async fn unknown_tool_produces_an_error_result() {
         .model_arc(tool_use_then_text("missing"))
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
 
     agent.invoke("go").await.unwrap();
@@ -404,7 +390,6 @@ async fn before_tool_call_cancel_with_a_custom_reason_becomes_the_error_result()
         .model_arc(tool_use_then_text("echo"))
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
 
     let _ = agent
@@ -429,7 +414,6 @@ async fn before_tool_call_selected_tool_overrides_the_tool_that_runs() {
         .model_arc(tool_use_then_text("echo"))
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
 
     let replacement: ToolRef = Arc::new(
@@ -460,7 +444,6 @@ async fn after_tool_call_can_replace_the_result() {
         .model_arc(tool_use_then_text("echo"))
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
 
     let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolCallEvent| {
@@ -488,7 +471,6 @@ async fn after_tools_end_turn_yes_stops_the_loop() {
         .model_arc(Arc::clone(&model) as Arc<_>)
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
     let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Yes;
@@ -516,7 +498,6 @@ async fn after_tools_end_turn_text_appends_an_assistant_message() {
         .model_arc(Arc::clone(&model) as Arc<_>)
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
     let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Text("stopping here".to_owned());
@@ -539,7 +520,6 @@ async fn after_tools_end_turn_blocks_appends_the_given_blocks() {
         .model_arc(Arc::clone(&model) as Arc<_>)
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
     let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Blocks(vec![ContentBlock::Text("from blocks".to_owned())]);
@@ -560,7 +540,6 @@ async fn before_tools_cancel_turns_every_result_into_an_error() {
         .model_arc(tool_use_then_text("echo"))
         .tool_ref(echo_tool("echo"))
         .build()
-        .await
         .unwrap();
     let _ = agent.hooks().add_sync_callback(|event: &mut BeforeToolsEvent| {
         event.cancel = Cancel::Reason("tools off".to_owned());
@@ -583,7 +562,6 @@ async fn before_invocation_cancel_appends_only_an_assistant_message() {
     let agent = Agent::builder()
         .model_arc(Arc::clone(&model) as Arc<_>)
         .build()
-        .await
         .unwrap();
     let _ = agent
         .hooks()
@@ -610,7 +588,6 @@ async fn agent_result_displays_the_concatenated_text() {
     let agent = Agent::builder()
         .model_arc(text_model(&["Hello there"]))
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("Hi").await.unwrap();
@@ -624,7 +601,6 @@ async fn stream_yields_the_agent_result_last() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     let mut stream = agent.stream("go");
 
@@ -646,7 +622,6 @@ async fn continuation_input_merges_with_the_prompt_and_reports_after_appending()
     let agent = Agent::builder()
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .build()
-        .await
         .unwrap();
 
     let seen: Arc<Mutex<Option<usize>>> = Arc::new(Mutex::new(None));
@@ -691,7 +666,6 @@ async fn continuation_input_is_abandoned_when_the_pass_never_appends() {
                 }),
         ) as ToolRef)
         .build()
-        .await
         .unwrap();
 
     // Put the agent into the "resume required" state: a tool interrupt stops the loop.

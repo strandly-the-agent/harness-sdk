@@ -56,7 +56,6 @@ async fn an_agent_calls_the_mcp_tool_and_gets_the_echo_back() {
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .tools(tools)
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("echo ping").await.unwrap();

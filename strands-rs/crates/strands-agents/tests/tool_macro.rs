@@ -46,7 +46,6 @@ async fn agent() -> Agent {
             Message::assistant("done"),
         )]))
         .build()
-        .await
         .unwrap()
 }
 
@@ -161,7 +160,6 @@ async fn a_generated_tool_runs_in_the_agent_loop() {
         .model_arc(model)
         .tool_ref(Arc::new(WeatherTool::new()))
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("weather in Seattle?").await.unwrap();

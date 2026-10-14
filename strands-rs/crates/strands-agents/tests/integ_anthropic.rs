@@ -138,7 +138,6 @@ async fn runs_an_agent_end_to_end() {
         .model(model)
         .system_prompt("Answer in one word.")
         .build()
-        .await
         .expect("agent");
     let result = agent
         .invoke("What is the capital of France?")

@@ -17,8 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::builder()
         .model(model)
         .tool(WeatherTool::new())
-        .build()
-        .await?;
+        .build()?;
 
     let result = agent.invoke("What is the weather in Seattle?").await?;
     println!("{result}");

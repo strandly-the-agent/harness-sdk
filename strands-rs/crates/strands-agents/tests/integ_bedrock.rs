@@ -223,7 +223,6 @@ async fn throws_without_context_management_when_the_model_hits_max_tokens() {
         .model(model(50).await)
         .context_manager(ContextManagerOption::Off)
         .build()
-        .await
         .unwrap();
     let long_prompt = format!(
         "Please write a very detailed explanation of {}",
@@ -246,7 +245,6 @@ async fn maps_an_oversized_prompt_to_context_window_overflow() {
         .context_manager(ContextManagerOption::Off)
         .no_retry_strategy()
         .build()
-        .await
         .unwrap();
     let huge = "lorem ipsum dolor sit amet ".repeat(60_000);
     let err = agent.invoke(huge).await.unwrap_err();
@@ -272,7 +270,6 @@ async fn handles_thinking_mode_with_tool_use() {
         .model(model)
         .tool(test_tool)
         .build()
-        .await
         .unwrap();
 
     let result = agent
@@ -360,7 +357,6 @@ async fn handles_invocation_streaming_system_prompts_and_tool_use() {
         )
         .tool(calculator(calls.clone()))
         .build()
-        .await
         .unwrap();
 
     let mut stream = agent.stream("What is 123 * 456?");
@@ -414,7 +410,6 @@ async fn handles_tool_use_with_json_schema_tool() {
         )
         .tool(tool)
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("What is 25 * 48?").await.unwrap();
@@ -434,7 +429,6 @@ async fn yields_metadata_events_through_the_agent_stream() {
         .model(model(100).await)
         .system_prompt("Respond with a brief greeting.")
         .build()
-        .await
         .unwrap();
 
     let mut stream = agent.stream("Say hello");
@@ -468,7 +462,6 @@ async fn maintains_message_history_and_conversation_context() {
         .model(model(100).await)
         .system_prompt("Answer in one short sentence.")
         .build()
-        .await
         .unwrap();
     agent
         .invoke("My favourite colour is teal. Remember it.")
@@ -486,14 +479,14 @@ async fn maintains_message_history_and_conversation_context() {
 #[tokio::test]
 #[ignore = "live Bedrock"]
 async fn accepts_content_block_and_message_inputs() {
-    let agent = Agent::builder().model(model(100).await).build().await.unwrap();
+    let agent = Agent::builder().model(model(100).await).build().unwrap();
     let result = agent
         .invoke(vec![ContentBlock::text("Reply with the single word: pong")])
         .await
         .unwrap();
     assert!(result.last_message.text().to_lowercase().contains("pong"));
 
-    let agent = Agent::builder().model(model(100).await).build().await.unwrap();
+    let agent = Agent::builder().model(model(100).await).build().unwrap();
     let history = vec![
         Message::user("My name is Ada."),
         Message::assistant("Nice to meet you, Ada."),
@@ -516,7 +509,7 @@ struct Answer {
 #[tokio::test]
 #[ignore = "live Bedrock"]
 async fn returns_validated_structured_output() {
-    let agent = Agent::builder().model(model(200).await).build().await.unwrap();
+    let agent = Agent::builder().model(model(200).await).build().unwrap();
     let answer: Answer = agent.invoke_structured("What is 2 + 2?").await.unwrap();
     assert_eq!(answer, Answer { answer: 4.0 });
 }
@@ -530,7 +523,7 @@ async fn emits_reasoning_content_with_thinking_model() {
     })
     .await
     .unwrap();
-    let agent = Agent::builder().model(model).build().await.unwrap();
+    let agent = Agent::builder().model(model).build().unwrap();
 
     let mut stream = agent.stream("What is 15 * 23? Think step by step.");
     let mut reasoning_deltas = 0;
@@ -641,7 +634,6 @@ async fn guardrail_agent(trace: GuardrailTraceMode) -> Option<Agent> {
             .model(model)
             .system_prompt("You are a helpful assistant.")
             .build()
-            .await
             .unwrap(),
     )
 }

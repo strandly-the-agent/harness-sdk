@@ -407,8 +407,7 @@ pub fn make_web_fetch(options: MakeWebFetchOptions) -> FunctionTool {
                 let summarizer = Agent::builder()
                     .model_arc(model)
                     .system_prompt(SUMMARIZER_PROMPT)
-                    .build()
-                    .await?;
+                    .build()?;
                 let result = summarizer
                     .invoke(format!(
                         "Fetched URL: {resolved_url}\n\nRequest: {prompt}\n\n--- Content ---\n{text}"

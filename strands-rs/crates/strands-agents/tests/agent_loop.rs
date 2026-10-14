@@ -43,7 +43,6 @@ async fn returns_the_model_response() {
     let agent = Agent::builder()
         .model_arc(text_model(&["Hello there"]))
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("Hi").await.unwrap();
@@ -64,7 +63,6 @@ async fn appends_input_messages_once_per_invocation() {
     let agent = Agent::builder()
         .model_arc(text_model(&["one", "two"]))
         .build()
-        .await
         .unwrap();
 
     agent.invoke("first").await.unwrap();
@@ -90,7 +88,6 @@ async fn runs_tools_and_feeds_results_back_to_the_model() {
         .model_arc(model.clone())
         .tool_ref(echo_tool())
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("run the tool").await.unwrap();
@@ -119,7 +116,6 @@ async fn unknown_tool_produces_an_error_result_and_keeps_looping() {
         .model_arc(model)
         .tool_ref(echo_tool())
         .build()
-        .await
         .unwrap();
 
     let result = agent.invoke("call a hallucinated tool").await.unwrap();
@@ -145,7 +141,6 @@ async fn emits_events_in_order() {
         .model_arc(model)
         .tool_ref(echo_tool())
         .build()
-        .await
         .unwrap();
 
     let mut names = Vec::new();
@@ -186,7 +181,6 @@ async fn fires_lifecycle_hooks_in_order() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     let seen = Arc::new(Mutex::new(Vec::new()));
 
@@ -235,7 +229,7 @@ async fn fires_lifecycle_hooks_in_order() {
 #[tokio::test]
 async fn before_invocation_hook_can_cancel_the_invocation() {
     let model = text_model(&["never reached"]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
     let _ = agent
         .hooks()
         .add_sync_callback::<BeforeInvocationEvent, _>(|event| {
@@ -267,7 +261,6 @@ async fn before_tools_hook_can_cancel_the_batch() {
         .model_arc(model)
         .tool_ref(echo_tool())
         .build()
-        .await
         .unwrap();
     let _ = agent.hooks().add_sync_callback::<BeforeToolsEvent, _>(|event| {
         event.cancel = true.into();
@@ -293,7 +286,6 @@ async fn after_tools_hook_can_end_the_turn() {
         .model_arc(model.clone())
         .tool_ref(echo_tool())
         .build()
-        .await
         .unwrap();
     let _ = agent.hooks().add_sync_callback::<AfterToolsEvent, _>(|event| {
         event.end_turn = strands_agents::hooks::EndTurn::Text("stopping".to_owned());
@@ -310,7 +302,7 @@ async fn after_tools_hook_can_end_the_turn() {
 #[tokio::test]
 async fn after_invocation_resume_runs_another_invocation() {
     let model = text_model(&["first", "second"]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
     let resumed = Arc::new(Mutex::new(false));
     let flag = Arc::clone(&resumed);
     let _ = agent
@@ -335,7 +327,6 @@ async fn rejects_a_concurrent_invocation() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hello"]))
         .build()
-        .await
         .unwrap();
     let mut first = agent.stream("hi");
     let mut second = agent.stream("again");
@@ -358,7 +349,6 @@ async fn releases_the_invocation_lock_after_completion() {
     let agent = Agent::builder()
         .model_arc(text_model(&["one", "two"]))
         .build()
-        .await
         .unwrap();
 
     agent.invoke("hi").await.unwrap();
@@ -373,7 +363,6 @@ async fn propagates_model_errors() {
         .model_arc(model)
         .no_retry_strategy()
         .build()
-        .await
         .unwrap();
 
     let error = agent.invoke("hi").await.expect_err("model error propagates");
@@ -386,7 +375,6 @@ async fn invocation_state_is_shared_with_the_result() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     let state = strands_agents::InvocationState::new();
     state.insert("key", "value".to_owned());
@@ -407,7 +395,6 @@ async fn stream_ends_with_exactly_one_agent_result() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
 
     let mut stream = agent.stream("hi");
@@ -446,7 +433,6 @@ async fn looping_agent(model: Arc<MockMessageModel>) -> Agent {
         .model_arc(model)
         .tool_ref(echo_tool())
         .build()
-        .await
         .unwrap()
 }
 
@@ -547,7 +533,6 @@ async fn rejects_non_positive_limits() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
 
     let error = agent
@@ -569,7 +554,7 @@ async fn rejects_non_positive_limits() {
 #[tokio::test]
 async fn cancel_before_the_model_call_returns_cancelled() {
     let model = text_model(&["never reached"]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
     let token = tokio_util::sync::CancellationToken::new();
     token.cancel();
 
@@ -625,7 +610,7 @@ async fn cancel_during_tool_execution_stops_after_the_results() {
         MockResponse::with_stop_reason(tool_use_message("cancels", "t1", json!({})), StopReason::ToolUse),
         MockResponse::message(Message::assistant("never reached")),
     ]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
     let cancelling = agent.clone();
     let cancel_tool: ToolRef = Arc::new(
         function_tool("cancels")
@@ -671,7 +656,7 @@ async fn structured_output_when_the_model_calls_the_tool() {
         structured_tool_use("s1", json!({ "name": "Ada", "age": 36 })),
         StopReason::ToolUse,
     )]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
 
     let person: Person = agent.invoke_structured("who?").await.unwrap();
 
@@ -697,7 +682,7 @@ async fn structured_output_is_forced_after_a_plain_text_reply() {
             StopReason::ToolUse,
         ),
     ]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
 
     let person: Person = agent.invoke_structured("who?").await.unwrap();
 
@@ -721,7 +706,7 @@ async fn structured_output_fails_when_the_model_never_calls_the_tool() {
         MockResponse::message(Message::assistant("first")),
         MockResponse::message(Message::assistant("second")),
     ]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
 
     let error = agent.invoke_structured::<Person>("who?").await.unwrap_err();
 
@@ -742,7 +727,7 @@ async fn structured_output_schema_is_reported_on_the_result() {
         structured_tool_use("s1", json!({ "name": "Ada", "age": 36 })),
         StopReason::ToolUse,
     )]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
 
     let result = agent
         .invoke_with(
@@ -770,7 +755,6 @@ async fn projects_input_tokens_for_the_model_call() {
     let agent = Agent::builder()
         .model_arc(text_model(&["hi"]))
         .build()
-        .await
         .unwrap();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let captured = Arc::clone(&seen);
@@ -795,7 +779,7 @@ async fn max_tokens_from_the_model_surfaces_as_an_error() {
         Message::assistant("partial answer"),
         StopReason::MaxTokens,
     )]);
-    let agent = Agent::builder().model_arc(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model_arc(model.clone()).build().unwrap();
 
     let error = agent.invoke("go").await.unwrap_err();
 
@@ -814,7 +798,7 @@ async fn max_tokens_from_the_model_surfaces_as_an_error() {
 
 #[tokio::test]
 async fn a_panicking_hook_releases_the_invocation_lock() {
-    let agent = Agent::new(text_model(&["after the panic"])).await.unwrap();
+    let agent = Agent::new(text_model(&["after the panic"])).unwrap();
     let panicked = Arc::new(Mutex::new(false));
     let flag = Arc::clone(&panicked);
     let _cleanup = agent
@@ -844,7 +828,7 @@ async fn dropping_the_stream_cancels_the_invocation() {
         MockResponse::with_stop_reason(tool_use_message("slow", "t1", json!({})), StopReason::ToolUse),
         MockResponse::message(Message::assistant("never reached")),
     ]);
-    let agent = Agent::builder().model(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model(model.clone()).build().unwrap();
     let slow: ToolRef = Arc::new(
         function_tool("slow")
             .description("Sleeps before succeeding")
@@ -877,7 +861,7 @@ async fn dropping_the_stream_cancels_the_invocation() {
 #[tokio::test]
 async fn cancel_right_after_stream_cancels_the_new_invocation() {
     let model = text_model(&["never reached"]);
-    let agent = Agent::builder().model(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model(model.clone()).build().unwrap();
 
     let mut stream = agent.stream("go");
     agent.cancel();
@@ -907,7 +891,7 @@ async fn a_tool_cancellation_leaves_results_for_every_tool_use() {
         ),
         MockResponse::message(Message::assistant("never reached")),
     ]);
-    let agent = Agent::builder().model(model.clone()).build().await.unwrap();
+    let agent = Agent::builder().model(model.clone()).build().unwrap();
     let cancelling = agent.clone();
     let cancels: ToolRef = Arc::new(
         function_tool("cancels")

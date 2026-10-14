@@ -288,11 +288,14 @@ impl AgentBuilder {
         self
     }
 
-    /// Build and initialize the agent.
+    /// Build the agent.
     ///
     /// Plugin order (observable through hook order): conversation manager, retry strategy,
     /// user plugins, session manager, `ModelPlugin`.
-    pub async fn build(self) -> Result<Agent> {
+    ///
+    /// Plugins are initialized lazily by the first `invoke`/`stream`; call
+    /// [`Agent::initialize`] to do it eagerly (e.g. to read a restored session before invoking).
+    pub fn build(self) -> Result<Agent> {
         let model = self
             .model
             .ok_or_else(|| Error::DefaultNotConfigured(NO_MODEL_MESSAGE.to_owned()))?;
@@ -373,7 +376,6 @@ impl AgentBuilder {
                 middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
         };
-        agent.initialize().await?;
         Ok(agent)
     }
 }
@@ -384,8 +386,8 @@ impl Agent {
         AgentBuilder::new()
     }
 
-    /// An initialized agent with default everything but the model.
-    pub async fn new(model: impl Model + 'static) -> Result<Agent> {
-        AgentBuilder::new().model(model).build().await
+    /// An agent with default everything but the model.
+    pub fn new(model: impl Model + 'static) -> Result<Agent> {
+        AgentBuilder::new().model(model).build()
     }
 }

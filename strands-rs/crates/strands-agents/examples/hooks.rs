@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .handler(|_input: JsonValue, _ctx: ToolContext| async move { Ok("12:00") });
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder().model(model).tool(clock).build().await?;
+    let agent = Agent::builder().model(model).tool(clock).build()?;
 
     let _ = agent
         .hooks()

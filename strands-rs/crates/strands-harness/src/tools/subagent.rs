@@ -995,7 +995,7 @@ mod tests {
             let (seen, child_model) = (seen.clone(), child_model.clone());
             Box::pin(async move {
                 seen.lock().unwrap().push(spec);
-                Agent::builder().model_arc(child_model).build().await
+                Agent::builder().model_arc(child_model).build()
             })
         });
         (builder, specs, model)
@@ -1006,7 +1006,6 @@ mod tests {
             .model_arc(mock("parent"))
             .messages(messages)
             .build()
-            .await
             .unwrap()
     }
 

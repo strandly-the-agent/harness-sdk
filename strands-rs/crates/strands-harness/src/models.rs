@@ -596,7 +596,7 @@ async fn build_bedrock(
         if let Some(region) = bedrock_region() {
             builder = builder.region(region);
         }
-        Ok(Arc::new(builder.build().await?))
+        Ok(Arc::new(builder.build()?))
     }
     #[cfg(not(feature = "bedrock"))]
     {

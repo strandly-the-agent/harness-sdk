@@ -91,7 +91,6 @@ async fn agent_loop_emits_the_gen_ai_span_tree_with_attributes_and_metrics() {
         .tool_ref(echo_tool())
         .trace_attributes([("deployment".to_string(), "test".into())])
         .build()
-        .await
         .expect("agent builds");
 
     let result = agent.invoke("hello").await.expect("invocation succeeds");
@@ -261,7 +260,6 @@ async fn metrics_are_collected_without_a_provider() {
     let agent = Agent::builder()
         .model_arc(model)
         .build()
-        .await
         .expect("agent builds");
     let result = agent.invoke("hello").await.expect("invocation succeeds");
     assert_eq!(result.metrics.cycle_count, 1);
