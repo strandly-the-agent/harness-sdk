@@ -76,3 +76,8 @@ installs the exporter).
 - `AgentStreamEvent` carries accessor shortcuts (`text_delta`, `tool_use`, `tool_result`,
   `result`) so the common streaming paths don't need a nested destructure; `Agent::stream_text`
   is the text-only view. `ModelStopData.usage` exposes the call's token usage to after-model hooks.
+- Hook callbacks are plain closures returning a future (`hooks.add_callback(|e: &mut Event| async move
+  { Ok(()) })`, plus `AgentBuilder::hook`/`sync_hook` for build-time registration); registration returns
+  `()` and the `*_scoped` variants return the `#[must_use]` `HookCleanup`. `add_callback_boxed*` keeps the
+  `|e| Box::pin(async move { .. })` form, needed when the future borrows the event (a closure's return
+  type cannot capture the event's lifetime).

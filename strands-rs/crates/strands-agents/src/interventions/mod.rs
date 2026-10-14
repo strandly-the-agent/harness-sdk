@@ -185,90 +185,98 @@ impl Plugin for InterventionRegistry {
 
     async fn init_agent(&self, agent: &Agent) -> Result<()> {
         let handlers = self.handlers.clone();
-        let _ = agent.hooks().add_callback_with_order::<BeforeInvocationEvent>(
-            hook_order::INTERVENTION_INPUT,
-            Arc::new(move |event: &mut BeforeInvocationEvent| {
-                let handlers = handlers.clone();
-                Box::pin(async move {
-                    let mut guides = Vec::new();
-                    for handler in &handlers {
-                        match handler.before_invocation(event).await? {
-                            Action::Proceed => {}
-                            Action::Deny(reason) => {
-                                event.cancel = Cancel::Reason(format!("{DENIED_PREFIX}{reason}"));
-                                return Ok(());
+        agent
+            .hooks()
+            .add_callback_boxed_with_order::<BeforeInvocationEvent, _>(
+                hook_order::INTERVENTION_INPUT,
+                move |event: &mut BeforeInvocationEvent| {
+                    let handlers = handlers.clone();
+                    Box::pin(async move {
+                        let mut guides = Vec::new();
+                        for handler in &handlers {
+                            match handler.before_invocation(event).await? {
+                                Action::Proceed => {}
+                                Action::Deny(reason) => {
+                                    event.cancel = Cancel::Reason(format!("{DENIED_PREFIX}{reason}"));
+                                    return Ok(());
+                                }
+                                Action::Guide(feedback) => guides.push((handler.name().to_owned(), feedback)),
+                                Action::Transform(apply) => apply(event),
                             }
-                            Action::Guide(feedback) => guides.push((handler.name().to_owned(), feedback)),
-                            Action::Transform(apply) => apply(event),
                         }
-                    }
-                    if !guides.is_empty() {
-                        event.cancel = Cancel::Reason(format!("{GUIDANCE_PREFIX}{}", merge_guides(&guides)));
-                    }
-                    Ok(())
-                })
-            }),
-        );
+                        if !guides.is_empty() {
+                            event.cancel =
+                                Cancel::Reason(format!("{GUIDANCE_PREFIX}{}", merge_guides(&guides)));
+                        }
+                        Ok(())
+                    })
+                },
+            );
 
         let handlers = self.handlers.clone();
-        let _ = agent.hooks().add_callback_with_order::<BeforeToolCallEvent>(
-            hook_order::INTERVENTION_INPUT,
-            Arc::new(move |event: &mut BeforeToolCallEvent| {
-                let handlers = handlers.clone();
-                Box::pin(async move {
-                    let mut guides = Vec::new();
-                    for handler in &handlers {
-                        match handler.before_tool_call(event).await? {
-                            ToolCallAction::Proceed => {}
-                            ToolCallAction::Deny(reason) => {
-                                event.cancel = Cancel::Reason(format!("{DENIED_PREFIX}{reason}"));
-                                return Ok(());
-                            }
-                            ToolCallAction::Guide(feedback) => {
-                                guides.push((handler.name().to_owned(), feedback))
-                            }
-                            ToolCallAction::Transform(apply) => apply(event),
-                            ToolCallAction::Confirm(confirm) => {
-                                let mut params =
-                                    InterruptParams::new(handler.name()).with_reason(confirm.prompt.clone());
-                                params.response = confirm.response.clone();
-                                // Propagates `Error::Interrupt` on the first pass; on resume the
-                                // human's answer comes back here.
-                                let response: JsonValue = event.interrupt(params)?;
-                                if !confirm.approves(&response) {
-                                    event.cancel = Cancel::Reason(format!(
-                                        "{CONFIRMATION_FAILED_PREFIX}{}",
-                                        confirm.prompt
-                                    ));
+        agent
+            .hooks()
+            .add_callback_boxed_with_order::<BeforeToolCallEvent, _>(
+                hook_order::INTERVENTION_INPUT,
+                move |event: &mut BeforeToolCallEvent| {
+                    let handlers = handlers.clone();
+                    Box::pin(async move {
+                        let mut guides = Vec::new();
+                        for handler in &handlers {
+                            match handler.before_tool_call(event).await? {
+                                ToolCallAction::Proceed => {}
+                                ToolCallAction::Deny(reason) => {
+                                    event.cancel = Cancel::Reason(format!("{DENIED_PREFIX}{reason}"));
                                     return Ok(());
+                                }
+                                ToolCallAction::Guide(feedback) => {
+                                    guides.push((handler.name().to_owned(), feedback))
+                                }
+                                ToolCallAction::Transform(apply) => apply(event),
+                                ToolCallAction::Confirm(confirm) => {
+                                    let mut params = InterruptParams::new(handler.name())
+                                        .with_reason(confirm.prompt.clone());
+                                    params.response = confirm.response.clone();
+                                    // Propagates `Error::Interrupt` on the first pass; on resume the
+                                    // human's answer comes back here.
+                                    let response: JsonValue = event.interrupt(params)?;
+                                    if !confirm.approves(&response) {
+                                        event.cancel = Cancel::Reason(format!(
+                                            "{CONFIRMATION_FAILED_PREFIX}{}",
+                                            confirm.prompt
+                                        ));
+                                        return Ok(());
+                                    }
                                 }
                             }
                         }
-                    }
-                    if !guides.is_empty() {
-                        event.cancel = Cancel::Reason(format!("{GUIDANCE_PREFIX}{}", merge_guides(&guides)));
-                    }
-                    Ok(())
-                })
-            }),
-        );
+                        if !guides.is_empty() {
+                            event.cancel =
+                                Cancel::Reason(format!("{GUIDANCE_PREFIX}{}", merge_guides(&guides)));
+                        }
+                        Ok(())
+                    })
+                },
+            );
 
         let handlers = self.handlers.clone();
-        let _ = agent.hooks().add_callback_with_order::<AfterToolCallEvent>(
-            hook_order::INTERVENTION_OUTPUT,
-            Arc::new(move |event: &mut AfterToolCallEvent| {
-                let handlers = handlers.clone();
-                Box::pin(async move {
-                    for handler in &handlers {
-                        // Only `transform` has an effect after a tool call.
-                        if let Action::Transform(apply) = handler.after_tool_call(event).await? {
-                            apply(event);
+        agent
+            .hooks()
+            .add_callback_boxed_with_order::<AfterToolCallEvent, _>(
+                hook_order::INTERVENTION_OUTPUT,
+                move |event: &mut AfterToolCallEvent| {
+                    let handlers = handlers.clone();
+                    Box::pin(async move {
+                        for handler in &handlers {
+                            // Only `transform` has an effect after a tool call.
+                            if let Action::Transform(apply) = handler.after_tool_call(event).await? {
+                                apply(event);
+                            }
                         }
-                    }
-                    Ok(())
-                })
-            }),
-        );
+                        Ok(())
+                    })
+                },
+            );
 
         Ok(())
     }

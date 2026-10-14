@@ -128,7 +128,7 @@ async fn hook_interrupt_stops_the_loop_before_the_tool_runs() {
         .tool(sibling_tool("ok", Arc::clone(&runs)))
         .build()
         .unwrap();
-    let _cleanup = agent
+    agent
         .hooks()
         .add_sync_callback(|event: &mut BeforeToolCallEvent| {
             let _: serde_json::Value = event.interrupt(InterruptParams::new("gate"))?;

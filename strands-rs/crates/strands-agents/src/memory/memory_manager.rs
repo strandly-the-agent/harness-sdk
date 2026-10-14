@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::agent::Agent;
 use crate::error::{Error, Result};
-use crate::hooks::{hook_order, AfterInvocationEvent, BeforeModelCallEvent, HookCallback, MessageAddedEvent};
+use crate::hooks::{hook_order, AfterInvocationEvent, BeforeModelCallEvent, MessageAddedEvent};
 use crate::memory::injection::MemoryInjectionConfig;
 use crate::memory::types::{
     has_write_sink, AddMessagesContext, ExtractionTrigger, MemoryAddOptions, MemoryAddToolConfig,
@@ -679,32 +679,34 @@ impl Plugin for MemoryManager {
 
         if self.has_extraction() {
             let buffering = Arc::clone(&manager);
-            let _ = agent.hooks().add_callback::<MessageAddedEvent, _>(move |event| {
-                let manager = Arc::clone(&buffering);
-                let message = event.message.clone();
-                Box::pin(async move {
-                    manager.record_messages(&[message]).await;
-                    Ok(())
-                })
-            });
-            let extracting = Arc::clone(&manager);
-            let callback: HookCallback<AfterInvocationEvent> = Arc::new(move |_event| {
-                let manager = Arc::clone(&extracting);
-                Box::pin(async move {
-                    manager.fire_extraction_trigger().await;
-                    Ok(())
-                })
-            });
-            let _ = agent
+            agent
                 .hooks()
-                .add_callback_with_order(hook_order::SDK_LAST, callback);
+                .add_callback_boxed::<MessageAddedEvent, _>(move |event| {
+                    let manager = Arc::clone(&buffering);
+                    let message = event.message.clone();
+                    Box::pin(async move {
+                        manager.record_messages(&[message]).await;
+                        Ok(())
+                    })
+                });
+            let extracting = Arc::clone(&manager);
+            agent.hooks().add_callback_with_order(
+                hook_order::SDK_LAST,
+                move |_event: &mut AfterInvocationEvent| {
+                    let manager = Arc::clone(&extracting);
+                    async move {
+                        manager.fire_extraction_trigger().await;
+                        Ok(())
+                    }
+                },
+            );
         }
 
         if self.injection.is_some() {
             let injecting = Arc::clone(&manager);
-            let _ = agent
+            agent
                 .hooks()
-                .add_callback::<BeforeModelCallEvent, _>(move |event| {
+                .add_callback_boxed::<BeforeModelCallEvent, _>(move |event| {
                     let manager = Arc::clone(&injecting);
                     Box::pin(async move {
                         manager.inject(&mut event.messages).await;

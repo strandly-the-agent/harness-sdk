@@ -169,9 +169,9 @@ impl Plugin for ContextInjector {
 
     async fn init_agent(&self, agent: &Agent) -> Result<()> {
         let injector = self.clone();
-        let _ = agent
+        agent
             .hooks()
-            .add_callback::<BeforeModelCallEvent, _>(move |event| {
+            .add_callback_boxed::<BeforeModelCallEvent, _>(move |event| {
                 let injector = injector.clone();
                 Box::pin(async move {
                     let agent = event.agent.clone();

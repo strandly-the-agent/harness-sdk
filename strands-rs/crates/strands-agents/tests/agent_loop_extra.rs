@@ -145,7 +145,7 @@ async fn fires_message_added_for_each_appended_message() {
 
     let roles = Arc::new(Mutex::new(Vec::new()));
     let captured = Arc::clone(&roles);
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(move |event: &mut MessageAddedEvent| {
             captured.lock().unwrap().push(event.message.role);
@@ -161,13 +161,39 @@ async fn fires_message_added_for_each_appended_message() {
 }
 
 #[tokio::test]
+async fn builder_registered_hooks_fire() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sync_seen = Arc::clone(&seen);
+    let async_seen = Arc::clone(&seen);
+    let agent = Agent::builder()
+        .model(text_model(&["hi"]))
+        .sync_hook(move |_e: &mut BeforeInvocationEvent| {
+            sync_seen.lock().unwrap().push("before");
+            Ok(())
+        })
+        .hook(move |_e: &mut AfterInvocationEvent| {
+            let seen = Arc::clone(&async_seen);
+            async move {
+                seen.lock().unwrap().push("after");
+                Ok(())
+            }
+        })
+        .build()
+        .unwrap();
+
+    agent.invoke("go").await.unwrap();
+
+    assert_eq!(*seen.lock().unwrap(), vec!["before", "after"]);
+}
+
+#[tokio::test]
 async fn after_invocation_callbacks_run_in_reverse_order() {
     let agent = Agent::builder().model(text_model(&["hi"])).build().unwrap();
     let order = Arc::new(Mutex::new(Vec::new()));
 
     for label in ["first", "second"] {
         let captured = Arc::clone(&order);
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback(move |_e: &mut AfterInvocationEvent| {
                 captured.lock().unwrap().push(label);
@@ -176,7 +202,7 @@ async fn after_invocation_callbacks_run_in_reverse_order() {
     }
     for label in ["before-first", "before-second"] {
         let captured = Arc::clone(&order);
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback(move |_e: &mut BeforeInvocationEvent| {
                 captured.lock().unwrap().push(label);
@@ -199,7 +225,7 @@ async fn after_model_call_callbacks_run_in_reverse_order() {
 
     for label in ["first", "second"] {
         let captured = Arc::clone(&order);
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback(move |_e: &mut AfterModelCallEvent| {
                 captured.lock().unwrap().push(label);
@@ -207,7 +233,7 @@ async fn after_model_call_callbacks_run_in_reverse_order() {
             });
     }
     let captured = Arc::clone(&order);
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(move |_e: &mut BeforeModelCallEvent| {
             captured.lock().unwrap().push("before");
@@ -228,7 +254,7 @@ async fn after_invocation_resume_runs_another_invocation() {
     let resumed = Arc::new(Mutex::new(false));
     let captured = Arc::clone(&resumed);
 
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(move |event: &mut AfterInvocationEvent| {
             let mut done = captured.lock().unwrap();
@@ -255,12 +281,12 @@ async fn after_invocation_resume_is_ignored_when_the_invocation_errored() {
         .model(MockMessageModel::shared(Vec::new()))
         .build()
         .unwrap();
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(|_e: &mut BeforeModelCallEvent| Err(strands_agents::Error::Other("boom".into())));
     let resumes = Arc::new(Mutex::new(0usize));
     let captured = Arc::clone(&resumes);
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(move |event: &mut AfterInvocationEvent| {
             *captured.lock().unwrap() += 1;
@@ -308,7 +334,7 @@ async fn initialize_is_idempotent_and_fires_initialized_once() {
     let agent = Agent::builder().model(text_model(&["hi"])).build().unwrap();
     let count = Arc::new(Mutex::new(0usize));
     let captured = Arc::clone(&count);
-    let _ = agent.hooks().add_sync_callback(move |_e: &mut InitializedEvent| {
+    agent.hooks().add_sync_callback(move |_e: &mut InitializedEvent| {
         *captured.lock().unwrap() += 1;
         Ok(())
     });
@@ -328,7 +354,7 @@ async fn build_defers_initialization_to_the_first_invocation() {
     let agent = Agent::builder().model(text_model(&["hi"])).build().unwrap();
     let count = Arc::new(Mutex::new(0usize));
     let captured = Arc::clone(&count);
-    let _ = agent.hooks().add_sync_callback(move |_e: &mut InitializedEvent| {
+    agent.hooks().add_sync_callback(move |_e: &mut InitializedEvent| {
         *captured.lock().unwrap() += 1;
         Ok(())
     });
@@ -410,7 +436,7 @@ async fn before_tool_call_cancel_with_a_custom_reason_becomes_the_error_result()
         .build()
         .unwrap();
 
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(|event: &mut BeforeToolCallEvent| {
             event.cancel = Cancel::Reason("not allowed".to_owned());
@@ -439,7 +465,7 @@ async fn before_tool_call_selected_tool_overrides_the_tool_that_runs() {
             .description("Replacement")
             .handler(|_input, _ctx| async move { Ok(json!("replaced")) }),
     );
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(move |event: &mut BeforeToolCallEvent| {
             event.selected_tool = Some(Arc::clone(&replacement));
@@ -464,7 +490,7 @@ async fn after_tool_call_can_replace_the_result() {
         .build()
         .unwrap();
 
-    let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolCallEvent| {
+    agent.hooks().add_sync_callback(|event: &mut AfterToolCallEvent| {
         event.result.content = vec![strands_agents::types::ToolResultContent::Text(
             "patched".to_owned(),
         )];
@@ -490,7 +516,7 @@ async fn after_tools_end_turn_yes_stops_the_loop() {
         .tool(echo_tool("echo"))
         .build()
         .unwrap();
-    let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
+    agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Yes;
         Ok(())
     });
@@ -517,7 +543,7 @@ async fn after_tools_end_turn_text_appends_an_assistant_message() {
         .tool(echo_tool("echo"))
         .build()
         .unwrap();
-    let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
+    agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Text("stopping here".to_owned());
         Ok(())
     });
@@ -539,7 +565,7 @@ async fn after_tools_end_turn_blocks_appends_the_given_blocks() {
         .tool(echo_tool("echo"))
         .build()
         .unwrap();
-    let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
+    agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Blocks(vec![ContentBlock::Text("from blocks".to_owned())]);
         Ok(())
     });
@@ -559,7 +585,7 @@ async fn before_tools_cancel_turns_every_result_into_an_error() {
         .tool(echo_tool("echo"))
         .build()
         .unwrap();
-    let _ = agent.hooks().add_sync_callback(|event: &mut BeforeToolsEvent| {
+    agent.hooks().add_sync_callback(|event: &mut BeforeToolsEvent| {
         event.cancel = Cancel::Reason("tools off".to_owned());
         Ok(())
     });
@@ -581,7 +607,7 @@ async fn before_invocation_cancel_appends_only_an_assistant_message() {
         .model(Arc::clone(&model) as Arc<_>)
         .build()
         .unwrap();
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(|event: &mut BeforeInvocationEvent| {
             event.cancel = Cancel::Yes;

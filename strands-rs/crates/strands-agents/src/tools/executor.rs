@@ -616,7 +616,7 @@ mod tests {
         agent.with_tool_registry(|r| {
             r.add_or_replace([echo_tool("a"), echo_tool("b")]).unwrap();
         });
-        let _ = agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
+        agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
             e.tool_use.name = "b".to_owned();
             Ok(())
         });
@@ -639,7 +639,7 @@ mod tests {
         let agent = test_agent();
         agent.with_tool_registry(|r| r.add(echo_tool("a")).unwrap());
         let replacement = echo_tool("replacement");
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback(move |e: &mut BeforeToolCallEvent| {
                 e.selected_tool = Some(replacement.clone());
@@ -675,7 +675,7 @@ mod tests {
             )) as ToolRef)
                 .unwrap()
         });
-        let _ = agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
+        agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
             e.cancel = Cancel::Reason("nope".to_owned());
             Ok(())
         });
@@ -690,7 +690,7 @@ mod tests {
     async fn hook_cancel_without_a_message_uses_the_default_text() {
         let agent = test_agent();
         agent.with_tool_registry(|r| r.add(echo_tool("a")).unwrap());
-        let _ = agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
+        agent.hooks().add_sync_callback(|e: &mut BeforeToolCallEvent| {
             e.cancel = Cancel::Yes;
             Ok(())
         });
@@ -703,7 +703,7 @@ mod tests {
     async fn after_hook_can_replace_the_result() {
         let agent = test_agent();
         agent.with_tool_registry(|r| r.add(echo_tool("a")).unwrap());
-        let _ = agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
+        agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
             e.result = ToolResultBlock::error(&e.result.tool_use_id, "replaced");
             Ok(())
         });
@@ -731,7 +731,7 @@ mod tests {
         });
         let attempts = Arc::new(AtomicUsize::new(0));
         let hook_attempts = attempts.clone();
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback(move |e: &mut AfterToolCallEvent| {
                 e.retry = hook_attempts.fetch_add(1, Ordering::SeqCst) == 0;
@@ -747,7 +747,7 @@ mod tests {
     async fn normalizes_a_result_id_rewritten_by_a_hook() {
         let agent = test_agent();
         agent.with_tool_registry(|r| r.add(echo_tool("a")).unwrap());
-        let _ = agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
+        agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
             e.result.tool_use_id = "hijacked".to_owned();
             Ok(())
         });
@@ -889,7 +889,7 @@ mod tests {
             ) as ToolRef)
                 .unwrap()
         });
-        let _ = agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
+        agent.hooks().add_sync_callback(|e: &mut AfterToolCallEvent| {
             e.retry = true;
             Ok(())
         });

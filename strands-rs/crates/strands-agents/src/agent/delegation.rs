@@ -118,7 +118,7 @@ impl Plugin for AgentDelegation {
 
         // Single-call constraint, plus per-batch state.
         let plugin = self.clone();
-        let _ = hooks.add_sync_callback::<BeforeToolsEvent, _>(move |event| {
+        hooks.add_sync_callback::<BeforeToolsEvent, _>(move |event| {
             let tool_uses: Vec<&str> = event
                 .message
                 .content
@@ -144,7 +144,7 @@ impl Plugin for AgentDelegation {
 
         // Mark the delegation tool use that succeeded.
         let plugin = self.clone();
-        let _ = hooks.add_sync_callback::<AfterToolCallEvent, _>(move |event| {
+        hooks.add_sync_callback::<AfterToolCallEvent, _>(move |event| {
             let mut state = plugin.state.lock();
             let Some(entry) = state.get_mut(event.agent.id()) else {
                 return Ok(());
@@ -201,7 +201,7 @@ impl Plugin for AgentDelegation {
 
         // If the loop continues past a delegation batch, the next model call invalidates the flag.
         let plugin = self.clone();
-        let _ = hooks.add_sync_callback::<BeforeModelCallEvent, _>(move |event| {
+        hooks.add_sync_callback::<BeforeModelCallEvent, _>(move |event| {
             plugin.state.lock().remove(event.agent.id());
             Ok(())
         });

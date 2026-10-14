@@ -20,7 +20,7 @@ is the lookup table for *what*.
 | `Tool.stream(ctx)` generator | `async fn invoke(&self, ctx) -> Result<ToolResultBlock>` + `ctx.progress(v).await` | |
 | `tool({ name, inputSchema: z.object(..), callback })` | `FunctionTool::builder(name).typed::<Input>().typed_handler(..)` | `schemars` derives the schema |
 | `tool({ name, inputSchema, callback })` over a plain function | `#[tool] async fn f(..)` ⇒ `FTool::new()` (feature `macros`) | doc comment ⇒ description, params ⇒ schema via `schemars`; a `ToolContext` param is passed through |
-| hook `class XEvent` + `addCallback(XEvent, cb)` | `struct XEvent` + `hooks.add_callback::<XEvent>(cb)` | registry keyed by `TypeId` |
+| hook `class XEvent` + `addCallback(XEvent, cb)` | `struct XEvent` + `hooks.add_callback(|e: &mut XEvent| async move { .. })` | registry keyed by `TypeId` |
 | writable event fields (`cancel`, `retry`, …) | `pub` fields on the struct, callbacks get `&mut E` | `Cancel`, `EndTurn` enums replace `boolean \| string` |
 | `_shouldReverseCallbacks()` | `HookEvent::reverse_callbacks()` | |
 | `agent.messages` (public array) | `agent.messages()` (snapshot) / `agent.with_messages(\|v\| ..)` | handle semantics |

@@ -233,14 +233,14 @@ impl Plugin for SessionManager {
         let hooks = agent.hooks();
 
         let manager = self.clone();
-        let _ = hooks.add_callback::<InitializedEvent, _>(move |event| {
+        hooks.add_callback_boxed::<InitializedEvent, _>(move |event| {
             let manager = manager.clone();
             Box::pin(async move { manager.initialize(&event.agent).await })
         });
 
         if self.inner.options.save_latest_on == SaveLatestStrategy::Message {
             let manager = self.clone();
-            let _ = hooks.add_callback::<MessageAddedEvent, _>(move |event| {
+            hooks.add_callback_boxed::<MessageAddedEvent, _>(move |event| {
                 let manager = manager.clone();
                 Box::pin(async move { manager.save_snapshot(&event.agent, true).await })
             });
@@ -250,14 +250,14 @@ impl Plugin for SessionManager {
         // stays in control there.
         if self.inner.options.save_latest_on != SaveLatestStrategy::Trigger {
             let manager = self.clone();
-            let _ = hooks.add_callback::<AfterModelCallEvent, _>(move |event| {
+            hooks.add_callback_boxed::<AfterModelCallEvent, _>(move |event| {
                 let manager = manager.clone();
                 Box::pin(async move { manager.on_after_model_call(event).await })
             });
         }
 
         let manager = self.clone();
-        let _ = hooks.add_callback::<AfterInvocationEvent, _>(move |event| {
+        hooks.add_callback_boxed::<AfterInvocationEvent, _>(move |event| {
             let manager = manager.clone();
             Box::pin(async move { manager.on_after_invocation(&event.agent).await })
         });
