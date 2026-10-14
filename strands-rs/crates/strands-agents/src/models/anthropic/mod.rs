@@ -19,7 +19,8 @@ use futures::StreamExt;
 use serde::Deserialize;
 
 use super::defaults::{
-    default_max_tokens_warning_message, default_model_warning_message, get_context_window_limit, MODEL_DEFAULTS,
+    default_max_tokens_warning_message, default_model_warning_message, get_context_window_limit,
+    MODEL_DEFAULTS,
 };
 use super::model::{CountTokensOptions, Model, ModelEventStream, StreamOptions};
 use super::streaming::ModelStreamEvent;
@@ -213,7 +214,10 @@ impl AnthropicModel {
     }
 
     /// Like [`AnthropicModel::new`] but with a caller-supplied transport.
-    pub fn with_transport(config: AnthropicModelConfig, transport: Arc<dyn AnthropicTransport>) -> Result<Self> {
+    pub fn with_transport(
+        config: AnthropicModelConfig,
+        transport: Arc<dyn AnthropicTransport>,
+    ) -> Result<Self> {
         let defaults = MODEL_DEFAULTS.anthropic;
         let model_id = match &config.model_id {
             Some(id) => id.clone(),

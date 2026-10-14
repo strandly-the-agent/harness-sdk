@@ -61,7 +61,10 @@ fn config() -> AnthropicModelConfig {
     }
 }
 
-fn model_with(config: AnthropicModelConfig, responses: Vec<(u16, String)>) -> (AnthropicModel, Arc<CannedTransport>) {
+fn model_with(
+    config: AnthropicModelConfig,
+    responses: Vec<(u16, String)>,
+) -> (AnthropicModel, Arc<CannedTransport>) {
     let transport = CannedTransport::new(responses);
     let model = AnthropicModel::with_transport(config, transport.clone()).unwrap();
     (model, transport)
@@ -92,7 +95,10 @@ fn text_stream() -> String {
             "content_block_delta",
             json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}}),
         ),
-        ("content_block_stop", json!({"type": "content_block_stop", "index": 0})),
+        (
+            "content_block_stop",
+            json!({"type": "content_block_stop", "index": 0}),
+        ),
         (
             "message_delta",
             json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 4}}),
@@ -101,7 +107,11 @@ fn text_stream() -> String {
     ])
 }
 
-async fn collect(model: &AnthropicModel, messages: &[Message], options: &StreamOptions) -> Vec<ModelStreamEvent> {
+async fn collect(
+    model: &AnthropicModel,
+    messages: &[Message],
+    options: &StreamOptions,
+) -> Vec<ModelStreamEvent> {
     let mut events = Vec::new();
     let mut stream = model.stream(messages, options);
     while let Some(event) = stream.next().await {
@@ -132,7 +142,10 @@ fn uses_default_model_id_and_max_tokens() {
         },
         vec![],
     );
-    assert_eq!(model.model_id().as_deref(), Some(MODEL_DEFAULTS.anthropic.model_id));
+    assert_eq!(
+        model.model_id().as_deref(),
+        Some(MODEL_DEFAULTS.anthropic.model_id)
+    );
     assert_eq!(model.max_tokens(), 64_000);
 }
 
@@ -155,7 +168,10 @@ fn rejects_function_tools_in_anthropic_tools() {
         CannedTransport::new(vec![]),
     )
     .unwrap_err();
-    assert!(err.to_string().starts_with("anthropicTools should not contain"), "{err}");
+    assert!(
+        err.to_string().starts_with("anthropicTools should not contain"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -193,7 +209,9 @@ fn errors_when_the_model_id_is_empty() {
 fn drops_messages_with_empty_content() {
     let (model, _) = model_with(config(), vec![]);
     let messages = vec![Message::new(Role::User, vec![]), user("hi")];
-    let request = model.format_request(&messages, &StreamOptions::default()).unwrap();
+    let request = model
+        .format_request(&messages, &StreamOptions::default())
+        .unwrap();
     assert_eq!(request["messages"].as_array().unwrap().len(), 1);
 }
 
@@ -201,17 +219,25 @@ fn drops_messages_with_empty_content() {
 fn formats_tool_use_and_tool_result_blocks() {
     let (model, _) = model_with(config(), vec![]);
     let messages = vec![
-        Message::new(Role::Assistant, vec![ContentBlock::ToolUse(crate::types::ToolUseBlock::new(
-            "calc",
-            "t1",
-            json!({"x": 1}),
-        ))]),
-        Message::new(Role::User, vec![ContentBlock::ToolResult(ToolResultBlock::success(
-            "t1",
-            vec![ToolResultContent::text("42")],
-        ))]),
+        Message::new(
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(crate::types::ToolUseBlock::new(
+                "calc",
+                "t1",
+                json!({"x": 1}),
+            ))],
+        ),
+        Message::new(
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock::success(
+                "t1",
+                vec![ToolResultContent::text("42")],
+            ))],
+        ),
     ];
-    let request = model.format_request(&messages, &StreamOptions::default()).unwrap();
+    let request = model
+        .format_request(&messages, &StreamOptions::default())
+        .unwrap();
     assert_eq!(
         request["messages"][0]["content"][0],
         json!({"type": "tool_use", "id": "t1", "name": "calc", "input": {"x": 1}})
@@ -225,64 +251,88 @@ fn formats_tool_use_and_tool_result_blocks() {
 #[test]
 fn marks_error_tool_results() {
     let (model, _) = model_with(config(), vec![]);
-    let messages = vec![Message::new(Role::User, vec![ContentBlock::ToolResult(ToolResultBlock::error("t1", "boom"))])];
-    let request = model.format_request(&messages, &StreamOptions::default()).unwrap();
+    let messages = vec![Message::new(
+        Role::User,
+        vec![ContentBlock::ToolResult(ToolResultBlock::error("t1", "boom"))],
+    )];
+    let request = model
+        .format_request(&messages, &StreamOptions::default())
+        .unwrap();
     assert_eq!(request["messages"][0]["content"][0]["is_error"], json!(true));
 }
 
 #[test]
 fn formats_images_and_skips_s3_sources() {
     let (model, _) = model_with(config(), vec![]);
-    let messages = vec![Message::new(Role::User, vec![
-        ContentBlock::Image(ImageBlock {
-            format: ImageFormat::Jpg,
-            source: ImageSource::Bytes(vec![1, 2, 3]),
-        }),
-        ContentBlock::Image(ImageBlock {
-            format: ImageFormat::Png,
-            source: ImageSource::Url("https://x/y.png".to_owned()),
-        }),
-        ContentBlock::Image(ImageBlock {
-            format: ImageFormat::Png,
-            source: ImageSource::Location(S3Location {
-                uri: "s3://b/k".to_owned(),
-                bucket_owner: None,
+    let messages = vec![Message::new(
+        Role::User,
+        vec![
+            ContentBlock::Image(ImageBlock {
+                format: ImageFormat::Jpg,
+                source: ImageSource::Bytes(vec![1, 2, 3]),
             }),
-        }),
-    ])];
-    let request = model.format_request(&messages, &StreamOptions::default()).unwrap();
+            ContentBlock::Image(ImageBlock {
+                format: ImageFormat::Png,
+                source: ImageSource::Url("https://x/y.png".to_owned()),
+            }),
+            ContentBlock::Image(ImageBlock {
+                format: ImageFormat::Png,
+                source: ImageSource::Location(S3Location {
+                    uri: "s3://b/k".to_owned(),
+                    bucket_owner: None,
+                }),
+            }),
+        ],
+    )];
+    let request = model
+        .format_request(&messages, &StreamOptions::default())
+        .unwrap();
     let content = request["messages"][0]["content"].as_array().unwrap();
     assert_eq!(content.len(), 2);
     assert_eq!(content[0]["source"]["media_type"], json!("image/jpeg"));
-    assert_eq!(content[1]["source"], json!({"type": "url", "url": "https://x/y.png"}));
+    assert_eq!(
+        content[1]["source"],
+        json!({"type": "url", "url": "https://x/y.png"})
+    );
 }
 
 #[test]
 fn inlines_text_documents_and_rejects_unsupported_ones() {
     let (model, _) = model_with(config(), vec![]);
-    let text_doc = Message::new(Role::User, vec![ContentBlock::Document(DocumentBlock {
-        name: "notes".to_owned(),
-        format: DocumentFormat::Md,
-        source: DocumentSource::Text("# hi".to_owned()),
-        citations: None,
-        context: None,
-    })]);
-    let request = model.format_request(&[text_doc], &StreamOptions::default()).unwrap();
+    let text_doc = Message::new(
+        Role::User,
+        vec![ContentBlock::Document(DocumentBlock {
+            name: "notes".to_owned(),
+            format: DocumentFormat::Md,
+            source: DocumentSource::Text("# hi".to_owned()),
+            citations: None,
+            context: None,
+        })],
+    );
+    let request = model
+        .format_request(&[text_doc], &StreamOptions::default())
+        .unwrap();
     assert_eq!(
         request["messages"][0]["content"][0],
         json!({"type": "text", "text": "# hi"})
     );
 
-    let bad = Message::new(Role::User, vec![ContentBlock::Document(DocumentBlock {
-        name: "sheet".to_owned(),
-        format: DocumentFormat::Xlsx,
-        source: DocumentSource::Bytes(vec![1]),
-        citations: None,
-        context: None,
-    })]);
-    let err = model.format_request(&[bad], &StreamOptions::default()).unwrap_err();
+    let bad = Message::new(
+        Role::User,
+        vec![ContentBlock::Document(DocumentBlock {
+            name: "sheet".to_owned(),
+            format: DocumentFormat::Xlsx,
+            source: DocumentSource::Bytes(vec![1]),
+            citations: None,
+            context: None,
+        })],
+    );
+    let err = model
+        .format_request(&[bad], &StreamOptions::default())
+        .unwrap_err();
     assert!(
-        err.to_string().starts_with("Unsupported document format or source for Anthropic"),
+        err.to_string()
+            .starts_with("Unsupported document format or source for Anthropic"),
         "{err}"
     );
 }
@@ -290,24 +340,32 @@ fn inlines_text_documents_and_rejects_unsupported_ones() {
 #[test]
 fn formats_reasoning_blocks() {
     let (model, _) = model_with(config(), vec![]);
-    let messages = vec![Message::new(Role::Assistant, vec![
-        ContentBlock::Reasoning(ReasoningBlock {
-            text: Some("because".to_owned()),
-            signature: Some("sig".to_owned()),
-            redacted_content: None,
-        }),
-        ContentBlock::Reasoning(ReasoningBlock {
-            text: None,
-            signature: None,
-            redacted_content: Some(vec![1, 2, 3]),
-        }),
-    ])];
-    let request = model.format_request(&messages, &StreamOptions::default()).unwrap();
+    let messages = vec![Message::new(
+        Role::Assistant,
+        vec![
+            ContentBlock::Reasoning(ReasoningBlock {
+                text: Some("because".to_owned()),
+                signature: Some("sig".to_owned()),
+                redacted_content: None,
+            }),
+            ContentBlock::Reasoning(ReasoningBlock {
+                text: None,
+                signature: None,
+                redacted_content: Some(vec![1, 2, 3]),
+            }),
+        ],
+    )];
+    let request = model
+        .format_request(&messages, &StreamOptions::default())
+        .unwrap();
     assert_eq!(
         request["messages"][0]["content"][0],
         json!({"type": "thinking", "thinking": "because", "signature": "sig"})
     );
-    assert_eq!(request["messages"][0]["content"][1]["type"], json!("redacted_thinking"));
+    assert_eq!(
+        request["messages"][0]["content"][1]["type"],
+        json!("redacted_thinking")
+    );
 }
 
 #[test]
@@ -394,7 +452,9 @@ fn appends_server_tools_unless_a_tool_is_forced() {
         ..config()
     };
     let (model, _) = model_with(config, vec![]);
-    let request = model.format_request(&[user("hi")], &StreamOptions::default()).unwrap();
+    let request = model
+        .format_request(&[user("hi")], &StreamOptions::default())
+        .unwrap();
     assert_eq!(request["tools"].as_array().unwrap().len(), 1);
 
     let options = StreamOptions {
@@ -421,7 +481,9 @@ fn user_params_win_over_config_fields() {
         ..config()
     };
     let (model, _) = model_with(config, vec![]);
-    let request = model.format_request(&[user("hi")], &StreamOptions::default()).unwrap();
+    let request = model
+        .format_request(&[user("hi")], &StreamOptions::default())
+        .unwrap();
     assert_eq!(request["temperature"], json!(0.1));
     assert_eq!(request["top_p"], json!(0.5));
     assert_eq!(request["stop_sequences"], json!(["STOP"]));
@@ -448,13 +510,19 @@ fn places_cache_control_on_tools_and_the_last_user_message() {
         }],
         ..Default::default()
     };
-    let messages = vec![user("old"), Message::new(Role::Assistant, vec![ContentBlock::text("ok")]), user("new")];
+    let messages = vec![
+        user("old"),
+        Message::new(Role::Assistant, vec![ContentBlock::text("ok")]),
+        user("new"),
+    ];
     let request = model.format_request(&messages, &options).unwrap();
     assert_eq!(
         request["tools"][0]["cache_control"],
         json!({"type": "ephemeral", "ttl": "5m"})
     );
-    assert!(request["messages"][0]["content"][0].get("cache_control").is_none());
+    assert!(request["messages"][0]["content"][0]
+        .get("cache_control")
+        .is_none());
     assert_eq!(
         request["messages"][2]["content"][0]["cache_control"],
         json!({"type": "ephemeral", "ttl": "5m"})
@@ -472,33 +540,43 @@ fn skips_dynamic_trailing_blocks_when_placing_a_cache_point() {
         dynamic_trailing_blocks: Some(1),
         ..Default::default()
     };
-    let messages = vec![Message::new(Role::User, vec![
-        ContentBlock::text("stable"),
-        ContentBlock::text("volatile"),
-    ])];
+    let messages = vec![Message::new(
+        Role::User,
+        vec![ContentBlock::text("stable"), ContentBlock::text("volatile")],
+    )];
     let request = model.format_request(&messages, &options).unwrap();
     assert_eq!(
         request["messages"][0]["content"][0]["cache_control"],
         json!({"type": "ephemeral"})
     );
-    assert!(request["messages"][0]["content"][1].get("cache_control").is_none());
+    assert!(request["messages"][0]["content"][1]
+        .get("cache_control")
+        .is_none());
 }
 
 #[test]
 fn honors_an_explicit_cache_point_block() {
     let (model, _) = model_with(config(), vec![]);
-    let messages = vec![Message::new(Role::User, vec![
-        ContentBlock::text("prefix"),
-        ContentBlock::CachePoint(CachePointBlock {
-            cache_type: CacheType::Default,
-            ttl: Some("1h".to_owned()),
-        }),
-        ContentBlock::text("suffix"),
-    ])];
-    let request = model.format_request(&messages, &StreamOptions::default()).unwrap();
+    let messages = vec![Message::new(
+        Role::User,
+        vec![
+            ContentBlock::text("prefix"),
+            ContentBlock::CachePoint(CachePointBlock {
+                cache_type: CacheType::Default,
+                ttl: Some("1h".to_owned()),
+            }),
+            ContentBlock::text("suffix"),
+        ],
+    )];
+    let request = model
+        .format_request(&messages, &StreamOptions::default())
+        .unwrap();
     let content = request["messages"][0]["content"].as_array().unwrap();
     assert_eq!(content.len(), 2);
-    assert_eq!(content[0]["cache_control"], json!({"type": "ephemeral", "ttl": "1h"}));
+    assert_eq!(
+        content[0]["cache_control"],
+        json!({"type": "ephemeral", "ttl": "1h"})
+    );
 }
 
 // --- SSE parsing ----------------------------------------------------------------------------
@@ -510,7 +588,9 @@ async fn streams_text_metadata_and_stop_reason() {
     assert_eq!(
         events,
         vec![
-            ModelStreamEvent::MessageStart { role: Role::Assistant },
+            ModelStreamEvent::MessageStart {
+                role: Role::Assistant
+            },
             ModelStreamEvent::ContentBlockStart { start: None },
             ModelStreamEvent::text_delta("hi"),
             ModelStreamEvent::ContentBlockStop {},
@@ -536,7 +616,10 @@ async fn streams_text_metadata_and_stop_reason() {
 #[tokio::test]
 async fn emits_text_from_a_non_empty_content_block_start() {
     let body = sse(&[
-        ("message_start", json!({"type": "message_start", "message": {"usage": {}}})),
+        (
+            "message_start",
+            json!({"type": "message_start", "message": {"usage": {}}}),
+        ),
         (
             "content_block_start",
             json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": "seed"}}),
@@ -551,7 +634,10 @@ async fn emits_text_from_a_non_empty_content_block_start() {
 #[tokio::test]
 async fn streams_tool_use_blocks() {
     let body = sse(&[
-        ("message_start", json!({"type": "message_start", "message": {"usage": {}}})),
+        (
+            "message_start",
+            json!({"type": "message_start", "message": {"usage": {}}}),
+        ),
         (
             "content_block_start",
             json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "t1", "name": "calc"}}),
@@ -560,7 +646,10 @@ async fn streams_tool_use_blocks() {
             "content_block_delta",
             json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"x\":"}}),
         ),
-        ("content_block_stop", json!({"type": "content_block_stop", "index": 0})),
+        (
+            "content_block_stop",
+            json!({"type": "content_block_stop", "index": 0}),
+        ),
         (
             "message_delta",
             json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {}}),
@@ -593,7 +682,10 @@ async fn streams_tool_use_blocks() {
 #[tokio::test]
 async fn streams_thinking_and_redacted_thinking() {
     let body = sse(&[
-        ("message_start", json!({"type": "message_start", "message": {"usage": {}}})),
+        (
+            "message_start",
+            json!({"type": "message_start", "message": {"usage": {}}}),
+        ),
         (
             "content_block_start",
             json!({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "seed", "signature": "s0"}}),
@@ -647,7 +739,10 @@ async fn streams_thinking_and_redacted_thinking() {
 #[tokio::test]
 async fn maps_citation_deltas() {
     let body = sse(&[
-        ("message_start", json!({"type": "message_start", "message": {"usage": {}}})),
+        (
+            "message_start",
+            json!({"type": "message_start", "message": {"usage": {}}}),
+        ),
         (
             "content_block_delta",
             json!({"type": "content_block_delta", "index": 0, "delta": {"type": "citations_delta", "citation": {"type": "web_search_result_location", "url": "https://example.com/a", "title": "A", "cited_text": "quote"}}}),
@@ -680,7 +775,10 @@ async fn maps_citation_deltas() {
 #[tokio::test]
 async fn suppresses_server_tool_blocks() {
     let body = sse(&[
-        ("message_start", json!({"type": "message_start", "message": {"usage": {}}})),
+        (
+            "message_start",
+            json!({"type": "message_start", "message": {"usage": {}}}),
+        ),
         (
             "content_block_start",
             json!({"type": "content_block_start", "index": 0, "content_block": {"type": "server_tool_use", "name": "web_search"}}),
@@ -689,20 +787,27 @@ async fn suppresses_server_tool_blocks() {
             "content_block_delta",
             json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{}"}}),
         ),
-        ("content_block_stop", json!({"type": "content_block_stop", "index": 0})),
+        (
+            "content_block_stop",
+            json!({"type": "content_block_stop", "index": 0}),
+        ),
         ("message_stop", json!({"type": "message_stop"})),
     ]);
     let (model, _) = model_with(config(), vec![(200, body)]);
     let events = collect(&model, &[user("hi")], &StreamOptions::default()).await;
-    assert!(!events
-        .iter()
-        .any(|e| matches!(e, ModelStreamEvent::ContentBlockStart { .. } | ModelStreamEvent::ContentBlockStop {})));
+    assert!(!events.iter().any(|e| matches!(
+        e,
+        ModelStreamEvent::ContentBlockStart { .. } | ModelStreamEvent::ContentBlockStop {}
+    )));
 }
 
 #[tokio::test]
 async fn emits_no_stop_event_when_the_stream_is_incomplete() {
     let body = sse(&[
-        ("message_start", json!({"type": "message_start", "message": {"usage": {}}})),
+        (
+            "message_start",
+            json!({"type": "message_start", "message": {"usage": {}}}),
+        ),
         (
             "content_block_delta",
             json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}}),
@@ -740,7 +845,10 @@ async fn accumulates_cache_usage_across_a_pause_turn_continuation() {
     assert_eq!(requests[1]["messages"][1]["content"][0]["text"], json!("partial"));
 
     assert_eq!(
-        events.iter().filter(|e| matches!(e, ModelStreamEvent::MessageStart { .. })).count(),
+        events
+            .iter()
+            .filter(|e| matches!(e, ModelStreamEvent::MessageStart { .. }))
+            .count(),
         1
     );
     let usage = events
@@ -760,7 +868,10 @@ async fn accumulates_cache_usage_across_a_pause_turn_continuation() {
 #[tokio::test]
 async fn fails_after_too_many_pause_turn_continuations() {
     let paused = sse(&[
-        ("message_start", json!({"type": "message_start", "message": {"usage": {}}})),
+        (
+            "message_start",
+            json!({"type": "message_start", "message": {"usage": {}}}),
+        ),
         (
             "message_delta",
             json!({"type": "message_delta", "delta": {"stop_reason": "pause_turn"}, "usage": {}}),
@@ -772,7 +883,10 @@ async fn fails_after_too_many_pause_turn_continuations() {
     let err = collect_err(&model, &[user("hi")]).await;
     assert_eq!(
         err.to_string(),
-        format!("server-side tool turn did not complete after {} continuations", MAX_PAUSE_TURN_CONTINUATIONS + 1)
+        format!(
+            "server-side tool turn did not complete after {} continuations",
+            MAX_PAUSE_TURN_CONTINUATIONS + 1
+        )
     );
 }
 
@@ -803,7 +917,8 @@ fn maps_known_and_unknown_stop_reasons() {
 
 #[tokio::test]
 async fn maps_429_to_throttling() {
-    let body = json!({"type": "error", "error": {"type": "rate_limit_error", "message": "slow down"}}).to_string();
+    let body =
+        json!({"type": "error", "error": {"type": "rate_limit_error", "message": "slow down"}}).to_string();
     let (model, _) = model_with(config(), vec![(429, body)]);
     let err = collect_err(&model, &[user("hi")]).await;
     assert!(matches!(err, Error::ModelThrottled { .. }), "{err:?}");
@@ -816,7 +931,10 @@ async fn maps_overflow_messages_to_context_window_overflow() {
         let body = json!({"error": {"message": format!("Error: {message}")}}).to_string();
         let (model, _) = model_with(config(), vec![(429, body)]);
         let err = collect_err(&model, &[user("hi")]).await;
-        assert!(matches!(err, Error::ContextWindowOverflow(_)), "{message}: {err:?}");
+        assert!(
+            matches!(err, Error::ContextWindowOverflow(_)),
+            "{message}: {err:?}"
+        );
     }
 }
 

@@ -415,8 +415,8 @@ fn format_content_block(block: &ContentBlock) -> Result<Option<Vec<Value>>> {
             }
             (format, source) => {
                 return Err(Error::model(format!(
-                    "Unsupported document format or source for Anthropic: format={format:?}, source={source:?}"
-                )))
+                "Unsupported document format or source for Anthropic: format={format:?}, source={source:?}"
+            )))
             }
         },
         ContentBlock::ToolUse(tool_use) => json!({
@@ -435,7 +435,9 @@ fn format_content_block(block: &ContentBlock) -> Result<Option<Vec<Value>>> {
                         "text": serde_json::to_string(value).unwrap_or_default(),
                     })),
                     ToolResultContent::Image(image) => {
-                        if let Some(mut formatted) = format_content_block(&ContentBlock::Image(image.clone()))? {
+                        if let Some(mut formatted) =
+                            format_content_block(&ContentBlock::Image(image.clone()))?
+                        {
                             content.append(&mut formatted);
                         }
                     }

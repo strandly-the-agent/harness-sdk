@@ -33,7 +33,10 @@ pub(super) fn drain_sse(buffer: &mut Vec<u8>) -> Vec<SseEvent> {
     let mut events = Vec::new();
     loop {
         let text = String::from_utf8_lossy(buffer).into_owned();
-        let Some(end) = text.find("\n\n").map(|i| i + 2).or_else(|| text.find("\r\n\r\n").map(|i| i + 4))
+        let Some(end) = text
+            .find("\n\n")
+            .map(|i| i + 2)
+            .or_else(|| text.find("\r\n\r\n").map(|i| i + 4))
         else {
             return events;
         };
@@ -177,7 +180,9 @@ impl StreamState {
                 if !self.first_response {
                     return Ok(Vec::new());
                 }
-                Ok(vec![ModelStreamEvent::MessageStart { role: Role::Assistant }])
+                Ok(vec![ModelStreamEvent::MessageStart {
+                    role: Role::Assistant,
+                }])
             }
             "content_block_start" => self.content_block_start(&value),
             "content_block_delta" => self.content_block_delta(&value),
@@ -241,7 +246,11 @@ impl StreamState {
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_owned(),
-                        tool_use_id: block.get("id").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                        tool_use_id: block
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
                         reasoning_signature: None,
                     }),
                 });
@@ -301,7 +310,10 @@ impl StreamState {
                 ModelStreamEvent::text_delta(text)
             }
             "input_json_delta" => {
-                let partial = delta.get("partial_json").and_then(Value::as_str).unwrap_or_default();
+                let partial = delta
+                    .get("partial_json")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 self.append_text(index, "partial_json", partial);
                 ModelStreamEvent::ContentBlockDelta {
                     delta: ContentBlockDelta::ToolUseInput {
@@ -371,7 +383,11 @@ fn format_citation(raw: &Value) -> Option<Citation> {
     let u64_at = |key: &str| raw.get(key).and_then(Value::as_u64).unwrap_or_default();
     let location = match kind {
         "web_search_result_location" => {
-            let url = raw.get("url").and_then(Value::as_str).unwrap_or_default().to_owned();
+            let url = raw
+                .get("url")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
             let domain = url
                 .split("//")
                 .nth(1)
@@ -404,7 +420,9 @@ fn format_citation(raw: &Value) -> Option<Citation> {
             end: u64_at("end_block_index"),
         },
         other => {
-            warn_once(&format!("citation_type=<{other}> | unknown anthropic citation type | skipping"));
+            warn_once(&format!(
+                "citation_type=<{other}> | unknown anthropic citation type | skipping"
+            ));
             return None;
         }
     };
@@ -420,11 +438,7 @@ fn format_citation(raw: &Value) -> Option<Citation> {
         .get("cited_text")
         .and_then(Value::as_str)
         .filter(|t| !t.is_empty())
-        .map(|t| {
-            vec![CitationSourceContent {
-                text: t.to_owned(),
-            }]
-        })
+        .map(|t| vec![CitationSourceContent { text: t.to_owned() }])
         .unwrap_or_default();
     Some(Citation {
         location,
