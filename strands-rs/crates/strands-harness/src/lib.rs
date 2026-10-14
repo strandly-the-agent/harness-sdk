@@ -6,5 +6,6 @@
 
 pub mod defaults;
 pub mod prompt;
+pub mod tools;
 
 pub use prompt::{build_system_prompt, HARNESS_CONTRACT};
