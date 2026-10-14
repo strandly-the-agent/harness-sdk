@@ -147,10 +147,40 @@ wire-compat 3/3; sensitive surface identical to TS. Open: written matrix for `ho
 retry "no backoff timer when already cancelled" case.
 
 
+## Live Bedrock integration run
+
+`tests/integ_bedrock.rs` ports `strands-ts/test/integ/models/bedrock.test.ts` and the Bedrock rows
+of `test/integ/agent.test.ts`. Run from the sandbox against us-west-2 (`global.anthropic.claude-sonnet-4-6`,
+caching on `us.anthropic.claude-sonnet-4-5-20250929-v1:0`, overflow on `us.anthropic.claude-haiku-4-5-20251001-v1:0`):
+
+```
+$ AWS_REGION=us-west-2 cargo test --all-features --test integ_bedrock -- --ignored --test-threads=4
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.06s
+```
+
+20 tests ran against the service: maxTokens stop reason + usage cap; system-prompt, message and
+`cache_config` (auto + anthropic) prompt caching (asserting real `cacheWriteInputTokens` then
+`cacheReadInputTokens`); invalid model id → model error; sliding-window history management over
+three turns; `Error::MaxTokens` through `NullConversationManager`; oversized prompt →
+`Error::ContextWindowOverflow` (real `ValidationException` substring mapping); thinking +
+tool use (reasoning block, tool use and tool result recorded); native `count_tokens`; agent
+streaming with tool use and multi-turn; JSON-schema tool; metadata (usage + latency) through the
+agent stream; multi-turn memory; `ContentBlock`/`Message` inputs; structured output; reasoning
+deltas; the non-streaming `Converse` path; `stream_aggregated` with usage metadata.
+
+The 3 guardrail tests (input intervention with trace disabled/enabled/enabled_full) are written
+but **skipped**: a tagged `strandly-managed-*` guardrail was created, but the sandbox role is not
+granted `bedrock:ApplyGuardrail`, so `Converse` with a `guardrailConfig` is denied. They run when
+`STRANDS_TEST_GUARDRAIL_ID` points at a guardrail the caller may apply. Guardrail was deleted.
+
+Not exercised live: throttling (`ModelThrottled`) — cannot be provoked deterministically;
+guardrail output intervention / masking / tool-result redaction / `guard_latest_user_message`
+(same permission gap); media (audio/PDF/image) — no fixtures ported yet; `AWS_BEARER_TOKEN_BEDROCK`.
+
 ## Known gaps / follow-ups
 
-- Bedrock: throttling/rethrow/mid-stream error mapping and the non-streaming path are untested
-  (no mocked transport); bearer-token auth untested; `AWS_BEARER_TOKEN_BEDROCK` not supported.
+- Bedrock: throttling mapping and guardrail paths untested live (see above); bearer-token auth
+  untested; `AWS_BEARER_TOKEN_BEDROCK` not supported; media integration tests not ported.
 - Session: stash / multi-agent snapshot parts not ported.
 - Retry: confirm "no backoff timer when already cancelled" case (validator flag).
 - Hooks: events are compile-checked and exercised by the loop tests, but have no written matrix.

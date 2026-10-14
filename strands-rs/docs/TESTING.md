@@ -10,8 +10,11 @@ scope has a Rust test with the same intent; [PORT_REPORT.md](PORT_REPORT.md) hol
 - Cross-module behaviour (agent loop + tools + hooks) goes in `crates/strands-agents/tests/`.
 - Shared fixtures live in `src/test_support.rs` (compiled under `cfg(test)` and the
   `test-support` feature so integration tests and downstream crates can use them).
-- Tests that need a live model are `#[ignore]`d with a reason and run explicitly:
-  `cargo test --all-features -- --ignored`.
+- Live Bedrock tests live in `tests/integ_bedrock.rs` (port of `strands-ts/test/integ`), are
+  `#[ignore]`d, and run explicitly with AWS credentials:
+  `AWS_REGION=us-west-2 cargo test --all-features --test integ_bedrock -- --ignored`.
+  The three guardrail tests additionally need `STRANDS_TEST_GUARDRAIL_ID` (a word-filter guardrail
+  blocking `CACTUS`, see the file header) and skip with a message when it is unset.
 
 ## Fixtures
 
@@ -29,8 +32,8 @@ scope has a Rust test with the same intent; [PORT_REPORT.md](PORT_REPORT.md) hol
 - Never sleep for real: retry/backoff takes an injectable sleeper.
 - Assert on **wire shapes** with `serde_json::json!` literals, not on `Debug` output.
 - Assert exact error messages where TS tests do (`assert_eq!(err.to_string(), "...")`).
-- No network. Bedrock tests exercise request formatting and response parsing with constructed
-  SDK types only.
+- Unit tests make no network calls; Bedrock unit tests exercise request formatting and response
+  parsing with constructed SDK types. Live behaviour is covered by `tests/integ_bedrock.rs`.
 - Keep tests deterministic: seed `rand` where jitter is involved or assert ranges.
 
 ## Running
