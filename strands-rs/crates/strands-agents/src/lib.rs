@@ -22,6 +22,7 @@ pub use agent::{
     Agent, AgentBuilder, AgentResult, AgentStream, AgentStreamEvent, InvocationState, InvokeInput,
     InvokeOptions, Limits,
 };
+pub use agent::{CallOptions, ToolHandle};
 pub use conversation_manager::{
     ConversationManager, NullConversationManager, ProactiveCompression, ReduceOptions, ReduceTrigger,
     SlidingWindowConfig, SlidingWindowConversationManager,
