@@ -531,7 +531,9 @@ fn truncate_tool_results(messages: &mut [Message], msg_idx: usize) -> bool {
 mod tests {
     use super::*;
     use crate::conversation_manager::test_support::test_agent_with_messages;
-    use crate::conversation_manager::test_support::{after_invocation, after_model_call, model, overflow};
+    use crate::conversation_manager::test_support::{
+        after_invocation, after_model_call, before_model_call, model, overflow,
+    };
     use crate::conversation_manager::ReduceTrigger;
     use crate::types::{
         DocumentFormat, ImageFormat, S3Location, ToolResultStatus, ToolUseBlock, VideoFormat,
@@ -1443,6 +1445,350 @@ mod tests {
                 .filter(|m| is_pinned(std::slice::from_ref(m), 0))
                 .count(),
             1
+        );
+    }
+
+    fn pinning_manager(window_size: usize, pin_first: usize) -> SlidingWindowConversationManager {
+        SlidingWindowConversationManager::with_config(SlidingWindowConfig {
+            window_size,
+            should_truncate_results: false,
+            pin_first: Some(pin_first),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    fn user_tool_use(name: &str, tool_use_id: &str) -> Message {
+        Message::new(
+            Role::User,
+            vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                name,
+                tool_use_id,
+                json!({}),
+            ))],
+        )
+    }
+
+    /// History whose only trim candidates past the window are tool messages, with a pinned or
+    /// plain user prefix ahead of two complete pairs.
+    fn trailing_pairs_history(first: Message) -> Vec<Message> {
+        vec![
+            first,
+            assistant("Old response"),
+            user("Old request"),
+            tool_use_message("lookup", "id-1"),
+            tool_result_message("id-1", "Old result"),
+            tool_use_message("lookup", "id-2"),
+            tool_result_message("id-2", "Recent result"),
+        ]
+    }
+
+    #[tokio::test]
+    async fn allows_trim_when_oldest_message_is_tool_use_with_following_tool_result() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            tool_use_message("tool1", "id-1"),
+            tool_result_message("id-1", "Result"),
+            assistant("Response"),
+            user("Message 2"),
+        ]);
+        trigger_context_overflow(&manager(2, false), &agent).await;
+
+        assert_eq!(texts(&agent.messages()), vec!["Message 2"]);
+    }
+
+    #[tokio::test]
+    async fn allows_trim_at_tool_use_when_tool_result_immediately_follows() {
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            assistant("Response 1"),
+            user("Message 2"),
+            tool_use_message("tool1", "id-1"),
+            tool_result_message("id-1", "Result"),
+            assistant("Response 2"),
+        ]);
+        trigger_context_overflow(&manager(4, false), &agent).await;
+
+        let messages = agent.messages();
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[0].text(), "Message 2");
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_a_complete_tool_pair_when_no_plain_user_trim_point_exists() {
+        let history = tool_heavy_history();
+        let agent = test_agent_with_messages(history.clone());
+        let expected: Vec<Message> = std::iter::once(history[0].clone())
+            .chain(history[5..].iter().cloned())
+            .collect();
+
+        trigger_context_overflow(&manager(4, false), &agent).await;
+
+        assert_eq!(agent.messages(), expected);
+        assert_eq!(
+            roles(&agent.messages()),
+            vec![Role::User, Role::Assistant, Role::User, Role::Assistant]
+        );
+    }
+
+    #[tokio::test]
+    async fn keeps_routine_window_management_user_first_when_it_uses_the_tool_pair_fallback() {
+        let history = tool_heavy_history();
+        let agent = test_agent_with_messages(history.clone());
+        let expected: Vec<Message> = std::iter::once(history[0].clone())
+            .chain(history[5..].iter().cloned())
+            .collect();
+
+        trigger_sliding_window(&manager(4, false), &agent).await;
+
+        assert_eq!(agent.messages(), expected);
+        assert_eq!(
+            roles(&agent.messages()),
+            vec![Role::User, Role::Assistant, Role::User, Role::Assistant]
+        );
+    }
+
+    #[tokio::test]
+    async fn prefers_a_plain_user_trim_point_over_a_reachable_complete_tool_pair_later_in_range() {
+        let history = vec![
+            user("First"),
+            assistant("Response A"),
+            user("Plain user message"),
+            tool_use_message("lookup", "id-1"),
+            tool_result_message("id-1", "Result"),
+            assistant("Final"),
+        ];
+        let agent = test_agent_with_messages(history.clone());
+
+        trigger_context_overflow(&manager(4, false), &agent).await;
+
+        assert_eq!(agent.messages(), history[2..].to_vec());
+        assert_eq!(agent.messages()[0].text(), "Plain user message");
+    }
+
+    #[tokio::test]
+    async fn does_not_treat_a_user_message_containing_tool_use_as_an_assistant_tool_pair_boundary() {
+        let history = vec![
+            user("Anchor"),
+            assistant("Old response"),
+            Message::new(
+                Role::User,
+                vec![
+                    ContentBlock::ToolResult(ToolResultBlock::success(
+                        "orphan",
+                        vec![ToolResultContent::text("Orphan result")],
+                    )),
+                    ContentBlock::ToolUse(ToolUseBlock::new("lookup", "id-1", json!({}))),
+                ],
+            ),
+            tool_result_message("id-1", "Result"),
+            assistant("Response"),
+            assistant("Final"),
+        ];
+        let agent = test_agent_with_messages(history.clone());
+
+        let reduced = reduce(&manager(4, false), &agent, ReduceTrigger::Overflow(overflow())).await;
+
+        assert!(!reduced);
+        assert_eq!(agent.messages(), history);
+    }
+
+    #[tokio::test]
+    async fn returns_false_when_an_assistant_tool_use_is_not_followed_by_a_tool_result() {
+        let history = vec![
+            user("Anchor"),
+            assistant("Old response"),
+            tool_use_message("lookup", "id-1"),
+            user_tool_use("anotherLookup", "id-2"),
+            assistant("Response"),
+            assistant("Final"),
+        ];
+        let agent = test_agent_with_messages(history.clone());
+
+        let reduced = reduce(&manager(4, false), &agent, ReduceTrigger::Overflow(overflow())).await;
+
+        assert!(!reduced);
+        assert_eq!(agent.messages(), history);
+    }
+
+    #[tokio::test]
+    async fn uses_the_pinned_first_user_as_a_safe_fallback_anchor() {
+        let agent = test_agent_with_messages(trailing_pairs_history(user("Pinned user")));
+
+        let reduced = reduce(
+            &pinning_manager(2, 1),
+            &agent,
+            ReduceTrigger::Overflow(overflow()),
+        )
+        .await;
+
+        assert!(reduced);
+        let messages = agent.messages();
+        assert_eq!(roles(&messages), vec![Role::User, Role::Assistant, Role::User]);
+        assert_eq!(messages[0].text(), "Pinned user");
+        assert_eq!(messages[1].tool_uses().next().unwrap().tool_use_id, "id-2");
+        assert_eq!(messages[2].tool_results().next().unwrap().tool_use_id, "id-2");
+    }
+
+    #[tokio::test]
+    async fn declines_fallback_when_a_pinned_prefix_ends_with_an_assistant_message() {
+        let history = trailing_pairs_history(user("Pinned user"));
+        let agent = test_agent_with_messages(history.clone());
+
+        let reduced = reduce(
+            &pinning_manager(2, 2),
+            &agent,
+            ReduceTrigger::Overflow(overflow()),
+        )
+        .await;
+
+        assert!(!reduced);
+        assert_eq!(texts(&agent.messages()), texts(&history));
+        assert_eq!(
+            roles(&agent.messages()),
+            vec![
+                Role::User,
+                Role::Assistant,
+                Role::User,
+                Role::Assistant,
+                Role::User,
+                Role::Assistant,
+                Role::User
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn declines_fallback_when_non_contiguous_pinned_messages_do_not_alternate() {
+        let mut history = vec![
+            user("Pinned user one"),
+            assistant("Unpinned response"),
+            user("Pinned user two"),
+        ];
+        history.extend(trailing_pairs_history(user("Old anchor"))[1..].iter().cloned());
+        pin_message(&mut history, 0);
+        pin_message(&mut history, 2);
+        let agent = test_agent_with_messages(history.clone());
+
+        let reduced = reduce(&manager(2, false), &agent, ReduceTrigger::Overflow(overflow())).await;
+
+        assert!(!reduced);
+        assert_eq!(agent.messages(), history);
+    }
+
+    #[tokio::test]
+    async fn declines_fallback_when_the_first_pinned_message_is_an_orphaned_tool_result() {
+        let mut history = trailing_pairs_history(tool_result_message("orphan", "Orphan result"));
+        pin_message(&mut history, 0);
+        let agent = test_agent_with_messages(history.clone());
+
+        let reduced = reduce(&manager(2, false), &agent, ReduceTrigger::Overflow(overflow())).await;
+
+        assert!(!reduced);
+        assert_eq!(agent.messages(), history);
+    }
+
+    #[tokio::test]
+    async fn declines_fallback_when_the_last_pinned_message_carries_a_bare_tool_use_block() {
+        let history = trailing_pairs_history(user_tool_use("weird", "weird-1"));
+        let agent = test_agent_with_messages(history.clone());
+
+        let reduced = reduce(
+            &pinning_manager(2, 1),
+            &agent,
+            ReduceTrigger::Overflow(overflow()),
+        )
+        .await;
+
+        assert!(!reduced);
+        assert_eq!(texts(&agent.messages()), texts(&history));
+    }
+
+    #[tokio::test]
+    async fn declines_fallback_when_no_plain_user_message_exists_before_the_tool_pair() {
+        let history = vec![
+            tool_result_message("orphan-0", "Orphan result"),
+            tool_use_message("lookup", "id-1"),
+            tool_result_message("id-1", "Result 1"),
+            tool_use_message("lookup", "id-2"),
+            tool_result_message("id-2", "Result 2"),
+        ];
+        let agent = test_agent_with_messages(history.clone());
+
+        let reduced = reduce(&manager(2, false), &agent, ReduceTrigger::Overflow(overflow())).await;
+
+        assert!(!reduced);
+        assert_eq!(agent.messages(), history);
+    }
+
+    #[tokio::test]
+    async fn trims_oldest_messages_when_compression_threshold_is_exceeded() {
+        let compressing = SlidingWindowConversationManager::with_config(SlidingWindowConfig {
+            window_size: 4,
+            proactive_compression: ProactiveCompression::Threshold(0.7),
+            ..Default::default()
+        })
+        .unwrap();
+        let agent = test_agent_with_messages(vec![
+            user("Message 1"),
+            assistant("Response 1"),
+            user("Message 2"),
+            assistant("Response 2"),
+            user("Message 3"),
+            assistant("Response 3"),
+        ]);
+        compressing.init_agent(&agent).await.unwrap();
+
+        let mut event = before_model_call(&agent, model(Some(1000)), Some(800));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+
+        assert_eq!(agent.messages().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn does_not_trim_when_below_compression_threshold() {
+        let compressing = SlidingWindowConversationManager::with_config(SlidingWindowConfig {
+            window_size: 4,
+            proactive_compression: ProactiveCompression::Threshold(0.7),
+            ..Default::default()
+        })
+        .unwrap();
+        let agent = test_agent_with_messages(vec![user("Message 1"), assistant("Response 1")]);
+        compressing.init_agent(&agent).await.unwrap();
+
+        let mut event = before_model_call(&agent, model(Some(1000)), Some(500));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+
+        assert_eq!(agent.messages().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn returns_false_when_all_messages_in_trim_range_are_protected() {
+        let agent = test_agent_with_messages(vec![user("a"), assistant("b"), user("c"), assistant("d")]);
+
+        let reduced = reduce(&pinning_manager(2, 4), &agent, ReduceTrigger::Proactive).await;
+
+        assert!(!reduced);
+    }
+
+    #[tokio::test]
+    async fn pinned_message_in_middle_of_window_survives_trimming() {
+        let mut history = vec![
+            user("first"),
+            assistant("second"),
+            user("pinned-middle"),
+            assistant("fourth"),
+            user("fifth"),
+            assistant("sixth"),
+        ];
+        pin_message(&mut history, 2);
+        let agent = test_agent_with_messages(history);
+
+        trigger_sliding_window(&manager(4, true), &agent).await;
+
+        assert_eq!(
+            texts(&agent.messages()),
+            vec!["pinned-middle", "fourth", "fifth", "sixth"]
         );
     }
 }
