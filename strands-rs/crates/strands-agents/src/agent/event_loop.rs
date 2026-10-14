@@ -551,6 +551,8 @@ async fn run_cycles(
         crate::types::SystemPrompt::Text(text) => Some(text),
         _ => None,
     });
+    // TS records the *input* messages of this invocation on the agent span, not the history.
+    let span_messages = input.clone().into_messages();
     let agent_span = agent
         .tracer()
         .start_agent_span(crate::telemetry::tracer::AgentSpanOptions {
@@ -560,11 +562,12 @@ async fn run_cycles(
             tools: &tool_names,
             tool_specs: &tool_specs,
             system_prompt: system_prompt.as_deref(),
-            messages: &agent.messages(),
+            messages: &span_messages,
             provider: None,
         });
 
-    let outcome = run_cycles_inner(agent, input, state, cancel, tx, options, structured, &agent_span).await;
+    let mut outcome =
+        run_cycles_inner(agent, input, state, cancel, tx, options, structured, &agent_span).await;
 
     match &outcome {
         Ok(result) => agent
@@ -575,6 +578,12 @@ async fn run_cycles(
             .end_agent_span(&agent_span, None, Some(&error.to_string())),
     }
     agent.meter().end_invocation();
+    // The result snapshotted traces/metrics before the agent span ended; refresh so the local
+    // trace tree carries the end time (TS hands out the shared trace object).
+    if let Ok(result) = &mut outcome {
+        result.traces = agent.tracer().local_traces();
+        result.metrics = agent.meter().metrics();
+    }
 
     if structured {
         agent.with_tool_registry(|registry| registry.remove(STRUCTURED_OUTPUT_TOOL_NAME));
