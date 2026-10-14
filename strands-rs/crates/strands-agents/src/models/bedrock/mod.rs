@@ -409,6 +409,10 @@ impl BedrockModel {
         }
     }
 
+    fn region(&self) -> Option<String> {
+        self.client.config().region().map(|region| region.to_string())
+    }
+
     /// The current configuration, with `context_window_limit` resolved from the model id.
     pub fn config(&self) -> BedrockModelConfig {
         let config = self.config.read().clone();
@@ -507,13 +511,38 @@ pub(crate) fn model_error(message: impl Into<String>, source: impl Into<crate::e
     }
 }
 
-/// Map a Bedrock SDK error: throttling, context overflow, then a generic model error.
-fn map_sdk_error<E>(error: aws_sdk_bedrockruntime::error::SdkError<E, HttpResponse>) -> Error
+/// Prefix a credentials/construction failure with what the caller has to do about it.
+///
+/// The raw SDK message ("dispatch failure", "no credentials found") doesn't say that.
+fn credentials_hint(message: &str, construction_failure: bool, region: Option<&str>) -> Option<String> {
+    if !construction_failure && !message.to_lowercase().contains("no credentials found") {
+        return None;
+    }
+    let region = region.unwrap_or("unknown");
+    Some(format!(
+        "No AWS credentials found for Bedrock (region {region}). Set AWS_PROFILE or \
+         AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, or run on a role. {message}"
+    ))
+}
+
+/// Map a Bedrock SDK error: credentials, throttling, context overflow, then a generic model error.
+fn map_sdk_error<E>(
+    error: aws_sdk_bedrockruntime::error::SdkError<E, HttpResponse>,
+    region: Option<&str>,
+) -> Error
 where
     E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
 {
     let code = error.code().map(str::to_owned);
     let message = flatten_error_message(&error);
+    let construction_failure = matches!(
+        error,
+        aws_sdk_bedrockruntime::error::SdkError::ConstructionFailure(_)
+    );
+
+    if let Some(hint) = credentials_hint(&message, construction_failure, region) {
+        return model_error(hint, error);
+    }
 
     if code.as_deref() == Some("ThrottlingException") {
         tracing::debug!("throttled | error_message=<{message}>");
@@ -609,7 +638,7 @@ impl BedrockModel {
                     builder = builder.guardrail_config(guardrail.to_stream()?);
                 }
 
-                let response = builder.send().await.map_err(map_sdk_error)?;
+                let response = builder.send().await.map_err(|error| map_sdk_error(error, self.region().as_deref()))?;
                 let mut stream = response.stream;
                 let mut last_stop_reason: Option<String> = None;
                 let mut redaction_emitted = false;
@@ -681,7 +710,7 @@ impl BedrockModel {
                     builder = builder.guardrail_config(guardrail.to_converse()?);
                 }
 
-                let response = builder.send().await.map_err(map_sdk_error)?;
+                let response = builder.send().await.map_err(|error| map_sdk_error(error, self.region().as_deref()))?;
                 for event in parse::map_converse_output(&config, &response)? {
                     yield event;
                 }
@@ -766,6 +795,15 @@ mod tests {
                 .build(),
         );
         BedrockModel::from_client(client, resolve_config(config))
+    }
+
+    #[test]
+    fn credentials_hint_fires_for_construction_and_missing_credentials() {
+        let hint = credentials_hint("dispatch failure", true, Some("us-west-2")).expect("hint");
+        assert!(hint.starts_with("No AWS credentials found for Bedrock (region us-west-2)."));
+        assert!(hint.ends_with("dispatch failure"));
+        assert!(credentials_hint("no credentials found in the property bag", false, None).is_some());
+        assert!(credentials_hint("ValidationException: bad model id", false, Some("us-west-2")).is_none());
     }
 
     #[test]
