@@ -8,7 +8,8 @@ use super::InvocationState;
 use crate::types::{ContentBlock, JsonValue, Message, StopReason};
 
 /// Result of one agent invocation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type", rename = "agentResult", rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct AgentResult {
     /// Why the loop stopped.
@@ -16,8 +17,10 @@ pub struct AgentResult {
     /// The final message in the conversation.
     pub last_message: Message,
     /// The invocation's shared state (same handle every event carried).
+    #[serde(skip)]
     pub invocation_state: InvocationState,
     /// Parsed structured output, when requested.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub structured_output: Option<JsonValue>,
 }
 
@@ -41,22 +44,7 @@ impl AgentResult {
 
     /// Wire form: `{ type, stopReason, lastMessage, structuredOutput? }`.
     pub fn to_json(&self) -> JsonValue {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Wire<'a> {
-            r#type: &'static str,
-            stop_reason: &'a StopReason,
-            last_message: &'a Message,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            structured_output: &'a Option<JsonValue>,
-        }
-        serde_json::to_value(Wire {
-            r#type: "agentResult",
-            stop_reason: &self.stop_reason,
-            last_message: &self.last_message,
-            structured_output: &self.structured_output,
-        })
-        .expect("AgentResult is serializable")
+        serde_json::to_value(self).expect("AgentResult is serializable")
     }
 }
 

@@ -7,7 +7,11 @@ mod model;
 pub mod streaming;
 
 #[cfg(feature = "bedrock")]
-pub use bedrock::{BedrockModel, BedrockModelConfig};
+pub use bedrock::{
+    BedrockGuardrailConfig, BedrockGuardrailRedactionConfig, BedrockModel, BedrockModelBuilder,
+    BedrockModelConfig, CacheConfig, CacheSection, CacheStrategy, GuardrailStreamProcessingMode,
+    GuardrailTraceMode, IncludeToolResultStatus,
+};
 pub use defaults::{
     default_max_tokens_warning_message, default_model_warning_message, get_context_window_limit,
     ModelDefaults, ProviderDefaults, MODEL_DEFAULTS,

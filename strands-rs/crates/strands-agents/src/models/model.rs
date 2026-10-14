@@ -49,7 +49,8 @@ pub struct CountTokensOptions {
 }
 
 /// Guardrail redaction of the user's input.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Redaction {
     /// Replacement text for the user message.
     pub user_message: String,

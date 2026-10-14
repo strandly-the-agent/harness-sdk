@@ -28,6 +28,7 @@ use crate::types::{
 };
 
 /// Error text when `invoke`/`stream` is called while another invocation runs.
+#[doc(hidden)]
 pub const CONCURRENT_INVOCATION_MESSAGE: &str = "Agent is already processing an invocation. Wait for the \
      current invoke() or stream() call to complete before invoking again.";
 
@@ -38,6 +39,7 @@ const CANCELLED_MESSAGE: &str = "Cancelled by user";
 const NO_TOOL_USE_BLOCKS_MESSAGE: &str = "Model indicated toolUse but no tool use blocks found in message";
 
 /// Error text when a forced structured-output tool call is still not made.
+#[doc(hidden)]
 pub const STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE: &str =
     "The model failed to invoke the structured output tool even after it was forced.";
 
@@ -744,12 +746,9 @@ async fn invoke_model(
                         stop_data: Some(ModelStopData {
                             message: result.message.clone(),
                             stop_reason: result.stop_reason.clone(),
-                            redaction: result
-                                .redaction
-                                .as_ref()
-                                .map(|r| crate::hooks::events::Redaction {
-                                    user_message: r.user_message.clone(),
-                                }),
+                            redaction: result.redaction.as_ref().map(|r| crate::models::Redaction {
+                                user_message: r.user_message.clone(),
+                            }),
                         }),
                         error: None,
                         invocation_state: state.clone(),

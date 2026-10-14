@@ -14,9 +14,9 @@ use crate::models::defaults::MODEL_DEFAULTS;
 use crate::models::model::StreamOptions;
 use crate::types::{
     AudioSource, Citation, CitationLocation, CitationsBlock, ContentBlock, DocumentBlock, DocumentSource,
-    GuardContentBlock, GuardImageFormat, GuardQualifier, ImageBlock, ImageSource, JsonSchema, JsonValue,
-    Message, Role, SystemContentBlock, SystemPrompt, ToolChoice, ToolResultBlock, ToolResultContent,
-    ToolResultStatus, ToolSpec, ToolUseBlock, VideoBlock, VideoSource,
+    GuardContentBlock, GuardImageFormat, GuardQualifier, ImageBlock, ImageSource, JsonValue, Message, Role,
+    SystemContentBlock, SystemPrompt, ToolChoice, ToolResultBlock, ToolResultContent, ToolResultStatus,
+    ToolSpec, ToolUseBlock, VideoBlock, VideoSource,
 };
 
 /// Placeholder tool sent when the history references tools but the caller supplied no specs.
@@ -1096,7 +1096,7 @@ const UNSUPPORTED_STRICT_KEYWORDS: &[&str] = &[
 ];
 
 /// Strict-mode copy of a tool's input schema, warning once per tool on rejected keywords.
-fn to_strict_input_schema(tool_name: &str, input_schema: &JsonSchema) -> JsonSchema {
+fn to_strict_input_schema(tool_name: &str, input_schema: &JsonValue) -> JsonValue {
     let mut schema = input_schema.clone();
     let root = schema.clone();
     apply_strict(&mut schema, &root, &mut Vec::new());
