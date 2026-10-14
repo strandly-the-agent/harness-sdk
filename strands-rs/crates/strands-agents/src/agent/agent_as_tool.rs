@@ -13,9 +13,7 @@ use crate::agent::{Agent, InvokeInput};
 use crate::error::{Error, Result};
 use crate::interrupt::{Interrupt, InterruptSource};
 use crate::tools::{create_error_result, Tool, ToolContext, ToolRef};
-use crate::types::{
-    InterruptResponse, JsonValue, StopReason, ToolResultBlock, ToolResultContent, ToolSpec,
-};
+use crate::types::{InterruptResponse, JsonValue, StopReason, ToolResultBlock, ToolResultContent, ToolSpec};
 
 /// Namespace prefix for a sub-agent's interrupt ids: `agent_as_tool:{tool_use_id}:{inner_id}`.
 const INTERRUPT_NAMESPACE: &str = "agent_as_tool";
@@ -71,7 +69,9 @@ struct AgentAsTool {
 impl AgentAsTool {
     fn new(agent: Agent, options: AgentAsToolOptions) -> Self {
         let name = options.name.unwrap_or_else(|| agent.name().to_owned());
-        let description = options.description.or_else(|| agent.description().map(str::to_owned));
+        let description = options
+            .description
+            .or_else(|| agent.description().map(str::to_owned));
         let description = description
             .unwrap_or_else(|| format!("Use the {name} agent by providing a natural language input"));
         let spec = ToolSpec::new(&name, &description).with_input_schema(input_schema());
@@ -200,7 +200,8 @@ impl Tool for AgentAsTool {
                     if let Some(agent_result) = event.result() {
                         result = Some(agent_result.clone());
                     }
-                    ctx.progress(json!({ "agent": self.name, "event": event.type_name() })).await;
+                    ctx.progress(json!({ "agent": self.name, "event": event.type_name() }))
+                        .await;
                 }
                 Err(Error::Cancelled) => return Err(Error::Cancelled),
                 Err(error) => return Ok(create_error_result(error, &tool_use_id)),
