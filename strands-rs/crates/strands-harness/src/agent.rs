@@ -7,12 +7,15 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use strands_agents::background_tasks::BackgroundTasksConfig;
 use strands_agents::context_manager::ContextManagerOption;
+use strands_agents::mcp::{ListOptions, LoadOptions, McpClient, McpServerConfig};
 use strands_agents::memory::{MemoryManager, MemoryStoreRef};
 use strands_agents::models::Model;
 use strands_agents::plugins::vended::{AgentSkills, SkillSource};
 use strands_agents::plugins::Plugin;
+use strands_agents::sandbox::SandboxRef;
 use strands_agents::session::{FileStorage, SaveLatestStrategy, SessionManager, SessionManagerOptions};
 use strands_agents::storage::LocalFileStorage;
+use strands_agents::telemetry::AttrValue;
 use strands_agents::tools::ToolRef;
 use strands_agents::ShellTool;
 use strands_agents::{Agent, Error, Result};
@@ -23,7 +26,7 @@ use crate::builtin_tools::{
     BuiltinToolSetting, BuiltinToolsConfig, WebSearchMode, WebSearchModel,
 };
 use crate::defaults::{DEFAULT_BUILTIN_PLUGINS, DEFAULT_MODEL, DEFAULT_SESSION_DIR, DEFAULT_SKILLS_DIR};
-use crate::interventions::{resolve_interventions, InterventionHandler, InterventionsOption};
+use crate::interventions::{resolve_interventions, InterventionsOption, ResolveInterventionsOptions};
 use crate::memory::{resolve_memory, ResolveMemoryOptions};
 use crate::models::{resolve_model, supports_web_search, Effort, ModelOption, ResolveModelOptions};
 use crate::prompt::build_system_prompt;
@@ -59,6 +62,27 @@ pub enum BackgroundTasksOption {
     On,
     /// An explicit policy.
     Config(BackgroundTasksConfig),
+}
+
+/// The `mcp_servers` option: a path to an `mcp.json`-shaped config, or an inline server map.
+#[derive(Debug, Clone)]
+pub enum McpServersOption {
+    /// Path to a JSON config file.
+    Path(PathBuf),
+    /// Already-parsed server map, keyed by server name.
+    Servers(indexmap::IndexMap<String, McpServerConfig>),
+}
+
+/// The `sandbox` option.
+#[derive(Clone, Default)]
+pub enum SandboxOption {
+    /// Leave the SDK's default slot in place (a `LocalSandbox`) — the default.
+    #[default]
+    Default,
+    /// No sandbox: no sandbox-vended tools are registered.
+    Off,
+    /// An explicit sandbox.
+    Instance(SandboxRef),
 }
 
 /// Session persistence settings (`session` as an object).
@@ -142,8 +166,8 @@ pub struct HarnessAgentOptions {
     /// Consumer plugins. A `Todos`/`EnvironmentContext`/`AgentSkills` instance here replaces the
     /// harness-added one.
     pub plugins: Vec<Arc<dyn Plugin>>,
-    /// MCP servers. Not supported yet: a non-empty value is an error.
-    pub mcp_servers: Vec<String>,
+    /// MCP servers: a config path or an inline map, loaded via [`McpClient::load_servers`].
+    pub mcp_servers: Option<McpServersOption>,
     /// Which built-ins to enable, and their config. Defaults to [`crate::defaults::DEFAULT_BUILTIN_TOOLS`].
     pub builtin_tools: Option<BuiltinToolsConfig>,
     /// Which built-in plugins to add. Defaults to [`crate::defaults::DEFAULT_BUILTIN_PLUGINS`];
@@ -161,8 +185,14 @@ pub struct HarnessAgentOptions {
     pub skills: SkillsOption,
     /// Long-term memory; on by default.
     pub memory: MemoryOption,
-    /// Intervention presets. Not supported yet; see [`resolve_interventions`].
+    /// Intervention presets and/or handler instances; see [`resolve_interventions`].
     pub interventions: InterventionsOption,
+    /// How intervention presets collect approval. `None` leaves them in interrupt/resume mode.
+    pub interventions_ask: Option<strands_agents::interventions::vended::hitl::AskFn>,
+    /// Where the agent runs commands and file operations. Defaults to the SDK's `LocalSandbox`.
+    pub sandbox: SandboxOption,
+    /// Custom attributes merged onto every span this agent emits.
+    pub trace_attributes: Vec<(String, AttrValue)>,
     /// Full system-prompt override, replacing the harness contract and `instructions`.
     pub system_prompt: Option<String>,
     /// Agent id.
@@ -176,10 +206,6 @@ pub struct HarnessAgentOptions {
 /// Build the harness agent: a resolved model, the vended system prompt, the built-in tools and
 /// plugins, context management, session persistence and memory, wired into a plain [`Agent`].
 pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
-    if !options.mcp_servers.is_empty() {
-        return Err(Error::other("MCP not supported yet"));
-    }
-
     let resolved_builtins = resolve_builtin_tools(options.builtin_tools.as_ref())?;
     let explicit_search = web_search_explicit(options.builtin_tools.as_ref());
     let search_model = match &options.model {
@@ -209,7 +235,8 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
         None => build_system_prompt(options.instructions.as_deref(), &[]),
     };
 
-    let consumer_tools = options.tools.clone();
+    let mut consumer_tools = options.tools.clone();
+    consumer_tools.extend(load_mcp_tools(options.mcp_servers.as_ref()).await?);
     let builtin = build_builtin_tools(&options, &resolved_builtins, web_search, &model, &consumer_tools)?;
 
     let mut plugins = options.plugins.clone();
@@ -244,7 +271,12 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
     let mut agent_tools = builtin;
     agent_tools.extend(consumer_tools);
 
-    let _interventions: Vec<InterventionHandler> = resolve_interventions(&options.interventions)?;
+    let interventions = resolve_interventions(
+        &options.interventions,
+        &ResolveInterventionsOptions {
+            ask: options.interventions_ask.clone(),
+        },
+    )?;
 
     let forced: Vec<String> = agent_tools
         .iter()
@@ -258,7 +290,32 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
         .system_prompt(system_prompt)
         .tools(agent_tools)
         .plugins(plugins)
-        .context_manager(options.context_manager.clone());
+        .context_manager(options.context_manager.clone())
+        .interventions(interventions)?;
+    if let Some(config) = crate::telemetry::setup_telemetry() {
+        builder = builder.telemetry(config);
+    }
+    if !options.trace_attributes.is_empty() {
+        builder = builder.trace_attributes(options.trace_attributes.clone());
+    }
+    let explicit_sandbox = match &options.sandbox {
+        SandboxOption::Default => {
+            // TS default-slot semantics: the harness runs locally, so register LocalSandbox as the
+            // process default when the embedder has not registered one.
+            if strands_agents::sandbox::default_sandbox().is_err() {
+                strands_agents::sandbox::register_local_sandbox_default();
+            }
+            None
+        }
+        SandboxOption::Off => {
+            builder = builder.no_sandbox();
+            None
+        }
+        SandboxOption::Instance(sandbox) => {
+            builder = builder.sandbox_arc(sandbox.clone());
+            Some(sandbox.clone())
+        }
+    };
     if let Some(config) = background {
         builder = builder.background_tasks(config);
     }
@@ -280,7 +337,50 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
     if let Some(description) = options.description {
         builder = builder.description(description);
     }
-    builder.build().await
+    let agent = builder.build().await?;
+    if let Some(sandbox) = explicit_sandbox {
+        drop_sandbox_tools(&agent, &sandbox);
+    }
+    Ok(agent)
+}
+
+/// Connect the configured MCP servers and return their (server-prefixed) tools.
+///
+/// Per-server failures are tolerated (`continue_on_error`), matching TS.
+async fn load_mcp_tools(option: Option<&McpServersOption>) -> Result<Vec<ToolRef>> {
+    let Some(option) = option else {
+        return Ok(Vec::new());
+    };
+    let source = match option {
+        McpServersOption::Path(path) => strands_agents::mcp::ConfigSource::Path(path.clone()),
+        McpServersOption::Servers(servers) => strands_agents::mcp::ConfigSource::Inline(servers.clone()),
+    };
+    let mut load = LoadOptions::default();
+    load.continue_on_error = true;
+    let mut list = ListOptions::default();
+    list.prefix_with_server_name = true;
+    let clients = McpClient::load_servers(source, load, list).await?;
+    let mut tools = Vec::new();
+    for client in &clients {
+        tools.extend(client.list_tools().await?);
+    }
+    Ok(tools)
+}
+
+/// Drop the sandbox's vended tools: the harness ships its own `shell`/`read`/`write`/`edit`.
+///
+/// The SDK registers sandbox tools during `build`, so this runs after.
+fn drop_sandbox_tools(agent: &Agent, sandbox: &SandboxRef) {
+    let names: Vec<String> = sandbox
+        .tools()
+        .iter()
+        .map(|tool| tool.name().to_string())
+        .collect();
+    agent.with_tool_registry(|registry| {
+        for name in &names {
+            registry.remove(name);
+        }
+    });
 }
 
 /// The built-in tool objects, in canonical registration order.
@@ -627,6 +727,7 @@ fn setting_value(setting: &BuiltinToolSetting) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strands_agents::sandbox::LocalSandbox;
     use strands_agents::test_support::MockMessageModel;
     use strands_agents::tools::FunctionTool;
 
@@ -773,12 +874,69 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_mcp_servers() {
+    async fn loads_no_tools_when_mcp_servers_is_unset_or_empty() {
+        assert!(load_mcp_tools(None).await.unwrap().is_empty());
+        let empty = McpServersOption::Servers(indexmap::IndexMap::new());
+        assert!(load_mcp_tools(Some(&empty)).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn fails_on_a_missing_mcp_config_path() {
+        let option = McpServersOption::Path("./does-not-exist-mcp.json".into());
+        assert!(load_mcp_tools(Some(&option)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn skips_a_disabled_mcp_server() {
+        let mut servers = indexmap::IndexMap::new();
+        let config = McpServerConfig {
+            command: Some("does-not-exist".to_string()),
+            disabled: true,
+            ..Default::default()
+        };
+        servers.insert("echo".to_string(), config);
+        let option = McpServersOption::Servers(servers);
+        assert!(load_mcp_tools(Some(&option)).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn defaults_the_sandbox_to_the_sdk_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent = create_harness(options(dir.path())).await.unwrap();
+        assert!(agent.sandbox().is_ok());
+    }
+
+    #[tokio::test]
+    async fn drops_the_vended_tools_of_an_explicit_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let sandbox: SandboxRef = Arc::new(LocalSandbox::new());
+        let vended: Vec<String> = sandbox.tools().iter().map(|t| t.name().to_string()).collect();
+        let mut opts = options(dir.path());
+        opts.sandbox = SandboxOption::Instance(sandbox);
+        let agent = create_harness(opts).await.unwrap();
+        let names: Vec<String> = agent.tools().iter().map(|t| t.name().to_string()).collect();
+        for name in &vended {
+            assert_eq!(
+                names.iter().filter(|n| *n == name).count(),
+                0,
+                "{name} in {names:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn resolves_interventions_into_the_agent() {
         let dir = tempfile::tempdir().unwrap();
         let mut opts = options(dir.path());
-        opts.mcp_servers = vec!["./mcp.json".to_string()];
-        let err = create_harness(opts).await.unwrap_err().to_string();
-        assert!(err.contains("MCP not supported yet"), "{err}");
+        opts.interventions = InterventionsOption::presets(["ask"]);
+        assert!(create_harness(opts).await.is_ok());
+        let mut opts = options(dir.path());
+        opts.interventions = InterventionsOption::presets(["smart"]);
+        let err = match create_harness(opts).await {
+            Ok(_) => panic!("expected an error"),
+            Err(error) => error.to_string(),
+        };
+        assert!(err.contains("LLM risk classifier"), "{err}");
     }
 
     #[test]

@@ -2623,6 +2623,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "futures",
+ "indexmap",
  "parking_lot",
  "regex",
  "reqwest 0.12.28",
