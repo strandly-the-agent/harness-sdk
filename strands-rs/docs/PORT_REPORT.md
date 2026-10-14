@@ -237,31 +237,71 @@ Open 🟡: background-task completion may overwrite `Cancelled`; background runs
 validation report; ~86 `agent.test.ts` rows unported); memory pass C items (key-aware extractor,
 per-store triggers); `shell.timeout` integer type.
 
-## Phase 3 — feature completion (in progress)
+## Phase 3 — feature completion
 
-Landed on `agent-tasks/strands-rs` (1156 tests green, fmt/clippy/doc clean): conversation
-managers removed (`ContextManagerOption::Auto` is the Agent default; `Off` disables);
-`middleware/` (TypeId-keyed stages, `InvokeModelStage`/`ExecuteToolStage`, input/wrap/output,
-loop + executor integration); interrupts + `interventions/` + `HumanInTheLoop` (`Error::Interrupt`,
-`ToolContext::interrupt`, `InvokeInput::InterruptResponses`, pending-batch resume, e2e in
-`tests/interrupts_loop.rs`); snapshots + checkpoints (`Agent::take_snapshot/load_snapshot`,
-`checkpointing`, `StopReason::Checkpoint`, resume; e2e `tests/checkpoint_loop.rs`); `sandbox/`
-(`Sandbox` trait, `LocalSandbox` in a process group, `ShellTool` routes through it; e2e
-`tests/sandbox_loop.rs`); `telemetry/` (OpenTelemetry `gen_ai.*` spans/events/metrics,
-`AgentResult.{metrics,traces}`, in-memory-exporter e2e `tests/telemetry.rs`); `mcp/` over rmcp 3.5
-(`McpClient`, `McpTool`, `load_servers`, stdio + streamable-http; e2e against a real stdio server
-`src/bin/mcp_echo_server.rs` in `tests/mcp_e2e.rs`); Anthropic and OpenAI (Responses + Chat +
-bedrock-mantle) providers with injectable transports (live tests gated on API keys); memory pass C
-(`resolve_extraction_config`, key-aware extractor, `to_read_only`, `TestMemoryStore`);
-`Continuations` API; `Agent::as_tool` (interrupt namespacing/resume; e2e
-`tests/agent_as_tool_loop.rs`); `AgentDelegation` plugin.
+All gates green at the final merge; **1210 tests passed, 0 failed, 39 ignored** (ignored = live
+suites), across `strands-agents` (lib 880+), `strands-agents-macros`, `strands-harness` (lib 209).
 
-Not finished in this phase: background-tasks engine remainder (max_concurrency/timeout/pass-id
-dedup/`Cancelled` guard — work lost in a sandbox recycle); harness wiring of the new features
-(`interventions` → HITL, `mcp_servers`, telemetry setup, `sandbox` option, `resolve_model` for
-anthropic/openai via the new providers); phase-3 review passes (correctness, API bar-raiser,
-validator) and docs for the new public surface. Known: `arronbailiss/harness-sdk` has no extra
-providers in Rust (only Bedrock), so Anthropic/OpenAI were ported from TS.
+```
+$ cargo fmt --check
+(clean)
+$ cargo clippy --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized] target(s) in 19.13s
+$ cargo build -p strands-agents  # default features
+    Finished `dev` profile [unoptimized] target(s) in 12.13s
+$ cargo build --no-default-features -p strands-agents
+    Finished `dev` profile [unoptimized] target(s) in 8.96s
+$ cargo doc --no-deps --all-features
+warnings: 0
+```
+
+Live runs (`docs/reviews/*-run.log`, genuine cargo output): Bedrock SDK e2e **22/22**
+(`integ_bedrock`, the sliding-window test went with conversation managers), harness defaults e2e
+**7/7** incl. the new `interventions_deny_the_shell_tool` (HITL with a scripted `ask`), MCP e2e
+**2/2** against a real stdio server, sandbox tests run real `sh` processes, telemetry e2e via an
+in-memory OTel exporter. Anthropic/OpenAI live tests skip without API keys.
+
+**Landed (all with e2e where feasible):** conversation managers removed → `ContextManagerOption::Auto`
+default; `middleware/` (TypeId-keyed stages, owned `Next<S>`, `wrap_fn(|ctx, sink, next| …)`,
+input/wrap/output, loop + executor integration); interrupts + `interventions/` + `HumanInTheLoop`
+(`Error::Interrupt`, `ToolContext::interrupt`, `InvokeInput::InterruptResponses`, pending-batch
+resume; `FunctionTool` passes interrupts through); snapshots + checkpoints (`take_snapshot` /
+`load_snapshot`, `checkpointing`, `StopReason::Checkpoint`, resume); `sandbox/` (`Sandbox` trait,
+`LocalSandbox` process group + bounded drain, `ShellTool` routes through it, stdin raced with
+timeout); `telemetry/` (`gen_ai.*` spans/events/metrics, `AgentResult.{metrics,traces}`, spans
+ended on interrupt paths); `mcp/` over rmcp 3.5 (`McpClient`, `McpTool`, `load_servers`, stdio +
+streamable-http; owned `McpServerInfo`, no rmcp types leaked); background-tasks engine
+(`max_concurrency` semaphore, per-task `timeout`, pass-id dedup, `Cancelled` guard,
+`AfterToolCallEvent` for background runs, `JoinHandle` abort); memory pass C (key-aware extractor,
+`resolve_extraction_config`, read-only views, `TestMemoryStore`); `Continuations` API (mark
+appended after the real append, abandon on early exit, same-role merge); `Agent::as_tool`
+(interrupt namespacing/resume), `AgentDelegation`; Anthropic + OpenAI (Responses/Chat/bedrock-mantle)
+providers over a byte-based `SseParser` (UTF-8 split + CRLF-across-chunks fixed) with injectable
+transports. Harness: `interventions` → `HumanInTheLoop` (`ask` seam, collision text), `mcp_servers`
+(`McpServersOption::{Path, Servers}` → `load_servers` with prefixing), `setup_telemetry` (env-gated
+`OTEL_TRACES_EXPORTER` → `TelemetryConfig`), `sandbox: SandboxOption{Default,Off,Instance}` +
+`drop_sandbox_tools`, `resolve_model` arms for `anthropic`/`openai`/`bedrock-mantle`.
+
+**Review disposition (phase 3):**
+- Correctness (`review-phase3-loop.md`): 🔴 UTF-8 chunk split corrupting SSE text (proven) → byte-based
+  parser; 🟡 CRLF across chunks, un-ended tool span on interrupt, continuation `mark_appended`
+  ordering, same-role merge, sandbox stdin deadlock — all fixed with regression tests.
+- API bar-raiser (`review-phase3-api.md`): 🔴 1–5 fixed (owned `Next`, opaque `InterruptStateHandle`,
+  infallible `intervention(impl …)`, no `rmcp`/`parking_lot`/`IndexMap` leaks, `opentelemetry`
+  re-exported). **Rejected/deferred with reasons:** `#[non_exhaustive]` on `AnthropicModelConfig`/
+  `OpenAIModelConfig` — forbids `..Default::default()` struct literals from other crates (would break
+  the live tests and user code) until a builder exists; 🟡 6–10 (async input/output handlers,
+  `AgentStreamStage`, per-stage event types, `pub(crate)`-ing provider internals, config builders)
+  are tracked as follow-ups.
+- Validator (`validation-phase3.md`): 🔴 plain `cargo build -p strands-agents` was broken (auto-
+  discovered test bin without `required-features`) → `[[bin]]` declared; 2 rustdoc warnings fixed.
+  PASS-WITH-FINDINGS otherwise; its unported-test counts (MCP tasks ~194, telemetry ~191,
+  middleware ~108, sandbox ~72) are the honest coverage gap — matrices for those modules are the
+  implementers' reports in `docs/matrices/`, not row-by-row inventories.
+
+**Not ported (by decision):** MCP tasks/annotations/progress, docker/ssh sandboxes, `AgentStreamStage`,
+HITL classifier/Cedar policies (hard errors naming the gap), OTLP exporter installation (the host
+installs it), printer, A2A, multiagent, Gemini/LiteLLM/OpenRouter.
 
 ## Known gaps / follow-ups
 

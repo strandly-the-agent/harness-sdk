@@ -249,10 +249,22 @@ async fn interventions_deny_the_shell_tool() {
         asked.load(Ordering::SeqCst) > 0,
         "the ask callback should have run"
     );
-    let text = result.text().to_lowercase();
-    assert!(
-        text.contains("denied") || text.contains("deny") || text.contains("not approved"),
-        "{}",
-        result.text()
+    // Deterministic evidence: the tool call was blocked (an error tool result, no shell output),
+    // not the model's wording about it.
+    let history = agent.messages();
+    let shell_result = history
+        .iter()
+        .flat_map(|m| m.tool_results())
+        .next()
+        .expect("the blocked shell call leaves a tool result in history");
+    assert_eq!(
+        shell_result.status,
+        strands_agents::types::ToolResultStatus::Error,
+        "{shell_result:?}"
     );
+    assert!(
+        !shell_result.text().contains("hello\n"),
+        "shell must not have run: {shell_result:?}"
+    );
+    assert!(!result.text().is_empty());
 }

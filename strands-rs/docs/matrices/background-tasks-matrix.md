@@ -53,6 +53,9 @@ Extra Rust tests with no 1:1 TS `it` (TS covers these inside the above cases):
 - Schema injection runs where the loop builds `tool_specs` (TS: `InvokeModelStage.Input`
   middleware). Behaviour — including the composite-schema refusal and the exact-vs-wildcard
   error — is unchanged.
-- Dedup of repeated submissions within one pass (TS `passId`) is not ported; every tool use
-  creates a task. `BackgroundTaskManager`'s `wait`/`waitForIdle`/`resume`/`remove` surface is
-  reduced to `wait_for_idle`, `cancel`, `get`, `list`.
+- Dedup of repeated submissions within one pass (TS `passId`) **is ported** as of pass B
+  (`submit_tool_call(.., pass_id)`, keyed on `(pass_id, tool_use_id)`), together with
+  `max_concurrency` (semaphore gate), per-task `timeout`, the `Working`-only outcome guard, an
+  `AfterToolCallEvent` for the background run, and `cancel` aborting the `JoinHandle` — see
+  `reports/background-tasks.md` (pass B table). `BackgroundTaskManager`'s
+  `wait`/`resume`/`remove` surface is still reduced to `wait_for_idle`, `cancel`, `get`, `list`.
