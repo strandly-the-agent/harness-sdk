@@ -9,7 +9,7 @@ is the lookup table for *what*.
 | `interface Foo { a?: number }` | `struct Foo { a: Option<u64> }` + `#[serde(default, skip_serializing_if = "Option::is_none")]` | absent key, never `null` |
 | open string union `'a' \| 'b' \| (string & {})` | `enum { A, B, Other(String) }` with manual serde | `StopReason` |
 | `Uint8Array` | `Vec<u8>` with `types::base64_bytes` serde helper | base64 on the wire |
-| `JSONValue` / `JSONSchema` | `serde_json::Value` (`types::JsonValue` / `JsonSchema`) | |
+| `JSONValue` / `JSONSchema` | `serde_json::Value` (`types::JsonValue`; `types::JsonSchema` is a doc alias, signatures use `JsonValue`) | avoids shadowing the `schemars::JsonSchema` trait |
 | `Record<string, JSONValue>` | `serde_json::Map<String, Value>` | insertion order preserved |
 | `abstract class Model<T>` | `trait Model` (object-safe), config on the concrete struct | `Arc<dyn Model>` |
 | `AsyncIterable<T>` | `BoxStream<'a, Result<T>>` | `futures::StreamExt` to consume |
@@ -24,7 +24,10 @@ is the lookup table for *what*.
 | `_shouldReverseCallbacks()` | `HookEvent::reverse_callbacks()` | |
 | `agent.messages` (public array) | `agent.messages()` (snapshot) / `agent.with_messages(\|v\| ..)` | handle semantics |
 | `agent.state` (`StateStore`) | `agent.state()` | |
-| `agent.tool.xxx(args)` proxy | `agent.tool(name).call(args)` / `agent.call_tool(..)` | |
+| `agent.tool.xxx(args)` proxy | `agent.tool(name)?.call(args)` | `ToolHandle`; `CallOptions::default().with_record_direct_tool_call(false)` |
+| `agent.stream(input, options?)` | `agent.stream(input)` / `agent.stream_with(input, options)` | same split as `invoke`/`invoke_with` |
+| `new Agent({ model, tools, plugins })` | `Agent::builder().model(m).tool(t).plugin(p).build().await?` | takes `impl Model`/`impl Tool`/`impl Plugin`; `model_arc`/`tool_ref`/`plugin_arc` for shared `Arc`s |
+| `AbortController` returned by `hooks.addCallback` | `HookCleanup` (`#[must_use]`) | dropping it keeps the hook registered |
 | `InvocationState = Record<string, unknown>` | `InvocationState` (type-erased bag, cloned handle) | identity preserved across events |
 | `Plugin` interface | `#[async_trait] trait Plugin` | |
 | `logger.warn/debug/...` | `tracing::warn!/debug!/...` | `logging::warn_once` for one-shot warnings |
