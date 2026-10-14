@@ -893,7 +893,9 @@ async fn fails_after_too_many_pause_turn_continuations() {
 #[test]
 fn parses_sse_frames_split_across_chunks() {
     let mut parser = SseParser::new();
-    assert!(parser.push("event: message_stop\ndata: {\"type\":\"mes").is_empty());
+    assert!(parser
+        .push("event: message_stop\ndata: {\"type\":\"mes")
+        .is_empty());
     let events = parser.push("sage_stop\"}\n\n");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event.as_deref(), Some("message_stop"));

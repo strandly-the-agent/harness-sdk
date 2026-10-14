@@ -4,9 +4,9 @@ use base64::Engine;
 use serde_json::{json, Value};
 
 use super::SERVER_TOOL_BLOCK_TYPES;
-use crate::models::sse::SseEvent;
 use crate::error::{Error, Result};
 use crate::logging::warn_once;
+use crate::models::sse::SseEvent;
 use crate::models::streaming::{ContentBlockDelta, ContentBlockStart, ModelStreamEvent};
 use crate::types::{
     Citation, CitationGeneratedContent, CitationLocation, CitationSourceContent, Role, StopReason, Usage,
