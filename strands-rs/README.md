@@ -2,8 +2,9 @@
 
 A Rust port of the core of [`@strands-agents/sdk`](../strands-ts): a model, a system prompt, and
 tools composed into an agent loop. **Experimental** — API may change; see
-[docs/DESIGN.md](docs/DESIGN.md) for scope and [docs/PORT_REPORT.md](docs/PORT_REPORT.md) for
-what is and isn't ported.
+[docs/DESIGN.md](docs/DESIGN.md) for scope, [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for
+feature availability across Python / TypeScript / Rust, and [docs/PORT_REPORT.md](docs/PORT_REPORT.md)
+for what is and isn't ported.
 
 ```rust
 use strands_agents::models::{BedrockModel, BedrockModelConfig};
