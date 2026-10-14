@@ -115,7 +115,7 @@ impl Todos {
         }
         Some(format!(
             "<system-reminder>\nYour current todo list:\n{}\nKeep it up to date with todo_write as you work.\n</system-reminder>",
-            format_args!("{}\n", render_list(&todos))
+            render_list(&todos)
         ))
     }
 }
@@ -203,3 +203,7 @@ impl Plugin for Todos {
         vec![Arc::new(tool) as ToolRef]
     }
 }
+
+#[cfg(test)]
+#[path = "todos_tests.rs"]
+mod tests;
