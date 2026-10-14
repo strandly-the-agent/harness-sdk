@@ -63,6 +63,7 @@ pub struct ToolUse {
 /// How the model may choose tools. Wire: `{"auto":{}}`, `{"any":{}}`, `{"tool":{"name":"x"}}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ToolChoice {
     /// Model decides.
     Auto {},

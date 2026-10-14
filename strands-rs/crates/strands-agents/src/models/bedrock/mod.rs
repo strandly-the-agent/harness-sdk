@@ -279,6 +279,7 @@ impl BedrockModelConfig {
 
 /// Builder for [`BedrockModel`]; `build` resolves credentials and region from the AWS chain.
 #[derive(Clone, Debug, Default)]
+#[must_use = "a BedrockModelBuilder does nothing until you call build()"]
 pub struct BedrockModelBuilder {
     config: BedrockModelConfig,
     region: Option<String>,

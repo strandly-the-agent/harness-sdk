@@ -9,6 +9,7 @@ use crate::types::{ContentBlock, JsonValue, Message, StopReason};
 
 /// Result of one agent invocation.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct AgentResult {
     /// Why the loop stopped.
     pub stop_reason: StopReason,
@@ -21,6 +22,23 @@ pub struct AgentResult {
 }
 
 impl AgentResult {
+    /// A result with no structured output.
+    pub fn new(stop_reason: StopReason, last_message: Message, invocation_state: InvocationState) -> Self {
+        Self {
+            stop_reason,
+            last_message,
+            invocation_state,
+            structured_output: None,
+        }
+    }
+
+    /// Attach parsed structured output.
+    #[must_use]
+    pub fn with_structured_output(mut self, output: JsonValue) -> Self {
+        self.structured_output = Some(output);
+        self
+    }
+
     /// Wire form: `{ type, stopReason, lastMessage, structuredOutput? }`.
     pub fn to_json(&self) -> JsonValue {
         #[derive(Serialize)]

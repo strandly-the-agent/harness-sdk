@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
 use serde_json::json;
-use strands_agents::agent::InvokeOptions;
 use strands_agents::hooks::{
     AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent, BeforeInvocationEvent,
     BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, Cancel, EndTurn, InitializedEvent,
@@ -74,7 +73,7 @@ fn result_text(message: &Message) -> String {
 #[tokio::test]
 async fn keeps_existing_messages_passed_to_the_builder() {
     let agent = Agent::builder()
-        .model(text_model(&["hi"]))
+        .model_arc(text_model(&["hi"]))
         .messages(vec![
             Message::user("earlier"),
             Message::assistant("earlier reply"),
@@ -94,7 +93,11 @@ async fn keeps_existing_messages_passed_to_the_builder() {
 
 #[tokio::test]
 async fn set_messages_replaces_the_conversation() {
-    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
+    let agent = Agent::builder()
+        .model_arc(text_model(&["hi"]))
+        .build()
+        .await
+        .unwrap();
     agent.invoke("one").await.unwrap();
 
     agent.set_messages(vec![Message::user("only")]);
@@ -105,7 +108,11 @@ async fn set_messages_replaces_the_conversation() {
 
 #[tokio::test]
 async fn state_is_readable_and_writable() {
-    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
+    let agent = Agent::builder()
+        .model_arc(text_model(&["hi"]))
+        .build()
+        .await
+        .unwrap();
 
     agent.state().set("key", json!("value"));
 
@@ -116,7 +123,7 @@ async fn state_is_readable_and_writable() {
 async fn set_system_prompt_changes_what_the_model_sees() {
     let model = text_model(&["a", "b"]);
     let agent = Agent::builder()
-        .model(Arc::clone(&model) as Arc<_>)
+        .model_arc(Arc::clone(&model) as Arc<_>)
         .system_prompt("first")
         .build()
         .await
@@ -140,15 +147,15 @@ async fn set_system_prompt_changes_what_the_model_sees() {
 #[tokio::test]
 async fn fires_message_added_for_each_appended_message() {
     let agent = Agent::builder()
-        .model(tool_use_then_text("echo"))
-        .tool(echo_tool("echo"))
+        .model_arc(tool_use_then_text("echo"))
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
 
     let roles = Arc::new(Mutex::new(Vec::new()));
     let captured = Arc::clone(&roles);
-    agent
+    let _ = agent
         .hooks()
         .add_sync_callback(move |event: &mut MessageAddedEvent| {
             captured.lock().unwrap().push(event.message.role);
@@ -165,12 +172,16 @@ async fn fires_message_added_for_each_appended_message() {
 
 #[tokio::test]
 async fn after_invocation_callbacks_run_in_reverse_order() {
-    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
+    let agent = Agent::builder()
+        .model_arc(text_model(&["hi"]))
+        .build()
+        .await
+        .unwrap();
     let order = Arc::new(Mutex::new(Vec::new()));
 
     for label in ["first", "second"] {
         let captured = Arc::clone(&order);
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback(move |_e: &mut AfterInvocationEvent| {
                 captured.lock().unwrap().push(label);
@@ -179,7 +190,7 @@ async fn after_invocation_callbacks_run_in_reverse_order() {
     }
     for label in ["before-first", "before-second"] {
         let captured = Arc::clone(&order);
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback(move |_e: &mut BeforeInvocationEvent| {
                 captured.lock().unwrap().push(label);
@@ -197,12 +208,16 @@ async fn after_invocation_callbacks_run_in_reverse_order() {
 
 #[tokio::test]
 async fn after_model_call_callbacks_run_in_reverse_order() {
-    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
+    let agent = Agent::builder()
+        .model_arc(text_model(&["hi"]))
+        .build()
+        .await
+        .unwrap();
     let order = Arc::new(Mutex::new(Vec::new()));
 
     for label in ["first", "second"] {
         let captured = Arc::clone(&order);
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback(move |_e: &mut AfterModelCallEvent| {
                 captured.lock().unwrap().push(label);
@@ -210,7 +225,7 @@ async fn after_model_call_callbacks_run_in_reverse_order() {
             });
     }
     let captured = Arc::clone(&order);
-    agent
+    let _ = agent
         .hooks()
         .add_sync_callback(move |_e: &mut BeforeModelCallEvent| {
             captured.lock().unwrap().push("before");
@@ -224,11 +239,15 @@ async fn after_model_call_callbacks_run_in_reverse_order() {
 
 #[tokio::test]
 async fn after_invocation_resume_runs_another_invocation() {
-    let agent = Agent::new(text_model(&["first", "second"])).await.unwrap();
+    let agent = Agent::builder()
+        .model_arc(text_model(&["first", "second"]))
+        .build()
+        .await
+        .unwrap();
     let resumed = Arc::new(Mutex::new(false));
     let captured = Arc::clone(&resumed);
 
-    agent
+    let _ = agent
         .hooks()
         .add_sync_callback(move |event: &mut AfterInvocationEvent| {
             let mut done = captured.lock().unwrap();
@@ -251,13 +270,17 @@ async fn after_invocation_resume_runs_another_invocation() {
 
 #[tokio::test]
 async fn after_invocation_resume_is_ignored_when_the_invocation_errored() {
-    let agent = Agent::new(MockMessageModel::shared(Vec::new())).await.unwrap();
-    agent
+    let agent = Agent::builder()
+        .model_arc(MockMessageModel::shared(Vec::new()))
+        .build()
+        .await
+        .unwrap();
+    let _ = agent
         .hooks()
         .add_sync_callback(|_e: &mut BeforeModelCallEvent| Err(strands_agents::Error::Other("boom".into())));
     let resumes = Arc::new(Mutex::new(0usize));
     let captured = Arc::clone(&resumes);
-    agent
+    let _ = agent
         .hooks()
         .add_sync_callback(move |event: &mut AfterInvocationEvent| {
             *captured.lock().unwrap() += 1;
@@ -273,8 +296,12 @@ async fn after_invocation_resume_is_ignored_when_the_invocation_errored() {
 
 #[tokio::test]
 async fn rejects_concurrent_invocations() {
-    let agent = Agent::new(text_model(&["hi", "there"])).await.unwrap();
-    let mut first = agent.stream("one", InvokeOptions::default());
+    let agent = Agent::builder()
+        .model_arc(text_model(&["hi", "there"]))
+        .build()
+        .await
+        .unwrap();
+    let mut first = agent.stream("one");
 
     let err = agent.invoke("two").await.unwrap_err();
     assert!(
@@ -291,7 +318,11 @@ async fn rejects_concurrent_invocations() {
 
 #[tokio::test]
 async fn is_invoking_is_false_before_and_after_an_invocation() {
-    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
+    let agent = Agent::builder()
+        .model_arc(text_model(&["hi"]))
+        .build()
+        .await
+        .unwrap();
     assert!(!agent.is_invoking());
     agent.invoke("go").await.unwrap();
     assert!(!agent.is_invoking());
@@ -299,10 +330,14 @@ async fn is_invoking_is_false_before_and_after_an_invocation() {
 
 #[tokio::test]
 async fn initialize_is_idempotent_and_fires_initialized_once() {
-    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
+    let agent = Agent::builder()
+        .model_arc(text_model(&["hi"]))
+        .build()
+        .await
+        .unwrap();
     let count = Arc::new(Mutex::new(0usize));
     let captured = Arc::clone(&count);
-    agent.hooks().add_sync_callback(move |_e: &mut InitializedEvent| {
+    let _ = agent.hooks().add_sync_callback(move |_e: &mut InitializedEvent| {
         *captured.lock().unwrap() += 1;
         Ok(())
     });
@@ -333,8 +368,8 @@ async fn registers_tools_contributed_by_plugins() {
     }
 
     let agent = Agent::builder()
-        .model(text_model(&["hi"]))
-        .plugin(Arc::new(ToolPlugin))
+        .model_arc(text_model(&["hi"]))
+        .plugin(ToolPlugin)
         .build()
         .await
         .unwrap();
@@ -346,8 +381,8 @@ async fn registers_tools_contributed_by_plugins() {
 #[tokio::test]
 async fn unknown_tool_produces_an_error_result() {
     let agent = Agent::builder()
-        .model(tool_use_then_text("missing"))
-        .tool(echo_tool("echo"))
+        .model_arc(tool_use_then_text("missing"))
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
@@ -366,13 +401,13 @@ async fn unknown_tool_produces_an_error_result() {
 #[tokio::test]
 async fn before_tool_call_cancel_with_a_custom_reason_becomes_the_error_result() {
     let agent = Agent::builder()
-        .model(tool_use_then_text("echo"))
-        .tool(echo_tool("echo"))
+        .model_arc(tool_use_then_text("echo"))
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
 
-    agent
+    let _ = agent
         .hooks()
         .add_sync_callback(|event: &mut BeforeToolCallEvent| {
             event.cancel = Cancel::Reason("not allowed".to_owned());
@@ -391,8 +426,8 @@ async fn before_tool_call_cancel_with_a_custom_reason_becomes_the_error_result()
 #[tokio::test]
 async fn before_tool_call_selected_tool_overrides_the_tool_that_runs() {
     let agent = Agent::builder()
-        .model(tool_use_then_text("echo"))
-        .tool(echo_tool("echo"))
+        .model_arc(tool_use_then_text("echo"))
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
@@ -402,7 +437,7 @@ async fn before_tool_call_selected_tool_overrides_the_tool_that_runs() {
             .description("Replacement")
             .handler(|_input, _ctx| async move { Ok(json!("replaced")) }),
     );
-    agent
+    let _ = agent
         .hooks()
         .add_sync_callback(move |event: &mut BeforeToolCallEvent| {
             event.selected_tool = Some(Arc::clone(&replacement));
@@ -422,13 +457,13 @@ async fn before_tool_call_selected_tool_overrides_the_tool_that_runs() {
 #[tokio::test]
 async fn after_tool_call_can_replace_the_result() {
     let agent = Agent::builder()
-        .model(tool_use_then_text("echo"))
-        .tool(echo_tool("echo"))
+        .model_arc(tool_use_then_text("echo"))
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
 
-    agent.hooks().add_sync_callback(|event: &mut AfterToolCallEvent| {
+    let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolCallEvent| {
         event.result.content = vec![strands_agents::types::ToolResultContent::Text(
             "patched".to_owned(),
         )];
@@ -450,12 +485,12 @@ async fn after_tool_call_can_replace_the_result() {
 async fn after_tools_end_turn_yes_stops_the_loop() {
     let model = tool_use_then_text("echo");
     let agent = Agent::builder()
-        .model(Arc::clone(&model) as Arc<_>)
-        .tool(echo_tool("echo"))
+        .model_arc(Arc::clone(&model) as Arc<_>)
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
-    agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
+    let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Yes;
         Ok(())
     });
@@ -478,12 +513,12 @@ async fn after_tools_end_turn_yes_stops_the_loop() {
 async fn after_tools_end_turn_text_appends_an_assistant_message() {
     let model = tool_use_then_text("echo");
     let agent = Agent::builder()
-        .model(Arc::clone(&model) as Arc<_>)
-        .tool(echo_tool("echo"))
+        .model_arc(Arc::clone(&model) as Arc<_>)
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
-    agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
+    let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Text("stopping here".to_owned());
         Ok(())
     });
@@ -501,12 +536,12 @@ async fn after_tools_end_turn_text_appends_an_assistant_message() {
 async fn after_tools_end_turn_blocks_appends_the_given_blocks() {
     let model = tool_use_then_text("echo");
     let agent = Agent::builder()
-        .model(Arc::clone(&model) as Arc<_>)
-        .tool(echo_tool("echo"))
+        .model_arc(Arc::clone(&model) as Arc<_>)
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
-    agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
+    let _ = agent.hooks().add_sync_callback(|event: &mut AfterToolsEvent| {
         event.end_turn = EndTurn::Blocks(vec![ContentBlock::Text("from blocks".to_owned())]);
         Ok(())
     });
@@ -522,12 +557,12 @@ async fn after_tools_end_turn_blocks_appends_the_given_blocks() {
 #[tokio::test]
 async fn before_tools_cancel_turns_every_result_into_an_error() {
     let agent = Agent::builder()
-        .model(tool_use_then_text("echo"))
-        .tool(echo_tool("echo"))
+        .model_arc(tool_use_then_text("echo"))
+        .tool_ref(echo_tool("echo"))
         .build()
         .await
         .unwrap();
-    agent.hooks().add_sync_callback(|event: &mut BeforeToolsEvent| {
+    let _ = agent.hooks().add_sync_callback(|event: &mut BeforeToolsEvent| {
         event.cancel = Cancel::Reason("tools off".to_owned());
         Ok(())
     });
@@ -545,8 +580,12 @@ async fn before_tools_cancel_turns_every_result_into_an_error() {
 #[tokio::test]
 async fn before_invocation_cancel_appends_only_an_assistant_message() {
     let model = text_model(&["never"]);
-    let agent = Agent::new(Arc::clone(&model) as Arc<_>).await.unwrap();
-    agent
+    let agent = Agent::builder()
+        .model_arc(Arc::clone(&model) as Arc<_>)
+        .build()
+        .await
+        .unwrap();
+    let _ = agent
         .hooks()
         .add_sync_callback(|event: &mut BeforeInvocationEvent| {
             event.cancel = Cancel::Yes;
@@ -568,7 +607,11 @@ async fn before_invocation_cancel_appends_only_an_assistant_message() {
 
 #[tokio::test]
 async fn agent_result_displays_the_concatenated_text() {
-    let agent = Agent::new(text_model(&["Hello there"])).await.unwrap();
+    let agent = Agent::builder()
+        .model_arc(text_model(&["Hello there"]))
+        .build()
+        .await
+        .unwrap();
 
     let result = agent.invoke("Hi").await.unwrap();
 
@@ -578,8 +621,12 @@ async fn agent_result_displays_the_concatenated_text() {
 
 #[tokio::test]
 async fn stream_yields_the_agent_result_last() {
-    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
-    let mut stream = agent.stream("go", InvokeOptions::default());
+    let agent = Agent::builder()
+        .model_arc(text_model(&["hi"]))
+        .build()
+        .await
+        .unwrap();
+    let mut stream = agent.stream("go");
 
     let mut last = None;
     while let Some(event) = stream.next().await {

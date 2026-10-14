@@ -13,14 +13,24 @@ use crate::types::{JsonValue, ToolResultBlock, ToolSpec, ToolUse};
 /// Progress data emitted by a tool while it runs (`ToolStreamEvent` in TS).
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(tag = "type", rename = "toolStreamEvent")]
+#[derive(Default)]
+#[non_exhaustive]
 pub struct ToolStreamEvent {
     /// Arbitrary progress payload.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<JsonValue>,
 }
 
+impl ToolStreamEvent {
+    /// A progress event carrying `data`.
+    pub fn new(data: impl Into<Option<JsonValue>>) -> Self {
+        Self { data: data.into() }
+    }
+}
+
 /// Everything a tool receives when invoked.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct ToolContext {
     /// The invocation request.
     pub tool_use: ToolUse,

@@ -59,6 +59,10 @@ pub struct HookRegistry {
 }
 
 /// Removes a registered callback when called. Idempotent.
+///
+/// Dropping a `HookCleanup` without calling it leaves the hook registered for the lifetime of
+/// the registry — there is no `Drop` impl.
+#[must_use = "dropping a HookCleanup leaves the hook registered; call it to remove the callback"]
 pub struct HookCleanup(Box<dyn FnOnce() + Send + Sync>);
 
 impl HookCleanup {
@@ -204,19 +208,19 @@ mod tests {
     #[tokio::test]
     async fn runs_in_order_then_registration_order() {
         let hooks = HookRegistry::new();
-        hooks.add_sync_callback_with_order(10, |e: &mut Forward| {
+        let _ = hooks.add_sync_callback_with_order(10, |e: &mut Forward| {
             e.0.push("late");
             Ok(())
         });
-        hooks.add_sync_callback(|e: &mut Forward| {
+        let _ = hooks.add_sync_callback(|e: &mut Forward| {
             e.0.push("a");
             Ok(())
         });
-        hooks.add_sync_callback(|e: &mut Forward| {
+        let _ = hooks.add_sync_callback(|e: &mut Forward| {
             e.0.push("b");
             Ok(())
         });
-        hooks.add_sync_callback_with_order(hook_order::SDK_FIRST, |e: &mut Forward| {
+        let _ = hooks.add_sync_callback_with_order(hook_order::SDK_FIRST, |e: &mut Forward| {
             e.0.push("first");
             Ok(())
         });
@@ -228,15 +232,15 @@ mod tests {
     #[tokio::test]
     async fn reverse_events_run_backwards_within_order() {
         let hooks = HookRegistry::new();
-        hooks.add_sync_callback(|e: &mut Backward| {
+        let _ = hooks.add_sync_callback(|e: &mut Backward| {
             e.0.push("a");
             Ok(())
         });
-        hooks.add_sync_callback(|e: &mut Backward| {
+        let _ = hooks.add_sync_callback(|e: &mut Backward| {
             e.0.push("b");
             Ok(())
         });
-        hooks.add_sync_callback_with_order(hook_order::SDK_FIRST, |e: &mut Backward| {
+        let _ = hooks.add_sync_callback_with_order(hook_order::SDK_FIRST, |e: &mut Backward| {
             e.0.push("first");
             Ok(())
         });
@@ -266,8 +270,8 @@ mod tests {
     #[tokio::test]
     async fn errors_stop_the_chain() {
         let hooks = HookRegistry::new();
-        hooks.add_sync_callback(|_: &mut Forward| Err(crate::Error::Plugin("nope".into())));
-        hooks.add_sync_callback(|e: &mut Forward| {
+        let _ = hooks.add_sync_callback(|_: &mut Forward| Err(crate::Error::Plugin("nope".into())));
+        let _ = hooks.add_sync_callback(|e: &mut Forward| {
             e.0.push("never");
             Ok(())
         });

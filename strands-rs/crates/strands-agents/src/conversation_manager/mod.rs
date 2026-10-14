@@ -53,6 +53,7 @@ impl ProactiveCompression {
 
 /// Why [`ConversationManager::reduce`] was called.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum ReduceTrigger {
     /// Reactive recovery from a context-window overflow: the manager MUST remove enough history
     /// for the next model call to succeed, or the error propagates out of the agent loop.
@@ -111,7 +112,7 @@ pub trait ConversationManager: Plugin + 'static {
         Self: Sized + Clone,
     {
         let manager = self.clone();
-        agent
+        let _ = agent
             .hooks()
             .add_callback(move |event: &mut AfterModelCallEvent| {
                 let manager = manager.clone();
@@ -139,7 +140,7 @@ pub trait ConversationManager: Plugin + 'static {
             });
 
         let manager = self.clone();
-        agent.hooks().add_callback(move |event: &mut BeforeModelCallEvent| {
+        let _ = agent.hooks().add_callback(move |event: &mut BeforeModelCallEvent| {
             let manager = manager.clone();
             let projected = event.projected_input_tokens;
             let agent = event.agent.clone();

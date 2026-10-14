@@ -10,12 +10,16 @@ use crate::tools::{ToolContext, ToolRef};
 use crate::types::{ContentBlock, JsonValue, Message, Role, ToolResultBlock, ToolUse, ToolUseBlock};
 
 /// Error text when a recording direct tool call is attempted during an invocation.
+#[doc(hidden)]
 pub const DIRECT_CALL_DURING_INVOCATION_MESSAGE: &str =
     "Direct tool call cannot be made while the agent is in the middle of an invocation. Set \
      record_direct_tool_call: false to allow direct tool calls during agent invocation.";
 
 /// Options for one direct tool call.
+///
+/// Build from [`CallOptions::default`] and the `with_*` setters.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct CallOptions {
     /// Record the call in the agent's message history. Defaults to `true`.
     pub record_direct_tool_call: bool,
@@ -32,8 +36,25 @@ impl Default for CallOptions {
     }
 }
 
+impl CallOptions {
+    /// Whether to record the call in the agent's message history.
+    #[must_use]
+    pub fn with_record_direct_tool_call(mut self, record: bool) -> Self {
+        self.record_direct_tool_call = record;
+        self
+    }
+
+    /// The shared state handed to the tool.
+    #[must_use]
+    pub fn with_invocation_state(mut self, state: InvocationState) -> Self {
+        self.invocation_state = state;
+        self
+    }
+}
+
 /// A handle to one resolved tool, obtained from [`Agent::tool`].
 #[derive(Clone)]
+#[must_use = "a ToolHandle does nothing until you call call()"]
 pub struct ToolHandle {
     agent: Agent,
     tool: ToolRef,
@@ -502,7 +523,7 @@ mod tests {
         let agent = agent_with_tools(vec![echo_tool("calculator")]);
         let seen: Arc<parking_lot::Mutex<Vec<Role>>> = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let captured = Arc::clone(&seen);
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback(move |event: &mut MessageAddedEvent| {
                 captured.lock().push(event.message.role);
@@ -524,7 +545,7 @@ mod tests {
         let agent = agent_with_tools(vec![echo_tool("calculator")]);
         let count = Arc::new(AtomicBool::new(false));
         let captured = Arc::clone(&count);
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback(move |_event: &mut MessageAddedEvent| {
                 captured.store(true, Ordering::SeqCst);

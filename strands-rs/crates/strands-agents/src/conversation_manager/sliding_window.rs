@@ -204,7 +204,7 @@ impl Plugin for SlidingWindowConversationManager {
         self.register_base_hooks(agent);
 
         let manager = self.clone();
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback(move |event: &mut AfterInvocationEvent| {
                 event

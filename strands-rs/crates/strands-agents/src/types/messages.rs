@@ -166,6 +166,7 @@ impl fmt::Display for Message {
 /// `{"toolUse": {...}}`, etc.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ContentBlock {
     /// Plain text.
     Text(String),

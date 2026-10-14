@@ -51,6 +51,7 @@ impl std::fmt::Debug for FunctionTool {
 ///         Ok(input)
 ///     });
 /// ```
+#[must_use = "a FunctionToolBuilder does nothing until you call handler() or typed_handler()"]
 pub struct FunctionToolBuilder {
     name: String,
     description: String,

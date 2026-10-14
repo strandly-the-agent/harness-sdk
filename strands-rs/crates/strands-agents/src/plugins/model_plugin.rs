@@ -37,7 +37,7 @@ impl Plugin for ModelPlugin {
         let model = Arc::clone(&self.model);
         // Clears `event.agent` rather than a captured handle: capturing the agent here would make
         // the agent own a plugin that owns the agent.
-        agent
+        let _ = agent
             .hooks()
             .add_sync_callback::<AfterInvocationEvent, _>(move |event| {
                 if model.stateful() {
