@@ -2161,6 +2161,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "strands-agents",
  "tempfile",
  "thiserror",
  "tokio",

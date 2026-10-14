@@ -39,6 +39,7 @@ aws-smithy-types = { workspace = true, optional = true }
 aws-smithy-runtime-api = { workspace = true, optional = true }
 
 [dev-dependencies]
+strands-agents = { path = ".", features = ["test-support"] }
 tempfile.workspace = true
 tokio-stream.workspace = true
 tracing-subscriber.workspace = true
