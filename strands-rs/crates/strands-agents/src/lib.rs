@@ -20,7 +20,7 @@ pub mod types;
 
 pub use agent::{
     Agent, AgentBuilder, AgentResult, AgentStream, AgentStreamEvent, InvocationState, InvokeInput,
-    InvokeOptions,
+    InvokeOptions, Limits,
 };
 pub use conversation_manager::{
     ConversationManager, NullConversationManager, ProactiveCompression, ReduceOptions, ReduceTrigger,

@@ -17,9 +17,15 @@ use crate::hooks::events::{
     ModelMessageEvent, ModelStopData, ModelStreamUpdateEvent, ToolResultEvent, ToolStreamUpdateEvent,
 };
 use crate::hooks::HookEvent;
-use crate::models::{AggregatedItem, StreamAggregatedResult, StreamOptions};
-use crate::tools::{ExecuteToolsInput, ToolExecutorEvent};
-use crate::types::{ContentBlock, Message, Role, StopReason, ToolUseBlock};
+use crate::models::{AggregatedItem, CountTokensOptions, Model, StreamAggregatedResult, StreamOptions};
+use crate::tools::{
+    ExecuteToolsInput, StructuredOutputTool, ToolExecutorEvent, EXECUTION_CANCELLED_MESSAGE,
+    STRUCTURED_OUTPUT_TOOL_NAME,
+};
+use crate::types::{
+    ContentBlock, JsonValue, Message, Role, StopReason, ToolChoice, ToolResultBlock, ToolResultContent,
+    ToolResultStatus, ToolUseBlock, Usage,
+};
 
 /// Error text when `invoke`/`stream` is called while another invocation runs.
 pub const CONCURRENT_INVOCATION_MESSAGE: &str = "Agent is already processing an invocation. Wait for the \
@@ -31,6 +37,55 @@ const HOOK_END_TURN_MESSAGE: &str = "Turn ended early by hook after tool executi
 const CANCELLED_MESSAGE: &str = "Cancelled by user";
 const NO_TOOL_USE_BLOCKS_MESSAGE: &str = "Model indicated toolUse but no tool use blocks found in message";
 
+/// Error text when a forced structured-output tool call is still not made.
+pub const STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE: &str =
+    "The model failed to invoke the structured output tool even after it was forced.";
+
+const NO_STRUCTURED_OUTPUT_MESSAGE: &str = "The agent stopped without producing structured output.";
+
+/// Per-invocation caps (§9.4 step 9). A `None` field is uncapped; comparison is "at most".
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Limits {
+    /// Maximum model↔tool cycles in this invocation.
+    pub turns: Option<u64>,
+    /// Maximum output tokens accumulated in this invocation.
+    pub output_tokens: Option<u64>,
+    /// Maximum total tokens accumulated in this invocation.
+    pub total_tokens: Option<u64>,
+}
+
+impl Limits {
+    /// `_validateLimits`: every present cap must be positive.
+    pub fn validate(&self) -> Result<()> {
+        for (key, value) in [
+            ("turns", self.turns),
+            ("outputTokens", self.output_tokens),
+            ("totalTokens", self.total_tokens),
+        ] {
+            if let Some(0) = value {
+                return Err(Error::other(format!(
+                    "limits.{key} must be a positive finite number, got 0"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// `_checkLimits`: `turns` wins over `totalTokens`, which wins over `outputTokens`.
+    fn check(&self, turns: u64, usage: &Usage) -> Option<StopReason> {
+        if self.turns.is_some_and(|cap| turns >= cap) {
+            return Some(StopReason::LimitTurns);
+        }
+        if self.total_tokens.is_some_and(|cap| usage.total_tokens >= cap) {
+            return Some(StopReason::LimitTotalTokens);
+        }
+        if self.output_tokens.is_some_and(|cap| usage.output_tokens >= cap) {
+            return Some(StopReason::LimitOutputTokens);
+        }
+        None
+    }
+}
+
 /// Options for one invocation.
 #[derive(Clone, Debug, Default)]
 pub struct InvokeOptions {
@@ -38,6 +93,10 @@ pub struct InvokeOptions {
     pub invocation_state: Option<InvocationState>,
     /// External cancellation. The agent's own [`Agent::cancel`] works regardless.
     pub cancel: Option<CancellationToken>,
+    /// Caps that stop the loop with a `limit*` stop reason.
+    pub limits: Option<Limits>,
+    /// JSON Schema the final answer must satisfy, via the structured-output tool.
+    pub structured_output_schema: Option<JsonValue>,
 }
 
 /// An event yielded by [`Agent::stream`]; `AgentResult` is always last.
@@ -179,6 +238,26 @@ impl Agent {
         result.ok_or_else(|| Error::other("agent stream ended without a result"))
     }
 
+    /// Run the loop and deserialize the structured output the model produced.
+    pub async fn invoke_structured<T>(&self, input: impl Into<InvokeInput>) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned + schemars::JsonSchema,
+    {
+        let result = self
+            .invoke_with(
+                input,
+                InvokeOptions {
+                    structured_output_schema: Some(crate::tools::input_schema_for::<T>()),
+                    ..InvokeOptions::default()
+                },
+            )
+            .await?;
+        let value = result
+            .structured_output
+            .ok_or_else(|| Error::StructuredOutput(NO_STRUCTURED_OUTPUT_MESSAGE.to_owned()))?;
+        serde_json::from_value(value).map_err(|error| Error::StructuredOutput(error.to_string()))
+    }
+
     /// Run the loop, streaming every event as it happens.
     ///
     /// The loop runs in a spawned task, so cleanup events are emitted even when the consumer stops
@@ -258,7 +337,7 @@ async fn run_invocation(agent: &Agent, input: InvokeInput, options: InvokeOption
             .await;
         }
 
-        let outcome = run_cycles(agent, current.clone(), &state, &cancel, tx).await;
+        let outcome = run_cycles(agent, current.clone(), &state, &cancel, tx, &options).await;
         let after = emit(
             agent,
             tx,
@@ -295,20 +374,65 @@ async fn finish(agent: &Agent, tx: &Sink, state: &InvocationState, result: Agent
     Ok(())
 }
 
-/// §9.4 — the model↔tool cycle.
+/// §9.4 — the model↔tool cycle, with the structured-output tool registered for its duration.
 async fn run_cycles(
     agent: &Agent,
     input: InvokeInput,
     state: &InvocationState,
     cancel: &CancellationToken,
     tx: &Sink,
+    options: &InvokeOptions,
+) -> Result<AgentResult> {
+    if let Some(limits) = &options.limits {
+        limits.validate()?;
+    }
+    let structured = options.structured_output_schema.is_some();
+    if let Some(schema) = options.structured_output_schema.clone() {
+        agent.with_tool_registry(|registry| {
+            registry.remove(STRUCTURED_OUTPUT_TOOL_NAME);
+            registry.add(Arc::new(StructuredOutputTool::from_schema(schema)))
+        })?;
+    }
+
+    let outcome = run_cycles_inner(agent, input, state, cancel, tx, options, structured).await;
+
+    if structured {
+        agent.with_tool_registry(|registry| registry.remove(STRUCTURED_OUTPUT_TOOL_NAME));
+    }
+    outcome
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_cycles_inner(
+    agent: &Agent,
+    input: InvokeInput,
+    state: &InvocationState,
+    cancel: &CancellationToken,
+    tx: &Sink,
+    options: &InvokeOptions,
+    structured: bool,
 ) -> Result<AgentResult> {
     let mut pending_input = Some(input);
+    let mut usage = Usage::default();
+    let mut turns = 0u64;
+    let mut forced_choice: Option<ToolChoice> = None;
 
     loop {
         if cancel.is_cancelled() {
             return cancelled_result(agent, tx, state).await;
         }
+
+        if let Some(stop_reason) = options.limits.as_ref().and_then(|l| l.check(turns, &usage)) {
+            return Ok(AgentResult {
+                stop_reason,
+                last_message: agent
+                    .with_messages(|m| m.last().cloned())
+                    .unwrap_or_else(|| Message::assistant("")),
+                invocation_state: state.clone(),
+                structured_output: None,
+            });
+        }
+        turns += 1;
 
         if let Some(input) = pending_input.take() {
             for message in input.into_messages() {
@@ -316,13 +440,29 @@ async fn run_cycles(
             }
         }
 
-        let model_result = match invoke_model(agent, state, cancel, tx).await {
+        let model_result = match invoke_model(agent, state, cancel, tx, forced_choice.clone()).await {
             Ok(result) => result,
             Err(Error::Cancelled) => return cancelled_result(agent, tx, state).await,
             Err(error) => return Err(error),
         };
+        if let Some(cycle_usage) = &model_result.usage {
+            usage.input_tokens += cycle_usage.input_tokens;
+            usage.output_tokens += cycle_usage.output_tokens;
+            usage.total_tokens += cycle_usage.total_tokens;
+        }
 
         if model_result.stop_reason != StopReason::ToolUse {
+            if structured {
+                if forced_choice.is_some() {
+                    return Err(Error::StructuredOutput(
+                        STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE.to_owned(),
+                    ));
+                }
+                forced_choice = Some(ToolChoice::Tool {
+                    name: STRUCTURED_OUTPUT_TOOL_NAME.to_owned(),
+                });
+                continue;
+            }
             append_message(agent, tx, state, model_result.message.clone()).await?;
             return Ok(AgentResult {
                 stop_reason: model_result.stop_reason,
@@ -333,9 +473,37 @@ async fn run_cycles(
         }
 
         let assistant_message = model_result.message;
-        let tools = execute_tools(agent, &assistant_message, state, cancel, tx).await?;
 
-        append_message(agent, tx, state, assistant_message).await?;
+        if cancel.is_cancelled() {
+            let cancelled = Message::new(
+                Role::User,
+                tool_use_blocks(&assistant_message)
+                    .iter()
+                    .map(|tool_use| {
+                        ContentBlock::ToolResult(ToolResultBlock::error(
+                            &tool_use.tool_use_id,
+                            EXECUTION_CANCELLED_MESSAGE,
+                        ))
+                    })
+                    .collect(),
+            );
+            append_message(agent, tx, state, assistant_message.clone()).await?;
+            append_message(agent, tx, state, cancelled).await?;
+            return Ok(AgentResult {
+                stop_reason: StopReason::Cancelled,
+                last_message: assistant_message,
+                invocation_state: state.clone(),
+                structured_output: None,
+            });
+        }
+
+        let tools = match execute_tools(agent, &assistant_message, state, cancel, tx).await {
+            Ok(tools) => tools,
+            Err(Error::Cancelled) => return cancelled_result(agent, tx, state).await,
+            Err(error) => return Err(error),
+        };
+
+        append_message(agent, tx, state, assistant_message.clone()).await?;
         append_message(agent, tx, state, tools.message.clone()).await?;
 
         match tools.end_turn {
@@ -357,6 +525,48 @@ async fn run_cycles(
                 });
             }
         }
+
+        if structured {
+            if let Some(output) = extract_structured_output(&assistant_message, &tools.message) {
+                return Ok(AgentResult {
+                    stop_reason: StopReason::ToolUse,
+                    last_message: assistant_message,
+                    invocation_state: state.clone(),
+                    structured_output: Some(output),
+                });
+            }
+        }
+    }
+}
+
+fn tool_use_blocks(message: &Message) -> Vec<ToolUseBlock> {
+    message
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::ToolUse(tool_use) => Some(tool_use.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `_extractStructuredOutput`: the JSON of a *successful* structured-output tool result.
+fn extract_structured_output(assistant: &Message, tool_results: &Message) -> Option<JsonValue> {
+    let tool_use = assistant.content.iter().find_map(|block| match block {
+        ContentBlock::ToolUse(tool_use) if tool_use.name == STRUCTURED_OUTPUT_TOOL_NAME => Some(tool_use),
+        _ => None,
+    })?;
+    let result = tool_results.content.iter().find_map(|block| match block {
+        ContentBlock::ToolResult(result)
+            if result.tool_use_id == tool_use.tool_use_id && result.status == ToolResultStatus::Success =>
+        {
+            Some(result)
+        }
+        _ => None,
+    })?;
+    match result.content.first()? {
+        ToolResultContent::Json(value) => Some(value.clone()),
+        _ => None,
     }
 }
 
@@ -380,6 +590,7 @@ async fn invoke_model(
     state: &InvocationState,
     cancel: &CancellationToken,
     tx: &Sink,
+    tool_choice: Option<ToolChoice>,
 ) -> Result<StreamAggregatedResult> {
     let mut attempt_count = 1;
 
@@ -388,6 +599,11 @@ async fn invoke_model(
             return Err(Error::Cancelled);
         }
         let model = agent.model();
+        let count_options = CountTokensOptions {
+            system_prompt: agent.system_prompt(),
+            tool_specs: agent.tools().iter().map(|t| t.spec().clone()).collect(),
+        };
+        let projected_input_tokens = estimate_input_tokens(agent, &model, &count_options).await.ok();
         let before = emit(
             agent,
             tx,
@@ -395,7 +611,7 @@ async fn invoke_model(
                 agent: agent.clone(),
                 model: Arc::clone(&model),
                 invocation_state: state.clone(),
-                projected_input_tokens: None,
+                projected_input_tokens,
                 cancel: Cancel::No,
             },
             AgentStreamEvent::BeforeModelCall,
@@ -438,8 +654,9 @@ async fn invoke_model(
 
         let options = StreamOptions {
             cancel: Some(cancel.clone()),
-            system_prompt: agent.system_prompt(),
-            tool_specs: agent.tools().iter().map(|t| t.spec().clone()).collect(),
+            system_prompt: count_options.system_prompt.clone(),
+            tool_specs: count_options.tool_specs.clone(),
+            tool_choice: tool_choice.clone(),
             ..StreamOptions::default()
         };
 
@@ -518,6 +735,41 @@ async fn invoke_model(
             }
         }
     }
+}
+
+/// §10 step 6 — `_estimateInputTokens`: reuse the last reported usage, else count everything.
+async fn estimate_input_tokens(
+    agent: &Agent,
+    model: &Arc<dyn Model>,
+    options: &CountTokensOptions,
+) -> Result<u64> {
+    let messages = agent.messages();
+    let anchor = messages.iter().rposition(|message| {
+        message.role == Role::Assistant
+            && message
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.usage.as_ref())
+                .is_some()
+    });
+
+    let Some(index) = anchor else {
+        return model.count_tokens(&messages, options).await;
+    };
+    let usage = messages[index]
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.usage.as_ref())
+        .expect("anchor message has usage");
+    let baseline = usage.input_tokens
+        + usage.cache_read_input_tokens.unwrap_or(0)
+        + usage.cache_write_input_tokens.unwrap_or(0)
+        + usage.output_tokens;
+    let rest = &messages[index + 1..];
+    if rest.is_empty() {
+        return Ok(baseline);
+    }
+    Ok(baseline + model.count_tokens(rest, options).await?)
 }
 
 async fn stream_from_model(

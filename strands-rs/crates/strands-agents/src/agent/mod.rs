@@ -21,7 +21,10 @@ use crate::tools::{ToolExecutor, ToolRef, ToolRegistry};
 use crate::types::{ContentBlock, Message, Role, SystemPrompt};
 
 pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
-pub use event_loop::{AgentStream, AgentStreamEvent, InvokeOptions, CONCURRENT_INVOCATION_MESSAGE};
+pub use event_loop::{
+    AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE,
+    STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE,
+};
 pub use invocation_state::InvocationState;
 pub use result::AgentResult;
 
