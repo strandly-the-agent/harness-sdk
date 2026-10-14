@@ -115,7 +115,6 @@ impl AgentBuilder {
         self
     }
 
-    /// Session manager (persistence).
     /// Default storage shared by subsystems that have none of their own (context manager stash,
     /// session snapshots).
     pub fn storage(mut self, storage: impl crate::storage::Storage + 'static) -> Self {
@@ -129,6 +128,7 @@ impl AgentBuilder {
         self
     }
 
+    /// Session manager (persistence).
     pub fn session_manager(mut self, manager: impl Into<Arc<SessionManager>>) -> Self {
         self.session_manager = Some(manager.into());
         self
