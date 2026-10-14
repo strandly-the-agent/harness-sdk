@@ -40,6 +40,7 @@ pub struct AgentBuilder {
     plugins: Vec<Arc<dyn Plugin>>,
     conversation_manager: Option<Option<Arc<dyn Plugin>>>,
     session_manager: Option<Arc<SessionManager>>,
+    storage: Option<crate::storage::StorageRef>,
     retry_strategy: Option<Option<Arc<dyn Plugin>>>,
     executor: Option<Arc<dyn ToolExecutor>>,
     state: Option<StateStore>,
@@ -115,6 +116,19 @@ impl AgentBuilder {
     }
 
     /// Session manager (persistence).
+    /// Default storage shared by subsystems that have none of their own (context manager stash,
+    /// session snapshots).
+    pub fn storage(mut self, storage: impl crate::storage::Storage + 'static) -> Self {
+        self.storage = Some(Arc::new(storage));
+        self
+    }
+
+    /// [`AgentBuilder::storage`] for an already shared handle.
+    pub fn storage_arc(mut self, storage: crate::storage::StorageRef) -> Self {
+        self.storage = Some(storage);
+        self
+    }
+
     pub fn session_manager(mut self, manager: impl Into<Arc<SessionManager>>) -> Self {
         self.session_manager = Some(manager.into());
         self
@@ -220,6 +234,8 @@ impl AgentBuilder {
                 invoking: AtomicBool::new(false),
                 cancel: RwLock::new(CancellationToken::new()),
                 initialized: AsyncMutex::new(false),
+                storage: self.storage,
+                session_id: RwLock::new(None),
             }),
         };
         agent.initialize().await?;

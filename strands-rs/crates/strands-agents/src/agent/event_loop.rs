@@ -727,6 +727,7 @@ async fn invoke_model(
                 invocation_state: state.clone(),
                 projected_input_tokens,
                 cancel: Cancel::No,
+                messages: agent.messages(),
             },
             AgentStreamEvent::BeforeModelCall,
         )
@@ -774,7 +775,7 @@ async fn invoke_model(
             ..StreamOptions::default()
         };
 
-        match stream_from_model(agent, &model, &options, state, cancel, tx).await {
+        match stream_from_model(agent, &model, &before.messages, &options, state, cancel, tx).await {
             Ok(result) => {
                 emit(
                     agent,
@@ -911,13 +912,13 @@ async fn estimate_input_tokens(
 async fn stream_from_model(
     agent: &Agent,
     model: &Arc<dyn crate::models::Model>,
+    messages: &[Message],
     options: &StreamOptions,
     state: &InvocationState,
     cancel: &CancellationToken,
     tx: &Sink,
 ) -> Result<StreamAggregatedResult> {
-    let messages = agent.messages();
-    let mut stream = model.stream_aggregated(&messages, options);
+    let mut stream = model.stream_aggregated(messages, options);
     let mut aggregated = None;
 
     while let Some(item) = tokio::select! {

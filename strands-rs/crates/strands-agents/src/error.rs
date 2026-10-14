@@ -122,6 +122,14 @@ impl Error {
         }
     }
 
+    /// `Storage` with a message and no cause.
+    pub fn storage(message: impl Into<String>) -> Self {
+        Error::Storage {
+            message: message.into(),
+            source: None,
+        }
+    }
+
     /// Wrap any error as `Error::Other`.
     pub fn other(err: impl Into<BoxError>) -> Self {
         Error::Other(err.into())

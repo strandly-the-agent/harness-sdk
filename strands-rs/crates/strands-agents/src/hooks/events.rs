@@ -180,6 +180,10 @@ pub struct BeforeModelCallEvent {
     pub projected_input_tokens: Option<u64>,
     /// Cancel the invocation.
     pub cancel: Cancel,
+    /// The messages that will be sent to the model (a copy of the conversation). Callbacks may
+    /// edit this for the current call only; `agent.messages()` is unaffected. Replaces TS's
+    /// `InvokeModelStage.Input` middleware seam.
+    pub messages: Vec<Message>,
 }
 impl HookEvent for BeforeModelCallEvent {}
 

@@ -97,6 +97,8 @@ pub(crate) struct AgentInner {
     pub(crate) invoking: AtomicBool,
     pub(crate) cancel: RwLock<CancellationToken>,
     pub(crate) initialized: AsyncMutex<bool>,
+    pub(crate) storage: Option<crate::storage::StorageRef>,
+    pub(crate) session_id: RwLock<Option<String>>,
 }
 
 /// An agent: a model, a system prompt, tools, and the conversation they share.
@@ -182,6 +184,26 @@ impl Agent {
     /// Hook registry.
     pub fn hooks(&self) -> &HookRegistry {
         &self.inner.hooks
+    }
+
+    /// Default storage for subsystems that have none of their own, if configured.
+    pub fn storage(&self) -> Option<crate::storage::StorageRef> {
+        self.inner.storage.clone()
+    }
+
+    /// Session id: the session manager's when attached, otherwise a lazily generated 8-char id.
+    pub fn session_id(&self) -> String {
+        if let Some(id) = self.inner.session_id.read().clone() {
+            return id;
+        }
+        let mut slot = self.inner.session_id.write();
+        slot.get_or_insert_with(|| uuid::Uuid::new_v4().to_string()[..8].to_owned())
+            .clone()
+    }
+
+    /// Pin the session id (used by `SessionManager` during initialization).
+    pub fn set_session_id(&self, id: impl Into<String>) {
+        *self.inner.session_id.write() = Some(id.into());
     }
 
     /// Registered tools in insertion order.
@@ -301,6 +323,8 @@ mod test_fixtures {
                 invoking: AtomicBool::new(false),
                 cancel: RwLock::new(CancellationToken::new()),
                 initialized: AsyncMutex::new(false),
+                storage: None,
+                session_id: RwLock::new(None),
             }),
         }
     }

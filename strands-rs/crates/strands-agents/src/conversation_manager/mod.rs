@@ -235,6 +235,7 @@ pub(crate) mod test_support {
             invocation_state: InvocationState::new(),
             projected_input_tokens,
             cancel: Default::default(),
+            messages: agent.messages(),
         }
     }
 
