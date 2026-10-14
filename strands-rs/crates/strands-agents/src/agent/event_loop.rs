@@ -1477,12 +1477,7 @@ async fn run_executor(
     results: &mut Vec<crate::types::ToolResultBlock>,
 ) -> Result<()> {
     let (events_tx, mut events_rx) = mpsc::channel::<ToolExecutorEvent>(64);
-    let input = ExecuteToolsInput {
-        agent: agent.clone(),
-        tool_uses,
-        invocation_state: state.clone(),
-        cancel: cancel.clone(),
-    };
+    let input = ExecuteToolsInput::new(agent.clone(), tool_uses, state.clone(), cancel.clone());
     let executor = agent.tool_executor();
 
     let forward = async {

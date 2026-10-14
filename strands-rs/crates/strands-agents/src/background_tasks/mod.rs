@@ -3,16 +3,20 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Notify;
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{Agent, InvocationState};
 use crate::error::{Error, Result};
-use crate::hooks::events::{AfterInvocationEvent, BeforeInvocationEvent, InitializedEvent};
+use crate::hooks::events::{
+    AfterInvocationEvent, AfterToolCallEvent, BeforeInvocationEvent, InitializedEvent,
+};
 use crate::hooks::hook_order;
 use crate::tools::{FunctionTool, ToolContext, ToolRef};
 use crate::types::{
@@ -72,6 +76,10 @@ pub struct BackgroundTasksConfig {
     pub never: Vec<String>,
     /// Wait for outstanding tasks at the end of an invocation (default `true`).
     pub wait_for_completion: bool,
+    /// Most tasks that may run at once; `None` (default) is unbounded.
+    pub max_concurrency: Option<usize>,
+    /// Per-task timeout; `None` (default) disables timeouts.
+    pub timeout: Option<Duration>,
 }
 
 impl Default for BackgroundTasksConfig {
@@ -81,6 +89,8 @@ impl Default for BackgroundTasksConfig {
             always: Vec::new(),
             never: Vec::new(),
             wait_for_completion: true,
+            max_concurrency: None,
+            timeout: None,
         }
     }
 }
@@ -112,6 +122,18 @@ impl BackgroundTasksConfig {
     /// Whether to await outstanding tasks before an invocation finishes.
     pub fn wait_for_completion(mut self, wait: bool) -> Self {
         self.wait_for_completion = wait;
+        self
+    }
+
+    /// Cap how many tasks run at once.
+    pub fn max_concurrency(mut self, max: usize) -> Self {
+        self.max_concurrency = Some(max);
+        self
+    }
+
+    /// Fail a task that runs longer than `timeout`.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
         self
     }
 }
@@ -374,6 +396,10 @@ fn status_label(status: BackgroundTaskStatus) -> &'static str {
 struct TaskRegistry {
     tasks: Mutex<BTreeMap<String, BackgroundTask>>,
     cancels: Mutex<HashMap<String, CancellationToken>>,
+    /// Spawned executions, kept so [`BackgroundTasks::cancel`] can abort them.
+    handles: Mutex<HashMap<String, JoinHandle<()>>>,
+    /// `(pass id, tool use id)` → task id, so a re-delivered tool use does not spawn twice.
+    submissions: Mutex<HashMap<(String, String), String>>,
     settled: Notify,
     next_id: Mutex<u64>,
 }
@@ -398,9 +424,31 @@ impl TaskRegistry {
     }
 
     fn update(&self, task_id: &str, mutate: impl FnOnce(&mut BackgroundTask)) -> Option<BackgroundTask> {
+        self.update_if(task_id, |_| true, mutate)
+    }
+
+    /// Commits an outcome only while the task is still `Working`, so a cancel or timeout that
+    /// already moved it wins and the late outcome is dropped (`in-process/engine.ts:260`).
+    fn update_working(
+        &self,
+        task_id: &str,
+        mutate: impl FnOnce(&mut BackgroundTask),
+    ) -> Option<BackgroundTask> {
+        self.update_if(task_id, |task| task.status == BackgroundTaskStatus::Working, mutate)
+    }
+
+    fn update_if(
+        &self,
+        task_id: &str,
+        allow: impl FnOnce(&BackgroundTask) -> bool,
+        mutate: impl FnOnce(&mut BackgroundTask),
+    ) -> Option<BackgroundTask> {
         let updated = {
             let mut tasks = self.tasks.lock();
             let task = tasks.get_mut(task_id)?;
+            if !allow(task) {
+                return None;
+            }
             mutate(task);
             task.last_updated_at = now_ms();
             task.clone()
@@ -417,6 +465,7 @@ impl TaskRegistry {
         for id in task_ids {
             tasks.remove(id);
         }
+        self.submissions.lock().retain(|_, id| !task_ids.contains(id));
     }
 }
 
@@ -427,16 +476,29 @@ pub struct BackgroundTasks {
     config: BackgroundTasksConfig,
     policy: HashMap<String, Policy>,
     registry: Arc<TaskRegistry>,
+    slots: Option<Arc<Semaphore>>,
 }
 
 impl BackgroundTasks {
     /// Build the plugin, validating the selector configuration.
     pub fn new(config: BackgroundTasksConfig) -> Result<Self> {
         let policy = resolve_policy(&config)?;
+        if let Some(max) = config.max_concurrency {
+            if max == 0 {
+                return Err(Error::other(
+                    "maxConcurrency must be a positive finite integer, got 0",
+                ));
+            }
+        }
+        if let Some(timeout) = config.timeout {
+            assert_timer_delay("timeout", timeout.as_millis() as i64)?;
+        }
+        let slots = config.max_concurrency.map(|max| Arc::new(Semaphore::new(max)));
         Ok(Self {
             config,
             policy,
             registry: Arc::new(TaskRegistry::default()),
+            slots,
         })
     }
 
@@ -480,6 +542,9 @@ impl BackgroundTasks {
         }
         if let Some(cancel) = self.registry.cancels.lock().get(task_id) {
             cancel.cancel();
+        }
+        if let Some(handle) = self.registry.handles.lock().remove(task_id) {
+            handle.abort();
         }
         Ok(self
             .registry
@@ -561,22 +626,44 @@ impl BackgroundTasks {
     }
 
     /// Spawn `tool` as a background task and return the dispatch acknowledgement.
+    ///
+    /// `pass_id` identifies the tool-execution pass: re-submitting the same `(pass_id, tool use
+    /// id)` pair returns the existing task instead of spawning a second one
+    /// (`in-process/manager.ts:77-93`).
     pub fn submit_tool_call(
         &self,
         agent: &Agent,
         tool: ToolRef,
         tool_use: ToolUse,
         invocation_state: InvocationState,
+        pass_id: &str,
     ) -> ToolResultBlock {
         if agent.cancel_token().is_cancelled() {
             return ToolResultBlock::error(&tool_use.tool_use_id, "Tool execution cancelled");
+        }
+        let submission = (pass_id.to_owned(), tool_use.tool_use_id.clone());
+        if let Some(existing) = self
+            .registry
+            .submissions
+            .lock()
+            .get(&submission)
+            .and_then(|task_id| self.registry.get(task_id))
+        {
+            return ToolResultBlock::success(
+                &tool_use.tool_use_id,
+                vec![ToolResultContent::Text(dispatched_text(&existing))],
+            );
         }
         let now = now_ms();
         let task = BackgroundTask {
             task_id: self.registry.next_task_id(),
             tool_use_id: tool_use.tool_use_id.clone(),
             tool_name: tool_use.name.clone(),
-            status: BackgroundTaskStatus::Working,
+            status: if self.slots.is_some() {
+                BackgroundTaskStatus::Queued
+            } else {
+                BackgroundTaskStatus::Working
+            },
             created_at: now,
             last_updated_at: now,
             result: None,
@@ -588,38 +675,110 @@ impl BackgroundTasks {
             .cancels
             .lock()
             .insert(task.task_id.clone(), cancel.clone());
+        self.registry.submissions.lock().insert(submission, task.task_id.clone());
         self.persist(agent);
 
         let registry = Arc::clone(&self.registry);
         let task_id = task.task_id.clone();
+        let slots = self.slots.clone();
+        let timeout = self.config.timeout;
+        let hook_agent = agent.clone();
+        let hook_tool = Arc::clone(&tool);
+        let hook_tool_use = tool_use.clone();
+        let hook_state = invocation_state.clone();
         let context = ToolContext::new(tool_use.clone(), agent.clone(), invocation_state, cancel);
-        tokio::spawn(async move {
-            let outcome = tool.invoke(context).await;
-            registry.update(&task_id, |task| match outcome {
-                Ok(result) => {
-                    let failed = result.status == ToolResultStatus::Error;
-                    task.status = if failed {
-                        BackgroundTaskStatus::Failed
-                    } else {
-                        BackgroundTaskStatus::Completed
-                    };
-                    if failed {
-                        task.error = Some(BackgroundTaskFailure {
+        let handle = tokio::spawn(async move {
+            let _permit: Option<OwnedSemaphorePermit> = match slots {
+                Some(slots) => match slots.acquire_owned().await {
+                    Ok(permit) => Some(permit),
+                    Err(_) => return,
+                },
+                None => None,
+            };
+            // A task cancelled while it sat in the queue never starts.
+            let started = registry
+                .update_if(
+                    &task_id,
+                    |task| task.status == BackgroundTaskStatus::Queued,
+                    |task| task.status = BackgroundTaskStatus::Working,
+                )
+                .is_some()
+                || registry
+                    .get(&task_id)
+                    .is_some_and(|task| task.status == BackgroundTaskStatus::Working);
+            if !started {
+                return;
+            }
+            let outcome = match timeout {
+                Some(limit) => tokio::time::timeout(limit, tool.invoke(context)).await.ok(),
+                None => Some(tool.invoke(context).await),
+            };
+            let (result, failure, keep_result, error) = match outcome {
+                Some(Ok(result)) => {
+                    let failure = (result.status == ToolResultStatus::Error).then(|| {
+                        BackgroundTaskFailure {
                             r#type: BackgroundTaskFailureType::ToolError,
                             message: result.text(),
-                        });
-                    }
-                    task.result = Some(result.content);
-                }
-                Err(error) => {
-                    task.status = BackgroundTaskStatus::Failed;
-                    task.error = Some(BackgroundTaskFailure {
-                        r#type: BackgroundTaskFailureType::ExecutionError,
-                        message: error.to_string(),
+                        }
                     });
+                    (result, failure, true, None)
                 }
-            });
+                Some(Err(error)) => {
+                    let message = error.to_string();
+                    (
+                        ToolResultBlock::error(&hook_tool_use.tool_use_id, &message),
+                        Some(BackgroundTaskFailure {
+                            r#type: BackgroundTaskFailureType::ExecutionError,
+                            message,
+                        }),
+                        false,
+                        Some(Arc::new(error)),
+                    )
+                }
+                None => {
+                    let message = format!(
+                        "Timed out after {}ms",
+                        timeout.map(|limit| limit.as_millis()).unwrap_or_default()
+                    );
+                    (
+                        ToolResultBlock::error(&hook_tool_use.tool_use_id, &message),
+                        Some(BackgroundTaskFailure {
+                            r#type: BackgroundTaskFailureType::Timeout,
+                            message,
+                        }),
+                        false,
+                        None,
+                    )
+                }
+            };
+            let content = result.content.clone();
+            let applied = registry
+                .update_working(&task_id, |task| {
+                    task.status = match &failure {
+                        Some(_) => BackgroundTaskStatus::Failed,
+                        None => BackgroundTaskStatus::Completed,
+                    };
+                    task.error = failure;
+                    if keep_result {
+                        task.result = Some(content);
+                    }
+                })
+                .is_some();
+            registry.handles.lock().remove(&task_id);
+            if applied {
+                let mut event = AfterToolCallEvent {
+                    agent: hook_agent.clone(),
+                    tool_use: hook_tool_use,
+                    tool: Some(hook_tool),
+                    result,
+                    error,
+                    invocation_state: hook_state,
+                    retry: false,
+                };
+                let _ = hook_agent.hooks().invoke_callbacks(&mut event).await;
+            }
         });
+        self.registry.handles.lock().insert(task.task_id.clone(), handle);
 
         ToolResultBlock::success(
             &tool_use.tool_use_id,
