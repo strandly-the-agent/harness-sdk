@@ -1036,7 +1036,7 @@ async fn invoke_model(
         let terminal = model_terminal(agent, state, cancel, tx);
         let outcome = agent
             .middleware()
-            .invoke::<InvokeModelStage>(context, &sink, &terminal)
+            .invoke::<InvokeModelStage>(context, &sink, terminal)
             .await;
 
         match outcome {

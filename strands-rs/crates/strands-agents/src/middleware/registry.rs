@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 use super::{EventSink, Stage};
 use crate::error::Result;
@@ -42,7 +43,7 @@ pub trait Middleware<S: Stage>: Send + Sync {
         &self,
         context: S::Context,
         events: &EventSink<S::Event>,
-        next: Next<'_, S>,
+        next: Next<S>,
     ) -> Result<S::Result>;
 }
 
@@ -65,29 +66,33 @@ where
     }
 }
 
-/// The remainder of a middleware chain. Cloneable, so a handler may call it more than once.
-pub struct Next<'a, S: Stage> {
-    handlers: &'a [HandlerRef<S>],
-    terminal: &'a dyn Terminal<S>,
+/// The remainder of a middleware chain. Owned and cloneable, so a handler may call it more than
+/// once (retry) or move it into a spawned task.
+pub struct Next<S: Stage> {
+    handlers: Arc<[HandlerRef<S>]>,
+    index: usize,
+    terminal: Arc<dyn Terminal<S>>,
 }
 
-impl<S: Stage> Clone for Next<'_, S> {
+impl<S: Stage> Clone for Next<S> {
     fn clone(&self) -> Self {
         Self {
-            handlers: self.handlers,
-            terminal: self.terminal,
+            handlers: Arc::clone(&self.handlers),
+            index: self.index,
+            terminal: Arc::clone(&self.terminal),
         }
     }
 }
 
-impl<S: Stage> Next<'_, S> {
+impl<S: Stage> Next<S> {
     /// Run the rest of the chain, ending at the terminal operation.
     pub async fn run(&self, context: S::Context, events: &EventSink<S::Event>) -> Result<S::Result> {
-        match self.handlers.split_first() {
-            Some((handler, rest)) => {
+        match self.handlers.get(self.index) {
+            Some(handler) => {
                 let next = Next {
-                    handlers: rest,
-                    terminal: self.terminal,
+                    handlers: Arc::clone(&self.handlers),
+                    index: self.index + 1,
+                    terminal: Arc::clone(&self.terminal),
                 };
                 handler.call(context, events, next).await
             }
@@ -96,38 +101,41 @@ impl<S: Stage> Next<'_, S> {
     }
 }
 
-type HandlerRef<S> = std::sync::Arc<dyn Middleware<S>>;
+type HandlerRef<S> = Arc<dyn Middleware<S>>;
 
 /// Wraps a closure as a wrap-phase [`Middleware`]; see [`wrap_fn`].
-pub struct WrapFn<F>(F);
+pub struct WrapFn<S: Stage> {
+    #[allow(clippy::type_complexity)]
+    f: Box<
+        dyn Fn(S::Context, EventSink<S::Event>, Next<S>) -> BoxFuture<'static, Result<S::Result>>
+            + Send
+            + Sync,
+    >,
+}
 
 #[async_trait]
-impl<S, F> Middleware<S> for WrapFn<F>
-where
-    S: Stage,
-    F: for<'a> Fn(S::Context, EventSink<S::Event>, Next<'a, S>) -> BoxFuture<'a, Result<S::Result>>
-        + Send
-        + Sync,
-{
+impl<S: Stage> Middleware<S> for WrapFn<S> {
     async fn call(
         &self,
         context: S::Context,
         events: &EventSink<S::Event>,
-        next: Next<'_, S>,
+        next: Next<S>,
     ) -> Result<S::Result> {
-        (self.0)(context, events.clone(), next).await
+        (self.f)(context, events.clone(), next).await
     }
 }
 
-/// Wrap-phase middleware from a closure: `wrap_fn(|ctx, sink, next| Box::pin(async move { .. }))`.
-pub fn wrap_fn<S, F>(f: F) -> WrapFn<F>
+/// Wrap-phase middleware from an async closure:
+/// `wrap_fn(|ctx, sink, next| async move { next.run(ctx, &sink).await })`.
+pub fn wrap_fn<S, F, Fut>(f: F) -> WrapFn<S>
 where
     S: Stage,
-    F: for<'a> Fn(S::Context, EventSink<S::Event>, Next<'a, S>) -> BoxFuture<'a, Result<S::Result>>
-        + Send
-        + Sync,
+    F: Fn(S::Context, EventSink<S::Event>, Next<S>) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<S::Result>> + Send + 'static,
 {
-    WrapFn(f)
+    WrapFn {
+        f: Box::new(move |context, events, next| Box::pin(f(context, events, next))),
+    }
 }
 
 /// Handle returned by every registration; pass it to
@@ -167,7 +175,7 @@ impl MiddlewareRegistry {
 
     /// Register a wrap-phase handler (the bare-stage TS overload).
     pub fn add<S: Stage>(&self, handler: impl Middleware<S> + 'static) -> MiddlewareHandle {
-        self.push::<S>(PhaseKind::Wrap, std::sync::Arc::new(handler))
+        self.push::<S>(PhaseKind::Wrap, Arc::new(handler))
     }
 
     /// Register an input-phase handler: transforms the context before inner layers see it.
@@ -175,7 +183,7 @@ impl MiddlewareRegistry {
         &self,
         handler: impl Fn(S::Context) -> Result<S::Context> + Send + Sync + 'static,
     ) -> MiddlewareHandle {
-        self.push::<S>(PhaseKind::Input, std::sync::Arc::new(InputAdapter(handler)))
+        self.push::<S>(PhaseKind::Input, Arc::new(InputAdapter(handler)))
     }
 
     /// Register an output-phase handler: transforms the result on the way out.
@@ -183,7 +191,7 @@ impl MiddlewareRegistry {
         &self,
         handler: impl Fn(S::Result) -> Result<S::Result> + Send + Sync + 'static,
     ) -> MiddlewareHandle {
-        self.push::<S>(PhaseKind::Output, std::sync::Arc::new(OutputAdapter(handler)))
+        self.push::<S>(PhaseKind::Output, Arc::new(OutputAdapter(handler)))
     }
 
     /// Remove a previously registered handler. A no-op if it is already gone.
@@ -209,21 +217,21 @@ impl MiddlewareRegistry {
         &self,
         context: S::Context,
         events: &EventSink<S::Event>,
-        terminal: &dyn Terminal<S>,
+        terminal: impl Terminal<S> + 'static,
     ) -> Result<S::Result> {
-        let handlers = self.compose::<S>();
         let next = Next {
-            handlers: &handlers,
-            terminal,
+            handlers: self.compose::<S>(),
+            index: 0,
+            terminal: Arc::new(terminal),
         };
         next.run(context, events).await
     }
 
     /// The handlers for `S` in execution order (outermost first).
-    fn compose<S: Stage>(&self) -> Vec<HandlerRef<S>> {
+    fn compose<S: Stage>(&self) -> Arc<[HandlerRef<S>]> {
         let entries = self.entries.read();
         let Some(stage) = entries.get(&TypeId::of::<S>()) else {
-            return Vec::new();
+            return Arc::from(Vec::new());
         };
         let mut ordered: Vec<&Entry> = stage.iter().collect();
         ordered.sort_by_key(|e| e.phase.order());
@@ -263,7 +271,7 @@ where
         &self,
         context: S::Context,
         events: &EventSink<S::Event>,
-        next: Next<'_, S>,
+        next: Next<S>,
     ) -> Result<S::Result> {
         next.run((self.0)(context)?, events).await
     }
@@ -281,7 +289,7 @@ where
         &self,
         context: S::Context,
         events: &EventSink<S::Event>,
-        next: Next<'_, S>,
+        next: Next<S>,
     ) -> Result<S::Result> {
         (self.0)(next.run(context, events).await?)
     }
