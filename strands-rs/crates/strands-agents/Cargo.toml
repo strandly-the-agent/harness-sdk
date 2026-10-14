@@ -12,9 +12,10 @@ authors.workspace = true
 workspace = true
 
 [features]
-default = ["bedrock", "macros", "openai"]
+default = ["anthropic", "bedrock", "macros", "openai"]
 test-support = []
 macros = ["dep:strands-agents-macros"]
+anthropic = ["dep:reqwest"]
 openai = ["dep:reqwest"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-smithy-runtime-api"]
 

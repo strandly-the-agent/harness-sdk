@@ -42,6 +42,8 @@ pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
 };
+#[cfg(feature = "anthropic")]
+pub use models::anthropic::{AnthropicModel, AnthropicModelConfig};
 pub use models::Model;
 #[cfg(feature = "openai")]
 pub use models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};

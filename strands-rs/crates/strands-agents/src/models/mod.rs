@@ -1,5 +1,7 @@
 //! Model providers and the `Model` contract.
 
+#[cfg(feature = "anthropic")]
+pub mod anthropic;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;
 pub mod defaults;
@@ -9,6 +11,12 @@ pub mod openai;
 pub mod sse;
 pub mod streaming;
 
+#[cfg(feature = "anthropic")]
+pub use anthropic::{
+    AnthropicCacheConfig, AnthropicCacheSection, AnthropicCacheStrategy, AnthropicModel,
+    AnthropicModelConfig, AnthropicTransport, ReqwestTransport as AnthropicReqwestTransport,
+    TransportResponse as AnthropicTransportResponse,
+};
 #[cfg(feature = "bedrock")]
 pub use bedrock::{
     BedrockGuardrailConfig, BedrockGuardrailRedactionConfig, BedrockModel, BedrockModelBuilder,
@@ -26,7 +34,7 @@ pub use model::{
 #[cfg(feature = "openai")]
 pub use openai::{
     classify_openai_error, BedrockMantleConfig, OpenAIApi, OpenAIModel, OpenAIModelConfig, OpenAIRequest,
-    OpenAITransport, ReqwestTransport,
+    OpenAITransport, ReqwestTransport as OpenAIReqwestTransport,
 };
 pub use sse::{SseEvent, SseParser};
 pub use streaming::{
