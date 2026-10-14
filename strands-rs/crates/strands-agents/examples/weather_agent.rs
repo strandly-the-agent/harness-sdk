@@ -1,26 +1,22 @@
-//! Agent with one typed tool, built with `FunctionTool::builder`.
+//! Agent with one tool declared with `#[tool]`.
 //!
 //! Run with `cargo run --example weather_agent` (needs AWS credentials).
 
-use serde::Deserialize;
 use strands_agents::models::BedrockModel;
 use strands_agents::prelude::*;
 
-#[derive(Deserialize, schemars::JsonSchema)]
-struct Location {
-    /// City to report the weather for.
-    city: String,
+/// Current weather for a city.
+#[tool]
+async fn weather(city: String) -> String {
+    format!("It is 22°C and sunny in {city}.")
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let weather = FunctionTool::builder("get_weather")
-        .description("Get the current weather for a city")
-        .typed_handler(|input: Location, _ctx| async move { Ok(format!("{}: 22°C, sunny", input.city)) });
-
     let agent = Agent::builder()
         .model(BedrockModel::default_model().await?)
-        .tool(weather)
+        .system_prompt("You are a terse assistant.")
+        .tool(WeatherTool::new())
         .build()?;
 
     println!(
