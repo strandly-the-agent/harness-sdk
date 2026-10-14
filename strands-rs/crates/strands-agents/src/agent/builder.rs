@@ -8,7 +8,6 @@ use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::sync::CancellationToken;
 
 use super::{Agent, AgentInner};
-use crate::conversation_manager::{ConversationManager, SlidingWindowConversationManager};
 use crate::error::{Error, Result};
 use crate::hooks::HookRegistry;
 use crate::models::Model;
@@ -38,8 +37,7 @@ pub struct AgentBuilder {
     messages: Vec<Message>,
     tools: Vec<ToolRef>,
     plugins: Vec<Arc<dyn Plugin>>,
-    conversation_manager: Option<Option<Arc<dyn Plugin>>>,
-    context_manager: Option<Arc<crate::context_manager::ContextManager>>,
+    context_manager_option: Option<crate::context_manager::ContextManagerOption>,
     session_manager: Option<Arc<SessionManager>>,
     background_tasks: Option<crate::background_tasks::BackgroundTasksConfig>,
     storage: Option<crate::storage::StorageRef>,
@@ -119,23 +117,11 @@ impl AgentBuilder {
         self
     }
 
-    /// Managed context (compression, offloading, overflow recovery). When set, the agent runs no
-    /// conversation manager at all — the context manager owns both jobs.
+    /// Managed context (compression, offloading, overflow recovery). Defaults to
+    /// [`ContextManagerOption::Auto`](crate::context_manager::ContextManagerOption::Auto); pass
+    /// `ContextManagerOption::Off` to run without any context management.
     pub fn context_manager(mut self, option: crate::context_manager::ContextManagerOption) -> Self {
-        self.context_manager = crate::context_manager::ContextManager::from(option);
-        self.conversation_manager = Some(None);
-        self
-    }
-
-    /// Conversation manager; defaults to a sliding window.
-    pub fn conversation_manager(mut self, manager: impl ConversationManager + 'static) -> Self {
-        self.conversation_manager = Some(Some(Arc::new(manager)));
-        self
-    }
-
-    /// Run without a conversation manager.
-    pub fn no_conversation_manager(mut self) -> Self {
-        self.conversation_manager = Some(None);
+        self.context_manager_option = Some(option);
         self
     }
 
@@ -230,10 +216,10 @@ impl AgentBuilder {
             .ok_or_else(|| Error::DefaultNotConfigured(NO_MODEL_MESSAGE.to_owned()))?;
 
         let mut plugins: Vec<Arc<dyn Plugin>> = Vec::new();
-        match self.conversation_manager {
-            Some(manager) => plugins.extend(manager),
-            None => plugins.push(Arc::new(SlidingWindowConversationManager::new())),
-        }
+        let context_manager = crate::context_manager::ContextManager::from(
+            self.context_manager_option
+                .unwrap_or(crate::context_manager::ContextManagerOption::Auto),
+        );
         match self.retry_strategy {
             Some(strategy) => plugins.extend(strategy),
             None => plugins.push(Arc::new(DefaultModelRetryStrategy::new(
@@ -241,7 +227,7 @@ impl AgentBuilder {
             )?)),
         }
         plugins.extend(self.plugins);
-        if let Some(manager) = self.context_manager {
+        if let Some(manager) = context_manager {
             plugins.push(manager);
         }
         if let Some(manager) = self.session_manager {

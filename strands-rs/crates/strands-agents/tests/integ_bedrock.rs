@@ -16,9 +16,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 use strands_agents::agent::AgentStreamEvent;
-use strands_agents::conversation_manager::{
-    NullConversationManager, SlidingWindowConfig, SlidingWindowConversationManager,
-};
+use strands_agents::context_manager::ContextManagerOption;
 use strands_agents::models::{
     BedrockGuardrailConfig, BedrockGuardrailRedactionConfig, BedrockModel, BedrockModelConfig, CacheConfig,
     CacheStrategy, ContentBlockDelta, CountTokensOptions, GuardrailTraceMode, Model, ModelStreamEvent,
@@ -218,39 +216,12 @@ async fn handles_invalid_model_id_gracefully() {
 
 #[tokio::test]
 #[ignore = "live Bedrock"]
-async fn manages_conversation_history_with_sliding_window_conversation_manager() {
-    let manager = SlidingWindowConversationManager::with_config(SlidingWindowConfig {
-        window_size: 4,
-        ..Default::default()
-    })
-    .unwrap();
-    let agent = Agent::builder()
-        .model(model(100).await)
-        .conversation_manager(manager)
-        .build()
-        .await
-        .unwrap();
-
-    agent.invoke("Count from 1 to 1.").await.unwrap();
-    assert_eq!(agent.messages().len(), 2);
-    agent.invoke("Count from 2 to 2.").await.unwrap();
-    assert_eq!(agent.messages().len(), 4);
-    agent.invoke("Count from 3 to 3.").await.unwrap();
-    assert_eq!(
-        agent.messages().len(),
-        4,
-        "window of 4 must hold after the third exchange"
-    );
-}
-
-#[tokio::test]
-#[ignore = "live Bedrock"]
-async fn throws_with_null_conversation_manager_when_the_model_hits_max_tokens() {
+async fn throws_without_context_management_when_the_model_hits_max_tokens() {
     // Mirrors the TS test: `maxTokens: 50` plus a long request makes the model stop on
-    // `max_tokens`, which the SDK surfaces as `Error::MaxTokens` and no manager recovers from.
+    // `max_tokens`, which the SDK surfaces as `Error::MaxTokens`; no context manager recovers it.
     let agent = Agent::builder()
         .model(model(50).await)
-        .conversation_manager(NullConversationManager::new())
+        .context_manager(ContextManagerOption::Off)
         .build()
         .await
         .unwrap();
@@ -272,7 +243,7 @@ async fn maps_an_oversized_prompt_to_context_window_overflow() {
         .unwrap();
     let agent = Agent::builder()
         .model(model)
-        .conversation_manager(NullConversationManager::new())
+        .context_manager(ContextManagerOption::Off)
         .no_retry_strategy()
         .build()
         .await

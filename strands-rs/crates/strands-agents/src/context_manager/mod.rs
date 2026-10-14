@@ -461,9 +461,9 @@ impl Plugin for ContextManager {
 
 #[cfg(test)]
 mod tests {
+    use super::test_support::{after_model_call, before_model_call, model, overflow};
     use super::*;
     use crate::agent::test_agent_with;
-    use crate::conversation_manager::test_support::{after_model_call, before_model_call, model, overflow};
     use crate::storage::InMemoryStorage;
     use crate::types::{ContentBlock, ToolResultBlock, ToolResultContent};
     use std::sync::atomic::AtomicUsize;
@@ -836,5 +836,91 @@ mod tests {
             keys.iter().any(|key| key.contains("tool-1_0")),
             "key written under the explicit root: {keys:?}"
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) mod test_support {
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+
+    use crate::agent::Agent;
+    use crate::error::{Error, Result};
+    use crate::hooks::AfterInvocationEvent;
+    use crate::hooks::{AfterModelCallEvent, BeforeModelCallEvent};
+    use crate::models::Model;
+    use crate::models::{ModelStreamEvent, StreamOptions};
+    use crate::types::Message;
+    use crate::InvocationState;
+    use futures::stream::BoxStream;
+
+    pub(crate) struct LimitedModel(pub(crate) Option<u64>);
+
+    #[async_trait]
+    impl Model for LimitedModel {
+        fn model_id(&self) -> Option<String> {
+            None
+        }
+
+        fn context_window_limit(&self) -> Option<u64> {
+            self.0
+        }
+
+        fn stream<'a>(
+            &'a self,
+            _messages: &'a [Message],
+            _options: &'a StreamOptions,
+        ) -> BoxStream<'a, Result<ModelStreamEvent>> {
+            Box::pin(futures::stream::empty())
+        }
+    }
+
+    pub(crate) fn model(limit: Option<u64>) -> Arc<dyn Model> {
+        Arc::new(LimitedModel(limit))
+    }
+
+    pub(crate) fn overflow() -> Arc<Error> {
+        Arc::new(Error::ContextWindowOverflow("Context overflow".to_owned()))
+    }
+
+    pub(crate) fn after_model_call(agent: &Agent, error: Option<Arc<Error>>) -> AfterModelCallEvent {
+        AfterModelCallEvent {
+            agent: agent.clone(),
+            model: model(Some(1000)),
+            stop_data: None,
+            error,
+            invocation_state: InvocationState::new(),
+            attempt_count: 1,
+            retry: false,
+        }
+    }
+
+    pub(crate) fn before_model_call(
+        agent: &Agent,
+        model: Arc<dyn Model>,
+        projected_input_tokens: Option<u64>,
+    ) -> BeforeModelCallEvent {
+        BeforeModelCallEvent {
+            agent: agent.clone(),
+            model,
+            invocation_state: InvocationState::new(),
+            projected_input_tokens,
+            cancel: Default::default(),
+            messages: agent.messages(),
+        }
+    }
+
+    pub(crate) fn test_agent_with_messages(messages: Vec<Message>) -> Agent {
+        crate::agent::test_agent_with("test-agent", None, messages)
+    }
+
+    pub(crate) fn after_invocation(agent: &Agent) -> AfterInvocationEvent {
+        AfterInvocationEvent {
+            agent: agent.clone(),
+            invocation_state: InvocationState::new(),
+            resume: None,
+        }
     }
 }
