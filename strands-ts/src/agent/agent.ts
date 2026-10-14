@@ -186,8 +186,7 @@ export type AgentConfig = {
    */
   model?: Model<BaseModelConfig> | ModelRouter | string
   /**
-   * Model for the a*
-   * - Omitted: a sensible default {@link DefaultModelRuxiliary side calls the SDK makes outside the main agent loop: context
+   * Model for the auxiliary side calls the SDK makes outside the main agent loop: context
    * summarization, memory extraction, the HITL risk classifier, LLM steering, the goal judge, and
    * the `web_fetch` analyst. Defaults to `model`, so leaving it unset changes nothing; set it
    * (typically to a smaller, cheaper model) to move every side call off the main model at once.
@@ -249,7 +248,8 @@ export type AgentConfig = {
   backgroundTasks?: boolean | BackgroundTasksConfig
   /**
    * Retry strategy (or strategies) for failed model/tool calls.
-   etryStrategy} with exponential backoff is used.
+   *
+   * - Omitted: a sensible default {@link DefaultModelRetryStrategy} with exponential backoff is used.
    * - Single strategy: the given strategy is used.
    * - Array of strategies: all are registered, in the given order. Passing two
    *   instances of the same concrete class logs a warning — they will collide
@@ -352,7 +352,8 @@ export type AgentConfig = {
    *   invocation finishes its current step (model call and tool batch), then stops with
    *   `stopReason: 'superseded'` instead of calling the model again. Queued
    *   `'cancelPrevious'` / `'stopPrevious'` predecessors are displaced; the new call runs
-   *   next, so it waits for the slowest in-flight tool.
+   *   next, so it waits for the slowest in-flight tool. A stop that lands before the
+   *   running invocation's first model call ends it with nothing appended, like a cancel.
    * - `'queue'`: wait FIFO; the call runs as its own invocation when the current one
    *   finishes. The queue is unbounded — bound it host-side by checking
    *   `pendingInvocations.length` before submitting.
@@ -560,8 +561,6 @@ export class Agent implements LocalAgent, InvokableAgent {
   _invocationId: number = 0
   private readonly _concurrentInvocationMode: ConcurrentInvocationMode
   private readonly _invocationQueue: InvocationQueue
-  /** Set by a `'stopPrevious'` caller; the running invocation stops at its next cycle boundary. */
-  private _stopRequested: boolean = false
   private _abortController = new AbortController()
   private _abortSignal: AbortSignal = this._abortController.signal
   private _printer?: Printer
@@ -954,11 +953,11 @@ export class Agent implements LocalAgent, InvokableAgent {
       mode: strategy,
       ...(options?.cancelSignal !== undefined && { cancelSignal: options.cancelSignal }),
     })
-    // An already-aborted caller never enters the queue; don't disturb the running
-    // invocation on its behalf.
-    if (options?.cancelSignal?.aborted !== true) {
-      if (strategy === 'cancelPrevious') this.cancel()
-      if (strategy === 'stopPrevious') this._stopRequested = true
+    // An already-aborted caller never enters the queue; don't cancel the running
+    // invocation on its behalf. A 'stopPrevious' entry's presence in the queue is itself
+    // the stop request, so a caller that withdraws takes its request with it.
+    if (strategy === 'cancelPrevious' && options?.cancelSignal?.aborted !== true) {
+      this.cancel()
     }
     return turn
   }
@@ -987,11 +986,10 @@ export class Agent implements LocalAgent, InvokableAgent {
     }
   }
 
-  /** Installs a fresh AbortController and clears any stop request for the invocation that now owns the turn. */
+  /** Installs a fresh AbortController for the invocation that now owns the turn. */
   private _installTurnController(): void {
     this._abortController = new AbortController()
     this._abortSignal = this._abortController.signal
-    this._stopRequested = false
   }
 
   /**
@@ -1416,10 +1414,16 @@ export class Agent implements LocalAgent, InvokableAgent {
 
         // Don't let a continuation swallow a cancel or stop request that arrived during
         // AfterInvocation: return the completed result instead; abandoned inputs re-deliver
-        // in a later invocation. `resume` is not gated — its passes terminate promptly.
-        const cancelledAfterFinalPass = hasContinuation && (this._abortSignal.aborted || this._stopRequested)
+        // in a later invocation. `resume` is not gated — its passes terminate promptly —
+        // except after 'superseded', which is terminal so a resume loop can't starve the
+        // caller waiting for the turn.
+        const endedAfterFinalPass =
+          hasContinuation && (this._abortSignal.aborted || this._invocationQueue.hasStopRequest())
 
-        if ((hasContinuation && !cancelledAfterFinalPass) || afterInvocationEvent.resume !== undefined) {
+        if (
+          stopReason !== 'superseded' &&
+          ((hasContinuation && !endedAfterFinalPass) || afterInvocationEvent.resume !== undefined)
+        ) {
           currentArgs = afterInvocationEvent.resume ?? []
           continue
         }
@@ -1768,7 +1772,7 @@ export class Agent implements LocalAgent, InvokableAgent {
       while (true) {
         this._throwIfCancelled()
 
-        if (this._stopRequested) {
+        if (this._invocationQueue.hasStopRequest()) {
           const stopMessage = new Message({
             role: 'assistant',
             content: [new TextBlock('Superseded by a new request')],

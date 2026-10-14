@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { Agent } from '../agent.js'
-import { AfterInvocationEvent, BeforeInvocationEvent } from '../../hooks/index.js'
+import { AfterInvocationEvent, AgentResultEvent, BeforeInvocationEvent, MessageAddedEvent } from '../../hooks/index.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { tool } from '../../tools/tool-factory.js'
 import { PendingInvocationCancelledError } from '../../errors.js'
-import { TextBlock, ToolResultBlock } from '../../types/messages.js'
+import { TextBlock, ToolResultBlock, type Message } from '../../types/messages.js'
 import { continuations } from '../continuation.js'
+import type { StreamOptions } from '../../models/model.js'
+import type { ModelStreamEvent } from '../../models/streaming.js'
 
 function createGate(name = 'gate') {
   let signalStarted!: () => void
@@ -231,5 +233,121 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     expect(abandoned).toBe(1)
     expect(resultText((await second) as { lastMessage: { content: readonly unknown[] } })).toBe('B')
     expect(model.callCount).toBe(2)
+  })
+
+  it('a stopping caller that withdraws after queueing takes its stop request with it', async () => {
+    const gate = createGate()
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'A' })
+    const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'stopPrevious' })
+
+    const first = agent.invoke('a')
+    await gate.started
+    const controller = new AbortController()
+    const second = agent.invoke('b', { cancelSignal: controller.signal })
+    await until(() => agent.pendingInvocations.length === 1, 'second queued')
+    controller.abort()
+    await expect(second).rejects.toThrow(PendingInvocationCancelledError)
+
+    gate.release()
+    const firstResult = await first
+    expect(firstResult.stopReason).toBe('endTurn')
+    expect(resultText(firstResult)).toBe('A')
+    expect(model.callCount).toBe(2)
+  })
+
+  it("'superseded' is terminal: a hook that keeps setting resume cannot starve the waiting caller", async () => {
+    const model = new MockMessageModel()
+      .addTurn({ type: 'textBlock', text: 'A' })
+      .addTurn({ type: 'textBlock', text: 'B' })
+    const agent = new Agent({ model, printer: false, concurrentInvocationMode: 'stopPrevious' })
+
+    let second: Promise<unknown> | undefined
+    let afterPasses = 0
+    agent.addHook(AfterInvocationEvent, (event) => {
+      afterPasses++
+      second ??= agent.invoke('b')
+      // Mirrors a plugin that resumes while its condition holds — here, while a caller waits.
+      if (agent.pendingInvocations.length > 0) event.resume = []
+    })
+
+    const firstResult = await agent.invoke('a')
+    // The resumed pass hit the stop at its loop top and the result was not resumed again.
+    expect(firstResult.stopReason).toBe('superseded')
+    expect(afterPasses).toBe(2)
+    expect(model.callCount).toBe(1)
+    expect(resultText((await second) as { lastMessage: { content: readonly unknown[] } })).toBe('B')
+  })
+
+  it('lets an in-flight model call finish before stopping', async () => {
+    let releaseModel!: () => void
+    const modelReleased = new Promise<void>((resolve) => (releaseModel = resolve))
+    let signalModelStarted!: () => void
+    const modelStarted = new Promise<void>((resolve) => (signalModelStarted = resolve))
+    class GatedModel extends MockMessageModel {
+      override async *stream(messages: Message[], options?: StreamOptions): AsyncGenerator<ModelStreamEvent> {
+        if (this.callCount === 0) {
+          signalModelStarted()
+          await modelReleased
+        }
+        yield* super.stream(messages, options)
+      }
+    }
+    const fast = tool({ name: 'fast', description: 'Returns immediately', callback: () => 'ok' })
+    const model = new GatedModel()
+      .addTurn({ type: 'toolUseBlock', name: 'fast', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'B' })
+    const agent = new Agent({ model, tools: [fast], printer: false, concurrentInvocationMode: 'stopPrevious' })
+
+    const first = agent.invoke('a')
+    await modelStarted
+    const second = agent.invoke('b')
+    await until(() => agent.pendingInvocations.length === 1, 'second queued')
+    releaseModel()
+
+    expect((await first).stopReason).toBe('superseded')
+    expect(resultText(await second)).toBe('B')
+    // The gated model call completed and its tool ran before the stop was observed.
+    expect(historyShape(agent)).toEqual([
+      'user: a',
+      'assistant: <toolUseBlock>',
+      'user: <toolResult>',
+      'assistant: Superseded by a new request',
+      'user: b',
+      'assistant: B',
+    ])
+  })
+
+  it('a superseded stream() consumer sees the synthetic message, AfterInvocation, and AgentResult events', async () => {
+    const gate = createGate()
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'B' })
+    const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'stopPrevious' })
+
+    const events: unknown[] = []
+    const consume = (async () => {
+      const iterator = agent.stream('a')
+      let step = await iterator.next()
+      while (!step.done) {
+        events.push(step.value)
+        step = await iterator.next()
+      }
+      return step.value
+    })()
+    await gate.started
+    const second = agent.invoke('b')
+    gate.release()
+
+    const firstResult = await consume
+    expect(firstResult.stopReason).toBe('superseded')
+    const supersededMessage = events.find(
+      (event) => event instanceof MessageAddedEvent && resultText({ lastMessage: event.message }) === 'Superseded by a new request'
+    )
+    expect(supersededMessage).toBeDefined()
+    expect(events.some((event) => event instanceof AfterInvocationEvent)).toBe(true)
+    expect(events.some((event) => event instanceof AgentResultEvent)).toBe(true)
+    expect(resultText(await second)).toBe('B')
   })
 })

@@ -153,6 +153,11 @@ export class InvocationQueue {
     return true
   }
 
+  /** Whether a queued `'stopPrevious'` caller is waiting for the running invocation to stop. */
+  hasStopRequest(): boolean {
+    return this._entries.some((queued) => queued.mode === 'stopPrevious')
+  }
+
   private _armAbort(entry: QueueEntry): void {
     const signal = entry.signal!
     const onAbort = (): void => this._remove(entry)
