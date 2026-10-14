@@ -489,7 +489,7 @@ async fn run_invocation(
 
         let result = outcome?;
         let resumable = matches!(result.stop_reason, StopReason::EndTurn | StopReason::StopSequence);
-        let pending_continuation = !agent.inner.continuation_input.read().is_empty();
+        let pending_continuation = agent.inner.continuations.has_input();
         match after.resume {
             Some(resume) if resumable => current = resume,
             None if resumable

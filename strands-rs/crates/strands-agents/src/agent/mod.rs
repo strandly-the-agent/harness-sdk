@@ -2,6 +2,7 @@
 
 mod builder;
 mod checkpoint;
+mod continuation;
 mod event_loop;
 mod invocation_state;
 mod result;
@@ -28,6 +29,7 @@ pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
 pub use checkpoint::{
     Checkpoint, CheckpointData, CheckpointPosition, CheckpointResumeContent, CHECKPOINT_SCHEMA_VERSION,
 };
+pub use continuation::{is_complete_message_input, ContinuationInput, Continuations};
 pub use event_loop::{
     AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE, INTERRUPTED_MESSAGE,
     INTERRUPT_RESPONSES_ONLY_MESSAGE, INTERRUPT_RESUME_REQUIRED_MESSAGE,
@@ -142,7 +144,7 @@ pub(crate) struct AgentInner {
     pub(crate) sandbox: Option<Option<crate::sandbox::SandboxRef>>,
     pub(crate) session_id: RwLock<Option<String>>,
     pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
-    pub(crate) continuation_input: RwLock<Vec<Message>>,
+    pub(crate) continuations: Continuations,
     pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     pub(crate) interrupt_state: crate::interrupt::InterruptStateHandle,
     pub(crate) middleware: crate::middleware::MiddlewareRegistry,
@@ -276,12 +278,21 @@ impl Agent {
 
     /// Queue messages to be prepended to the input of the next invocation (TS `continuations`).
     pub fn add_continuation_input(&self, messages: Vec<Message>) {
-        self.inner.continuation_input.write().extend(messages);
+        self.inner
+            .continuations
+            .add_input(ContinuationInput::new(messages));
     }
 
-    /// Take the queued continuation messages.
+    /// The continuation queue (callbacks, validation, prepare/mark-appended).
+    pub fn continuations(&self) -> &Continuations {
+        &self.inner.continuations
+    }
+
+    /// Take the queued continuation messages, resolving their `on_appended` callbacks.
     pub fn take_continuation_input(&self) -> Vec<Message> {
-        std::mem::take(&mut *self.inner.continuation_input.write())
+        let messages = self.inner.continuations.prepare().unwrap_or_default();
+        self.inner.continuations.mark_appended();
+        messages
     }
 
     /// Shared handle to this agent's interrupt state.
@@ -480,7 +491,7 @@ pub(crate) mod test_fixtures {
                 session_id: RwLock::new(None),
                 memory_manager: None,
                 background_tasks: None,
-                continuation_input: RwLock::new(Vec::new()),
+                continuations: Continuations::default(),
                 middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
         }

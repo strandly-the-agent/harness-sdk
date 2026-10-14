@@ -49,11 +49,6 @@ aws-sdk-bedrockruntime = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
 aws-smithy-runtime-api = { workspace = true, optional = true }
 
-[[bin]]
-name = "mcp_echo_server"
-path = "src/bin/mcp_echo_server.rs"
-required-features = ["mcp-echo-server"]
-
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true }
 

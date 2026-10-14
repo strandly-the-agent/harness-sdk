@@ -312,7 +312,7 @@ impl AgentBuilder {
                 session_id: RwLock::new(None),
                 memory_manager: self.memory_manager,
                 background_tasks,
-                continuation_input: RwLock::new(Vec::new()),
+                continuations: Default::default(),
                 interrupt_state: Default::default(),
                 middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
