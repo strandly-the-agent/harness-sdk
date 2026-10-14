@@ -665,6 +665,9 @@ mod tests {
     /// `bedrock_region` reads process-wide env, so its tests take this lock.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    /// `reset_warn_once` clears a process-wide set, so the tests that assert on it take this lock.
+    static WARN_LOCK: Mutex<()> = Mutex::new(());
+
     fn resolve(spec: &str, effort: Effort) -> Result<BedrockModelConfig> {
         bedrock_config_for(spec, effort, false, false, false)
     }
@@ -754,6 +757,7 @@ mod tests {
 
     #[tokio::test]
     async fn passes_a_model_instance_through_untouched() {
+        let _warn_guard = WARN_LOCK.lock().expect("warn lock");
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
         let resolved = resolve_model(
@@ -1120,6 +1124,7 @@ mod tests {
 
     #[tokio::test]
     async fn warns_instead_of_throwing_when_an_effort_level_is_requested_on_a_model_instance() {
+        let _warn_guard = WARN_LOCK.lock().expect("warn lock");
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
         resolve_model(
@@ -1139,6 +1144,7 @@ mod tests {
 
     #[tokio::test]
     async fn does_not_warn_for_a_model_instance_with_default_effort_and_no_web_search_or_caching() {
+        let _warn_guard = WARN_LOCK.lock().expect("warn lock");
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
         resolve_model(
@@ -1156,6 +1162,7 @@ mod tests {
 
     #[tokio::test]
     async fn warns_instead_of_throwing_when_caching_is_explicitly_requested_on_a_model_instance() {
+        let _warn_guard = WARN_LOCK.lock().expect("warn lock");
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
         resolve_model(
@@ -1173,6 +1180,7 @@ mod tests {
 
     #[tokio::test]
     async fn does_not_warn_when_default_caching_hits_a_model_instance() {
+        let _warn_guard = WARN_LOCK.lock().expect("warn lock");
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
         resolve_model(
@@ -1190,6 +1198,7 @@ mod tests {
 
     #[test]
     fn does_not_warn_when_caching_is_supported() {
+        let _warn_guard = WARN_LOCK.lock().expect("warn lock");
         reset_warn_once();
         resolve_caching(DEFAULT, Effort::Auto, true, true).expect("resolves");
         assert!(!warned("prompt caching"));
@@ -1197,6 +1206,7 @@ mod tests {
 
     #[test]
     fn does_not_warn_when_caching_is_supported_for_litellm() {
+        let _warn_guard = WARN_LOCK.lock().expect("warn lock");
         reset_warn_once();
         let error = resolve_caching("litellm/some-model", Effort::Auto, true, true).expect_err("rejects");
         assert!(
@@ -1208,6 +1218,7 @@ mod tests {
 
     #[test]
     fn warns_when_caching_is_unsupported_by_the_provider() {
+        let _warn_guard = WARN_LOCK.lock().expect("warn lock");
         reset_warn_once();
         let error = resolve_caching("ollama/llama3", Effort::Auto, true, true).expect_err("rejects");
         assert!(
