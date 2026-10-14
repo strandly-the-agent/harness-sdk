@@ -1,5 +1,23 @@
 //! Test doubles for driving agents without a real provider
 //! (`strands-ts/src/__fixtures__/mock-message-model.ts`, `model-test-helpers.ts`).
+//!
+//! Enable the `test-support` feature (a dev-dependency on this crate is enough).
+//!
+//! ```
+//! use strands_agents::testing::{MockMessageModel, MockResponse};
+//! use strands_agents::{Agent, Message};
+//!
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> strands_agents::error::Result<()> {
+//! let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("42"))]);
+//! let agent = Agent::builder().model(model.clone()).build()?;
+//!
+//! let result = agent.invoke("What is 6 times 7?").await?;
+//! assert_eq!(result.text(), "42");
+//! assert_eq!(model.call_count(), 1);
+//! # Ok(())
+//! # }
+//! ```
 
 use std::sync::{Arc, Mutex};
 

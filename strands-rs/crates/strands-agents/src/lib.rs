@@ -1,7 +1,57 @@
 //! Strands Agents SDK for Rust.
 //!
 //! A model-driven framework for building AI agents: a [`models::Model`], a system prompt,
-//! and a list of [`tools::Tool`]s composed into an agent loop.
+//! and a list of [`tools::Tool`]s composed into an agent loop. The model decides which tools
+//! to call and when to stop; the loop runs the calls, feeds the results back, and repeats.
+//!
+//! ```rust,no_run
+//! use strands_agents::models::{BedrockModel, BedrockModelConfig};
+//! use strands_agents::{tool, Agent};
+//!
+//! /// Current weather for a city.
+//! #[tool]
+//! async fn weather(city: String) -> String {
+//!     format!("It is 22°C and sunny in {city}.")
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
+//!     let agent = Agent::builder()
+//!         .model(model)
+//!         .system_prompt("You are a terse assistant.")
+//!         .tool(WeatherTool::new())
+//!         .build()?;
+//!
+//!     let result = agent.invoke("What's the weather in Seattle?").await?;
+//!     println!("{result}");
+//!     Ok(())
+//! }
+//! ```
+//!
+//! # Where things live
+//!
+//! - [`agent`] — [`Agent`], [`AgentBuilder`], invocation options and streaming events.
+//! - [`tools`] — the [`tools::Tool`] trait, [`tools::FunctionTool`] and the `#[tool]` macro output.
+//! - [`models`] — providers ([`models::BedrockModel`] and friends) and the streaming protocol.
+//! - [`hooks`] — typed lifecycle events for observing or rewriting a run.
+//! - [`types`] — [`types::Message`], [`types::ContentBlock`], usage and metrics.
+//! - [`error`] — [`error::Error`] and [`error::Result`].
+//! - [`prelude`] — the handful of imports most agents need.
+//!
+//! # Testing without a provider
+//!
+//! Enable the `test-support` feature and drive an agent with [`testing::MockMessageModel`]:
+//! queued responses, no AWS, no network. See the [`testing`] module for an example.
+//!
+//! # Feature flags
+//!
+//! - `bedrock` (default) — Amazon Bedrock Converse provider.
+//! - `macros` (default) — the `#[tool]` attribute macro.
+//! - `anthropic`, `openai` — HTTP providers.
+//! - `mcp` — MCP client transports and tool discovery.
+//! - `telemetry` — OpenTelemetry export.
+//! - `test-support` — the [`testing`] module.
 
 pub mod agent;
 pub mod background_tasks;
@@ -24,7 +74,10 @@ pub mod state_store;
 pub mod storage;
 pub mod telemetry;
 #[cfg(any(test, feature = "test-support"))]
-pub mod test_support;
+pub mod testing;
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub use testing as test_support;
 pub mod tools;
 pub mod types;
 

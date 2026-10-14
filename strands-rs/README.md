@@ -49,6 +49,26 @@ Default: `bedrock`, `macros`. Everything else is opt-in.
 - `telemetry` — OpenTelemetry metrics/tracing export.
 - `test-support` — the [`testing`](#testing) module (test doubles).
 
+## Testing
+
+Enable the `test-support` feature in `[dev-dependencies]` and drive an agent with
+`MockMessageModel` — queued responses, no AWS, no network:
+
+```rust
+use strands_agents::testing::{MockMessageModel, MockResponse};
+use strands_agents::{Agent, Message};
+
+#[tokio::test]
+async fn answers_from_the_mock() {
+    let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("42"))]);
+    let agent = Agent::builder().model(model.clone()).build().unwrap();
+
+    let result = agent.invoke("What is 6 times 7?").await.unwrap();
+    assert_eq!(result.text(), "42");
+    assert_eq!(model.call_count(), 1);
+}
+```
+
 ## Development
 
 ```bash
