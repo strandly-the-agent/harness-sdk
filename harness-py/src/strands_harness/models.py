@@ -530,8 +530,10 @@ def resolve_aux_model(
     reuses the main model and logs a warning rather than guessing. Thinking is never applied: side
     calls are fast tasks.
 
-    ``caching`` is deliberately not forwarded: side calls are single-shot prompts whose cache entries
-    no later call could read.
+    ``caching`` is deliberately not forwarded: side calls are one-shot requests with no recurring
+    prefix, and the SDK's automatic strategy also marks the last user message (the page, conversation,
+    or messages being processed), so every call would pay a cache write that nothing ever reads. Pass a
+    ``Model`` with its own ``cache_config`` as ``aux_model`` to cache anyway.
     """
     if isinstance(aux_model, ModelRouter):
         return aux_model.default_model

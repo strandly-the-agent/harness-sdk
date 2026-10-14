@@ -568,8 +568,10 @@ function hasWebSearch(providerName: string, name: string): boolean {
  * family we can't identify reuses the main model and logs a warning rather than guessing. Thinking
  * is never applied: side calls are fast tasks.
  *
- * `caching` is deliberately not forwarded: side calls are single-shot prompts whose cache entries no
- * later call could read.
+ * `caching` is deliberately not forwarded: side calls are one-shot requests with no recurring prefix,
+ * and the SDK's automatic strategy also marks the last user message (the page, conversation, or
+ * messages being processed), so every call would pay a cache write that nothing ever reads. Pass a
+ * `Model` with its own `cacheConfig` as `auxModel` to cache anyway.
  *
  * @param mainModel - The main agent's `model` argument (instance, string, or undefined).
  * @param auxModel - Explicit aux model, or undefined to use the provider table.
