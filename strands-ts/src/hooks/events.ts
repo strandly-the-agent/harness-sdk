@@ -178,7 +178,9 @@ export class AfterInvocationEvent extends HookableEvent {
    * When set, after this event's callbacks complete the agent re-enters its loop
    * with these args as new input, under the same invocation lock. A fresh
    * {@link BeforeInvocationEvent}/{@link AfterInvocationEvent} pair fires for the
-   * resumed run. Ignored if the invocation ended with an error.
+   * resumed run. Ignored if the invocation ended with an error or with
+   * `stopReason: 'superseded'` (a queued caller is taking the turn; set it again on
+   * the next invocation).
    *
    * If multiple callbacks set `resume`, the last callback to run wins.
    */

@@ -153,7 +153,11 @@ export class InvocationQueue {
     return true
   }
 
-  /** Whether a queued `'stopPrevious'` caller is waiting for the running invocation to stop. */
+  /**
+   * Whether a queued `'stopPrevious'` caller is waiting for the running invocation to stop.
+   * Relies on latest-wins entries being front-inserted and removed at {@link handoff}, so a
+   * stop entry can never sit behind the invocation that currently holds the turn.
+   */
   hasStopRequest(): boolean {
     return this._entries.some((queued) => queued.mode === 'stopPrevious')
   }
