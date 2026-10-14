@@ -11,8 +11,8 @@ use strands_agents::hooks::{
 };
 use strands_agents::test_support::{MockMessageModel, MockResponse};
 use strands_agents::tools::{tool, ToolRef};
-use strands_agents::types::{ContentBlock, Role, StopReason, ToolResultStatus, ToolUseBlock};
-use strands_agents::{Agent, AgentStreamEvent, Message};
+use strands_agents::types::{ContentBlock, Role, StopReason, ToolResultStatus, ToolUseBlock, Usage};
+use strands_agents::{Agent, AgentStreamEvent, Limits, Message};
 
 fn text_model(texts: &[&str]) -> Arc<MockMessageModel> {
     MockMessageModel::shared(
@@ -394,4 +394,169 @@ async fn stream_ends_with_exactly_one_agent_result() {
     }
 
     assert_eq!(results, 1);
+}
+
+// ---- limits (§9.4 step 9) -------------------------------------------------
+
+fn tool_use_responses(count: usize, usage: Option<Usage>) -> Arc<MockMessageModel> {
+    MockMessageModel::shared(
+        (0..count)
+            .map(|i| {
+                let message = tool_use_message("echo", &format!("t{i}"), json!({ "value": i }));
+                match &usage {
+                    Some(usage) => MockResponse::Message {
+                        message,
+                        stop_reason: Some(StopReason::ToolUse),
+                        usage: Some(usage.clone()),
+                    },
+                    None => MockResponse::with_stop_reason(message, StopReason::ToolUse),
+                }
+            })
+            .collect(),
+    )
+}
+
+async fn looping_agent(model: Arc<MockMessageModel>) -> Agent {
+    Agent::builder()
+        .model(model)
+        .tool(echo_tool())
+        .build()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn stops_when_the_turn_limit_is_reached() {
+    let model = tool_use_responses(5, None);
+    let agent = looping_agent(Arc::clone(&model)).await;
+
+    let result = agent
+        .invoke_with(
+            "go",
+            InvokeOptions {
+                limits: Some(Limits {
+                    turns: Some(2),
+                    ..Limits::default()
+                }),
+                ..InvokeOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::LimitTurns);
+    assert_eq!(model.call_count(), 2);
+    assert_eq!(result.last_message, *agent.messages().last().unwrap());
+    assert_eq!(result.last_message.role, Role::User);
+}
+
+#[tokio::test]
+async fn stops_when_the_output_token_limit_is_reached() {
+    let usage = Usage {
+        input_tokens: 5,
+        output_tokens: 10,
+        total_tokens: 15,
+        ..Usage::default()
+    };
+    let model = tool_use_responses(5, Some(usage));
+    let agent = looping_agent(Arc::clone(&model)).await;
+
+    let result = agent
+        .invoke_with(
+            "go",
+            InvokeOptions {
+                limits: Some(Limits {
+                    output_tokens: Some(10),
+                    ..Limits::default()
+                }),
+                ..InvokeOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::LimitOutputTokens);
+    assert_eq!(model.call_count(), 1);
+}
+
+#[tokio::test]
+async fn stops_when_the_total_token_limit_is_reached() {
+    let usage = Usage {
+        input_tokens: 10,
+        output_tokens: 5,
+        total_tokens: 15,
+        ..Usage::default()
+    };
+    let model = tool_use_responses(5, Some(usage));
+    let agent = looping_agent(Arc::clone(&model)).await;
+
+    let result = agent
+        .invoke_with(
+            "go",
+            InvokeOptions {
+                limits: Some(Limits {
+                    total_tokens: Some(30),
+                    ..Limits::default()
+                }),
+                ..InvokeOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::LimitTotalTokens);
+    assert_eq!(model.call_count(), 2);
+}
+
+#[tokio::test]
+async fn turns_limit_wins_over_token_limits() {
+    let usage = Usage {
+        input_tokens: 10,
+        output_tokens: 10,
+        total_tokens: 20,
+        ..Usage::default()
+    };
+    let model = tool_use_responses(5, Some(usage));
+    let agent = looping_agent(Arc::clone(&model)).await;
+
+    let result = agent
+        .invoke_with(
+            "go",
+            InvokeOptions {
+                limits: Some(Limits {
+                    turns: Some(1),
+                    output_tokens: Some(1),
+                    total_tokens: Some(1),
+                }),
+                ..InvokeOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::LimitTurns);
+}
+
+#[tokio::test]
+async fn rejects_non_positive_limits() {
+    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
+
+    let error = agent
+        .invoke_with(
+            "go",
+            InvokeOptions {
+                limits: Some(Limits {
+                    turns: Some(0),
+                    ..Limits::default()
+                }),
+                ..InvokeOptions::default()
+            },
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "limits.turns must be a positive finite number, got 0"
+    );
 }
