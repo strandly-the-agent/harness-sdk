@@ -5,7 +5,7 @@ mod agent_snapshot;
 mod file_storage;
 mod session_manager;
 mod storage;
-mod types;
+pub(crate) mod types;
 mod validation;
 
 pub use file_storage::FileStorage;

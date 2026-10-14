@@ -77,6 +77,20 @@ pub struct StreamAggregatedResult {
     pub redaction: Option<Redaction>,
 }
 
+impl StreamAggregatedResult {
+    /// A result carrying just a message and stop reason, for middleware that short-circuits the
+    /// model call.
+    pub fn new(message: Message, stop_reason: StopReason) -> Self {
+        Self {
+            message,
+            stop_reason,
+            usage: None,
+            metrics: None,
+            redaction: None,
+        }
+    }
+}
+
 /// Items yielded by [`Model::stream_aggregated`]; `Result` is always the last item.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AggregatedItem {

@@ -50,7 +50,7 @@ pub(crate) fn object(entries: Vec<(&str, Value)>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ContentBlock, ImageBlock, ImageSource, Message};
+    use crate::types::{ContentBlock, ImageBlock, ImageFormat, ImageSource, Message};
 
     #[test]
     fn passes_through_plain_values() {
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn replaces_binary_payloads() {
         let block = ContentBlock::Image(ImageBlock {
-            format: "png".into(),
+            format: ImageFormat::Png,
             source: ImageSource::Bytes(vec![1, 2, 3]),
         });
         let json = to_telemetry_json(&block);

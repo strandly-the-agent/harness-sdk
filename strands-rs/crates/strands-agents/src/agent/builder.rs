@@ -46,6 +46,7 @@ pub struct AgentBuilder {
     telemetry: Option<crate::telemetry::TelemetryConfig>,
     executor: Option<Arc<dyn ToolExecutor>>,
     state: Option<StateStore>,
+    checkpointing: bool,
 }
 
 impl AgentBuilder {
@@ -211,6 +212,14 @@ impl AgentBuilder {
         self
     }
 
+    /// Pause the loop at cycle boundaries, returning
+    /// [`StopReason::Checkpoint`](crate::types::StopReason::Checkpoint) with a
+    /// [`Checkpoint`](crate::agent::Checkpoint) to resume from.
+    pub fn checkpointing(mut self, enabled: bool) -> Self {
+        self.checkpointing = enabled;
+        self
+    }
+
     /// Initial application state.
     pub fn state(mut self, state: StateStore) -> Self {
         self.state = Some(state);
@@ -278,6 +287,8 @@ impl AgentBuilder {
                 system_prompt: RwLock::new(self.system_prompt),
                 messages: RwLock::new(self.messages),
                 state: self.state.unwrap_or_default(),
+                model_state: StateStore::new(),
+                checkpointing: self.checkpointing,
                 hooks: HookRegistry::new(),
                 tools: RwLock::new(registry),
                 plugins: PluginRegistry::new(plugins),
@@ -294,6 +305,7 @@ impl AgentBuilder {
                 meter: crate::telemetry::Meter::new(),
                 background_tasks,
                 continuation_input: RwLock::new(Vec::new()),
+                middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
         };
         agent.initialize().await?;

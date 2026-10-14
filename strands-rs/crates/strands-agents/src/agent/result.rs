@@ -27,6 +27,9 @@ pub struct AgentResult {
     pub metrics: AgentMetrics,
     /// Local trace tree collected during the invocation.
     pub traces: Vec<AgentTrace>,
+    /// The cycle boundary the loop paused at, when `stop_reason` is `checkpoint`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<super::Checkpoint>,
 }
 
 impl AgentResult {
@@ -39,6 +42,7 @@ impl AgentResult {
             structured_output: None,
             metrics: AgentMetrics::default(),
             traces: Vec::new(),
+            checkpoint: None,
         }
     }
 
@@ -83,6 +87,7 @@ impl PartialEq for AgentResult {
         self.stop_reason == other.stop_reason
             && self.last_message == other.last_message
             && self.structured_output == other.structured_output
+            && self.checkpoint == other.checkpoint
     }
 }
 
@@ -128,6 +133,9 @@ mod tests {
             last_message: Message::new(Role::Assistant, content),
             invocation_state: InvocationState::new(),
             structured_output: structured,
+            metrics: AgentMetrics::default(),
+            traces: Vec::new(),
+            checkpoint: None,
         }
     }
 

@@ -1,83 +1,29 @@
 //! Agent state capture/restore for session snapshots.
 //!
-//! Temporary home for the `takeSnapshot`/`loadSnapshot` helpers of
-//! `strands-ts/src/agent/snapshot.ts`; they move to `agent/` when that module is ported. Only the
-//! `session` preset is implemented, and only the fields the Rust `Agent` has today (`messages`,
-//! `state`, `systemPrompt`) — `modelState` and `interrupts` are not ported yet, and omitting the
-//! keys makes a TS reader leave its own values untouched.
+//! Thin wrappers over `agent::snapshot` (`strands-ts/src/agent/snapshot.ts`) with the `session`
+//! preset, kept so the session manager has a stable crate-internal entry point.
 
-use serde_json::{Map, Value};
+use super::types::Snapshot;
+use crate::agent::{Agent, TakeSnapshotOptions};
+use crate::error::Result;
 
-use super::types::{now_iso8601, Scope, Snapshot, SNAPSHOT_SCHEMA_VERSION};
-use crate::agent::Agent;
-use crate::error::{Error, Result};
-use crate::types::{Message, SystemPrompt};
-
-/// Captures the agent's session state.
+/// Captures the agent's session state (the `session` snapshot preset).
 pub(crate) fn take_agent_snapshot(agent: &Agent) -> Snapshot {
-    let mut data = Map::new();
-    data.insert(
-        "messages".to_owned(),
-        serde_json::to_value(agent.messages()).unwrap_or(Value::Null),
-    );
-    data.insert("state".to_owned(), agent.state().to_json());
-    data.insert(
-        "systemPrompt".to_owned(),
-        match agent.system_prompt() {
-            Some(prompt) => serde_json::to_value(prompt).unwrap_or(Value::Null),
-            None => Value::Null,
-        },
-    );
-    Snapshot {
-        scope: Scope::Agent,
-        schema_version: SNAPSHOT_SCHEMA_VERSION.to_owned(),
-        created_at: now_iso8601(),
-        data,
-        app_data: Map::new(),
-    }
+    agent.take_snapshot(TakeSnapshotOptions::default())
 }
 
 /// Restores a snapshot into the agent. Absent keys leave the corresponding field unchanged.
 pub(crate) fn load_agent_snapshot(agent: &Agent, snapshot: &Snapshot) -> Result<()> {
-    if snapshot.scope != Scope::Agent {
-        return Err(Error::other(format!(
-            "Expected snapshot scope 'agent', got '{}'",
-            snapshot.scope
-        )));
-    }
-    if snapshot.schema_version != SNAPSHOT_SCHEMA_VERSION {
-        return Err(Error::other(format!(
-            "Unsupported snapshot schema version: {}. Current version: {SNAPSHOT_SCHEMA_VERSION}",
-            snapshot.schema_version
-        )));
-    }
-
-    if let Some(messages) = snapshot.data.get("messages") {
-        let messages: Vec<Message> = serde_json::from_value(messages.clone())?;
-        agent.set_messages(messages);
-    }
-
-    if let Some(state) = snapshot.data.get("state") {
-        agent.state().load_json(state.clone());
-    }
-
-    if let Some(prompt) = snapshot.data.get("systemPrompt") {
-        if prompt.is_null() {
-            agent.set_system_prompt(None);
-        } else {
-            let prompt: SystemPrompt = serde_json::from_value(prompt.clone())?;
-            agent.set_system_prompt(Some(prompt));
-        }
-    }
-
-    Ok(())
+    agent.load_snapshot(snapshot)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::agent::test_agent_for_session;
-    use serde_json::json;
+    use crate::session::types::Scope;
+    use crate::types::Message;
+    use serde_json::{json, Map, Value};
 
     #[test]
     fn captures_messages_state_and_system_prompt() {

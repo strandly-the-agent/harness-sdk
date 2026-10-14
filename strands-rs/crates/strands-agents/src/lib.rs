@@ -10,6 +10,7 @@ pub mod error;
 pub mod hooks;
 pub mod logging;
 pub mod memory;
+pub mod middleware;
 pub mod models;
 pub mod plugins;
 pub mod retry;
