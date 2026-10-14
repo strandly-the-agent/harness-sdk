@@ -2,7 +2,8 @@
 
 Branch: `agent-tasks/strands-rs` on `strandly-the-agent/harness-sdk` (no PR by request).
 Source: `strands-ts/src` @ `041a47f68`. Scope: option 1 — the core SDK subset that makes an
-agent run; see [DESIGN.md](DESIGN.md) for in/out of scope.
+agent run; see [DESIGN.md](DESIGN.md) for in/out of scope and [FEATURE_MATRIX.md](FEATURE_MATRIX.md)
+for per-feature availability against the Python and TypeScript SDKs.
 
 ## Status
 
