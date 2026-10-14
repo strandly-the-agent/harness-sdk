@@ -28,6 +28,7 @@ tracing.workspace = true
 uuid.workspace = true
 schemars.workspace = true
 parking_lot.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 strands-agents = { path = "../strands-agents", features = ["test-support"] }

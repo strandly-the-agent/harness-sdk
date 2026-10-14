@@ -2189,6 +2189,7 @@ dependencies = [
  "async-trait",
  "futures",
  "parking_lot",
+ "regex",
  "schemars",
  "serde",
  "serde_json",
