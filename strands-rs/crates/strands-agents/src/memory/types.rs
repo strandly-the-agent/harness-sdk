@@ -12,6 +12,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::error::{Error, Result};
+use crate::models::Model;
 use crate::tools::ToolRef;
 use crate::types::{JsonValue, Message};
 
@@ -159,18 +160,85 @@ impl ExtractionTrigger {
     }
 }
 
+/// Content blocks stripped from messages before extraction (TS `MemoryMessageFilter`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MemoryMessageFilter {
+    /// Block kinds to drop, named as in the TS `ContentBlock` union (`toolUse`, `toolResult`, ...).
+    pub exclude: Vec<String>,
+}
+
+impl Default for MemoryMessageFilter {
+    fn default() -> Self {
+        Self {
+            exclude: vec!["toolUse".to_owned(), "toolResult".to_owned()],
+        }
+    }
+}
+
 /// Automatic-extraction config for a store.
 #[derive(Clone, Default)]
 pub struct ExtractionConfig {
     /// Distills messages into entries written with [`MemoryStore::add`]. When `None`, raw
     /// messages go to [`MemoryStore::add_messages`] (the passthrough path).
     pub extractor: Option<ExtractorRef>,
+    /// When extraction fires. `None` defaults to one interval trigger of
+    /// [`DEFAULT_EXTRACTION_TRIGGER_TURNS`]; an explicit empty list stays empty so the manager
+    /// can reject it.
+    pub trigger: Option<Vec<ExtractionTrigger>>,
+    /// Blocks stripped before extraction. `None` defaults to [`MemoryMessageFilter::default`].
+    pub filter: Option<MemoryMessageFilter>,
+    /// Model for the default extractor; falls back to the agent's auxiliary model.
+    pub model: Option<Arc<dyn Model>>,
+    /// Framing that replaces the default extraction guidance (the output contract is kept).
+    pub system_prompt: Option<String>,
+}
+
+impl ExtractionConfig {
+    /// Set the extractor.
+    pub fn extractor(mut self, extractor: ExtractorRef) -> Self {
+        self.extractor = Some(extractor);
+        self
+    }
+
+    /// Set a single trigger.
+    pub fn trigger(mut self, trigger: ExtractionTrigger) -> Self {
+        self.trigger = Some(vec![trigger]);
+        self
+    }
+
+    /// Set the trigger list verbatim (an empty list is preserved).
+    pub fn triggers(mut self, triggers: Vec<ExtractionTrigger>) -> Self {
+        self.trigger = Some(triggers);
+        self
+    }
+
+    /// Set the message filter.
+    pub fn filter(mut self, filter: MemoryMessageFilter) -> Self {
+        self.filter = Some(filter);
+        self
+    }
+
+    /// Set the model used by the default extractor.
+    pub fn model(mut self, model: Arc<dyn Model>) -> Self {
+        self.model = Some(model);
+        self
+    }
+
+    /// Override the extraction framing.
+    pub fn system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(prompt.into());
+        self
+    }
 }
 
 impl std::fmt::Debug for ExtractionConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExtractionConfig")
             .field("extractor", &self.extractor.is_some())
+            .field("trigger", &self.trigger)
+            .field("filter", &self.filter)
+            .field("model", &self.model.is_some())
+            .field("system_prompt", &self.system_prompt)
             .finish()
     }
 }

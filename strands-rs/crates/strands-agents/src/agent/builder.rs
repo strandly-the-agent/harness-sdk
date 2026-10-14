@@ -33,6 +33,7 @@ pub struct AgentBuilder {
     name: Option<String>,
     description: Option<String>,
     model: Option<Arc<dyn Model>>,
+    aux_model: Option<Arc<dyn Model>>,
     system_prompt: Option<SystemPrompt>,
     messages: Vec<Message>,
     tools: Vec<ToolRef>,
@@ -58,6 +59,19 @@ impl AgentBuilder {
     /// The model the agent calls.
     pub fn model(self, model: impl Model + 'static) -> Self {
         self.model_arc(Arc::new(model))
+    }
+
+    /// Auxiliary model for internal side calls (memory extraction, summarization).
+    ///
+    /// Defaults to [`AgentBuilder::model`] when unset.
+    pub fn aux_model(self, model: impl Model + 'static) -> Self {
+        self.aux_model_arc(Arc::new(model))
+    }
+
+    /// [`AgentBuilder::aux_model`] with an already shared model.
+    pub fn aux_model_arc(mut self, model: Arc<dyn Model>) -> Self {
+        self.aux_model = Some(model);
+        self
     }
 
     /// [`AgentBuilder::model`] with an already shared model.
@@ -295,6 +309,7 @@ impl AgentBuilder {
                 name: self.name.unwrap_or_else(|| DEFAULT_AGENT_NAME.to_owned()),
                 description: self.description,
                 model: RwLock::new(model),
+                aux_model: RwLock::new(self.aux_model),
                 system_prompt: RwLock::new(self.system_prompt),
                 messages: RwLock::new(self.messages),
                 state: self.state.unwrap_or_default(),

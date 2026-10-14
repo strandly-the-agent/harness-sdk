@@ -125,6 +125,7 @@ pub(crate) struct AgentInner {
     pub(crate) name: String,
     pub(crate) description: Option<String>,
     pub(crate) model: RwLock<Arc<dyn Model>>,
+    pub(crate) aux_model: RwLock<Option<Arc<dyn Model>>>,
     pub(crate) system_prompt: RwLock<Option<SystemPrompt>>,
     pub(crate) messages: RwLock<Vec<Message>>,
     pub(crate) state: StateStore,
@@ -186,6 +187,17 @@ impl Agent {
     /// The model.
     pub fn model(&self) -> Arc<dyn Model> {
         self.inner.model.read().clone()
+    }
+
+    /// The auxiliary model for internal side calls (memory extraction, summarization).
+    ///
+    /// Falls back to [`Agent::model`] when no auxiliary model was configured.
+    pub fn aux_model(&self) -> Arc<dyn Model> {
+        self.inner
+            .aux_model
+            .read()
+            .clone()
+            .unwrap_or_else(|| self.model())
     }
 
     /// Replace the model.
@@ -462,6 +474,7 @@ pub(crate) mod test_fixtures {
                 name: id.to_owned(),
                 description: None,
                 model: RwLock::new(Arc::new(EmptyStreamModel { stateful })),
+                aux_model: RwLock::new(None),
                 system_prompt: RwLock::new(system_prompt.map(|p| SystemPrompt::Text(p.to_owned()))),
                 messages: RwLock::new(messages),
                 state: StateStore::new(),
