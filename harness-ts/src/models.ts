@@ -80,6 +80,15 @@ const CUSTOM_ENDPOINT_VARS: Record<string, string | undefined> = {
 
 const BEDROCK_REGION_PREFIXES = ['global.', 'apac.', 'us.', 'eu.', 'au.', 'jp.'] as const
 
+// Small regional aux model per Bedrock model family, keyed by family prefix. These ids are served
+// regionally, so unlike the OpenAI-on-Bedrock case no inference-profile prefix is carried over. Kept
+// byte-identical with `_BEDROCK_AUX_FAMILY_MODELS` in the Python `models.py`.
+const BEDROCK_AUX_FAMILY_MODELS: Record<string, string> = {
+  'amazon.': 'amazon.nova-lite-v1:0',
+  'meta.': 'meta.llama3-2-3b-instruct-v1:0',
+  'mistral.': 'mistral.mistral-small-2402-v1:0',
+}
+
 // Reasoning levels each provider's API accepts. `'off'` is the harness's spelling of a provider's
 // "none" where it has one (OpenAI, Bedrock GPT and Qwen) and omits the reasoning field elsewhere.
 // The harness validates against the resolved provider's set so an unsupported level fails here rather
@@ -564,8 +573,9 @@ function hasWebSearch(providerName: string, name: string): boolean {
  * its credentials; when the main model is a `Model` instance (provider unknown), reuse it. A router
  * uses its concrete default model because auxiliary calls are outside the primary agent invocation
  * and cannot share its routing decision. On Bedrock the aux model follows the main model's family
- * (Anthropic-on-Bedrock gets Haiku, OpenAI-on-Bedrock gets the OpenAI small model); a Bedrock
- * family we can't identify reuses the main model and logs a warning rather than guessing. Thinking
+ * (Anthropic-on-Bedrock gets Haiku, OpenAI-on-Bedrock gets the OpenAI small model, Amazon/Meta/Mistral
+ * get their small regional models); a Bedrock family with no mapped small model reuses the main model
+ * and logs a warning rather than guessing. Thinking
  * is never applied: side calls are fast tasks.
  *
  * `caching` is deliberately not forwarded: side calls are one-shot requests with no recurring prefix,
@@ -644,9 +654,11 @@ function concreteModel(model: Model | ModelRouter): Model {
  * Bedrock hosts models from several providers, so the aux model follows the main model's family.
  * An Anthropic-on-Bedrock model (an `anthropic.` prefix, after any cross-region prefix like `us.`)
  * gets Anthropic Haiku; an OpenAI-on-Bedrock model (an `openai.` prefix) gets the OpenAI small model
- * hosted on Bedrock (`openai.` + the OpenAI-provider small model). Either way the aux model shares
- * the main model's provider. Any other family is unidentifiable and returns `undefined` so the
- * caller can reuse the main model rather than guess.
+ * hosted on Bedrock (`openai.` + the OpenAI-provider small model), carrying the main model's
+ * cross-region prefix because those ids are only served through an inference profile. Amazon, Meta,
+ * and Mistral families get their small regional models. The aux model always shares the main model's
+ * credentials. A family with no mapped small model returns `undefined` so the caller can reuse the
+ * main model rather than guess.
  */
 function bedrockAuxModel(name: string): string | undefined {
   const family = bedrockFamily(name)
@@ -657,5 +669,5 @@ function bedrockAuxModel(name: string): string | undefined {
     const prefix = name.slice(0, name.length - family.length)
     return `${prefix}openai.${AUX_MODELS.openai}`
   }
-  return undefined
+  return Object.entries(BEDROCK_AUX_FAMILY_MODELS).find(([familyPrefix]) => family.startsWith(familyPrefix))?.[1]
 }

@@ -728,17 +728,29 @@ describe('resolveAuxModel', () => {
   it('reuses the main model and warns for an unidentifiable bedrock family', async () => {
     const warn = vi.fn()
     configureLogging({ debug: () => {}, info: () => {}, warn, error: () => {} })
-    const model = await resolveAuxModel('bedrock/amazon.nova-pro-v1:0', undefined)
+    const model = await resolveAuxModel('bedrock/cohere.command-r-plus-v1:0', undefined)
     expect(model).toBeInstanceOf(BedrockModel)
-    expect(model.getConfig().modelId).toBe('amazon.nova-pro-v1:0')
+    expect(model.getConfig().modelId).toBe('cohere.command-r-plus-v1:0')
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('could not identify the Bedrock model family'))
+  })
+
+  it('maps the Amazon, Meta, and Mistral Bedrock families to their small regional models', async () => {
+    const cases: Array<[string, string]> = [
+      ['bedrock/amazon.nova-2-lite-v1:0', 'amazon.nova-lite-v1:0'],
+      ['bedrock/us.amazon.nova-pro-v1:0', 'amazon.nova-lite-v1:0'],
+      ['bedrock/us.meta.llama3-2-70b-instruct-v1:0', 'meta.llama3-2-3b-instruct-v1:0'],
+      ['bedrock/mistral.mistral-large-2407-v1:0', 'mistral.mistral-small-2402-v1:0'],
+    ]
+    for (const [main, small] of cases) {
+      expect((await resolveAuxModel(main, undefined)).getConfig().modelId).toBe(small)
+    }
   })
 
   it('does not warn for an unidentifiable bedrock family with an explicit override', async () => {
     const warn = vi.fn()
     configureLogging({ debug: () => {}, info: () => {}, warn, error: () => {} })
     const override = new BedrockModel({ modelId: 'explicit' })
-    expect(await resolveAuxModel('bedrock/amazon.nova-pro-v1:0', override)).toBe(override)
+    expect(await resolveAuxModel('bedrock/cohere.command-r-plus-v1:0', override)).toBe(override)
     expect(warn).not.toHaveBeenCalled()
   })
 
