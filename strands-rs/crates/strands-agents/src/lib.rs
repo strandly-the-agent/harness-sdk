@@ -16,6 +16,7 @@ pub mod retry;
 pub mod session;
 pub mod state_store;
 pub mod storage;
+pub mod telemetry;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 pub mod tools;
