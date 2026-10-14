@@ -45,6 +45,7 @@ pub struct AgentBuilder {
     sandbox: Option<Option<crate::sandbox::SandboxRef>>,
     memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     retry_strategy: Option<Option<Arc<dyn Plugin>>>,
+    telemetry: Option<crate::telemetry::TelemetryConfig>,
     executor: Option<Arc<dyn ToolExecutor>>,
     state: Option<StateStore>,
     checkpointing: bool,
@@ -54,6 +55,25 @@ impl AgentBuilder {
     /// A fresh builder.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Telemetry configuration (defaults to [`TelemetryConfig::from_env`](crate::telemetry::TelemetryConfig::from_env)).
+    pub fn telemetry(mut self, config: crate::telemetry::TelemetryConfig) -> Self {
+        self.telemetry = Some(config);
+        self
+    }
+
+    /// Custom attributes merged onto every span this agent emits.
+    pub fn trace_attributes(
+        mut self,
+        attrs: impl IntoIterator<Item = (String, crate::telemetry::AttrValue)>,
+    ) -> Self {
+        let config = self
+            .telemetry
+            .take()
+            .unwrap_or_else(crate::telemetry::TelemetryConfig::from_env);
+        self.telemetry = Some(config.with_trace_attributes(attrs));
+        self
     }
 
     /// The model the agent calls.
@@ -326,6 +346,11 @@ impl AgentBuilder {
                 sandbox: self.sandbox,
                 session_id: RwLock::new(None),
                 memory_manager: self.memory_manager,
+                tracer: crate::telemetry::Tracer::new(
+                    self.telemetry
+                        .unwrap_or_else(crate::telemetry::TelemetryConfig::from_env),
+                ),
+                meter: crate::telemetry::Meter::new(),
                 background_tasks,
                 continuation_input: RwLock::new(Vec::new()),
                 interrupt_state: Default::default(),

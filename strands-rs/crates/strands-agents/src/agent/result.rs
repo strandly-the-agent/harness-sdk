@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use super::InvocationState;
 use crate::interrupt::Interrupt;
+use crate::telemetry::{AgentMetrics, AgentTrace};
 use crate::types::{ContentBlock, JsonValue, Message, StopReason};
 
 /// Result of one agent invocation.
@@ -23,6 +24,10 @@ pub struct AgentResult {
     /// Parsed structured output, when requested.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub structured_output: Option<JsonValue>,
+    /// Metrics collected during the invocation.
+    pub metrics: AgentMetrics,
+    /// Local trace tree collected during the invocation.
+    pub traces: Vec<AgentTrace>,
     /// Unanswered interrupts; non-empty exactly when `stop_reason` is
     /// [`StopReason::Interrupt`](crate::types::StopReason::Interrupt).
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -40,6 +45,8 @@ impl AgentResult {
             last_message,
             invocation_state,
             structured_output: None,
+            metrics: AgentMetrics::default(),
+            traces: Vec::new(),
             interrupts: Vec::new(),
             checkpoint: None,
         }
@@ -50,6 +57,24 @@ impl AgentResult {
     pub fn with_structured_output(mut self, output: JsonValue) -> Self {
         self.structured_output = Some(output);
         self
+    }
+
+    /// Attach telemetry collected during the invocation.
+    #[must_use]
+    pub fn with_telemetry(mut self, metrics: AgentMetrics, traces: Vec<AgentTrace>) -> Self {
+        self.metrics = metrics;
+        self.traces = traces;
+        self
+    }
+
+    /// Total prompt tokens (incl. cached) of the last model call (TS `latestContextSize`).
+    pub fn context_size(&self) -> Option<u64> {
+        self.metrics.latest_context_size
+    }
+
+    /// Latest prompt plus the last output tokens (TS `projectedContextSize`).
+    pub fn projected_context_size(&self) -> Option<u64> {
+        self.metrics.projected_context_size
     }
 
     /// Text of the last message (its text blocks concatenated).
@@ -119,6 +144,8 @@ mod tests {
             last_message: Message::new(Role::Assistant, content),
             invocation_state: InvocationState::new(),
             structured_output: structured,
+            metrics: AgentMetrics::default(),
+            traces: Vec::new(),
             interrupts: Vec::new(),
             checkpoint: None,
         }

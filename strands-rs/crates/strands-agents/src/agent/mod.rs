@@ -145,6 +145,8 @@ pub(crate) struct AgentInner {
     pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
     pub(crate) continuation_input: RwLock<Vec<Message>>,
     pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
+    pub(crate) tracer: crate::telemetry::Tracer,
+    pub(crate) meter: crate::telemetry::Meter,
     pub(crate) interrupt_state: crate::interrupt::InterruptStateHandle,
     pub(crate) middleware: crate::middleware::MiddlewareRegistry,
 }
@@ -326,6 +328,16 @@ impl Agent {
             .clone()
     }
 
+    /// The agent's OTel tracer (spans and local traces).
+    pub fn tracer(&self) -> &crate::telemetry::Tracer {
+        &self.inner.tracer
+    }
+
+    /// The agent's metrics recorder.
+    pub fn meter(&self) -> &crate::telemetry::Meter {
+        &self.inner.meter
+    }
+
     /// The memory manager registered through [`AgentBuilder::memory_manager`](crate::agent::AgentBuilder::memory_manager), if any.
     pub fn memory_manager(&self) -> Option<Arc<crate::memory::MemoryManager>> {
         self.inner.memory_manager.clone()
@@ -492,6 +504,8 @@ pub(crate) mod test_fixtures {
                 sandbox: None,
                 session_id: RwLock::new(None),
                 memory_manager: None,
+                tracer: crate::telemetry::Tracer::new(crate::telemetry::TelemetryConfig::from_env()),
+                meter: crate::telemetry::Meter::new(),
                 background_tasks: None,
                 continuation_input: RwLock::new(Vec::new()),
                 middleware: crate::middleware::MiddlewareRegistry::new(),

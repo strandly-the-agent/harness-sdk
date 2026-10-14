@@ -12,9 +12,10 @@ authors.workspace = true
 workspace = true
 
 [features]
-default = ["anthropic", "bedrock", "macros", "mcp", "openai"]
+default = ["anthropic", "bedrock", "macros", "mcp", "openai", "telemetry"]
 test-support = []
 macros = ["dep:strands-agents-macros"]
+telemetry = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
 anthropic = ["dep:reqwest"]
 openai = ["dep:reqwest"]
 mcp = ["dep:rmcp", "dep:http", "dep:regex"]
@@ -40,6 +41,8 @@ tracing.workspace = true
 uuid.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
 rmcp = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
@@ -65,3 +68,5 @@ tokio-util.workspace = true
 tempfile.workspace = true
 tokio-stream.workspace = true
 tracing-subscriber.workspace = true
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
