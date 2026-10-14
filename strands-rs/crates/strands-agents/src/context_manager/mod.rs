@@ -633,7 +633,7 @@ mod tests {
         let agent = test_agent_with("cm-agent", None, vec![big_tool_result("tool-1", 32)]);
         manager.init_agent(&agent).await.unwrap();
         let stash = manager.stash().expect("stash");
-        assert_eq!(stash.retrieve("tool-1_0").await.is_some(), true);
+        assert!(stash.retrieve("tool-1_0").await.is_some());
     }
 
     // --- _runStrategies -------------------------------------------------------------------
