@@ -1359,6 +1359,178 @@ mod tests {
         );
     }
 
+    /// Tool that sleeps `delay_ms`, then records that it finished.
+    fn sleepy_tool(name: &'static str, delay_ms: u64, finished: Arc<std::sync::atomic::AtomicUsize>) -> ToolRef {
+        Arc::new(
+            crate::tools::function_tool(name)
+                .description("sleeps")
+                .handler(move |_input, _ctx| {
+                    let finished = Arc::clone(&finished);
+                    async move {
+                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Ok(serde_json::json!({ "ok": true }))
+                    }
+                }),
+        )
+    }
+
+    fn submit(plugin: &BackgroundTasks, agent: &Agent, tool: ToolRef, tool_use_id: &str, pass_id: &str) -> ToolResultBlock {
+        let tool_use = ToolUse {
+            name: tool.name().to_owned(),
+            tool_use_id: tool_use_id.to_owned(),
+            input: serde_json::json!({}),
+        };
+        plugin.submit_tool_call(agent, tool, tool_use, InvocationState::default(), pass_id)
+    }
+
+    #[test]
+    fn a_completion_never_overwrites_a_cancelled_task() {
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        plugin
+            .registry
+            .insert(task("bgtask-1", BackgroundTaskStatus::Working));
+
+        assert_eq!(
+            plugin.cancel("bgtask-1").unwrap().status,
+            BackgroundTaskStatus::Cancelled
+        );
+        assert!(plugin
+            .registry
+            .update_working("bgtask-1", |task| task.status = BackgroundTaskStatus::Completed)
+            .is_none());
+        assert_eq!(
+            plugin.get("bgtask-1").unwrap().status,
+            BackgroundTaskStatus::Cancelled
+        );
+    }
+
+    #[test]
+    fn rejects_a_zero_max_concurrency_and_an_out_of_range_timeout() {
+        let error = BackgroundTasks::new(BackgroundTasksConfig::default().max_concurrency(0))
+            .map(|_| ())
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "maxConcurrency must be a positive finite integer, got 0"
+        );
+        let error = BackgroundTasks::new(
+            BackgroundTasksConfig::default().timeout(Duration::from_millis(MAX_TIMER_DELAY_MS as u64 + 1)),
+        )
+        .map(|_| ())
+        .unwrap_err();
+        assert!(error.to_string().contains("timeout must be at most"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn max_concurrency_queues_tasks_beyond_the_cap() {
+        let agent = crate::agent::test_agent();
+        let plugin =
+            BackgroundTasks::new(BackgroundTasksConfig::default().max_concurrency(1)).unwrap();
+        let finished = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        submit(&plugin, &agent, sleepy_tool("a", 60, Arc::clone(&finished)), "tu-1", "pass-1");
+        submit(&plugin, &agent, sleepy_tool("b", 0, Arc::clone(&finished)), "tu-2", "pass-1");
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let statuses: Vec<BackgroundTaskStatus> = plugin.list().iter().map(|t| t.status).collect();
+        assert_eq!(
+            statuses,
+            vec![BackgroundTaskStatus::Working, BackgroundTaskStatus::Queued],
+            "the second task should wait for the only slot"
+        );
+
+        plugin.wait_for_idle(&agent).await;
+        assert_eq!(finished.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_task_that_outlives_its_timeout_fails_with_the_timeout_message() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(
+            BackgroundTasksConfig::default().timeout(Duration::from_millis(10)),
+        )
+        .unwrap();
+        let finished = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        submit(&plugin, &agent, sleepy_tool("a", 5_000, finished), "tu-1", "pass-1");
+
+        plugin.wait_for_idle(&agent).await;
+        let task = plugin.list().remove(0);
+        assert_eq!(task.status, BackgroundTaskStatus::Failed);
+        assert_eq!(
+            task.error,
+            Some(BackgroundTaskFailure {
+                r#type: BackgroundTaskFailureType::Timeout,
+                message: "Timed out after 10ms".to_owned(),
+            })
+        );
+        assert!(task.result.is_none());
+    }
+
+    #[tokio::test]
+    async fn the_same_pass_and_tool_use_returns_the_existing_task() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        let finished = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let tool = sleepy_tool("a", 30, Arc::clone(&finished));
+
+        let first = submit(&plugin, &agent, Arc::clone(&tool), "tu-1", "pass-1");
+        let repeat = submit(&plugin, &agent, Arc::clone(&tool), "tu-1", "pass-1");
+        assert_eq!(first.content, repeat.content, "a repeat submission re-spawned");
+        assert_eq!(plugin.list().len(), 1);
+
+        submit(&plugin, &agent, tool, "tu-1", "pass-2");
+        assert_eq!(plugin.list().len(), 2, "a later pass must spawn its own task");
+        plugin.wait_for_idle(&agent).await;
+        assert_eq!(finished.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn the_background_run_fires_after_tool_call() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let recorder = Arc::clone(&seen);
+        let _cleanup = agent
+            .hooks()
+            .add_sync_callback(move |event: &mut AfterToolCallEvent| {
+                recorder.lock().push(event.tool_use.name.clone());
+                Ok(())
+            });
+
+        let finished = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        submit(&plugin, &agent, sleepy_tool("a", 0, finished), "tu-1", "pass-1");
+        plugin.wait_for_idle(&agent).await;
+        for _ in 0..50 {
+            if !seen.lock().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(seen.lock().as_slice(), ["a".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn cancel_aborts_the_running_task() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        let finished = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        submit(&plugin, &agent, sleepy_tool("a", 10_000, Arc::clone(&finished)), "tu-1", "pass-1");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let cancelled = plugin.cancel(&plugin.list()[0].task_id).unwrap();
+        assert_eq!(cancelled.status, BackgroundTaskStatus::Cancelled);
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(
+            finished.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "the aborted task kept running"
+        );
+        assert_eq!(
+            plugin.get(&cancelled.task_id).unwrap().status,
+            BackgroundTaskStatus::Cancelled
+        );
+    }
+
     #[test]
     fn delivers_terminal_tasks_as_a_synthetic_tool_pair() {
         let agent = crate::agent::test_agent();
