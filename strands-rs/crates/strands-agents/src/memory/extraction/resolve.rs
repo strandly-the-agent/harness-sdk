@@ -125,7 +125,7 @@ mod tests {
     use super::*;
     use crate::error::Result;
     use crate::memory::types::{ExtractionResult, Extractor};
-    use crate::test_support::MockMessageModel;
+    use crate::test_support::{MockMessageModel, MockResponse};
     use crate::types::Message;
 
     struct NoopExtractor;
@@ -138,7 +138,9 @@ mod tests {
     }
 
     fn model() -> Arc<dyn Model> {
-        Arc::new(MockMessageModel::text("[]"))
+        Arc::new(MockMessageModel::new(vec![MockResponse::message(
+            crate::types::Message::assistant("[]"),
+        )]))
     }
 
     fn caps(add: bool, add_messages: bool) -> StoreWriteCaps {
