@@ -203,11 +203,7 @@ impl InterruptState {
             return Ok(());
         }
         for response in &responses {
-            let Some(interrupt) = self
-                .interrupts
-                .iter_mut()
-                .find(|i| i.id == response.interrupt_id)
-            else {
+            let Some(interrupt) = self.interrupts.iter_mut().find(|i| i.id == response.interrupt_id) else {
                 return Err(Error::other(format!(
                     "interrupt_id=<{}> | no interrupt found",
                     response.interrupt_id
@@ -405,10 +401,7 @@ mod tests {
             before_tool_call_interrupt_id("tu1", "approve"),
             "hook:beforeToolCall:tu1:approve"
         );
-        assert_eq!(
-            before_tools_interrupt_id("approve"),
-            "hook:beforeTools:approve"
-        );
+        assert_eq!(before_tools_interrupt_id("approve"), "hook:beforeTools:approve");
     }
 
     #[test]

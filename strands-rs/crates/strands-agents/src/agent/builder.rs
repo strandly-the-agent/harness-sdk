@@ -106,6 +106,16 @@ impl AgentBuilder {
         self
     }
 
+    /// Gate the agent's lifecycle with [`InterventionHandler`](crate::interventions::InterventionHandler)s.
+    ///
+    /// Returns an error if two handlers share a name.
+    pub fn interventions(
+        self,
+        handlers: impl IntoIterator<Item = Arc<dyn crate::interventions::InterventionHandler>>,
+    ) -> Result<Self> {
+        Ok(self.plugin(crate::interventions::InterventionRegistry::new(handlers)?))
+    }
+
     /// Add one user plugin.
     pub fn plugin(self, plugin: impl Plugin + 'static) -> Self {
         self.plugin_arc(Arc::new(plugin))

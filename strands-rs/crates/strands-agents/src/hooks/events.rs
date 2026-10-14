@@ -150,10 +150,7 @@ impl BeforeToolCallEvent {
         &self,
         params: crate::types::InterruptParams,
     ) -> crate::error::Result<T> {
-        let id = crate::interrupt::before_tool_call_interrupt_id(
-            &self.tool_use.tool_use_id,
-            &params.name,
-        );
+        let id = crate::interrupt::before_tool_call_interrupt_id(&self.tool_use.tool_use_id, &params.name);
         let response = crate::interrupt::raise(
             &self.agent.interrupt_state(),
             &id,

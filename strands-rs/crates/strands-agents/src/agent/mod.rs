@@ -23,7 +23,8 @@ use crate::types::{ContentBlock, InterruptResponseContent, Message, Role, System
 
 pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
 pub use event_loop::{
-    AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE,
+    AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE, INTERRUPTED_MESSAGE,
+    INTERRUPT_RESPONSES_ONLY_MESSAGE, INTERRUPT_RESUME_REQUIRED_MESSAGE,
     STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE,
 };
 pub use invocation_state::InvocationState;
@@ -63,10 +64,9 @@ impl InvokeInput {
     /// The interrupt responses carried by this input, if any.
     pub fn interrupt_responses(&self) -> Vec<crate::types::InterruptResponse> {
         match self {
-            InvokeInput::InterruptResponses(blocks) => blocks
-                .iter()
-                .map(|b| b.interrupt_response.clone())
-                .collect(),
+            InvokeInput::InterruptResponses(blocks) => {
+                blocks.iter().map(|b| b.interrupt_response.clone()).collect()
+            }
             _ => vec![],
         }
     }

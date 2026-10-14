@@ -12,7 +12,6 @@ use tokio_util::sync::CancellationToken;
 use std::collections::HashMap;
 
 use super::{Agent, AgentResult, InvocationState, InvokeInput};
-use crate::interrupt::{Interrupt, PendingToolExecution};
 use crate::error::{Error, Result};
 use crate::hooks::events::{
     AfterInvocationEvent, AfterModelCallEvent, AfterToolsEvent, AgentResultEvent, BeforeInvocationEvent,
@@ -20,6 +19,7 @@ use crate::hooks::events::{
     ModelMessageEvent, ModelStopData, ModelStreamUpdateEvent, ToolResultEvent, ToolStreamUpdateEvent,
 };
 use crate::hooks::HookEvent;
+use crate::interrupt::{Interrupt, PendingToolExecution};
 use crate::models::{AggregatedItem, CountTokensOptions, Model, StreamAggregatedResult, StreamOptions};
 use crate::tools::{
     ExecuteToolsInput, StructuredOutputTool, ToolExecutorEvent, EXECUTION_CANCELLED_MESSAGE,
@@ -457,8 +457,8 @@ async fn run_invocation(
                     last_message: message,
                     invocation_state: state.clone(),
                     structured_output: None,
-            interrupts: Vec::new(),
-                                },
+                    interrupts: Vec::new(),
+                },
             )
             .await;
         }
@@ -584,8 +584,8 @@ async fn run_cycles_inner(
                     .unwrap_or_else(|| Message::assistant("")),
                 invocation_state: state.clone(),
                 structured_output: None,
-            interrupts: Vec::new(),
-                            });
+                interrupts: Vec::new(),
+            });
         }
         turns += 1;
 
@@ -600,15 +600,12 @@ async fn run_cycles_inner(
         if let Some(pending_tools) = pending_tools {
             let assistant_message = pending_tools.assistant_message.clone();
             let restored = pending_tools.completed_tool_results.clone();
-            let tools =
-                match execute_tools(agent, &assistant_message, state, cancel, tx, &restored).await {
-                    Ok(tools) => tools,
-                    Err(Error::Interrupt(interrupts)) => {
-                        return interrupt_result(agent, state, interrupts)
-                    }
-                    Err(Error::Cancelled) => return cancelled_result(agent, tx, state).await,
-                    Err(error) => return Err(error),
-                };
+            let tools = match execute_tools(agent, &assistant_message, state, cancel, tx, &restored).await {
+                Ok(tools) => tools,
+                Err(Error::Interrupt(interrupts)) => return interrupt_result(agent, state, interrupts),
+                Err(Error::Cancelled) => return cancelled_result(agent, tx, state).await,
+                Err(error) => return Err(error),
+            };
             append_message(agent, tx, state, assistant_message.clone()).await?;
             append_message(agent, tx, state, tools.message.clone()).await?;
             {
@@ -665,8 +662,8 @@ async fn run_cycles_inner(
                 last_message: model_result.message,
                 invocation_state: state.clone(),
                 structured_output: None,
-            interrupts: Vec::new(),
-                            });
+                interrupts: Vec::new(),
+            });
         }
 
         let assistant_message = model_result.message;
@@ -691,20 +688,11 @@ async fn run_cycles_inner(
                 last_message: assistant_message,
                 invocation_state: state.clone(),
                 structured_output: None,
-            interrupts: Vec::new(),
-                            });
+                interrupts: Vec::new(),
+            });
         }
 
-        let tools = match execute_tools(
-            agent,
-            &assistant_message,
-            state,
-            cancel,
-            tx,
-            &HashMap::new(),
-        )
-        .await
-        {
+        let tools = match execute_tools(agent, &assistant_message, state, cancel, tx, &HashMap::new()).await {
             Ok(tools) => tools,
             // Nothing is appended: history never holds a `toolUse` without its `toolResult`, which
             // is what makes an interrupted agent re-invokable.
@@ -737,8 +725,8 @@ async fn run_cycles_inner(
                     last_message: last,
                     invocation_state: state.clone(),
                     structured_output: None,
-            interrupts: Vec::new(),
-                                });
+                    interrupts: Vec::new(),
+                });
             }
         }
 
@@ -749,7 +737,7 @@ async fn run_cycles_inner(
                     last_message: assistant_message,
                     invocation_state: state.clone(),
                     structured_output: Some(output),
-                interrupts: Vec::new(),
+                    interrupts: Vec::new(),
                 });
             }
         }

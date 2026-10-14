@@ -50,8 +50,8 @@ pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
 };
 pub use types::{
-    ContentBlock, InterruptParams, InterruptResponse, InterruptResponseContent, Message, Role,
-    StopReason, SystemPrompt,
+    ContentBlock, InterruptParams, InterruptResponse, InterruptResponseContent, Message, Role, StopReason,
+    SystemPrompt,
 };
 
 /// Turns a function into a [`tools::Tool`] implementation (requires the `macros` feature).
@@ -71,9 +71,9 @@ pub mod __private {
 pub mod prelude {
     pub use crate::agent::{Agent, AgentBuilder, AgentResult, InvokeOptions};
     pub use crate::error::{Error, Result};
+    pub use crate::interrupt::{Interrupt, InterruptSource};
     pub use crate::models::Model;
     pub use crate::tools::{FunctionTool, Tool, ToolContext};
-    pub use crate::interrupt::{Interrupt, InterruptSource};
     pub use crate::types::{
         ContentBlock, InterruptParams, InterruptResponse, InterruptResponseContent, Message, Role,
         StopReason, SystemPrompt,

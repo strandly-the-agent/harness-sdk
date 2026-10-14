@@ -110,7 +110,10 @@ fn interrupt_message(interrupts: &[Interrupt]) -> String {
         many => format!(
             "{} interrupts raised: {}",
             many.len(),
-            many.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", ")
+            many.iter()
+                .map(|i| i.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
     }
 }
