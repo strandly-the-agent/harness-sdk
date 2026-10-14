@@ -377,6 +377,7 @@ async fn registers_tools_contributed_by_plugins() {
         .plugin(ToolPlugin)
         .build()
         .unwrap();
+    agent.initialize().await.unwrap();
 
     let names: Vec<String> = agent.tools().iter().map(|t| t.name().to_owned()).collect();
     assert!(names.contains(&"plugin-echo".to_owned()), "got {names:?}");

@@ -100,12 +100,14 @@ impl Tool for UserShellTool {
 }
 
 async fn agent_with(builder: strands_agents::AgentBuilder) -> Agent {
-    builder
+    let agent = builder
         .model(MockMessageModel::shared(vec![MockResponse::message(
             Message::assistant("done"),
         )]))
         .build()
-        .unwrap()
+        .unwrap();
+    agent.initialize().await.unwrap();
+    agent
 }
 
 #[tokio::test]

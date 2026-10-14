@@ -150,5 +150,6 @@ async fn registers_a_context_injector_on_init_agent() {
         .plugin(Todos::default())
         .build()
         .expect("agent builds");
+    agent.initialize().await.expect("plugins initialize");
     assert!(agent.tools().iter().any(|t| t.name() == "todo_write"));
 }

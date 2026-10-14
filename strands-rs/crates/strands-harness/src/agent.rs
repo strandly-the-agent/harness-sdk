@@ -338,6 +338,7 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
         builder = builder.description(description);
     }
     let agent = builder.build()?;
+    agent.initialize().await?;
     if let Some(sandbox) = explicit_sandbox {
         drop_sandbox_tools(&agent, &sandbox);
     }
