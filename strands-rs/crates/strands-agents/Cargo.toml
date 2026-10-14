@@ -12,11 +12,14 @@ authors.workspace = true
 workspace = true
 
 [features]
-default = ["anthropic", "bedrock", "macros", "openai"]
+default = ["anthropic", "bedrock", "macros", "mcp", "openai"]
 test-support = []
 macros = ["dep:strands-agents-macros"]
 anthropic = ["dep:reqwest"]
 openai = ["dep:reqwest"]
+mcp = ["dep:rmcp", "dep:http", "dep:regex"]
+# Builds the `mcp_echo_server` test binary (a minimal stdio MCP server used by the e2e tests).
+mcp-echo-server = ["mcp", "rmcp/server", "rmcp/transport-io", "rmcp/macros"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-smithy-runtime-api"]
 
 [dependencies]
@@ -37,17 +40,25 @@ tracing.workspace = true
 uuid.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
+rmcp = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 aws-config = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
 aws-smithy-runtime-api = { workspace = true, optional = true }
 
+[[bin]]
+name = "mcp_echo_server"
+path = "src/bin/mcp_echo_server.rs"
+required-features = ["mcp-echo-server"]
+
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true }
 
 [dev-dependencies]
-strands-agents = { path = ".", features = ["test-support"] }
+strands-agents = { path = ".", features = ["test-support", "mcp-echo-server"] }
 schemars.workspace = true
 serde.workspace = true
 tokio-util.workspace = true

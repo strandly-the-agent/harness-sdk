@@ -11,6 +11,8 @@ pub mod hooks;
 pub mod interrupt;
 pub mod interventions;
 pub mod logging;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod memory;
 pub mod middleware;
 pub mod models;
@@ -38,6 +40,8 @@ pub use context_manager::{
 pub use error::{Error, Result};
 pub use interrupt::{Interrupt, InterruptSource, InterruptState};
 pub use interventions::{InterventionHandler, InterventionRegistry};
+#[cfg(feature = "mcp")]
+pub use mcp::{McpClient, McpServerConfig, McpTool};
 pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
