@@ -38,6 +38,8 @@ pub use memory::{
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
 };
 pub use models::Model;
+#[cfg(feature = "openai")]
+pub use models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};

@@ -244,7 +244,10 @@ impl Model for OpenAIModel {
 }
 
 /// Decode an SSE body into `ModelStreamEvent`s with the adapter's state machine.
-fn decode(api: OpenAIApi, chunks: BoxStream<'static, Result<String>>) -> impl futures::Stream<Item = Result<super::streaming::ModelStreamEvent>> {
+fn decode(
+    api: OpenAIApi,
+    chunks: BoxStream<'static, Result<String>>,
+) -> impl futures::Stream<Item = Result<super::streaming::ModelStreamEvent>> {
     async_stream::try_stream! {
         let mut parser = SseParser::new();
         let mut responses_state = responses::ResponsesStream::default();

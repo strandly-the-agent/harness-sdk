@@ -23,7 +23,8 @@ impl SseParser {
 
     /// Feed a chunk of the response body and return every event it completed.
     pub fn push(&mut self, chunk: &str) -> Vec<SseEvent> {
-        self.buffer.push_str(&chunk.replace("\r\n", "\n").replace('\r', "\n"));
+        self.buffer
+            .push_str(&chunk.replace("\r\n", "\n").replace('\r', "\n"));
         let mut out = Vec::new();
         while let Some(idx) = self.buffer.find("\n\n") {
             let block: String = self.buffer.drain(..idx + 2).collect();

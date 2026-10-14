@@ -8,8 +8,8 @@ use crate::logging::warn_once;
 use crate::models::model::StreamOptions;
 use crate::models::streaming::{ContentBlockDelta, ContentBlockStart, ModelStreamEvent};
 use crate::types::{
-    Citation, CitationGeneratedContent, CitationLocation, ContentBlock, Message, Role, StopReason, SystemPrompt,
-    ToolChoice, ToolResultContent, Usage,
+    Citation, CitationGeneratedContent, CitationLocation, ContentBlock, Message, Role, StopReason,
+    SystemPrompt, ToolChoice, ToolResultContent, Usage,
 };
 
 /// Build the `POST /responses` request body.
@@ -213,15 +213,17 @@ impl ResponsesStream {
         if data.trim().is_empty() || data.trim() == "[DONE]" {
             return Ok(Vec::new());
         }
-        let payload: Value =
-            serde_json::from_str(data).map_err(|e| Error::model(format!("invalid openai sse payload: {e}")))?;
+        let payload: Value = serde_json::from_str(data)
+            .map_err(|e| Error::model(format!("invalid openai sse payload: {e}")))?;
         let kind = event
             .map(str::to_string)
             .or_else(|| payload.get("type").and_then(Value::as_str).map(str::to_string))
             .unwrap_or_default();
         let mut out = Vec::new();
         match kind.as_str() {
-            "response.created" => out.push(ModelStreamEvent::MessageStart { role: Role::Assistant }),
+            "response.created" => out.push(ModelStreamEvent::MessageStart {
+                role: Role::Assistant,
+            }),
             "response.output_text.delta" => {
                 out.extend(self.switch(DataType::Text));
                 out.push(ModelStreamEvent::text_delta(str_field(&payload, "delta")));
@@ -249,17 +251,16 @@ impl ResponsesStream {
                     out.push(ModelStreamEvent::ContentBlockDelta {
                         delta: ContentBlockDelta::Citations {
                             citations: vec![Citation {
-                                location: Some(CitationLocation::Web { url: url.clone() }),
-                                source: Some(url),
+                                location: CitationLocation::Web {
+                                    url: url.clone(),
+                                    domain: None,
+                                },
+                                source: url,
                                 source_content: Vec::new(),
-                                title: annotation.get("title").and_then(Value::as_str).map(str::to_string),
+                                title: str_field(&annotation, "title"),
                             }],
-                            content: vec![CitationGeneratedContent::Text {
-                                text: annotation
-                                    .get("cited_text")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("")
-                                    .to_string(),
+                            content: vec![CitationGeneratedContent {
+                                text: str_field(&annotation, "cited_text"),
                             }],
                         },
                     });
@@ -349,7 +350,9 @@ impl ResponsesStream {
                 }),
             });
             out.push(ModelStreamEvent::ContentBlockDelta {
-                delta: ContentBlockDelta::ToolUseInput { input: call.arguments },
+                delta: ContentBlockDelta::ToolUseInput {
+                    input: call.arguments,
+                },
             });
             out.push(ModelStreamEvent::ContentBlockStop {});
             self.stop_reason = Some(StopReason::ToolUse);
