@@ -4,7 +4,7 @@ use serde_json::json;
 use strands_agents::agent::InvocationState;
 use strands_agents::models::Model;
 use strands_agents::test_support::{MockMessageModel, MockResponse};
-use strands_agents::tools::{Tool, ToolContext};
+use strands_agents::tools::ToolContext;
 use strands_agents::types::{Message, ToolUse};
 use strands_agents::Agent;
 use tokio_util::sync::CancellationToken;
@@ -96,9 +96,7 @@ async fn re_surfaces_the_list_as_a_reminder_when_todos_are_present() {
         .build()
         .await
         .expect("agent builds");
-    agent
-        .state()
-        .set("todos", serde_json::to_value(items()).unwrap());
+    agent.state().set("todos", serde_json::to_value(items()).unwrap());
     agent.invoke("hi").await.expect("invoke");
     let (messages, _) = model.calls().remove(0);
     let text = messages.iter().map(Message::text).collect::<Vec<_>>().join("\n");
@@ -156,8 +154,5 @@ async fn registers_a_context_injector_on_init_agent() {
         .build()
         .await
         .expect("agent builds");
-    assert!(agent
-        .tools()
-        .iter()
-        .any(|t| t.name() == "todo_write"));
+    assert!(agent.tools().iter().any(|t| t.name() == "todo_write"));
 }

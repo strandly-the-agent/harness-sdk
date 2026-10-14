@@ -12,10 +12,10 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::Arc;
 use strands_agents::plugins::vended::{ContextInjector, InjectionContext, InjectionTrigger};
 use strands_agents::plugins::Plugin;
 use strands_agents::tools::{function_tool, ToolRef};
-use std::sync::Arc;
 use strands_agents::{Agent, Result};
 
 const STATE_KEY: &str = "todos";
@@ -181,22 +181,16 @@ impl Plugin for Todos {
             .handler(move |input, ctx| {
                 let state_key = state_key.clone();
                 async move {
-                    let todos: Vec<TodoItem> = serde_json::from_value(
-                        input.get("todos").cloned().unwrap_or(json!([])),
-                    )
-                    .map_err(|e| strands_agents::Error::ToolValidation(e.to_string()))?;
+                    let todos: Vec<TodoItem> =
+                        serde_json::from_value(input.get("todos").cloned().unwrap_or(json!([])))
+                            .map_err(|e| strands_agents::Error::ToolValidation(e.to_string()))?;
                     if todos.is_empty() {
                         ctx.agent.state().delete(&state_key);
                         return Ok("Todo list cleared".to_owned());
                     }
-                    let remaining = todos
-                        .iter()
-                        .filter(|t| t.status != TodoStatus::Completed)
-                        .count();
+                    let remaining = todos.iter().filter(|t| t.status != TodoStatus::Completed).count();
                     let rendered = render_list(&todos);
-                    ctx.agent
-                        .state()
-                        .set(state_key, serde_json::to_value(&todos)?);
+                    ctx.agent.state().set(state_key, serde_json::to_value(&todos)?);
                     Ok(format!("{remaining} todos remaining\n{rendered}"))
                 }
             });

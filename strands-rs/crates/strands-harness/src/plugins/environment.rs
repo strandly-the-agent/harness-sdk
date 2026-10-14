@@ -243,3 +243,7 @@ async fn discover(root: &Path) -> (Vec<String>, Vec<String>) {
     readmes.sort();
     (agents, readmes)
 }
+
+#[cfg(test)]
+#[path = "environment_tests.rs"]
+mod tests;

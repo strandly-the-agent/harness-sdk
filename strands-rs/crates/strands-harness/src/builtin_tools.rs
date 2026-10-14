@@ -376,10 +376,7 @@ pub fn select_builtin_tools(
 }
 
 /// The built-in plugins for `names`, skipping any already present in `existing`.
-pub fn select_builtin_plugins(
-    names: &[&str],
-    existing: &[Arc<dyn Plugin>],
-) -> Result<Vec<Arc<dyn Plugin>>> {
+pub fn select_builtin_plugins(names: &[&str], existing: &[Arc<dyn Plugin>]) -> Result<Vec<Arc<dyn Plugin>>> {
     let mut selected: Vec<Arc<dyn Plugin>> = Vec::new();
     for name in names {
         let built: Arc<dyn Plugin> = match *name {
@@ -401,3 +398,7 @@ pub fn select_builtin_plugins(
     }
     Ok(selected)
 }
+
+#[cfg(test)]
+#[path = "builtin_tools_tests.rs"]
+mod tests;
