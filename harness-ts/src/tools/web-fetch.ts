@@ -12,7 +12,7 @@
  * port into the core SDK later; keep it minimal and SDK-idiomatic.
  */
 
-import { randomUUID } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import { TextDecoder } from 'node:util'
 
 import { Agent, type Model, type Sandbox, tool, type Tool } from '@strands-agents/sdk'
@@ -25,23 +25,6 @@ const TIMEOUT_SECONDS = 30
 const MAX_BYTES = 5 * 1024 * 1024
 const MAX_CHARS = 50_000
 const CACHE_TTL_MS = 15 * 60 * 1000
-// Scratch directory inside the sandbox (never the host's): the shell writes there and `sandbox.readFile` reads
-// it back, so both must mean the same place. `/tmp` is that for every POSIX sandbox. Under Git Bash on Windows
-// the shell's `/tmp` is an MSYS mount the runtime cannot see, so the sandbox is asked once for the mixed-format
-// path (`C:/Users/.../Temp`) that both sides understand. The answer is cached per sandbox.
-const scratchDirs = new WeakMap<Sandbox, Promise<string>>()
-
-function scratchDir(sandbox: Sandbox): Promise<string> {
-  let dir = scratchDirs.get(sandbox)
-  if (!dir) {
-    dir = sandbox
-      .execute('cygpath -m /tmp 2>/dev/null', { timeout: 10 })
-      .then((result) => (result.exitCode === 0 && result.stdout.trim() ? result.stdout.trim() : '/tmp'))
-      .catch(() => '/tmp')
-    scratchDirs.set(sandbox, dir)
-  }
-  return dir
-}
 // The characters RFC 3986 allows anywhere in a URL; anything else (whitespace, quotes, control
 // characters, non-ASCII) is rejected before the URL reaches a shell or a socket.
 const URL_CHARS = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/
@@ -89,18 +72,18 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
-function curlCommand(url: string, output: string): string {
+function curlCommand(url: string): string {
   // -g keeps `{}`/`[]` in the URL literal; --proto/--proto-redir keep the request and any redirect on
   // http(s) (curl would otherwise follow a redirect to ftp://); --fail turns HTTP errors into a non-zero
-  // exit; -sS keeps curl's own error text on stderr. The body goes to a file (stdout is decoded text,
-  // which would lose the charset and split multi-byte characters) and is truncated in the sandbox before
-  // it is read back; stdout carries only the final hop's content type and URL.
-  const out = shellQuote(output)
-  const part = shellQuote(`${output}.part`)
+  // exit; -sS keeps curl's own error text on stderr. The body is spooled to a file the shell picks with
+  // mktemp (so the path only ever has to make sense inside the sandbox), truncated there, and returned over
+  // stdout as base64: ASCII survives the chunked stdout decoding that raw bytes would not, and the charset is
+  // applied once here. stdout is the final hop's content type and URL, then the base64 body.
   return (
+    `f=$(mktemp -t strands-web-fetch.XXXXXX) && ` +
     `curl -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time ${TIMEOUT_SECONDS} ` +
-    `-A ${shellQuote(USER_AGENT)} -o ${out} -w '%{content_type}\\n%{url_effective}' -- ${shellQuote(url)} ` +
-    `&& head -c ${MAX_BYTES} ${out} > ${part} && mv -f ${part} ${out}`
+    `-A ${shellQuote(USER_AGENT)} -o "$f" -w '%{content_type}\\n%{url_effective}\\n' -- ${shellQuote(url)} ` +
+    `&& head -c ${MAX_BYTES} "$f" | base64; s=$?; rm -f "$f"; exit $s`
   )
 }
 
@@ -123,26 +106,15 @@ function toText(data: Uint8Array, contentType: string, resolvedUrl: string, url:
 
 /** Fetch a validated `url` with `curl` inside `sandbox`; throws when curl fails. */
 async function fetchCurl(sandbox: Sandbox, url: string): Promise<Fetched> {
-  const output = `${await scratchDir(sandbox)}/strands-web-fetch-${randomUUID().replaceAll('-', '')}`
-  let contentType: string
-  let resolvedUrl: string
-  let data: Uint8Array
-  try {
-    const result = await sandbox.execute(curlCommand(url, output), { timeout: TIMEOUT_SECONDS + 5 })
-    if (result.exitCode !== 0) {
-      throw new Error(result.stderr.trim() || `curl exited with code ${result.exitCode}`)
-    }
-    // The trailer is the last two lines; the content-type line is empty when the header is absent.
-    const lines = result.stdout.replace(/\n+$/, '').split('\n')
-    resolvedUrl = (lines.pop() ?? '').trim()
-    contentType = (lines.pop() ?? '').trim()
-    data = await sandbox.readFile(output)
-  } finally {
-    await sandbox
-      .execute(`rm -f ${shellQuote(output)} ${shellQuote(`${output}.part`)}`, { timeout: 10 })
-      .catch(() => undefined)
+  const result = await sandbox.execute(curlCommand(url), { timeout: TIMEOUT_SECONDS + 5 })
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr.trim() || `curl exited with code ${result.exitCode}`)
   }
-  return toText(data, contentType, resolvedUrl, url)
+  // Two header lines (the content-type line is empty when the header is absent), then the base64 body,
+  // which base64(1) may wrap; whitespace is not part of the encoding.
+  const [contentType = '', resolvedUrl = '', ...body] = result.stdout.split('\n')
+  const data = new Uint8Array(Buffer.from(body.join('').replace(/\s+/g, ''), 'base64'))
+  return toText(data, contentType.trim(), resolvedUrl.trim(), url)
 }
 
 /** Fetch a validated `url` from the harness process with global `fetch` (bypasses the sandbox). */

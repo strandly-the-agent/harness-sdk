@@ -1,5 +1,4 @@
-import re
-import shlex
+import base64
 import shutil
 import threading
 import time
@@ -28,32 +27,24 @@ class _Sandbox:
 
     def __init__(self, body=b"", content_type="text/html", url="https://example.com/final", stderr="", exit_code=0):
         self.body = body
-        self.result = ExecutionResult(exit_code=exit_code, stdout=f"{content_type}\n{url}\n", stderr=stderr)
+        self.content_type = content_type
+        self.url = url
+        self.stderr = stderr
+        self.exit_code = exit_code
         self.commands = []
-        self.files = {}
-        # What the scratch-dir probe answers; ``None`` means "no cygpath here" (any POSIX sandbox).
-        self.cygpath = None
 
     async def execute(self, command, **kwargs):
-        if command.startswith("cygpath "):
-            if self.cygpath is None:
-                return ExecutionResult(exit_code=127, stdout="", stderr="")
-            return ExecutionResult(exit_code=0, stdout=f"{self.cygpath}\n", stderr="")
         self.commands.append(command)
-        if command.startswith("rm -f "):
-            for path in shlex.split(command)[2:]:
-                self.files.pop(path, None)
-            return ExecutionResult(exit_code=0, stdout="", stderr="")
-        if self.result.exit_code == 0:
-            self.files[re.search(r"-o (\S+)", command).group(1).strip("'")] = self.body
-        return self.result
-
-    async def read_file(self, path):
-        return self.files[path]
+        if self.exit_code != 0:
+            return ExecutionResult(exit_code=self.exit_code, stdout="", stderr=self.stderr)
+        # What the shell pipeline prints: the two trailer lines, then base64(1) output (wrapped at 76 columns).
+        encoded = base64.b64encode(self.body).decode()
+        wrapped = "\n".join(encoded[i : i + 76] for i in range(0, len(encoded), 76))
+        return ExecutionResult(exit_code=0, stdout=f"{self.content_type}\n{self.url}\n{wrapped}\n", stderr=self.stderr)
 
     @property
     def curl(self):
-        return next(c for c in self.commands if c.startswith("curl "))
+        return next(c for c in self.commands if c.startswith("f=$(mktemp") and "curl " in c)
 
 
 def _context(sandbox):
@@ -198,8 +189,10 @@ async def test_fetch_text_runs_curl_in_the_sandbox_and_reads_the_final_hop():
         " -- '",
     ):
         assert flag in command
-    # The body file is removed afterwards.
-    assert sandbox.commands[-1].startswith("rm -f ") and sandbox.files == {}
+    # One round-trip: the shell picks the scratch file, returns the body as base64, and removes the file itself.
+    assert len(sandbox.commands) == 1
+    assert command.startswith("f=$(mktemp -t strands-web-fetch.XXXXXX) && ")
+    assert command.endswith('| base64; s=$?; rm -f "$f"; exit $s')
 
 
 async def test_fetch_text_handles_a_missing_content_type():
@@ -210,8 +203,8 @@ async def test_fetch_text_handles_a_missing_content_type():
 
 
 async def test_fetch_text_truncates_the_body_in_the_sandbox():
-    command = web_fetch_module._curl_command("https://example.com", "/tmp/f")
-    assert f"&& head -c {web_fetch_module._MAX_BYTES} /tmp/f > /tmp/f.part && mv -f /tmp/f.part /tmp/f" in command
+    command = web_fetch_module._curl_command("https://example.com")
+    assert f'&& head -c {web_fetch_module._MAX_BYTES} "$f" | base64' in command
     assert "--max-filesize" not in command
 
 
@@ -237,21 +230,7 @@ async def test_fetch_text_surfaces_curl_errors_and_still_cleans_up():
     sandbox = _Sandbox(stderr="curl: (22) The requested URL returned error: 404\n", exit_code=22)
     with pytest.raises(RuntimeError, match=r"\(22\).*404"):
         await web_fetch_module._fetch_text(sandbox, "https://example.com/missing", "curl")
-    assert sandbox.commands[-1].startswith("rm -f ")
-
-
-async def test_fetch_text_asks_the_sandbox_for_a_scratch_dir_once_and_falls_back_to_tmp():
-    posix = _Sandbox(body=b"x", content_type="text/plain")
-    await web_fetch_module._fetch_text(posix, "https://example.com/a", "curl")
-    await web_fetch_module._fetch_text(posix, "https://example.com/b", "curl")
-    assert all("-o /tmp/strands-web-fetch-" in c for c in posix.commands if c.startswith("curl"))
-
-    # Git Bash: the shell's /tmp is an MSYS mount, so the probe returns a path both sh and Python can read.
-    git_bash = _Sandbox(body=b"x", content_type="text/plain")
-    git_bash.cygpath = "C:/Users/me/AppData/Local/Temp"
-    await web_fetch_module._fetch_text(git_bash, "https://example.com/c", "curl")
-    assert "-o C:/Users/me/AppData/Local/Temp/strands-web-fetch-" in git_bash.commands[0]
-    assert git_bash.files == {}
+    assert len(sandbox.commands) == 1
 
 
 @pytest.mark.skipif(shutil.which("curl") is None, reason="curl not installed")
@@ -305,8 +284,7 @@ async def test_fetch_text_end_to_end_through_the_local_environment():
         _, huge = await web_fetch_module._fetch_text(sandbox, f"{base}/huge", "curl")
         assert huge == "x" * web_fetch_module._MAX_CHARS
         assert await web_fetch_module._fetch_text(sandbox, f"{base}/notype", "curl") == (f"{base}/notype", "a < b")
-        scratch = (await sandbox.execute("cygpath -m /tmp 2>/dev/null")).stdout.strip() or "/tmp"
-        assert (await sandbox.execute(f"ls {shlex.quote(scratch)} | grep -c strands-web-fetch")).stdout.strip() == "0"
+        assert (await sandbox.execute('ls "${TMPDIR:-/tmp}" | grep -c strands-web-fetch')).stdout.strip() == "0"
         with pytest.raises(RuntimeError, match="404"):
             await web_fetch_module._fetch_text(sandbox, f"{base}/missing", "curl")
     finally:
