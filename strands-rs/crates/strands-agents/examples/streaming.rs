@@ -5,8 +5,8 @@
 use std::io::Write;
 
 use futures::StreamExt;
-use strands_agents::models::{BedrockModel, BedrockModelConfig, ContentBlockDelta, ModelStreamEvent};
-use strands_agents::{Agent, AgentStreamEvent};
+use strands_agents::models::{BedrockModel, BedrockModelConfig};
+use strands_agents::Agent;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,20 +15,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut stream = agent.stream("Write a haiku about Rust.");
     while let Some(event) = stream.next().await {
-        match event? {
-            AgentStreamEvent::ModelStreamUpdate(update) => {
-                if let ModelStreamEvent::ContentBlockDelta {
-                    delta: ContentBlockDelta::Text { text },
-                } = update.event
-                {
-                    print!("{text}");
-                    std::io::stdout().flush()?;
-                }
-            }
-            AgentStreamEvent::AgentResult(event) => {
-                println!("\nstop reason: {:?}", event.result.stop_reason);
-            }
-            _ => {}
+        let event = event?;
+        if let Some(text) = event.text_delta() {
+            print!("{text}");
+            std::io::stdout().flush()?;
+        }
+        if let Some(result) = event.result() {
+            println!("\nstop reason: {:?}", result.stop_reason);
         }
     }
 

@@ -70,3 +70,6 @@ installs the exporter).
 - Option/result structs that will grow are `#[non_exhaustive]` and built from `Default` plus
   `with_*` setters (`InvokeOptions::default().with_limits(Limits::default().with_turns(2))`);
   public enums that mirror a provider's wire format are `#[non_exhaustive]` too.
+- `AgentStreamEvent` carries accessor shortcuts (`text_delta`, `tool_use`, `tool_result`,
+  `result`) so the common streaming paths don't need a nested destructure; `Agent::stream_text`
+  is the text-only view. `ModelStopData.usage` exposes the call's token usage to after-model hooks.

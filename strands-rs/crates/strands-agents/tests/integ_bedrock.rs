@@ -506,7 +506,7 @@ struct Answer {
 #[ignore = "live Bedrock"]
 async fn returns_validated_structured_output() {
     let agent = Agent::builder().model(model(200).await).build().unwrap();
-    let answer: Answer = agent.invoke_structured("What is 2 + 2?").await.unwrap();
+    let answer: Answer = agent.structured_output("What is 2 + 2?").await.unwrap();
     assert_eq!(answer, Answer { answer: 4.0 });
 }
 
