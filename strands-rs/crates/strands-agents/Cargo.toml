@@ -12,7 +12,7 @@ authors.workspace = true
 workspace = true
 
 [features]
-default = ["anthropic", "bedrock", "macros", "mcp", "openai", "telemetry"]
+default = ["bedrock", "macros"]
 test-support = []
 macros = ["dep:strands-agents-macros"]
 telemetry = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
