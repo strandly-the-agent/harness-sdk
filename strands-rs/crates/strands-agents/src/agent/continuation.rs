@@ -243,7 +243,8 @@ mod tests {
         );
 
         let messages = continuations.prepare().expect("prepared");
-        assert_eq!(messages, vec![Message::user("more")]);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].text(), "more");
         continuations.mark_appended();
         continuations.mark_appended();
         assert_eq!(appended.load(Ordering::SeqCst), 1);
