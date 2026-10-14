@@ -3,16 +3,20 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Notify;
+use tokio::sync::{Notify, Semaphore};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{Agent, InvocationState};
 use crate::error::{Error, Result};
-use crate::hooks::events::{AfterInvocationEvent, BeforeInvocationEvent, InitializedEvent};
+use crate::hooks::events::{
+    AfterInvocationEvent, AfterToolCallEvent, BeforeInvocationEvent, InitializedEvent,
+};
 use crate::hooks::hook_order;
 use crate::tools::{FunctionTool, ToolContext, ToolRef};
 use crate::types::{
@@ -28,6 +32,10 @@ pub const BACKGROUND_PROPERTY: &str = "_background_execution";
 pub const MANAGE_TOOL_NAME: &str = "strands_manage_background_task";
 /// Largest delay accepted by [`assert_timer_delay`] (`2 ** 31 - 1` ms).
 pub const MAX_TIMER_DELAY_MS: i64 = i32::MAX as i64;
+/// `invocation_state` key holding the current loop pass id (dedup key for resubmitted tool uses).
+pub const BACKGROUND_TASK_PASS_ID_KEY: &str = "strands.backgroundTaskPassId";
+/// Default number of concurrently running task executions.
+pub const DEFAULT_MAX_CONCURRENCY: usize = 4;
 
 const COMPOSITE_SCHEMA_KEYS: [&str; 8] = ["$ref", "allOf", "anyOf", "oneOf", "not", "if", "then", "else"];
 const BACKGROUND_PROPERTY_DESCRIPTION: &str =
@@ -72,6 +80,10 @@ pub struct BackgroundTasksConfig {
     pub never: Vec<String>,
     /// Wait for outstanding tasks at the end of an invocation (default `true`).
     pub wait_for_completion: bool,
+    /// Task executions that may run concurrently; the rest stay `queued` (default `4`).
+    pub max_concurrency: usize,
+    /// Per-task timeout in milliseconds, or `None` to disable timeouts (default `None`).
+    pub timeout_ms: Option<i64>,
 }
 
 impl Default for BackgroundTasksConfig {
@@ -81,6 +93,8 @@ impl Default for BackgroundTasksConfig {
             always: Vec::new(),
             never: Vec::new(),
             wait_for_completion: true,
+            max_concurrency: DEFAULT_MAX_CONCURRENCY,
+            timeout_ms: None,
         }
     }
 }
@@ -112,6 +126,18 @@ impl BackgroundTasksConfig {
     /// Whether to await outstanding tasks before an invocation finishes.
     pub fn wait_for_completion(mut self, wait: bool) -> Self {
         self.wait_for_completion = wait;
+        self
+    }
+
+    /// Set how many task executions may run concurrently.
+    pub fn max_concurrency(mut self, max_concurrency: usize) -> Self {
+        self.max_concurrency = max_concurrency;
+        self
+    }
+
+    /// Set the per-task timeout in milliseconds.
+    pub fn timeout_ms(mut self, timeout_ms: i64) -> Self {
+        self.timeout_ms = Some(timeout_ms);
         self
     }
 }
@@ -374,6 +400,8 @@ fn status_label(status: BackgroundTaskStatus) -> &'static str {
 struct TaskRegistry {
     tasks: Mutex<BTreeMap<String, BackgroundTask>>,
     cancels: Mutex<HashMap<String, CancellationToken>>,
+    handles: Mutex<HashMap<String, JoinHandle<()>>>,
+    task_id_by_submission: Mutex<HashMap<(String, String), String>>,
     settled: Notify,
     next_id: Mutex<u64>,
 }
@@ -397,16 +425,37 @@ impl TaskRegistry {
         self.tasks.lock().insert(task.task_id.clone(), task);
     }
 
-    fn update(&self, task_id: &str, mutate: impl FnOnce(&mut BackgroundTask)) -> Option<BackgroundTask> {
+    /// Cancel and abort a task's execution (`controller.abort(reason)`).
+    fn abort(&self, task_id: &str) {
+        if let Some(cancel) = self.cancels.lock().remove(task_id) {
+            cancel.cancel();
+        }
+        if let Some(handle) = self.handles.lock().remove(task_id) {
+            handle.abort();
+        }
+    }
+
+    /// Apply `mutate`; `None` when the task is unknown or the mutator abandoned the update
+    /// (`_updateTask` bumps `lastUpdatedAt` and notifies only when a mutation applied).
+    fn update(
+        &self,
+        task_id: &str,
+        mutate: impl FnOnce(&mut BackgroundTask) -> bool,
+    ) -> Option<BackgroundTask> {
         let updated = {
             let mut tasks = self.tasks.lock();
             let task = tasks.get_mut(task_id)?;
-            mutate(task);
-            task.last_updated_at = now_ms();
-            task.clone()
+            let mut candidate = task.clone();
+            if !mutate(&mut candidate) {
+                return None;
+            }
+            candidate.last_updated_at = now_ms();
+            *task = candidate.clone();
+            candidate
         };
         if updated.status.is_terminal() {
             self.cancels.lock().remove(task_id);
+            self.handles.lock().remove(task_id);
         }
         self.settled.notify_waiters();
         Some(updated)
@@ -417,6 +466,9 @@ impl TaskRegistry {
         for id in task_ids {
             tasks.remove(id);
         }
+        self.task_id_by_submission
+            .lock()
+            .retain(|_, task_id| !task_ids.contains(task_id));
     }
 }
 
@@ -427,16 +479,28 @@ pub struct BackgroundTasks {
     config: BackgroundTasksConfig,
     policy: HashMap<String, Policy>,
     registry: Arc<TaskRegistry>,
+    permits: Arc<Semaphore>,
 }
 
 impl BackgroundTasks {
-    /// Build the plugin, validating the selector configuration.
+    /// Build the plugin, validating the selector configuration, concurrency and timeout.
     pub fn new(config: BackgroundTasksConfig) -> Result<Self> {
         let policy = resolve_policy(&config)?;
+        if config.max_concurrency == 0 {
+            return Err(Error::other(format!(
+                "maxConcurrency must be a positive finite integer, got {}",
+                config.max_concurrency
+            )));
+        }
+        if let Some(timeout) = config.timeout_ms {
+            assert_timer_delay("timeout", timeout)?;
+        }
+        let permits = Arc::new(Semaphore::new(config.max_concurrency));
         Ok(Self {
             config,
             policy,
             registry: Arc::new(TaskRegistry::default()),
+            permits,
         })
     }
 
@@ -478,10 +542,7 @@ impl BackgroundTasks {
         if task.status.is_terminal() {
             return Ok(task);
         }
-        if let Some(cancel) = self.registry.cancels.lock().get(task_id) {
-            cancel.cancel();
-        }
-        Ok(self
+        let cancelled = self
             .registry
             .update(task_id, |task| {
                 task.status = BackgroundTaskStatus::Cancelled;
@@ -489,8 +550,11 @@ impl BackgroundTasks {
                     r#type: BackgroundTaskFailureType::ExecutionError,
                     message: "Background task cancelled".to_owned(),
                 });
+                true
             })
-            .unwrap_or(task))
+            .unwrap_or(task);
+        self.registry.abort(task_id);
+        Ok(cancelled)
     }
 
     /// Adds `_background_execution` to every `agentic` tool's schema (TS's input middleware).
@@ -571,12 +635,33 @@ impl BackgroundTasks {
         if agent.cancel_token().is_cancelled() {
             return ToolResultBlock::error(&tool_use.tool_use_id, "Tool execution cancelled");
         }
+        let submission = (
+            invocation_state
+                .get::<String>(BACKGROUND_TASK_PASS_ID_KEY)
+                .map(|id| (*id).clone())
+                .unwrap_or_default(),
+            tool_use.tool_use_id.clone(),
+        );
+        let deduped = self
+            .registry
+            .task_id_by_submission
+            .lock()
+            .get(&submission)
+            .cloned()
+            .and_then(|task_id| self.registry.get(&task_id));
+        if let Some(task) = deduped {
+            return ToolResultBlock::success(
+                &tool_use.tool_use_id,
+                vec![ToolResultContent::Text(dispatched_text(&task))],
+            );
+        }
+
         let now = now_ms();
         let task = BackgroundTask {
             task_id: self.registry.next_task_id(),
             tool_use_id: tool_use.tool_use_id.clone(),
             tool_name: tool_use.name.clone(),
-            status: BackgroundTaskStatus::Working,
+            status: BackgroundTaskStatus::Queued,
             created_at: now,
             last_updated_at: now,
             result: None,
@@ -588,38 +673,118 @@ impl BackgroundTasks {
             .cancels
             .lock()
             .insert(task.task_id.clone(), cancel.clone());
+        self.registry
+            .task_id_by_submission
+            .lock()
+            .insert(submission, task.task_id.clone());
         self.persist(agent);
 
         let registry = Arc::clone(&self.registry);
+        let permits = Arc::clone(&self.permits);
+        let timeout_ms = self.config.timeout_ms;
         let task_id = task.task_id.clone();
-        let context = ToolContext::new(tool_use.clone(), agent.clone(), invocation_state, cancel);
-        tokio::spawn(async move {
-            let outcome = tool.invoke(context).await;
-            registry.update(&task_id, |task| match outcome {
-                Ok(result) => {
-                    let failed = result.status == ToolResultStatus::Error;
-                    task.status = if failed {
-                        BackgroundTaskStatus::Failed
-                    } else {
-                        BackgroundTaskStatus::Completed
-                    };
-                    if failed {
-                        task.error = Some(BackgroundTaskFailure {
-                            r#type: BackgroundTaskFailureType::ToolError,
-                            message: result.text(),
-                        });
-                    }
-                    task.result = Some(result.content);
+        let hook_agent = agent.clone();
+        let hook_tool = Arc::clone(&tool);
+        let hook_tool_use = tool_use.clone();
+        let hook_state = invocation_state.clone();
+        let context = ToolContext::new(tool_use.clone(), agent.clone(), invocation_state, cancel.clone());
+        let handle = tokio::spawn(async move {
+            let Ok(_permit) = permits.acquire().await else {
+                return;
+            };
+            let started = registry.update(&task_id, |task| {
+                if task.status != BackgroundTaskStatus::Queued {
+                    return false;
                 }
-                Err(error) => {
-                    task.status = BackgroundTaskStatus::Failed;
-                    task.error = Some(BackgroundTaskFailure {
-                        r#type: BackgroundTaskFailureType::ExecutionError,
-                        message: error.to_string(),
-                    });
-                }
+                task.status = BackgroundTaskStatus::Working;
+                true
             });
+            if started.is_none() {
+                return;
+            }
+
+            let invoke = tool.invoke(context);
+            let outcome = match timeout_ms {
+                Some(ms) => match tokio::time::timeout(Duration::from_millis(ms as u64), invoke).await {
+                    Ok(outcome) => outcome,
+                    Err(_) => {
+                        let timed_out = registry.update(&task_id, |task| {
+                            if task.status != BackgroundTaskStatus::Working {
+                                return false;
+                            }
+                            task.status = BackgroundTaskStatus::Failed;
+                            task.error = Some(BackgroundTaskFailure {
+                                r#type: BackgroundTaskFailureType::Timeout,
+                                message: format!("Timed out after {ms}ms"),
+                            });
+                            true
+                        });
+                        if timed_out.is_some() {
+                            cancel.cancel();
+                        }
+                        return;
+                    }
+                },
+                None => invoke.await,
+            };
+
+            let (result, error) = match outcome {
+                Ok(result) => (result, None),
+                Err(error) => (
+                    ToolResultBlock::error(&hook_tool_use.tool_use_id, error.to_string()),
+                    Some(Arc::new(error)),
+                ),
+            };
+            let committed = {
+                let result = result.clone();
+                let error = error.clone();
+                registry.update(&task_id, |task| {
+                    if task.status != BackgroundTaskStatus::Working {
+                        return false;
+                    }
+                    match error {
+                        None => {
+                            let failed = result.status == ToolResultStatus::Error;
+                            task.status = if failed {
+                                BackgroundTaskStatus::Failed
+                            } else {
+                                BackgroundTaskStatus::Completed
+                            };
+                            if failed {
+                                task.error = Some(BackgroundTaskFailure {
+                                    r#type: BackgroundTaskFailureType::ToolError,
+                                    message: result.text(),
+                                });
+                            }
+                            task.result = Some(result.content);
+                        }
+                        Some(error) => {
+                            task.status = BackgroundTaskStatus::Failed;
+                            task.error = Some(BackgroundTaskFailure {
+                                r#type: BackgroundTaskFailureType::ExecutionError,
+                                message: error.to_string(),
+                            });
+                        }
+                    }
+                    true
+                })
+            };
+            if committed.is_none() {
+                return;
+            }
+
+            let mut after = AfterToolCallEvent {
+                agent: hook_agent.clone(),
+                tool_use: hook_tool_use,
+                tool: Some(hook_tool),
+                result,
+                error,
+                invocation_state: hook_state,
+                retry: false,
+            };
+            let _ = hook_agent.hooks().invoke_callbacks(&mut after).await;
         });
+        self.registry.handles.lock().insert(task.task_id.clone(), handle);
 
         ToolResultBlock::success(
             &tool_use.tool_use_id,
@@ -741,8 +906,6 @@ impl TaskRegistry {
 impl BackgroundTasks {
     fn manage_tool(&self) -> ToolRef {
         let registry = Arc::clone(&self.registry);
-        let cancels = Arc::clone(&self.registry);
-        let _ = &cancels;
         Arc::new(
             FunctionTool::builder(MANAGE_TOOL_NAME)
                 .description(
@@ -809,9 +972,6 @@ fn manage(registry: &Arc<TaskRegistry>, input: JsonValue) -> Result<JsonValue> {
                     serde_json::json!({ "taskId": task.task_id, "status": status_label(task.status) }),
                 );
             }
-            if let Some(cancel) = registry.cancels.lock().get(task_id) {
-                cancel.cancel();
-            }
             let task = registry
                 .update(task_id, |task| {
                     task.status = BackgroundTaskStatus::Cancelled;
@@ -819,8 +979,10 @@ fn manage(registry: &Arc<TaskRegistry>, input: JsonValue) -> Result<JsonValue> {
                         r#type: BackgroundTaskFailureType::ExecutionError,
                         message: "Background task cancelled".to_owned(),
                     });
+                    true
                 })
                 .unwrap_or(task);
+            registry.abort(task_id);
             Ok(serde_json::json!({ "taskId": task.task_id, "status": status_label(task.status) }))
         }
         other => Err(Error::other(format!("Unknown mode '{other}'"))),

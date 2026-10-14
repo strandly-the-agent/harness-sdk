@@ -1333,6 +1333,10 @@ async fn execute_tools(
     tx: &Sink,
     restored: &HashMap<String, ToolResultBlock>,
 ) -> Result<ToolsOutcome> {
+    state.insert(
+        crate::background_tasks::BACKGROUND_TASK_PASS_ID_KEY,
+        uuid::Uuid::new_v4().to_string(),
+    );
     let before = match emit(
         agent,
         tx,
