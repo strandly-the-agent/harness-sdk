@@ -113,9 +113,7 @@ impl SnapshotField {
 
     fn capture(self, agent: &Agent) -> JsonValue {
         match self {
-            SnapshotField::Messages => {
-                serde_json::to_value(agent.messages()).unwrap_or(Value::Null)
-            }
+            SnapshotField::Messages => serde_json::to_value(agent.messages()).unwrap_or(Value::Null),
             SnapshotField::State => agent.state().to_json(),
             SnapshotField::SystemPrompt => match agent.system_prompt() {
                 Some(prompt) => serde_json::to_value(prompt).unwrap_or(Value::Null),
@@ -202,13 +200,7 @@ mod tests {
         assert_eq!(SNAPSHOT_SCHEMA_VERSION, "1.0");
         assert_eq!(
             ALL_SNAPSHOT_FIELDS.map(SnapshotField::key),
-            [
-                "messages",
-                "state",
-                "systemPrompt",
-                "modelState",
-                "interrupts"
-            ]
+            ["messages", "state", "systemPrompt", "modelState", "interrupts"]
         );
     }
 
@@ -281,8 +273,7 @@ mod tests {
     fn excludes_specified_fields() {
         let agent = test_agent_for_session("a");
 
-        let snapshot =
-            agent.take_snapshot(TakeSnapshotOptions::default().exclude(SnapshotField::Messages));
+        let snapshot = agent.take_snapshot(TakeSnapshotOptions::default().exclude(SnapshotField::Messages));
 
         assert!(!snapshot.data.contains_key("messages"));
         assert!(snapshot.data.contains_key("state"));

@@ -544,7 +544,10 @@ async fn run_cycles_inner(
     structured: bool,
 ) -> Result<AgentResult> {
     let resume = super::checkpoint::resume_checkpoint(agent, &input)?;
-    let mut cycle_index = resume.as_ref().map(super::checkpoint::resume_cycle_index).unwrap_or(0);
+    let mut cycle_index = resume
+        .as_ref()
+        .map(super::checkpoint::resume_cycle_index)
+        .unwrap_or(0);
     let mut resume_position = resume.map(|checkpoint| checkpoint.position);
     let mut pending_input = Some(input);
     let mut usage = Usage::default();

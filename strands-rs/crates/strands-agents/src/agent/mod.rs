@@ -25,8 +25,7 @@ use crate::types::{ContentBlock, Message, Role, SystemPrompt};
 
 pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
 pub use checkpoint::{
-    Checkpoint, CheckpointData, CheckpointPosition, CheckpointResumeContent,
-    CHECKPOINT_SCHEMA_VERSION,
+    Checkpoint, CheckpointData, CheckpointPosition, CheckpointResumeContent, CHECKPOINT_SCHEMA_VERSION,
 };
 pub use event_loop::{
     AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE,
@@ -34,9 +33,7 @@ pub use event_loop::{
 };
 pub use invocation_state::InvocationState;
 pub use result::AgentResult;
-pub use snapshot::{
-    SnapshotField, SnapshotPreset, TakeSnapshotOptions, ALL_SNAPSHOT_FIELDS,
-};
+pub use snapshot::{SnapshotField, SnapshotPreset, TakeSnapshotOptions, ALL_SNAPSHOT_FIELDS};
 pub use tool_caller::{CallOptions, ToolHandle, DIRECT_CALL_DURING_INVOCATION_MESSAGE};
 
 /// Input accepted by `invoke`/`stream`: text, content blocks, or whole messages.

@@ -234,17 +234,14 @@ mod tests {
     #[test]
     fn defaults_cycle_index_to_0() {
         let checkpoint =
-            Checkpoint::from_json(json!({ "position": "afterModel", "schemaVersion": "1.0" }))
-                .unwrap();
+            Checkpoint::from_json(json!({ "position": "afterModel", "schemaVersion": "1.0" })).unwrap();
         assert_eq!(checkpoint.cycle_index, 0);
     }
 
     #[test]
     fn errors_on_schema_version_mismatch() {
-        let error = Checkpoint::from_json(
-            json!({ "position": "afterModel", "schemaVersion": "9.9" }),
-        )
-        .unwrap_err();
+        let error =
+            Checkpoint::from_json(json!({ "position": "afterModel", "schemaVersion": "9.9" })).unwrap_err();
         assert_eq!(
             error.to_string(),
             "Checkpoints with schema version \"9.9\" are not compatible with current version 1.0."
