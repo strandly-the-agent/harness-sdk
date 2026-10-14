@@ -430,3 +430,383 @@ impl Plugin for ContextManager {
         vec![tool]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::test_agent_with;
+    use crate::conversation_manager::test_support::{after_model_call, before_model_call, model, overflow};
+    use crate::storage::InMemoryStorage;
+    use crate::types::{ContentBlock, ToolResultBlock, ToolResultContent};
+    use std::sync::atomic::AtomicUsize;
+
+    /// Records the order in which it ran and what `ctx.overflow` it saw.
+    struct Recorder {
+        name: &'static str,
+        acted: bool,
+        fails: bool,
+        log: Arc<Mutex<Vec<(String, bool)>>>,
+    }
+
+    #[async_trait]
+    impl ContextStrategy for Recorder {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        async fn apply(&self, ctx: &mut ContextState<'_>) -> Result<bool> {
+            self.log.lock().push((self.name.to_owned(), ctx.overflow));
+            if self.fails {
+                return Err(Error::other("strategy boom"));
+            }
+            if self.acted {
+                ctx.messages.push(Message::user("added by strategy"));
+            }
+            Ok(self.acted)
+        }
+    }
+
+    fn recorder(
+        name: &'static str,
+        acted: bool,
+        fails: bool,
+        log: &Arc<Mutex<Vec<(String, bool)>>>,
+    ) -> Arc<dyn ContextStrategy> {
+        Arc::new(Recorder {
+            name,
+            acted,
+            fails,
+            log: Arc::clone(log),
+        })
+    }
+
+    fn manager_with(strategies: Vec<Arc<dyn ContextStrategy>>) -> ContextManager {
+        ContextManager::new(Some(ContextManagerConfig {
+            strategies: Some(strategies),
+            stash: StashOption::Disabled,
+        }))
+    }
+
+    fn big_tool_result(tool_use_id: &str, chars: usize) -> Message {
+        Message::new(
+            crate::types::Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock::success(
+                tool_use_id,
+                vec![ToolResultContent::Text("x".repeat(chars))],
+            ))],
+        )
+    }
+
+    // --- from() resolution (cm1 §3.2, all six cases) ---------------------------------------
+
+    #[test]
+    fn from_off_returns_none() {
+        assert!(ContextManager::from(ContextManagerOption::Off).is_none());
+    }
+
+    #[test]
+    fn from_instance_is_passed_through() {
+        let instance = Arc::new(ContextManager::new(None));
+        let resolved = ContextManager::from(ContextManagerOption::Instance(Arc::clone(&instance)))
+            .expect("instance resolves");
+        assert!(Arc::ptr_eq(&instance, &resolved));
+    }
+
+    #[test]
+    fn from_auto_builds_the_default_pipeline() {
+        let manager = ContextManager::from(ContextManagerOption::Auto).expect("auto resolves");
+        assert_eq!(
+            manager.strategy_names(),
+            vec![
+                "offload:truncate",
+                "offload:summarize",
+                "offload:emergency-truncate"
+            ]
+        );
+        assert!(manager.inner.enable_retrieval_tool);
+    }
+
+    #[test]
+    fn from_agentic_builds_the_higher_threshold_pipeline() {
+        let manager = ContextManager::from(ContextManagerOption::Agentic).expect("agentic resolves");
+        assert_eq!(
+            manager.strategy_names(),
+            vec![
+                "offload:truncate",
+                "offload:summarize",
+                "offload:emergency-truncate"
+            ]
+        );
+    }
+
+    #[test]
+    fn from_config_keeps_custom_strategies_and_appends_emergency() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = ContextManager::from(ContextManagerOption::Config(ContextManagerConfig {
+            strategies: Some(vec![recorder("custom", false, false, &log)]),
+            stash: StashOption::Disabled,
+        }))
+        .expect("config resolves");
+        assert_eq!(
+            manager.strategy_names(),
+            vec!["custom", "offload:emergency-truncate"]
+        );
+    }
+
+    #[test]
+    fn unknown_preset_string_is_a_verbatim_error() {
+        let Err(error) = "atuo".parse::<ContextManagerOption>() else {
+            panic!("unknown preset must fail");
+        };
+        assert_eq!(
+            error.to_string(),
+            "Unknown contextManager preset: \"atuo\". Valid presets: \"auto\", \"agentic\""
+        );
+    }
+
+    #[test]
+    fn plugin_name_matches_ts() {
+        assert_eq!(
+            Plugin::name(&ContextManager::new(None)),
+            "strands:context-manager"
+        );
+    }
+
+    // --- init_agent -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn init_agent_registers_the_three_hooks_and_inits_strategies() {
+        struct InitSpy(Arc<AtomicUsize>);
+        #[async_trait]
+        impl ContextStrategy for InitSpy {
+            fn name(&self) -> &str {
+                "init-spy"
+            }
+            fn init(&self, _agent: &Agent, _stash: Option<Arc<Stash>>) {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+            async fn apply(&self, _ctx: &mut ContextState<'_>) -> Result<bool> {
+                Ok(false)
+            }
+        }
+
+        let inits = Arc::new(AtomicUsize::new(0));
+        let manager = ContextManager::new(Some(ContextManagerConfig {
+            strategies: Some(vec![Arc::new(InitSpy(Arc::clone(&inits)))]),
+            stash: StashOption::Enabled,
+        }));
+        let agent = test_agent_with("cm-agent", None, Vec::new());
+        manager.init_agent(&agent).await.unwrap();
+
+        assert_eq!(agent.hooks().count::<AfterModelCallEvent>(), 1);
+        assert_eq!(agent.hooks().count::<BeforeModelCallEvent>(), 1);
+        assert_eq!(agent.hooks().count::<MessageAddedEvent>(), 1);
+        assert_eq!(inits.load(Ordering::Relaxed), 1);
+        assert!(manager.stash().is_some());
+        assert!(!manager.stash_is_durable());
+    }
+
+    #[tokio::test]
+    async fn stash_disabled_means_no_stash_and_no_tool() {
+        let manager = manager_with(Vec::new());
+        let agent = test_agent_with("cm-agent", None, Vec::new());
+        manager.init_agent(&agent).await.unwrap();
+        assert!(manager.stash().is_none());
+        assert!(manager.tools().is_empty());
+        assert_eq!(agent.hooks().count::<MessageAddedEvent>(), 0);
+    }
+
+    #[tokio::test]
+    async fn registers_retrieval_tool_after_init() {
+        let manager = ContextManager::new(None);
+        let agent = test_agent_with("cm-agent", None, Vec::new());
+        assert!(manager.tools().is_empty(), "no tool before init");
+        manager.init_agent(&agent).await.unwrap();
+        let tools = manager.tools();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name(), retrieval_tool::RETRIEVAL_TOOL_NAME);
+    }
+
+    #[tokio::test]
+    async fn backfills_stash_from_pre_existing_messages() {
+        let manager = ContextManager::new(None);
+        let agent = test_agent_with("cm-agent", None, vec![big_tool_result("tool-1", 32)]);
+        manager.init_agent(&agent).await.unwrap();
+        let stash = manager.stash().expect("stash");
+        assert_eq!(stash.retrieve("tool-1_0").await.is_some(), true);
+    }
+
+    // --- _runStrategies -------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn run_strategies_runs_in_order_and_reports_acted() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![
+            recorder("first", false, false, &log),
+            recorder("second", true, false, &log),
+        ]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        let acted = manager.run_strategies(&agent, Some(10), false).await.unwrap();
+
+        assert!(acted);
+        let names: Vec<String> = log.lock().iter().map(|(name, _)| name.clone()).collect();
+        assert_eq!(names, vec!["first", "second"]);
+        assert_eq!(
+            manager.strategy_names().last(),
+            Some(&"offload:emergency-truncate"),
+            "emergency truncate always runs last"
+        );
+        assert_eq!(agent.messages().len(), 2, "mutated messages are written back");
+    }
+
+    #[tokio::test]
+    async fn run_strategies_swallows_strategy_errors() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![
+            recorder("boom", false, true, &log),
+            recorder("after", false, false, &log),
+        ]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        let acted = manager.run_strategies(&agent, Some(10), false).await.unwrap();
+
+        assert!(!acted);
+        let names: Vec<String> = log.lock().iter().map(|(name, _)| name.clone()).collect();
+        assert_eq!(
+            names,
+            vec!["boom", "after"],
+            "a failing strategy does not abort the pipeline"
+        );
+    }
+
+    #[tokio::test]
+    async fn emergency_truncate_sees_overflow_cleared_once_a_strategy_acted() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![recorder("acted", true, false, &log)]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        manager.run_strategies(&agent, Some(10), true).await.unwrap();
+
+        let seen = log.lock().clone();
+        assert_eq!(seen, vec![("acted".to_owned(), true)]);
+    }
+
+    #[tokio::test]
+    async fn before_model_call_hook_runs_strategies_with_projected_tokens() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![recorder("probe", false, false, &log)]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        manager.init_agent(&agent).await.unwrap();
+
+        let mut event = before_model_call(&agent, model(Some(1000)), Some(500));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+        assert_eq!(log.lock().len(), 1, "the hook ran the pipeline once");
+    }
+
+    // --- overflow recovery ----------------------------------------------------------------
+
+    #[tokio::test]
+    async fn overflow_runs_strategies_and_sets_retry() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![recorder("acted", true, false, &log)]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        manager.init_agent(&agent).await.unwrap();
+
+        let mut event = after_model_call(&agent, Some(overflow()));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+        assert!(event.retry);
+        assert_eq!(log.lock()[0], ("acted".to_owned(), true));
+    }
+
+    #[tokio::test]
+    async fn non_overflow_error_does_not_run_strategies() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![recorder("probe", true, false, &log)]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        manager.init_agent(&agent).await.unwrap();
+
+        let error = Arc::new(Error::other("some other error"));
+        let mut event = after_model_call(&agent, Some(error));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+        assert!(!event.retry);
+        assert!(log.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn no_retry_when_no_strategy_made_progress() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![recorder("idle", false, false, &log)]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        manager.init_agent(&agent).await.unwrap();
+
+        let mut event = after_model_call(&agent, Some(overflow()));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+        assert!(!event.retry);
+    }
+
+    #[tokio::test]
+    async fn caps_overflow_retries_at_three_then_resets() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![recorder("acted", true, false, &log)]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        manager.init_agent(&agent).await.unwrap();
+
+        for attempt in 1..=3 {
+            let mut event = after_model_call(&agent, Some(overflow()));
+            agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+            assert!(event.retry, "attempt {attempt} must retry");
+        }
+        let mut event = after_model_call(&agent, Some(overflow()));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+        assert!(!event.retry, "fourth overflow gives up");
+
+        // Counter was reset when it gave up, so the next overflow retries again.
+        let mut event = after_model_call(&agent, Some(overflow()));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+        assert!(event.retry);
+    }
+
+    #[tokio::test]
+    async fn successful_model_call_resets_the_retry_counter() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let manager = manager_with(vec![recorder("acted", true, false, &log)]);
+        let agent = test_agent_with("cm-agent", None, vec![Message::user("hello")]);
+        manager.init_agent(&agent).await.unwrap();
+
+        for _ in 0..3 {
+            let mut event = after_model_call(&agent, Some(overflow()));
+            agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+        }
+        let mut ok = after_model_call(&agent, None);
+        agent.hooks().invoke_callbacks(&mut ok).await.unwrap();
+
+        let mut event = after_model_call(&agent, Some(overflow()));
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+        assert!(event.retry, "counter reset by the successful call");
+    }
+
+    // --- stash root (cm2b) ----------------------------------------------------------------
+
+    #[tokio::test]
+    async fn explicit_storage_is_used_as_the_exact_root() {
+        let storage: StorageRef = Arc::new(InMemoryStorage::new());
+        let manager = ContextManager::new(Some(ContextManagerConfig {
+            strategies: Some(Vec::new()),
+            stash: StashOption::Config(StashConfig {
+                storage: Some(Arc::clone(&storage)),
+                retrieval_tool: true,
+            }),
+        }));
+        let agent = test_agent_with("cm-agent", None, Vec::new());
+        manager.init_agent(&agent).await.unwrap();
+        let stash = manager.stash().expect("stash");
+        stash
+            .store("tool-1", 0, &serde_json::json!("hello"))
+            .await
+            .unwrap();
+
+        let keys = storage.list("").await.unwrap();
+        assert!(
+            keys.iter().any(|key| key.contains("tool-1_0")),
+            "key written under the explicit root: {keys:?}"
+        );
+    }
+}
