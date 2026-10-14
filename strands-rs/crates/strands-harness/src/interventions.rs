@@ -148,7 +148,9 @@ mod tests {
     fn resolves_no_interventions_by_default() {
         assert!(resolve(&InterventionsOption::default()).unwrap().is_empty());
         assert!(resolve(&InterventionsOption::Values(vec![])).unwrap().is_empty());
-        assert!(resolve(&InterventionsOption::presets(["off"])).unwrap().is_empty());
+        assert!(resolve(&InterventionsOption::presets(["off"]))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

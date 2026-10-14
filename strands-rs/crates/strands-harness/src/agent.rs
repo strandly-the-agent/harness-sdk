@@ -7,13 +7,13 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use strands_agents::background_tasks::BackgroundTasksConfig;
 use strands_agents::context_manager::ContextManagerOption;
+use strands_agents::mcp::{ListOptions, LoadOptions, McpClient, McpServerConfig};
 use strands_agents::memory::{MemoryManager, MemoryStoreRef};
 use strands_agents::models::Model;
 use strands_agents::plugins::vended::{AgentSkills, SkillSource};
 use strands_agents::plugins::Plugin;
+use strands_agents::sandbox::SandboxRef;
 use strands_agents::session::{FileStorage, SaveLatestStrategy, SessionManager, SessionManagerOptions};
-use strands_agents::mcp::{ListOptions, LoadOptions, McpClient, McpServerConfig};
-use strands_agents::sandbox::{LocalSandbox, SandboxRef};
 use strands_agents::storage::LocalFileStorage;
 use strands_agents::telemetry::AttrValue;
 use strands_agents::tools::ToolRef;
@@ -76,7 +76,7 @@ pub enum McpServersOption {
 /// The `sandbox` option.
 #[derive(Clone, Default)]
 pub enum SandboxOption {
-    /// Leave the SDK's default slot in place (a [`LocalSandbox`]) — the default.
+    /// Leave the SDK's default slot in place (a `LocalSandbox`) — the default.
     #[default]
     Default,
     /// No sandbox: no sandbox-vended tools are registered.
@@ -189,7 +189,7 @@ pub struct HarnessAgentOptions {
     pub interventions: InterventionsOption,
     /// How intervention presets collect approval. `None` leaves them in interrupt/resume mode.
     pub interventions_ask: Option<strands_agents::interventions::vended::hitl::AskFn>,
-    /// Where the agent runs commands and file operations. Defaults to the SDK's [`LocalSandbox`].
+    /// Where the agent runs commands and file operations. Defaults to the SDK's `LocalSandbox`.
     pub sandbox: SandboxOption,
     /// Custom attributes merged onto every span this agent emits.
     pub trace_attributes: Vec<(String, AttrValue)>,
@@ -359,12 +359,7 @@ async fn load_mcp_tools(option: Option<&McpServersOption>) -> Result<Vec<ToolRef
     load.continue_on_error = true;
     let mut list = ListOptions::default();
     list.prefix_with_server_name = true;
-    let clients = McpClient::load_servers(
-        source,
-        load,
-        list,
-    )
-    .await?;
+    let clients = McpClient::load_servers(source, load, list).await?;
     let mut tools = Vec::new();
     for client in &clients {
         tools.extend(client.list_tools().await?);
@@ -376,7 +371,11 @@ async fn load_mcp_tools(option: Option<&McpServersOption>) -> Result<Vec<ToolRef
 ///
 /// The SDK registers sandbox tools during `build`, so this runs after.
 fn drop_sandbox_tools(agent: &Agent, sandbox: &SandboxRef) {
-    let names: Vec<String> = sandbox.tools().iter().map(|tool| tool.name().to_string()).collect();
+    let names: Vec<String> = sandbox
+        .tools()
+        .iter()
+        .map(|tool| tool.name().to_string())
+        .collect();
     agent.with_tool_registry(|registry| {
         for name in &names {
             registry.remove(name);
@@ -728,6 +727,7 @@ fn setting_value(setting: &BuiltinToolSetting) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strands_agents::sandbox::LocalSandbox;
     use strands_agents::test_support::MockMessageModel;
     use strands_agents::tools::FunctionTool;
 
@@ -889,9 +889,11 @@ mod tests {
     #[tokio::test]
     async fn skips_a_disabled_mcp_server() {
         let mut servers = indexmap::IndexMap::new();
-        let mut config = McpServerConfig::default();
-        config.command = Some("does-not-exist".to_string());
-        config.disabled = true;
+        let config = McpServerConfig {
+            command: Some("does-not-exist".to_string()),
+            disabled: true,
+            ..Default::default()
+        };
         servers.insert("echo".to_string(), config);
         let option = McpServersOption::Servers(servers);
         assert!(load_mcp_tools(Some(&option)).await.unwrap().is_empty());
@@ -914,7 +916,11 @@ mod tests {
         let agent = create_harness(opts).await.unwrap();
         let names: Vec<String> = agent.tools().iter().map(|t| t.name().to_string()).collect();
         for name in &vended {
-            assert_eq!(names.iter().filter(|n| *n == name).count(), 0, "{name} in {names:?}");
+            assert_eq!(
+                names.iter().filter(|n| *n == name).count(),
+                0,
+                "{name} in {names:?}"
+            );
         }
     }
 

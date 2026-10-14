@@ -207,3 +207,52 @@ async fn persists_memory_across_agents() {
         result.text()
     );
 }
+
+/// A scripted `ask` that denies every approval request: the model must report the denial instead of
+/// running the shell tool.
+#[tokio::test]
+#[ignore = "live Bedrock"]
+async fn interventions_deny_the_shell_tool() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use strands_agents::interventions::vended::hitl::AskFn;
+    use strands_agents::types::JsonValue;
+    use strands_harness::InterventionsOption;
+
+    let dir = tempfile::tempdir().unwrap();
+    let asked = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&asked);
+    let ask: AskFn = Arc::new(move |_prompt: String| {
+        let seen = Arc::clone(&seen);
+        Box::pin(async move {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(JsonValue::String("n".to_string()))
+        })
+    });
+
+    let agent = create_harness(HarnessAgentOptions {
+        interventions: InterventionsOption::presets(["ask"]),
+        interventions_ask: Some(ask),
+        ..base(dir.path())
+    })
+    .await
+    .unwrap();
+
+    let result = agent
+        .invoke(format!(
+            "{TESTING} Run the shell command `echo hello` with the shell tool, then tell me what happened."
+        ))
+        .await
+        .unwrap();
+
+    assert!(
+        asked.load(Ordering::SeqCst) > 0,
+        "the ask callback should have run"
+    );
+    let text = result.text().to_lowercase();
+    assert!(
+        text.contains("denied") || text.contains("deny") || text.contains("not approved"),
+        "{}",
+        result.text()
+    );
+}

@@ -16,27 +16,27 @@ pub mod telemetry;
 pub mod tools;
 
 pub use agent::{
-    create_harness, BackgroundTasksOption, CachingOption, HarnessAgentOptions, MemoryConfig, MemoryOption,
-    McpServersOption, SandboxOption, SessionConfig, SessionOption, SkillsOption,
+    create_harness, BackgroundTasksOption, CachingOption, HarnessAgentOptions, McpServersOption,
+    MemoryConfig, MemoryOption, SandboxOption, SessionConfig, SessionOption, SkillsOption,
 };
 pub use builtin_tools::{
     BuiltinPluginName, BuiltinToolName, BuiltinToolSetting, BuiltinToolsConfig, WebSearchMode,
     BUILTIN_PLUGIN_NAMES, BUILTIN_TOOL_NAMES,
 };
 pub use interventions::{InterventionValue, InterventionsOption};
-pub use telemetry::{reset_telemetry, setup_telemetry, TRACES_EXPORTER_ENV_VAR};
 pub use memory::{resolve_memory, ResolveMemoryOptions};
 pub use models::{resolve_model, Effort, ModelOption, ResolveModelOptions};
 pub use plugins::{EnvironmentContext, EnvironmentContextConfig, Todos, TodosConfig};
 pub use prompt::{build_system_prompt, HARNESS_CONTRACT};
+pub use telemetry::{reset_telemetry, setup_telemetry, TRACES_EXPORTER_ENV_VAR};
 
 /// The harness in one `use`: [`create_harness`], its options, and the model sugar.
 ///
 /// Resolvers and the individual tools stay in their modules ([`builtin_tools`], [`tools`]).
 pub mod prelude {
     pub use crate::agent::{
-        create_harness, BackgroundTasksOption, CachingOption, HarnessAgentOptions, MemoryConfig,
-        McpServersOption, MemoryOption, SandboxOption, SessionConfig, SessionOption, SkillsOption,
+        create_harness, BackgroundTasksOption, CachingOption, HarnessAgentOptions, McpServersOption,
+        MemoryConfig, MemoryOption, SandboxOption, SessionConfig, SessionOption, SkillsOption,
     };
     pub use crate::builtin_tools::{
         BuiltinPluginName, BuiltinToolName, BuiltinToolSetting, BuiltinToolsConfig,
