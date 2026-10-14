@@ -862,7 +862,11 @@ async fn stream_from_model(
     let mut stream = model.stream_aggregated(&messages, options);
     let mut aggregated = None;
 
-    while let Some(item) = stream.next().await {
+    while let Some(item) = tokio::select! {
+        biased;
+        () = cancel.cancelled() => return Err(Error::Cancelled),
+        item = stream.next() => item,
+    } {
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
