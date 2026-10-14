@@ -1,5 +1,6 @@
 //! The `Agent` handle, its builder, and the event loop.
 
+mod agent_as_tool;
 mod builder;
 mod checkpoint;
 mod continuation;
@@ -25,6 +26,7 @@ use crate::state_store::StateStore;
 use crate::tools::{ToolExecutor, ToolRef, ToolRegistry};
 use crate::types::{ContentBlock, InterruptResponseContent, Message, Role, SystemPrompt};
 
+pub use agent_as_tool::AgentAsToolOptions;
 pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
 pub use checkpoint::{
     Checkpoint, CheckpointData, CheckpointPosition, CheckpointResumeContent, CHECKPOINT_SCHEMA_VERSION,
