@@ -174,14 +174,14 @@ async fn fires_lifecycle_hooks_in_order() {
     let seen = Arc::new(Mutex::new(Vec::new()));
 
     let recorder = Arc::clone(&seen);
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback::<BeforeInvocationEvent, _>(move |_| {
             recorder.lock().unwrap().push("before");
             Ok(())
         });
     let recorder = Arc::clone(&seen);
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback::<MessageAddedEvent, _>(move |event| {
             recorder
@@ -195,12 +195,12 @@ async fn fires_lifecycle_hooks_in_order() {
             Ok(())
         });
     let recorder = Arc::clone(&seen);
-    let _ = agent.hooks().add_sync_callback::<ModelMessageEvent, _>(move |_| {
+    agent.hooks().add_sync_callback::<ModelMessageEvent, _>(move |_| {
         recorder.lock().unwrap().push("model");
         Ok(())
     });
     let recorder = Arc::clone(&seen);
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback::<AfterInvocationEvent, _>(move |_| {
             recorder.lock().unwrap().push("after");
@@ -219,7 +219,7 @@ async fn fires_lifecycle_hooks_in_order() {
 async fn before_invocation_hook_can_cancel_the_invocation() {
     let model = text_model(&["never reached"]);
     let agent = Agent::builder().model(model.clone()).build().unwrap();
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback::<BeforeInvocationEvent, _>(|event| {
             event.cancel = "denied".into();
@@ -247,7 +247,7 @@ async fn before_tools_hook_can_cancel_the_batch() {
         MockResponse::message(Message::assistant("after cancel")),
     ]);
     let agent = Agent::builder().model(model).tool(echo_tool()).build().unwrap();
-    let _ = agent.hooks().add_sync_callback::<BeforeToolsEvent, _>(|event| {
+    agent.hooks().add_sync_callback::<BeforeToolsEvent, _>(|event| {
         event.cancel = true.into();
         Ok(())
     });
@@ -272,7 +272,7 @@ async fn after_tools_hook_can_end_the_turn() {
         .tool(echo_tool())
         .build()
         .unwrap();
-    let _ = agent.hooks().add_sync_callback::<AfterToolsEvent, _>(|event| {
+    agent.hooks().add_sync_callback::<AfterToolsEvent, _>(|event| {
         event.end_turn = strands_agents::hooks::EndTurn::Text("stopping".to_owned());
         Ok(())
     });
@@ -290,7 +290,7 @@ async fn after_invocation_resume_runs_another_invocation() {
     let agent = Agent::builder().model(model.clone()).build().unwrap();
     let resumed = Arc::new(Mutex::new(false));
     let flag = Arc::clone(&resumed);
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback::<AfterInvocationEvent, _>(move |event| {
             let mut flag = flag.lock().unwrap();
@@ -545,7 +545,7 @@ async fn cancel_after_a_tool_use_reply_leaves_no_orphan_tool_uses() {
     ]);
     let agent = looping_agent(Arc::clone(&model)).await;
     let cancelling = agent.clone();
-    let _ = agent.hooks().add_sync_callback(move |_: &mut ModelMessageEvent| {
+    agent.hooks().add_sync_callback(move |_: &mut ModelMessageEvent| {
         cancelling.cancel();
         Ok(())
     });

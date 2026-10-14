@@ -1015,7 +1015,7 @@ impl crate::plugins::Plugin for BackgroundTasks {
 
         let agent_handle = agent.clone();
         let registry = Arc::clone(&self.registry);
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback(move |_event: &mut BeforeInvocationEvent| {
                 registry.deliver_ready(&agent_handle);
@@ -1025,7 +1025,7 @@ impl crate::plugins::Plugin for BackgroundTasks {
         let wait = self.config.wait_for_completion;
         let agent_handle = agent.clone();
         let registry = Arc::clone(&self.registry);
-        let _ = agent
+        agent
             .hooks()
             .add_callback(move |_event: &mut AfterInvocationEvent| {
                 let agent = agent_handle.clone();
@@ -1041,7 +1041,7 @@ impl crate::plugins::Plugin for BackgroundTasks {
 
         let agent_handle = agent.clone();
         let registry = Arc::clone(&self.registry);
-        let _ = agent.hooks().add_sync_callback_with_order(
+        agent.hooks().add_sync_callback_with_order(
             hook_order::SDK_LAST,
             move |_event: &mut InitializedEvent| {
                 registry.load_app_state(&agent_handle);

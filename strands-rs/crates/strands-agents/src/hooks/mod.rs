@@ -4,7 +4,7 @@ pub mod events;
 mod registry;
 
 pub use events::*;
-pub use registry::{hook_order, HookCallback, HookCleanup, HookEvent, HookRegistry};
+pub use registry::{hook_order, HookCallback, HookCleanup, HookEvent, HookFn, HookRegistry};
 
 #[cfg(test)]
 mod tests {

@@ -205,7 +205,7 @@ async fn a_denying_before_tool_call_hook_beats_background_routing() {
         .background_tasks(BackgroundTasksConfig::new())
         .build()
         .unwrap();
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(|event: &mut BeforeToolCallEvent| {
             event.cancel = Cancel::Reason("denied by policy".to_owned());

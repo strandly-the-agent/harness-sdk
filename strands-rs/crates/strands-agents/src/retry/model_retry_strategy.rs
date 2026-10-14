@@ -93,9 +93,9 @@ pub trait ModelRetryStrategy: Plugin {
 /// Called from a strategy's [`Plugin::init_agent`]; hook registration is the framework's job so a
 /// strategy cannot forget it.
 pub fn register_model_retry_hook(agent: &Agent, strategy: Arc<dyn ModelRetryStrategy>) {
-    let _ = agent
+    agent
         .hooks()
-        .add_callback::<AfterModelCallEvent, _>(move |event| {
+        .add_callback_boxed::<AfterModelCallEvent, _>(move |event| {
             let strategy = Arc::clone(&strategy);
             Box::pin(async move { strategy.retry_model(event).await })
         });

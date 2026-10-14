@@ -17,14 +17,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
     let agent = Agent::builder().model(model).tool(clock).build()?;
 
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(|event: &mut BeforeToolCallEvent| {
             println!("calling tool {}", event.tool_use.name);
             Ok(())
         });
 
-    let _ = agent.hooks().add_callback(|event: &mut AfterModelCallEvent| {
+    agent.hooks().add_callback(|event: &mut AfterModelCallEvent| {
         let attempt = event.attempt_count;
         Box::pin(async move {
             println!("model call finished (attempt {attempt})");

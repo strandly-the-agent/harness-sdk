@@ -523,7 +523,7 @@ mod tests {
         let agent = agent_with_tools(vec![echo_tool("calculator")]);
         let seen: Arc<parking_lot::Mutex<Vec<Role>>> = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let captured = Arc::clone(&seen);
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback(move |event: &mut MessageAddedEvent| {
                 captured.lock().push(event.message.role);
@@ -545,7 +545,7 @@ mod tests {
         let agent = agent_with_tools(vec![echo_tool("calculator")]);
         let count = Arc::new(AtomicBool::new(false));
         let captured = Arc::clone(&count);
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback(move |_event: &mut MessageAddedEvent| {
                 captured.store(true, Ordering::SeqCst);

@@ -714,7 +714,7 @@ impl Plugin for AgentSkills {
         }
         tracing::debug!(skill_count = count, "skills plugin initialized");
         let plugin = self.clone();
-        let _ = agent
+        agent
             .hooks()
             .add_sync_callback::<BeforeInvocationEvent, _>(move |event| {
                 plugin.inject_skills_xml(&event.agent)

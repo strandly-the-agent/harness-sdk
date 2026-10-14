@@ -3,6 +3,7 @@
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -39,6 +40,30 @@ pub mod hook_order {
 
 /// An async callback for event `E`.
 pub type HookCallback<E> = Arc<dyn for<'a> Fn(&'a mut E) -> BoxFuture<'a, Result<()>> + Send + Sync>;
+
+/// An async closure `|event: &mut E| async move { .. }`, borrowing the event for the future.
+///
+/// Implemented for every such closure; use it as `F: for<'a> HookFn<'a, E>`.
+pub trait HookFn<'a, E: 'a>: Fn(&'a mut E) -> <Self as HookFn<'a, E>>::Fut {
+    /// The future returned by the closure.
+    type Fut: Future<Output = Result<()>> + Send + 'a;
+}
+
+impl<'a, E: 'a, F, Fut> HookFn<'a, E> for F
+where
+    F: Fn(&'a mut E) -> Fut,
+    Fut: Future<Output = Result<()>> + Send + 'a,
+{
+    type Fut = Fut;
+}
+
+fn boxed_callback<E, F>(callback: F) -> HookCallback<E>
+where
+    E: HookEvent,
+    F: for<'a> HookFn<'a, E> + Send + Sync + 'static,
+{
+    Arc::new(move |event: &mut E| Box::pin(callback(event)) as BoxFuture<'_, Result<()>>)
+}
 
 struct Entry {
     id: u64,
@@ -90,12 +115,7 @@ impl HookRegistry {
         Self::default()
     }
 
-    /// Register an async callback for `E` at `order`.
-    pub fn add_callback_with_order<E: HookEvent>(
-        &self,
-        order: i32,
-        callback: HookCallback<E>,
-    ) -> HookCleanup {
+    fn insert<E: HookEvent>(&self, order: i32, callback: HookCallback<E>) -> HookCleanup {
         let id = {
             let mut inner = self.inner.lock();
             inner.next_id += 1;
@@ -120,36 +140,92 @@ impl HookRegistry {
         }))
     }
 
-    /// Register an async callback for `E` at the default order.
+    /// Register a pre-boxed async callback (`|event| Box::pin(async move { .. })`) for `E`.
     ///
-    /// ```ignore
-    /// hooks.add_callback::<BeforeToolCallEvent>(|event| Box::pin(async move { Ok(()) }));
-    /// ```
-    pub fn add_callback<E, F>(&self, callback: F) -> HookCleanup
+    /// Prefer [`Self::add_callback`]; this form is for callbacks that are already boxed.
+    pub fn add_callback_boxed<E, F>(&self, callback: F) -> HookCleanup
     where
         E: HookEvent,
         F: for<'a> Fn(&'a mut E) -> BoxFuture<'a, Result<()>> + Send + Sync + 'static,
     {
-        self.add_callback_with_order::<E>(hook_order::DEFAULT, Arc::new(callback))
+        self.add_callback_boxed_with_order(hook_order::DEFAULT, callback)
+    }
+
+    /// Register a pre-boxed async callback for `E` at `order`.
+    pub fn add_callback_boxed_with_order<E, F>(&self, order: i32, callback: F) -> HookCleanup
+    where
+        E: HookEvent,
+        F: for<'a> Fn(&'a mut E) -> BoxFuture<'a, Result<()>> + Send + Sync + 'static,
+    {
+        self.insert::<E>(order, Arc::new(callback))
+    }
+
+    /// Register an async callback for `E` at the default order.
+    ///
+    /// ```ignore
+    /// hooks.add_callback(|event: &mut BeforeToolCallEvent| async move { Ok(()) });
+    /// ```
+    pub fn add_callback<E, F>(&self, callback: F)
+    where
+        E: HookEvent,
+        F: for<'a> HookFn<'a, E> + Send + Sync + 'static,
+    {
+        drop(self.add_callback_scoped(callback));
+    }
+
+    /// Register an async callback for `E` at `order`.
+    pub fn add_callback_with_order<E, F>(&self, order: i32, callback: F)
+    where
+        E: HookEvent,
+        F: for<'a> HookFn<'a, E> + Send + Sync + 'static,
+    {
+        drop(self.insert::<E>(order, boxed_callback(callback)));
+    }
+
+    /// Like [`Self::add_callback`], but returns a [`HookCleanup`] that removes the callback.
+    pub fn add_callback_scoped<E, F>(&self, callback: F) -> HookCleanup
+    where
+        E: HookEvent,
+        F: for<'a> HookFn<'a, E> + Send + Sync + 'static,
+    {
+        self.insert::<E>(hook_order::DEFAULT, boxed_callback(callback))
     }
 
     /// Register a synchronous callback for `E` at the default order.
-    pub fn add_sync_callback<E, F>(&self, callback: F) -> HookCleanup
+    pub fn add_sync_callback<E, F>(&self, callback: F)
     where
         E: HookEvent,
         F: Fn(&mut E) -> Result<()> + Send + Sync + 'static,
     {
-        self.add_sync_callback_with_order(hook_order::DEFAULT, callback)
+        self.add_sync_callback_with_order(hook_order::DEFAULT, callback);
     }
 
     /// Register a synchronous callback for `E` at `order`.
-    pub fn add_sync_callback_with_order<E, F>(&self, order: i32, callback: F) -> HookCleanup
+    pub fn add_sync_callback_with_order<E, F>(&self, order: i32, callback: F)
+    where
+        E: HookEvent,
+        F: Fn(&mut E) -> Result<()> + Send + Sync + 'static,
+    {
+        drop(self.add_sync_callback_scoped_with_order(order, callback));
+    }
+
+    /// Like [`Self::add_sync_callback`], but returns a [`HookCleanup`] that removes the callback.
+    pub fn add_sync_callback_scoped<E, F>(&self, callback: F) -> HookCleanup
+    where
+        E: HookEvent,
+        F: Fn(&mut E) -> Result<()> + Send + Sync + 'static,
+    {
+        self.add_sync_callback_scoped_with_order(hook_order::DEFAULT, callback)
+    }
+
+    /// Like [`Self::add_sync_callback_with_order`], but returns a [`HookCleanup`].
+    pub fn add_sync_callback_scoped_with_order<E, F>(&self, order: i32, callback: F) -> HookCleanup
     where
         E: HookEvent,
         F: Fn(&mut E) -> Result<()> + Send + Sync + 'static,
     {
         let callback = Arc::new(callback);
-        self.add_callback_with_order::<E>(
+        self.insert::<E>(
             order,
             Arc::new(move |event: &mut E| {
                 let result = callback(event);
@@ -208,19 +284,19 @@ mod tests {
     #[tokio::test]
     async fn runs_in_order_then_registration_order() {
         let hooks = HookRegistry::new();
-        let _ = hooks.add_sync_callback_with_order(10, |e: &mut Forward| {
+        hooks.add_sync_callback_with_order(10, |e: &mut Forward| {
             e.0.push("late");
             Ok(())
         });
-        let _ = hooks.add_sync_callback(|e: &mut Forward| {
+        hooks.add_sync_callback(|e: &mut Forward| {
             e.0.push("a");
             Ok(())
         });
-        let _ = hooks.add_sync_callback(|e: &mut Forward| {
+        hooks.add_sync_callback(|e: &mut Forward| {
             e.0.push("b");
             Ok(())
         });
-        let _ = hooks.add_sync_callback_with_order(hook_order::SDK_FIRST, |e: &mut Forward| {
+        hooks.add_sync_callback_with_order(hook_order::SDK_FIRST, |e: &mut Forward| {
             e.0.push("first");
             Ok(())
         });
@@ -232,15 +308,15 @@ mod tests {
     #[tokio::test]
     async fn reverse_events_run_backwards_within_order() {
         let hooks = HookRegistry::new();
-        let _ = hooks.add_sync_callback(|e: &mut Backward| {
+        hooks.add_sync_callback(|e: &mut Backward| {
             e.0.push("a");
             Ok(())
         });
-        let _ = hooks.add_sync_callback(|e: &mut Backward| {
+        hooks.add_sync_callback(|e: &mut Backward| {
             e.0.push("b");
             Ok(())
         });
-        let _ = hooks.add_sync_callback_with_order(hook_order::SDK_FIRST, |e: &mut Backward| {
+        hooks.add_sync_callback_with_order(hook_order::SDK_FIRST, |e: &mut Backward| {
             e.0.push("first");
             Ok(())
         });
@@ -252,11 +328,9 @@ mod tests {
     #[tokio::test]
     async fn cleanup_removes_once_and_async_callbacks_work() {
         let hooks = HookRegistry::new();
-        let cleanup = hooks.add_callback(|e: &mut Forward| {
-            Box::pin(async move {
-                e.0.push("async");
-                Ok(())
-            })
+        let cleanup = hooks.add_callback_scoped(|e: &mut Forward| async move {
+            e.0.push("async");
+            Ok(())
         });
         assert_eq!(hooks.count::<Forward>(), 1);
         let mut ev = Forward(vec![]);
@@ -270,8 +344,8 @@ mod tests {
     #[tokio::test]
     async fn errors_stop_the_chain() {
         let hooks = HookRegistry::new();
-        let _ = hooks.add_sync_callback(|_: &mut Forward| Err(crate::Error::Plugin("nope".into())));
-        let _ = hooks.add_sync_callback(|e: &mut Forward| {
+        hooks.add_sync_callback(|_: &mut Forward| Err(crate::Error::Plugin("nope".into())));
+        hooks.add_sync_callback(|e: &mut Forward| {
             e.0.push("never");
             Ok(())
         });

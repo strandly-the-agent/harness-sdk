@@ -356,22 +356,24 @@ impl Plugin for ContextManager {
                 stash.store_message(&message, &skip).await;
             }
             let hook_inner = Arc::clone(&inner);
-            let _ = agent.hooks().add_callback::<MessageAddedEvent, _>(move |event| {
-                let hook_inner = Arc::clone(&hook_inner);
-                let message = event.message.clone();
-                Box::pin(async move {
-                    let Some(stash) = hook_inner.stash.read().clone() else {
-                        return Ok(());
-                    };
-                    let skip = {
-                        let mut skip = hook_inner.retrieval_tool_use_ids.lock();
-                        track_retrieval_tool_use_ids(&message, &mut skip);
-                        skip.clone()
-                    };
-                    stash.store_message(&message, &skip).await;
-                    Ok(())
-                })
-            });
+            agent
+                .hooks()
+                .add_callback_boxed::<MessageAddedEvent, _>(move |event| {
+                    let hook_inner = Arc::clone(&hook_inner);
+                    let message = event.message.clone();
+                    Box::pin(async move {
+                        let Some(stash) = hook_inner.stash.read().clone() else {
+                            return Ok(());
+                        };
+                        let skip = {
+                            let mut skip = hook_inner.retrieval_tool_use_ids.lock();
+                            track_retrieval_tool_use_ids(&message, &mut skip);
+                            skip.clone()
+                        };
+                        stash.store_message(&message, &skip).await;
+                        Ok(())
+                    })
+                });
         }
 
         for strategy in &inner.strategies {
@@ -382,9 +384,9 @@ impl Plugin for ContextManager {
             inner: Arc::clone(&inner),
         };
         let before = Arc::new(before);
-        let _ = agent
+        agent
             .hooks()
-            .add_callback::<BeforeModelCallEvent, _>(move |event| {
+            .add_callback_boxed::<BeforeModelCallEvent, _>(move |event| {
                 let manager = Arc::clone(&before);
                 let agent = event.agent.clone();
                 let projected = event.projected_input_tokens;
@@ -408,9 +410,9 @@ impl Plugin for ContextManager {
             inner: Arc::clone(&inner),
         });
         let overflow_retries = Arc::new(AtomicU32::new(0));
-        let _ = agent
+        agent
             .hooks()
-            .add_callback::<AfterModelCallEvent, _>(move |event| {
+            .add_callback_boxed::<AfterModelCallEvent, _>(move |event| {
                 let manager = Arc::clone(&after);
                 let retries = Arc::clone(&overflow_retries);
                 let agent = event.agent.clone();
