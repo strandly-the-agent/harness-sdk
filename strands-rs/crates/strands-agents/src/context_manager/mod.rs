@@ -97,7 +97,7 @@ pub enum StashOption {
 }
 
 /// A custom pipeline.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ContextManagerConfig {
     /// Ordered pipeline; `None` uses the `auto` default.
     pub strategies: Option<Vec<Arc<dyn ContextStrategy>>>,
@@ -106,8 +106,10 @@ pub struct ContextManagerConfig {
 }
 
 /// What `AgentBuilder::context_manager` accepts.
+#[derive(Clone, Default)]
 pub enum ContextManagerOption {
     /// Managed context: proactive compression + offloading.
+    #[default]
     Auto,
     /// Model-driven context management (same compression gates, higher thresholds).
     Agentic,
