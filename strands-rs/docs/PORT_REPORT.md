@@ -6,7 +6,31 @@ agent run; see [DESIGN.md](DESIGN.md) for in/out of scope.
 
 ## Status
 
-<!-- GATES -->
+All gates green at the final merge commit (601 tests: 543 unit + 57 integration + 1 doctest;
+~22.4k lines of Rust incl. tests). Independent validation verdict: PASS-WITH-FINDINGS; all 🔴 and
+🟡 correctness findings and all 🔴 API findings were fixed and re-verified (see below).
+
+```
+$ cargo fmt --check
+(clean)
+$ cargo clippy --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized] target(s) in 0.13s
+$ cargo test --all-features
+     Running unittests src/lib.rs (/home/sandbox/cargo-target/debug/deps/strands_agents-c418e986ebb3ece5)
+test result: ok. 543 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+     Running tests/agent_loop.rs (/home/sandbox/cargo-target/debug/deps/agent_loop-85ca00193662de09)
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+     Running tests/agent_loop_extra.rs (/home/sandbox/cargo-target/debug/deps/agent_loop_extra-988a39e583b52103)
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.58s
+$ cargo build --no-default-features
+    Finished `dev` profile [unoptimized] target(s) in 0.09s
+$ cargo build --examples --all-features
+    Finished `dev` profile [unoptimized] target(s) in 0.11s
+$ cargo doc --no-deps --all-features
+   Generated /home/sandbox/cargo-target/doc/strands_agents/index.html
+```
+
 
 ## Structural map
 
@@ -92,7 +116,36 @@ Independent validation verdict: **PASS-WITH-FINDINGS** (wire-compat round-trip o
 
 ## Review findings (independent passes)
 
-<!-- REVIEWS -->
+Full reports in `docs/reviews/`. Summary and disposition:
+
+**Correctness reviewer** (`review-loop.md`) — all fixed with regression tests:
+- 🔴 F1 `invoking` flag leaked when the spawned task panicked → `InvokingGuard` drop guard +
+  `JoinError` forwarded (`a_panicking_hook_releases_the_invocation_lock`).
+- 🟡 F2 dropping `AgentStream` left the invocation running → `Drop` cancels the root token; a
+  closed channel surfaces as `Error::Cancelled` (`dropping_the_stream_cancels_the_invocation`).
+- 🟡 F3 `cancel()` raced the previous invocation's token → token installed synchronously in
+  `stream()` (`cancel_right_after_stream_cancels_the_new_invocation`).
+- 🟡 F4 concurrent executor diverged from sequential/TS on a tool `Cancelled` → per-tool error
+  result, batch returns `Ok` (`concurrent_converts_a_tool_cancellation_into_an_error_result`).
+- 🟡 F5 `stream_aggregated` re-wrapped `Cancelled` as a retryable `Model` error → passthrough.
+- 🟢 F6/F7 `# Panics` doc on `stream()`; `select!` on cancellation in `stream_from_model`.
+
+**API bar-raiser** (`review-api.md`) — fixed: typed builder slots
+(`conversation_manager(impl ConversationManager)`, `retry_strategy(impl ModelRetryStrategy)`,
+`session_manager(..)`), `impl Model/Tool/Plugin + 'static` parameters with `*_arc`/`tool_ref`
+variants (plus a blanket `impl Model for Arc<M>`), `#[non_exhaustive]` + `Default`/`with_*` on
+option/result structs and growable enums, `stream(input)` / `stream_with(input, options)`,
+`#[must_use]` on builders/streams/`HookCleanup`, single `Redaction` type, `JsonSchema` alias
+removed from public signatures, Bedrock config types re-exported, `AgentResult: Serialize`,
+docs re-aligned. **Open (🟡/🟢, deferred):** `ToolExecutor::execute` out-param signature (#7),
+`FunctionToolBuilder` terminal `handler` vs `build()` (#8), `SessionManager::new(&str)` /
+`save_snapshot(bool)` (#13), `BedrockModelConfig.max_tokens: i32` vs `u64` (#14), nits #17–22.
+
+**Port validator** (`validation.md`) — PASS-WITH-FINDINGS. All 462 matrix "pass" rows resolve to
+real tests; 3 sampled tests assert slightly less than TS (low); 3 rustdoc warnings (fixed);
+wire-compat 3/3; sensitive surface identical to TS. Open: written matrix for `hooks`; confirm the
+retry "no backoff timer when already cancelled" case.
+
 
 ## Known gaps / follow-ups
 

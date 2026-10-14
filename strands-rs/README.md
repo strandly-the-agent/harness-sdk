@@ -6,25 +6,30 @@ tools composed into an agent loop. **Experimental** — API may change; see
 what is and isn't ported.
 
 ```rust
-use std::sync::Arc;
-use strands_agents::models::bedrock::BedrockModel;
-use strands_agents::tools::FunctionTool;
-use strands_agents::{Agent, Result};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use strands_agents::models::{BedrockModel, BedrockModelConfig};
+use strands_agents::tools::{FunctionTool, ToolContext};
+use strands_agents::Agent;
+
+#[derive(Deserialize, JsonSchema)]
+struct WeatherInput {
+    city: String,
+}
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let weather = FunctionTool::builder("weather")
         .description("Current weather for a city")
-        .typed::<WeatherInput>()
-        .typed_handler(|input: WeatherInput, _ctx| async move {
-            Ok(serde_json::json!({ "city": input.city, "temp_c": 21 }))
-        })
-        .build()?;
+        .typed_handler(|input: WeatherInput, _ctx: ToolContext| async move {
+            Ok(format!("It is 22°C and sunny in {}.", input.city))
+        });
 
+    let model = BedrockModel::new(BedrockModelConfig::default()).await?;
     let agent = Agent::builder()
-        .model(Arc::new(BedrockModel::default()))
+        .model(model)
         .system_prompt("You are a terse assistant.")
-        .tool(Arc::new(weather))
+        .tool(weather)
         .build()
         .await?;
 
@@ -32,12 +37,9 @@ async fn main() -> Result<()> {
     println!("{result}");
     Ok(())
 }
-
-#[derive(serde::Deserialize, schemars::JsonSchema)]
-struct WeatherInput {
-    city: String,
-}
 ```
+
+More in `crates/strands-agents/examples/` (`basic`, `tools`, `hooks`, `streaming`).
 
 ## Features
 
