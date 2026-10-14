@@ -2731,4 +2731,143 @@ mod tests {
             ["text:durable ask", "cachePoint:1h", "text:per-call"]
         );
     }
+
+    fn guarding() -> BedrockModelConfig {
+        let mut config = claude();
+        config.guardrail_config = Some(BedrockGuardrailConfig {
+            guardrail_identifier: "gr-1".into(),
+            guardrail_version: "1".into(),
+            guard_latest_user_message: Some(true),
+            ..Default::default()
+        });
+        config
+    }
+
+    #[test]
+    fn wraps_latest_user_message_image_content_in_guard_content_when_enabled() {
+        let messages = [user(vec![img_block(
+            crate::types::ImageFormat::Png,
+            ImageSource::Bytes(vec![1, 2, 3]),
+        )])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["guardImage:png"]);
+    }
+
+    #[test]
+    fn wraps_supported_image_formats_png_and_jpeg_with_bytes_source() {
+        for (image_format, tag) in [
+            (crate::types::ImageFormat::Png, "guardImage:png"),
+            (crate::types::ImageFormat::Jpeg, "guardImage:jpeg"),
+        ] {
+            let messages = [user(vec![img_block(image_format, ImageSource::Bytes(vec![1]))])];
+            let request = format(&guarding(), &messages, &StreamOptions::default());
+            assert_eq!(tags(&request, 0), [tag]);
+        }
+    }
+
+    #[test]
+    fn skips_wrapping_images_with_unsupported_formats() {
+        for (image_format, tag) in [
+            (crate::types::ImageFormat::Gif, "image:gif"),
+            (crate::types::ImageFormat::Webp, "image:webp"),
+        ] {
+            let messages = [user(vec![img_block(image_format, ImageSource::Bytes(vec![1]))])];
+            let request = format(&guarding(), &messages, &StreamOptions::default());
+            assert_eq!(tags(&request, 0), [tag]);
+        }
+    }
+
+    #[test]
+    fn skips_wrapping_images_with_a_non_bytes_source() {
+        let sources = [
+            ImageSource::Location(crate::types::S3Location {
+                uri: "s3://bucket/key.png".into(),
+                bucket_owner: None,
+            }),
+            ImageSource::Url("s3://bucket/key.png".into()),
+        ];
+        for source in sources {
+            let messages = [user(vec![img_block(crate::types::ImageFormat::Png, source)])];
+            let request = format(&guarding(), &messages, &StreamOptions::default());
+            assert_eq!(tags(&request, 0), ["image:png"]);
+        }
+    }
+
+    #[test]
+    fn does_not_wrap_assistant_messages() {
+        let messages = [
+            user(vec![ContentBlock::text("ask")]),
+            Message::new(Role::Assistant, vec![ContentBlock::text("reply")]),
+        ];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["guardText:ask"]);
+        assert_eq!(tags(&request, 1), ["text:reply"]);
+    }
+
+    #[test]
+    fn wraps_only_the_last_user_text_or_image_message_in_multi_turn_conversation() {
+        let messages = [
+            user(vec![ContentBlock::text("older")]),
+            Message::new(Role::Assistant, vec![ContentBlock::text("reply")]),
+            user(vec![ContentBlock::text("newer")]),
+        ];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["text:older"]);
+        assert_eq!(tags(&request, 2), ["guardText:newer"]);
+    }
+
+    #[test]
+    fn wraps_all_text_and_image_blocks_in_the_latest_user_message() {
+        let messages = [user(vec![
+            ContentBlock::text("first"),
+            img_block(crate::types::ImageFormat::Png, ImageSource::Bytes(vec![1])),
+            ContentBlock::text("second"),
+        ])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["guardText:first", "guardImage:png", "guardText:second"]
+        );
+    }
+
+    #[test]
+    fn handles_no_user_messages_with_text_or_image_content_gracefully() {
+        let messages = [user(vec![ContentBlock::ToolResult(ToolResultBlock::success(
+            "t1",
+            vec![ToolResultContent::Text("done".into())],
+        ))])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["toolResult"]);
+    }
+
+    #[test]
+    fn preserves_explicit_guard_content_block_in_messages_without_double_wrapping() {
+        let messages = [user(vec![
+            ContentBlock::GuardContent(GuardContentBlock {
+                text: Some(crate::types::GuardContentText {
+                    qualifiers: vec![],
+                    text: "grounding".into(),
+                }),
+                image: None,
+            }),
+            ContentBlock::text("ask"),
+        ])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["guardText:grounding", "guardText:ask"]);
+    }
+
+    #[test]
+    fn does_not_wrap_reasoning_or_cache_point_blocks() {
+        let messages = [user(vec![
+            ContentBlock::text("ask"),
+            ContentBlock::Reasoning(ReasoningBlock {
+                text: Some("thinking".into()),
+                signature: Some("sig".into()),
+                redacted_content: None,
+            }),
+            cp_block(None),
+        ])];
+        let request = format(&guarding(), &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["guardText:ask", "reasoning", "cachePoint"]);
+    }
 }
