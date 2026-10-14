@@ -6,5 +6,10 @@
 
 pub mod defaults;
 pub mod prompt;
+pub mod tools;
 
 pub use prompt::{build_system_prompt, HARNESS_CONTRACT};
+pub use tools::{edit, make_read, read, write, ReadConfig};
+pub use tools::{exa_web_search, make_exa_web_search, SearchBackend, SearchResult, WebSearchError};
+#[cfg(feature = "http")]
+pub use tools::{make_web_fetch, MakeWebFetchOptions, WebFetchTransport};
