@@ -19,7 +19,9 @@ telemetry = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
 anthropic = ["dep:reqwest"]
 openai = ["dep:reqwest"]
 mcp = ["dep:rmcp", "dep:http", "dep:regex"]
-# Builds the `mcp_echo_server` test binary (a minimal stdio MCP server used by the e2e tests).
+# Internal, test-only: builds the `mcp_echo_server` binary (a minimal stdio MCP server used by
+# this crate's own e2e tests). Not part of the supported public feature set; do not enable it
+# from downstream crates.
 mcp-echo-server = ["mcp", "rmcp/server", "rmcp/transport-io", "rmcp/macros"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-smithy-runtime-api"]
 
