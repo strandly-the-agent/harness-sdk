@@ -14,7 +14,13 @@ mod client;
 mod config;
 mod tool;
 
-pub use client::{ListOptions, LoadOptions, McpClient, McpConnectionState, ToolsChangedCallback};
+pub use client::{
+    ListOptions, LoadOptions, McpClient, McpConnectionState, McpServerInfo, ToolsChangedCallback,
+};
+
+/// Re-exported from `indexmap`: a public dependency of this module's config types
+/// ([`ConfigSource::Inline`], [`ConfigSource::load`]), which keep server order.
+pub use indexmap::IndexMap;
 pub use config::{
     ConfigSource, McpConfigFile, McpServerConfig, McpToolFilters, McpTransportKind, ResolvedTransport,
 };

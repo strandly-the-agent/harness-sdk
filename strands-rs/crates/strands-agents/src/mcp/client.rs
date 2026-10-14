@@ -216,9 +216,10 @@ impl McpClient {
         *self.inner.state.read()
     }
 
-    /// The server's `initialize` response, once connected.
-    pub async fn server_info(&self) -> Option<Arc<rmcp::model::ServerPeerInfo>> {
-        self.inner.service.lock().await.as_ref()?.peer_info()
+    /// What the server reported at `initialize`, once connected.
+    pub async fn server_info(&self) -> Option<McpServerInfo> {
+        let peer = self.inner.service.lock().await.as_ref()?.peer_info()?;
+        Some(McpServerInfo::from(peer.as_ref()))
     }
 
     /// The server's tools as Strands tools, with the client's prefix and filters applied.
@@ -482,6 +483,31 @@ impl ClientHandler for Handler {
             if let Some(client) = client {
                 client.handle_tools_changed().await;
             }
+        }
+    }
+}
+
+/// What an MCP server reported during `initialize`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct McpServerInfo {
+    /// Server implementation name, when the server provided one.
+    pub name: Option<String>,
+    /// Server implementation version, when the server provided one.
+    pub version: Option<String>,
+    /// The negotiated MCP protocol version.
+    pub protocol_version: String,
+    /// Human-readable usage instructions from the server.
+    pub instructions: Option<String>,
+}
+
+impl From<&rmcp::model::ServerPeerInfo> for McpServerInfo {
+    fn from(info: &rmcp::model::ServerPeerInfo) -> Self {
+        Self {
+            name: info.server_info.as_ref().map(|i| i.name.clone()),
+            version: info.server_info.as_ref().map(|i| i.version.clone()),
+            protocol_version: info.protocol_version.to_string(),
+            instructions: info.instructions.clone(),
         }
     }
 }
