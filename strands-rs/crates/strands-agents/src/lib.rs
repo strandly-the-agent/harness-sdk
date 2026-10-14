@@ -12,6 +12,7 @@ pub mod interrupt;
 pub mod interventions;
 pub mod logging;
 pub mod memory;
+pub mod middleware;
 pub mod models;
 pub mod plugins;
 pub mod retry;

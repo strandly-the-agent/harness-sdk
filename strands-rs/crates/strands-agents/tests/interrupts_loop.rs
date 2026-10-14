@@ -77,7 +77,7 @@ async fn tool_interrupt_stops_the_loop_and_resume_finishes_the_tool() {
     ]);
     let agent = Agent::builder()
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_arc(approve_tool(Arc::clone(&runs)))
+        .tool_ref(approve_tool(Arc::clone(&runs)))
         .build()
         .await
         .unwrap();
@@ -127,7 +127,7 @@ async fn hook_interrupt_stops_the_loop_before_the_tool_runs() {
     ]);
     let agent = Agent::builder()
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_arc(sibling_tool("ok", Arc::clone(&runs)))
+        .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
         .build()
         .await
         .unwrap();
@@ -161,7 +161,7 @@ async fn invoking_with_new_input_while_interrupted_is_rejected() {
     let model = model(vec![tool_use_message(&[("approve", "call-1")])]);
     let agent = Agent::builder()
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_arc(approve_tool(Arc::new(AtomicUsize::new(0))))
+        .tool_ref(approve_tool(Arc::new(AtomicUsize::new(0))))
         .build()
         .await
         .unwrap();
@@ -184,8 +184,8 @@ async fn a_sibling_interrupt_keeps_the_completed_tool_result() {
     ]);
     let agent = Agent::builder()
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_arc(approve_tool(Arc::clone(&approve_runs)))
-        .tool_arc(sibling_tool("ok", Arc::clone(&sibling_runs)))
+        .tool_ref(approve_tool(Arc::clone(&approve_runs)))
+        .tool_ref(sibling_tool("ok", Arc::clone(&sibling_runs)))
         .build()
         .await
         .unwrap();
@@ -234,7 +234,7 @@ async fn hitl_with_a_scripted_ask_approves_and_denies_inline() {
         )));
         let agent = Agent::builder()
             .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-            .tool_arc(sibling_tool("ok", Arc::clone(&runs)))
+            .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
             .interventions([hitl])
             .unwrap()
             .build()
@@ -270,7 +270,7 @@ async fn hitl_without_an_ask_interrupts_and_resumes() {
     let hitl: Arc<dyn InterventionHandler> = Arc::new(HumanInTheLoop::new());
     let agent = Agent::builder()
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_arc(sibling_tool("ok", Arc::clone(&runs)))
+        .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
         .interventions([hitl])
         .unwrap()
         .build()
@@ -309,7 +309,7 @@ async fn hitl_allowed_tools_skip_approval_entirely() {
     let hitl: Arc<dyn InterventionHandler> = Arc::new(HumanInTheLoop::new().allowed_tools(["*"]));
     let agent = Agent::builder()
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_arc(sibling_tool("ok", Arc::clone(&runs)))
+        .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
         .interventions([hitl])
         .unwrap()
         .build()

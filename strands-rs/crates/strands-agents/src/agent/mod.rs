@@ -1,9 +1,11 @@
 //! The `Agent` handle, its builder, and the event loop.
 
 mod builder;
+mod checkpoint;
 mod event_loop;
 mod invocation_state;
 mod result;
+mod snapshot;
 mod tool_caller;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::Result;
 use crate::hooks::{HookRegistry, InitializedEvent};
+use crate::middleware::{Middleware, MiddlewareHandle, Stage};
 use crate::models::Model;
 use crate::plugins::PluginRegistry;
 use crate::state_store::StateStore;
@@ -22,6 +25,9 @@ use crate::tools::{ToolExecutor, ToolRef, ToolRegistry};
 use crate::types::{ContentBlock, InterruptResponseContent, Message, Role, SystemPrompt};
 
 pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
+pub use checkpoint::{
+    Checkpoint, CheckpointData, CheckpointPosition, CheckpointResumeContent, CHECKPOINT_SCHEMA_VERSION,
+};
 pub use event_loop::{
     AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE, INTERRUPTED_MESSAGE,
     INTERRUPT_RESPONSES_ONLY_MESSAGE, INTERRUPT_RESUME_REQUIRED_MESSAGE,
@@ -29,6 +35,7 @@ pub use event_loop::{
 };
 pub use invocation_state::InvocationState;
 pub use result::AgentResult;
+pub use snapshot::{SnapshotField, SnapshotPreset, TakeSnapshotOptions, ALL_SNAPSHOT_FIELDS};
 pub use tool_caller::{CallOptions, ToolHandle, DIRECT_CALL_DURING_INVOCATION_MESSAGE};
 
 /// Input accepted by `invoke`/`stream`: text, content blocks, whole messages, or interrupt
@@ -45,6 +52,8 @@ pub enum InvokeInput {
     Messages(Vec<Message>),
     /// Answers to the interrupts the last invocation stopped on. Appends no user message.
     InterruptResponses(Vec<InterruptResponseContent>),
+    /// Resume from a checkpoint; appends no new input.
+    CheckpointResume(CheckpointResumeContent),
 }
 
 impl InvokeInput {
@@ -58,6 +67,7 @@ impl InvokeInput {
             InvokeInput::Messages(m) => m,
             // Resume appends no user message (`_normalizeInput` in TS).
             InvokeInput::InterruptResponses(_) => vec![],
+            InvokeInput::CheckpointResume(_) => vec![],
         }
     }
 
@@ -118,6 +128,8 @@ pub(crate) struct AgentInner {
     pub(crate) system_prompt: RwLock<Option<SystemPrompt>>,
     pub(crate) messages: RwLock<Vec<Message>>,
     pub(crate) state: StateStore,
+    pub(crate) model_state: StateStore,
+    pub(crate) checkpointing: bool,
     pub(crate) hooks: HookRegistry,
     pub(crate) tools: RwLock<ToolRegistry>,
     pub(crate) plugins: PluginRegistry,
@@ -131,6 +143,7 @@ pub(crate) struct AgentInner {
     pub(crate) continuation_input: RwLock<Vec<Message>>,
     pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     pub(crate) interrupt_state: crate::interrupt::InterruptStateHandle,
+    pub(crate) middleware: crate::middleware::MiddlewareRegistry,
 }
 
 /// An agent: a model, a system prompt, tools, and the conversation they share.
@@ -183,6 +196,42 @@ impl Agent {
         *self.inner.model.write() = model;
     }
 
+    /// The middleware registered on this agent.
+    pub fn middleware(&self) -> &crate::middleware::MiddlewareRegistry {
+        &self.inner.middleware
+    }
+
+    /// Register a wrap-phase middleware for `S` (the bare-stage TS overload).
+    pub fn add_middleware<S: Stage>(&self, handler: impl Middleware<S> + 'static) -> MiddlewareHandle {
+        self.inner.middleware.add::<S>(handler)
+    }
+
+    /// Register a wrap-phase middleware for `S`.
+    pub fn add_wrap_middleware<S: Stage>(&self, handler: impl Middleware<S> + 'static) -> MiddlewareHandle {
+        self.inner.middleware.add::<S>(handler)
+    }
+
+    /// Register an input-phase middleware for `S`.
+    pub fn add_input_middleware<S: Stage>(
+        &self,
+        handler: impl Fn(S::Context) -> Result<S::Context> + Send + Sync + 'static,
+    ) -> MiddlewareHandle {
+        self.inner.middleware.add_input::<S>(handler)
+    }
+
+    /// Register an output-phase middleware for `S`.
+    pub fn add_output_middleware<S: Stage>(
+        &self,
+        handler: impl Fn(S::Result) -> Result<S::Result> + Send + Sync + 'static,
+    ) -> MiddlewareHandle {
+        self.inner.middleware.add_output::<S>(handler)
+    }
+
+    /// Remove a middleware registered earlier; a no-op if it is already gone.
+    pub fn remove_middleware(&self, handle: MiddlewareHandle) {
+        self.inner.middleware.remove(handle);
+    }
+
     /// The system prompt.
     pub fn system_prompt(&self) -> Option<SystemPrompt> {
         self.inner.system_prompt.read().clone()
@@ -211,6 +260,11 @@ impl Agent {
     /// Application state store.
     pub fn state(&self) -> &StateStore {
         &self.inner.state
+    }
+
+    /// Model-owned state store (captured by snapshots, never exposed to middleware).
+    pub fn model_state(&self) -> &StateStore {
+        &self.inner.model_state
     }
 
     /// The background-tasks plugin, when configured.
@@ -379,6 +433,8 @@ pub(crate) mod test_fixtures {
                 messages: RwLock::new(messages),
                 state: StateStore::new(),
                 interrupt_state: Default::default(),
+                model_state: StateStore::new(),
+                checkpointing: false,
                 hooks: HookRegistry::new(),
                 tools: RwLock::new(ToolRegistry::new()),
                 plugins: PluginRegistry::new(Vec::new()),
@@ -391,6 +447,7 @@ pub(crate) mod test_fixtures {
                 memory_manager: None,
                 background_tasks: None,
                 continuation_input: RwLock::new(Vec::new()),
+                middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
         }
     }

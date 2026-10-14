@@ -27,6 +27,9 @@ pub struct AgentResult {
     /// [`StopReason::Interrupt`](crate::types::StopReason::Interrupt).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub interrupts: Vec<Interrupt>,
+    /// The cycle boundary the loop paused at, when `stop_reason` is `checkpoint`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<super::Checkpoint>,
 }
 
 impl AgentResult {
@@ -38,6 +41,7 @@ impl AgentResult {
             invocation_state,
             structured_output: None,
             interrupts: Vec::new(),
+            checkpoint: None,
         }
     }
 
@@ -65,6 +69,7 @@ impl PartialEq for AgentResult {
             && self.last_message == other.last_message
             && self.structured_output == other.structured_output
             && self.interrupts == other.interrupts
+            && self.checkpoint == other.checkpoint
     }
 }
 
@@ -115,6 +120,7 @@ mod tests {
             invocation_state: InvocationState::new(),
             structured_output: structured,
             interrupts: Vec::new(),
+            checkpoint: None,
         }
     }
 
