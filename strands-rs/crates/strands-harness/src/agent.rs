@@ -13,7 +13,7 @@ use strands_agents::plugins::vended::{AgentSkills, SkillSource};
 use strands_agents::plugins::Plugin;
 use strands_agents::session::{FileStorage, SaveLatestStrategy, SessionManager, SessionManagerOptions};
 use strands_agents::mcp::{ListOptions, LoadOptions, McpClient, McpServerConfig};
-use strands_agents::sandbox::SandboxRef;
+use strands_agents::sandbox::{LocalSandbox, SandboxRef};
 use strands_agents::storage::LocalFileStorage;
 use strands_agents::telemetry::AttrValue;
 use strands_agents::tools::ToolRef;
@@ -76,7 +76,7 @@ pub enum McpServersOption {
 /// The `sandbox` option.
 #[derive(Clone, Default)]
 pub enum SandboxOption {
-    /// Leave the SDK's default slot in place (a `LocalSandbox`) — the default.
+    /// Leave the SDK's default slot in place (a [`LocalSandbox`]) — the default.
     #[default]
     Default,
     /// No sandbox: no sandbox-vended tools are registered.
@@ -189,7 +189,7 @@ pub struct HarnessAgentOptions {
     pub interventions: InterventionsOption,
     /// How intervention presets collect approval. `None` leaves them in interrupt/resume mode.
     pub interventions_ask: Option<strands_agents::interventions::vended::hitl::AskFn>,
-    /// Where the agent runs commands and file operations. Defaults to the SDK's `LocalSandbox`.
+    /// Where the agent runs commands and file operations. Defaults to the SDK's [`LocalSandbox`].
     pub sandbox: SandboxOption,
     /// Custom attributes merged onto every span this agent emits.
     pub trace_attributes: Vec<(String, AttrValue)>,
@@ -299,7 +299,14 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
         builder = builder.trace_attributes(options.trace_attributes.clone());
     }
     let explicit_sandbox = match &options.sandbox {
-        SandboxOption::Default => None,
+        SandboxOption::Default => {
+            // TS default-slot semantics: the harness runs locally, so register LocalSandbox as the
+            // process default when the embedder has not registered one.
+            if strands_agents::sandbox::default_sandbox().is_err() {
+                strands_agents::sandbox::register_local_sandbox_default();
+            }
+            None
+        }
         SandboxOption::Off => {
             builder = builder.no_sandbox();
             None
@@ -867,12 +874,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_mcp_servers() {
+    async fn loads_no_tools_when_mcp_servers_is_unset_or_empty() {
+        assert!(load_mcp_tools(None).await.unwrap().is_empty());
+        let empty = McpServersOption::Servers(indexmap::IndexMap::new());
+        assert!(load_mcp_tools(Some(&empty)).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn fails_on_a_missing_mcp_config_path() {
+        let option = McpServersOption::Path("./does-not-exist-mcp.json".into());
+        assert!(load_mcp_tools(Some(&option)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn skips_a_disabled_mcp_server() {
+        let mut servers = indexmap::IndexMap::new();
+        let mut config = McpServerConfig::default();
+        config.command = Some("does-not-exist".to_string());
+        config.disabled = true;
+        servers.insert("echo".to_string(), config);
+        let option = McpServersOption::Servers(servers);
+        assert!(load_mcp_tools(Some(&option)).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn defaults_the_sandbox_to_the_sdk_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent = create_harness(options(dir.path())).await.unwrap();
+        assert!(agent.sandbox().is_ok());
+    }
+
+    #[tokio::test]
+    async fn drops_the_vended_tools_of_an_explicit_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let sandbox: SandboxRef = Arc::new(LocalSandbox::new());
+        let vended: Vec<String> = sandbox.tools().iter().map(|t| t.name().to_string()).collect();
+        let mut opts = options(dir.path());
+        opts.sandbox = SandboxOption::Instance(sandbox);
+        let agent = create_harness(opts).await.unwrap();
+        let names: Vec<String> = agent.tools().iter().map(|t| t.name().to_string()).collect();
+        for name in &vended {
+            assert_eq!(names.iter().filter(|n| *n == name).count(), 0, "{name} in {names:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn resolves_interventions_into_the_agent() {
         let dir = tempfile::tempdir().unwrap();
         let mut opts = options(dir.path());
-        opts.mcp_servers = vec!["./mcp.json".to_string()];
-        let err = create_harness(opts).await.unwrap_err().to_string();
-        assert!(err.contains("MCP not supported yet"), "{err}");
+        opts.interventions = InterventionsOption::presets(["ask"]);
+        assert!(create_harness(opts).await.is_ok());
+        let mut opts = options(dir.path());
+        opts.interventions = InterventionsOption::presets(["smart"]);
+        let err = match create_harness(opts).await {
+            Ok(_) => panic!("expected an error"),
+            Err(error) => error.to_string(),
+        };
+        assert!(err.contains("LLM risk classifier"), "{err}");
     }
 
     #[test]

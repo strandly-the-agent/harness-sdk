@@ -137,6 +137,13 @@ mod tests {
         resolve_interventions(value, &ResolveInterventionsOptions::default())
     }
 
+    fn resolve_err(value: &InterventionsOption) -> String {
+        match resolve(value) {
+            Ok(_) => panic!("expected an error"),
+            Err(error) => error.to_string(),
+        }
+    }
+
     #[test]
     fn resolves_no_interventions_by_default() {
         assert!(resolve(&InterventionsOption::default()).unwrap().is_empty());
@@ -169,9 +176,7 @@ mod tests {
             ("./policy.cedar", "Cedar policy handler"),
             ("never delete files", "natural-language risk policy"),
         ] {
-            let err = resolve(&InterventionsOption::presets([value]))
-                .unwrap_err()
-                .to_string();
+            let err = resolve_err(&InterventionsOption::presets([value]));
             assert!(err.contains(needle), "{err}");
             assert!(err.contains(value), "{err}");
         }
@@ -179,9 +184,7 @@ mod tests {
 
     #[test]
     fn rejects_two_handlers_sharing_a_name() {
-        let err = resolve(&InterventionsOption::presets(["ask", "ask"]))
-            .unwrap_err()
-            .to_string();
+        let err = resolve_err(&InterventionsOption::presets(["ask", "ask"]));
         assert!(
             err.contains("Two interventions share the handler name 'strands:human-in-the-loop'"),
             "{err}"
