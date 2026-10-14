@@ -76,17 +76,17 @@ impl WebFetchTransport for ReqwestTransport {
             .user_agent(USER_AGENT)
             .timeout(Duration::from_secs(TIMEOUT_SECONDS))
             .build()
-            .map_err(|e| Error::Other(e.to_string()))?;
+            .map_err(|e| Error::other(e.to_string()))?;
         let response = client.get(url).send().await.map_err(|e| {
             if e.is_timeout() {
-                Error::Other(format!("web_fetch gave up after {TIMEOUT_SECONDS}s."))
+                Error::other(format!("web_fetch gave up after {TIMEOUT_SECONDS}s."))
             } else {
-                Error::Other(e.to_string())
+                Error::other(e.to_string())
             }
         })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(Error::Other(format!(
+            return Err(Error::other(format!(
                 "HTTP {} {}",
                 status.as_u16(),
                 status.canonical_reason().unwrap_or("")
@@ -99,7 +99,11 @@ impl WebFetchTransport for ReqwestTransport {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
-        let mut body = response.bytes().await.map_err(|e| Error::Other(e.to_string()))?.to_vec();
+        let mut body = response
+            .bytes()
+            .await
+            .map_err(|e| Error::other(e.to_string()))?
+            .to_vec();
         body.truncate(MAX_BYTES);
         Ok(FetchedPage {
             resolved_url,
@@ -113,7 +117,9 @@ impl WebFetchTransport for ReqwestTransport {
 pub(crate) fn html_to_text(html: &str) -> String {
     let stripped = strip_elements(html, &["script", "style"]);
     let no_tags = strip_tags(&stripped);
-    collapse_blank_lines(&collapse_spaces(&no_tags)).trim().to_string()
+    collapse_blank_lines(&collapse_spaces(&no_tags))
+        .trim()
+        .to_string()
 }
 
 fn strip_elements(input: &str, tags: &[&str]) -> String {
@@ -228,7 +234,7 @@ fn collapse_blank_lines(input: &str) -> String {
 fn validate_url(url: &str) -> Result<String> {
     let url = url.trim();
     if url.is_empty() || !url.chars().all(is_url_char) {
-        return Err(Error::Other(
+        return Err(Error::other(
             "web_fetch URLs may only contain the characters RFC 3986 allows; percent-encode spaces \
              and non-ASCII characters (and punycode the host) and retry."
                 .to_string(),
@@ -241,12 +247,12 @@ fn validate_url(url: &str) -> Result<String> {
         8
     } else {
         return if lower.contains(':') {
-            Err(Error::Other(format!(
+            Err(Error::other(format!(
                 "web_fetch only supports http(s) URLs, got {}.",
                 quote(url)
             )))
         } else {
-            Err(Error::Other(format!(
+            Err(Error::other(format!(
                 "web_fetch could not parse the URL {}.",
                 quote(url)
             )))
@@ -255,7 +261,10 @@ fn validate_url(url: &str) -> Result<String> {
     // The authority must be non-empty: `https:///host` has no host.
     let authority = &url[scheme_len..];
     if authority.is_empty() || authority.starts_with(['/', '?', '#']) {
-        return Err(Error::Other(format!("web_fetch URL has no host: {}.", quote(url))));
+        return Err(Error::other(format!(
+            "web_fetch URL has no host: {}.",
+            quote(url)
+        )));
     }
     Ok(url.to_string())
 }
@@ -290,11 +299,14 @@ pub struct MakeWebFetchOptions {
 impl MakeWebFetchOptions {
     /// Options with the default transport.
     pub fn new(model: Arc<dyn Model>) -> Self {
-        Self { model, transport: None }
+        Self {
+            model,
+            transport: None,
+        }
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct WebFetchInput {
     url: String,
     #[serde(default)]
@@ -386,10 +398,7 @@ pub fn make_web_fetch(options: MakeWebFetchOptions) -> FunctionTool {
 }
 
 fn error_message(err: &Error) -> String {
-    match err {
-        Error::Other(message) => message.clone(),
-        other => other.to_string(),
-    }
+    err.to_string()
 }
 
 #[cfg(test)]
@@ -397,7 +406,7 @@ mod tests {
     use super::*;
     use crate::tools::test_support::{invoke, test_agent, text_of};
     use strands_agents::test_support::{MockMessageModel, MockResponse};
-    use strands_agents::types::{ContentBlock, Message};
+    use strands_agents::types::Message;
 
     struct StubTransport {
         page: FetchedPage,
@@ -441,14 +450,14 @@ mod tests {
     #[async_trait]
     impl WebFetchTransport for FailingTransport {
         async fn fetch(&self, _url: &str) -> Result<FetchedPage> {
-            Err(Error::Other("HTTP 503 Service Unavailable".into()))
+            Err(Error::other("HTTP 503 Service Unavailable".to_string()))
         }
     }
 
     fn model(reply: &str) -> Arc<dyn Model> {
-        Arc::new(MockMessageModel::new(vec![MockResponse::message(Message::assistant(
-            vec![ContentBlock::text(reply)],
-        ))]))
+        Arc::new(MockMessageModel::new(vec![MockResponse::message(
+            Message::assistant(reply),
+        )]))
     }
 
     fn tool(transport: Arc<dyn WebFetchTransport>, reply: &str) -> FunctionTool {
@@ -468,7 +477,11 @@ mod tests {
     #[tokio::test]
     async fn blank_prompt_returns_the_raw_content() {
         let t = tool(Arc::new(StubTransport::text("plain body")), "unused");
-        let result = invoke(&t, serde_json::json!({ "url": "https://example.com", "prompt": "   " })).await;
+        let result = invoke(
+            &t,
+            serde_json::json!({ "url": "https://example.com", "prompt": "   " }),
+        )
+        .await;
         assert_eq!(text_of(&result), "plain body");
     }
 
@@ -487,7 +500,11 @@ mod tests {
     #[tokio::test]
     async fn a_prompt_is_answered_by_the_summarizer() {
         let t = tool(Arc::new(StubTransport::text("the body")), "the answer");
-        let result = invoke(&t, serde_json::json!({ "url": "https://example.com", "prompt": "what?" })).await;
+        let result = invoke(
+            &t,
+            serde_json::json!({ "url": "https://example.com", "prompt": "what?" }),
+        )
+        .await;
         assert_eq!(text_of(&result), "the answer");
     }
 
@@ -550,18 +567,24 @@ mod tests {
         let agent = test_agent("x").await;
         drop(agent);
         assert_eq!(strands_agents::tools::Tool::name(&t), "web_fetch");
-        assert_eq!(strands_agents::tools::Tool::description(&t), WEB_FETCH_DESCRIPTION);
+        assert_eq!(
+            strands_agents::tools::Tool::description(&t),
+            WEB_FETCH_DESCRIPTION
+        );
     }
 
     #[test]
     fn html_to_text_collapses_blank_lines() {
-        assert_eq!(html_to_text("<p>a</p>\n \n \n<p>b</p>"), "a\n\nb");
-        assert_eq!(html_to_text("<p>a</p>\n\n<p>b</p>"), "a\n\n b");
+        // Verbatim TS output: tag removal leaves the spaces the regexes do not touch.
+        assert_eq!(html_to_text("<p>a</p>\n \n \n<p>b</p>"), "a \n\n b");
+        assert_eq!(html_to_text("<p>a</p>\n\n<p>b</p>"), "a \n\n b");
     }
 
     #[test]
     fn summarizer_prompt_is_verbatim() {
         assert!(SUMMARIZER_PROMPT.starts_with("You answer a request about a single fetched web page."));
-        assert!(SUMMARIZER_PROMPT.ends_with("details (names, numbers, quotes, links) relevant to the request."));
+        assert!(
+            SUMMARIZER_PROMPT.ends_with("details (names, numbers, quotes, links) relevant to the request.")
+        );
     }
 }

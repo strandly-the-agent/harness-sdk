@@ -49,7 +49,7 @@ fn document_format(ext: &str) -> Option<DocumentFormat> {
 }
 
 fn err(message: impl Into<String>) -> Error {
-    Error::Other(message.into())
+    Error::other(message.into())
 }
 
 fn validate_path(path: &str) -> Result<()> {
@@ -120,10 +120,12 @@ async fn read_bytes(path: &str) -> Result<Vec<u8>> {
 }
 
 async fn read_text(path: &str) -> Result<String> {
-    tokio::fs::read_to_string(path).await.map_err(|e| err(e.to_string()))
+    tokio::fs::read_to_string(path)
+        .await
+        .map_err(|e| err(e.to_string()))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct ReadInput {
     path: String,
     #[serde(default)]
@@ -132,13 +134,13 @@ struct ReadInput {
     limit: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct WriteInput {
     path: String,
     content: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct EditInput {
     path: String,
     old_str: String,
@@ -208,19 +210,24 @@ async fn read_call(input: ReadInput, media: bool) -> Result<JsonValue> {
                 bytes.len(),
             )));
         }
-        return Ok(serde_json::to_value(ToolResultContent::Document(DocumentBlock {
-            name: document_name(&input.path),
-            format,
-            source: DocumentSource::Bytes(bytes),
-            citations: None,
-            context: None,
-        }))?);
+        return Ok(serde_json::to_value(ToolResultContent::Document(
+            DocumentBlock {
+                name: document_name(&input.path),
+                format,
+                source: DocumentSource::Bytes(bytes),
+                citations: None,
+                context: None,
+            },
+        ))?);
     }
 
     let content = read_text(&input.path).await?;
     let lines: Vec<&str> = content.split('\n').collect();
     let start = input.offset.map(|o| (o - 1).max(0) as usize).unwrap_or(0);
-    let count = input.limit.map(|l| l.max(0) as usize).unwrap_or(READ_DEFAULT_LIMIT);
+    let count = input
+        .limit
+        .map(|l| l.max(0) as usize)
+        .unwrap_or(READ_DEFAULT_LIMIT);
     let window: Vec<&str> = lines.iter().skip(start).take(count).copied().collect();
     if window.is_empty() {
         let offset = input
@@ -353,7 +360,11 @@ mod tests {
         let dir = tmp();
         let path = dir.path().join("a.txt");
         tokio::fs::write(&path, "l1\nl2\nl3\nl4\nl5").await.unwrap();
-        let result = invoke(&read(), serde_json::json!({ "path": path, "offset": 2, "limit": 2 })).await;
+        let result = invoke(
+            &read(),
+            serde_json::json!({ "path": path, "offset": 2, "limit": 2 }),
+        )
+        .await;
         assert_eq!(
             text_of(&result),
             "     2\tl2\n     3\tl3\n[Showing lines 2-3 of 5. Use offset/limit to read more.]"
@@ -443,7 +454,11 @@ mod tests {
     async fn write_writes_and_counts_lines() {
         let dir = tmp();
         let path = dir.path().join("out.txt");
-        let result = invoke(&write(), serde_json::json!({ "path": path, "content": "a\nb\nc" })).await;
+        let result = invoke(
+            &write(),
+            serde_json::json!({ "path": path, "content": "a\nb\nc" }),
+        )
+        .await;
         assert_eq!(text_of(&result), format!("Wrote 3 lines to {}.", path.display()));
         assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), "a\nb\nc");
     }
@@ -501,7 +516,10 @@ mod tests {
         )
         .await;
         assert_eq!(result.status, ToolResultStatus::Error);
-        assert!(text_of(&result).contains(&format!("old_str appears 3 times in {}; make it unique.", path.display())));
+        assert!(text_of(&result).contains(&format!(
+            "old_str appears 3 times in {}; make it unique.",
+            path.display()
+        )));
     }
 
     #[test]

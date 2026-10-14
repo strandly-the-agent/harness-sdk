@@ -22,16 +22,16 @@ pub(crate) mod test_support {
     use strands_agents::agent::InvocationState;
     use strands_agents::test_support::{MockMessageModel, MockResponse};
     use strands_agents::tools::{Tool, ToolContext};
-    use strands_agents::types::{ContentBlock, JsonValue, Message, ToolResultBlock, ToolResultContent, ToolUse};
+    use strands_agents::types::{JsonValue, Message, ToolResultBlock, ToolResultContent, ToolUse};
     use strands_agents::Agent;
     use tokio_util::sync::CancellationToken;
 
     /// An agent over a mock model that replies `reply` to every call.
     pub(crate) async fn test_agent(reply: &str) -> Agent {
         Agent::builder()
-            .model(MockMessageModel::new(vec![MockResponse::message(Message::assistant(
-                vec![ContentBlock::text(reply)],
-            ))]))
+            .model(MockMessageModel::new(vec![MockResponse::message(
+                Message::assistant(reply),
+            )]))
             .build()
             .await
             .expect("agent builds")

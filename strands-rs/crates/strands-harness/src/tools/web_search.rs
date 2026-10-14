@@ -117,7 +117,7 @@ fn block_head(block: &str) -> Option<(String, String)> {
     Some((title.trim().to_string(), url.to_string()))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct WebSearchInput {
     query: String,
     #[serde(default)]
@@ -189,7 +189,12 @@ impl ExaBackend {
         Self { api_key, transport }
     }
 
-    async fn call(&self, query: &str, max_results: u32, key: Option<&str>) -> Result<Vec<SearchResult>, WebSearchError> {
+    async fn call(
+        &self,
+        query: &str,
+        max_results: u32,
+        key: Option<&str>,
+    ) -> Result<Vec<SearchResult>, WebSearchError> {
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -270,11 +275,12 @@ impl ExaTransport for ReqwestExaTransport {
             request = request.header("x-api-key", key);
         }
         let response = request.send().await.map_err(|e| {
-            WebSearchError::new(format!(
-                "could not reach Exa's MCP server at {EXA_MCP_URL} ({e})"
-            ))
+            WebSearchError::new(format!("could not reach Exa's MCP server at {EXA_MCP_URL} ({e})"))
         })?;
-        let text = response.text().await.map_err(|e| WebSearchError::new(e.to_string()))?;
+        let text = response
+            .text()
+            .await
+            .map_err(|e| WebSearchError::new(e.to_string()))?;
         // Streamable HTTP may answer with SSE; take the first `data:` payload.
         let payload = text
             .lines()
@@ -282,9 +288,7 @@ impl ExaTransport for ReqwestExaTransport {
             .unwrap_or(&text)
             .trim();
         serde_json::from_str(payload).map_err(|e| {
-            WebSearchError::new(format!(
-                "could not reach Exa's MCP server at {EXA_MCP_URL} ({e})"
-            ))
+            WebSearchError::new(format!("could not reach Exa's MCP server at {EXA_MCP_URL} ({e})"))
         })
     }
 }
@@ -307,9 +311,12 @@ mod tests {
     use crate::tools::test_support::{invoke, text_of};
     use parking_lot::Mutex;
 
+    type Calls = Arc<Mutex<Vec<(String, u32)>>>;
+    type Posts = Arc<Mutex<Vec<(serde_json::Value, Option<String>)>>>;
+
     struct StubBackend {
         results: Vec<SearchResult>,
-        calls: Arc<Mutex<Vec<(String, u32)>>>,
+        calls: Calls,
     }
 
     #[async_trait]
@@ -337,7 +344,7 @@ mod tests {
         }
     }
 
-    fn stub(results: Vec<SearchResult>) -> (FunctionTool, Arc<Mutex<Vec<(String, u32)>>>) {
+    fn stub(results: Vec<SearchResult>) -> (FunctionTool, Calls) {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let backend = StubBackend {
             results,
@@ -413,13 +420,16 @@ mod tests {
 
     #[test]
     fn truncates_a_long_snippet() {
-        let text = format!("Title: T\nURL: https://x.example\nHighlights: {}\n", "a".repeat(600));
+        let text = format!(
+            "Title: T\nURL: https://x.example\nHighlights: {}\n",
+            "a".repeat(600)
+        );
         assert_eq!(parse_exa(&text)[0].snippet.chars().count(), SNIPPET_CHARS);
     }
 
     struct StubExaTransport {
         response: serde_json::Value,
-        seen: Arc<Mutex<Vec<(serde_json::Value, Option<String>)>>>,
+        seen: Posts,
     }
 
     #[async_trait]
