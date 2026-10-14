@@ -299,4 +299,46 @@ mod tests {
         assert_eq!(root.list("agent/sub/").await.unwrap(), vec!["agent/sub/x"]);
         assert!(Arc::ptr_eq(&resolve_namespace(Arc::clone(&ns), "other"), &ns));
     }
+
+    #[tokio::test]
+    async fn in_memory_uses_the_default_keyword_scan_with_no_strategy() {
+        let s = InMemoryStorage::new();
+        s.write("notes", b"dark mode toggle").await.unwrap();
+        let hits = s.search("dark mode").await.unwrap().unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].key, "notes");
+        assert_eq!(hits[0].score, 2.0);
+    }
+
+    #[tokio::test]
+    async fn in_memory_indexes_writes_and_delegates_search_to_a_search_strategy() {
+        struct Fixed;
+        #[async_trait]
+        impl SearchStrategy for Fixed {
+            async fn search(&self, _storage: &dyn Storage, query: &str) -> Result<Vec<StorageSearchResult>> {
+                Ok(vec![StorageSearchResult {
+                    key: format!("from-strategy:{query}"),
+                    score: 9.0,
+                    data: None,
+                }])
+            }
+        }
+        let s = InMemoryStorage::new().with_search_strategy(Fixed);
+        s.write("k", b"v").await.unwrap();
+        let hits = s.search("q").await.unwrap().unwrap();
+        assert_eq!(hits[0].key, "from-strategy:q");
+        assert_eq!(hits[0].score, 9.0);
+    }
+
+    #[tokio::test]
+    async fn in_memory_copies_bytes_on_write_and_read_to_prevent_aliasing() {
+        let s = InMemoryStorage::new();
+        let mut data = vec![1u8, 2, 3];
+        s.write("k", &data).await.unwrap();
+        data[0] = 9;
+        let mut read = s.read("k").await.unwrap().unwrap();
+        assert_eq!(read, vec![1, 2, 3]);
+        read[0] = 7;
+        assert_eq!(s.read("k").await.unwrap().unwrap(), vec![1, 2, 3]);
+    }
 }

@@ -46,17 +46,16 @@ pub fn token_overlap_score(query_tokens: &HashSet<String>, content: &str) -> f64
 
 /// Common English words that carry no retrieval signal.
 pub const STOP_WORDS: &[&str] = &[
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do",
-    "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can", "need",
-    "dare", "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
-    "into", "through", "during", "before", "after", "above", "below", "between", "out", "off",
-    "over", "under", "again", "further", "then", "once", "and", "but", "or", "nor", "not", "so",
-    "yet", "both", "either", "neither", "each", "every", "all", "any", "few", "more", "most",
-    "other", "some", "such", "no", "only", "own", "same", "than", "too", "very", "just", "because",
-    "about", "up", "its", "it", "he", "she", "they", "we", "you", "i", "me", "him", "her", "us",
-    "them", "my", "your", "his", "our", "their", "this", "that", "these", "those", "what", "which",
-    "who", "whom", "when", "where", "why", "how", "if", "while", "although", "though", "unless",
-    "until", "since",
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does",
+    "did", "will", "would", "could", "should", "may", "might", "shall", "can", "need", "dare", "ought",
+    "used", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through", "during",
+    "before", "after", "above", "below", "between", "out", "off", "over", "under", "again", "further",
+    "then", "once", "and", "but", "or", "nor", "not", "so", "yet", "both", "either", "neither", "each",
+    "every", "all", "any", "few", "more", "most", "other", "some", "such", "no", "only", "own", "same",
+    "than", "too", "very", "just", "because", "about", "up", "its", "it", "he", "she", "they", "we", "you",
+    "i", "me", "him", "her", "us", "them", "my", "your", "his", "our", "their", "this", "that", "these",
+    "those", "what", "which", "who", "whom", "when", "where", "why", "how", "if", "while", "although",
+    "though", "unless", "until", "since",
 ];
 
 /// `true` when `token` is a stop word.
@@ -130,11 +129,7 @@ mod tests {
     #[tokio::test]
     async fn returns_empty_array_for_whitespace_only_query() {
         let s = store(&[("a", "anything")]).await;
-        assert!(KeywordSearchStrategy
-            .search(&s, "   ")
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(KeywordSearchStrategy.search(&s, "   ").await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -172,11 +167,7 @@ mod tests {
     #[tokio::test]
     async fn returns_empty_array_when_no_content_matches() {
         let s = store(&[("a", "completely different")]).await;
-        assert!(KeywordSearchStrategy
-            .search(&s, "zzz")
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(KeywordSearchStrategy.search(&s, "zzz").await.unwrap().is_empty());
     }
 
     #[test]
