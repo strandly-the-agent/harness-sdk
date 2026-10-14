@@ -40,6 +40,9 @@ aws-sdk-bedrockruntime = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
 aws-smithy-runtime-api = { workspace = true, optional = true }
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
 [dev-dependencies]
 strands-agents = { path = ".", features = ["test-support"] }
 schemars.workspace = true
