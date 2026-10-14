@@ -20,11 +20,14 @@ use parking_lot::Mutex;
 
 use crate::agent::Agent;
 use crate::error::Result;
-use crate::hooks::{hook_order, AfterToolCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolsEvent, Cancel};
+use crate::hooks::{
+    hook_order, AfterToolCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolsEvent, Cancel,
+};
 use crate::plugins::Plugin;
 use crate::types::{ContentBlock, ToolResultContent, ToolResultStatus};
 
-const DEFAULT_NAME: &str = "strands:agent-delegation";
+/// Plugin name; `AgentBuilder::build` skips the default registration when it is already taken.
+pub(crate) const PLUGIN_NAME: &str = "strands:agent-delegation";
 
 /// Cancellation message for a delegation tool called alongside other tools (verbatim from TS).
 pub const DELEGATION_SINGLE_CALL_CANCEL: &str = "This tool call was not executed. A delegation tool must be the only tool called in a turn. Retry with a single delegation tool call or use only non-delegation tools.";
@@ -104,7 +107,7 @@ fn is_blank(blocks: &[ContentBlock]) -> bool {
 #[async_trait]
 impl Plugin for AgentDelegation {
     fn name(&self) -> &str {
-        DEFAULT_NAME
+        PLUGIN_NAME
     }
 
     async fn init_agent(&self, agent: &Agent) -> Result<()> {
@@ -115,7 +118,7 @@ impl Plugin for AgentDelegation {
 
         // Single-call constraint, plus per-batch state.
         let plugin = self.clone();
-        hooks.add_sync_callback::<BeforeToolsEvent, _>(move |event| {
+        let _ = hooks.add_sync_callback::<BeforeToolsEvent, _>(move |event| {
             let tool_uses: Vec<&str> = event
                 .message
                 .content
@@ -141,7 +144,7 @@ impl Plugin for AgentDelegation {
 
         // Mark the delegation tool use that succeeded.
         let plugin = self.clone();
-        hooks.add_sync_callback::<AfterToolCallEvent, _>(move |event| {
+        let _ = hooks.add_sync_callback::<AfterToolCallEvent, _>(move |event| {
             let mut state = plugin.state.lock();
             let Some(entry) = state.get_mut(event.agent.id()) else {
                 return Ok(());
@@ -162,42 +165,43 @@ impl Plugin for AgentDelegation {
 
         // End the turn with the delegate's content as the final assistant message.
         let plugin = self.clone();
-        hooks.add_sync_callback_with_order::<AfterToolsEvent, _>(hook_order::SDK_LAST, move |event| {
-            let tool_use_id = {
-                let mut state = plugin.state.lock();
-                match state.remove(event.agent.id()) {
-                    Some(entry) => entry.tool_use_id,
-                    None => None,
-                }
-            };
-            let Some(tool_use_id) = tool_use_id else {
-                return Ok(());
-            };
-            let blocks = event
-                .message
-                .content
-                .iter()
-                .find_map(|block| match block {
-                    ContentBlock::ToolResult(result) if result.tool_use_id == tool_use_id => {
-                        Some(to_content_blocks(&result.content))
+        let _ =
+            hooks.add_sync_callback_with_order::<AfterToolsEvent, _>(hook_order::SDK_LAST, move |event| {
+                let tool_use_id = {
+                    let mut state = plugin.state.lock();
+                    match state.remove(event.agent.id()) {
+                        Some(entry) => entry.tool_use_id,
+                        None => None,
                     }
-                    _ => None,
-                })
-                .unwrap_or_default();
-            if is_blank(&blocks) {
-                tracing::debug!(
-                    tool_use_id = %tool_use_id,
-                    "delegation produced blank content, skipping delegation"
-                );
-                return Ok(());
-            }
-            event.end_turn = crate::hooks::EndTurn::Blocks(blocks);
-            Ok(())
-        });
+                };
+                let Some(tool_use_id) = tool_use_id else {
+                    return Ok(());
+                };
+                let blocks = event
+                    .message
+                    .content
+                    .iter()
+                    .find_map(|block| match block {
+                        ContentBlock::ToolResult(result) if result.tool_use_id == tool_use_id => {
+                            Some(to_content_blocks(&result.content))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                if is_blank(&blocks) {
+                    tracing::debug!(
+                        tool_use_id = %tool_use_id,
+                        "delegation produced blank content, skipping delegation"
+                    );
+                    return Ok(());
+                }
+                event.end_turn = crate::hooks::EndTurn::Blocks(blocks);
+                Ok(())
+            });
 
         // If the loop continues past a delegation batch, the next model call invalidates the flag.
         let plugin = self.clone();
-        hooks.add_sync_callback::<BeforeModelCallEvent, _>(move |event| {
+        let _ = hooks.add_sync_callback::<BeforeModelCallEvent, _>(move |event| {
             plugin.state.lock().remove(event.agent.id());
             Ok(())
         });
@@ -212,38 +216,20 @@ mod tests {
     use crate::agent::Agent;
     use crate::test_support::{MockMessageModel, MockResponse};
     use crate::tools::FunctionTool;
-    use crate::types::{Message, StopReason, ToolResultBlock, ToolSpec, ToolUseBlock};
-
-    fn spec(name: &str) -> ToolSpec {
-        ToolSpec {
-            name: name.to_owned(),
-            description: format!("delegate to {name}"),
-            input_schema: serde_json::json!({ "type": "object", "properties": {} }),
-            output_schema: None,
-        }
-    }
+    use crate::types::{Message, Role, StopReason, ToolUseBlock};
 
     fn delegate_tool(name: &'static str, reply: &'static str) -> FunctionTool {
-        FunctionTool::new(spec(name), move |_input, ctx: crate::tools::ToolContext| {
-            Box::pin(async move {
-                Ok(ToolResultBlock::success(
-                    ctx.tool_use_id.clone(),
-                    vec![ToolResultContent::Text(reply.to_owned())],
-                ))
-            })
-        })
+        FunctionTool::builder(name)
+            .description(format!("delegate to {name}"))
+            .input_schema(serde_json::json!({ "type": "object", "properties": {} }))
+            .handler(move |_input: serde_json::Value, _ctx| async move { Ok(reply.to_owned()) })
     }
 
     fn tool_use_message(uses: &[(&str, &str)]) -> Message {
-        Message::assistant_blocks(
+        Message::new(
+            Role::Assistant,
             uses.iter()
-                .map(|(id, name)| {
-                    ContentBlock::ToolUse(ToolUseBlock {
-                        tool_use_id: (*id).to_owned(),
-                        name: (*name).to_owned(),
-                        input: serde_json::json!({}),
-                    })
-                })
+                .map(|(id, name)| ContentBlock::ToolUse(ToolUseBlock::new(*name, *id, serde_json::json!({}))))
                 .collect(),
         )
     }
@@ -264,7 +250,10 @@ mod tests {
 
         let result = agent.invoke("go").await.unwrap();
 
-        assert_eq!(result.message.content, vec![ContentBlock::Text("specialist says hi".into())]);
+        assert_eq!(
+            result.last_message.content,
+            vec![ContentBlock::Text("specialist says hi".into())]
+        );
         assert_eq!(model.call_count(), 1, "loop exits immediately after delegation");
     }
 
@@ -284,7 +273,10 @@ mod tests {
 
         let result = agent.invoke("go").await.unwrap();
 
-        assert_eq!(result.message.content, vec![ContentBlock::Text("done".into())]);
+        assert_eq!(
+            result.last_message.content,
+            vec![ContentBlock::Text("done".into())]
+        );
         assert_eq!(model.call_count(), 2);
     }
 
@@ -308,7 +300,11 @@ mod tests {
 
         let result = agent.invoke("go").await.unwrap();
 
-        let results = agent.messages().into_iter().flat_map(|m| m.content).collect::<Vec<_>>();
+        let results = agent
+            .messages()
+            .into_iter()
+            .flat_map(|m| m.content)
+            .collect::<Vec<_>>();
         let texts: Vec<String> = results
             .iter()
             .filter_map(|block| match block {
@@ -325,7 +321,10 @@ mod tests {
             texts.iter().all(|t| t == DELEGATION_SINGLE_CALL_CANCEL),
             "both tool calls are cancelled with the verbatim message, got {texts:?}"
         );
-        assert_eq!(result.message.content, vec![ContentBlock::Text("retried".into())]);
+        assert_eq!(
+            result.last_message.content,
+            vec![ContentBlock::Text("retried".into())]
+        );
         assert_eq!(model.call_count(), 2, "the loop continues so the model can retry");
     }
 
@@ -345,7 +344,10 @@ mod tests {
 
         let result = agent.invoke("go").await.unwrap();
 
-        assert_eq!(result.message.content, vec![ContentBlock::Text("continued".into())]);
+        assert_eq!(
+            result.last_message.content,
+            vec![ContentBlock::Text("continued".into())]
+        );
         assert_eq!(model.call_count(), 2);
     }
 
@@ -365,7 +367,10 @@ mod tests {
 
         let result = agent.invoke("go").await.unwrap();
 
-        assert_eq!(result.message.content, vec![ContentBlock::Text("done".into())]);
+        assert_eq!(
+            result.last_message.content,
+            vec![ContentBlock::Text("done".into())]
+        );
         assert_eq!(model.call_count(), 2);
     }
 }
