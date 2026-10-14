@@ -18,8 +18,8 @@ struct StaticTransport {
 
 #[async_trait]
 impl OpenAITransport for StaticTransport {
-    async fn send(&self, _request: OpenAIRequest) -> Result<BoxStream<'static, Result<String>>> {
-        let body = self.body.clone();
+    async fn send(&self, _request: OpenAIRequest) -> Result<BoxStream<'static, Result<Vec<u8>>>> {
+        let body = self.body.clone().into_bytes();
         Ok(futures::stream::iter(vec![Ok(body)]).boxed())
     }
 }

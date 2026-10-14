@@ -83,7 +83,7 @@ pub struct OpenAIRequest {
 #[async_trait]
 pub trait OpenAITransport: Send + Sync + std::fmt::Debug {
     /// Execute the request, returning the response body as a chunk stream.
-    async fn send(&self, request: OpenAIRequest) -> Result<BoxStream<'static, Result<String>>>;
+    async fn send(&self, request: OpenAIRequest) -> Result<BoxStream<'static, Result<Vec<u8>>>>;
 }
 
 /// `reqwest`-backed transport used when no transport is injected.
@@ -94,7 +94,7 @@ pub struct ReqwestTransport {
 
 #[async_trait]
 impl OpenAITransport for ReqwestTransport {
-    async fn send(&self, request: OpenAIRequest) -> Result<BoxStream<'static, Result<String>>> {
+    async fn send(&self, request: OpenAIRequest) -> Result<BoxStream<'static, Result<Vec<u8>>>> {
         let mut builder = self.client.post(&request.url).json(&request.body);
         if let Some(token) = &request.bearer_token {
             builder = builder.bearer_auth(token);
@@ -110,7 +110,7 @@ impl OpenAITransport for ReqwestTransport {
         }
         let stream = response.bytes_stream().map(|chunk| {
             chunk
-                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .map(|b| b.to_vec())
                 .map_err(|e| Error::model(format!("openai stream failed: {e}")))
         });
         Ok(stream.boxed())
@@ -246,7 +246,7 @@ impl Model for OpenAIModel {
 /// Decode an SSE body into `ModelStreamEvent`s with the adapter's state machine.
 fn decode(
     api: OpenAIApi,
-    chunks: BoxStream<'static, Result<String>>,
+    chunks: BoxStream<'static, Result<Vec<u8>>>,
 ) -> impl futures::Stream<Item = Result<super::streaming::ModelStreamEvent>> {
     async_stream::try_stream! {
         let mut parser = SseParser::new();
