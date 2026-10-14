@@ -7,7 +7,7 @@ use serde_json::json;
 use strands_agents::test_support::{MockMessageModel, MockResponse};
 use strands_agents::tools::{Tool, ToolContext};
 use strands_agents::types::{ContentBlock, Role, StopReason, ToolResultStatus, ToolUse, ToolUseBlock};
-use strands_agents::{tool, Agent, InvocationState, Message};
+use strands_agents::{tool, Agent, InterruptParams, InvocationState, Message};
 use tokio_util::sync::CancellationToken;
 
 /// Current weather for a city.
@@ -170,4 +170,37 @@ async fn a_generated_tool_runs_in_the_agent_loop() {
         panic!("expected a tool result block");
     };
     assert_eq!(tool_result.status, ToolResultStatus::Success);
+}
+
+/// Asks a human to approve, then reports the answer.
+#[tool]
+async fn approve(ctx: ToolContext) -> Result<String, strands_agents::Error> {
+    let answer: String = ctx.interrupt(InterruptParams::new("confirm").with_reason("approve?"))?;
+    Ok(format!("did it: {answer}"))
+}
+
+#[tokio::test]
+async fn a_generated_tool_interrupt_stops_the_loop() {
+    let model = MockMessageModel::shared(vec![MockResponse::with_stop_reason(
+        Message::new(
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                "approve",
+                "call-1",
+                json!({}),
+            ))],
+        ),
+        StopReason::ToolUse,
+    )]);
+    let agent = Agent::builder()
+        .model(model)
+        .tool(Arc::new(ApproveTool::new()))
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("write the file").await.unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::Interrupt);
+    assert_eq!(result.interrupts.len(), 1);
+    assert_eq!(result.interrupts[0].name, "confirm");
 }

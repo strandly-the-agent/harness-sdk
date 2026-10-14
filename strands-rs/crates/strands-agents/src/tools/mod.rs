@@ -18,4 +18,7 @@ pub use function_tool::{
 pub use noop_tool::{noop_tool_spec, NoopTool, NOOP_TOOL_DESCRIPTION, NOOP_TOOL_NAME};
 pub use registry::{ToolRegistry, MAX_TOOL_NAME_LENGTH};
 pub use structured_output::{StructuredOutputTool, STRUCTURED_OUTPUT_TOOL_NAME};
-pub use tool::{create_error_result, is_valid_tool_name, Tool, ToolContext, ToolRef, ToolStreamEvent};
+pub use tool::{
+    create_error_result, is_valid_tool_name, tool_error_or_propagate, Tool, ToolContext, ToolRef,
+    ToolStreamEvent,
+};

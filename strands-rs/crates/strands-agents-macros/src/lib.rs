@@ -18,8 +18,11 @@ use syn::{parse_macro_input, Attribute, FnArg, ItemFn, Pat, ReturnType, Type};
 /// constructor is generated next to the function.
 ///
 /// A parameter of type `ToolContext` is passed through from the invocation and excluded
-/// from the schema. A function returning `Result<T, E>` (`E: Display`) reports `Err` as an
-/// error tool result; any other return type is serialized as a success result.
+/// from the schema. A function returning `Result<T, E>` (`E: Display + 'static`) reports
+/// `Err` as an error tool result, except for control-flow errors
+/// (`Error::Interrupt` from `ToolContext::interrupt`, `Error::Cancelled`), which are
+/// propagated so they still pause or cancel the event loop. Any other return type is
+/// serialized as a success result.
 ///
 /// # Example
 ///
@@ -86,9 +89,7 @@ fn expand(input_fn: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
             let output = match #call {
                 ::core::result::Result::Ok(value) => value,
                 ::core::result::Result::Err(err) => {
-                    return ::core::result::Result::Ok(
-                        ::strands_agents::tools::create_error_result(&err, &tool_use_id),
-                    );
+                    return ::strands_agents::tools::tool_error_or_propagate(err, &tool_use_id);
                 }
             };
         }

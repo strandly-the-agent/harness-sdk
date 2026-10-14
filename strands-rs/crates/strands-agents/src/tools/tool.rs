@@ -161,6 +161,21 @@ pub fn create_error_result(error: impl std::fmt::Display, tool_use_id: &str) -> 
     ToolResultBlock::error(tool_use_id, format!("Error: {error}"))
 }
 
+/// `status: error` result for a tool failure, except for control-flow errors
+/// ([`Error::Interrupt`], [`Error::Cancelled`]) which are returned as `Err` so they keep
+/// halting the event loop. Used by the `#[tool]` macro, where `E` is only `Display`.
+pub fn tool_error_or_propagate<E: std::any::Any + std::fmt::Display>(
+    error: E,
+    tool_use_id: &str,
+) -> Result<ToolResultBlock> {
+    let result = create_error_result(&error, tool_use_id);
+    match (Box::new(error) as Box<dyn std::any::Any>).downcast::<Error>() {
+        Ok(err) if err.is_control_flow() || matches!(*err, Error::Cancelled) => Err(*err),
+        Ok(err) => Ok(result.with_error(*err)),
+        Err(_) => Ok(result),
+    }
+}
+
 /// 1..=64 chars of `[a-zA-Z0-9_-]`.
 pub fn is_valid_tool_name(name: &str) -> bool {
     (1..=64).contains(&name.len())
@@ -203,6 +218,30 @@ mod tests {
         let r = create_error_result("boom", "t1");
         assert_eq!(r.text(), "Error: boom");
         assert_eq!(r.status, crate::types::ToolResultStatus::Error);
+    }
+
+    #[test]
+    fn tool_error_or_propagate_separates_control_flow_from_failures() {
+        let interrupt = Error::Interrupt(vec![crate::interrupt::Interrupt::new(
+            "tool:t1:confirm",
+            "confirm",
+            InterruptSource::Tool,
+        )]);
+        assert!(matches!(
+            tool_error_or_propagate(interrupt, "t1"),
+            Err(Error::Interrupt(_))
+        ));
+        assert!(matches!(
+            tool_error_or_propagate(Error::Cancelled, "t1"),
+            Err(Error::Cancelled)
+        ));
+
+        let result = tool_error_or_propagate(Error::other("boom"), "t1").unwrap();
+        assert_eq!(result.text(), "Error: boom");
+        assert_eq!(result.status, crate::types::ToolResultStatus::Error);
+
+        let result = tool_error_or_propagate("plain failure".to_owned(), "t1").unwrap();
+        assert_eq!(result.text(), "Error: plain failure");
     }
 
     #[test]
