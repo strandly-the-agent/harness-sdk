@@ -11,6 +11,9 @@ use strands_agents::tools::{function_tool, ToolRef};
 use strands_agents::types::{ContentBlock, ToolUseBlock, Usage};
 use strands_agents::{Agent, Message};
 
+/// The tracer provider is process-global, so tests that emit spans must not overlap.
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn attr<'a>(span: &'a SpanData, key: &str) -> Option<&'a Value> {
     span.attributes
         .iter()
@@ -43,6 +46,7 @@ fn echo_tool() -> ToolRef {
 /// One test owns the global provider: it is process-wide, so all span assertions share a run.
 #[tokio::test]
 async fn agent_loop_emits_the_gen_ai_span_tree_with_attributes_and_metrics() {
+    let _serial = SERIAL.lock().await;
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
@@ -214,6 +218,7 @@ async fn agent_loop_emits_the_gen_ai_span_tree_with_attributes_and_metrics() {
 /// Error paths: a failing model records the exception and an ERROR status on the model span.
 #[tokio::test]
 async fn model_errors_are_recorded_on_the_model_span() {
+    let _serial = SERIAL.lock().await;
     let tracer = strands_agents::telemetry::Tracer::new(strands_agents::telemetry::TelemetryConfig::new());
     let agent_span = tracer.start_agent_span(Default::default());
     let cycle = tracer.start_agent_loop_span(&agent_span, "cycle-1");
@@ -231,6 +236,7 @@ async fn model_errors_are_recorded_on_the_model_span() {
 /// `end_*` tolerates a span that was never started (TS "handles null span gracefully").
 #[tokio::test]
 async fn handles_unstarted_spans_gracefully() {
+    let _serial = SERIAL.lock().await;
     let tracer = strands_agents::telemetry::Tracer::new(strands_agents::telemetry::TelemetryConfig::new());
     let span = strands_agents::telemetry::SpanHandle::default();
     tracer.end_agent_span(&span, None, None);
@@ -242,6 +248,7 @@ async fn handles_unstarted_spans_gracefully() {
 /// Spans carry no telemetry when no provider is installed, but metrics still accumulate.
 #[tokio::test]
 async fn metrics_are_collected_without_a_provider() {
+    let _serial = SERIAL.lock().await;
     let model = MockMessageModel::shared(vec![MockResponse::with_usage(
         Message::assistant("hi"),
         Usage {
