@@ -307,6 +307,9 @@ impl AgentBuilder {
         if let Some(manager) = self.session_manager {
             plugins.push(manager);
         }
+        if !plugins.iter().any(|p| p.name() == super::delegation::PLUGIN_NAME) {
+            plugins.push(Arc::new(super::AgentDelegation::default()));
+        }
         plugins.push(Arc::new(ModelPlugin::new(Arc::clone(&model))));
 
         let background_tasks = match self.background_tasks {

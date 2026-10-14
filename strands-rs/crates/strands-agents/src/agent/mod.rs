@@ -4,6 +4,7 @@ mod agent_as_tool;
 mod builder;
 mod checkpoint;
 mod continuation;
+mod delegation;
 mod event_loop;
 mod invocation_state;
 mod result;
@@ -32,6 +33,7 @@ pub use checkpoint::{
     Checkpoint, CheckpointData, CheckpointPosition, CheckpointResumeContent, CHECKPOINT_SCHEMA_VERSION,
 };
 pub use continuation::{is_complete_message_input, ContinuationInput, Continuations};
+pub use delegation::{AgentDelegation, DELEGATION_SINGLE_CALL_CANCEL};
 pub use event_loop::{
     AgentStream, AgentStreamEvent, InvokeOptions, Limits, CONCURRENT_INVOCATION_MESSAGE, INTERRUPTED_MESSAGE,
     INTERRUPT_RESPONSES_ONLY_MESSAGE, INTERRUPT_RESUME_REQUIRED_MESSAGE,
