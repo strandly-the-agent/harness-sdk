@@ -883,3 +883,385 @@ impl crate::plugins::Plugin for BackgroundTasks {
         vec![self.manage_tool()]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::Tool;
+
+    fn spec_with(schema: JsonValue) -> ToolSpec {
+        let mut spec = ToolSpec::new("weather", "Weather");
+        spec.input_schema = Some(schema);
+        spec
+    }
+
+    #[test]
+    fn defaults_every_tool_to_agentic() {
+        let policy = resolve_policy(&BackgroundTasksConfig::default()).unwrap();
+        assert_eq!(policy.get("*"), Some(&Policy::Agentic));
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        assert_eq!(
+            plugin.policy_for("anything"),
+            Some(PolicyMatch {
+                mode: Policy::Agentic,
+                exact: false
+            })
+        );
+    }
+
+    #[test]
+    fn drops_the_agentic_wildcard_when_always_or_never_claims_it() {
+        let policy = resolve_policy(&BackgroundTasksConfig::default().never(["*"])).unwrap();
+        assert_eq!(policy.get("*"), Some(&Policy::Never));
+        let policy = resolve_policy(&BackgroundTasksConfig::default().always(["*"])).unwrap();
+        assert_eq!(policy.get("*"), Some(&Policy::Always));
+    }
+
+    #[test]
+    fn rejects_a_tool_configured_in_two_modes() {
+        let error = resolve_policy(&BackgroundTasksConfig::default().agentic(["a"]).always(["a"])).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Tool 'a' cannot be configured as both 'agentic' and 'always'"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn prefers_an_exact_entry_over_the_wildcard() {
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default().never(["weather"])).unwrap();
+        assert_eq!(
+            plugin.policy_for("weather"),
+            Some(PolicyMatch {
+                mode: Policy::Never,
+                exact: true
+            })
+        );
+    }
+
+    #[test]
+    fn injects_the_background_property() {
+        let spec = spec_with(serde_json::json!({
+            "type": "object",
+            "properties": { "city": { "type": "string" } },
+            "required": ["city"],
+        }));
+        let rewritten = add_background_selection(&spec).unwrap();
+        let schema = rewritten.input_schema.unwrap();
+        assert_eq!(
+            schema["properties"][BACKGROUND_PROPERTY],
+            serde_json::json!({ "type": "boolean", "description": BACKGROUND_PROPERTY_DESCRIPTION })
+        );
+        assert_eq!(schema["properties"]["city"], serde_json::json!({ "type": "string" }));
+        assert_eq!(schema["required"], serde_json::json!(["city"]));
+    }
+
+    #[test]
+    fn refuses_composite_and_conflicting_schemas() {
+        for schema in [
+            serde_json::json!({ "anyOf": [{ "type": "object" }] }),
+            serde_json::json!({ "$ref": "#/defs/x" }),
+            serde_json::json!({ "type": "string" }),
+            serde_json::json!({ "type": "object", "properties": [] }),
+            serde_json::json!({ "type": "object", "properties": { BACKGROUND_PROPERTY: { "type": "string" } } }),
+            serde_json::json!({ "type": "object", "required": [BACKGROUND_PROPERTY] }),
+        ] {
+            assert!(
+                add_background_selection(&spec_with(schema.clone())).is_none(),
+                "{schema} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn fails_an_exact_agentic_tool_whose_schema_cannot_take_the_flag() {
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default().agentic(["weather"])).unwrap();
+        let spec = spec_with(serde_json::json!({ "anyOf": [{ "type": "object" }] }));
+        let error = plugin.rewrite_tool_specs(vec![spec.clone()]).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Tool 'weather' cannot use agentic background selection"),
+            "{error}"
+        );
+
+        let wildcard = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        assert_eq!(wildcard.rewrite_tool_specs(vec![spec.clone()]).unwrap(), vec![spec]);
+    }
+
+    #[test]
+    fn routes_only_when_the_flag_is_set_for_an_agentic_tool() {
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+
+        let mut tool_use = ToolUse {
+            name: "weather".to_owned(),
+            tool_use_id: "t1".to_owned(),
+            input: serde_json::json!({ "city": "Berlin", BACKGROUND_PROPERTY: true }),
+        };
+        assert!(matches!(
+            plugin.route_tool_call(&mut tool_use, "weather", "weather"),
+            Route::Background
+        ));
+        assert_eq!(tool_use.input, serde_json::json!({ "city": "Berlin" }));
+
+        let mut tool_use = ToolUse {
+            name: "weather".to_owned(),
+            tool_use_id: "t2".to_owned(),
+            input: serde_json::json!({ BACKGROUND_PROPERTY: false }),
+        };
+        assert!(matches!(
+            plugin.route_tool_call(&mut tool_use, "weather", "weather"),
+            Route::Foreground
+        ));
+
+        let mut tool_use = ToolUse {
+            name: "weather".to_owned(),
+            tool_use_id: "t3".to_owned(),
+            input: serde_json::json!({ BACKGROUND_PROPERTY: "yes" }),
+        };
+        let Route::Error(result) = plugin.route_tool_call(&mut tool_use, "weather", "weather") else {
+            panic!("expected an error result");
+        };
+        assert_eq!(result.status, ToolResultStatus::Error);
+        assert_eq!(result.text(), "'_background_execution' must be a boolean");
+    }
+
+    #[test]
+    fn always_routes_without_the_flag_and_never_stays_in_the_foreground() {
+        let plugin = BackgroundTasks::new(
+            BackgroundTasksConfig::default()
+                .agentic(Vec::<String>::new())
+                .always(["bg"])
+                .never(["fg"]),
+        )
+        .unwrap();
+        let mut bg = ToolUse {
+            name: "bg".to_owned(),
+            tool_use_id: "t1".to_owned(),
+            input: serde_json::json!({}),
+        };
+        assert!(matches!(plugin.route_tool_call(&mut bg, "bg", "bg"), Route::Background));
+        let mut fg = ToolUse {
+            name: "fg".to_owned(),
+            tool_use_id: "t2".to_owned(),
+            input: serde_json::json!({ BACKGROUND_PROPERTY: true }),
+        };
+        assert!(matches!(plugin.route_tool_call(&mut fg, "fg", "fg"), Route::Foreground));
+    }
+
+    #[test]
+    fn refuses_to_background_a_foreground_only_tool_listed_explicitly() {
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default().always([MANAGE_TOOL_NAME])).unwrap();
+        let mut tool_use = ToolUse {
+            name: MANAGE_TOOL_NAME.to_owned(),
+            tool_use_id: "t1".to_owned(),
+            input: serde_json::json!({ "mode": "list" }),
+        };
+        let Route::Error(result) = plugin.route_tool_call(&mut tool_use, MANAGE_TOOL_NAME, MANAGE_TOOL_NAME) else {
+            panic!("expected an error result");
+        };
+        assert_eq!(
+            result.text(),
+            format!("Tool '{MANAGE_TOOL_NAME}' cannot run in the background")
+        );
+    }
+
+    fn task(task_id: &str, status: BackgroundTaskStatus) -> BackgroundTask {
+        BackgroundTask {
+            task_id: task_id.to_owned(),
+            tool_use_id: "tu-1".to_owned(),
+            tool_name: "weather".to_owned(),
+            status,
+            created_at: 1,
+            last_updated_at: 2,
+            result: Some(vec![ToolResultContent::Text("sunny".to_owned())]),
+            error: None,
+        }
+    }
+
+    async fn manage_result(plugin: &BackgroundTasks, agent: &Agent, input: JsonValue) -> Result<JsonValue> {
+        let tool = plugin.manage_tool();
+        let context = ToolContext::new(
+            ToolUse {
+                name: MANAGE_TOOL_NAME.to_owned(),
+                tool_use_id: "call-1".to_owned(),
+                input: input.clone(),
+            },
+            agent.clone(),
+            InvocationState::default(),
+            CancellationToken::new(),
+        );
+        let result = tool.invoke(context).await?;
+        if result.status == ToolResultStatus::Error {
+            return Err(Error::other(result.text()));
+        }
+        Ok(match result.content.first() {
+            Some(ToolResultContent::Json(value)) => value.clone(),
+            other => serde_json::to_value(other).unwrap(),
+        })
+    }
+
+    #[tokio::test]
+    async fn manage_tool_lists_gets_and_cancels() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Completed));
+        plugin.registry.insert(task("bgtask-2", BackgroundTaskStatus::Working));
+
+        let listed = manage_result(&plugin, &agent, serde_json::json!({ "mode": "list" }))
+            .await
+            .unwrap();
+        assert_eq!(
+            listed,
+            serde_json::json!({ "tasks": [
+                { "taskId": "bgtask-1", "toolName": "weather", "status": "completed" },
+                { "taskId": "bgtask-2", "toolName": "weather", "status": "working" },
+            ] })
+        );
+
+        let got = manage_result(
+            &plugin,
+            &agent,
+            serde_json::json!({ "mode": "get", "taskId": "bgtask-1" }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(got["status"], serde_json::json!("completed"));
+        assert_eq!(got["taskId"], serde_json::json!("bgtask-1"));
+
+        let cancelled = manage_result(
+            &plugin,
+            &agent,
+            serde_json::json!({ "mode": "cancel", "taskId": "bgtask-2" }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            cancelled,
+            serde_json::json!({ "taskId": "bgtask-2", "status": "cancelled" })
+        );
+        assert_eq!(
+            plugin.get("bgtask-2").unwrap().status,
+            BackgroundTaskStatus::Cancelled
+        );
+    }
+
+    #[tokio::test]
+    async fn manage_tool_rejects_a_missing_or_unknown_task_id() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+
+        let error = manage_result(&plugin, &agent, serde_json::json!({ "mode": "get" }))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("Task ID is required for mode 'get'"), "{error}");
+
+        let error = manage_result(
+            &plugin,
+            &agent,
+            serde_json::json!({ "mode": "get", "taskId": "nope" }),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("Background task 'nope' was not found"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn delivers_terminal_tasks_as_a_synthetic_tool_pair() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Failed));
+        plugin.registry.insert(task("bgtask-2", BackgroundTaskStatus::Working));
+
+        assert!(plugin.deliver_ready(&agent));
+        let messages = agent.take_continuation_input();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, Role::Assistant);
+        let ContentBlock::ToolUse(tool_use) = &messages[0].content[0] else {
+            panic!("expected a tool use");
+        };
+        assert_eq!(tool_use.name, MANAGE_TOOL_NAME);
+        assert_eq!(tool_use.tool_use_id, "bgtask-1");
+        assert_eq!(
+            tool_use.input,
+            serde_json::json!({ "mode": "get", "taskId": "bgtask-1" })
+        );
+
+        assert_eq!(messages[1].role, Role::User);
+        let ContentBlock::ToolResult(result) = &messages[1].content[0] else {
+            panic!("expected a tool result");
+        };
+        assert_eq!(result.status, ToolResultStatus::Success);
+        assert_eq!(result.content[1], ToolResultContent::Text("sunny".to_owned()));
+        let ToolResultContent::Json(metadata) = &result.content[0] else {
+            panic!("expected metadata json");
+        };
+        assert_eq!(metadata["status"], serde_json::json!("failed"));
+        assert!(metadata.get("result").is_none());
+
+        assert!(plugin.get("bgtask-1").is_none());
+        assert!(plugin.get("bgtask-2").is_some());
+    }
+
+    #[test]
+    fn force_fails_non_terminal_tasks_on_restore() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Working));
+        plugin.persist(&agent);
+
+        let restored = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        restored.load_app_state(&agent);
+        let task = restored.get("bgtask-1").unwrap();
+        assert_eq!(task.status, BackgroundTaskStatus::Failed);
+        assert_eq!(
+            task.error,
+            Some(BackgroundTaskFailure {
+                r#type: BackgroundTaskFailureType::ExecutionError,
+                message: RESTORE_FAILURE_MESSAGE.to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn persisting_an_empty_registry_clears_the_state_key() {
+        let agent = crate::agent::test_agent();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Completed));
+        plugin.persist(&agent);
+        assert!(agent.state().get(BACKGROUND_TASKS_STATE_KEY).is_some());
+
+        plugin.registry.remove(&["bgtask-1".to_owned()]);
+        plugin.persist(&agent);
+        assert!(agent.state().get(BACKGROUND_TASKS_STATE_KEY).is_none());
+    }
+
+    #[test]
+    fn rejects_snapshot_loads_while_tasks_are_tracked() {
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
+        assert!(plugin.assert_can_load_snapshot().is_ok());
+        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Working));
+        let error = plugin.assert_can_load_snapshot().unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Cannot load a snapshot while background tasks are still tracked"
+        );
+    }
+
+    #[test]
+    fn rejects_out_of_range_timer_delays() {
+        assert!(assert_timer_delay("timeout", 5).is_ok());
+        assert_eq!(
+            assert_timer_delay("timeout", 0).unwrap_err().to_string(),
+            "timeout must be a positive finite integer, got 0"
+        );
+        assert_eq!(
+            assert_timer_delay("timeout", MAX_TIMER_DELAY_MS + 1).unwrap_err().to_string(),
+            format!("timeout must be at most {MAX_TIMER_DELAY_MS}ms, got {}", MAX_TIMER_DELAY_MS + 1)
+        );
+    }
+}
