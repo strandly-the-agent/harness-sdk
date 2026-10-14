@@ -41,7 +41,9 @@ pub struct ToolHandle {
 
 impl std::fmt::Debug for ToolHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ToolHandle").field("tool", &self.tool.name()).finish()
+        f.debug_struct("ToolHandle")
+            .field("tool", &self.tool.name())
+            .finish()
     }
 }
 
@@ -127,7 +129,8 @@ impl ToolHandle {
     }
 
     async fn append(&self, message: Message, state: &InvocationState) -> Result<()> {
-        self.agent.with_messages(|messages| messages.push(message.clone()));
+        self.agent
+            .with_messages(|messages| messages.push(message.clone()));
         let mut event = MessageAddedEvent {
             agent: self.agent.clone(),
             message,
@@ -161,7 +164,9 @@ mod tests {
 
     fn agent_with_tools(tools: Vec<ToolRef>) -> Agent {
         let agent = test_agent_with("tool-caller", None, Vec::new());
-        agent.with_tool_registry(|registry| registry.add_or_replace(tools)).unwrap();
+        agent
+            .with_tool_registry(|registry| registry.add_or_replace(tools))
+            .unwrap();
         agent
     }
 
@@ -194,7 +199,12 @@ mod tests {
     #[tokio::test]
     async fn calls_a_tool_with_empty_input_when_no_input_provided() {
         let agent = agent_with_tools(vec![echo_tool("calculator")]);
-        let result = agent.tool("calculator").unwrap().call(JsonValue::Null).await.unwrap();
+        let result = agent
+            .tool("calculator")
+            .unwrap()
+            .call(JsonValue::Null)
+            .await
+            .unwrap();
 
         assert_eq!(text_of(&result), "{}");
         let messages = agent.messages();
@@ -374,7 +384,9 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(err, Error::ConcurrentInvocation(ref msg) if msg == DIRECT_CALL_DURING_INVOCATION_MESSAGE));
+        assert!(
+            matches!(err, Error::ConcurrentInvocation(ref msg) if msg == DIRECT_CALL_DURING_INVOCATION_MESSAGE)
+        );
     }
 
     #[tokio::test]
@@ -490,10 +502,12 @@ mod tests {
         let agent = agent_with_tools(vec![echo_tool("calculator")]);
         let seen: Arc<parking_lot::Mutex<Vec<Role>>> = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let captured = Arc::clone(&seen);
-        agent.hooks().add_sync_callback(move |event: &mut MessageAddedEvent| {
-            captured.lock().push(event.message.role);
-            Ok(())
-        });
+        agent
+            .hooks()
+            .add_sync_callback(move |event: &mut MessageAddedEvent| {
+                captured.lock().push(event.message.role);
+                Ok(())
+            });
 
         agent
             .tool("calculator")
@@ -502,10 +516,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            *seen.lock(),
-            vec![Role::Assistant, Role::User, Role::Assistant]
-        );
+        assert_eq!(*seen.lock(), vec![Role::Assistant, Role::User, Role::Assistant]);
     }
 
     #[tokio::test]
@@ -513,10 +524,12 @@ mod tests {
         let agent = agent_with_tools(vec![echo_tool("calculator")]);
         let count = Arc::new(AtomicBool::new(false));
         let captured = Arc::clone(&count);
-        agent.hooks().add_sync_callback(move |_event: &mut MessageAddedEvent| {
-            captured.store(true, Ordering::SeqCst);
-            Ok(())
-        });
+        agent
+            .hooks()
+            .add_sync_callback(move |_event: &mut MessageAddedEvent| {
+                captured.store(true, Ordering::SeqCst);
+                Ok(())
+            });
 
         agent
             .tool("calculator")

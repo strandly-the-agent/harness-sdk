@@ -12,7 +12,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
     let agent = Agent::new(Arc::new(model)).await?;
 
-    let result = agent.invoke("In one sentence: what is a model-driven agent?").await?;
+    let result = agent
+        .invoke("In one sentence: what is a model-driven agent?")
+        .await?;
     println!("{result}");
 
     Ok(())
