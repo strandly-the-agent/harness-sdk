@@ -173,6 +173,7 @@ impl InvokeOptions {
 /// An event yielded by [`Agent::stream`]; `AgentResult` is always last.
 #[derive(Clone)]
 #[non_exhaustive]
+#[allow(clippy::large_enum_variant)]
 pub enum AgentStreamEvent {
     /// Before the invocation starts.
     BeforeInvocation(BeforeInvocationEvent),

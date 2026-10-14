@@ -140,36 +140,6 @@ fn detect_langfuse() -> bool {
     .any(|v| v.to_lowercase().contains("langfuse"))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn config_defaults_to_stable_conventions() {
-        let config = TelemetryConfig::new();
-        assert_eq!(config.provider_key(), "gen_ai.system");
-        assert!(!config.events_as_attributes());
-    }
-
-    #[test]
-    fn latest_conventions_rename_the_provider_key() {
-        let config = TelemetryConfig {
-            use_latest_conventions: true,
-            ..TelemetryConfig::new()
-        };
-        assert_eq!(config.provider_key(), "gen_ai.provider.name");
-    }
-
-    #[test]
-    fn langfuse_records_events_as_span_attributes() {
-        let config = TelemetryConfig {
-            is_langfuse: true,
-            ..TelemetryConfig::new()
-        };
-        assert!(config.events_as_attributes());
-    }
-}
-
 /// Keeps one `execute_agent_loop_cycle` span and its metric cycle open for a scope.
 ///
 /// Ending on drop covers the loop's many early returns.
@@ -210,5 +180,35 @@ impl Drop for CycleScope {
     fn drop(&mut self) {
         self.meter.end_cycle(&self.cycle);
         self.tracer.end_agent_loop_span(&self.span, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_defaults_to_stable_conventions() {
+        let config = TelemetryConfig::new();
+        assert_eq!(config.provider_key(), "gen_ai.system");
+        assert!(!config.events_as_attributes());
+    }
+
+    #[test]
+    fn latest_conventions_rename_the_provider_key() {
+        let config = TelemetryConfig {
+            use_latest_conventions: true,
+            ..TelemetryConfig::new()
+        };
+        assert_eq!(config.provider_key(), "gen_ai.provider.name");
+    }
+
+    #[test]
+    fn langfuse_records_events_as_span_attributes() {
+        let config = TelemetryConfig {
+            is_langfuse: true,
+            ..TelemetryConfig::new()
+        };
+        assert!(config.events_as_attributes());
     }
 }
