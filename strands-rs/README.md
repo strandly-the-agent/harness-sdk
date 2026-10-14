@@ -6,30 +6,22 @@ tools composed into an agent loop. **Experimental** — API may change; see
 what is and isn't ported.
 
 ```rust
-use schemars::JsonSchema;
-use serde::Deserialize;
 use strands_agents::models::{BedrockModel, BedrockModelConfig};
-use strands_agents::tools::{FunctionTool, ToolContext};
-use strands_agents::Agent;
+use strands_agents::{tool, Agent};
 
-#[derive(Deserialize, JsonSchema)]
-struct WeatherInput {
-    city: String,
+/// Current weather for a city.
+#[tool]
+async fn weather(city: String) -> String {
+    format!("It is 22°C and sunny in {city}.")
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let weather = FunctionTool::builder("weather")
-        .description("Current weather for a city")
-        .typed_handler(|input: WeatherInput, _ctx: ToolContext| async move {
-            Ok(format!("It is 22°C and sunny in {}.", input.city))
-        });
-
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
     let agent = Agent::builder()
         .model(model)
         .system_prompt("You are a terse assistant.")
-        .tool(weather)
+        .tool(WeatherTool::new())
         .build()
         .await?;
 
@@ -39,11 +31,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-More in `crates/strands-agents/examples/` (`basic`, `tools`, `hooks`, `streaming`).
+`#[tool]` generates a `WeatherTool` struct (doc comment ⇒ description, parameters ⇒ JSON
+schema) and comes from the default `macros` feature; `FunctionTool::builder` is the
+runtime equivalent (see the `tools_builder` example).
+
+More in `crates/strands-agents/examples/` (`basic`, `tools`, `tools_builder`, `hooks`,
+`streaming`).
 
 ## Features
 
 - `bedrock` (default) — Amazon Bedrock Converse provider via `aws-sdk-bedrockruntime`.
+- `macros` (default) — the `#[tool]` attribute macro from `strands-agents-macros`.
 
 ## Development
 

@@ -215,7 +215,9 @@ fn extract_doc_comment(attrs: &[Attribute]) -> String {
                 if let syn::Lit::Str(lit_str) = &expr_lit.lit {
                     let line = lit_str.value().trim().to_string();
                     let lower = line.to_lowercase();
-                    if lower.starts_with("# arg") || lower.starts_with("args:") || lower.starts_with("arguments:")
+                    if lower.starts_with("# arg")
+                        || lower.starts_with("args:")
+                        || lower.starts_with("arguments:")
                     {
                         break;
                     }
