@@ -88,6 +88,14 @@ impl AgentBuilder {
         self
     }
 
+    /// Register a [`MemoryManager`](crate::memory::MemoryManager): adds it as a plugin and
+    /// registers its memory tools.
+    pub fn memory_manager(mut self, manager: Arc<crate::memory::MemoryManager>) -> Self {
+        self.tools.extend(manager.memory_tools());
+        self.plugins.push(manager);
+        self
+    }
+
     /// Replace the user plugin list.
     pub fn plugins(mut self, plugins: impl IntoIterator<Item = Arc<dyn Plugin>>) -> Self {
         self.plugins = plugins.into_iter().collect();
