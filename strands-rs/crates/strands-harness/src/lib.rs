@@ -19,17 +19,27 @@ pub use agent::{
     SessionConfig, SessionOption, SkillsOption,
 };
 pub use builtin_tools::{
-    builtin_tool_config, enabled_builtin_tools, resolve_builtin_tools, select_builtin_plugins,
-    select_builtin_tools, web_search_explicit, web_search_mode, BuiltinToolName, BuiltinToolSetting,
-    BuiltinToolsConfig, ResolvedBuiltinTools, WebSearchMode, WebSearchModel, BUILTIN_PLUGIN_NAMES,
-    BUILTIN_TOOL_NAMES,
+    BuiltinPluginName, BuiltinToolName, BuiltinToolSetting, BuiltinToolsConfig, WebSearchMode,
+    BUILTIN_PLUGIN_NAMES, BUILTIN_TOOL_NAMES,
 };
-pub use interventions::{resolve_interventions, InterventionHandler, InterventionsOption};
+pub use interventions::InterventionsOption;
 pub use memory::{resolve_memory, ResolveMemoryOptions};
-pub use models::{resolve_model, supports_thinking, supports_web_search, Effort, ModelOption};
-pub use plugins::{EnvironmentContext, EnvironmentContextConfig, TodoItem, TodoStatus, Todos, TodosConfig};
+pub use models::{resolve_model, Effort, ModelOption, ResolveModelOptions};
+pub use plugins::{EnvironmentContext, EnvironmentContextConfig, Todos, TodosConfig};
 pub use prompt::{build_system_prompt, HARNESS_CONTRACT};
-pub use tools::{edit, make_read, read, write, ReadConfig};
-pub use tools::{exa_web_search, make_exa_web_search, SearchBackend, SearchResult, WebSearchError};
-#[cfg(feature = "http")]
-pub use tools::{make_web_fetch, MakeWebFetchOptions, WebFetchTransport};
+
+/// The harness in one `use`: [`create_harness`], its options, and the model sugar.
+///
+/// Resolvers and the individual tools stay in their modules ([`builtin_tools`], [`tools`]).
+pub mod prelude {
+    pub use crate::agent::{
+        create_harness, BackgroundTasksOption, CachingOption, HarnessAgentOptions, MemoryConfig,
+        MemoryOption, SessionConfig, SessionOption, SkillsOption,
+    };
+    pub use crate::builtin_tools::{
+        BuiltinPluginName, BuiltinToolName, BuiltinToolSetting, BuiltinToolsConfig,
+    };
+    pub use crate::interventions::InterventionsOption;
+    pub use crate::models::{Effort, ModelOption};
+    pub use crate::prompt::{build_system_prompt, HARNESS_CONTRACT};
+}

@@ -20,6 +20,9 @@ use strands_agents::models::Model;
 use strands_agents::types::JsonValue;
 use strands_agents::{Error, Result};
 
+use crate::agent::CachingOption;
+use crate::defaults::DEFAULT_MODEL;
+
 #[cfg(feature = "bedrock")]
 use strands_agents::models::{BedrockModel, BedrockModelConfig, CacheConfig, CacheStrategy};
 
@@ -70,6 +73,7 @@ static CLAUDE_ID: LazyLock<Regex> = LazyLock::new(|| {
 static WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 /// Log `message` at warn level the first time it is seen (TS `warnOnce`).
+#[doc(hidden)]
 pub fn warn_once(message: impl Into<String>) {
     let message = message.into();
     let mut seen = WARNED.lock().expect("warn_once mutex is not poisoned");
@@ -79,6 +83,7 @@ pub fn warn_once(message: impl Into<String>) {
 }
 
 /// Forget every message already warned about (test helper; TS `resetWarnOnce`).
+#[doc(hidden)]
 pub fn reset_warn_once() {
     WARNED.lock().expect("warn_once mutex is not poisoned").clear();
 }
@@ -170,6 +175,12 @@ impl fmt::Debug for ModelOption {
 impl From<String> for ModelOption {
     fn from(id: String) -> Self {
         Self::Id(id)
+    }
+}
+
+impl From<Arc<dyn Model>> for ModelOption {
+    fn from(model: Arc<dyn Model>) -> Self {
+        Self::Instance(model)
     }
 }
 
@@ -482,19 +493,48 @@ fn bedrock_config(name: &str, effort: Option<&str>, caching: bool) -> BedrockMod
     }
 }
 
+/// Options for [`resolve_model`].
+pub struct ResolveModelOptions {
+    /// What the caller passed for `model`; unset falls back to `default`.
+    pub model: Option<ModelOption>,
+    /// Model used when `model` is unset (defaults to [`DEFAULT_MODEL`]).
+    pub default: String,
+    /// Reasoning effort.
+    pub effort: Effort,
+    /// Whether the model should serve `web_search` natively.
+    pub web_search: bool,
+    /// Prompt caching. [`CachingOption::Auto`] warns where the provider has none;
+    /// [`CachingOption::On`] errors.
+    pub caching: CachingOption,
+}
+
+impl Default for ResolveModelOptions {
+    fn default() -> Self {
+        Self {
+            model: None,
+            default: DEFAULT_MODEL.to_string(),
+            effort: Effort::Auto,
+            web_search: false,
+            caching: CachingOption::default(),
+        }
+    }
+}
+
 /// Resolve a model option into a ready [`Model`].
 ///
 /// A pre-built instance is returned unchanged (with a warning when `effort`/`caching` could not
 /// be applied); otherwise `"provider/name"` (or a bare Bedrock id) is parsed and the provider's
 /// reasoning-effort and prompt-caching fields are configured.
-pub async fn resolve_model(
-    model: Option<ModelOption>,
-    default: &str,
-    effort: Effort,
-    web_search: bool,
-    caching: bool,
-    caching_explicit: bool,
-) -> Result<Arc<dyn Model>> {
+pub async fn resolve_model(options: ResolveModelOptions) -> Result<Arc<dyn Model>> {
+    let ResolveModelOptions {
+        model,
+        default,
+        effort,
+        web_search,
+        caching: caching_option,
+    } = options;
+    let caching = !matches!(caching_option, CachingOption::Off);
+    let caching_explicit = matches!(caching_option, CachingOption::On);
     let spec = match model {
         Some(ModelOption::Instance(instance)) => {
             if effort != Effort::Auto {
@@ -509,7 +549,7 @@ pub async fn resolve_model(
             return Ok(instance);
         }
         Some(ModelOption::Id(id)) => id,
-        None => default.to_string(),
+        None => default,
     };
     #[cfg(not(feature = "bedrock"))]
     {
@@ -760,14 +800,13 @@ mod tests {
         let _warn_guard = WARN_LOCK.lock().await;
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
-        let resolved = resolve_model(
-            Some(ModelOption::Instance(instance.clone())),
-            DEFAULT,
-            Effort::Auto,
-            false,
-            false,
-            false,
-        )
+        let resolved = resolve_model(ResolveModelOptions {
+            model: Some(ModelOption::Instance(instance.clone())),
+            default: DEFAULT.to_string(),
+            effort: Effort::Auto,
+            caching: CachingOption::Off,
+            ..Default::default()
+        })
         .await
         .expect("passes through");
         assert!(Arc::ptr_eq(&instance, &resolved));
@@ -1127,14 +1166,13 @@ mod tests {
         let _warn_guard = WARN_LOCK.lock().await;
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
-        resolve_model(
-            Some(ModelOption::Instance(instance)),
-            DEFAULT,
-            Effort::High,
-            false,
-            false,
-            false,
-        )
+        resolve_model(ResolveModelOptions {
+            model: Some(ModelOption::Instance(instance)),
+            default: DEFAULT.to_string(),
+            effort: Effort::High,
+            caching: CachingOption::Off,
+            ..Default::default()
+        })
         .await
         .expect("passes through");
         assert!(warned(
@@ -1147,14 +1185,13 @@ mod tests {
         let _warn_guard = WARN_LOCK.lock().await;
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
-        resolve_model(
-            Some(ModelOption::Instance(instance)),
-            DEFAULT,
-            Effort::Auto,
-            false,
-            false,
-            false,
-        )
+        resolve_model(ResolveModelOptions {
+            model: Some(ModelOption::Instance(instance)),
+            default: DEFAULT.to_string(),
+            effort: Effort::Auto,
+            caching: CachingOption::Off,
+            ..Default::default()
+        })
         .await
         .expect("passes through");
         assert!(!warned("pre-built Model instance"));
@@ -1165,14 +1202,13 @@ mod tests {
         let _warn_guard = WARN_LOCK.lock().await;
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
-        resolve_model(
-            Some(ModelOption::Instance(instance)),
-            DEFAULT,
-            Effort::Auto,
-            false,
-            true,
-            true,
-        )
+        resolve_model(ResolveModelOptions {
+            model: Some(ModelOption::Instance(instance)),
+            default: DEFAULT.to_string(),
+            effort: Effort::Auto,
+            caching: CachingOption::On,
+            ..Default::default()
+        })
         .await
         .expect("passes through");
         assert!(warned("prompt caching not applied to a pre-built Model instance"));
@@ -1183,14 +1219,13 @@ mod tests {
         let _warn_guard = WARN_LOCK.lock().await;
         reset_warn_once();
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
-        resolve_model(
-            Some(ModelOption::Instance(instance)),
-            DEFAULT,
-            Effort::Auto,
-            false,
-            true,
-            false,
-        )
+        resolve_model(ResolveModelOptions {
+            model: Some(ModelOption::Instance(instance)),
+            default: DEFAULT.to_string(),
+            effort: Effort::Auto,
+            caching: CachingOption::Auto,
+            ..Default::default()
+        })
         .await
         .expect("passes through");
         assert!(!warned("pre-built Model instance"));
