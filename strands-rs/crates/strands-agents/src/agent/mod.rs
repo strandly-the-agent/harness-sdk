@@ -208,14 +208,9 @@ impl Agent {
             .unwrap_or_else(|| self.model())
     }
 
-    /// Replace the model.
+    /// Replace the model; takes a value or an already shared `Arc<dyn Model>`.
     pub fn set_model(&self, model: impl Model + 'static) {
-        self.set_model_arc(Arc::new(model));
-    }
-
-    /// [`Agent::set_model`] with an already shared model.
-    pub fn set_model_arc(&self, model: Arc<dyn Model>) {
-        *self.inner.model.write() = model;
+        *self.inner.model.write() = Arc::new(model);
     }
 
     /// The middleware registered on this agent.

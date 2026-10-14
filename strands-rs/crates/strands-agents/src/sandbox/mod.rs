@@ -243,6 +243,68 @@ pub trait Sandbox: std::fmt::Debug + Send + Sync {
     }
 }
 
+/// Shared sandboxes are sandboxes too, so `Arc<S>` can be passed wherever `impl Sandbox` is
+/// expected.
+#[async_trait]
+impl<S: Sandbox + ?Sized> Sandbox for Arc<S> {
+    fn kind(&self) -> &str {
+        (**self).kind()
+    }
+
+    fn description(&self) -> &str {
+        (**self).description()
+    }
+
+    async fn execute(&self, command: &str, options: ExecuteOptions) -> SandboxResult<ExecutionResult> {
+        (**self).execute(command, options).await
+    }
+
+    fn execute_streaming<'a>(
+        &'a self,
+        command: &'a str,
+        options: ExecuteOptions,
+    ) -> BoxStream<'a, SandboxResult<SandboxEvent>> {
+        (**self).execute_streaming(command, options)
+    }
+
+    async fn execute_code(
+        &self,
+        code: &str,
+        language: &str,
+        options: ExecuteOptions,
+    ) -> SandboxResult<ExecutionResult> {
+        (**self).execute_code(code, language, options).await
+    }
+
+    async fn read_file(&self, path: &str) -> SandboxResult<Vec<u8>> {
+        (**self).read_file(path).await
+    }
+
+    async fn write_file(&self, path: &str, content: &[u8]) -> SandboxResult<()> {
+        (**self).write_file(path, content).await
+    }
+
+    async fn remove_file(&self, path: &str) -> SandboxResult<()> {
+        (**self).remove_file(path).await
+    }
+
+    async fn list_files(&self, path: &str) -> SandboxResult<Vec<FileInfo>> {
+        (**self).list_files(path).await
+    }
+
+    async fn read_text(&self, path: &str) -> SandboxResult<String> {
+        (**self).read_text(path).await
+    }
+
+    async fn write_text(&self, path: &str, content: &str) -> SandboxResult<()> {
+        (**self).write_text(path, content).await
+    }
+
+    fn tools(&self) -> Vec<ToolRef> {
+        (**self).tools()
+    }
+}
+
 /// A shared sandbox handle.
 pub type SandboxRef = Arc<dyn Sandbox>;
 

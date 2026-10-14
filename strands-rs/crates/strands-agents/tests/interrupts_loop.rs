@@ -75,8 +75,8 @@ async fn tool_interrupt_stops_the_loop_and_resume_finishes_the_tool() {
         Message::assistant("all done"),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(approve_tool(Arc::clone(&runs)))
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(approve_tool(Arc::clone(&runs)))
         .build()
         .unwrap();
 
@@ -124,8 +124,8 @@ async fn hook_interrupt_stops_the_loop_before_the_tool_runs() {
         Message::assistant("done"),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(sibling_tool("ok", Arc::clone(&runs)))
         .build()
         .unwrap();
     let _cleanup = agent
@@ -154,8 +154,8 @@ async fn hook_interrupt_stops_the_loop_before_the_tool_runs() {
 async fn invoking_with_new_input_while_interrupted_is_rejected() {
     let model = model(vec![tool_use_message(&[("approve", "call-1")])]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(approve_tool(Arc::new(AtomicUsize::new(0))))
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(approve_tool(Arc::new(AtomicUsize::new(0))))
         .build()
         .unwrap();
 
@@ -176,9 +176,9 @@ async fn a_sibling_interrupt_keeps_the_completed_tool_result() {
         Message::assistant("both done"),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(approve_tool(Arc::clone(&approve_runs)))
-        .tool_ref(sibling_tool("ok", Arc::clone(&sibling_runs)))
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(approve_tool(Arc::clone(&approve_runs)))
+        .tool(sibling_tool("ok", Arc::clone(&sibling_runs)))
         .build()
         .unwrap();
 
@@ -224,8 +224,8 @@ async fn hitl_with_a_scripted_ask_approves_and_denies_inline() {
                 Box::pin(async move { Ok(json!(answer)) }) as _
             })));
         let agent = Agent::builder()
-            .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-            .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
+            .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+            .tool(sibling_tool("ok", Arc::clone(&runs)))
             .interventions([hitl])
             .build()
             .unwrap();
@@ -258,8 +258,8 @@ async fn hitl_without_an_ask_interrupts_and_resumes() {
     ]);
     let hitl: Arc<dyn InterventionHandler> = Arc::new(HumanInTheLoop::new());
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(sibling_tool("ok", Arc::clone(&runs)))
         .interventions([hitl])
         .build()
         .unwrap();
@@ -295,8 +295,8 @@ async fn hitl_allowed_tools_skip_approval_entirely() {
     ]);
     let hitl: Arc<dyn InterventionHandler> = Arc::new(HumanInTheLoop::new().allowed_tools(["*"]));
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(sibling_tool("ok", Arc::clone(&runs)))
         .interventions([hitl])
         .build()
         .unwrap();
@@ -319,8 +319,8 @@ async fn an_interrupted_tool_still_ends_its_tool_span() {
     let runs = Arc::new(AtomicUsize::new(0));
     let model = model(vec![tool_use_message(&[("approve", "call-1")])]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(approve_tool(Arc::clone(&runs)))
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(approve_tool(Arc::clone(&runs)))
         .build()
         .unwrap();
 

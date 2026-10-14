@@ -136,6 +136,26 @@ pub trait Tool: Send + Sync {
 /// Shared tool handle.
 pub type ToolRef = Arc<dyn Tool>;
 
+/// Shared tools are tools too, so `Arc<T>` can be passed wherever `impl Tool` is expected.
+#[async_trait]
+impl<T: Tool + ?Sized> Tool for Arc<T> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+
+    fn description(&self) -> &str {
+        (**self).description()
+    }
+
+    fn spec(&self) -> &ToolSpec {
+        (**self).spec()
+    }
+
+    async fn invoke(&self, ctx: ToolContext) -> Result<ToolResultBlock> {
+        (**self).invoke(ctx).await
+    }
+}
+
 /// `status: error` result with content `Error: <message>` (`createErrorResult` in TS).
 pub fn create_error_result(error: impl std::fmt::Display, tool_use_id: &str) -> ToolResultBlock {
     ToolResultBlock::error(tool_use_id, format!("Error: {error}"))

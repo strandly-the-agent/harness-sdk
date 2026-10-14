@@ -405,7 +405,7 @@ pub fn make_web_fetch(options: MakeWebFetchOptions) -> FunctionTool {
                 }
 
                 let summarizer = Agent::builder()
-                    .model_arc(model)
+                    .model(model)
                     .system_prompt(SUMMARIZER_PROMPT)
                     .build()?;
                 let result = summarizer

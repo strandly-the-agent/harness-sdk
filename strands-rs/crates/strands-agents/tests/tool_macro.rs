@@ -42,7 +42,7 @@ async fn echo_id(ctx: ToolContext) -> String {
 
 async fn agent() -> Agent {
     Agent::builder()
-        .model_arc(MockMessageModel::shared(vec![MockResponse::message(
+        .model(MockMessageModel::shared(vec![MockResponse::message(
             Message::assistant("done"),
         )]))
         .build()
@@ -157,8 +157,8 @@ async fn a_generated_tool_runs_in_the_agent_loop() {
         MockResponse::message(Message::assistant("It is sunny in Seattle.")),
     ]);
     let agent = Agent::builder()
-        .model_arc(model)
-        .tool_ref(Arc::new(WeatherTool::new()))
+        .model(model)
+        .tool(Arc::new(WeatherTool::new()))
         .build()
         .unwrap();
 

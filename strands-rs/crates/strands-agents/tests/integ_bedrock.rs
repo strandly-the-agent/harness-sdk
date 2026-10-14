@@ -266,11 +266,7 @@ async fn handles_thinking_mode_with_tool_use() {
         .description("Test description")
         .input_schema(json!({"type": "object"}))
         .handler(|_input, _ctx: ToolContext| async move { Ok("result") });
-    let agent = Agent::builder()
-        .model(model)
-        .tool(test_tool)
-        .build()
-        .unwrap();
+    let agent = Agent::builder().model(model).tool(test_tool).build().unwrap();
 
     let result = agent
         .invoke("Use the testTool with the message \"Hello World\"")

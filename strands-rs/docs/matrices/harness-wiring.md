@@ -32,7 +32,7 @@ Branch `agent-tasks/strands-rs-h-wire` (worktree `/home/sandbox/wt/h-wire`), 3 c
    configures the agent for tracing and warns once that the `TracerProvider` is the embedder's to
    install on the OTel global API.
 4. **sandbox** — `SandboxOption::Default` registers `LocalSandbox` as the process default when none
-   is registered (TS default-slot semantics); `Off` → `no_sandbox()`; `Instance` → `sandbox_arc(..)`
+   is registered (TS default-slot semantics); `Off` → `no_sandbox()`; `Instance` → `sandbox(..)`
    plus `drop_sandbox_tools` (h1 step 23: remove the sandbox's vended tools from the registry after
    build, since the harness ships its own `shell`/`read`/`write`/`edit`).
 

@@ -286,7 +286,7 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
     let background = resolve_background_tasks(&options.background_tasks, &forced);
 
     let mut builder = Agent::builder()
-        .model_arc(model)
+        .model(model)
         .system_prompt(system_prompt)
         .tools(agent_tools)
         .plugins(plugins)
@@ -312,7 +312,7 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
             None
         }
         SandboxOption::Instance(sandbox) => {
-            builder = builder.sandbox_arc(sandbox.clone());
+            builder = builder.sandbox(sandbox.clone());
             Some(sandbox.clone())
         }
     };

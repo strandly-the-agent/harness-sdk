@@ -33,7 +33,7 @@ fn echo_tool() -> ToolRef {
 }
 
 async fn agent_with(model: Arc<MockMessageModel>) -> Agent {
-    Agent::builder().model_arc(model).build().unwrap()
+    Agent::builder().model(model).build().unwrap()
 }
 
 #[tokio::test]
@@ -127,11 +127,7 @@ async fn returns_mock_tool_result_without_executing_the_real_tool() {
         )),
         MockResponse::message(Message::assistant("done")),
     ]);
-    let agent = Agent::builder()
-        .model_arc(model)
-        .tool_ref(echo_tool())
-        .build()
-        .unwrap();
+    let agent = Agent::builder().model(model).tool(echo_tool()).build().unwrap();
 
     let seen = Arc::new(Mutex::new(Vec::new()));
     agent.add_middleware::<ExecuteToolStage>(wrap_fn({

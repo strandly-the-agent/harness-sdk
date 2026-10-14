@@ -44,16 +44,16 @@ async fn parent_calls_the_child_agent_tool_and_gets_its_text_back() {
     let child = Agent::builder()
         .name("researcher")
         .description("Researches things")
-        .model_arc(model(vec![Message::assistant("the answer is 42")]))
+        .model(model(vec![Message::assistant("the answer is 42")]))
         .build()
         .unwrap();
 
     let parent = Agent::builder()
-        .model_arc(model(vec![
+        .model(model(vec![
             tool_use("researcher", "call-1", json!({ "prompt": "what is the answer?" })),
             Message::assistant("the researcher says 42"),
         ]))
-        .tool_ref(child.as_tool(AgentAsToolOptions::default()))
+        .tool(child.as_tool(AgentAsToolOptions::default()))
         .build()
         .unwrap();
 
@@ -82,20 +82,20 @@ async fn a_child_interrupt_is_namespaced_in_the_parent_and_resumes_the_child() {
     let runs = Arc::new(AtomicUsize::new(0));
     let child = Agent::builder()
         .name("worker")
-        .model_arc(model(vec![
+        .model(model(vec![
             tool_use("approve", "child-1", json!({})),
             Message::assistant("all done"),
         ]))
-        .tool_ref(approve_tool(Arc::clone(&runs)))
+        .tool(approve_tool(Arc::clone(&runs)))
         .build()
         .unwrap();
 
     let parent = Agent::builder()
-        .model_arc(model(vec![
+        .model(model(vec![
             tool_use("worker", "call:1", json!({ "prompt": "do the thing" })),
             Message::assistant("the worker finished"),
         ]))
-        .tool_ref(child.as_tool(AgentAsToolOptions::default()))
+        .tool(child.as_tool(AgentAsToolOptions::default()))
         .build()
         .unwrap();
 

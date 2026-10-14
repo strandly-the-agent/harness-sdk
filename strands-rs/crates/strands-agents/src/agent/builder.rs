@@ -77,27 +77,17 @@ impl AgentBuilder {
         self
     }
 
-    /// The model the agent calls.
-    pub fn model(self, model: impl Model + 'static) -> Self {
-        self.model_arc(Arc::new(model))
+    /// The model the agent calls; takes a value or an already shared `Arc<dyn Model>`.
+    pub fn model(mut self, model: impl Model + 'static) -> Self {
+        self.model = Some(Arc::new(model));
+        self
     }
 
     /// Auxiliary model for internal side calls (memory extraction, summarization).
     ///
     /// Defaults to [`AgentBuilder::model`] when unset.
-    pub fn aux_model(self, model: impl Model + 'static) -> Self {
-        self.aux_model_arc(Arc::new(model))
-    }
-
-    /// [`AgentBuilder::aux_model`] with an already shared model.
-    pub fn aux_model_arc(mut self, model: Arc<dyn Model>) -> Self {
-        self.aux_model = Some(model);
-        self
-    }
-
-    /// [`AgentBuilder::model`] with an already shared model.
-    pub fn model_arc(mut self, model: Arc<dyn Model>) -> Self {
-        self.model = Some(model);
+    pub fn aux_model(mut self, model: impl Model + 'static) -> Self {
+        self.aux_model = Some(Arc::new(model));
         self
     }
 
@@ -113,14 +103,9 @@ impl AgentBuilder {
         self
     }
 
-    /// Add one tool.
-    pub fn tool(self, tool: impl Tool + 'static) -> Self {
-        self.tool_ref(Arc::new(tool))
-    }
-
-    /// [`AgentBuilder::tool`] with an already shared tool.
-    pub fn tool_ref(mut self, tool: ToolRef) -> Self {
-        self.tools.push(tool);
+    /// Add one tool; takes a value or an already shared [`ToolRef`].
+    pub fn tool(mut self, tool: impl Tool + 'static) -> Self {
+        self.tools.push(Arc::new(tool));
         self
     }
 
@@ -160,14 +145,9 @@ impl AgentBuilder {
         self
     }
 
-    /// Add one user plugin.
-    pub fn plugin(self, plugin: impl Plugin + 'static) -> Self {
-        self.plugin_arc(Arc::new(plugin))
-    }
-
-    /// [`AgentBuilder::plugin`] with an already shared plugin.
-    pub fn plugin_arc(mut self, plugin: Arc<dyn Plugin>) -> Self {
-        self.plugins.push(plugin);
+    /// Add one user plugin; takes a value or an already shared `Arc<dyn Plugin>`.
+    pub fn plugin(mut self, plugin: impl Plugin + 'static) -> Self {
+        self.plugins.push(Arc::new(plugin));
         self
     }
 
@@ -180,22 +160,17 @@ impl AgentBuilder {
     }
 
     /// Default storage shared by subsystems that have none of their own (context manager stash,
-    /// session snapshots).
+    /// session snapshots). Takes a value or an already shared [`StorageRef`](crate::storage::StorageRef).
     pub fn storage(mut self, storage: impl crate::storage::Storage + 'static) -> Self {
         self.storage = Some(Arc::new(storage));
         self
     }
 
-    /// Where the agent runs commands and file operations; its vended tools are registered at
-    /// build time unless a user tool already has the same name.
+    /// Where the agent runs commands and file operations; its vended tools are registered on
+    /// [`Agent::initialize`] unless a user tool already has the same name. Takes a value or an
+    /// already shared [`SandboxRef`](crate::sandbox::SandboxRef).
     pub fn sandbox(mut self, sandbox: impl crate::sandbox::Sandbox + 'static) -> Self {
         self.sandbox = Some(Some(Arc::new(sandbox)));
-        self
-    }
-
-    /// [`AgentBuilder::sandbox`] for an already shared handle.
-    pub fn sandbox_arc(mut self, sandbox: crate::sandbox::SandboxRef) -> Self {
-        self.sandbox = Some(Some(sandbox));
         self
     }
 
@@ -203,12 +178,6 @@ impl AgentBuilder {
     /// registered and [`Agent::sandbox`] falls back to the default slot.
     pub fn no_sandbox(mut self) -> Self {
         self.sandbox = Some(None);
-        self
-    }
-
-    /// [`AgentBuilder::storage`] for an already shared handle.
-    pub fn storage_arc(mut self, storage: crate::storage::StorageRef) -> Self {
-        self.storage = Some(storage);
         self
     }
 
@@ -230,14 +199,10 @@ impl AgentBuilder {
         self
     }
 
-    /// Tool executor; defaults to [`ConcurrentToolExecutor`].
-    pub fn tool_executor(self, executor: impl ToolExecutor + 'static) -> Self {
-        self.tool_executor_arc(Arc::new(executor))
-    }
-
-    /// [`AgentBuilder::tool_executor`] with an already shared executor.
-    pub fn tool_executor_arc(mut self, executor: Arc<dyn ToolExecutor>) -> Self {
-        self.executor = Some(executor);
+    /// Tool executor; defaults to [`ConcurrentToolExecutor`]. Takes a value or an already
+    /// shared `Arc<dyn ToolExecutor>`.
+    pub fn tool_executor(mut self, executor: impl ToolExecutor + 'static) -> Self {
+        self.executor = Some(Arc::new(executor));
         self
     }
 

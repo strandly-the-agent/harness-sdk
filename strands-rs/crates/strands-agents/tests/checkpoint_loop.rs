@@ -58,8 +58,8 @@ fn regenerating_model(extra: Vec<MockResponse>) -> Arc<MockMessageModel> {
 
 async fn checkpointing_agent(model: Arc<MockMessageModel>, tool: ToolRef) -> Agent {
     Agent::builder()
-        .model_arc(model)
-        .tool_ref(tool)
+        .model(model)
+        .tool(tool)
         .checkpointing(true)
         .build()
         .unwrap()
@@ -73,8 +73,8 @@ fn resume(checkpoint: Checkpoint) -> InvokeInput {
 async fn does_not_checkpoint_by_default() {
     let (tool, calls) = counting_tool();
     let agent = Agent::builder()
-        .model_arc(tool_then_text_model())
-        .tool_ref(tool)
+        .model(tool_then_text_model())
+        .tool(tool)
         .build()
         .unwrap();
 
@@ -160,8 +160,8 @@ async fn does_not_checkpoint_a_plain_end_turn_cycle() {
 async fn resume_requires_checkpointing_to_be_enabled() {
     let (tool, _) = counting_tool();
     let agent = Agent::builder()
-        .model_arc(tool_then_text_model())
-        .tool_ref(tool)
+        .model(tool_then_text_model())
+        .tool(tool)
         .build()
         .unwrap();
 

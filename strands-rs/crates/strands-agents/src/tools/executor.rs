@@ -84,6 +84,20 @@ pub trait ToolExecutor: Send + Sync {
     ) -> Result<()>;
 }
 
+/// Shared executors are executors too, so `Arc<E>` can be passed wherever `impl ToolExecutor`
+/// is expected.
+#[async_trait]
+impl<E: ToolExecutor + ?Sized> ToolExecutor for std::sync::Arc<E> {
+    async fn execute(
+        &self,
+        input: &ExecuteToolsInput,
+        events: &mpsc::Sender<ToolExecutorEvent>,
+        results: &mut Vec<ToolResultBlock>,
+    ) -> Result<()> {
+        (**self).execute(input, events, results).await
+    }
+}
+
 /// One tool at a time, in model order, re-checking cancellation before each tool.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SequentialToolExecutor;

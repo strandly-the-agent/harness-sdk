@@ -28,6 +28,22 @@ pub trait Plugin: Send + Sync {
     }
 }
 
+/// Shared plugins are plugins too, so `Arc<P>` can be passed wherever `impl Plugin` is expected.
+#[async_trait]
+impl<P: Plugin + ?Sized> Plugin for std::sync::Arc<P> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+
+    async fn init_agent(&self, agent: &Agent) -> Result<()> {
+        (**self).init_agent(agent).await
+    }
+
+    fn tools(&self) -> Vec<ToolRef> {
+        (**self).tools()
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_plugins {
     use std::sync::atomic::{AtomicBool, Ordering};

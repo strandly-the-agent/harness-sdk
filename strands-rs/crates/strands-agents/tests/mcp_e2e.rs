@@ -53,7 +53,7 @@ async fn an_agent_calls_the_mcp_tool_and_gets_the_echo_back() {
         MockResponse::message(Message::assistant("done")),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .tools(tools)
         .build()
         .unwrap();

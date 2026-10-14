@@ -58,6 +58,42 @@ pub trait Storage: Send + Sync {
     }
 }
 
+/// Shared storage is storage too, so `Arc<S>` can be passed wherever `impl Storage` is expected.
+#[async_trait]
+impl<S: Storage + ?Sized> Storage for Arc<S> {
+    async fn write(&self, key: &str, data: &[u8]) -> Result<()> {
+        (**self).write(key, data).await
+    }
+
+    async fn read(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        (**self).read(key).await
+    }
+
+    async fn delete(&self, key: &str) -> Result<()> {
+        (**self).delete(key).await
+    }
+
+    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+        (**self).list(prefix).await
+    }
+
+    fn is_ephemeral(&self) -> bool {
+        (**self).is_ephemeral()
+    }
+
+    fn is_namespaced(&self) -> bool {
+        (**self).is_namespaced()
+    }
+
+    fn namespace(self: Arc<Self>, prefix: &str) -> Option<StorageRef> {
+        Arc::clone(&*self).namespace(prefix)
+    }
+
+    async fn search(&self, query: &str) -> Option<Result<Vec<StorageSearchResult>>> {
+        (**self).search(query).await
+    }
+}
+
 /// Validate and canonicalize a key: collapses `//`, strips leading/trailing `/`, rejects `\`
 /// and `..`, rejects empty.
 pub fn normalize_key(key: &str) -> Result<String> {

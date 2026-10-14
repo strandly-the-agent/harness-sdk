@@ -43,8 +43,8 @@ async fn dispatches_a_flagged_tool_call_and_delivers_the_result_on_the_next_invo
         MockResponse::message(Message::assistant("the forecast is sunny")),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(slow_tool())
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(slow_tool())
         .background_tasks(BackgroundTasksConfig::new().wait_for_completion(false))
         .build()
         .unwrap();
@@ -125,8 +125,8 @@ async fn dispatches_a_flagged_tool_call_and_delivers_the_result_on_the_next_invo
 async fn offers_the_background_flag_only_for_agentic_tools() {
     let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("hi"))]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(slow_tool())
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(slow_tool())
         .background_tasks(BackgroundTasksConfig::new())
         .build()
         .unwrap();
@@ -160,8 +160,8 @@ async fn waits_for_outstanding_tasks_before_the_invocation_finishes() {
         MockResponse::message(Message::assistant("done with the result")),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(slow_tool())
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(slow_tool())
         .background_tasks(true)
         .build()
         .unwrap();
@@ -200,8 +200,8 @@ async fn a_denying_before_tool_call_hook_beats_background_routing() {
         MockResponse::message(Message::assistant("denied, carrying on")),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(tool)
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(tool)
         .background_tasks(BackgroundTasksConfig::new())
         .build()
         .unwrap();
@@ -279,8 +279,8 @@ async fn max_concurrency_one_runs_background_calls_sequentially() {
         MockResponse::message(Message::assistant("both dispatched")),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(tool)
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(tool)
         .background_tasks(
             BackgroundTasksConfig::new()
                 .wait_for_completion(false)
@@ -319,8 +319,8 @@ async fn a_timed_out_background_task_is_delivered_as_failed() {
         MockResponse::message(Message::assistant("it timed out")),
     ]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
-        .tool_ref(slow_tool())
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(slow_tool())
         .background_tasks(
             BackgroundTasksConfig::new()
                 .wait_for_completion(false)

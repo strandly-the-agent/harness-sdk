@@ -20,7 +20,7 @@ Pass B landed:
   default `Interval { turns: 5 }`) + `DEFAULT_EXTRACTION_TRIGGER_TURNS`.
 - `MemoryManager::shared(config) -> Arc<Self>` + `bind_self` (a `OnceLock<Weak<Self>>` self-handle,
   also set by `AgentBuilder::memory_manager`): `Plugin::init_agent` takes `&self`, so the hooks
-  need an owned handle. A manager registered via plain `.plugin_arc(..)` logs a warning and skips
+  need an owned handle. A manager registered via plain `.plugin(..)` logs a warning and skips
   hook wiring — pinned by `an_unbound_manager_skips_hook_wiring`.
 - Flush/shutdown: `MemoryManager::flush` is public and the harness must call it explicitly;
   `Agent` has no shutdown hook/event and pass B deliberately did not add one.
@@ -123,7 +123,7 @@ writable-store validation, extraction-config validation (extractor→`add`, none
    TS: search tool on, add tool off (`MemoryManager::new`); `with_add_tool` turns both on.
 5. **Tools are built from `Arc<Self>`** (`memory_tools()`), not from `Plugin::tools()`, because the
    tool closures need to own the manager handle. `AgentBuilder::memory_manager` does both steps;
-   `Plugin::tools()` returns empty. A caller using `.plugin_arc(manager)` directly gets no tools —
+   `Plugin::tools()` returns empty. A caller using `.plugin(manager)` directly gets no tools —
    documented on the builder method.
 6. **`add_memory` with `wait_for_writes: false` is not implemented** — the fire-and-forget branch
    needs a spawn + detach policy; pass A always awaits (TS's default is `true`).

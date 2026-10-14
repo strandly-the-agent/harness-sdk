@@ -54,7 +54,7 @@ async fn truncates_an_oversized_tool_result_in_the_call_that_triggers_it() {
     });
     let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("done"))]);
     let agent = Agent::builder()
-        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .messages(oversized_history())
         .context_manager(manager)
         .build()

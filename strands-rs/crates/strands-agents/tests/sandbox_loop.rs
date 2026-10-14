@@ -101,7 +101,7 @@ impl Tool for UserShellTool {
 
 async fn agent_with(builder: strands_agents::AgentBuilder) -> Agent {
     builder
-        .model_arc(MockMessageModel::shared(vec![MockResponse::message(
+        .model(MockMessageModel::shared(vec![MockResponse::message(
             Message::assistant("done"),
         )]))
         .build()
@@ -147,7 +147,7 @@ async fn skips_a_sandbox_vended_tool_when_a_user_tool_has_the_same_name() {
     let agent = agent_with(
         Agent::builder()
             .sandbox(RecordingSandbox::default())
-            .tool_ref(Arc::new(UserShellTool::new())),
+            .tool(Arc::new(UserShellTool::new())),
     )
     .await;
     let tool = agent
@@ -182,8 +182,8 @@ async fn the_shell_tool_runs_through_the_agents_sandbox_in_the_loop() {
         MockResponse::message(Message::assistant("ran it")),
     ]);
     let agent = Agent::builder()
-        .model_arc(model)
-        .sandbox_arc(Arc::clone(&sandbox) as Arc<dyn Sandbox>)
+        .model(model)
+        .sandbox(Arc::clone(&sandbox) as Arc<dyn Sandbox>)
         .build()
         .unwrap();
 

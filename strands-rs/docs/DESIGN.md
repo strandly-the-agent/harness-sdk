@@ -33,7 +33,7 @@ installs the exporter).
 | `JSONValue` | `serde_json::Value` (`preserve_order`) | Insertion order is observable in tool specs. |
 | `Message` / `ContentBlock` class-per-variant with `toJSON` | `struct Message`, `enum ContentBlock` with serde externally-tagged repr (`{"text": "..."}`, `{"toolUse": {...}}`), camelCase field names | Wire-compatible with TS/py session files. |
 | `StopReason` open string union | `enum StopReason { EndTurn, ToolUse, …, Other(String) }` with custom serde | Unknown values must round-trip. |
-| `Model` abstract class, generic over config | `trait Model: Send + Sync` (object-safe, no associated config type); provider config lives on the concrete struct (`BedrockModel::config()/update_config()` with interior mutability) | Agent holds `Arc<dyn Model>` (`AgentBuilder::model` takes `impl Model + 'static` and wraps it; `model_arc` takes the `Arc`); config generics would break object safety. |
+| `Model` abstract class, generic over config | `trait Model: Send + Sync` (object-safe, no associated config type); provider config lives on the concrete struct (`BedrockModel::config()/update_config()` with interior mutability) | Agent holds `Arc<dyn Model>` (`AgentBuilder::model` takes `impl Model + 'static` and wraps it); config generics would break object safety. |
 | `AsyncIterable<ModelStreamEvent>` | `BoxStream<'_, Result<ModelStreamEvent, Error>>` | |
 | `Tool.stream()` async generator (yields progress, returns `ToolResultBlock`) | `#[async_trait] trait Tool { async fn invoke(&self, ctx: ToolContext) -> Result<ToolResultBlock, Error> }`; progress via `ctx.progress(value).await` (mpsc sender in the context) | Generators don't exist; a result-returning future + side channel is the idiomatic equivalent and keeps per-tool event ordering. `Err` is reserved for exceptional control flow (cancellation, future interrupts); tool failures are `Ok(result with status: error)` exactly as in TS. |
 | `FunctionTool` / `tool()` with zod | `FunctionTool::builder(name).handler(|input: JsonValue, ctx| ..)` for raw JSON, or `.typed_handler(|input: T, ctx| ..)` for `T: schemars::JsonSchema + DeserializeOwned` (schema derived, input validated with `jsonschema`) | schemars is the Rust analogue of zod. |
@@ -58,10 +58,15 @@ installs the exporter).
 - Gates: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
   `cargo test --all-features`.
 - Public API shape: builders take `impl Trait + 'static` and wrap in `Arc` internally
-  (`AgentBuilder::{model, tool, plugin, tool_executor}`), with `*_arc`/`*_ref` variants for shared
-  instances (`model_arc`, `tool_ref`, `plugin_arc`, `tool_executor_arc`). Typed plugin slots take
+  (`AgentBuilder::{model, aux_model, tool, plugin, storage, sandbox, tool_executor}`). There are no
+  `*_arc`/`*_ref` twins: every one of those traits has a blanket `impl Trait for Arc<T>`, so an
+  `Arc<dyn Trait>` is itself `impl Trait + 'static` and goes through the same method (one extra
+  pointer hop when a shared handle is re-wrapped). Typed plugin slots take
   their own trait: `conversation_manager(impl ConversationManager)`,
   `retry_strategy(impl ModelRetryStrategy)`, `session_manager(impl Into<Arc<SessionManager>>)`.
+- `AgentBuilder::build()` and `Agent::new()` are **synchronous**: they allocate the agent and
+  nothing else. `Agent::initialize()` (plugins, session restore, sandbox tools) runs lazily on the
+  first `invoke`/`stream`; call it explicitly to observe that state earlier.
 - Option/result structs that will grow are `#[non_exhaustive]` and built from `Default` plus
   `with_*` setters (`InvokeOptions::default().with_limits(Limits::default().with_turns(2))`);
   public enums that mirror a provider's wire format are `#[non_exhaustive]` too.
