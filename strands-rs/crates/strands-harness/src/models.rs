@@ -4,9 +4,10 @@
 //! id, or `None` for the harness default. The [`Effort`] level is mapped to each provider's own
 //! request fields here, so the caller sets one value regardless of provider.
 //!
-//! Only `bedrock` is built by this port; every other provider in the TS table is still
-//! recognised (so effort/caching validation errors match) but building it fails with a clear
-//! message — pass a pre-built [`Model`] instead.
+//! `bedrock`, `bedrock-mantle`, `anthropic` and `openai` are built by this port (each behind the
+//! matching crate feature); `google`, `litellm` and `ollama` are still recognised (so
+//! effort/caching validation errors match) but building one fails with a clear message — pass a
+//! pre-built [`Model`] instead.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -23,8 +24,14 @@ use strands_agents::{Error, Result};
 use crate::agent::CachingOption;
 use crate::defaults::DEFAULT_MODEL;
 
+#[cfg(feature = "anthropic")]
+use strands_agents::models::{
+    AnthropicCacheConfig, AnthropicCacheStrategy, AnthropicModel, AnthropicModelConfig,
+};
 #[cfg(feature = "bedrock")]
 use strands_agents::models::{BedrockModel, BedrockModelConfig, CacheConfig, CacheStrategy};
+#[cfg(feature = "openai")]
+use strands_agents::models::{BedrockMantleConfig, OpenAIModel, OpenAIModelConfig};
 
 const ANTHROPIC_MAX_TOKENS: i32 = 32_000;
 const CLAUDE_MAX_TOKENS: &[(&str, i32)] = &[
@@ -477,6 +484,8 @@ struct Resolved<'a> {
     name: &'a str,
     effort: Option<String>,
     caching: bool,
+    /// Whether the provider serves `web_search` natively for this model.
+    native_search: bool,
 }
 
 #[cfg(feature = "bedrock")]
@@ -551,21 +560,170 @@ pub async fn resolve_model(options: ResolveModelOptions) -> Result<Arc<dyn Model
         Some(ModelOption::Id(id)) => id,
         None => default,
     };
-    #[cfg(not(feature = "bedrock"))]
-    {
-        resolve_spec(&spec, effort, web_search, caching, caching_explicit)?;
-        return Err(Error::model(
-            "Bedrock models need the strands-harness `bedrock` feature; enable it or pass a pre-built Model instance.",
-        ));
+    let (provider_name, _) = split_provider(&spec);
+    match provider_name {
+        "bedrock" => build_bedrock(&spec, effort, web_search, caching, caching_explicit).await,
+        "anthropic" => build_anthropic(&spec, effort, web_search, caching, caching_explicit),
+        "openai" | "bedrock-mantle" => {
+            build_openai(&spec, effort, web_search, caching, caching_explicit)
+        }
+        _ => {
+            resolve_spec(&spec, effort, web_search, caching, caching_explicit)?;
+            Err(unsupported_provider(provider_name))
+        }
     }
+}
+
+/// The error for a provider whose crate feature is off: the spec is still validated first so the
+/// effort/caching messages match the enabled build.
+#[cfg(not(all(feature = "anthropic", feature = "bedrock", feature = "openai")))]
+fn missing_feature(provider_name: &str, feature: &str) -> Error {
+    Error::model(format!(
+        "Provider {} needs the strands-harness `{feature}` feature; enable it or pass a pre-built Model instance.",
+        quote(provider_name)
+    ))
+}
+
+async fn build_bedrock(
+    spec: &str,
+    effort: Effort,
+    web_search: bool,
+    caching: bool,
+    caching_explicit: bool,
+) -> Result<Arc<dyn Model>> {
     #[cfg(feature = "bedrock")]
     {
-        let config = bedrock_config_for(&spec, effort, web_search, caching, caching_explicit)?;
+        let config = bedrock_config_for(spec, effort, web_search, caching, caching_explicit)?;
         let mut builder = BedrockModel::builder().config(config);
         if let Some(region) = bedrock_region() {
             builder = builder.region(region);
         }
         Ok(Arc::new(builder.build().await?))
+    }
+    #[cfg(not(feature = "bedrock"))]
+    {
+        resolve_spec(spec, effort, web_search, caching, caching_explicit)?;
+        Err(missing_feature("bedrock", "bedrock"))
+    }
+}
+
+fn build_anthropic(
+    spec: &str,
+    effort: Effort,
+    web_search: bool,
+    caching: bool,
+    caching_explicit: bool,
+) -> Result<Arc<dyn Model>> {
+    #[cfg(feature = "anthropic")]
+    {
+        let config = anthropic_config_for(spec, effort, web_search, caching, caching_explicit)?;
+        Ok(Arc::new(AnthropicModel::new(config)?))
+    }
+    #[cfg(not(feature = "anthropic"))]
+    {
+        resolve_spec(spec, effort, web_search, caching, caching_explicit)?;
+        Err(missing_feature("anthropic", "anthropic"))
+    }
+}
+
+fn build_openai(
+    spec: &str,
+    effort: Effort,
+    web_search: bool,
+    caching: bool,
+    caching_explicit: bool,
+) -> Result<Arc<dyn Model>> {
+    #[cfg(feature = "openai")]
+    {
+        let config = openai_config_for(spec, effort, web_search, caching, caching_explicit)?;
+        Ok(Arc::new(OpenAIModel::new(config)?))
+    }
+    #[cfg(not(feature = "openai"))]
+    {
+        let provider_name = split_provider(spec).0;
+        resolve_spec(spec, effort, web_search, caching, caching_explicit)?;
+        Err(missing_feature(provider_name, "openai"))
+    }
+}
+
+/// Run the full resolution pipeline for an `anthropic/...` spec and return the config it produces,
+/// without building the HTTP client.
+#[cfg(feature = "anthropic")]
+pub(crate) fn anthropic_config_for(
+    spec: &str,
+    effort: Effort,
+    web_search: bool,
+    caching: bool,
+    caching_explicit: bool,
+) -> Result<AnthropicModelConfig> {
+    let resolved = resolve_spec(spec, effort, web_search, caching, caching_explicit)?;
+    if resolved.provider != "anthropic" {
+        return Err(unsupported_provider(resolved.provider));
+    }
+    let max_tokens = claude_max_tokens(resolved.name).unwrap_or(ANTHROPIC_MAX_TOKENS);
+    Ok(AnthropicModelConfig {
+        model_id: Some(resolved.name.to_string()),
+        max_tokens: Some(max_tokens as u64),
+        params: resolved.effort.as_deref().map(|effort| {
+            object(claude_thinking_block(resolved.name, effort, max_tokens))
+        }),
+        anthropic_tools: resolved.native_search.then(|| {
+            vec![json!({
+                "type": "web_search_20260318",
+                "name": "web_search",
+                "allowed_callers": ["direct"],
+            })]
+        }),
+        cache_config: resolved.caching.then(|| AnthropicCacheConfig {
+            strategy: Some(AnthropicCacheStrategy::Auto),
+            ..AnthropicCacheConfig::default()
+        }),
+        ..AnthropicModelConfig::default()
+    })
+}
+
+/// Run the full resolution pipeline for an `openai/...` or `bedrock-mantle/...` spec and return
+/// the config it produces, without minting credentials.
+#[cfg(feature = "openai")]
+pub(crate) fn openai_config_for(
+    spec: &str,
+    effort: Effort,
+    web_search: bool,
+    caching: bool,
+    caching_explicit: bool,
+) -> Result<OpenAIModelConfig> {
+    let resolved = resolve_spec(spec, effort, web_search, caching, caching_explicit)?;
+    let mantle = match resolved.provider {
+        "openai" => None,
+        "bedrock-mantle" => Some(BedrockMantleConfig::default()),
+        other => return Err(unsupported_provider(other)),
+    };
+    let mut params = serde_json::Map::new();
+    if let Some(effort) = &resolved.effort {
+        params.insert("reasoning".to_string(), json!({ "effort": effort }));
+    }
+    if resolved.native_search {
+        let tool = if mantle.is_some() {
+            json!({ "type": "web_search", "external_web_access": true })
+        } else {
+            json!({ "type": "web_search" })
+        };
+        params.insert("tools".to_string(), json!([tool]));
+    }
+    Ok(OpenAIModelConfig {
+        model_id: Some(resolved.name.to_string()),
+        mantle,
+        params,
+        ..OpenAIModelConfig::default()
+    })
+}
+
+/// Unwrap a JSON object literal into the map shape the provider configs take.
+#[cfg(feature = "anthropic")]
+fn object(value: JsonValue) -> serde_json::Map<String, JsonValue> {
+    match value {
+        JsonValue::Object(map) => map,
+        other => panic!("expected a JSON object, got {other}"),
     }
 }
 
@@ -592,7 +750,7 @@ pub(crate) fn bedrock_config_for(
 
 fn unsupported_provider(provider_name: &str) -> Error {
     Error::model(format!(
-        "Provider {} is not built by the Rust harness yet; only \"bedrock\" is implemented (recognised providers: {}). Pass a pre-built Model instance for anything else.",
+        "Provider {} is not built by the Rust harness yet; built providers: anthropic, bedrock, bedrock-mantle, openai (recognised providers: {}). Pass a pre-built Model instance for anything else.",
         quote(provider_name),
         provider_names()
     ))
@@ -616,7 +774,7 @@ fn resolve_spec<'a>(
             provider_names()
         )));
     };
-    let _native_search = web_search && has_web_search(provider_name, name);
+    let native_search = web_search && has_web_search(provider_name, name);
 
     if caching && !provider.caching {
         require_or_warn(
@@ -652,6 +810,7 @@ fn resolve_spec<'a>(
         name,
         effort,
         caching: caching && provider.caching && !unsupported_caching,
+        native_search,
     })
 }
 

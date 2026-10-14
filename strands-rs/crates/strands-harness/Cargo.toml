@@ -12,10 +12,12 @@ authors.workspace = true
 workspace = true
 
 [features]
-default = ["bedrock", "http", "mcp"]
+default = ["anthropic", "bedrock", "http", "mcp", "openai"]
 http = ["dep:reqwest"]
 mcp = ["strands-agents/mcp"]
 bedrock = ["strands-agents/bedrock"]
+anthropic = ["strands-agents/anthropic"]
+openai = ["strands-agents/openai"]
 
 [dependencies]
 strands-agents = { path = "../strands-agents", default-features = false, features = ["macros"] }
