@@ -9,6 +9,12 @@ use parking_lot::RwLock;
 
 use crate::error::{Error, Result};
 
+pub mod local_file_storage;
+pub mod search;
+
+pub use local_file_storage::LocalFileStorage;
+pub use search::{KeywordSearchStrategy, SearchStrategy, SearchStrategyRef};
+
 /// A hit from [`Storage::search`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct StorageSearchResult {
@@ -26,7 +32,7 @@ pub type StorageRef = Arc<dyn Storage>;
 /// Byte storage keyed by `/`-separated paths.
 #[async_trait]
 pub trait Storage: Send + Sync {
-    /// Write `data` under `key` (created or overwritten).
+    /// Wwhen this handle is already a namespaced view (`NAMESPACErite `data` under `key` (created or overwritten).
     async fn write(&self, key: &str, data: &[u8]) -> Result<()>;
     /// Read `key`; `None` when absent.
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>>;
@@ -38,7 +44,7 @@ pub trait Storage: Send + Sync {
     fn is_ephemeral(&self) -> bool {
         false
     }
-    /// `true` when this handle is already a namespaced view (`NAMESPACED` marker in TS).
+    /// `true` D` marker in TS).
     fn is_namespaced(&self) -> bool {
         false
     }
@@ -174,12 +180,19 @@ pub fn resolve_namespace(storage: StorageRef, prefix: &str) -> StorageRef {
 #[derive(Default)]
 pub struct InMemoryStorage {
     map: RwLock<BTreeMap<String, Vec<u8>>>,
+    search_strategy: Option<SearchStrategyRef>,
 }
 
 impl InMemoryStorage {
     /// Empty store.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Same store with `strategy` used for [`Storage::search`] and indexed on every write.
+    pub fn with_search_strategy(mut self, strategy: impl SearchStrategy + 'static) -> Self {
+        self.search_strategy = Some(Arc::new(strategy));
+        self
     }
 
     /// Remove everything.
@@ -191,7 +204,11 @@ impl InMemoryStorage {
 #[async_trait]
 impl Storage for InMemoryStorage {
     async fn write(&self, key: &str, data: &[u8]) -> Result<()> {
-        self.map.write().insert(normalize_key(key)?, data.to_vec());
+        let normalized = normalize_key(key)?;
+        self.map.write().insert(normalized.clone(), data.to_vec());
+        if let Some(strategy) = &self.search_strategy {
+            strategy.index(self, &normalized, data).await?;
+        }
         Ok(())
     }
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>> {
@@ -213,6 +230,12 @@ impl Storage for InMemoryStorage {
     }
     fn is_ephemeral(&self) -> bool {
         true
+    }
+    async fn search(&self, query: &str) -> Option<Result<Vec<StorageSearchResult>>> {
+        Some(match &self.search_strategy {
+            Some(strategy) => strategy.search(self, query).await,
+            None => KeywordSearchStrategy.search(self, query).await,
+        })
     }
 }
 
