@@ -564,7 +564,6 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
   })
 })
 
-
 describe("concurrentInvocationMode 'stopPrevious' × backgroundTasks", () => {
   it('a stopPrevious caller arriving during the settlement wait takes the turn; the task delivers to it with provenance', async () => {
     const work = createGate('work')

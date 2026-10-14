@@ -344,7 +344,9 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     const firstResult = await consume
     expect(firstResult.stopReason).toBe('superseded')
     const supersededMessage = events.find(
-      (event) => event instanceof MessageAddedEvent && resultText({ lastMessage: event.message }) === 'Superseded by a new request'
+      (event) =>
+        event instanceof MessageAddedEvent &&
+        resultText({ lastMessage: event.message }) === 'Superseded by a new request'
     )
     expect(supersededMessage).toBeDefined()
     expect(events.some((event) => event instanceof AfterInvocationEvent)).toBe(true)
