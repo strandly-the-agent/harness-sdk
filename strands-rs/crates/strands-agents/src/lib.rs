@@ -8,6 +8,7 @@ pub mod conversation_manager;
 pub mod error;
 pub mod hooks;
 pub mod logging;
+pub mod memory;
 pub mod models;
 pub mod plugins;
 pub mod retry;
@@ -29,6 +30,10 @@ pub use conversation_manager::{
     SlidingWindowConfig, SlidingWindowConversationManager,
 };
 pub use error::{Error, Result};
+pub use memory::{
+    FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryManager, MemoryManagerConfig, MemoryStore,
+    MemoryStoreRef, ModelExtractor,
+};
 pub use models::Model;
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
