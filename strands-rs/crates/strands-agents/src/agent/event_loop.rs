@@ -411,6 +411,13 @@ async fn run_invocation(
         let cancel = root.child_token();
         *agent.inner.cancel.write() = cancel.clone();
 
+        let continuation = agent.take_continuation_input();
+        if !continuation.is_empty() {
+            let mut messages = continuation;
+            messages.extend(current.clone().into_messages());
+            current = InvokeInput::Messages(messages);
+        }
+
         let before = emit(
             agent,
             tx,
@@ -466,8 +473,17 @@ async fn run_invocation(
 
         let result = outcome?;
         let resumable = matches!(result.stop_reason, StopReason::EndTurn | StopReason::StopSequence);
+        let pending_continuation = !agent.inner.continuation_input.read().is_empty();
         match after.resume {
             Some(resume) if resumable => current = resume,
+            None if resumable
+                && pending_continuation
+                && agent
+                    .background_tasks()
+                    .is_some_and(|background| background.wait_for_completion()) =>
+            {
+                current = InvokeInput::None
+            }
             _ => return finish(agent, tx, &state, result).await,
         }
     }
@@ -713,9 +729,13 @@ async fn invoke_model(
             return Err(Error::Cancelled);
         }
         let model = agent.model();
+        let mut tool_specs: Vec<_> = agent.tools().iter().map(|t| t.spec().clone()).collect();
+        if let Some(background) = agent.background_tasks() {
+            tool_specs = background.rewrite_tool_specs(tool_specs)?;
+        }
         let count_options = CountTokensOptions {
             system_prompt: agent.system_prompt(),
-            tool_specs: agent.tools().iter().map(|t| t.spec().clone()).collect(),
+            tool_specs,
         };
         let projected_input_tokens = estimate_input_tokens(agent, &model, &count_options).await.ok();
         let before = emit(

@@ -99,6 +99,8 @@ pub(crate) struct AgentInner {
     pub(crate) initialized: AsyncMutex<bool>,
     pub(crate) storage: Option<crate::storage::StorageRef>,
     pub(crate) session_id: RwLock<Option<String>>,
+    pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
+    pub(crate) continuation_input: RwLock<Vec<Message>>,
 }
 
 /// An agent: a model, a system prompt, tools, and the conversation they share.
@@ -179,6 +181,21 @@ impl Agent {
     /// Application state store.
     pub fn state(&self) -> &StateStore {
         &self.inner.state
+    }
+
+    /// The background-tasks plugin, when configured.
+    pub fn background_tasks(&self) -> Option<Arc<crate::background_tasks::BackgroundTasks>> {
+        self.inner.background_tasks.clone()
+    }
+
+    /// Queue messages to be prepended to the input of the next invocation (TS `continuations`).
+    pub fn add_continuation_input(&self, messages: Vec<Message>) {
+        self.inner.continuation_input.write().extend(messages);
+    }
+
+    /// Take the queued continuation messages.
+    pub fn take_continuation_input(&self) -> Vec<Message> {
+        std::mem::take(&mut *self.inner.continuation_input.write())
     }
 
     /// Hook registry.
@@ -325,6 +342,8 @@ mod test_fixtures {
                 initialized: AsyncMutex::new(false),
                 storage: None,
                 session_id: RwLock::new(None),
+                background_tasks: None,
+                continuation_input: RwLock::new(Vec::new()),
             }),
         }
     }
