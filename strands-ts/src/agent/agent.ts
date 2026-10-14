@@ -558,8 +558,8 @@ export class Agent implements LocalAgent, InvokableAgent {
   private _mcpClients: McpClient[]
   private _initialized: boolean
   private _isInvoking: boolean = false
-  /** The invocation that was interrupted, so a resume continues the same request. */
-  private _interruptedInvocation?: InternalInvocation
+  /** The invocation that raised the pending interrupt, so a resume continues the same request. Cleared with the interrupt state. */
+  private _interruptedInvocation: InternalInvocation | undefined
   private readonly _concurrentInvocationMode: ConcurrentInvocationMode
   private readonly _invocationQueue: InvocationQueue
   private _abortController = new AbortController()
@@ -1089,7 +1089,10 @@ export class Agent implements LocalAgent, InvokableAgent {
    * @returns The request-scoped state to run this call under
    */
   private _resolveInvocation(options: InvokeOptions | undefined): InternalInvocation {
-    const inherited = toInternal(options?.invocation)
+    // A resume continues the request that raised the interrupt unless the caller joins
+    // another one explicitly.
+    const inherited =
+      toInternal(options?.invocation) ?? (this._interruptState.activated ? this._interruptedInvocation : undefined)
     if (!inherited) return createInvocation(options?.limits)
     return options?.limits === undefined ? inherited : createInvocation(options.limits, inherited)
   }
@@ -1338,12 +1341,7 @@ export class Agent implements LocalAgent, InvokableAgent {
       const resolvedOptions: InvokeOptions = options?.invocationState ? options : { ...options, invocationState }
 
       this._validateLimits(options)
-      // A resume continues the interrupted request under the same invocation unless the
-      // caller scopes it explicitly.
-      const resumesInterrupted =
-        this._interruptState.activated && options?.invocation === undefined && options?.limits === undefined
-      const invocation = (resumesInterrupted && this._interruptedInvocation) || this._resolveInvocation(options)
-      this._interruptedInvocation = invocation
+      const invocation = this._resolveInvocation(options)
 
       let currentArgs: InvokeArgs = args
       let firstPass = true
@@ -1525,6 +1523,7 @@ export class Agent implements LocalAgent, InvokableAgent {
         !this._interruptState.pendingToolExecution
       ) {
         this._interruptState.deactivate()
+        this._interruptedInvocation = undefined
       }
       return result
     } catch (error) {
@@ -1533,6 +1532,7 @@ export class Agent implements LocalAgent, InvokableAgent {
           this._interruptState.registerInterrupt(interrupt)
         }
         this._interruptState.activate()
+        this._interruptedInvocation = invocation
         for (const interrupt of error.interrupts) {
           yield new InterruptEvent({ agent: this, invocation, interrupt, invocationState })
         }
@@ -1708,6 +1708,8 @@ export class Agent implements LocalAgent, InvokableAgent {
   public loadSnapshot(snapshot: Snapshot): void {
     if (this._initialized) this._backgroundTasks?.assertCanLoadSnapshot()
     loadSnapshotInternal(this, snapshot)
+    // A restored interrupt belongs to a request this instance never ran; a resume starts a fresh one.
+    this._interruptedInvocation = undefined
     if (this._initialized && 'state' in snapshot.data) this._backgroundTasks?._loadAppState()
   }
 
@@ -2028,6 +2030,7 @@ export class Agent implements LocalAgent, InvokableAgent {
           // cycle starts with a clean slate (new interrupts can be raised again).
           if (this._interruptState.activated) {
             this._interruptState.deactivate()
+            this._interruptedInvocation = undefined
           }
 
           closeCycle()
@@ -2196,6 +2199,7 @@ export class Agent implements LocalAgent, InvokableAgent {
    */
   private _createInterruptResult(invocationState: InvocationState, invocation: InternalInvocation): AgentResult {
     this._interruptState.activate()
+    this._interruptedInvocation = invocation
     return new AgentResult({
       requestUsage: invocation.requestUsage,
       stopReason: 'interrupt',

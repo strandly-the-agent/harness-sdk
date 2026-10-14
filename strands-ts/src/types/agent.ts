@@ -139,7 +139,10 @@ export interface InvokeOptions {
    */
   cancelSignal?: AbortSignal
 
-  /** Runs this call as part of the request a hook event or {@link ToolContext.invocation} belongs to, sharing its limits and usage total (even after it returned); `limits` set alongside it can only tighten the budget. */
+  /**
+   * Runs this call as part of the request a hook event or {@link ToolContext.invocation} belongs to, sharing its limits and usage total (even after it returned); `limits` set alongside it can only tighten the budget.
+   * A resume of an interrupted agent joins the request that raised the interrupt unless this is set.
+   */
   invocation?: Invocation
 
   /**
