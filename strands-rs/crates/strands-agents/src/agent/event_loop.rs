@@ -411,13 +411,6 @@ async fn run_invocation(
         let cancel = root.child_token();
         *agent.inner.cancel.write() = cancel.clone();
 
-        let continuation = agent.take_continuation_input();
-        if !continuation.is_empty() {
-            let mut messages = continuation;
-            messages.extend(current.clone().into_messages());
-            current = InvokeInput::Messages(messages);
-        }
-
         let before = emit(
             agent,
             tx,
@@ -456,6 +449,13 @@ async fn run_invocation(
                 },
             )
             .await;
+        }
+
+        let continuation = agent.take_continuation_input();
+        if !continuation.is_empty() {
+            let mut messages = continuation;
+            messages.extend(current.clone().into_messages());
+            current = InvokeInput::Messages(messages);
         }
 
         let outcome = run_cycles(agent, current.clone(), &state, &cancel, tx, &options).await;

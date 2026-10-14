@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent::{Agent, InvocationState};
 use crate::error::{Error, Result};
-use crate::hooks::events::{AfterInvocationEvent, InitializedEvent};
+use crate::hooks::events::{AfterInvocationEvent, BeforeInvocationEvent, InitializedEvent};
 use crate::hooks::hook_order;
 use crate::tools::{FunctionTool, ToolContext, ToolRef};
 use crate::types::{
@@ -849,6 +849,15 @@ impl crate::plugins::Plugin for BackgroundTasks {
             }
         }
 
+        let agent_handle = agent.clone();
+        let registry = Arc::clone(&self.registry);
+        let _ = agent
+            .hooks()
+            .add_sync_callback(move |_event: &mut BeforeInvocationEvent| {
+                registry.deliver_ready(&agent_handle);
+                Ok(())
+            });
+
         let wait = self.config.wait_for_completion;
         let agent_handle = agent.clone();
         let registry = Arc::clone(&self.registry);
@@ -887,7 +896,6 @@ impl crate::plugins::Plugin for BackgroundTasks {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::Tool;
 
     fn spec_with(schema: JsonValue) -> ToolSpec {
         let mut spec = ToolSpec::new("weather", "Weather");
@@ -919,7 +927,8 @@ mod tests {
 
     #[test]
     fn rejects_a_tool_configured_in_two_modes() {
-        let error = resolve_policy(&BackgroundTasksConfig::default().agentic(["a"]).always(["a"])).unwrap_err();
+        let error =
+            resolve_policy(&BackgroundTasksConfig::default().agentic(["a"]).always(["a"])).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -953,7 +962,10 @@ mod tests {
             schema["properties"][BACKGROUND_PROPERTY],
             serde_json::json!({ "type": "boolean", "description": BACKGROUND_PROPERTY_DESCRIPTION })
         );
-        assert_eq!(schema["properties"]["city"], serde_json::json!({ "type": "string" }));
+        assert_eq!(
+            schema["properties"]["city"],
+            serde_json::json!({ "type": "string" })
+        );
         assert_eq!(schema["required"], serde_json::json!(["city"]));
     }
 
@@ -987,7 +999,10 @@ mod tests {
         );
 
         let wildcard = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
-        assert_eq!(wildcard.rewrite_tool_specs(vec![spec.clone()]).unwrap(), vec![spec]);
+        assert_eq!(
+            wildcard.rewrite_tool_specs(vec![spec.clone()]).unwrap(),
+            vec![spec]
+        );
     }
 
     #[test]
@@ -1041,24 +1056,32 @@ mod tests {
             tool_use_id: "t1".to_owned(),
             input: serde_json::json!({}),
         };
-        assert!(matches!(plugin.route_tool_call(&mut bg, "bg", "bg"), Route::Background));
+        assert!(matches!(
+            plugin.route_tool_call(&mut bg, "bg", "bg"),
+            Route::Background
+        ));
         let mut fg = ToolUse {
             name: "fg".to_owned(),
             tool_use_id: "t2".to_owned(),
             input: serde_json::json!({ BACKGROUND_PROPERTY: true }),
         };
-        assert!(matches!(plugin.route_tool_call(&mut fg, "fg", "fg"), Route::Foreground));
+        assert!(matches!(
+            plugin.route_tool_call(&mut fg, "fg", "fg"),
+            Route::Foreground
+        ));
     }
 
     #[test]
     fn refuses_to_background_a_foreground_only_tool_listed_explicitly() {
-        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default().always([MANAGE_TOOL_NAME])).unwrap();
+        let plugin =
+            BackgroundTasks::new(BackgroundTasksConfig::default().always([MANAGE_TOOL_NAME])).unwrap();
         let mut tool_use = ToolUse {
             name: MANAGE_TOOL_NAME.to_owned(),
             tool_use_id: "t1".to_owned(),
             input: serde_json::json!({ "mode": "list" }),
         };
-        let Route::Error(result) = plugin.route_tool_call(&mut tool_use, MANAGE_TOOL_NAME, MANAGE_TOOL_NAME) else {
+        let Route::Error(result) = plugin.route_tool_call(&mut tool_use, MANAGE_TOOL_NAME, MANAGE_TOOL_NAME)
+        else {
             panic!("expected an error result");
         };
         assert_eq!(
@@ -1106,8 +1129,12 @@ mod tests {
     async fn manage_tool_lists_gets_and_cancels() {
         let agent = crate::agent::test_agent();
         let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
-        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Completed));
-        plugin.registry.insert(task("bgtask-2", BackgroundTaskStatus::Working));
+        plugin
+            .registry
+            .insert(task("bgtask-1", BackgroundTaskStatus::Completed));
+        plugin
+            .registry
+            .insert(task("bgtask-2", BackgroundTaskStatus::Working));
 
         let listed = manage_result(&plugin, &agent, serde_json::json!({ "mode": "list" }))
             .await
@@ -1155,7 +1182,10 @@ mod tests {
         let error = manage_result(&plugin, &agent, serde_json::json!({ "mode": "get" }))
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("Task ID is required for mode 'get'"), "{error}");
+        assert!(
+            error.to_string().contains("Task ID is required for mode 'get'"),
+            "{error}"
+        );
 
         let error = manage_result(
             &plugin,
@@ -1174,8 +1204,12 @@ mod tests {
     fn delivers_terminal_tasks_as_a_synthetic_tool_pair() {
         let agent = crate::agent::test_agent();
         let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
-        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Failed));
-        plugin.registry.insert(task("bgtask-2", BackgroundTaskStatus::Working));
+        plugin
+            .registry
+            .insert(task("bgtask-1", BackgroundTaskStatus::Failed));
+        plugin
+            .registry
+            .insert(task("bgtask-2", BackgroundTaskStatus::Working));
 
         assert!(plugin.deliver_ready(&agent));
         let messages = agent.take_continuation_input();
@@ -1211,7 +1245,9 @@ mod tests {
     fn force_fails_non_terminal_tasks_on_restore() {
         let agent = crate::agent::test_agent();
         let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
-        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Working));
+        plugin
+            .registry
+            .insert(task("bgtask-1", BackgroundTaskStatus::Working));
         plugin.persist(&agent);
 
         let restored = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
@@ -1231,7 +1267,9 @@ mod tests {
     fn persisting_an_empty_registry_clears_the_state_key() {
         let agent = crate::agent::test_agent();
         let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
-        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Completed));
+        plugin
+            .registry
+            .insert(task("bgtask-1", BackgroundTaskStatus::Completed));
         plugin.persist(&agent);
         assert!(agent.state().get(BACKGROUND_TASKS_STATE_KEY).is_some());
 
@@ -1244,7 +1282,9 @@ mod tests {
     fn rejects_snapshot_loads_while_tasks_are_tracked() {
         let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
         assert!(plugin.assert_can_load_snapshot().is_ok());
-        plugin.registry.insert(task("bgtask-1", BackgroundTaskStatus::Working));
+        plugin
+            .registry
+            .insert(task("bgtask-1", BackgroundTaskStatus::Working));
         let error = plugin.assert_can_load_snapshot().unwrap_err();
         assert_eq!(
             error.to_string(),
@@ -1260,8 +1300,13 @@ mod tests {
             "timeout must be a positive finite integer, got 0"
         );
         assert_eq!(
-            assert_timer_delay("timeout", MAX_TIMER_DELAY_MS + 1).unwrap_err().to_string(),
-            format!("timeout must be at most {MAX_TIMER_DELAY_MS}ms, got {}", MAX_TIMER_DELAY_MS + 1)
+            assert_timer_delay("timeout", MAX_TIMER_DELAY_MS + 1)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "timeout must be at most {MAX_TIMER_DELAY_MS}ms, got {}",
+                MAX_TIMER_DELAY_MS + 1
+            )
         );
     }
 }
