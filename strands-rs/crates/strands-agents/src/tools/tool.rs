@@ -79,7 +79,7 @@ impl ToolContext {
             Some(raise) => raise(params)?,
             None => {
                 let id = interrupt::tool_interrupt_id(&self.tool_use.tool_use_id, &params.name);
-                interrupt::raise(&self.agent.interrupt_state(), &id, params, InterruptSource::Tool)?
+                interrupt::raise(&self.agent.interrupt_state_shared(), &id, params, InterruptSource::Tool)?
             }
         };
         serde_json::from_value(response).map_err(|e| Error::other(e.to_string()))
