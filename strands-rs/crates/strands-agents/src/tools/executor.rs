@@ -33,6 +33,8 @@ pub struct ExecuteToolsInput {
     pub invocation_state: InvocationState,
     /// Cancellation scoped to this invocation.
     pub cancel: CancellationToken,
+    /// Identifies this tool-execution pass (background-task submission dedup).
+    pub pass_id: String,
 }
 
 impl ExecuteToolsInput {
@@ -48,6 +50,7 @@ impl ExecuteToolsInput {
             tool_uses,
             invocation_state,
             cancel,
+            pass_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 }
@@ -224,6 +227,7 @@ async fn execute_tool(
                                 tool,
                                 tool_use.clone(),
                                 input.invocation_state.clone(),
+                                &input.pass_id,
                             );
                             return Ok(normalize_tool_result_id(result, &tool_use_block.tool_use_id));
                         }
@@ -492,12 +496,12 @@ mod tests {
     }
 
     fn input(agent: &Agent, tool_uses: Vec<ToolUseBlock>) -> ExecuteToolsInput {
-        ExecuteToolsInput {
-            agent: agent.clone(),
+        ExecuteToolsInput::new(
+            agent.clone(),
             tool_uses,
-            invocation_state: InvocationState::default(),
-            cancel: CancellationToken::new(),
-        }
+            InvocationState::default(),
+            CancellationToken::new(),
+        )
     }
 
     async fn run<E: ToolExecutor>(

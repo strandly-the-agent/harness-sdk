@@ -237,3 +237,120 @@ async fn a_denying_before_tool_call_hook_beats_background_routing() {
     let tasks = agent.background_tasks().expect("background tasks").list();
     assert!(tasks.is_empty(), "a task was dispatched anyway: {tasks:?}");
 }
+
+/// Two flagged calls in one pass with `max_concurrency: 1` must not overlap.
+#[tokio::test]
+async fn max_concurrency_one_runs_background_calls_sequentially() {
+    let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let peak = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tool: ToolRef = {
+        let live = Arc::clone(&live);
+        let peak = Arc::clone(&peak);
+        Arc::new(
+            function_tool("slow")
+                .description("Sleeps, then answers")
+                .input_schema(json!({ "type": "object", "properties": { "city": { "type": "string" } } }))
+                .handler(move |_input, _ctx| {
+                    let live = Arc::clone(&live);
+                    let peak = Arc::clone(&peak);
+                    async move {
+                        let now = live.fetch_add(1, Ordering::SeqCst) + 1;
+                        peak.fetch_max(now, Ordering::SeqCst);
+                        tokio::time::sleep(Duration::from_millis(40)).await;
+                        live.fetch_sub(1, Ordering::SeqCst);
+                        Ok(json!({ "forecast": "sunny" }))
+                    }
+                }),
+        )
+    };
+    let two_calls = Message::new(
+        Role::Assistant,
+        vec![
+            ContentBlock::ToolUse(ToolUseBlock::new(
+                "slow",
+                "call-1",
+                json!({ "city": "Berlin", BACKGROUND_PROPERTY: true }),
+            )),
+            ContentBlock::ToolUse(ToolUseBlock::new(
+                "slow",
+                "call-2",
+                json!({ "city": "Paris", BACKGROUND_PROPERTY: true }),
+            )),
+        ],
+    );
+    let model = MockMessageModel::shared(vec![
+        MockResponse::message(two_calls),
+        MockResponse::message(Message::assistant("both dispatched")),
+    ]);
+    let agent = Agent::builder()
+        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool_ref(tool)
+        .background_tasks(
+            BackgroundTasksConfig::new()
+                .wait_for_completion(false)
+                .max_concurrency(1),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    agent.invoke("two forecasts please").await.unwrap();
+    let background = agent.background_tasks().expect("background tasks");
+    assert_eq!(background.list().len(), 2);
+    for _ in 0..100 {
+        if background.list().iter().all(|task| task.status.is_terminal()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let statuses: Vec<_> = background.list().iter().map(|task| task.status).collect();
+    assert!(
+        background.list().iter().all(|task| task.status.is_terminal()),
+        "tasks never settled: {statuses:?}"
+    );
+    assert_eq!(peak.load(Ordering::SeqCst), 1, "the two tasks overlapped");
+}
+
+/// A task that outlives the configured timeout is delivered as a failed task.
+#[tokio::test]
+async fn a_timed_out_background_task_is_delivered_as_failed() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::message(tool_use(
+            "slow",
+            "call-1",
+            json!({ "city": "Berlin", BACKGROUND_PROPERTY: true }),
+        )),
+        MockResponse::message(Message::assistant("dispatched, carrying on")),
+        MockResponse::message(Message::assistant("it timed out")),
+    ]);
+    let agent = Agent::builder()
+        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool_ref(slow_tool())
+        .background_tasks(
+            BackgroundTasksConfig::new()
+                .wait_for_completion(false)
+                .timeout(Duration::from_millis(10)),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    agent.invoke("forecast for Berlin?").await.unwrap();
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let before = agent.messages().len();
+    agent.invoke("anything back?").await.unwrap();
+
+    let delivered = &agent.messages()[before..];
+    let ContentBlock::ToolResult(result) = &delivered[1].content[0] else {
+        panic!("expected the synthetic tool result, got {:?}", delivered[1]);
+    };
+    let ToolResultContent::Json(metadata) = &result.content[0] else {
+        panic!("expected task metadata");
+    };
+    assert_eq!(metadata["status"], json!("failed"));
+    assert_eq!(
+        metadata["error"],
+        json!({ "type": "timeout", "message": "Timed out after 10ms" })
+    );
+    assert_eq!(result.content.len(), 1, "a timed-out task carries no tool result");
+}
