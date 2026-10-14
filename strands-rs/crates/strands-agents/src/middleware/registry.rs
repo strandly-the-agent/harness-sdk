@@ -286,3 +286,6 @@ where
         (self.0)(next.run(context, events).await?)
     }
 }
+
+#[path = "tests.rs"]
+mod tests_impl;
