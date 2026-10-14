@@ -1521,7 +1521,7 @@ mod tests {
         let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
         let seen = Arc::new(Mutex::new(Vec::<String>::new()));
         let recorder = Arc::clone(&seen);
-        let _cleanup = agent
+        agent
             .hooks()
             .add_sync_callback(move |event: &mut AfterToolCallEvent| {
                 recorder.lock().push(event.tool_use.name.clone());

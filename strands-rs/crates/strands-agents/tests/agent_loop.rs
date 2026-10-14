@@ -720,13 +720,12 @@ async fn projects_input_tokens_for_the_model_call() {
     let agent = Agent::builder().model(text_model(&["hi"])).build().unwrap();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let captured = Arc::clone(&seen);
-    let _ =
-        agent
-            .hooks()
-            .add_sync_callback(move |event: &mut strands_agents::hooks::BeforeModelCallEvent| {
-                captured.lock().unwrap().push(event.projected_input_tokens);
-                Ok(())
-            });
+    agent
+        .hooks()
+        .add_sync_callback(move |event: &mut strands_agents::hooks::BeforeModelCallEvent| {
+            captured.lock().unwrap().push(event.projected_input_tokens);
+            Ok(())
+        });
 
     agent.invoke("count my tokens").await.unwrap();
 
@@ -763,7 +762,7 @@ async fn a_panicking_hook_releases_the_invocation_lock() {
     let agent = Agent::new(text_model(&["after the panic"])).unwrap();
     let panicked = Arc::new(Mutex::new(false));
     let flag = Arc::clone(&panicked);
-    let _cleanup = agent
+    agent
         .hooks()
         .add_sync_callback(move |_: &mut BeforeInvocationEvent| {
             if !*flag.lock().unwrap() {

@@ -50,6 +50,7 @@ pub struct AgentBuilder {
     executor: Option<Arc<dyn ToolExecutor>>,
     state: Option<StateStore>,
     checkpointing: bool,
+    hooks: HookRegistry,
 }
 
 impl AgentBuilder {
@@ -253,6 +254,30 @@ impl AgentBuilder {
         self
     }
 
+    /// Register an async hook callback on the agent built by [`Self::build`].
+    ///
+    /// ```ignore
+    /// Agent::builder().hook(|event: &mut BeforeToolCallEvent| async move { Ok(()) })
+    /// ```
+    pub fn hook<E, F>(self, callback: F) -> Self
+    where
+        E: crate::hooks::HookEvent,
+        F: for<'a> crate::hooks::HookFn<'a, E> + Send + Sync + 'static,
+    {
+        self.hooks.add_callback(callback);
+        self
+    }
+
+    /// Register a synchronous hook callback on the agent built by [`Self::build`].
+    pub fn sync_hook<E, F>(self, callback: F) -> Self
+    where
+        E: crate::hooks::HookEvent,
+        F: Fn(&mut E) -> Result<()> + Send + Sync + 'static,
+    {
+        self.hooks.add_sync_callback(callback);
+        self
+    }
+
     /// Build the agent.
     ///
     /// Plugin order (observable through hook order): conversation manager, retry strategy,
@@ -319,7 +344,7 @@ impl AgentBuilder {
                 state: self.state.unwrap_or_default(),
                 model_state: StateStore::new(),
                 checkpointing: self.checkpointing,
-                hooks: HookRegistry::new(),
+                hooks: self.hooks,
                 tools: RwLock::new(registry),
                 plugins: PluginRegistry::new(plugins),
                 executor: self.executor.unwrap_or_else(|| Arc::new(ConcurrentToolExecutor)),

@@ -70,3 +70,8 @@ installs the exporter).
 - Option/result structs that will grow are `#[non_exhaustive]` and built from `Default` plus
   `with_*` setters (`InvokeOptions::default().with_limits(Limits::default().with_turns(2))`);
   public enums that mirror a provider's wire format are `#[non_exhaustive]` too.
+- Hook callbacks are plain closures returning a future (`hooks.add_callback(|e: &mut Event| async move
+  { Ok(()) })`, plus `AgentBuilder::hook`/`sync_hook` for build-time registration); registration returns
+  `()` and the `*_scoped` variants return the `#[must_use]` `HookCleanup`. `add_callback_boxed*` keeps the
+  `|e| Box::pin(async move { .. })` form, needed when the future borrows the event (a closure's return
+  type cannot capture the event's lifetime).

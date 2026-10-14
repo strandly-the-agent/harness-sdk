@@ -161,6 +161,32 @@ async fn fires_message_added_for_each_appended_message() {
 }
 
 #[tokio::test]
+async fn builder_registered_hooks_fire() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sync_seen = Arc::clone(&seen);
+    let async_seen = Arc::clone(&seen);
+    let agent = Agent::builder()
+        .model(text_model(&["hi"]))
+        .sync_hook(move |_e: &mut BeforeInvocationEvent| {
+            sync_seen.lock().unwrap().push("before");
+            Ok(())
+        })
+        .hook(move |_e: &mut AfterInvocationEvent| {
+            let seen = Arc::clone(&async_seen);
+            async move {
+                seen.lock().unwrap().push("after");
+                Ok(())
+            }
+        })
+        .build()
+        .unwrap();
+
+    agent.invoke("go").await.unwrap();
+
+    assert_eq!(*seen.lock().unwrap(), vec!["before", "after"]);
+}
+
+#[tokio::test]
 async fn after_invocation_callbacks_run_in_reverse_order() {
     let agent = Agent::builder().model(text_model(&["hi"])).build().unwrap();
     let order = Arc::new(Mutex::new(Vec::new()));

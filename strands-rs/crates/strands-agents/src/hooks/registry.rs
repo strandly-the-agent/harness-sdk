@@ -143,28 +143,34 @@ impl HookRegistry {
     /// Register a pre-boxed async callback (`|event| Box::pin(async move { .. })`) for `E`.
     ///
     /// Prefer [`Self::add_callback`]; this form is for callbacks that are already boxed.
-    pub fn add_callback_boxed<E, F>(&self, callback: F) -> HookCleanup
+    pub fn add_callback_boxed<E, F>(&self, callback: F)
     where
         E: HookEvent,
         F: for<'a> Fn(&'a mut E) -> BoxFuture<'a, Result<()>> + Send + Sync + 'static,
     {
-        self.add_callback_boxed_with_order(hook_order::DEFAULT, callback)
+        self.add_callback_boxed_with_order(hook_order::DEFAULT, callback);
     }
 
     /// Register a pre-boxed async callback for `E` at `order`.
-    pub fn add_callback_boxed_with_order<E, F>(&self, order: i32, callback: F) -> HookCleanup
+    pub fn add_callback_boxed_with_order<E, F>(&self, order: i32, callback: F)
     where
         E: HookEvent,
         F: for<'a> Fn(&'a mut E) -> BoxFuture<'a, Result<()>> + Send + Sync + 'static,
     {
-        self.insert::<E>(order, Arc::new(callback))
+        drop(self.insert::<E>(order, Arc::new(callback)));
     }
 
     /// Register an async callback for `E` at the default order.
     ///
     /// ```ignore
-    /// hooks.add_callback(|event: &mut BeforeToolCallEvent| async move { Ok(()) });
+    /// hooks.add_callback(|event: &mut BeforeToolCallEvent| {
+    ///     let name = event.tool_use.name.clone();
+    ///     async move { log(&name).await; Ok(()) }
+    /// });
     /// ```
+    ///
+    /// The future may not borrow the event (closure return types cannot capture the event's
+    /// lifetime); to hold the event across an `await`, use [`Self::add_callback_boxed`].
     pub fn add_callback<E, F>(&self, callback: F)
     where
         E: HookEvent,
@@ -328,9 +334,9 @@ mod tests {
     #[tokio::test]
     async fn cleanup_removes_once_and_async_callbacks_work() {
         let hooks = HookRegistry::new();
-        let cleanup = hooks.add_callback_scoped(|e: &mut Forward| async move {
+        let cleanup = hooks.add_callback_scoped(|e: &mut Forward| {
             e.0.push("async");
-            Ok(())
+            async move { Ok(()) }
         });
         assert_eq!(hooks.count::<Forward>(), 1);
         let mut ev = Forward(vec![]);

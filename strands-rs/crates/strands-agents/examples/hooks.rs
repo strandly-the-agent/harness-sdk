@@ -15,21 +15,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .handler(|_input: JsonValue, _ctx: ToolContext| async move { Ok("12:00") });
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder().model(model).tool(clock).build()?;
-
-    agent
-        .hooks()
-        .add_sync_callback(|event: &mut BeforeToolCallEvent| {
+    let agent = Agent::builder()
+        .model(model)
+        .tool(clock)
+        .sync_hook(|event: &mut BeforeToolCallEvent| {
             println!("calling tool {}", event.tool_use.name);
             Ok(())
-        });
+        })
+        .build()?;
 
     agent.hooks().add_callback(|event: &mut AfterModelCallEvent| {
         let attempt = event.attempt_count;
-        Box::pin(async move {
+        async move {
             println!("model call finished (attempt {attempt})");
             Ok(())
-        })
+        }
     });
 
     let result = agent.invoke("What time is it?").await?;

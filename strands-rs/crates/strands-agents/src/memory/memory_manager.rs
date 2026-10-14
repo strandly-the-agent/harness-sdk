@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::agent::Agent;
 use crate::error::{Error, Result};
-use crate::hooks::{hook_order, AfterInvocationEvent, BeforeModelCallEvent, HookCallback, MessageAddedEvent};
+use crate::hooks::{hook_order, AfterInvocationEvent, BeforeModelCallEvent, MessageAddedEvent};
 use crate::memory::injection::MemoryInjectionConfig;
 use crate::memory::types::{
     has_write_sink, AddMessagesContext, ExtractionTrigger, MemoryAddOptions, MemoryAddToolConfig,
