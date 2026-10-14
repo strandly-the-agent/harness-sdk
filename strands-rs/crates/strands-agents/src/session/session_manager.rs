@@ -702,7 +702,7 @@ mod tests {
             .unwrap();
         let manager = new_manager("test-session", &storage, SessionManagerOptions::default());
         let agent = test_agent_for_session("test-agent");
-        agent.set_model(Arc::new(StatefulModel));
+        agent.set_model(StatefulModel);
         manager.init_agent(&agent).await.unwrap();
 
         invoke_initialized(&agent).await;
