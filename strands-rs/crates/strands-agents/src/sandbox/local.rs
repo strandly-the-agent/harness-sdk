@@ -119,14 +119,19 @@ impl Sandbox for LocalSandbox {
         // Kills the group on every exit path, including when this future is dropped.
         let pid = child.id();
         let _group = GroupKill(pid);
-        if let Some(stdin) = options.stdin {
-            if let Some(mut pipe) = child.stdin.take() {
+        let stdin_pipe = options.stdin.map(|stdin| (child.stdin.take(), stdin));
+        let stdout = collect(child.stdout.take());
+        let stderr = collect(child.stderr.take());
+
+        // Raced below, never awaited to completion on its own: a child that fills its stdout pipe
+        // while we are still writing stdin would otherwise deadlock with no timeout armed.
+        let feed_stdin = async {
+            if let Some((Some(mut pipe), stdin)) = stdin_pipe {
                 let _ = pipe.write_all(stdin.as_bytes()).await;
                 let _ = pipe.shutdown().await;
             }
-        }
-        let stdout = collect(child.stdout.take());
-        let stderr = collect(child.stderr.take());
+            std::future::pending::<()>().await
+        };
 
         let cancelled = async {
             match &options.cancel {
@@ -143,6 +148,7 @@ impl Sandbox for LocalSandbox {
 
         tokio::select! {
             biased;
+            () = feed_stdin => unreachable!("stdin feed never completes"),
             () = cancelled => {
                 kill_group(pid);
                 let _ = child.kill().await;

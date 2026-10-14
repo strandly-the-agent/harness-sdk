@@ -317,9 +317,7 @@ async fn hitl_allowed_tools_skip_approval_entirely() {
 fn flatten(traces: &[strands_agents::telemetry::types::AgentTrace]) -> Vec<(String, Option<u64>)> {
     traces
         .iter()
-        .flat_map(|t| {
-            std::iter::once((t.name.clone(), t.end_time)).chain(flatten(&t.children))
-        })
+        .flat_map(|t| std::iter::once((t.name.clone(), t.end_time)).chain(flatten(&t.children)))
         .collect()
 }
 
@@ -338,7 +336,10 @@ async fn an_interrupted_tool_still_ends_its_tool_span() {
     assert_eq!(interrupted.stop_reason, StopReason::Interrupt);
 
     let traces = flatten(&agent.tracer().local_traces());
-    let tool_spans: Vec<_> = traces.iter().filter(|(name, _)| name == "Tool: approve").collect();
+    let tool_spans: Vec<_> = traces
+        .iter()
+        .filter(|(name, _)| name == "Tool: approve")
+        .collect();
     assert_eq!(tool_spans.len(), 1, "expected one tool trace, got {traces:?}");
     assert!(
         tool_spans[0].1.is_some(),

@@ -686,8 +686,7 @@ async fn continuation_input_is_abandoned_when_the_pass_never_appends() {
                 .description("Interrupts for approval")
                 .input_schema(json!({ "type": "object", "properties": {} }))
                 .handler(|_input, ctx| async move {
-                    let _: String =
-                        ctx.interrupt(strands_agents::InterruptParams::new("confirm"))?;
+                    let _: String = ctx.interrupt(strands_agents::InterruptParams::new("confirm"))?;
                     Ok(json!("ok"))
                 }),
         ) as ToolRef)

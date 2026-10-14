@@ -235,8 +235,7 @@ async fn execute_tool(
                     }
                 }
                 let span = input.agent.tracer().start_tool_call_span(None, &tool_use);
-                let outcome = match run_tool_chain(input, effective_tool.as_ref(), &tool_use, events).await
-                {
+                let outcome = match run_tool_chain(input, effective_tool.as_ref(), &tool_use, events).await {
                     Ok(outcome) => outcome,
                     // Control-flow errors (tool interrupts) must still close the span and meter.
                     Err(error) => {

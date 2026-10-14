@@ -209,3 +209,33 @@ async fn the_shell_tool_falls_back_to_the_local_host_without_an_agent_sandbox() 
     assert_eq!(output.output.trim(), "local");
     assert_eq!(output.exit_code, 0);
 }
+
+/// A large stdin against a child that fills its own stdout pipe must not deadlock: the write is
+/// raced with the timeout, so the call returns rather than hanging forever.
+#[tokio::test]
+async fn large_stdin_against_a_full_stdout_pipe_returns_promptly() {
+    let sandbox = LocalSandbox::new();
+    let stdin = "x".repeat(1024 * 1024);
+    let started = std::time::Instant::now();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        sandbox.execute(
+            "cat",
+            ExecuteOptions {
+                timeout: Some(std::time::Duration::from_secs(2)),
+                stdin: Some(stdin.clone()),
+                ..ExecuteOptions::default()
+            },
+        ),
+    )
+    .await
+    .expect("execute must not hang")
+    .expect("cat succeeds");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "took {:?}",
+        started.elapsed()
+    );
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.stdout.len(), stdin.len());
+}
