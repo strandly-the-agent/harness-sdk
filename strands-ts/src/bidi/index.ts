@@ -11,9 +11,13 @@
  * `GoogleGeminiLiveModel` lives in the `@strands-agents/sdk/bidi/models/google` subpath so that
  * importing this barrel does not require the optional `@google/genai` peer dependency.
  *
+ * This barrel runs in Node and browsers. Node-only I/O lives in subpaths: `ConsoleIO` in
+ * `@strands-agents/sdk/bidi/io/console` and `AudioIO` in `@strands-agents/sdk/bidi/io/audio`.
+ *
  * @example
  * ```typescript
- * import { BidiAgent, BedrockNovaSonicModel, ConsoleIO } from '@strands-agents/sdk/bidi'
+ * import { BidiAgent, BedrockNovaSonicModel } from '@strands-agents/sdk/bidi'
+ * import { ConsoleIO } from '@strands-agents/sdk/bidi/io/console'
  * import { BidiBargeInEvent } from '@strands-agents/sdk/bidi/hooks'
  * import { GoogleGeminiLiveModel } from '@strands-agents/sdk/bidi/models/google'
  * ```

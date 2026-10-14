@@ -21,7 +21,6 @@ import {
   type InvokeModelWithBidirectionalStreamInput,
   type InvokeModelWithBidirectionalStreamOutput,
 } from '@aws-sdk/client-bedrock-runtime'
-import { NodeHttp2Handler } from '@smithy/node-http-handler'
 
 import { ModelError, ModelThrottledError } from '../../errors.js'
 import { logger } from '../../logging/logger.js'
@@ -298,12 +297,8 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
    * client's HTTP/2 sessions.
    */
   private _createClient(): BedrockRuntimeClient {
-    return new BedrockRuntimeClient({
-      ...this._clientConfig,
-      // Nova Sonic needs a duplex HTTP/2 transport; the default Node handler is HTTP/1.1.
-      requestHandler:
-        this._clientConfig.requestHandler ?? new NodeHttp2Handler({ requestTimeout: 0, sessionTimeout: 0 }),
-    })
+    // The AWS SDK picks the duplex transport per runtime: HTTP/2 in Node, a signed WebSocket in browsers.
+    return new BedrockRuntimeClient(this._clientConfig)
   }
 
   /**

@@ -472,3 +472,5 @@ export class ConsoleIO {
     return new ConsoleOutputStream(this._config, this._display)
   }
 }
+
+export type { ConsoleIOConfig } from './configs.js'

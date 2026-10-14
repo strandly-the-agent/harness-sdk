@@ -19,7 +19,8 @@ import { BidiConnectionStartEvent } from '../../types/events.js'
 import { Message, TextBlock, systemPromptFromData, systemPromptToData } from '../../../types/messages.js'
 import type { SystemContentBlockData } from '../../../types/messages.js'
 import { ImageBlock } from '../../../types/media.js'
-import { NotASandboxLocalEnvironment } from '../../../sandbox/not-a-sandbox-local-environment.js'
+import { Sandbox } from '../../../sandbox/base.js'
+import type { ExecutionResult, FileInfo, StreamChunk } from '../../../sandbox/types.js'
 import { InitializedEvent } from '../../../hooks/events.js'
 import type { LocalAgent } from '../../../types/agent.js'
 import type { Plugin } from '../../../plugins/plugin.js'
@@ -76,6 +77,26 @@ class FakeBidiModel extends BidiModel {
   stop = vi.fn(async (): Promise<void> => {})
   send = vi.fn(async (_content: BidiMessage | BidiContentDelta): Promise<void> => {})
   receive = vi.fn(async function* (): AsyncGenerator<BidiOutputEvent> {})
+}
+
+/** Environment-neutral sandbox: this file also runs in the browser, where the host sandbox cannot load. */
+class StubSandbox extends Sandbox {
+  // eslint-disable-next-line require-yield
+  async *executeStreaming(): AsyncGenerator<StreamChunk | ExecutionResult> {
+    throw new Error('not implemented')
+  }
+  // eslint-disable-next-line require-yield
+  async *executeCodeStreaming(): AsyncGenerator<StreamChunk | ExecutionResult> {
+    throw new Error('not implemented')
+  }
+  async readFile(): Promise<Uint8Array> {
+    throw new Error('not implemented')
+  }
+  async writeFile(): Promise<void> {}
+  async removeFile(): Promise<void> {}
+  async listFiles(): Promise<FileInfo[]> {
+    return []
+  }
 }
 
 /** Build a started agent, since most behaviour requires an open connection. */
@@ -215,11 +236,10 @@ describe('BidiAgent', () => {
       expect(new BidiAgent({ model: new FakeBidiModel() }).contextManager).toBeUndefined()
     })
 
-    it('defaults the sandbox to the host environment', () => {
-      const agent = new BidiAgent({ model: new FakeBidiModel() })
+    it('uses the configured sandbox', () => {
+      const sandbox = new StubSandbox()
 
-      expect(agent.sandbox).toBeInstanceOf(NotASandboxLocalEnvironment)
-      expect(agent.sandbox).toBe(agent.sandbox)
+      expect(new BidiAgent({ model: new FakeBidiModel(), sandbox }).sandbox).toBe(sandbox)
     })
 
     it('exposes metrics and tool names', () => {

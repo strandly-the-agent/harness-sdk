@@ -54,7 +54,12 @@
     },
     "./bidi": {
       "types": "./dist/src/bidi/index.d.ts",
+      "node": "./dist/src/bidi/index.node.js",
       "default": "./dist/src/bidi/index.js"
+    },
+    "./bidi/io/console": {
+      "types": "./dist/src/bidi/io/console.d.ts",
+      "default": "./dist/src/bidi/io/console.js"
     },
     "./bidi/io/audio": {
       "types": "./dist/src/bidi/io/audio.d.ts",
@@ -221,7 +226,7 @@
     "build": "tsc --project src/tsconfig.json",
     "prepack": "npm run build",
     "check": "npm run lint && npm run format && npm run type-check && npm run check:browser-bundle && npm run test:coverage && npm run test:package",
-    "check:browser-bundle": "esbuild src/index.ts --bundle --platform=browser --format=esm --packages=external --outfile=/dev/null",
+    "check:browser-bundle": "node scripts/check-browser-bundle.mjs",
     "clean": "rm -rf node_modules dist",
     "lock:refresh": "rm -rf node_modules && npm install --ignore-scripts --os=linux --os=darwin --os=win32 --cpu=x64 --cpu=arm64 --cpu=wasm32",
     "test": "vitest run --project unit-node",
@@ -316,7 +321,6 @@
     "@aws-sdk/client-bedrock-runtime": "^3.1132.0",
     "@modelcontextprotocol/ext-tasks": "^0.2.2",
     "@smithy/fetch-http-handler": "^5.8.0",
-    "@smithy/node-http-handler": "^4.12.1",
     "@types/json-schema": "^7.0.15",
     "uuid": "^14.0.2",
     "yaml": "^2.9.1"

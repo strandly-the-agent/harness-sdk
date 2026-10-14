@@ -41,7 +41,7 @@ import type { BaseModelConfig, Model } from '../../models/model.js'
 import type { Plugin } from '../../plugins/plugin.js'
 import { PluginRegistry } from '../../plugins/registry.js'
 import { ToolRegistry } from '../../registry/tool-registry.js'
-import { NotASandboxLocalEnvironment } from '../../sandbox/not-a-sandbox-local-environment.js'
+import { defaultSandbox } from '../../sandbox/default.js'
 import type { Sandbox } from '../../sandbox/base.js'
 import type { SessionManager } from '../../session/session-manager.js'
 import { StateStore } from '../../state-store.js'
@@ -236,8 +236,14 @@ export interface BidiAgentConfig {
    */
   storage?: Storage
 
-  /** Execution environment for tool code. Defaults to the host with no isolation. */
-  sandbox?: Sandbox
+  /**
+   * Execution environment for running commands, code, and file operations.
+   * When provided, sandbox-aware tools route operations through it.
+   *
+   * - Omitted: use the environment's default sandbox (host execution in Node; none in browsers).
+   * - `false`: explicitly opt out of a managed sandbox.
+   */
+  sandbox?: Sandbox | false
 
   /**
    * Model for auxiliary side calls. Defaults to a {@link BedrockModel} — bidirectional models
@@ -319,7 +325,7 @@ export class BidiAgent implements LocalAgent {
   /** Default storage backend for agent subsystems. */
   public readonly storage?: Storage | undefined
 
-  private readonly _sandbox: Sandbox
+  private readonly _sandbox: Sandbox | false | undefined
   private readonly _toolRegistry: ToolRegistry
   private readonly _mcpClients: McpClient[]
   private readonly _hooksRegistry: HookRegistryImplementation
@@ -396,7 +402,7 @@ export class BidiAgent implements LocalAgent {
       message instanceof Message ? message : Message.fromMessageData(message)
     )
     this.storage = config?.storage
-    this._sandbox = config?.sandbox ?? new NotASandboxLocalEnvironment()
+    this._sandbox = config?.sandbox
 
     // Agent identification
     this.id = config?.id ?? DEFAULT_AGENT_ID
@@ -472,9 +478,14 @@ export class BidiAgent implements LocalAgent {
     return this._sessionId
   }
 
-  /** Execution environment for tool code: the host, with no isolation. */
+  /**
+   * Execution environment for running commands, code, and file operations.
+   *
+   * @throws DefaultNotConfiguredError if no sandbox is configured for this
+   * environment (e.g. browsers, where no host default is registered).
+   */
   get sandbox(): Sandbox {
-    return this._sandbox
+    return this._sandbox || defaultSandbox.get()
   }
 
   /** The context manager plugin; always undefined because bidirectional agents have none. */

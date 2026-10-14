@@ -1,4 +1,5 @@
-import { BedrockNovaSonicModel, BidiAgent, ConsoleIO } from '@strands-agents/sdk/bidi'
+import { BedrockNovaSonicModel, BidiAgent } from '@strands-agents/sdk/bidi'
+import { ConsoleIO } from '@strands-agents/sdk/bidi/io/console'
 
 const io = new ConsoleIO({ placeholder: 'Type a message and press Enter' })
 
