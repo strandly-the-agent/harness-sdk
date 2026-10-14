@@ -2,10 +2,10 @@
 //!
 //! Thin, self-contained tools that fill gaps in the SDK's vended set.
 //!
-//! Not ported: `programmatic-tool-caller` (Node-only, depends on a JS runtime inside the tool) and
-//! `subagent` (separate task).
+//! Not ported: `programmatic-tool-caller` (Node-only, depends on a JS runtime inside the tool).
 
 pub mod file_tools;
+pub mod subagent;
 #[cfg(feature = "http")]
 pub mod web_fetch;
 pub mod web_search;
