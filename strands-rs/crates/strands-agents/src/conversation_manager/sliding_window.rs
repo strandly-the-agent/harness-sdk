@@ -28,7 +28,7 @@ pub const DEFAULT_WINDOW_SIZE: usize = 40;
 /// Configuration for [`SlidingWindowConversationManager`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct SlidingWindowConfig {
-    /// Maximum number of messages to keep. Defaults to [`DEFAULT_WINDOW_SIZE`]; `0` is legal and
+    /// Maximum number of messages to keep. Defaults to `DEFAULT_WINDOW_SIZE` (40); `0` is legal and
     /// means "remove everything".
     pub window_size: usize,
     /// Truncate large tool results before trimming messages, on overflow only. Defaults to `true`.

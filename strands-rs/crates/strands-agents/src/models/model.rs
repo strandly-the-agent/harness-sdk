@@ -326,6 +326,7 @@ pub fn stream_aggregated<'a>(
         while let Some(event) = events.next().await {
             let event = match event {
                 Ok(e) => e,
+                Err(Error::Cancelled) => { yield Err(Error::Cancelled); return; }
                 Err(e) if e.is_model_error() => { yield Err(e); return; }
                 Err(e) => { yield Err(Error::Model { message: e.to_string(), source: Some(Box::new(e)) }); return; }
             };

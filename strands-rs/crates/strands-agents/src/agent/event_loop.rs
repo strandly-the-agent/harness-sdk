@@ -177,6 +177,7 @@ impl std::fmt::Debug for AgentStreamEvent {
 /// Stream of [`AgentStreamEvent`]s produced by a running invocation.
 pub struct AgentStream {
     rx: mpsc::Receiver<Result<AgentStreamEvent>>,
+    cancel: Option<CancellationToken>,
 }
 
 impl Stream for AgentStream {
@@ -187,16 +188,39 @@ impl Stream for AgentStream {
     }
 }
 
+/// Dropping the stream cancels the invocation it is driving (TS: abandoning a `for await`).
+impl Drop for AgentStream {
+    fn drop(&mut self) {
+        if let Some(cancel) = &self.cancel {
+            cancel.cancel();
+        }
+    }
+}
+
+/// Resets `invoking` even if the invocation task panics or is dropped.
+struct InvokingGuard(Arc<super::AgentInner>);
+
+impl Drop for InvokingGuard {
+    fn drop(&mut self) {
+        self.0.invoking.store(false, Ordering::SeqCst);
+    }
+}
+
 type Sink = mpsc::Sender<Result<AgentStreamEvent>>;
 
 /// Dispatches `event` to hooks, then yields it; returns the (possibly mutated) event.
+///
+/// A closed channel (the consumer dropped the stream) surfaces as [`Error::Cancelled`] so the
+/// invocation task unwinds instead of running on.
 async fn emit<E, F>(agent: &Agent, tx: &Sink, mut event: E, wrap: F) -> Result<E>
 where
     E: HookEvent + Clone,
     F: FnOnce(E) -> AgentStreamEvent,
 {
     agent.hooks().invoke_callbacks(&mut event).await?;
-    let _ = tx.send(Ok(wrap(event.clone()))).await;
+    tx.send(Ok(wrap(event.clone())))
+        .await
+        .map_err(|_| Error::Cancelled)?;
     Ok(event)
 }
 
@@ -260,41 +284,70 @@ impl Agent {
 
     /// Run the loop, streaming every event as it happens.
     ///
-    /// The loop runs in a spawned task, so cleanup events are emitted even when the consumer stops
-    /// reading. The invocation is only released when the stream is dropped or finished.
+    /// The loop runs in a spawned task. Dropping the stream cancels the invocation.
+    ///
+    /// # Panics
+    /// Panics if called outside a tokio runtime (it spawns the invocation task).
     pub fn stream(&self, input: impl Into<InvokeInput>, options: InvokeOptions) -> AgentStream {
         let (tx, rx) = mpsc::channel(64);
         if self.inner.invoking.swap(true, Ordering::SeqCst) {
             let _ = tx.try_send(Err(Error::ConcurrentInvocation(
                 CONCURRENT_INVOCATION_MESSAGE.to_owned(),
             )));
-            return AgentStream { rx };
+            return AgentStream { rx, cancel: None };
         }
+        let guard = InvokingGuard(self.inner.clone());
+
+        let root = match &options.cancel {
+            Some(external) => external.child_token(),
+            None => CancellationToken::new(),
+        };
+        *self.inner.cancel.write() = root.clone();
 
         let agent = self.clone();
         let input = input.into();
+        let tx_join = tx.clone();
+        let task = {
+            let root = root.clone();
+            tokio::spawn(async move {
+                let outcome = run_invocation(&agent, input, options, &root, &tx).await;
+                if let Err(error) = outcome {
+                    let _ = tx.send(Err(error)).await;
+                }
+            })
+        };
         tokio::spawn(async move {
-            let outcome = run_invocation(&agent, input, options, &tx).await;
-            if let Err(error) = outcome {
-                let _ = tx.send(Err(error)).await;
+            let joined = task.await;
+            drop(guard);
+            if let Err(error) = joined {
+                let _ = tx_join
+                    .send(Err(Error::other(format!(
+                        "agent invocation task failed: {error}"
+                    ))))
+                    .await;
             }
-            agent.inner.invoking.store(false, Ordering::SeqCst);
         });
-        AgentStream { rx }
+        AgentStream {
+            rx,
+            cancel: Some(root),
+        }
     }
 }
 
 /// §9.1 — the outer (resume) loop.
-async fn run_invocation(agent: &Agent, input: InvokeInput, options: InvokeOptions, tx: &Sink) -> Result<()> {
+async fn run_invocation(
+    agent: &Agent,
+    input: InvokeInput,
+    options: InvokeOptions,
+    root: &CancellationToken,
+    tx: &Sink,
+) -> Result<()> {
     agent.initialize().await?;
     let state = options.invocation_state.clone().unwrap_or_default();
     let mut current = input;
 
     loop {
-        let cancel = match &options.cancel {
-            Some(external) => external.child_token(),
-            None => CancellationToken::new(),
-        };
+        let cancel = root.child_token();
         *agent.inner.cancel.write() = cancel.clone();
 
         let before = emit(

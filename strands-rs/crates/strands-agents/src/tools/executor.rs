@@ -116,15 +116,13 @@ impl ToolExecutor for ConcurrentToolExecutor {
             .collect();
 
         let mut collected: Vec<Option<ToolResultBlock>> = vec![None; input.tool_uses.len()];
-        let mut cancelled: Option<Error> = None;
 
         while let Some((index, outcome)) = pending.next().await {
             let tool_use = &input.tool_uses[index];
             let result = match outcome {
                 Ok(result) => result,
                 Err(Error::Cancelled) => {
-                    cancelled = Some(Error::Cancelled);
-                    continue;
+                    ToolResultBlock::error(&tool_use.tool_use_id, EXECUTION_CANCELLED_MESSAGE)
                 }
                 Err(error) => ToolResultBlock::error(&tool_use.tool_use_id, error.to_string()),
             };
@@ -138,10 +136,7 @@ impl ToolExecutor for ConcurrentToolExecutor {
         }
 
         results.extend(collected.into_iter().flatten());
-        match cancelled {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        Ok(())
     }
 }
 
@@ -760,7 +755,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn concurrent_isolates_a_sibling_failure() {
+    async fn concurrent_converts_a_tool_cancellation_into_an_error_result() {
         struct Cancelling;
         #[async_trait]
         impl crate::tools::Tool for Cancelling {
@@ -784,8 +779,11 @@ mod tests {
         });
         let input = input(&agent, vec![block("cancelling", "1"), block("b", "2")]);
         let (outcome, results, _) = run(&ConcurrentToolExecutor, &input).await;
-        assert!(matches!(outcome, Err(Error::Cancelled)));
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].tool_use_id, "2");
+        assert!(outcome.is_ok());
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].tool_use_id, "1");
+        assert_eq!(results[0].status, ToolResultStatus::Error);
+        assert!(format!("{:?}", results[0].content).contains(EXECUTION_CANCELLED_MESSAGE));
+        assert_eq!(results[1].tool_use_id, "2");
     }
 }
