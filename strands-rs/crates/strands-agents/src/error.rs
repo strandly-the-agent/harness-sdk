@@ -106,6 +106,14 @@ impl Error {
         }
     }
 
+    /// Generic model error wrapping a provider error as its source.
+    pub fn model_with_source(message: impl Into<String>, source: impl Into<BoxError>) -> Self {
+        Error::Model {
+            message: message.into(),
+            source: Some(source.into()),
+        }
+    }
+
     /// `ModelThrottled` with a message and no cause.
     pub fn throttled(message: impl Into<String>) -> Self {
         Error::ModelThrottled {

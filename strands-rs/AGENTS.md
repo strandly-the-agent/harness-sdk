@@ -81,3 +81,25 @@ All four gates must be clean before a change is proposed. `missing_docs` is a wa
 
 See [docs/TESTING.md](docs/TESTING.md). Every TS `it(...)` has a Rust test with the same intent;
 the traceability matrix lives in [docs/PORT_REPORT.md](docs/PORT_REPORT.md).
+
+## Adding a model provider
+
+- Implement `Model` for your type: `model_id()` plus `stream(&self, &[Message], &StreamOptions) ->
+  ModelEventStream<'_>`; everything else (`stream_aggregated`, `aggregate`, `count_tokens`,
+  `estimate_utilization`) has a default.
+- Keep the config on the struct behind interior mutability (`RwLock<YourConfig>`) so `&self`
+  methods can read it and `update_config` can replace it — see `models/bedrock`.
+- Map provider errors onto `Error::ModelThrottled` (retryable), `Error::ContextWindowOverflow`
+  (prompt too long) and `Error::model_with_source(msg, err)` for everything else; never leak the
+  SDK's error type.
+- Construct `StreamOptions`/`CountTokensOptions` with `..Default::default()` so new fields do not
+  break you.
+- Feature-gate the provider SDK dependency (`[features] your-provider = [...]`) and gate the
+  module with `#[cfg(feature = "your-provider")]`.
+
+## Known deviations from a literal port
+
+A few APIs intentionally differ from `strands-ts` (fallible `build()`, `Agent` as a `Clone`
+handle, `function_tool()` instead of a root `tool()`, prelude module). Each one is recorded with
+its reasoning in the decision log in [docs/DESIGN.md](docs/DESIGN.md); check there before
+"fixing" a difference you spot.

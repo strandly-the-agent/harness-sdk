@@ -18,7 +18,7 @@ pub use defaults::{
 };
 pub use model::{
     estimate_tokens_heuristic, stream_aggregated, AgentMetadata, AggregatedItem, CountTokensOptions, Model,
-    Redaction, StreamAggregatedResult, StreamOptions, DEFAULT_CONTEXT_WINDOW_LIMIT,
+    ModelEventStream, Redaction, StreamAggregatedResult, StreamOptions, DEFAULT_CONTEXT_WINDOW_LIMIT,
 };
 pub use streaming::{
     accumulate_usage, total_prompt_tokens, ContentBlockDelta, ContentBlockStart, ModelStreamEvent,

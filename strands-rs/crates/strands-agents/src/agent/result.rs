@@ -42,6 +42,11 @@ impl AgentResult {
         self
     }
 
+    /// Text of the last message (its text blocks concatenated).
+    pub fn text(&self) -> String {
+        self.last_message.text()
+    }
+
     /// Wire form: `{ type, stopReason, lastMessage, structuredOutput? }`.
     pub fn to_json(&self) -> JsonValue {
         serde_json::to_value(self).expect("AgentResult is serializable")
@@ -114,6 +119,22 @@ mod tests {
             None,
         );
         assert_eq!(r.to_string(), "💭 Reasoning:\n   a\n   b\nhi");
+    }
+
+    #[test]
+    fn text_returns_the_last_message_text() {
+        let r = result(
+            vec![
+                ContentBlock::Reasoning(ReasoningBlock {
+                    text: Some("thinking".into()),
+                    ..Default::default()
+                }),
+                ContentBlock::text("hi"),
+                ContentBlock::text("there"),
+            ],
+            Some(serde_json::json!({"k": 1})),
+        );
+        assert_eq!(r.text(), "hithere");
     }
 
     #[test]

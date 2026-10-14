@@ -24,7 +24,7 @@ pub const DEFAULT_AGENT_NAME: &str = "Strands Agent";
 /// Default agent id when none is configured.
 pub const DEFAULT_AGENT_ID: &str = "agent";
 
-const NO_MODEL_MESSAGE: &str = "No model configured. Pass a model to Agent::builder().model(..).";
+const NO_MODEL_MESSAGE: &str = "Agent requires a model; call .model(...) before .build()";
 
 /// Builds an [`Agent`]: model, prompt, tools, plugins, executor.
 #[derive(Default)]

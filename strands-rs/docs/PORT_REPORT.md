@@ -177,6 +177,22 @@ Not exercised live: throttling (`ModelThrottled`) — cannot be provoked determi
 guardrail output intervention / masking / tool-result redaction / `guard_latest_user_message`
 (same permission gap); media (audio/PDF/image) — no fixtures ported yet; `AWS_BEARER_TOKEN_BEDROCK`.
 
+## Comparison with `arronbailiss/harness-sdk` `feat/strands-rs`
+
+A maintainer's earlier Rust vertical slice (Aug 2026, ~3k lines: types, `Model`, Bedrock,
+`FunctionTool`, `#[tool]` proc macro, minimal owned `Agent`) was compared shape-by-shape
+(`docs/reviews/compare-arron.md`, 24 rows). Adopted from it: the `#[tool]` attribute macro
+(new crate `strands-agents-macros`, feature `macros`, default on; schema derived via `schemars`
+rather than type-name matching), `prelude`, `BedrockModel::default_model()` /
+`with_model_id()`, `AgentResult::text()`, `ModelEventStream` alias, provided `Model::aggregate`,
+`Error::model_with_source`, clearer missing-model build error, "Adding a model provider" docs,
+and the 20-line `weather_agent` example. Kept ours (with reasons in the file): `Clone` handle
+`Agent` + `&self` (his slice has no hooks/plugins/`ToolContext.agent`, which force it),
+`Tool::invoke -> Result<ToolResultBlock>` (TS parity; his `Result<Value>` cannot express
+error-with-content, multi-block or media results), fallible async `build()`, `Error` naming, the
+full `ContentBlock`/`StopReason`/error sets. Found in his slice: `Message.tracking_id` lacks
+`#[serde(default)]`, so TS messages without `trackingId` fail to deserialize.
+
 ## Known gaps / follow-ups
 
 - Bedrock: throttling mapping and guardrail paths untested live (see above); bearer-token auth

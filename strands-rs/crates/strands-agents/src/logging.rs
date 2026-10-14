@@ -50,8 +50,12 @@ mod tests {
         }
     }
 
+    /// Serializes tests that touch the process-global warn-once set.
+    static SERIAL: PlMutex<()> = PlMutex::new(());
+
     /// Captured `tracing` output of `f`, for this thread only.
     fn capture(f: impl FnOnce()) -> String {
+        let _guard = SERIAL.lock();
         let buffer = Arc::new(PlMutex::new(Vec::new()));
         let sink = Arc::clone(&buffer);
         let subscriber = tracing_subscriber::fmt()
