@@ -30,6 +30,7 @@ pub use conversation_manager::{
 };
 pub use error::{Error, Result};
 pub use models::Model;
+pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
