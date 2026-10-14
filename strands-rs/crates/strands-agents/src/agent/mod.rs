@@ -236,7 +236,6 @@ impl Agent {
         self.inner.tools.read().list()
     }
 
-    /// Access the tool registry.
     /// Where this agent runs commands and file operations.
     ///
     /// The configured sandbox, else the process-wide default
@@ -249,6 +248,7 @@ impl Agent {
         }
     }
 
+    /// Access the tool registry.
     pub fn with_tool_registry<R>(&self, f: impl FnOnce(&mut ToolRegistry) -> R) -> R {
         f(&mut self.inner.tools.write())
     }

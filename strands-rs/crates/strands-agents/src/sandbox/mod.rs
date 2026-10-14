@@ -175,7 +175,7 @@ pub fn shell_quote(value: &str) -> String {
 /// terminal result, so a backend that can stream overrides it; there is no `stat` (TS has none
 /// either) and no `start`/`stop` lifecycle (TS has none).
 #[async_trait]
-pub trait Sandbox: Send + Sync {
+pub trait Sandbox: std::fmt::Debug + Send + Sync {
     /// Short identifier of the backend, e.g. `"local"`.
     fn kind(&self) -> &str;
 

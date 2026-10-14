@@ -15,8 +15,6 @@ use super::{
     SandboxResult,
 };
 
-/// Exit code reported for a command killed by its timeout (the `timeout(1)` convention).
-const TIMEOUT_EXIT_CODE: i32 = 124;
 /// How long the pipe collectors get to finish after the command ended, before their buffers are
 /// taken as-is. Bounds the call when a grandchild still holds the inherited pipes open.
 const DRAIN_GRACE: Duration = Duration::from_millis(250);
@@ -342,8 +340,3 @@ fn kill_group(pid: Option<u32>) {
 
 #[cfg(not(unix))]
 fn kill_group(_pid: Option<u32>) {}
-
-/// Exit code a timed-out command is reported with by the shell tool.
-pub(crate) const fn timeout_exit_code() -> i32 {
-    TIMEOUT_EXIT_CODE
-}
