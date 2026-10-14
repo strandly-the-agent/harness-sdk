@@ -231,7 +231,6 @@ async fn hitl_with_a_scripted_ask_approves_and_denies_inline() {
             .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
             .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
             .interventions([hitl])
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -267,7 +266,6 @@ async fn hitl_without_an_ask_interrupts_and_resumes() {
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
         .interventions([hitl])
-        .unwrap()
         .build()
         .await
         .unwrap();
@@ -306,7 +304,6 @@ async fn hitl_allowed_tools_skip_approval_entirely() {
         .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
         .tool_ref(sibling_tool("ok", Arc::clone(&runs)))
         .interventions([hitl])
-        .unwrap()
         .build()
         .await
         .unwrap();

@@ -38,6 +38,7 @@ pub struct AgentBuilder {
     messages: Vec<Message>,
     tools: Vec<ToolRef>,
     plugins: Vec<Arc<dyn Plugin>>,
+    interventions: Vec<Arc<dyn crate::interventions::InterventionHandler>>,
     context_manager_option: Option<crate::context_manager::ContextManagerOption>,
     session_manager: Option<Arc<SessionManager>>,
     background_tasks: Option<crate::background_tasks::BackgroundTasksConfig>,
@@ -142,14 +143,24 @@ impl AgentBuilder {
         self
     }
 
-    /// Gate the agent's lifecycle with [`InterventionHandler`](crate::interventions::InterventionHandler)s.
-    ///
-    /// Returns an error if two handlers share a name.
+    /// Gate the agent's lifecycle with one
+    /// [`InterventionHandler`](crate::interventions::InterventionHandler). Repeatable;
+    /// [`build`](Self::build) rejects two handlers sharing a name.
+    pub fn intervention(
+        mut self,
+        handler: impl crate::interventions::InterventionHandler + 'static,
+    ) -> Self {
+        self.interventions.push(Arc::new(handler));
+        self
+    }
+
+    /// [`AgentBuilder::intervention`] for several already shared handlers.
     pub fn interventions(
-        self,
+        mut self,
         handlers: impl IntoIterator<Item = Arc<dyn crate::interventions::InterventionHandler>>,
-    ) -> Result<Self> {
-        Ok(self.plugin(crate::interventions::InterventionRegistry::new(handlers)?))
+    ) -> Self {
+        self.interventions.extend(handlers);
+        self
     }
 
     /// Add one user plugin.
@@ -301,6 +312,11 @@ impl AgentBuilder {
             )?)),
         }
         plugins.extend(self.plugins);
+        if !self.interventions.is_empty() {
+            plugins.push(Arc::new(crate::interventions::InterventionRegistry::new(
+                self.interventions,
+            )?));
+        }
         if let Some(manager) = context_manager {
             plugins.push(manager);
         }
