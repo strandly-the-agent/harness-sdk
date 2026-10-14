@@ -2381,4 +2381,354 @@ mod tests {
         let request = format(&config, &messages, &StreamOptions::default());
         assert_eq!(tags(&request, 0), ["document:readme"]);
     }
+
+    fn tools_cache_ttls(request: &FormattedRequest) -> Vec<Option<String>> {
+        request
+            .tool_config
+            .as_ref()
+            .map(|tools| {
+                tools
+                    .tools()
+                    .iter()
+                    .filter_map(|tool| tool.as_cache_point().ok())
+                    .map(|point| point.ttl().map(|ttl| ttl.as_str().to_owned()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn with_tools_and_system(system: SystemPrompt) -> StreamOptions {
+        StreamOptions {
+            tool_specs: vec![tool_spec("t1")],
+            system_prompt: Some(system),
+            ..Default::default()
+        }
+    }
+
+    fn system_with_cache_point(ttl: Option<&str>) -> SystemPrompt {
+        SystemPrompt::Blocks(vec![
+            SystemContentBlock::Text("be brief".into()),
+            SystemContentBlock::CachePoint(CachePointBlock {
+                cache_type: Default::default(),
+                ttl: ttl.map(str::to_owned),
+            }),
+        ])
+    }
+
+    #[test]
+    fn caches_every_section_when_no_strategy_is_given() {
+        let mut config = claude();
+        with_cache(&mut config, CacheConfig::default());
+        let options = with_tools_and_system(SystemPrompt::Text("be brief".into()));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(tools_cache_ttls(&request), vec![None]);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+        assert_eq!(msg_cache_ttls(&request, 0), vec![None]);
+    }
+
+    #[test]
+    fn caches_only_the_conversation_when_tools_ttl_is_false() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                tools_ttl: Some(CacheSection::Disabled),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(SystemPrompt::Text("be brief".into()));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert!(tools_cache_ttls(&request).is_empty());
+        assert_eq!(msg_cache_ttls(&request, 0), vec![None]);
+    }
+
+    #[test]
+    fn emits_nothing_when_every_section_is_disabled() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                tools_ttl: Some(CacheSection::Disabled),
+                system_prompt_ttl: Some(CacheSection::Disabled),
+                messages_ttl: Some(CacheSection::Disabled),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(SystemPrompt::Text("be brief".into()));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert!(tools_cache_ttls(&request).is_empty());
+        assert!(system_cache_ttls(&request).is_empty());
+        assert!(msg_cache_ttls(&request, 0).is_empty());
+    }
+
+    #[test]
+    fn propagates_only_tools_ttl_when_messages_ttl_is_not_set() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                tools_ttl: Some(CacheSection::Ttl("1h".into())),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            tool_specs: vec![tool_spec("t1")],
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(tools_cache_ttls(&request), vec![Some("1h".to_owned())]);
+        assert_eq!(msg_cache_ttls(&request, 0), vec![None]);
+    }
+
+    #[test]
+    fn propagates_only_messages_ttl_when_tools_ttl_is_not_set() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                messages_ttl: Some(CacheSection::Ttl("5m".into())),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            tool_specs: vec![tool_spec("t1")],
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(tools_cache_ttls(&request), vec![None]);
+        assert_eq!(msg_cache_ttls(&request, 0), vec![Some("5m".to_owned())]);
+    }
+
+    #[test]
+    fn applies_the_shared_ttl_to_a_caller_placed_system_cache_point() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![Some("1h".to_owned())]);
+    }
+
+    #[test]
+    fn leaves_a_system_cache_point_ttl_the_caller_wrote_as_written() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(Some("5m"))),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![Some("5m".to_owned())]);
+    }
+
+    #[test]
+    fn leaves_a_system_cache_point_alone_when_no_ttl_is_configured() {
+        let mut config = claude();
+        with_cache(&mut config, CacheConfig::default());
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+    }
+
+    #[test]
+    fn treats_an_empty_shared_ttl_as_unconfigured_for_system_points() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some(String::new()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(Some(""))),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+    }
+
+    #[test]
+    fn leaves_a_system_cache_point_alone_when_the_model_does_not_support_caching() {
+        let mut config = BedrockModelConfig::new("amazon.titan-text-v1");
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+    }
+
+    #[test]
+    fn leaves_a_system_cache_point_alone_when_the_tools_checkpoint_ahead_of_it_is_shorter() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                tools_ttl: Some(CacheSection::Ttl("5m".into())),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(system_with_cache_point(None));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(tools_cache_ttls(&request), vec![Some("5m".to_owned())]);
+        assert_eq!(system_cache_ttls(&request), vec![None]);
+    }
+
+    #[test]
+    fn applies_the_shared_ttl_when_the_tools_section_carries_it_too() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                tools_ttl: Some(CacheSection::Ttl("1h".into())),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(system_with_cache_point(None));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![Some("1h".to_owned())]);
+    }
+
+    #[test]
+    fn applies_the_shared_ttl_when_the_tools_section_is_disabled() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                tools_ttl: Some(CacheSection::Disabled),
+                ..Default::default()
+            },
+        );
+        let options = with_tools_and_system(system_with_cache_point(None));
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert!(tools_cache_ttls(&request).is_empty());
+        assert_eq!(system_cache_ttls(&request), vec![Some("1h".to_owned())]);
+    }
+
+    #[test]
+    fn applies_the_shared_ttl_when_the_request_carries_no_tools_at_all() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                tools_ttl: Some(CacheSection::Ttl("5m".into())),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let request = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(system_cache_ttls(&request), vec![Some("1h".to_owned())]);
+    }
+
+    #[test]
+    fn does_not_mutate_the_system_prompt_blocks_the_caller_owns() {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                ttl: Some("1h".into()),
+                ..Default::default()
+            },
+        );
+        let options = StreamOptions {
+            system_prompt: Some(system_with_cache_point(None)),
+            ..Default::default()
+        };
+        let snapshot = options.system_prompt.clone();
+        let _ = format(&config, &[user(vec![ContentBlock::text("hi")])], &options);
+        assert_eq!(options.system_prompt, snapshot);
+    }
+
+    #[test]
+    fn places_the_cache_point_ahead_of_every_block_of_a_multi_block_tail() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            ContentBlock::text("injected"),
+            ContentBlock::text("status"),
+        ])];
+        let options = StreamOptions {
+            dynamic_trailing_blocks: Some(2),
+            ..Default::default()
+        };
+        let request = format(&config, &messages, &options);
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint", "text:injected", "text:status",]
+        );
+    }
+
+    #[test]
+    fn steps_a_per_call_boundary_back_over_a_directly_preceding_non_pdf_document() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze this"),
+            doc_block("readme", crate::types::DocumentFormat::Md),
+            ContentBlock::text("per-call"),
+        ])];
+        let options = StreamOptions {
+            dynamic_trailing_blocks: Some(1),
+            ..Default::default()
+        };
+        let request = format(&config, &messages, &options);
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:analyze this",
+                "cachePoint",
+                "document:readme",
+                "text:per-call",
+            ]
+        );
+    }
+
+    #[test]
+    fn applies_the_configured_messages_ttl_to_a_per_call_boundary() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            ContentBlock::text("per-call"),
+        ])];
+        let options = StreamOptions {
+            dynamic_trailing_blocks: Some(1),
+            ..Default::default()
+        };
+        let request = format(&config, &messages, &options);
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint:1h", "text:per-call"]
+        );
+    }
 }
