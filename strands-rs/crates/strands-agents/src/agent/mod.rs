@@ -127,6 +127,7 @@ pub(crate) struct AgentInner {
     pub(crate) name: String,
     pub(crate) description: Option<String>,
     pub(crate) model: RwLock<Arc<dyn Model>>,
+    pub(crate) aux_model: RwLock<Option<Arc<dyn Model>>>,
     pub(crate) system_prompt: RwLock<Option<SystemPrompt>>,
     pub(crate) messages: RwLock<Vec<Message>>,
     pub(crate) state: StateStore,
@@ -146,6 +147,8 @@ pub(crate) struct AgentInner {
     pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
     pub(crate) continuations: Continuations,
     pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
+    pub(crate) tracer: crate::telemetry::Tracer,
+    pub(crate) meter: crate::telemetry::Meter,
     pub(crate) interrupt_state: crate::interrupt::InterruptStateHandle,
     pub(crate) middleware: crate::middleware::MiddlewareRegistry,
 }
@@ -188,6 +191,17 @@ impl Agent {
     /// The model.
     pub fn model(&self) -> Arc<dyn Model> {
         self.inner.model.read().clone()
+    }
+
+    /// The auxiliary model for internal side calls (memory extraction, summarization).
+    ///
+    /// Falls back to [`Agent::model`] when no auxiliary model was configured.
+    pub fn aux_model(&self) -> Arc<dyn Model> {
+        self.inner
+            .aux_model
+            .read()
+            .clone()
+            .unwrap_or_else(|| self.model())
     }
 
     /// Replace the model.
@@ -323,6 +337,16 @@ impl Agent {
         let mut slot = self.inner.session_id.write();
         slot.get_or_insert_with(|| uuid::Uuid::new_v4().to_string()[..8].to_owned())
             .clone()
+    }
+
+    /// The agent's OTel tracer (spans and local traces).
+    pub fn tracer(&self) -> &crate::telemetry::Tracer {
+        &self.inner.tracer
+    }
+
+    /// The agent's metrics recorder.
+    pub fn meter(&self) -> &crate::telemetry::Meter {
+        &self.inner.meter
     }
 
     /// The memory manager registered through [`AgentBuilder::memory_manager`](crate::agent::AgentBuilder::memory_manager), if any.
@@ -473,6 +497,7 @@ pub(crate) mod test_fixtures {
                 name: id.to_owned(),
                 description: None,
                 model: RwLock::new(Arc::new(EmptyStreamModel { stateful })),
+                aux_model: RwLock::new(None),
                 system_prompt: RwLock::new(system_prompt.map(|p| SystemPrompt::Text(p.to_owned()))),
                 messages: RwLock::new(messages),
                 state: StateStore::new(),
@@ -490,6 +515,8 @@ pub(crate) mod test_fixtures {
                 sandbox: None,
                 session_id: RwLock::new(None),
                 memory_manager: None,
+                tracer: crate::telemetry::Tracer::new(crate::telemetry::TelemetryConfig::from_env()),
+                meter: crate::telemetry::Meter::new(),
                 background_tasks: None,
                 continuations: Continuations::default(),
                 middleware: crate::middleware::MiddlewareRegistry::new(),

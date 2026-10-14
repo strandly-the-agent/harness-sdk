@@ -927,6 +927,7 @@ mod tests {
         store.supports_add_messages = true;
         store.extraction = Some(ExtractionConfig {
             extractor: Some(Arc::new(FixedExtractor(vec![]))),
+            ..Default::default()
         });
         assert_eq!(
             MemoryManager::new(vec![store.into_ref()])
@@ -1223,6 +1224,7 @@ mod tests {
         let mut store = FakeStore::new("facts").writable();
         store.extraction = Some(ExtractionConfig {
             extractor: Some(Arc::new(FixedExtractor(vec!["fact one"]))),
+            ..Default::default()
         });
         let store = Arc::new(store);
         let manager = MemoryManager::new(vec![store.clone() as MemoryStoreRef]).unwrap();
@@ -1255,6 +1257,7 @@ mod tests {
         let mut store = FakeStore::new("flaky").writable().failing();
         store.extraction = Some(ExtractionConfig {
             extractor: Some(Arc::new(FixedExtractor(vec!["fact"]))),
+            ..Default::default()
         });
         let manager = MemoryManager::new(vec![store.into_ref()]).unwrap();
         manager.record_messages(&[user("hi")]).await;
@@ -1286,6 +1289,7 @@ mod tests {
         let mut store = FakeStore::new("facts").writable().failing();
         store.extraction = Some(ExtractionConfig {
             extractor: Some(Arc::new(FixedExtractor(vec!["one", "two"]))),
+            ..Default::default()
         });
         let store: MemoryStoreRef = store.into_ref();
         let manager = MemoryManager::new(vec![Arc::clone(&store)]).unwrap();
@@ -1414,6 +1418,7 @@ mod tests {
         let mut store = FakeStore::new("notes").writable();
         store.extraction = Some(ExtractionConfig {
             extractor: Some(Arc::new(FixedExtractor(vec!["fact"]))),
+            ..Default::default()
         });
         let store = store.into_ref();
         let manager = manager_with_injection(vec![store], Some(MemoryInjectionConfig::default()));
@@ -1445,6 +1450,7 @@ mod tests {
         let mut store = FakeStore::new("notes").writable().hits(&["user likes tea"]);
         store.extraction = Some(ExtractionConfig {
             extractor: Some(Arc::new(FixedExtractor(vec!["user likes tea"]))),
+            ..Default::default()
         });
         let store = Arc::new(store);
         let manager = MemoryManager::shared(MemoryManagerConfig {

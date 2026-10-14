@@ -152,6 +152,7 @@ pub(crate) fn resume_cycle_index(checkpoint: &Checkpoint) -> u64 {
 }
 
 fn checkpoint_result(
+    agent: &Agent,
     state: &InvocationState,
     last_message: Message,
     position: CheckpointPosition,
@@ -162,6 +163,8 @@ fn checkpoint_result(
         last_message,
         invocation_state: state.clone(),
         structured_output: None,
+        metrics: agent.meter().metrics(),
+        traces: agent.tracer().local_traces(),
         interrupts: Vec::new(),
         checkpoint: Some(Checkpoint::new(position, cycle_index)),
     }
@@ -183,6 +186,7 @@ pub(crate) fn after_model_checkpoint(
         return None;
     }
     Some(checkpoint_result(
+        agent,
         state,
         message.clone(),
         CheckpointPosition::AfterModel,
@@ -202,6 +206,7 @@ pub(crate) fn after_tools_checkpoint(
         return None;
     }
     Some(checkpoint_result(
+        agent,
         state,
         message.clone(),
         CheckpointPosition::AfterTools,

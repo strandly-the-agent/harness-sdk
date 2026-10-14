@@ -87,6 +87,7 @@ fn build_default_store(dir: &Path, writable: bool, extractor: Option<Arc<dyn Mod
         writable: Some(writable),
         extraction: extractor.map(|model| ExtractionConfig {
             extractor: Some(Arc::new(ModelExtractor::new(model))),
+            ..Default::default()
         }),
         ..Default::default()
     })

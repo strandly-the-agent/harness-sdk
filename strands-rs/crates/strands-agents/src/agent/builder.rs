@@ -33,6 +33,7 @@ pub struct AgentBuilder {
     name: Option<String>,
     description: Option<String>,
     model: Option<Arc<dyn Model>>,
+    aux_model: Option<Arc<dyn Model>>,
     system_prompt: Option<SystemPrompt>,
     messages: Vec<Message>,
     tools: Vec<ToolRef>,
@@ -44,6 +45,7 @@ pub struct AgentBuilder {
     sandbox: Option<Option<crate::sandbox::SandboxRef>>,
     memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     retry_strategy: Option<Option<Arc<dyn Plugin>>>,
+    telemetry: Option<crate::telemetry::TelemetryConfig>,
     executor: Option<Arc<dyn ToolExecutor>>,
     state: Option<StateStore>,
     checkpointing: bool,
@@ -55,9 +57,41 @@ impl AgentBuilder {
         Self::default()
     }
 
+    /// Telemetry configuration (defaults to [`TelemetryConfig::from_env`](crate::telemetry::TelemetryConfig::from_env)).
+    pub fn telemetry(mut self, config: crate::telemetry::TelemetryConfig) -> Self {
+        self.telemetry = Some(config);
+        self
+    }
+
+    /// Custom attributes merged onto every span this agent emits.
+    pub fn trace_attributes(
+        mut self,
+        attrs: impl IntoIterator<Item = (String, crate::telemetry::AttrValue)>,
+    ) -> Self {
+        let config = self
+            .telemetry
+            .take()
+            .unwrap_or_else(crate::telemetry::TelemetryConfig::from_env);
+        self.telemetry = Some(config.with_trace_attributes(attrs));
+        self
+    }
+
     /// The model the agent calls.
     pub fn model(self, model: impl Model + 'static) -> Self {
         self.model_arc(Arc::new(model))
+    }
+
+    /// Auxiliary model for internal side calls (memory extraction, summarization).
+    ///
+    /// Defaults to [`AgentBuilder::model`] when unset.
+    pub fn aux_model(self, model: impl Model + 'static) -> Self {
+        self.aux_model_arc(Arc::new(model))
+    }
+
+    /// [`AgentBuilder::aux_model`] with an already shared model.
+    pub fn aux_model_arc(mut self, model: Arc<dyn Model>) -> Self {
+        self.aux_model = Some(model);
+        self
     }
 
     /// [`AgentBuilder::model`] with an already shared model.
@@ -295,6 +329,7 @@ impl AgentBuilder {
                 name: self.name.unwrap_or_else(|| DEFAULT_AGENT_NAME.to_owned()),
                 description: self.description,
                 model: RwLock::new(model),
+                aux_model: RwLock::new(self.aux_model),
                 system_prompt: RwLock::new(self.system_prompt),
                 messages: RwLock::new(self.messages),
                 state: self.state.unwrap_or_default(),
@@ -311,6 +346,11 @@ impl AgentBuilder {
                 sandbox: self.sandbox,
                 session_id: RwLock::new(None),
                 memory_manager: self.memory_manager,
+                tracer: crate::telemetry::Tracer::new(
+                    self.telemetry
+                        .unwrap_or_else(crate::telemetry::TelemetryConfig::from_env),
+                ),
+                meter: crate::telemetry::Meter::new(),
                 background_tasks,
                 continuations: Default::default(),
                 interrupt_state: Default::default(),
