@@ -1772,7 +1772,9 @@ export class Agent implements LocalAgent, InvokableAgent {
       while (true) {
         this._throwIfCancelled()
 
-        if (this._invocationQueue.hasStopRequest()) {
+        // A resume's pending tool batch is this invocation's in-flight step: let it run
+        // (and append its messages) before honouring a stop request.
+        if (this._invocationQueue.hasStopRequest() && !this._interruptState.pendingToolExecution) {
           const stopMessage = new Message({
             role: 'assistant',
             content: [new TextBlock('Superseded by a new request')],

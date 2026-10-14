@@ -8,6 +8,7 @@ import { TextBlock, ToolResultBlock, type Message } from '../../types/messages.j
 import { continuations } from '../continuation.js'
 import type { StreamOptions } from '../../models/model.js'
 import type { ModelStreamEvent } from '../../models/streaming.js'
+import { InterruptResponseContent } from '../../types/interrupt.js'
 
 function createGate(name = 'gate') {
   let signalStarted!: () => void
@@ -349,5 +350,41 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     expect(events.some((event) => event instanceof AfterInvocationEvent)).toBe(true)
     expect(events.some((event) => event instanceof AgentResultEvent)).toBe(true)
     expect(resultText(await second)).toBe('B')
+  })
+
+  it('lets an interrupt resume run its pending tool before stopping, so the interrupt is not left pending', async () => {
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'confirm', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'B' })
+    const confirm = tool({
+      name: 'confirm',
+      description: 'Asks for confirmation',
+      callback: (_input, context) => `got ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+    })
+    const agent = new Agent({ model, tools: [confirm], printer: false, concurrentInvocationMode: 'stopPrevious' })
+
+    const interrupted = await agent.invoke('a')
+    expect(interrupted.stopReason).toBe('interrupt')
+
+    // The stop lands before the resume's first loop pass, i.e. before the pending tool runs.
+    let second: Promise<unknown> | undefined
+    agent.addHook(BeforeInvocationEvent, () => {
+      second ??= agent.invoke('b')
+    })
+    const resumed = await agent.invoke([
+      new InterruptResponseContent({ interruptId: interrupted.interrupts![0]!.id, response: 'yes' }),
+    ])
+
+    expect(resumed.stopReason).toBe('superseded')
+    expect(agent._interruptState.activated).toBe(false)
+    expect(resultText((await second) as { lastMessage: { content: readonly unknown[] } })).toBe('B')
+    expect(historyShape(agent)).toEqual([
+      'user: a',
+      'assistant: <toolUseBlock>',
+      'user: <toolResult>',
+      'assistant: Superseded by a new request',
+      'user: b',
+      'assistant: B',
+    ])
   })
 })
