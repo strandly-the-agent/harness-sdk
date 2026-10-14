@@ -306,11 +306,10 @@ impl Agent {
         &self.inner.continuations
     }
 
-    /// Take the queued continuation messages, resolving their `on_appended` callbacks.
+    /// Take the queued continuation messages. The inputs stay prepared until the loop appends
+    /// them (TS resolves `markAppended` only after the push to history).
     pub fn take_continuation_input(&self) -> Vec<Message> {
-        let messages = self.inner.continuations.prepare().unwrap_or_default();
-        self.inner.continuations.mark_appended();
-        messages
+        self.inner.continuations.prepare().unwrap_or_default()
     }
 
     /// Read-only view of this agent's interrupt state.

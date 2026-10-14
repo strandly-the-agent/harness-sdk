@@ -313,6 +313,19 @@ async fn append_message(agent: &Agent, tx: &Sink, state: &InvocationState, messa
     Ok(())
 }
 
+/// Concatenate messages, folding each one into the previous message when the roles match
+/// (TS `_appendMessages`); Bedrock Converse rejects consecutive same-role messages.
+fn merge_same_role(messages: Vec<Message>) -> Vec<Message> {
+    let mut out: Vec<Message> = Vec::with_capacity(messages.len());
+    for message in messages {
+        match out.last_mut() {
+            Some(last) if last.role == message.role => last.content.extend(message.content),
+            _ => out.push(message),
+        }
+    }
+    out
+}
+
 impl Agent {
     /// Run the loop to completion and return its result.
     pub async fn invoke(&self, input: impl Into<InvokeInput>) -> Result<AgentResult> {
@@ -474,7 +487,7 @@ async fn run_invocation(
         if !continuation.is_empty() {
             let mut messages = continuation;
             messages.extend(current.clone().into_messages());
-            current = InvokeInput::Messages(messages);
+            current = InvokeInput::Messages(merge_same_role(messages));
         }
 
         let outcome = run_cycles(agent, current.clone(), &state, &cancel, tx, &options).await;
@@ -568,6 +581,11 @@ async fn run_cycles(
 
     let mut outcome =
         run_cycles_inner(agent, input, state, cancel, tx, options, structured, &agent_span).await;
+    // A pass that ended before the append loop ran leaves prepared inputs behind: abandon them
+    // instead of dropping them silently (a no-op once `mark_appended` has drained them).
+    agent
+        .continuations()
+        .abandon("Agent invocation ended before the continuation input was appended");
 
     match &outcome {
         Ok(result) => agent
@@ -650,6 +668,8 @@ async fn run_cycles_inner(
             for message in input.into_messages() {
                 append_message(agent, tx, state, message).await?;
             }
+            // TS resolves `markAppended` only once the messages are in history.
+            agent.continuations().mark_appended();
         }
 
         // A resumed tool batch replays the stored assistant message: no second model call.
