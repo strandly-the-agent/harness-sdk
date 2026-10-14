@@ -655,3 +655,158 @@ async fn cancel_during_tool_execution_stops_after_the_results() {
     assert_eq!(messages[3], result.last_message);
     assert_eq!(model.call_count(), 1);
 }
+
+// ---- structured output (§9.4 steps 3, 13, 20, 28) -------------------------
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema, PartialEq)]
+struct Person {
+    name: String,
+    age: u64,
+}
+
+fn structured_tool_use(id: &str, input: serde_json::Value) -> Message {
+    tool_use_message("strands_structured_output", id, input)
+}
+
+#[tokio::test]
+async fn structured_output_when_the_model_calls_the_tool() {
+    let model = MockMessageModel::shared(vec![MockResponse::with_stop_reason(
+        structured_tool_use("s1", json!({ "name": "Ada", "age": 36 })),
+        StopReason::ToolUse,
+    )]);
+    let agent = Agent::new(model.clone()).await.unwrap();
+
+    let person: Person = agent.invoke_structured("who?").await.unwrap();
+
+    assert_eq!(
+        person,
+        Person {
+            name: "Ada".to_owned(),
+            age: 36
+        }
+    );
+    assert!(agent
+        .tools()
+        .iter()
+        .all(|t| t.name() != "strands_structured_output"));
+}
+
+#[tokio::test]
+async fn structured_output_is_forced_after_a_plain_text_reply() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::message(Message::assistant("Ada is 36")),
+        MockResponse::with_stop_reason(
+            structured_tool_use("s1", json!({ "name": "Ada", "age": 36 })),
+            StopReason::ToolUse,
+        ),
+    ]);
+    let agent = Agent::new(model.clone()).await.unwrap();
+
+    let person: Person = agent.invoke_structured("who?").await.unwrap();
+
+    assert_eq!(person.name, "Ada");
+    assert_eq!(model.call_count(), 2);
+    let calls = model.calls();
+    assert_eq!(calls[0].1.tool_choice, None);
+    assert_eq!(
+        calls[1].1.tool_choice,
+        Some(strands_agents::types::ToolChoice::Tool {
+            name: "strands_structured_output".to_owned()
+        })
+    );
+    let messages = agent.messages();
+    assert!(messages.iter().all(|m| !m.text().contains("Ada is 36")));
+}
+
+#[tokio::test]
+async fn structured_output_fails_when_the_model_never_calls_the_tool() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::message(Message::assistant("first")),
+        MockResponse::message(Message::assistant("second")),
+    ]);
+    let agent = Agent::new(model.clone()).await.unwrap();
+
+    let error = agent.invoke_structured::<Person>("who?").await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "The model failed to invoke the structured output tool even after it was forced."
+    );
+    assert_eq!(model.call_count(), 2);
+    assert!(agent
+        .tools()
+        .iter()
+        .all(|t| t.name() != "strands_structured_output"));
+}
+
+#[tokio::test]
+async fn structured_output_schema_is_reported_on_the_result() {
+    let model = MockMessageModel::shared(vec![MockResponse::with_stop_reason(
+        structured_tool_use("s1", json!({ "name": "Ada", "age": 36 })),
+        StopReason::ToolUse,
+    )]);
+    let agent = Agent::new(model.clone()).await.unwrap();
+
+    let result = agent
+        .invoke_with(
+            "who?",
+            InvokeOptions {
+                structured_output_schema: Some(json!({
+                    "type": "object",
+                    "properties": { "name": { "type": "string" }, "age": { "type": "number" } },
+                    "required": ["name", "age"]
+                })),
+                ..InvokeOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::ToolUse);
+    assert_eq!(
+        result.structured_output,
+        Some(json!({ "name": "Ada", "age": 36 }))
+    );
+}
+
+// ---- projected input tokens, maxTokens (§10 step 6, §8.6) -----------------
+
+#[tokio::test]
+async fn projects_input_tokens_for_the_model_call() {
+    let agent = Agent::new(text_model(&["hi"])).await.unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let captured = Arc::clone(&seen);
+    agent
+        .hooks()
+        .add_sync_callback(move |event: &mut strands_agents::hooks::BeforeModelCallEvent| {
+            captured.lock().unwrap().push(event.projected_input_tokens);
+            Ok(())
+        });
+
+    agent.invoke("count my tokens").await.unwrap();
+
+    let projected = seen.lock().unwrap().clone();
+    assert_eq!(projected.len(), 1);
+    assert!(projected[0].is_some_and(|tokens| tokens > 0));
+}
+
+#[tokio::test]
+async fn max_tokens_from_the_model_surfaces_as_an_error() {
+    let model = MockMessageModel::shared(vec![MockResponse::with_stop_reason(
+        Message::assistant("partial answer"),
+        StopReason::MaxTokens,
+    )]);
+    let agent = Agent::new(model.clone()).await.unwrap();
+
+    let error = agent.invoke("go").await.unwrap_err();
+
+    match error {
+        strands_agents::Error::MaxTokens { partial_message, .. } => {
+            assert_eq!(partial_message.text(), "partial answer")
+        }
+        other => panic!("expected MaxTokens, got {other:?}"),
+    }
+    let messages = agent.messages();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].role, Role::User);
+}

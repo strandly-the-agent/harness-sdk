@@ -731,10 +731,35 @@ async fn invoke_model(
                     attempt_count += 1;
                     continue;
                 }
-                return Err(Arc::try_unwrap(shared).unwrap_or_else(|e| Error::other(e.to_string())));
+                return Err(unwrap_shared_error(shared));
             }
         }
     }
+}
+
+/// Recover the owned error after it has been shared with hooks, preserving the loop-relevant
+/// variants (`Error` is not `Clone`, and emitted events keep a handle).
+fn unwrap_shared_error(shared: Arc<Error>) -> Error {
+    Arc::try_unwrap(shared).unwrap_or_else(|shared| match &*shared {
+        Error::ContextWindowOverflow(message) => Error::ContextWindowOverflow(message.clone()),
+        Error::MaxTokens {
+            message,
+            partial_message,
+        } => Error::MaxTokens {
+            message: message.clone(),
+            partial_message: partial_message.clone(),
+        },
+        Error::ModelThrottled { message, .. } => Error::ModelThrottled {
+            message: message.clone(),
+            source: None,
+        },
+        Error::Model { message, .. } => Error::Model {
+            message: message.clone(),
+            source: None,
+        },
+        Error::Cancelled => Error::Cancelled,
+        other => Error::other(other.to_string()),
+    })
 }
 
 /// §10 step 6 — `_estimateInputTokens`: reuse the last reported usage, else count everything.
