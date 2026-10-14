@@ -139,7 +139,7 @@ impl OpenAIModel {
             Some(id) => id.clone(),
             None => {
                 let default_id = MODEL_DEFAULTS.openai.model_id.to_string();
-                warn_once(&default_model_warning_message("openai", &default_id));
+                warn_once(&default_model_warning_message(&default_id));
                 default_id
             }
         };
