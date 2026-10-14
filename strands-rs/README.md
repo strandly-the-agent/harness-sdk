@@ -39,8 +39,15 @@ More in `crates/strands-agents/examples/` (`basic`, `tools`, `tools_builder`, `h
 
 ## Features
 
+Default: `bedrock`, `macros`. Everything else is opt-in.
+
 - `bedrock` (default) — Amazon Bedrock Converse provider via `aws-sdk-bedrockruntime`.
 - `macros` (default) — the `#[tool]` attribute macro from `strands-agents-macros`.
+- `anthropic` — Anthropic Messages provider.
+- `openai` — OpenAI Chat Completions provider.
+- `mcp` — MCP client transports and tool discovery.
+- `telemetry` — OpenTelemetry metrics/tracing export.
+- `test-support` — the [`testing`](#testing) module (test doubles).
 
 ## Development
 
