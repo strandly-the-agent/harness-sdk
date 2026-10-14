@@ -15,7 +15,7 @@ import {
   type McpServerConfig,
   MemoryManager,
   type Model,
-  ModelRouter,
+  type ModelRouter,
   type Plugin,
   SessionManager,
   Tool,
@@ -393,11 +393,9 @@ export async function createHarness(options: HarnessAgentOptions = {}): Promise<
     cachingOn,
     cachingExplicit
   )
-  if (auxModel instanceof ModelRouter) {
-    throw new TypeError("auxModel must be a Model, a 'provider/name' string, 'auto', or null, not a ModelRouter")
-  }
+  // Only strings are the harness's to interpret; anything else is the SDK's to validate.
   const resolvedAuxModel =
-    auxModel === null ? undefined : await resolveAuxModel(model, auxModel === 'auto' ? undefined : auxModel)
+    typeof auxModel === 'string' ? await resolveAuxModel(model, auxModel === 'auto' ? undefined : auxModel) : auxModel
 
   if (agentConfig.systemPrompt === undefined) {
     agentConfig.systemPrompt = buildSystemPrompt(instructions)
@@ -524,7 +522,7 @@ export async function createHarness(options: HarnessAgentOptions = {}): Promise<
   const agent = new Agent({
     ...agentConfig,
     model: resolvedModel,
-    ...(resolvedAuxModel !== undefined && { auxModel: resolvedAuxModel }),
+    ...(resolvedAuxModel != null && { auxModel: resolvedAuxModel }),
     tools: agentTools,
     plugins,
     backgroundTasks: resolvedBackgroundTasks,

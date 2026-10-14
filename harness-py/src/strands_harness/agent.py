@@ -422,10 +422,11 @@ def create_harness(
         caching=caching_on,
         caching_explicit=caching_explicit,
     )
-    if isinstance(aux_model, ModelRouter):
-        raise TypeError("aux_model must be a Model, a 'provider/name' string, 'auto', or None, not a ModelRouter")
+    # Only strings are the harness's to interpret; anything else is the SDK's to validate.
     resolved_aux_model = (
-        None if aux_model is None else resolve_aux_model(model, None if aux_model == "auto" else aux_model)
+        resolve_aux_model(model, None if aux_model == "auto" else aux_model)
+        if isinstance(aux_model, str)
+        else aux_model
     )
 
     if "system_prompt" not in agent_kwargs:
