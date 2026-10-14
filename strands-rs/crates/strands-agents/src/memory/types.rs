@@ -111,11 +111,55 @@ pub struct MemoryAddToolConfig {
     pub wait_for_writes: Option<bool>,
 }
 
-/// Automatic-extraction config for a store.
+/// Default turn interval of the extraction trigger (TS `DEFAULT_EXTRACTION_TRIGGER_TURNS`).
+pub const DEFAULT_EXTRACTION_TRIGGER_TURNS: u32 = 5;
+
+/// When buffered messages are handed to the extraction stores.
 ///
-/// Pass A ports the extractor slot only; the trigger set (`InvocationTrigger`,
-/// `IntervalTrigger`) is not implemented yet, so extraction is driven by
-/// [`MemoryManager::extract_now`](crate::memory::MemoryManager::extract_now) / `flush`.
+/// TS attaches a trigger *per store*; Rust's
+/// [`MemoryManager::extract_now`](crate::memory::MemoryManager::extract_now) saves every
+/// extraction store in one pass, so the trigger lives on
+/// [`MemoryManagerConfig`](crate::memory::MemoryManagerConfig) instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtractionTrigger {
+    /// After every invocation (TS `InvocationTrigger`).
+    Invocation,
+    /// Every `turns` invocations (TS `IntervalTrigger`).
+    Interval {
+        /// Invocations between extractions; must be positive.
+        turns: u32,
+    },
+}
+
+impl Default for ExtractionTrigger {
+    fn default() -> Self {
+        Self::Interval {
+            turns: DEFAULT_EXTRACTION_TRIGGER_TURNS,
+        }
+    }
+}
+
+impl ExtractionTrigger {
+    /// Interval trigger, rejecting `turns == 0`.
+    pub fn interval(turns: u32) -> Result<Self> {
+        if turns == 0 {
+            return Err(Error::other(format!(
+                "IntervalTrigger: turns must be a positive integer, got {turns}"
+            )));
+        }
+        Ok(Self::Interval { turns })
+    }
+
+    /// Whether the `count`-th invocation (1-based) fires extraction.
+    pub fn fires_on(&self, count: u64) -> bool {
+        match self {
+            Self::Invocation => true,
+            Self::Interval { turns } => count % u64::from(*turns) == 0,
+        }
+    }
+}
+
+/// Automatic-extraction config for a store.
 #[derive(Clone, Default)]
 pub struct ExtractionConfig {
     /// Distills messages into entries written with [`MemoryStore::add`]. When `None`, raw

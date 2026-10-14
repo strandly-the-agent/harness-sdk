@@ -2,7 +2,8 @@
 //! add across memory stores and exposes the `search_memory` / `add_memory` tools.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock, Weak};
 
 use async_trait::async_trait;
 use serde_json::json;
@@ -10,10 +11,13 @@ use tokio::sync::Mutex;
 
 use crate::agent::Agent;
 use crate::error::{Error, Result};
+use crate::hooks::{hook_order, AfterInvocationEvent, BeforeModelCallEvent, HookCallback, MessageAddedEvent};
+use crate::memory::injection::MemoryInjectionConfig;
 use crate::memory::types::{
-    has_write_sink, AddMessagesContext, MemoryAddOptions, MemoryAddToolConfig, MemoryEntry,
-    MemorySearchOptions, MemoryStoreRef, MemoryToolConfig, SearchOptions,
+    has_write_sink, AddMessagesContext, ExtractionTrigger, MemoryAddOptions, MemoryAddToolConfig,
+    MemoryEntry, MemorySearchOptions, MemoryStoreRef, MemoryToolConfig, SearchOptions,
 };
+use crate::plugins::vended::context_injector::fold_into_last_user_message;
 use crate::plugins::Plugin;
 use crate::tools::{function_tool, ToolRef};
 use crate::types::{JsonValue, Message};
@@ -37,6 +41,10 @@ pub struct MemoryManagerConfig {
     pub search_tool: Option<MemoryToolConfig>,
     /// `add_memory` tool config; `None` disables the tool.
     pub add_tool: Option<MemoryAddToolConfig>,
+    /// Memory injection before each model call; `None` disables it.
+    pub injection: Option<MemoryInjectionConfig>,
+    /// When extraction fires; `None` uses [`ExtractionTrigger::default`] (every 5 invocations).
+    pub extraction_trigger: Option<ExtractionTrigger>,
 }
 
 /// Long-term memory across one or more [`MemoryStore`](crate::memory::MemoryStore)s.
@@ -45,7 +53,14 @@ pub struct MemoryManager {
     add_stores: Vec<MemoryStoreRef>,
     search_tool: Option<MemoryToolConfig>,
     add_tool: Option<(MemoryAddToolConfig, Vec<MemoryStoreRef>)>,
+    injection: Option<MemoryInjectionConfig>,
+    extraction_trigger: ExtractionTrigger,
     extraction: Mutex<ExtractionState>,
+    /// Invocations seen by the `AfterInvocationEvent` trigger.
+    invocations: AtomicU64,
+    /// Handle to itself, so `init_agent` can give its hooks an owned manager. Set by
+    /// [`MemoryManager::shared`] / [`AgentBuilder::memory_manager`](crate::agent::AgentBuilder).
+    self_ref: OnceLock<Weak<MemoryManager>>,
 }
 
 /// Per-store extraction bookkeeping (the TS `ExtractionCoordinator`, simplified: one lock over all
@@ -80,6 +95,8 @@ impl MemoryManager {
             stores,
             search_tool: Some(MemoryToolConfig::default()),
             add_tool: None,
+            injection: Some(MemoryInjectionConfig::default()),
+            extraction_trigger: None,
         })
     }
 
@@ -89,6 +106,8 @@ impl MemoryManager {
             stores,
             search_tool: Some(MemoryToolConfig::default()),
             add_tool: Some(MemoryAddToolConfig::default()),
+            injection: Some(MemoryInjectionConfig::default()),
+            extraction_trigger: None,
         })
     }
 
@@ -176,8 +195,24 @@ impl MemoryManager {
             add_stores,
             search_tool: config.search_tool,
             add_tool,
+            injection: config.injection,
+            extraction_trigger: config.extraction_trigger.unwrap_or_default(),
             extraction: Mutex::new(ExtractionState::default()),
+            invocations: AtomicU64::new(0),
+            self_ref: OnceLock::new(),
         })
+    }
+
+    /// Shared manager, ready for [`AgentBuilder::memory_manager`](crate::agent::AgentBuilder).
+    pub fn shared(config: MemoryManagerConfig) -> Result<Arc<Self>> {
+        let manager = Arc::new(Self::with_config(config)?);
+        manager.bind_self();
+        Ok(manager)
+    }
+
+    /// Records the owning `Arc` so `init_agent`'s hooks can hold the manager. Idempotent.
+    pub(crate) fn bind_self(self: &Arc<Self>) {
+        let _ = self.self_ref.set(Arc::downgrade(self));
     }
 
     /// Configured store names, in order.
@@ -324,6 +359,56 @@ impl MemoryManager {
         }
         state.trim(self.extraction_store_names());
         Ok(attempted)
+    }
+
+    /// One `AfterInvocationEvent`: count the invocation and extract when the trigger fires.
+    /// Extraction errors are logged, never propagated into the agent loop.
+    async fn fire_extraction_trigger(&self) {
+        let count = self.invocations.fetch_add(1, Ordering::Relaxed) + 1;
+        if !self.extraction_trigger.fires_on(count) {
+            return;
+        }
+        if let Err(err) = self.extract_now().await {
+            tracing::warn!("reason=<{err}> | memory extraction failed");
+        }
+    }
+
+    /// Search memory for this model call and fold the rendered block into the last user message.
+    ///
+    /// Returns whether anything was injected. Fails open: no query, no results, or a failing
+    /// search leaves `messages` untouched. `messages` is the per-call copy from
+    /// [`BeforeModelCallEvent`], so durable history is never modified.
+    pub async fn inject(&self, messages: &mut [Message]) -> bool {
+        let Some(config) = &self.injection else {
+            return false;
+        };
+        if !config.should_inject(messages) {
+            return false;
+        }
+        let Some(query) = config.query(messages) else {
+            return false;
+        };
+        let max_entries = config.max_entries();
+        let options = MemorySearchOptions {
+            max_search_results: Some(max_entries),
+            stores: None,
+        };
+        let mut entries = match self.search(&query, &options).await {
+            Ok(entries) => entries,
+            Err(err) => {
+                tracing::warn!("reason=<{err}> | memory injection search failed");
+                return false;
+            }
+        };
+        entries.truncate(max_entries);
+        if entries.is_empty() {
+            return false;
+        }
+        let text = config.format(&entries);
+        if text.trim().is_empty() {
+            return false;
+        }
+        fold_into_last_user_message(messages, &text)
     }
 
     /// Save every store's remaining messages, looping until nothing is left to save.
@@ -578,9 +663,54 @@ impl Plugin for MemoryManager {
         "memory-manager"
     }
 
-    async fn init_agent(&self, _agent: &Agent) -> Result<()> {
+    /// Initializes the stores, then registers the extraction triggers (`MessageAddedEvent` →
+    /// buffer, `AfterInvocationEvent` at [`hook_order::SDK_LAST`] → extract) and the injection
+    /// hook (`BeforeModelCallEvent`, TS's `InvokeModelStage.Input` middleware).
+    async fn init_agent(&self, agent: &Agent) -> Result<()> {
         for store in &self.stores {
             store.initialize().await?;
+        }
+        let Some(manager) = self.self_ref.get().and_then(Weak::upgrade) else {
+            tracing::warn!(
+                "memory manager was not registered through AgentBuilder::memory_manager | extraction triggers and injection are disabled"
+            );
+            return Ok(());
+        };
+
+        if self.has_extraction() {
+            let buffering = Arc::clone(&manager);
+            let _ = agent.hooks().add_callback::<MessageAddedEvent, _>(move |event| {
+                let manager = Arc::clone(&buffering);
+                let message = event.message.clone();
+                Box::pin(async move {
+                    manager.record_messages(&[message]).await;
+                    Ok(())
+                })
+            });
+            let extracting = Arc::clone(&manager);
+            let callback: HookCallback<AfterInvocationEvent> = Arc::new(move |_event| {
+                let manager = Arc::clone(&extracting);
+                Box::pin(async move {
+                    manager.fire_extraction_trigger().await;
+                    Ok(())
+                })
+            });
+            let _ = agent
+                .hooks()
+                .add_callback_with_order(hook_order::SDK_LAST, callback);
+        }
+
+        if self.injection.is_some() {
+            let injecting = Arc::clone(&manager);
+            let _ = agent
+                .hooks()
+                .add_callback::<BeforeModelCallEvent, _>(move |event| {
+                    let manager = Arc::clone(&injecting);
+                    Box::pin(async move {
+                        manager.inject(&mut event.messages).await;
+                        Ok(())
+                    })
+                });
         }
         Ok(())
     }
@@ -812,6 +942,8 @@ mod tests {
             stores: vec![store],
             search_tool: Some(MemoryToolConfig::default()),
             add_tool: Some(MemoryAddToolConfig::default()),
+            injection: Some(MemoryInjectionConfig::default()),
+            extraction_trigger: None,
         })
         .unwrap_err();
         assert_eq!(

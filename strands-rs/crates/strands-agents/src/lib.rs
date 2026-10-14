@@ -38,8 +38,8 @@ pub use conversation_manager::{
 };
 pub use error::{Error, Result};
 pub use memory::{
-    FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryManager, MemoryManagerConfig, MemoryStore,
-    MemoryStoreRef, ModelExtractor,
+    FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
+    MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
 };
 pub use models::Model;
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};

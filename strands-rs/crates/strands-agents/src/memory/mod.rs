@@ -3,14 +3,19 @@
 
 pub mod extraction;
 pub mod file_memory_store;
+pub mod injection;
 pub mod memory_manager;
 pub mod types;
 
 pub use extraction::ModelExtractor;
 pub use file_memory_store::{FileMemoryStore, FileMemoryStoreConfig};
+pub use injection::{
+    default_injection_format, default_injection_query, escape_xml_attr, escape_xml_text, InjectionTrigger,
+    MemoryInjectionConfig, DEFAULT_MAX_ENTRIES,
+};
 pub use memory_manager::{MemoryManager, MemoryManagerConfig};
 pub use types::{
-    AddMessagesContext, ExtractionConfig, ExtractionResult, Extractor, ExtractorRef, MemoryAddOptions,
-    MemoryAddToolConfig, MemoryEntry, MemorySearchOptions, MemoryStore, MemoryStoreConfig, MemoryStoreRef,
-    MemoryToolConfig, Metadata, SearchOptions,
+    AddMessagesContext, ExtractionConfig, ExtractionResult, ExtractionTrigger, Extractor, ExtractorRef,
+    MemoryAddOptions, MemoryAddToolConfig, MemoryEntry, MemorySearchOptions, MemoryStore, MemoryStoreConfig,
+    MemoryStoreRef, MemoryToolConfig, Metadata, SearchOptions,
 };

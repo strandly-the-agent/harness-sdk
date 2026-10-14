@@ -89,8 +89,11 @@ impl AgentBuilder {
     }
 
     /// Register a [`MemoryManager`](crate::memory::MemoryManager): adds it as a plugin and
-    /// registers its memory tools.
+    /// registers its memory tools. The manager's extraction triggers and injection hook are wired
+    /// in its `init_agent`; call [`MemoryManager::flush`](crate::memory::MemoryManager::flush) on
+    /// shutdown to save whatever is still buffered (the agent has no shutdown hook).
     pub fn memory_manager(mut self, manager: Arc<crate::memory::MemoryManager>) -> Self {
+        manager.bind_self();
         self.tools.extend(manager.memory_tools());
         self.plugins.push(manager);
         self
