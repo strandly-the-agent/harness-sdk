@@ -12,9 +12,18 @@ registry, sequential + concurrent executors), `hooks/` (registry + all events), 
 `agent/` (event loop, `invoke`/`stream`, state store, continuation/resume), `conversation_manager/`
 (null + sliding window), `session/` (file storage + session manager), `retry/`, `error.rs`.
 
-Out (not ported yet; keep the seams): interrupts/HITL, background tasks, agent-as-tool /
-delegation, checkpointing/snapshots, printer, telemetry, MCP, A2A, multiagent, summarizing
-conversation manager, S3 session storage, non-Bedrock providers.
+Since then (phases 2–3) the scope grew to: storage, context manager (replaces conversation
+managers — `ContextManagerOption::Auto` is the Agent default), background tasks (engine with
+max_concurrency/timeout/dedup), memory manager, skills/context-injector plugins, sandbox
+(`Sandbox` trait + `LocalSandbox`; shell runs through it), middleware (TypeId-keyed stages,
+owned `Next`), interrupts/HITL (`Error::Interrupt`, `ToolContext::interrupt`,
+`InvokeInput::InterruptResponses`, `HumanInTheLoop`), snapshots/checkpoints, telemetry (OpenTelemetry
+`gen_ai.*`), MCP (rmcp 3.x; stdio + streamable-http — rmcp has no SSE client), agent-as-tool,
+delegation, continuations, Anthropic + OpenAI (Responses/Chat/bedrock-mantle) providers.
+
+Still out: printer, A2A, multiagent (swarm/graph), S3 session storage, docker/ssh sandboxes,
+Gemini/LiteLLM/OpenRouter providers, OTLP exporter installation (the SDK emits spans; the host
+installs the exporter).
 
 ## Core shapes
 

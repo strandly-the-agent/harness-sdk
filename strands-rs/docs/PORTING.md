@@ -37,6 +37,11 @@ is the lookup table for *what*.
 | `string.slice(a, b)` / `.length` | `encode_utf16()`-based helpers where TS semantics matter | never byte-slice user text |
 | `JSON.parse` failure (`SyntaxError`) | `serde_json::Error` | |
 | `Map` (insertion-ordered) | `indexmap::IndexMap` | `ToolRegistry` |
+| middleware `(ctx, next) => AsyncGenerator<Event, Result>` | `impl Middleware<S>` / `wrap_fn(\|ctx, sink, next\| async move {..})`; events go to `sink`, result is the return value | |
+| `ctx.interrupt(params)` throws `InterruptError` | `ctx.interrupt::<T>(params)?` → `Err(Error::Interrupt)` on first call, stored response on resume | never convert to an error result |
+| `agent.takeSnapshot()/loadSnapshot()` | `agent.take_snapshot(opts)` / `agent.load_snapshot(&snapshot)` | absent vs `null` preserved |
+| `agent.asTool()` | `agent.as_tool(AgentAsToolOptions)` | interrupt ids namespaced `agent_as_tool:{id}:` |
+| `new McpClient(config)` | `McpClient::connect(McpServerConfig).await` / `McpClient::load_servers(..)` | |
 | `vitest` `describe/it` | `#[cfg(test)] mod tests` + `#[test]`/`#[tokio::test]` | name = TS name in snake_case |
 | `MockMessageModel` fixture | `test_support::MockMessageModel` | |
 

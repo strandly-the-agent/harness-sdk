@@ -35,12 +35,17 @@ strands-rs/
 │   │   ├── tools/                # Tool trait, ToolContext, FunctionTool, registry, executors, vended/shell
 │   │   ├── hooks/                # HookRegistry + every event struct
 │   │   ├── plugins/              # Plugin trait, PluginRegistry, ModelPlugin, vended/{skills,context_injector}
-│   │   ├── agent/                # Agent handle, builder, event loop, AgentResult, InvocationState
+│   │   ├── agent/                # Agent handle, builder, event loop, snapshot/checkpoint, as_tool, delegation, continuation
 │   │   ├── storage/              # Storage trait, InMemoryStorage, LocalFileStorage, keyword search
 │   │   ├── context_manager/      # ContextManager ('auto'/'agentic'), offload strategies, stash, retrieval tool
 │   │   ├── background_tasks/     # background tool execution, manage tool, continuation delivery
 │   │   ├── memory/               # MemoryManager, MemoryStore, ModelExtractor, FileMemoryStore, injection
-│   │   ├── conversation_manager/ # Null + SlidingWindow
+│   │   ├── middleware/           # Stage trait, InvokeModelStage/ExecuteToolStage, MiddlewareRegistry
+│   │   ├── interrupt.rs, interventions/  # interrupts, InterventionHandler, vended HumanInTheLoop
+│   │   ├── sandbox/              # Sandbox trait, LocalSandbox
+│   │   ├── telemetry/            # OpenTelemetry tracer/meter, AgentMetrics/AgentTrace
+│   │   ├── mcp/                  # McpClient/McpTool over rmcp (feature mcp); src/bin/mcp_echo_server.rs for e2e
+│   │   ├── models/{bedrock,anthropic,openai}/ + sse.rs
 │   │   ├── session/              # SessionStorage, FileSessionStorage, SessionManager
 │   │   ├── retry/                # backoff + model retry strategies
 │   │   ├── state_store.rs        # JSON k/v store
@@ -68,6 +73,9 @@ All four gates must be clean before a change is proposed. `missing_docs` is a wa
 `pub` item needs a `///` line) and clippy runs with `-D warnings`.
 
 ## Conventions
+
+- `src/bin/mcp_echo_server.rs` is force-tracked (`git add -f`): the root `.gitignore` excludes
+  `bin/`. It is a test-only MCP server (`mcp-echo-server` feature) used by `tests/mcp_e2e.rs`.
 
 - **Translate, don't improve.** A behaviour change relative to `strands-ts` is a bug unless
   `docs/DESIGN.md` says otherwise. Fix bugs upstream first, then port.

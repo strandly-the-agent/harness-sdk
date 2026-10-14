@@ -67,3 +67,9 @@ tokio-stream.workspace = true
 tracing-subscriber.workspace = true
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
+
+# Test-only stdio MCP server used by tests/mcp_e2e.rs; never built without its feature.
+[[bin]]
+name = "mcp_echo_server"
+path = "src/bin/mcp_echo_server.rs"
+required-features = ["mcp-echo-server"]
