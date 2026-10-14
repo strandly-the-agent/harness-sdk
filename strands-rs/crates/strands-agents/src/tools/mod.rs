@@ -6,6 +6,7 @@ mod noop_tool;
 mod registry;
 mod structured_output;
 mod tool;
+pub mod vended;
 
 pub use executor::{
     ConcurrentToolExecutor, ExecuteToolsInput, SequentialToolExecutor, ToolExecutor, ToolExecutorEvent,
