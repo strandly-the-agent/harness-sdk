@@ -29,6 +29,9 @@ pub const SANDBOX_SHELL_DESCRIPTION: &str = "Executes shell commands and returns
 
 /// Exit code reported for a command killed by its timeout (the `timeout(1)` convention).
 const TIMEOUT_EXIT_CODE: i32 = 124;
+/// How long the pipe collectors get to finish after the command ended, before their buffers are
+/// taken as-is. Bounds the call when a grandchild still holds the inherited pipes open.
+const DRAIN_GRACE: Duration = Duration::from_millis(250);
 
 /// Result of a shell command (`ShellOutput` in TS).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,6 +139,9 @@ impl ShellTool {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        // Own process group, so the whole tree (not just `sh`) can be signalled.
+        #[cfg(unix)]
+        cmd.process_group(0);
         if let Some(cwd) = &self.config.cwd {
             cmd.current_dir(cwd);
         }
@@ -144,6 +150,9 @@ impl ShellTool {
         }
 
         let mut child = cmd.spawn().map_err(|e| ShellError::Execution(e.to_string()))?;
+        // Kills the group on every exit path, including when this future is dropped (cancel).
+        let pid = child.id();
+        let _group = GroupKill(pid);
         let stdout = collect(child.stdout.take());
         let stderr = collect(child.stderr.take());
 
@@ -151,19 +160,21 @@ impl ShellTool {
         match status {
             Ok(status) => {
                 let status = status.map_err(|e| ShellError::Execution(e.to_string()))?;
+                kill_group(pid);
                 Ok(ShellOutput {
-                    output: stdout.read().await,
-                    error: stderr.read().await,
+                    output: stdout.read(DRAIN_GRACE).await,
+                    error: stderr.read(DRAIN_GRACE).await,
                     exit_code: exit_code_of(&status),
                 })
             }
             Err(_) => {
+                kill_group(pid);
                 let _ = child.kill().await;
                 Err(ShellError::Timeout {
                     seconds,
                     partial: ShellOutput {
-                        output: stdout.read().await,
-                        error: stderr.read().await,
+                        output: stdout.read(DRAIN_GRACE).await,
+                        error: stderr.read(DRAIN_GRACE).await,
                         exit_code: TIMEOUT_EXIT_CODE,
                     },
                 })
@@ -257,14 +268,46 @@ struct Collected {
 }
 
 impl Collected {
-    async fn read(mut self) -> String {
-        if let Some(task) = self.task.take() {
-            let _ = task.await;
+    /// Wait up to `grace` for EOF, then take whatever has been buffered so far.
+    async fn read(mut self, grace: Duration) -> String {
+        if let Some(mut task) = self.task.take() {
+            if tokio::time::timeout(grace, &mut task).await.is_err() {
+                task.abort();
+            }
         }
         let bytes = self.buffer.lock().expect("output buffer poisoned").clone();
         String::from_utf8_lossy(&bytes).into_owned()
     }
 }
+
+impl Drop for Collected {
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
+}
+
+/// SIGKILLs the process group of `pid` when dropped (timeout, error, or a cancelled call).
+struct GroupKill(Option<u32>);
+
+impl Drop for GroupKill {
+    fn drop(&mut self) {
+        kill_group(self.0);
+    }
+}
+
+/// SIGKILL the whole process group led by `pid`; children of the command die with it.
+#[cfg(unix)]
+fn kill_group(pid: Option<u32>) {
+    let Some(pid) = pid.and_then(|pid| i32::try_from(pid).ok()) else {
+        return;
+    };
+    let _ = nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGKILL);
+}
+
+#[cfg(not(unix))]
+fn kill_group(_pid: Option<u32>) {}
 
 fn collect<R>(reader: Option<R>) -> Collected
 where
@@ -317,6 +360,45 @@ mod tests {
         assert!(out.output.contains("hello sandbox"));
         assert_eq!(out.error, "");
         assert_eq!(out.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn a_timeout_kills_the_whole_process_group() {
+        let started = std::time::Instant::now();
+        let error = ShellTool::new()
+            .execute("sleep 4 & sleep 10", Some(0.5))
+            .await
+            .unwrap_err();
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "the call waited for a grandchild to release the pipes: {elapsed:?}"
+        );
+        match error {
+            ShellError::Timeout { partial, seconds } => {
+                assert_eq!(partial.exit_code, TIMEOUT_EXIT_CODE);
+                assert_eq!(seconds, 0.5);
+            }
+            other => panic!("expected a timeout, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_call_kills_the_whole_process_group() {
+        let context = ctx(serde_json::json!({ "command": "sleep 4 & sleep 10" }));
+        let cancel = context.cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            cancel.cancel();
+        });
+        let started = std::time::Instant::now();
+        let error = ShellTool::new().invoke(context).await.unwrap_err();
+        let elapsed = started.elapsed();
+        assert!(matches!(error, Error::Cancelled), "{error}");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "the cancelled call waited for the process tree: {elapsed:?}"
+        );
     }
 
     #[tokio::test]

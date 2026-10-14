@@ -1,10 +1,12 @@
 //! Background-task dispatch and delivery through the public API (`background-tasks.test.ts`).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
 use strands_agents::background_tasks::{BackgroundTasksConfig, BACKGROUND_PROPERTY, MANAGE_TOOL_NAME};
+use strands_agents::hooks::{BeforeToolCallEvent, Cancel};
 use strands_agents::test_support::{MockMessageModel, MockResponse};
 use strands_agents::tools::{function_tool, ToolRef};
 use strands_agents::types::{ContentBlock, Role, ToolResultContent, ToolResultStatus, ToolUseBlock};
@@ -174,4 +176,64 @@ async fn waits_for_outstanding_tasks_before_the_invocation_finishes() {
         .content
         .iter()
         .any(|block| matches!(block, ContentBlock::ToolUse(use_) if use_.name == MANAGE_TOOL_NAME))));
+}
+
+#[tokio::test]
+async fn a_denying_before_tool_call_hook_beats_background_routing() {
+    let ran = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&ran);
+    let tool: ToolRef = Arc::new(
+        function_tool("slow")
+            .description("Sleeps, then answers")
+            .input_schema(json!({ "type": "object", "properties": { "city": { "type": "string" } } }))
+            .handler(move |_input, _ctx| {
+                let flag = Arc::clone(&flag);
+                async move {
+                    flag.store(true, Ordering::SeqCst);
+                    Ok(json!({ "forecast": "sunny" }))
+                }
+            }),
+    );
+    let model = MockMessageModel::shared(vec![
+        MockResponse::message(tool_use(
+            "slow",
+            "call-1",
+            json!({ "city": "Berlin", BACKGROUND_PROPERTY: true }),
+        )),
+        MockResponse::message(Message::assistant("denied, carrying on")),
+    ]);
+    let agent = Agent::builder()
+        .model_arc(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool_ref(tool)
+        .background_tasks(BackgroundTasksConfig::new())
+        .build()
+        .await
+        .unwrap();
+    let _ = agent
+        .hooks()
+        .add_sync_callback(|event: &mut BeforeToolCallEvent| {
+            event.cancel = Cancel::Reason("denied by policy".to_owned());
+            Ok(())
+        });
+
+    agent.invoke("forecast for Berlin?").await.unwrap();
+
+    let result = agent
+        .messages()
+        .into_iter()
+        .find_map(|message| {
+            message.content.into_iter().find_map(|block| match block {
+                ContentBlock::ToolResult(result) if result.tool_use_id == "call-1" => Some(result),
+                _ => None,
+            })
+        })
+        .expect("a tool result for the denied call");
+    assert_eq!(result.status, ToolResultStatus::Error);
+    assert_eq!(result.text(), "denied by policy");
+    assert!(
+        !ran.load(Ordering::SeqCst),
+        "the tool ran despite the denying hook"
+    );
+    let tasks = agent.background_tasks().expect("background tasks").list();
+    assert!(tasks.is_empty(), "a task was dispatched anyway: {tasks:?}");
 }

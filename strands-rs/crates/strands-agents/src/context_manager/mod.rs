@@ -244,11 +244,30 @@ impl ContextManager {
         overflow: bool,
     ) -> Result<bool> {
         let mut messages = agent.messages();
+        let acted = self
+            .run_strategies_on(agent, &mut messages, projected_input_tokens, overflow)
+            .await?;
+        if acted {
+            agent.set_messages(messages);
+        }
+        Ok(acted)
+    }
+
+    /// Like [`ContextManager::run_strategies`], but compacts `messages` in place instead of
+    /// `agent.messages()` — used by the `BeforeModelCall` hook so compaction reaches the very
+    /// call that triggered it, leaving per-call blocks appended by sibling hooks untouched.
+    pub async fn run_strategies_on(
+        &self,
+        agent: &Agent,
+        messages: &mut Vec<Message>,
+        projected_input_tokens: Option<u64>,
+        overflow: bool,
+    ) -> Result<bool> {
         let model = agent.model();
         let input_tokens = match projected_input_tokens {
             Some(tokens) => tokens,
             None => model
-                .count_tokens(&messages, &CountTokensOptions::default())
+                .count_tokens(messages, &CountTokensOptions::default())
                 .await
                 .unwrap_or(0),
         };
@@ -256,7 +275,7 @@ impl ContextManager {
         let mut any_acted = false;
         {
             let mut ctx = ContextState {
-                messages: &mut messages,
+                messages,
                 agent,
                 utilization: model.estimate_utilization(input_tokens),
                 overflow,
@@ -289,9 +308,6 @@ impl ContextManager {
                     }
                 }
             }
-        }
-        if any_acted {
-            agent.set_messages(messages);
         }
         Ok(any_acted)
     }
@@ -372,8 +388,18 @@ impl Plugin for ContextManager {
                 let manager = Arc::clone(&before);
                 let agent = event.agent.clone();
                 let projected = event.projected_input_tokens;
+                let messages = &mut event.messages;
                 Box::pin(async move {
-                    let _ = manager.run_strategies(&agent, projected, false).await;
+                    // Mirror into the agent only while `event.messages` still matches the
+                    // history, so per-call blocks added by sibling hooks never leak into it.
+                    let mirror = messages.len() == agent.with_messages(|m| m.len());
+                    let acted = manager
+                        .run_strategies_on(&agent, messages, projected, false)
+                        .await
+                        .unwrap_or(false);
+                    if acted && mirror {
+                        agent.set_messages(messages.clone());
+                    }
                     Ok(())
                 })
             });
