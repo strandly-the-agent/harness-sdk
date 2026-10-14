@@ -2183,6 +2183,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "strands-harness"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "parking_lot",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strands-agents",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
