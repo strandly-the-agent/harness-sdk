@@ -41,6 +41,7 @@ pub struct AgentBuilder {
     session_manager: Option<Arc<SessionManager>>,
     background_tasks: Option<crate::background_tasks::BackgroundTasksConfig>,
     storage: Option<crate::storage::StorageRef>,
+    sandbox: Option<Option<crate::sandbox::SandboxRef>>,
     memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     retry_strategy: Option<Option<Arc<dyn Plugin>>>,
     executor: Option<Arc<dyn ToolExecutor>>,
@@ -129,6 +130,26 @@ impl AgentBuilder {
     /// session snapshots).
     pub fn storage(mut self, storage: impl crate::storage::Storage + 'static) -> Self {
         self.storage = Some(Arc::new(storage));
+        self
+    }
+
+    /// Where the agent runs commands and file operations; its vended tools are registered at
+    /// build time unless a user tool already has the same name.
+    pub fn sandbox(mut self, sandbox: impl crate::sandbox::Sandbox + 'static) -> Self {
+        self.sandbox = Some(Some(Arc::new(sandbox)));
+        self
+    }
+
+    /// [`AgentBuilder::sandbox`] for an already shared handle.
+    pub fn sandbox_arc(mut self, sandbox: crate::sandbox::SandboxRef) -> Self {
+        self.sandbox = Some(Some(sandbox));
+        self
+    }
+
+    /// Opt out of a sandbox entirely (TS `sandbox: false`): no sandbox-vended tools are
+    /// registered and [`Agent::sandbox`] falls back to the default slot.
+    pub fn no_sandbox(mut self) -> Self {
+        self.sandbox = Some(None);
         self
     }
 
@@ -266,6 +287,7 @@ impl AgentBuilder {
                 cancel: RwLock::new(CancellationToken::new()),
                 initialized: AsyncMutex::new(false),
                 storage: self.storage,
+                sandbox: self.sandbox,
                 session_id: RwLock::new(None),
                 memory_manager: self.memory_manager,
                 background_tasks,
