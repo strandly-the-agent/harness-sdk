@@ -196,27 +196,31 @@ async fn execute_tool(
             None => registry_tool.clone(),
         };
 
-        if let (Some(background), Some(tool)) = (input.agent.background_tasks(), effective_tool.clone()) {
-            match background.route_tool_call(&mut tool_use, &tool_use_block.name, tool.name()) {
-                crate::background_tasks::Route::Error(result) => {
-                    return Ok(normalize_tool_result_id(*result, &tool_use_block.tool_use_id));
-                }
-                crate::background_tasks::Route::Background => {
-                    let result = background.submit_tool_call(
-                        &input.agent,
-                        tool,
-                        tool_use.clone(),
-                        input.invocation_state.clone(),
-                    );
-                    return Ok(normalize_tool_result_id(result, &tool_use_block.tool_use_id));
-                }
-                crate::background_tasks::Route::Foreground => {}
-            }
-        }
-
+        // A denying hook wins over background routing (TS `executor.ts:141-163`).
         let (result, error) = match before.cancel.message_or(HOOK_CANCELLED_MESSAGE) {
             Some(message) => (ToolResultBlock::error(&tool_use.tool_use_id, message), None),
-            None => run_tool(input, effective_tool.as_ref(), &tool_use, events).await?,
+            None => {
+                if let (Some(background), Some(tool)) =
+                    (input.agent.background_tasks(), effective_tool.clone())
+                {
+                    match background.route_tool_call(&mut tool_use, &tool_use_block.name, tool.name()) {
+                        crate::background_tasks::Route::Error(result) => {
+                            return Ok(normalize_tool_result_id(*result, &tool_use_block.tool_use_id));
+                        }
+                        crate::background_tasks::Route::Background => {
+                            let result = background.submit_tool_call(
+                                &input.agent,
+                                tool,
+                                tool_use.clone(),
+                                input.invocation_state.clone(),
+                            );
+                            return Ok(normalize_tool_result_id(result, &tool_use_block.tool_use_id));
+                        }
+                        crate::background_tasks::Route::Foreground => {}
+                    }
+                }
+                run_tool(input, effective_tool.as_ref(), &tool_use, events).await?
+            }
         };
 
         let mut after = AfterToolCallEvent {
