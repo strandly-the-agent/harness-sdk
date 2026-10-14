@@ -137,9 +137,7 @@ async fn returns_mock_tool_result_without_executing_the_real_tool() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     agent.add_middleware::<ExecuteToolStage>(wrap_fn({
         let seen = Arc::clone(&seen);
-        move |ctx: ExecuteToolContext,
-              _sink: EventSink<ToolStreamEvent>,
-              _next: Next<ExecuteToolStage>| {
+        move |ctx: ExecuteToolContext, _sink: EventSink<ToolStreamEvent>, _next: Next<ExecuteToolStage>| {
             let seen = Arc::clone(&seen);
             async move {
                 seen.lock().push(ctx.tool_use.name.clone());

@@ -146,10 +146,7 @@ impl AgentBuilder {
     /// Gate the agent's lifecycle with one
     /// [`InterventionHandler`](crate::interventions::InterventionHandler). Repeatable;
     /// [`build`](Self::build) rejects two handlers sharing a name.
-    pub fn intervention(
-        mut self,
-        handler: impl crate::interventions::InterventionHandler + 'static,
-    ) -> Self {
+    pub fn intervention(mut self, handler: impl crate::interventions::InterventionHandler + 'static) -> Self {
         self.interventions.push(Arc::new(handler));
         self
     }

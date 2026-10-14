@@ -110,8 +110,8 @@ mod tests {
         let registry = MiddlewareRegistry::new();
         let t = trace();
         registry.add::<TestStage>(wrap_fn(
-            |_ctx: String, _sink: EventSink<String>, _next: Next<TestStage>| {
-                async move { Ok("short-circuit".to_owned()) }
+            |_ctx: String, _sink: EventSink<String>, _next: Next<TestStage>| async move {
+                Ok("short-circuit".to_owned())
             },
         ));
         registry.add::<TestStage>(recording_wrap(Arc::clone(&t), "inner"));
@@ -141,11 +141,9 @@ mod tests {
     async fn only_yields_events_matching_a_predicate() {
         let registry = MiddlewareRegistry::new();
         registry.add::<TestStage>(wrap_fn(
-            |ctx: String, sink: EventSink<String>, next: Next<TestStage>| {
-                async move {
-                    let filtered = sink.filter(|event: &String| event.starts_with("keep"));
-                    next.run(ctx, &filtered).await
-                }
+            |ctx: String, sink: EventSink<String>, next: Next<TestStage>| async move {
+                let filtered = sink.filter(|event: &String| event.starts_with("keep"));
+                next.run(ctx, &filtered).await
             },
         ));
         let (sink, events) = EventSink::collector();
@@ -164,11 +162,9 @@ mod tests {
     async fn can_yield_events_without_calling_next() {
         let registry = MiddlewareRegistry::new();
         registry.add::<TestStage>(wrap_fn(
-            |_ctx: String, sink: EventSink<String>, _next: Next<TestStage>| {
-                async move {
-                    sink.send("synthetic".to_owned()).await?;
-                    Ok("synthetic-result".to_owned())
-                }
+            |_ctx: String, sink: EventSink<String>, _next: Next<TestStage>| async move {
+                sink.send("synthetic".to_owned()).await?;
+                Ok("synthetic-result".to_owned())
             },
         ));
         let (sink, events) = EventSink::collector();
@@ -270,8 +266,8 @@ mod tests {
         let registry = MiddlewareRegistry::new();
         let t = trace();
         registry.add::<OtherStage>(wrap_fn(
-            |_ctx: String, _sink: EventSink<String>, _next: Next<OtherStage>| {
-                async move { Ok("other".to_owned()) }
+            |_ctx: String, _sink: EventSink<String>, _next: Next<OtherStage>| async move {
+                Ok("other".to_owned())
             },
         ));
         assert_eq!(TestStage::name(), OtherStage::name());
@@ -303,9 +299,7 @@ mod tests {
     fn remove_is_a_no_op_when_stage_has_no_handlers() {
         let registry = MiddlewareRegistry::new();
         let handle = registry.add::<TestStage>(wrap_fn(
-            |_ctx: String, _sink: EventSink<String>, _next: Next<TestStage>| {
-                async move { Ok(String::new()) }
-            },
+            |_ctx: String, _sink: EventSink<String>, _next: Next<TestStage>| async move { Ok(String::new()) },
         ));
         registry.remove(handle);
         registry.remove(handle);

@@ -653,7 +653,11 @@ async fn run_cycles_inner(
         }
 
         // A resumed tool batch replays the stored assistant message: no second model call.
-        let pending_tools = agent.interrupt_state_shared().lock().pending_tool_execution().cloned();
+        let pending_tools = agent
+            .interrupt_state_shared()
+            .lock()
+            .pending_tool_execution()
+            .cloned();
         if let Some(pending_tools) = pending_tools {
             let assistant_message = pending_tools.assistant_message.clone();
             let restored = pending_tools.completed_tool_results.clone();
