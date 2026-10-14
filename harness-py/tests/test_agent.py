@@ -200,10 +200,10 @@ def test_aux_model_instance_is_used_verbatim():
     assert agent.aux_model is aux
 
 
-def test_aux_model_router_uses_its_default_model():
-    default = BedrockModel(model_id="fast")
-    agent = create_harness(aux_model=ModelRouter([default, BedrockModel(model_id="deep")]))
-    assert agent.aux_model is default
+def test_aux_model_rejects_a_router_like_the_sdk():
+    router = ModelRouter([BedrockModel(model_id="fast"), BedrockModel(model_id="deep")])
+    with pytest.raises(TypeError, match="ModelRouter"):
+        create_harness(aux_model=router)
 
 
 def test_memory_extractor_pins_no_model_so_it_follows_aux_model(tmp_path):

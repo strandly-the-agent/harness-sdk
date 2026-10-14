@@ -15,7 +15,7 @@ import {
   type McpServerConfig,
   MemoryManager,
   type Model,
-  type ModelRouter,
+  ModelRouter,
   type Plugin,
   SessionManager,
   Tool,
@@ -87,10 +87,10 @@ export interface HarnessAgentOptions extends Omit<
    * extraction, the `web_fetch` summarizer, ...). `'auto'` (the default) picks the small fast model of
    * the main model's provider so credentials align (Bedrock follows the main model's family; a `Model`
    * instance as `model` is reused as-is); reasoning is off and caching never applied. `null` sets no
-   * auxiliary model, so side calls follow `model` like a plain `Agent`. Otherwise the same forms as
-   * `model`; a router uses its concrete default model, since side calls run outside the routed turn.
+   * auxiliary model, so side calls follow `model` like a plain `Agent`. Otherwise a `Model` or
+   * `"provider/name"` string; a `ModelRouter` throws, as on `Agent`.
    */
-  auxModel?: Model | ModelRouter | string | 'auto' | null
+  auxModel?: Model | string | 'auto' | null
   /**
    * Reasoning effort applied to the resolved model, mapped to each provider's request fields.
    * `'auto'` (the default) uses the provider's recommended level, `'off'` turns reasoning off
@@ -393,6 +393,9 @@ export async function createHarness(options: HarnessAgentOptions = {}): Promise<
     cachingOn,
     cachingExplicit
   )
+  if (auxModel instanceof ModelRouter) {
+    throw new TypeError("auxModel must be a Model, a 'provider/name' string, 'auto', or null, not a ModelRouter")
+  }
   const resolvedAuxModel =
     auxModel === null ? undefined : await resolveAuxModel(model, auxModel === 'auto' ? undefined : auxModel)
 

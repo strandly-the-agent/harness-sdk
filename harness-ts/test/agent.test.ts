@@ -237,12 +237,9 @@ describe('createHarness', () => {
     expect(vi.mocked(makeWebFetch).mock.lastCall?.[0]?.model?.getConfig().modelId).toBe('gpt-5-mini')
   })
 
-  it('uses a ModelRouter auxModel through its default model', async () => {
-    const defaultModel = new BedrockModel({ modelId: 'fast' })
-    const agent = await createHarness({
-      auxModel: new ModelRouter([defaultModel, new BedrockModel({ modelId: 'deep' })]),
-    })
-    expect(agent.auxModel).toBe(defaultModel)
+  it('rejects a ModelRouter as auxModel like the SDK does', async () => {
+    const router = new ModelRouter([new BedrockModel({ modelId: 'fast' }), new BedrockModel({ modelId: 'deep' })])
+    await expect(createHarness({ auxModel: router as unknown as Model })).rejects.toThrow(/ModelRouter/)
   })
 
   it('forwards auxModel to subagent children, and a child with its own model re-resolves it', async () => {
