@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { isNode } from '../../../__fixtures__/environment.js'
+
 import { ImageBlock, decodeBase64 } from '../../../types/media.js'
 import { JsonBlock, Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../../types/messages.js'
 import { AudioDelta } from '../../types/media.js'
@@ -209,7 +211,8 @@ describe('OpenAIRealtimeModel', () => {
       })
     })
 
-    it('falls back to the OPENAI_API_KEY environment variable', () => {
+    // Browsers have no process.env, so environment fallback is a Node-only behavior.
+    it.runIf(isNode)('falls back to the OPENAI_API_KEY environment variable', () => {
       vi.stubEnv('OPENAI_API_KEY', 'env-key')
 
       const model = new OpenAIRealtimeModel({

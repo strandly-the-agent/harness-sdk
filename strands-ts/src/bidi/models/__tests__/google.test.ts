@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { isNode } from '../../../__fixtures__/environment.js'
 
 import { ModelThrottledError } from '../../../errors.js'
 import { encodeBase64 } from '../../../types/media.js'
@@ -96,7 +98,11 @@ describe('GoogleGeminiLiveModel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     connect.mockImplementation(defaultConnect)
-    delete globalThis.process.env.GEMINI_API_KEY
+    if (isNode) vi.stubEnv('GEMINI_API_KEY', '')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   describe('constructor', () => {
@@ -123,8 +129,9 @@ describe('GoogleGeminiLiveModel', () => {
       )
     })
 
-    it('resolves the api key from the environment', () => {
-      globalThis.process.env.GEMINI_API_KEY = 'env-key'
+    // Browsers have no process.env, so environment fallback is a Node-only behavior.
+    it.runIf(isNode)('resolves the api key from the environment', () => {
+      vi.stubEnv('GEMINI_API_KEY', 'env-key')
 
       expect(() => new GoogleGeminiLiveModel({ modelId })).not.toThrow()
     })
