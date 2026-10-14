@@ -38,7 +38,7 @@ aws-smithy-runtime-api = { version = "1", features = ["client"] }
 regex = "1"
 tempfile = "3"
 tokio-stream = "0.1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [workspace.lints.rust]
