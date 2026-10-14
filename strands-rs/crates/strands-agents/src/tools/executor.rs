@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{Agent, InvocationState};
+use crate::middleware::{ExecuteToolContext, ExecuteToolStage};
 use crate::error::{Error, Result};
 use crate::hooks::events::{AfterToolCallEvent, BeforeToolCallEvent, ToolResultEvent, ToolStreamUpdateEvent};
 use crate::tools::tool::{ToolContext, ToolRef, ToolStreamEvent};
@@ -219,7 +220,7 @@ async fn execute_tool(
                         crate::background_tasks::Route::Foreground => {}
                     }
                 }
-                run_tool(input, effective_tool.as_ref(), &tool_use, events).await?
+                run_tool_chain(input, effective_tool.as_ref(), &tool_use, events).await?
             }
         };
 
@@ -243,6 +244,98 @@ async fn execute_tool(
             &tool_use_block.tool_use_id,
         ));
     }
+}
+
+/// Runs one tool call through the [`ExecuteToolStage`] chain; the terminal is [`run_tool`].
+///
+/// A short-circuiting handler returns its own result and the tool never runs, so the error slot
+/// stays empty (`AfterToolCallEvent.error` is `None`, matching TS).
+async fn run_tool_chain(
+    input: &ExecuteToolsInput,
+    tool: Option<&ToolRef>,
+    tool_use: &ToolUse,
+    events: &mpsc::Sender<ToolExecutorEvent>,
+) -> Result<(ToolResultBlock, Option<std::sync::Arc<Error>>)> {
+    if !input.agent.middleware().has::<ExecuteToolStage>() {
+        return run_tool(input, tool, tool_use, events).await;
+    }
+
+    let context = ExecuteToolContext::new(
+        input.agent.clone(),
+        tool.cloned(),
+        tool_use.clone(),
+        input.invocation_state.clone(),
+        input.cancel.clone(),
+    );
+    let error_slot: std::sync::Arc<parking_lot::Mutex<Option<std::sync::Arc<Error>>>> =
+        std::sync::Arc::new(parking_lot::Mutex::new(None));
+    let sink = tool_event_sink(input, events);
+
+    let terminal = {
+        let input_agent = input.agent.clone();
+        let invocation_state = input.invocation_state.clone();
+        let cancel = input.cancel.clone();
+        let events = events.clone();
+        let error_slot = std::sync::Arc::clone(&error_slot);
+        move |context: ExecuteToolContext, _sink: crate::middleware::EventSink<ToolStreamEvent>| {
+            let inner = ExecuteToolsInput::new(
+                input_agent.clone(),
+                Vec::new(),
+                invocation_state.clone(),
+                cancel.clone(),
+            );
+            let events = events.clone();
+            let error_slot = std::sync::Arc::clone(&error_slot);
+            async move {
+                let (result, error) =
+                    run_tool(&inner, context.tool.as_ref(), &context.tool_use, &events).await?;
+                *error_slot.lock() = error;
+                Ok(result)
+            }
+        }
+    };
+
+    let result = input
+        .agent
+        .middleware()
+        .invoke::<ExecuteToolStage>(context, &sink, &terminal)
+        .await?;
+    let error = error_slot.lock().take();
+    Ok((result, error))
+}
+
+/// Sink that republishes stage events as [`ToolExecutorEvent::ToolStreamUpdate`].
+fn tool_event_sink(
+    input: &ExecuteToolsInput,
+    events: &mpsc::Sender<ToolExecutorEvent>,
+) -> crate::middleware::EventSink<ToolStreamEvent> {
+    struct Target {
+        agent: Agent,
+        invocation_state: InvocationState,
+        events: mpsc::Sender<ToolExecutorEvent>,
+    }
+
+    #[async_trait]
+    impl crate::middleware::EventTarget<ToolStreamEvent> for Target {
+        async fn send(&self, event: ToolStreamEvent) -> Result<()> {
+            let update = ToolStreamUpdateEvent {
+                agent: self.agent.clone(),
+                event,
+                invocation_state: self.invocation_state.clone(),
+            };
+            let _ = self
+                .events
+                .send(ToolExecutorEvent::ToolStreamUpdate(update))
+                .await;
+            Ok(())
+        }
+    }
+
+    crate::middleware::EventSink::new(std::sync::Arc::new(Target {
+        agent: input.agent.clone(),
+        invocation_state: input.invocation_state.clone(),
+        events: events.clone(),
+    }))
 }
 
 /// Invokes the tool, forwarding its progress channel as [`ToolExecutorEvent::ToolStreamUpdate`].

@@ -17,7 +17,10 @@ use crate::hooks::events::{
     ModelMessageEvent, ModelStopData, ModelStreamUpdateEvent, ToolResultEvent, ToolStreamUpdateEvent,
 };
 use crate::hooks::HookEvent;
-use crate::models::{AggregatedItem, CountTokensOptions, Model, StreamAggregatedResult, StreamOptions};
+use crate::middleware::{EventSink, EventTarget, InvokeModelContext, InvokeModelStage};
+use crate::models::{
+    AggregatedItem, CountTokensOptions, Model, ModelStreamEvent, StreamAggregatedResult, StreamOptions,
+};
 use crate::tools::{
     ExecuteToolsInput, StructuredOutputTool, ToolExecutorEvent, EXECUTION_CANCELLED_MESSAGE,
     STRUCTURED_OUTPUT_TOOL_NAME,
@@ -787,15 +790,25 @@ async fn invoke_model(
             return Ok(denied);
         }
 
-        let options = StreamOptions {
-            cancel: Some(cancel.clone()),
+        // §m1 — the input phase runs after the hooks and sees the same message list.
+        let context = InvokeModelContext {
+            agent: agent.clone(),
+            model: Arc::clone(&model),
+            messages: before.messages.clone(),
             system_prompt: count_options.system_prompt.clone(),
             tool_specs: count_options.tool_specs.clone(),
             tool_choice: tool_choice.clone(),
-            ..StreamOptions::default()
+            invocation_state: state.clone(),
+            projected_input_tokens,
         };
+        let sink = model_event_sink(agent, tx, state);
+        let terminal = model_terminal(agent, state, cancel, tx);
+        let outcome = agent
+            .middleware()
+            .invoke::<InvokeModelStage>(context, &sink, &terminal)
+            .await;
 
-        match stream_from_model(agent, &model, &before.messages, &options, state, cancel, tx).await {
+        match outcome {
             Ok(result) => {
                 emit(
                     agent,
@@ -937,6 +950,7 @@ async fn stream_from_model(
     state: &InvocationState,
     cancel: &CancellationToken,
     tx: &Sink,
+    sink: &EventSink<ModelStreamEvent>,
 ) -> Result<StreamAggregatedResult> {
     let mut stream = model.stream_aggregated(messages, options);
     let mut aggregated = None;
@@ -950,19 +964,7 @@ async fn stream_from_model(
             return Err(Error::Cancelled);
         }
         match item {
-            Ok(AggregatedItem::Event(event)) => {
-                emit(
-                    agent,
-                    tx,
-                    ModelStreamUpdateEvent {
-                        agent: agent.clone(),
-                        event,
-                        invocation_state: state.clone(),
-                    },
-                    AgentStreamEvent::ModelStreamUpdate,
-                )
-                .await?;
-            }
+            Ok(AggregatedItem::Event(event)) => sink.send(event).await?,
             Ok(AggregatedItem::ContentBlock(content_block)) => {
                 emit(
                     agent,
@@ -987,6 +989,72 @@ async fn stream_from_model(
     }
 
     aggregated.ok_or_else(|| Error::other("model stream ended without a result"))
+}
+
+/// Sink that turns stage events back into `ModelStreamUpdateEvent`s on the agent stream.
+fn model_event_sink(agent: &Agent, tx: &Sink, state: &InvocationState) -> EventSink<ModelStreamEvent> {
+    struct Target {
+        agent: Agent,
+        tx: Sink,
+        state: InvocationState,
+    }
+
+    #[async_trait::async_trait]
+    impl EventTarget<ModelStreamEvent> for Target {
+        async fn send(&self, event: ModelStreamEvent) -> Result<()> {
+            emit(
+                &self.agent,
+                &self.tx,
+                ModelStreamUpdateEvent {
+                    agent: self.agent.clone(),
+                    event,
+                    invocation_state: self.state.clone(),
+                },
+                AgentStreamEvent::ModelStreamUpdate,
+            )
+            .await?;
+            Ok(())
+        }
+    }
+
+    EventSink::new(Arc::new(Target {
+        agent: agent.clone(),
+        tx: tx.clone(),
+        state: state.clone(),
+    }))
+}
+
+/// The terminal operation of [`InvokeModelStage`]: the real model call.
+fn model_terminal(
+    agent: &Agent,
+    state: &InvocationState,
+    cancel: &CancellationToken,
+    tx: &Sink,
+) -> impl crate::middleware::Terminal<InvokeModelStage> {
+    let (agent, state, cancel, tx) = (agent.clone(), state.clone(), cancel.clone(), tx.clone());
+    move |context: InvokeModelContext, sink: EventSink<ModelStreamEvent>| {
+        let (agent, state, cancel, tx) = (agent.clone(), state.clone(), cancel.clone(), tx.clone());
+        async move {
+            let options = StreamOptions {
+                cancel: Some(cancel.clone()),
+                system_prompt: context.system_prompt.clone(),
+                tool_specs: context.tool_specs.clone(),
+                tool_choice: context.tool_choice.clone(),
+                ..StreamOptions::default()
+            };
+            stream_from_model(
+                &agent,
+                &context.model,
+                &context.messages,
+                &options,
+                &state,
+                &cancel,
+                &tx,
+                &sink,
+            )
+            .await
+        }
+    }
 }
 
 fn redact_last_message(agent: &Agent, text: &str) {
