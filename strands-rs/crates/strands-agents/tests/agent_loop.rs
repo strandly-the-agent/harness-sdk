@@ -429,7 +429,7 @@ async fn after_model_call_hook_sees_usage() {
     let seen = Arc::new(Mutex::new(None));
     let captured = Arc::clone(&seen);
     let agent = Agent::builder().model(model).build().unwrap();
-    let _ = agent
+    agent
         .hooks()
         .add_sync_callback(move |event: &mut AfterModelCallEvent| {
             *captured.lock().unwrap() = event.stop_data.as_ref().and_then(|d| d.usage.clone());

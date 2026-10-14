@@ -321,3 +321,14 @@ integration branch; six modules were then ported in parallel on per-module branc
 three passes; test-gap passes closed sliding-window and Bedrock cache-point coverage; three
 independent review passes (correctness reviewer, API bar-raiser, port validator) produced the
 findings above, which were fixed on `-fix-loop`/`-fix-api` branches and merged.
+
+## API review follow-ups (2026-10-14)
+
+Landed from the Rust-idiom/DevX review (branches `agent-tasks/strands-rs-fix-{builder,macro,hooks,stream,devx}`):
+`AgentBuilder::build()`/`Agent::new()` are sync (init is lazy; `create_harness` initializes eagerly); no
+`*_arc`/`*_ref` builder twins; `#[tool]` propagates `Interrupt`/`Cancelled`, accepts `#[tool(name, description)]`
+and per-parameter `///` docs; hook callbacks take plain async closures (no `Box::pin`), registration returns `()`,
+`AgentBuilder::hook`/`sync_hook`; `AgentStreamEvent::{text_delta,tool_use,tool_result}` + `Agent::stream_text`;
+`invoke_structured` → `structured_output`, `AgentResult::structured_output_as`; `ModelStopData.usage`;
+`testing` module (alias `test_support`), crate-level guide, actionable no-credentials error, default features
+`bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
