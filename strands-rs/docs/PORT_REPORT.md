@@ -237,6 +237,32 @@ Open 🟡: background-task completion may overwrite `Cancelled`; background runs
 validation report; ~86 `agent.test.ts` rows unported); memory pass C items (key-aware extractor,
 per-store triggers); `shell.timeout` integer type.
 
+## Phase 3 — feature completion (in progress)
+
+Landed on `agent-tasks/strands-rs` (1156 tests green, fmt/clippy/doc clean): conversation
+managers removed (`ContextManagerOption::Auto` is the Agent default; `Off` disables);
+`middleware/` (TypeId-keyed stages, `InvokeModelStage`/`ExecuteToolStage`, input/wrap/output,
+loop + executor integration); interrupts + `interventions/` + `HumanInTheLoop` (`Error::Interrupt`,
+`ToolContext::interrupt`, `InvokeInput::InterruptResponses`, pending-batch resume, e2e in
+`tests/interrupts_loop.rs`); snapshots + checkpoints (`Agent::take_snapshot/load_snapshot`,
+`checkpointing`, `StopReason::Checkpoint`, resume; e2e `tests/checkpoint_loop.rs`); `sandbox/`
+(`Sandbox` trait, `LocalSandbox` in a process group, `ShellTool` routes through it; e2e
+`tests/sandbox_loop.rs`); `telemetry/` (OpenTelemetry `gen_ai.*` spans/events/metrics,
+`AgentResult.{metrics,traces}`, in-memory-exporter e2e `tests/telemetry.rs`); `mcp/` over rmcp 3.5
+(`McpClient`, `McpTool`, `load_servers`, stdio + streamable-http; e2e against a real stdio server
+`src/bin/mcp_echo_server.rs` in `tests/mcp_e2e.rs`); Anthropic and OpenAI (Responses + Chat +
+bedrock-mantle) providers with injectable transports (live tests gated on API keys); memory pass C
+(`resolve_extraction_config`, key-aware extractor, `to_read_only`, `TestMemoryStore`);
+`Continuations` API; `Agent::as_tool` (interrupt namespacing/resume; e2e
+`tests/agent_as_tool_loop.rs`); `AgentDelegation` plugin.
+
+Not finished in this phase: background-tasks engine remainder (max_concurrency/timeout/pass-id
+dedup/`Cancelled` guard — work lost in a sandbox recycle); harness wiring of the new features
+(`interventions` → HITL, `mcp_servers`, telemetry setup, `sandbox` option, `resolve_model` for
+anthropic/openai via the new providers); phase-3 review passes (correctness, API bar-raiser,
+validator) and docs for the new public surface. Known: `arronbailiss/harness-sdk` has no extra
+providers in Rust (only Bedrock), so Anthropic/OpenAI were ported from TS.
+
 ## Known gaps / follow-ups
 
 - Bedrock: throttling mapping and guardrail paths untested live (see above); bearer-token auth
