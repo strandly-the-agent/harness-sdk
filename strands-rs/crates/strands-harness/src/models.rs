@@ -28,10 +28,10 @@ use crate::defaults::DEFAULT_MODEL;
 use strands_agents::models::{
     AnthropicCacheConfig, AnthropicCacheStrategy, AnthropicModel, AnthropicModelConfig,
 };
-#[cfg(feature = "bedrock")]
-use strands_agents::models::{BedrockModel, BedrockModelConfig, CacheConfig, CacheStrategy};
 #[cfg(feature = "openai")]
 use strands_agents::models::{BedrockMantleConfig, OpenAIModel, OpenAIModelConfig};
+#[cfg(feature = "bedrock")]
+use strands_agents::models::{BedrockModel, BedrockModelConfig, CacheConfig, CacheStrategy};
 
 const ANTHROPIC_MAX_TOKENS: i32 = 32_000;
 const CLAUDE_MAX_TOKENS: &[(&str, i32)] = &[
@@ -564,9 +564,7 @@ pub async fn resolve_model(options: ResolveModelOptions) -> Result<Arc<dyn Model
     match provider_name {
         "bedrock" => build_bedrock(&spec, effort, web_search, caching, caching_explicit).await,
         "anthropic" => build_anthropic(&spec, effort, web_search, caching, caching_explicit),
-        "openai" | "bedrock-mantle" => {
-            build_openai(&spec, effort, web_search, caching, caching_explicit)
-        }
+        "openai" | "bedrock-mantle" => build_openai(&spec, effort, web_search, caching, caching_explicit),
         _ => {
             resolve_spec(&spec, effort, web_search, caching, caching_explicit)?;
             Err(unsupported_provider(provider_name))
@@ -664,9 +662,10 @@ pub(crate) fn anthropic_config_for(
     Ok(AnthropicModelConfig {
         model_id: Some(resolved.name.to_string()),
         max_tokens: Some(max_tokens as u64),
-        params: resolved.effort.as_deref().map(|effort| {
-            object(claude_thinking_block(resolved.name, effort, max_tokens))
-        }),
+        params: resolved
+            .effort
+            .as_deref()
+            .map(|effort| object(claude_thinking_block(resolved.name, effort, max_tokens))),
         anthropic_tools: resolved.native_search.then(|| {
             vec![json!({
                 "type": "web_search_20260318",
@@ -1522,5 +1521,248 @@ mod tests {
     fn supports_web_search_is_false_for_a_model_instance() {
         let instance: Arc<dyn Model> = MockMessageModel::shared(vec![]);
         assert!(!supports_web_search(Some(&ModelOption::Instance(instance))));
+    }
+}
+
+#[cfg(all(test, feature = "anthropic"))]
+mod anthropic_tests {
+    use super::*;
+
+    fn resolve(spec: &str, effort: Effort) -> AnthropicModelConfig {
+        anthropic_config_for(spec, effort, false, false, false).expect("resolves")
+    }
+
+    #[test]
+    fn maps_anthropic_to_thinking_and_max_tokens() {
+        let config = resolve("anthropic/claude-opus-4-8", Effort::Auto);
+        assert_eq!(config.model_id.as_deref(), Some("claude-opus-4-8"));
+        assert_eq!(config.max_tokens, Some(128_000));
+        let params = config.params.expect("params");
+        assert_eq!(
+            params.get("thinking"),
+            Some(&json!({ "type": "adaptive", "display": "summarized" }))
+        );
+        assert_eq!(params.get("output_config"), Some(&json!({ "effort": "high" })));
+    }
+
+    #[test]
+    fn gives_anthropic_haiku_its_own_tier_max_tokens() {
+        let config = resolve("anthropic/claude-haiku-4-5-20251001", Effort::Auto);
+        assert_eq!(config.max_tokens, Some(64_000));
+    }
+
+    #[test]
+    fn falls_back_to_a_flat_max_tokens_for_an_unrecognized_anthropic_tier() {
+        let config = resolve("anthropic/claude-mythos-1", Effort::Auto);
+        assert_eq!(config.max_tokens, Some(32_000));
+    }
+
+    #[test]
+    fn sends_extended_thinking_params_to_an_anthropic_direct_haiku_model() {
+        let config = resolve("anthropic/claude-haiku-4-5-20251001", Effort::Auto);
+        assert_eq!(
+            JsonValue::Object(config.params.expect("params")),
+            json!({ "thinking": { "type": "enabled", "budget_tokens": 16_384 } })
+        );
+    }
+
+    #[test]
+    fn sends_no_thinking_params_to_an_anthropic_direct_claude_below_the_floor() {
+        let config = resolve("anthropic/claude-3-haiku-20240307", Effort::Auto);
+        assert!(config.params.is_none());
+    }
+
+    #[test]
+    fn rejects_a_thinking_level_on_an_anthropic_direct_claude_below_the_floor() {
+        let error = anthropic_config_for(
+            "anthropic/claude-3-haiku-20240307",
+            Effort::High,
+            false,
+            false,
+            false,
+        )
+        .expect_err("rejects");
+        assert!(
+            error
+                .to_string()
+                .contains("is not supported by model claude-3-haiku-20240307"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn adds_the_anthropic_web_search_server_tool_as_a_direct_call() {
+        let config = anthropic_config_for("anthropic/claude-opus-4-8", Effort::High, true, false, false)
+            .expect("resolves");
+        assert_eq!(
+            config.anthropic_tools,
+            Some(vec![json!({
+                "type": "web_search_20260318",
+                "name": "web_search",
+                "allowed_callers": ["direct"],
+            })])
+        );
+        assert!(config.params.expect("params").contains_key("thinking"));
+    }
+
+    #[test]
+    fn omits_anthropic_server_tools_when_web_search_is_off() {
+        let config = anthropic_config_for("anthropic/claude-opus-4-8", Effort::High, false, false, false)
+            .expect("resolves");
+        assert!(config.anthropic_tools.is_none());
+    }
+
+    #[test]
+    fn enables_prompt_caching_for_anthropic_direct_when_requested() {
+        let config = anthropic_config_for("anthropic/claude-opus-4-8", Effort::Auto, false, true, true)
+            .expect("resolves");
+        let cache = config.cache_config.expect("cache config");
+        assert_eq!(cache.strategy, Some(AnthropicCacheStrategy::Auto));
+        assert!(cache.ttl.is_none());
+    }
+
+    #[test]
+    fn does_not_set_cache_config_for_anthropic_direct_when_caching_is_off() {
+        let config = resolve("anthropic/claude-opus-4-8", Effort::Auto);
+        assert!(config.cache_config.is_none());
+    }
+}
+
+#[cfg(all(test, feature = "openai"))]
+mod openai_tests {
+    use super::*;
+    use strands_agents::models::openai::resolve_mantle_base_url;
+
+    fn resolve(spec: &str, effort: Effort, web_search: bool) -> OpenAIModelConfig {
+        openai_config_for(spec, effort, web_search, false, false).expect("resolves")
+    }
+
+    #[test]
+    fn maps_openai_to_reasoning_effort() {
+        let config = resolve("openai/gpt-5.6-sol", Effort::Auto, false);
+        assert_eq!(config.model_id.as_deref(), Some("gpt-5.6-sol"));
+        assert!(config.mantle.is_none());
+        assert_eq!(config.params.get("reasoning"), Some(&json!({ "effort": "high" })));
+    }
+
+    #[test]
+    fn adds_the_openai_web_search_tool_alongside_reasoning() {
+        let config = resolve("openai/gpt-5.6-sol", Effort::High, true);
+        assert_eq!(config.params.get("reasoning"), Some(&json!({ "effort": "high" })));
+        assert_eq!(
+            config.params.get("tools"),
+            Some(&json!([{ "type": "web_search" }]))
+        );
+    }
+
+    #[test]
+    fn adds_the_openai_web_search_tool_with_effort_off() {
+        let config = resolve("openai/gpt-5.6-sol", Effort::Off, true);
+        assert_eq!(config.params.get("reasoning"), Some(&json!({ "effort": "none" })));
+        assert_eq!(
+            config.params.get("tools"),
+            Some(&json!([{ "type": "web_search" }]))
+        );
+    }
+
+    #[test]
+    fn omits_openai_tools_when_web_search_is_off() {
+        let config = resolve("openai/gpt-5.6-sol", Effort::High, false);
+        assert!(!config.params.contains_key("tools"));
+    }
+
+    #[test]
+    fn builds_bedrock_mantle_via_the_openai_provider() {
+        let config = resolve("bedrock-mantle/openai.gpt-oss-120b", Effort::Auto, false);
+        assert_eq!(config.model_id.as_deref(), Some("openai.gpt-oss-120b"));
+        assert_eq!(config.params.get("reasoning"), Some(&json!({ "effort": "high" })));
+        let mantle = config.mantle.expect("mantle config");
+        // TS passes `bedrockMantleConfig: {}`; the SDK resolves the region from the environment.
+        assert!(mantle.region.is_none());
+    }
+
+    #[test]
+    fn rejects_an_unsupported_thinking_level_for_bedrock_mantle() {
+        let error = openai_config_for(
+            "bedrock-mantle/openai.gpt-oss-120b",
+            Effort::Max,
+            false,
+            false,
+            false,
+        )
+        .expect_err("rejects");
+        assert!(
+            error.to_string().contains("not supported by this provider"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn adds_the_bedrock_web_search_tool_for_bedrock_mantle_web_search() {
+        let config = resolve("bedrock-mantle/openai.gpt-5.6-luna", Effort::Auto, true);
+        assert_eq!(config.params.get("reasoning"), Some(&json!({ "effort": "high" })));
+        assert_eq!(
+            config.params.get("tools"),
+            Some(&json!([{ "type": "web_search", "external_web_access": true }]))
+        );
+    }
+
+    #[test]
+    fn adds_the_bedrock_web_search_tool_with_effort_off() {
+        for id in [
+            "bedrock-mantle/openai.gpt-5.6-luna",
+            "bedrock-mantle/openai.gpt-6-astra",
+        ] {
+            let config = resolve(id, Effort::Off, true);
+            assert_eq!(
+                JsonValue::Object(config.params),
+                json!({
+                    "reasoning": { "effort": "none" },
+                    "tools": [{ "type": "web_search", "external_web_access": true }],
+                }),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn omits_bedrock_mantle_tools_when_web_search_is_off() {
+        let config = resolve("bedrock-mantle/openai.gpt-5.6-luna", Effort::Auto, false);
+        assert!(!config.params.contains_key("tools"));
+    }
+
+    #[test]
+    fn never_adds_a_native_search_tool_where_the_model_has_none() {
+        for id in [
+            "bedrock-mantle/qwen.qwen3-32b-v1:0",
+            "bedrock-mantle/openai.gpt-oss-120b-1:0",
+        ] {
+            let config = resolve(id, Effort::High, true);
+            assert!(!config.params.contains_key("tools"), "{id}");
+        }
+    }
+
+    /// The base URL comes from the SDK, driven by the model id this module resolves.
+    #[test]
+    fn derives_the_mantle_base_url_from_the_resolved_model_id() {
+        for (spec, url) in [
+            (
+                "bedrock-mantle/openai.gpt-5.6-luna",
+                "https://bedrock-mantle.us-west-2.api.aws/openai/v1",
+            ),
+            (
+                "bedrock-mantle/qwen.qwen3-32b-v1:0",
+                "https://bedrock-mantle.us-west-2.api.aws/v1",
+            ),
+        ] {
+            let config = resolve(spec, Effort::High, false);
+            let mantle = BedrockMantleConfig {
+                region: Some("us-west-2".to_string()),
+                ..config.mantle.expect("mantle config")
+            };
+            let resolved = resolve_mantle_base_url(&mantle, config.model_id.as_deref().expect("model id"))
+                .expect("base url");
+            assert_eq!(resolved, url, "{spec}");
+        }
     }
 }
