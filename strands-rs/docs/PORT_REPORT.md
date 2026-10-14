@@ -193,6 +193,50 @@ error-with-content, multi-block or media results), fallible async `build()`, `Er
 full `ContentBlock`/`StopReason`/error sets. Found in his slice: `Message.tracking_id` lacks
 `#[serde(default)]`, so TS messages without `trackingId` fail to deserialize.
 
+## Phase 2 — harness-ready SDK + `strands-harness`
+
+Goal: `strands_harness::create_harness(Default::default())` reproduces `harness-ts` `createHarness()`
+defaults. Plan: `PLAN_PHASE2.md`. Final state: 997 tests (844 SDK, 181 harness, 1 macro, doctests),
+all gates green, live suites: Bedrock SDK 23/23, harness defaults 6/6 (`docs/reviews/*-run.log`).
+
+**New SDK modules** (`strands-agents`): `storage/` (Storage trait, InMemoryStorage, LocalFileStorage
+with TS key rules + atomic writes, keyword search), `context_manager/` ('auto'/'agentic' presets,
+truncate/summarize/emergency strategies with verbatim markers and prompt, stash over Storage,
+retrieval tool, overflow retry), `background_tasks/` (policy, `_background_execution` schema
+injection, manage tool, synthetic tool-pair delivery via continuation input), `memory/`
+(MemoryStore trait, MemoryManager + tools, ModelExtractor, FileMemoryStore, injection via the
+`BeforeModelCallEvent.messages` seam), `plugins::vended::{AgentSkills, ContextInjector}`,
+`tools::vended::ShellTool` (process-group kill on timeout/cancel), plus `Agent::{storage,
+session_id, memory_manager}` and `AgentBuilder::{storage, context_manager, memory_manager,
+background_tasks}`. `BeforeModelCallEvent.messages` replaces TS's `InvokeModelStage.Input` middleware.
+
+**`strands-harness`**: `create_harness`/`HarnessAgentOptions` (TS algorithm step by step),
+`defaults`, `prompt` (`HARNESS_CONTRACT` byte-identical — `tests/prompt_parity.rs` diffs it against
+`harness-ts/src/prompt.ts`), `models::resolve_model` (bedrock effort/thinking/caching matrix; other
+providers → clear unsupported error), `builtin_tools` resolution, tools `read/write/edit`,
+`web_fetch`, `web_search` (Exa), `subagent` (option modes, schema incl. `context`/`last_messages`,
+depth limit), plugins `todos`, `environment`, `resolve_memory`, interventions skeleton.
+
+Default-behaviour parity (validator table in `docs/reviews/validation-phase2.md`): model id, effort,
+caching, system prompt, context manager auto, session on (`./.agent/sessions`, 8-hex minted id,
+`LocalFileStorage` as agent storage), skills on-if-dir, memory on (`./.agent/memory`, extractor),
+builtin tools order, builtin plugins, background policy with forced `subagent`, interventions none —
+all MATCH. Tool descriptions the model sees are byte-identical to TS for shell/read/write/edit/
+web_fetch/todo_write/subagent. **Known DIFFs:** `programmatic_tool_caller` not ported (Monty Python
+runtime; omitted with a warning), telemetry (`setupTelemetry`) not ported, MCP servers error out,
+`shell.timeout` schema says `number` where zod says `integer`, web_fetch runs host-process `reqwest`
+(http/https-only redirects) instead of sandboxed curl, shell runs `sh -c` on the host with the
+inherited env (TS `LocalSandbox` equivalent).
+
+Review disposition (phase 2): correctness 🔴 fixed — hook `cancel` now beats background routing,
+context compaction reaches the triggering call, shell kills the whole process group with a bounded
+drain; API 🔴 fixed — plain `CachingOption`/`BackgroundTasksOption`/`InterventionsOption` enums,
+`Instance(..)` naming, `ResolveModelOptions`, `Agent::memory_manager()`, trimmed re-exports, prelude.
+Open 🟡: background-task completion may overwrite `Cancelled`; background runs don't fire
+`AfterToolCallEvent`; no matrices for harness-agent/models/plugins and context-manager (counts in
+validation report; ~86 `agent.test.ts` rows unported); memory pass C items (key-aware extractor,
+per-store triggers); `shell.timeout` integer type.
+
 ## Known gaps / follow-ups
 
 - Bedrock: throttling mapping and guardrail paths untested live (see above); bearer-token auth

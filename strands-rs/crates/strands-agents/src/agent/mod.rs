@@ -101,6 +101,7 @@ pub(crate) struct AgentInner {
     pub(crate) session_id: RwLock<Option<String>>,
     pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
     pub(crate) continuation_input: RwLock<Vec<Message>>,
+    pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
 }
 
 /// An agent: a model, a system prompt, tools, and the conversation they share.
@@ -216,6 +217,11 @@ impl Agent {
         let mut slot = self.inner.session_id.write();
         slot.get_or_insert_with(|| uuid::Uuid::new_v4().to_string()[..8].to_owned())
             .clone()
+    }
+
+    /// The memory manager registered through [`AgentBuilder::memory_manager`](crate::agent::AgentBuilder::memory_manager), if any.
+    pub fn memory_manager(&self) -> Option<Arc<crate::memory::MemoryManager>> {
+        self.inner.memory_manager.clone()
     }
 
     /// Pin the session id (used by `SessionManager` during initialization).
@@ -342,6 +348,7 @@ pub(crate) mod test_fixtures {
                 initialized: AsyncMutex::new(false),
                 storage: None,
                 session_id: RwLock::new(None),
+                memory_manager: None,
                 background_tasks: None,
                 continuation_input: RwLock::new(Vec::new()),
             }),

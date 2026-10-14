@@ -43,6 +43,7 @@ pub struct AgentBuilder {
     session_manager: Option<Arc<SessionManager>>,
     background_tasks: Option<crate::background_tasks::BackgroundTasksConfig>,
     storage: Option<crate::storage::StorageRef>,
+    memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     retry_strategy: Option<Option<Arc<dyn Plugin>>>,
     executor: Option<Arc<dyn ToolExecutor>>,
     state: Option<StateStore>,
@@ -92,10 +93,12 @@ impl AgentBuilder {
     /// registers its memory tools. The manager's extraction triggers and injection hook are wired
     /// in its `init_agent`; call [`MemoryManager::flush`](crate::memory::MemoryManager::flush) on
     /// shutdown to save whatever is still buffered (the agent has no shutdown hook).
-    pub fn memory_manager(mut self, manager: Arc<crate::memory::MemoryManager>) -> Self {
+    pub fn memory_manager(mut self, manager: impl Into<Arc<crate::memory::MemoryManager>>) -> Self {
+        let manager = manager.into();
         manager.bind_self();
         self.tools.extend(manager.memory_tools());
-        self.plugins.push(manager);
+        self.plugins.push(Arc::clone(&manager) as Arc<dyn Plugin>);
+        self.memory_manager = Some(manager);
         self
     }
 
@@ -278,6 +281,7 @@ impl AgentBuilder {
                 initialized: AsyncMutex::new(false),
                 storage: self.storage,
                 session_id: RwLock::new(None),
+                memory_manager: self.memory_manager,
                 background_tasks,
                 continuation_input: RwLock::new(Vec::new()),
             }),

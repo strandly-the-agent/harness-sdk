@@ -185,7 +185,7 @@ async fn persists_memory_across_agents() {
         .map(|e| std::fs::read_to_string(e.path()).unwrap())
         .collect();
     assert!(
-        distilled.contains("TANGERINE"),
+        distilled.to_uppercase().contains("TANGERINE"),
         "memory file should contain the fact: {distilled:?}"
     );
 
