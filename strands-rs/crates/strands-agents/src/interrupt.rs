@@ -269,7 +269,44 @@ impl InterruptState {
 }
 
 /// Shared handle to an agent's interrupt state (the loop and raisers both hold one).
-pub type InterruptStateHandle = Arc<Mutex<InterruptState>>;
+pub(crate) type SharedInterruptState = Arc<Mutex<InterruptState>>;
+
+/// Read-only view of an agent's interrupt state, from [`Agent::interrupt_state`].
+///
+/// [`Agent::interrupt_state`]: crate::Agent::interrupt_state
+#[derive(Clone, Debug)]
+pub struct InterruptStateHandle(SharedInterruptState);
+
+impl InterruptStateHandle {
+    pub(crate) fn new(state: SharedInterruptState) -> Self {
+        Self(state)
+    }
+
+    /// Whether the agent is waiting for interrupt responses.
+    pub fn is_activated(&self) -> bool {
+        self.0.lock().activated()
+    }
+
+    /// Every interrupt raised in the current invocation, in insertion order.
+    pub fn interrupts(&self) -> Vec<Interrupt> {
+        self.0.lock().list().to_vec()
+    }
+
+    /// Interrupts that are still unanswered; the oldest open one is first.
+    pub fn unanswered(&self) -> Vec<Interrupt> {
+        self.0.lock().unanswered()
+    }
+
+    /// The tool batch that was paused mid-execution, if any.
+    pub fn pending(&self) -> Option<PendingToolExecution> {
+        self.0.lock().pending_tool_execution().cloned()
+    }
+
+    /// A copy of the whole state.
+    pub fn snapshot(&self) -> InterruptState {
+        self.0.lock().clone()
+    }
+}
 
 /// A raise closure: returns the stored response, or `Err(Error::Interrupt)` to halt.
 ///
@@ -278,8 +315,8 @@ pub type InterruptFn = Arc<dyn Fn(InterruptParams) -> Result<JsonValue> + Send +
 
 /// Raise or resolve the interrupt `id`: the stored response when answered, otherwise
 /// `Err(Error::Interrupt)`.
-pub fn raise(
-    state: &InterruptStateHandle,
+pub(crate) fn raise(
+    state: &SharedInterruptState,
     id: &str,
     params: InterruptParams,
     source: InterruptSource,
@@ -293,7 +330,7 @@ pub fn raise(
 
 /// A raise closure that namespaces ids with `id_prefix` (`{id_prefix}:{params.name}`).
 pub fn interrupt_fn(
-    state: InterruptStateHandle,
+    state: SharedInterruptState,
     id_prefix: impl Into<String>,
     source: InterruptSource,
 ) -> InterruptFn {
@@ -308,7 +345,7 @@ pub fn interrupt_fn(
 mod tests {
     use super::*;
 
-    fn handle() -> InterruptStateHandle {
+    fn handle() -> SharedInterruptState {
         Arc::new(Mutex::new(InterruptState::new()))
     }
 

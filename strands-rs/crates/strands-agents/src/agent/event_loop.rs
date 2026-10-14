@@ -606,7 +606,7 @@ async fn run_cycles_inner(
     // returns its answer instead of raising again.
     let responses = input.interrupt_responses();
     {
-        let interrupt_state = agent.interrupt_state();
+        let interrupt_state = agent.interrupt_state_shared();
         let mut interrupt_state = interrupt_state.lock();
         if responses.is_empty() && interrupt_state.activated() {
             return Err(Error::other(INTERRUPT_RESUME_REQUIRED_MESSAGE));
@@ -653,7 +653,11 @@ async fn run_cycles_inner(
         }
 
         // A resumed tool batch replays the stored assistant message: no second model call.
-        let pending_tools = agent.interrupt_state().lock().pending_tool_execution().cloned();
+        let pending_tools = agent
+            .interrupt_state_shared()
+            .lock()
+            .pending_tool_execution()
+            .cloned();
         if let Some(pending_tools) = pending_tools {
             let assistant_message = pending_tools.assistant_message.clone();
             let restored = pending_tools.completed_tool_results.clone();
@@ -666,7 +670,7 @@ async fn run_cycles_inner(
             append_message(agent, tx, state, assistant_message.clone()).await?;
             append_message(agent, tx, state, tools.message.clone()).await?;
             {
-                let interrupt_state = agent.interrupt_state();
+                let interrupt_state = agent.interrupt_state_shared();
                 let mut interrupt_state = interrupt_state.lock();
                 interrupt_state.clear_pending_tool_execution();
                 interrupt_state.deactivate();
@@ -814,8 +818,8 @@ async fn run_cycles_inner(
         append_message(agent, tx, state, tools.message.clone()).await?;
 
         // Stale-state sweeper: a resumed agent that finished its tools is no longer interrupted.
-        if agent.interrupt_state().lock().activated() {
-            agent.interrupt_state().lock().deactivate();
+        if agent.interrupt_state_shared().lock().activated() {
+            agent.interrupt_state_shared().lock().deactivate();
         }
 
         match tools.end_turn {
@@ -877,7 +881,7 @@ fn interrupt_result(
     interrupts: Vec<Interrupt>,
 ) -> Result<AgentResult> {
     let unanswered = {
-        let interrupt_state = agent.interrupt_state();
+        let interrupt_state = agent.interrupt_state_shared();
         let mut interrupt_state = interrupt_state.lock();
         for interrupt in &interrupts {
             interrupt_state.register(interrupt);
@@ -1036,7 +1040,7 @@ async fn invoke_model(
         let terminal = model_terminal(agent, state, cancel, tx);
         let outcome = agent
             .middleware()
-            .invoke::<InvokeModelStage>(context, &sink, &terminal)
+            .invoke::<InvokeModelStage>(context, &sink, terminal)
             .await;
 
         match outcome {
@@ -1460,7 +1464,7 @@ fn store_pending_tools(
     completed_tool_results: HashMap<String, ToolResultBlock>,
 ) {
     agent
-        .interrupt_state()
+        .interrupt_state_shared()
         .lock()
         .set_pending_tool_execution(PendingToolExecution {
             assistant_message: assistant_message.clone(),

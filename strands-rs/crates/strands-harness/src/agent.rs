@@ -291,7 +291,7 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
         .tools(agent_tools)
         .plugins(plugins)
         .context_manager(options.context_manager.clone())
-        .interventions(interventions)?;
+        .interventions(interventions);
     if let Some(config) = crate::telemetry::setup_telemetry() {
         builder = builder.telemetry(config);
     }

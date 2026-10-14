@@ -2,10 +2,9 @@
 mod tests {
     use std::sync::Arc;
 
-    use futures::future::BoxFuture;
     use parking_lot::Mutex;
 
-    use crate::error::{Error, Result};
+    use crate::error::Error;
     use crate::middleware::{wrap_fn, EventSink, Middleware, MiddlewareRegistry, Next, Stage, Terminal};
 
     struct TestStage;
@@ -60,14 +59,14 @@ mod tests {
 
     fn recording_wrap(trace: Trace, tag: &'static str) -> impl Middleware<TestStage> {
         wrap_fn(
-            move |ctx: String, sink: EventSink<String>, next: Next<'_, TestStage>| {
+            move |ctx: String, sink: EventSink<String>, next: Next<TestStage>| {
                 let trace = Arc::clone(&trace);
-                Box::pin(async move {
+                async move {
                     trace.lock().push(format!("{tag}:before"));
                     let result = next.run(ctx, &sink).await;
                     trace.lock().push(format!("{tag}:after"));
                     result
-                }) as BoxFuture<'_, Result<String>>
+                }
             },
         )
     }
@@ -77,7 +76,7 @@ mod tests {
         let registry = MiddlewareRegistry::new();
         let t = trace();
         let result = registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(result, "terminal:ctx");
@@ -91,7 +90,7 @@ mod tests {
         registry.add::<TestStage>(recording_wrap(Arc::clone(&t), "first"));
         registry.add::<TestStage>(recording_wrap(Arc::clone(&t), "second"));
         registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(
@@ -111,13 +110,13 @@ mod tests {
         let registry = MiddlewareRegistry::new();
         let t = trace();
         registry.add::<TestStage>(wrap_fn(
-            |_ctx: String, _sink: EventSink<String>, _next: Next<'_, TestStage>| {
-                Box::pin(async move { Ok("short-circuit".to_owned()) }) as BoxFuture<'_, Result<String>>
+            |_ctx: String, _sink: EventSink<String>, _next: Next<TestStage>| async move {
+                Ok("short-circuit".to_owned())
             },
         ));
         registry.add::<TestStage>(recording_wrap(Arc::clone(&t), "inner"));
         let result = registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(result, "short-circuit");
@@ -131,7 +130,7 @@ mod tests {
         registry.add::<TestStage>(recording_wrap(Arc::clone(&t), "wrap"));
         let (sink, events) = EventSink::collector();
         let result = registry
-            .invoke::<TestStage>("ctx".to_owned(), &sink, &emitting_terminal(vec!["a", "b"]))
+            .invoke::<TestStage>("ctx".to_owned(), &sink, emitting_terminal(vec!["a", "b"]))
             .await
             .unwrap();
         assert_eq!(result, "done");
@@ -142,11 +141,9 @@ mod tests {
     async fn only_yields_events_matching_a_predicate() {
         let registry = MiddlewareRegistry::new();
         registry.add::<TestStage>(wrap_fn(
-            |ctx: String, sink: EventSink<String>, next: Next<'_, TestStage>| {
-                Box::pin(async move {
-                    let filtered = sink.filter(|event: &String| event.starts_with("keep"));
-                    next.run(ctx, &filtered).await
-                }) as BoxFuture<'_, Result<String>>
+            |ctx: String, sink: EventSink<String>, next: Next<TestStage>| async move {
+                let filtered = sink.filter(|event: &String| event.starts_with("keep"));
+                next.run(ctx, &filtered).await
             },
         ));
         let (sink, events) = EventSink::collector();
@@ -154,7 +151,7 @@ mod tests {
             .invoke::<TestStage>(
                 "ctx".to_owned(),
                 &sink,
-                &emitting_terminal(vec!["keep-1", "drop-1", "keep-2"]),
+                emitting_terminal(vec!["keep-1", "drop-1", "keep-2"]),
             )
             .await
             .unwrap();
@@ -165,17 +162,15 @@ mod tests {
     async fn can_yield_events_without_calling_next() {
         let registry = MiddlewareRegistry::new();
         registry.add::<TestStage>(wrap_fn(
-            |_ctx: String, sink: EventSink<String>, _next: Next<'_, TestStage>| {
-                Box::pin(async move {
-                    sink.send("synthetic".to_owned()).await?;
-                    Ok("synthetic-result".to_owned())
-                }) as BoxFuture<'_, Result<String>>
+            |_ctx: String, sink: EventSink<String>, _next: Next<TestStage>| async move {
+                sink.send("synthetic".to_owned()).await?;
+                Ok("synthetic-result".to_owned())
             },
         ));
         let (sink, events) = EventSink::collector();
         let t = trace();
         let result = registry
-            .invoke::<TestStage>("ctx".to_owned(), &sink, &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &sink, terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(result, "synthetic-result");
@@ -190,7 +185,7 @@ mod tests {
         registry.add_input::<TestStage>(|ctx: String| Ok(format!("{ctx}+a")));
         registry.add_input::<TestStage>(|ctx: String| Ok(format!("{ctx}+b")));
         let result = registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(result, "terminal:ctx+a+b");
@@ -202,7 +197,7 @@ mod tests {
         let t = trace();
         registry.add_output::<TestStage>(|result: String| Ok(format!("{result}!")));
         let result = registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(result, "terminal:ctx!");
@@ -229,7 +224,7 @@ mod tests {
             }
         });
         registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(
@@ -244,22 +239,22 @@ mod tests {
         let seen = Arc::new(Mutex::new(None));
         registry.add::<TestStage>(wrap_fn({
             let seen = Arc::clone(&seen);
-            move |ctx: String, sink: EventSink<String>, next: Next<'_, TestStage>| {
+            move |ctx: String, sink: EventSink<String>, next: Next<TestStage>| {
                 let seen = Arc::clone(&seen);
-                Box::pin(async move {
+                async move {
                     let result = next.run(ctx, &sink).await;
                     if let Err(error) = &result {
                         *seen.lock() = Some(error.to_string());
                     }
                     result
-                }) as BoxFuture<'_, Result<String>>
+                }
             }
         }));
         let failing = |_ctx: String, _sink: EventSink<String>| async move {
             Err::<String, Error>(Error::other("terminal boom"))
         };
         let error = registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &failing)
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), failing)
             .await
             .unwrap_err();
         assert!(error.to_string().contains("terminal boom"));
@@ -271,15 +266,15 @@ mod tests {
         let registry = MiddlewareRegistry::new();
         let t = trace();
         registry.add::<OtherStage>(wrap_fn(
-            |_ctx: String, _sink: EventSink<String>, _next: Next<'_, OtherStage>| {
-                Box::pin(async move { Ok("other".to_owned()) }) as BoxFuture<'_, Result<String>>
+            |_ctx: String, _sink: EventSink<String>, _next: Next<OtherStage>| async move {
+                Ok("other".to_owned())
             },
         ));
         assert_eq!(TestStage::name(), OtherStage::name());
         assert!(registry.has::<OtherStage>());
         assert!(!registry.has::<TestStage>());
         let result = registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(result, "terminal:ctx");
@@ -293,7 +288,7 @@ mod tests {
         registry.add::<TestStage>(recording_wrap(Arc::clone(&t), "kept"));
         registry.remove(handle);
         registry
-            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), &terminal(Arc::clone(&t)))
+            .invoke::<TestStage>("ctx".to_owned(), &EventSink::null(), terminal(Arc::clone(&t)))
             .await
             .unwrap();
         assert_eq!(*t.lock(), ["kept:before", "terminal:ctx", "kept:after"]);
@@ -304,9 +299,7 @@ mod tests {
     fn remove_is_a_no_op_when_stage_has_no_handlers() {
         let registry = MiddlewareRegistry::new();
         let handle = registry.add::<TestStage>(wrap_fn(
-            |_ctx: String, _sink: EventSink<String>, _next: Next<'_, TestStage>| {
-                Box::pin(async move { Ok(String::new()) }) as BoxFuture<'_, Result<String>>
-            },
+            |_ctx: String, _sink: EventSink<String>, _next: Next<TestStage>| async move { Ok(String::new()) },
         ));
         registry.remove(handle);
         registry.remove(handle);
@@ -326,12 +319,12 @@ mod tests {
         let t = trace();
         registry.add::<TestStage>(wrap_fn({
             let t = Arc::clone(&t);
-            move |ctx: String, sink: EventSink<String>, next: Next<'_, TestStage>| {
+            move |ctx: String, sink: EventSink<String>, next: Next<TestStage>| {
                 let t = Arc::clone(&t);
-                Box::pin(async move {
+                async move {
                     let _guard = Guard(t, "outer-cleanup");
                     next.run(ctx, &sink).await
-                }) as BoxFuture<'_, Result<String>>
+                }
             }
         }));
         let hanging = |_ctx: String, _sink: EventSink<String>| async move {
@@ -339,7 +332,7 @@ mod tests {
             Ok(String::new())
         };
         let sink = EventSink::null();
-        let call = registry.invoke::<TestStage>("ctx".to_owned(), &sink, &hanging);
+        let call = registry.invoke::<TestStage>("ctx".to_owned(), &sink, hanging);
         assert!(tokio::time::timeout(std::time::Duration::from_millis(20), call)
             .await
             .is_err());

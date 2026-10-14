@@ -152,7 +152,7 @@ impl BeforeToolCallEvent {
     ) -> crate::error::Result<T> {
         let id = crate::interrupt::before_tool_call_interrupt_id(&self.tool_use.tool_use_id, &params.name);
         let response = crate::interrupt::raise(
-            &self.agent.interrupt_state(),
+            &self.agent.interrupt_state_shared(),
             &id,
             params,
             crate::interrupt::InterruptSource::Hook,
@@ -325,7 +325,7 @@ impl BeforeToolsEvent {
     ) -> crate::error::Result<T> {
         let id = crate::interrupt::before_tools_interrupt_id(&params.name);
         let response = crate::interrupt::raise(
-            &self.agent.interrupt_state(),
+            &self.agent.interrupt_state_shared(),
             &id,
             params,
             crate::interrupt::InterruptSource::Hook,

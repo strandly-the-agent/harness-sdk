@@ -326,7 +326,7 @@ async fn run_tool_chain(
     let result = input
         .agent
         .middleware()
-        .invoke::<ExecuteToolStage>(context, &sink, &terminal)
+        .invoke::<ExecuteToolStage>(context, &sink, terminal)
         .await?;
     let error = error_slot.lock().take();
     Ok((result, error))

@@ -104,7 +104,7 @@ impl AgentAsTool {
 
     /// Register the child's interrupts in the parent under the namespaced ids and re-raise.
     fn raise_in_parent(&self, ctx: &ToolContext, prefix: &str, interrupts: Vec<Interrupt>) -> Error {
-        let parent = ctx.agent.interrupt_state();
+        let parent = ctx.agent.interrupt_state_shared();
         let mut state = parent.lock();
         let raised = interrupts
             .into_iter()
@@ -154,7 +154,7 @@ fn interrupt_prefix(tool_use_id: &str) -> String {
 
 /// The parent's answered interrupts for this call, with the namespace prefix stripped back off.
 fn answered_responses(ctx: &ToolContext, prefix: &str) -> Vec<InterruptResponse> {
-    let parent = ctx.agent.interrupt_state();
+    let parent = ctx.agent.interrupt_state_shared();
     let state = parent.lock();
     state
         .list()

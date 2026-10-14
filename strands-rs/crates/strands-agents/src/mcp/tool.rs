@@ -27,7 +27,11 @@ pub struct McpTool {
 
 impl McpTool {
     /// Build a tool from an MCP `tools/list` entry under the given agent-facing name.
-    pub fn new(client: McpClient, tool: &rmcp::model::Tool, agent_facing_name: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        client: McpClient,
+        tool: &rmcp::model::Tool,
+        agent_facing_name: impl Into<String>,
+    ) -> Self {
         let server_tool_name = tool.name.to_string();
         let description = tool
             .description

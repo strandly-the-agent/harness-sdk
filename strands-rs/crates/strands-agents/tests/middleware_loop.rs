@@ -2,10 +2,8 @@
 
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
 use parking_lot::Mutex;
 use serde_json::json;
-use strands_agents::error::Result;
 use strands_agents::middleware::{
     wrap_fn, EventSink, ExecuteToolContext, ExecuteToolStage, InvokeModelContext, InvokeModelStage, Next,
 };
@@ -46,12 +44,12 @@ async fn middleware_handler_is_invoked_during_model_call() {
 
     agent.add_middleware::<InvokeModelStage>(wrap_fn({
         let seen = Arc::clone(&seen);
-        move |ctx: InvokeModelContext, sink: EventSink<ModelStreamEvent>, next: Next<'_, InvokeModelStage>| {
+        move |ctx: InvokeModelContext, sink, next| {
             let seen = Arc::clone(&seen);
-            Box::pin(async move {
+            async move {
                 seen.lock().push(ctx.messages.len());
                 next.run(ctx, &sink).await
-            }) as BoxFuture<'_, Result<StreamAggregatedResult>>
+            }
         }
     }));
 
@@ -67,13 +65,13 @@ async fn returns_synthetic_result_without_calling_the_model() {
     let agent = agent_with(Arc::clone(&model)).await;
 
     agent.add_wrap_middleware::<InvokeModelStage>(wrap_fn(
-        |_ctx: InvokeModelContext, _sink: EventSink<ModelStreamEvent>, _next: Next<'_, InvokeModelStage>| {
-            Box::pin(async move {
+        |_ctx: InvokeModelContext, _sink: EventSink<ModelStreamEvent>, _next: Next<InvokeModelStage>| {
+            async move {
                 Ok(StreamAggregatedResult::new(
                     Message::assistant("synthetic"),
                     StopReason::EndTurn,
                 ))
-            }) as BoxFuture<'_, Result<StreamAggregatedResult>>
+            }
         },
     ));
 
@@ -139,17 +137,15 @@ async fn returns_mock_tool_result_without_executing_the_real_tool() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     agent.add_middleware::<ExecuteToolStage>(wrap_fn({
         let seen = Arc::clone(&seen);
-        move |ctx: ExecuteToolContext,
-              _sink: EventSink<ToolStreamEvent>,
-              _next: Next<'_, ExecuteToolStage>| {
+        move |ctx: ExecuteToolContext, _sink: EventSink<ToolStreamEvent>, _next: Next<ExecuteToolStage>| {
             let seen = Arc::clone(&seen);
-            Box::pin(async move {
+            async move {
                 seen.lock().push(ctx.tool_use.name.clone());
                 Ok(ToolResultBlock::success(
                     &ctx.tool_use.tool_use_id,
                     vec![ToolResultContent::Text("mocked".to_owned())],
                 ))
-            }) as BoxFuture<'_, Result<ToolResultBlock>>
+            }
         }
     }));
 

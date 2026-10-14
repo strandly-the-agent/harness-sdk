@@ -14,6 +14,14 @@ pub use meter::Meter;
 pub use tracer::{SpanHandle, Tracer};
 pub use types::{AgentMetrics, AgentTrace, CycleMetrics, InvocationMetrics, ToolMetrics};
 
+/// Re-exported from `opentelemetry`: a public dependency of this module.
+///
+/// Use this re-export (not your own `opentelemetry` dependency) with
+/// [`SpanHandle::context`](tracer::SpanHandle::context), so the `Context` type matches the
+/// version the SDK was built against.
+#[cfg(feature = "telemetry")]
+pub use ::opentelemetry;
+
 /// Default OTel service name (TS `utils.ts:13`).
 pub const DEFAULT_SERVICE_NAME: &str = "strands-agents";
 

@@ -153,7 +153,7 @@ pub(crate) struct AgentInner {
     pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
     pub(crate) tracer: crate::telemetry::Tracer,
     pub(crate) meter: crate::telemetry::Meter,
-    pub(crate) interrupt_state: crate::interrupt::InterruptStateHandle,
+    pub(crate) interrupt_state: crate::interrupt::SharedInterruptState,
     pub(crate) middleware: crate::middleware::MiddlewareRegistry,
 }
 
@@ -313,8 +313,12 @@ impl Agent {
         messages
     }
 
-    /// Shared handle to this agent's interrupt state.
+    /// Read-only view of this agent's interrupt state.
     pub fn interrupt_state(&self) -> crate::interrupt::InterruptStateHandle {
+        crate::interrupt::InterruptStateHandle::new(Arc::clone(&self.inner.interrupt_state))
+    }
+
+    pub(crate) fn interrupt_state_shared(&self) -> crate::interrupt::SharedInterruptState {
         Arc::clone(&self.inner.interrupt_state)
     }
 
