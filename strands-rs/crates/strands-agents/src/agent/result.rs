@@ -5,6 +5,7 @@ use std::fmt;
 use serde::Serialize;
 
 use super::InvocationState;
+use crate::interrupt::Interrupt;
 use crate::types::{ContentBlock, JsonValue, Message, StopReason};
 
 /// Result of one agent invocation.
@@ -22,6 +23,10 @@ pub struct AgentResult {
     /// Parsed structured output, when requested.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub structured_output: Option<JsonValue>,
+    /// Unanswered interrupts; non-empty exactly when `stop_reason` is
+    /// [`StopReason::Interrupt`](crate::types::StopReason::Interrupt).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub interrupts: Vec<Interrupt>,
 }
 
 impl AgentResult {
@@ -32,6 +37,7 @@ impl AgentResult {
             last_message,
             invocation_state,
             structured_output: None,
+            interrupts: Vec::new(),
         }
     }
 
@@ -58,6 +64,7 @@ impl PartialEq for AgentResult {
         self.stop_reason == other.stop_reason
             && self.last_message == other.last_message
             && self.structured_output == other.structured_output
+            && self.interrupts == other.interrupts
     }
 }
 
@@ -65,6 +72,10 @@ impl PartialEq for AgentResult {
 /// blocks joined by newlines (`AgentResult.toString()` in TS).
 impl fmt::Display for AgentResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.interrupts.is_empty() {
+            let json = serde_json::to_string(&self.interrupts).unwrap_or_default();
+            return f.write_str(&json);
+        }
         if let Some(out) = &self.structured_output {
             return f.write_str(&out.to_string());
         }

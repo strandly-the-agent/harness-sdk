@@ -19,7 +19,7 @@ use crate::models::Model;
 use crate::plugins::PluginRegistry;
 use crate::state_store::StateStore;
 use crate::tools::{ToolExecutor, ToolRef, ToolRegistry};
-use crate::types::{ContentBlock, Message, Role, SystemPrompt};
+use crate::types::{ContentBlock, InterruptResponseContent, Message, Role, SystemPrompt};
 
 pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
 pub use event_loop::{
@@ -30,7 +30,8 @@ pub use invocation_state::InvocationState;
 pub use result::AgentResult;
 pub use tool_caller::{CallOptions, ToolHandle, DIRECT_CALL_DURING_INVOCATION_MESSAGE};
 
-/// Input accepted by `invoke`/`stream`: text, content blocks, or whole messages.
+/// Input accepted by `invoke`/`stream`: text, content blocks, whole messages, or interrupt
+/// responses that resume an interrupted agent.
 #[derive(Clone, Debug, PartialEq)]
 pub enum InvokeInput {
     /// No new input (continue from the current conversation).
@@ -41,6 +42,8 @@ pub enum InvokeInput {
     Blocks(Vec<ContentBlock>),
     /// Messages appended as-is.
     Messages(Vec<Message>),
+    /// Answers to the interrupts the last invocation stopped on. Appends no user message.
+    InterruptResponses(Vec<InterruptResponseContent>),
 }
 
 impl InvokeInput {
@@ -52,7 +55,32 @@ impl InvokeInput {
             InvokeInput::Blocks(b) if b.is_empty() => vec![],
             InvokeInput::Blocks(b) => vec![Message::new(Role::User, b)],
             InvokeInput::Messages(m) => m,
+            // Resume appends no user message (`_normalizeInput` in TS).
+            InvokeInput::InterruptResponses(_) => vec![],
         }
+    }
+
+    /// The interrupt responses carried by this input, if any.
+    pub fn interrupt_responses(&self) -> Vec<crate::types::InterruptResponse> {
+        match self {
+            InvokeInput::InterruptResponses(blocks) => blocks
+                .iter()
+                .map(|b| b.interrupt_response.clone())
+                .collect(),
+            _ => vec![],
+        }
+    }
+}
+
+impl From<Vec<InterruptResponseContent>> for InvokeInput {
+    fn from(responses: Vec<InterruptResponseContent>) -> Self {
+        InvokeInput::InterruptResponses(responses)
+    }
+}
+
+impl From<InterruptResponseContent> for InvokeInput {
+    fn from(response: InterruptResponseContent) -> Self {
+        InvokeInput::InterruptResponses(vec![response])
     }
 }
 
@@ -102,6 +130,7 @@ pub(crate) struct AgentInner {
     pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
     pub(crate) continuation_input: RwLock<Vec<Message>>,
     pub(crate) memory_manager: Option<Arc<crate::memory::MemoryManager>>,
+    pub(crate) interrupt_state: crate::interrupt::InterruptStateHandle,
 }
 
 /// An agent: a model, a system prompt, tools, and the conversation they share.
@@ -197,6 +226,16 @@ impl Agent {
     /// Take the queued continuation messages.
     pub fn take_continuation_input(&self) -> Vec<Message> {
         std::mem::take(&mut *self.inner.continuation_input.write())
+    }
+
+    /// Shared handle to this agent's interrupt state.
+    pub fn interrupt_state(&self) -> crate::interrupt::InterruptStateHandle {
+        Arc::clone(&self.inner.interrupt_state)
+    }
+
+    /// Interrupts the last invocation stopped on that are still unanswered.
+    pub fn unanswered_interrupts(&self) -> Vec<crate::interrupt::Interrupt> {
+        self.inner.interrupt_state.lock().unanswered()
     }
 
     /// Hook registry.

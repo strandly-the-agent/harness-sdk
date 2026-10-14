@@ -1,5 +1,6 @@
 //! Error types. One variant per TS error class (`strands-ts/src/errors.ts`).
 
+use crate::interrupt::Interrupt;
 use crate::types::Message;
 
 /// Boxed source error.
@@ -92,12 +93,38 @@ pub enum Error {
     /// Plugin registration failure.
     #[error("{0}")]
     Plugin(String),
+    /// Not a failure: a raiser is asking for human input (`InterruptError`).
+    ///
+    /// Control flow — every layer that normalizes errors into a tool error result must check
+    /// [`Error::is_control_flow`] first and re-propagate this variant untouched.
+    #[error("{}", interrupt_message(.0))]
+    Interrupt(Vec<Interrupt>),
     /// Any other error (user tool/hook failures, I/O, serde).
     #[error(transparent)]
     Other(BoxError),
 }
 
+fn interrupt_message(interrupts: &[Interrupt]) -> String {
+    match interrupts {
+        [one] => format!("Interrupt raised: {}", one.name),
+        many => format!(
+            "{} interrupts raised: {}",
+            many.len(),
+            many.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", ")
+        ),
+    }
+}
+
 impl Error {
+    /// Whether this is control flow rather than a failure (currently [`Error::Interrupt`]).
+    ///
+    /// Error normalizers (tool-result conversion, `on_error` policies, retries) must re-propagate
+    /// these instead of swallowing them.
+    #[must_use]
+    pub fn is_control_flow(&self) -> bool {
+        matches!(self, Error::Interrupt(_))
+    }
+
     /// Generic model error with a message and no cause.
     pub fn model(message: impl Into<String>) -> Self {
         Error::Model {
@@ -164,6 +191,7 @@ impl Error {
             Error::Cancelled => "CancelledError",
             Error::DefaultNotConfigured(_) => "DefaultNotConfiguredError",
             Error::Storage { .. } => "StorageError",
+            Error::Interrupt(_) => "InterruptError",
             Error::Plugin(_) => "Error",
             Error::Other(_) => "Error",
         }

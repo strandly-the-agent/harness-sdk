@@ -8,7 +8,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent::{Agent, InvocationState};
 use crate::error::{Error, Result};
-use crate::types::{JsonValue, ToolResultBlock, ToolSpec, ToolUse};
+use crate::interrupt::{self, InterruptFn, InterruptSource};
+use crate::types::{InterruptParams, JsonValue, ToolResultBlock, ToolSpec, ToolUse};
 
 /// Progress data emitted by a tool while it runs (`ToolStreamEvent` in TS).
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -41,6 +42,7 @@ pub struct ToolContext {
     /// Cancellation for this tool call.
     pub cancel: CancellationToken,
     progress: Option<mpsc::Sender<JsonValue>>,
+    interrupt: Option<InterruptFn>,
 }
 
 impl ToolContext {
@@ -57,7 +59,35 @@ impl ToolContext {
             invocation_state,
             cancel,
             progress: None,
+            interrupt: None,
         }
+    }
+
+    /// Override the raise closure (used to re-scope a sub-agent's interrupt ids).
+    #[must_use]
+    pub fn with_interrupt(mut self, interrupt: InterruptFn) -> Self {
+        self.interrupt = Some(interrupt);
+        self
+    }
+
+    /// Ask the caller for input: returns the answer on resume, otherwise raises
+    /// [`Error::Interrupt`] to halt the invocation.
+    ///
+    /// Propagate the error (`?`) — catching it turns a pause into a tool failure.
+    pub fn interrupt<T: serde::de::DeserializeOwned>(&self, params: InterruptParams) -> Result<T> {
+        let response = match &self.interrupt {
+            Some(raise) => raise(params)?,
+            None => {
+                let id = interrupt::tool_interrupt_id(&self.tool_use.tool_use_id, &params.name);
+                interrupt::raise(
+                    &self.agent.interrupt_state(),
+                    &id,
+                    params,
+                    InterruptSource::Tool,
+                )?
+            }
+        };
+        serde_json::from_value(response).map_err(|e| Error::other(e.to_string()))
     }
 
     /// Attach a progress channel; emitted values surface as `ToolStreamUpdate` events.

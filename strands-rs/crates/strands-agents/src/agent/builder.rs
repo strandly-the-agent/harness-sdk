@@ -270,6 +270,7 @@ impl AgentBuilder {
                 memory_manager: self.memory_manager,
                 background_tasks,
                 continuation_input: RwLock::new(Vec::new()),
+                interrupt_state: Default::default(),
             }),
         };
         agent.initialize().await?;

@@ -8,6 +8,8 @@ pub mod background_tasks;
 pub mod context_manager;
 pub mod error;
 pub mod hooks;
+pub mod interrupt;
+pub mod interventions;
 pub mod logging;
 pub mod memory;
 pub mod models;
@@ -32,6 +34,8 @@ pub use context_manager::{
     StashOption,
 };
 pub use error::{Error, Result};
+pub use interrupt::{Interrupt, InterruptSource, InterruptState};
+pub use interventions::{InterventionHandler, InterventionRegistry};
 pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
@@ -45,7 +49,10 @@ pub use tools::vended::ShellTool;
 pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
 };
-pub use types::{ContentBlock, Message, Role, StopReason, SystemPrompt};
+pub use types::{
+    ContentBlock, InterruptParams, InterruptResponse, InterruptResponseContent, Message, Role,
+    StopReason, SystemPrompt,
+};
 
 /// Turns a function into a [`tools::Tool`] implementation (requires the `macros` feature).
 #[cfg(feature = "macros")]
@@ -66,7 +73,11 @@ pub mod prelude {
     pub use crate::error::{Error, Result};
     pub use crate::models::Model;
     pub use crate::tools::{FunctionTool, Tool, ToolContext};
-    pub use crate::types::{ContentBlock, Message, Role, StopReason, SystemPrompt};
+    pub use crate::interrupt::{Interrupt, InterruptSource};
+    pub use crate::types::{
+        ContentBlock, InterruptParams, InterruptResponse, InterruptResponseContent, Message, Role,
+        StopReason, SystemPrompt,
+    };
     #[cfg(feature = "macros")]
     pub use strands_agents_macros::tool;
 }
