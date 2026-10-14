@@ -226,7 +226,7 @@ mod tests {
 
     fn storage() -> (TempDir, LocalFileStorage) {
         let dir = TempDir::new().unwrap();
-        let storage = LocalFileStorage::new(dir.path().to_string_lossy().into_owned());
+        let storage = LocalFileStorage::new(dir.path().to_string_lossy());
         (dir, storage)
     }
 
@@ -347,7 +347,7 @@ mod tests {
     #[tokio::test]
     async fn returns_empty_array_when_base_directory_does_not_exist() {
         let dir = TempDir::new().unwrap();
-        let s = LocalFileStorage::new(dir.path().join("nope").to_string_lossy().into_owned());
+        let s = LocalFileStorage::new(dir.path().join("nope").to_string_lossy());
         assert!(s.list("").await.unwrap().is_empty());
     }
 
