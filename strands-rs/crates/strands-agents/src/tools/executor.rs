@@ -9,9 +9,9 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{Agent, InvocationState};
-use crate::middleware::{ExecuteToolContext, ExecuteToolStage};
 use crate::error::{Error, Result};
 use crate::hooks::events::{AfterToolCallEvent, BeforeToolCallEvent, ToolResultEvent, ToolStreamUpdateEvent};
+use crate::middleware::{ExecuteToolContext, ExecuteToolStage};
 use crate::tools::tool::{ToolContext, ToolRef, ToolStreamEvent};
 use crate::types::{ToolResultBlock, ToolUse, ToolUseBlock};
 

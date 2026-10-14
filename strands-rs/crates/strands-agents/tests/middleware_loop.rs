@@ -7,8 +7,7 @@ use parking_lot::Mutex;
 use serde_json::json;
 use strands_agents::error::Result;
 use strands_agents::middleware::{
-    wrap_fn, EventSink, ExecuteToolContext, ExecuteToolStage, InvokeModelContext, InvokeModelStage,
-    Next,
+    wrap_fn, EventSink, ExecuteToolContext, ExecuteToolStage, InvokeModelContext, InvokeModelStage, Next,
 };
 use strands_agents::models::{ModelStreamEvent, StreamAggregatedResult};
 use strands_agents::test_support::{MockMessageModel, MockResponse};

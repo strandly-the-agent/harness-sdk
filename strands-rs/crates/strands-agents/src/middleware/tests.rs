@@ -6,9 +6,7 @@ mod tests {
     use parking_lot::Mutex;
 
     use crate::error::{Error, Result};
-    use crate::middleware::{
-        wrap_fn, EventSink, Middleware, MiddlewareRegistry, Next, Stage, Terminal,
-    };
+    use crate::middleware::{wrap_fn, EventSink, Middleware, MiddlewareRegistry, Next, Stage, Terminal};
 
     struct TestStage;
     impl Stage for TestStage {
@@ -61,15 +59,17 @@ mod tests {
     }
 
     fn recording_wrap(trace: Trace, tag: &'static str) -> impl Middleware<TestStage> {
-        wrap_fn(move |ctx: String, sink: EventSink<String>, next: Next<'_, TestStage>| {
-            let trace = Arc::clone(&trace);
-            Box::pin(async move {
-                trace.lock().push(format!("{tag}:before"));
-                let result = next.run(ctx, &sink).await;
-                trace.lock().push(format!("{tag}:after"));
-                result
-            }) as BoxFuture<'_, Result<String>>
-        })
+        wrap_fn(
+            move |ctx: String, sink: EventSink<String>, next: Next<'_, TestStage>| {
+                let trace = Arc::clone(&trace);
+                Box::pin(async move {
+                    trace.lock().push(format!("{tag}:before"));
+                    let result = next.run(ctx, &sink).await;
+                    trace.lock().push(format!("{tag}:after"));
+                    result
+                }) as BoxFuture<'_, Result<String>>
+            },
+        )
     }
 
     #[tokio::test]
@@ -234,13 +234,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             *t.lock(),
-            [
-                "input",
-                "wrap:before",
-                "terminal:ctx",
-                "wrap:after",
-                "output"
-            ]
+            ["input", "wrap:before", "terminal:ctx", "wrap:after", "output"]
         );
     }
 
@@ -346,11 +340,9 @@ mod tests {
         };
         let sink = EventSink::null();
         let call = registry.invoke::<TestStage>("ctx".to_owned(), &sink, &hanging);
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_millis(20), call)
-                .await
-                .is_err()
-        );
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(20), call)
+            .await
+            .is_err());
         assert_eq!(*t.lock(), ["outer-cleanup"]);
     }
 }

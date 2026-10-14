@@ -976,6 +976,7 @@ async fn estimate_input_tokens(
     Ok(baseline + model.count_tokens(rest, options).await?)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn stream_from_model(
     agent: &Agent,
     model: &Arc<dyn crate::models::Model>,

@@ -173,18 +173,12 @@ impl Agent {
     }
 
     /// Register a wrap-phase middleware for `S` (the bare-stage TS overload).
-    pub fn add_middleware<S: Stage>(
-        &self,
-        handler: impl Middleware<S> + 'static,
-    ) -> MiddlewareHandle {
+    pub fn add_middleware<S: Stage>(&self, handler: impl Middleware<S> + 'static) -> MiddlewareHandle {
         self.inner.middleware.add::<S>(handler)
     }
 
     /// Register a wrap-phase middleware for `S`.
-    pub fn add_wrap_middleware<S: Stage>(
-        &self,
-        handler: impl Middleware<S> + 'static,
-    ) -> MiddlewareHandle {
+    pub fn add_wrap_middleware<S: Stage>(&self, handler: impl Middleware<S> + 'static) -> MiddlewareHandle {
         self.inner.middleware.add::<S>(handler)
     }
 
