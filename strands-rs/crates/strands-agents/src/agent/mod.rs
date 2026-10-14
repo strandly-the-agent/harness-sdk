@@ -266,7 +266,7 @@ pub(crate) use test_fixtures::{
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod test_fixtures {
+pub(crate) mod test_fixtures {
     use super::*;
     use crate::error::Result;
     use crate::models::{ModelStreamEvent, StreamOptions};

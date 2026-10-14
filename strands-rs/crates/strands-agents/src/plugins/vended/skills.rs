@@ -362,6 +362,7 @@ fn parse_scalar(raw: &str) -> JsonValue {
 }
 
 /// Where a skill comes from.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum SkillSource {
     /// A skill directory (containing `SKILL.md`), a `SKILL.md` file, or a parent directory of
@@ -785,5 +786,436 @@ impl Tool for SkillsTool {
             &ctx.tool_use.tool_use_id,
             vec![ToolResultContent::Text(text)],
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::test_fixtures::test_agent_with;
+    use crate::agent::InvocationState;
+    use crate::hooks::Cancel;
+    use crate::types::ToolUse;
+    use tempfile::TempDir;
+    use tokio_util::sync::CancellationToken;
+
+    fn write_skill(root: &Path, name: &str, body: &str) -> PathBuf {
+        let dir = root.join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SKILL.md"), body).unwrap();
+        dir
+    }
+
+    fn skill_md(name: &str, description: &str) -> String {
+        format!("---\nname: {name}\ndescription: {description}\n---\n\nDo the thing.\n")
+    }
+
+    async fn fire_before_invocation(agent: &Agent) {
+        let mut event = BeforeInvocationEvent {
+            agent: agent.clone(),
+            invocation_state: InvocationState::new(),
+            cancel: Cancel::No,
+        };
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+    }
+
+    async fn call_tool(plugin: &AgentSkills, agent: &Agent, skill_name: &str) -> String {
+        let tool = plugin.tools().remove(0);
+        let ctx = ToolContext::new(
+            ToolUse {
+                tool_use_id: "t1".to_owned(),
+                name: "skills".to_owned(),
+                input: json!({ "skill_name": skill_name }),
+            },
+            agent.clone(),
+            InvocationState::new(),
+            CancellationToken::new(),
+        );
+        tool.invoke(ctx).await.unwrap().text()
+    }
+
+    #[test]
+    fn resolves_skill_instances_directly() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "does alpha", "body")]);
+        let names: Vec<String> = plugin.available_skills().iter().map(|s| s.name.clone()).collect();
+        assert_eq!(names, ["alpha"]);
+    }
+
+    #[test]
+    fn resolves_a_skill_directory_path() {
+        let tmp = TempDir::new().unwrap();
+        let dir = write_skill(tmp.path(), "alpha", &skill_md("alpha", "does alpha"));
+        let plugin = AgentSkills::new([dir]);
+        assert_eq!(plugin.available_skills().len(), 1);
+        assert_eq!(plugin.available_skills()[0].instructions, "Do the thing.");
+    }
+
+    #[test]
+    fn resolves_a_parent_directory_with_multiple_skills() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(tmp.path(), "alpha", &skill_md("alpha", "a"));
+        write_skill(tmp.path(), "beta", &skill_md("beta", "b"));
+        let plugin = AgentSkills::new([tmp.path().to_path_buf()]);
+        let names: Vec<String> = plugin.available_skills().iter().map(|s| s.name.clone()).collect();
+        assert_eq!(names, ["alpha", "beta"]);
+    }
+
+    #[test]
+    fn handles_mixed_sources() {
+        let tmp = TempDir::new().unwrap();
+        let dir = write_skill(tmp.path(), "alpha", &skill_md("alpha", "a"));
+        let plugin = AgentSkills::new([
+            SkillSource::Path(dir),
+            SkillSource::Instance(Skill::new("inline", "i", "body")),
+        ]);
+        let names: Vec<String> = plugin.available_skills().iter().map(|s| s.name.clone()).collect();
+        assert_eq!(names, ["alpha", "inline"]);
+    }
+
+    #[test]
+    fn duplicate_names_keep_the_last() {
+        let plugin = AgentSkills::new([
+            Skill::new("alpha", "first", "one"),
+            Skill::new("alpha", "second", "two"),
+        ]);
+        assert_eq!(plugin.available_skills().len(), 1);
+        assert_eq!(plugin.available_skills()[0].description, "second");
+    }
+
+    #[test]
+    fn skips_non_existent_paths() {
+        let plugin = AgentSkills::new(["/definitely/not/here"]);
+        assert!(plugin.available_skills().is_empty());
+    }
+
+    #[test]
+    fn handles_a_path_with_malformed_skill_md() {
+        let tmp = TempDir::new().unwrap();
+        let dir = write_skill(tmp.path(), "alpha", "no frontmatter here");
+        let plugin = AgentSkills::new([dir]);
+        assert!(plugin.available_skills().is_empty());
+    }
+
+    #[test]
+    fn loads_valid_skills_from_a_parent_dir_with_malformed_siblings() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(tmp.path(), "good", &skill_md("good", "g"));
+        write_skill(tmp.path(), "bad", "not a skill");
+        fs::create_dir_all(tmp.path().join("empty")).unwrap();
+        let plugin = AgentSkills::new([tmp.path().to_path_buf()]);
+        let names: Vec<String> = plugin.available_skills().iter().map(|s| s.name.clone()).collect();
+        assert_eq!(names, ["good"]);
+    }
+
+    #[test]
+    fn set_available_skills_replaces_the_set() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "one")]);
+        plugin.set_available_skills([Skill::new("beta", "b", "two")]);
+        let names: Vec<String> = plugin.available_skills().iter().map(|s| s.name.clone()).collect();
+        assert_eq!(names, ["beta"]);
+    }
+
+    #[test]
+    fn has_the_correct_plugin_name() {
+        assert_eq!(
+            AgentSkills::new(Vec::<Skill>::new()).name(),
+            "strands:agent-skills"
+        );
+    }
+
+    #[test]
+    fn exposes_one_skills_tool_with_the_expected_spec() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "one")]);
+        let tools = plugin.tools();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name(), "skills");
+        assert_eq!(
+            tools[0].description(),
+            "Activate a skill to load its full instructions. Use this tool to load the complete \
+             instructions for a skill listed in the available_skills section of your system prompt."
+        );
+        let schema = tools[0].spec().input_schema.clone().unwrap();
+        assert_eq!(schema["required"], json!(["skill_name"]));
+        assert_eq!(schema["properties"]["skill_name"]["type"], "string");
+        assert_eq!(
+            schema["properties"]["skill_name"]["description"],
+            "Name of the skill to activate"
+        );
+    }
+
+    #[test]
+    fn frontmatter_requires_an_opening_delimiter() {
+        let error = Skill::from_content("name: x", false, None)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "SKILL.md must start with --- frontmatter delimiter");
+    }
+
+    #[test]
+    fn frontmatter_requires_a_closing_delimiter() {
+        let error = Skill::from_content("---\nname: x\n", false, None)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "SKILL.md frontmatter missing closing --- delimiter");
+    }
+
+    #[test]
+    fn requires_name_and_description() {
+        let no_name = Skill::from_content("---\ndescription: d\n---\nbody", false, None)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            no_name,
+            "SKILL.md content must have a 'name' field in frontmatter"
+        );
+        let no_desc = Skill::from_content("---\nname: alpha\n---\nbody", false, None)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            no_desc,
+            "SKILL.md content must have a 'description' field in frontmatter"
+        );
+    }
+
+    #[test]
+    fn parses_optional_frontmatter_fields() {
+        let skill = Skill::from_content(
+            "---\nname: alpha\ndescription: d\nallowed-tools: read write\nlicense: MIT\ncompatibility: \"strands >= 1\"\nmetadata:\n  owner: team\n---\nbody text",
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(skill.allowed_tools.unwrap(), ["read", "write"]);
+        assert_eq!(skill.license.unwrap(), "MIT");
+        assert_eq!(skill.compatibility.unwrap(), "strands >= 1");
+        assert_eq!(skill.metadata["owner"], json!("team"));
+        assert_eq!(skill.instructions, "body text");
+    }
+
+    #[test]
+    fn parses_allowed_tools_as_a_yaml_list() {
+        let skill = Skill::from_content(
+            "---\nname: alpha\ndescription: d\nallowed-tools:\n  - read\n  - write\n---\nbody",
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(skill.allowed_tools.unwrap(), ["read", "write"]);
+    }
+
+    #[test]
+    fn invalid_names_warn_by_default_and_fail_in_strict_mode() {
+        let content = "---\nname: Bad_Name\ndescription: d\n---\nbody";
+        assert!(Skill::from_content(content, false, None).is_ok());
+        let error = Skill::from_content(content, true, None).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "name=<Bad_Name> | skill name should be 1-64 lowercase alphanumeric characters or hyphens, should not start/end with hyphen"
+        );
+    }
+
+    #[test]
+    fn strict_mode_rejects_consecutive_hyphens_and_long_names() {
+        let dashes = Skill::from_content("---\nname: a--b\ndescription: d\n---\nb", true, None)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(dashes, "name=<a--b> | skill name contains consecutive hyphens");
+        let long = "a".repeat(65);
+        let error = Skill::from_content(&format!("---\nname: {long}\ndescription: d\n---\nb"), true, None)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error,
+            format!("name=<{long}> | skill name exceeds 64 character limit")
+        );
+    }
+
+    #[test]
+    fn strict_mode_requires_the_name_to_match_the_directory() {
+        let tmp = TempDir::new().unwrap();
+        let dir = write_skill(tmp.path(), "other", &skill_md("alpha", "a"));
+        let error = Skill::from_file(&dir, true).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "name=<alpha>, directory=<other> | skill name does not match parent directory name"
+        );
+    }
+
+    #[test]
+    fn from_file_accepts_a_skill_md_path_and_rejects_other_paths() {
+        let tmp = TempDir::new().unwrap();
+        let dir = write_skill(tmp.path(), "alpha", &skill_md("alpha", "a"));
+        let skill = Skill::from_file(dir.join("SKILL.md"), false).unwrap();
+        assert_eq!(skill.name, "alpha");
+        assert_eq!(skill.path.unwrap(), dir);
+
+        let missing = tmp.path().join("nope");
+        assert_eq!(
+            Skill::from_file(&missing, false).unwrap_err().to_string(),
+            format!(
+                "path=<{}> | skill path does not exist or is not a valid skill directory",
+                missing.display()
+            )
+        );
+    }
+
+    #[test]
+    fn from_directory_rejects_a_missing_directory() {
+        assert_eq!(
+            Skill::from_directory("/definitely/not/here", false)
+                .unwrap_err()
+                .to_string(),
+            "path=</definitely/not/here> | skills directory does not exist"
+        );
+    }
+
+    #[test]
+    fn generates_xml_for_an_empty_skill_set() {
+        let plugin = AgentSkills::new(Vec::<Skill>::new());
+        assert_eq!(
+            plugin.skills_xml(),
+            "<available_skills>\nNo skills are currently available.\n</available_skills>"
+        );
+    }
+
+    #[test]
+    fn generates_xml_with_escaping_and_location() {
+        let tmp = TempDir::new().unwrap();
+        let dir = write_skill(tmp.path(), "alpha", &skill_md("alpha", "a & <b>"));
+        let plugin = AgentSkills::new([dir.clone()]);
+        let xml = plugin.skills_xml();
+        assert!(xml.contains("<name>alpha</name>"));
+        assert!(xml.contains("<description>a &amp; &lt;b&gt;</description>"));
+        assert!(xml.contains(&format!("<location>{}/SKILL.md</location>", dir.display())));
+    }
+
+    #[tokio::test]
+    async fn injects_appends_to_a_string_prompt_and_replaces_on_reinjection() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "does alpha", "one")]);
+        let agent = test_agent_with("a1", Some("base prompt"), Vec::new());
+        plugin.init_agent(&agent).await.unwrap();
+
+        fire_before_invocation(&agent).await;
+        let first = agent.system_prompt().unwrap().text();
+        assert_eq!(first, format!("base prompt\n\n{}", plugin.skills_xml()));
+
+        fire_before_invocation(&agent).await;
+        let second = agent.system_prompt().unwrap().text();
+        assert_eq!(second, first, "previous injection is replaced, not duplicated");
+    }
+
+    #[tokio::test]
+    async fn injects_bare_xml_when_there_is_no_system_prompt() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "one")]);
+        let agent = test_agent_with("a2", None, Vec::new());
+        plugin.init_agent(&agent).await.unwrap();
+        fire_before_invocation(&agent).await;
+        assert_eq!(agent.system_prompt().unwrap().text(), plugin.skills_xml());
+    }
+
+    #[tokio::test]
+    async fn re_appends_when_the_previous_injection_is_gone() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "one")]);
+        let agent = test_agent_with("a3", Some("base"), Vec::new());
+        plugin.init_agent(&agent).await.unwrap();
+        fire_before_invocation(&agent).await;
+        agent.set_system_prompt(Some(SystemPrompt::Text("rewritten".to_owned())));
+        fire_before_invocation(&agent).await;
+        assert_eq!(
+            agent.system_prompt().unwrap().text(),
+            format!("rewritten\n\n{}", plugin.skills_xml())
+        );
+    }
+
+    #[tokio::test]
+    async fn injects_into_a_block_system_prompt() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "one")]);
+        let agent = test_agent_with("a4", None, Vec::new());
+        agent.set_system_prompt(Some(SystemPrompt::Blocks(vec![SystemContentBlock::Text(
+            "base".to_owned(),
+        )])));
+        plugin.init_agent(&agent).await.unwrap();
+
+        fire_before_invocation(&agent).await;
+        fire_before_invocation(&agent).await;
+        let Some(SystemPrompt::Blocks(blocks)) = agent.system_prompt() else {
+            panic!("expected blocks");
+        };
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[1], SystemContentBlock::Text(plugin.skills_xml()));
+    }
+
+    #[tokio::test]
+    async fn activating_a_skill_returns_instructions_metadata_and_resources() {
+        let tmp = TempDir::new().unwrap();
+        let dir = write_skill(
+            tmp.path(),
+            "alpha",
+            "---\nname: alpha\ndescription: d\nallowed-tools: read write\ncompatibility: all\n---\nFull instructions.",
+        );
+        fs::create_dir_all(dir.join("scripts")).unwrap();
+        fs::write(dir.join("scripts/run.sh"), "#!/bin/sh\n").unwrap();
+        let plugin = AgentSkills::new([dir.clone()]);
+        let agent = test_agent_with("a5", None, Vec::new());
+
+        let text = call_tool(&plugin, &agent, "alpha").await;
+        assert!(text.starts_with("Full instructions."));
+        assert!(text.contains("Allowed tools: read, write"));
+        assert!(text.contains("Compatibility: all"));
+        assert!(text.contains(&format!("Location: {}/SKILL.md", dir.display())));
+        assert!(text.contains("Available resources:\n  scripts/run.sh"));
+        assert_eq!(plugin.activated_skills(&agent), ["alpha"]);
+    }
+
+    #[tokio::test]
+    async fn activating_an_unknown_skill_returns_a_message_listing_available_skills() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "one")]);
+        let agent = test_agent_with("a6", None, Vec::new());
+        let text = call_tool(&plugin, &agent, "nope").await;
+        assert_eq!(text, "Skill 'nope' not found. Available skills: alpha");
+        assert!(plugin.activated_skills(&agent).is_empty());
+    }
+
+    #[tokio::test]
+    async fn activation_tracking_dedups_and_moves_to_the_end() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "one"), Skill::new("beta", "b", "two")]);
+        let agent = test_agent_with("a7", None, Vec::new());
+        call_tool(&plugin, &agent, "alpha").await;
+        call_tool(&plugin, &agent, "beta").await;
+        call_tool(&plugin, &agent, "alpha").await;
+        assert_eq!(plugin.activated_skills(&agent), ["beta", "alpha"]);
+    }
+
+    #[tokio::test]
+    async fn a_skill_without_instructions_reports_that() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "")]);
+        let agent = test_agent_with("a8", None, Vec::new());
+        assert_eq!(
+            call_tool(&plugin, &agent, "alpha").await,
+            "Skill 'alpha' activated (no instructions available)."
+        );
+    }
+
+    #[tokio::test]
+    async fn resource_listing_is_capped() {
+        let tmp = TempDir::new().unwrap();
+        let dir = write_skill(tmp.path(), "alpha", &skill_md("alpha", "a"));
+        fs::create_dir_all(dir.join("scripts")).unwrap();
+        for i in 0..5 {
+            fs::write(dir.join(format!("scripts/f{i}.txt")), "x").unwrap();
+        }
+        let plugin = AgentSkills::with_config([dir], false, 2, DEFAULT_STATE_KEY);
+        let agent = test_agent_with("a9", None, Vec::new());
+        let text = call_tool(&plugin, &agent, "alpha").await;
+        assert!(text.contains("... (truncated at 2 files)"), "{text}");
+    }
+
+    #[test]
+    fn a_non_object_state_value_is_a_type_error() {
+        let plugin = AgentSkills::new([Skill::new("alpha", "a", "one")]);
+        let agent = test_agent_with("a10", None, Vec::new());
+        agent.state().set(DEFAULT_STATE_KEY, json!("oops"));
+        let error = plugin.inject_skills_xml(&agent).unwrap_err().to_string();
+        assert_eq!(error, "expected object for state key 'agent_skills', got string");
     }
 }
