@@ -560,3 +560,98 @@ async fn rejects_non_positive_limits() {
         "limits.turns must be a positive finite number, got 0"
     );
 }
+
+// ---- cancellation (§9.4 steps 14, 23) -------------------------------------
+
+#[tokio::test]
+async fn cancel_before_the_model_call_returns_cancelled() {
+    let model = text_model(&["never reached"]);
+    let agent = Agent::new(model.clone()).await.unwrap();
+    let token = tokio_util::sync::CancellationToken::new();
+    token.cancel();
+
+    let result = agent
+        .invoke_with(
+            "go",
+            InvokeOptions {
+                cancel: Some(token),
+                ..InvokeOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::Cancelled);
+    assert_eq!(result.to_string(), "Cancelled by user");
+    assert_eq!(model.call_count(), 0);
+    assert!(agent.messages().is_empty());
+}
+
+#[tokio::test]
+async fn cancel_after_a_tool_use_reply_leaves_no_orphan_tool_uses() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::with_stop_reason(
+            tool_use_message("echo", "t1", json!({ "value": 1 })),
+            StopReason::ToolUse,
+        ),
+        MockResponse::message(Message::assistant("never reached")),
+    ]);
+    let agent = looping_agent(Arc::clone(&model)).await;
+    let cancelling = agent.clone();
+    agent.hooks().add_sync_callback(move |_: &mut ModelMessageEvent| {
+        cancelling.cancel();
+        Ok(())
+    });
+
+    let result = agent.invoke("go").await.unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::Cancelled);
+    assert_eq!(model.call_count(), 1);
+    let messages = agent.messages();
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[1].role, Role::Assistant);
+    assert_eq!(messages[2].role, Role::User);
+    match &messages[2].content[0] {
+        ContentBlock::ToolResult(result) => {
+            assert_eq!(result.tool_use_id, "t1");
+            assert_eq!(result.status, ToolResultStatus::Error);
+            assert_eq!(result.text(), "Tool execution cancelled");
+        }
+        other => panic!("expected a tool result, got {other:?}"),
+    }
+    assert_eq!(result.last_message, messages[1]);
+}
+
+#[tokio::test]
+async fn cancel_during_tool_execution_stops_after_the_results() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::with_stop_reason(tool_use_message("cancels", "t1", json!({})), StopReason::ToolUse),
+        MockResponse::message(Message::assistant("never reached")),
+    ]);
+    let agent = Agent::builder().model(model.clone()).build().await.unwrap();
+    let cancelling = agent.clone();
+    let cancel_tool: ToolRef = Arc::new(
+        tool("cancels")
+            .description("Cancels the invocation, then succeeds")
+            .handler(move |_input: serde_json::Value, _ctx| {
+                let agent = cancelling.clone();
+                async move {
+                    agent.cancel();
+                    Ok(json!({ "ok": true }))
+                }
+            }),
+    );
+    agent
+        .with_tool_registry(|registry| registry.add(cancel_tool))
+        .unwrap();
+
+    let result = agent.invoke("go").await.unwrap();
+
+    assert_eq!(result.stop_reason, StopReason::Cancelled);
+    assert_eq!(result.to_string(), "Cancelled by user");
+    let messages = agent.messages();
+    assert_eq!(messages.len(), 4);
+    assert_eq!(messages[2].role, Role::User);
+    assert_eq!(messages[3], result.last_message);
+    assert_eq!(model.call_count(), 1);
+}
