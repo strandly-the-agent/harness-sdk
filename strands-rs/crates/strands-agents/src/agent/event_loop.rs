@@ -446,6 +446,8 @@ async fn run_invocation(
                     last_message: message,
                     invocation_state: state.clone(),
                     structured_output: None,
+                    metrics: agent.meter().metrics(),
+                    traces: agent.tracer().local_traces(),
                 },
             )
             .await;
@@ -524,7 +526,32 @@ async fn run_cycles(
         })?;
     }
 
-    let outcome = run_cycles_inner(agent, input, state, cancel, tx, options, structured).await;
+    agent.meter().start_new_invocation();
+    let tool_specs: Vec<_> = agent.tools().iter().map(|t| t.spec().clone()).collect();
+    let tool_names: Vec<String> = tool_specs.iter().map(|s| s.name.clone()).collect();
+    let model_id = agent.model().model_id();
+    let system_prompt = agent.system_prompt().and_then(|p| match p {
+        crate::types::SystemPrompt::Text(text) => Some(text),
+        _ => None,
+    });
+    let agent_span = agent.tracer().start_agent_span(crate::telemetry::tracer::AgentSpanOptions {
+        agent_name: agent.name(),
+        agent_id: Some(agent.id()),
+        model_id: model_id.as_deref(),
+        tools: &tool_names,
+        tool_specs: &tool_specs,
+        system_prompt: system_prompt.as_deref(),
+        messages: &agent.messages(),
+        provider: None,
+    });
+
+    let outcome = run_cycles_inner(agent, input, state, cancel, tx, options, structured, &agent_span).await;
+
+    match &outcome {
+        Ok(result) => agent.tracer().end_agent_span(&agent_span, Some(&result.last_message), None),
+        Err(error) => agent.tracer().end_agent_span(&agent_span, None, Some(&error.to_string())),
+    }
+    agent.meter().end_invocation();
 
     if structured {
         agent.with_tool_registry(|registry| registry.remove(STRUCTURED_OUTPUT_TOOL_NAME));
@@ -541,6 +568,7 @@ async fn run_cycles_inner(
     tx: &Sink,
     options: &InvokeOptions,
     structured: bool,
+    agent_span: &crate::telemetry::SpanHandle,
 ) -> Result<AgentResult> {
     let mut pending_input = Some(input);
     let mut usage = Usage::default();
@@ -560,6 +588,8 @@ async fn run_cycles_inner(
                     .unwrap_or_else(|| Message::assistant("")),
                 invocation_state: state.clone(),
                 structured_output: None,
+                metrics: agent.meter().metrics(),
+                traces: agent.tracer().local_traces(),
             });
         }
         turns += 1;
@@ -570,10 +600,42 @@ async fn run_cycles_inner(
             }
         }
 
+        let cycle = crate::telemetry::CycleScope::start(agent, agent_span);
+        let model_span = agent
+            .tracer()
+            .start_model_invoke_span(cycle.span(), crate::telemetry::tracer::ModelSpanOptions {
+                model_id: agent.model().model_id().as_deref(),
+                provider: None,
+                messages: &agent.messages(),
+            });
         let model_result = match invoke_model(agent, state, cancel, tx, forced_choice.clone()).await {
-            Ok(result) => result,
-            Err(Error::Cancelled) => return cancelled_result(agent, tx, state).await,
-            Err(error) => return Err(error),
+            Ok(result) => {
+                agent.tracer().end_model_invoke_span(
+                    &model_span,
+                    Some(&result.message),
+                    result.usage.as_ref(),
+                    result.metrics.as_ref(),
+                    Some(&result.stop_reason),
+                    None,
+                );
+                if let Some(usage) = result.usage.as_ref() {
+                    let metrics = result.metrics.clone().unwrap_or_default();
+                    agent
+                        .meter()
+                        .update_cycle(usage, metrics.latency_ms, metrics.time_to_first_byte_ms);
+                }
+                result
+            }
+            Err(error) => {
+                let message = error.to_string();
+                agent
+                    .tracer()
+                    .end_model_invoke_span(&model_span, None, None, None, None, Some(&message));
+                if matches!(error, Error::Cancelled) {
+                    return cancelled_result(agent, tx, state).await;
+                }
+                return Err(error);
+            }
         };
         if let Some(cycle_usage) = &model_result.usage {
             usage.input_tokens += cycle_usage.input_tokens;
@@ -599,6 +661,8 @@ async fn run_cycles_inner(
                 last_message: model_result.message,
                 invocation_state: state.clone(),
                 structured_output: None,
+                metrics: agent.meter().metrics(),
+                traces: agent.tracer().local_traces(),
             });
         }
 
@@ -624,6 +688,8 @@ async fn run_cycles_inner(
                 last_message: assistant_message,
                 invocation_state: state.clone(),
                 structured_output: None,
+                metrics: agent.meter().metrics(),
+                traces: agent.tracer().local_traces(),
             });
         }
 
@@ -652,6 +718,8 @@ async fn run_cycles_inner(
                     last_message: last,
                     invocation_state: state.clone(),
                     structured_output: None,
+                    metrics: agent.meter().metrics(),
+                    traces: agent.tracer().local_traces(),
                 });
             }
         }
@@ -663,6 +731,8 @@ async fn run_cycles_inner(
                     last_message: assistant_message,
                     invocation_state: state.clone(),
                     structured_output: Some(output),
+                    metrics: agent.meter().metrics(),
+                    traces: agent.tracer().local_traces(),
                 });
             }
         }
@@ -711,6 +781,8 @@ async fn cancelled_result(agent: &Agent, tx: &Sink, state: &InvocationState) -> 
         last_message: message,
         invocation_state: state.clone(),
         structured_output: None,
+        metrics: agent.meter().metrics(),
+        traces: agent.tracer().local_traces(),
     })
 }
 

@@ -40,6 +40,7 @@ impl SpanHandle {
 struct TraceState {
     traces: Vec<AgentTrace>,
     current_cycle: Option<String>,
+    current_cycle_span: backend::RawSpan,
 }
 
 /// Options for [`Tracer::start_agent_span`].
@@ -137,6 +138,7 @@ impl Tracer {
         {
             let mut state = self.state.lock();
             state.current_cycle = None;
+            state.current_cycle_span = backend::RawSpan::default();
         }
         let mut span = self.begin(&name, backend::Kind::Internal, attrs, None);
         span.local_trace = Some(self.push_trace(AgentTrace::new(name, None), None));
@@ -160,7 +162,11 @@ impl Tracer {
         let mut span = self.begin("execute_agent_loop_cycle", backend::Kind::Default, attrs, Some(parent));
         let trace = AgentTrace::new("Cycle", parent.local_trace.clone());
         let id = self.push_trace(trace, parent.local_trace.as_deref());
-        self.state.lock().current_cycle = Some(id.clone());
+        {
+            let mut state = self.state.lock();
+            state.current_cycle = Some(id.clone());
+            state.current_cycle_span = span.inner.clone();
+        }
         span.local_trace = Some(id);
         span
     }
@@ -168,7 +174,9 @@ impl Tracer {
     /// Close the cycle span.
     pub fn end_agent_loop_span(&self, span: &SpanHandle, error: Option<&str>) {
         self.end(span, error);
-        self.state.lock().current_cycle = None;
+        let mut state = self.state.lock();
+        state.current_cycle = None;
+        state.current_cycle_span = backend::RawSpan::default();
     }
 
     /// `chat` — one model invocation, parented to the cycle span.
@@ -179,7 +187,7 @@ impl Tracer {
         }
         self.apply_custom(&mut attrs);
         let mut span = self.begin("chat", backend::Kind::Default, attrs, Some(parent));
-        span.local_trace = Some(self.push_child_trace("Model invoke", parent));
+        span.local_trace = Some(self.push_child_trace("Model invoke", Some(parent)));
         self.record_messages(&span, options.messages, None);
         span
     }
@@ -226,7 +234,7 @@ impl Tracer {
     }
 
     /// `execute_tool <name>` — one tool call, parented to the cycle span.
-    pub fn start_tool_call_span(&self, parent: &SpanHandle, tool_use: &ToolUse) -> SpanHandle {
+    pub fn start_tool_call_span(&self, parent: Option<&SpanHandle>, tool_use: &ToolUse) -> SpanHandle {
         let name = format!("execute_tool {}", tool_use.name);
         let mut attrs = self.common_attributes(Some("execute_tool"), None);
         attr(&mut attrs, "gen_ai.tool.name", tool_use.name.as_str());
@@ -235,7 +243,7 @@ impl Tracer {
             attr(&mut attrs, "gen_ai.tool.call.arguments", to_telemetry_json(&tool_use.input));
         }
         self.apply_custom(&mut attrs);
-        let mut span = self.begin(&name, backend::Kind::Default, attrs, Some(parent));
+        let mut span = self.begin(&name, backend::Kind::Default, attrs, parent);
         span.local_trace = Some(self.push_child_trace(format!("Tool: {}", tool_use.name), parent));
         span
     }
@@ -282,8 +290,10 @@ impl Tracer {
     }
 
     fn begin(&self, name: &str, kind: backend::Kind, attrs: Attrs, parent: Option<&SpanHandle>) -> SpanHandle {
+        let implicit = parent.is_none().then(|| self.state.lock().current_cycle_span.clone());
+        let parent_raw = parent.map(|p| p.inner.clone()).or(implicit);
         SpanHandle {
-            inner: self.inner.start(name, kind, &attrs, parent.map(|p| &p.inner)),
+            inner: self.inner.start(name, kind, &attrs, parent_raw.as_ref()),
             local_trace: None,
             start_time: now_ms(),
         }
@@ -362,9 +372,9 @@ impl Tracer {
         id
     }
 
-    fn push_child_trace(&self, name: impl Into<String>, parent: &SpanHandle) -> String {
+    fn push_child_trace(&self, name: impl Into<String>, parent: Option<&SpanHandle>) -> String {
         let cycle = self.state.lock().current_cycle.clone();
-        let parent_id = cycle.or_else(|| parent.local_trace.clone());
+        let parent_id = cycle.or_else(|| parent.and_then(|p| p.local_trace.clone()));
         let trace = AgentTrace::new(name, parent_id.clone());
         self.push_trace(trace, parent_id.as_deref())
     }

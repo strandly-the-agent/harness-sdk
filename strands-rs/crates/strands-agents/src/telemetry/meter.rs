@@ -71,12 +71,18 @@ impl Meter {
         if let Some(i) = &self.instruments {
             i.cycle_count.add(1, &[]);
         }
-        let mut state = self.state.lock();
-        state.cycle_count += 1;
-        CycleHandle {
+        let handle = CycleHandle {
             cycle_id: uuid::Uuid::new_v4().to_string(),
             start_time: now_ms(),
-        }
+        };
+        let mut state = self.state.lock();
+        state.cycle_count += 1;
+        state.current_cycles.push(CycleMetrics {
+            cycle_id: handle.cycle_id.clone(),
+            duration: 0,
+            usage: Usage::default(),
+        });
+        handle
     }
 
     /// Close a cycle, recording its duration (TS `endCycle`).
@@ -88,11 +94,9 @@ impl Meter {
         }
         let mut state = self.state.lock();
         state.total_duration += duration;
-        state.current_cycles.push(CycleMetrics {
-            cycle_id: cycle.cycle_id.clone(),
-            duration,
-            usage: Usage::default(),
-        });
+        if let Some(entry) = state.current_cycles.iter_mut().find(|c| c.cycle_id == cycle.cycle_id) {
+            entry.duration = duration;
+        }
     }
 
     /// Record model usage and latency against the open cycle (TS `updateCycle`).

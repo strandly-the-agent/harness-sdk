@@ -219,7 +219,21 @@ async fn execute_tool(
                         crate::background_tasks::Route::Foreground => {}
                     }
                 }
-                run_tool(input, effective_tool.as_ref(), &tool_use, events).await?
+                let span = input.agent.tracer().start_tool_call_span(None, &tool_use);
+                let outcome = run_tool(input, effective_tool.as_ref(), &tool_use, events).await?;
+                let success = outcome.1.is_none()
+                    && outcome.0.status == crate::types::ToolResultStatus::Success;
+                input.agent.tracer().end_tool_call_span(
+                    &span,
+                    Some(&outcome.0),
+                    outcome.1.as_ref().map(|e| e.to_string()).as_deref(),
+                );
+                input.agent.meter().end_tool_call(
+                    &tool_use.name,
+                    crate::telemetry::types::now_ms().saturating_sub(span.start_time()),
+                    success,
+                );
+                outcome
             }
         };
 

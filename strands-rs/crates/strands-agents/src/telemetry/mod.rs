@@ -9,6 +9,7 @@ pub mod tracer;
 pub mod types;
 
 pub use json::to_telemetry_json;
+pub use meter::CycleHandle;
 pub use meter::Meter;
 pub use tracer::{SpanHandle, Tracer};
 pub use types::{AgentMetrics, AgentTrace, CycleMetrics, InvocationMetrics, ToolMetrics};
@@ -163,5 +164,48 @@ mod tests {
             ..TelemetryConfig::new()
         };
         assert!(config.events_as_attributes());
+    }
+}
+
+/// Keeps one `execute_agent_loop_cycle` span and its metric cycle open for a scope.
+///
+/// Ending on drop covers the loop's many early returns.
+pub struct CycleScope {
+    tracer: Tracer,
+    meter: Meter,
+    span: SpanHandle,
+    cycle: CycleHandle,
+}
+
+impl CycleScope {
+    /// Open a cycle span under `parent` and start the matching metric cycle.
+    pub fn start(agent: &crate::agent::Agent, parent: &SpanHandle) -> Self {
+        let tracer = agent.tracer().clone();
+        let meter = agent.meter().clone();
+        let cycle = meter.start_cycle();
+        let span = tracer.start_agent_loop_span(parent, &cycle.cycle_id);
+        Self {
+            tracer,
+            meter,
+            span,
+            cycle,
+        }
+    }
+
+    /// The cycle span, for parenting model and tool spans.
+    pub fn span(&self) -> &SpanHandle {
+        &self.span
+    }
+
+    /// This cycle's id (`agent_loop.cycle_id`).
+    pub fn cycle_id(&self) -> &str {
+        &self.cycle.cycle_id
+    }
+}
+
+impl Drop for CycleScope {
+    fn drop(&mut self) {
+        self.meter.end_cycle(&self.cycle);
+        self.tracer.end_agent_loop_span(&self.span, None);
     }
 }
