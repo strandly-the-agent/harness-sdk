@@ -69,7 +69,8 @@ const TOOLS_DESCRIPTION: &str =
     "Subset of tools to grant the subagent. Fewer is safer; it cannot exceed your own.";
 const MODEL_DESCRIPTION: &str = "Which model the subagent runs on.";
 const CONTEXT_DESCRIPTION: &str = "How much of this conversation the subagent sees: 'none' (fresh start), 'all' (full history including tool calls and their results — can be large), 'no_tools' (text turns only — tool calls and their results removed). More context costs more tokens.";
-const LAST_MESSAGES_DESCRIPTION: &str = "Optional: limit the shared context to the last N messages. Omit to share all of the selected context.";
+const LAST_MESSAGES_DESCRIPTION: &str =
+    "Optional: limit the shared context to the last N messages. Omit to share all of the selected context.";
 
 // --- option-mode vocabulary -------------------------------------------------------------------
 
@@ -160,7 +161,10 @@ impl<T: Clone> Choice<T> {
 
     /// The matching option's value, if any.
     pub fn value_for(&self, name: &str) -> Option<T> {
-        self.options.iter().find(|o| o.name == name).map(|o| o.value.clone())
+        self.options
+            .iter()
+            .find(|o| o.name == name)
+            .map(|o| o.value.clone())
     }
 }
 
@@ -360,8 +364,7 @@ pub struct AgentSpec {
 pub type ChildAgentConfig = AgentSpec;
 
 /// Builds the child agent from a resolved spec.
-pub type AgentBuilderFn =
-    Arc<dyn Fn(ChildAgentConfig) -> BoxFuture<'static, Result<Agent>> + Send + Sync>;
+pub type AgentBuilderFn = Arc<dyn Fn(ChildAgentConfig) -> BoxFuture<'static, Result<Agent>> + Send + Sync>;
 
 /// Configuration for [`make_subagent`].
 #[derive(Clone)]
@@ -413,7 +416,11 @@ where
     Opt<T>: Clone,
 {
     let names: Vec<String> = choice.options.iter().map(|o| o.name.clone()).collect();
-    let described: Vec<&Opt<T>> = choice.options.iter().filter(|o| !o.description.is_empty()).collect();
+    let described: Vec<&Opt<T>> = choice
+        .options
+        .iter()
+        .filter(|o| !o.description.is_empty())
+        .collect();
     let mut description = base.to_owned();
     if !described.is_empty() {
         let lines: Vec<String> = choice
@@ -501,7 +508,10 @@ fn describe_roles(base: &str, presets: &BTreeMap<String, Preset>) -> String {
             format!("- {name}: {desc}")
         })
         .collect();
-    format!("{base}\n\nAvailable subagents (agent_type):\n{}", lines.join("\n"))
+    format!(
+        "{base}\n\nAvailable subagents (agent_type):\n{}",
+        lines.join("\n")
+    )
 }
 
 // --- the tool ---------------------------------------------------------------------------------
@@ -517,6 +527,14 @@ pub struct SubagentTool {
     context: ContextAxis,
     builder: AgentBuilderFn,
     max_depth: u32,
+}
+
+impl std::fmt::Debug for SubagentTool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SubagentTool")
+            .field("spec", &self.spec)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Build a delegation tool whose schema is derived from the configured axis modes.
@@ -603,8 +621,8 @@ impl SubagentTool {
             }
         }
 
-        let overriding_instructions = !matches!(self.instructions, InstructionsMode::Fixed(_))
-            && raw.contains_key("instructions");
+        let overriding_instructions =
+            !matches!(self.instructions, InstructionsMode::Fixed(_)) && raw.contains_key("instructions");
         let agent_type = match requested_type {
             Some(t) => Some(t.to_owned()),
             None if overriding_instructions => None,
@@ -647,16 +665,9 @@ impl SubagentTool {
             (ToolsMode::Choice(choice), None, Some(allowed)) => match preset.and_then(|p| p.tools.clone()) {
                 Some(preset_tools) => {
                     let values: Vec<String> = allowed.iter().map(|n| choice.value_or_name(n)).collect();
-                    Some(
-                        preset_tools
-                            .into_iter()
-                            .filter(|t| values.contains(t))
-                            .collect(),
-                    )
+                    Some(preset_tools.into_iter().filter(|t| values.contains(t)).collect())
                 }
-                None if choice.multiple => {
-                    Some(allowed.iter().map(|n| choice.value_or_name(n)).collect())
-                }
+                None if choice.multiple => Some(allowed.iter().map(|n| choice.value_or_name(n)).collect()),
                 None => None,
             },
             (ToolsMode::Fixed(Fixed(value)), _, _) => match preset.and_then(|p| p.tools.clone()) {
@@ -841,7 +852,10 @@ pub fn render_context(parent: &[Message], last_n: Option<i64>) -> String {
         let start = lines.len().saturating_sub(last_n as usize);
         lines = lines.split_off(start);
     }
-    lines.join("\n").replace("</parent_context>", "<\\/parent_context>").replace("<parent_context>", "<\\parent_context>")
+    lines
+        .join("\n")
+        .replace("</parent_context>", "<\\/parent_context>")
+        .replace("<parent_context>", "<\\parent_context>")
 }
 
 /// Wrap a rendered transcript and the task into one prompt (`context: no_tools`).
@@ -871,7 +885,11 @@ impl Tool for SubagentTool {
 
         let depth = match ctx.agent.state().get(DEPTH_STATE_KEY) {
             None => i64::from(self.max_depth),
-            Some(value) => value.as_f64().filter(|n| n.is_finite()).map(|n| n as i64).unwrap_or(0),
+            Some(value) => value
+                .as_f64()
+                .filter(|n| n.is_finite())
+                .map(|n| n as i64)
+                .unwrap_or(0),
         };
         if depth <= 0 {
             return Ok(create_error_result(
@@ -900,7 +918,10 @@ impl Tool for SubagentTool {
 
         let prompt = match spec.context {
             ContextMode::None => vec![Message::user(&spec.task)],
-            ContextMode::All => with_history(&spec.task, fork_messages(&ctx.agent.messages(), spec.last_messages)),
+            ContextMode::All => with_history(
+                &spec.task,
+                fork_messages(&ctx.agent.messages(), spec.last_messages),
+            ),
             ContextMode::NoTools => vec![Message::user(with_context(
                 &spec.task,
                 &render_context(&ctx.agent.messages(), spec.last_messages),
@@ -946,4 +967,446 @@ fn subagent_error(message: &str, tool_use_id: &str) -> ToolResultBlock {
 
 fn subagent_error_raw(message: &str, tool_use_id: &str) -> ToolResultBlock {
     create_error_result(message, tool_use_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use strands_agents::agent::InvocationState;
+    use strands_agents::test_support::{MockMessageModel, MockResponse};
+    use strands_agents::types::{ToolUse, ToolUseBlock};
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+
+    type Captured = Arc<Mutex<Vec<AgentSpec>>>;
+
+    fn mock(text: &str) -> Arc<MockMessageModel> {
+        MockMessageModel::shared(vec![MockResponse::message(Message::assistant(text))])
+    }
+
+    /// A builder that records every spec and answers with `reply`.
+    fn recording_builder(reply: &str) -> (AgentBuilderFn, Captured, Arc<MockMessageModel>) {
+        let specs: Captured = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(reply);
+        let (seen, child_model) = (specs.clone(), model.clone());
+        let builder: AgentBuilderFn = Arc::new(move |spec: ChildAgentConfig| {
+            let (seen, child_model) = (seen.clone(), child_model.clone());
+            Box::pin(async move {
+                seen.lock().unwrap().push(spec);
+                Agent::builder().model_arc(child_model).build().await
+            })
+        });
+        (builder, specs, model)
+    }
+
+    async fn parent_agent(messages: Vec<Message>) -> Agent {
+        Agent::builder()
+            .model_arc(mock("parent"))
+            .messages(messages)
+            .build()
+            .await
+            .unwrap()
+    }
+
+    fn ctx_for(agent: &Agent, input: Value) -> ToolContext {
+        ToolContext::new(
+            ToolUse {
+                name: "subagent".to_owned(),
+                tool_use_id: "t1".to_owned(),
+                input,
+            },
+            agent.clone(),
+            InvocationState::default(),
+            CancellationToken::new(),
+        )
+    }
+
+    fn options(builder: AgentBuilderFn) -> MakeSubagentOptions {
+        let mut options = MakeSubagentOptions::new(builder);
+        options.inherited_tools = vec!["read".to_owned(), "shell".to_owned()];
+        options
+    }
+
+    fn properties(tool: &SubagentTool) -> Map<String, Value> {
+        tool.spec().input_schema.clone().unwrap()["properties"]
+            .as_object()
+            .unwrap()
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn derives_the_expected_parameters_from_the_axis_modes() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.model = ModelMode::Choice(Choice::of_names(["fast", "smart"], false));
+        opts.context = ContextAxis::Choice(Choice::multiple(
+            CONTEXT_MODES.iter().map(|m| Opt::new(m.as_str(), *m)).collect(),
+        ));
+        let tool = make_subagent(opts).unwrap();
+        let props = properties(&tool);
+        assert_eq!(
+            props.keys().cloned().collect::<Vec<_>>(),
+            [
+                "task",
+                "instructions",
+                "tools",
+                "model",
+                "context",
+                "last_messages"
+            ]
+        );
+        assert_eq!(props["task"]["description"], json!(TASK_DESCRIPTION));
+        assert_eq!(
+            props["instructions"],
+            json!({ "type": "string", "description": INSTRUCTIONS_DESCRIPTION })
+        );
+        assert_eq!(props["tools"]["type"], json!("array"));
+        assert_eq!(props["tools"]["items"]["enum"], json!(["read", "shell"]));
+        assert_eq!(props["model"]["enum"], json!(["fast", "smart"]));
+        assert_eq!(props["last_messages"]["type"], json!("integer"));
+        assert_eq!(
+            tool.spec().input_schema.clone().unwrap()["required"],
+            json!(["task"])
+        );
+    }
+
+    #[tokio::test]
+    async fn drops_parameters_for_fixed_and_inherit_axes() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.instructions = InstructionsMode::Fixed(Fixed(Some("pinned".to_owned())));
+        opts.tools = Some(ToolsMode::Inherit(Inherit));
+        opts.model = ModelMode::Inherit(Inherit);
+        let tool = make_subagent(opts).unwrap();
+        assert_eq!(properties(&tool).keys().cloned().collect::<Vec<_>>(), ["task"]);
+    }
+
+    #[tokio::test]
+    async fn adds_an_agent_type_enum_and_lists_the_roles_from_presets() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.presets.insert("generalist".to_owned(), Preset::generalist());
+        let tool = make_subagent(opts).unwrap();
+        let props = properties(&tool);
+        assert_eq!(props["agent_type"]["enum"], json!(["generalist"]));
+        assert_eq!(props["agent_type"]["description"], json!(AGENT_TYPE_DESCRIPTION));
+        assert_eq!(
+            tool.description(),
+            format!(
+                "{BASE_DESCRIPTION}\n\nAvailable subagents (agent_type):\n- generalist: a general-purpose agent for a focused subtask that runs in its own context"
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_a_misconfigured_tools_choice_at_construction() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut empty = options(builder.clone());
+        empty.tools = Some(ToolsMode::Choice(Choice::multiple(Vec::new())));
+        assert_eq!(
+            make_subagent(empty).unwrap_err().to_string(),
+            "tools=Choice([]) offers no options; use Fixed([]) for a toolless child, or Inherit()."
+        );
+
+        let mut single = options(builder);
+        single.tools = Some(ToolsMode::Choice(Choice::of_names(["read"], false)));
+        assert_eq!(
+            make_subagent(single).unwrap_err().to_string(),
+            "tools=Choice(...) must be multiple=true; a subagent selects a subset of tools."
+        );
+    }
+
+    #[tokio::test]
+    async fn omits_last_messages_when_the_only_context_mode_is_none() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder.clone());
+        opts.context = ContextAxis::Choice(Choice::new(vec![Opt::new("none", ContextMode::None)]));
+        assert!(!properties(&make_subagent(opts).unwrap()).contains_key("last_messages"));
+
+        let mut history = options(builder);
+        history.context = ContextAxis::Choice(Choice::new(vec![Opt::new("no_tools", ContextMode::NoTools)]));
+        assert!(properties(&make_subagent(history).unwrap()).contains_key("last_messages"));
+    }
+
+    #[tokio::test]
+    async fn renders_per_option_descriptions_into_the_parameter_description() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.model = ModelMode::Choice(Choice::new(vec![
+            Opt::new("fast", "model-a".to_owned()).with_description("cheap"),
+            Opt::new("smart", "model-b".to_owned()),
+        ]));
+        let props = properties(&make_subagent(opts).unwrap());
+        assert_eq!(
+            props["model"]["description"],
+            json!(format!("{MODEL_DESCRIPTION}\nOptions:\n- fast: cheap\n- smart: "))
+        );
+    }
+
+    #[tokio::test]
+    async fn builds_the_child_from_the_spec_and_returns_its_output() {
+        let (builder, specs, _) = recording_builder("child says hi");
+        let tool = make_subagent(options(builder)).unwrap();
+        let parent = parent_agent(vec![]).await;
+        let result = tool
+            .invoke(ctx_for(
+                &parent,
+                json!({ "task": "do it", "instructions": "be brief" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(result.text(), "child says hi");
+        let spec = specs.lock().unwrap()[0].clone();
+        assert_eq!(spec.task, "do it");
+        assert_eq!(spec.instructions.as_deref(), Some("be brief"));
+        assert_eq!(spec.tools, Some(vec!["read".to_owned(), "shell".to_owned()]));
+        assert_eq!(spec.context, ContextMode::None);
+    }
+
+    #[tokio::test]
+    async fn rejects_an_off_schema_agent_type() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.presets.insert("generalist".to_owned(), Preset::generalist());
+        let tool = make_subagent(opts).unwrap();
+        let err = tool
+            .resolve_spec(json!({ "task": "t", "agent_type": "nope" }).as_object().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "Unknown agent_type \"nope\"; valid values: generalist.");
+    }
+
+    #[tokio::test]
+    async fn lets_ad_hoc_instructions_suppress_the_default_preset() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.presets.insert("generalist".to_owned(), Preset::generalist());
+        let tool = make_subagent(opts).unwrap();
+        let spec = tool
+            .resolve_spec(
+                json!({ "task": "t", "instructions": "custom" })
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(spec.agent_type, None);
+        assert_eq!(spec.instructions.as_deref(), Some("custom"));
+
+        let default = tool
+            .resolve_spec(json!({ "task": "t" }).as_object().unwrap())
+            .unwrap();
+        assert_eq!(default.agent_type.as_deref(), Some("generalist"));
+        assert_eq!(default.instructions.as_deref(), Some(GENERALIST_INSTRUCTIONS));
+    }
+
+    #[tokio::test]
+    async fn clamps_and_coerces_the_tools_argument() {
+        let (builder, _, _) = recording_builder("ok");
+        let tool = make_subagent(options(builder)).unwrap();
+        let clamped = tool
+            .resolve_spec(
+                json!({ "task": "t", "tools": ["read", "rm"] })
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(clamped.tools, Some(vec!["read".to_owned()]));
+
+        let scalar = tool
+            .resolve_spec(json!({ "task": "t", "tools": "shell" }).as_object().unwrap())
+            .unwrap();
+        assert_eq!(scalar.tools, Some(vec!["shell".to_owned()]));
+
+        let malformed = tool
+            .resolve_spec(json!({ "task": "t", "tools": 7 }).as_object().unwrap())
+            .unwrap();
+        assert_eq!(malformed.tools, Some(Vec::<String>::new()));
+    }
+
+    #[tokio::test]
+    async fn ignores_an_off_enum_choice_value_and_a_fixed_axis_argument() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.model = ModelMode::Fixed(Fixed(Some("pinned-model".to_owned())));
+        let tool = make_subagent(opts).unwrap();
+        let spec = tool
+            .resolve_spec(json!({ "task": "t", "model": "sneaky" }).as_object().unwrap())
+            .unwrap();
+        assert_eq!(spec.model.as_deref(), Some("pinned-model"));
+    }
+
+    #[tokio::test]
+    async fn maps_a_choice_name_back_to_its_value() {
+        let (builder, _, _) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.model = ModelMode::Choice(Choice::new(vec![Opt::new("fast", "model-a".to_owned())]));
+        let tool = make_subagent(opts).unwrap();
+        let spec = tool
+            .resolve_spec(json!({ "task": "t", "model": "fast" }).as_object().unwrap())
+            .unwrap();
+        assert_eq!(spec.model.as_deref(), Some("model-a"));
+    }
+
+    #[tokio::test]
+    async fn starts_the_child_fresh_under_context_none() {
+        let (builder, _, child) = recording_builder("ok");
+        let tool = make_subagent(options(builder)).unwrap();
+        let parent = parent_agent(vec![Message::user("earlier"), Message::assistant("answer")]).await;
+        tool.invoke(ctx_for(&parent, json!({ "task": "fresh task" })))
+            .await
+            .unwrap();
+        let (messages, _) = child.calls()[0].clone();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].text(), "fresh task");
+    }
+
+    #[tokio::test]
+    async fn forks_the_parents_messages_under_context_all() {
+        let (builder, _, child) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.context = ContextAxis::Fixed(Fixed(Some(ContextMode::All)));
+        let tool = make_subagent(opts).unwrap();
+        let parent = parent_agent(vec![Message::user("earlier"), Message::assistant("answer")]).await;
+        tool.invoke(ctx_for(&parent, json!({ "task": "next" })))
+            .await
+            .unwrap();
+        let (messages, _) = child.calls()[0].clone();
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].text(), "earlier");
+        assert_eq!(messages[2].text(), format!("{FORK_PREAMBLE}\n\nnext"));
+        assert_eq!(messages[2].role, Role::User);
+    }
+
+    #[tokio::test]
+    async fn drops_in_flight_tool_calls_and_reasoning_under_context_all() {
+        let unanswered = Message::new(
+            Role::Assistant,
+            vec![
+                ContentBlock::text("thinking out loud"),
+                ContentBlock::ToolUse(ToolUseBlock {
+                    tool_use_id: "pending".to_owned(),
+                    name: "read".to_owned(),
+                    input: json!({}),
+                    reasoning_signature: None,
+                }),
+            ],
+        );
+        let forked = fork_messages(&[Message::user("hi"), unanswered], None);
+        assert_eq!(forked.len(), 2);
+        assert_eq!(forked[1].content.len(), 1);
+        assert_eq!(forked[1].text(), "thinking out loud");
+    }
+
+    #[tokio::test]
+    async fn sends_the_bare_task_under_context_all_when_the_parent_is_empty() {
+        let messages = with_history("solo", Vec::new());
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].text(), "solo");
+    }
+
+    #[tokio::test]
+    async fn keeps_the_tail_with_last_messages_under_context_all() {
+        let history = vec![
+            Message::user("one"),
+            Message::assistant("two"),
+            Message::user("three"),
+            Message::assistant("four"),
+        ];
+        let forked = fork_messages(&history, Some(2));
+        assert_eq!(
+            forked.iter().map(Message::text).collect::<Vec<_>>(),
+            ["three", "four"]
+        );
+    }
+
+    #[tokio::test]
+    async fn renders_a_block_under_context_no_tools() {
+        let (builder, _, child) = recording_builder("ok");
+        let mut opts = options(builder);
+        opts.context = ContextAxis::Fixed(Fixed(Some(ContextMode::NoTools)));
+        let tool = make_subagent(opts).unwrap();
+        let parent = parent_agent(vec![
+            Message::user("line one\nline two"),
+            Message::assistant("reply"),
+        ])
+        .await;
+        tool.invoke(ctx_for(&parent, json!({ "task": "go" })))
+            .await
+            .unwrap();
+        let (messages, _) = child.calls()[0].clone();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            messages[0].text(),
+            format!(
+                "<parent_context>\nuser: line one\n  line two\nassistant: reply\n</parent_context>\n\n{CONTEXT_PREAMBLE}\n\ngo"
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn strips_a_nested_framing_under_context_no_tools() {
+        let nested = format!(
+            "<parent_context>\nuser: inner\n</parent_context>\n\n{CONTEXT_PREAMBLE}\n\nthe real task"
+        );
+        let rendered = render_context(&[Message::user(nested)], None);
+        assert_eq!(rendered, "user: the real task");
+    }
+
+    #[tokio::test]
+    async fn counts_rendered_entries_for_last_messages_under_context_no_tools() {
+        let history = vec![
+            Message::user("one"),
+            Message::assistant("two"),
+            Message::user("three"),
+        ];
+        assert_eq!(render_context(&history, Some(1)), "user: three");
+    }
+
+    #[tokio::test]
+    async fn refuses_once_the_budget_is_exhausted_without_building_a_child() {
+        let (builder, specs, _) = recording_builder("ok");
+        let tool = make_subagent(options(builder)).unwrap();
+        let parent = parent_agent(vec![]).await;
+        parent.state().set(DEPTH_STATE_KEY, 0);
+        let result = tool
+            .invoke(ctx_for(&parent, json!({ "task": "t" })))
+            .await
+            .unwrap();
+        assert_eq!(
+            result.text(),
+            "Error: Delegation depth limit reached (2 levels); you cannot delegate further. Complete this task yourself instead of calling subagent again."
+        );
+        assert!(specs.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn starts_a_parent_that_never_delegated_at_max_depth() {
+        let (builder, _, _) = recording_builder("ok");
+        let tool = make_subagent(options(builder)).unwrap();
+        let parent = parent_agent(vec![]).await;
+        assert!(parent.state().get(DEPTH_STATE_KEY).is_none());
+        let result = tool
+            .invoke(ctx_for(&parent, json!({ "task": "t" })))
+            .await
+            .unwrap();
+        assert_eq!(result.text(), "ok");
+    }
+
+    #[tokio::test]
+    async fn turns_a_failed_build_into_an_error_result() {
+        let builder: AgentBuilderFn = Arc::new(|_| Box::pin(async { Err(Error::other("boom")) }));
+        let tool = make_subagent(options(builder)).unwrap();
+        let parent = parent_agent(vec![]).await;
+        let result = tool
+            .invoke(ctx_for(&parent, json!({ "task": "t" })))
+            .await
+            .unwrap();
+        assert!(
+            result.text().starts_with("Error: Subagent error: "),
+            "got {}",
+            result.text()
+        );
+    }
 }
