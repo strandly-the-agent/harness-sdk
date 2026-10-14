@@ -2080,4 +2080,305 @@ mod tests {
             .expect_err("reasoning block without content must fail");
         assert!(matches!(error, Error::Model { .. }), "got {error:?}");
     }
+
+    fn auto_cache(messages_ttl: Option<CacheSection>) -> BedrockModelConfig {
+        let mut config = claude();
+        with_cache(
+            &mut config,
+            CacheConfig {
+                strategy: Some(CacheStrategy::Auto),
+                messages_ttl,
+                ..Default::default()
+            },
+        );
+        config
+    }
+
+    fn cp_block(ttl: Option<&str>) -> ContentBlock {
+        ContentBlock::CachePoint(CachePointBlock {
+            cache_type: Default::default(),
+            ttl: ttl.map(str::to_owned),
+        })
+    }
+
+    fn doc_block(name: &str, format: crate::types::DocumentFormat) -> ContentBlock {
+        ContentBlock::Document(DocumentBlock {
+            name: name.to_owned(),
+            format,
+            source: DocumentSource::Bytes(vec![1]),
+            citations: None,
+            context: None,
+        })
+    }
+
+    fn img_block(format: crate::types::ImageFormat, source: ImageSource) -> ContentBlock {
+        ContentBlock::Image(ImageBlock { format, source })
+    }
+
+    fn block_tag(block: &bt::ContentBlock) -> String {
+        match block {
+            bt::ContentBlock::Text(text) => format!("text:{text}"),
+            bt::ContentBlock::CachePoint(point) => match point.ttl() {
+                Some(ttl) => format!("cachePoint:{}", ttl.as_str()),
+                None => "cachePoint".to_owned(),
+            },
+            bt::ContentBlock::Document(doc) => format!("document:{}", doc.name()),
+            bt::ContentBlock::Image(image) => format!("image:{}", image.format().as_str()),
+            bt::ContentBlock::ToolResult(_) => "toolResult".to_owned(),
+            bt::ContentBlock::ReasoningContent(_) => "reasoning".to_owned(),
+            bt::ContentBlock::GuardContent(guard) => match guard {
+                bt::GuardrailConverseContentBlock::Text(text) => format!("guardText:{}", text.text()),
+                bt::GuardrailConverseContentBlock::Image(image) => {
+                    format!("guardImage:{}", image.format().as_str())
+                }
+                other => format!("guardOther:{other:?}"),
+            },
+            other => format!("other:{other:?}"),
+        }
+    }
+
+    fn tags(request: &FormattedRequest, index: usize) -> Vec<String> {
+        request.messages[index].content().iter().map(block_tag).collect()
+    }
+
+    #[test]
+    fn replaces_a_leading_caller_placed_cache_point_with_automatic_placement() {
+        let config = auto_cache(None);
+        let messages = [user(vec![cp_block(None), ContentBlock::text("durable ask")])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["text:durable ask", "cachePoint"]);
+    }
+
+    #[test]
+    fn leaves_a_message_that_was_only_a_cache_point_empty() {
+        let config = auto_cache(None);
+        let request = format(&config, &[user(vec![cp_block(None)])], &StreamOptions::default());
+        assert!(tags(&request, 0).is_empty());
+    }
+
+    #[test]
+    fn honors_a_cache_point_the_caller_placed_in_the_last_user_message() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(None),
+            ContentBlock::text("<context-status>rebuilt each call</context-status>"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:durable ask",
+                "cachePoint",
+                "text:<context-status>rebuilt each call</context-status>",
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_only_the_first_of_three_cache_points_and_gives_it_the_configured_ttl() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(None),
+            ContentBlock::text("per-call"),
+            cp_block(None),
+            ContentBlock::text("more per-call"),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:durable ask",
+                "cachePoint:1h",
+                "text:per-call",
+                "text:more per-call",
+            ]
+        );
+    }
+
+    #[test]
+    fn relocates_an_honored_cache_point_over_the_adjacent_document_run_only() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze these"),
+            doc_block("earlier", crate::types::DocumentFormat::Md),
+            ContentBlock::text("notes"),
+            doc_block("adjacent", crate::types::DocumentFormat::Md),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:analyze these",
+                "document:earlier",
+                "text:notes",
+                "cachePoint",
+                "document:adjacent",
+            ]
+        );
+    }
+
+    #[test]
+    fn still_strips_cache_points_in_earlier_messages() {
+        let config = auto_cache(None);
+        let messages = [
+            user(vec![ContentBlock::text("old ask"), cp_block(None)]),
+            Message::new(Role::Assistant, vec![ContentBlock::text("reply")]),
+            user(vec![ContentBlock::text("new ask"), cp_block(None)]),
+        ];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["text:old ask"]);
+        assert_eq!(tags(&request, 1), ["text:reply"]);
+        assert_eq!(tags(&request, 2), ["text:new ask", "cachePoint"]);
+    }
+
+    #[test]
+    fn applies_the_configured_messages_ttl_to_an_honored_cache_point_without_one() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(None),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint:1h", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn does_not_forward_an_empty_configured_messages_ttl() {
+        let config = auto_cache(Some(CacheSection::Ttl(String::new())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(Some("1h")),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn normalizes_the_ttl_of_a_relocated_cache_point() {
+        let config = auto_cache(Some(CacheSection::Ttl("5m".into())));
+        let messages = [user(vec![
+            ContentBlock::text("analyze"),
+            doc_block("d", crate::types::DocumentFormat::Md),
+            cp_block(Some("1h")),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:analyze", "cachePoint:5m", "document:d", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn normalizes_a_hand_placed_ttl_to_the_configured_one() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(Some("5m")),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint:1h", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn drops_a_hand_placed_ttl_when_no_messages_ttl_is_configured() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("durable ask"),
+            cp_block(Some("1h")),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:durable ask", "cachePoint", "text:per-call"]
+        );
+    }
+
+    #[test]
+    fn applies_the_configured_messages_ttl_over_a_null_ttl_on_the_caller_point() {
+        let config = auto_cache(Some(CacheSection::Ttl("1h".into())));
+        let messages = [user(vec![ContentBlock::text("durable ask"), cp_block(None)])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["text:durable ask", "cachePoint:1h"]);
+    }
+
+    #[test]
+    fn relocates_an_honored_cache_point_ahead_of_a_directly_preceding_non_pdf_document() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze this"),
+            doc_block("readme", crate::types::DocumentFormat::Md),
+            cp_block(None),
+            ContentBlock::text("per-call"),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            [
+                "text:analyze this",
+                "cachePoint",
+                "document:readme",
+                "text:per-call",
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_relocate_an_honored_cache_point_a_document_does_not_directly_precede() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze this"),
+            doc_block("readme", crate::types::DocumentFormat::Md),
+            ContentBlock::text("notes"),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:analyze this", "document:readme", "text:notes", "cachePoint",]
+        );
+    }
+
+    #[test]
+    fn leaves_an_honored_cache_point_after_a_pdf_document() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            ContentBlock::text("analyze this"),
+            doc_block("report", crate::types::DocumentFormat::Pdf),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(
+            tags(&request, 0),
+            ["text:analyze this", "document:report", "cachePoint"]
+        );
+    }
+
+    #[test]
+    fn drops_an_honored_cache_point_when_a_non_pdf_document_leads_the_message() {
+        let config = auto_cache(None);
+        let messages = [user(vec![
+            doc_block("readme", crate::types::DocumentFormat::Md),
+            cp_block(None),
+        ])];
+        let request = format(&config, &messages, &StreamOptions::default());
+        assert_eq!(tags(&request, 0), ["document:readme"]);
+    }
 }
