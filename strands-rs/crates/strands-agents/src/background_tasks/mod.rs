@@ -434,7 +434,11 @@ impl TaskRegistry {
         task_id: &str,
         mutate: impl FnOnce(&mut BackgroundTask),
     ) -> Option<BackgroundTask> {
-        self.update_if(task_id, |task| task.status == BackgroundTaskStatus::Working, mutate)
+        self.update_if(
+            task_id,
+            |task| task.status == BackgroundTaskStatus::Working,
+            mutate,
+        )
     }
 
     fn update_if(
@@ -675,7 +679,10 @@ impl BackgroundTasks {
             .cancels
             .lock()
             .insert(task.task_id.clone(), cancel.clone());
-        self.registry.submissions.lock().insert(submission, task.task_id.clone());
+        self.registry
+            .submissions
+            .lock()
+            .insert(submission, task.task_id.clone());
         self.persist(agent);
 
         let registry = Arc::clone(&self.registry);
@@ -715,11 +722,9 @@ impl BackgroundTasks {
             };
             let (result, failure, keep_result, error) = match outcome {
                 Some(Ok(result)) => {
-                    let failure = (result.status == ToolResultStatus::Error).then(|| {
-                        BackgroundTaskFailure {
-                            r#type: BackgroundTaskFailureType::ToolError,
-                            message: result.text(),
-                        }
+                    let failure = (result.status == ToolResultStatus::Error).then(|| BackgroundTaskFailure {
+                        r#type: BackgroundTaskFailureType::ToolError,
+                        message: result.text(),
                     });
                     (result, failure, true, None)
                 }
@@ -1360,7 +1365,11 @@ mod tests {
     }
 
     /// Tool that sleeps `delay_ms`, then records that it finished.
-    fn sleepy_tool(name: &'static str, delay_ms: u64, finished: Arc<std::sync::atomic::AtomicUsize>) -> ToolRef {
+    fn sleepy_tool(
+        name: &'static str,
+        delay_ms: u64,
+        finished: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> ToolRef {
         Arc::new(
             crate::tools::function_tool(name)
                 .description("sleeps")
@@ -1375,7 +1384,13 @@ mod tests {
         )
     }
 
-    fn submit(plugin: &BackgroundTasks, agent: &Agent, tool: ToolRef, tool_use_id: &str, pass_id: &str) -> ToolResultBlock {
+    fn submit(
+        plugin: &BackgroundTasks,
+        agent: &Agent,
+        tool: ToolRef,
+        tool_use_id: &str,
+        pass_id: &str,
+    ) -> ToolResultBlock {
         let tool_use = ToolUse {
             name: tool.name().to_owned(),
             tool_use_id: tool_use_id.to_owned(),
@@ -1425,11 +1440,22 @@ mod tests {
     #[tokio::test]
     async fn max_concurrency_queues_tasks_beyond_the_cap() {
         let agent = crate::agent::test_agent();
-        let plugin =
-            BackgroundTasks::new(BackgroundTasksConfig::default().max_concurrency(1)).unwrap();
+        let plugin = BackgroundTasks::new(BackgroundTasksConfig::default().max_concurrency(1)).unwrap();
         let finished = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        submit(&plugin, &agent, sleepy_tool("a", 60, Arc::clone(&finished)), "tu-1", "pass-1");
-        submit(&plugin, &agent, sleepy_tool("b", 0, Arc::clone(&finished)), "tu-2", "pass-1");
+        submit(
+            &plugin,
+            &agent,
+            sleepy_tool("a", 60, Arc::clone(&finished)),
+            "tu-1",
+            "pass-1",
+        );
+        submit(
+            &plugin,
+            &agent,
+            sleepy_tool("b", 0, Arc::clone(&finished)),
+            "tu-2",
+            "pass-1",
+        );
 
         tokio::time::sleep(Duration::from_millis(20)).await;
         let statuses: Vec<BackgroundTaskStatus> = plugin.list().iter().map(|t| t.status).collect();
@@ -1446,12 +1472,17 @@ mod tests {
     #[tokio::test]
     async fn a_task_that_outlives_its_timeout_fails_with_the_timeout_message() {
         let agent = crate::agent::test_agent();
-        let plugin = BackgroundTasks::new(
-            BackgroundTasksConfig::default().timeout(Duration::from_millis(10)),
-        )
-        .unwrap();
+        let plugin =
+            BackgroundTasks::new(BackgroundTasksConfig::default().timeout(Duration::from_millis(10)))
+                .unwrap();
         let finished = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        submit(&plugin, &agent, sleepy_tool("a", 5_000, finished), "tu-1", "pass-1");
+        submit(
+            &plugin,
+            &agent,
+            sleepy_tool("a", 5_000, finished),
+            "tu-1",
+            "pass-1",
+        );
 
         plugin.wait_for_idle(&agent).await;
         let task = plugin.list().remove(0);
@@ -1514,7 +1545,13 @@ mod tests {
         let agent = crate::agent::test_agent();
         let plugin = BackgroundTasks::new(BackgroundTasksConfig::default()).unwrap();
         let finished = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        submit(&plugin, &agent, sleepy_tool("a", 10_000, Arc::clone(&finished)), "tu-1", "pass-1");
+        submit(
+            &plugin,
+            &agent,
+            sleepy_tool("a", 10_000, Arc::clone(&finished)),
+            "tu-1",
+            "pass-1",
+        );
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         let cancelled = plugin.cancel(&plugin.list()[0].task_id).unwrap();
