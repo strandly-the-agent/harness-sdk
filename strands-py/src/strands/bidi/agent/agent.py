@@ -42,7 +42,6 @@ from ...tools._caller import _ToolCaller
 from ...tools.executors import ConcurrentToolExecutor
 from ...tools.registry import ToolRegistry
 from ...tools.tool_provider import ToolProvider
-from ...tools.watcher import ToolWatcher
 from ...types._snapshot import (
     BIDI_SNAPSHOT_FIELDS,
     BIDI_SNAPSHOT_PRESETS,
@@ -75,6 +74,7 @@ from .loop import _AgentLoop
 
 if TYPE_CHECKING:
     from ..._context_manager.context_manager import ContextManager
+    from ...session.session_manager import SessionManager
     from ...telemetry.metrics import EventLoopMetrics
 
 logger = logging.getLogger(__name__)
@@ -99,32 +99,33 @@ class BidiAgent(LocalAgent):
         system_prompt: str | list[SystemContentBlock] | None = None,
         messages: Messages | None = None,
         record_direct_tool_call: bool = True,
-        load_tools_from_directory: bool = False,
         agent_id: str | None = None,
         name: str | None = None,
         description: str | None = None,
         hooks: list[HookProvider] | None = None,
         state: AgentState | dict | None = None,
+        session_manager: "SessionManager[LocalAgent] | None" = None,
         storage: Storage | None = None,
     ):
         """Initialize bidirectional agent.
 
         Args:
-            model: BidiModel instance, Bedrock model ID string, or None to use Nova Sonic 2.
+            model: BidiModel instance, Bedrock model ID string, or None to use Nova Sonic 2.5.
             tools: Optional list of tools with flexible format support.
             system_prompt: System prompt for conversations as a string or structured content blocks.
                 Structured blocks are retained, while their text is passed to Bidi models as a string.
             messages: Optional conversation history to initialize with.
             record_direct_tool_call: Whether to record direct tool calls in message history.
-            load_tools_from_directory: Whether to load and automatically reload tools in the `./tools/` directory.
             agent_id: Optional ID for the agent, useful for connection management and multi-agent scenarios.
             name: Name of the Agent.
             description: Description of what the Agent does.
             hooks: Optional list of hook providers to register for lifecycle events.
             state: Stateful information for the agent. Can be either an AgentState object, or a json serializable dict.
+            session_manager: Manager for handling agent sessions including conversation history and state.
+                If provided, enables session-based persistence and state management.
             storage: Default storage backend for agent subsystems.
                 When provided, subsystems that do not have their own explicit storage
-                resolve from this value. Each subsystem
+                (e.g., SessionManager) resolve from this value. Each subsystem
                 auto-namespaces under its own prefix to avoid key collisions.
                 Storage specified directly on a subsystem always takes precedence over
                 this agent-level default. Defaults to None.
@@ -142,7 +143,7 @@ class BidiAgent(LocalAgent):
         elif model is None:
             from ..models.bedrock import BedrockNovaSonicModel
 
-            self.model = BedrockNovaSonicModel(model_id="amazon.nova-2-sonic-v1:0")
+            self.model = BedrockNovaSonicModel(model_id="amazon.nova-2-5-sonic")
         else:
             raise TypeError("model must be a BidiModel, string, or None")
 
@@ -159,19 +160,12 @@ class BidiAgent(LocalAgent):
 
         # Tool execution configuration
         self.record_direct_tool_call = record_direct_tool_call
-        self.load_tools_from_directory = load_tools_from_directory
 
         # Initialize tool registry
         self.tool_registry = ToolRegistry()
 
         if tools is not None:
             self.tool_registry.process_tools(tools)
-
-        self.tool_registry.initialize_tools(self.load_tools_from_directory)
-
-        # Initialize tool watcher if directory loading is enabled
-        if self.load_tools_from_directory:
-            self._tool_watcher = ToolWatcher(tool_registry=self.tool_registry)
 
         # Initialize agent state management
         if state is not None:
@@ -196,8 +190,12 @@ class BidiAgent(LocalAgent):
             for hook in hooks:
                 self.hooks.add_hook(hook)
 
-        self._session_manager = None
-        self._session_id = uuid.uuid4().hex[:8]
+        self._session_manager = session_manager
+        if self._session_manager:
+            self._session_id: str = getattr(self._session_manager, "session_id", uuid.uuid4().hex[:8])
+            self.hooks.add_hook(self._session_manager)
+        else:
+            self._session_id = uuid.uuid4().hex[:8]
 
         self._loop = _AgentLoop(self)
 
@@ -453,7 +451,7 @@ class BidiAgent(LocalAgent):
             yield event
 
     async def stop(self) -> None:
-        """End the conversation connection and cleanup all resources.
+        """End the conversation connection and clean up background tasks.
 
         Terminates the streaming connection, cancels background tasks, and
         closes the connection to the model provider.
@@ -548,6 +546,7 @@ class BidiAgent(LocalAgent):
         """Async context manager entry point.
 
         Automatically starts the bidirectional connection when entering the context.
+        Cleans up if startup fails.
 
         Args:
             invocation_state: Optional context to pass to tools during execution.
@@ -556,9 +555,19 @@ class BidiAgent(LocalAgent):
 
         Returns:
             Self for use in the context.
+
+        Raises:
+            RuntimeError: If the agent is already started.
         """
+        if self._started:
+            raise RuntimeError("agent already started | call stop before starting again")
+
         logger.debug("context_manager=<enter> | starting agent")
-        await self.start(invocation_state)
+        try:
+            await self.start(invocation_state)
+        except BaseException:
+            await self.stop()
+            raise
         return self
 
     async def __aexit__(self, *_: Any) -> None:
@@ -585,7 +594,7 @@ class BidiAgent(LocalAgent):
         Example:
             ```python
             # Using default audio settings:
-            model = BedrockNovaSonicModel(model_id="amazon.nova-2-sonic-v1:0")
+            model = BedrockNovaSonicModel(model_id="amazon.nova-2-5-sonic")
             audio_io = AudioIO()
             agent = BidiAgent(model=model, tools=[calculator])
             await agent.run(
@@ -596,7 +605,7 @@ class BidiAgent(LocalAgent):
 
             # Using custom audio config:
             model = BedrockNovaSonicModel(
-                model_id="amazon.nova-2-sonic-v1:0",
+                model_id="amazon.nova-2-5-sonic",
                 audio={
                     "input": {"sample_rate": 16000},
                     "output": {"sample_rate": 24000},
