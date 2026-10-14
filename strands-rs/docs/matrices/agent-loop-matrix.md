@@ -16,7 +16,7 @@
     `Err(Error::Cancelled)` from the executor now maps to `cancelled_result` (step 23) instead of
     propagating; `agent.cancel()` from inside a tool stops the loop after the results are appended.
   - **Structured output** — `InvokeOptions.structured_output_schema` +
-    `Agent::invoke_structured::<T: DeserializeOwned + JsonSchema>()`. `StructuredOutputTool` is
+    `Agent::structured_output::<T: DeserializeOwned + JsonSchema>()`. `StructuredOutputTool` is
     registered for the invocation and removed in **all** exit paths (step 28); a non-toolUse reply
     sets `tool_choice = Tool{strands_structured_output}` for the next cycle **without appending the
     assistant message** (step 13); a second failure → `Error::StructuredOutput("The model failed to

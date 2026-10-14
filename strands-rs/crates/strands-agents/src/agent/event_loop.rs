@@ -22,7 +22,8 @@ use crate::hooks::HookEvent;
 use crate::interrupt::{Interrupt, PendingToolExecution};
 use crate::middleware::{EventSink, EventTarget, InvokeModelContext, InvokeModelStage};
 use crate::models::{
-    AggregatedItem, CountTokensOptions, Model, ModelStreamEvent, StreamAggregatedResult, StreamOptions,
+    AggregatedItem, ContentBlockDelta, CountTokensOptions, Model, ModelStreamEvent, StreamAggregatedResult,
+    StreamOptions,
 };
 use crate::tools::{
     ExecuteToolsInput, StructuredOutputTool, ToolExecutorEvent, EXECUTION_CANCELLED_MESSAGE,
@@ -30,7 +31,7 @@ use crate::tools::{
 };
 use crate::types::{
     ContentBlock, JsonValue, Message, Role, StopReason, ToolChoice, ToolResultBlock, ToolResultContent,
-    ToolResultStatus, ToolUseBlock, Usage,
+    ToolResultStatus, ToolUse, ToolUseBlock, Usage,
 };
 
 /// Error text when `invoke`/`stream` is called while another invocation runs.
@@ -236,6 +237,35 @@ impl AgentStreamEvent {
             _ => None,
         }
     }
+
+    /// The text fragment, when this is a model stream text delta (not reasoning or tool input).
+    pub fn text_delta(&self) -> Option<&str> {
+        match self {
+            Self::ModelStreamUpdate(e) => match &e.event {
+                ModelStreamEvent::ContentBlockDelta {
+                    delta: ContentBlockDelta::Text { text },
+                } => Some(text),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The tool request, when this is the `BeforeToolCall` event.
+    pub fn tool_use(&self) -> Option<&ToolUse> {
+        match self {
+            Self::BeforeToolCall(e) => Some(&e.tool_use),
+            _ => None,
+        }
+    }
+
+    /// The tool's final result block, when this is the `ToolResult` event.
+    pub fn tool_result(&self) -> Option<&ToolResultBlock> {
+        match self {
+            Self::ToolResult(e) => Some(&e.result),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Debug for AgentStreamEvent {
@@ -349,7 +379,7 @@ impl Agent {
     }
 
     /// Run the loop and deserialize the structured output the model produced.
-    pub async fn invoke_structured<T>(&self, input: impl Into<InvokeInput>) -> Result<T>
+    pub async fn structured_output<T>(&self, input: impl Into<InvokeInput>) -> Result<T>
     where
         T: serde::de::DeserializeOwned + schemars::JsonSchema,
     {
@@ -374,6 +404,26 @@ impl Agent {
     /// Panics if called outside a tokio runtime (it spawns the invocation task).
     pub fn stream(&self, input: impl Into<InvokeInput>) -> AgentStream {
         self.stream_with(input, InvokeOptions::default())
+    }
+
+    /// Run the loop, yielding only the assistant's text deltas. Errors are passed through.
+    ///
+    /// ```ignore
+    /// let mut text = agent.stream_text("Write a haiku about Rust.");
+    /// while let Some(chunk) = text.next().await {
+    ///     print!("{}", chunk?);
+    /// }
+    /// ```
+    ///
+    /// # Panics
+    /// Panics if called outside a tokio runtime (it spawns the invocation task).
+    pub fn stream_text(&self, input: impl Into<InvokeInput>) -> impl Stream<Item = Result<String>> + Send {
+        self.stream(input).filter_map(|event| async move {
+            match event {
+                Ok(event) => event.text_delta().map(|text| Ok(text.to_owned())),
+                Err(error) => Some(Err(error)),
+            }
+        })
     }
 
     /// [`Agent::stream`] with options.
@@ -1028,6 +1078,7 @@ async fn invoke_model(
                     stop_data: Some(ModelStopData {
                         message: denied.message.clone(),
                         stop_reason: denied.stop_reason.clone(),
+                        usage: denied.usage.clone(),
                         redaction: None,
                     }),
                     error: None,
@@ -1089,6 +1140,7 @@ async fn invoke_model(
                         stop_data: Some(ModelStopData {
                             message: result.message.clone(),
                             stop_reason: result.stop_reason.clone(),
+                            usage: result.usage.clone(),
                             redaction: result.redaction.as_ref().map(|r| crate::models::Redaction {
                                 user_message: r.user_message.clone(),
                             }),

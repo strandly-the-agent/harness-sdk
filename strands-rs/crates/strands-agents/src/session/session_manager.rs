@@ -377,6 +377,7 @@ mod tests {
             stop_data: Some(ModelStopData {
                 message: Message::assistant("Response"),
                 stop_reason: StopReason::EndTurn,
+                usage: None,
                 redaction: redacted.then(|| Redaction {
                     user_message: "[User input redacted.]".to_owned(),
                 }),

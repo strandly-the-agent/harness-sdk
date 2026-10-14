@@ -73,3 +73,6 @@ installs the exporter).
 - `#[tool]` re-propagates control-flow errors (`Error::Interrupt`, `Error::Cancelled`) instead of
   turning them into error tool results, via `tools::tool_error_or_propagate` (the macro only sees
   `E: Display`, so it downcasts `Box<dyn Any>` to `Error`); this requires `E: 'static`.
+- `AgentStreamEvent` carries accessor shortcuts (`text_delta`, `tool_use`, `tool_result`,
+  `result`) so the common streaming paths don't need a nested destructure; `Agent::stream_text`
+  is the text-only view. `ModelStopData.usage` exposes the call's token usage to after-model hooks.

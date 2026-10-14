@@ -82,6 +82,12 @@ impl AgentResult {
         self.last_message.text()
     }
 
+    /// Structured output deserialized into `T`; `None` when the invocation produced none.
+    pub fn structured_output_as<T: serde::de::DeserializeOwned>(&self) -> Option<crate::error::Result<T>> {
+        let value = self.structured_output.clone()?;
+        Some(serde_json::from_value(value).map_err(crate::error::Error::from))
+    }
+
     /// Wire form: `{ type, stopReason, lastMessage, structuredOutput? }`.
     pub fn to_json(&self) -> JsonValue {
         serde_json::to_value(self).expect("AgentResult is serializable")
@@ -188,5 +194,22 @@ mod tests {
         assert_eq!(r.to_string(), "{\"k\":1}");
         assert_eq!(r.to_json()["type"], "agentResult");
         assert_eq!(r.to_json()["structuredOutput"]["k"], 1);
+    }
+
+    #[test]
+    fn structured_output_as_deserializes_or_errors() {
+        #[derive(serde::Deserialize, PartialEq, Debug)]
+        struct Out {
+            k: u32,
+        }
+
+        let none = result(vec![ContentBlock::text("hi")], None);
+        assert!(none.structured_output_as::<Out>().is_none());
+
+        let ok = result(vec![], Some(serde_json::json!({"k": 1})));
+        assert_eq!(ok.structured_output_as::<Out>().unwrap().unwrap(), Out { k: 1 });
+
+        let bad = result(vec![], Some(serde_json::json!({"k": "nope"})));
+        assert!(bad.structured_output_as::<Out>().unwrap().is_err());
     }
 }

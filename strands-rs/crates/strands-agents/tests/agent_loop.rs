@@ -6,8 +6,8 @@ use futures::StreamExt;
 use serde_json::json;
 use strands_agents::agent::InvokeOptions;
 use strands_agents::hooks::{
-    AfterInvocationEvent, AfterToolsEvent, BeforeInvocationEvent, BeforeToolsEvent, MessageAddedEvent,
-    ModelMessageEvent,
+    AfterInvocationEvent, AfterModelCallEvent, AfterToolsEvent, BeforeInvocationEvent, BeforeToolsEvent,
+    MessageAddedEvent, ModelMessageEvent,
 };
 use strands_agents::test_support::{MockMessageModel, MockResponse};
 use strands_agents::tools::{function_tool, ToolRef};
@@ -380,6 +380,67 @@ async fn stream_ends_with_exactly_one_agent_result() {
     assert_eq!(results, 1);
 }
 
+#[tokio::test]
+async fn text_delta_collects_the_assistant_text() {
+    let agent = Agent::builder()
+        .model(text_model(&["hello world"]))
+        .build()
+        .unwrap();
+
+    let mut stream = agent.stream("hi");
+    let mut text = String::new();
+    while let Some(event) = stream.next().await {
+        if let Some(delta) = event.unwrap().text_delta() {
+            text.push_str(delta);
+        }
+    }
+
+    assert_eq!(text, "hello world");
+}
+
+#[tokio::test]
+async fn stream_text_yields_only_text_deltas() {
+    let agent = Agent::builder()
+        .model(text_model(&["hello world"]))
+        .build()
+        .unwrap();
+
+    let chunks: Vec<String> = agent
+        .stream_text("hi")
+        .map(|chunk| chunk.unwrap())
+        .collect()
+        .await;
+
+    assert_eq!(chunks.concat(), "hello world");
+}
+
+#[tokio::test]
+async fn after_model_call_hook_sees_usage() {
+    let usage = Usage {
+        input_tokens: 3,
+        output_tokens: 4,
+        total_tokens: 7,
+        ..Default::default()
+    };
+    let model = MockMessageModel::shared(vec![MockResponse::with_usage(
+        Message::assistant("hi"),
+        usage.clone(),
+    )]);
+    let seen = Arc::new(Mutex::new(None));
+    let captured = Arc::clone(&seen);
+    let agent = Agent::builder().model(model).build().unwrap();
+    let _ = agent
+        .hooks()
+        .add_sync_callback(move |event: &mut AfterModelCallEvent| {
+            *captured.lock().unwrap() = event.stop_data.as_ref().and_then(|d| d.usage.clone());
+            Ok(())
+        });
+
+    agent.invoke("hi").await.unwrap();
+
+    assert_eq!(*seen.lock().unwrap(), Some(usage));
+}
+
 // ---- limits (§9.4 step 9) -------------------------------------------------
 
 fn tool_use_responses(count: usize, usage: Option<Usage>) -> Arc<MockMessageModel> {
@@ -623,7 +684,7 @@ async fn structured_output_when_the_model_calls_the_tool() {
     )]);
     let agent = Agent::builder().model(model.clone()).build().unwrap();
 
-    let person: Person = agent.invoke_structured("who?").await.unwrap();
+    let person: Person = agent.structured_output("who?").await.unwrap();
 
     assert_eq!(
         person,
@@ -649,7 +710,7 @@ async fn structured_output_is_forced_after_a_plain_text_reply() {
     ]);
     let agent = Agent::builder().model(model.clone()).build().unwrap();
 
-    let person: Person = agent.invoke_structured("who?").await.unwrap();
+    let person: Person = agent.structured_output("who?").await.unwrap();
 
     assert_eq!(person.name, "Ada");
     assert_eq!(model.call_count(), 2);
@@ -673,7 +734,7 @@ async fn structured_output_fails_when_the_model_never_calls_the_tool() {
     ]);
     let agent = Agent::builder().model(model.clone()).build().unwrap();
 
-    let error = agent.invoke_structured::<Person>("who?").await.unwrap_err();
+    let error = agent.structured_output::<Person>("who?").await.unwrap_err();
 
     assert_eq!(
         error.to_string(),

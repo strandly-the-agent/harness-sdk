@@ -10,7 +10,7 @@ use crate::agent::{Agent, AgentResult, InvocationState, InvokeInput};
 use crate::error::Error;
 use crate::models::{Model, ModelStreamEvent};
 use crate::tools::{ToolRef, ToolStreamEvent};
-use crate::types::{ContentBlock, Message, StopReason, ToolResultBlock, ToolUse};
+use crate::types::{ContentBlock, Message, StopReason, ToolResultBlock, ToolUse, Usage};
 
 /// Why a cancellable step was cancelled: `false` (not cancelled), `true`, or a message.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -72,6 +72,9 @@ pub struct ModelStopData {
     pub message: Message,
     /// Stop reason.
     pub stop_reason: StopReason,
+    /// Token usage from the provider's metadata event, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
     /// Input redaction, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redaction: Option<Redaction>,
