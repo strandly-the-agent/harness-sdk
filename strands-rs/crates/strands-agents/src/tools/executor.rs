@@ -235,7 +235,24 @@ async fn execute_tool(
                     }
                 }
                 let span = input.agent.tracer().start_tool_call_span(None, &tool_use);
-                let outcome = run_tool_chain(input, effective_tool.as_ref(), &tool_use, events).await?;
+                let outcome = match run_tool_chain(input, effective_tool.as_ref(), &tool_use, events).await
+                {
+                    Ok(outcome) => outcome,
+                    // Control-flow errors (tool interrupts) must still close the span and meter.
+                    Err(error) => {
+                        let message = error.to_string();
+                        input
+                            .agent
+                            .tracer()
+                            .end_tool_call_span(&span, None, Some(&message));
+                        input.agent.meter().end_tool_call(
+                            &tool_use.name,
+                            crate::telemetry::types::now_ms().saturating_sub(span.start_time()),
+                            false,
+                        );
+                        return Err(error);
+                    }
+                };
                 let success =
                     outcome.1.is_none() && outcome.0.status == crate::types::ToolResultStatus::Success;
                 input.agent.tracer().end_tool_call_span(
