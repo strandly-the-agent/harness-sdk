@@ -190,3 +190,190 @@ impl Agent {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::test_agent_for_session;
+    use serde_json::json;
+
+    #[test]
+    fn exports_snapshot_constants_with_correct_values() {
+        assert_eq!(SNAPSHOT_SCHEMA_VERSION, "1.0");
+        assert_eq!(
+            ALL_SNAPSHOT_FIELDS.map(SnapshotField::key),
+            [
+                "messages",
+                "state",
+                "systemPrompt",
+                "modelState",
+                "interrupts"
+            ]
+        );
+    }
+
+    #[test]
+    fn returns_session_preset_fields_when_preset_is_session() {
+        let fields = TakeSnapshotOptions::default()
+            .preset(SnapshotPreset::Session)
+            .fields();
+        assert_eq!(fields, ALL_SNAPSHOT_FIELDS.to_vec());
+    }
+
+    #[test]
+    fn returns_explicit_fields_when_include_is_specified() {
+        let fields = TakeSnapshotOptions::default()
+            .include(SnapshotField::Messages)
+            .fields();
+        assert_eq!(fields, ALL_SNAPSHOT_FIELDS.to_vec());
+    }
+
+    #[test]
+    fn applies_exclude_after_preset() {
+        let fields = TakeSnapshotOptions::default()
+            .exclude(SnapshotField::Interrupts)
+            .exclude(SnapshotField::ModelState)
+            .fields();
+        assert_eq!(
+            fields,
+            vec![
+                SnapshotField::Messages,
+                SnapshotField::State,
+                SnapshotField::SystemPrompt
+            ]
+        );
+    }
+
+    #[test]
+    fn creates_snapshot_with_session_preset() {
+        let agent = test_agent_for_session("a");
+        agent.set_messages(vec![Message::user("hello")]);
+        agent.state().set("k", json!("v"));
+        agent.model_state().set("m", json!(1));
+
+        let snapshot = agent.take_snapshot(TakeSnapshotOptions::default());
+
+        assert_eq!(snapshot.scope, Scope::Agent);
+        assert_eq!(snapshot.schema_version, "1.0");
+        let messages = snapshot.data["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], json!("user"));
+        assert_eq!(messages[0]["content"], json!([{ "text": "hello" }]));
+        assert_eq!(snapshot.data["state"], json!({ "k": "v" }));
+        assert_eq!(snapshot.data["systemPrompt"], json!("Test prompt"));
+        assert_eq!(snapshot.data["modelState"], json!({ "m": 1 }));
+        assert_eq!(snapshot.data["interrupts"], Value::Null);
+        assert!(snapshot.app_data.is_empty());
+    }
+
+    #[test]
+    fn includes_app_data_in_snapshot() {
+        let agent = test_agent_for_session("a");
+        let mut app_data = Map::new();
+        app_data.insert("custom".to_owned(), json!(7));
+
+        let snapshot = agent.take_snapshot(TakeSnapshotOptions::default().app_data(app_data));
+
+        assert_eq!(snapshot.app_data["custom"], json!(7));
+    }
+
+    #[test]
+    fn excludes_specified_fields() {
+        let agent = test_agent_for_session("a");
+
+        let snapshot =
+            agent.take_snapshot(TakeSnapshotOptions::default().exclude(SnapshotField::Messages));
+
+        assert!(!snapshot.data.contains_key("messages"));
+        assert!(snapshot.data.contains_key("state"));
+    }
+
+    #[test]
+    fn throws_error_for_incompatible_schema_version() {
+        let agent = test_agent_for_session("a");
+        let snapshot = Snapshot {
+            schema_version: "2.0".to_owned(),
+            ..agent.take_snapshot(TakeSnapshotOptions::default())
+        };
+
+        assert_eq!(
+            agent.load_snapshot(&snapshot).unwrap_err().to_string(),
+            "Unsupported snapshot schema version: 2.0. Current version: 1.0"
+        );
+    }
+
+    #[test]
+    fn throws_error_for_wrong_scope() {
+        let agent = test_agent_for_session("a");
+        let snapshot = Snapshot {
+            scope: Scope::MultiAgent,
+            ..agent.take_snapshot(TakeSnapshotOptions::default())
+        };
+
+        assert_eq!(
+            agent.load_snapshot(&snapshot).unwrap_err().to_string(),
+            "Expected snapshot scope 'agent', got 'multiAgent'"
+        );
+    }
+
+    #[test]
+    fn take_snapshot_captures_state_and_load_snapshot_restores_it() {
+        let source = test_agent_for_session("a");
+        source.set_messages(vec![Message::assistant("hi")]);
+        source.state().set("count", json!(2));
+        source.model_state().set("cursor", json!("abc"));
+        let snapshot = source.take_snapshot(TakeSnapshotOptions::default());
+
+        let target = test_agent_for_session("b");
+        target.load_snapshot(&snapshot).unwrap();
+
+        assert_eq!(target.messages(), source.messages());
+        assert_eq!(target.state().to_json(), json!({ "count": 2 }));
+        assert_eq!(target.model_state().to_json(), json!({ "cursor": "abc" }));
+        assert_eq!(target.system_prompt(), source.system_prompt());
+    }
+
+    #[test]
+    fn clears_system_prompt_when_snapshot_has_null_system_prompt() {
+        let agent = test_agent_for_session("a");
+        let mut snapshot = agent.take_snapshot(TakeSnapshotOptions::default());
+        snapshot.data.insert("systemPrompt".to_owned(), Value::Null);
+
+        agent.load_snapshot(&snapshot).unwrap();
+
+        assert_eq!(agent.system_prompt(), None);
+    }
+
+    #[test]
+    fn leaves_fields_unchanged_when_their_keys_are_absent_from_snapshot() {
+        let agent = test_agent_for_session("a");
+        agent.set_messages(vec![Message::user("keep")]);
+        agent.state().set("keep", json!(true));
+        let snapshot = Snapshot {
+            data: Map::new(),
+            ..agent.take_snapshot(TakeSnapshotOptions::default())
+        };
+
+        agent.load_snapshot(&snapshot).unwrap();
+
+        assert_eq!(agent.messages().len(), 1);
+        assert_eq!(agent.messages()[0].text(), "keep");
+        assert_eq!(agent.state().to_json(), json!({ "keep": true }));
+        assert!(agent.system_prompt().is_some());
+    }
+
+    #[test]
+    fn snapshot_survives_json_round_trip() {
+        let agent = test_agent_for_session("a");
+        agent.set_messages(vec![Message::user("hello")]);
+        let snapshot = agent.take_snapshot(TakeSnapshotOptions::default());
+
+        let text = serde_json::to_string(&snapshot).unwrap();
+        let parsed: Snapshot = serde_json::from_str(&text).unwrap();
+
+        let target = test_agent_for_session("b");
+        target.load_snapshot(&parsed).unwrap();
+        assert_eq!(target.messages(), agent.messages());
+        assert_eq!(parsed.created_at, snapshot.created_at);
+    }
+}

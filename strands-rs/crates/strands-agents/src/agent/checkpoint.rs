@@ -207,3 +207,81 @@ pub(crate) fn after_tools_checkpoint(
         cycle_index,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn round_trips_through_to_json_from_json() {
+        let checkpoint = Checkpoint::new(CheckpointPosition::AfterTools, 3);
+
+        let json = checkpoint.to_json();
+        assert_eq!(
+            json,
+            json!({ "position": "afterTools", "cycleIndex": 3, "schemaVersion": "1.0" })
+        );
+        assert_eq!(Checkpoint::from_json(json).unwrap(), checkpoint);
+    }
+
+    #[test]
+    fn always_sets_schema_version_to_the_current_constant() {
+        let json = Checkpoint::new(CheckpointPosition::AfterModel, 0).to_json();
+        assert_eq!(json["schemaVersion"], json!(CHECKPOINT_SCHEMA_VERSION));
+    }
+
+    #[test]
+    fn defaults_cycle_index_to_0() {
+        let checkpoint =
+            Checkpoint::from_json(json!({ "position": "afterModel", "schemaVersion": "1.0" }))
+                .unwrap();
+        assert_eq!(checkpoint.cycle_index, 0);
+    }
+
+    #[test]
+    fn errors_on_schema_version_mismatch() {
+        let error = Checkpoint::from_json(
+            json!({ "position": "afterModel", "schemaVersion": "9.9" }),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Checkpoints with schema version \"9.9\" are not compatible with current version 1.0."
+        );
+    }
+
+    #[test]
+    fn errors_when_schema_version_is_missing() {
+        let error = Checkpoint::from_json(json!({ "position": "afterModel" })).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Checkpoints with schema version \"\" are not compatible with current version 1.0."
+        );
+    }
+
+    #[test]
+    fn ignores_unknown_fields() {
+        let checkpoint = Checkpoint::from_json(json!({
+            "position": "afterTools",
+            "cycleIndex": 1,
+            "schemaVersion": "1.0",
+            "mystery": true
+        }))
+        .unwrap();
+
+        assert_eq!(checkpoint, Checkpoint::new(CheckpointPosition::AfterTools, 1));
+    }
+
+    #[test]
+    fn after_tools_resume_starts_at_the_next_cycle() {
+        assert_eq!(
+            resume_cycle_index(&Checkpoint::new(CheckpointPosition::AfterTools, 2)),
+            3
+        );
+        assert_eq!(
+            resume_cycle_index(&Checkpoint::new(CheckpointPosition::AfterModel, 2)),
+            2
+        );
+    }
+}
