@@ -375,6 +375,12 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
     this._abortController = abortController
     this._client ??= this._createClient()
 
+    const initEvents = this._buildInitializationEvents(options?.systemPrompt, options?.tools, options?.messages)
+    logger.debug(`event_count=<${initEvents.length}> | sending nova sonic initialization events`)
+    // Bedrock does not return response headers until it receives the session start events, so the
+    // initialization events must be sent concurrently with the request rather than after it resolves.
+    const initSent = this._sendNovaEvents(initEvents)
+
     const response = await this._client.send(
       new InvokeModelWithBidirectionalStreamCommand({
         modelId: this._config.modelId as string,
@@ -384,10 +390,7 @@ export class BedrockNovaSonicModel extends BidiModel<BedrockNovaSonicModelConfig
     )
     this._outputStream = response.body
     logger.debug(`region=<${this.region}> | nova sonic bidirectional stream established`)
-
-    const initEvents = this._buildInitializationEvents(options?.systemPrompt, options?.tools, options?.messages)
-    logger.debug(`event_count=<${initEvents.length}> | sending nova sonic initialization events`)
-    await this._sendNovaEvents(initEvents)
+    await initSent
 
     logger.info(`connection_id=<${this._connectionId}> | nova sonic connection established`)
   }
