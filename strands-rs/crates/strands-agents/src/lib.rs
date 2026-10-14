@@ -9,6 +9,8 @@ pub mod context_manager;
 pub mod error;
 pub mod hooks;
 pub mod logging;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod memory;
 pub mod middleware;
 pub mod models;
@@ -37,6 +39,8 @@ pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
 };
+#[cfg(feature = "mcp")]
+pub use mcp::{McpClient, McpServerConfig, McpTool};
 pub use models::Model;
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
