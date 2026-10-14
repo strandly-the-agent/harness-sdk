@@ -204,3 +204,28 @@ async fn a_generated_tool_interrupt_stops_the_loop() {
     assert_eq!(result.interrupts.len(), 1);
     assert_eq!(result.interrupts[0].name, "confirm");
 }
+
+/// Doc comment that the attribute overrides.
+#[tool(name = "search-web", description = "Searches the web.")]
+async fn search(
+    /// Query to search for.
+    query: String,
+) -> String {
+    format!("results for {query}")
+}
+
+#[tokio::test]
+async fn attribute_args_override_name_and_description() {
+    let tool = SearchTool::new();
+    assert_eq!(tool.name(), "search-web");
+    assert_eq!(tool.description(), "Searches the web.");
+}
+
+#[tokio::test]
+async fn parameter_doc_comments_become_schema_descriptions() {
+    let schema = SearchTool::new().spec().input_schema.clone().unwrap();
+    assert_eq!(
+        schema["properties"]["query"]["description"],
+        json!("Query to search for.")
+    );
+}

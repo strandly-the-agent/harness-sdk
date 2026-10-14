@@ -31,8 +31,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 `#[tool]` generates a `WeatherTool` struct (doc comment ⇒ description, parameters ⇒ JSON
-schema) and comes from the default `macros` feature; `FunctionTool::builder` is the
-runtime equivalent (see the `tools_builder` example).
+schema, a doc comment on a parameter ⇒ that property's description) and comes from the
+default `macros` feature. `#[tool(name = "...", description = "...")]` overrides the name
+and description; `FunctionTool::builder` is the runtime equivalent (see the
+`tools_builder` example).
 
 More in `crates/strands-agents/examples/` (`basic`, `tools`, `tools_builder`, `hooks`,
 `streaming`).

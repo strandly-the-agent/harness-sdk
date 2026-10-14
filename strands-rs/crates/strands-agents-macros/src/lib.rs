@@ -7,15 +7,75 @@
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
+use syn::parse::{Parse, ParseStream};
+use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, Attribute, FnArg, ItemFn, Pat, ReturnType, Type};
+use syn::{
+    parse_macro_input, Attribute, Expr, ExprLit, FnArg, ItemFn, Lit, Meta, Pat, ReturnType, Token, Type,
+};
+
+/// Parsed `#[tool(name = "...", description = "...")]` arguments.
+#[derive(Default)]
+struct ToolArgs {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+impl Parse for ToolArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut args = ToolArgs::default();
+        for meta in Punctuated::<Meta, Token![,]>::parse_terminated(input)? {
+            let Meta::NameValue(meta) = &meta else {
+                return Err(syn::Error::new(
+                    meta.span(),
+                    "#[tool] arguments must be `name = \"...\"` or `description = \"...\"`",
+                ));
+            };
+            let Expr::Lit(ExprLit {
+                lit: Lit::Str(value), ..
+            }) = &meta.value
+            else {
+                return Err(syn::Error::new(meta.value.span(), "expected a string literal"));
+            };
+            if meta.path.is_ident("name") {
+                if !is_valid_tool_name(&value.value()) {
+                    return Err(syn::Error::new(
+                        value.span(),
+                        "tool name must be 1-64 characters of [a-zA-Z0-9_-]",
+                    ));
+                }
+                args.name = Some(value.value());
+            } else if meta.path.is_ident("description") {
+                args.description = Some(value.value());
+            } else {
+                return Err(syn::Error::new(
+                    meta.path.span(),
+                    "unknown #[tool] argument; expected `name` or `description`",
+                ));
+            }
+        }
+        Ok(args)
+    }
+}
+
+/// Mirrors `strands_agents::tools::is_valid_tool_name` (no dependency on the SDK crate).
+fn is_valid_tool_name(name: &str) -> bool {
+    (1..=64).contains(&name.len())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
 
 /// Turns a function into a `strands_agents::tools::Tool` implementation.
 ///
 /// The function's doc comment becomes the tool description and its parameters become the
 /// JSON input schema (parameter types must implement `serde::Deserialize` and
-/// `schemars::JsonSchema`). A struct named `<FnNameInPascalCase>Tool` with a `new()`
-/// constructor is generated next to the function.
+/// `schemars::JsonSchema`); a doc comment on a parameter becomes that property's
+/// `description`. A struct named `<FnNameInPascalCase>Tool` with a `new()` constructor is
+/// generated next to the function.
+///
+/// `#[tool(name = "...", description = "...")]` overrides the tool name (1-64 characters
+/// of `[a-zA-Z0-9_-]`) and the description.
 ///
 /// A parameter of type `ToolContext` is passed through from the invocation and excluded
 /// from the schema. A function returning `Result<T, E>` (`E: Display + 'static`) reports
@@ -31,32 +91,39 @@ use syn::{parse_macro_input, Attribute, FnArg, ItemFn, Pat, ReturnType, Type};
 ///
 /// /// Get the current weather for a location.
 /// #[tool]
-/// async fn get_weather(location: String) -> String {
+/// async fn get_weather(
+///     /// City to look up, e.g. "Seattle".
+///     location: String,
+/// ) -> String {
 ///     format!("Weather in {location}: 22C, sunny")
 /// }
 ///
 /// // Register with: Agent::builder().tool(GetWeatherTool::new())
 /// ```
 #[proc_macro_attribute]
-pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as ToolArgs);
     let input_fn = parse_macro_input!(item as ItemFn);
-    match expand(input_fn) {
+    match expand(args, input_fn) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
 }
 
-fn expand(input_fn: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
+fn expand(args: ToolArgs, mut input_fn: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
     let fn_name = input_fn.sig.ident.clone();
     let fn_name_str = fn_name.to_string();
     let struct_name = format_ident!("{}Tool", to_pascal_case(&fn_name_str));
     let args_name = format_ident!("{}ToolArgs", to_pascal_case(&fn_name_str));
     let is_async = input_fn.sig.asyncness.is_some();
-    let description = extract_doc_comment(&input_fn.attrs);
+    let tool_name = args.name.unwrap_or_else(|| fn_name_str.clone());
+    let description = args
+        .description
+        .unwrap_or_else(|| extract_doc_comment(&input_fn.attrs));
 
     let mut fields = Vec::new();
     let mut call_args = Vec::new();
-    for arg in &input_fn.sig.inputs {
+    for arg in &mut input_fn.sig.inputs {
         let FnArg::Typed(pat_type) = arg else {
             return Err(syn::Error::new(
                 arg.span(),
@@ -70,12 +137,19 @@ fn expand(input_fn: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
             ));
         };
         let ident = pat_ident.ident.clone();
+        let docs: Vec<Attribute> = pat_type
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("doc"))
+            .cloned()
+            .collect();
+        pat_type.attrs.retain(|attr| !attr.path().is_ident("doc"));
         let ty = &*pat_type.ty;
         if is_tool_context(ty) {
             call_args.push(quote!(ctx));
             continue;
         }
-        fields.push(quote!(#ident: #ty));
+        fields.push(quote!(#(#docs)* #ident: #ty));
         call_args.push(quote!(args.#ident));
     }
 
@@ -121,7 +195,7 @@ fn expand(input_fn: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
             #[doc = concat!("Creates the `", #fn_name_str, "` tool.")]
             pub fn new() -> Self {
                 Self {
-                    spec: ::strands_agents::types::ToolSpec::new(#fn_name_str, #description)
+                    spec: ::strands_agents::types::ToolSpec::new(#tool_name, #description)
                         .with_input_schema(
                             ::strands_agents::tools::input_schema_for::<#args_name>(),
                         ),

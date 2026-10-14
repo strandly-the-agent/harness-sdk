@@ -70,3 +70,6 @@ installs the exporter).
 - Option/result structs that will grow are `#[non_exhaustive]` and built from `Default` plus
   `with_*` setters (`InvokeOptions::default().with_limits(Limits::default().with_turns(2))`);
   public enums that mirror a provider's wire format are `#[non_exhaustive]` too.
+- `#[tool]` re-propagates control-flow errors (`Error::Interrupt`, `Error::Cancelled`) instead of
+  turning them into error tool results, via `tools::tool_error_or_propagate` (the macro only sees
+  `E: Display`, so it downcasts `Box<dyn Any>` to `Error`); this requires `E: 'static`.
