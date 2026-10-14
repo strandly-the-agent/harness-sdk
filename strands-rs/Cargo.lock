@@ -2358,6 +2358,7 @@ dependencies = [
  "async-trait",
  "futures",
  "parking_lot",
+ "regex",
  "reqwest",
  "schemars",
  "serde",

@@ -5,9 +5,11 @@
 //! [`strands_agents::Agent`]. Every option is overridable.
 
 pub mod defaults;
+pub mod models;
 pub mod prompt;
 pub mod tools;
 
+pub use models::{resolve_model, supports_thinking, supports_web_search, Effort, ModelOption};
 pub use prompt::{build_system_prompt, HARNESS_CONTRACT};
 pub use tools::{edit, make_read, read, write, ReadConfig};
 pub use tools::{exa_web_search, make_exa_web_search, SearchBackend, SearchResult, WebSearchError};
