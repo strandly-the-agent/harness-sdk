@@ -380,6 +380,7 @@ pub(crate) mod test_fixtures {
                 cancel: RwLock::new(CancellationToken::new()),
                 initialized: AsyncMutex::new(false),
                 storage: None,
+                sandbox: None,
                 session_id: RwLock::new(None),
                 memory_manager: None,
                 background_tasks: None,
