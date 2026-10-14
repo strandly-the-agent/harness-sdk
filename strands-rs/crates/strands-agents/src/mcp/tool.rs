@@ -193,10 +193,7 @@ mod tests {
     use serde_json::json;
 
     fn result(content: Vec<ContentBlock>) -> CallToolResult {
-        CallToolResult {
-            content,
-            ..CallToolResult::default()
-        }
+        CallToolResult::success(content)
     }
 
     #[test]
@@ -234,31 +231,14 @@ mod tests {
     #[test]
     fn maps_text_and_image_resources() {
         let data = base64::engine::general_purpose::STANDARD.encode([9u8]);
-        let text = ContentBlock::Resource(rmcp::model::EmbeddedResource {
-            resource: ResourceContents::text("doc body", "file:///doc.txt"),
-            meta: None,
-            annotations: None,
-        });
-        let blob = ContentBlock::Resource(rmcp::model::EmbeddedResource {
-            resource: ResourceContents::BlobResourceContents {
-                uri: "file:///x.png".into(),
-                mime_type: Some("image/png".into()),
-                blob: data,
-                meta: None,
-            },
-            annotations: None,
-            meta: None,
-        });
-        let other = ContentBlock::Resource(rmcp::model::EmbeddedResource {
-            resource: ResourceContents::BlobResourceContents {
-                uri: "file:///x.bin".into(),
-                mime_type: Some("application/octet-stream".into()),
-                blob: "AAAA".into(),
-                meta: None,
-            },
-            annotations: None,
-            meta: None,
-        });
+        let text = ContentBlock::resource(ResourceContents::text("doc body", "file:///doc.txt"));
+        let blob = ContentBlock::resource(
+            ResourceContents::blob(data, "file:///x.png").with_mime_type("image/png"),
+        );
+        let other = ContentBlock::resource(
+            ResourceContents::blob("AAAA", "file:///x.bin")
+                .with_mime_type("application/octet-stream"),
+        );
         let mapped = map_call_tool_result(result(vec![text, blob, other]), "t1");
         assert_eq!(mapped.content[0], ToolResultContent::text("doc body"));
         assert!(matches!(mapped.content[1], ToolResultContent::Image(_)));

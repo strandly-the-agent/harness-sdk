@@ -54,6 +54,7 @@ pub struct ListOptions {
 /// Called after a `tools/list_changed` notification with the previous tool names and the new tools.
 pub type ToolsChangedCallback = Arc<dyn Fn(Vec<String>, Vec<ToolRef>) + Send + Sync>;
 
+#[derive(Debug)]
 struct CompiledFilters {
     allowed: Vec<Regex>,
     rejected: Vec<Regex>,
