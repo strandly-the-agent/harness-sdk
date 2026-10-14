@@ -766,6 +766,7 @@ fn dedup(names: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::injection::InjectionTrigger;
     use crate::memory::types::{ExtractionConfig, ExtractionResult, Extractor, MemoryStore, Metadata};
     use crate::types::{ContentBlock, Role};
     use parking_lot::Mutex as SyncMutex;
@@ -1184,6 +1185,7 @@ mod tests {
                 stores: vec![FakeStore::new("facts").writable().into_ref()],
                 search_tool: None,
                 add_tool: Some(MemoryAddToolConfig::default()),
+                ..Default::default()
             })
             .unwrap(),
         );
@@ -1295,5 +1297,185 @@ mod tests {
             err.to_string(),
             "failed to write 2 of 2 extracted entries\nfacts: write refused\nfacts: write refused"
         );
+    }
+
+    // --- injection + triggers (pass B) ---
+
+    fn user_message(text: &str) -> Message {
+        Message::new(Role::User, vec![ContentBlock::text(text)])
+    }
+
+    fn manager_with_injection(
+        stores: Vec<MemoryStoreRef>,
+        injection: Option<MemoryInjectionConfig>,
+    ) -> Arc<MemoryManager> {
+        MemoryManager::shared(MemoryManagerConfig {
+            stores,
+            search_tool: Some(MemoryToolConfig::default()),
+            add_tool: None,
+            injection,
+            extraction_trigger: None,
+        })
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn inject_folds_a_memory_block_into_the_last_user_message() {
+        let store = FakeStore::new("notes").hits(&["likes tea"]).into_ref();
+        let manager = manager_with_injection(vec![store], Some(MemoryInjectionConfig::default()));
+        let mut messages = vec![user_message("what do I drink?")];
+
+        assert!(manager.inject(&mut messages).await);
+        assert_eq!(messages[0].content.len(), 2);
+        assert_eq!(
+            messages[0].content[1],
+            ContentBlock::text("\n\n<memory>\n<entry source=\"notes\">likes tea</entry>\n</memory>")
+        );
+    }
+
+    #[tokio::test]
+    async fn inject_is_a_no_op_when_disabled_off_turn_or_without_hits() {
+        let hits = || FakeStore::new("notes").hits(&["likes tea"]).into_ref();
+
+        let disabled = manager_with_injection(vec![hits()], None);
+        let mut messages = vec![user_message("hi")];
+        assert!(!disabled.inject(&mut messages).await);
+
+        let user_turn = manager_with_injection(vec![hits()], Some(MemoryInjectionConfig::default()));
+        let mut assistant_turn = vec![Message::assistant("thinking")];
+        assert!(!user_turn.inject(&mut assistant_turn).await);
+
+        let empty = manager_with_injection(
+            vec![FakeStore::new("notes").into_ref()],
+            Some(MemoryInjectionConfig::default()),
+        );
+        let mut messages = vec![user_message("hi")];
+        assert!(!empty.inject(&mut messages).await);
+        assert_eq!(messages[0].content.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn inject_fails_open_when_every_store_search_fails() {
+        let manager = manager_with_injection(
+            vec![FakeStore::new("notes").failing().into_ref()],
+            Some(MemoryInjectionConfig::default()),
+        );
+        let mut messages = vec![user_message("hi")];
+        assert!(!manager.inject(&mut messages).await);
+        assert_eq!(messages[0].content.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn inject_caps_entries_and_passes_the_cap_to_the_store() {
+        let store = Arc::new(FakeStore::new("notes").hits(&["a", "b", "c"]));
+        let manager = manager_with_injection(
+            vec![Arc::clone(&store) as MemoryStoreRef],
+            Some(MemoryInjectionConfig {
+                max_entries: Some(2),
+                trigger: InjectionTrigger::EveryTurn,
+                ..Default::default()
+            }),
+        );
+        let mut messages = vec![user_message("hi"), Message::assistant("prev step")];
+
+        assert!(manager.inject(&mut messages).await);
+        assert_eq!(
+            store.last_options.lock().as_ref().unwrap().max_search_results,
+            Some(2)
+        );
+        let injected = messages[0].content[1].clone();
+        let ContentBlock::Text(text) = injected else {
+            panic!("expected text")
+        };
+        assert_eq!(text.matches("<entry").count(), 2);
+    }
+
+    #[test]
+    fn interval_trigger_rejects_zero_turns_and_fires_every_n() {
+        assert_eq!(
+            ExtractionTrigger::interval(0).unwrap_err().to_string(),
+            "IntervalTrigger: turns must be a positive integer, got 0"
+        );
+        let interval = ExtractionTrigger::interval(2).unwrap();
+        assert!(!interval.fires_on(1));
+        assert!(interval.fires_on(2));
+        assert!(ExtractionTrigger::Invocation.fires_on(1));
+        assert_eq!(
+            ExtractionTrigger::default(),
+            ExtractionTrigger::Interval { turns: 5 }
+        );
+    }
+
+    #[tokio::test]
+    async fn init_agent_registers_the_trigger_and_injection_hooks() {
+        use crate::agent::test_fixtures::test_agent;
+        use crate::hooks::{AfterInvocationEvent, BeforeModelCallEvent, MessageAddedEvent};
+
+        let mut store = FakeStore::new("notes").writable();
+        store.extraction = Some(ExtractionConfig {
+            extractor: Some(Arc::new(FixedExtractor(vec!["fact"]))),
+        });
+        let store = store.into_ref();
+        let manager = manager_with_injection(vec![store], Some(MemoryInjectionConfig::default()));
+        let agent = test_agent();
+
+        manager.init_agent(&agent).await.unwrap();
+
+        assert_eq!(agent.hooks().count::<MessageAddedEvent>(), 1);
+        assert_eq!(agent.hooks().count::<AfterInvocationEvent>(), 1);
+        assert_eq!(agent.hooks().count::<BeforeModelCallEvent>(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_unbound_manager_skips_hook_wiring() {
+        use crate::agent::test_fixtures::test_agent;
+        use crate::hooks::BeforeModelCallEvent;
+
+        let manager = MemoryManager::new(vec![FakeStore::new("notes").hits(&["x"]).into_ref()]).unwrap();
+        let agent = test_agent();
+        manager.init_agent(&agent).await.unwrap();
+        assert_eq!(agent.hooks().count::<BeforeModelCallEvent>(), 0);
+    }
+
+    #[tokio::test]
+    async fn injection_reaches_the_model_and_extraction_runs_after_an_invocation() {
+        use crate::models::Model;
+        use crate::test_support::{MockMessageModel, MockResponse};
+
+        let mut store = FakeStore::new("notes").writable().hits(&["user likes tea"]);
+        store.extraction = Some(ExtractionConfig {
+            extractor: Some(Arc::new(FixedExtractor(vec!["user likes tea"]))),
+        });
+        let store = Arc::new(store);
+        let manager = MemoryManager::shared(MemoryManagerConfig {
+            stores: vec![Arc::clone(&store) as MemoryStoreRef],
+            search_tool: None,
+            add_tool: None,
+            injection: Some(MemoryInjectionConfig::default()),
+            extraction_trigger: Some(ExtractionTrigger::Invocation),
+        })
+        .unwrap();
+        let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("ok"))]);
+        let agent = Agent::builder()
+            .model(Arc::clone(&model) as Arc<dyn Model>)
+            .memory_manager(Arc::clone(&manager))
+            .build()
+            .await
+            .unwrap();
+
+        agent.invoke("what do I drink?").await.unwrap();
+
+        let (sent, _) = model.calls().remove(0);
+        let last = sent.last().unwrap();
+        assert_eq!(last.content.len(), 2, "memory block folded into the user turn");
+        assert!(last
+            .text()
+            .contains("<entry source=\"notes\">user likes tea</entry>"));
+        assert_eq!(
+            agent.messages()[0].content.len(),
+            1,
+            "durable history is untouched"
+        );
+        assert_eq!(store.added.lock().len(), 1, "extraction ran after the invocation");
     }
 }
