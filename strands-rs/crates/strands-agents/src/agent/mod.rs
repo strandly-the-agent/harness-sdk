@@ -1,18 +1,27 @@
-//! The `Agent` handle and invocation types. The event loop lives in `loop.rs` (wave 2).
+//! The `Agent` handle, its builder, and the event loop.
 
+mod builder;
+mod event_loop;
 mod invocation_state;
 mod result;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use tokio::sync::Mutex as AsyncMutex;
+use tokio_util::sync::CancellationToken;
 
-use crate::hooks::HookRegistry;
+use crate::error::Result;
+use crate::hooks::{HookRegistry, InitializedEvent};
 use crate::models::Model;
+use crate::plugins::PluginRegistry;
 use crate::state_store::StateStore;
-use crate::tools::{ToolRef, ToolRegistry};
+use crate::tools::{ToolExecutor, ToolRef, ToolRegistry};
 use crate::types::{ContentBlock, Message, Role, SystemPrompt};
 
+pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
+pub use event_loop::{AgentStream, AgentStreamEvent, InvokeOptions, CONCURRENT_INVOCATION_MESSAGE};
 pub use invocation_state::InvocationState;
 pub use result::AgentResult;
 
@@ -78,6 +87,11 @@ pub(crate) struct AgentInner {
     pub(crate) state: StateStore,
     pub(crate) hooks: HookRegistry,
     pub(crate) tools: RwLock<ToolRegistry>,
+    pub(crate) plugins: PluginRegistry,
+    pub(crate) executor: Arc<dyn ToolExecutor>,
+    pub(crate) invoking: AtomicBool,
+    pub(crate) cancel: RwLock<CancellationToken>,
+    pub(crate) initialized: AsyncMutex<bool>,
 }
 
 /// An agent: a model, a system prompt, tools, and the conversation they share.
@@ -169,6 +183,46 @@ impl Agent {
     pub fn with_tool_registry<R>(&self, f: impl FnOnce(&mut ToolRegistry) -> R) -> R {
         f(&mut self.inner.tools.write())
     }
+
+    /// Plugin registry.
+    pub fn plugins(&self) -> &PluginRegistry {
+        &self.inner.plugins
+    }
+
+    /// The tool executor used by the loop.
+    pub fn tool_executor(&self) -> Arc<dyn ToolExecutor> {
+        Arc::clone(&self.inner.executor)
+    }
+
+    /// Initialize plugins and fire [`InitializedEvent`]. Idempotent.
+    pub async fn initialize(&self) -> Result<()> {
+        let mut initialized = self.inner.initialized.lock().await;
+        if *initialized {
+            return Ok(());
+        }
+        self.inner.plugins.initialize(self).await?;
+        let mut event = InitializedEvent { agent: self.clone() };
+        self.inner.hooks.invoke_callbacks(&mut event).await?;
+        *initialized = true;
+        Ok(())
+    }
+
+    /// Whether an invocation is currently running.
+    pub fn is_invoking(&self) -> bool {
+        self.inner.invoking.load(Ordering::SeqCst)
+    }
+
+    /// Cancel the running invocation. No-op when idle.
+    pub fn cancel(&self) {
+        if self.is_invoking() {
+            self.inner.cancel.read().cancel();
+        }
+    }
+
+    /// Cancellation token of the current (or most recent) invocation.
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.inner.cancel.read().clone()
+    }
 }
 
 #[cfg(test)]
@@ -232,6 +286,11 @@ mod test_fixtures {
                 state: StateStore::new(),
                 hooks: HookRegistry::new(),
                 tools: RwLock::new(ToolRegistry::new()),
+                plugins: PluginRegistry::new(Vec::new()),
+                executor: Arc::new(crate::tools::ConcurrentToolExecutor),
+                invoking: AtomicBool::new(false),
+                cancel: RwLock::new(CancellationToken::new()),
+                initialized: AsyncMutex::new(false),
             }),
         }
     }

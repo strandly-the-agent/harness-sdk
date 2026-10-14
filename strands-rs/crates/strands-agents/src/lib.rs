@@ -18,7 +18,10 @@ pub mod test_support;
 pub mod tools;
 pub mod types;
 
-pub use agent::{Agent, AgentResult, InvocationState, InvokeInput};
+pub use agent::{
+    Agent, AgentBuilder, AgentResult, AgentStream, AgentStreamEvent, InvocationState, InvokeInput,
+    InvokeOptions,
+};
 pub use conversation_manager::{
     ConversationManager, NullConversationManager, ProactiveCompression, ReduceOptions, ReduceTrigger,
     SlidingWindowConfig, SlidingWindowConversationManager,
