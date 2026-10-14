@@ -18,7 +18,13 @@ TS → Rust construct map; [docs/TESTING.md](docs/TESTING.md) the test conventio
 
 ```
 strands-rs/
-├── Cargo.toml                    # workspace (one crate today; harness-rs may join later)
+├── Cargo.toml                    # workspace: strands-agents, strands-agents-macros, strands-harness
+├── crates/strands-agents-macros/ # `#[tool]` attribute macro (feature `macros`)
+├── crates/strands-harness/       # the harness: create_harness(), defaults, prompt, models, builtin tools, plugins
+│   ├── src/{agent,defaults,prompt,models,builtin_tools,memory,interventions}.rs
+│   ├── src/tools/{file_tools,web_fetch,web_search,subagent}.rs
+│   ├── src/plugins/{todos,environment}.rs
+│   └── tests/{prompt_parity,integ_harness}.rs
 ├── crates/strands-agents/
 │   ├── Cargo.toml                # features: bedrock (default)
 │   ├── src/
@@ -26,10 +32,14 @@ strands-rs/
 │   │   ├── error.rs              # one `Error` enum, variant per TS error class
 │   │   ├── types/                # Message, ContentBlock, media, ToolSpec, StopReason, SystemPrompt
 │   │   ├── models/               # Model trait, stream events, stream_aggregated, bedrock, defaults
-│   │   ├── tools/                # Tool trait, ToolContext, FunctionTool, registry, executors
+│   │   ├── tools/                # Tool trait, ToolContext, FunctionTool, registry, executors, vended/shell
 │   │   ├── hooks/                # HookRegistry + every event struct
-│   │   ├── plugins/              # Plugin trait, PluginRegistry, ModelPlugin
+│   │   ├── plugins/              # Plugin trait, PluginRegistry, ModelPlugin, vended/{skills,context_injector}
 │   │   ├── agent/                # Agent handle, builder, event loop, AgentResult, InvocationState
+│   │   ├── storage/              # Storage trait, InMemoryStorage, LocalFileStorage, keyword search
+│   │   ├── context_manager/      # ContextManager ('auto'/'agentic'), offload strategies, stash, retrieval tool
+│   │   ├── background_tasks/     # background tool execution, manage tool, continuation delivery
+│   │   ├── memory/               # MemoryManager, MemoryStore, ModelExtractor, FileMemoryStore, injection
 │   │   ├── conversation_manager/ # Null + SlidingWindow
 │   │   ├── session/              # SessionStorage, FileSessionStorage, SessionManager
 │   │   ├── retry/                # backoff + model retry strategies
