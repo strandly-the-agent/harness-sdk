@@ -426,8 +426,7 @@ impl OffloadStrategy {
                 })
                 .map(|(index, _)| index)
                 .collect()
-    t over = false;
-                for block in &message.con    }
+        }
     }
 
     async fn apply_per_block(&self, ctx: &mut ContextState<'_>) -> bool {
@@ -462,7 +461,8 @@ impl OffloadStrategy {
             let mut kept = Vec::new();
             for index in eligible {
                 let message = ctx.messages[index].clone();
-                let mutent {
+                let mut over = false;
+                for block in &message.content {
                     if self.block_matches_target(block, &message, &tool_names)
                         && self.count_block_tokens(ctx, message.role, block).await as f64 > threshold
                     {
