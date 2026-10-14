@@ -37,6 +37,8 @@ pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
 };
+#[cfg(feature = "anthropic")]
+pub use models::anthropic::{AnthropicModel, AnthropicModelConfig};
 pub use models::Model;
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};

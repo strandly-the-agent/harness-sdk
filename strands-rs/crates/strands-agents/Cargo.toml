@@ -12,9 +12,10 @@ authors.workspace = true
 workspace = true
 
 [features]
-default = ["bedrock", "macros"]
+default = ["anthropic", "bedrock", "macros"]
 test-support = []
 macros = ["dep:strands-agents-macros"]
+anthropic = ["dep:reqwest"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-smithy-runtime-api"]
 
 [dependencies]
@@ -35,6 +36,7 @@ tracing.workspace = true
 uuid.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
+reqwest = { workspace = true, optional = true }
 aws-config = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }

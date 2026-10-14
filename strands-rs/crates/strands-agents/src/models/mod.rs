@@ -1,11 +1,18 @@
 //! Model providers and the `Model` contract.
 
+#[cfg(feature = "anthropic")]
+pub mod anthropic;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;
 pub mod defaults;
 mod model;
 pub mod streaming;
 
+#[cfg(feature = "anthropic")]
+pub use anthropic::{
+    AnthropicCacheConfig, AnthropicCacheSection, AnthropicCacheStrategy, AnthropicModel,
+    AnthropicModelConfig, AnthropicTransport, ReqwestTransport, TransportResponse,
+};
 #[cfg(feature = "bedrock")]
 pub use bedrock::{
     BedrockGuardrailConfig, BedrockGuardrailRedactionConfig, BedrockModel, BedrockModelBuilder,
