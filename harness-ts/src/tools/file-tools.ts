@@ -6,6 +6,8 @@
  * candidates to port into the core SDK later; keep them minimal and SDK-idiomatic.
  */
 
+import { posix, win32 } from 'node:path'
+
 import { DocumentBlock, ImageBlock, tool } from '@strands-agents/sdk'
 import type { DocumentFormat, ImageFormat, ToolContext } from '@strands-agents/sdk'
 import { z } from 'zod'
@@ -20,12 +22,9 @@ const READ_DEFAULT_LIMIT = 2000
 const IMAGE_FORMATS: Record<string, ImageFormat> = { png: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif', webp: 'webp' }
 const DOCUMENT_FORMATS: readonly string[] = ['pdf', 'doc', 'docx', 'xls', 'xlsx']
 
-// Absolute on POSIX (`/…`) or Windows (`C:\…`, `C:/…`, `\\server\share\…`); checked textually so the
-// rule is the same on every host and for every sandbox backend.
-const ABSOLUTE_PATH = /^(?:\/|\\\\|[A-Za-z]:[\\/])/
-
 function validatePath(path: string): void {
-  if (!ABSOLUTE_PATH.test(path)) {
+  // The path belongs to the sandbox, not the host, so accept either platform's notion of absolute.
+  if (!posix.isAbsolute(path) && !win32.isAbsolute(path)) {
     throw new Error(
       `The path ${path} is not absolute; it should start with '/' (or a drive letter or UNC share on Windows).`
     )

@@ -7,6 +7,8 @@ candidates to port into the core SDK later; keep them minimal and SDK-idiomatic.
 
 from __future__ import annotations
 
+import ntpath
+import posixpath
 import re
 
 from strands.tools.decorator import tool
@@ -22,13 +24,9 @@ _IMAGE_FORMATS = {"png": "png", "jpg": "jpeg", "jpeg": "jpeg", "gif": "gif", "we
 _DOCUMENT_FORMATS = ("pdf", "doc", "docx", "xls", "xlsx")
 
 
-# Absolute on POSIX (``/…``) or Windows (``C:\…``, ``C:/…``, ``\\server\share\…``); checked textually so
-# the rule is the same on every host and for every sandbox backend.
-_ABSOLUTE_PATH = re.compile(r"^(?:/|\\\\|[A-Za-z]:[\\/])")
-
-
 def _validate_path(path: str) -> None:
-    if not _ABSOLUTE_PATH.match(path):
+    # The path belongs to the sandbox, not the host, so accept either platform's notion of absolute.
+    if not (posixpath.isabs(path) or ntpath.isabs(path)):
         raise ValueError(
             f"The path {path} is not absolute; it should start with '/' (or a drive letter or UNC share on Windows)."
         )

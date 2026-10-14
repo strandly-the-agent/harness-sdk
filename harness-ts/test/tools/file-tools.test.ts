@@ -123,7 +123,8 @@ describe('read/write/edit', () => {
     await write.invoke({ path: 'C:/Users/me/novel.json', content: '{}' }, winCtx)
     await write.invoke({ path: '\\\\server\\share\\novel.json', content: '{}' }, winCtx)
     expect(written).toEqual(['C:\\Users\\me\\novel.json', 'C:/Users/me/novel.json', '\\\\server\\share\\novel.json'])
-    await expect(write.invoke({ path: '\\Users\\me\\novel.json', content: '' }, winCtx)).rejects.toThrow('not absolute')
+    // Drive-relative (`C:foo`) is not absolute on either platform.
+    await expect(write.invoke({ path: 'C:novel.json', content: '' }, winCtx)).rejects.toThrow('not absolute')
     await expect(write.invoke({ path: 'C:\\Users\\..\\secret', content: '' }, winCtx)).rejects.toThrow('path traversal')
   })
 })

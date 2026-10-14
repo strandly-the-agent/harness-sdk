@@ -80,8 +80,9 @@ async def test_windows_drive_letter_path_is_absolute():
     await write._tool_func(path="C:/Users/me/novel.json", content="{}", tool_context=win_ctx)
     await write._tool_func(path="\\\\server\\share\\novel.json", content="{}", tool_context=win_ctx)
     assert written == ["C:\\Users\\me\\novel.json", "C:/Users/me/novel.json", "\\\\server\\share\\novel.json"]
+    # Drive-relative (``C:foo``) is not absolute on either platform.
     with pytest.raises(ValueError, match="not absolute"):
-        await write._tool_func(path="\\Users\\me\\novel.json", content="", tool_context=win_ctx)
+        await write._tool_func(path="C:novel.json", content="", tool_context=win_ctx)
     with pytest.raises(ValueError, match="path traversal"):
         await write._tool_func(path="C:\\Users\\..\\secret", content="", tool_context=win_ctx)
 
