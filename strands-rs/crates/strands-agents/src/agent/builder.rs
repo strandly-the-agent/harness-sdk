@@ -39,6 +39,7 @@ pub struct AgentBuilder {
     tools: Vec<ToolRef>,
     plugins: Vec<Arc<dyn Plugin>>,
     conversation_manager: Option<Option<Arc<dyn Plugin>>>,
+    context_manager: Option<Arc<crate::context_manager::ContextManager>>,
     session_manager: Option<Arc<SessionManager>>,
     storage: Option<crate::storage::StorageRef>,
     retry_strategy: Option<Option<Arc<dyn Plugin>>>,
@@ -100,6 +101,14 @@ impl AgentBuilder {
     /// [`AgentBuilder::plugin`] with an already shared plugin.
     pub fn plugin_arc(mut self, plugin: Arc<dyn Plugin>) -> Self {
         self.plugins.push(plugin);
+        self
+    }
+
+    /// Managed context (compression, offloading, overflow recovery). When set, the agent runs no
+    /// conversation manager at all — the context manager owns both jobs.
+    pub fn context_manager(mut self, option: crate::context_manager::ContextManagerOption) -> Self {
+        self.context_manager = crate::context_manager::ContextManager::from(option);
+        self.conversation_manager = Some(None);
         self
     }
 
@@ -208,6 +217,9 @@ impl AgentBuilder {
             )?)),
         }
         plugins.extend(self.plugins);
+        if let Some(manager) = self.context_manager {
+            plugins.push(manager);
+        }
         if let Some(manager) = self.session_manager {
             plugins.push(manager);
         }
