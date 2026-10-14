@@ -1,7 +1,5 @@
 import { Buffer } from 'node:buffer'
 import { createServer } from 'node:http'
-import { tmpdir } from 'node:os'
-import { sep } from 'node:path'
 import { ReadableStream } from 'node:stream/web'
 import type { AddressInfo } from 'node:net'
 
@@ -273,7 +271,9 @@ describe('web_fetch', () => {
     expect(invokeCalls).toHaveLength(2)
   })
 
-  it('fetches end to end through the local environment sandbox', async () => {
+  // The SDK's default sandbox runs Git Bash's `sh` on Windows, whose `/tmp` Node cannot read; Windows support for
+  // that sandbox is tracked in strands-agents/harness-sdk#4985.
+  it.skipIf(process.platform === 'win32')('fetches end to end through the local environment sandbox', async () => {
     const server = createServer((req, res) => {
       if (req.url === '/redirect') {
         res.writeHead(302, { Location: '/page' })
@@ -309,8 +309,7 @@ describe('web_fetch', () => {
       expect(await invoke(tool, { url: `${base}/huge` }, sandbox)).toBe('x'.repeat(50_000))
       expect(await invoke(tool, { url: `${base}/notype` }, sandbox)).toBe('a < b')
       // Same scratch directory the tool derives: `/tmp` is not readable through Node on Windows.
-      const tempDir = process.platform === 'win32' ? tmpdir().replaceAll(sep, '/') : '/tmp'
-      expect((await sandbox.execute(`ls '${tempDir}' | grep -c strands-web-fetch`)).stdout.trim()).toBe('0')
+      expect((await sandbox.execute('ls /tmp | grep -c strands-web-fetch')).stdout.trim()).toBe('0')
       expect(await invoke(tool, { url: `${base}/missing` }, sandbox)).toContain('404')
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))

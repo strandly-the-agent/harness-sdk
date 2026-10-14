@@ -15,11 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 import re
 import shlex
-import sys
-import tempfile
 import time
 import uuid
 from typing import Any
@@ -39,10 +36,9 @@ _TIMEOUT = 30
 _MAX_BYTES = 5 * 1024 * 1024
 _MAX_CHARS = 50_000
 _CACHE_TTL_SECONDS = 15 * 60
-# The sandbox shell and ``sandbox.read_file`` must resolve the scratch file to the same place: ``/tmp`` does
-# that in any POSIX sandbox, but on Windows the shell's ``/tmp`` is its own (MSYS) mount that Python resolves
-# against the current drive instead, so there the host temp dir is used, forward-slashed for ``sh``.
-_TEMP_DIR = tempfile.gettempdir().replace(os.sep, "/") if sys.platform == "win32" else "/tmp"
+# Scratch directory inside the sandbox (never the host's): the shell writes there and ``sandbox.read_file``
+# reads it back, so both must mean the same place. ``/tmp`` is that for every POSIX sandbox.
+_TEMP_DIR = "/tmp"
 # The characters RFC 3986 allows anywhere in a URL; anything else (whitespace, quotes, control
 # characters, non-ASCII) is rejected before the URL reaches a shell or a socket.
 _URL_CHARS = re.compile(r"[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+")

@@ -1,6 +1,7 @@
 import re
 import shlex
 import shutil
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -235,6 +236,10 @@ async def test_fetch_text_surfaces_curl_errors_and_still_cleans_up():
 
 
 @pytest.mark.skipif(shutil.which("curl") is None, reason="curl not installed")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the SDK default sandbox runs Git Bash sh on Windows, whose /tmp Python cannot read (#4985)",
+)
 async def test_fetch_text_end_to_end_through_the_local_environment():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -285,9 +290,7 @@ async def test_fetch_text_end_to_end_through_the_local_environment():
         _, huge = await web_fetch_module._fetch_text(sandbox, f"{base}/huge", "curl")
         assert huge == "x" * web_fetch_module._MAX_CHARS
         assert await web_fetch_module._fetch_text(sandbox, f"{base}/notype", "curl") == (f"{base}/notype", "a < b")
-        # Same scratch directory the tool derives: ``/tmp`` is not readable through Python on Windows.
-        temp_dir = shlex.quote(web_fetch_module._TEMP_DIR)
-        assert (await sandbox.execute(f"ls {temp_dir} | grep -c strands-web-fetch")).stdout.strip() == "0"
+        assert (await sandbox.execute("ls /tmp | grep -c strands-web-fetch")).stdout.strip() == "0"
         with pytest.raises(RuntimeError, match="404"):
             await web_fetch_module._fetch_text(sandbox, f"{base}/missing", "curl")
     finally:
