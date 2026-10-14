@@ -12,8 +12,9 @@ authors.workspace = true
 workspace = true
 
 [features]
-default = ["bedrock", "http"]
+default = ["bedrock", "http", "mcp"]
 http = ["dep:reqwest"]
+mcp = ["strands-agents/mcp"]
 bedrock = ["strands-agents/bedrock"]
 
 [dependencies]
@@ -31,6 +32,7 @@ schemars.workspace = true
 parking_lot.workspace = true
 reqwest = { workspace = true, optional = true }
 regex.workspace = true
+indexmap.workspace = true
 
 [dev-dependencies]
 strands-agents = { path = "../strands-agents", features = ["test-support"] }
