@@ -107,6 +107,14 @@ impl AgentStreamEvent {
     }
 }
 
+impl std::fmt::Debug for AgentStreamEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("AgentStreamEvent")
+            .field(&self.type_name())
+            .finish()
+    }
+}
+
 /// Stream of [`AgentStreamEvent`]s produced by a running invocation.
 pub struct AgentStream {
     rx: mpsc::Receiver<Result<AgentStreamEvent>>,
@@ -202,7 +210,6 @@ async fn run_invocation(agent: &Agent, input: InvokeInput, options: InvokeOption
     agent.initialize().await?;
     let state = options.invocation_state.clone().unwrap_or_default();
     let mut current = input;
-
 
     loop {
         let cancel = match &options.cancel {
@@ -462,9 +469,12 @@ async fn invoke_model(
                         stop_data: Some(ModelStopData {
                             message: result.message.clone(),
                             stop_reason: result.stop_reason.clone(),
-                            redaction: result.redaction.as_ref().map(|r| crate::hooks::events::Redaction {
-                                user_message: r.user_message.clone(),
-                            }),
+                            redaction: result
+                                .redaction
+                                .as_ref()
+                                .map(|r| crate::hooks::events::Redaction {
+                                    user_message: r.user_message.clone(),
+                                }),
                         }),
                         error: None,
                         invocation_state: state.clone(),
@@ -640,7 +650,11 @@ async fn execute_tools(
         .cancel
         .message_or(crate::tools::HOOK_CANCELLED_MESSAGE)
         .map(str::to_owned)
-        .or_else(|| cancel.is_cancelled().then(|| crate::tools::EXECUTION_CANCELLED_MESSAGE.to_owned()))
+        .or_else(|| {
+            cancel
+                .is_cancelled()
+                .then(|| crate::tools::EXECUTION_CANCELLED_MESSAGE.to_owned())
+        })
     {
         for tool_use in &tool_uses {
             let result = crate::types::ToolResultBlock::error(&tool_use.tool_use_id, &message);
