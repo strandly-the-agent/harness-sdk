@@ -136,12 +136,13 @@ create_harness(model=OpenAIModel(model_id="gpt-5.6-sol"))   # full control
 ```
 
 The SDK's auxiliary side calls (context summarization, memory extraction, the `web_fetch`
-summarizer, the approval classifier) run on `aux_model`, which defaults to the small fast model of
-your main provider so credentials line up (Bedrock Haiku for the default). Pass `aux_model` in the
-same forms as `model` to choose it:
+summarizer, the approval classifier) run on `aux_model`. The default, `"auto"`, picks the small
+fast model of your main provider so credentials line up (Bedrock Haiku for the default); `None`
+sets none, so side calls use the main model; or pass one in the same forms as `model`:
 
 ```python
 create_harness(aux_model="bedrock/us.amazon.nova-lite-v1:0")
+create_harness(aux_model=None)  # side calls on the main model
 ```
 
 The `provider/model` string is a shorthand with aliases for `bedrock`, `bedrock-mantle`, `anthropic`,

@@ -51,7 +51,7 @@ DEFAULT_HARNESS_AGENT_CONFIG: dict[str, Any] = {
     "instructions": "",
     "model": defaults.DEFAULT_MODEL,
     "modelModule": None,
-    "auxModel": None,
+    "auxModel": defaults.DEFAULT_AUX_MODEL,
     "effort": defaults.DEFAULT_EFFORT,
     "tools": [],
     "subagents": [],

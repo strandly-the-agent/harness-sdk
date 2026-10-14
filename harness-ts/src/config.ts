@@ -30,6 +30,7 @@ import {
   DEFAULT_BUILTIN_PLUGINS,
   DEFAULT_BUILTIN_TOOLS,
   DEFAULT_CONTEXT_MANAGER,
+  DEFAULT_AUX_MODEL,
   DEFAULT_EFFORT,
   DEFAULT_MEMORY_DIR,
   DEFAULT_MODEL,
@@ -301,7 +302,7 @@ export const DEFAULT_HARNESS_AGENT_CONFIG: HarnessAgentConfig = {
   instructions: '',
   model: DEFAULT_MODEL,
   modelModule: null,
-  auxModel: null,
+  auxModel: DEFAULT_AUX_MODEL,
   effort: DEFAULT_EFFORT,
   tools: [],
   subagents: [],
@@ -374,7 +375,7 @@ export async function harnessAgentOptionsFromConfig(
     loadOptional<Sandbox | false>(config.sandbox, baseDir, generation),
     loadMany<MemoryStore>(config.memoryStores, baseDir, generation),
     loadOptional<Model>(config.modelModule, baseDir, generation),
-    loadModelSetting(config.auxModel ?? undefined, baseDir, generation),
+    config.auxModel === null ? null : loadModelSetting(config.auxModel, baseDir, generation),
     builtinToolsOption(config.builtinTools, baseDir, generation),
     loadMany<InterventionValue>(config.interventionModules, baseDir, generation),
     loadReferenceRecord(config.agentConfigModules, baseDir, generation),
@@ -748,10 +749,10 @@ const HarnessAgentConfigSchema = z.object({
   modelModule: moduleReferenceSchema('model').nullable().default(null),
   auxModel: z
     .union([NonEmptyString, moduleReferenceSchema('model')], {
-      error: 'must be a "provider/name" string or a model module reference.',
+      error: 'must be "auto", a "provider/name" string, a model module reference, or null.',
     })
     .nullable()
-    .default(null),
+    .default(DEFAULT_AUX_MODEL),
   effort: z
     .enum(EFFORT_LEVELS, { error: `must be one of: ${EFFORT_LEVELS.join(', ')}.` })
     .default(DEFAULT_HARNESS_AGENT_CONFIG.effort),

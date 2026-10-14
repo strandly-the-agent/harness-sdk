@@ -119,7 +119,7 @@ def test_config_maps_to_harness_agent_kwargs(tmp_path):
     assert kwargs == {
         "name": "Strands harness",
         "model": DEFAULT_HARNESS_AGENT_CONFIG["model"],
-        "aux_model": None,
+        "aux_model": "auto",
         "effort": "auto",
         "context_manager": "auto",
         "session": True,
@@ -232,7 +232,8 @@ def test_config_builtin_tools_mapping_passes_edits_and_loads_web_fetch_model(tmp
 def test_config_aux_model_string_reaches_the_factory():
     kwargs = harness_agent_kwargs_from_config(define_harness_agent_config({"auxModel": "openai/gpt-5-mini"}), ".")
     assert kwargs["aux_model"] == "openai/gpt-5-mini"
-    assert harness_agent_kwargs_from_config(define_harness_agent_config({}), ".")["aux_model"] is None
+    assert harness_agent_kwargs_from_config(define_harness_agent_config({}), ".")["aux_model"] == "auto"
+    assert harness_agent_kwargs_from_config(define_harness_agent_config({"auxModel": None}), ".")["aux_model"] is None
 
 
 def test_config_aux_model_loads_a_model_module_reference(tmp_path):

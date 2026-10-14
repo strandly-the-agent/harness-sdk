@@ -180,6 +180,15 @@ def test_aux_model_follows_the_main_models_provider():
     assert agent.aux_model.get_config()["model_id"] == "claude-haiku-4-5-20251001"
 
 
+def test_aux_model_none_leaves_side_calls_on_the_main_model():
+    agent = create_harness(aux_model=None)
+    assert agent.aux_model is agent.model
+
+
+def test_aux_model_auto_is_the_default():
+    assert create_harness(aux_model="auto").aux_model.get_config() == create_harness().aux_model.get_config()
+
+
 def test_aux_model_accepts_a_provider_string():
     agent = create_harness(aux_model="openai/gpt-5-mini")
     assert agent.aux_model.get_config()["model_id"] == "gpt-5-mini"

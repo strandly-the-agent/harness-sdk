@@ -239,7 +239,7 @@ def _resolve_background_tasks(
 def create_harness(
     *,
     model: Model | ModelRouter | str | None = None,
-    aux_model: Model | str | None = None,
+    aux_model: Model | str | Literal["auto"] | None = defaults.DEFAULT_AUX_MODEL,
     effort: Effort = defaults.DEFAULT_EFFORT,
     instructions: str | None = None,
     tools: list[Any] | None = None,
@@ -268,10 +268,12 @@ def create_harness(
             ``"anthropic/claude-fable-5"``), a bare Bedrock model id, or ``None`` for the
             harness default (Bedrock Opus 5).
         aux_model: The model for the SDK's auxiliary side calls (``Agent(aux_model=...)``: context
-            summarization, memory extraction, the ``web_fetch`` summarizer, ...). Takes the same forms
-            as ``model`` except a router; ``None`` (the default) picks the small fast model of the main
-            model's provider so credentials align (Bedrock follows the main model's family). Reasoning
-            is always off and caching never applied. A ``Model`` instance as ``model`` is reused as-is.
+            summarization, memory extraction, the ``web_fetch`` summarizer, ...). ``"auto"`` (the
+            default) picks the small fast model of the main model's provider so credentials align
+            (Bedrock follows the main model's family; a ``Model`` instance as ``model`` is reused
+            as-is); reasoning is off and caching never applied. ``None`` sets no auxiliary model, so
+            side calls follow ``model`` like a plain ``Agent``. Otherwise the same forms as ``model``
+            except a router.
         effort: Reasoning effort applied to the resolved model, mapped to each provider's request
             fields. ``"auto"`` (the default) uses the provider's recommended level, ``"off"`` turns
             reasoning off, and ``"minimal"``/``"low"``/``"medium"``/``"high"``/``"xhigh"``/``"max"``
@@ -421,8 +423,10 @@ def create_harness(
         caching_explicit=caching_explicit,
     )
     if isinstance(aux_model, ModelRouter):
-        raise TypeError("aux_model must be a Model, a 'provider/name' string, or None, not a ModelRouter")
-    resolved_aux_model = resolve_aux_model(model, aux_model)
+        raise TypeError("aux_model must be a Model, a 'provider/name' string, 'auto', or None, not a ModelRouter")
+    resolved_aux_model = (
+        None if aux_model is None else resolve_aux_model(model, None if aux_model == "auto" else aux_model)
+    )
 
     if "system_prompt" not in agent_kwargs:
         agent_kwargs["system_prompt"] = build_system_prompt(instructions)

@@ -142,12 +142,13 @@ await createHarness({ model: new OpenAIModel({ modelId: 'gpt-5.6-sol' }) }) // f
 ```
 
 The SDK's auxiliary side calls (context summarization, memory extraction, the `web_fetch`
-summarizer, the approval classifier) run on `auxModel`, which defaults to the small fast model of
-your main provider so credentials line up (Bedrock Haiku for the default). Pass `auxModel` in the
-same forms as `model` to choose it:
+summarizer, the approval classifier) run on `auxModel`. The default, `'auto'`, picks the small
+fast model of your main provider so credentials line up (Bedrock Haiku for the default); `null`
+sets none, so side calls use the main model; or pass one in the same forms as `model`:
 
 ```typescript
 await createHarness({ auxModel: 'bedrock/us.amazon.nova-lite-v1:0' })
+await createHarness({ auxModel: null }) // side calls on the main model
 ```
 
 The `provider/model` string is a shorthand with aliases for `bedrock`, `bedrock-mantle`, `anthropic`,

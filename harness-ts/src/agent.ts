@@ -37,6 +37,7 @@ import {
   DEFAULT_BUILTIN_PLUGINS,
   DEFAULT_CACHING,
   DEFAULT_CONTEXT_MANAGER,
+  DEFAULT_AUX_MODEL,
   DEFAULT_EFFORT,
   DEFAULT_MEMORY,
   DEFAULT_MODEL,
@@ -83,12 +84,13 @@ export interface HarnessAgentOptions extends Omit<
   model?: Model | ModelRouter | string
   /**
    * The model for the SDK's auxiliary side calls (`Agent({ auxModel })`: context summarization, memory
-   * extraction, the `web_fetch` summarizer, ...). Takes the same forms as `model` except a router;
-   * `undefined` (the default) picks the small fast model of the main model's provider so credentials
-   * align (Bedrock follows the main model's family). Reasoning is always off and caching never
-   * applied. A `Model` instance as `model` is reused as-is.
+   * extraction, the `web_fetch` summarizer, ...). `'auto'` (the default) picks the small fast model of
+   * the main model's provider so credentials align (Bedrock follows the main model's family; a `Model`
+   * instance as `model` is reused as-is); reasoning is off and caching never applied. `null` sets no
+   * auxiliary model, so side calls follow `model` like a plain `Agent`. Otherwise the same forms as
+   * `model` except a router.
    */
-  auxModel?: Model | string
+  auxModel?: Model | string | 'auto' | null
   /**
    * Reasoning effort applied to the resolved model, mapped to each provider's request fields.
    * `'auto'` (the default) uses the provider's recommended level, `'off'` turns reasoning off
@@ -354,7 +356,7 @@ function resolveBackgroundTasks(
 export async function createHarness(options: HarnessAgentOptions = {}): Promise<Agent> {
   const {
     model,
-    auxModel,
+    auxModel = DEFAULT_AUX_MODEL,
     effort = DEFAULT_EFFORT,
     instructions,
     tools,
@@ -392,9 +394,10 @@ export async function createHarness(options: HarnessAgentOptions = {}): Promise<
     cachingExplicit
   )
   if (auxModel instanceof ModelRouter) {
-    throw new TypeError("auxModel must be a Model or a 'provider/name' string, not a ModelRouter")
+    throw new TypeError("auxModel must be a Model, a 'provider/name' string, 'auto', or null, not a ModelRouter")
   }
-  const resolvedAuxModel = await resolveAuxModel(model, auxModel)
+  const resolvedAuxModel =
+    auxModel === null ? undefined : await resolveAuxModel(model, auxModel === 'auto' ? undefined : auxModel)
 
   if (agentConfig.systemPrompt === undefined) {
     agentConfig.systemPrompt = buildSystemPrompt(instructions)
@@ -521,7 +524,7 @@ export async function createHarness(options: HarnessAgentOptions = {}): Promise<
   const agent = new Agent({
     ...agentConfig,
     model: resolvedModel,
-    auxModel: resolvedAuxModel,
+    ...(resolvedAuxModel !== undefined && { auxModel: resolvedAuxModel }),
     tools: agentTools,
     plugins,
     backgroundTasks: resolvedBackgroundTasks,

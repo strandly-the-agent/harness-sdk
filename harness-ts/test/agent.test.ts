@@ -206,6 +206,13 @@ describe('createHarness', () => {
     expect(anthropic.auxModel.getConfig().modelId).toBe('claude-haiku-4-5-20251001')
   })
 
+  it('sets no auxModel when null, so side calls follow the main model', async () => {
+    const agent = await createHarness({ auxModel: null })
+    expect(agent.auxModel).toBe(agent.model)
+    const explicit = await createHarness({ auxModel: 'auto' })
+    expect(explicit.auxModel.getConfig()).toEqual((await createHarness()).auxModel.getConfig())
+  })
+
   it('accepts auxModel as a provider string or a Model instance', async () => {
     const fromString = await createHarness({ auxModel: 'openai/gpt-5-mini' })
     expect(fromString.auxModel.getConfig().modelId).toBe('gpt-5-mini')
