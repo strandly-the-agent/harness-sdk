@@ -446,6 +446,7 @@ async fn run_invocation(
                     last_message: message,
                     invocation_state: state.clone(),
                     structured_output: None,
+                    checkpoint: None,
                 },
             )
             .await;
@@ -542,6 +543,9 @@ async fn run_cycles_inner(
     options: &InvokeOptions,
     structured: bool,
 ) -> Result<AgentResult> {
+    let resume = super::checkpoint::resume_checkpoint(agent, &input)?;
+    let mut cycle_index = resume.as_ref().map(super::checkpoint::resume_cycle_index).unwrap_or(0);
+    let mut resume_position = resume.map(|checkpoint| checkpoint.position);
     let mut pending_input = Some(input);
     let mut usage = Usage::default();
     let mut turns = 0u64;
@@ -560,6 +564,7 @@ async fn run_cycles_inner(
                     .unwrap_or_else(|| Message::assistant("")),
                 invocation_state: state.clone(),
                 structured_output: None,
+                checkpoint: None,
             });
         }
         turns += 1;
@@ -599,6 +604,7 @@ async fn run_cycles_inner(
                 last_message: model_result.message,
                 invocation_state: state.clone(),
                 structured_output: None,
+                checkpoint: None,
             });
         }
 
@@ -624,7 +630,18 @@ async fn run_cycles_inner(
                 last_message: assistant_message,
                 invocation_state: state.clone(),
                 structured_output: None,
+                checkpoint: None,
             });
+        }
+
+        if let Some(result) = super::checkpoint::after_model_checkpoint(
+            agent,
+            state,
+            &assistant_message,
+            cycle_index,
+            &mut resume_position,
+        ) {
+            return Ok(result);
         }
 
         let tools = match execute_tools(agent, &assistant_message, state, cancel, tx).await {
@@ -652,6 +669,7 @@ async fn run_cycles_inner(
                     last_message: last,
                     invocation_state: state.clone(),
                     structured_output: None,
+                    checkpoint: None,
                 });
             }
         }
@@ -663,9 +681,21 @@ async fn run_cycles_inner(
                     last_message: assistant_message,
                     invocation_state: state.clone(),
                     structured_output: Some(output),
+                    checkpoint: None,
                 });
             }
         }
+
+        if let Some(result) = super::checkpoint::after_tools_checkpoint(
+            agent,
+            state,
+            &assistant_message,
+            cycle_index,
+            cancel.is_cancelled(),
+        ) {
+            return Ok(result);
+        }
+        cycle_index += 1;
     }
 }
 
@@ -711,6 +741,7 @@ async fn cancelled_result(agent: &Agent, tx: &Sink, state: &InvocationState) -> 
         last_message: message,
         invocation_state: state.clone(),
         structured_output: None,
+        checkpoint: None,
     })
 }
 
