@@ -220,6 +220,10 @@
     "./sandbox/ssh": {
       "types": "./dist/src/sandbox/ssh.d.ts",
       "default": "./dist/src/sandbox/ssh.js"
+    },
+    "./sandbox/browser": {
+      "types": "./dist/src/sandbox/browser.d.ts",
+      "default": "./dist/src/sandbox/browser.js"
     }
   },
   "scripts": {

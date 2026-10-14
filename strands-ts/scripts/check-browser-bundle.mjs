@@ -4,7 +4,13 @@
 import { builtinModules } from 'node:module'
 import { build } from 'esbuild'
 
-const ENTRIES = ['src/index.ts', 'src/bidi/index.ts', 'src/bidi/hooks/index.ts', 'src/bidi/models/google.ts']
+const ENTRIES = [
+  'src/index.ts',
+  'src/bidi/index.ts',
+  'src/bidi/hooks/index.ts',
+  'src/bidi/models/google.ts',
+  'src/sandbox/browser.ts',
+]
 
 const NODE_ONLY_PACKAGES = new Set(['@smithy/node-http-handler', 'audify', 'ws'])
 const builtins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]))
