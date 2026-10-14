@@ -19,6 +19,7 @@ import re
 import shlex
 import time
 import uuid
+import weakref
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -36,9 +37,28 @@ _TIMEOUT = 30
 _MAX_BYTES = 5 * 1024 * 1024
 _MAX_CHARS = 50_000
 _CACHE_TTL_SECONDS = 15 * 60
-# Scratch directory inside the sandbox (never the host's): the shell writes there and ``sandbox.read_file``
-# reads it back, so both must mean the same place. ``/tmp`` is that for every POSIX sandbox.
-_TEMP_DIR = "/tmp"
+# Scratch directory inside the sandbox (never the host's): the shell writes there and ``sandbox.read_file`` reads
+# it back, so both must mean the same place. ``/tmp`` is that for every POSIX sandbox. Under Git Bash on Windows
+# the shell's ``/tmp`` is an MSYS mount the runtime cannot see, so the sandbox is asked once for the mixed-format
+# path (``C:/Users/.../Temp``) that both sides understand. The answer is cached per sandbox.
+_scratch_dirs: weakref.WeakKeyDictionary[Any, str] = weakref.WeakKeyDictionary()
+
+
+async def _scratch_dir(sandbox: Sandbox) -> str:
+    try:
+        return _scratch_dirs[sandbox]
+    except (KeyError, TypeError):
+        pass
+    try:
+        result = await sandbox.execute("cygpath -m /tmp 2>/dev/null", timeout=10)
+        directory = result.stdout.strip() if result.exit_code == 0 and result.stdout.strip() else "/tmp"
+    except Exception:
+        directory = "/tmp"
+    with contextlib.suppress(TypeError):
+        _scratch_dirs[sandbox] = directory
+    return directory
+
+
 # The characters RFC 3986 allows anywhere in a URL; anything else (whitespace, quotes, control
 # characters, non-ASCII) is rejected before the URL reaches a shell or a socket.
 _URL_CHARS = re.compile(r"[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+")
@@ -104,7 +124,7 @@ def _to_text(data: bytes, content_type: str, resolved_url: str, url: str) -> tup
 
 async def _fetch_curl(sandbox: Sandbox, url: str) -> tuple[str, str]:
     """Fetch a validated ``url`` with ``curl`` inside ``sandbox``; raises ``RuntimeError`` when curl fails."""
-    output = f"{_TEMP_DIR}/strands-web-fetch-{uuid.uuid4().hex}"
+    output = f"{await _scratch_dir(sandbox)}/strands-web-fetch-{uuid.uuid4().hex}"
     try:
         result = await sandbox.execute(_curl_command(url, output), timeout=_TIMEOUT + 5)
         if result.exit_code != 0:

@@ -41,7 +41,19 @@ class FakeSandbox {
       stderr?: string
     } = {}
   ) {}
+  /** What the scratch-dir probe answers; `undefined` means "no cygpath here" (any POSIX sandbox). */
+  cygpath: string | undefined = undefined
   execute(command: string): Promise<ExecutionResult> {
+    if (command.startsWith('cygpath ')) {
+      const ok = this.cygpath !== undefined
+      return Promise.resolve({
+        type: 'executionResult',
+        exitCode: ok ? 0 : 127,
+        stdout: ok ? `${this.cygpath}\n` : '',
+        stderr: '',
+        outputFiles: [],
+      })
+    }
     this.commands.push(command)
     if (command.startsWith('rm -f ')) {
       for (const path of command.slice('rm -f '.length).split(' ')) this.files.delete(path.replaceAll("'", ''))
@@ -271,9 +283,24 @@ describe('web_fetch', () => {
     expect(invokeCalls).toHaveLength(2)
   })
 
-  // The SDK's default sandbox runs Git Bash's `sh` on Windows, whose `/tmp` Node cannot read; Windows support for
-  // that sandbox is tracked in strands-agents/harness-sdk#4985.
-  it.skipIf(process.platform === 'win32')('fetches end to end through the local environment sandbox', async () => {
+  it('asks the sandbox for a scratch directory once and falls back to /tmp without cygpath', async () => {
+    const posix = new FakeSandbox({ body: 'x', contentType: 'text/plain' })
+    const tool = makeWebFetch({ model })
+    await invoke(tool, { url: 'https://example.com/a' }, posix)
+    await invoke(tool, { url: 'https://example.com/b' }, posix)
+    expect(
+      posix.commands.filter((c) => c.startsWith('curl')).every((c) => c.includes("-o '/tmp/strands-web-fetch-"))
+    ).toBe(true)
+
+    // Git Bash: the shell's /tmp is an MSYS mount, so the probe returns a path both sh and Node can read.
+    const gitBash = new FakeSandbox({ body: 'x', contentType: 'text/plain' })
+    gitBash.cygpath = 'C:/Users/me/AppData/Local/Temp'
+    await invoke(tool, { url: 'https://example.com/c' }, gitBash)
+    expect(gitBash.commands[0]).toContain("-o 'C:/Users/me/AppData/Local/Temp/strands-web-fetch-")
+    expect(gitBash.files.size).toBe(0)
+  })
+
+  it('fetches end to end through the local environment sandbox', async () => {
     const server = createServer((req, res) => {
       if (req.url === '/redirect') {
         res.writeHead(302, { Location: '/page' })
@@ -309,7 +336,8 @@ describe('web_fetch', () => {
       expect(await invoke(tool, { url: `${base}/huge` }, sandbox)).toBe('x'.repeat(50_000))
       expect(await invoke(tool, { url: `${base}/notype` }, sandbox)).toBe('a < b')
       // Same scratch directory the tool derives: `/tmp` is not readable through Node on Windows.
-      expect((await sandbox.execute('ls /tmp | grep -c strands-web-fetch')).stdout.trim()).toBe('0')
+      const scratch = (await sandbox.execute('cygpath -m /tmp 2>/dev/null')).stdout.trim() || '/tmp'
+      expect((await sandbox.execute(`ls '${scratch}' | grep -c strands-web-fetch`)).stdout.trim()).toBe('0')
       expect(await invoke(tool, { url: `${base}/missing` }, sandbox)).toContain('404')
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))

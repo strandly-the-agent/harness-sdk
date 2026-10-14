@@ -25,9 +25,23 @@ const TIMEOUT_SECONDS = 30
 const MAX_BYTES = 5 * 1024 * 1024
 const MAX_CHARS = 50_000
 const CACHE_TTL_MS = 15 * 60 * 1000
-// Scratch directory inside the sandbox (never the host's): the shell writes there and `sandbox.readFile`
-// reads it back, so both must mean the same place. `/tmp` is that for every POSIX sandbox.
-const TEMP_DIR = '/tmp'
+// Scratch directory inside the sandbox (never the host's): the shell writes there and `sandbox.readFile` reads
+// it back, so both must mean the same place. `/tmp` is that for every POSIX sandbox. Under Git Bash on Windows
+// the shell's `/tmp` is an MSYS mount the runtime cannot see, so the sandbox is asked once for the mixed-format
+// path (`C:/Users/.../Temp`) that both sides understand. The answer is cached per sandbox.
+const scratchDirs = new WeakMap<Sandbox, Promise<string>>()
+
+function scratchDir(sandbox: Sandbox): Promise<string> {
+  let dir = scratchDirs.get(sandbox)
+  if (!dir) {
+    dir = sandbox
+      .execute('cygpath -m /tmp 2>/dev/null', { timeout: 10 })
+      .then((result) => (result.exitCode === 0 && result.stdout.trim() ? result.stdout.trim() : '/tmp'))
+      .catch(() => '/tmp')
+    scratchDirs.set(sandbox, dir)
+  }
+  return dir
+}
 // The characters RFC 3986 allows anywhere in a URL; anything else (whitespace, quotes, control
 // characters, non-ASCII) is rejected before the URL reaches a shell or a socket.
 const URL_CHARS = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/
@@ -109,7 +123,7 @@ function toText(data: Uint8Array, contentType: string, resolvedUrl: string, url:
 
 /** Fetch a validated `url` with `curl` inside `sandbox`; throws when curl fails. */
 async function fetchCurl(sandbox: Sandbox, url: string): Promise<Fetched> {
-  const output = `${TEMP_DIR}/strands-web-fetch-${randomUUID().replaceAll('-', '')}`
+  const output = `${await scratchDir(sandbox)}/strands-web-fetch-${randomUUID().replaceAll('-', '')}`
   let contentType: string
   let resolvedUrl: string
   let data: Uint8Array

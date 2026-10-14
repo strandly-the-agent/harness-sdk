@@ -1,7 +1,6 @@
 import re
 import shlex
 import shutil
-import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -32,8 +31,14 @@ class _Sandbox:
         self.result = ExecutionResult(exit_code=exit_code, stdout=f"{content_type}\n{url}\n", stderr=stderr)
         self.commands = []
         self.files = {}
+        # What the scratch-dir probe answers; ``None`` means "no cygpath here" (any POSIX sandbox).
+        self.cygpath = None
 
     async def execute(self, command, **kwargs):
+        if command.startswith("cygpath "):
+            if self.cygpath is None:
+                return ExecutionResult(exit_code=127, stdout="", stderr="")
+            return ExecutionResult(exit_code=0, stdout=f"{self.cygpath}\n", stderr="")
         self.commands.append(command)
         if command.startswith("rm -f "):
             for path in shlex.split(command)[2:]:
@@ -235,11 +240,21 @@ async def test_fetch_text_surfaces_curl_errors_and_still_cleans_up():
     assert sandbox.commands[-1].startswith("rm -f ")
 
 
+async def test_fetch_text_asks_the_sandbox_for_a_scratch_dir_once_and_falls_back_to_tmp():
+    posix = _Sandbox(body=b"x", content_type="text/plain")
+    await web_fetch_module._fetch_text(posix, "https://example.com/a", "curl")
+    await web_fetch_module._fetch_text(posix, "https://example.com/b", "curl")
+    assert all("-o /tmp/strands-web-fetch-" in c for c in posix.commands if c.startswith("curl"))
+
+    # Git Bash: the shell's /tmp is an MSYS mount, so the probe returns a path both sh and Python can read.
+    git_bash = _Sandbox(body=b"x", content_type="text/plain")
+    git_bash.cygpath = "C:/Users/me/AppData/Local/Temp"
+    await web_fetch_module._fetch_text(git_bash, "https://example.com/c", "curl")
+    assert "-o C:/Users/me/AppData/Local/Temp/strands-web-fetch-" in git_bash.commands[0]
+    assert git_bash.files == {}
+
+
 @pytest.mark.skipif(shutil.which("curl") is None, reason="curl not installed")
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="the SDK default sandbox runs Git Bash sh on Windows, whose /tmp Python cannot read (#4985)",
-)
 async def test_fetch_text_end_to_end_through_the_local_environment():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -290,7 +305,8 @@ async def test_fetch_text_end_to_end_through_the_local_environment():
         _, huge = await web_fetch_module._fetch_text(sandbox, f"{base}/huge", "curl")
         assert huge == "x" * web_fetch_module._MAX_CHARS
         assert await web_fetch_module._fetch_text(sandbox, f"{base}/notype", "curl") == (f"{base}/notype", "a < b")
-        assert (await sandbox.execute("ls /tmp | grep -c strands-web-fetch")).stdout.strip() == "0"
+        scratch = (await sandbox.execute("cygpath -m /tmp 2>/dev/null")).stdout.strip() or "/tmp"
+        assert (await sandbox.execute(f"ls {shlex.quote(scratch)} | grep -c strands-web-fetch")).stdout.strip() == "0"
         with pytest.raises(RuntimeError, match="404"):
             await web_fetch_module._fetch_text(sandbox, f"{base}/missing", "curl")
     finally:
