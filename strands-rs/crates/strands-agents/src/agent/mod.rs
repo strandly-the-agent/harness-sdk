@@ -4,6 +4,7 @@ mod builder;
 mod event_loop;
 mod invocation_state;
 mod result;
+mod tool_caller;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -24,6 +25,7 @@ pub use builder::{AgentBuilder, DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME};
 pub use event_loop::{AgentStream, AgentStreamEvent, InvokeOptions, CONCURRENT_INVOCATION_MESSAGE};
 pub use invocation_state::InvocationState;
 pub use result::AgentResult;
+pub use tool_caller::{CallOptions, ToolHandle, DIRECT_CALL_DURING_INVOCATION_MESSAGE};
 
 /// Input accepted by `invoke`/`stream`: text, content blocks, or whole messages.
 #[derive(Clone, Debug, PartialEq)]
