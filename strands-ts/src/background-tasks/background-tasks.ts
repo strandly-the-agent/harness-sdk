@@ -281,9 +281,8 @@ export class BackgroundTasks implements Plugin {
       event.resume ??= []
       return
     }
-    // A pending caller takes priority over settlement and delivery: a 'queue' or
-    // 'cancelPrevious' entry takes the turn, an 'inject' entry joins this invocation
-    // as another pass. Task results stay persisted and are delivered in a later pass.
+    // A pending caller takes priority over settlement and delivery: it takes the turn,
+    // and task results stay persisted to be delivered in a later invocation's passes.
     if (agent.pendingInvocations.length > 0) return
     this._deliverReady(event, tasks)
   }

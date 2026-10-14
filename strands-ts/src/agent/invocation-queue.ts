@@ -1,13 +1,13 @@
 /**
- * Invocation queueing for agents using `'queue'`, `'cancelPrevious'`, or `'inject'`
+ * Invocation queueing for agents using `'queue'`, `'cancelPrevious'`, or `'stopPrevious'`
  * concurrency.
  */
 
 import { PendingInvocationCancelledError } from '../errors.js'
-import type { AgentResult, InvokeArgs } from '../types/agent.js'
+import type { InvokeArgs } from '../types/agent.js'
 
 /** Supported values for the `concurrentInvocationMode` parameter. */
-export const CONCURRENT_INVOCATION_MODES = ['throw', 'cancelPrevious', 'queue', 'inject'] as const
+export const CONCURRENT_INVOCATION_MODES = ['throw', 'cancelPrevious', 'stopPrevious', 'queue'] as const
 
 /**
  * Behavior when `invoke()` or `stream()` is called while an invocation is already in
@@ -16,11 +16,12 @@ export const CONCURRENT_INVOCATION_MODES = ['throw', 'cancelPrevious', 'queue', 
  *
  * - `'throw'`: reject the new call with `ConcurrentInvocationError` (default).
  * - `'cancelPrevious'`: latest wins — cancel the running invocation, displace queued
- *   `'cancelPrevious'` predecessors, and run this call next.
+ *   latest-wins predecessors, and run this call next.
+ * - `'stopPrevious'`: latest wins, gracefully — the running invocation finishes its current
+ *   step and stops with `stopReason: 'superseded'`; queued latest-wins predecessors are
+ *   displaced and this call runs next.
  * - `'queue'`: wait FIFO; the call runs as its own invocation when the current one
  *   finishes.
- * - `'inject'`: join the running invocation — the input is added to the conversation
- *   before its next model request, and the call resolves with that invocation's result.
  */
 export type ConcurrentInvocationMode = (typeof CONCURRENT_INVOCATION_MODES)[number]
 
@@ -33,37 +34,36 @@ export interface PendingInvocation {
   readonly id: string
   /** When the call entered the queue. */
   readonly submittedAt: Date
-  /**
-   * How the call will be handled once the agent is free. An `'inject'` call that missed
-   * the invocation it meant to join is reported as `'queue'`.
-   */
+  /** The mode the call was submitted under. */
   readonly mode: PendingInvocationMode
 }
 
-/** A pending `'inject'` call removed from the queue by the running invocation. */
-export interface InjectedInvocation {
-  readonly id: string
-  readonly args: InvokeArgs
-  /** Settles the caller with the absorbing invocation's result. */
-  readonly resolve: (result: AgentResult) => void
-  /** Settles the caller with the absorbing invocation's error. */
-  readonly reject: (error: Error) => void
-  /**
-   * Returns the call to the front of the queue as a `'queue'` entry, so it runs as its
-   * own invocation once the turn is released. Used when the absorbing invocation ends
-   * before the input reached the model. A call whose `cancelSignal` aborted meanwhile
-   * rejects instead.
-   */
-  readonly requeue: () => void
-}
-
 interface QueueEntry extends PendingInvocation {
-  mode: PendingInvocationMode
   args: InvokeArgs
   signal?: AbortSignal
-  resolve: (absorbed?: AgentResult) => void
+  resolve: () => void
   reject: (error: Error) => void
   cleanup: () => void
+}
+
+/**
+ * Validates a concurrency mode value at runtime so an unrecognized value from an untyped
+ * (JS) caller fails loudly.
+ *
+ * @internal
+ */
+export function validateConcurrentInvocationMode(value: unknown, paramName: string): ConcurrentInvocationMode {
+  if (!CONCURRENT_INVOCATION_MODES.includes(value as ConcurrentInvocationMode)) {
+    throw new Error(
+      `Unsupported ${paramName} value: ${JSON.stringify(value)}. Supported values: ${CONCURRENT_INVOCATION_MODES.map((mode) => `"${mode}"`).join(', ')}`
+    )
+  }
+  return value as ConcurrentInvocationMode
+}
+
+/** Modes that take the turn from the running invocation and displace each other when queued. */
+function isLatestWins(mode: PendingInvocationMode): boolean {
+  return mode === 'cancelPrevious' || mode === 'stopPrevious'
 }
 
 /**
@@ -99,23 +99,18 @@ export class InvocationQueue {
   }
 
   /**
-   * Adds a waiter. The promise resolves with `undefined` when the invocation lock is
-   * handed to it (via {@link handoff}), with the absorbing invocation's result when an
-   * `'inject'` entry is taken by the running invocation (via {@link takeInjects}), or
-   * rejects when the entry is removed first.
+   * Adds a waiter. The promise resolves when the invocation lock is handed to it (via
+   * {@link handoff}), or rejects when the entry is removed first.
    *
    * @param args - The invocation arguments
-   * @param options - `mode` selects the queue behavior: `'cancelPrevious'` inserts at
-   *   the front and displaces queued `'cancelPrevious'` entries (they reject as
-   *   cancelled); aborting `cancelSignal` while queued removes the entry and rejects
-   *   with {@link PendingInvocationCancelledError}
+   * @param options - `mode` selects the queue behavior: `'cancelPrevious'` and
+   *   `'stopPrevious'` insert at the front and displace queued entries of either mode
+   *   (they reject as cancelled); aborting `cancelSignal` while queued removes the entry
+   *   and rejects with {@link PendingInvocationCancelledError}
    */
-  wait(
-    args: InvokeArgs,
-    options: { mode: PendingInvocationMode; cancelSignal?: AbortSignal }
-  ): Promise<AgentResult | undefined> {
+  wait(args: InvokeArgs, options: { mode: PendingInvocationMode; cancelSignal?: AbortSignal }): Promise<void> {
     const id = `pending-${this._nextSequence++}`
-    return new Promise<AgentResult | undefined>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const entry: QueueEntry = {
         id,
         submittedAt: new Date(),
@@ -135,8 +130,8 @@ export class InvocationQueue {
         this._armAbort(entry)
       }
 
-      if (entry.mode === 'cancelPrevious') {
-        for (const displaced of this._entries.filter((e) => e.mode === 'cancelPrevious')) this._remove(displaced)
+      if (isLatestWins(entry.mode)) {
+        for (const displaced of this._entries.filter((queued) => isLatestWins(queued.mode))) this._remove(displaced)
         this._entries.unshift(entry)
       } else {
         this._entries.push(entry)
@@ -146,48 +141,16 @@ export class InvocationQueue {
   }
 
   /**
-   * Hands the invocation lock to the next waiter, if any. `'inject'` entries still
-   * queued here missed the invocation they meant to join: they become `'queue'` entries
-   * and run as their own invocations rather than joining the next turn owner.
+   * Hands the invocation lock to the next waiter, if any.
    *
    * @returns `true` when a waiter took ownership, `false` when the queue is empty
    */
   handoff(): boolean {
     const next = this._entries.shift()
     if (!next) return false
-    for (const entry of this._entries) {
-      if (entry.mode === 'inject') entry.mode = 'queue'
-    }
     next.cleanup()
     next.resolve()
     return true
-  }
-
-  /**
-   * Removes every queued `'inject'` entry, in submission order, for the running
-   * invocation to absorb. Their callers settle via the returned handles.
-   */
-  takeInjects(): InjectedInvocation[] {
-    const injects = this._entries.filter((entry) => entry.mode === 'inject')
-    for (const entry of injects) {
-      this._entries.splice(this._entries.indexOf(entry), 1)
-      entry.cleanup()
-    }
-    return injects.map((entry) => ({
-      id: entry.id,
-      args: entry.args,
-      resolve: entry.resolve,
-      reject: entry.reject,
-      requeue: (): void => {
-        if (entry.signal?.aborted) {
-          entry.reject(new PendingInvocationCancelledError(entry.id))
-          return
-        }
-        entry.mode = 'queue'
-        if (entry.signal) this._armAbort(entry)
-        this._entries.unshift(entry)
-      },
-    }))
   }
 
   private _armAbort(entry: QueueEntry): void {
@@ -204,7 +167,7 @@ export class InvocationQueue {
    * @returns `true` when the entry was found and removed
    */
   cancel(id: string): boolean {
-    const entry = this._entries.find((e) => e.id === id)
+    const entry = this._entries.find((queued) => queued.id === id)
     if (!entry) return false
     this._remove(entry)
     return true

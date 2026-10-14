@@ -564,19 +564,20 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
   })
 })
 
-describe("concurrentInvocationMode 'inject' × backgroundTasks", () => {
-  it('an inject arriving during the settlement wait ends the wait, runs a pass, then waits again and delivers', async () => {
+
+describe("concurrentInvocationMode 'stopPrevious' × backgroundTasks", () => {
+  it('a stopPrevious caller arriving during the settlement wait takes the turn; the task delivers to it with provenance', async () => {
     const work = createGate('work')
     const model = new MockMessageModel()
       .addTurn({ type: 'toolUseBlock', name: 'work', toolUseId: 'work-use', input: {} })
       .addTurn({ type: 'textBlock', text: 'first done' })
-      .addTurn({ type: 'textBlock', text: 'answered meanwhile' })
+      .addTurn({ type: 'textBlock', text: 'second done' })
       .addTurn({ type: 'textBlock', text: 'delivered' })
     const agent = new Agent({
       model,
       tools: [work.tool],
       backgroundTasks: { always: [work.tool] },
-      concurrentInvocationMode: 'inject',
+      concurrentInvocationMode: 'stopPrevious',
       printer: false,
     })
 
@@ -586,66 +587,19 @@ describe("concurrentInvocationMode 'inject' × backgroundTasks", () => {
     // waiting for the background task to settle.
     await until(() => model.callCount === 2, 'first invocation parked in settlement wait')
 
-    const injected = agent.invoke('meanwhile')
-    // The inject ends the wait: the same invocation runs another model pass with the
-    // injected input while the task is still working.
-    await until(() => model.callCount === 3, 'inject pass ran')
-    expect(persistedTasks(agent)?.map((task) => task.status)).toEqual(['working'])
-    expect(agent.pendingInvocations).toHaveLength(0)
-
-    // Back in the settlement wait; the task settling delivers inside the same invocation.
-    work.release()
-    const [firstResult, injectedResult] = await Promise.all([first, injected])
-    expect(injectedResult).toBe(firstResult)
-    expect(resultText(firstResult)).toBe('delivered')
-    expect(model.callCount).toBe(4)
-    expect(persistedTasks(agent)).toBeUndefined()
-
-    // Durable history: injected input, its answer, then the delivery (whose assistant
-    // tool use folds into the answer message) — all one invocation, so the delivery
-    // carries no cross-invocation provenance.
-    const meanwhileIndex = messageIndex(agent, (content) => hasText(content, 'meanwhile'))
-    const answerIndex = messageIndex(agent, (content) => hasText(content, 'answered meanwhile'))
-    const deliveryIndex = messageIndex(agent, hasBackgroundDelivery)
-    expect(meanwhileIndex).toBeGreaterThan(-1)
-    expect(answerIndex).toBeGreaterThan(meanwhileIndex)
-    expect(deliveryIndex).toBeGreaterThanOrEqual(answerIndex)
-    expect(deliveryInput(agent)).toEqual({ toolName: 'work' })
-  })
-
-  it('with both an inject and a queued caller pending, the inject joins first and the queued caller then takes the turn', async () => {
-    const work = createGate('work')
-    const model = new MockMessageModel()
-      .addTurn({ type: 'toolUseBlock', name: 'work', toolUseId: 'work-use', input: {} })
-      .addTurn({ type: 'textBlock', text: 'first done' })
-      .addTurn({ type: 'textBlock', text: 'answered meanwhile' })
-      .addTurn({ type: 'textBlock', text: 'second done' })
-      .addTurn({ type: 'textBlock', text: 'delivered' })
-    const agent = new Agent({
-      model,
-      tools: [work.tool],
-      backgroundTasks: { always: [work.tool] },
-      concurrentInvocationMode: 'queue',
-      printer: false,
-    })
-
-    const first = agent.invoke('first')
-    await work.started
-    await until(() => model.callCount === 2, 'first invocation parked in settlement wait')
-
     const second = agent.invoke('second')
-    const injected = agent.invoke('meanwhile', { ifBusy: 'inject' })
 
-    // The inject joined the first invocation (one more pass); the queued caller then
-    // took the turn without the first invocation waiting for settlement.
+    // The first invocation had already finished its last step, so it completes normally
+    // rather than reporting 'superseded', and the second takes the turn without waiting
+    // for settlement.
     const firstResult = await first
-    expect(resultText(firstResult)).toBe('answered meanwhile')
-    expect(await injected).toBe(firstResult)
-    await until(() => model.callCount === 4, 'queued invocation model pass')
+    expect(firstResult.stopReason).toBe('endTurn')
+    expect(resultText(firstResult)).toBe('first done')
+    await until(() => model.callCount === 3, 'second invocation model pass')
     expect(persistedTasks(agent)?.map((task) => task.status)).toEqual(['working'])
 
-    // The queued caller is last: it waits for settlement and absorbs the delivery,
-    // which carries provenance because a different invocation dispatched the task.
+    // The second invocation is last in line: it waits for settlement and absorbs the
+    // delivery, which carries provenance because the first invocation dispatched the task.
     work.release()
     expect(resultText(await second)).toBe('delivered')
     expect(deliveryInput(agent)).toEqual({ toolName: 'work', startedBy: 'an earlier request in this conversation' })
