@@ -110,6 +110,8 @@ pub(crate) struct AgentInner {
     pub(crate) cancel: RwLock<CancellationToken>,
     pub(crate) initialized: AsyncMutex<bool>,
     pub(crate) storage: Option<crate::storage::StorageRef>,
+    /// Configured sandbox; `None` falls back to the default slot, `Some(None)` opts out.
+    pub(crate) sandbox: Option<Option<crate::sandbox::SandboxRef>>,
     pub(crate) session_id: RwLock<Option<String>>,
     pub(crate) background_tasks: Option<Arc<crate::background_tasks::BackgroundTasks>>,
     pub(crate) continuation_input: RwLock<Vec<Message>>,
@@ -288,6 +290,18 @@ impl Agent {
         self.inner.tools.read().list()
     }
 
+    /// Where this agent runs commands and file operations.
+    ///
+    /// The configured sandbox, else the process-wide default
+    /// ([`crate::sandbox::set_default_sandbox`]); errors with [`Error::DefaultNotConfigured`]
+    /// when neither is set, as the TS getter throws.
+    pub fn sandbox(&self) -> Result<crate::sandbox::SandboxRef> {
+        match &self.inner.sandbox {
+            Some(Some(sandbox)) => Ok(Arc::clone(sandbox)),
+            _ => crate::sandbox::default_sandbox(),
+        }
+    }
+
     /// Access the tool registry.
     pub fn with_tool_registry<R>(&self, f: impl FnOnce(&mut ToolRegistry) -> R) -> R {
         f(&mut self.inner.tools.write())
@@ -310,10 +324,29 @@ impl Agent {
             return Ok(());
         }
         self.inner.plugins.initialize(self).await?;
+        self.register_sandbox_tools();
         let mut event = InitializedEvent { agent: self.clone() };
         self.inner.hooks.invoke_callbacks(&mut event).await?;
         *initialized = true;
         Ok(())
+    }
+
+    /// Add the sandbox's vended tools, skipping names a user tool already owns (TS
+    /// `initialize()` step 2). Skipped when the sandbox was explicitly opted out of.
+    fn register_sandbox_tools(&self) {
+        let Some(Some(sandbox)) = self.inner.sandbox.as_ref() else {
+            return;
+        };
+        for tool in sandbox.tools() {
+            let name = tool.name().to_owned();
+            let added = self.with_tool_registry(|registry| registry.add(tool).is_ok());
+            if !added {
+                tracing::warn!(
+                    tool_name = %name,
+                    "sandbox-vended tool skipped, user already registered a tool with this name"
+                );
+            }
+        }
     }
 
     /// Whether an invocation is currently running.
@@ -403,6 +436,7 @@ pub(crate) mod test_fixtures {
                 cancel: RwLock::new(CancellationToken::new()),
                 initialized: AsyncMutex::new(false),
                 storage: None,
+                sandbox: None,
                 session_id: RwLock::new(None),
                 memory_manager: None,
                 background_tasks: None,

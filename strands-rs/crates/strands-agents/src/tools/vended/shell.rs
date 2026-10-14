@@ -1,22 +1,20 @@
 //! The `shell` tool (`strands-ts/src/vended-tools/shell/make-shell.ts`).
 //!
 //! Stateless: every call runs the command in a fresh `sh -c` process, so variables and the
-//! working directory do not survive across calls. The TS tool routes through
-//! `Sandbox.execute`; this port runs on the host, reproducing the local-environment executor
-//! (`sh -c`, inherited environment plus [`ShellConfig::env`], optional `cwd`).
+//! working directory do not survive across calls. Like TS, the command is routed through a
+//! [`Sandbox`]: the tool's own sandbox if it was vended by one, else the invoking agent's
+//! ([`crate::Agent::sandbox`]), else a [`LocalSandbox`] built from [`ShellConfig`].
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncReadExt;
-use tokio::process::Command;
 
 use crate::error::{Error, Result};
+use crate::sandbox::{ExecuteOptions, LocalSandbox, Sandbox, SandboxError, SandboxRef};
 use crate::tools::tool::{create_error_result, Tool, ToolContext};
 use crate::tools::wrap_in_tool_result;
 use crate::types::{ToolResultBlock, ToolSpec};
@@ -29,9 +27,6 @@ pub const SANDBOX_SHELL_DESCRIPTION: &str = "Executes shell commands and returns
 
 /// Exit code reported for a command killed by its timeout (the `timeout(1)` convention).
 const TIMEOUT_EXIT_CODE: i32 = 124;
-/// How long the pipe collectors get to finish after the command ended, before their buffers are
-/// taken as-is. Bounds the call when a grandchild still holds the inherited pipes open.
-const DRAIN_GRACE: Duration = Duration::from_millis(250);
 
 /// Result of a shell command (`ShellOutput` in TS).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +97,7 @@ struct ShellInput {
 #[derive(Debug)]
 pub struct ShellTool {
     config: ShellConfig,
+    sandbox: Option<SandboxRef>,
     spec: ToolSpec,
 }
 
@@ -121,8 +117,28 @@ impl ShellTool {
     pub fn with_config(config: ShellConfig) -> Self {
         Self {
             config,
+            sandbox: None,
             spec: shell_tool_spec(),
         }
+    }
+
+    /// Shell tool that always runs through `sandbox` (how a sandbox vends its own shell tool).
+    pub fn with_sandbox(sandbox: SandboxRef) -> Self {
+        Self {
+            sandbox: Some(sandbox),
+            ..Self::new()
+        }
+    }
+
+    fn fallback_sandbox(&self) -> SandboxRef {
+        let mut sandbox = match &self.config.cwd {
+            Some(cwd) => LocalSandbox::with_base_dir(cwd.clone()),
+            None => LocalSandbox::new(),
+        };
+        if let Some(env) = &self.config.env {
+            sandbox = sandbox.with_env(env.clone());
+        }
+        Arc::new(sandbox)
     }
 
     /// Run `command`, killing it after `timeout` (defaults to [`ShellConfig::timeout`]).
@@ -131,54 +147,41 @@ impl ShellTool {
         command: &str,
         timeout: Option<f64>,
     ) -> std::result::Result<ShellOutput, ShellError> {
+        self.execute_in(self.fallback_sandbox().as_ref(), command, timeout)
+            .await
+    }
+
+    /// Run `command` through `sandbox`, mapping sandbox failures onto [`ShellError`].
+    pub async fn execute_in(
+        &self,
+        sandbox: &dyn Sandbox,
+        command: &str,
+        timeout: Option<f64>,
+    ) -> std::result::Result<ShellOutput, ShellError> {
         let seconds = timeout.unwrap_or(self.config.timeout.as_secs_f64());
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-            .arg(command)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        // Own process group, so the whole tree (not just `sh`) can be signalled.
-        #[cfg(unix)]
-        cmd.process_group(0);
-        if let Some(cwd) = &self.config.cwd {
-            cmd.current_dir(cwd);
-        }
-        if let Some(env) = &self.config.env {
-            cmd.envs(env);
-        }
-
-        let mut child = cmd.spawn().map_err(|e| ShellError::Execution(e.to_string()))?;
-        // Kills the group on every exit path, including when this future is dropped (cancel).
-        let pid = child.id();
-        let _group = GroupKill(pid);
-        let stdout = collect(child.stdout.take());
-        let stderr = collect(child.stderr.take());
-
-        let status = tokio::time::timeout(Duration::from_secs_f64(seconds), child.wait()).await;
-        match status {
-            Ok(status) => {
-                let status = status.map_err(|e| ShellError::Execution(e.to_string()))?;
-                kill_group(pid);
-                Ok(ShellOutput {
-                    output: stdout.read(DRAIN_GRACE).await,
-                    error: stderr.read(DRAIN_GRACE).await,
-                    exit_code: exit_code_of(&status),
-                })
-            }
-            Err(_) => {
-                kill_group(pid);
-                let _ = child.kill().await;
-                Err(ShellError::Timeout {
-                    seconds,
-                    partial: ShellOutput {
-                        output: stdout.read(DRAIN_GRACE).await,
-                        error: stderr.read(DRAIN_GRACE).await,
-                        exit_code: TIMEOUT_EXIT_CODE,
-                    },
-                })
-            }
+        let options = ExecuteOptions {
+            timeout: Some(Duration::from_secs_f64(seconds)),
+            ..ExecuteOptions::default()
+        };
+        match sandbox.execute(command, options).await {
+            Ok(result) => Ok(ShellOutput {
+                output: result.stdout,
+                error: result.stderr,
+                exit_code: result.exit_code,
+            }),
+            Err(SandboxError::Timeout {
+                seconds,
+                stdout,
+                stderr,
+            }) => Err(ShellError::Timeout {
+                seconds,
+                partial: ShellOutput {
+                    output: stdout,
+                    error: stderr,
+                    exit_code: TIMEOUT_EXIT_CODE,
+                },
+            }),
+            Err(error) => Err(ShellError::Execution(error.to_string())),
         }
     }
 }
@@ -229,7 +232,14 @@ impl Tool for ShellTool {
             ));
         }
 
-        let run = self.execute(&input.command, input.timeout);
+        let sandbox = match self.sandbox.clone() {
+            Some(sandbox) => sandbox,
+            None => match ctx.agent.sandbox() {
+                Ok(sandbox) => sandbox,
+                Err(_) => self.fallback_sandbox(),
+            },
+        };
+        let run = self.execute_in(sandbox.as_ref(), &input.command, input.timeout);
         let outcome = tokio::select! {
             biased;
             () = ctx.cancel.cancelled() => return Err(Error::Cancelled),
@@ -244,92 +254,6 @@ impl Tool for ShellTool {
             Err(err) => Ok(create_error_result(err, &ctx.tool_use.tool_use_id)),
         }
     }
-}
-
-/// Exit code of a finished process; a signal maps to `128 + signo` as a shell does.
-fn exit_code_of(status: &std::process::ExitStatus) -> i32 {
-    if let Some(code) = status.code() {
-        return code;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        if let Some(signal) = status.signal() {
-            return 128 + signal;
-        }
-    }
-    1
-}
-
-/// A pipe being drained in the background, readable as a `String` once the child is done.
-struct Collected {
-    buffer: Arc<Mutex<Vec<u8>>>,
-    task: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Collected {
-    /// Wait up to `grace` for EOF, then take whatever has been buffered so far.
-    async fn read(mut self, grace: Duration) -> String {
-        if let Some(mut task) = self.task.take() {
-            if tokio::time::timeout(grace, &mut task).await.is_err() {
-                task.abort();
-            }
-        }
-        let bytes = self.buffer.lock().expect("output buffer poisoned").clone();
-        String::from_utf8_lossy(&bytes).into_owned()
-    }
-}
-
-impl Drop for Collected {
-    fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
-    }
-}
-
-/// SIGKILLs the process group of `pid` when dropped (timeout, error, or a cancelled call).
-struct GroupKill(Option<u32>);
-
-impl Drop for GroupKill {
-    fn drop(&mut self) {
-        kill_group(self.0);
-    }
-}
-
-/// SIGKILL the whole process group led by `pid`; children of the command die with it.
-#[cfg(unix)]
-fn kill_group(pid: Option<u32>) {
-    let Some(pid) = pid.and_then(|pid| i32::try_from(pid).ok()) else {
-        return;
-    };
-    let _ = nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGKILL);
-}
-
-#[cfg(not(unix))]
-fn kill_group(_pid: Option<u32>) {}
-
-fn collect<R>(reader: Option<R>) -> Collected
-where
-    R: AsyncReadExt + Unpin + Send + 'static,
-{
-    let buffer = Arc::new(Mutex::new(Vec::new()));
-    let task = reader.map(|mut reader| {
-        let buffer = Arc::clone(&buffer);
-        tokio::spawn(async move {
-            let mut chunk = [0u8; 8192];
-            while let Ok(read) = reader.read(&mut chunk).await {
-                if read == 0 {
-                    break;
-                }
-                buffer
-                    .lock()
-                    .expect("output buffer poisoned")
-                    .extend_from_slice(&chunk[..read]);
-            }
-        })
-    });
-    Collected { buffer, task }
 }
 
 #[cfg(test)]

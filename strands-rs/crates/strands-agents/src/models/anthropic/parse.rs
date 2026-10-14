@@ -4,76 +4,13 @@ use base64::Engine;
 use serde_json::{json, Value};
 
 use super::SERVER_TOOL_BLOCK_TYPES;
+use crate::models::sse::SseEvent;
 use crate::error::{Error, Result};
 use crate::logging::warn_once;
 use crate::models::streaming::{ContentBlockDelta, ContentBlockStart, ModelStreamEvent};
 use crate::types::{
     Citation, CitationGeneratedContent, CitationLocation, CitationSourceContent, Role, StopReason, Usage,
 };
-
-/// One parsed `text/event-stream` frame.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SseEvent {
-    /// The `event:` name, empty when absent.
-    pub event: String,
-    /// The joined `data:` payload.
-    pub data: String,
-}
-
-/// Parse a complete SSE payload into frames (used by tests and offline transports).
-pub fn parse_sse_events(bytes: &[u8]) -> Vec<SseEvent> {
-    let mut buffer = bytes.to_vec();
-    let mut events = drain_sse(&mut buffer);
-    events.extend(flush_sse(&mut buffer));
-    events
-}
-
-/// Pull every complete frame out of `buffer`, leaving the trailing partial frame behind.
-pub(super) fn drain_sse(buffer: &mut Vec<u8>) -> Vec<SseEvent> {
-    let mut events = Vec::new();
-    loop {
-        let text = String::from_utf8_lossy(buffer).into_owned();
-        let Some(end) = text
-            .find("\n\n")
-            .map(|i| i + 2)
-            .or_else(|| text.find("\r\n\r\n").map(|i| i + 4))
-        else {
-            return events;
-        };
-        let frame = text[..end].to_owned();
-        buffer.drain(..end);
-        if let Some(event) = parse_frame(&frame) {
-            events.push(event);
-        }
-    }
-}
-
-/// Parse whatever is left in `buffer` as a final (unterminated) frame.
-pub(super) fn flush_sse(buffer: &mut Vec<u8>) -> Vec<SseEvent> {
-    let text = String::from_utf8_lossy(buffer).into_owned();
-    buffer.clear();
-    parse_frame(&text).into_iter().collect()
-}
-
-fn parse_frame(frame: &str) -> Option<SseEvent> {
-    let mut event = String::new();
-    let mut data: Vec<String> = Vec::new();
-    for line in frame.lines() {
-        let line = line.trim_end_matches('\r');
-        if let Some(rest) = line.strip_prefix("event:") {
-            event = rest.trim().to_owned();
-        } else if let Some(rest) = line.strip_prefix("data:") {
-            data.push(rest.strip_prefix(' ').unwrap_or(rest).to_owned());
-        }
-    }
-    if data.is_empty() && event.is_empty() {
-        return None;
-    }
-    Some(SseEvent {
-        event,
-        data: data.join("\n"),
-    })
-}
 
 /// Map an Anthropic `stop_reason` onto [`StopReason`], passing unknown values through verbatim.
 pub fn map_stop_reason(raw: &str) -> StopReason {
@@ -162,7 +99,7 @@ impl StreamState {
         let kind = value
             .get("type")
             .and_then(Value::as_str)
-            .unwrap_or(sse.event.as_str())
+            .unwrap_or(sse.event.as_deref().unwrap_or_default())
             .to_owned();
         match kind.as_str() {
             "error" => {

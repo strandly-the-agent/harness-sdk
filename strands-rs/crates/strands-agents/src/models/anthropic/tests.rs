@@ -892,14 +892,13 @@ async fn fails_after_too_many_pause_turn_continuations() {
 
 #[test]
 fn parses_sse_frames_split_across_chunks() {
-    let mut buffer = b"event: message_stop\ndata: {\"type\":\"mes".to_vec();
-    assert!(parse::drain_sse(&mut buffer).is_empty());
-    buffer.extend_from_slice(b"sage_stop\"}\n\n");
-    let events = parse::drain_sse(&mut buffer);
+    let mut parser = SseParser::new();
+    assert!(parser.push("event: message_stop\ndata: {\"type\":\"mes").is_empty());
+    let events = parser.push("sage_stop\"}\n\n");
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].event, "message_stop");
+    assert_eq!(events[0].event.as_deref(), Some("message_stop"));
     assert_eq!(events[0].data, "{\"type\":\"message_stop\"}");
-    assert!(buffer.is_empty());
+    assert!(parser.finish().is_none());
 }
 
 #[test]

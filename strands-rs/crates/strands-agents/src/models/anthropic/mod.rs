@@ -8,7 +8,7 @@ mod format;
 mod parse;
 
 pub use format::{format_count_tokens_request, format_request};
-pub use parse::{map_stop_reason, parse_sse_events, SseEvent};
+pub use parse::map_stop_reason;
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -23,6 +23,7 @@ use super::defaults::{
     MODEL_DEFAULTS,
 };
 use super::model::{CountTokensOptions, Model, ModelEventStream, StreamOptions};
+use super::sse::SseParser;
 use super::streaming::ModelStreamEvent;
 use crate::error::{Error, Result};
 use crate::logging::warn_once;
@@ -382,21 +383,21 @@ impl Model for AnthropicModel {
                 }
 
                 let mut state = parse::StreamState::new(continuations == 0);
-                let mut buffer = Vec::<u8>::new();
+                let mut parser = SseParser::new();
                 while let Some(chunk) = body.next().await {
                     if let Some(cancel) = &options.cancel {
                         if cancel.is_cancelled() {
                             Err(Error::Cancelled)?;
                         }
                     }
-                    buffer.extend_from_slice(&chunk?);
-                    for sse in parse::drain_sse(&mut buffer) {
+                    let chunk = chunk?;
+                    for sse in parser.push(&String::from_utf8_lossy(&chunk)) {
                         for event in state.handle(&sse)? {
                             yield event;
                         }
                     }
                 }
-                for sse in parse::flush_sse(&mut buffer) {
+                if let Some(sse) = parser.finish() {
                     for event in state.handle(&sse)? {
                         yield event;
                     }
