@@ -5,6 +5,7 @@
 
 pub mod agent;
 pub mod background_tasks;
+pub mod context_manager;
 pub mod conversation_manager;
 pub mod error;
 pub mod hooks;
@@ -26,6 +27,10 @@ pub use agent::{
 };
 pub use agent::{CallOptions, ToolHandle};
 pub use background_tasks::{BackgroundTask, BackgroundTasks, BackgroundTasksConfig};
+pub use context_manager::{
+    ContextManager, ContextManagerConfig, ContextManagerOption, ContextState, ContextStrategy, StashConfig,
+    StashOption,
+};
 pub use conversation_manager::{
     ConversationManager, NullConversationManager, ProactiveCompression, ReduceOptions, ReduceTrigger,
     SlidingWindowConfig, SlidingWindowConversationManager,
