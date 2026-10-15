@@ -617,19 +617,18 @@ impl Graph {
     pub fn edges(&self) -> &[Edge];
     pub fn sources(&self) -> &[Arc<dyn Node>];
     pub fn config(&self) -> &GraphConfig;
-    pub fn can_run_concurrently(&self) -> bool;
     pub fn hooks(&self) -> &HookRegistry;
     pub fn plugins(&self) -> &MultiAgentPluginRegistry;
-    pub fn state(&self) -> &MultiAgentStateHandle;
-    pub fn invocation_state(&self) -> &InvocationState;
+    pub async fn initialize(&self) -> Result<()>;
     // execution (inherent, per the MultiAgent binding rule; `impl MultiAgent for Graph` delegates)
     pub async fn invoke(&self, impl Into<MultiAgentInput>) -> Result<MultiAgentResult>;
     pub async fn invoke_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions)
         -> Result<MultiAgentResult>;
     pub fn stream(&self, impl Into<MultiAgentInput>) -> MultiAgentStream;
     pub fn stream_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions) -> MultiAgentStream;
-    pub fn take_snapshot(&self, TakeMultiAgentSnapshotOptions) -> Result<Snapshot>;
-    pub fn load_snapshot(&self, &Snapshot) -> Result<()>;
+    pub fn take_snapshot(&self, Option<&MultiAgentStateHandle>, TakeMultiAgentSnapshotOptions)
+        -> Result<Snapshot>;
+    pub fn load_snapshot(&self, &Snapshot, Option<&MultiAgentStateHandle>) -> Result<()>;
 }
 
 pub struct GraphBuilder;                     // #[must_use]
@@ -647,7 +646,6 @@ impl GraphBuilder {
     pub fn max_steps(self, u64) -> Self;
     pub fn timeout(self, Duration) -> Self;
     pub fn node_timeout(self, Duration) -> Self;
-    pub fn set_state(self, InvocationState) -> Self;
     pub fn plugin(self, Arc<dyn MultiAgentPlugin>) -> Self;
     pub fn hook<E, F>(self, F) -> Self;
     pub fn build(self) -> Result<Graph>;
@@ -656,26 +654,27 @@ impl GraphBuilder {
 
 Divergences from TS:
 
-- **One state handle, reset per invocation.** TS allocates a fresh `MultiAgentState` inside
-  `_stream`; the Rust `Graph` owns one `MultiAgentStateHandle` (so `Graph::state()` and every hook
-  event observe the same handle), and an invocation overwrites its contents instead — unless it is
-  resuming, in which case the pending state is restored into it.
 - **`load_snapshot` arms the next invocation.** TS has no `Graph.takeSnapshot`/`loadSnapshot`: a
   session plugin restores state inside the `BeforeMultiAgentInvocationEvent` hook. The Rust methods
-  delegate to `multiagent::snapshot` and, because the invocation resets the handle,
-  `load_snapshot` also stores the restored state as the pending state so the next
+  delegate to `multiagent::snapshot` and take an optional state handle, like `Swarm`'s:
+  `take_snapshot(None, ..)` snapshots the most recent invocation's state (an error before the first
+  run), and `load_snapshot(.., None)` validates identity and arms the restored state so the next
   `invoke`/`stream` resumes from it (same mechanism as an interrupt resume).
 - **Interrupt resume is same-instance.** The paused `MultiAgentState` is kept on the graph, so
   `graph.invoke(MultiAgentInput::InterruptResponses(..))` resumes it. Cross-process resume needs
   the `session_manager` slot, which is not ported yet (register a session plugin via
   `.plugin(..)`), so TS's session-manager resume tests are covered through `load_snapshot`.
-- **Per-node `timeout: None` inherits `GraphConfig::node_timeout`**; TS's per-node `Infinity`
-  (which *disables* a finite graph-level `nodeTimeout`) has no `Option<Duration>` spelling. A node
-  that must never time out needs a graph without `node_timeout`.
+- **Per-node `timeout: None` inherits `GraphConfig::node_timeout`**, and
+  `AgentNodeOptions::with_timeout(Duration::MAX)` is the spelling of TS's per-node `Infinity` that
+  disables a finite graph-level `node_timeout`.
 - **A node timeout surfaces after the node's `CANCELLED` result.** `run_node` maps the cancel to a
   `CANCELLED` `NodeResult` (which is emitted and recorded) and the graph then fails the invocation
   with TS's `node_timeout=<ms>, node_id=<id>, graph_id=<id>` error; TS throws before recording the
   result. The error is the same, the discarded aggregate differs.
+- **`stream_with` runs under a child cancel token.** The invocation task gets
+  `options.cancel.child_token()` (or a fresh token), and dropping the stream cancels it and aborts
+  the task — TS's `gen.return()` cleanup. The caller's own token is never cancelled, and node
+  cancellation stays cooperative.
 - **Node events pass through the orchestrator.** `run_node` writes to a `NodeSink`; the graph owns
   that channel, invokes hook callbacks on each event, and forwards it to the consumer's stream —
   which is how TS's queue-and-`_emit` ordering (`nodeResult` → `handoff` → `afterNodeCall`) is

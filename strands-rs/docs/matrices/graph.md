@@ -35,8 +35,9 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | `nodes: [graph]` (`definition instanceof Graph`) | `impl From<Graph> for NodeDefinition` | wraps in a `MultiAgentNode` |
 | `graph.invoke(input, options?)` | `Graph::{invoke, invoke_with}` | inherent, `impl Into<MultiAgentInput>` |
 | `graph.stream(input, options?)` | `Graph::{stream, stream_with}` | inherent, returns `MultiAgentStream` |
-| `graph.initialize()` | — | run implicitly by the first invocation (idempotent) |
-| (session plugin restore) | `Graph::{take_snapshot, load_snapshot}` | `load_snapshot` makes the next invocation resume |
+| `graph.initialize()` | `Graph::initialize()` | idempotent; the first invocation calls it |
+| (session plugin restore) | `Graph::{take_snapshot, load_snapshot}` | `state: Option<&MultiAgentStateHandle>`; `take_snapshot(None, ..)` uses the last run's state, `load_snapshot(.., None)` makes the next invocation resume |
+| `new MultiAgentState` per `_stream` | a fresh `MultiAgentStateHandle` per invocation | concurrent invocations are independent |
 
 ## Tests
 
@@ -69,12 +70,12 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | does not pass dependency reasoning blocks downstream | — | pending (`MockMessageModel` cannot emit reasoning blocks) |
 | converts ContentBlockData[] input for downstream nodes | — | n/a (Rust input is already `Vec<ContentBlock>`) |
 | returns failed result when agent throws | `a_failing_node_lands_as_a_failed_result_and_stops_its_branch` | ported (custom node; the mock model cannot fail) |
-| propagates unexpected errors from node execution | — | pending |
+| propagates unexpected errors from node execution | — | n/a (`run_node` turns every node error into a `FAILED`/`CANCELLED` result) |
 | throws when maxSteps is exceeded | `errors_when_max_steps_is_exceeded` | ported |
 | throws when a node exceeds nodeTimeout | `errors_when_a_node_exceeds_the_node_timeout` | ported |
 | applies per-node timeout over nodeTimeout | `a_per_node_timeout_overrides_the_graph_node_timeout` | ported |
 | does not throw when nodeTimeout is Infinity | covered by every test without `node_timeout` | n/a (`None` == Infinity) |
-| per-node timeout of Infinity disables a finite nodeTimeout | — | n/a (divergence: per-node `None` inherits) |
+| per-node timeout of Infinity disables a finite nodeTimeout | `a_per_node_timeout_of_duration_max_disables_the_graph_node_timeout` | ported (`Duration::MAX` is the opt-out) |
 | throws when timeout is exceeded | `errors_when_the_wall_clock_timeout_is_exceeded` | ported |
 | calls initialize only once across invocations | `initializes_plugins_only_once_across_invocations` | ported |
 | respects maxConcurrency limit | `respects_max_concurrency` | ported |
@@ -84,7 +85,8 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | yields handoff events on transitions between nodes | `yields_a_handoff_event_between_nodes` | ported |
 | returns cancelled result when cancel is true / a string | `a_hook_cancels_a_node_with_its_own_message` | ported (string variant) |
 | buffers / does not buffer agent printer output | — | n/a (no printer buffering in the Rust port) |
-| cleans up running nodes when consumer breaks mid-stream | — | pending (dropping `MultiAgentStream` drops the driver task) |
+| cleans up running nodes when consumer breaks mid-stream | `dropping_the_stream_cancels_the_invocation` | ported (dropping the stream aborts the invocation task, which drops the node tasks) |
+| does not interleave output from parallel nodes on a shared writer | — | n/a (no printer in the Rust port) |
 | resumes from the next ready node after a linear graph stops | `resumes_from_the_next_ready_node_after_a_loaded_snapshot` | ported (snapshot instead of session manager) |
 | resumes parallel branches independently / respects conditional edges on resume / starts fresh when all completed | — | pending (need the `session_manager` slot) |
 | throws when sessionManager is in both constructor arg and plugins | — | not yet (no `session_manager` slot) |
@@ -99,6 +101,10 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 Rust tests with no TS counterpart (they cover Rust-only surface):
 `takes_node_ids_from_the_nodes_themselves`,
 `can_run_concurrently_is_false_for_a_single_linear_path`,
-`can_run_concurrently_is_true_when_a_node_fans_out`,
-`seeds_the_shared_state_with_every_node_id`, `clones_share_one_state_handle`,
-`edge_handlers_read_the_shared_state`, `node_description_falls_back_to_the_agent_description`.
+`can_run_concurrently_is_true_when_a_node_fans_out` (both cover the `pub(crate)` predicate),
+`seeds_a_fresh_invocation_state_with_every_node_id`,
+`concurrent_invocations_each_see_only_their_own_node_results`,
+`an_interrupt_leaves_queued_targets_pending`,
+`emits_an_after_node_call_event_for_every_node_that_ran`,
+`a_node_timeout_error_survives_the_post_loop_drain`,
+`edge_handlers_read_the_invocation_state`, `node_description_falls_back_to_the_agent_description`.

@@ -33,6 +33,7 @@ use super::snapshot::{self, TakeMultiAgentSnapshotOptions};
 use super::state::{
     now_ms, MultiAgentResult, MultiAgentState, MultiAgentStateHandle, NodeResult, ResultStatus, Status,
 };
+use super::{EVENT_BUFFER, HOOK_CANCEL_MESSAGE};
 use crate::agent::InvocationState;
 use crate::error::{Error, Result};
 use crate::hooks::{Cancel, HookEvent, HookFn, HookRegistry};
@@ -49,7 +50,7 @@ const UNBOUNDED_WARNING: &str = "graph has no max_steps or timeout set; executio
 ///
 /// Every limit defaults to "no limit"; [`GraphBuilder::build`] warns once when neither
 /// `max_steps` nor `timeout` is set.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct GraphConfig {
     /// Max nodes executing in parallel; `None` means no limit.
@@ -74,19 +75,20 @@ struct GraphInner {
     edges: Vec<Edge>,
     sources: Vec<Arc<dyn Node>>,
     config: GraphConfig,
+    // Only the tests consume it: TS reads it for `bufferOutput`, which Rust has no equivalent of.
+    #[cfg_attr(not(test), allow(dead_code))]
     can_run_concurrently: bool,
-    invocation_state: InvocationState,
-    state: MultiAgentStateHandle,
     hooks: HookRegistry,
     plugins: MultiAgentPluginRegistry,
     initialized: AtomicBool,
-    pending_interrupt: Mutex<Option<MultiAgentState>>,
+    pending_interrupt_state: Mutex<Option<MultiAgentState>>,
+    last_state: Mutex<Option<MultiAgentStateHandle>>,
 }
 
-/// Directed graph orchestrator; a cheap `Clone` handle over one shared topology and state.
+/// Directed graph orchestrator; a cheap `Clone` handle over one shared topology.
 ///
-/// Build it with [`Graph::builder`]. Clones share the node set, the hook registry, and the
-/// invocation state, so cloning a graph never forks its execution state.
+/// Build it with [`Graph::builder`]. Clones share the node set and the hook registry; every
+/// invocation gets its own execution state, so concurrent invocations never interfere.
 #[derive(Clone)]
 pub struct Graph {
     inner: Arc<GraphInner>,
@@ -141,8 +143,8 @@ impl Graph {
     }
 
     /// Whether this topology can ever run two nodes at once.
-    #[must_use]
-    pub fn can_run_concurrently(&self) -> bool {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn can_run_concurrently(&self) -> bool {
         self.inner.can_run_concurrently
     }
 
@@ -156,18 +158,6 @@ impl Graph {
     #[must_use]
     pub fn plugins(&self) -> &MultiAgentPluginRegistry {
         &self.inner.plugins
-    }
-
-    /// Shared execution state: node statuses, results, and the app-owned store.
-    #[must_use]
-    pub fn state(&self) -> &MultiAgentStateHandle {
-        &self.inner.state
-    }
-
-    /// State forwarded to every node's child agent, shared by all clones of this handle.
-    #[must_use]
-    pub fn invocation_state(&self) -> &InvocationState {
-        &self.inner.invocation_state
     }
 }
 
@@ -193,7 +183,6 @@ pub struct GraphBuilder {
     edges: Vec<EdgeDefinition>,
     entry_points: Option<Vec<String>>,
     config: GraphConfig,
-    invocation_state: Option<InvocationState>,
     plugins: Vec<Arc<dyn MultiAgentPlugin>>,
     hooks: HookRegistry,
 }
@@ -283,12 +272,6 @@ impl GraphBuilder {
         self
     }
 
-    /// Seed the state forwarded to every node's child agent.
-    pub fn set_state(mut self, state: InvocationState) -> Self {
-        self.invocation_state = Some(state);
-        self
-    }
-
     /// Register a multi-agent plugin.
     pub fn plugin(mut self, plugin: Arc<dyn MultiAgentPlugin>) -> Self {
         self.plugins.push(plugin);
@@ -324,7 +307,6 @@ impl GraphBuilder {
 
         let id = self.id.unwrap_or_else(|| DEFAULT_GRAPH_ID.to_owned());
         let name = self.name.unwrap_or_else(|| id.clone());
-        let state = MultiAgentStateHandle::new(MultiAgentState::new(nodes.keys().cloned()));
 
         Ok(Graph {
             inner: Arc::new(GraphInner {
@@ -336,12 +318,11 @@ impl GraphBuilder {
                 edges,
                 sources,
                 config: self.config,
-                invocation_state: self.invocation_state.unwrap_or_default(),
-                state,
                 hooks: self.hooks,
                 plugins: MultiAgentPluginRegistry::new(self.plugins),
                 initialized: AtomicBool::new(false),
-                pending_interrupt: Mutex::new(None),
+                pending_interrupt_state: Mutex::new(None),
+                last_state: Mutex::new(None),
             }),
         })
     }
@@ -486,9 +467,6 @@ fn can_run_concurrently(config: &GraphConfig, edges: &[Edge], sources: &[Arc<dyn
     fan_out.values().any(|count| *count > 1)
 }
 
-const EVENT_BUFFER: usize = 32;
-const HOOK_CANCEL_MESSAGE: &str = "node cancelled by hook";
-
 impl Graph {
     /// Run to completion with default options.
     pub async fn invoke(&self, input: impl Into<MultiAgentInput>) -> Result<MultiAgentResult> {
@@ -517,40 +495,94 @@ impl Graph {
     }
 
     /// Stream events as they occur; the last event carries the aggregate result.
+    ///
+    /// The invocation runs in a spawned task; dropping the stream cancels it, as TS cancels the
+    /// run in `gen.return()`. Node cancellation stays cooperative.
+    ///
+    /// # Panics
+    /// Panics if called outside a tokio runtime (it spawns the invocation task).
     pub fn stream_with(
         &self,
         input: impl Into<MultiAgentInput>,
-        options: MultiAgentInvokeOptions,
+        mut options: MultiAgentInvokeOptions,
     ) -> MultiAgentStream {
         let (sink, events) = mpsc::channel(EVENT_BUFFER);
         let graph = self.clone();
         let input = input.into();
-        tokio::spawn(async move {
-            if let Err(error) = graph.run(input, options, sink.clone()).await {
-                let _ = sink.send(Err(error)).await;
-            }
-        });
+        // A child of the caller's token, so dropping the stream cancels this run only.
+        let cancel = options
+            .cancel
+            .as_ref()
+            .map_or_else(CancellationToken::new, CancellationToken::child_token);
+        options.cancel = Some(cancel.clone());
+        let driver = CancelOnDrop {
+            cancel,
+            task: tokio::spawn(async move {
+                if let Err(error) = graph.run(input, options, sink.clone()).await {
+                    let _ = sink.send(Err(error)).await;
+                }
+            }),
+        };
         MultiAgentStream::new(Box::pin(futures::stream::unfold(
-            events,
-            |mut events| async move { events.recv().await.map(|event| (event, events)) },
+            (events, driver),
+            |(mut events, driver)| async move { events.recv().await.map(|event| (event, (events, driver))) },
         )))
     }
 
-    /// Capture the graph's current state as a multi-agent snapshot.
+    /// Capture the graph's identity as a snapshot (`scope: "multiAgent"`).
+    ///
+    /// Pass the state handle of a live invocation to include its execution state; `None` uses the
+    /// most recent invocation's state.
     ///
     /// # Errors
-    /// Fails when the state cannot be serialized.
-    pub fn take_snapshot(&self, options: TakeMultiAgentSnapshotOptions) -> Result<Snapshot> {
-        snapshot::take_snapshot(self, Some(&self.inner.state), options)
+    /// Fails when the state cannot be serialized, or when `None` is passed before the first run.
+    pub fn take_snapshot(
+        &self,
+        state: Option<&MultiAgentStateHandle>,
+        options: TakeMultiAgentSnapshotOptions,
+    ) -> Result<Snapshot> {
+        match state {
+            Some(state) => snapshot::take_snapshot(self, Some(state), options),
+            None => {
+                let last = self.inner.last_state.lock().clone().ok_or_else(|| {
+                    Error::other(format!(
+                        "graph_id=<{}> | no invocation state to snapshot; run the graph or pass a state handle",
+                        self.inner.id
+                    ))
+                })?;
+                snapshot::take_snapshot(self, Some(&last), options)
+            }
+        }
     }
 
-    /// Restore state from `snapshot`; the next invocation resumes from it.
+    /// Restore a snapshot into `state`, or arm the next invocation to resume from it when `None`.
     ///
     /// # Errors
     /// Fails when the snapshot's scope, schema version, or orchestrator id do not match.
-    pub fn load_snapshot(&self, snapshot: &Snapshot) -> Result<()> {
-        snapshot::load_snapshot(self, snapshot, Some(&self.inner.state))?;
-        *self.inner.pending_interrupt.lock() = Some(self.inner.state.snapshot());
+    pub fn load_snapshot(&self, snapshot: &Snapshot, state: Option<&MultiAgentStateHandle>) -> Result<()> {
+        match state {
+            Some(state) => snapshot::load_snapshot(self, snapshot, Some(state))?,
+            None => {
+                let restored =
+                    MultiAgentStateHandle::new(MultiAgentState::new(self.inner.nodes.keys().cloned()));
+                snapshot::load_snapshot(self, snapshot, Some(&restored))?;
+                *self.inner.pending_interrupt_state.lock() = Some(restored.snapshot());
+            }
+        }
+        Ok(())
+    }
+
+    /// Initialize plugins and fire `MultiAgentInitializedEvent`; the first invocation calls this.
+    ///
+    /// # Errors
+    /// Propagates plugin and hook initialization failures.
+    pub async fn initialize(&self) -> Result<()> {
+        let orchestrator: OrchestratorRef = Arc::new(self.clone());
+        self.inner.plugins.initialize(&orchestrator).await?;
+        if !self.inner.initialized.swap(true, Ordering::SeqCst) {
+            let mut event = MultiAgentInitializedEvent { orchestrator };
+            self.inner.hooks.invoke_callbacks(&mut event).await?;
+        }
         Ok(())
     }
 
@@ -560,24 +592,18 @@ impl Graph {
         options: MultiAgentInvokeOptions,
         sink: NodeSink,
     ) -> Result<MultiAgentResult> {
+        self.initialize().await?;
         let orchestrator: OrchestratorRef = Arc::new(self.clone());
-        self.inner.plugins.initialize(&orchestrator).await?;
-        if !self.inner.initialized.swap(true, Ordering::SeqCst) {
-            let mut event = MultiAgentInitializedEvent {
-                orchestrator: Arc::clone(&orchestrator),
-            };
-            self.inner.hooks.invoke_callbacks(&mut event).await?;
-        }
 
-        let invocation_state = options
-            .invocation_state
-            .unwrap_or_else(|| self.inner.invocation_state.clone());
-        let state = self.inner.state.clone();
-        let resumed = self.inner.pending_interrupt.lock().take();
-        let node_ids: Vec<String> = self.inner.nodes.keys().cloned().collect();
-        state.with_mut(|current| {
-            *current = resumed.unwrap_or_else(|| MultiAgentState::new(node_ids));
-        });
+        // Shared by reference across every node, so mutations in one are visible to the next.
+        let invocation_state = options.invocation_state.unwrap_or_default();
+        // A fresh state per invocation, except when resuming a prior INTERRUPTED run on this
+        // instance, so concurrent invocations cannot see each other's node results.
+        let resumed = self.inner.pending_interrupt_state.lock().take();
+        let state = MultiAgentStateHandle::new(
+            resumed.unwrap_or_else(|| MultiAgentState::new(self.inner.nodes.keys().cloned())),
+        );
+        *self.inner.last_state.lock() = Some(state.clone());
 
         let mut before = BeforeMultiAgentInvocationEvent {
             orchestrator: Arc::clone(&orchestrator),
@@ -691,9 +717,6 @@ impl Graph {
         let max_concurrency = self.inner.config.max_concurrency.unwrap_or(usize::MAX);
 
         let outcome: Result<()> = 'run: loop {
-            if pending.targets.is_empty() && pending.running.is_empty() && pending.gated.is_empty() {
-                break Ok(());
-            }
             if execution.timed_out.load(Ordering::SeqCst) {
                 break Err(Error::other(format!(
                     "timeout=<{}>, graph_id=<{}> | graph exceeded wall-clock budget",
@@ -741,34 +764,50 @@ impl Graph {
                 }
             }
 
-            if pending.gated.is_empty() && !pending.running.is_empty() {
-                let Some(event) = node_events.recv().await else {
+            // A gated node's result is queued while scheduling, so it is handled before any node
+            // event that arrives later, as in TS where both share one queue.
+            if let Some((node, result)) = pending.gated.pop_front() {
+                if let Err(error) = pending.handle_result(self, execution, &node, result).await {
+                    break Err(error);
+                }
+                continue;
+            }
+
+            if tasks.is_empty() {
+                // Nothing in flight: finish once the channel is empty too. An interrupt stops
+                // scheduling, so any target left over stays PENDING.
+                let Ok(event) = node_events.try_recv() else {
                     break Ok(());
                 };
                 if let Err(error) = pending.handle_event(self, execution, event).await {
                     break Err(error);
                 }
+                continue;
             }
-            while let Ok(event) = node_events.try_recv() {
-                if let Err(error) = pending.handle_event(self, execution, event).await {
-                    break 'run Err(error);
+
+            tokio::select! {
+                event = node_events.recv() => {
+                    let Some(event) = event else { break Ok(()) };
+                    if let Err(error) = pending.handle_event(self, execution, event).await {
+                        break Err(error);
+                    }
                 }
-            }
-            while let Some((node, result)) = pending.gated.pop_front() {
-                if let Err(error) = pending.handle_result(self, execution, &node, result).await {
-                    break 'run Err(error);
-                }
+                _ = tasks.join_next() => {}
             }
         };
 
         drop(node_sink);
-        while !tasks.is_empty() {
-            tokio::select! {
-                _ = node_events.recv() => {}
-                _ = tasks.join_next() => {}
+        // A node task sends its after-call event and any timeout error after `run_node` returns,
+        // so drain to channel close — which happens only once every task has dropped its sender.
+        let mut drained: Result<()> = Ok(());
+        while let Some(event) = node_events.recv().await {
+            let handled = pending.handle_event(self, execution, event).await;
+            if drained.is_ok() {
+                drained = handled;
             }
         }
         outcome?;
+        drained?;
 
         let content = self.resolve_content(&execution.state);
         let (results, duration) = execution
@@ -776,9 +815,9 @@ impl Graph {
             .with(|state| (state.results.clone(), now_ms().saturating_sub(state.start_time)));
         let result = MultiAgentResult::new(results, duration).with_content(content);
         if result.status == ResultStatus::Interrupted {
-            *self.inner.pending_interrupt.lock() = Some(execution.state.snapshot());
+            *self.inner.pending_interrupt_state.lock() = Some(execution.state.snapshot());
         } else {
-            *self.inner.pending_interrupt.lock() = None;
+            *self.inner.pending_interrupt_state.lock() = None;
             execution.state.with_mut(|state| state.pending_input = None);
         }
         Ok(result)
@@ -825,18 +864,18 @@ impl Graph {
                     node.id()
                 )
             });
+            if let Some(error) = &error {
+                let _ = sink.send(Err(Error::other(error.clone()))).await;
+            }
             let _ = sink
                 .send(Ok(MultiAgentStreamEvent::AfterNodeCall(AfterNodeCallEvent {
                     orchestrator,
                     state,
                     node_id: node.id().to_owned(),
                     invocation_state,
-                    error: error.clone(),
+                    error,
                 })))
                 .await;
-            if let Some(error) = error {
-                let _ = sink.send(Err(Error::other(error))).await;
-            }
         });
     }
 
@@ -1158,6 +1197,19 @@ impl From<Graph> for NodeDefinition {
     }
 }
 
+/// Cancels the invocation, then aborts its task, when the consumer drops the stream.
+struct CancelOnDrop {
+    cancel: CancellationToken,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        self.task.abort();
+    }
+}
+
 /// Everything one invocation threads through the execution loop.
 struct Execution {
     orchestrator: OrchestratorRef,
@@ -1398,6 +1450,47 @@ mod tests {
         }
     }
 
+    /// Node that succeeds across an await point; unlike one `Agent`, it can run concurrently.
+    struct EchoNode {
+        id: String,
+        config: NodeConfig,
+    }
+
+    impl EchoNode {
+        fn shared(id: &str) -> Arc<dyn Node> {
+            Arc::new(Self {
+                id: id.to_owned(),
+                config: NodeConfig::default(),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl Node for EchoNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn node_type(&self) -> NodeType {
+            NodeType::Custom("node".to_owned())
+        }
+
+        fn config(&self) -> &NodeConfig {
+            &self.config
+        }
+
+        async fn handle(
+            &self,
+            _input: MultiAgentInput,
+            _state: &MultiAgentStateHandle,
+            _options: &NodeInputOptions,
+            _events: &NodeSink,
+        ) -> Result<NodeResultUpdate> {
+            tokio::task::yield_now().await;
+            Ok(NodeResultUpdate::default())
+        }
+    }
+
     async fn collect(stream: MultiAgentStream) -> Vec<MultiAgentStreamEvent> {
         stream
             .map(|event| event.expect("stream event"))
@@ -1441,7 +1534,6 @@ mod tests {
         assert_eq!(result.status, ResultStatus::Completed);
         assert_eq!(node_ids(&result), vec!["a", "b", "c"]);
         assert_eq!(text(&result), vec!["from c".to_owned()]);
-        assert_eq!(graph.state().steps(), 3);
     }
 
     #[tokio::test]
@@ -1646,6 +1738,70 @@ mod tests {
         let result = graph.invoke("go").await.unwrap();
 
         assert_eq!(result.status, ResultStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn a_per_node_timeout_of_duration_max_disables_the_graph_node_timeout() {
+        let graph = Graph::builder()
+            .node(AgentNodeOptions::new(sleeping("a", Duration::from_millis(60))).with_timeout(Duration::MAX))
+            .node_timeout(Duration::from_millis(20))
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(result.status, ResultStatus::Completed);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dropping_the_stream_cancels_the_invocation() {
+        let ran = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&ran);
+        let tool = Arc::new(
+            FunctionTool::builder("wait")
+                .description("Sleeps, then records that it finished")
+                .input_schema(json!({ "type": "object", "properties": {} }))
+                .handler(move |_input, ctx| {
+                    let flag = Arc::clone(&flag);
+                    async move {
+                        tokio::select! {
+                            () = tokio::time::sleep(Duration::from_millis(200)) => {
+                                flag.store(true, Ordering::SeqCst);
+                            }
+                            () = ctx.cancel.cancelled() => {}
+                        }
+                        Ok(json!("done"))
+                    }
+                }),
+        );
+        let agent = Agent::builder()
+            .id("a")
+            .model(MockMessageModel::shared(vec![
+                MockResponse::message(Message::new(
+                    Role::Assistant,
+                    vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                        "wait",
+                        "call-1",
+                        json!({}),
+                    ))],
+                )),
+                MockResponse::message(Message::assistant("slept")),
+            ]))
+            .tool(tool)
+            .build()
+            .unwrap();
+        let graph = Graph::builder().node(agent).max_steps(5).build().unwrap();
+
+        let mut stream = graph.stream("go");
+        stream.next().await.expect("first event").expect("stream event");
+        drop(stream);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        assert!(
+            !ran.load(Ordering::SeqCst),
+            "the node kept running after the drop"
+        );
     }
 
     #[tokio::test]
@@ -2027,7 +2183,7 @@ mod tests {
             .unwrap();
         first.invoke("go").await.expect_err("max steps stops after a");
         let snapshot = first
-            .take_snapshot(TakeMultiAgentSnapshotOptions::default())
+            .take_snapshot(None, TakeMultiAgentSnapshotOptions::default())
             .unwrap();
 
         let resumed = Graph::builder()
@@ -2037,7 +2193,7 @@ mod tests {
             .max_steps(5)
             .build()
             .unwrap();
-        resumed.load_snapshot(&snapshot).unwrap();
+        resumed.load_snapshot(&snapshot, None).unwrap();
         let result = resumed.invoke("go").await.unwrap();
 
         assert_eq!(node_ids(&result), vec!["a", "b"], "a's result carries over");
@@ -2253,30 +2409,51 @@ mod tests {
         assert!(graph.can_run_concurrently());
     }
 
-    #[test]
-    fn seeds_the_shared_state_with_every_node_id() {
+    #[tokio::test]
+    async fn seeds_a_fresh_invocation_state_with_every_node_id() {
         let graph = Graph::builder()
-            .node(agent("a"))
-            .node(agent("b"))
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
             .edge("a", "b")
+            .max_steps(5)
             .build()
             .unwrap();
-        let ids: Vec<_> = graph
-            .state()
-            .with(|state| state.nodes().keys().cloned().collect());
+
+        let events = collect(graph.stream("go")).await;
+
+        let ids = events
+            .iter()
+            .find_map(|event| match event {
+                MultiAgentStreamEvent::BeforeMultiAgentInvocation(event) => Some(
+                    event
+                        .state
+                        .with(|state| state.nodes().keys().cloned().collect::<Vec<_>>()),
+                ),
+                _ => None,
+            })
+            .expect("before-invocation event");
         assert_eq!(ids, ["a", "b"]);
     }
 
-    #[test]
-    fn clones_share_one_state_handle() {
-        let graph = one_node("a").build().unwrap();
-        let clone = graph.clone();
-        clone.state().with_mut(|state| state.steps = 7);
-        assert_eq!(graph.state().steps(), 7);
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_invocations_each_see_only_their_own_node_results() {
+        let graph = Graph::builder()
+            .node(EchoNode::shared("a"))
+            .node(EchoNode::shared("b"))
+            .edge("a", "b")
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let (first, second) = tokio::join!(graph.invoke("first"), graph.invoke("second"));
+
+        let (first, second) = (first.unwrap(), second.unwrap());
+        assert_eq!(node_ids(&first), vec!["a", "b"], "first: {:?}", first.results);
+        assert_eq!(node_ids(&second), vec!["a", "b"], "second: {:?}", second.results);
     }
 
     #[test]
-    fn edge_handlers_read_the_shared_state() {
+    fn edge_handlers_read_the_invocation_state() {
         let graph = Graph::builder()
             .node(agent("a"))
             .node(agent("b"))
@@ -2284,9 +2461,10 @@ mod tests {
             .build()
             .unwrap();
         let handler = graph.edges()[0].handler.clone().unwrap();
-        assert!(!futures::executor::block_on(handler(graph.state())));
-        graph.state().with_mut(|state| state.steps = 1);
-        assert!(futures::executor::block_on(handler(graph.state())));
+        let state = MultiAgentStateHandle::new(MultiAgentState::new(["a".to_owned(), "b".to_owned()]));
+        assert!(!futures::executor::block_on(handler(&state)));
+        state.with_mut(|state| state.steps = 1);
+        assert!(futures::executor::block_on(handler(&state)));
     }
 
     #[test]
@@ -2304,5 +2482,63 @@ mod tests {
             graph.nodes().get("a").unwrap().config().description.as_deref(),
             Some("writes things")
         );
+    }
+    #[tokio::test]
+    async fn an_interrupt_leaves_queued_targets_pending() {
+        let graph = Graph::builder()
+            .node(approving("a"))
+            .node(saying("b", "from b"))
+            .max_concurrency(1)
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(5), graph.invoke("go"))
+            .await
+            .expect("the loop terminates instead of spinning on the unrun target")
+            .unwrap();
+
+        assert_eq!(result.status, ResultStatus::Interrupted);
+        assert_eq!(node_ids(&result), vec!["a"]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn emits_an_after_node_call_event_for_every_node_that_ran() {
+        for _ in 0..40 {
+            let graph = Graph::builder()
+                .node(saying("a", "from a"))
+                .node(saying("b", "from b"))
+                .edge("a", "b")
+                .max_steps(10)
+                .build()
+                .unwrap();
+
+            let events = collect(graph.stream("go")).await;
+
+            let after = names(&events)
+                .iter()
+                .filter(|name| **name == "afterNodeCallEvent")
+                .count();
+            assert_eq!(after, 2, "events: {:?}", names(&events));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_node_timeout_error_survives_the_post_loop_drain() {
+        for _ in 0..40 {
+            let graph = Graph::builder()
+                .node(sleeping("a", Duration::from_millis(400)))
+                .node_timeout(Duration::from_millis(20))
+                .max_steps(5)
+                .build()
+                .unwrap();
+
+            let error = graph.invoke("go").await.expect_err("node timeout trips");
+
+            assert!(
+                error.to_string().contains("node exceeded wall-clock budget"),
+                "unexpected error: {error}"
+            );
+        }
     }
 }

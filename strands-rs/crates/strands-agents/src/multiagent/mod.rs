@@ -15,6 +15,12 @@ pub mod state;
 #[cfg(test)]
 pub(crate) mod test_orchestrator;
 
+/// Buffer of the channel an invocation task writes its events to.
+pub(crate) const EVENT_BUFFER: usize = 64;
+
+/// Reason reported when a hook cancels a node without giving one.
+pub(crate) const HOOK_CANCEL_MESSAGE: &str = "node cancelled by hook";
+
 pub use edge::{edge_handler, Edge, EdgeDefinition, EdgeHandler};
 pub use events::{
     AfterMultiAgentInvocationEvent, AfterNodeCallEvent, BeforeMultiAgentInvocationEvent, BeforeNodeCallEvent,
