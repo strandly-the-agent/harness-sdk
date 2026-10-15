@@ -1247,9 +1247,14 @@ mod tests {
     use super::*;
     use crate::agent::Agent;
     use crate::multiagent::edge::edge_handler;
-    use crate::multiagent::nodes::{AgentNode, AgentNodeOptions, NodeType};
+    use crate::multiagent::nodes::{AgentNode, AgentNodeOptions, NodeConfig, NodeType};
+    use crate::multiagent::state::NodeResultUpdate;
     use crate::test_support::{MockMessageModel, MockResponse};
-    use crate::types::Message;
+    use crate::tools::FunctionTool;
+    use crate::types::{InterruptParams, Message, Role, ToolUseBlock};
+    use futures::StreamExt;
+    use serde_json::json;
+    use std::sync::atomic::AtomicUsize;
 
     fn agent(id: &str) -> Agent {
         Agent::builder()
@@ -1267,6 +1272,720 @@ mod tests {
 
     fn error(builder: GraphBuilder) -> String {
         builder.build().expect_err("build fails").to_string()
+    }
+
+    // ---- execution ----
+
+    fn saying(id: &str, text: &str) -> Agent {
+        Agent::builder()
+            .id(id)
+            .model(MockMessageModel::shared(vec![MockResponse::message(
+                Message::assistant(text),
+            )]))
+            .build()
+            .expect("agent builds")
+    }
+
+    fn with_model(id: &str, model: Arc<MockMessageModel>) -> Agent {
+        Agent::builder()
+            .id(id)
+            .model(model)
+            .build()
+            .expect("agent builds")
+    }
+
+    /// Agent whose single tool call sleeps, so a timeout or cancel has something to interrupt.
+    fn sleeping(id: &str, delay: Duration) -> Agent {
+        let tool = Arc::new(
+            FunctionTool::builder("wait")
+                .description("Sleeps")
+                .input_schema(json!({ "type": "object", "properties": {} }))
+                .handler(move |_input, _ctx| async move {
+                    tokio::time::sleep(delay).await;
+                    Ok(json!("done"))
+                }),
+        );
+        Agent::builder()
+            .id(id)
+            .model(MockMessageModel::shared(vec![
+                MockResponse::message(Message::new(
+                    Role::Assistant,
+                    vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                        "wait",
+                        "call-1",
+                        json!({}),
+                    ))],
+                )),
+                MockResponse::message(Message::assistant("slept")),
+            ]))
+            .tool(tool)
+            .build()
+            .expect("agent builds")
+    }
+
+    /// `approve`: interrupts for an approval, then reports the answer (as in `nodes.rs`).
+    fn approving(id: &str) -> Agent {
+        let tool = Arc::new(
+            FunctionTool::builder("approve")
+                .description("Interrupts for approval")
+                .input_schema(json!({ "type": "object", "properties": {} }))
+                .handler(|_input, ctx| async move {
+                    let answer: String = ctx.interrupt(InterruptParams::new("confirm"))?;
+                    Ok(json!(format!("did it: {answer}")))
+                }),
+        );
+        Agent::builder()
+            .id(id)
+            .model(MockMessageModel::shared(vec![
+                MockResponse::message(Message::new(
+                    Role::Assistant,
+                    vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                        "approve",
+                        "call-1",
+                        json!({}),
+                    ))],
+                )),
+                MockResponse::message(Message::assistant("approved")),
+            ]))
+            .tool(tool)
+            .build()
+            .expect("agent builds")
+    }
+
+    /// Node that always fails, which `MockMessageModel` cannot express.
+    struct FailingNode {
+        id: String,
+        config: NodeConfig,
+    }
+
+    impl FailingNode {
+        fn shared(id: &str) -> Arc<dyn Node> {
+            Arc::new(Self {
+                id: id.to_owned(),
+                config: NodeConfig::default(),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl Node for FailingNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn node_type(&self) -> NodeType {
+            NodeType::Custom("node".to_owned())
+        }
+
+        fn config(&self) -> &NodeConfig {
+            &self.config
+        }
+
+        async fn handle(
+            &self,
+            _input: MultiAgentInput,
+            _state: &MultiAgentStateHandle,
+            _options: &NodeInputOptions,
+            _events: &NodeSink,
+        ) -> Result<NodeResultUpdate> {
+            Err(Error::other("node blew up"))
+        }
+    }
+
+    async fn collect(stream: MultiAgentStream) -> Vec<MultiAgentStreamEvent> {
+        stream
+            .map(|event| event.expect("stream event"))
+            .collect::<Vec<_>>()
+            .await
+    }
+
+    fn names(events: &[MultiAgentStreamEvent]) -> Vec<&'static str> {
+        events.iter().map(MultiAgentStreamEvent::type_name).collect()
+    }
+
+    fn node_ids(result: &MultiAgentResult) -> Vec<&str> {
+        result.results.iter().map(|r| r.node_id.as_str()).collect()
+    }
+
+    fn text(result: &MultiAgentResult) -> Vec<String> {
+        result
+            .content
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn executes_a_linear_graph_in_order() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .node(saying("c", "from c"))
+            .edge("a", "b")
+            .edge("b", "c")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), vec!["a", "b", "c"]);
+        assert_eq!(text(&result), vec!["from c".to_owned()]);
+        assert_eq!(graph.state().steps(), 3);
+    }
+
+    #[tokio::test]
+    async fn executes_parallel_branches_after_the_source() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .node(saying("c", "from c"))
+            .edge("a", "b")
+            .edge("a", "c")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result)[0], "a");
+        let mut rest = node_ids(&result)[1..].to_vec();
+        rest.sort_unstable();
+        assert_eq!(rest, vec!["b", "c"]);
+    }
+
+    #[tokio::test]
+    async fn waits_for_every_dependency_before_a_join_node() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .node(saying("c", "from c"))
+            .edge("a", "c")
+            .edge("b", "c")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(node_ids(&result).len(), 3, "the join node runs exactly once");
+        assert_eq!(node_ids(&result)[2], "c", "the join node runs last");
+    }
+
+    #[tokio::test]
+    async fn runs_a_nested_graph_through_a_multi_agent_node() {
+        let inner: Arc<dyn MultiAgent> = Arc::new(
+            Graph::builder()
+                .id("inner")
+                .node(saying("x", "from x"))
+                .max_steps(5)
+                .build()
+                .unwrap(),
+        );
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(inner)
+            .edge("a", "inner")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(node_ids(&result), vec!["a", "inner"]);
+        assert_eq!(text(&result), vec!["from x".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn uses_explicit_entry_points_instead_of_auto_detection() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .edge_when("b", "a", edge_handler(|_| false))
+            .entry_point("a")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(node_ids(&result), vec!["a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn skips_a_conditional_edge_whose_handler_is_false() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .edge_when("a", "b", edge_handler(|_| false))
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(node_ids(&result), vec!["a"]);
+    }
+
+    #[tokio::test]
+    async fn passes_the_task_and_dependency_content_to_a_downstream_node() {
+        let downstream = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("from b"))]);
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(with_model("b", Arc::clone(&downstream)))
+            .edge("a", "b")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        graph.invoke("go").await.unwrap();
+
+        let prompt = downstream.calls()[0].0[0].content.clone();
+        assert_eq!(
+            prompt,
+            vec![
+                ContentBlock::Text("go".into()),
+                ContentBlock::Text("[node: a]".into()),
+                ContentBlock::Text("from a".into()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failing_node_lands_as_a_failed_result_and_stops_its_branch() {
+        let graph = Graph::builder()
+            .node(FailingNode::shared("a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(result.status, ResultStatus::Failed);
+        assert_eq!(node_ids(&result), vec!["a"]);
+        assert_eq!(result.results[0].error.as_deref(), Some("node blew up"));
+    }
+
+    #[tokio::test]
+    async fn errors_when_max_steps_is_exceeded() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(1)
+            .build()
+            .unwrap();
+
+        let error = graph.invoke("go").await.expect_err("max steps trips");
+
+        assert_eq!(error.to_string(), "steps=<1> | max steps reached");
+    }
+
+    #[tokio::test]
+    async fn errors_when_a_node_exceeds_the_node_timeout() {
+        let graph = Graph::builder()
+            .node(sleeping("a", Duration::from_millis(400)))
+            .node_timeout(Duration::from_millis(20))
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let error = graph.invoke("go").await.expect_err("node timeout trips");
+
+        assert!(
+            error.to_string().contains("node exceeded wall-clock budget"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_per_node_timeout_overrides_the_graph_node_timeout() {
+        let graph = Graph::builder()
+            .node(
+                AgentNodeOptions::new(sleeping("a", Duration::from_millis(10)))
+                    .with_timeout(Duration::from_secs(5)),
+            )
+            .node_timeout(Duration::from_millis(20))
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(result.status, ResultStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn errors_when_the_wall_clock_timeout_is_exceeded() {
+        let graph = Graph::builder()
+            .node(sleeping("a", Duration::from_millis(40)))
+            .node(sleeping("b", Duration::from_millis(40)))
+            .edge("a", "b")
+            .timeout(Duration::from_millis(20))
+            .build()
+            .unwrap();
+
+        let error = graph.invoke("go").await.expect_err("timeout trips");
+
+        assert!(
+            error.to_string().contains("graph exceeded wall-clock budget"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn errors_when_cancelled_through_the_external_token() {
+        let graph = Graph::builder()
+            .node(sleeping("a", Duration::from_millis(40)))
+            .node(sleeping("b", Duration::from_millis(40)))
+            .edge("a", "b")
+            .max_steps(5)
+            .build()
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let token = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            token.cancel();
+        });
+
+        let error = graph
+            .invoke_with("go", MultiAgentInvokeOptions::default().with_cancel(cancel))
+            .await
+            .expect_err("external cancel trips");
+
+        assert_eq!(
+            error.to_string(),
+            "graph_id=<graph> | graph cancelled by external signal"
+        );
+    }
+
+    #[tokio::test]
+    async fn respects_max_concurrency() {
+        let current = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let (running, highest) = (Arc::clone(&current), Arc::clone(&peak));
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .node(saying("c", "from c"))
+            .edge("a", "b")
+            .edge("a", "c")
+            .max_concurrency(1)
+            .max_steps(10)
+            .hook(move |_event: &mut BeforeNodeCallEvent| {
+                let (running, highest) = (Arc::clone(&running), Arc::clone(&highest));
+                async move {
+                    let in_flight = running.fetch_add(1, Ordering::SeqCst) + 1;
+                    highest.fetch_max(in_flight, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    running.fetch_sub(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            })
+            .build()
+            .unwrap();
+
+        graph.invoke("go").await.unwrap();
+
+        assert_eq!(
+            peak.load(Ordering::SeqCst),
+            1,
+            "never more than one node in flight"
+        );
+    }
+
+    #[tokio::test]
+    async fn initializes_plugins_only_once_across_invocations() {
+        #[derive(Default)]
+        struct CountingPlugin(Arc<Mutex<usize>>);
+
+        #[async_trait]
+        impl MultiAgentPlugin for CountingPlugin {
+            fn name(&self) -> &str {
+                "counting"
+            }
+
+            async fn init_multi_agent(&self, _orchestrator: &OrchestratorRef) -> Result<()> {
+                *self.0.lock() += 1;
+                Ok(())
+            }
+        }
+
+        let calls = Arc::new(Mutex::new(0));
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .plugin(Arc::new(CountingPlugin(Arc::clone(&calls))))
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        graph.invoke("go").await.unwrap();
+        graph.invoke("again").await.unwrap();
+
+        assert_eq!(*calls.lock(), 1);
+    }
+
+    #[tokio::test]
+    async fn yields_lifecycle_events_in_order_for_a_single_node() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let events = collect(graph.stream("go")).await;
+        let order = names(&events);
+
+        assert_eq!(order.first(), Some(&"beforeMultiAgentInvocationEvent"));
+        assert_eq!(order.last(), Some(&"multiAgentResultEvent"));
+        let lifecycle: Vec<_> = order
+            .iter()
+            .filter(|name| **name != "nodeStreamUpdateEvent")
+            .copied()
+            .collect();
+        assert_eq!(
+            lifecycle,
+            vec![
+                "beforeMultiAgentInvocationEvent",
+                "beforeNodeCallEvent",
+                "nodeResultEvent",
+                "afterNodeCallEvent",
+                "afterMultiAgentInvocationEvent",
+                "multiAgentResultEvent",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn yields_a_handoff_event_between_nodes() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let events = collect(graph.stream("go")).await;
+        let handoff = events
+            .iter()
+            .find_map(|event| match event {
+                MultiAgentStreamEvent::MultiAgentHandoff(event) => Some(event),
+                _ => None,
+            })
+            .expect("a handoff event");
+
+        assert_eq!(handoff.source, "a");
+        assert_eq!(handoff.targets, vec!["b".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn a_hook_cancels_a_node_with_its_own_message() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .max_steps(5)
+            .hook(|event: &mut BeforeNodeCallEvent| {
+                event.cancel = Cancel::Reason("not today".to_owned());
+                async move { Ok(()) }
+            })
+            .build()
+            .unwrap();
+
+        let events = collect(graph.stream("go")).await;
+        let cancel = events
+            .iter()
+            .find_map(|event| match event {
+                MultiAgentStreamEvent::NodeCancel(event) => Some(event),
+                _ => None,
+            })
+            .expect("a node cancel event");
+
+        assert_eq!(cancel.message, "not today");
+        assert_eq!(
+            names(&events),
+            vec![
+                "beforeMultiAgentInvocationEvent",
+                "beforeNodeCallEvent",
+                "nodeCancelEvent",
+                "afterNodeCallEvent",
+                "afterMultiAgentInvocationEvent",
+                "multiAgentResultEvent",
+            ]
+        );
+        let result = events.last().unwrap().result().expect("the aggregate result");
+        assert_eq!(result.status, ResultStatus::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn forwards_one_invocation_state_to_every_node_and_event() {
+        let invocation_state = InvocationState::new();
+        invocation_state.insert("seen", "yes".to_owned());
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let events = collect(graph.stream_with(
+            "go",
+            MultiAgentInvokeOptions::default().with_invocation_state(invocation_state.clone()),
+        ))
+        .await;
+
+        let before: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                MultiAgentStreamEvent::BeforeNodeCall(event) => Some(&event.invocation_state),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(before.len(), 2);
+        assert!(
+            before.iter().all(|state| state.ptr_eq(&invocation_state)),
+            "every node sees the same invocation state"
+        );
+    }
+
+    #[tokio::test]
+    async fn resumes_a_child_agent_interrupt_on_the_same_graph() {
+        let graph = Graph::builder()
+            .node(approving("a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let interrupted = graph.invoke("go").await.unwrap();
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+        assert_eq!(interrupted.interrupts.len(), 1);
+        assert_eq!(node_ids(&interrupted), vec!["a"]);
+
+        let responses = vec![InterruptResponseContent::new(
+            &interrupted.interrupts[0].id,
+            json!("yes"),
+        )];
+        let resumed = graph
+            .invoke(MultiAgentInput::InterruptResponses(responses))
+            .await
+            .unwrap();
+
+        assert_eq!(resumed.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&resumed), vec!["a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn a_before_node_call_interrupt_gates_a_node_and_resumes() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .max_steps(5)
+            .hook(|event: &mut BeforeNodeCallEvent| {
+                let event = event.clone();
+                async move {
+                    let _: String = event.interrupt(InterruptParams::new("approve"))?;
+                    Ok(())
+                }
+            })
+            .build()
+            .unwrap();
+
+        let events = collect(graph.stream("go")).await;
+        assert_eq!(
+            names(&events),
+            vec![
+                "beforeMultiAgentInvocationEvent",
+                "beforeNodeCallEvent",
+                "nodeResultEvent",
+                "afterNodeCallEvent",
+                "afterMultiAgentInvocationEvent",
+                "multiAgentResultEvent",
+            ],
+            "a gated node still reports a result and an after-call event"
+        );
+        let interrupted = events.last().unwrap().result().expect("the aggregate result");
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+
+        let responses = vec![InterruptResponseContent::new(
+            &interrupted.interrupts[0].id,
+            json!("ok"),
+        )];
+        let resumed = graph
+            .invoke(MultiAgentInput::InterruptResponses(responses))
+            .await
+            .unwrap();
+
+        assert_eq!(resumed.status, ResultStatus::Completed);
+        assert_eq!(text(&resumed), vec!["from a".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn resuming_a_graph_whose_topology_changed_errors() {
+        let graph = Graph::builder()
+            .node(approving("a"))
+            .max_steps(5)
+            .build()
+            .unwrap();
+        let interrupted = graph.invoke("go").await.unwrap();
+        let responses = vec![InterruptResponseContent::new(
+            &interrupted.interrupts[0].id,
+            json!("yes"),
+        )];
+
+        let other = Graph::builder()
+            .node(saying("z", "from z"))
+            .max_steps(5)
+            .build()
+            .unwrap();
+        let error = other
+            .invoke(MultiAgentInput::InterruptResponses(responses))
+            .await
+            .expect_err("the response matches no node");
+
+        assert!(
+            error
+                .to_string()
+                .contains("no node found with matching interrupt"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resumes_from_the_next_ready_node_after_a_loaded_snapshot() {
+        let first = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(1)
+            .build()
+            .unwrap();
+        first.invoke("go").await.expect_err("max steps stops after a");
+        let snapshot = first
+            .take_snapshot(TakeMultiAgentSnapshotOptions::default())
+            .unwrap();
+
+        let resumed = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(5)
+            .build()
+            .unwrap();
+        resumed.load_snapshot(&snapshot).unwrap();
+        let result = resumed.invoke("go").await.unwrap();
+
+        assert_eq!(node_ids(&result), vec!["a", "b"], "a's result carries over");
+        assert_eq!(text(&result), vec!["from b".to_owned()]);
     }
 
     #[test]
