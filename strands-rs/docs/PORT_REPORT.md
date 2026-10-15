@@ -333,3 +333,13 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `invoke_structured` → `structured_output`, `AgentResult::structured_output_as`; `ModelStopData.usage`;
 `testing` module (alias `test_support`), crate-level guide, actionable no-credentials error, default features
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
+
+## Phase 4
+
+- **Steering** (`interventions::vended::steering`, branch `agent-tasks/strands-rs-steering`):
+  `SteeringProviders`/`SteeringAction` (TS's abstract `SteeringHandler`), `LlmSteeringHandler`
+  (model-judged guidance, TS prompt text verbatim), `SteeringContextProvider` + `ToolLedgerProvider`.
+  Adds a defaulted `InterventionHandler::observe_agent` so providers can self-register hooks (TS
+  `LifecycleObserver`). 21 unit tests pass; clippy clean. Tool-call gate only — Rust has no
+  after-model intervention gate. Agent-loop and live-Bedrock suites still to come; see
+  `docs/matrices/steering.md`.

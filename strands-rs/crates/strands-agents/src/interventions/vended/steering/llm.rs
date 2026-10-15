@@ -255,10 +255,7 @@ impl InterventionHandler for LlmSteeringHandler {
     async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
         let context = self.providers.steering_context();
         let prompt = (self.prompt_builder)(&context, Some(&event.tool_use));
-        let model = self
-            .model
-            .clone()
-            .unwrap_or_else(|| event.agent.aux_model());
+        let model = self.model.clone().unwrap_or_else(|| event.agent.aux_model());
         let decision = self.decide(prompt, model).await?;
 
         let action = match decision.kind {
@@ -486,7 +483,10 @@ mod tests {
         assert!(matches!(blocks[1], ContentBlock::CachePoint(_)));
         assert!(!instructions.contains("Understanding Ledger Tool States"));
         assert!(dynamic.contains("No context available"), "{dynamic}");
-        assert!(dynamic.contains("Tool: searchWeb\nArguments: {\n  \"q\": \"hi\"\n}"), "{dynamic}");
+        assert!(
+            dynamic.contains("Tool: searchWeb\nArguments: {\n  \"q\": \"hi\"\n}"),
+            "{dynamic}"
+        );
     }
 
     #[test]
@@ -498,8 +498,14 @@ mod tests {
         let ContentBlock::Text(dynamic) = &blocks[2] else {
             panic!("expected text");
         };
-        assert!(instructions.contains("evaluates a action that ANOTHER AGENT"), "{instructions}");
-        assert!(instructions.contains("### 1. Analyze the Action"), "{instructions}");
+        assert!(
+            instructions.contains("evaluates a action that ANOTHER AGENT"),
+            "{instructions}"
+        );
+        assert!(
+            instructions.contains("### 1. Analyze the Action"),
+            "{instructions}"
+        );
         assert!(dynamic.contains("General evaluation"), "{dynamic}");
     }
 

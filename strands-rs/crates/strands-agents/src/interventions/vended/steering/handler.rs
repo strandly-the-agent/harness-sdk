@@ -176,10 +176,10 @@ mod tests {
         }
 
         async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
-            self.seen.lock().unwrap().push((
-                event.tool_use.name.clone(),
-                self.providers.steering_context(),
-            ));
+            self.seen
+                .lock()
+                .unwrap()
+                .push((event.tool_use.name.clone(), self.providers.steering_context()));
             Ok((self.action)().into())
         }
     }
