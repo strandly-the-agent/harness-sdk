@@ -20,7 +20,10 @@ fn main() {
             .collect::<String>();
         out.push_str(&format!("#[path = {:?}]\nmod snippet_{name};\n", path.display()));
     }
-    println!("cargo:rerun-if-changed={}", docs.display());
+    // A new snippet file only changes its parent directory's mtime, so watch every directory.
+    for entry in glob::glob(&format!("{}/**/", docs.display())).expect("valid glob") {
+        println!("cargo:rerun-if-changed={}", entry.expect("readable path").display());
+    }
 
     let dest = Path::new(&env::var("OUT_DIR").unwrap()).join("snippets.rs");
     fs::write(dest, out).expect("write snippets.rs");

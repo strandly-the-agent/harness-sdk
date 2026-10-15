@@ -20,10 +20,10 @@ async fn sdk_context_manager() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:sdk_context_manager]
     use std::sync::Arc;
 
-    use strands_agents::context_manager::strategies::{Offload, OffloadConditions, OffloadTarget};
-    use strands_agents::context_manager::{
-        ContextManagerConfig, ContextManagerOption, StashOption, TruncateConfig,
+    use strands_agents::context_manager::strategies::{
+        Offload, OffloadConditions, OffloadTarget, TruncateConfig,
     };
+    use strands_agents::context_manager::{ContextManagerConfig, ContextManagerOption, StashOption};
     use strands_agents::models::BedrockModel;
     use strands_agents::Agent;
 
