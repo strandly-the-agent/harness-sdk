@@ -911,6 +911,7 @@ pub(crate) mod test_support {
             projected_input_tokens,
             cancel: Default::default(),
             messages: agent.messages(),
+            dynamic_trailing_blocks: 0,
         }
     }
 

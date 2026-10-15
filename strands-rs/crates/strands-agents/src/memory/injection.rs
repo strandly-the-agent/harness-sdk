@@ -1,16 +1,17 @@
-//! Memory injection (`strands-ts/src/memory/memory-manager.ts` injection internals +
-//! `strands-ts/src/injection/xml.ts`): folds retrieved entries into the model input for one call.
+//! Memory injection (`strands-ts/src/memory/memory-manager.ts` injection internals): folds
+//! retrieved entries into the model input for one call.
 //!
-//! TS uses an `InvokeModelStage.Input` middleware; Rust uses the equivalent seam,
-//! [`BeforeModelCallEvent::messages`](crate::hooks::BeforeModelCallEvent) — see
-//! [`ContextInjector`](crate::plugins::ContextInjector), whose `is_user_turn` /
-//! `fold_into_last_user_message` primitives this module reuses.
+//! The delivery primitives (`is_user_turn`, `fold_into_last_user_message`, the XML escaping
+//! helpers re-exported below) live in [`crate::injection`]; this module only adds the
+//! memory-specific query/format policy.
 
 use std::sync::Arc;
 
+use crate::injection::is_user_turn;
 use crate::memory::types::MemoryEntry;
-use crate::plugins::vended::context_injector::is_user_turn;
 use crate::types::{ContentBlock, Message, Role};
+
+pub use crate::injection::{escape_xml_attr, escape_xml_text, InjectionTrigger};
 
 /// Entries injected per model call when the config does not say.
 pub const DEFAULT_MAX_ENTRIES: usize = 5;
@@ -88,8 +89,6 @@ impl MemoryInjectionConfig {
     }
 }
 
-pub use crate::plugins::vended::context_injector::InjectionTrigger;
-
 /// Adaptive default query: the latest user text on a user turn, else the most recent assistant
 /// text (the previous step of an autonomous turn).
 pub fn default_injection_query(messages: &[Message]) -> Option<String> {
@@ -126,22 +125,6 @@ pub fn default_injection_format(entries: &[MemoryEntry]) -> String {
         })
         .collect();
     format!("<memory>\n{}\n</memory>", items.join("\n"))
-}
-
-/// Escapes text for placement between XML tags (`&` first, so later replacements are not
-/// double-escaped).
-pub fn escape_xml_text(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-/// [`escape_xml_text`] plus the quote characters, for a double-quoted XML attribute.
-pub fn escape_xml_attr(value: &str) -> String {
-    escape_xml_text(value)
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
 
 #[cfg(test)]

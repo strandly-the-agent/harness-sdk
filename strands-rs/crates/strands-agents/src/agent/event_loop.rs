@@ -1056,6 +1056,7 @@ async fn invoke_model(
                 projected_input_tokens,
                 cancel: Cancel::No,
                 messages: agent.messages(),
+                dynamic_trailing_blocks: 0,
             },
             AgentStreamEvent::BeforeModelCall,
         )
@@ -1106,6 +1107,7 @@ async fn invoke_model(
             tool_choice: tool_choice.clone(),
             invocation_state: state.clone(),
             projected_input_tokens,
+            dynamic_trailing_blocks: before.dynamic_trailing_blocks,
         };
         let sink = model_event_sink(agent, tx, state);
         let terminal = model_terminal(agent, state, cancel, tx);
@@ -1348,6 +1350,8 @@ fn model_terminal(
                 system_prompt: context.system_prompt.clone(),
                 tool_specs: context.tool_specs.clone(),
                 tool_choice: context.tool_choice.clone(),
+                dynamic_trailing_blocks: (context.dynamic_trailing_blocks > 0)
+                    .then_some(context.dynamic_trailing_blocks),
                 ..StreamOptions::default()
             };
             stream_from_model(

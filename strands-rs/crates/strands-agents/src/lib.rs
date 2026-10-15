@@ -58,6 +58,7 @@ pub mod background_tasks;
 pub mod context_manager;
 pub mod error;
 pub mod hooks;
+pub mod injection;
 pub mod interrupt;
 pub mod interventions;
 pub mod logging;

@@ -1,11 +1,10 @@
 //! `ContextInjector` (`strands-ts/src/vended-plugins/context-injector`): folds ephemeral text
 //! into the conversation for a single model call.
 //!
-//! TS does this with `InvokeModelStage.Input` middleware; Rust uses the equivalent seam,
-//! [`BeforeModelCallEvent::messages`] — a per-call copy of the conversation. Durable history and
-//! the session are never touched.
-
-use std::sync::Arc;
+//! The plugin is a thin wrapper over [`MessageInjection`](crate::injection::MessageInjection);
+//! the delivery primitives live in [`crate::injection`]. TS does this with
+//! `InvokeModelStage.Input` middleware; Rust uses the equivalent seam, [`BeforeModelCallEvent`] —
+//! a per-call copy of the conversation. Durable history and the session are never touched.
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -13,45 +12,21 @@ use futures::future::BoxFuture;
 use crate::agent::Agent;
 use crate::error::Result;
 use crate::hooks::BeforeModelCallEvent;
+use crate::injection::{FoldOutcome, MessageInjection};
 use crate::plugins::Plugin;
-use crate::types::{ContentBlock, Message, Role};
+use crate::types::Message;
+
+pub use crate::injection::{
+    fold_into_last_user_message, is_user_turn, InjectionContext, InjectionTrigger,
+};
 
 const DEFAULT_NAME: &str = "strands:context-injector";
-
-/// When an injector contributes text.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum InjectionTrigger {
-    /// Only on a fresh user ask: the last message is from the user and carries no tool results.
-    #[default]
-    UserTurn,
-    /// Every model call.
-    EveryTurn,
-}
-
-/// What an injector sees when deciding what to inject.
-pub struct InjectionContext {
-    /// The conversation as it will be sent to the model.
-    pub messages: Vec<Message>,
-    /// The invoking agent (its [`state`](Agent::state) is the durable app state).
-    pub agent: Agent,
-}
-
-type RenderFn =
-    Arc<dyn for<'a> Fn(&'a InjectionContext) -> BoxFuture<'a, Result<Option<String>>> + Send + Sync>;
-type PredicateFn = Arc<dyn Fn(&InjectionContext) -> bool + Send + Sync>;
-
-#[derive(Clone)]
-enum Trigger {
-    Builtin(InjectionTrigger),
-    Predicate(PredicateFn),
-}
 
 /// Appends rendered text to the most recent user message of a single model call.
 #[derive(Clone)]
 pub struct ContextInjector {
     name: String,
-    trigger: Trigger,
-    render: RenderFn,
+    injection: MessageInjection,
 }
 
 impl ContextInjector {
@@ -62,18 +37,16 @@ impl ContextInjector {
     {
         Self {
             name: DEFAULT_NAME.to_owned(),
-            trigger: Trigger::Builtin(InjectionTrigger::UserTurn),
-            render: Arc::new(render),
+            injection: MessageInjection::new(render),
         }
     }
 
     /// Injector for a fixed string.
     pub fn inject(text: impl Into<String>) -> Self {
-        let text = text.into();
-        Self::new(move |_ctx| {
-            let text = text.clone();
-            Box::pin(async move { Ok(Some(text)) })
-        })
+        Self {
+            name: DEFAULT_NAME.to_owned(),
+            injection: MessageInjection::text(text),
+        }
     }
 
     /// Override the plugin name (needed when registering more than one injector).
@@ -84,7 +57,7 @@ impl ContextInjector {
 
     /// Set the built-in trigger.
     pub fn with_trigger(mut self, trigger: InjectionTrigger) -> Self {
-        self.trigger = Trigger::Builtin(trigger);
+        self.injection = self.injection.with_trigger(trigger);
         self
     }
 
@@ -93,72 +66,15 @@ impl ContextInjector {
     where
         F: Fn(&InjectionContext) -> bool + Send + Sync + 'static,
     {
-        self.trigger = Trigger::Predicate(Arc::new(predicate));
+        self.injection = self.injection.with_trigger_fn(predicate);
         self
-    }
-
-    fn should_inject(&self, ctx: &InjectionContext) -> bool {
-        match &self.trigger {
-            Trigger::Builtin(InjectionTrigger::EveryTurn) => true,
-            Trigger::Builtin(InjectionTrigger::UserTurn) => is_user_turn(&ctx.messages),
-            Trigger::Predicate(predicate) => predicate(ctx),
-        }
     }
 
     /// Render and fold the text into `messages` for this call. Errors from the renderer are
     /// logged and the messages left untouched (fail open).
-    pub async fn apply(&self, agent: &Agent, messages: &mut [Message]) {
-        let ctx = InjectionContext {
-            messages: messages.to_vec(),
-            agent: agent.clone(),
-        };
-        if !self.should_inject(&ctx) {
-            return;
-        }
-        let text = match (self.render)(&ctx).await {
-            Ok(Some(text)) => text,
-            Ok(None) => return,
-            Err(error) => {
-                tracing::warn!(reason = %error, "injection renderContent threw; skipping injection");
-                return;
-            }
-        };
-        if text.trim().is_empty() {
-            return;
-        }
-        fold_into_last_user_message(messages, &text);
+    pub async fn apply(&self, agent: &Agent, messages: &mut [Message]) -> FoldOutcome {
+        self.injection.apply(agent, messages).await
     }
-}
-
-/// A fresh user ask: the last message is from the user and has no tool-result blocks.
-pub fn is_user_turn(messages: &[Message]) -> bool {
-    match messages.last() {
-        Some(last) => {
-            last.role == Role::User
-                && !last
-                    .content
-                    .iter()
-                    .any(|b| matches!(b, ContentBlock::ToolResult(_)))
-        }
-        None => false,
-    }
-}
-
-/// Append `text` as a text block on the last user message. A `\n\n` separator is inserted when
-/// that message already has content and `text` does not start with a newline.
-pub fn fold_into_last_user_message(messages: &mut [Message], text: &str) -> bool {
-    let Some(target) = messages.iter_mut().rev().find(|m| m.role == Role::User) else {
-        return false;
-    };
-    let separator = if !target.content.is_empty() && !text.starts_with('\n') {
-        "\n\n"
-    } else {
-        ""
-    };
-    target
-        .content
-        .push(ContentBlock::text(format!("{separator}{text}")));
-    true
 }
 
 #[async_trait]
@@ -175,37 +91,33 @@ impl Plugin for ContextInjector {
                 let injector = injector.clone();
                 Box::pin(async move {
                     let agent = event.agent.clone();
-                    injector.apply(&agent, &mut event.messages).await;
+                    let outcome = injector.apply(&agent, &mut event.messages).await;
+                    event.dynamic_trailing_blocks += outcome.trailing_blocks;
                     Ok(())
                 })
             });
         Ok(())
     }
 }
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     use super::*;
     use crate::agent::test_fixtures::test_agent_with;
     use crate::agent::InvocationState;
     use crate::error::Error;
     use crate::hooks::Cancel;
+    use crate::injection::tests::user_with_tool_result;
     use crate::models::Model;
-    use crate::types::{ToolResultBlock, ToolResultContent};
-
-    fn user_with_tool_result() -> Message {
-        Message::new(
-            Role::User,
-            vec![ContentBlock::ToolResult(ToolResultBlock::success(
-                "t1",
-                vec![ToolResultContent::Text("done".to_owned())],
-            ))],
-        )
-    }
+    use crate::types::{ContentBlock, Role};
 
     async fn run_hook(agent: &Agent, messages: Vec<Message>) -> Vec<Message> {
+        run_hook_event(agent, messages).await.messages
+    }
+
+    async fn run_hook_event(agent: &Agent, messages: Vec<Message>) -> BeforeModelCallEvent {
         let model: Arc<dyn Model> = agent.model();
         let mut event = BeforeModelCallEvent {
             agent: agent.clone(),
@@ -214,9 +126,10 @@ mod tests {
             projected_input_tokens: None,
             cancel: Cancel::No,
             messages,
+            dynamic_trailing_blocks: 0,
         };
         agent.hooks().invoke_callbacks(&mut event).await.unwrap();
-        event.messages
+        event
     }
 
     #[test]
@@ -352,8 +265,23 @@ mod tests {
     #[tokio::test]
     async fn text_starting_with_a_newline_is_appended_without_a_separator() {
         let mut messages = vec![Message::user("hi")];
-        assert!(fold_into_last_user_message(&mut messages, "\ninjected"));
+        assert!(fold_into_last_user_message(&mut messages, "\ninjected").folded);
         assert_eq!(messages[0].content[1], ContentBlock::text("\ninjected"));
+    }
+
+    #[tokio::test]
+    async fn the_hook_reports_per_call_trailing_blocks_and_accumulates_across_injectors() {
+        let agent = test_agent_with("c10", None, Vec::new());
+        ContextInjector::inject("one").init_agent(&agent).await.unwrap();
+        ContextInjector::inject("two")
+            .with_name("second")
+            .init_agent(&agent)
+            .await
+            .unwrap();
+        let event = run_hook_event(&agent, vec![Message::user("hi")]).await;
+
+        assert_eq!(event.dynamic_trailing_blocks, 2);
+        assert_eq!(event.messages[0].content.len(), 3);
     }
 
     #[tokio::test]

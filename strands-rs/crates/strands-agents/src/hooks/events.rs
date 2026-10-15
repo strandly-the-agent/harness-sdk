@@ -205,6 +205,10 @@ pub struct BeforeModelCallEvent {
     /// edit this for the current call only; `agent.messages()` is unaffected. Replaces TS's
     /// `InvokeModelStage.Input` middleware seam.
     pub messages: Vec<Message>,
+    /// How many trailing blocks of the last message are per-call content a provider must keep out
+    /// of its cached prefix (TS `InvokeModelContext.dynamicTrailingBlocks`). A callback that
+    /// appends ephemeral content — see [`crate::injection`] — adds what it appended.
+    pub dynamic_trailing_blocks: usize,
 }
 impl HookEvent for BeforeModelCallEvent {}
 

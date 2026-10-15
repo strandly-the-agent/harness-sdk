@@ -45,6 +45,9 @@ pub struct InvokeModelContext {
     pub invocation_state: InvocationState,
     /// Estimated input tokens, `None` when estimation failed.
     pub projected_input_tokens: Option<u64>,
+    /// Trailing blocks of the last message that are per-call content; the provider places its
+    /// cache point before them (see [`crate::injection`]).
+    pub dynamic_trailing_blocks: usize,
 }
 
 /// One tool call made by the executor.
