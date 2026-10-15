@@ -211,8 +211,7 @@ pub struct MultiAgentResultEvent {
 }
 impl HookEvent for MultiAgentResultEvent {}
 
-/// Union of all multi-agent streaming events, like
-/// [`AgentStreamEvent`](crate::agent::AgentStreamEvent).
+/// Union of all multi-agent streaming events, like [`crate::agent::AgentStreamEvent`].
 #[derive(Clone)]
 pub enum MultiAgentStreamEvent {
     /// Before the invocation starts.

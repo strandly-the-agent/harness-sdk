@@ -198,7 +198,7 @@ pub fn apply_orchestrator_hook_responses(&mut NodeState, Vec<InterruptResponseCo
     -> Vec<InterruptResponseContent>;         // returns the responses bound for the child agent
 ```
 
-### `multiagent::events` / `multiagent::nodes`
+### `multiagent::events`
 
 Ten hook events, each `impl HookEvent`, each carrying `state: MultiAgentStateHandle` and
 `invocation_state: InvocationState`; orchestrator-scoped ones also carry
@@ -223,6 +223,105 @@ impl MultiAgentStreamEvent {
 }
 
 pub enum NodeType { Agent, MultiAgent, Custom(String) }   // serde "agentNode"/"multiAgentNode"/<name>
+```
+
+### `multiagent::nodes`
+
+```rust
+pub type NodeSink = tokio::sync::mpsc::Sender<Result<MultiAgentStreamEvent>>;
+
+pub struct NodeConfig { pub description: Option<String> }
+pub struct NodeInputOptions {                     // TS NodeInputOptions
+    pub structured_output_schema: Option<JsonValue>,
+    pub invocation_state: InvocationState,        // shared by reference across nodes
+    pub cancel: Option<CancellationToken>,
+}
+impl NodeInputOptions { with_structured_output_schema, with_invocation_state, with_cancel }
+
+pub trait Node: Send + Sync {
+    fn id(&self) -> &str;
+    fn node_type(&self) -> NodeType;
+    fn config(&self) -> &NodeConfig;
+    fn handle<'a>(&'a self, input: MultiAgentInput, state: &'a MultiAgentStateHandle,
+                  options: &'a NodeInputOptions, events: &'a NodeSink)
+        -> BoxFuture<'a, Result<NodeResultUpdate>>;
+}
+
+/// The shared TS `Node.stream` wrapper.
+pub async fn run_node(node: &dyn Node, input: MultiAgentInput, state: &MultiAgentStateHandle,
+                      options: &NodeInputOptions, events: &NodeSink) -> NodeResult;
+
+pub struct AgentNodeOptions { pub agent: Agent, pub description: Option<String>,
+                              pub timeout: Option<Duration>, pub preserve_context: bool }
+impl AgentNodeOptions { pub fn new(Agent) -> Self; with_description, with_timeout, with_preserve_context }
+pub struct AgentNode;
+impl AgentNode {
+    pub fn new(options: impl Into<AgentNodeOptions>) -> Result<Self>;   // rejects a zero timeout
+    pub fn agent(&self) -> &Agent;
+    pub fn timeout(&self) -> Option<Duration>;
+    pub fn preserve_context(&self) -> bool;
+}
+
+pub struct MultiAgentNodeOptions { pub orchestrator: Arc<dyn MultiAgent>, pub description: Option<String> }
+impl MultiAgentNodeOptions { pub fn new(Arc<dyn MultiAgent>) -> Self; with_description }
+pub struct MultiAgentNode;
+impl MultiAgentNode {
+    pub fn new(options: impl Into<MultiAgentNodeOptions>) -> Self;
+    pub fn orchestrator(&self) -> &Arc<dyn MultiAgent>;
+}
+
+pub enum NodeDefinition { Agent(AgentNodeOptions), MultiAgent(MultiAgentNodeOptions), Node(Arc<dyn Node>) }
+impl NodeDefinition { pub fn into_node(self) -> Result<Arc<dyn Node>>; }
+// From<Agent>, From<AgentNodeOptions>, From<Arc<dyn MultiAgent>>, From<MultiAgentNodeOptions>, From<Arc<dyn Node>>
+```
+
+### `multiagent::edge`
+
+```rust
+pub type EdgeHandler = Arc<dyn for<'a> Fn(&'a MultiAgentState) -> BoxFuture<'a, bool> + Send + Sync>;
+pub fn edge_handler(predicate: impl Fn(&MultiAgentState) -> bool + Send + Sync + 'static) -> EdgeHandler;
+
+pub struct Edge { pub source: Arc<dyn Node>, pub target: Arc<dyn Node>, pub handler: Option<EdgeHandler> }
+impl Edge {
+    pub fn new(Arc<dyn Node>, Arc<dyn Node>) -> Self;
+    pub fn with_handler(self, EdgeHandler) -> Self;
+    pub async fn should_traverse(&self, state: &MultiAgentState) -> bool;   // true when no handler
+}
+
+pub struct EdgeDefinition { pub source: String, pub target: String, pub handler: Option<EdgeHandler> }
+impl EdgeDefinition { pub fn new(impl Into<String>, impl Into<String>) -> Self; with_handler }
+impl<S: Into<String>, T: Into<String>> From<(S, T)> for EdgeDefinition;   // the TS `[source, target]` tuple
+```
+
+### `multiagent::plugins`
+
+```rust
+#[async_trait]
+pub trait MultiAgentPlugin: Send + Sync {
+    fn name(&self) -> &str;
+    async fn init_multi_agent(&self, orchestrator: &dyn MultiAgent) -> Result<()>;
+}
+impl<P: MultiAgentPlugin + ?Sized> MultiAgentPlugin for Arc<P>;
+
+pub struct MultiAgentPluginRegistry;    // mirrors plugins::PluginRegistry exactly
+impl MultiAgentPluginRegistry {
+    pub fn new(plugins: Vec<Arc<dyn MultiAgentPlugin>>) -> Self;
+    pub fn add(&self, plugin: Arc<dyn MultiAgentPlugin>);
+    pub fn get(&self, name: &str) -> Option<Arc<dyn MultiAgentPlugin>>;
+    pub async fn initialize(&self, orchestrator: &dyn MultiAgent) -> Result<()>;   // fail-closed, once
+}
+```
+
+### `multiagent::snapshot`
+
+```rust
+pub struct TakeMultiAgentSnapshotOptions { pub app_data: Map<String, JsonValue> }
+impl TakeMultiAgentSnapshotOptions { pub fn with_app_data(self, Map<String, JsonValue>) -> Self }
+
+pub fn take_snapshot(orchestrator: &dyn MultiAgent, state: Option<&MultiAgentStateHandle>,
+                     options: TakeMultiAgentSnapshotOptions) -> Result<Snapshot>;   // session::types::Snapshot
+pub fn load_snapshot(orchestrator: &dyn MultiAgent, snapshot: &Snapshot,
+                     state: Option<&MultiAgentStateHandle>) -> Result<()>;
 ```
 
 ### Decision log
@@ -257,3 +356,26 @@ pub enum NodeType { Agent, MultiAgent, Custom(String) }   // serde "agentNode"/"
   runnable; the Rust port has no such common event type, so custom nodes forward opaque JSON.
 - **`NodeType` lives in `multiagent::nodes`** (increment 1 defines only the enum; the `Node` trait
   and the concrete node types land there next) because the events reference it.
+- **`Node::handle` writes to a `NodeSink` and returns `Result<NodeResultUpdate>`** instead of
+  being an async generator that both yields and returns: the crate already streams through an
+  `mpsc` sink (`agent::event_loop`), and a channel keeps `Node` object-safe.
+- **The shared TS `Node.stream` wrapper is the free fn `run_node`**, not a provided trait method:
+  it needs `async` over `&dyn Node`, and a free fn keeps the trait object-safe without boxing the
+  wrapper per implementation. It does not fire the before/after-node hooks — matching TS, where
+  Graph and Swarm own those.
+- **`AgentNode` wraps the concrete `Agent`**, since the Rust port has no `InvokableAgent`
+  interface. The TS "`preserveContext` requires an `Agent` instance" validation (and its test) is
+  therefore unnecessary; snapshot/restore always works.
+- **No `NodeInputOptions.buffer_output`**: TS swaps the agent's private printer to buffer
+  concurrent stdout. The Rust `Agent` exposes no swappable printer, so the knob (and its two TS
+  tests) is dropped rather than guessed at — revisit if/when printers are injectable.
+- **`AgentNode` timeout is `Option<Duration>`**, with `Duration::MAX` as the TS `Infinity`
+  opt-out and `Duration::ZERO` rejected (TS rejects `timeout < 1` ms).
+- **`EdgeHandler` returns a `BoxFuture`** so conditions can be async as in TS; `edge_handler`
+  wraps the common synchronous predicate. `Edge::should_traverse` takes `&MultiAgentState` rather
+  than the handle: the handle's `with` closure is synchronous and cannot await.
+- **`EdgeDefinition` is a struct, not an enum**: TS's `[source, target] | EdgeOptions` union
+  collapses into one struct with an optional handler, reached by `From<(S, T)>` for the tuple case.
+- **`take_snapshot`/`load_snapshot` are free fns over `&dyn MultiAgent`** (TS takes
+  `Graph | Swarm`) and take the state as `Option<&MultiAgentStateHandle>`; `take_snapshot` returns
+  `Result` because serializing the state can fail in Rust.
