@@ -33,7 +33,7 @@ async fn folds_injected_text_into_the_call_that_triggered_it_without_touching_hi
     let seen = last_user_text(&model, 0);
     assert!(seen.contains("what colour is the sky?"), "seen: {seen}");
     assert!(seen.contains("remember: the sky is green"), "seen: {seen}");
-    assert!(seen.contains("<notes>"), "seen: {seen}");
+    assert!(seen.ends_with("\n\nremember: the sky is green"), "seen: {seen}");
 
     let history = agent.messages();
     assert_eq!(history[0].text(), "what colour is the sky?");
