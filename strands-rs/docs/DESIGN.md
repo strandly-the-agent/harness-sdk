@@ -591,3 +591,69 @@ fallback. A `Choice` list axis drops values that are not options; `Inherit` reso
 - **`_defaultBuilder` is not ported in this increment**: it needs parent-agent internals the Rust
   `Agent` does not expose yet (MCP client inheritance, sandbox, printer, tracer trace-attributes).
   It belongs with the vended multi-agent tools that call it.
+
+### Swarm
+
+`multiagent::swarm` ports `strands-ts/src/multiagent/swarm.ts`. Agents run one at a time; each
+is handed a handoff JSON schema and routes the swarm by returning a target agent id, or ends it
+by omitting one. Increment 1 landed the handle, builder and validation; the execution loop and
+its tests land next.
+
+```rust
+pub struct SwarmConfig {                    // None = TS Infinity (no limit)
+    pub max_steps: Option<u64>,
+    pub repetitive_handoff_detection_window: usize,
+    pub repetitive_handoff_min_unique_agents: usize,
+    pub timeout: Option<Duration>,
+    pub node_timeout: Option<Duration>,
+}
+
+pub struct HandoffResult {                  // serde camelCase; the nodes' structured output
+    pub agent_id: Option<String>, pub message: String,
+    pub context: Option<serde_json::Map<String, JsonValue>>,
+}
+
+#[derive(Clone)]
+pub struct Swarm(Arc<SwarmInner>);
+impl Swarm {
+    pub fn builder() -> SwarmBuilder;
+    pub fn id(&self) -> &str;
+    pub fn name(&self) -> &str;
+    pub fn description(&self) -> Option<&str>;
+    pub fn nodes(&self) -> &IndexMap<String, Arc<dyn Node>>;
+    pub fn start(&self) -> &Arc<dyn Node>;
+    pub fn config(&self) -> &SwarmConfig;
+    pub fn hooks(&self) -> &HookRegistry;
+    pub fn plugins(&self) -> &MultiAgentPluginRegistry;
+    pub async fn initialize(&self) -> Result<()>;
+    pub async fn invoke(&self, input: impl Into<MultiAgentInput>) -> Result<MultiAgentResult>;
+    pub fn stream(&self, input: impl Into<MultiAgentInput>) -> MultiAgentStream;
+    pub fn take_snapshot(&self, Option<&MultiAgentStateHandle>, TakeMultiAgentSnapshotOptions) -> Result<Snapshot>;
+    pub fn load_snapshot(&self, &Snapshot, Option<&MultiAgentStateHandle>) -> Result<()>;
+}
+impl MultiAgent for Swarm;                  // invoke_with / stream_with / as_any
+impl From<Swarm> for NodeDefinition;        // nest a swarm as a node
+
+pub struct SwarmBuilder;                    // .id .name .description .node .entry_point
+                                            // .plugin .hook::<E, _> .max_steps .timeout
+                                            // .node_timeout .repetitive_handoff_detection_window
+                                            // .repetitive_handoff_min_unique_agents
+                                            // .build() -> Result<Swarm>
+```
+
+Divergences from TS (details in `docs/matrices/swarm.md`):
+
+- **Builder, not an options struct**, per crate convention; the validation messages are
+  TS-identical but arrive as `Err` from `build()` rather than a constructor throw.
+- **`Option<T>` replaces `Infinity`** for the three limits, so TS's "must be at least 1" checks
+  become "must not be zero" — `u64`/`Duration` cannot be negative.
+- **`.node(impl Into<NodeDefinition>)` derives the node id from the definition**, as TS
+  `SwarmNodeDefinition` does, rather than the `.node(id, def)` shape sketched in the increment
+  brief: `AgentNode` already takes its id from the agent, so a separate id argument would only
+  be able to disagree with it.
+- **No injected `handoff_to_agent` tool**: TS deliberately routes through structured output and
+  keeps routing in the orchestrator. The Rust port follows TS over Python here.
+- **The handoff schema is hand-written JSON Schema** (`structured_output_schema` is a
+  `serde_json::Value`); TS's `z.never()` for a single-node swarm becomes `{"not": {}}`.
+- **`warnOnce` → `tracing::warn!`** for the unbounded-execution warning; no warn-once helper
+  exists in the crate.
