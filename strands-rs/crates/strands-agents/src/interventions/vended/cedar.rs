@@ -943,4 +943,612 @@ action "search" appliesTo {
         let hour = current_utc_hour();
         assert!((0..24).contains(&hour), "{hour}");
     }
+
+    // --- runtime decisions (the TS `real Cedar evaluation` / resource / enricher / onError /
+    // session / namespace suites, driven through the handler instead of a whole agent loop) ---
+
+    /// The `entities.json` fixture from the TS suite.
+    const ENTITIES: &str = r#"[
+      { "uid": { "type": "Resource", "id": "agent" }, "attrs": {}, "parents": [] },
+      { "uid": { "type": "User", "id": "alice" }, "attrs": { "role": "admin" }, "parents": [] },
+      { "uid": { "type": "User", "id": "bob" }, "attrs": { "role": "analyst" }, "parents": [] },
+      { "uid": { "type": "User", "id": "eve" }, "attrs": { "role": "viewer" }, "parents": [] }
+    ]"#;
+    /// The `test.cedar` fixture.
+    const PERMIT_SEARCH: &str = r#"permit(principal, action == Action::"search", resource);"#;
+    /// The `role-based.cedar` fixture.
+    const ROLE_BASED: &str = r#"
+permit(principal is User, action, resource) when { principal.role == "admin" };
+permit(principal is User, action == Action::"search", resource) when { principal.role == "analyst" };
+permit(principal is User, action == Action::"query_database", resource) when { principal.role == "analyst" };
+"#;
+    /// The `rate-limited.cedar` fixture.
+    const RATE_LIMITED: &str = r#"permit(principal, action == Action::"send_email", resource) when { context.session.call_count < 3 };"#;
+    /// The `env-restricted.cedar` fixture.
+    const ENV_RESTRICTED: &str =
+        r#"permit(principal, action, resource) when { context.session.environment != "production" };"#;
+
+    fn agent() -> Agent {
+        Agent::builder()
+            .model(crate::testing::MockMessageModel::shared(vec![]))
+            .build()
+            .expect("agent over a mock model")
+    }
+
+    fn event(agent: &Agent, tool: &str, input: JsonValue, state: InvocationState) -> BeforeToolCallEvent {
+        BeforeToolCallEvent {
+            agent: agent.clone(),
+            tool_use: crate::types::ToolUse {
+                name: tool.to_owned(),
+                tool_use_id: "call-1".to_owned(),
+                input,
+            },
+            tool: None,
+            invocation_state: state,
+            cancel: crate::hooks::events::Cancel::No,
+            selected_tool: None,
+        }
+    }
+
+    /// Gates one tool call: `Ok(None)` permits, `Ok(Some(reason))` denies.
+    async fn gate(
+        cedar: &CedarAuthorization,
+        agent: &Agent,
+        tool: &str,
+        input: JsonValue,
+        state: InvocationState,
+    ) -> Result<Option<String>> {
+        match cedar.before_tool_call(&event(agent, tool, input, state)).await? {
+            ToolCallAction::Proceed => Ok(None),
+            ToolCallAction::Deny(reason) => Ok(Some(reason)),
+            _ => panic!("cedar only proceeds or denies"),
+        }
+    }
+
+    fn no_state() -> InvocationState {
+        InvocationState::new()
+    }
+
+    fn state_with(key: &str, value: &str) -> InvocationState {
+        let state = InvocationState::new();
+        state.insert(key, value.to_owned());
+        state
+    }
+
+    /// `User::"<invocation_state.user_id>"`, or no principal at all when it is unset.
+    fn user_resolver() -> PrincipalResolver {
+        Arc::new(|state: &InvocationState| {
+            Ok(state
+                .get::<String>("user_id")
+                .map(|id| EntityRef::new("User", id.as_str())))
+        })
+    }
+
+    fn fixed_user(entity_type: &'static str, id: &'static str) -> PrincipalResolver {
+        Arc::new(move |_| Ok(Some(EntityRef::new(entity_type, id))))
+    }
+
+    fn failing_resolver() -> PrincipalResolver {
+        Arc::new(|_| Err(Error::Plugin("resolver crash".to_owned())))
+    }
+
+    #[tokio::test]
+    async fn allows_permitted_tool_calls() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(PERMIT_SEARCH)
+                .with_entities(ENTITIES)
+                .with_principal_resolver(user_resolver()),
+        )
+        .unwrap();
+
+        let denial = gate(
+            &cedar,
+            &agent(),
+            "search",
+            serde_json::json!({ "query": "test" }),
+            state_with("user_id", "alice"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(denial, None);
+    }
+
+    #[tokio::test]
+    async fn denies_tools_not_in_any_permit_policy() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(PERMIT_SEARCH)
+                .with_entities(ENTITIES)
+                .with_principal_resolver(fixed_user("User", "alice")),
+        )
+        .unwrap();
+
+        let denial = gate(
+            &cedar,
+            &agent(),
+            "delete_record",
+            serde_json::json!({ "id": "1" }),
+            no_state(),
+        )
+        .await
+        .unwrap()
+        .expect("default-deny");
+        assert!(denial.starts_with("Access denied by Cedar policy"), "{denial}");
+    }
+
+    #[tokio::test]
+    async fn enforces_role_based_access_admin_can_delete_analyst_cannot() {
+        let config = |id: &'static str| {
+            CedarAuthorizationConfig::new(ROLE_BASED)
+                .with_entities(ENTITIES)
+                .with_principal_resolver(fixed_user("User", id))
+        };
+        let admin = CedarAuthorization::new(config("alice")).unwrap();
+        let analyst = CedarAuthorization::new(config("bob")).unwrap();
+
+        let agent = agent();
+        assert_eq!(
+            gate(&admin, &agent, "delete_record", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(
+            gate(
+                &analyst,
+                &agent,
+                "delete_record",
+                serde_json::json!({}),
+                no_state()
+            )
+            .await
+            .unwrap()
+            .is_some(),
+            "an analyst must not delete"
+        );
+    }
+
+    #[tokio::test]
+    async fn enforces_role_based_access_analyst_can_search_viewer_cannot() {
+        let config = |id: &'static str| {
+            CedarAuthorizationConfig::new(ROLE_BASED)
+                .with_entities(ENTITIES)
+                .with_principal_resolver(fixed_user("User", id))
+        };
+        let analyst = CedarAuthorization::new(config("bob")).unwrap();
+        let viewer = CedarAuthorization::new(config("eve")).unwrap();
+
+        let agent = agent();
+        assert_eq!(
+            gate(&analyst, &agent, "search", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(
+            gate(&viewer, &agent, "search", serde_json::json!({}), no_state())
+                .await
+                .unwrap()
+                .is_some(),
+            "a viewer must not search"
+        );
+    }
+
+    #[tokio::test]
+    async fn enforces_rate_limits_via_call_count_in_session_context() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(RATE_LIMITED)
+                .with_entities(ENTITIES)
+                .with_principal_resolver(fixed_user("User", "alice")),
+        )
+        .unwrap();
+
+        let agent = agent();
+        let mut permitted = 0;
+        for _ in 0..4 {
+            if gate(&cedar, &agent, "send_email", serde_json::json!({}), no_state())
+                .await
+                .unwrap()
+                .is_none()
+            {
+                permitted += 1;
+            }
+        }
+        // `call_count < 3` is evaluated with this call included, so calls 1 and 2 pass.
+        assert_eq!(permitted, 2);
+    }
+
+    #[tokio::test]
+    async fn enforces_environment_restrictions_via_context_enricher() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(ENV_RESTRICTED)
+                .with_entities(ENTITIES)
+                .with_principal_resolver(fixed_user("User", "alice"))
+                .with_context_enricher(Arc::new(|ctx| {
+                    let environment = ctx
+                        .invocation_state
+                        .get::<String>("environment")
+                        .map_or_else(|| "unknown".to_owned(), |e| e.to_string());
+                    Ok(Map::from_iter([("environment".to_owned(), environment.into())]))
+                })),
+        )
+        .unwrap();
+
+        let agent = agent();
+        assert_eq!(
+            gate(
+                &cedar,
+                &agent,
+                "search",
+                serde_json::json!({}),
+                state_with("environment", "development")
+            )
+            .await
+            .unwrap(),
+            None
+        );
+        assert!(
+            gate(
+                &cedar,
+                &agent,
+                "search",
+                serde_json::json!({}),
+                state_with("environment", "production")
+            )
+            .await
+            .unwrap()
+            .is_some(),
+            "production must be denied"
+        );
+    }
+
+    #[tokio::test]
+    async fn denies_when_principal_is_missing() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(PERMIT_SEARCH)
+                .with_entities(ENTITIES)
+                .with_principal_resolver(user_resolver()),
+        )
+        .unwrap();
+
+        let denial = gate(&cedar, &agent(), "search", serde_json::json!({}), no_state())
+            .await
+            .unwrap();
+        assert_eq!(denial.as_deref(), Some(NO_PRINCIPAL));
+    }
+
+    #[tokio::test]
+    async fn supports_a_static_principal_without_invocation_state() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(PERMIT_SEARCH)
+                .with_entities(ENTITIES)
+                .with_principal(EntityRef::new("User", "alice")),
+        )
+        .unwrap();
+
+        assert_eq!(
+            gate(&cedar, &agent(), "search", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn defaults_to_an_anonymous_user_principal() {
+        let cedar =
+            CedarAuthorization::new(CedarAuthorizationConfig::new(PERMIT_SEARCH).with_entities(ENTITIES))
+                .unwrap();
+
+        assert_eq!(
+            gate(&cedar, &agent(), "search", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn uses_an_unconstrained_resource_by_default() {
+        // No entity store at all: the default `Resource::"agent"` still satisfies `resource`.
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(PERMIT_SEARCH).with_principal_resolver(fixed_user("User", "alice")),
+        )
+        .unwrap();
+
+        assert_eq!(
+            gate(&cedar, &agent(), "search", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn constrains_on_tool_arguments_via_context_input() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(
+                r#"permit(principal, action == Action::"delete", resource) when { context.input.record_id == "42" };"#,
+            )
+            .with_principal_resolver(fixed_user("User", "alice")),
+        )
+        .unwrap();
+
+        let agent = agent();
+        assert_eq!(
+            gate(
+                &cedar,
+                &agent,
+                "delete",
+                serde_json::json!({ "record_id": "42" }),
+                no_state()
+            )
+            .await
+            .unwrap(),
+            None
+        );
+        assert!(
+            gate(
+                &cedar,
+                &agent,
+                "delete",
+                serde_json::json!({ "record_id": "99" }),
+                no_state()
+            )
+            .await
+            .unwrap()
+            .is_some(),
+            "record 99 must be denied"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_enricher_adds_custom_fields_usable_in_policies() {
+        let cedar = |department: &'static str| {
+            CedarAuthorization::new(
+                CedarAuthorizationConfig::new(
+                    r#"permit(principal, action, resource) when { context.session.department == "engineering" };"#,
+                )
+                .with_entities(ENTITIES)
+                .with_principal_resolver(fixed_user("User", "alice"))
+                .with_context_enricher(Arc::new(move |_| {
+                    Ok(Map::from_iter([("department".to_owned(), department.into())]))
+                })),
+            )
+            .unwrap()
+        };
+
+        let agent = agent();
+        assert_eq!(
+            gate(
+                &cedar("engineering"),
+                &agent,
+                "search",
+                serde_json::json!({}),
+                no_state()
+            )
+            .await
+            .unwrap(),
+            None
+        );
+        assert!(
+            gate(
+                &cedar("marketing"),
+                &agent,
+                "search",
+                serde_json::json!({}),
+                no_state()
+            )
+            .await
+            .unwrap()
+            .is_some(),
+            "a mismatching enricher value must deny"
+        );
+    }
+
+    #[tokio::test]
+    async fn propagates_by_default_when_a_callback_fails() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new("permit(principal, action, resource);")
+                .with_principal_resolver(failing_resolver()),
+        )
+        .unwrap();
+
+        let error = gate(&cedar, &agent(), "tool", serde_json::json!({}), no_state())
+            .await
+            .expect_err("the resolver error must propagate")
+            .to_string();
+        assert!(error.contains("resolver crash"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn denies_when_on_error_is_deny_and_a_callback_fails() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new("permit(principal, action, resource);")
+                .with_principal_resolver(failing_resolver())
+                .with_on_error(OnError::Deny),
+        )
+        .unwrap();
+
+        let denial = gate(&cedar, &agent(), "tool", serde_json::json!({}), no_state())
+            .await
+            .unwrap()
+            .expect("a failing callback must deny");
+        assert!(denial.contains("resolver crash"), "{denial}");
+    }
+
+    #[tokio::test]
+    async fn proceeds_when_on_error_is_proceed_and_a_callback_fails() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new("permit(principal, action, resource);")
+                .with_principal_resolver(failing_resolver())
+                .with_on_error(OnError::Proceed),
+        )
+        .unwrap();
+
+        assert_eq!(
+            gate(&cedar, &agent(), "tool", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn reads_a_cedar_policy_file_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.cedar");
+        std::fs::write(&path, PERMIT_SEARCH).unwrap();
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(path).with_principal_resolver(fixed_user("User", "alice")),
+        )
+        .unwrap();
+
+        assert_eq!(
+            gate(&cedar, &agent(), "search", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn reads_a_json_entity_file_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("entities.json");
+        std::fs::write(&path, ENTITIES).unwrap();
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(ROLE_BASED)
+                .with_entities(path)
+                .with_principal_resolver(fixed_user("User", "alice")),
+        )
+        .unwrap();
+
+        // `principal.role == "admin"` only holds if the entity attributes came off disk.
+        assert_eq!(
+            gate(
+                &cedar,
+                &agent(),
+                "delete_record",
+                serde_json::json!({}),
+                no_state()
+            )
+            .await
+            .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_call_counts_re_enables_rate_limited_tools() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(
+                "permit(principal, action, resource) when { context.session.call_count < 2 };",
+            )
+            .with_principal_resolver(fixed_user("User", "alice")),
+        )
+        .unwrap();
+
+        let agent = agent();
+        assert_eq!(
+            gate(&cedar, &agent, "send_email", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(
+            gate(&cedar, &agent, "send_email", serde_json::json!({}), no_state())
+                .await
+                .unwrap()
+                .is_some(),
+            "the second call exceeds the limit"
+        );
+
+        cedar.reset_call_counts(&agent);
+        assert_eq!(
+            gate(&cedar, &agent, "send_email", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None,
+            "the counter was reset"
+        );
+    }
+
+    #[tokio::test]
+    async fn uses_namespaced_action_and_resource_types() {
+        let entities = r#"[
+          { "uid": { "type": "Agent::Role", "id": "admin" }, "attrs": {}, "parents": [] },
+          { "uid": { "type": "Agent::User", "id": "alice" }, "attrs": {},
+            "parents": [{ "type": "Agent::Role", "id": "admin" }] },
+          { "uid": { "type": "Agent::User", "id": "bob" }, "attrs": {}, "parents": [] },
+          { "uid": { "type": "Agent::Resource", "id": "default" }, "attrs": {}, "parents": [] }
+        ]"#;
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(
+                r#"permit(principal in Agent::Role::"admin", action == Agent::Action::"search", resource);"#,
+            )
+            .with_namespace("Agent")
+            .with_entities(entities)
+            .with_principal_resolver(Arc::new(|state: &InvocationState| {
+                Ok(state
+                    .get::<String>("user_id")
+                    .map(|id| EntityRef::new("Agent::User", id.as_str())))
+            })),
+        )
+        .unwrap();
+
+        let agent = agent();
+        assert_eq!(
+            gate(
+                &cedar,
+                &agent,
+                "search",
+                serde_json::json!({}),
+                state_with("user_id", "alice")
+            )
+            .await
+            .unwrap(),
+            None
+        );
+        assert!(
+            gate(
+                &cedar,
+                &agent,
+                "search",
+                serde_json::json!({}),
+                state_with("user_id", "bob")
+            )
+            .await
+            .unwrap()
+            .is_some(),
+            "bob is not in the admin role"
+        );
+    }
+
+    #[tokio::test]
+    async fn works_with_a_namespace_and_tools() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(
+                r#"permit(principal, action == MyApp::Action::"search", resource);"#,
+            )
+            .with_namespace("MyApp")
+            .with_tools(tools())
+            .with_entities(
+                r#"[{ "uid": { "type": "MyApp::Resource", "id": "default" }, "attrs": {}, "parents": [] }]"#,
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            gate(
+                &cedar,
+                &agent(),
+                "search",
+                serde_json::json!({ "query": "test" }),
+                no_state()
+            )
+            .await
+            .unwrap(),
+            None
+        );
+    }
 }
