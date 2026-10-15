@@ -101,11 +101,8 @@ async fn returns_an_error_when_the_mcp_tool_reports_is_error() {
 
 #[tokio::test]
 async fn disconnect_succeeds_when_the_server_is_already_gone() {
-    // The server is killed 1s in, so `disconnect` runs against a dead child process.
-    let short_lived = McpServerConfig::stdio(
-        "sh",
-        vec!["-c".to_owned(), format!("exec timeout -s KILL 1 {ECHO_BIN}")],
-    );
+    // The server exits 300 ms in, so both calls below run against a dead child process.
+    let short_lived = McpServerConfig::stdio(ECHO_BIN, vec!["--exit-after-ms".to_owned(), "300".to_owned()]);
     let tool = router_with(vec![("echo".to_owned(), short_lived)], 10);
 
     run(
@@ -114,7 +111,19 @@ async fn disconnect_succeeds_when_the_server_is_already_gone() {
     )
     .await
     .unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+
+    run(
+        &tool,
+        json!({
+            "command": "call_tool",
+            "connection_id": "c1",
+            "tool_name": "echo",
+            "arguments": {"text": "hello"},
+        }),
+    )
+    .await
+    .expect_err("call_tool against a dead server must fail");
 
     let disconnected = run(&tool, json!({"command": "disconnect", "connection_id": "c1"}))
         .await
@@ -229,7 +238,10 @@ async fn cleans_up_when_the_server_fails_to_start() {
     .await
     .unwrap_err()
     .to_string();
-    assert!(!error.is_empty());
+    assert!(
+        error.contains("strands-rs-no-such-binary") || error.contains("broken"),
+        "the error must name the failing server or command: {error}"
+    );
     assert_eq!(
         run(&tool, json!({"command": "list_connections"})).await.unwrap(),
         json!(""),
