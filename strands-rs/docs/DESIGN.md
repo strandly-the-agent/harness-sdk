@@ -596,8 +596,9 @@ fallback. A `Choice` list axis drops values that are not options; `Inherit` reso
 
 `multiagent::swarm` ports `strands-ts/src/multiagent/swarm.ts`. Agents run one at a time; each
 is handed a handoff JSON schema and routes the swarm by returning a target agent id, or ends it
-by omitting one. Increment 1 landed the handle, builder and validation; the execution loop and
-its tests land next.
+by omitting one. Increment 1 landed the handle, builder and validation; increment 2 the execution
+loop (routing, handoffs, limits, interrupts, hook and stream events) and its tests. Telemetry
+spans are the remaining gap (`docs/matrices/swarm.md`).
 
 ```rust
 pub struct SwarmConfig {                    // None = TS Infinity (no limit)
@@ -627,7 +628,9 @@ impl Swarm {
     pub fn plugins(&self) -> &MultiAgentPluginRegistry;
     pub async fn initialize(&self) -> Result<()>;
     pub async fn invoke(&self, input: impl Into<MultiAgentInput>) -> Result<MultiAgentResult>;
+    pub async fn invoke_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions) -> Result<MultiAgentResult>;
     pub fn stream(&self, input: impl Into<MultiAgentInput>) -> MultiAgentStream;
+    pub fn stream_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions) -> MultiAgentStream;
     pub fn take_snapshot(&self, Option<&MultiAgentStateHandle>, TakeMultiAgentSnapshotOptions) -> Result<Snapshot>;
     pub fn load_snapshot(&self, &Snapshot, Option<&MultiAgentStateHandle>) -> Result<()>;
 }
@@ -657,3 +660,12 @@ Divergences from TS (details in `docs/matrices/swarm.md`):
   `serde_json::Value`); TS's `z.never()` for a single-node swarm becomes `{"not": {}}`.
 - **`warnOnce` → `tracing::warn!`** for the unbounded-execution warning; no warn-once helper
   exists in the crate.
+- **The loop is a spawned task over an `mpsc` channel** (like `Agent::stream_with`), not an async
+  generator: `stream_with` spawns, `invoke_with` drains the stream to the terminal result event,
+  and dropping the stream ends the invocation.
+- **Wall-clock budgets are `tokio` deadlines** raced against the node future in one `select!`,
+  which cancels the node's `CancellationToken` — TS's `AbortSignal.any` composition. Messages keep
+  TS's text with milliseconds (`node_timeout=<20>`, `timeout=<20>`).
+- **The orchestrator appends node results to `state.results`** (`run_node` only records them on
+  the node), and an unknown handoff target is an `Err` rather than TS's non-null assertion, since
+  the Rust handoff schema is advisory JSON Schema rather than an enforced Zod enum.
