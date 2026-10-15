@@ -112,12 +112,16 @@ mod basic_plugin {
             })
     }
 
-    // Using the plugin
-    async fn build() -> Result<Agent> {
-        let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-        Agent::builder().model(model).plugin(LoggingPlugin).build()
-    }
     // --8<-- [end:basic_plugin]
+
+    async fn build() -> Result<Agent> {
+        // --8<-- [start:basic_plugin_usage]
+        // Using the plugin
+        let model = BedrockModel::new(BedrockModelConfig::default()).await?;
+        let agent = Agent::builder().model(model).plugin(LoggingPlugin).build()?;
+        // --8<-- [end:basic_plugin_usage]
+        Ok(agent)
+    }
 }
 
 mod hook_decorator_alternative {
@@ -227,16 +231,19 @@ mod state_management {
         }
     }
 
-    // Usage
+    // --8<-- [end:state_management]
+
     async fn build() -> Result<Agent> {
+        // --8<-- [start:state_management_usage]
+        // Usage
         let model = BedrockModel::new(BedrockModelConfig::default()).await?;
         let agent = Agent::builder().model(model).plugin(MetricsPlugin).build()?;
         agent.initialize().await?;
 
         println!("Tool calls: {:?}", agent.state().get("metrics_call_count"));
+        // --8<-- [end:state_management_usage]
         Ok(agent)
     }
-    // --8<-- [end:state_management]
 }
 
 mod async_initialization {
