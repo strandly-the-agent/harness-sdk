@@ -455,6 +455,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reports_a_task_that_did_not_complete() {
+        // A model error drives the executor to a failed terminal state through the real server.
+        let handle = A2AServer::builder("Failing Agent")
+            .executor(A2AExecutor::with_factory(|_| {
+                Agent::builder()
+                    .model(MockMessageModel::shared(vec![MockResponse::Error(Error::other(
+                        "model exploded",
+                    ))]))
+                    .build()
+                    .unwrap()
+            }))
+            .build()
+            .unwrap()
+            .serve()
+            .await
+            .unwrap();
+        let endpoint = format!("http://{}", handle.local_addr());
+        let tool = A2AClientTool::new([endpoint.clone()]).unwrap();
+
+        let result = call(
+            &tool,
+            json!({ "operation": "send_message", "endpoint": endpoint, "message": "hi" }),
+        )
+        .await;
+
+        let text = error_text(&result);
+        assert!(
+            text.contains("did not complete: task state is 'failed'"),
+            "{text}"
+        );
+        assert!(text.contains("model exploded"), "{text}");
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn wraps_a_send_failure() {
         let tool = A2AClientTool::new(["http://127.0.0.1:1"]).unwrap();
 
