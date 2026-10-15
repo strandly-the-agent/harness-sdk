@@ -441,3 +441,58 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   (`tests/integ_memory_kb.rs`) is `#[ignore]`d and skips unless `STRANDS_TEST_KB_ID` is set — no
   knowledge base exists in the sandbox account, so only its skip path has been exercised. Cases
   not ported, and why, are listed in `docs/matrices/memory-stores.md`.
+
+## Phase 5 — multi-agent, A2A, decisions
+
+Plan: [PLAN_PHASE5.md](PLAN_PHASE5.md). Five workstream branches plus three follow-up branches,
+each built → independently reviewed → fixed → merged into `agent-tasks/strands-rs`. Design record:
+[DESIGN.md](DESIGN.md) "## Multi-agent" (incl. "### Graph", "### Swarm"), "## A2A", "## Decisions";
+traceability in `docs/matrices/{multiagent-core,graph,swarm,a2a,decisions}.md`.
+
+- **Multi-agent core** (`src/multiagent/{state,multiagent,events,nodes,edge,plugins,snapshot,spec}.rs`):
+  `MultiAgent` trait (object-safe; `MultiAgentExt` for `dyn`), `MultiAgentInput` /
+  `MultiAgentInvokeOptions` / `MultiAgentStream` mirroring `Agent`'s invoke surface, state types
+  serde-identical to TS `toJSON()` (verified by `tests/multiagent_interop.rs` fixtures), `Node` /
+  `AgentNode` / `MultiAgentNode` / `NodeDefinition`, `Edge` with async `EdgeHandler`,
+  `MultiAgentPlugin(Registry)`, `take_snapshot`/`load_snapshot` over `session::types::Snapshot`,
+  the ten hook events on the shared `HookRegistry`, `AgentSpec` axes. API bar-raiser review fixed
+  two 🔴s before Graph/Swarm started (edge handler could not be awaited against the state handle;
+  `AgentNode` never reloaded `interrupted_snapshot`).
+- **Graph** (`src/multiagent/graph.rs`) and **Swarm** (`src/multiagent/swarm.rs`): `Clone` handles,
+  `Graph::builder()` / `Swarm::builder()` with one-argument `.node(def)` (id from the node, as TS),
+  TS-identical validation messages, inherent `invoke/invoke_with/stream/stream_with`,
+  `take_snapshot(Option<&MultiAgentStateHandle>, ..)` / `load_snapshot(.., Option<&..>)`,
+  `initialize()`, fresh `MultiAgentState` per invocation, same-instance and cross-instance interrupt
+  resume, cooperative cancel-on-drop for streams (shared `CancelOnDrop`), multi-agent + node
+  telemetry spans with TS attribute names (`tests/multiagent_tracer.rs`, 17 tests). Graph went
+  through a rework round (busy-spin on interrupt with queued targets, loop exiting before trailing
+  events, shared state across concurrent invocations) and an adversarial round (abort-on-drop
+  skipped agent restore/after-hook/watcher cleanup; `AfterNodeCall` ordering; swallowed panics;
+  swarm resume livelock at `max_steps`).
+- **A2A** (`src/a2a/`, cargo feature `a2a`): in-tree A2A 0.3 protocol types (no official Rust SDK;
+  verified against `@a2a-js/sdk` 0.3.9), `A2AServer` over axum (card at both well-known paths,
+  JSON-RPC `message/send`, `message/stream` SSE, `tasks/get`, `tasks/cancel`, bounded `TaskStore`,
+  task continuation semantics), `A2AExecutor` (shared-agent and per-context factory modes),
+  `A2AAgent` client (card `url` as endpoint, opt-in context continuity), `A2AClientTool` vended
+  tool; `tests/a2a_e2e.rs` drives server + client in-process. Review fixed a 🔴 task-continuation
+  data-loss bug and seven 🟡s. `InvokableAgent` deliberately left out (see DESIGN.md "## A2A").
+- **Decisions** (`src/decisions/`): `DecisionModel` trait + `DecisionModelExt::ask` (traced
+  `decision` span), `Question`/`Answer` enums replacing TS const generics, `LlmDecisionModel` with
+  a zod-byte-identical answer schema. Review fixed a flaky tracing test and a stricter-than-TS
+  validation (`additionalProperties`).
+- **Core fixes surfaced by this phase**: `HookRegistry` now accumulates interrupts across all
+  callbacks (TS semantics; was first-wins); `Agent::take_snapshot`/`load_snapshot` now carry
+  interrupt state (`InterruptState::from_json` added) so a snapshot taken mid-interrupt resumes on a
+  fresh instance.
+
+Live Bedrock runs (`us.anthropic.claude-haiku-4-5-20251001-v1:0`, `us-west-2`), all `#[ignore]`
+integ tests, each run during the phase: `integ_multiagent` (3-node graph with a conditional edge,
+2-agent swarm that hands off, swarm-in-graph) 3/3; `integ_a2a` (Bedrock-backed agent served over
+A2A, `A2AAgent` client round-trip) 1/1; `integ_decisions` 1/1 (one transient model-side non-JSON
+tool input observed across ~30 runs, recorded in the test's module doc).
+
+Known follow-ups: `session_manager` constructor slot on Graph/Swarm (TS `sessionManager` option —
+resume tests use `take_snapshot`/`load_snapshot` directly); `AgentSpec::_defaultBuilder` (needs
+`Agent` to expose MCP clients / sandbox / tracer attributes); agent spans inside a node are root
+spans (no ambient OTel context plumbing — same limitation as `decision` spans); `tasks/resubscribe`
+answers `-32004`; `InvokableAgent` trait covering `Agent` + `A2AAgent` for nodes/executors.
