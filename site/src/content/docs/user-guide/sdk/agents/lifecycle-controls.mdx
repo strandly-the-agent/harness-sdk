@@ -286,7 +286,7 @@ default the agent processes one invocation at a time and rejects overlap.
   <Tab label="Python">
 
   Invoking an agent that is already running raises `ConcurrencyException`. The
-  <Syntax py="concurrent_invocation_mode" /> constructor parameter controls this:
+  `concurrent_invocation_mode` constructor parameter controls this:
   it takes a `ConcurrentInvocationMode` of either `THROW` (the default) or
   `UNSAFE_REENTRANT`.
 
@@ -305,7 +305,7 @@ default the agent processes one invocation at a time and rejects overlap.
 
   When a retry arrives for a request that is still in flight, deduplicate it
   rather than erroring or doing the work twice. Pass
-  <Syntax py="idempotency_token" /> to any invocation method to identify the
+  `idempotency_token` to any invocation method to identify the
   logical request. A second call with the same token waits for the original and
   returns the same `AgentResult`; a call with a different token still raises
   `ConcurrencyException`.

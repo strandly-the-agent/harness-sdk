@@ -682,6 +682,12 @@ A Python module tool requires two key components:
 1. A `TOOL_SPEC` variable that defines the tool's name, description, and input schema
 2. A function with the same name as specified in the tool spec that implements the tool's functionality
 </Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
+```
+</Tab>
 <Tab label="Rust">
 
 :::note[Python only]
@@ -748,6 +754,12 @@ def weather_forecast(tool, **kwargs: Any):
     }
 ```
 </Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
+```
+</Tab>
 <Tab label="Rust">
 
 ```rust
@@ -782,6 +794,12 @@ from strands import Agent
 agent = Agent(
     tools=["./weather_forecast.py"]
 )
+```
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
 ```
 </Tab>
 <Tab label="Rust">
@@ -822,6 +840,12 @@ async def call_api(tool, **kwargs):
         "status": "success",
         "content": [{"text": result}],
     }
+```
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
 ```
 </Tab>
 <Tab label="Rust">

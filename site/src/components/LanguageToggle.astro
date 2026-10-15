@@ -48,7 +48,7 @@ const isDisabled = (lang: LanguageSlug) =>
 // "This page is Python and Rust only", built from the languages the page does
 // support.
 const LABELS: Record<LanguageSlug, string> = { python: 'Python', typescript: 'TypeScript', rust: 'Rust' }
-const enabledLabels = (['typescript', 'python', 'rust'] as const)
+const enabledLabels = (['python', 'typescript', 'rust'] as const)
   .filter((lang) => !isDisabled(lang))
   .map((lang) => LABELS[lang])
 const disabledTitle =

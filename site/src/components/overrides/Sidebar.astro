@@ -10,6 +10,7 @@ import MobileMenuFooter from 'virtual:starlight/components/MobileMenuFooter'
 import SidebarPersister from '@astrojs/starlight/components/SidebarPersister.astro'
 import SidebarSublist from './SidebarSublist.astro'
 import { currentProduct } from '../../util/current-product'
+import { LANGUAGE_STORAGE_KEY } from '../../util/language-preference'
 
 const { sidebar } = Astro.locals.starlightRoute
 const product = currentProduct(Astro.url.pathname)
@@ -37,14 +38,13 @@ const staticSlug = isLearning
           : null
 ---
 
-<script is:inline>
+<script is:inline define:vars={{ KEY: LANGUAGE_STORAGE_KEY }}>
   // Language-scoped sidebar entries (Quickstart / API reference) collapse to a
   // single row that follows the header language toggle. Mirror the stored
   // language onto <html data-lang-pref> so CSS can hide the other language's
   // row before the list paints, then keep it in sync as the toggle changes.
-  // Key + label values mirror src/util/language-preference.ts + LanguageToggle.astro.
+  // Label values mirror LanguageToggle.astro.
   ;(function () {
-    var KEY = 'starlight-synced-tabs__jarkqt'
     var SLUGS = { Python: 'python', TypeScript: 'typescript', Rust: 'rust' }
     function set(label) {
       document.documentElement.dataset.langPref = SLUGS[label] || 'typescript'

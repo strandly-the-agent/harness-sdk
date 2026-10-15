@@ -194,7 +194,7 @@ Do not list all three SDK languages (`[python, typescript, rust]`) — that is t
 
 The site documents three SDKs: Python, TypeScript and Rust. The header language toggle is global, so a page must make the reader's choice meaningful in one of two ways:
 
-1. **The page supports Rust** — it has no `languages` field (or one that includes `rust`), and then *every* language tab group on the page has a `Rust` tab, and every `<Syntax>` has an `rs` prop. If a single section covers a feature the Rust SDK lacks, keep the Rust tab and fill it with the stub fence used for the other SDKs' gaps:
+1. **The page supports Rust** — it has no `languages` field (or one that includes `rust`), and then *every* language tab group on the page offers every language the page does (a `Rust` tab, and a `Python`/`TypeScript` stub where one was missing), and every `<Syntax>` has an `rs` prop. `site/test/language-coverage.test.ts` enforces both; a partial group would otherwise show the wrong language with its tablist hidden. If a single section covers a feature the Rust SDK lacks, keep the Rust tab and fill it with the stub fence used for the other SDKs' gaps:
 
    ````mdx
    <Tab label="Rust">
