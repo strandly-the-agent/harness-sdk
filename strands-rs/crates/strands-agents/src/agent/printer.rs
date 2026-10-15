@@ -166,6 +166,7 @@ impl<W: Write> AgentPrinter<W> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     use super::*;
@@ -176,17 +177,46 @@ mod tests {
     use crate::tools::{FunctionTool, ToolContext};
     use crate::types::{ContentBlock, JsonValue, Message, Role, StopReason, ToolUseBlock};
 
-    /// Model replaying `events` plus the `MessageStart`/`MessageStop` frame around them.
-    fn one_turn(events: Vec<ModelStreamEvent>) -> Arc<TestModelProvider> {
+    /// `events` wrapped in the `MessageStart`/`MessageStop` frame of one turn.
+    fn turn(events: Vec<ModelStreamEvent>, stop_reason: StopReason) -> Vec<ModelStreamEvent> {
         let mut all = vec![ModelStreamEvent::MessageStart {
             role: Role::Assistant,
         }];
         all.extend(events);
         all.push(ModelStreamEvent::MessageStop {
-            stop_reason: StopReason::EndTurn,
+            stop_reason,
             additional_model_response_fields: None,
         });
+        all
+    }
+
+    /// Model replaying `events` as a single end-turn message.
+    fn one_turn(events: Vec<ModelStreamEvent>) -> Arc<TestModelProvider> {
+        let all = turn(events, StopReason::EndTurn);
         Arc::new(TestModelProvider::new(all.into_iter().map(Ok).collect()))
+    }
+
+    /// Model replaying one framed event sequence per call, in order.
+    struct ScriptedModel {
+        turns: Vec<Vec<ModelStreamEvent>>,
+        call: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Model for ScriptedModel {
+        fn model_id(&self) -> Option<String> {
+            Some("test-model".to_owned())
+        }
+
+        fn stream<'a>(
+            &'a self,
+            _messages: &'a [Message],
+            _options: &'a crate::models::StreamOptions,
+        ) -> futures::stream::BoxStream<'a, Result<ModelStreamEvent>> {
+            let index = self.call.fetch_add(1, Ordering::SeqCst);
+            let events = self.turns.get(index).cloned().unwrap_or_default();
+            Box::pin(futures::stream::iter(events.into_iter().map(Ok)))
+        }
     }
 
     fn text_delta(text: &str) -> ModelStreamEvent {
@@ -364,5 +394,68 @@ mod tests {
             printed(&agent).await,
             "\n  ⏳ tool_a\n\n🚫 All tools denied\n✗ Tool failed\nDone\n"
         );
+    }
+
+    /// A tool-use content block as a provider streams it.
+    fn tool_use_block(name: &str) -> Vec<ModelStreamEvent> {
+        vec![
+            ModelStreamEvent::ContentBlockStart {
+                start: Some(ContentBlockStart::ToolUse {
+                    name: name.to_owned(),
+                    tool_use_id: format!("{name}-1"),
+                    reasoning_signature: None,
+                }),
+            },
+            ModelStreamEvent::ContentBlockDelta {
+                delta: ContentBlockDelta::ToolUseInput {
+                    input: "{}".to_owned(),
+                },
+            },
+            ModelStreamEvent::ContentBlockStop {},
+        ]
+    }
+
+    #[tokio::test]
+    async fn prints_comprehensive_scenario_with_all_output_types() {
+        let mut first = block(vec![text_delta("Let me help you. ")]);
+        first.extend(block(vec![reasoning_delta("I need to use the calculator")]));
+        first.extend(tool_use_block("calculator"));
+        let mut second = block(vec![text_delta("The calculation succeeded. ")]);
+        second.extend(block(vec![reasoning_delta("Now trying validation")]));
+        second.extend(tool_use_block("validator"));
+        let mut third = block(vec![text_delta("All done. ")]);
+        third.extend(block(vec![reasoning_delta("Task completed successfully")]));
+
+        let model = Arc::new(ScriptedModel {
+            turns: vec![
+                turn(first, StopReason::ToolUse),
+                turn(second, StopReason::ToolUse),
+                turn(third, StopReason::EndTurn),
+            ],
+            call: AtomicUsize::new(0),
+        });
+        let agent = Agent::builder()
+            .model(model as Arc<dyn Model>)
+            .tool(ok_tool("calculator"))
+            .tool(failing_tool("validator"))
+            .build()
+            .expect("agent builds");
+
+        let expected = concat!(
+            "Let me help you. ",
+            "\n💭 Reasoning:\n   I need to use the calculator\n",
+            "\n  ⏳ calculator\n",
+            "\n🔧 Tool #1: calculator\n",
+            "✓ Tool completed\n",
+            "The calculation succeeded. ",
+            "\n💭 Reasoning:\n   Now trying validation\n",
+            "\n  ⏳ validator\n",
+            "\n🔧 Tool #2: validator\n",
+            "✗ Tool failed\n",
+            "All done. ",
+            "\n💭 Reasoning:\n   Task completed successfully\n",
+            "\n",
+        );
+        assert_eq!(printed(&agent).await, expected);
     }
 }
