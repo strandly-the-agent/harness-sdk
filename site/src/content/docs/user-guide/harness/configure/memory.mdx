@@ -45,6 +45,11 @@ Set `memory={"dir": ...}` to store the memory files somewhere other than `./.age
     const agent = await createHarness({ memory: { dir: '/var/lib/agent/memory' } })
     ```
   </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/memory.rs:memory_dir"
+    ```
+  </Tab>
 </Tabs>
 
 ## Swap the memory backend
@@ -69,6 +74,11 @@ giving up Strands harness's defaults:
     import { PostgresMemoryStore } from './my-stores'
 
     const agent = await createHarness({ memory: { stores: [new PostgresMemoryStore('postgres://...')] } })
+    ```
+  </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/memory.rs:memory_stores"
     ```
   </Tab>
 </Tabs>
@@ -97,6 +107,11 @@ Pass `False`/`null` (or set `memory` off) to disable memory entirely:
     const agent = await createHarness({ memory: false })
     ```
   </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/memory.rs:memory_off"
+    ```
+  </Tab>
 </Tabs>
 
 ## Flush before a short run exits
@@ -120,6 +135,14 @@ shutdown runs when the block exits — on a normal return and on a thrown error 
     // the agent's shutdown runs here as the scope exits, flushing pending memory
     ```
   </Tab>
+  <Tab label="Rust">
+    The Rust agent has no shutdown hook, so flush the memory manager yourself before the
+    scope ends:
+
+    ```rust
+    --8<-- "user-guide/harness/configure/memory.rs:memory_flush_scope"
+    ```
+  </Tab>
 </Tabs>
 
 If you manage the agent's lifetime yourself, run its shutdown at your shutdown boundary:
@@ -133,6 +156,11 @@ If you manage the agent's lifetime yourself, run its shutdown at your shutdown b
   <Tab label="TypeScript">
     ```typescript
     await agent.shutdown()
+    ```
+  </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/memory.rs:memory_flush"
     ```
   </Tab>
 </Tabs>

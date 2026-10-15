@@ -39,6 +39,11 @@ You do not have to pass anything. Import it, instantiate it, then give the agent
     await agent.invoke("Research the top three vector databases, compare pricing and limits, and write it up in comparison.md")
     ```
   </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/index.rs:get_one_running"
+    ```
+  </Tab>
 </Tabs>
 
 Amazon Bedrock is the default. See [choose a model](./configure/model/) to run on Anthropic, OpenAI, Google, or Ollama.
@@ -51,6 +56,9 @@ Strands harness is open source — browse the source on GitHub:
   </Tab>
   <Tab label="TypeScript">
     [`harness-ts`](https://github.com/strands-agents/harness-sdk/tree/main/harness-ts) — the TypeScript package.
+  </Tab>
+  <Tab label="Rust">
+    [`strands-harness`](https://github.com/strands-agents/harness-sdk/tree/main/strands-rs/crates/strands-harness) — the Rust crate, experimental.
   </Tab>
 </Tabs>
 
