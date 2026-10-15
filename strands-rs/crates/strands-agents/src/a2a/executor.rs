@@ -53,7 +53,10 @@ impl RequestContext {
         }
     }
 
-    /// A context for `user_message` under freshly generated task and context ids.
+    /// A context for `user_message`, reusing the ids it carries and generating the rest.
+    ///
+    /// Performs no validation: a server continuing a task the client named must itself load that
+    /// task and reject an unknown or terminal one (see [`A2AServer`](super::A2AServer)).
     pub fn for_message(user_message: Message) -> Self {
         let task_id = user_message
             .task_id
@@ -64,6 +67,13 @@ impl RequestContext {
             .clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         Self::new(task_id, context_id, user_message)
+    }
+
+    /// The task this request continues, as the server loaded it.
+    #[must_use]
+    pub fn with_task(mut self, task: Task) -> Self {
+        self.task = Some(task);
+        self
     }
 }
 

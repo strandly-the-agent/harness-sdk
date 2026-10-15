@@ -19,6 +19,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
+use uuid::Uuid;
 
 use super::executor::{A2AExecutor, EventBus, RequestContext};
 use super::task_store::TaskStore;
@@ -388,8 +389,7 @@ async fn send(
     state: &ServerState,
     params: MessageSendParams,
 ) -> std::result::Result<JsonValue, JsonRpcError> {
-    let context = RequestContext::for_message(params.message);
-    submit(state, &context);
+    let context = request_context(state, params.message)?;
 
     let (bus, mut events) = EventBus::channel();
     let outcome = state.executor.execute(&context, &bus).await;
@@ -420,8 +420,10 @@ async fn send(
 
 /// Run the agent in the background and stream its events as SSE.
 fn stream(state: Arc<ServerState>, id: Option<JsonValue>, params: MessageSendParams) -> Response {
-    let context = RequestContext::for_message(params.message);
-    submit(&state, &context);
+    let context = match request_context(&state, params.message) {
+        Ok(context) => context,
+        Err(error) => return failure(id, error),
+    };
 
     let (bus, events) = EventBus::channel();
     let executing = Arc::clone(&state);
@@ -484,15 +486,62 @@ async fn cancel_task(
     encode(&task)
 }
 
-/// Record the task as submitted, with the caller's message as its first history entry.
-fn submit(state: &ServerState, context: &RequestContext) {
-    let mut task = Task::new(
-        context.task_id.clone(),
-        context.context_id.clone(),
-        TaskStatus::new(TaskState::Submitted),
-    );
-    task.history = Some(vec![context.user_message.clone()]);
-    state.store.save(task);
+/// The context of an incoming message: a fresh task, or the continuation of a stored one.
+///
+/// Mirrors `DefaultRequestHandler._createRequestContext`: a `taskId` this server does not know is
+/// `-32001`, a task in a terminal state is `-32600`, and otherwise the message is appended to the
+/// stored task's history and the task is passed to the executor as [`RequestContext::task`]. A
+/// message naming no task starts a fresh one, recorded as `submitted`.
+fn request_context(
+    state: &ServerState,
+    mut message: Message,
+) -> std::result::Result<RequestContext, JsonRpcError> {
+    let existing = match &message.task_id {
+        Some(task_id) => {
+            let task = state
+                .store
+                .get(task_id)
+                .ok_or_else(|| JsonRpcError::task_not_found(task_id))?;
+            if task.status.state.is_terminal() {
+                return Err(JsonRpcError::invalid_request(format!(
+                    "Task {task_id} is in a terminal state ({}) and cannot be modified.",
+                    task.status.state
+                )));
+            }
+            Some(task)
+        }
+        None => None,
+    };
+
+    let task_id = message
+        .task_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let context_id = message
+        .context_id
+        .clone()
+        .or_else(|| existing.as_ref().map(|task| task.context_id.clone()))
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    message.task_id = Some(task_id.clone());
+    message.context_id = Some(context_id.clone());
+
+    let context = RequestContext::new(task_id, context_id, message.clone());
+    Ok(match existing {
+        Some(task) => {
+            let appended = state.store.append_history(&task.id, message).unwrap_or(task);
+            context.with_task(appended)
+        }
+        None => {
+            let mut task = Task::new(
+                context.task_id.clone(),
+                context.context_id.clone(),
+                TaskStatus::new(TaskState::Submitted),
+            );
+            task.history = Some(vec![context.user_message.clone()]);
+            state.store.save(task);
+            context
+        }
+    })
 }
 
 /// A terminal `failed` status update carrying `message`.
@@ -695,6 +744,124 @@ mod tests {
         assert_eq!(artifacts[0].parts[0].as_text(), Some("Hello"));
         assert_eq!(task.history.unwrap()[0].text(), "hi");
         handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn message_send_continues_an_unfinished_task() {
+        let server = A2AServer::builder("Test Agent")
+            .executor(A2AExecutor::with_factory(|_| agent_saying("Hello")))
+            .build()
+            .unwrap();
+        // A task the agent left waiting for more input, as a multi-turn executor would.
+        let mut waiting = Task::new("task-1", "ctx-1", TaskStatus::new(TaskState::InputRequired));
+        waiting.history = Some(vec![Message::user("first")]);
+        server.task_store().save(waiting);
+        let store = Arc::clone(server.task_store());
+        let handle = server.serve().await.unwrap();
+        let base = format!("http://{}", handle.local_addr());
+
+        let mut second = Message::user("second");
+        second.task_id = Some("task-1".to_owned());
+        let response = call(&base, METHOD_MESSAGE_SEND, json!({ "message": second })).await;
+
+        let task: Task = serde_json::from_value(response["result"].clone()).unwrap();
+        assert_eq!(task.id, "task-1");
+        assert_eq!(task.context_id, "ctx-1");
+        let history = task.history.unwrap();
+        assert_eq!(
+            history.iter().map(Message::text).collect::<Vec<_>>(),
+            vec!["first".to_owned(), "second".to_owned()]
+        );
+        assert_eq!(store.get("task-1").unwrap().status.state, TaskState::Completed);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn message_send_reports_an_unknown_task_id() {
+        let handle = server().serve().await.unwrap();
+        let base = format!("http://{}", handle.local_addr());
+
+        let mut message = Message::user("hi");
+        message.task_id = Some("never-seen".to_owned());
+        let response = call(&base, METHOD_MESSAGE_SEND, json!({ "message": message })).await;
+
+        assert_eq!(response["error"]["code"], error_codes::TASK_NOT_FOUND);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn message_send_refuses_to_modify_a_terminal_task() {
+        let handle = server().serve().await.unwrap();
+        let base = format!("http://{}", handle.local_addr());
+
+        let sent = call(
+            &base,
+            METHOD_MESSAGE_SEND,
+            json!({ "message": Message::user("hi") }),
+        )
+        .await;
+        let id = sent["result"]["id"].as_str().unwrap().to_owned();
+
+        let mut second = Message::user("again");
+        second.task_id = Some(id.clone());
+        let response = call(&base, METHOD_MESSAGE_SEND, json!({ "message": second })).await;
+
+        assert_eq!(response["error"]["code"], error_codes::INVALID_REQUEST);
+        assert!(response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("terminal state"));
+        handle.shutdown().await;
+    }
+
+    fn state_with(store: Arc<TaskStore>) -> ServerState {
+        ServerState {
+            card: AgentCard::new("Test Agent", "", ""),
+            executor: Arc::new(A2AExecutor::with_factory(|_| agent_saying("Hello"))),
+            store,
+        }
+    }
+
+    fn waiting_task(id: &str, context_id: &str) -> Task {
+        let mut task = Task::new(id, context_id, TaskStatus::new(TaskState::InputRequired));
+        task.history = Some(vec![Message::user("first")]);
+        task
+    }
+
+    #[test]
+    fn a_continued_request_appends_to_the_task_and_passes_it_through() {
+        let state = state_with(Arc::new(TaskStore::new()));
+        state.store.save(waiting_task("task-2", "ctx-2"));
+        let mut message = Message::user("second");
+        message.task_id = Some("task-2".to_owned());
+
+        let context = request_context(&state, message).unwrap();
+
+        assert_eq!(context.task.as_ref().unwrap().id, "task-2");
+        assert_eq!(context.context_id, "ctx-2");
+        assert_eq!(context.user_message.task_id.as_deref(), Some("task-2"));
+        let history = state.store.get("task-2").unwrap().history.unwrap();
+        assert_eq!(
+            history.iter().map(Message::text).collect::<Vec<_>>(),
+            vec!["first".to_owned(), "second".to_owned()]
+        );
+        assert_eq!(
+            state.store.get("task-2").unwrap().status.state,
+            TaskState::InputRequired,
+            "continuing a task never resets its status"
+        );
+    }
+
+    #[test]
+    fn a_request_naming_no_task_records_a_fresh_submitted_one() {
+        let state = state_with(Arc::new(TaskStore::new()));
+
+        let context = request_context(&state, Message::user("hi")).unwrap();
+
+        assert!(context.task.is_none());
+        let task = state.store.get(&context.task_id).unwrap();
+        assert_eq!(task.status.state, TaskState::Submitted);
+        assert_eq!(task.history.unwrap()[0].text(), "hi");
     }
 
     #[tokio::test]

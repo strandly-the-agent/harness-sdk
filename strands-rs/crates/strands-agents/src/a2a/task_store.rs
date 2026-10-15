@@ -34,6 +34,16 @@ impl TaskStore {
         self.tasks.lock().insert(task.id.clone(), task);
     }
 
+    /// Append `message` to the history of the task under `id`, returning it as it now stands.
+    ///
+    /// `None` when no such task is stored; a message already in the history is not appended twice.
+    pub fn append_history(&self, id: &str, message: Message) -> Option<Task> {
+        let mut tasks = self.tasks.lock();
+        let task = tasks.get_mut(id)?;
+        push_history(task, message);
+        Some(task.clone())
+    }
+
     /// Fold one executor event into the stored task, returning the task as it now stands.
     ///
     /// A [`A2AEventData::Message`] event belongs to no task and is ignored; an update naming an
