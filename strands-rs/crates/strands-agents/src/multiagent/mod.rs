@@ -11,6 +11,7 @@ pub mod plugins;
 pub mod snapshot;
 pub mod spec;
 pub mod state;
+pub mod swarm;
 #[cfg(test)]
 pub(crate) mod test_orchestrator;
 
@@ -39,3 +40,4 @@ pub use state::{
     aggregate_node_usage, resolve_status, MultiAgentResult, MultiAgentState, MultiAgentStateHandle,
     NodeResult, NodeResultUpdate, NodeState, ResultStatus, Status,
 };
+pub use swarm::{HandoffResult, Swarm, SwarmBuilder, SwarmConfig};
