@@ -59,7 +59,7 @@ async fn programmatic_access() -> Result<()> {
         .await?;
 
     agent
-        .invoke("Summarize /workspace/input.csv and write the summary to /workspace/out.txt")
+        .invoke("Summarize /workspace/input.csv into /workspace/out.txt")
         .await?;
 
     let result = sandbox
@@ -77,7 +77,8 @@ async fn streaming() -> Result<()> {
 
     let sandbox = DockerSandbox::new("my-container-id");
 
-    let mut events = sandbox.execute_streaming("npm run build", ExecuteOptions::default());
+    let options = ExecuteOptions::default();
+    let mut events = sandbox.execute_streaming("npm run build", options);
     while let Some(event) = events.next().await {
         match event? {
             SandboxEvent::Chunk(chunk) => print!("{}", chunk.data),
