@@ -156,14 +156,13 @@ _CONTEXT_WINDOW_LIMITS: dict[str, int] = {
 }
 
 
-# Max output token ceilings for known model IDs — the largest ``max_tokens`` the provider accepts.
+# Output token limits for known model IDs — the largest ``max_tokens`` the provider accepts.
 #
 # BedrockModel sends this when ``max_tokens`` is not configured, because Bedrock's own default is
-# per-model and can be far below the ceiling (Claude Haiku 5.5 defaults to 4096). Unknown models
-# return None and the request omits maxTokens as before. Values verified live against Bedrock
-# Converse, which reports the ceiling in its ValidationException when exceeded.
-_MAX_OUTPUT_TOKENS: dict[str, int] = {
-    # Bedrock Anthropic (base model IDs — cross-region prefixes stripped by get_max_output_tokens)
+# per-model and can be far below the limit (Claude Haiku 5.5 defaults to 4096). Only models whose
+# limit has been confirmed against Bedrock are listed; unknown models return None.
+_OUTPUT_TOKEN_LIMITS: dict[str, int] = {
+    # Bedrock Anthropic (base model IDs — cross-region prefixes stripped by get_output_token_limit)
     "anthropic.claude-sonnet-4-6": 128_000,
     "anthropic.claude-sonnet-4-20250514-v1:0": 65_536,
     "anthropic.claude-sonnet-4-5-20250929-v1:0": 64_000,
@@ -217,8 +216,8 @@ def get_context_window_limit(model_id: str) -> int | None:
     return _lookup(_CONTEXT_WINDOW_LIMITS, model_id)
 
 
-def get_max_output_tokens(model_id: str) -> int | None:
-    """Look up the max output token ceiling for a model ID.
+def get_output_token_limit(model_id: str) -> int | None:
+    """Look up the output token limit for a model ID.
 
     Prefixes are stripped as a fallback the same way as :func:`get_context_window_limit`.
 
@@ -228,7 +227,7 @@ def get_max_output_tokens(model_id: str) -> int | None:
     Returns:
         The largest ``max_tokens`` the model accepts, or None if not known.
     """
-    return _lookup(_MAX_OUTPUT_TOKENS, model_id)
+    return _lookup(_OUTPUT_TOKEN_LIMITS, model_id)
 
 
 def resolve_config_metadata(config: _C, model_id: str) -> _C:
