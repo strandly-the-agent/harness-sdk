@@ -174,16 +174,16 @@ The documentation extends Starlight's default schema with custom fields that aut
 
 ### `languages`
 
-Indicates a feature is only available in specific SDK languages.
+Indicates a feature is only available in specific SDK languages. Values are the lowercase slugs `python`, `typescript` and `rust` (the display form is still accepted on older pages).
 
 ```yaml
 ---
 title: My Feature
-languages: Python
+languages: [python, typescript]
 ---
 ```
 
-Renders a note aside: "This provider is only supported in {languages}."
+Renders a note aside: "This feature is only supported in Python and TypeScript." (one language, `A and B`, or `A, B and C`). The same field disables the languages a page lacks in the header `LanguageToggle`.
 
 ### `community`
 
@@ -271,9 +271,11 @@ For other components, use [explicit imports](https://starlight.astro.build/compo
 
 A wrapper around Starlight's `Tabs` that auto-generates a `syncKey` from tab labels. Tabs with identical label sets automatically sync together across the page. Auto-imported as `Tabs` (see above).
 
+Language tab groups are a special case: any group whose labels include at least two of Python/TypeScript/Rust gets one canonical `syncKey` (the hash of `Python|TypeScript`, i.e. `starlight-synced-tabs__jarkqt` — see `src/util/language-preference.ts`), so two- and three-language groups stay in sync and an existing stored preference keeps working. Those groups also get `data-language-tabs`, which hides the inline tablist in favour of the header `LanguageToggle`.
+
 ### `Syntax`
 
-Inline component for language-specific identifiers in prose. Renders the Python or TypeScript variant based on the global language toggle, avoiding the `"python_name (Python) or tsName (TypeScript)"` pattern. Auto-imported.
+Inline component for language-specific identifiers in prose. Renders the Python, TypeScript or Rust variant based on the global language toggle, avoiding the `"python_name (Python) or tsName (TypeScript)"` pattern. Auto-imported.
 
 ```mdx
 Pass <Syntax py="context_manager" ts="contextManager" /> to configure...
@@ -282,11 +284,12 @@ Pass <Syntax py="context_manager" ts="contextManager" /> to configure...
 Props:
 - `py` (required): Python syntax variant
 - `ts` (required): TypeScript syntax variant
+- `rs` (optional): Rust syntax variant — omit it on pages with no Rust coverage
 - `plain` (default: `false`): Renders as plain text instead of `<code>`.
 
-The component reads the same `localStorage` key as the language toggle and swaps live without page reload.
+The component reads the same `localStorage` key as the language toggle and swaps live without page reload. It resolves the *effective* language the way `LanguageToggle` does (on a page whose `languages` frontmatter disables the stored preference, the first enabled option wins) and falls back to the `ts` variant when the selected language has no variant here.
 
-**When to use:** Any time a single identifier, method name, or parameter differs between Python and TypeScript and you're writing shared prose (not inside a `<Tab>` section).
+**When to use:** Any time a single identifier, method name, or parameter differs between languages and you're writing shared prose (not inside a `<Tab>` section).
 
 **When NOT to use:** For code blocks (use `<Tabs>`), for conceptual differences between SDKs that aren't simple name swaps, or for content that only applies to one language.
 
