@@ -336,11 +336,7 @@ fn claim_agent(agent: &Agent) -> bool {
         return false;
     }
     attached.push(key);
-    t{
-    messages
-        .iter()
-        .rev()
-        .firue
+    true
 }
 
 fn default_resume_prompt(feedback: Option<&str>) -> InvokeInput {
@@ -356,7 +352,11 @@ fn default_resume_prompt(feedback: Option<&str>) -> InvokeInput {
 }
 
 /// `None` when the invocation was cancelled before the model replied.
-fn last_assistant_message(messages: &[Message]) -> Option<Message> nd(|message| message.role == Role::Assistant)
+fn last_assistant_message(messages: &[Message]) -> Option<Message> {
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.role == Role::Assistant)
         .cloned()
 }
 
@@ -406,8 +406,7 @@ impl GoalLoop {
 
     /// Loop against a natural-language goal, graded by an internal judge agent.
     pub fn goal(goal: impl Into<String>) -> Self {
-        Self::with_goal(Goal::Description(goal.inor error into failing
-    /// feedback so a buggy validatto()))
+        Self::with_goal(Goal::Description(goal.into()))
     }
 
     /// Loop against an async validator of your own.
@@ -466,7 +465,8 @@ impl GoalLoop {
     ///
     /// With `false` (Ralph-Wiggum mode) every retry restores the model-visible session captured
     /// just before attempt 1's first model call — messages, system prompt, model state and
-    /// interrupts — so the model never sees its own earlier attempts, only the latest feedback.
+    /// interrupts — so the model never sees its
+    /// own earlier attempts, only the latest feedback.
     /// Application state ([`Agent::state`]) is deliberately left alone: it is plugin scratch
     /// space other plugins rely on across attempts.
     #[must_use]
@@ -559,15 +559,13 @@ impl GoalLoop {
     async fn after_invocation(&self, event: &mut AfterInvocationEvent) -> Result<()> {
         let agent = event.agent.clone();
 
-        // `start` is wall-clock for the whole run, so the budget caps the agent invocations too.
+        // `sta  let Some(response) = last_assistant_message(&agent.messrt` is wall-clock for the whole run, so the budget caps the agent invocations too.
         // Checked before validation so an expensive validator cannot blow past it.
         let elapsed_out = self.runs.with(&agent, |run| match run {
             Some(run) => {
                 let expired = self.timeout.is_some_and(|budget| run.start.elapsed() >= budget);
                 if expired {
-                    run.finish(GoalStopReasoult<()> {
-        self.validate_config()?;
-        if !cln::Timeout);
+                    run.finish(GoalStopReason::Timeout);
                 }
                 Some(expired)
             }
@@ -629,7 +627,9 @@ impl Plugin for GoalLoop {
         &self.name
     }
 
-    async fn init_agent(&self, agent: &Agent) -> Resaim_agent(agent) {
+    async fn init_agent(&self, agent: &Agent) -> Result<()> {
+        self.validate_config()?;
+        if !claim_agent(agent) {
             return Err(Error::other(format!(
                 "{}: another GoalLoop is already attached to this agent; only one GoalLoop is supported per agent",
                 self.name
@@ -695,6 +695,9 @@ impl Plugin for GoalLoop {
 mod tmp_tests {
     #[test]
     fn print_schema() {
-        println!("{}", serde_json::to_string_pretty(&super::judge_outcome_schema()).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&super::judge_outcome_schema()).unwrap()
+        );
     }
 }
