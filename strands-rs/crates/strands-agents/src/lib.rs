@@ -54,6 +54,8 @@
 //! - `test-support` — the [`testing`] module.
 
 pub mod agent;
+#[cfg(any(feature = "bedrock", feature = "bedrock-kb"))]
+mod aws_document;
 pub mod background_tasks;
 pub mod context_manager;
 pub mod error;
@@ -97,9 +99,15 @@ pub use interrupt::{Interrupt, InterruptSource, InterruptState};
 pub use interventions::{InterventionHandler, InterventionRegistry};
 #[cfg(feature = "mcp")]
 pub use mcp::{McpClient, McpServerConfig, McpTool};
+#[cfg(feature = "bedrock-kb")]
+pub use memory::{
+    AccessControlAccess, AccessControlEntry, BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseS3Config,
+    BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig, DataSourceType, FilterAttribute,
+    KnowledgeBaseType, RetrievalFilter,
+};
 pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
-    MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
+    MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor, TestMemoryStore, TestMemoryStoreConfig,
 };
 #[cfg(feature = "anthropic")]
 pub use models::anthropic::{AnthropicModel, AnthropicModelConfig};

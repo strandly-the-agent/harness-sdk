@@ -3,10 +3,10 @@
 use aws_sdk_bedrockruntime::operation::converse::ConverseOutput;
 use aws_sdk_bedrockruntime::types as bt;
 
-use super::format::document_to_json;
 use super::{
     BedrockGuardrailConfig, BedrockModelConfig, DEFAULT_REDACT_INPUT_MESSAGE, DEFAULT_REDACT_OUTPUT_MESSAGE,
 };
+use crate::aws_document::document_to_json;
 use crate::error::{Error, Result};
 use crate::models::streaming::{
     ContentBlockDelta, ContentBlockStart, ModelStreamEvent, RedactInputContent, RedactOutputContent,
@@ -732,7 +732,7 @@ mod tests {
             bt::MessageStopEvent::builder()
                 .stop_reason(bt::StopReason::EndTurn)
                 .additional_model_response_fields(
-                    super::super::format::json_to_document(&serde_json::json!({"a": 1})).expect("document"),
+                    crate::aws_document::json_to_document(&serde_json::json!({"a": 1})).expect("document"),
                 )
                 .build()
                 .expect("messageStop"),

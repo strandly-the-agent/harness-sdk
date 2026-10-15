@@ -34,12 +34,14 @@ jsonschema = { version = "0.33", default-features = false }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-bedrockruntime = "1"
 aws-sdk-s3 = "1"
+aws-sdk-bedrockagent = "1"
+aws-sdk-bedrockagentruntime = "1"
 aws-smithy-types = "1"
 aws-smithy-runtime-api = { version = "1", features = ["client"] }
+aws-smithy-mocks = "0.3"
 regex = "1"
 http = "1"
 tempfile = "3"
-aws-smithy-mocks = "0.3"
 tokio-stream = "0.1"
 rmcp = { version = "3", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
