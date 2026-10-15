@@ -33,14 +33,25 @@ flowchart LR
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```mermaid
+flowchart LR
+    A[Schema Definition] --> B[Agent Invocation]
+    B --> C[LLM] --> D[Validated Object]
+    D --> E["agent.structured_output::&lt;T&gt;()"]
+```
+
+</Tab>
 </Tabs>
 
 ## Basic Usage
 
 To request structured output, pass a schema with
-<Syntax py="structured_output_model" ts="structuredOutputSchema" />.
-Read the validated object from
-<Syntax py="result.structured_output" ts="result.structuredOutput" />.
+<Syntax py="structured_output_model" ts="structuredOutputSchema"
+rs="Agent::structured_output" />. Read the validated object from
+<Syntax py="result.structured_output" ts="result.structuredOutput"
+rs="the typed return value" plain />.
 
 <Tabs>
 <Tab label="Python">
@@ -111,13 +122,31 @@ Example output:
 ```
 
 </Tab>
+<Tab label="Rust">
+
+Derive [`schemars::JsonSchema`](https://docs.rs/schemars/) for the schema and
+`serde::Deserialize` for the parsing, then call `structured_output`, which
+returns your type directly rather than a field on the result. Doc comments on
+the fields become the schema descriptions the model sees.
+
+```rust
+--8<-- "user-guide/sdk/agents/structured-output.rs:basic_usage"
+```
+
+Example output:
+
+```text
+Person { name: "John Smith", age: 30, occupation: "software engineer" }
+```
+
+</Tab>
 </Tabs>
 
 ## How It Works
 
 Structured output converts your schema into a tool specification that guides the model toward a correctly formatted response. Every model provider Strands supports works with structured output.
 
-Strands accepts the <Syntax py="structured_output_model" ts="structuredOutputSchema" /> parameter in agent invocations, which manages the conversion, validation, and response processing automatically. The validated result is available in the <Syntax py="AgentResult.structured_output" ts="AgentResult.structuredOutput" /> field.
+Strands accepts the <Syntax py="structured_output_model" ts="structuredOutputSchema" rs="structured_output_schema" /> parameter in agent invocations, which manages the conversion, validation, and response processing automatically. The validated result is available in the <Syntax py="AgentResult.structured_output" ts="AgentResult.structuredOutput" rs="AgentResult::structured_output" /> field.
 
 
 ## Error Handling
@@ -143,6 +172,12 @@ except StructuredOutputException as e:
 --8<-- "user-guide/sdk/agents/structured-output.ts:error_handling"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/structured-output.rs:error_handling"
+```
+</Tab>
 </Tabs>
 
 ## Best Practices
@@ -166,6 +201,13 @@ except StructuredOutputException as e:
 - [Zod documentation](https://zod.dev/)
 - [Schema types](https://zod.dev/?id=primitives)
 - [Schema methods](https://zod.dev/?id=strings)
+
+</Tab>
+<Tab label="Rust">
+
+- [`schemars` documentation](https://docs.rs/schemars/)
+- [Deriving `JsonSchema`](https://graham.cool/schemars/derive/)
+- [Schema attributes](https://graham.cool/schemars/derive/attributes/)
 
 </Tab>
 </Tabs>
@@ -203,6 +245,12 @@ result = agent("What is Aaron's name?", structured_output_model=Name)
 
 ```typescript
 --8<-- "user-guide/sdk/agents/structured-output.ts:auto_retries"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/structured-output.rs:auto_retries"
 ```
 </Tab>
 </Tabs>
@@ -245,6 +293,12 @@ async for event in streaming_agent.stream_async(
 --8<-- "user-guide/sdk/agents/structured-output.ts:streaming"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/structured-output.rs:streaming"
+```
+</Tab>
 </Tabs>
 
 ### Combining with Tools
@@ -276,6 +330,12 @@ res = tool_agent(
 
 ```typescript
 --8<-- "user-guide/sdk/agents/structured-output.ts:combining_tools"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/structured-output.rs:combining_tools"
 ```
 </Tab>
 </Tabs>
@@ -316,6 +376,12 @@ task_res = agent("Create task: Review code, high priority, completed", structure
 
 ```typescript
 --8<-- "user-guide/sdk/agents/structured-output.ts:multiple_types"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/structured-output.rs:multiple_types"
 ```
 </Tab>
 </Tabs>
@@ -360,6 +426,12 @@ print(f"Country: {result.structured_output.country}") # "France"
 --8<-- "user-guide/sdk/agents/structured-output.ts:conversation_history"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/structured-output.rs:conversation_history"
+```
+</Tab>
 </Tabs>
 
 
@@ -389,6 +461,15 @@ print(f"Job: {result.structured_output.occupation}") # "software engineer"
 
 ```typescript
 --8<-- "user-guide/sdk/agents/structured-output.ts:agent_defaults"
+```
+</Tab>
+<Tab label="Rust">
+
+The schema is per invocation in Rust, so there is no agent-level default: call
+`structured_output` with the type you want on each call.
+
+```rust
+// This feature is not yet available in the Rust SDK
 ```
 </Tab>
 </Tabs>
@@ -434,6 +515,16 @@ print(f"Size: {result.structured_output.employees}")    # 500
 
 ```typescript
 --8<-- "user-guide/sdk/agents/structured-output.ts:overriding_defaults"
+```
+</Tab>
+<Tab label="Rust">
+
+With no agent-level default to override, one agent can serve several schemas by
+switching the type parameter, as in
+[Multiple Output Types](#multiple-output-types).
+
+```rust
+// This feature is not yet available in the Rust SDK
 ```
 </Tab>
 </Tabs>
