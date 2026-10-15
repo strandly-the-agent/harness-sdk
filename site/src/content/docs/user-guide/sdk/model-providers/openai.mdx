@@ -27,6 +27,17 @@ pip install 'strands-agents[openai]'
 npm install @strands-agents/sdk openai
 ```
 </Tab>
+<Tab label="Rust">
+
+Enable the `openai` feature on the crate:
+
+```toml
+[dependencies.strands-agents]
+git = "https://github.com/strands-agents/harness-sdk"
+package = "strands-agents"
+features = ["openai"]
+```
+</Tab>
 </Tabs>
 
 ## Usage
@@ -66,6 +77,15 @@ print(response)
 --8<-- "user-guide/sdk/model-providers/openai.ts:basic_usage"
 ```
 </Tab>
+<Tab label="Rust">
+
+`OpenAIModel` defaults to the [Responses API](./openai-responses), so set
+`api: OpenAIApi::Chat` for Chat Completions:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai.rs:basic_usage"
+```
+</Tab>
 </Tabs>
 
 To connect to a custom OpenAI-compatible server:
@@ -89,6 +109,12 @@ model = OpenAIModel(
 --8<-- "user-guide/sdk/model-providers/openai.ts:custom_server"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai.rs:custom_server"
+```
+</Tab>
 </Tabs>
 
 Guides for specific OpenAI-compatible services, such as
@@ -108,6 +134,12 @@ The `client_args` configure the underlying OpenAI client. For a complete list of
 <Tab label="TypeScript">
 
 The `clientConfig` configures the underlying OpenAI client. For a complete list of available options, please refer to the [OpenAI TypeScript documentation](https://github.com/openai/openai-node).
+</Tab>
+<Tab label="Rust">
+
+There is no separate client config: `api_key` (falling back to `OPENAI_API_KEY`) and
+`base_url` are fields on `OpenAIModelConfig`. To control how requests are sent, supply
+your own transport (see [Custom client](#custom-client)).
 </Tab>
 </Tabs>
 
@@ -134,6 +166,15 @@ The model configuration sets parameters for inference:
 | `frequencyPenalty` | Reduces repetition (-2.0 to 2.0) | `0.5` | [reference](https://platform.openai.com/docs/api-reference/chat/create)
 | `presencePenalty` | Encourages new topics (-2.0 to 2.0) | `0.5` | [reference](https://platform.openai.com/docs/api-reference/chat/create)
 | `params` | Additional parameters not listed above | `{ stop: ["END"] }` | [reference](https://platform.openai.com/docs/api-reference/chat/create)
+</Tab>
+<Tab label="Rust">
+
+`OpenAIModelConfig` holds the inference settings as struct fields — `model_id`,
+`max_tokens`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`,
+`reasoning_effort`, and `params` for anything else. `api` selects the API
+(`OpenAIApi::Chat` or `OpenAIApi::Responses`); `strict_tools` and `stateful` apply to
+the Responses API only. Keys in `params` cannot override the fields the provider
+manages (`model`, `messages`, `stream`, `stream_options`).
 </Tab>
 </Tabs>
 
@@ -193,6 +234,27 @@ const model = new OpenAIModel({
 
 See the [OpenAI Harmony message format](https://cookbook.openai.com/articles/openai-harmony#message-format) for details on GPT-OSS stop tokens.
 </Tab>
+<Tab label="Rust">
+
+**Unresolved Import**
+
+`unresolved import strands_agents::models::OpenAIModel` means the `openai` feature is
+off. Add it to the dependency, as in [Installation](#installation).
+
+**GPT-OSS Tool Calling Fails on Non-Managed Endpoints**
+
+If you are running GPT-OSS on an endpoint that isn't a managed inference provider and
+you see errors like `Unexpected token ... while expecting start token ...` during tool
+calling, your endpoint likely doesn't have the correct stop tokens configured.
+
+As an immediate workaround, pass the GPT-OSS stop sequences explicitly via `params`:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai.rs:gpt_oss_stop_sequences"
+```
+
+See the [OpenAI Harmony message format](https://cookbook.openai.com/articles/openai-harmony#message-format) for details on GPT-OSS stop tokens.
+</Tab>
 </Tabs>
 
 ## Advanced Features
@@ -244,6 +306,15 @@ Define a Zod schema and pass it as `structuredOutputSchema`. Validated output is
 --8<-- "user-guide/sdk/model-providers/openai.ts:structured_output"
 ```
 </Tab>
+<Tab label="Rust">
+
+Derive `JsonSchema` and `Deserialize` on a struct and pass it as the return type of
+`agent.structured_output()`:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai.rs:structured_output"
+```
+</Tab>
 </Tabs>
 
 For schema patterns, error handling, and per-invocation overrides, see [Structured Output](../agents/structured-output/).
@@ -292,6 +363,12 @@ if __name__ == "__main__":
 
 --8<-- "user-guide/sdk/model-providers/openai.ts:custom_client"
 ```
+</Tab>
+<Tab label="Rust">
+
+Rust has no client object to pass. `OpenAIModel::with_transport` takes an
+`Arc<dyn OpenAITransport>` instead, so implement that trait to control how requests
+are sent.
 </Tab>
 </Tabs>
 
