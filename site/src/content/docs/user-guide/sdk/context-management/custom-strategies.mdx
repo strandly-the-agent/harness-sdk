@@ -54,15 +54,21 @@ agent = Agent(
 --8<-- "user-guide/sdk/context-management/custom-strategies.ts:basic_config"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:basic_config"
+```
+</Tab>
 </Tabs>
 
 :::note
-Both SDKs accept a config object with a <Syntax py="strategies" ts="strategies" /> key. The SDK constructs the `ContextManager` internally.
+Both SDKs accept a config object with a <Syntax py="strategies" ts="strategies" rs="strategies" /> key. The SDK constructs the `ContextManager` internally.
 :::
 
 ## Offload builder
 
-The `Offload` namespace exposes three methods. Each returns a strategy builder that can be chained with <Syntax py=".when()" ts=".when()" /> to add conditions.
+The `Offload` namespace exposes three methods. Each returns a strategy builder that can be chained with <Syntax py=".when()" ts=".when()" rs=".when()" /> to add conditions.
 
 ### Truncate
 
@@ -88,6 +94,12 @@ Offload.truncate(
 --8<-- "user-guide/sdk/context-management/custom-strategies.ts:truncate"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:truncate"
+```
+</Tab>
 </Tabs>
 
 **Truncate configuration:**
@@ -109,13 +121,21 @@ Offload.truncate(
 | Preview mode | `preview` | `"headTail"` |
 
 </Tab>
+<Tab label="Rust">
+
+| Parameter | Field of `TruncateConfig` | Default |
+|-----------|---------------------------|---------|
+| Preview size | `preview_tokens` | 1,000 |
+| Preview mode | `preview` | `PreviewMode::HeadTail` |
+
+</Tab>
 </Tabs>
 
-Preview modes: `"head"`, `"tail"`, <Syntax py='"head_tail"' ts='"headTail"' />.
+Preview modes: `"head"`, `"tail"`, <Syntax py='"head_tail"' ts='"headTail"' rs="PreviewMode::HeadTail" />.
 
 ### Summarize
 
-Replaces content with an LLM-generated summary. Uses <Syntax py="agent.aux_model" ts="agent.auxModel" /> by default.
+Replaces content with an LLM-generated summary. Uses <Syntax py="agent.aux_model" ts="agent.auxModel" rs="agent.model()" /> by default.
 
 <Tabs>
 <Tab label="Python">
@@ -137,6 +157,12 @@ Offload.summarize("*").when(
 --8<-- "user-guide/sdk/context-management/custom-strategies.ts:summarize"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:summarize"
+```
+</Tab>
 </Tabs>
 
 **Summarize configuration:**
@@ -156,6 +182,14 @@ Offload.summarize("*").when(
 |-----------|-----|---------|
 | Model | `model` | `agent.auxModel` |
 | System prompt | `systemPrompt` | Built-in |
+
+</Tab>
+<Tab label="Rust">
+
+| Parameter | Setter | Default |
+|-----------|--------|---------|
+| Model | `.with_model(model)` | the agent's own model |
+| System prompt | not configurable yet | Built-in |
 
 </Tab>
 </Tabs>
@@ -181,20 +215,26 @@ Offload.drop("tool_results").when(preserve_recent=5)
 --8<-- "user-guide/sdk/context-management/custom-strategies.ts:drop"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:drop"
+```
+</Tab>
 </Tabs>
 
 ## Conditions
 
-Chain <Syntax py=".when()" ts=".when()" /> to control when a strategy fires. Conditions determine the granularity of the strategy, not the method.
+Chain <Syntax py=".when()" ts=".when()" rs=".when()" /> to control when a strategy fires. Conditions determine the granularity of the strategy, not the method.
 
 | Condition | Granularity | Behavior |
 |-----------|-------------|----------|
-| <Syntax py="threshold" ts="threshold" /> only | Per-block, eager | Acts on each block above this token size on message arrival |
-| <Syntax py="utilization" ts="utilization" /> only | Message-level, batch | Removes/summarizes oldest messages when utilization exceeded |
+| <Syntax py="threshold" ts="threshold" rs="threshold" /> only | Per-block, eager | Acts on each block above this token size on message arrival |
+| <Syntax py="utilization" ts="utilization" rs="utilization" /> only | Message-level, batch | Removes/summarizes oldest messages when utilization exceeded |
 | Both | Message-level | Targets messages with blocks over the threshold, fires at utilization |
-| <Syntax py="preserve_recent" ts="preserveRecent" /> | — | Number of most recent matching messages to skip |
+| <Syntax py="preserve_recent" ts="preserveRecent" rs="preserve_recent" /> | — | Number of most recent matching messages to skip |
 
-<Syntax py="preserve_recent" ts="preserveRecent" /> accepts an integer (absolute count) or a float between 0 and 1 (ratio of matching messages, e.g., `0.7` keeps 70%).
+<Syntax py="preserve_recent" ts="preserveRecent" rs="preserve_recent" /> accepts an integer (absolute count) or a float between 0 and 1 (ratio of matching messages, e.g., `0.7` keeps 70%). In Rust every condition is an `f64`, so a count is written `Some(4.0)`.
 
 ### Per-block example
 
@@ -215,6 +255,12 @@ Offload.truncate("tool_results").when(threshold=2000)
 --8<-- "user-guide/sdk/context-management/custom-strategies_imports.ts:conditions_imports"
 
 --8<-- "user-guide/sdk/context-management/custom-strategies.ts:conditions_threshold"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:conditions_threshold"
 ```
 </Tab>
 </Tabs>
@@ -243,6 +289,12 @@ Offload.summarize("*").when(
 --8<-- "user-guide/sdk/context-management/custom-strategies.ts:conditions_utilization"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:conditions_utilization"
+```
+</Tab>
 </Tabs>
 
 ### Combined example
@@ -267,6 +319,12 @@ Offload.truncate("tool_results").when(
 --8<-- "user-guide/sdk/context-management/custom-strategies_imports.ts:conditions_imports"
 
 --8<-- "user-guide/sdk/context-management/custom-strategies.ts:conditions_both"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:conditions_both"
 ```
 </Tab>
 </Tabs>
@@ -302,6 +360,24 @@ Targets specify which content a strategy applies to.
 | Exclude tools | `["!tool::bash"]` |
 
 </Tab>
+<Tab label="Rust">
+
+Targets are the `OffloadTarget` enum rather than strings:
+
+| Target | Value |
+|--------|-------|
+| All content | `OffloadTarget::All` |
+| Tool results | `OffloadTarget::ToolResults` |
+| Failed tool results | `OffloadTarget::ToolResultErrors` |
+| Assistant text | `OffloadTarget::AssistantText` |
+| User text | `OffloadTarget::UserText` |
+| Specific tools | `OffloadTarget::tools(["tool::shell"])` |
+| Exclude tools | `OffloadTarget::tools(["!tool::shell"])` |
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:tool_targets"
+```
+</Tab>
 </Tabs>
 
 Tool name lists use the `tool::` prefix. Prefix a name with `!` to exclude it (apply to all tools *except* the listed ones).
@@ -310,7 +386,7 @@ Tool name lists use the `tool::` prefix. Prefix a name with `!` to exclude it (a
 
 The stash stores all message content on arrival as JSON, before any strategy runs. Truncated or summarized content can be retrieved on demand through the `retrieve_context` tool, which the SDK registers by default.
 
-Stash uses in-memory storage by default. Configure it through the <Syntax py="stash" ts="stash" /> key:
+Stash uses in-memory storage by default. Configure it through the <Syntax py="stash" ts="stash" rs="stash" /> key:
 
 - Omit or pass `true` for defaults (in-memory storage)
 - Pass a config with a custom storage backend
@@ -336,6 +412,12 @@ agent = Agent(
 --8<-- "user-guide/sdk/context-management/custom-strategies_imports.ts:stash_imports"
 
 --8<-- "user-guide/sdk/context-management/custom-strategies.ts:stash_disabled"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/custom-strategies.rs:stash_disabled"
 ```
 </Tab>
 </Tabs>

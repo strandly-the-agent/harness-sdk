@@ -5,7 +5,7 @@ tags: [sandbox, tool-execution]
 addedDate: 2026-06-17
 ---
 
-Strands provides two built-in Sandbox backends: `DockerSandbox` for containers on the local host, and `SshSandbox` for remote machines. Both automatically register `sandbox_shell` and `sandbox_file_editor` tools on the agent. This page covers their configuration, plus how to drive a sandbox directly from your own code.
+Strands provides two built-in Sandbox backends: `DockerSandbox` for containers on the local host, and `SshSandbox` for remote machines. Both automatically register `sandbox_shell` and `sandbox_file_editor` tools on the agent (in Rust, the `shell` tool only). This page covers their configuration, plus how to drive a sandbox directly from your own code.
 
 ## DockerSandbox
 
@@ -25,6 +25,13 @@ Executes operations inside a Docker container on the host via `docker exec`. The
 
 ```python
 --8<-- "user-guide/sdk/sandbox/index.py:docker_constructor"
+```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/sandbox/available-sandboxes.rs:docker_constructor"
 ```
 
 </Tab>

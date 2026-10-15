@@ -2,6 +2,7 @@
 title: Conversation Management
 description: 'Keep long agent conversations within token limits using sliding window and summarizing conversation managers in the Strands Agents SDK.'
 tags: [conversation-management, session-management, token-management]
+languages: [python, typescript]
 sourceLinks:
   - path: strands-py/src/strands/agent/conversation_manager/conversation_manager.py
   - path: strands-py/src/strands/agent/conversation_manager/sliding_window_conversation_manager.py
@@ -19,7 +20,9 @@ management happens automatically as messages accumulate.
 This page covers the built-in conversation managers and how to write your own. If
 you want sensible defaults wired up for you rather than configuring a manager by
 hand, start with [Manage the context window](../context-management); the managers
-documented here are the mechanism underneath it.
+documented here are the mechanism underneath it. The Rust SDK has no conversation
+managers at all — [context management](../context-management) is its only
+context-reduction path.
 
 ## Built-in Conversation Managers
 

@@ -36,14 +36,16 @@ All Sandbox implementations share the same abstract interface:
 
 | Method | Description |
 | --- | --- |
-| <Syntax py="execute_streaming" ts="executeStreaming" /> | Run a shell command, stream output |
-| <Syntax py="execute_code_streaming" ts="executeCodeStreaming" /> | Run code via an interpreter, stream output |
-| <Syntax py="read_file" ts="readFile" /> | Read a file as bytes |
-| <Syntax py="write_file" ts="writeFile" /> | Write bytes to a file |
-| <Syntax py="remove_file" ts="removeFile" /> | Delete a file |
-| <Syntax py="list_files" ts="listFiles" /> | List directory contents |
+| <Syntax py="execute_streaming" ts="executeStreaming" rs="execute" /> | Run a shell command, stream output |
+| <Syntax py="execute_code_streaming" ts="executeCodeStreaming" rs="execute_code" /> | Run code via an interpreter, stream output |
+| <Syntax py="read_file" ts="readFile" rs="read_file" /> | Read a file as bytes |
+| <Syntax py="write_file" ts="writeFile" rs="write_file" /> | Write bytes to a file |
+| <Syntax py="remove_file" ts="removeFile" rs="remove_file" /> | Delete a file |
+| <Syntax py="list_files" ts="listFiles" rs="list_files" /> | List directory contents |
 
-The execution methods accept optional parameters: `timeout` (seconds, throws `SandboxTimeoutError` when exceeded), `cwd` (working directory override), `env` (environment variables), and in TypeScript, `signal` (AbortSignal, throws `SandboxAbortError`).
+Rust inverts the streaming relationship: `execute` is the required primitive and `execute_streaming` has a default that yields only the terminal result, so a backend that can stream output overrides it.
+
+The execution methods accept optional parameters: `timeout` (seconds, throws `SandboxTimeoutError` when exceeded), `cwd` (working directory override), `env` (environment variables), and in TypeScript, `signal` (AbortSignal, throws `SandboxAbortError`). Rust carries the same fields on `ExecuteOptions`, with a `cancel` token in place of `signal`.
 
 ## Getting started
 
@@ -66,6 +68,13 @@ Pass a sandbox to an agent through the `sandbox` parameter, and the agent's comm
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/sandbox/index.rs:basic_usage"
+```
+
+</Tab>
 </Tabs>
 
 :::caution[The default is not a sandbox]
@@ -79,6 +88,12 @@ In TypeScript, pass `sandbox: false` to opt out explicitly and keep that intent 
 const agent = new Agent({ sandbox: false })
 ```
 
+Rust spells the same opt-out as a builder call:
+
+```rust
+--8<-- "user-guide/sdk/sandbox/index.rs:no_sandbox"
+```
+
 See [Available Sandboxes](./available-sandboxes.mdx) for Docker and SSH configuration options, programmatic access, and streaming output.
 
 ## Using tools with sandboxes
@@ -89,6 +104,8 @@ When a sandbox is configured, the agent automatically registers two tools so the
 
 - **`sandbox_shell`** — Executes shell commands and returns output (stdout), error (stderr), and exit_code (non-zero means the command failed). Each call runs in a fresh shell; state such as variables and the working directory does not persist across calls.
 - **`sandbox_file_editor`** — Views, creates, and edits files using absolute paths. Supports view (with line ranges), create, string replace, and insert operations.
+
+Rust's built-in sandboxes vend only the shell tool, registered under the name `shell`. A sandbox-routed file editor is not ported yet; `FileEditorTool::with_sandbox` exists, so you can register one yourself.
 
 If a tool with the same name is already registered on the agent, the sandbox-vended version is skipped. This lets you override a vended tool with a stricter variant:
 
@@ -109,9 +126,16 @@ If a tool with the same name is already registered on the agent, the sandbox-ven
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/sandbox/ox implementations can also override <Syntax py="get_toolindex.rs:tool_override"
+```
+
+</Tab>
 </Tabs>
 
-Custom sandbox implementations can also override <Syntax py="get_tools()" ts="getTools()" /> to vend their own tools entirely.
+Custom sandbs()" ts="getTools()" rs="tools()" /> to vend their own tools entirely.
 
 ### Custom tools
 
@@ -131,6 +155,15 @@ You can add your own tools alongside the auto-vended ones by creating a tool tha
 
 ```python
 --8<-- "user-guide/sdk/sandbox/index.py:custom_tool"
+```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/sandbox/index.rs:custom_tool"
+
+--8<-- "user-guide/sdk/sandbox/index.rs:custom_tool_agent"
 ```
 
 </Tab>
