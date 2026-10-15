@@ -25,6 +25,9 @@ The tool takes a `url` and an optional `prompt`. With a prompt, the summarizer a
 the page; leave the prompt empty and it returns the page text verbatim instead. Only
 `http` and `https` URLs are allowed.
 
+In Rust the request runs from the harness process with `reqwest`, not inside the sandbox,
+so a fetch reaches whatever the host can reach.
+
 ### The summarizer model
 
 By default the summarizer runs on the small, fast model for the main agent's provider, so
@@ -51,6 +54,13 @@ main model's family, Anthropic-on-Bedrock or OpenAI-on-Bedrock). Override it wit
         })
         ```
       </Tab>
+      <Tab label="Rust">
+        The Rust summarizer always runs on the main agent's model.
+
+        ```rust
+        // This feature is not yet available in the Rust SDK
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -73,6 +83,11 @@ main model's family, Anthropic-on-Bedrock or OpenAI-on-Bedrock). Override it wit
 
         // No web_fetch or summarizer model; httpRequest returns raw HTTP
         const agent = new Agent({ tools: [httpRequest] })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/tools/web-access.rs:sdk_web_fetch"
         ```
       </Tab>
     </Tabs>

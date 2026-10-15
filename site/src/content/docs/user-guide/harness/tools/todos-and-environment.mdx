@@ -65,6 +65,11 @@ subset to keep one, or an empty list to turn both off:
         const agent = await createHarness({ builtinPlugins: ['todos'] }) // [] for none
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/tools/todos-and-environment.rs:harness_builtin_plugins"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -92,6 +97,11 @@ subset to keep one, or an empty list to turn both off:
           tools: [notebook],
           systemPrompt: 'Create a notebook checklist and update it as you work.',
         })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/tools/todos-and-environment.rs:sdk_builtin_plugins"
         ```
       </Tab>
     </Tabs>
