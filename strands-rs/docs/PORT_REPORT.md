@@ -333,3 +333,14 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `invoke_structured` → `structured_output`, `AgentResult::structured_output_as`; `ModelStopData.usage`;
 `testing` module (alias `test_support`), crate-level guide, actionable no-credentials error, default features
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
+
+## Phase 4
+
+- **Cedar policy intervention** (`interventions::vended::cedar`, `cedar` feature): `CedarAuthorization`
+  gates every tool call on a Cedar policy set — `principal`, `Action::"<tool>"`, `Resource::"agent"`,
+  `context = { input, session: { hour_utc, call_count, ..enricher } }`; default-deny. Static principal
+  or per-invocation `PrincipalResolver`, context enricher, per-tool rate limits persisted in agent
+  state (`CALL_COUNTS_KEY`), optional schema validation (supplied or generated from `ToolSpec`s),
+  namespacing, file-backed sources with `reload()`. Engine is the first-party `cedar_policy` crate
+  (pinned `=4.11.0`) instead of TS's WASM bundle. 43 unit tests + 1 agent-loop test
+  (`tests/cedar_loop.rs`); matrix in `docs/matrices/cedar.md`.

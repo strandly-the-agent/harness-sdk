@@ -76,6 +76,11 @@ installs the exporter).
 - `AgentStreamEvent` carries accessor shortcuts (`text_delta`, `tool_use`, `tool_result`,
   `result`) so the common streaming paths don't need a nested destructure; `Agent::stream_text`
   is the text-only view. `ModelStopData.usage` exposes the call's token usage to after-model hooks.
+- `interventions::vended::cedar` uses the first-party `cedar_policy` crate (+
+  `cedar_policy_mcp_schema_generator`) rather than TS's `@cedar-policy/cedar-wasm`, parses policies
+  / entities / schema once at construction and on `reload()`, takes `CedarSource::{Text,File}`
+  instead of a suffix-sniffed string, and exposes TS's base-class `onError` as the Cedar-local
+  `OnError` option; behind the `cedar` cargo feature.
 - Hook callbacks are plain closures returning a future (`hooks.add_callback(|e: &mut Event| async move
   { Ok(()) })`, plus `AgentBuilder::hook`/`sync_hook` for build-time registration); registration returns
   `()` and the `*_scoped` variants return the `#[must_use]` `HookCleanup`. `add_callback_boxed*` keeps the
