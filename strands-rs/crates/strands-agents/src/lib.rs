@@ -66,6 +66,7 @@ pub mod mcp;
 pub mod memory;
 pub mod middleware;
 pub mod models;
+pub mod multiagent;
 pub mod plugins;
 pub mod retry;
 pub mod sandbox;
