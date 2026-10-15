@@ -17,7 +17,7 @@ You can continue using [conversation managers](./agents/conversation-management)
 
 ## Quick start
 
-Pass <Syntax py='context_manager="auto"' ts='contextManager: "auto"' /> and the SDK manages context in the background:
+Pass <Syntax py='context_manager="auto"' ts='contextManager: "auto"' rs="ContextManagerOption::Auto" /> and the SDK manages context in the background:
 
 <Tabs>
 <Tab label="Python">
@@ -36,17 +36,25 @@ agent = Agent(context_manager="auto")
 --8<-- "user-guide/sdk/context-management.ts:basic"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management.rs:basic"
+```
+</Tab>
 </Tabs>
+
+In Rust this is also the default: an agent built without <Syntax py="context_manager" ts="contextManager" rs=".context_manager(…)" /> gets the `auto` pipeline.
 
 ## How it works
 
-The <Syntax py="context_manager" ts="contextManager" /> parameter is a first-class agent parameter, not a plugin. It creates a `ContextManager` that owns all context reduction for the agent.
+The <Syntax py="context_manager" ts="contextManager" rs=".context_manager(…)" /> parameter is a first-class agent parameter, not a plugin. It creates a `ContextManager` that owns all context reduction for the agent.
 
 The ContextManager runs strategies as an ordered pipeline. Each strategy sees the output of the previous one. The SDK always appends an emergency truncation strategy as the final step, which only fires when the window is still overflowing after all other strategies have run.
 
 A stash stores all message content on arrival as JSON, before any strategy acts. Truncated or summarized content is preserved and retrievable on demand through the `retrieve_context` tool, registered by default.
 
-When <Syntax py="context_manager" ts="contextManager" /> is set, any co-provided <Syntax py="conversation_manager" ts="conversationManager" /> is ignored. The ContextManager owns overflow recovery and proactive compression internally.
+When <Syntax py="context_manager" ts="contextManager" rs=".context_manager(…)" /> is set, the ContextManager owns overflow recovery and proactive compression internally, superseding any [conversation manager](./agents/conversation-management) you also pass. Rust has no conversation managers, so the context manager is its only context-reduction path.
 
 ## Choosing a mode
 
@@ -88,13 +96,21 @@ stash = {
 --8<-- "user-guide/sdk/context-management.ts:storage_backends"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management.rs:storage_backends"
+```
+
+Enable the `s3` feature for `S3Storage`.
+</Tab>
 </Tabs>
 
-Pass one of these <Syntax py="stash" ts="stash" /> values in your context manager configuration. See [Storage](./storage) for the full storage backend reference.
+Pass one of these <Syntax py="stash" ts="stash" rs="stash" /> values in your context manager configuration. See [Storage](./storage) for the full storage backend reference.
 
 ## Limitations
 
-**Stateful models.** Stateful models manage conversation state server-side. Setting <Syntax py="context_manager" ts="contextManager" /> with a stateful model raises an error.
+**Stateful models.** Stateful models manage conversation state server-side. Setting <Syntax py="context_manager" ts="contextManager" rs=".context_manager(…)" /> with a stateful model raises an error.
 
 ## Migrating to the strategy API
 
@@ -119,6 +135,14 @@ If you currently use `SummarizingConversationManager`, `ContextOffloader`, or `c
 | `new ContextOffloader({ maxResultTokens: 2500, previewTokens: 500 })` | `Offload.truncate("toolResults", { previewTokens: 500 }).when({ threshold: 2500 })` |
 | `new SlidingWindowConversationManager(...)` | No exact equivalent. Use `Offload.drop` or `Offload.truncate` with utilization and preservation conditions. |
 | `contextManager: "auto"` | Unchanged |
+
+</Tab>
+<Tab label="Rust">
+
+:::note[Python and TypeScript only]
+Rust never shipped conversation managers or `ContextOffloader`, so there is nothing to
+migrate from: the context manager is the only context-reduction API.
+:::
 
 </Tab>
 </Tabs>

@@ -1161,9 +1161,13 @@ const cards = [
     });
 
   // Language switching: keep every toolkit card's terminal in sync with the
-  // site-wide Python/TypeScript selector. Cards without a TS variant (only
-  // /evals) show their Python panel plus a "Python-only" note when TS is
-  // selected.
+  // site-wide language selector. Cards without a TS variant (only /evals) show
+  // their Python panel plus a "Python-only" note when TS is selected.
+  //
+  // Rust falls through to the TypeScript panel: the products these cards
+  // advertise (harness, shell, Box policies, evals) have no Rust surface, so
+  // there is no Rust code to show. Give a card a Rust snippet only once its
+  // product ships a Rust API.
 
   function applyToolkitLang(lang: string) {
     const isPython = lang === 'Python';

@@ -1,0 +1,32 @@
+# Compiles every `*.rs` snippet file under site/src/content/docs so the Rust tabs in the docs
+# stay in step with the SDK — the Rust counterpart of the TypeScript `typecheck:snippets` gate.
+# Snippet files are discovered by build.rs; nothing here needs editing when a page is added.
+[package]
+name = "docs-snippets"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+strands-agents = { path = "../../../strands-rs/crates/strands-agents", features = [
+  "anthropic", "bedrock", "bedrock-kb", "cedar", "http", "macros", "mcp", "openai", "s3",
+  "telemetry", "test-support",
+] }
+strands-harness = { path = "../../../strands-rs/crates/strands-harness" }
+async-trait = "0.1"
+futures = "0.3"
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[build-dependencies]
+glob = "0.3"

@@ -42,6 +42,12 @@ agent("Get https://example.com and summarize the response status.")
 --8<-- "user-guide/sdk/tools/tools.ts:adding_tools"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/using-tools.rs:adding_tools"
+```
+</Tab>
 </Tabs>
 
 We can see which tools are loaded in our agent:
@@ -66,6 +72,14 @@ Access the tools array directly:
 console.log(agent.tools)
 ```
 </Tab>
+<Tab label="Rust">
+
+`agent.tools()` returns the registered tools; `agent.with_tool_registry(..)` gives you the registry itself, including each tool's spec:
+
+```rust
+--8<-- "user-guide/sdk/tools/using-tools.rs:inspect_tools"
+```
+</Tab>
 </Tabs>
 
 
@@ -81,6 +95,11 @@ agent = Agent(tools=["/path/to/my_tool.py"])
 ```
 </Tab>
 <Tab label="TypeScript">
+
+Loading tools from a file path is available in the Python SDK.
+
+</Tab>
+<Tab label="Rust">
 
 Loading tools from a file path is available in the Python SDK.
 
@@ -105,6 +124,11 @@ agent = Agent(load_tools_from_directory=True)
 ```
 </Tab>
 <Tab label="TypeScript">
+
+Automatic loading and reloading from a directory is available in the Python SDK.
+
+</Tab>
+<Tab label="Rust">
 
 Automatic loading and reloading from a directory is available in the Python SDK.
 
@@ -139,6 +163,12 @@ agent('Read the "ideas" notebook.')
 
 ```typescript
 --8<-- "user-guide/sdk/tools/tools.ts:natural_language_invocation"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/using-tools.rs:natural_language_invocation"
 ```
 </Tab>
 </Tabs>
@@ -186,6 +216,20 @@ Note `agent.tool` (singular) is the direct-call accessor; `agent.tools` (plural)
 The accessor resolves names by exact match first, then with underscores substituted for hyphens, then case-insensitively. `agent.tool.read_all` resolves to a tool registered as `read-all`. Calling a name that doesn't resolve throws `ToolNotFoundError`.
 
 By default, direct calls are recorded in the agent's message history. Pass `{ recordDirectToolCall: false }` to skip recording. This is required when calling tools during an active agent invocation (otherwise `ConcurrentInvocationError` is thrown), and useful for side-effect tools whose output should stay out of conversation context.
+</Tab>
+<Tab label="Rust">
+
+`agent.tool(name)` returns a `ToolHandle`; `handle.call(input)` runs the tool with a JSON input, and `handle.call_with(input, options)` takes a `CallOptions`:
+
+```rust
+--8<-- "user-guide/sdk/tools/using-tools.rs:direct_invocation"
+```
+
+Names resolve by exact match first, then with hyphens substituted for underscores, then case-insensitively. `agent.tool("read_all")` resolves to a tool registered as `read-all`. A name that doesn't resolve returns `Error::ToolNotFound`.
+
+By default, direct calls are recorded in the agent's message history. `CallOptions::default().with_record_direct_tool_call(false)` skips recording. This is required when calling tools during an active agent invocation (otherwise the call returns `Error::ConcurrentInvocation`), and useful for side-effect tools whose output should stay out of conversation context.
+
+Rust has no streaming counterpart to the TypeScript `handle.stream(input)`; a tool's progress events reach the caller only through the agent's own event stream.
 </Tab>
 </Tabs>
 

@@ -61,6 +61,12 @@ asyncio.run(main())
 --8<-- "user-guide/sdk/streaming/overview.ts:quick_example_async_iterator"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/streaming/index.rs:quick_example_async_iterator"
+```
+</Tab>
 </Tabs>
 
 Each `data` chunk is one piece of the model's output. The [event reference](./events.md) lists everything else the stream carries: tool calls, lifecycle signals, and multi-agent coordination.

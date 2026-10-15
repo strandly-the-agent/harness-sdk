@@ -94,6 +94,11 @@ All four gates must be clean before a change is proposed. `missing_docs` is a wa
   Keep the default feature set small; provider SDKs go behind features.
 - **Docs.** `///` on every public item, 1–4 lines, no narration. Comments only for non-obvious
   behaviour (a TS quirk being reproduced, an ordering constraint).
+- **Site docs.** The docs site (`site/`) has a Rust tab. When a module lands or an API changes,
+  update the matching `site/src/content/docs/**/*.rs` snippet (compiled by
+  `cd site && npm run check:snippets:rust`), the row in `docs/FEATURE_MATRIX.md`, and drop the
+  page's `languages: [python, typescript]` frontmatter once Rust supports it. Rules:
+  `.agents/references/mdx-authoring.md` ("Rust snippets", "Language coverage").
 
 ## Testing
 

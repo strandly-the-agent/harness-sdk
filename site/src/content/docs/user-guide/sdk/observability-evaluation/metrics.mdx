@@ -61,6 +61,21 @@ All these metrics are accessible through the `AgentResult` object returned when 
 
 The `metrics` property on `AgentResult` is an instance of `AgentMetrics` that holds the performance data for the agent's execution.
 </Tab>
+<Tab label="Rust">
+
+The Rust SDK tracks the same metrics during agent execution and surfaces them on `AgentResult::metrics` as an `AgentMetrics` value:
+
+- **Token usage**: Input tokens, output tokens, total tokens consumed, and cache metrics
+- **Performance metrics**: Latency and execution time measurements
+- **Tool usage**: Call counts, success rates, and execution times for each tool
+- **Event loop cycles**: Number of event loop cycles and their durations
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/metrics.rs:basic_metrics"
+```
+
+`metrics` is a plain struct of public fields, so it is always present — no `Option` to unwrap. The cache counts are `Option<u64>` because providers only report them when prompt caching is in play.
+</Tab>
 </Tabs>
 
 ## Agent Loop Metrics
@@ -142,6 +157,23 @@ This allows you to track metrics at both the individual invocation level and acr
 --8<-- "user-guide/sdk/observability-evaluation/metrics.ts:agent_loop_metrics"
 ```
 </Tab>
+<Tab label="Rust">
+
+`AgentMetrics` aggregates the same data across the agent loop: `cycle_count` and `total_duration` for cycles, `tool_metrics` per tool, `agent_invocations` per request, and `accumulated_usage` / `accumulated_metrics` across all of them.
+
+**Agent Invocations**
+
+`agent_invocations` is a `Vec<InvocationMetrics>` holding the most recent invocations (at most 50). Each one carries:
+
+- **cycles**: A `Vec<CycleMetrics>`, each a single event loop cycle with its `cycle_id`, `duration`, and `usage`
+- **usage**: Accumulated token usage for that invocation across all its cycles
+
+The latest invocation is the last element, and there is no `average_cycle_time` field — divide `total_duration` by `cycle_count` when you want it:
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/metrics.rs:agent_loop_metrics"
+```
+</Tab>
 </Tabs>
 
 ## Tool Metrics
@@ -171,6 +203,14 @@ Tool metrics provide insights into:
 - **Computed statistics**: The `toolUsage` getter adds computed `averageTime` and `successRate` fields
 
 These metrics help you identify performance bottlenecks, tools with high error rates, and opportunities for optimization.
+</Tab>
+<Tab label="Rust">
+
+`tool_metrics` is a `BTreeMap<String, ToolMetrics>` keyed by tool name, so iteration is in name order. Each `ToolMetrics` records `call_count`, `success_count`, `error_count`, and `total_time` in milliseconds. Average time and success rate are not precomputed — derive them from those counters:
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/metrics.rs:tool_metrics"
+```
 </Tab>
 </Tabs>
 
@@ -236,6 +276,14 @@ The `AgentMetrics` class implements `toJSON()`, so you can serialize the complet
 
 This summary provides a complete picture of the agent's execution, including cycle information, token usage, and tool performance.
 </Tab>
+<Tab label="Rust">
+
+`AgentMetrics::to_json()` returns the same wire form — `serde` renames every field to camelCase, so the JSON above matches:
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/metrics.rs:metrics_summary"
+```
+</Tab>
 </Tabs>
 
 ## Local Execution Traces
@@ -287,6 +335,22 @@ Each `AgentTrace` contains:
 - **message**: The model output message (for model invocation traces)
 
 Traces are separate from `AgentMetrics` and are accessed via `result.traces`. `AgentResult.toJSON()` excludes traces and metrics by default to keep API responses lean, so access them directly via `result.traces` and `result.metrics`.
+</Tab>
+<Tab label="Rust">
+
+Local execution traces are collected the same way, with or without the `telemetry` feature, and returned as `AgentResult::traces` (a `Vec<AgentTrace>`):
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/metrics.rs:local_traces"
+```
+
+Each `AgentTrace` contains:
+
+- **name**: Human-readable label (e.g., "Cycle 1", "stream_messages", "Tool: notebook")
+- **duration**: Execution time in milliseconds
+- **children**: Nested `AgentTrace` values for operations within the cycle
+- **metadata**: A `BTreeMap<String, String>` of associated data like `cycleId`, `toolUseId`, and `toolName`
+- **message**: The model output message (for model invocation traces)
 </Tab>
 </Tabs>
 

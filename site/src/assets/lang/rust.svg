@@ -1,0 +1,5 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+  <circle cx="12" cy="12" r="10.4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-dasharray="2.6 2.85" />
+  <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8" />
+  <text x="12" y="16.3" text-anchor="middle" font-family="ui-monospace, 'JetBrains Mono', monospace" font-weight="700" font-size="11" fill="currentColor">R</text>
+</svg>

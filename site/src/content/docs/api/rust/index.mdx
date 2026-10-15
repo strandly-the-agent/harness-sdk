@@ -1,0 +1,34 @@
+---
+title: Rust API Reference
+description: 'The API reference for the experimental Strands Agents Rust SDK: how to build the rustdoc for the strands-agents crate locally and where the source lives.'
+---
+
+The Rust API reference is [rustdoc](https://doc.rust-lang.org/rustdoc/), generated from the
+crate source. The `strands-agents` crate is **experimental** and not published to
+[crates.io](https://crates.io), so there is no page on [docs.rs](https://docs.rs) yet —
+build the docs locally from a checkout of the monorepo:
+
+```bash
+cd strands-rs
+cargo doc --open -p strands-agents
+```
+
+That opens the reference for the default feature set (`bedrock`, `macros`). Pass the features
+you use to document their items too, or document everything:
+
+```bash
+cargo doc --open -p strands-agents --all-features
+```
+
+`cargo doc -p strands-agents-macros` covers the `#[tool]` macro crate, and
+`cargo doc -p strands-harness` the harness crate.
+
+## Source
+
+The crates live under
+[`strands-rs/`](https://github.com/strands-agents/harness-sdk/tree/main/strands-rs) in the
+monorepo. `crates/strands-agents/src/lib.rs` is the public API's entry point, and
+`crates/strands-agents/examples/` holds runnable examples.
+
+The [Python](../python/) and [TypeScript](../typescript/) references are generated and browsable
+here on the site.

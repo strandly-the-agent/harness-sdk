@@ -40,6 +40,14 @@ The two presets cover the common cases:
         const agent = await createHarness({ interventions: 'ask' })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/interventions.rs:harness_ask"
+        ```
+
+        The Rust harness has no risk classifier, so `"smart"` is a configuration error
+        rather than a weaker gate.
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -70,6 +78,11 @@ The two presets cover the common cases:
         const agent = new Agent({ tools: [bash], interventions: [new HumanInTheLoop()] })
         const result = await agent.invoke('Delete the temp files')
         // result.stopReason === 'interrupt': present the prompt, then resume
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/interventions.rs:sdk_ask"
         ```
       </Tab>
     </Tabs>
@@ -106,6 +119,11 @@ own rubric:
         })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        // This feature is not yet available in the Rust SDK
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -134,6 +152,11 @@ own rubric:
         const agent = new Agent({ tools: [bash], interventions: [new HumanInTheLoop()] })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/interventions.rs:sdk_policy"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
 </Tabs>
@@ -143,6 +166,7 @@ own rubric:
 A string ending in `.cedar` loads a [Cedar](../../../sdk/agents/interventions/cedar-authorization/)
 policy file for programmatic authorization. Cedar needs an optional dependency:
 `strands-agents[cedar]` in Python, or the `@cedar-policy/cedar-wasm` package in TypeScript.
+Rust takes the handler itself rather than a path.
 
 <Tabs>
   <Tab label="Python">
@@ -157,6 +181,13 @@ policy file for programmatic authorization. Cedar needs an optional dependency:
     import { createHarness } from '@strands-agents/harness'
 
     const agent = await createHarness({ interventions: './policies/agent.cedar' })
+    ```
+  </Tab>
+  <Tab label="Rust">
+    Enable the `cedar` feature on `strands-agents`.
+
+    ```rust
+    --8<-- "user-guide/harness/configure/interventions.rs:harness_cedar"
     ```
   </Tab>
 </Tabs>

@@ -18,11 +18,12 @@ For complete details on supported models, token requirements, and cache field su
 
 Cache system prompts that remain static across multiple requests. This is useful when your system prompt contains no variables, timestamps, or dynamic content, exceeds the minimum cacheable token threshold for your model, and you make multiple requests with the same system prompt.
 
-With <Syntax py="cache_config" ts="cacheConfig" /> set to the `auto` (or `anthropic`) strategy, Strands caches the system prompt **by default**: it appends a cache point at the end of the system prompt on every request, so repeated calls with the same static system prefix (including fresh agents that share a system prompt) read it from cache. A system prompt that changes on every request never produces a cache read, so the added cache write is a small extra cost with no offsetting saving; opt out by setting <Syntax py="system_prompt_ttl=False" ts="systemPromptTTL: false" /> when the system prompt is dynamic. This disables only the auto-injected system point, and tool and message caching are unaffected. A cache point you place by hand anywhere in the system prompt is honored as-is, and no second point is added.
+With <Syntax py="cache_config" ts="cacheConfig" rs="cache_config" /> set to the `auto` (or `anthropic`) strategy, Strands caches the system prompt **by default**: it appends a cache point at the end of the system prompt on every request, so repeated calls with the same static system prefix (including fresh agents that share a system prompt) read it from cache. A system prompt that changes on every request never produces a cache read, so the added cache write is a small extra cost with no offsetting saving; opt out by setting <Syntax py="system_prompt_ttl=False" ts="systemPromptTTL: false"
+rs="system_prompt_ttl: CacheSection::Disabled" /> when the system prompt is dynamic. This disables only the auto-injected system point, and tool and message caching are unaffected. A cache point you place by hand anywhere in the system prompt is honored as-is, and no second point is added.
 
 The auto-injected system cache point inherits the TTL you configured, so setting one `ttl` gives every cache point in the request the same duration. Bedrock requires TTLs to be non-increasing across the tool definitions, the system prompt, and the messages, and rejects a request where a longer TTL follows a shorter one.
 
-The example below places the cache point by hand for fine-grained control. With <Syntax py="cache_config" ts="cacheConfig" /> you do not need to: the point is added for you.
+The example below places the cache point by hand for fine-grained control. With <Syntax py="cache_config" ts="cacheConfig" rs="cache_config" /> you do not need to: the point is added for you.
 
 <Tabs>
 <Tab label="Python">
@@ -56,6 +57,14 @@ print(f"Cache read tokens: {response2.metrics.accumulated_usage.get('cacheReadIn
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.ts:system_prompt_caching_full"
+```
+</Tab>
+<Tab label="Rust">
+
+Rust has no implicit default model, so the agent is built explicitly with `BedrockModel::default_model()`:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.rs:system_prompt_caching_full"
 ```
 </Tab>
 </Tabs>
@@ -115,6 +124,12 @@ Pass a TTL to set that duration, or `false` to turn that part off. A `ttl` on `c
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.ts:tool_caching_full"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.rs:tool_caching_full"
+```
+</Tab>
 </Tabs>
 
 ## Messages Caching
@@ -127,7 +142,7 @@ Place your cache point *ahead* of content that changes on every call, such as re
 
 **Option A: Automatic Cache Strategy (Claude models only)**
 
-Enable automatic cache point management for agent workflows with multi-turn conversations. The SDK automatically places a cache point at the end of the last user message to maximize cache hits without requiring manual management. The same <Syntax py="cache_config" ts="cacheConfig" /> also caches the system prompt by default (see [System Prompt Caching](#system-prompt-caching)), so a multi-turn conversation reuses both the static system prefix and the accumulated conversation context.
+Enable automatic cache point management for agent workflows with multi-turn conversations. The SDK automatically places a cache point at the end of the last user message to maximize cache hits without requiring manual management. The same <Syntax py="cache_config" ts="cacheConfig" rs="cache_config" /> also caches the system prompt by default (see [System Prompt Caching](#system-prompt-caching)), so a multi-turn conversation reuses both the static system prefix and the accumulated conversation context.
 
 <Tabs>
 <Tab label="Python">
@@ -167,6 +182,12 @@ print(f"Cache read tokens: {response2.metrics.accumulated_usage.get('cacheReadIn
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.ts:automatic_cache_strategy"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.rs:automatic_cache_strategy"
 ```
 </Tab>
 </Tabs>
@@ -215,6 +236,12 @@ print(f"Cache read tokens: {response2.metrics.accumulated_usage.get('cacheReadIn
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.ts:messages_caching_full"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.rs:messages_caching_full"
+```
+</Tab>
 </Tabs>
 
 ## Cache Metrics
@@ -255,6 +282,14 @@ Cache statistics are included in `modelMetadataEvent.usage` during streaming:
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching_imports.ts:basic_default_imports"
 
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.ts:cache_metrics"
+```
+</Tab>
+<Tab label="Rust">
+
+Cache statistics are in `AgentResult.metrics.accumulated_usage`:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock-prompt-caching.rs:cache_metrics"
 ```
 </Tab>
 </Tabs>

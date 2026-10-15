@@ -133,6 +133,18 @@ npm install openai
 
 > **Note:** All model providers except Bedrock are listed as optional dependencies in the SDK. This means npm will attempt to install them automatically, but won't fail if they're unavailable. You can explicitly install them when needed.
 </Tab>
+<Tab label="Rust">
+
+The Rust SDK is experimental and not published to crates.io, so depend on it from git.
+Bedrock is on by default; other providers are Cargo features:
+
+```toml
+[dependencies.strands-agents]
+git = "https://github.com/strands-agents/harness-sdk"
+package = "strands-agents"
+features = ["openai", "anthropic"]
+```
+</Tab>
 </Tabs>
 
 ### Basic Usage
@@ -169,6 +181,12 @@ response = agent("What can you help me with?")
 --8<-- "user-guide/sdk/model-providers/index.ts:basic_usage"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/index.rs:basic_usage"
+```
+</Tab>
 </Tabs>
 
 ### Auxiliary model
@@ -176,7 +194,7 @@ response = agent("What can you help me with?")
 Besides the main loop, the SDK makes side calls on your behalf: context
 summarization, memory extraction, the human-in-the-loop risk classifier, LLM
 steering, the goal-loop judge, and the `web_fetch` analyst. By default they all run
-on the agent's main model. Set <Syntax py="aux_model" ts="auxModel" /> to route
+on the agent's main model. Set <Syntax py="aux_model" ts="auxModel" rs="aux_model" /> to route
 every one of them to a smaller, cheaper model at once:
 
 <Tabs>
@@ -204,12 +222,21 @@ agent.aux_model = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 --8<-- "user-guide/sdk/model-providers/index.ts:aux_model"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/index.rs:aux_model"
+```
+
+The auxiliary model is set on the builder; Rust has no `aux_model` setter.
+</Tab>
 </Tabs>
 
 Each side call resolves its model in this order: the component's own `model`
 option (for example the summarizer's or the classifier's) >
-<Syntax py="agent.aux_model" ts="agent.auxModel" /> > `agent.model`. Leaving
-<Syntax py="aux_model" ts="auxModel" /> unset changes nothing. A `ModelRouter` is
+<Syntax py="agent.aux_model" ts="agent.auxModel" rs="agent.aux_model()" /> >
+`agent.model`. Leaving <Syntax py="aux_model" ts="auxModel" rs="aux_model" /> unset
+changes nothing. A `ModelRouter` is
 not accepted here: side calls run outside the agent loop the router attaches to.
 
 ## Next Steps

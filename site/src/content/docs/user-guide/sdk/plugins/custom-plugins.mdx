@@ -7,7 +7,7 @@ sourceLinks:
   - path: strands-ts/src/plugins/plugin.ts
 ---
 
-A plugin bundles hooks and tools into one reusable object you attach to an agent. It works against the low-level primitives the Agent class exposes: `model`, <Syntax py="system_prompt" ts="systemPrompt" />, `messages`, `tools`, and `hooks`. When the built-in plugins don't fit, you build and distribute your own. See [Get Featured](/docs/integrations/get-featured) to share your plugins with the community.
+A plugin bundles hooks and tools into one reusable object you attach to an agent. It works against the low-level primitives the Agent class exposes: `model`, <Syntax py="system_prompt" ts="systemPrompt" rs="system_prompt" />, `messages`, `tools`, and `hooks`. When the built-in plugins don't fit, you build and distribute your own. See [Get Featured](/docs/integrations/get-featured) to share your plugins with the community.
 
 ## Using Plugins
 
@@ -33,6 +33,12 @@ agent = Agent(
 --8<-- "user-guide/sdk/plugins/custom-plugins_imports.ts:using_plugins_imports"
 
 --8<-- "user-guide/sdk/plugins/custom-plugins.ts:using_plugins"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:using_plugins"
 ```
 </Tab>
 </Tabs>
@@ -90,6 +96,14 @@ agent("Calculate 2 + 2 and print the result")
 --8<-- "user-guide/sdk/plugins/custom-plugins.ts:basic_plugin"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:basic_plugin"
+
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:basic_plugin_usage"
+```
+</Tab>
 </Tabs>
 
 ### What Happens on Attach
@@ -112,6 +126,15 @@ When you attach a plugin to an agent, the following happens:
 3. **Hook Registration**: In `initAgent`, use `agent.addHook()` to register event callbacks manually
 
 **Note**: TypeScript does not use `@hook` or `@tool` decorators. Instead, tools are returned from `getTools()` and hooks are registered manually in `initAgent()`.
+
+</Tab>
+<Tab label="Rust">
+
+1. **Initialization**: The `init_agent(&agent)` method is called for hook registration and setup
+2. **Hook Registration**: In `init_agent`, use `agent.hooks().add_callback()` (or `add_sync_callback()`) to register event callbacks manually
+3. **Tool Registration**: The `tools()` method is called afterwards to get the tools provided by the plugin
+
+**Note**: `init_agent` is `async`, and the plugin name must be unique across the agent's plugins — duplicates are rejected.
 
 </Tab>
 </Tabs>
@@ -165,11 +188,19 @@ TypeScript plugins register hooks manually in the `initAgent` method using `agen
 --8<-- "user-guide/sdk/plugins/custom-plugins.ts:hook_decorator_alternative"
 ```
 </Tab>
+<Tab label="Rust">
+
+#### Manual Hook Registration
+
+```rust
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:hook_decorator_alternative"
+```
+</Tab>
 </Tabs>
 
 ### Manual Hook and Tool Registration
 
-For more control, you can manually register hooks and tools in the <Syntax py="init_agent" ts="initAgent" /> method:
+For more control, you can manually register hooks and tools in the <Syntax py="init_agent" ts="initAgent" rs="init_agent" /> method:
 
 <Tabs>
 <Tab label="Python">
@@ -203,6 +234,12 @@ class ManualPlugin(Plugin):
 --8<-- "user-guide/sdk/plugins/custom-plugins_imports.ts:manual_registration_imports"
 
 --8<-- "user-guide/sdk/plugins/custom-plugins.ts:manual_registration"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:manual_registration"
 ```
 </Tab>
 </Tabs>
@@ -248,6 +285,12 @@ print(f"Tool calls: {agent.state.get('metrics_call_count')}")
 --8<-- "user-guide/sdk/plugins/custom-plugins.ts:state_management"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:state_management"
+```
+</Tab>
 </Tabs>
 
 See [Agent State](../agents/state.mdx) for more information on state management.
@@ -286,6 +329,12 @@ class AsyncConfigPlugin(Plugin):
 --8<-- "user-guide/sdk/plugins/custom-plugins_imports.ts:async_initialization_imports"
 
 --8<-- "user-guide/sdk/plugins/custom-plugins.ts:async_initialization"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:async_initialization"
 ```
 </Tab>
 </Tabs>

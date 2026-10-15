@@ -12,13 +12,17 @@
  * </AutoSyncTabs>
  *
  * Special case: language tabs.
- * When the labels are exactly the language pair {"Python", "TypeScript"},
+ * When the labels include at least two of {"Python", "TypeScript", "Rust"},
  * the wrapper is marked with `data-language-tabs` so the inline tablist
- * can be visually hidden via global CSS. The site's header LanguageToggle
- * remains the single language selector. Tab logic, syncing, and switching
- * are unchanged — only the inline UI is hidden.
+ * can be visually hidden via global CSS, and the group gets the canonical
+ * language syncKey (see LANGUAGE_SYNC_KEY below) so two- and three-language
+ * groups sync with each other. The site's header LanguageToggle remains the
+ * single language selector. Tab logic, syncing, and switching are unchanged —
+ * only the inline UI is hidden.
  */
 import { Tabs } from '@astrojs/starlight/components';
+import { hashTabLabels as hashString, LANGUAGE_SYNC_KEY } from '../util/language-preference';
+import { ALL_SDK_LANGUAGES } from '../config/languages';
 
 interface Props {
   /** Optional explicit syncKey. If provided, auto-generation is skipped. */
@@ -34,34 +38,34 @@ const slotContent = await Astro.slots.render('default');
 const labelMatches = slotContent.matchAll(/data-label="([^"]+)"/g);
 const labels = [...labelMatches].map(match => match[1]);
 
-/**
- * Generate a simple hash from a string.
- * Used to create consistent sync keys from tab labels.
- */
-function hashString(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return Math.abs(hash).toString(36);
+// Detect language tabs: any group whose labels include at least two of the
+// three documented SDK languages. Other tab groups (npm/yarn, OS variants,
+// IDE choice, etc.) keep their normal tablist UI.
+const LANGUAGE_LABELS: Record<string, string> = { python: 'Python', typescript: 'TypeScript', rust: 'Rust' };
+const labelSet = new Set(labels);
+const isLanguageTabs = Object.values(LANGUAGE_LABELS).filter((label) => labelSet.has(label)).length >= 2;
+
+// The tablist is hidden (the header toggle drives the group) only when the group
+// offers every language the page does; a partial group keeps its tablist so the
+// reader can see which language is showing. `starlightRoute` throws off
+// Starlight pages, hence the try/catch.
+let pageLanguages: string[] | undefined;
+try {
+  const raw = Astro.locals.starlightRoute?.entry.data.languages;
+  pageLanguages = raw ? (Array.isArray(raw) ? raw : [raw]).map((l: string) => l.toLowerCase()) : undefined;
+} catch {
+  pageLanguages = undefined;
 }
+const offered = (pageLanguages?.length ? pageLanguages : [...ALL_SDK_LANGUAGES]).map((l) => LANGUAGE_LABELS[l] ?? l);
+const coversPageLanguages = isLanguageTabs && offered.every((label) => labelSet.has(label));
 
 // Generate syncKey from labels if not explicitly provided
-const syncKey = explicitSyncKey ?? (labels.length > 0 ? hashString(labels.join('|')) : undefined);
-
-// Detect language tabs (Python + TypeScript pair, in any order).
-// Only this exact pair is treated as a "language tab" — other tab groups
-// (npm/yarn, OS variants, IDE choice, etc.) keep their normal tablist UI.
-const labelSet = new Set(labels);
-const isLanguageTabs =
-  labels.length === 2 &&
-  labelSet.has('Python') &&
-  labelSet.has('TypeScript');
+const syncKey =
+  explicitSyncKey ??
+  (isLanguageTabs ? LANGUAGE_SYNC_KEY : labels.length > 0 ? hashString(labels.join('|')) : undefined);
 ---
 
-{isLanguageTabs ? (
+{coversPageLanguages ? (
   <div data-language-tabs>
     <Tabs syncKey={syncKey}>
       <Fragment set:html={slotContent} />

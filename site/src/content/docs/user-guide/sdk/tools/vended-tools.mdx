@@ -92,6 +92,15 @@ agent("Create a file at /tmp/hello.txt with the contents 'Hello, world!'")
 ```
 
 </Tab>
+<Tab label="Rust">
+
+The SDK ships `FileEditorTool`; the harness also has the narrower `read`, `write` and `edit` tools in `strands_harness::tools`.
+
+```rust
+--8<-- "user-guide/sdk/tools/vended-tools.rs:file_editor_example"
+```
+
+</Tab>
 </Tabs>
 
 [Full API reference](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/vended-tools/file-editor/README.md)
@@ -111,6 +120,11 @@ The Python tool delegates all networking to an `httpx.AsyncClient`. Use the `mak
 
 </Tab>
 <Tab label="TypeScript">
+</Tab>
+<Tab label="Rust">
+
+`HttpRequestTool` needs the `http` feature. It is configured through `HttpRequestConfig` (timeout, allowed methods, default headers) rather than by injecting a client.
+
 </Tab>
 </Tabs>
 
@@ -151,6 +165,15 @@ agent = Agent(tools=[tool])
 ```
 
 </Tab>
+<Tab label="Rust">
+
+Enable the `http` feature.
+
+```rust
+--8<-- "user-guide/sdk/tools/vended-tools.rs:http_request_example"
+```
+
+</Tab>
 </Tabs>
 
 Full API reference: [TypeScript](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/vended-tools/http-request/README.md), [Python](https://github.com/strands-agents/harness-sdk/blob/main/strands-py/src/strands/vended_tools/http_request/README.md)
@@ -186,6 +209,15 @@ agent('Create a notebook called "tasks" with "# Daily Tasks" and add "- [ ] Revi
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+There is no notebook tool in the Rust SDK yet.
+
+</Tab>
 </Tabs>
 
 **Example - State Persistence:**
@@ -215,6 +247,15 @@ print(notebooks.get("tasks"))
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+There is no notebook tool in the Rust SDK yet.
+
+</Tab>
 </Tabs>
 
 **Example - Custom configuration:**
@@ -241,6 +282,15 @@ notes = make_notebook(
 )
 agent = Agent(tools=[notes])
 ```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+There is no notebook tool in the Rust SDK yet.
 
 </Tab>
 </Tabs>
@@ -283,6 +333,15 @@ from strands.vended_tools import shell
 
 agent = Agent(tools=[shell])
 agent("List all Python files in the current directory and count them")
+```
+
+</Tab>
+<Tab label="Rust">
+
+The Rust tool is `ShellTool` (tool name `shell`); it is stateless, so there are no persistent sessions.
+
+```rust
+--8<-- "user-guide/sdk/tools/vended-tools.rs:shell_example"
 ```
 
 </Tab>
@@ -334,6 +393,13 @@ agent("Pause for two seconds, then continue.")
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/vended-tools.rs:sleep_example"
+```
+
+</Tab>
 </Tabs>
 
 **Custom maximum:**
@@ -356,6 +422,13 @@ from strands.vended_tools import make_sleep
 
 short_sleep = make_sleep(max_duration=5)
 agent = Agent(tools=[short_sleep])
+```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/vended-tools.rs:sleep_custom_example"
 ```
 
 </Tab>
@@ -432,6 +505,15 @@ resumed = agent([
 ```
 
 </Tab>
+<Tab label="Rust">
+
+Resume by invoking the agent again with the interrupt response; `HANDOFF_INTERRUPT_NAME` is the stable interrupt name.
+
+```rust
+--8<-- "user-guide/sdk/tools/vended-tools.rs:handoff_to_user_example"
+```
+
+</Tab>
 </Tabs>
 
 📖 [Full API Reference](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/vended-tools/handoff-to-user/README.md)
@@ -477,6 +559,15 @@ result = agent("Summarize the changes in ./CHANGELOG.md")
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+There is no stop tool in the Rust SDK yet.
+
+</Tab>
 </Tabs>
 
 [Full API reference](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/experimental/vended-tools/stop/README.md)
@@ -498,7 +589,7 @@ configured at construction time via `make_web_fetch` / `makeWebFetch`:
 The `max_bytes` / `maxBytes` parameter caps the HTTP response size (default 5 MiB);
 `max_content_chars` / `maxContentChars` caps the extracted content delivered to the model or
 analyst (default 50,000 characters). For `mode='agentic'` / `mode: 'agentic'`,
-the factory also accepts a `model` for the analyst; <Syntax py="agent.aux_model" ts="agent.auxModel" />
+the factory also accepts a `model` for the analyst; <Syntax py="agent.aux_model" ts="agent.auxModel" rs="MakeWebFetchOptions::model" />
 is used when none is supplied.
 
 The Python tool delegates all networking to an `httpx.AsyncClient`. Use the
@@ -522,6 +613,11 @@ HTML conversion requires the optional `turndown` peer dependency:
 ```bash
 npm install turndown
 ```
+</Tab>
+<Tab label="Rust">
+
+Web fetch is a harness tool in Rust, not an SDK vended tool: `strands_harness::tools::make_web_fetch(MakeWebFetchOptions::new(model))` builds it, and it needs the harness `http` feature.
+
 </Tab>
 </Tabs>
 :::
@@ -601,6 +697,11 @@ agent = Agent(tools=[web_fetch])
 ```
 
 </Tab>
+<Tab label="Rust">
+
+Build the tool with `strands_harness::tools::make_web_fetch(MakeWebFetchOptions::new(model))` and add it to the agent like any other tool. `MakeWebFetchOptions` takes the summarizer model and, optionally, a `WebFetchTransport` seam.
+
+</Tab>
 </Tabs>
 
 📖 [Full API Reference](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/vended-tools/web-fetch/README.md)
@@ -654,6 +755,15 @@ agent(
 ```
 
 </Tab>
+<Tab label="Rust">
+
+Enable the `mcp` feature.
+
+```rust
+--8<-- "user-guide/sdk/tools/vended-tools.rs:mcp_router_example"
+```
+
+</Tab>
 </Tabs>
 
 ### A2A Client
@@ -685,6 +795,15 @@ Requires the optional `@a2a-js/sdk` peer dependency:
 ```bash
 npm install @a2a-js/sdk
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+There is no A2A client tool in the Rust SDK yet.
+
 </Tab>
 </Tabs>
 :::
@@ -729,6 +848,15 @@ agent("What has the research agent found recently?")
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+There is no A2A client tool in the Rust SDK yet.
+
+</Tab>
 </Tabs>
 
 Full API reference: [TypeScript](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/vended-tools/a2a-client/README.md)
@@ -766,6 +894,15 @@ agent("Use python_repl to compute the first 10 Fibonacci numbers and print them.
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+There is no Python REPL tool in the Rust SDK yet.
+
+</Tab>
 </Tabs>
 
 **Bound sandbox or custom interpreter:**
@@ -795,6 +932,15 @@ agent = Agent(tools=[python_repl])
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+There is no Python REPL tool in the Rust SDK yet.
+
+</Tab>
 </Tabs>
 
 [Full API reference](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/vended-tools/python-repl/README.md)
@@ -805,10 +951,10 @@ agent = Agent(tools=[python_repl])
 
 Delegates a self-contained task to a child agent that runs in its own context and returns a final report. Use it when a subtask would otherwise flood the parent's context with intermediate work and you only need the conclusion. The model writes the task each time it calls the tool; the child cannot ask follow-up questions, so the task must include all the context it needs.
 
-The <Syntax py="make_subagent" ts="makeSubagent" /> factory uses [axis policies](#axis-policies) to control what the model can configure on each child.
-The configurable axes are `instructions`, `tools`, <Syntax py="mcp_servers" ts="mcpServers" />, `model`, and `context`. The parent also passes a task to the child.
+The <Syntax py="make_subagent" ts="makeSubagent" rs="make_subagent" /> factory uses [axis policies](#axis-policies) to control what the model can configure on each child.
+The configurable axes are `instructions`, `tools`, <Syntax py="mcp_servers" ts="mcpServers" rs="—" />, `model`, and `context`. The parent also passes a task to the child.
 
-By default, the child sees only the task (<Syntax py='context=Fixed("none")' ts="context: new Fixed('none')" />), but you can share the parent's conversation by setting `context` to a `Choice` over `"none"`, `"all"` (full history including tool calls), and `"no_tools"` (text turns only). When a non-`"none"` option is available, the model can also pass `last_messages` to limit how many parent messages to share.
+By default, the child sees only the task (<Syntax py='context=Fixed("none")' ts="context: new Fixed('none')" rs='context: ContextAxis::Fixed(Fixed(Some(ContextMode::None)))' />), but you can share the parent's conversation by setting `context` to a `Choice` over `"none"`, `"all"` (full history including tool calls), and `"no_tools"` (text turns only). When a non-`"none"` option is available, the model can also pass `last_messages` to limit how many parent messages to share.
 
 _Supported in: Python, TypeScript (Node.js, browsers)._
 
@@ -838,9 +984,14 @@ agent("Research the latest Python 3.13 features and summarize them.")
 ```
 
 </Tab>
+<Tab label="Rust">
+
+Delegation is a harness tool in Rust, not an SDK vended tool: `strands_harness::tools::subagent::make_subagent(MakeSubagentOptions::new(builder))` builds it, where `builder` constructs the child agent from the resolved `ChildAgentConfig`.
+
+</Tab>
 </Tabs>
 
-**Example — full control with <Syntax py="make_subagent" ts="makeSubagent" />:**
+**Example — full control with <Syntax py="make_subagent" ts="makeSubagent" rs="make_subagent" />:**
 
 <Tabs>
 <Tab label="TypeScript">
@@ -883,6 +1034,11 @@ agent("Review the changes in src/main.py for correctness.")
 ```
 
 </Tab>
+<Tab label="Rust">
+
+The axes are the fields of `MakeSubagentOptions`: `presets` (a map of `Preset`), `instructions`, `tools`, `model` and `context`, each an enum over `Fixed`/`Inherit`/`Open`/`Choice`, plus `max_depth`.
+
+</Tab>
 </Tabs>
 
 Full API reference: [TypeScript](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/vended-tools/subagent/README.md)
@@ -891,18 +1047,18 @@ Full API reference: [TypeScript](https://github.com/strands-agents/harness-sdk/b
 
 ## Axis policies
 
-Some vended tools let the model configure child agents at runtime. Axis policies control how much freedom the model has over each parameter. Import them from <Syntax py="strands.multiagent" ts="@strands-agents/sdk/multiagent" />.
+Some vended tools let the model configure child agents at runtime. Axis policies control how much freedom the model has over each parameter. Import them from <Syntax py="strands.multiagent" ts="@strands-agents/sdk/multiagent" rs="strands_harness::tools::subagent" />.
 
 | Policy | Effect | Model sees a parameter? |
 |--------|--------|------------------------|
-| <Syntax py="Inherit()" ts="new Inherit()" /> | Child inherits the parent's value | No |
-| <Syntax py="Fixed(value)" ts="new Fixed(value)" /> | Developer pins the value | No |
-| <Syntax py="Open()" ts="new Open()" /> | Model writes a free-form value | Yes (string) |
-| <Syntax py="Choice([...], multiple=True)" ts="new Choice([...], true)" /> | Model picks from a set | Yes (enum) |
+| <Syntax py="Inherit()" ts="new Inherit()" rs="Inherit" /> | Child inherits the parent's value | No |
+| <Syntax py="Fixed(value)" ts="new Fixed(value)" rs="Fixed(value)" /> | Developer pins the value | No |
+| <Syntax py="Open()" ts="new Open()" rs="Open" /> | Model writes a free-form value | Yes (string) |
+| <Syntax py="Choice([...], multiple=True)" ts="new Choice([...], true)" rs="Choice::new(vec![Opt::new(..)])" /> | Model picks from a set | Yes (enum) |
 
 Use `Option` inside a `Choice` to map model-facing names to runtime values. Bundle axis defaults into a `Preset` that the model selects via `agent_type`.
 
-Tools that accept axis policies use a default builder to turn resolved specs into child agents. By default, it produces child agents that inherit the parent's tools, model, and MCP servers. Each child gets <Syntax py='context_manager="auto"' ts="contextManager: 'auto'" /> (unless its model is stateful) in place of the parent's context-management tools, and accesses the parent's long-term memory through inherited memory tools.
+Tools that accept axis policies use a default builder to turn resolved specs into child agents. By default, it produces child agents that inherit the parent's tools, model, and MCP servers. Each child gets <Syntax py='context_manager="auto"' ts="contextManager: 'auto'" rs='context_manager("auto")' /> (unless its model is stateful) in place of the parent's context-management tools, and accesses the parent's long-term memory through inherited memory tools.
 
 To replace the default builder, pass any callable that takes an `AgentSpec` and returns an `Agent`.
 

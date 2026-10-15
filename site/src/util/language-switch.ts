@@ -3,9 +3,9 @@
  *
  * Pages live under language-specific path segments (e.g.
  * `docs/api/python/...`, `docs/user-guide/quickstart/typescript`). When the
- * user switches language we want to land on the equivalent page in the other
- * language — but the two trees are not mirrors of each other. The Python API
- * reference uses module paths (`strands.agent.a2a_agent`) while the
+ * user switches language we want to land on the equivalent page in the
+ * selected language — but the trees are not mirrors of each other. The Python
+ * API reference uses module paths (`strands.agent.a2a_agent`) while the
  * TypeScript one uses symbol names (`Agent`), so a naive URL swap produces
  * URLs that don't exist.
  *
@@ -20,7 +20,7 @@
  */
 import { normalizePathToSlug } from './links'
 
-const LANGUAGE_SLUGS = ['python', 'typescript'] as const
+const LANGUAGE_SLUGS = ['python', 'typescript', 'rust'] as const
 export type LanguageSlug = (typeof LANGUAGE_SLUGS)[number]
 
 function isLanguageSlug(segment: string): segment is LanguageSlug {

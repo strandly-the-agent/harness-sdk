@@ -65,7 +65,7 @@ The injected system prompt metadata looks like this:
 </available_skills>
 ```
 
-This XML block is refreshed before each invocation, so changes to available skills (through <Syntax py="set_available_skills" ts="setAvailableSkills" />) take effect immediately. Activated skills are tracked in [agent state](../agents/state.mdx) for session persistence.
+This XML block is refreshed before each invocation, so changes to available skills (through <Syntax py="set_available_skills" ts="setAvailableSkills" rs="set_available_skills" />) take effect immediately. Activated skills are tracked in [agent state](../agents/state.mdx) for session persistence.
 
 ## Usage
 
@@ -105,6 +105,15 @@ agent = Agent(plugins=[plugin])
 --8<-- "user-guide/sdk/plugins/skills.ts:usage"
 ```
 </Tab>
+<Tab label="Rust">
+
+Rust takes any iterable of `SkillSource` (a path or a `Skill`). HTTPS skill sources are not
+yet supported in Rust:
+
+```rust
+--8<-- "user-guide/sdk/plugins/skills.rs:usage"
+```
+</Tab>
 </Tabs>
 
 ### Providing tools for resource access
@@ -139,6 +148,15 @@ For filesystem-based skills, the vended `bash` and `fileEditor` tools are the ea
 --8<-- "user-guide/sdk/plugins/skills_imports.ts:tools"
 
 --8<-- "user-guide/sdk/plugins/skills.ts:tools"
+```
+</Tab>
+<Tab label="Rust">
+
+For filesystem-based skills, the vended `ShellTool` and `FileEditorTool` are the easiest way to
+get started:
+
+```rust
+--8<-- "user-guide/sdk/plugins/skills.rs:tools"
 ```
 </Tab>
 </Tabs>
@@ -183,6 +201,12 @@ skills = Skill.from_directory("./skills/")
 --8<-- "user-guide/sdk/plugins/skills_imports.ts:programmatic"
 
 --8<-- "user-guide/sdk/plugins/skills.ts:programmatic"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/skills.rs:programmatic"
 ```
 </Tab>
 </Tabs>
@@ -230,6 +254,15 @@ print(f"Activated skills: {activated}")
 --8<-- "user-guide/sdk/plugins/skills.ts:runtime"
 ```
 </Tab>
+<Tab label="Rust">
+
+`AgentSkills` is cheap to clone and shares its skill set, so keep a clone to manage skills after
+the agent is built:
+
+```rust
+--8<-- "user-guide/sdk/plugins/skills.rs:runtime"
+```
+</Tab>
 </Tabs>
 
 ## SKILL.md format
@@ -267,7 +300,7 @@ The `allowed-tools` field is currently informational. When a skill is activated,
 :::
 
 :::note[Name validation]
-Skill names must match the parent directory name. By default, validation issues produce warnings rather than errors. Pass <Syntax py="strict=True" ts="strict: true" /> to raise exceptions instead.
+Skill names must match the parent directory name. By default, validation issues produce warnings rather than errors. Pass <Syntax py="strict=True" ts="strict: true" rs="AgentSkills::strict" /> to raise exceptions instead.
 :::
 
 ### Resource directories
@@ -310,6 +343,20 @@ The `AgentSkills` constructor accepts the following parameters.
 | `stateKey` | `string` | `'agent_skills'` | Key for storing plugin state in `agent.appState`. |
 | `maxResourceFiles` | `number` | `20` | Maximum number of resource files listed in skill activation responses. |
 | `strict` | `boolean` | `false` | If `true`, throw on validation issues instead of logging warnings. |
+
+</Tab>
+<Tab label="Rust">
+
+`AgentSkills::new(sources)` takes the sources; `AgentSkills::strict(sources)` is the strict
+variant, and `AgentSkills::with_config(sources, strict, max_resource_files, state_key)` sets
+everything.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sources` | `IntoIterator<Item = Into<SkillSource>>` | Required | Skill sources (paths or `Skill` instances). HTTPS URLs are not supported yet. |
+| `state_key` | `impl Into<String>` | `"agent_skills"` | Key for storing plugin state in `agent.state()`. |
+| `max_resource_files` | `usize` | `20` | Maximum number of resource files listed in skill activation responses. |
+| `strict` | `bool` | `false` | If `true`, return an error on validation issues instead of logging warnings. |
 
 </Tab>
 </Tabs>

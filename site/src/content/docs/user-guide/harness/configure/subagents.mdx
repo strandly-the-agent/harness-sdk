@@ -47,6 +47,11 @@ reach for it:
     const agent = await createHarness({ tools: [researcher.asTool()] })
     ```
   </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/subagents.rs:specialist_agent"
+    ```
+  </Tab>
 </Tabs>
 
 Each call runs from the subagent's construction-time baseline, a fresh conversation, so a
@@ -89,6 +94,11 @@ it off:
         const agent = await createHarness({ builtinTools: { subagent: false } })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/subagents.rs:harness_subagent_off"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -109,6 +119,11 @@ it off:
 
         // The generalist is Strands harness-specific; raw Strands Harness SDK has none to disable.
         const agent = new Agent()
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/subagents.rs:sdk_subagent_off"
         ```
       </Tab>
     </Tabs>

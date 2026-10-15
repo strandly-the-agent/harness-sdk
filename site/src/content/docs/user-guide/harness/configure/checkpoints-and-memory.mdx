@@ -52,6 +52,11 @@ next time you build an agent with the same id:
     await agent.invoke("Let's refactor the parser. Where should we start?")
     ```
   </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/checkpoints-and-memory.rs:checkpoints"
+    ```
+  </Tab>
 </Tabs>
 
 State is written under `./.agent/sessions` (override with `session={"dir": ...}` / `session: { dir }`),

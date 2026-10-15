@@ -10,6 +10,7 @@ import MobileMenuFooter from 'virtual:starlight/components/MobileMenuFooter'
 import SidebarPersister from '@astrojs/starlight/components/SidebarPersister.astro'
 import SidebarSublist from './SidebarSublist.astro'
 import { currentProduct } from '../../util/current-product'
+import { LANGUAGE_STORAGE_KEY } from '../../util/language-preference'
 
 const { sidebar } = Astro.locals.starlightRoute
 const product = currentProduct(Astro.url.pathname)
@@ -37,16 +38,16 @@ const staticSlug = isLearning
           : null
 ---
 
-<script is:inline>
+<script is:inline define:vars={{ KEY: LANGUAGE_STORAGE_KEY }}>
   // Language-scoped sidebar entries (Quickstart / API reference) collapse to a
   // single row that follows the header language toggle. Mirror the stored
   // language onto <html data-lang-pref> so CSS can hide the other language's
   // row before the list paints, then keep it in sync as the toggle changes.
-  // Key + label values mirror src/util/language-preference.ts + LanguageToggle.astro.
+  // Label values mirror LanguageToggle.astro.
   ;(function () {
-    var KEY = 'starlight-synced-tabs__jarkqt'
+    var SLUGS = { Python: 'python', TypeScript: 'typescript', Rust: 'rust' }
     function set(label) {
-      document.documentElement.dataset.langPref = label === 'Python' ? 'python' : 'typescript'
+      document.documentElement.dataset.langPref = SLUGS[label] || 'typescript'
     }
     try {
       set(localStorage.getItem(KEY) || 'TypeScript')
@@ -172,14 +173,18 @@ const staticSlug = isLearning
 <style is:global>
   /* Language-scoped sidebar rows (Quickstart / API reference) follow the header
      language toggle via <html data-lang-pref>. Default (attr unset) = TypeScript.
-     One row of each pair is always shown; the other is collapsed. */
+     Exactly one row of each language set is shown; the others are collapsed. */
   html:not([data-lang-pref='python']) .sidebar-content li:has(> a[href*='/quickstart/python']),
-  html:not([data-lang-pref='python']) .sidebar-content li:has(> a[href*='/api/python']) {
+  html:not([data-lang-pref='python']) .sidebar-content li:has(> a[href*='/api/python']),
+  html:not([data-lang-pref='rust']) .sidebar-content li:has(> a[href*='/quickstart/rust']),
+  html:not([data-lang-pref='rust']) .sidebar-content li:has(> a[href*='/api/rust']) {
     display: none;
   }
 
   html[data-lang-pref='python'] .sidebar-content li:has(> a[href*='/quickstart/typescript']),
-  html[data-lang-pref='python'] .sidebar-content li:has(> a[href*='/api/typescript']) {
+  html[data-lang-pref='python'] .sidebar-content li:has(> a[href*='/api/typescript']),
+  html[data-lang-pref='rust'] .sidebar-content li:has(> a[href*='/quickstart/typescript']),
+  html[data-lang-pref='rust'] .sidebar-content li:has(> a[href*='/api/typescript']) {
     display: none;
   }
 </style>

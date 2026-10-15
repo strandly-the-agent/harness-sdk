@@ -24,18 +24,23 @@ The Strands Agents SDK empowers developers to quickly build, manage, evaluate an
   description="Create your first TypeScript Strands agent!"
   href="../typescript/"
 />
+<LinkCard
+  title="Rust Quickstart"
+  description="Create your first Rust Strands agent — experimental!"
+  href="../rust/"
+/>
 </CardGrid>
 ---
 
 ## A library, not a platform
 
 Strands runs inside your own process. Creating an agent is constructing an object
-in Python or Node.js: there is no hosted control plane, scheduler, or database to
-stand up first. Any [model provider](../model-providers/) works. Amazon
+in Python, Node.js, or Rust: there is no hosted control plane, scheduler, or
+database to stand up first. Any [model provider](../model-providers/) works. Amazon
 Bedrock is the default, and swapping in Anthropic, OpenAI, Gemini, or Ollama is a
 one-line change, so an AWS account is only required if you keep the default.
-Adding an agent to an existing FastAPI, Express, or Next.js app is a dependency
-and a few lines of code, not new infrastructure.
+Adding an agent to an existing FastAPI, Express, Next.js, or axum app is a
+dependency and a few lines of code, not new infrastructure.
 
 Here is the whole of it: one file that answers HTTP requests with a Strands
 agent. The route handler constructs an agent and calls it. The only service it
@@ -73,6 +78,14 @@ Run it with `uvicorn main:app`.
 ```
 
 Run it with `tsx server.ts`.
+</Tab>
+<Tab label="Rust">
+```rust
+--8<-- "user-guide/sdk/quickstart/overview.rs:chat_server"
+```
+
+Strands brings no HTTP layer of its own, so hand this to axum, actix-web, or
+whatever your service already uses.
 </Tab>
 </Tabs>
 
@@ -165,6 +178,31 @@ print(agent("What can you help me build?"))
 
 Ollama runs in the Python SDK only.
 </Tab>
+<Tab label="Rust">
+<Tabs>
+<Tab label="Amazon Bedrock">
+```rust
+--8<-- "user-guide/sdk/quickstart/overview.rs:provider_bedrock"
+```
+</Tab>
+<Tab label="Anthropic">
+Enable the non-default `anthropic` feature.
+
+```rust
+--8<-- "user-guide/sdk/quickstart/overview.rs:provider_anthropic"
+```
+</Tab>
+<Tab label="OpenAI">
+Enable the non-default `openai` feature.
+
+```rust
+--8<-- "user-guide/sdk/quickstart/overview.rs:provider_openai"
+```
+</Tab>
+</Tabs>
+
+Google and Ollama are not available in the Rust SDK.
+</Tab>
 </Tabs>
 
 See [model providers](../model-providers/) for the full list and per-provider configuration.
@@ -183,40 +221,43 @@ Weighing Strands against other frameworks or a hand-written loop instead? See [c
 
 ## Language support
 
-Strands Agents SDK is available in both Python and TypeScript.
+Strands Agents SDK is available in Python, TypeScript, and — experimentally — Rust.
 
 ### Feature availability
 
-The table below compares feature availability between the Python and TypeScript SDKs.
+The table below compares feature availability across the three SDKs. The Rust SDK is
+experimental, and
+[its feature matrix](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/docs/FEATURE_MATRIX.md)
+records the partial-support details behind each row.
 
-| Category | Feature | Python | TypeScript |
-|----------|---------|:------:|:----------:|
-| **Core** | [Agent creation and invocation](../agents/agent-loop/) | ✅ | ✅ |
-| | [Streaming responses](../streaming/) | ✅ | ✅ |
-| | [Structured output](../agents/structured-output/) | ✅ | ✅ |
-| **Model providers** | [Amazon Bedrock](../model-providers/amazon-bedrock/) | ✅ | ✅ |
-| | [OpenAI](../model-providers/openai/) | ✅ | ✅ |
-| | [OpenAI Responses API](../model-providers/openai-responses/) | ✅ | ✅ |
-| | [Anthropic](../model-providers/anthropic/) | ✅ | ✅ |
-| | [Google](../model-providers/google/) | ✅ | ✅ |
-| | [Ollama](../model-providers/ollama/) | ✅ | ❌ |
-| | [LiteLLM](../model-providers/litellm/) | ✅ | ❌ |
-| | [Custom providers](../model-providers/custom_model_provider/) | ✅ | ✅ |
-| | [Additional providers](../model-providers/) | 5+ | 1+ |
-| **Tools** | [Custom function tools](../tools/custom-tools/) | ✅ | ✅ |
-| | [MCP (Model Context Protocol)](../tools/mcp-tools/) | ✅ | ✅ |
-| | [Built-in tools](../tools/community-tools-package/) | 30+ via community package | 4 built-in |
-| **Conversation** | [Null manager](../agents/conversation-management/) | ✅ | ✅ |
-| | [Sliding window manager](../agents/conversation-management/) | ✅ | ✅ |
-| | [Summarizing manager](../agents/conversation-management/) | ✅ | ✅ |
-| **Hooks** | [Lifecycle hooks](../agents/hooks/) | ✅ | ✅ |
-| | [Custom hook providers](../agents/hooks/) | ✅ | ✅ |
-| **Multi-agent** | [Swarms](../multi-agent/swarm/) | ✅ | ✅ |
-| | [Graphs](../multi-agent/graph/) | ✅ | ✅ |
-| | [Workflows](../multi-agent/workflow/) | ✅ | ✅ |
-| | [Agents as tools](../multi-agent/agents-as-tools/) | ✅ | ✅ |
-| | [Agent-to-Agent (A2A)](../multi-agent/agent-to-agent/) | ✅ | ✅ |
-| **Session management** | [File, S3, repository managers](../agents/session-management/) | ✅ | ✅ |
-| **Observability** | [OpenTelemetry integration](../observability-evaluation/observability/) | ✅ | ✅ |
-| **Steering** | [Agent steering](../agents/interventions/steering/) | ✅ | ✅ |
-| **Voice** | [Bidirectional streaming](../bidi/quickstart/) | ✅ | ❌ |
+| Category | Feature | Python | TypeScript | Rust |
+|----------|---------|:------:|:----------:|:----:|
+| **Core** | [Agent creation and invocation](../agents/agent-loop/) | ✅ | ✅ | ✅ |
+| | [Streaming responses](../streaming/) | ✅ | ✅ | ✅ |
+| | [Structured output](../agents/structured-output/) | ✅ | ✅ | ✅ |
+| **Model providers** | [Amazon Bedrock](../model-providers/amazon-bedrock/) | ✅ | ✅ | ✅ |
+| | [OpenAI](../model-providers/openai/) | ✅ | ✅ | ✅ |
+| | [OpenAI Responses API](../model-providers/openai-responses/) | ✅ | ✅ | ✅ |
+| | [Anthropic](../model-providers/anthropic/) | ✅ | ✅ | ✅ |
+| | [Google](../model-providers/google/) | ✅ | ✅ | ❌ |
+| | [Ollama](../model-providers/ollama/) | ✅ | ❌ | ❌ |
+| | [LiteLLM](../model-providers/litellm/) | ✅ | ❌ | ❌ |
+| | [Custom providers](../model-providers/custom_model_provider/) | ✅ | ✅ | ✅ |
+| | [Additional providers](../model-providers/) | 5+ | 1+ | 0 |
+| **Tools** | [Custom function tools](../tools/custom-tools/) | ✅ | ✅ | ✅ |
+| | [MCP (Model Context Protocol)](../tools/mcp-tools/) | ✅ | ✅ | ✅ |
+| | [Built-in tools](../tools/community-tools-package/) | 30+ via community package | 4 built-in | 6 built-in |
+| **Conversation** | [Null manager](../agents/conversation-management/) | ✅ | ✅ | ❌ |
+| | [Sliding window manager](../agents/conversation-management/) | ✅ | ✅ | ❌ |
+| | [Summarizing manager](../agents/conversation-management/) | ✅ | ✅ | ❌ |
+| **Hooks** | [Lifecycle hooks](../agents/hooks/) | ✅ | ✅ | ✅ |
+| | [Custom hook providers](../agents/hooks/) | ✅ | ✅ | ✅ |
+| **Multi-agent** | [Swarms](../multi-agent/swarm/) | ✅ | ✅ | ❌ |
+| | [Graphs](../multi-agent/graph/) | ✅ | ✅ | ❌ |
+| | [Workflows](../multi-agent/workflow/) | ✅ | ✅ | ❌ |
+| | [Agents as tools](../multi-agent/agents-as-tools/) | ✅ | ✅ | ✅ |
+| | [Agent-to-Agent (A2A)](../multi-agent/agent-to-agent/) | ✅ | ✅ | ❌ |
+| **Session management** | [File, S3, repository managers](../agents/session-management/) | ✅ | ✅ | ✅ |
+| **Observability** | [OpenTelemetry integration](../observability-evaluation/observability/) | ✅ | ✅ | ✅ |
+| **Steering** | [Agent steering](../agents/interventions/steering/) | ✅ | ✅ | ✅ |
+| **Voice** | [Bidirectional streaming](../bidi/quickstart/) | ✅ | ❌ | ❌ |

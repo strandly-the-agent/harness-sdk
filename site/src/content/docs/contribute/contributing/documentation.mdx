@@ -106,7 +106,7 @@ Keep prose tight and focused. Readers scan documentation looking for answers.
 Code examples show developers exactly what to do, so always test them before submitting.
 
 - Test all code: every example must actually work
-- Include both languages: provide Python and TypeScript when both are supported
+- Include every language: provide Python, TypeScript and Rust tabs where the SDKs support the feature (see `.agents/references/mdx-authoring.md`, "Language coverage")
 - Start simple: show the minimal example first, then add complexity
 - Add comments: explain non-obvious parts
 - Use realistic names: avoid foo/bar, use descriptive names
@@ -133,6 +133,12 @@ agent("What's the weather like?")
 
 ```typescript
 --8<-- "contribute/contributing/documentation.ts:basic_agent"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "contribute/contributing/documentation.rs:basic_agent"
 ```
 </Tab>
 </Tabs>

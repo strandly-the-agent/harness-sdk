@@ -5,6 +5,7 @@ import IntegrationsBackLink from '../IntegrationsBackLink.astro';
 import LanguageSupportAside from '../LanguageSupportAside.astro';
 import ExperimentalAside from '../ExperimentalAside.astro';
 import PageTags from '../PageTags.astro';
+import { ALL_SDK_LANGUAGES } from '../../config/languages';
 
 const { starlightRoute } = Astro.locals;
 const { languages, community, experimental } = starlightRoute.entry.data;
@@ -15,7 +16,6 @@ const isIntegrationsPage =
   starlightRoute.id !== 'docs/integrations/get-featured' &&
   (starlightRoute.id === 'docs/integrations' || starlightRoute.id.startsWith('docs/integrations/'));
 
-const ALL_SDK_LANGUAGES = ['python', 'typescript']
 const langArray = languages
   ? (Array.isArray(languages) ? languages : [languages]).map((l: string) => l.toLowerCase())
   : []

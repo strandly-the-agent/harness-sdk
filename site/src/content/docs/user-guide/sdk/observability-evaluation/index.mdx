@@ -72,6 +72,18 @@ agent("What is agent observability?")
 ```
 
 </Tab>
+<Tab label="Rust">
+
+Enable the `telemetry` feature. Rust has no console-exporter helper: install an
+OpenTelemetry stdout exporter and register it with
+`opentelemetry::global::set_tracer_provider` in your application, and the agent's
+spans follow it.
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/index.rs:observe_agent"
+```
+
+</Tab>
 </Tabs>
 
 Swap the console exporter for an OTLP exporter to send the same spans to Jaeger,

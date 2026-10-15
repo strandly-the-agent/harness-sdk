@@ -48,6 +48,29 @@ Each event emitted from the TypeScript agent is a class with a `type` attribute 
 - **`AgentResultEvent`**: Final agent result
     - **`result`**: The `AgentResult` with `stopReason`, `lastMessage`, and optional `structuredOutput`
 </Tab>
+<Tab label="Rust">
+
+`Agent::stream` yields `Result<AgentStreamEvent>`, where `AgentStreamEvent` is a non-exhaustive enum: match on the variant you care about and ignore the rest with `_ => {}`. Each variant wraps the same struct the matching hook callback receives, so an event is both streamable and subscribable.
+
+- **`BeforeInvocation(BeforeInvocationEvent)`**: Start of agent loop (before any iterations)
+    - **`cancel`**: Set by hook callbacks to cancel the invocation (`Option<CancelDecision>`)
+- **`AfterInvocation(AfterInvocationEvent)`**: End of agent loop (after all iterations complete)
+    - **`error`**: Optional error if the loop terminated with a failure
+- **`BeforeModelCall(BeforeModelCallEvent)`**: Before model invocation
+    - **`messages`**: Messages being sent to the model
+- **`AfterModelCall(AfterModelCallEvent)`**: After model invocation
+    - **`message`**: Assistant message returned by the model
+    - **`stop_reason`**: Why generation stopped
+- **`BeforeTools(BeforeToolsEvent)`**: Before tools execution
+    - **`message`**: Assistant message containing tool use blocks
+- **`AfterTools(AfterToolsEvent)`**: After tools execution
+    - **`message`**: User message containing tool results
+- **`MessageAdded(MessageAddedEvent)`**: A message was appended to the conversation
+- **`AgentResult(AgentResultEvent)`**: Final agent result, always the last event
+    - **`result`**: The `AgentResult` with `stop_reason`, `last_message`, and optional `structured_output`
+
+`event.result()` returns `Option<&AgentResult>`, which is shorter than matching the last variant by hand.
+</Tab>
 </Tabs>
 
 ### Model Stream Events
@@ -74,6 +97,21 @@ Each event emitted from the TypeScript agent is a class with a `type` attribute 
 - **`ContentBlockEvent`**: Wraps a fully assembled content block (TextBlock, ToolUseBlock, ReasoningBlock). Access via `.contentBlock`
 - **`ModelMessageEvent`**: Wraps the complete model message after all blocks are assembled. Access via `.message`
 </Tab>
+<Tab label="Rust">
+
+- **`ModelStreamUpdate(ModelStreamUpdateEvent)`**: Wraps transient model streaming deltas. Access the inner `ModelStreamEvent` via `.event`:
+    - **`MessageStart { role }`**: Start of a message from the model
+    - **`ContentBlockStart { start }`**: Start of a content block (text, tool use, reasoning, etc.)
+    - **`ContentBlockDelta { delta }`**: Content deltas for text, tool input, or reasoning
+    - **`ContentBlockStop {}`**: End of a content block
+    - **`MessageStop { stop_reason, .. }`**: End of a message
+    - **`Metadata { usage, metrics, .. }`**: Usage and metrics metadata
+    - **`Redaction { .. }`**: Guardrail redaction of streamed content
+- **`ContentBlock(ContentBlockEvent)`**: Wraps a fully assembled content block. Access via `.content_block`
+- **`ModelMessage(ModelMessageEvent)`**: Wraps the complete model message after all blocks are assembled. Access via `.message`
+
+For the common case of printing text as it arrives, `event.text_delta()` returns `Option<&str>` instead of matching the delta variants yourself.
+</Tab>
 </Tabs>
 
 ### Tool Events
@@ -97,6 +135,17 @@ Each event emitted from the TypeScript agent is a class with a `type` attribute 
 - **`ToolStreamUpdateEvent`**: Wraps streaming progress events from a tool. Access via `.event`:
     - **`data`**: The data streamed from the tool
 - **`ToolResultEvent`**: Wraps a completed tool result. Access via `.result`
+</Tab>
+<Tab label="Rust">
+
+- **`BeforeToolCall(BeforeToolCallEvent)`**: Before a tool is executed
+    - **`tool_use`**: The tool use block with `name` and `input`
+- **`AfterToolCall(AfterToolCallEvent)`**: After a tool finishes execution
+    - **`tool_use`**: The tool use block
+    - **`result`**: The tool result block
+- **`ToolStreamUpdate(ToolStreamUpdateEvent)`**: Wraps streaming progress events from a tool. Access via `.event`:
+    - **`data`**: The data streamed from the tool (`Option<JsonValue>`)
+- **`ToolResult(ToolResultEvent)`**: Wraps a completed tool result. Access via `.result`
 </Tab>
 </Tabs>
 
@@ -175,6 +224,28 @@ Multi-agent systems ([Graph](../multi-agent/graph.md) and [Swarm](../multi-agent
 
 See [Graph streaming](../multi-agent/graph.md#streaming-events) and [Swarm streaming](../multi-agent/swarm.md#streaming-events) for usage examples.
 </Tab>
+<Tab label="Rust">
+
+Multi-agent orchestrators stream `MultiAgentStreamEvent`, a separate non-exhaustive enum from `AgentStreamEvent`, and each variant wraps the hook event of the same name.
+
+- **`BeforeMultiAgentInvocation(BeforeMultiAgentInvocationEvent)`**: Before orchestrator execution starts
+- **`BeforeNodeCall(BeforeNodeCallEvent)`**: Before a node executes
+    - **`node_id`**: Unique identifier for the node
+    - **`cancel`**: Set by hook callbacks to cancel node execution
+- **`NodeStreamUpdate(NodeStreamUpdateEvent)`**: Forwarded events from agents or nested orchestrators with node context
+    - **`node_id`**: Identifier of the node generating the event
+    - **`event`**: The inner `AgentStreamEvent` or `MultiAgentStreamEvent`
+- **`NodeCancel(NodeCancelEvent)`**: When a node is cancelled by a hook
+- **`AfterNodeCall(AfterNodeCallEvent)`**: After a node completes execution
+- **`NodeResult(NodeResultEvent)`**: When a node finishes execution
+    - **`result`**: The `NodeResult` for that node
+- **`MultiAgentHandoff(MultiAgentHandoffEvent)`**: When execution transitions between nodes
+- **`AfterMultiAgentInvocation(AfterMultiAgentInvocationEvent)`**: After orchestrator execution completes
+- **`MultiAgentResult(MultiAgentResultEvent)`**: Final event in the multi-agent stream
+    - **`result`**: The aggregate `MultiAgentResult`
+
+`event.node_id()` returns the node an event concerns, and `event.result()` the aggregate result on the final event. See [Graph streaming](../multi-agent/graph.md#streaming-events) and [Swarm streaming](../multi-agent/swarm.md#streaming-events).
+</Tab>
 </Tabs>
 
 ### Event Serialization
@@ -223,6 +294,14 @@ You can filter which events to forward to the client:
 
 ```typescript
 --8<-- "user-guide/sdk/streaming/overview.ts:event_serialization"
+```
+</Tab>
+<Tab label="Rust">
+
+Stream events hold live handles (the agent, the shared invocation state), so they are not serializable as a whole. Build the payload you want to send from the fields you need; `type_name()` gives the same discriminator string the TypeScript events use.
+
+```rust
+--8<-- "user-guide/sdk/streaming/events.rs:event_serialization"
 ```
 </Tab>
 </Tabs>

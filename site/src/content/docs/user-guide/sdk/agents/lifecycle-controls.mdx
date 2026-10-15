@@ -65,6 +65,15 @@ tokens. All three are optional, and each must be a positive integer.
   number.
 
   </Tab>
+  <Tab label="Rust">
+
+  ```rust
+  --8<-- "user-guide/sdk/agents/lifecycle-controls.rs:limits_basic"
+  ```
+
+  The same options work with `stream_with`. Each cap is a positive `u64`.
+
+  </Tab>
 </Tabs>
 
 Limits are checked at the top of each loop iteration, not mid-call. A single
@@ -81,20 +90,20 @@ state, so you can retry with a higher budget.
 
 Every result carries a stop reason that tells you whether the call finished, hit
 a budget, was cancelled, or was blocked. Branch on it to decide what happens
-next. Read it from <Syntax py="result.stop_reason" ts="result.stopReason" />.
+next. Read it from <Syntax py="result.stop_reason" ts="result.stopReason" rs="result.stop_reason" />.
 
 | Stop reason | What it means | What to do |
 |---|---|---|
-| <Syntax py="end_turn" ts="endTurn" /> | Normal completion. The model finished its response. | Return the result. |
-| <Syntax py="stop_sequence" ts="stopSequence" /> | The model hit a configured stop sequence. | Terminates normally, like `end_turn`. |
-| <Syntax py="tool_use" ts="toolUse" /> | The model requested a tool. The loop handles this internally. | Nothing; you see this only mid-loop. |
-| <Syntax py="limit_turns" ts="limitTurns" /> | The turn budget was exhausted. | Reinvoke with a higher budget, or return a partial answer. |
-| <Syntax py="limit_total_tokens" ts="limitTotalTokens" /> | The cumulative token budget was exhausted. | Same as above; history is reinvokable. |
-| <Syntax py="limit_output_tokens" ts="limitOutputTokens" /> | The output token budget was exhausted. | Same as above. |
-| `cancelled` | The agent was stopped via <Syntax py="agent.cancel()" ts="agent.cancel()" /> or a cancel signal. | Treat as a client-initiated stop. |
-| <Syntax py="max_tokens" ts="maxTokens" /> | A single model response exceeded the provider's per-call cap. Unrecoverable within the loop. | See [Handle a truncated model response](#handle-a-truncated-model-response). |
-| <Syntax py="content_filtered" ts="contentFiltered" /> | A safety mechanism blocked the response. | Handle per your application's policy. |
-| <Syntax py="guardrail_intervened" ts="guardrailIntervened" /> | A guardrail policy stopped generation. | Handle per your application's policy. |
+| <Syntax py="end_turn" ts="endTurn" rs="StopReason::EndTurn" /> | Normal completion. The model finished its response. | Return the result. |
+| <Syntax py="stop_sequence" ts="stopSequence" rs="StopReason::StopSequence" /> | The model hit a configured stop sequence. | Terminates normally, like `end_turn`. |
+| <Syntax py="tool_use" ts="toolUse" rs="StopReason::ToolUse" /> | The model requested a tool. The loop handles this internally. | Nothing; you see this only mid-loop. |
+| <Syntax py="limit_turns" ts="limitTurns" rs="StopReason::LimitTurns" /> | The turn budget was exhausted. | Reinvoke with a higher budget, or return a partial answer. |
+| <Syntax py="limit_total_tokens" ts="limitTotalTokens" rs="StopReason::LimitTotalTokens" /> | The cumulative token budget was exhausted. | Same as above; history is reinvokable. |
+| <Syntax py="limit_output_tokens" ts="limitOutputTokens" rs="StopReason::LimitOutputTokens" /> | The output token budget was exhausted. | Same as above. |
+| `cancelled` | The agent was stopped via <Syntax py="agent.cancel()" ts="agent.cancel()" rs="agent.cancel()" /> or a cancel signal. | Treat as a client-initiated stop. |
+| <Syntax py="max_tokens" ts="maxTokens" rs="StopReason::MaxTokens" /> | A single model response exceeded the provider's per-call cap. Unrecoverable within the loop. | See [Handle a truncated model response](#handle-a-truncated-model-response). |
+| <Syntax py="content_filtered" ts="contentFiltered" rs="StopReason::ContentFiltered" /> | A safety mechanism blocked the response. | Handle per your application's policy. |
+| <Syntax py="guardrail_intervened" ts="guardrailIntervened" rs="StopReason::GuardrailIntervened" /> | A guardrail policy stopped generation. | Handle per your application's policy. |
 | `interrupt` | The agent paused for human input. | Resume with interrupt responses. See [Interrupts](../interrupts.md). |
 
 The three limit reasons signal graceful budget exhaustion, not failure. Content
@@ -107,7 +116,7 @@ To stop a call from outside the loop, on a client disconnect, a timeout, or a
 "Stop" button, cancel it. The agent checks for cancellation at fixed checkpoints
 and returns a result with a `cancelled` stop reason. The cancel signal clears
 when the invocation completes, so the agent is immediately reusable.
-<Syntax py="agent.cancel()" ts="agent.cancel()" /> is idempotent; calling it more
+<Syntax py="agent.cancel()" ts="agent.cancel()" rs="agent.cancel()" /> is idempotent; calling it more
 than once is safe.
 
 <Tabs>
@@ -177,6 +186,22 @@ than once is safe.
   ```
 
   </Tab>
+  <Tab label="Rust">
+
+  ```rust
+  --8<-- "user-guide/sdk/agents/lifecycle-controls.rs:cancel_timeout"
+  ```
+
+  For a declarative deadline, pass a `tokio_util::sync::CancellationToken` as
+  the `cancel` option to `invoke_with` or `stream_with`. The loop's own token is
+  a child of it, so `agent.cancel()` and the external token each trigger
+  cancellation independently.
+
+  ```rust
+  --8<-- "user-guide/sdk/agents/lifecycle-controls.rs:cancel_external"
+  ```
+
+  </Tab>
 </Tabs>
 
 The agent checks for cancellation before and between tool calls, so a running
@@ -212,6 +237,13 @@ poll the cancel signal between steps, or forward it to any API that accepts one.
   ```
 
   </Tab>
+  <Tab label="Rust">
+
+  ```rust
+  --8<-- "user-guide/sdk/agents/lifecycle-controls.rs:cancel_in_tool"
+  ```
+
+  </Tab>
 </Tabs>
 
 For the full checkpoint tables and provider-level abort behavior, see
@@ -240,7 +272,7 @@ you more control:
 When a single model response exceeds the provider's per-call output cap, the
 loop cannot continue from a partial message. This is distinct from the graceful
 `limit_*` stop reasons: the loop raises
-<Syntax py="MaxTokensReachedException" ts="MaxTokensError" /> rather than
+<Syntax py="MaxTokensReachedException" ts="MaxTokensError" rs="Error::MaxTokens" /> rather than
 returning a result. Reduce the context size, raise the provider's token limit,
 or split the task into smaller steps.
 
@@ -254,7 +286,7 @@ default the agent processes one invocation at a time and rejects overlap.
   <Tab label="Python">
 
   Invoking an agent that is already running raises `ConcurrencyException`. The
-  <Syntax py="concurrent_invocation_mode" /> constructor parameter controls this:
+  `concurrent_invocation_mode` constructor parameter controls this:
   it takes a `ConcurrentInvocationMode` of either `THROW` (the default) or
   `UNSAFE_REENTRANT`.
 
@@ -273,7 +305,7 @@ default the agent processes one invocation at a time and rejects overlap.
 
   When a retry arrives for a request that is still in flight, deduplicate it
   rather than erroring or doing the work twice. Pass
-  <Syntax py="idempotency_token" /> to any invocation method to identify the
+  `idempotency_token` to any invocation method to identify the
   logical request. A second call with the same token waits for the original and
   returns the same `AgentResult`; a call with a different token still raises
   `ConcurrencyException`.
@@ -293,6 +325,20 @@ default the agent processes one invocation at a time and rejects overlap.
   This SDK does not offer a configurable concurrency mode or idempotency-token
   deduplication of retries; both are available only in the Python SDK. To run
   independent work in parallel, use a separate agent per task.
+
+  </Tab>
+  <Tab label="Rust">
+
+  Invoking an agent that is already running fails with
+  `Error::ConcurrentInvocation`. `Agent` is a clonable handle, so every clone
+  shares the same guard. Like TypeScript, this SDK offers neither a configurable
+  concurrency mode nor idempotency-token deduplication of retries; both are
+  available only in the Python SDK. To run independent work in parallel, use a
+  separate agent per task.
+
+  ```rust
+  --8<-- "user-guide/sdk/agents/lifecycle-controls.rs:concurrent_invocation"
+  ```
 
   </Tab>
 </Tabs>
@@ -364,6 +410,13 @@ can branch on.
   --8<-- "user-guide/sdk/agents/lifecycle-controls_imports.ts:worked_example_imports"
 
   --8<-- "user-guide/sdk/agents/lifecycle-controls.ts:worked_example"
+  ```
+
+  </Tab>
+  <Tab label="Rust">
+
+  ```rust
+  --8<-- "user-guide/sdk/agents/lifecycle-controls.rs:worked_example"
   ```
 
   </Tab>

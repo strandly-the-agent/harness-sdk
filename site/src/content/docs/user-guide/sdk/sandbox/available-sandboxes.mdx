@@ -5,7 +5,7 @@ tags: [sandbox, tool-execution]
 addedDate: 2026-06-17
 ---
 
-Strands provides two built-in Sandbox backends: `DockerSandbox` for containers on the local host, and `SshSandbox` for remote machines. Both automatically register `sandbox_shell` and `sandbox_file_editor` tools on the agent. This page covers their configuration, plus how to drive a sandbox directly from your own code.
+Strands provides two built-in Sandbox backends: `DockerSandbox` for containers on the local host, and `SshSandbox` for remote machines. Both automatically register `sandbox_shell` and `sandbox_file_editor` tools on the agent (in Rust, the `shell` tool only). This page covers their configuration, plus how to drive a sandbox directly from your own code.
 
 ## DockerSandbox
 
@@ -28,15 +28,22 @@ Executes operations inside a Docker container on the host via `docker exec`. The
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/sandbox/available-sandboxes.rs:docker_constructor"
+```
+
+</Tab>
 </Tabs>
 
 ### Options
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| <Syntax py="container" ts="container" /> | <Syntax py="str" ts="string" /> | (required) | ID or name of a running container |
-| <Syntax py="working_dir" ts="workingDir" /> | <Syntax py="str \| None" ts="string" /> | <Syntax py="None" ts="container default" /> | Working directory for executed commands. If omitted, runs in the container's configured working directory. |
-| <Syntax py="user" ts="user" /> | <Syntax py="str \| None" ts="string" /> | <Syntax py="None" ts="container default" /> | User to run commands as (`"uid"`, `"uid:gid"`, or name). If omitted, runs as the container's configured user. |
+| <Syntax py="container" ts="container" rs="container" /> | <Syntax py="str" ts="string" rs="impl Into<String>" /> | (required) | ID or name of a running container |
+| <Syntax py="working_dir" ts="workingDir" rs="with_working_dir" /> | <Syntax py="str \| None" ts="string" rs="impl Into<String>" /> | <Syntax py="None" ts="container default" rs="container default" /> | Working directory for executed commands. If omitted, runs in the container's configured working directory. |
+| <Syntax py="user" ts="user" rs="with_user" /> | <Syntax py="str \| None" ts="string" rs="impl Into<String>" /> | <Syntax py="None" ts="container default" rs="container default" /> | User to run commands as (`"uid"`, `"uid:gid"`, or name). If omitted, runs as the container's configured user. |
 
 ## SshSandbox
 
@@ -59,19 +66,26 @@ Executes operations on a remote host via SSH. Each command spawns a fresh `ssh` 
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/sandbox/available-sandboxes.rs:ssh_constructor"
+```
+
+</Tab>
 </Tabs>
 
 ### Options
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| <Syntax py="host" ts="host" /> | <Syntax py="str" ts="string" /> | (required) | SSH destination (e.g., `"user@host"`, `"192.168.1.10"`) |
-| <Syntax py="working_dir" ts="workingDir" /> | <Syntax py="str" ts="string" /> | (required) | Working directory on the remote host |
-| <Syntax py="identity_file" ts="identityFile" /> | <Syntax py="str \| None" ts="string" /> | <Syntax py="None" ts="undefined" /> | Path to SSH private key file |
-| <Syntax py="port" ts="port" /> | <Syntax py="int" ts="number" /> | `22` | SSH port |
-| <Syntax py="allow_unknown_hosts" ts="allowUnknownHosts" /> | <Syntax py="bool" ts="boolean" /> | <Syntax py="False" ts="false" /> | When false, uses `StrictHostKeyChecking=accept-new`. When true, disables host key verification. |
-| <Syntax py="ssh_options" ts="sshOptions" /> | <Syntax py="list[str] \| None" ts="string[]" /> | <Syntax py="None" ts="[]" /> | Additional SSH options passed as `-o` flags |
-| <Syntax py="allow_unsafe_ssh_options" ts="allowUnsafeSshOptions" /> | <Syntax py="bool" ts="boolean" /> | <Syntax py="False" ts="false" /> | Bypass the SSH option allowlist. When false, unknown options throw at construction time. |
+| <Syntax py="host" ts="host" rs="host" /> | <Syntax py="str" ts="string" rs="impl Into<String>" /> | (required) | SSH destination (e.g., `"user@host"`, `"192.168.1.10"`) |
+| <Syntax py="working_dir" ts="workingDir" rs="working_dir" /> | <Syntax py="str" ts="string" rs="impl Into<String>" /> | (required) | Working directory on the remote host |
+| <Syntax py="identity_file" ts="identityFile" rs="with_identity_file" /> | <Syntax py="str \| None" ts="string" rs="impl Into<PathBuf>" /> | <Syntax py="None" ts="undefined" rs="client default keys" /> | Path to SSH private key file |
+| <Syntax py="port" ts="port" rs="with_port" /> | <Syntax py="int" ts="number" rs="u16" /> | `22` | SSH port |
+| <Syntax py="allow_unknown_hosts" ts="allowUnknownHosts" rs="with_allow_unknown_hosts" /> | <Syntax py="bool" ts="boolean" rs="bool" /> | <Syntax py="False" ts="false" rs="false" /> | When false, uses `StrictHostKeyChecking=accept-new`. When true, disables host key verification. |
+| <Syntax py="ssh_options" ts="sshOptions" rs="with_ssh_options" /> | <Syntax py="list[str] \| None" ts="string[]" rs="impl IntoIterator<Item = impl Into<String>>" /> | <Syntax py="None" ts="[]" rs="empty" /> | Additional SSH options passed as `-o` flags |
+| <Syntax py="allow_unsafe_ssh_options" ts="allowUnsafeSshOptions" rs="with_allow_unsafe_ssh_options" /> | <Syntax py="bool" ts="boolean" rs="bool" /> | <Syntax py="False" ts="false" rs="false" /> | Bypass the SSH option allowlist. When false, unknown options throw at construction time. |
 
 ### SSH Option Allowlist
 
@@ -81,7 +95,9 @@ By default, `SshSandbox` only permits known-safe SSH options (connection tuning,
 Setting `allowUnsafeSshOptions: true` bypasses this allowlist and lets any SSH option through, including directives that run commands on the local host. Only enable it with options you control, never with model-generated or untrusted input.
 :::
 
-Neither backend sets environment variables at construction time. Pass them per-command via the `env` option on <Syntax py="execute()" ts="execute()" /> / <Syntax py="execute_code()" ts="executeCode()" />.
+In Rust the builder cannot fail, so a disallowed option is reported when a command runs rather than at construction time.
+
+Neither backend sets environment variables at construction time. Pass them per-command via the `env` option on <Syntax py="execute()" ts="execute()" rs="execute()" /> / <Syntax py="execute_code()" ts="executeCode()" rs="execute_code()" />.
 
 ## Working with a sandbox directly
 
@@ -89,10 +105,10 @@ You can drive a sandbox directly from your own code. This is useful for setup an
 
 | Method | Description |
 | --- | --- |
-| <Syntax py="execute" ts="execute" /> | Run a shell command, return the result |
-| <Syntax py="execute_code" ts="executeCode" /> | Run code via an interpreter, return the result |
-| <Syntax py="read_text" ts="readText" /> | Read a file as a UTF-8 string |
-| <Syntax py="write_text" ts="writeText" /> | Write a string as UTF-8 |
+| <Syntax py="execute" ts="execute" rs="execute" /> | Run a shell command, return the result |
+| <Syntax py="execute_code" ts="executeCode" rs="execute_code" /> | Run code via an interpreter, return the result |
+| <Syntax py="read_text" ts="readText" rs="read_text" /> | Read a file as a UTF-8 string |
+| <Syntax py="write_text" ts="writeText" rs="write_text" /> | Write a string as UTF-8 |
 
 <Tabs>
 <Tab label="TypeScript">
@@ -108,6 +124,13 @@ You can drive a sandbox directly from your own code. This is useful for setup an
 
 ```python
 --8<-- "user-guide/sdk/sandbox/index.py:programmatic_access"
+```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/sandbox/available-sandboxes.rs:programmatic_access"
 ```
 
 </Tab>
@@ -131,6 +154,13 @@ You can drive a sandbox directly from your own code. This is useful for setup an
 
 ```python
 --8<-- "user-guide/sdk/sandbox/index.py:streaming"
+```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/sandbox/available-sandboxes.rs:streaming"
 ```
 
 </Tab>

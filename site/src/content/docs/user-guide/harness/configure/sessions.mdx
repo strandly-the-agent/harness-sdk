@@ -43,6 +43,11 @@ start clean.
         await resumed.invoke('Where did we leave off?')
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/sessions.rs:harness_session_id"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -81,6 +86,11 @@ start clean.
         await resumed.invoke('Where did we leave off?')
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/sessions.rs:sdk_session_id"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
 </Tabs>
@@ -113,6 +123,11 @@ it elsewhere:
         })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/sessions.rs:harness_session_dir"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -139,6 +154,11 @@ it elsewhere:
         const agent = new Agent({ sessionManager: session })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/sessions.rs:sdk_session_dir"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
 </Tabs>
@@ -155,13 +175,13 @@ distills durable facts that the agent recalls across every conversation, with or
 session. Use a session to continue a specific task; rely on memory to carry knowledge
 between unrelated runs.
 
-## How the two SDKs store sessions
+## How the SDKs store sessions
 
-Both SDKs write session snapshots to local files, but through different classes. The
+Every SDK writes session snapshots to local files, but through different classes. The
 Python SDK uses a `SnapshotSessionManager` backed by `LocalFileStorage`. The TypeScript
-SDK composes the shared `Storage` abstraction, using a `SessionManager` whose snapshot
-storage is a file storage under the session directory. Either way the on-disk result is a local
-session store rooted at the session directory.
+and Rust SDKs compose the shared `Storage` abstraction, using a `SessionManager` whose
+snapshot storage is a file storage under the session directory. Either way the on-disk
+result is a local session store rooted at the session directory.
 
 To supply your own session manager (for example an S3-backed one), pass it through to the
 `Agent`; your explicit manager wins over the one Strands harness would build from `session`. Pass

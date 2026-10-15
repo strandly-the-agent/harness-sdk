@@ -163,6 +163,14 @@ export AWS_REGION="us-west-2"
 
 For complete details on credential configuration, see the [AWS SDK for JavaScript documentation](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html).
 </Tab>
+<Tab label="Rust">
+
+Strands uses the [AWS SDK for Rust](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/welcome.html), which resolves credentials from its default provider chain: environment variables, a shared profile, SSO, or the instance role. `aws configure` and the `AWS_*` environment variables above both work unchanged. `BedrockModel::builder()` takes the region, the per-request timeout, and a Bedrock API key (`.api_key(...)`, passed as a bearer token, in addition to the `AWS_BEARER_TOKEN_BEDROCK` environment variable the AWS default chain honours). For anything else — static credentials, a custom retry policy, an endpoint override — construct an `aws_sdk_bedrockruntime::Client` yourself and pass it to `BedrockModel::from_client`.
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:custom_credentials"
+```
+</Tab>
 </Tabs>
 
 ## Basic Usage
@@ -209,6 +217,20 @@ You can specify which Bedrock model to use by passing in the model ID string dir
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:basic_model_id"
 ```
 </Tab>
+<Tab label="Rust">
+
+Rust has no implicit default model, so pass `BedrockModel::default_model()` to get the same default as Python and TypeScript:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:basic_default"
+```
+
+`BedrockModel::with_model_id` selects a model by its Bedrock model ID:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:basic_model_id"
+```
+</Tab>
 </Tabs>
 
 > **Note:** See [Bedrock troubleshooting](amazon-bedrock.md#troubleshooting) if you encounter any issues.
@@ -244,6 +266,12 @@ For more control over model configuration, you can create an instance of the [`B
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:basic_model_instance"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:basic_model_instance"
 ```
 </Tab>
 </Tabs>
@@ -286,6 +314,23 @@ Common configuration parameters include:
 - `clientConfig` - AWS SDK client configuration
 - `additionalArgs` - Additional model-specific parameters
 </Tab>
+<Tab label="Rust">
+
+[`BedrockModelConfig`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/crates/strands-agents/src/models/bedrock/mod.rs) carries the model options; every field is an `Option`, so `..Default::default()` leaves the rest alone.
+
+Common configuration parameters include:
+
+- `model_id` - The Bedrock model identifier
+- `temperature` - Controls randomness (higher = more random)
+- `max_tokens` - Maximum number of tokens to generate
+- `stream` - Enable/disable streaming mode
+- `cache_config` - Enable prompt caching with `CacheConfig { strategy: Some(CacheStrategy::Auto), .. }`
+- `guardrail_config` - `BedrockGuardrailConfig` for the guardrail to apply
+- `strict_tools` - Enforce structured output on tool definitions
+- `additional_request_fields` - Additional model-specific parameters
+
+The region, a Bedrock API key, and the per-request timeout are set on the builder instead: `BedrockModel::builder().region(...).api_key(...).request_timeout(...)`.
+</Tab>
 </Tabs>
 
 ### Example with Configuration
@@ -325,6 +370,12 @@ response = agent("Write a short story about an AI assistant.")
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:configuration"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:configuration"
 ```
 </Tab>
 </Tabs>
@@ -376,6 +427,12 @@ non_streaming_model = BedrockModel(
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:streaming"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:streaming"
+```
+</Tab>
 </Tabs>
 
 See the Amazon Bedrock documentation for [Supported models and model features](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference-supported-models-features.html) to learn about the streaming support for different models.
@@ -420,6 +477,12 @@ response = agent(
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:multimodal_full"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:multimodal_full"
 ```
 </Tab>
 </Tabs>
@@ -470,6 +533,12 @@ response = agent(
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:s3_location"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:s3_location"
 ```
 </Tab>
 </Tabs>
@@ -538,6 +607,16 @@ When `guardLatestUserMessage: true`, only the most recent user message is sent t
 :::
 
 </Tab>
+<Tab label="Rust">
+
+`BedrockGuardrailConfig` carries the same fields, with the trace level and the stream processing mode as enums:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:guardrails"
+```
+
+Redaction and `guard_latest_user_message` behave as described above: input redaction is on by default, output redaction is off, and both messages are overridable.
+</Tab>
 </Tabs>
 
 ### Caching
@@ -571,6 +650,12 @@ bedrock_model.update_config(
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:update_config"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:update_config"
 ```
 </Tab>
 </Tabs>
@@ -615,6 +700,18 @@ def update_temperature(temperature: float, agent: Agent) -> str:
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:tool_update_config"
 ```
 </Tab>
+<Tab label="Rust">
+
+The tool reaches the agent through `ToolContext`. `Agent::model()` returns an `Arc<dyn Model>`, so the tool builds a model with the new temperature and swaps it in with `Agent::set_model` rather than updating the running one in place:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:tool_update_config"
+```
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:tool_update_config_agent"
+```
+</Tab>
 </Tabs>
 
 ### Reasoning Support
@@ -654,6 +751,12 @@ Enable reasoning on your [`BedrockModel`](@api/typescript/BedrockModel):
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:reasoning"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:reasoning"
 ```
 </Tab>
 </Tabs>
@@ -713,6 +816,14 @@ Define a Zod schema and pass it as `structuredOutputSchema`. Validated output is
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:structured_output"
 ```
 </Tab>
+<Tab label="Rust">
+
+Define a type deriving `Deserialize` and `JsonSchema`, then call `agent.structured_output()`:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:structured_output"
+```
+</Tab>
 </Tabs>
 
 For schema patterns, error handling, and per-invocation overrides, see [Structured Output](../agents/structured-output/).
@@ -752,6 +863,18 @@ const model = new BedrockModel({
 })
 ```
 </Tab>
+<Tab label="Rust">
+
+The Bedrock provider can use the native `CountTokens` API. This includes system prompts, messages, and tool specifications in the count.
+
+Not all Bedrock models support the `CountTokens` API. When a model doesn't support it or the caller doesn't have the required IAM permissions, the provider caches this result and falls back to estimation with a character-based heuristic (characters ÷ 4 for text, characters ÷ 2 for JSON) for subsequent calls.
+
+You can enable native token counting with:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:native_token_count"
+```
+</Tab>
 </Tabs>
 
 ### OpenAI-Compatible Endpoints (Mantle)
@@ -774,7 +897,7 @@ In Python, that provider can also target `bedrock-runtime`; see
 
 #### Connecting with AWS Credentials
 
-Pass <Syntax py="bedrock_mantle_config" ts="bedrockMantleConfig" /> and the provider
+Pass <Syntax py="bedrock_mantle_config" ts="bedrockMantleConfig" rs="mantle" /> and the provider
 derives the endpoint from your region, routes the model to the correct Mantle base
 path, and mints short-lived bearer tokens from your AWS credentials (via the
 standard credential chain), refreshing them so long-running agents survive token
@@ -807,13 +930,22 @@ print(response)
 
 Requires the optional dependency: `npm install @aws/bedrock-token-generator`
 </Tab>
+<Tab label="Rust">
+
+Enable the `openai` feature. `BedrockMantleConfig` takes the region and an optional token lifetime (`expires_in_seconds`) and derives the Mantle base URL and model path. Minting tokens from AWS credentials is not implemented in Rust yet, so supply the bearer token yourself: set `AWS_BEARER_TOKEN_BEDROCK`, or pass `api_key` as in [Connecting with a Bedrock API Key](#connecting-with-a-bedrock-api-key).
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:mantle_config"
+```
+</Tab>
 </Tabs>
 
 Omit the region to resolve it from your AWS environment. The config also accepts AWS
 credentials to forward to the token generator
-(<Syntax py="credentials_provider" ts="credentials" />, a
-<Syntax py="botocore CredentialProvider" ts="static identity or provider function" plain />)
-and a token-lifetime override (<Syntax py="expiry" ts="expiresInSeconds" />). In
+(<Syntax py="credentials_provider" ts="credentials" rs="no equivalent" />, a
+<Syntax py="botocore CredentialProvider" ts="static identity or provider function"
+rs="the AWS credential chain only" plain />)
+and a token-lifetime override (<Syntax py="expiry" ts="expiresInSeconds" rs="expires_in_seconds" />). In
 Python, `boto_session` can also supply the region from a configured profile.
 
 #### Choosing the Endpoint
@@ -839,6 +971,18 @@ agent = Agent(model=model)
 response = agent("What is 2+2?")
 print(response)
 ```
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
+```
+</Tab>
+<Tab label="Rust">
+
+:::note[Python only]
+The Rust `BedrockMantleConfig` has no `endpoint` field, so it always targets `bedrock-mantle`. Use `BedrockModel` for models served on `bedrock-runtime`.
+:::
 </Tab>
 </Tabs>
 
@@ -880,6 +1024,12 @@ print(response)
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock_imports.ts:bedrock_mantle_imports"
 
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:bedrock_mantle"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:bedrock_mantle"
 ```
 </Tab>
 </Tabs>
@@ -929,6 +1079,12 @@ const agent = new Agent({
 })
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:invalid_model_id"
+```
+</Tab>
 </Tabs>
 
 
@@ -972,6 +1128,12 @@ const bedrockModel = new BedrockModel({
 })
 
 const agent = new Agent({ model: bedrockModel })
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:cache_config_arn"
 ```
 </Tab>
 </Tabs>

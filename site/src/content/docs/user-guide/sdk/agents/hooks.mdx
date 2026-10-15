@@ -35,7 +35,7 @@ You register a hook callback against an event type, and it receives a strongly-t
 
 ### Registering Individual Hook Callbacks
 
-The simplest way to register a hook callback is using the <Syntax py="agent.add_hook()" ts="agent.addHook()" /> method:
+The simplest way to register a hook callback is using the <Syntax py="agent.add_hook()" ts="agent.addHook()" rs="agent.hooks().add_sync_callback()" /> method:
 
 <Tabs>
 <Tab label="Python">
@@ -65,6 +65,12 @@ agent.add_hook(typed_callback)  # Event type inferred from type hint
 --8<-- "user-guide/sdk/agents/hooks.ts:individual_callback"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:individual_callback"
+```
+</Tab>
 </Tabs>
 
 For multi-agent orchestrators, you can register callbacks for orchestration events:
@@ -87,6 +93,15 @@ orchestrator.hooks.add_callback(BeforeNodeCallEvent, my_callback)
 
 ```typescript
 --8<-- "user-guide/sdk/agents/hooks.ts:orchestrator_callback"
+```
+</Tab>
+<Tab label="Rust">
+
+Rust has the orchestrator hook events (`BeforeNodeCallEvent`, `AfterNodeCallEvent`) and
+`MultiAgent::hooks()`, but no built-in Graph or Swarm orchestrator to register them on yet.
+
+```rust
+// This feature is not yet available in the Rust SDK
 ```
 </Tab>
 </Tabs>
@@ -121,6 +136,12 @@ agent = Agent(plugins=[LoggingPlugin()])
 
 ```typescript
 --8<-- "user-guide/sdk/plugins/index.ts:plugin_for_hooks"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:plugin_for_hooks"
 ```
 </Tab>
 </Tabs>
@@ -186,6 +207,12 @@ These are not enforced bounds: any numeric value works. Use values beyond them (
 Within the same order group, Before events preserve registration order and After events reverse it.
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:hook_ordering"
+```
+</Tab>
 </Tabs>
 
 ## Advanced Usage
@@ -249,6 +276,12 @@ result = agent(
 --8<-- "user-guide/sdk/agents/hooks.ts:invocation_state_in_hooks"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:invocation_state_in_hooks"
+```
+</Tab>
 </Tabs>
 
 Multi-agent hook events provide access to:
@@ -265,6 +298,13 @@ Multi-agent hook events provide access to:
 - **orchestrator**: The multi-agent orchestrator instance (for example: Graph/Swarm)
 - **nodeId**: Identifier of the node being executed (for node-level events)
 - **state**: The `MultiAgentState` for the current invocation, including an `app` field for custom consumer state
+</Tab>
+<Tab label="Rust">
+
+:::note[Python and TypeScript only]
+The Rust SDK defines the node-level events but does not ship the `Graph` and `Swarm`
+orchestrators yet.
+:::
 </Tab>
 </Tabs>
 
@@ -295,6 +335,12 @@ class ToolInterceptor(HookProvider):
 --8<-- "user-guide/sdk/agents/hooks.ts:tool_interception"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:tool_interception"
+```
+</Tab>
 </Tabs>
 
 ### Result Modification
@@ -322,6 +368,12 @@ class ResultProcessor(HookProvider):
 --8<-- "user-guide/sdk/agents/hooks_imports.ts:result_modification_imports"
 
 --8<-- "user-guide/sdk/agents/hooks.ts:result_modification"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:result_modification"
 ```
 </Tab>
 </Tabs>
@@ -356,6 +408,16 @@ class ConditionalExecutionHook(HookProvider):
 --8<-- "user-guide/sdk/agents/hooks.ts:conditional_node_execution"
 ```
 </Tab>
+<Tab label="Rust">
+
+Rust has the orchestrator hook events (`BeforeNodeCallEvent`, `AfterNodeCallEvent`) and
+`MultiAgent::hooks()`, but no built-in Graph or Swarm orchestrator to register them on yet.
+When one exists, setting `BeforeNodeCallEvent.cancel` skips the node.
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+</Tab>
 </Tabs>
 
 ## Best Practices
@@ -381,6 +443,12 @@ class RequestLoggingHook(HookProvider):
 
 ```typescript
 --8<-- "user-guide/sdk/agents/hooks.ts:composability"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:composability"
 ```
 </Tab>
 </Tabs>
@@ -410,6 +478,12 @@ class ResultProcessor(HookProvider):
 --8<-- "user-guide/sdk/agents/hooks_imports.ts:logging_modifications_imports"
 
 --8<-- "user-guide/sdk/agents/hooks.ts:logging_modifications"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:logging_modifications"
 ```
 </Tab>
 </Tabs>
@@ -449,6 +523,15 @@ class UniversalMultiAgentHook(HookProvider):
 
 ```typescript
 --8<-- "user-guide/sdk/agents/hooks.ts:orchestrator_agnostic_design"
+```
+</Tab>
+<Tab label="Rust">
+
+Rust has the orchestrator hook events (`BeforeNodeCallEvent`, `AfterNodeCallEvent`) and
+`MultiAgent::hooks()`, but no built-in Graph or Swarm orchestrator to register them on yet.
+
+```rust
+// This feature is not yet available in the Rust SDK
 ```
 </Tab>
 </Tabs>
@@ -492,6 +575,15 @@ orchestrator = Graph(
 
 ```typescript
 --8<-- "user-guide/sdk/agents/hooks.ts:layered_hooks"
+```
+</Tab>
+<Tab label="Rust">
+
+Rust has the orchestrator hook events (`BeforeNodeCallEvent`, `AfterNodeCallEvent`) and
+`MultiAgent::hooks()`, but no built-in Graph or Swarm orchestrator to register them on yet.
+
+```rust
+// This feature is not yet available in the Rust SDK
 ```
 </Tab>
 </Tabs>
@@ -543,6 +635,12 @@ class ConstantToolArguments(HookProvider):
 --8<-- "user-guide/sdk/agents/hooks.ts:fixed_tool_arguments_class"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:fixed_tool_arguments_class"
+```
+</Tab>
 </Tabs>
 
 For example, to always force the `calculator` tool to use precision of 1 digit:
@@ -565,6 +663,12 @@ result = agent("What is 2 / 3?")
 
 ```typescript
 --8<-- "user-guide/sdk/agents/hooks.ts:fixed_tool_arguments_usage"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:fixed_tool_arguments_usage"
 ```
 </Tab>
 </Tabs>
@@ -625,6 +729,12 @@ class LimitToolCounts(HookProvider):
 --8<-- "user-guide/sdk/agents/hooks.ts:limit_tool_counts_class"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:limit_tool_counts_class"
+```
+</Tab>
 </Tabs>
 
 For example, to limit the `sleep` tool to 3 invocations per invocation:
@@ -647,6 +757,12 @@ agent("Sleep once")
 
 ```typescript
 --8<-- "user-guide/sdk/agents/hooks.ts:limit_tool_counts_usage"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:limit_tool_counts_usage"
 ```
 </Tab>
 </Tabs>
@@ -699,6 +815,12 @@ class RetryOnServiceUnavailable(HookProvider):
 --8<-- "user-guide/sdk/agents/hooks.ts:model_call_retry_class"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:model_call_retry_class"
+```
+</Tab>
 </Tabs>
 
 For example, to retry up to 3 times on service unavailable errors:
@@ -719,6 +841,12 @@ result = agent("What is the capital of France?")
 
 ```typescript
 --8<-- "user-guide/sdk/agents/hooks.ts:model_call_retry_usage"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:model_call_retry_usage"
 ```
 </Tab>
 </Tabs>
@@ -762,6 +890,13 @@ agent = Agent(
 
 ```ts
 // This feature is not yet available in TypeScript SDK
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:propagate_unexpected_errors_class"
+--8<-- "user-guide/sdk/agents/hooks.rs:propagate_unexpected_errors_usage"
 ```
 </Tab>
 </Tabs>
@@ -815,6 +950,12 @@ class RetryOnToolError(HookProvider):
 --8<-- "user-guide/sdk/agents/hooks.ts:tool_call_retry_class"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:tool_call_retry_class"
+```
+</Tab>
 </Tabs>
 
 For example, to retry failed tool calls once:
@@ -847,6 +988,12 @@ result = agent("Look up the weather")
 
 ```typescript
 --8<-- "user-guide/sdk/agents/hooks.ts:tool_call_retry_usage"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:tool_call_retry_usage"
 ```
 </Tab>
 </Tabs>
@@ -895,6 +1042,12 @@ result = agent("Look up the weather in Seattle")
 --8<-- "user-guide/sdk/agents/hooks.ts:summarize_after_tools"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:summarize_after_tools"
+```
+</Tab>
 </Tabs>
 
 You can also use `resume` to chain multiple re-invocations. Make sure to include a termination condition to avoid infinite loops:
@@ -928,6 +1081,12 @@ result = agent("Draft a haiku about programming")
 --8<-- "user-guide/sdk/agents/hooks_imports.ts:iterative_refinement_imports"
 
 --8<-- "user-guide/sdk/agents/hooks.ts:iterative_refinement"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:iterative_refinement"
 ```
 </Tab>
 </Tabs>
@@ -986,6 +1145,16 @@ result = agent("Send an email to alice@example.com saying hello")
 --8<-- "user-guide/sdk/agents/hooks.ts:auto_approve_interrupts"
 ```
 </Tab>
+<Tab label="Rust">
+
+Rust has the building blocks (`BeforeToolCallEvent::interrupt`, `AfterInvocationEvent.resume`,
+`agent.interrupts()`), but `AfterInvocationEvent` carries no `result`, so the collect-then-resume
+pattern shown here has no direct port yet.
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+</Tab>
 </Tabs>
 
 ## HookProvider Protocol
@@ -1027,6 +1196,12 @@ The TypeScript SDK does not export a `HookProvider` interface. Instead, use the 
 
 ```typescript
 --8<-- "user-guide/sdk/plugins/index.ts:plugin_for_hooks"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/hooks.rs:plugin_for_hooks"
 ```
 </Tab>
 </Tabs>

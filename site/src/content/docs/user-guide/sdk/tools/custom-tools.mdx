@@ -31,6 +31,14 @@ TypeScript supports two main approaches:
 
 * **Class-based tools extending FunctionTool**: Create tools within classes to maintain shared state and resources.
 </Tab>
+<Tab label="Rust">
+
+Rust supports two approaches:
+
+* **The `#[tool]` attribute macro**: Turn an `async fn` into a tool. The macro derives the tool specification from the function at compile time — its doc comment becomes the description, its parameters become the JSON input schema — and generates a `<FnName>Tool` struct with a `new()` constructor.
+
+* **`FunctionTool::builder()`**: Build a tool from a closure, with the input schema either derived from a `Deserialize + JsonSchema` struct (`typed_handler`) or supplied as JSON Schema (`handler`). Closures capture shared state, which is how Rust does the class-based pattern.
+</Tab>
 </Tabs>
 
 
@@ -78,6 +86,24 @@ Here's the same tool using a JSON Schema object instead:
 --8<-- "user-guide/sdk/tools/tools.ts:json_schema_tool"
 ```
 </Tab>
+<Tab label="Rust">
+
+Here's a simple example of a function based tool with the `#[tool]` macro:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:basic_tool"
+```
+
+The macro reads the function's doc comment to create the tool specification: the comment becomes the tool's description, a doc comment on a parameter becomes that property's description, and the parameter types become the JSON input schema. An `Option<T>` parameter is optional; everything else is required. Register the generated struct with `Agent::builder().tool(WeatherForecastTool::new())`.
+
+Here's the same tool built from a closure instead, with the schema derived from an input struct:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:builder_tool"
+```
+
+`typed_handler` validates the input against the derived schema and hands the closure a typed `WeatherInput`. `handler` skips both, taking the raw `JsonValue`; pair it with `input_schema` when you want to supply JSON Schema directly.
+</Tab>
 </Tabs>
 
 
@@ -110,6 +136,14 @@ The tool name and description are always provided explicitly in the `tool()` con
 
 ```typescript
 --8<-- "user-guide/sdk/tools/tools.ts:tool_override"
+```
+</Tab>
+<Tab label="Rust">
+
+Override the tool name and description by passing them to the macro:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:tool_override"
 ```
 </Tab>
 </Tabs>
@@ -157,6 +191,15 @@ def calculate_area(shape: str, radius: float = None, width: float = None, height
 
 `inputSchema` is always provided explicitly in the `tool()` configuration, as either a Zod schema or a JSON Schema object. See the [basic example](#basic-example) above for both approaches.
 </Tab>
+<Tab label="Rust">
+
+`#[tool]` always derives the schema from the function signature. To supply your own, build
+the tool with `FunctionTool::builder` and pass it to `input_schema`:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:json_schema_tool"
+```
+</Tab>
 </Tabs>
 
 
@@ -182,6 +225,12 @@ agent = Agent(
 const agent = new Agent({
     tools: [weatherTool]
 })
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:loading_tools"
 ```
 </Tab>
 </Tabs>
@@ -227,6 +276,16 @@ Your tool's return value is automatically converted into a `ToolResultBlock`. Re
 ```typescript
 --8<-- "user-guide/sdk/tools/tools.ts:tool_response_success"
 ```
+</Tab>
+<Tab label="Rust">
+
+Your tool's return value is automatically converted into a `ToolResultBlock`. Return anything that implements `Serialize`:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:tool_response_success"
+```
+
+A string becomes a text block and a struct becomes a `json` block. To return an explicit error status, make the function return `Result<T, E>`: an `Err` becomes an error result.
 </Tab>
 </Tabs>
 
@@ -275,6 +334,16 @@ asyncio.run(async_example())
 --8<-- "user-guide/sdk/tools/tools.ts:async_generator_callback"
 ```
 </Tab>
+<Tab label="Rust">
+
+Tools are async by definition in Rust — `Tool::invoke` is an `async fn` — so there is nothing to opt into:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:async_tool"
+```
+
+`#[tool]` also accepts a synchronous `fn`, which it calls inline. For progress updates during a long call, see [Tool Streaming](#tool-streaming).
+</Tab>
 </Tabs>
 
 ### ToolContext
@@ -316,6 +385,16 @@ The context is passed as an optional second parameter to the callback function:
 --8<-- "user-guide/sdk/tools/tools.ts:tool_context"
 ```
 </Tab>
+<Tab label="Rust">
+
+Add a parameter of type `ToolContext`. The macro passes the context through and leaves the parameter out of the input schema:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:tool_context"
+```
+
+A `FunctionTool` closure receives the same context as its second argument.
+</Tab>
 </Tabs>
 
 
@@ -343,6 +422,14 @@ agent("What is your name?")
 
 ```ts
 // Renaming the context parameter is not supported
+```
+</Tab>
+<Tab label="Rust">
+
+The context parameter is recognized by its type, so name it whatever reads best:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:tool_context_name"
 ```
 </Tab>
 </Tabs>
@@ -425,6 +512,35 @@ For durable state, read it back inside a tool with the typed `appState.get<T>()`
 --8<-- "user-guide/sdk/tools/tools.ts:tool_context_app_state"
 ```
 </Tab>
+<Tab label="Rust">
+
+Tools access **invocation state** through `ctx.invocation_state`. This per-invocation store is passed in via `InvokeOptions`, holds values of any type (`insert` / `get::<T>`), and is shared by reference across hooks and tools for the duration of one invocation:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:tool_context_invocation_state"
+```
+
+Invocation state is useful for:
+
+1. **Request Context**: Access session IDs, user information, or request-specific data without polluting model context
+2. **Cross-Hook Counters**: Track tool call counts, model calls, or custom metrics across hooks and tools within a single invocation
+
+**Invocation State Compared To Other Approaches**
+
+- **Tool Parameters**: Data the LLM should reason about, such as search queries, file paths, and user requests.
+
+- **Invocation State** (`ctx.invocation_state`): Request-scoped context that should not appear in prompts but affects tool behavior. Ephemeral: scoped to one invocation, and accepts arbitrary values.
+
+- **Agent State** (`ctx.agent.state()`): Durable JSON key-value storage that persists across invocations. Use for configuration that doesn't change between requests.
+
+- **[Class-based tools](#class-based-tools)**: Instance-level configuration that requires initialization. Use for API keys, database connections, or shared resources.
+
+For durable state, read it back inside a tool with `state.get_as::<T>(key)`, which deserializes the stored value instead of handing back a bare `JsonValue`:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:tool_context_app_state"
+```
+</Tab>
 </Tabs>
 
 
@@ -471,6 +587,14 @@ asyncio.run(tool_stream_example())
 
 ```typescript
 --8<-- "user-guide/sdk/tools/tools.ts:tool_streaming"
+```
+</Tab>
+<Tab label="Rust">
+
+A tool reports progress with `ctx.progress(value).await`. Each value surfaces as an `AgentStreamEvent::ToolStreamUpdate` [streaming event](../streaming/index.md), and the function's return value is still the tool's result:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:tool_streaming"
 ```
 </Tab>
 </Tabs>
@@ -534,6 +658,16 @@ When you use the [`@tool`](@api/python/strands.tools.decorator#tool) decorator o
 
 Create tools within a class and store them as properties. The tools access the class's private state through closures.
 </Tab>
+<Tab label="Rust">
+
+Rust has no classes; the equivalent is a struct that owns the shared resource and hands out `FunctionTool`s whose closures capture it:
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:class_multiple_tools"
+```
+
+Add one method per tool and register them all on the agent. For full control — several tools over one connection, or a tool with its own lifecycle — implement the `Tool` trait on your own struct instead.
+</Tab>
 </Tabs>
 
 ## Module Based Tools (python only)
@@ -547,6 +681,19 @@ A Python module tool requires two key components:
 
 1. A `TOOL_SPEC` variable that defines the tool's name, description, and input schema
 2. A function with the same name as specified in the tool spec that implements the tool's functionality
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
+```
+</Tab>
+<Tab label="Rust">
+
+:::note[Python only]
+Module based tools are a Python packaging convention. In Rust, define tools with the
+`#[tool]` macro, `FunctionTool`, or the `Tool` trait.
+:::
 </Tab>
 </Tabs>
 
@@ -607,6 +754,18 @@ def weather_forecast(tool, **kwargs: Any):
     }
 ```
 </Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// Module based tools are Python only
+```
+</Tab>
 </Tabs>
 
 
@@ -635,6 +794,18 @@ from strands import Agent
 agent = Agent(
     tools=["./weather_forecast.py"]
 )
+```
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// Module based tools are Python only
 ```
 </Tab>
 </Tabs>
@@ -669,6 +840,18 @@ async def call_api(tool, **kwargs):
         "status": "success",
         "content": [{"text": result}],
     }
+```
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+// This feature is not yet available in TypeScript SDK
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// Module based tools are Python only
 ```
 </Tab>
 </Tabs>
@@ -747,5 +930,15 @@ def search_database(query: str, max_results: int = 10) -> list:
 ```typescript
 --8<-- "user-guide/sdk/tools/tools.ts:search_database"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/custom-tools.rs:search_database"
+```
+
+`#[tool]` joins a doc comment into a single paragraph, so pass a multi-paragraph
+description to the macro as `description = "..."` (or to
+`FunctionTool::builder().description(..)`) when the structure matters.
 </Tab>
 </Tabs>

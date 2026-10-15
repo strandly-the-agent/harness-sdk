@@ -41,6 +41,11 @@ harness's contract handles the general "how to act like an agent" behavior, so k
         })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/tools-and-instructions.rs:harness_instructions"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -63,6 +68,11 @@ harness's contract handles the general "how to act like an agent" behavior, so k
         const agent = new Agent({
           systemPrompt: 'You are a support assistant. Always link the ticket.',
         })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/tools-and-instructions.rs:sdk_instructions"
         ```
       </Tab>
     </Tabs>
@@ -114,6 +124,11 @@ built-in ones. Define them the same way you would for any Strands agent:
     })
     ```
   </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/tools-and-instructions.rs:register_tools"
+    ```
+  </Tab>
 </Tabs>
 
 A tool name must be unique across every source (built-in tools, `tools`, and plugin-vended
@@ -125,7 +140,8 @@ built-in first.
 
 The built-in tools are `shell`, `read`, `write`, `edit`, `web_fetch`, `web_search`,
 `programmatic_tool_caller`, and `subagent`, all on by default. Pass `builtin_tools` a subset to narrow the
-set, or an empty list to turn them all off and bring your own:
+set, or an empty list to turn them all off and bring your own. The Rust harness has no
+`programmatic_tool_caller`; naming it warns once and skips that tool rather than failing:
 
 <Tabs>
   <Tab label="Strands harness">
@@ -142,6 +158,11 @@ set, or an empty list to turn them all off and bring your own:
         import { createHarness } from '@strands-agents/harness'
 
         const agent = await createHarness({ builtinTools: ['read', 'shell'] }) // [] for none
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/tools-and-instructions.rs:harness_builtin_tools"
         ```
       </Tab>
     </Tabs>
@@ -167,6 +188,11 @@ set, or an empty list to turn them all off and bring your own:
 
         // The Strands Harness SDK has no built-in toggle; pass exactly the tools you want
         const agent = new Agent({ tools: [fileEditor, bash] })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/tools-and-instructions.rs:sdk_builtin_tools"
         ```
       </Tab>
     </Tabs>

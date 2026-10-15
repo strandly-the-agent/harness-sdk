@@ -41,6 +41,14 @@ agent = Agent(memory_manager=MemoryManager(stores=[store]))
 --8<-- "user-guide/sdk/memory/bedrock-knowledge-base.ts:read_only"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/bedrock-knowledge-base.rs:read_only"
+```
+
+Enable the `bedrock-kb` feature for `BedrockKnowledgeBaseStore`.
+</Tab>
 </Tabs>
 
 To enable writing memories through the [`add_memory` tool](./managing-memory#memory-tools) or [automatic extraction](./managing-memory#automatic-extraction), mark the store writable and point it at a data source that accepts ingestion:
@@ -71,26 +79,33 @@ store = BedrockKnowledgeBaseStore(
 --8<-- "user-guide/sdk/memory/bedrock-knowledge-base.ts:writable_custom"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/bedrock-knowledge-base.rs:writable_custom"
+```
+
+</Tab>
 </Tabs>
 
 ## Configuration
 
 ### Scope and namespaces
 
-`scope` isolates documents within a single knowledge base. It is stamped on every write (under <Syntax py="scope_metadata_key" ts="scopeMetadataKey" />, default `'namespace'`) and applied as a metadata filter on search. Unlike `name`, scope is not a routing identity, so it never affects which store the `MemoryManager` targets. For per-tenant isolation, construct one store per scope; since they share a connection, this is cheap.
+`scope` isolates documents within a single knowledge base. It is stamped on every write (under <Syntax py="scope_metadata_key" ts="scopeMetadataKey" rs="scope_metadata_key" />, default `'namespace'`) and applied as a metadata filter on search. Unlike `name`, scope is not a routing identity, so it never affects which store the `MemoryManager` targets. For per-tenant isolation, construct one store per scope; since they share a connection, this is cheap.
 
 ### Store config
 
-The outer `BedrockKnowledgeBaseStoreConfig` carries the per-store identity and behavior, plus the [shared `MemoryStore` fields](./managing-memory#stores) (`name`, `description`, <Syntax py="max_search_results" ts="maxSearchResults" />, `writable`, `extraction`):
+The outer `BedrockKnowledgeBaseStoreConfig` carries the per-store identity and behavior, plus the [shared `MemoryStore` fields](./managing-memory#stores) (`name`, `description`, <Syntax py="max_search_results" ts="maxSearchResults" rs="max_search_results" />, `writable`, `extraction`):
 
 | Field | Purpose |
 |-------|---------|
 | `config` | The knowledge base connection (see below). Reuse one across stores that differ only by `scope`. |
 | `scope` | Logical namespace isolating documents. Applied as a metadata filter on search and stamped on writes. |
 | `filter` | Explicit retrieval filter; overrides the auto-generated scope filter on search. |
-| <Syntax py="access_control_list" ts="accessControlList" /> | Document-level ACL entries stamped on every write. Required when the data source has ACL awareness enabled. See [Access control lists](#access-control-lists). |
-| <Syntax py="min_score" ts="minScore" /> | Score floor a result must meet. Use for similarity-scored knowledge bases, where a higher score is a better match. See [Filtering by score](#filtering-by-score). |
-| <Syntax py="max_score" ts="maxScore" /> | Score ceiling a result must not exceed. Use for distance-scored knowledge bases, where a lower score is a better match. See [Filtering by score](#filtering-by-score). |
+| <Syntax py="access_control_list" ts="accessControlList" rs="access_control_list" /> | Document-level ACL entries stamped on every write. Required when the data source has ACL awareness enabled. See [Access control lists](#access-control-lists). |
+| <Syntax py="min_score" ts="minScore" rs="min_score" /> | Score floor a result must meet. Use for similarity-scored knowledge bases, where a higher score is a better match. See [Filtering by score](#filtering-by-score). |
+| <Syntax py="max_score" ts="maxScore" rs="max_score" /> | Score ceiling a result must not exceed. Use for distance-scored knowledge bases, where a lower score is a better match. See [Filtering by score](#filtering-by-score). |
 
 ### Connection config
 
@@ -98,14 +113,14 @@ The inner `BedrockKnowledgeBaseConfig` is the reusable connection: which knowled
 
 | Field | Purpose |
 |-------|---------|
-| <Syntax py="knowledge_base_id" ts="knowledgeBaseId" /> | The Bedrock Knowledge Base to query and ingest into. Required. |
-| <Syntax py="knowledge_base_type" ts="knowledgeBaseType" /> | The knowledge base type (`'MANAGED'`, `'VECTOR'`, `'KENDRA'`, or `'SQL'`). When provided, skips the `GetKnowledgeBase` call during initialization. When omitted, detected automatically. |
-| <Syntax py="data_source_type" ts="dataSourceType" /> | `'CUSTOM'`, `'S3'`, or `'OTHER'`. Governs whether and how the store can be written to. |
-| <Syntax py="data_source_id" ts="dataSourceId" /> | The data source to ingest into. Required for writes. |
+| <Syntax py="knowledge_base_id" ts="knowledgeBaseId" rs="knowledge_base_id" /> | The Bedrock Knowledge Base to query and ingest into. Required. |
+| <Syntax py="knowledge_base_type" ts="knowledgeBaseType" rs="knowledge_base_type" /> | The knowledge base type (`'MANAGED'`, `'VECTOR'`, `'KENDRA'`, or `'SQL'`). When provided, skips the `GetKnowledgeBase` call during initialization. When omitted, detected automatically. |
+| <Syntax py="data_source_type" ts="dataSourceType" rs="data_source_type" /> | `'CUSTOM'`, `'S3'`, or `'OTHER'`. Governs whether and how the store can be written to. |
+| <Syntax py="data_source_id" ts="dataSourceId" rs="data_source_id" /> | The data source to ingest into. Required for writes. |
 | `s3` | S3 ingestion settings (`bucket`, `prefix`). Required when the data source type is `'S3'`. |
-| <Syntax py="scope_metadata_key" ts="scopeMetadataKey" /> | Metadata attribute key used for scope filtering. Defaults to `'namespace'`. |
-| <Syntax py="runtime_client / agent_client" ts="runtimeClient / agentClient" /> | Pre-constructed AWS clients. When omitted, default clients are constructed using the standard credential chain (the agent client lazily, on first write). |
-| <Syntax py="region_name" ts="regionName" /> | AWS region hint for the default clients the store constructs. When omitted, boto3 resolves the region itself. Ignored for any client you inject explicitly (`runtime_client` / `agent_client` / `s3.client`). |
+| <Syntax py="scope_metadata_key" ts="scopeMetadataKey" rs="scope_metadata_key" /> | Metadata attribute key used for scope filtering. Defaults to `'namespace'`. |
+| <Syntax py="runtime_client / agent_client" ts="runtimeClient / agentClient" rs="runtime_client / agent_client" /> | Pre-constructed AWS clients. When omitted, default clients are constructed using the standard credential chain (the agent client lazily, on first write). |
+| <Syntax py="region_name" ts="regionName" rs="region" /> | AWS region hint for the default clients the store constructs. When omitted, boto3 resolves the region itself. Ignored for any client you inject explicitly (`runtime_client` / `agent_client` / `s3.client`). |
 
 Because the connection is a separate object, you build it once and vary only `name` and `scope` per store. This is the cheap way to give each tenant an isolated namespace over a single knowledge base:
 
@@ -133,6 +148,13 @@ bob = BedrockKnowledgeBaseStore(name="bob", writable=True, scope="user-bob", con
 
 --8<-- "user-guide/sdk/memory/bedrock-knowledge-base.ts:scoped_stores"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/bedrock-knowledge-base.rs:scoped_stores"
+```
+
 </Tab>
 </Tabs>
 
@@ -174,6 +196,13 @@ store = BedrockKnowledgeBaseStore(
 
 --8<-- "user-guide/sdk/memory/bedrock-knowledge-base.ts:s3_store"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/bedrock-knowledge-base.rs:s3_store"
+```
+
 </Tab>
 </Tabs>
 
@@ -221,11 +250,18 @@ print(result.document_id)
 --8<-- "user-guide/sdk/memory/bedrock-knowledge-base.ts:search"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/bedrock-knowledge-base.rs:search"
+```
+
+</Tab>
 </Tabs>
 
-The search result cap defaults to `10` when neither the call nor the store sets one. This `10` default applies only to direct calls on the store. Reached through a `MemoryManager` tool or its search method, the manager supplies its own per-call cap instead; set <Syntax py="max_search_results" ts="maxSearchResults" /> on the store to pin a value across both paths.
+The search result cap defaults to `10` when neither the call nor the store sets one. This `10` default applies only to direct calls on the store. Reached through a `MemoryManager` tool or its search method, the manager supplies its own per-call cap instead; set <Syntax py="max_search_results" ts="maxSearchResults" rs="max_search_results" /> on the store to pin a value across both paths.
 
-Each entry's `metadata` carries the document's own attributes plus two reserved synthetic keys: <Syntax py="_relevance_score" ts="_relevanceScore" /> (the Bedrock relevance score) and <Syntax py="_source_location" ts="_sourceLocation" /> (the retrieval location). When `scope` is set, search filters to that namespace automatically; an explicit `filter` overrides the scope-derived one. The asymmetry is deliberate: an explicit `filter` affects search only, while writes always scope by `scope`.
+Each entry's `metadata` carries the document's own attributes plus two reserved synthetic keys: <Syntax py="_relevance_score" ts="_relevanceScore" rs="_relevanceScore" /> (the Bedrock relevance score) and <Syntax py="_source_location" ts="_sourceLocation" rs="_sourceLocation" /> (the retrieval location). When `scope` is set, search filters to that namespace automatically; an explicit `filter` overrides the scope-derived one. The asymmetry is deliberate: an explicit `filter` affects search only, while writes always scope by `scope`.
 
 The document id from `add` is the generated UUID for a `CUSTOM` document, or the `s3://` URI of the uploaded object for `S3`. Writes require a data source ID (and an `s3` config for S3 data sources); a write against a missing or read-only configuration raises.
 
@@ -233,9 +269,9 @@ Ingestion is eventually consistent: a successful write does not mean the content
 
 ### Filtering by score
 
-Set <Syntax py="min_score" ts="minScore" /> or <Syntax py="max_score" ts="maxScore" /> on the store to enforce score limits on returned results. For similarity-scored knowledge bases use <Syntax py="min_score" ts="minScore" /> to keep results at or above the floor. For distance-scored knowledge bases use <Syntax py="max_score" ts="maxScore" /> to keep results at or below the ceiling.
+Set <Syntax py="min_score" ts="minScore" rs="min_score" /> or <Syntax py="max_score" ts="maxScore" rs="max_score" /> on the store to enforce score limits on returned results. For similarity-scored knowledge bases use <Syntax py="min_score" ts="minScore" rs="min_score" /> to keep results at or above the floor. For distance-scored knowledge bases use <Syntax py="max_score" ts="maxScore" rs="max_score" /> to keep results at or below the ceiling.
 
-The score metric is a property of the vector store behind the knowledge base. Filtering is applied after retrieval, so a search may therefore return fewer entries than <Syntax py="max_search_results" ts="maxSearchResults" />, or none at all when nothing clears the bound. A result without a score is retained.
+The score metric is a property of the vector store behind the knowledge base. Filtering is applied after retrieval, so a search may therefore return fewer entries than <Syntax py="max_search_results" ts="maxSearchResults" rs="max_search_results" />, or none at all when nothing clears the bound. A result without a score is retained.
 
 ## Extraction
 
@@ -267,6 +303,13 @@ store = BedrockKnowledgeBaseStore(
 --8<-- "user-guide/sdk/memory/bedrock-knowledge-base.ts:extraction"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/bedrock-knowledge-base.rs:extraction"
+```
+
+</Tab>
 </Tabs>
 
 To change the cadence, swap the extractor, or extract server-side, see [Automatic Extraction](./managing-memory#automatic-extraction) on the Memory page.
@@ -276,7 +319,7 @@ To change the cadence, swap the extractor, or extract server-side, see [Automati
 The credentials the store uses must allow the Bedrock operations it calls, plus S3 writes when using an S3 data source:
 
 - `bedrock:Retrieve` - for search.
-- `bedrock:GetKnowledgeBase` - called once at initialization to detect the knowledge base type, then memoized. Not required if you provide <Syntax py="knowledge_base_type" ts="knowledgeBaseType" /> in the config.
+- `bedrock:GetKnowledgeBase` - called once at initialization to detect the knowledge base type, then memoized. Not required if you provide <Syntax py="knowledge_base_type" ts="knowledgeBaseType" rs="knowledge_base_type" /> in the config.
 - `bedrock:IngestKnowledgeBaseDocuments` - for writes (`CUSTOM` and `S3`).
 - `s3:PutObject` - for writes to an `S3` data source, on the configured bucket and prefix.
 
@@ -311,7 +354,7 @@ For an `S3` data source, add `s3:PutObject` on the bucket and prefix the store u
 
 ## Access Control Lists
 
-Managed knowledge base data sources can have [ACL awareness](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-managed-acl.html) enabled, which requires every ingested document to carry an access control list specifying who can retrieve it. Set <Syntax py="access_control_list" ts="accessControlList" /> on the store to supply entries for every write:
+Managed knowledge base data sources can have [ACL awareness](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-managed-acl.html) enabled, which requires every ingested document to carry an access control list specifying who can retrieve it. Set <Syntax py="access_control_list" ts="accessControlList" rs="access_control_list" /> on the store to supply entries for every write:
 
 <Tabs>
 <Tab label="Python">
@@ -342,11 +385,18 @@ store = BedrockKnowledgeBaseStore(
 --8<-- "user-guide/sdk/memory/bedrock-knowledge-base.ts:acl_store"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/bedrock-knowledge-base.rs:acl_store"
+```
+
+</Tab>
 </Tabs>
 
 Each entry specifies `access` (`'ALLOW'` or `'DENY'`), `name` (the user's email), and `type` (`'USER'`). Deny overrides allow. The entries apply to both `CUSTOM` and `S3` writes. For the `CUSTOM` path, an inline ACL requires at least one metadata attribute (a `scope` satisfies this); if none is present the store raises with guidance.
 
-If the data source has ACL awareness enabled and no <Syntax py="access_control_list" ts="accessControlList" /> is set, the store surfaces a clear error pointing at the field.
+If the data source has ACL awareness enabled and no <Syntax py="access_control_list" ts="accessControlList" rs="access_control_list" /> is set, the store surfaces a clear error pointing at the field.
 
 ## Related
 

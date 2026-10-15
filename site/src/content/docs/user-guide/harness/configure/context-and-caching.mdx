@@ -41,6 +41,11 @@ The option takes `"auto"` (the default), `"agentic"`, or off:
         const agent = await createHarness({ contextManager: 'agentic' })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/context-and-caching.rs:harness_context_manager"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -64,6 +69,11 @@ The option takes `"auto"` (the default), `"agentic"`, or off:
           windowSize: 20,
         })
         const agent = new Agent({ conversationManager })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/context-and-caching.rs:sdk_context_manager"
         ```
       </Tab>
     </Tabs>
@@ -112,6 +122,11 @@ Pass `caching` off to disable what Strands harness configures:
         const agent = await createHarness({ caching: false })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/context-and-caching.rs:harness_caching_off"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -137,6 +152,11 @@ Pass `caching` off to disable what Strands harness configures:
           cacheConfig: { ttl: '1h' },
         })
         const agent = new Agent({ model: bedrockModel })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/context-and-caching.rs:sdk_caching"
         ```
       </Tab>
     </Tabs>

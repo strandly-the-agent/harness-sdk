@@ -29,6 +29,16 @@ Strands Harness SDK provides a simple logging infrastructure with a global logge
 
 3. **Default Behavior**: By default, the SDK only logs warnings and errors to the console. Debug and info logs are no-ops unless you configure a custom logger.
 </Tab>
+<Tab label="Rust">
+
+Strands Harness SDK logs through the [`tracing`](https://docs.rs/tracing) crate. There is no SDK-level logger to configure — `tracing` already owns that seam:
+
+1. **Module-level Targets**: Every event carries the emitting module as its target (`strands_agents::tools::registry`, `strands_agents::models::bedrock`), so a filter can select any subtree of the SDK.
+
+2. **Subscriber-driven**: Levels, filtering, and formatting are the subscriber's job. Install one in your application and the SDK's events flow into it.
+
+3. **Default Behavior**: With no subscriber installed, every event is dropped. The SDK configures nothing on your behalf.
+</Tab>
 </Tabs>
 
 ## Configuring Logging
@@ -73,6 +83,27 @@ To enable logging for the Strands Agents SDK, use the `configureLogging` functio
 - Debug and info logs are no-ops by default (zero performance overhead)
 - Configure a custom logger with appropriate log levels to enable debug/info logging
 </Tab>
+<Tab label="Rust">
+
+Logging is turned on by installing a `tracing` subscriber before you create an agent. Add [`tracing-subscriber`](https://docs.rs/tracing-subscriber) to your `Cargo.toml` with the `env-filter` feature.
+
+**Fixed filter:**
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/logs.rs:basic_subscriber"
+```
+
+**Driven by `RUST_LOG`:**
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/logs.rs:env_filter"
+```
+
+**Default Behavior:**
+
+- With no subscriber installed, the SDK's events go nowhere (zero overhead)
+- `tracing-subscriber`'s default filter is `ERROR`; name `strands_agents` in the filter to see the SDK's own events
+</Tab>
 </Tabs>
 
 ### Log Levels
@@ -89,7 +120,7 @@ The Strands Agents SDK uses standard log levels:
 
 - **CRITICAL**: Reserved for catastrophic failures.
 
-In the Python SDK, notices about *how the SDK is being used* (an unset `context_window_limit`, an unknown cache strategy, a graph built without execution limits) are emitted through Python's [`warnings`](https://docs.python.org/3/library/warnings.html) module instead of the logger. The standard library deduplicates repeats, so each warning surfaces once rather than on every call. The TypeScript SDK reports these through its logger.
+In the Python SDK, notices about *how the SDK is being used* (an unset `context_window_limit`, an unknown cache strategy, a graph built without execution limits) are emitted through Python's [`warnings`](https://docs.python.org/3/library/warnings.html) module instead of the logger. The standard library deduplicates repeats, so each warning surfaces once rather than on every call. The TypeScript SDK reports these through its logger. The Rust SDK emits them as `tracing::warn!` events, deduplicated by message so each notice surfaces once per process; `tracing` has no `CRITICAL` level — its levels are `TRACE` through `ERROR`.
 
 Control them with `-W` or `PYTHONWARNINGS`, like any other warning:
 
@@ -193,6 +224,27 @@ WARN event_type=<unknown_type> | unsupported bedrock event type
 
 Future versions will include more detailed logging for tool operations and event loop processing.
 </Tab>
+<Tab label="Rust">
+
+The Rust SDK's logging is concentrated in tool execution and model interactions. Events use the SDK's `key=<value> … | human sentence` format, and the emitting module is the event target:
+
+```
+# Tool registry and skills
+DEBUG strands_agents::plugins::vended::skills | loading skill path=/skills/review
+DEBUG strands_agents::plugins::vended::skills | skill loaded successfully name=review
+
+# Context management
+DEBUG strands_agents::context_manager | strategy applied, retrying the model call
+WARN  strands_agents::context_manager | no context strategy could reduce the context, not retrying
+
+# Model interactions
+DEBUG strands_agents::models::bedrock | total_tokens=<2417> | native token count
+DEBUG strands_agents::models::bedrock | throttled | error_message=<Too many requests>
+WARN  strands_agents::models::bedrock::parse | event_type=<"unknown"> | unsupported bedrock event type
+```
+
+The exact rendering depends on your subscriber — the lines above are `tracing_subscriber::fmt()` with targets enabled.
+</Tab>
 </Tabs>
 
 ## Advanced Configuration
@@ -250,6 +302,24 @@ You can implement your own logger to integrate with your application's logging s
 --8<-- "user-guide/sdk/observability-evaluation/logs.ts:custom_logger"
 ```
 </Tab>
+<Tab label="Rust">
+
+**Filtering Specific Modules**
+
+`EnvFilter` directives take a target prefix, so a level can be scoped to one part of the SDK:
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/logs.rs:module_filter"
+```
+
+**Structured Output**
+
+With `tracing-subscriber`'s `json` feature, each event becomes one JSON object:
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/logs.rs:json_subscriber"
+```
+</Tab>
 </Tabs>
 
 ## Best Practices
@@ -270,5 +340,13 @@ You can implement your own logger to integrate with your application's logging s
 3. **Production Performance**: Debug and info logs are no-ops by default, minimizing performance impact
 4. **Compatible Libraries**: Use established logging libraries like Pino or Winston for production deployments
 5. **Consistent Format**: Ensure your custom logger maintains consistent formatting across log levels
+</Tab>
+<Tab label="Rust">
+
+1. **Configure Early**: Install the subscriber before creating any `Agent` — a subscriber installed later misses everything emitted before it
+2. **Default Behavior**: Without a subscriber nothing is logged; name `strands_agents` in the filter to see the SDK's own events
+3. **Production Performance**: Filtered-out events compile down to a level check, so leaving `debug!` calls in place costs effectively nothing
+4. **Compatible Subscribers**: Any `tracing` subscriber works — `tracing-subscriber` for text or JSON, `tracing-appender` for files
+5. **Narrow Filters**: Prefer a target prefix (`strands_agents::tools=debug`) over a global `debug` so dependency chatter stays out
 </Tab>
 </Tabs>

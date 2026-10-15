@@ -13,7 +13,7 @@ sourceLinks:
   - path: strands-ts/src/tools/mcp-tool.ts
 ---
 
-Connect your agent to tools that live outside your codebase: databases, SaaS APIs, and internal services exposed over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), an open standard for providing context to language models. Strands loads an MCP server's tools and hands them to the agent like any other tool, in both Python and TypeScript.
+Connect your agent to tools that live outside your codebase: databases, SaaS APIs, and internal services exposed over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), an open standard for providing context to language models. Strands loads an MCP server's tools and hands them to the agent like any other tool, in Python, TypeScript, and Rust.
 
 ## Quick Start
 
@@ -42,6 +42,15 @@ agent("What is AWS Lambda?")
 
 ```typescript
 --8<-- "user-guide/sdk/tools/mcp-tools.ts:quick_start"
+```
+</Tab>
+<Tab label="Rust">
+
+Enable the `mcp` feature. `McpClient::connect` opens the connection and
+`list_tools()` turns the server's tools into agent tools:
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-tools.rs:quick_start"
 ```
 </Tab>
 </Tabs>
@@ -97,6 +106,18 @@ Tools can also be listed explicitly if needed:
 
 ```typescript
 --8<-- "user-guide/sdk/tools/mcp-tools.ts:explicit_tools"
+```
+</Tab>
+<Tab label="Rust">
+
+**Explicit Integration**
+
+Rust has one approach: `McpClient` is not itself a tool, so list its tools and
+pass them to the builder. The client owns the connection, so keep it alive for
+as long as the agent may call the server:
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-tools.rs:explicit_tools"
 ```
 </Tab>
 </Tabs>
@@ -192,6 +213,26 @@ keep credentials out of the configuration:
 
 Set `prefixWithServerName` when servers expose tools with overlapping names.
 A server-level `prefix` overrides the generated prefix, and `prefix: ''` disables it.
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-tools.rs:multiple_servers"
+```
+
+**Load from configuration**
+
+`McpClient::load_servers` creates one client per server from a JSON value, an
+`mcp.json` path, or an `IndexMap` of configs. Transport types are detected from
+`command` or `url`, and `${VAR}` placeholders are read from the environment:
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-tools.rs:load_servers"
+```
+
+Set `prefix_with_server_name` when servers expose tools with overlapping names.
+A server-level `prefix` overrides the generated prefix, and `Some(String::new())`
+disables it.
 </Tab>
 </Tabs>
 
@@ -301,6 +342,36 @@ defaults; `prefix: ''` disables a default prefix and `toolFilters: {}` disables
 default filters. Declarative `McpClient.loadServers()` config accepts `prefix`
 and `toolFilters` too, where filter strings are regexes.
 </Tab>
+<Tab label="Rust">
+
+Filtering and prefixing are fields of `McpServerConfig`, so the same struct
+drives both `connect` and `load_servers`.
+
+**Tool Filtering**
+
+Control which tools are loaded with `tool_filters`:
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-tools.rs:tool_filtering"
+```
+
+Every pattern is a regex matched from the start of the server-side tool name.
+`allowed` is applied first, then `rejected`, so rejection wins when both match.
+There is no callback matcher.
+
+**Tool Name Prefixing**
+
+Prevent name conflicts when using multiple MCP servers:
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-tools.rs:tool_prefixing"
+```
+
+A prefix only renames the tool for the agent: calls still send the original
+server tool name. Config defaults can be overridden per listing with
+`list_tools_with(ListOptions { .. })`, where `None` fields inherit the config
+and `Some(String::new())` disables a default prefix.
+</Tab>
 </Tabs>
 
 ## Direct Tool Invocation
@@ -328,6 +399,12 @@ const calcTool = tools.find(t => t.name === 'calculator')
 
 // Call directly through the client
 const result = await mcpClient.callTool(calcTool, { x: 10, y: 20 })
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-tools.rs:direct_invocation"
 ```
 </Tab>
 </Tabs>
@@ -359,6 +436,15 @@ mcp.run(transport="sse")
 ```typescript
 --8<-- "user-guide/sdk/tools/mcp-tools.ts:mcp_server"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+The Rust SDK is an MCP client only. Serve your Rust tools over MCP with
+[`rmcp`](https://docs.rs/rmcp), the crate the client is built on.
 </Tab>
 </Tabs>
 
@@ -435,6 +521,12 @@ Pass an `elicitationCallback` when constructing the client. The callback receive
 --8<-- "user-guide/sdk/tools/mcp-tools.ts:elicitation"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+</Tab>
 </Tabs>
 
 For more information on elicitation, see the [MCP specification](https://modelcontextprotocol.io/specification/draft/client/elicitation).
@@ -491,6 +583,11 @@ result = client.call_tool_sync(
 <Tab label="TypeScript">
 
 Progress notifications are not yet supported in the TypeScript SDK.
+
+</Tab>
+<Tab label="Rust">
+
+Progress notifications are not yet supported in the Rust SDK.
 
 </Tab>
 </Tabs>
