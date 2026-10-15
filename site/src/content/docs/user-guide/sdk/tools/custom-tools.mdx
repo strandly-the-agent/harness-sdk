@@ -685,7 +685,8 @@ A Python module tool requires two key components:
 <Tab label="Rust">
 
 :::note[Python only]
-Module based to= "..."` (or to `FunctionTool::builder().description(..)`ols are a Python packaging convention. In Rust, define tools with the `#[tool]` macro, `FunctionTool`, or the `Tool` trait.
+Module based tools are a Python packaging convention. In Rust, define tools with the
+`#[tool]` macro, `FunctionTool`, or the `Tool` trait.
 :::
 </Tab>
 </Tabs>
@@ -912,6 +913,8 @@ def search_database(query: str, max_results: int = 10) -> list:
 --8<-- "user-guide/sdk/tools/custom-tools.rs:search_database"
 ```
 
-`#[tool]` joins a doc comment into a single paragraph, so pass a multi-paragraph description to the macro as `description ) when the structure matters.
+`#[tool]` joins a doc comment into a single paragraph, so pass a multi-paragraph
+description to the macro as `description = "..."` (or to
+`FunctionTool::builder().description(..)`) when the structure matters.
 </Tab>
 </Tabs>
