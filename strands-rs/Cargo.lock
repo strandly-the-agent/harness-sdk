@@ -2618,6 +2618,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "strands-cli-worker"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "indexmap",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "strands-agents",
+ "strands-harness",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "strands-harness"
 version = "0.1.0"
 dependencies = [
