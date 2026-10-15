@@ -386,3 +386,8 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   live `tests/integ_steering.rs` passes against Bedrock haiku 4.5 in us-west-2; clippy clean.
   Tool-call gate only — Rust has no after-model intervention gate; see
   `docs/matrices/steering.md`.
+- `GoalLoop` (`plugins::vended::goal`): iterative refinement against a natural-language goal (graded
+  by an auto-built judge agent on `Agent::aux_model`) or a validator closure, re-entering the agent
+  loop through `AfterInvocationEvent::resume` until it passes, `max_attempts` is hit or `timeout`
+  elapses; `preserve_context: false` restores the attempt-1 session each retry. 12 unit + 19
+  agent-loop tests; see `docs/matrices/goal.md`.

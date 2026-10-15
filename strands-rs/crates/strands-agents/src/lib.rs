@@ -106,7 +106,10 @@ pub use models::anthropic::{AnthropicModel, AnthropicModelConfig};
 pub use models::Model;
 #[cfg(feature = "openai")]
 pub use models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};
-pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
+pub use plugins::vended::{
+    AgentSkills, ContextInjector, GoalLoop, GoalResult, GoalStopReason, Skill, SkillSource,
+    ValidationContext, ValidationOutcome,
+};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use sandbox::{
     DockerSandbox, ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError,

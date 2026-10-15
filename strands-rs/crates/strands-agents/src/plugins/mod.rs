@@ -13,7 +13,10 @@ use crate::tools::ToolRef;
 
 pub use model_plugin::ModelPlugin;
 pub use registry::PluginRegistry;
-pub use vended::{AgentSkills, ContextInjector, Skill, SkillSource};
+pub use vended::{
+    AgentSkills, ContextInjector, GoalLoop, GoalResult, GoalStopReason, Skill, SkillSource,
+    ValidationContext, ValidationOutcome,
+};
 
 /// An agent extension. `init_agent` runs once during `Agent::initialize`; `tools` runs after it.
 #[async_trait]

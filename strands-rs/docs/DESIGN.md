@@ -94,3 +94,8 @@ installs the exporter).
   `()` and the `*_scoped` variants return the `#[must_use]` `HookCleanup`. `add_callback_boxed*` keeps the
   `|e| Box::pin(async move { .. })` form, needed when the future borrows the event (a closure's return
   type cannot capture the event's lifetime).
+- `GoalLoop` (`plugins::vended::goal`) takes its config through chained `with_*` methods, so invalid
+  budgets (`max_attempts = 0`, zero `timeout`) are rejected by `Plugin::init_agent` instead of a
+  panicking constructor; a goal is either a description judged by an auto-built judge agent or a
+  validator closure (`validator` async / `sync_validator`, a TS `throw` becoming `Err`), and the
+  judge's structured-output schema is derived from `JudgeOutcome` with `schemars` rather than zod.
