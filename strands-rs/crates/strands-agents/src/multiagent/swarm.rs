@@ -558,6 +558,8 @@ impl Swarm {
             .with_cancel(CancellationToken::new());
         let token = options.cancel.clone().expect("cancel token set above");
 
+        // Fixed when the node starts: a node that streams events must not push its own deadline out.
+        let node_deadline = node_timeout.map(|timeout| Instant::now() + timeout);
         let (node_tx, mut node_rx) = mpsc::channel(EVENT_BUFFER);
         let execution = run_node(
             node.as_ref(),
@@ -575,7 +577,7 @@ impl Swarm {
             tokio::select! {
                 biased;
                 Some(event) = node_rx.recv() => self.forward(tx, event?).await?,
-                () = wait_until(node_timeout_deadline(node_timeout)), if !node_expired => {
+                () = wait_until(node_deadline), if !node_expired => {
                     node_expired = true;
                     token.cancel();
                 }
@@ -854,11 +856,6 @@ fn resolve_node_input(input: MultiAgentInput, handoff: Option<&HandoffResult>) -
         blocks.push(ContentBlock::text(format!("Context:\n{context}")));
     }
     MultiAgentInput::Blocks(blocks)
-}
-
-/// When a node sets no timeout of its own, the deadline is the swarm's `node_timeout`.
-fn node_timeout_deadline(timeout: Option<Duration>) -> Option<Instant> {
-    timeout.map(|timeout| Instant::now() + timeout)
 }
 
 /// Never completes when there is no deadline, so an unbounded run never wakes up for one.
@@ -1188,6 +1185,21 @@ mod tests {
             .model(SlowModel {
                 inner: MockMessageModel::new(vec![handoff_turn(handoff)]),
                 delay,
+                per_event: false,
+            })
+            .id(id)
+            .build()
+            .expect("agent builds")
+    }
+
+    /// Agent whose model pauses `delay` before *every* stream event, so the node keeps emitting
+    /// events for longer than a short node timeout.
+    fn chatty_agent(id: &str, delay: Duration) -> Agent {
+        Agent::builder()
+            .model(SlowModel {
+                inner: MockMessageModel::new(vec![handoff_turn(json!({ "message": "done" }))]),
+                delay,
+                per_event: true,
             })
             .id(id)
             .build()
@@ -1198,6 +1210,8 @@ mod tests {
     struct SlowModel {
         inner: MockMessageModel,
         delay: Duration,
+        /// Pause before every event instead of once before the first.
+        per_event: bool,
     }
 
     #[async_trait]
@@ -1211,11 +1225,15 @@ mod tests {
             messages: &'a [Message],
             options: &'a crate::models::StreamOptions,
         ) -> futures::stream::BoxStream<'a, Result<crate::models::ModelStreamEvent>> {
-            let delay = self.delay;
             Box::pin(async_stream::stream! {
-                tokio::time::sleep(delay).await;
+                if !self.per_event {
+                    tokio::time::sleep(self.delay).await;
+                }
                 let mut inner = self.inner.stream(messages, options);
                 while let Some(event) = inner.next().await {
+                    if self.per_event {
+                        tokio::time::sleep(self.delay).await;
+                    }
                     yield event;
                 }
             })
@@ -1733,6 +1751,21 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "node_timeout=<20>, node_id=<slow>, swarm_id=<swarm> | node exceeded wall-clock budget"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_streaming_node_does_not_refresh_its_own_timeout() {
+        let swarm = Swarm::builder()
+            .node(chatty_agent("slow", Duration::from_millis(8)))
+            .node_timeout(Duration::from_millis(20))
+            .build()
+            .expect("swarm builds");
+
+        let error = swarm.invoke("go").await.expect_err("node timeout");
+        assert!(
+            error.to_string().starts_with("node_timeout=<20>, node_id=<slow>"),
+            "{error}"
         );
     }
 
