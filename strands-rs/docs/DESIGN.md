@@ -630,7 +630,7 @@ impl GraphBuilder {
     pub fn id(self, impl Into<String>) -> Self;
     pub fn name(self, impl Into<String>) -> Self;
     pub fn description(self, impl Into<String>) -> Self;
-    pub fn node(self, id: impl Into<String>, impl Into<NodeDefinition>) -> Self;
+    pub fn node(self, impl Into<NodeDefinition>) -> Self;
     pub fn edge(self, source: impl Into<String>, target: impl Into<String>) -> Self;
     pub fn edge_when(self, source: .., target: .., handler: EdgeHandler) -> Self;
     pub fn edge_definition(self, impl Into<EdgeDefinition>) -> Self;
@@ -654,10 +654,11 @@ Divergences from TS:
 - **`Option<T>` limits instead of `Infinity`**: Rust has no `Infinity` for `usize`/`Duration`, so
   `None` is "no limit". Consequently the TS `< 1` checks become `== 0` checks and their messages
   stay byte-identical (`max_steps=<0> | must be at least 1`).
-- **`.node(id, definition)` — the graph names its nodes; TS takes the id from the agent.** The
-  builder needs a stable key for `.edge(..)`, so when the supplied id differs from
-  `Node::id()` the node is wrapped in a private id-overriding delegate and the graph-facing id
-  wins everywhere topology is compared (edges, reachability, state keys).
+- **`.node(definition)` takes one argument; the id comes from the node** (`Node::id()`, i.e. the
+  agent's id for an agent node), exactly as TS `nodes: NodeDefinition[]` does, and consistently
+  with the sibling `Swarm` builder. `.edge(src, dst)` / `.entry_point(id)` still refer to nodes
+  by id string; a repeated id fails with TS's `node_id=<id> | duplicate node id`. Rename a node
+  by giving its agent the id you want.
 - **`.entry_point(id)` instead of `sources: string[]`**: reads as a builder call and matches the
   Python `GraphBuilder`. The accessor is still `Graph::sources()`, and the unknown-id error keeps
   TS's `source=<id> | source references unknown node` wording.

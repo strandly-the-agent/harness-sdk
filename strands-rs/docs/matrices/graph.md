@@ -19,7 +19,7 @@ increment 2.
 | `GraphConfig.maxSteps` | `GraphConfig::max_steps: Option<u64>` | |
 | `GraphConfig.timeout` | `GraphConfig::timeout: Option<Duration>` | |
 | `GraphConfig.nodeTimeout` | `GraphConfig::node_timeout: Option<Duration>` | |
-| `GraphOptions.nodes` | `GraphBuilder::node(id, def)` | graph supplies the id |
+| `GraphOptions.nodes` | `GraphBuilder::node(def)` | id comes from `Node::id()`, as in TS |
 | `GraphOptions.edges` | `GraphBuilder::{edge, edge_when, edge_definition}` | |
 | `GraphOptions.sources` | `GraphBuilder::entry_point(id)` | accessor `Graph::sources()` |
 | `GraphOptions.plugins` | `GraphBuilder::plugin(..)` | |
