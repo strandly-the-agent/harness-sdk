@@ -189,10 +189,19 @@ impl Swarm {
 
     /// Restore a snapshot into this swarm, replacing `state` when the snapshot carries one.
     ///
+    /// With `None` the snapshot is restored into a fresh handle that the next invocation resumes
+    /// from, so a swarm can be rehydrated without a live invocation to hand in.
+    ///
     /// # Errors
     /// Propagates [`load_snapshot`] validation failures.
     pub fn load_snapshot(&self, snapshot: &Snapshot, state: Option<&MultiAgentStateHandle>) -> Result<()> {
-        load_snapshot(self, snapshot, state)
+        if let Some(state) = state {
+            return load_snapshot(self, snapshot, Some(state));
+        }
+        let state = MultiAgentStateHandle::new(MultiAgentState::new(self.0.nodes.keys().cloned()));
+        load_snapshot(self, snapshot, Some(&state))?;
+        *self.pending_interrupt_state() = Some(state);
+        Ok(())
     }
 
     /// Run the swarm to completion with default options.
@@ -2240,6 +2249,62 @@ mod tests {
 
         assert_eq!(result.status, ResultStatus::Completed);
         assert_eq!(node_ids(&result), ["a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn a_snapshot_loaded_without_a_state_handle_resumes_the_next_invocation() {
+        let saved = Arc::new(Mutex::new(None));
+        let record = saved.clone();
+        let crashed = Swarm::builder()
+            .id("my-swarm")
+            .node(handoff_agent(
+                "a",
+                json!({ "agentId": "b", "message": "go to b" }),
+            ))
+            .node(final_agent("b", "done by b"))
+            .max_steps(1)
+            .hook::<AfterMultiAgentInvocationEvent, _>(move |event| {
+                let snapshot = take_snapshot(
+                    event.orchestrator.as_ref(),
+                    Some(&event.state),
+                    TakeMultiAgentSnapshotOptions::default(),
+                )?;
+                *record.lock().expect("not poisoned") = Some(snapshot);
+                Ok(())
+            })
+            .build()
+            .expect("swarm builds");
+        crashed.invoke("start").await.expect_err("step limit");
+        let snapshot = saved
+            .lock()
+            .expect("not poisoned")
+            .clone()
+            .expect("snapshot saved");
+
+        // A fresh instance with no live state handle: `a`'s model must stay untouched, which is
+        // what distinguishes a resume at the pending handoff target from a fresh run.
+        let model_a = MockMessageModel::shared(vec![handoff_turn(
+            json!({ "agentId": "b", "message": "go to b" }),
+        )]);
+        let resumed = Swarm::builder()
+            .id("my-swarm")
+            .node(
+                Agent::builder()
+                    .model(model_a.clone())
+                    .id("a")
+                    .build()
+                    .expect("agent builds"),
+            )
+            .node(final_agent("b", "done by b"))
+            .build()
+            .expect("swarm builds");
+        resumed.load_snapshot(&snapshot, None).expect("snapshot loads");
+
+        let result = resumed.invoke("start").await.expect("swarm runs");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), ["a", "b"]);
+        assert!(model_a.calls().is_empty(), "node a ran again");
     }
 
     #[tokio::test]
