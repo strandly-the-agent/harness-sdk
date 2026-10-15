@@ -57,6 +57,10 @@
       "node": "./dist/src/bidi/index.node.js",
       "default": "./dist/src/bidi/index.js"
     },
+    "./bidi/io/browser-audio": {
+      "types": "./dist/src/bidi/io/browser-audio.d.ts",
+      "default": "./dist/src/bidi/io/browser-audio.js"
+    },
     "./bidi/io/console": {
       "types": "./dist/src/bidi/io/console.d.ts",
       "default": "./dist/src/bidi/io/console.js"

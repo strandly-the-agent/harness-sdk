@@ -10,6 +10,7 @@ const ENTRIES = [
   'src/bidi/hooks/index.ts',
   'src/bidi/models/google.ts',
   'src/sandbox/browser.ts',
+  'src/bidi/io/browser-audio.ts',
 ]
 
 const NODE_ONLY_PACKAGES = new Set(['@smithy/node-http-handler', 'audify', 'ws'])

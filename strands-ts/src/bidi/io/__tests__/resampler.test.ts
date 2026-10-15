@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { PcmResampler } from '../audio.js'
+import { PcmResampler } from '../resampler.js'
 
 /** Deterministic PRNG so chunk sizes are reproducible. */
 function prng(seed: number): () => number {
