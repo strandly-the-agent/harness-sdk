@@ -65,6 +65,8 @@ Landed in increment 2 (the execution loop):
 | throws when a node exceeds `nodeTimeout` | `errors_when_a_node_exceeds_the_node_timeout` |
 | applies the per-node timeout over `nodeTimeout` | `prefers_a_nodes_own_timeout_over_the_swarm_default` |
 | no throw when `nodeTimeout` is `Infinity` | `runs_without_a_node_timeout` |
+| per-node timeout of `Infinity` disables a finite `nodeTimeout` | `a_node_timeout_of_duration_max_opts_out_of_the_swarm_default` |
+| — (swarm `timeout` of `Duration::MAX`, no TS `it`) | `a_swarm_timeout_of_duration_max_is_unbounded` |
 | throws when `timeout` is exceeded between steps | `errors_when_the_swarm_budget_runs_out_between_steps` |
 | aborts an in-flight node when `timeout` expires mid-step | `aborts_an_in_flight_node_when_the_swarm_budget_runs_out` |
 | — (external `cancelSignal`, no TS `it`) | `stops_at_the_loop_top_when_cancelled_externally` |
@@ -97,9 +99,7 @@ Landed in increment 2 (the execution loop):
 | — (same-instance resume, `pending_interrupt_state`) | `resumes_an_interrupted_run_on_the_same_instance_without_a_session` |
 
 Not ported: `swarm.tracer.test.ts` — `telemetry::Tracer` has no multi-agent or node spans yet, so
-there is nothing to assert against (see **Remaining** below). TS's "per-node timeout of `Infinity`
-disables a finite `nodeTimeout`" has no Rust equivalent: `AgentNodeOptions::with_timeout` takes a
-`Duration`, so a node cannot express "no timeout" while the swarm sets one — `None` means "inherit".
+there is nothing to assert against (see **Remaining** below).
 
 ## Remaining
 
@@ -132,6 +132,10 @@ disables a finite `nodeTimeout`" has no Rust equivalent: `AgentNodeOptions::with
 - **The loop runs in a spawned task** writing to an `mpsc` channel, as `Agent::stream_with` does,
   instead of TS's async generator. Dropping the stream ends the invocation (the send fails with
   `Error::Cancelled`), and `invoke_with` is `stream_with` drained to the terminal result event.
+- **`Duration::MAX` is the Rust spelling of `Infinity`** for a timeout: a deadline that overflows
+  the clock is no deadline (`deadline_after`), so a node's `Duration::MAX` opts out of the swarm's
+  `node_timeout` (`AgentNodeOptions::with_timeout`, `nodes.rs`) and a swarm's leaves it unbounded.
+  `None` still means "inherit the swarm's" for a node and "no limit" for the swarm.
 - **Timeouts are deadlines, not `AbortSignal`s.** The swarm budget and the per-node budget are
   `tokio::time::Instant` deadlines raced against the node future in one `select!`; whichever
   expires cancels the node's `CancellationToken` (TS composes `AbortSignal.any`). Error messages

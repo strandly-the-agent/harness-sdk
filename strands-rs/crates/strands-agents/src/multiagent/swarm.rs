@@ -300,7 +300,7 @@ impl Swarm {
             cancel: options.cancel,
             // The timer starts fresh per invocation: human response time between resumes is not
             // deducted.
-            deadline: self.0.config.timeout.map(|timeout| Instant::now() + timeout),
+            deadline: deadline_after(self.0.config.timeout),
         };
 
         // A session manager (or any plugin) may restore `state.results` from this hook.
@@ -559,7 +559,7 @@ impl Swarm {
         let token = options.cancel.clone().expect("cancel token set above");
 
         // Fixed when the node starts: a node that streams events must not push its own deadline out.
-        let node_deadline = node_timeout.map(|timeout| Instant::now() + timeout);
+        let node_deadline = deadline_after(node_timeout);
         let (node_tx, mut node_rx) = mpsc::channel(EVENT_BUFFER);
         let execution = run_node(
             node.as_ref(),
@@ -856,6 +856,12 @@ fn resolve_node_input(input: MultiAgentInput, handoff: Option<&HandoffResult>) -
         blocks.push(ContentBlock::text(format!("Context:\n{context}")));
     }
     MultiAgentInput::Blocks(blocks)
+}
+
+/// The deadline `timeout` from now, or `None` for no deadline. A timeout that overflows the clock
+/// — [`Duration::MAX`], the documented per-node opt-out — is one with no deadline.
+fn deadline_after(timeout: Option<Duration>) -> Option<Instant> {
+    timeout.and_then(|timeout| Instant::now().checked_add(timeout))
 }
 
 /// Never completes when there is no deadline, so an unbounded run never wakes up for one.
@@ -1785,6 +1791,33 @@ mod tests {
             error.to_string().starts_with("node_timeout=<15>, node_id=<slow>"),
             "{error}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_node_timeout_of_duration_max_opts_out_of_the_swarm_default() {
+        let swarm = Swarm::builder()
+            .node(
+                AgentNodeOptions::new(slow_agent("slow", Duration::from_millis(30)))
+                    .with_timeout(Duration::MAX),
+            )
+            .node_timeout(Duration::from_millis(10))
+            .build()
+            .expect("swarm builds");
+
+        let result = swarm.invoke("go").await.expect("swarm runs");
+        assert_eq!(result.status, ResultStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn a_swarm_timeout_of_duration_max_is_unbounded() {
+        let swarm = Swarm::builder()
+            .node(final_agent("a", "done"))
+            .timeout(Duration::MAX)
+            .build()
+            .expect("swarm builds");
+
+        let result = swarm.invoke("go").await.expect("swarm runs");
+        assert_eq!(result.status, ResultStatus::Completed);
     }
 
     #[tokio::test]
