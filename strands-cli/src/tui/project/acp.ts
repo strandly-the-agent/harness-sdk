@@ -1,33 +1,28 @@
 import { randomUUID } from 'node:crypto'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
-import type { ImportedAgentProject } from './import.js'
 import { createAcpApp, validateSessionId } from '../acp/server.js'
 import { projectPrompt, replaySessionHistory, sendChatEvent, toAcpStopReason } from '../acp/projection.js'
-import type { CliConfigStore } from '../config.js'
 import { sessionAgentDefinitionFromMeta } from '../session/agent-definition.js'
-import { PythonBackend, type PythonOptions } from './python.js'
+import type { WorkerOpener } from './run.js'
+import type { WorkerBackend, WorkerOptions } from './worker.js'
 
-export async function runPythonAcpServer(
-  project: ImportedAgentProject,
-  config: CliConfigStore,
-  options: PythonOptions
-): Promise<void> {
-  const sessions = new Map<string, PythonBackend>()
+export async function runWorkerAcpServer(openWorker: WorkerOpener, options: WorkerOptions): Promise<void> {
+  const sessions = new Map<string, WorkerBackend>()
   const open = async (
     sessionId: string,
     servers: acp.McpServer[],
     cwd: string,
     resume: boolean,
     meta?: Record<string, unknown> | null
-  ): Promise<PythonBackend> => {
+  ): Promise<WorkerBackend> => {
     if (sessions.has(sessionId)) {
       throw acp.RequestError.invalidParams({ sessionId }, 'This session is already loaded.')
     }
     if (servers.length > 0) {
-      throw new Error('ACP MCP servers cannot be added to an authored source agent; declare them in its source.')
+      throw new Error('ACP MCP servers cannot be added to a worker agent; declare them in its configuration.')
     }
-    const backend = await PythonBackend.open(project, config, {
+    const backend = await openWorker({
       ...options,
       overrides: { ...options.overrides, ...sessionAgentDefinitionFromMeta(meta) },
       sessionId,

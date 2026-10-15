@@ -1,7 +1,7 @@
 import { createInterface } from 'node:readline/promises'
 import { TurnRenderer } from '../../console.js'
 
-import { importAgentProject } from './import.js'
+import { importAgentProject, type ImportedAgentProject } from './import.js'
 import { exportSourceProject } from './export.js'
 import { ChatController, type ChatConversation } from '../chat/controller.js'
 import type { CliConfigStore } from '../config.js'
@@ -9,19 +9,34 @@ import { HARNESS_VERSION } from '../package-version.js'
 import { ConversationManager } from '../session/conversations.js'
 import { FileSessionRuntime } from '../session/sessions.js'
 import { PythonVoiceSession } from '../voice/session.js'
-import { PythonBackend, type PythonOptions } from './python.js'
+import { WorkerBackend, type WorkerOptions } from './worker.js'
 
-export async function createPythonChat(
+/** How a worker backend is opened: `WorkerBackend.openPython` bound to a project, or `openRust`. */
+export type WorkerOpener = (options: WorkerOptions, signal?: AbortSignal) => Promise<WorkerBackend>
+
+export function pythonOpener(
   path: string,
+  config: CliConfigStore
+): { open: WorkerOpener; project: ImportedAgentProject } {
+  const project = importAgentProject(path)
+  return { project, open: (options, signal) => WorkerBackend.openPython(project, config, options, signal) }
+}
+
+export function rustOpener(config: CliConfigStore): WorkerOpener {
+  return (options, signal) => WorkerBackend.openRust(config, options, signal)
+}
+
+export async function createWorkerChat(
+  open: WorkerOpener,
+  project: ImportedAgentProject | undefined,
   config: CliConfigStore,
-  options: PythonOptions,
+  options: WorkerOptions,
   signal: AbortSignal,
   requestSetup: () => void,
   conversation?: ChatConversation
 ): Promise<ConversationManager> {
-  const project = importAgentProject(path)
   const createController = (
-    backend: PythonBackend,
+    backend: WorkerBackend,
     initialTurns?: ChatConversation['completedTurns']
   ): ChatController => {
     const snapshot = config.snapshot()
@@ -35,14 +50,16 @@ export async function createPythonChat(
       skillNames: backend.skills.map((skill) => skill.name),
       setSettings: (settings) => config.setSettings(settings),
       requestSetup,
-      project,
-      exportAgentProject: (language, destination) =>
-        exportSourceProject(project, backend.name, language, backend.privatePaths, destination),
+      ...(project
+        ? {
+            project,
+            exportAgentProject: (language, destination) =>
+              exportSourceProject(project, backend.name, language, backend.privatePaths, destination),
+          }
+        : {}),
     })
   }
-  const backend = await PythonBackend.open(
-    project,
-    config,
+  const backend = await open(
     {
       ...options,
       interactive: true,
@@ -57,14 +74,12 @@ export async function createPythonChat(
     }
     return new ConversationManager(createController(backend, conversation?.completedTurns), {
       fork: async (source): Promise<ChatController> => {
-        if (!(source.backend instanceof PythonBackend)) throw new Error('Expected a Python conversation.')
+        if (!(source.backend instanceof WorkerBackend)) throw new Error('Expected a worker conversation.')
         return createController(await source.backend.fork({ ...options, interactive: true }, signal))
       },
       resume: async (_source, target): Promise<ChatController> =>
         createController(
-          await PythonBackend.open(
-            project,
-            config,
+          await open(
             {
               ...options,
               interactive: true,
@@ -84,14 +99,13 @@ export async function createPythonChat(
   }
 }
 
-export async function runPythonConsole(
-  path: string,
-  config: CliConfigStore,
-  options: PythonOptions,
+export async function runWorkerConsole(
+  open: WorkerOpener,
+  options: WorkerOptions,
   request: string | undefined,
   interactive: boolean
 ): Promise<void> {
-  const backend = await PythonBackend.open(importAgentProject(path), config, options)
+  const backend = await open(options)
   const terminal = interactive ? createInterface({ input: process.stdin, output: process.stdout }) : undefined
   const cancel = (): void => backend.cancel()
   process.on('SIGINT', cancel)

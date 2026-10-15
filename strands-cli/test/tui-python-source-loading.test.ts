@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChatEvent, ChatRunResult } from '../src/tui/chat/types.js'
 import { CliConfigStore } from '../src/tui/config.js'
-import { PythonBackend, type PythonOptions } from '../src/tui/project/python.js'
+import { WorkerBackend, type WorkerOptions } from '../src/tui/project/worker.js'
 import { pythonExecutable as python } from './fixtures/python-runtime.js'
 
 const baseSource = `from strands import tool
@@ -34,7 +34,7 @@ agent = build()
 
 describe.skipIf(!existsSync(python))('Python source loading', () => {
   let root: string
-  const backends: PythonBackend[] = []
+  const backends: WorkerBackend[] = []
 
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'strands-python-options-')))
@@ -51,10 +51,10 @@ describe.skipIf(!existsSync(python))('Python source loading', () => {
     await rm(root, { recursive: true, force: true })
   })
 
-  async function open(authored: string | Uint8Array, options: PythonOptions = {}): Promise<PythonBackend> {
+  async function open(authored: string | Uint8Array, options: WorkerOptions = {}): Promise<WorkerBackend> {
     const entrypoint = join(root, 'agent.py')
     await writeFile(entrypoint, authored)
-    const backend = await PythonBackend.open(
+    const backend = await WorkerBackend.openPython(
       { root, entrypoint, language: 'python' },
       CliConfigStore.memory(),
       { cwd: root, ...options },
@@ -64,7 +64,7 @@ describe.skipIf(!existsSync(python))('Python source loading', () => {
     return backend
   }
 
-  async function turn(backend: PythonBackend): Promise<ChatEvent[]> {
+  async function turn(backend: WorkerBackend): Promise<ChatEvent[]> {
     const events: ChatEvent[] = []
     for await (const event of backend.stream(JSON.stringify({ tool: 'status' }))) {
       events.push(event)
@@ -72,7 +72,7 @@ describe.skipIf(!existsSync(python))('Python source loading', () => {
     return events
   }
 
-  async function runTurn(backend: PythonBackend): Promise<ChatRunResult> {
+  async function runTurn(backend: WorkerBackend): Promise<ChatRunResult> {
     const stream = backend.stream(JSON.stringify({ tool: 'status' }))
     let next = await stream.next()
     while (!next.done) {

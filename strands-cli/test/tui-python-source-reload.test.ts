@@ -6,13 +6,13 @@ import { fileURLToPath, URL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CliConfigStore } from '../src/tui/config.js'
-import { PythonBackend } from '../src/tui/project/python.js'
+import { WorkerBackend } from '../src/tui/project/worker.js'
 import { pythonEnvironment, pythonExecutable as python } from './fixtures/python-runtime.js'
 
 describe.skipIf(!existsSync(python))('Python source reloads', () => {
   let root: string
   let entrypoint: string
-  const backends: PythonBackend[] = []
+  const backends: WorkerBackend[] = []
 
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'strands-python-source-reload-')))
@@ -56,8 +56,8 @@ agent = create_harness(
     await rm(root, { recursive: true, force: true })
   })
 
-  async function open(interactive = false): Promise<PythonBackend> {
-    const backend = await PythonBackend.open(
+  async function open(interactive = false): Promise<WorkerBackend> {
+    const backend = await WorkerBackend.openPython(
       { root, entrypoint, language: 'python' },
       CliConfigStore.memory(),
       { cwd: root, interactive },

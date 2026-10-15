@@ -5,14 +5,14 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { applyProviderEnvironmentValues, CliConfigStore } from '../src/tui/config.js'
-import { PythonBackend, type PythonOptions } from '../src/tui/project/python.js'
+import { WorkerBackend, type WorkerOptions } from '../src/tui/project/worker.js'
 import { pythonEnvironment, pythonExecutable } from './fixtures/python-runtime.js'
 
 const bedrockModel = 'bedrock/anthropic.claude-3-haiku-20240307-v1:0'
 
 describe.skipIf(!existsSync(pythonExecutable))('Python worker provider resolution', { timeout: 15_000 }, () => {
   let root: string
-  const backends: PythonBackend[] = []
+  const backends: WorkerBackend[] = []
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'strands-python-worker-region-'))
@@ -46,9 +46,9 @@ describe.skipIf(!existsSync(pythonExecutable))('Python worker provider resolutio
 
   async function openAgent(
     model = JSON.stringify(bedrockModel),
-    overrides?: PythonOptions['overrides'],
+    overrides?: WorkerOptions['overrides'],
     prelude = ''
-  ): Promise<PythonBackend> {
+  ): Promise<WorkerBackend> {
     const entrypoint = join(root, 'agent.py')
     await writeFile(
       entrypoint,
@@ -63,7 +63,7 @@ agent = create_harness(
 agent.name = agent.model.client.meta.region_name if isinstance(agent.model, BedrockModel) else type(agent.model).__name__
 `
     )
-    const backend = await PythonBackend.open(
+    const backend = await WorkerBackend.openPython(
       { root, entrypoint, language: 'python' },
       CliConfigStore.memory(),
       { cwd: root, ...(overrides ? { overrides } : {}) },
@@ -81,7 +81,7 @@ agent.name = agent.model.client.meta.region_name if isinstance(agent.model, Bedr
   ])(
     'leaves authored model resolution to the SDK for %s',
     async (model) => {
-      await expect(openAgent(model)).resolves.toBeInstanceOf(PythonBackend)
+      await expect(openAgent(model)).resolves.toBeInstanceOf(WorkerBackend)
     },
     15_000
   )
@@ -92,8 +92,8 @@ agent.name = agent.model.client.meta.region_name if isinstance(agent.model, Bedr
   })
 
   it('drops removed config keys instead of forwarding them to Agent', async () => {
-    const overrides = { thinking: null } as unknown as PythonOptions['overrides']
-    await expect(openAgent(undefined, overrides)).resolves.toBeInstanceOf(PythonBackend)
+    const overrides = { thinking: null } as unknown as WorkerOptions['overrides']
+    await expect(openAgent(undefined, overrides)).resolves.toBeInstanceOf(WorkerBackend)
   })
 
   it('leaves a supplied Model instance untouched', async () => {

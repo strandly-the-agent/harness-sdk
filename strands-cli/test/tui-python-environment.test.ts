@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { applyProviderEnvironmentValues, CliConfigStore } from '../src/tui/config.js'
-import { PythonBackend } from '../src/tui/project/python.js'
+import { WorkerBackend } from '../src/tui/project/worker.js'
 
 vi.mock('node:child_process', async (original) => ({
   ...(await original<typeof import('node:child_process')>()),
@@ -32,7 +32,7 @@ describe('Python project environment', () => {
       const config = CliConfigStore.memory()
       const project = { root, entrypoint: join(root, 'agent.py'), language: 'python' as const }
       const launch = async (): Promise<NodeJS.ProcessEnv> => {
-        await expect(PythonBackend.open(project, config)).rejects.toThrow('Captured Python spawn')
+        await expect(WorkerBackend.openPython(project, config)).rejects.toThrow('Captured Python spawn')
         return vi.mocked(spawn).mock.calls.at(-1)![2]!.env!
       }
       const untrusted = await launch()

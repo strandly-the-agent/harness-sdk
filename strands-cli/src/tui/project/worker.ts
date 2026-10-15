@@ -44,7 +44,7 @@ function decodeBytes(_key: string, value: unknown): unknown {
   return value
 }
 
-interface PythonState {
+interface WorkerState {
   name: string
   reconstructable: boolean
   description: string
@@ -62,7 +62,7 @@ interface PythonState {
 }
 
 type WorkerMessage =
-  | { type: 'ready'; state: PythonState }
+  | { type: 'ready'; state: WorkerState }
   | { type: 'event'; event: ChatEvent }
   | {
       type: 'authorize'
@@ -72,10 +72,10 @@ type WorkerMessage =
       before?: string
       pathInWorkspace: boolean
     }
-  | { type: 'result'; result: ChatRunResult; state: PythonState; reload?: boolean }
+  | { type: 'result'; result: ChatRunResult; state: WorkerState; reload?: boolean }
   | { type: 'error'; message: string }
 
-export interface PythonOptions {
+export interface WorkerOptions {
   sourceSelection?: ChatConversation['sourceSelection']
   overrides?: Partial<HarnessAgentConfig>
   assignments?: readonly string[]
@@ -89,10 +89,21 @@ export interface PythonOptions {
   resume?: boolean
 }
 
-export class PythonBackend implements ChatBackend {
-  readonly id = 'python'
+export type WorkerRuntime = 'python' | 'rust'
+
+export interface WorkerLaunch {
+  runtime: WorkerRuntime
+  command: string
+  args: string[]
+  env?: NodeJS.ProcessEnv
+  project?: ImportedAgentProject
+}
+
+export class WorkerBackend implements ChatBackend {
+  readonly id: WorkerRuntime
   readonly protocol = 'strands'
-  private _state!: PythonState
+  private readonly _label: string
+  private _state!: WorkerState
   private readonly _messages: WorkerMessage[] = []
   private readonly _permissions = new ToolPermissionBroker()
   private _wake: (() => void) | undefined
@@ -105,10 +116,12 @@ export class PythonBackend implements ChatBackend {
 
   private constructor(
     private readonly _child: ChildProcess,
-    private readonly _project: ImportedAgentProject,
+    private readonly _launch: WorkerLaunch,
     private readonly _config: CliConfigStore,
     readonly cwd: string
   ) {
+    this.id = _launch.runtime
+    this._label = _launch.runtime === 'rust' ? 'Rust' : 'Python'
     for (const output of [_child.stdout, _child.stderr]) {
       output?.on('data', (chunk: Buffer) => {
         this._diagnostics = (this._diagnostics + chunk.toString()).slice(-8_192)
@@ -124,53 +137,86 @@ export class PythonBackend implements ChatBackend {
           !('type' in message) ||
           !['ready', 'event', 'authorize', 'result', 'error'].includes(String(message.type))
         ) {
-          throw new Error('Unexpected Python message')
+          throw new Error(`Unexpected ${this._label} message`)
         }
         this._messages.push(message as WorkerMessage)
         this._wake?.()
       } catch {
-        this._fail(new Error('The Python agent returned an invalid message.'))
+        this._fail(new Error(`The ${this._label} agent returned an invalid message.`))
       }
     })
     _child.on('error', (error) => this._fail(error))
     _child.on('close', (code, signal) => {
       this._fail(
-        new Error(`Python agent exited (${signal ?? code}). ${sanitizeTerminalText(this._diagnostics).trim()}`)
+        new Error(`${this._label} agent exited (${signal ?? code}). ${sanitizeTerminalText(this._diagnostics).trim()}`)
       )
       input.close()
     })
     _child.stdin?.on('error', (error) => this._fail(error))
   }
 
-  static async open(
+  /** Run an authored Python agent project through `worker.py`. */
+  static async openPython(
     project: ImportedAgentProject,
     config: CliConfigStore,
-    options: PythonOptions = {},
+    options: WorkerOptions = {},
     signal?: AbortSignal
-  ): Promise<PythonBackend> {
+  ): Promise<WorkerBackend> {
     await prepareArchiveDependencies(project.root, project.language)
     const python = join(project.root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
     const projectEnvironment = existsSync(python)
     const worker = fileURLToPath(new URL('./worker.py', import.meta.url))
+    return WorkerBackend._open(
+      {
+        runtime: 'python',
+        command: projectEnvironment ? python : 'python3',
+        args: ['-u', worker, project.entrypoint, project.root],
+        ...(projectEnvironment
+          ? { env: { PATH: [dirname(python), process.env.PATH].filter(Boolean).join(delimiter) } }
+          : {}),
+        project,
+      },
+      config,
+      options,
+      signal
+    )
+  }
+
+  /** Run the harness through the Rust `strands-cli-worker` binary (see `resolveRustWorker`). */
+  static async openRust(
+    config: CliConfigStore,
+    options: WorkerOptions = {},
+    signal?: AbortSignal
+  ): Promise<WorkerBackend> {
+    return WorkerBackend._open({ runtime: 'rust', command: resolveRustWorker(), args: [] }, config, options, signal)
+  }
+
+  private static async _open(
+    launch: WorkerLaunch,
+    config: CliConfigStore,
+    options: WorkerOptions,
+    signal?: AbortSignal
+  ): Promise<WorkerBackend> {
     const cwd = resolve(options.cwd ?? process.cwd())
     config.applyProviderEnvironment()
-    const backend = new PythonBackend(
-      spawn(projectEnvironment ? python : 'python3', ['-u', worker, project.entrypoint, project.root], {
+    const backend = new WorkerBackend(
+      spawn(launch.command, launch.args, {
         cwd,
         env: {
           ...process.env,
-          ...(projectEnvironment ? { PATH: [dirname(python), process.env.PATH].filter(Boolean).join(delimiter) } : {}),
+          ...launch.env,
           ...(process.env.AWS_REGION ? { AWS_DEFAULT_REGION: process.env.AWS_REGION } : {}),
         },
         stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
       }),
-      project,
+      launch,
       config,
       cwd
     )
-    const cancel = (): void => backend._fail(new Error('Python agent loading cancelled.'))
+    const label = backend._label
+    const cancel = (): void => backend._fail(new Error(`${label} agent loading cancelled.`))
     signal?.addEventListener('abort', cancel, { once: true })
-    const timeout = setTimeout(() => backend._fail(new Error('Python agent loading timed out.')), 60_000)
+    const timeout = setTimeout(() => backend._fail(new Error(`${label} agent loading timed out.`)), 60_000)
     try {
       signal?.throwIfAborted()
       await backend._request({ type: 'init', ...options })
@@ -196,7 +242,7 @@ export class PythonBackend implements ChatBackend {
   get sessionDirectory(): string {
     return this._state.sessionDirectory
   }
-  get sessionIdentity(): PythonState['session'] {
+  get sessionIdentity(): WorkerState['session'] {
     return this._state.session
   }
   get messages(): Message[] {
@@ -220,7 +266,7 @@ export class PythonBackend implements ChatBackend {
   }
 
   async *stream(prompt: string | ContentBlockData[]): AsyncGenerator<ChatEvent, ChatRunResult, undefined> {
-    if (this._running) throw new Error('The Python agent is busy.')
+    if (this._running) throw new Error(`The ${this._label} agent is busy.`)
     this._running = true
     let completed = false
     try {
@@ -261,7 +307,7 @@ export class PythonBackend implements ChatBackend {
     if (!this._reloadRequested) return undefined
     this._reloadRequested = false
     return {
-      agentProject: this._project.entrypoint,
+      ...(this._launch.project ? { agentProject: this._launch.project.entrypoint } : {}),
       onFailure: async (message): Promise<void> => {
         await this._request({ type: 'reload-failed', message })
       },
@@ -286,7 +332,7 @@ export class PythonBackend implements ChatBackend {
     return models.some((model) => model.active)
       ? models
       : [
-          { id: this._state.model, name: this._state.model, description: 'Current Python model', active: true },
+          { id: this._state.model, name: this._state.model, description: `Current ${this._label} model`, active: true },
           ...models,
         ]
   }
@@ -327,9 +373,9 @@ export class PythonBackend implements ChatBackend {
     return this.skills.find((skill) => skill.name === name)
   }
 
-  async fork(options: PythonOptions, signal?: AbortSignal): Promise<PythonBackend> {
-    const target = await PythonBackend.open(
-      this._project,
+  async fork(options: WorkerOptions, signal?: AbortSignal): Promise<WorkerBackend> {
+    const target = await WorkerBackend._open(
+      this._launch,
       this._config,
       {
         ...options,
@@ -405,7 +451,7 @@ export class PythonBackend implements ChatBackend {
       this._send({ type: 'cancel' })
       if (this._running && !this._cancelTimeout) {
         this._cancelTimeout = setTimeout(() => {
-          this._fail(new Error('The Python agent did not stop after cancellation. Reload it to continue.'))
+          this._fail(new Error(`The ${this._label} agent did not stop after cancellation. Reload it to continue.`))
           void this.dispose()
         }, 3_000)
       }
@@ -430,7 +476,7 @@ export class PythonBackend implements ChatBackend {
     ])
     clearTimeout(timeout)
     if (this._child.exitCode === null && this._child.signalCode === null) await terminateProcessTree(this._child)
-    this._fail(new Error('Python agent closed.'))
+    this._fail(new Error(`${this._label} agent closed.`))
   }
 
   private async _authorize(message: Extract<WorkerMessage, { type: 'authorize' }>): Promise<boolean> {
@@ -471,13 +517,13 @@ export class PythonBackend implements ChatBackend {
   }
 
   private async _request(command: object): Promise<ChatRunResult> {
-    if (this._running) throw new Error('Wait for the Python agent to finish before changing it.')
+    if (this._running) throw new Error(`Wait for the ${this._label} agent to finish before changing it.`)
     this._running = true
     try {
       this._send(command)
       const message = await this._next()
       if (message.type === 'error') throw new Error(sanitizeTerminalText(message.message))
-      if (message.type !== 'ready' && message.type !== 'result') throw new Error('Unexpected Python response.')
+      if (message.type !== 'ready' && message.type !== 'result') throw new Error(`Unexpected ${this._label} response.`)
       this._state = message.state
       return message.type === 'result' ? message.result : { stopReason: 'ready' }
     } finally {
@@ -512,4 +558,34 @@ export class PythonBackend implements ChatBackend {
     }
     return this._messages.shift()!
   }
+}
+
+/**
+ * Locate the Rust worker binary: `STRANDS_RUST_WORKER`, then `strands-cli-worker` on `PATH`, then a
+ * cargo build in the monorepo's `strands-rs/target` (dev checkouts).
+ */
+export function resolveRustWorker(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env.STRANDS_RUST_WORKER
+  if (explicit) {
+    if (!existsSync(explicit)) throw new Error(`STRANDS_RUST_WORKER points to a missing file: ${explicit}`)
+    return explicit
+  }
+  const binary = process.platform === 'win32' ? 'strands-cli-worker.exe' : 'strands-cli-worker'
+  for (const dir of (env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    const candidate = join(dir, binary)
+    if (existsSync(candidate)) return candidate
+  }
+  const targets = [env.CARGO_TARGET_DIR, fileURLToPath(new URL('../../../../strands-rs/target', import.meta.url))]
+  for (const target of targets) {
+    if (!target) continue
+    for (const profile of ['release', 'debug']) {
+      const candidate = join(target, profile, binary)
+      if (existsSync(candidate)) return candidate
+    }
+  }
+  throw new Error(
+    'The Rust runtime needs the strands-cli-worker binary. Build it with ' +
+      '`cargo build --release -p strands-cli-worker` in strands-rs/ (or `cargo install --path strands-rs/crates/strands-cli-worker`) ' +
+      'and put it on PATH or set STRANDS_RUST_WORKER to its path.'
+  )
 }

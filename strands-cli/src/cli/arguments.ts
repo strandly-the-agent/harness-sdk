@@ -11,6 +11,7 @@ export interface ParsedArgs {
   acpServer: boolean
   setup: boolean
   agent: string | undefined
+  runtime: CliRuntime | undefined
   configSet: string[]
   envFiles: string[]
   name: string | undefined
@@ -51,6 +52,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
     .option('--acp-server', 'serve the agent over ACP on stdin/stdout')
     .option('--setup', 'open the interactive provider and agent setup wizard')
     .option('--agent <path>', 'load an agent project ZIP, folder, or agent.ts/agent.py')
+    .option(
+      '--runtime <name>',
+      "harness runtime: 'typescript' (default) or 'rust' (needs strands-cli-worker; or STRANDS_RUNTIME)"
+    )
     .option('--set <field=value>', 'override any portable agent config field (repeatable)', collect, [])
     .option('--env-file <path>', 'load an explicitly trusted env file (repeatable)', collect, [])
     .option('--name <name>', 'agent name')
@@ -87,6 +92,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     acpServer: Boolean(opts.acpServer),
     setup: Boolean(opts.setup),
     agent: opts.agent,
+    runtime: parseRuntime(opts.runtime ?? process.env.STRANDS_RUNTIME, program),
     configSet: opts.set,
     envFiles: opts.envFile,
     name: opts.name,
@@ -123,6 +129,7 @@ function parseUpdateArgs(argv: string[]): ParsedArgs {
     acpServer: false,
     setup: false,
     agent: undefined,
+    runtime: undefined,
     configSet: [],
     envFiles: [],
     name: undefined,
@@ -144,6 +151,14 @@ function parseUpdateArgs(argv: string[]): ParsedArgs {
 }
 
 /** Apply arbitrary portable config values, followed by the dedicated CLI flag shorthands. */
+export type CliRuntime = 'typescript' | 'rust'
+
+function parseRuntime(value: string | undefined, program: Command): CliRuntime | undefined {
+  if (value === undefined || value === '') return undefined
+  if (value === 'typescript' || value === 'rust') return value
+  return program.error(`error: unknown runtime '${value}'; expected 'typescript' or 'rust'.`)
+}
+
 export function agentConfig(args: ParsedArgs, defaults: HarnessAgentConfig): HarnessAgentConfig {
   const config = globalThis.structuredClone(defaults) as unknown as Record<string, unknown>
   for (const assignment of args.configSet) {

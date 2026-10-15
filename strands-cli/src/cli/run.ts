@@ -3,7 +3,12 @@ import { CommanderError } from 'commander'
 import { createHarness, harnessAgentOptionsFromConfig } from '@strands-agents/harness'
 
 import { parseArgs, shouldPersistModelChanges, type CliRunMode, type ParsedArgs } from './arguments.js'
-import { invocationAgentForRun, pythonInvocationOptions, withDiscoveredSkills } from './invocation.js'
+import {
+  invocationAgentForRun,
+  pythonInvocationOptions,
+  rustInvocationOptions,
+  withDiscoveredSkills,
+} from './invocation.js'
 import { initLogging } from '../logging.js'
 import { runPlainChat, runTurn } from '../console.js'
 import { importAgentProject } from '../tui/project/import.js'
@@ -100,9 +105,19 @@ async function runAcp(args: ParsedArgs): Promise<void> {
     const mcp = await resolveMcpConfig(args.mcpConfig, { discovery: settings.mcpDiscovery })
     const projectPath = args.agent ?? config.snapshot().agentProject
     const project = projectPath ? importAgentProject(projectPath) : undefined
-    if (project?.language === 'python') {
-      const { runPythonAcpServer } = await import('../tui/project/acp.js')
-      await runPythonAcpServer(project, config, await pythonInvocationOptions(args, process.cwd(), settings, mcp))
+    if (project?.language === 'python' || args.runtime === 'rust') {
+      const [{ runWorkerAcpServer }, { pythonOpener, rustOpener }] = await Promise.all([
+        import('../tui/project/acp.js'),
+        import('../tui/project/run.js'),
+      ])
+      if (project?.language === 'python') {
+        await runWorkerAcpServer(
+          pythonOpener(project.entrypoint, config).open,
+          await pythonInvocationOptions(args, process.cwd(), settings, mcp)
+        )
+      } else {
+        await runWorkerAcpServer(rustOpener(config), await rustInvocationOptions(args, process.cwd(), config, mcp))
+      }
       return
     }
     const invocation = await invocationAgentForRun(args, config)
@@ -128,20 +143,28 @@ async function runConsole(args: ParsedArgs, request: string | undefined, mode: '
     config.useEnvironmentFiles(args.envFiles)
     const projectPath = args.agent ?? config.snapshot().agentProject
     const project = projectPath ? importAgentProject(projectPath) : undefined
-    if (project?.language === 'python') {
-      const { runPythonConsole } = await import('../tui/project/run.js')
+    if (project?.language === 'python' || args.runtime === 'rust') {
+      const { runWorkerConsole, pythonOpener, rustOpener } = await import('../tui/project/run.js')
       const settings = config.snapshot().settings
       const mcp = await resolveMcpConfig(args.mcpConfig, {
         ...(mode === 'plain' ? { confirm: confirmWorkspaceMcp } : {}),
         discovery: settings.mcpDiscovery,
       })
-      await runPythonConsole(
-        project.entrypoint,
-        config,
-        await pythonInvocationOptions(args, process.cwd(), settings, mcp),
-        request,
-        mode === 'plain'
-      )
+      if (project?.language === 'python') {
+        await runWorkerConsole(
+          pythonOpener(project.entrypoint, config).open,
+          await pythonInvocationOptions(args, process.cwd(), settings, mcp),
+          request,
+          mode === 'plain'
+        )
+      } else {
+        await runWorkerConsole(
+          rustOpener(config),
+          await rustInvocationOptions(args, process.cwd(), config, mcp),
+          request,
+          mode === 'plain'
+        )
+      }
       return
     }
     const invocation = await invocationAgentForRun(args, config, process.cwd(), project, true)
@@ -214,11 +237,26 @@ async function runInteractive(args: ParsedArgs, request: string | undefined): Pr
           launch?.agentProject ?? (launch?.configuration ? undefined : (args.agent ?? config.snapshot().agentProject))
         const project = projectPath ? importAgentProject(projectPath) : undefined
         if (project?.language === 'python') {
-          const { createPythonChat } = await import('../tui/project/run.js')
-          return createPythonChat(
-            project.entrypoint,
+          const { createWorkerChat, pythonOpener } = await import('../tui/project/run.js')
+          const opener = pythonOpener(project.entrypoint, config)
+          return createWorkerChat(
+            opener.open,
+            opener.project,
             config,
             await pythonInvocationOptions(args, initialWorkspace, config.snapshot().settings, initialMcp),
+            signal,
+            requestSetup,
+            conversation
+          )
+        }
+        if (args.runtime === 'rust' && !project) {
+          const { createWorkerChat, rustOpener } = await import('../tui/project/run.js')
+          if (launch?.configuration) config.applyProviderEnvironment()
+          return createWorkerChat(
+            rustOpener(config),
+            undefined,
+            config,
+            await rustInvocationOptions(args, initialWorkspace, config, initialMcp),
             signal,
             requestSetup,
             conversation

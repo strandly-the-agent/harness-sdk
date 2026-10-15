@@ -130,7 +130,7 @@ export async function pythonInvocationOptions(
   cwd: string,
   settings: { skillDiscovery: boolean },
   mcp: ResolvedMcpConfig
-): Promise<import('../tui/project/python.js').PythonOptions> {
+): Promise<import('../tui/project/worker.js').WorkerOptions> {
   const [{ readMcpDefinitions }, { resolveSkillPaths }] = await Promise.all([
     import('../tui/mcp.js'),
     import('../tui/skills.js'),
@@ -148,6 +148,18 @@ export async function pythonInvocationOptions(
     mcpServers: definitions,
     skillPaths: resolveSkillPaths(undefined, cwd, settings.skillDiscovery),
   }
+}
+
+/** Worker options for the Rust runtime: the full profile (plus CLI flags) travels as `overrides`. */
+export async function rustInvocationOptions(
+  args: ParsedArgs,
+  cwd: string,
+  config: { snapshot(): { profile: HarnessAgentConfig; settings: { skillDiscovery: boolean } } },
+  mcp: ResolvedMcpConfig
+): Promise<import('../tui/project/worker.js').WorkerOptions> {
+  const snapshot = config.snapshot()
+  const options = await pythonInvocationOptions(args, cwd, snapshot.settings, mcp)
+  return { ...options, overrides: agentConfig(args, snapshot.profile) }
 }
 
 export async function withDiscoveredSkills(
