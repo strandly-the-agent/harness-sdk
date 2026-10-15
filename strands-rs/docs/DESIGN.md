@@ -105,3 +105,25 @@ a deliberate divergence from `strands-ts/src/a2a/`:
   can recover the JSON-RPC code; agent failures propagate as the crate's own errors unchanged.
 - `ExecutionEventBus` becomes `a2a::EventBus`, an unbounded `tokio::sync::mpsc` sender; the
   consumer (JSON-RPC handler) drains the receiver to aggregate a task or to emit SSE.
+
+The server (`a2a::A2AServer`) is `axum` rather than express, and the request handling TS gets from
+`@a2a-js/sdk`'s `DefaultRequestHandler` + `InMemoryTaskStore` is in-tree over `a2a::TaskStore`,
+which folds the executor's events into one `Task`. `A2AServer::builder(name)` mirrors
+`AgentBuilder`; `router() -> axum::Router` mounts into a host application and
+`serve() -> ServerHandle` runs it (`local_addr`, `agent_card`, graceful `shutdown`). Further
+deliberate divergences:
+
+- `.agent()` and `.executor()` write the same builder slot, so TS's "provide exactly one of
+  `agent`/`agentFactory`" throw is unexpressible; `build()` fails only when neither was set.
+- The task store is concrete and in-memory, not a trait: TS's `taskStore` option has no twin until
+  there is a second implementation to abstract over.
+- The card is served at both `/.well-known/agent-card.json` and the legacy
+  `/.well-known/agent.json`, advertises protocol version `0.3.0` (not TS's `0.2.0`), and takes its
+  description from the served agent in `.agent()` mode — TS's `__agent_card__` placeholder factory
+  call is not ported.
+- Routes mount under the path of `http_url` with `serve_at_root(true)` forcing the root, following
+  Python rather than TS (whose express server always mounts at `/`).
+- `message/send` always runs to completion: `configuration.blocking: false` is treated as blocking
+  since nothing delivers a result out of band yet. An executor failure marks the task `failed` and
+  returns its JSON-RPC code.
+- No auth hook (TS's `UserBuilder`): hosts wrap `router()` in their own `axum` middleware.

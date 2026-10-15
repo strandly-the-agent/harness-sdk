@@ -21,6 +21,15 @@ Behind the `a2a` cargo feature. Protocol types are in-tree (TS depends on `@a2a-
 | `executor.execute(ctx, bus)` | `A2AExecutor::execute(&self, &RequestContext, &EventBus) -> Result<()>` |
 | `executor.cancelTask(id, bus)` | `A2AExecutor::cancel_task(&self, &str, &EventBus) -> Result<()>` |
 | `invocationState.a2aRequestContext` | `a2a::A2A_REQUEST_CONTEXT_KEY` |
+| `InMemoryTaskStore` + `DefaultRequestHandler` aggregation (SDK) | `a2a::TaskStore::{new, get, save, apply}` |
+| `new A2AServer({ ... })` / `new A2AExpressServer({ ... })` | `A2AServer::builder(name)` → `.agent(a)` / `.executor(e)` / `.description` / `.http_url` / `.version` / `.skills` / `.agent_card` / `.serve_at_root` / `.host` / `.port` / `.listener` / `.build() -> Result<A2AServer>` |
+| `server.agentCard` | `A2AServer::agent_card() -> &AgentCard`, `ServerHandle::agent_card()` |
+| `{ taskStore }` config option | `A2AServer::task_store() -> &Arc<TaskStore>` (no pluggable store; see divergences) |
+| `server.createMiddleware()` (express `Router`) | `A2AServer::router() -> axum::Router` |
+| `server.serve({ signal })` | `A2AServer::serve() -> Result<ServerHandle>`; `ServerHandle::{local_addr, agent_card, shutdown}` |
+| `agentCardHandler` at `/.well-known/agent-card.json` | `GET types::AGENT_CARD_PATH` and legacy `types::PREV_AGENT_CARD_PATH` |
+| `jsonRpcHandler` at `/` | `POST /` — `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel` |
+| `UserBuilder.noAuthentication` | **not ported** — wrap `router()` in your own `axum` middleware |
 
 ## Test map
 
@@ -52,7 +61,18 @@ Behind the `a2a` cargo feature. Protocol types are in-tree (TS depends on `@a2a-
 | executor: `isolates history across contexts via snapshot swapping` | `a_shared_agent_isolates_history_across_contexts_via_snapshot_swapping` |
 | executor: `throws when a single agent has a sessionManager` | covered by `A2AExecutor::new` returning `Err`; no dedicated test yet |
 | `async-lock.test.ts` (4 `it`s) | **N/A** — `tokio::sync::Mutex` replaces `AsyncLock`; not re-tested |
-| `server.test.ts`, `server.test.node.ts`, `a2a-agent.test.ts` | **not ported yet** (`server.rs`, `A2AAgent` still to come) |
+| server: `builds agent card with provided values` | `a2a::server::builds_agent_card_with_provided_values` |
+| server: `uses default values when optional config is omitted` | `uses_default_values_when_optional_config_is_omitted` |
+| server: `builds an agent card from a factory-built representative agent` | `describes_itself_with_the_agents_own_description` (agent mode; the factory is never called just for the card) |
+| server: `accepts custom taskStore` | **N/A** — the store is not pluggable; `an_explicit_agent_card_overrides_the_card_settings` covers the remaining override knob |
+| server: `throws when neither agent nor agentFactory is provided` | `requires_an_agent_or_an_executor` |
+| server: `throws when both agent and agentFactory are provided` | **N/A** — `.agent()`/`.executor()` share one slot, last call wins |
+| server (node): `builds agent card with default values` / `uses custom config values` / `uses httpUrl override when provided` | `uses_default_values_when_optional_config_is_omitted`, `builds_agent_card_with_provided_values`, `serves_the_agent_card_at_both_well_known_paths` |
+| server (node): `is an instance of A2AServer` | **N/A** — one type, no subclassing |
+| server (node): `returns an express router with SDK middleware` | `serves_the_agent_card_at_both_well_known_paths`, `serves_under_the_path_of_the_http_url`, `serve_at_root_ignores_the_http_url_path` (behavioural, not mock-shaped) |
+| *(no TS equivalent — the SDK's `DefaultRequestHandler` is not unit-tested here)* | `message_send_returns_the_completed_task`, `message_stream_emits_the_task_artifacts_and_final_status_as_sse`, `tasks_get_returns_a_previously_served_task`, `tasks_get_truncates_the_history_to_the_requested_length`, `tasks_get_reports_an_unknown_task`, `tasks_cancel_reports_an_unknown_task`, `tasks_cancel_reports_a_finished_task_as_not_cancelable`, `reports_an_unknown_method`, `reports_invalid_params`, `reports_a_malformed_body_as_a_parse_error`, `reports_a_wrong_protocol_version_as_an_invalid_request`, `serves_on_a_provided_listener_and_stops_on_shutdown`, `derives_the_mount_path_from_the_http_url` |
+| *(no TS equivalent — store aggregation)* | `a2a::task_store::*` (8 tests) |
+| `a2a-agent.test.ts` | **not ported yet** (`A2AAgent` still to come) |
 
 ## Divergences
 
@@ -71,3 +91,28 @@ Behind the `a2a` cargo feature. Protocol types are in-tree (TS depends on `@a2a-
   errors.
 - `EventBus` is an unbounded `tokio::sync::mpsc` sender rather than the SDK's event bus; the
   server (next increment) drains the receiver to aggregate a task or emit SSE.
+- The request handling `@a2a-js/sdk`'s `DefaultRequestHandler` performs is in-tree over
+  `a2a::TaskStore`, which is a concrete in-memory store rather than TS's `TaskStore` interface:
+  there is no second implementation to abstract over yet, so the `taskStore` config option has no
+  Rust twin (`A2AServer::task_store()` exposes the store for inspection).
+- `A2AServer::builder(name)` mirrors `AgentBuilder`; `.agent()` and `.executor()` write the same
+  slot, so "exactly one of agent/agentFactory" cannot be violated and `build()` fails only when
+  neither was set.
+- In executor mode no representative agent exists, so TS's `__agent_card__` placeholder factory
+  call is not ported — the card's description comes from `.description()`, falling back to the
+  agent's own `description()` in `.agent()` mode.
+- The card advertises protocol version `0.3.0` (what `a2a::types` implements), not TS's
+  hard-coded `0.2.0`.
+- The agent card is served at both `/.well-known/agent-card.json` and the legacy
+  `/.well-known/agent.json`; TS serves only the former.
+- Routes mount under the path component of `http_url` (Python's `serve_at_root` / mount-path
+  semantics), which TS's express server does not do; `serve_at_root(true)` forces the root.
+- `serve()` returns a `ServerHandle` (`local_addr`, `agent_card`, `shutdown`) instead of TS's
+  promise that resolves on listen plus an `AbortSignal`; shutdown is graceful.
+- `message/send` always runs the agent to completion: `configuration.blocking: false` is treated
+  as blocking, since there are no push notifications to deliver the result out of band.
+- An executor failure marks the task `failed` in the store (mirroring `DefaultRequestHandler`)
+  and is returned as a JSON-RPC error, recovering the executor's own code when it has one.
+- `tasks/cancel` answers `-32001` for an unknown task and `-32002` for a terminal one before
+  reaching the executor, which still reports `-32004` (unsupported).
+- No auth hook (`UserBuilder`) is ported: hosts wrap `router()` in their own `axum` middleware.
