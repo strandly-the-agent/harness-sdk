@@ -17,6 +17,7 @@ test-support = []
 macros = ["dep:strands-agents-macros"]
 telemetry = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
 anthropic = ["dep:reqwest"]
+http = ["dep:reqwest"]
 openai = ["dep:reqwest"]
 mcp = ["dep:rmcp", "dep:http", "dep:regex"]
 # Internal, test-only: builds the `mcp_echo_server` binary (a minimal stdio MCP server used by
