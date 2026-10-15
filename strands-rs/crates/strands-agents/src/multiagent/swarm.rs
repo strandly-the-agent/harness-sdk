@@ -1222,6 +1222,79 @@ mod tests {
         }
     }
 
+    /// Stands in for the TS `SessionManager` plugin, which is not ported yet: saves the
+    /// orchestration state after every run and restores it into the next one. Like TS, it restores
+    /// at most once per orchestrator (`SessionManager._multiAgentRestoredIds`).
+    #[derive(Default)]
+    struct Session {
+        saved: Mutex<Option<Snapshot>>,
+    }
+
+    impl Session {
+        fn shared() -> Arc<Self> {
+            Arc::new(Self::default())
+        }
+
+        /// Registers the save/restore hooks a session manager would register. Each call is one
+        /// manager instance over the same storage, so each restores at most once.
+        fn install(self: &Arc<Self>, builder: SwarmBuilder) -> SwarmBuilder {
+            let restore = self.clone();
+            let save = self.clone();
+            let restored = Arc::new(Mutex::new(false));
+            builder
+                .hook::<BeforeMultiAgentInvocationEvent, _>(move |event| {
+                    let mut restored = restored.lock().expect("not poisoned");
+                    if *restored {
+                        return Ok(());
+                    }
+                    *restored = true;
+                    let saved = restore.saved.lock().expect("not poisoned").clone();
+                    if let Some(snapshot) = saved {
+                        load_snapshot(event.orchestrator.as_ref(), &snapshot, Some(&event.state))?;
+                    }
+                    Ok(())
+                })
+                .hook::<AfterMultiAgentInvocationEvent, _>(move |event| {
+                    let snapshot = take_snapshot(
+                        event.orchestrator.as_ref(),
+                        Some(&event.state),
+                        TakeMultiAgentSnapshotOptions::default(),
+                    )?;
+                    *save.saved.lock().expect("not poisoned") = Some(snapshot);
+                    Ok(())
+                })
+        }
+    }
+
+    /// Tool that interrupts for approval the first time and returns the answer on resume.
+    fn approve_tool() -> Arc<crate::tools::FunctionTool> {
+        Arc::new(
+            crate::tools::FunctionTool::builder("confirm_tool")
+                .description("Interrupts for approval")
+                .input_schema(json!({ "type": "object", "properties": {} }))
+                .handler(|_input, ctx| async move {
+                    let answer: String =
+                        ctx.interrupt(crate::types::InterruptParams::new("confirm").with_reason("approve?"))?;
+                    Ok(json!(format!("approved: {answer}")))
+                }),
+        )
+    }
+
+    /// Assistant turn calling `confirm_tool`, which interrupts.
+    fn interrupting_turn() -> MockResponse {
+        MockResponse::with_stop_reason(
+            Message::new(
+                Role::Assistant,
+                vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                    "confirm_tool",
+                    "tool-int",
+                    json!({}),
+                ))],
+            ),
+            StopReason::ToolUse,
+        )
+    }
+
     fn node_ids(result: &MultiAgentResult) -> Vec<&str> {
         result.results.iter().map(|r| r.node_id.as_str()).collect()
     }
@@ -1959,6 +2032,513 @@ mod tests {
             *messages.lock().expect("not poisoned"),
             ["agent not ready".to_owned()]
         );
+    }
+
+    // ---- resume from restored state (`swarm.test.ts` "resume with session manager") ---------
+
+    #[tokio::test]
+    async fn resumes_from_the_pending_handoff_target_after_a_crash() {
+        let session = Session::shared();
+        let resume_swarm = |max_steps: Option<u64>| {
+            let mut builder = Swarm::builder()
+                .id("my-swarm")
+                .node(handoff_agent(
+                    "a",
+                    json!({ "agentId": "b", "message": "go to b" }),
+                ))
+                .node(final_agent("b", "done by b"));
+            if let Some(max_steps) = max_steps {
+                builder = builder.max_steps(max_steps);
+            }
+            session.install(builder).build().expect("swarm builds")
+        };
+
+        let error = resume_swarm(Some(1))
+            .invoke("start")
+            .await
+            .expect_err("step limit");
+        assert_eq!(error.to_string(), "max_steps=<1> | swarm reached step limit");
+
+        let result = resume_swarm(None).invoke("start").await.expect("swarm runs");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), ["a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn carries_forward_the_step_count_from_the_previous_invocation() {
+        let session = Session::shared();
+        let resume_swarm = |max_steps: u64| {
+            session
+                .install(
+                    Swarm::builder()
+                        .id("my-swarm")
+                        .node(handoff_agent(
+                            "a",
+                            json!({ "agentId": "b", "message": "go to b" }),
+                        ))
+                        .node(final_agent("b", "done by b"))
+                        .max_steps(max_steps),
+                )
+                .build()
+                .expect("swarm builds")
+        };
+
+        resume_swarm(1).invoke("start").await.expect_err("step limit");
+        let result = resume_swarm(2).invoke("start").await.expect("swarm runs");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), ["a", "b"]);
+        assert_eq!(result.results.len(), 2, "the restored step count is spent");
+    }
+
+    #[tokio::test]
+    async fn restores_only_once_so_a_completed_run_starts_fresh() {
+        let session = Session::shared();
+        let swarm = session
+            .install(
+                Swarm::builder()
+                    .id("my-swarm")
+                    .node(handoff_sequence_agent(
+                        "a",
+                        vec![json!({ "message": "all done" }), json!({ "message": "again" })],
+                    ))
+                    .node(final_agent("b", "done by b")),
+            )
+            .build()
+            .expect("swarm builds");
+
+        let first = swarm.invoke("start").await.expect("swarm runs");
+        assert_eq!(node_ids(&first), ["a"]);
+
+        let second = swarm.invoke("start").await.expect("swarm runs");
+
+        assert_eq!(second.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&second), ["a"]);
+    }
+
+    #[tokio::test]
+    async fn passes_the_last_handoff_context_to_the_resumed_node() {
+        let session = Session::shared();
+        let handoff = json!({
+            "agentId": "b",
+            "message": "write this up",
+            "context": { "research": "quantum computing basics" },
+        });
+
+        let crashed = session
+            .install(
+                Swarm::builder()
+                    .id("my-swarm")
+                    .node(handoff_agent("a", handoff.clone()))
+                    .node(final_agent("b", "done"))
+                    .max_steps(1),
+            )
+            .build()
+            .expect("swarm builds");
+        crashed.invoke("start").await.expect_err("step limit");
+
+        let model_b = MockMessageModel::shared(vec![handoff_turn(json!({ "message": "done" }))]);
+        let resumed = session
+            .install(
+                Swarm::builder()
+                    .id("my-swarm")
+                    .node(handoff_agent("a", handoff))
+                    .node(
+                        Agent::builder()
+                            .model(model_b.clone())
+                            .id("b")
+                            .build()
+                            .expect("agent builds"),
+                    ),
+            )
+            .build()
+            .expect("swarm builds");
+        resumed.invoke("start").await.expect("swarm runs");
+
+        let (messages, _) = model_b.calls().remove(0);
+        let input = messages[0].text();
+        assert!(input.contains("write this up"), "{input}");
+        assert!(input.contains("quantum computing basics"), "{input}");
+    }
+
+    #[tokio::test]
+    async fn starts_fresh_when_the_resume_target_left_the_swarm() {
+        let session = Session::shared();
+        let crashed = session
+            .install(
+                Swarm::builder()
+                    .id("my-swarm")
+                    .node(handoff_agent(
+                        "a",
+                        json!({ "agentId": "b", "message": "go to b" }),
+                    ))
+                    .node(final_agent("b", "done by b"))
+                    .max_steps(1),
+            )
+            .build()
+            .expect("swarm builds");
+        crashed.invoke("start").await.expect_err("step limit");
+
+        // Same session, but b is gone and c is new.
+        let reconfigured = session
+            .install(
+                Swarm::builder()
+                    .id("my-swarm")
+                    .node(final_agent("a", "fresh start"))
+                    .node(final_agent("c", "done by c")),
+            )
+            .build()
+            .expect("swarm builds");
+
+        let result = reconfigured.invoke("start").await.expect("swarm runs");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), ["a", "a"]);
+    }
+
+    #[tokio::test]
+    async fn scopes_repetitive_handoff_detection_to_the_current_invocation() {
+        let session = Session::shared();
+        let prior = session
+            .install(
+                Swarm::builder()
+                    .id("my-swarm")
+                    .node(handoff_sequence_agent(
+                        "a",
+                        vec![
+                            json!({ "agentId": "b", "message": "to b" }),
+                            json!({ "agentId": "b", "message": "to b again" }),
+                        ],
+                    ))
+                    .node(handoff_sequence_agent(
+                        "b",
+                        vec![
+                            json!({ "agentId": "a", "message": "to a" }),
+                            json!({ "message": "prior run complete" }),
+                        ],
+                    ))
+                    .node(final_agent("c", "unused")),
+            )
+            .build()
+            .expect("swarm builds");
+        let prior_result = prior.invoke("start").await.expect("swarm runs");
+        assert_eq!(node_ids(&prior_result), ["a", "b", "a", "b"]);
+
+        let resumed = session
+            .install(
+                Swarm::builder()
+                    .id("my-swarm")
+                    .node(final_agent("a", "a"))
+                    .node(final_agent("b", "b"))
+                    .node(final_agent("c", "fresh result"))
+                    .entry_point("c")
+                    .repetitive_handoff_detection_window(4)
+                    .repetitive_handoff_min_unique_agents(3),
+            )
+            .build()
+            .expect("swarm builds");
+
+        let result = resumed.invoke("new request").await.expect("swarm runs");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(result.error, None);
+        assert_eq!(node_ids(&result), ["a", "b", "a", "b", "c"]);
+    }
+
+    // ---- invocation state (`swarm.invocation-state.test.ts`) --------------------------------
+
+    #[tokio::test]
+    async fn forwards_one_invocation_state_to_every_node() {
+        let agent_a = handoff_agent("a", json!({ "agentId": "b", "message": "to b" }));
+        agent_a
+            .hooks()
+            .add_sync_callback::<crate::hooks::BeforeModelCallEvent, _>(|event| {
+                event.invocation_state.insert("touched_by_a", true);
+                Ok(())
+            });
+
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let recorded = observed.clone();
+        let agent_b = final_agent("b", "done");
+        agent_b
+            .hooks()
+            .add_sync_callback::<crate::hooks::BeforeModelCallEvent, _>(move |event| {
+                recorded.lock().expect("not poisoned").push((
+                    event.invocation_state.clone(),
+                    event.invocation_state.contains("touched_by_a"),
+                ));
+                Ok(())
+            });
+
+        let swarm = Swarm::builder()
+            .node(agent_a)
+            .node(agent_b)
+            .build()
+            .expect("swarm builds");
+
+        let state = InvocationState::new();
+        state.insert("request_id", "r-1".to_owned());
+        swarm
+            .invoke_with(
+                "hello",
+                MultiAgentInvokeOptions::default().with_invocation_state(state.clone()),
+            )
+            .await
+            .expect("swarm runs");
+
+        let observed = observed.lock().expect("not poisoned");
+        let (seen, saw_mutation) = observed.first().expect("node b ran");
+        // Every node shares the caller's state, so b sees a's write.
+        assert!(seen.ptr_eq(&state));
+        assert!(*saw_mutation);
+        assert!(*state.get::<bool>("touched_by_a").expect("flag"));
+    }
+
+    #[tokio::test]
+    async fn defaults_the_invocation_state_to_an_empty_map() {
+        let observed = Arc::new(Mutex::new(None));
+        let recorded = observed.clone();
+        let agent = final_agent("a", "done");
+        agent
+            .hooks()
+            .add_sync_callback::<crate::hooks::BeforeModelCallEvent, _>(move |event| {
+                *recorded.lock().expect("not poisoned") = Some(event.invocation_state.clone());
+                Ok(())
+            });
+        let swarm = Swarm::builder().node(agent).build().expect("swarm builds");
+
+        swarm.invoke("hello").await.expect("swarm runs");
+
+        let observed = observed.lock().expect("not poisoned");
+        assert_eq!(observed.as_ref().expect("node ran").keys(), Vec::<String>::new());
+    }
+
+    // ---- interrupts (`interrupts.test.ts`, swarm half) --------------------------------------
+
+    #[tokio::test]
+    async fn interrupts_inside_an_agent_and_resumes_from_a_restored_session() {
+        let session = Session::shared();
+        let interrupted_swarm = session
+            .install(
+                Swarm::builder().id("my-swarm").node(
+                    Agent::builder()
+                        .model(MockMessageModel::new(vec![interrupting_turn()]))
+                        .id("a")
+                        .tool(approve_tool())
+                        .build()
+                        .expect("agent builds"),
+                ),
+            )
+            .build()
+            .expect("swarm builds");
+
+        let interrupted = interrupted_swarm.invoke("start").await.expect("swarm runs");
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+        assert_eq!(interrupted.interrupts.len(), 1);
+
+        // A fresh instance resumes from the session, like a cross-process resume. The swarm routes
+        // handoffs through structured output, so the final turn ends the run.
+        let resumed_swarm = session
+            .install(
+                Swarm::builder().id("my-swarm").node(
+                    Agent::builder()
+                        .model(MockMessageModel::new(vec![handoff_turn(
+                            json!({ "message": "all done" }),
+                        )]))
+                        .id("a")
+                        .tool(approve_tool())
+                        .build()
+                        .expect("agent builds"),
+                ),
+            )
+            .build()
+            .expect("swarm builds");
+
+        let result = resumed_swarm
+            .invoke(vec![InterruptResponseContent::new(
+                &interrupted.interrupts[0].id,
+                json!("ok"),
+            )])
+            .await
+            .expect("swarm resumes");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert!(result.interrupts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn resumes_an_interrupted_run_on_the_same_instance_without_a_session() {
+        let swarm = Swarm::builder()
+            .node(
+                Agent::builder()
+                    .model(MockMessageModel::new(vec![
+                        interrupting_turn(),
+                        handoff_turn(json!({ "message": "all done" })),
+                    ]))
+                    .id("a")
+                    .tool(approve_tool())
+                    .build()
+                    .expect("agent builds"),
+            )
+            .build()
+            .expect("swarm builds");
+
+        let interrupted = swarm.invoke("start").await.expect("swarm runs");
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+
+        let result = swarm
+            .invoke(vec![InterruptResponseContent::new(
+                &interrupted.interrupts[0].id,
+                json!("ok"),
+            )])
+            .await
+            .expect("swarm resumes");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        // The stale INTERRUPTED result is replaced, not appended to.
+        assert_eq!(node_ids(&result), ["a"]);
+    }
+
+    #[tokio::test]
+    async fn repetitive_handoff_detection_does_not_swallow_a_restored_interrupt_response() {
+        let session = Session::shared();
+        let detection = |builder: SwarmBuilder| {
+            builder
+                .id("my-swarm")
+                .entry_point("a")
+                .repetitive_handoff_detection_window(4)
+                .repetitive_handoff_min_unique_agents(3)
+        };
+
+        let interrupted_swarm = session
+            .install(detection(
+                Swarm::builder()
+                    .node(handoff_agent("a", json!({ "agentId": "b", "message": "to b" })))
+                    .node(
+                        Agent::builder()
+                            .model(MockMessageModel::new(vec![
+                                handoff_turn(json!({ "agentId": "a", "message": "to a" })),
+                                interrupting_turn(),
+                            ]))
+                            .id("b")
+                            .tool(approve_tool())
+                            .build()
+                            .expect("agent builds"),
+                    )
+                    .node(final_agent("c", "unused")),
+            ))
+            .build()
+            .expect("swarm builds");
+
+        let interrupted = interrupted_swarm.invoke("start").await.expect("swarm runs");
+
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+        assert_eq!(
+            interrupted
+                .results
+                .iter()
+                .map(|result| (result.node_id.as_str(), result.status))
+                .collect::<Vec<_>>(),
+            [
+                ("a", ResultStatus::Completed),
+                ("b", ResultStatus::Completed),
+                ("a", ResultStatus::Completed),
+                ("b", ResultStatus::Interrupted),
+            ]
+        );
+
+        let resumed_swarm = session
+            .install(detection(
+                Swarm::builder()
+                    .node(handoff_agent("a", json!({ "agentId": "b", "message": "to b" })))
+                    .node(
+                        Agent::builder()
+                            .model(MockMessageModel::new(vec![handoff_turn(
+                                json!({ "message": "all done" }),
+                            )]))
+                            .id("b")
+                            .tool(approve_tool())
+                            .build()
+                            .expect("agent builds"),
+                    )
+                    .node(final_agent("c", "unused")),
+            ))
+            .build()
+            .expect("swarm builds");
+
+        let result = resumed_swarm
+            .invoke(vec![InterruptResponseContent::new(
+                &interrupted.interrupts[0].id,
+                json!("yes"),
+            )])
+            .await
+            .expect("swarm resumes");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(result.error, None);
+        assert!(result.interrupts.is_empty());
+        assert_eq!(node_ids(&result), ["a", "b", "a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn gates_a_node_with_a_before_node_call_interrupt_and_resumes() {
+        let session = Session::shared();
+        let gated = |builder: SwarmBuilder| {
+            builder.id("my-swarm").hook::<BeforeNodeCallEvent, _>(|event| {
+                let _: JsonValue =
+                    event.interrupt(crate::types::InterruptParams::new("gate").with_reason("approve?"))?;
+                Ok(())
+            })
+        };
+
+        let interrupted_swarm = session
+            .install(gated(Swarm::builder().node(final_agent("a", "ran"))))
+            .build()
+            .expect("swarm builds");
+
+        let interrupted = interrupted_swarm.invoke("begin").await.expect("swarm runs");
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+        assert_eq!(
+            interrupted.interrupts[0].source,
+            crate::interrupt::InterruptSource::MultiagentHook
+        );
+
+        let resumed_swarm = session
+            .install(gated(Swarm::builder().node(final_agent("a", "ran"))))
+            .build()
+            .expect("swarm builds");
+
+        let result = resumed_swarm
+            .invoke(vec![InterruptResponseContent::new(
+                &interrupted.interrupts[0].id,
+                json!("approved"),
+            )])
+            .await
+            .expect("swarm resumes");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(result.content, vec![ContentBlock::text("ran")]);
+    }
+
+    #[tokio::test]
+    async fn a_hook_gated_node_still_emits_its_result_and_after_events() {
+        let swarm = Swarm::builder()
+            .node(final_agent("a", "never runs"))
+            .hook::<BeforeNodeCallEvent, _>(|event| {
+                let _: JsonValue = event.interrupt(crate::types::InterruptParams::new("gate"))?;
+                Ok(())
+            })
+            .build()
+            .expect("swarm builds");
+
+        let (events, result) = collect(swarm.stream("hi")).await;
+
+        assert_eq!(result.expect("terminal result").status, ResultStatus::Interrupted);
+        let position = |name: &str| events.iter().position(|event| event == name);
+        assert!(position("beforeNodeCallEvent") < position("nodeResultEvent"));
+        assert!(position("nodeResultEvent") < position("afterNodeCallEvent"));
+        assert!(position("afterNodeCallEvent").is_some(), "{events:?}");
     }
 
     #[test]
