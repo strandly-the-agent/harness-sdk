@@ -287,3 +287,496 @@ fn build_system_prompt(system_prompt: &str) -> String {
          - For each question, you MUST return exactly one of its allowed option values through the {STRUCTURED_OUTPUT_TOOL_NAME} tool, and nothing else."
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use futures::stream::BoxStream;
+    use serde_json::json;
+
+    use super::super::DecisionModelExt;
+    use super::*;
+    use crate::models::{ContentBlockDelta, ContentBlockStart, ModelStreamEvent};
+    use crate::types::{Message, Metrics, Role};
+
+    const DEFAULT_USAGE: Usage = Usage {
+        input_tokens: 3,
+        output_tokens: 2,
+        total_tokens: 5,
+        cache_read_input_tokens: None,
+        cache_write_input_tokens: None,
+    };
+
+    /// Replays a fixed event sequence and records every `(messages, options)` it was called with
+    /// (TS `RecordingModel`).
+    struct RecordingModel {
+        events: Vec<ModelStreamEvent>,
+        calls: Mutex<Vec<(Vec<Message>, StreamOptions)>>,
+    }
+
+    impl RecordingModel {
+        fn new(events: Vec<ModelStreamEvent>) -> Arc<Self> {
+            Arc::new(Self {
+                events,
+                calls: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn calls(&self) -> Vec<(Vec<Message>, StreamOptions)> {
+            self.calls.lock().expect("lock").clone()
+        }
+
+        fn options(&self) -> StreamOptions {
+            self.calls().first().expect("one model call").1.clone()
+        }
+
+        fn sent_messages(&self) -> Vec<Message> {
+            self.calls().first().expect("one model call").0.clone()
+        }
+
+        fn answer_enum(&self, id: &str) -> Vec<String> {
+            let spec = self.options().tool_specs.first().expect("a tool spec").clone();
+            let schema = spec.input_schema.expect("an input schema");
+            serde_json::from_value(schema["properties"][id]["properties"]["answer"]["enum"].clone())
+                .expect("an enum of strings")
+        }
+    }
+
+    #[async_trait]
+    impl Model for RecordingModel {
+        fn model_id(&self) -> Option<String> {
+            Some("test-model".to_owned())
+        }
+
+        fn stream<'a>(
+            &'a self,
+            messages: &'a [Message],
+            options: &'a StreamOptions,
+        ) -> BoxStream<'a, Result<ModelStreamEvent>> {
+            self.calls
+                .lock()
+                .expect("lock")
+                .push((messages.to_vec(), options.clone()));
+            let events: Vec<Result<ModelStreamEvent>> = self.events.iter().cloned().map(Ok).collect();
+            Box::pin(futures::stream::iter(events))
+        }
+    }
+
+    /// A model replaying one structured-output tool call carrying `input`, plus a metadata event
+    /// (TS `toolUseModel`).
+    fn tool_use_model(input: JsonValue) -> Arc<RecordingModel> {
+        tool_use_model_with(input, Some(DEFAULT_USAGE), Some(42))
+    }
+
+    fn tool_use_model_with(
+        input: JsonValue,
+        usage: Option<Usage>,
+        latency_ms: Option<u64>,
+    ) -> Arc<RecordingModel> {
+        let mut events = vec![
+            ModelStreamEvent::MessageStart { role: Role::Assistant },
+            ModelStreamEvent::ContentBlockStart {
+                start: Some(ContentBlockStart::ToolUse {
+                    name: STRUCTURED_OUTPUT_TOOL_NAME.to_owned(),
+                    tool_use_id: "decision-1".to_owned(),
+                    reasoning_signature: None,
+                }),
+            },
+            ModelStreamEvent::ContentBlockDelta {
+                delta: ContentBlockDelta::ToolUseInput {
+                    input: input.to_string(),
+                },
+            },
+            ModelStreamEvent::ContentBlockStop {},
+            ModelStreamEvent::MessageStop {
+                stop_reason: StopReason::ToolUse,
+                additional_model_response_fields: None,
+            },
+        ];
+        if usage.is_some() || latency_ms.is_some() {
+            events.push(ModelStreamEvent::Metadata {
+                usage,
+                metrics: latency_ms.map(|latency_ms| Metrics {
+                    latency_ms,
+                    time_to_first_byte_ms: None,
+                }),
+                trace: None,
+            });
+        }
+        RecordingModel::new(events)
+    }
+
+    /// A model that returns a plain text message instead of a tool call (TS `textModel`).
+    fn text_model(text: &str) -> Arc<RecordingModel> {
+        RecordingModel::new(vec![
+            ModelStreamEvent::MessageStart { role: Role::Assistant },
+            ModelStreamEvent::ContentBlockStart { start: None },
+            ModelStreamEvent::ContentBlockDelta {
+                delta: ContentBlockDelta::Text { text: text.to_owned() },
+            },
+            ModelStreamEvent::ContentBlockStop {},
+            ModelStreamEvent::MessageStop {
+                stop_reason: StopReason::EndTurn,
+                additional_model_response_fields: None,
+            },
+            ModelStreamEvent::Metadata {
+                usage: Some(DEFAULT_USAGE),
+                metrics: Some(Metrics {
+                    latency_ms: 1,
+                    time_to_first_byte_ms: None,
+                }),
+                trace: None,
+            },
+        ])
+    }
+
+    #[tokio::test]
+    async fn narrows_string_and_bool_answers_from_a_successful_tool_call() {
+        let model = tool_use_model(json!({ "color": { "answer": "red" }, "is_fruit": { "answer": "true" } }));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+
+        let result = decision
+            .ask(
+                "The fruit is an apple",
+                &Questions::new()
+                    .choice("color", "What color is the fruit?", ["red", "green", "blue"])
+                    .with(
+                        "is_fruit",
+                        Question::boolean("Is the thing talked about a fruit?")
+                            .with_uncertainty(super::super::Uncertainty::Disabled),
+                    ),
+            )
+            .await
+            .expect("decision succeeds");
+
+        assert_eq!(result.answers.keys().collect::<Vec<_>>(), ["color", "is_fruit"]);
+        assert_eq!(result.answer("color"), Some(&Answer::Choice("red".to_owned())));
+        assert_eq!(result.answer("is_fruit"), Some(&Answer::Bool(true)));
+        assert_eq!(result.usage, Some(DEFAULT_USAGE));
+        assert_eq!(result.metadata.latency_ms, 42);
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_wall_clock_latency_when_the_provider_omits_latency_metrics() {
+        let model = tool_use_model_with(json!({ "q": { "answer": "true" } }), Some(DEFAULT_USAGE), None);
+        let decision = LlmDecisionModel::new(model);
+
+        let result = decision
+            .ask("x", &Questions::new().boolean("q", "ok?"))
+            .await
+            .expect("decision succeeds");
+
+        // Wall-clock fallback: a u64 is always >= 0, so assert it is plausible rather than the
+        // provider's 42ms.
+        assert!(result.metadata.latency_ms < 60_000, "{}", result.metadata.latency_ms);
+    }
+
+    #[tokio::test]
+    async fn returns_uncertain_when_the_model_picks_the_uncertain_option() {
+        let model = tool_use_model(json!({ "color": { "answer": "uncertain" } }));
+        let decision = LlmDecisionModel::new(model);
+
+        let result = decision
+            .ask("ambiguous", &Questions::new().choice("color", "color?", ["red", "green"]))
+            .await
+            .expect("decision succeeds");
+
+        assert_eq!(result.answer("color"), Some(&Answer::Uncertain(Uncertain::new())));
+    }
+
+    #[tokio::test]
+    async fn returns_uncertain_carrying_the_model_supplied_reason() {
+        let model = tool_use_model(
+            json!({ "color": { "answer": "uncertain", "reason": "the input mentioned no color" } }),
+        );
+        let decision = LlmDecisionModel::new(model);
+
+        let result = decision
+            .ask("ambiguous", &Questions::new().choice("color", "color?", ["red", "green"]))
+            .await
+            .expect("decision succeeds");
+
+        assert_eq!(
+            result.answer("color").and_then(Answer::as_uncertain),
+            Some(&Uncertain::with_reason("the input mentioned no color"))
+        );
+    }
+
+    #[tokio::test]
+    async fn omits_uncertain_from_the_enum_when_a_question_opts_out() {
+        let model = tool_use_model(json!({ "q": { "answer": "yes" } }));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+
+        decision
+            .ask(
+                "state",
+                &Questions::new().with(
+                    "q",
+                    Question::choice("ok?", ["yes", "no"]).with_uncertainty(super::super::Uncertainty::Disabled),
+                ),
+            )
+            .await
+            .expect("decision succeeds");
+
+        assert_eq!(model.answer_enum("q"), ["yes", "no"]);
+    }
+
+    #[tokio::test]
+    async fn appends_uncertain_to_the_enum_by_default() {
+        let model = tool_use_model(json!({ "q": { "answer": "uncertain" } }));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+
+        decision
+            .ask("state", &Questions::new().choice("q", "ok?", ["yes", "no"]))
+            .await
+            .expect("decision succeeds");
+
+        assert_eq!(model.answer_enum("q"), ["yes", "no", "uncertain"]);
+    }
+
+    #[tokio::test]
+    async fn forces_the_structured_output_tool() {
+        let model = tool_use_model(json!({ "q": { "answer": "true" } }));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+
+        decision
+            .ask("x", &Questions::new().boolean("q", "ok?"))
+            .await
+            .expect("decision succeeds");
+
+        assert_eq!(
+            model.options().tool_choice,
+            Some(ToolChoice::Tool {
+                name: STRUCTURED_OUTPUT_TOOL_NAME.to_owned()
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn wraps_a_plain_string_state_as_a_single_user_message() {
+        let model = tool_use_model(json!({ "q": { "answer": "true" } }));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+
+        decision
+            .ask("the state", &Questions::new().boolean("q", "is this a string?"))
+            .await
+            .expect("decision succeeds");
+
+        let sent = model.sent_messages();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].role, Role::User);
+        assert_eq!(sent[0].content, vec![ContentBlock::text("the state")]);
+    }
+
+    #[tokio::test]
+    async fn wraps_a_content_array_as_a_single_user_message() {
+        let model = tool_use_model(json!({ "q": { "answer": "true" } }));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+
+        decision
+            .ask(
+                vec![ContentBlock::text("hello")],
+                &Questions::new().boolean("q", "greeting?"),
+            )
+            .await
+            .expect("decision succeeds");
+
+        let sent = model.sent_messages();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].role, Role::User);
+    }
+
+    #[tokio::test]
+    async fn passes_a_message_history_straight_through() {
+        let model = tool_use_model(json!({ "q": { "answer": "true" } }));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+        let history = vec![
+            Message::user("earlier"),
+            Message::assistant("ack"),
+            Message::user("the real question"),
+        ];
+
+        decision
+            .ask(history.clone(), &Questions::new().boolean("q", "conversation?"))
+            .await
+            .expect("decision succeeds");
+
+        let sent = model.sent_messages();
+        assert_eq!(
+            sent.iter().map(|m| m.text()).collect::<Vec<_>>(),
+            ["earlier", "ack", "the real question"]
+        );
+        assert_eq!(
+            sent.iter().map(|m| m.tracking_id.clone()).collect::<Vec<_>>(),
+            history.iter().map(|m| m.tracking_id.clone()).collect::<Vec<_>>(),
+            "the history must be passed through, not rebuilt"
+        );
+    }
+
+    #[tokio::test]
+    async fn includes_the_untrusted_state_defense_in_the_system_prompt() {
+        let model = tool_use_model(json!({ "q": { "answer": "true" } }));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+
+        decision
+            .ask("x", &Questions::new().boolean("q", "ok?"))
+            .await
+            .expect("decision succeeds");
+
+        let prompt = model.options().system_prompt.expect("a system prompt").text();
+        assert!(prompt.contains("MANDATORY RULES"), "{prompt}");
+        assert!(prompt.starts_with(DEFAULT_SYSTEM_PROMPT), "{prompt}");
+    }
+
+    #[tokio::test]
+    async fn errors_when_the_model_returns_a_non_tool_use_stop() {
+        let decision = LlmDecisionModel::new(text_model("I refuse"));
+
+        let error = decision
+            .ask("x", &Questions::new().boolean("q", "bool?"))
+            .await
+            .expect_err("must fail")
+            .to_string();
+
+        assert_eq!(error, "decision model returned no structured answers");
+    }
+
+    #[tokio::test]
+    async fn validation_rejects_questions_before_calling_the_model() {
+        let model = tool_use_model(json!({}));
+        let decision = LlmDecisionModel::new(Arc::clone(&model));
+
+        assert!(decision.ask("x", &Questions::new()).await.is_err());
+        assert!(decision
+            .ask("x", &Questions::new().boolean("q", "   "))
+            .await
+            .is_err());
+        assert!(decision
+            .ask("x", &Questions::new().choice("q", "pick", ["a", "a"]))
+            .await
+            .is_err());
+        assert!(decision
+            .ask("x", &Questions::new().choice("q", "pick", ["certain", "uncertain"]))
+            .await
+            .is_err());
+        assert!(decision
+            .ask(
+                "x",
+                &Questions::new().with(
+                    "q",
+                    Question::boolean("ok?").with_uncertainty(super::super::Uncertainty::MinConfidence(1.5))
+                )
+            )
+            .await
+            .is_err());
+
+        assert!(model.calls().is_empty(), "the model must not be called");
+    }
+
+    #[tokio::test]
+    async fn returns_a_result_without_usage_when_the_provider_omits_it() {
+        let model = tool_use_model_with(json!({ "q": { "answer": "true" } }), None, Some(42));
+        let decision = LlmDecisionModel::new(model);
+
+        let result = decision
+            .ask("x", &Questions::new().boolean("q", "ok?"))
+            .await
+            .expect("decision succeeds");
+
+        assert_eq!(result.answer("q"), Some(&Answer::Bool(true)));
+        assert_eq!(result.usage, None);
+        assert_eq!(result.metadata.latency_ms, 42);
+    }
+
+    #[tokio::test]
+    async fn errors_when_the_model_returns_an_unknown_option() {
+        let model = tool_use_model(json!({ "color": { "answer": "purple" } }));
+        let decision = LlmDecisionModel::new(model);
+
+        let error = decision
+            .ask("x", &Questions::new().choice("color", "c?", ["red", "green"]))
+            .await
+            .expect_err("must fail")
+            .to_string();
+
+        assert!(error.starts_with("decision model returned an invalid answer set:"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn errors_when_the_model_omits_an_answer() {
+        let model = tool_use_model_with(json!({ "a": { "answer": "true" } }), None, Some(1));
+        let decision = LlmDecisionModel::new(model);
+
+        let error = decision
+            .ask("x", &Questions::new().boolean("a", "ok?").boolean("b", "ok?"))
+            .await
+            .expect_err("must fail")
+            .to_string();
+
+        // A missing key fails schema validation first; both guards carry the question id.
+        assert!(error.contains("invalid answer set"), "{error}");
+        assert!(error.contains('b'), "{error}");
+    }
+
+    #[test]
+    fn the_answer_schema_matches_the_typescript_zod_output() {
+        let schema = build_answer_schema(&Questions::new().boolean("q", "ok?"));
+
+        // Captured from `zod@4.6.7`: `z.toJSONSchema(buildAnswerSchema({ q: { question: 'ok?',
+        // choices: 'boolean' } }))` with `$schema` stripped.
+        let expected = r#"{"type":"object","properties":{"q":{"type":"object","properties":{"answer":{"type":"string","enum":["true","false","uncertain"]},"reason":{"description":"Explanation when answer is 'uncertain'; omit otherwise.","type":"string"}},"required":["answer"],"additionalProperties":false,"description":"ok?"}},"required":["q"],"additionalProperties":false,"description":"Answer for each question in the input decision set."}"#;
+        assert_eq!(serde_json::to_string(&schema).expect("serializes"), expected);
+    }
+
+    #[test]
+    fn the_answer_schema_describes_every_question_in_order() {
+        let schema = build_answer_schema(
+            &Questions::new()
+                .choice("color", "What color?", ["red", "green"])
+                .with(
+                    "is_fruit",
+                    Question::boolean("A fruit?").with_uncertainty(super::super::Uncertainty::Disabled),
+                ),
+        );
+
+        assert_eq!(schema["required"], json!(["color", "is_fruit"]));
+        assert_eq!(
+            schema["properties"]["color"]["properties"]["answer"]["enum"],
+            json!(["red", "green", "uncertain"])
+        );
+        assert_eq!(schema["properties"]["color"]["description"], json!("What color?"));
+        assert_eq!(
+            schema["properties"]["is_fruit"]["properties"]["answer"]["enum"],
+            json!(["true", "false"])
+        );
+    }
+
+    #[tokio::test]
+    async fn the_builder_sets_the_model_and_the_system_prompt() {
+        let model = tool_use_model(json!({ "q": { "answer": "false" } }));
+        let decision = LlmDecisionModel::builder()
+            .model(Arc::clone(&model))
+            .system_prompt("Decide tersely.")
+            .build()
+            .await
+            .expect("builds");
+
+        assert!(decision.system_prompt().starts_with("Decide tersely.\n\n"));
+        let result = decision
+            .ask("x", &Questions::new().boolean("q", "ok?"))
+            .await
+            .expect("decision succeeds");
+        assert_eq!(result.answer("q"), Some(&Answer::Bool(false)));
+    }
+
+    #[test]
+    fn the_default_system_prompt_appends_the_mandatory_rules() {
+        let prompt = build_system_prompt(DEFAULT_SYSTEM_PROMPT);
+        assert!(prompt.starts_with(DEFAULT_SYSTEM_PROMPT));
+        assert!(prompt.contains("untrusted data"));
+        assert!(prompt.ends_with(&format!(
+            "through the {STRUCTURED_OUTPUT_TOOL_NAME} tool, and nothing else."
+        )));
+    }
+}

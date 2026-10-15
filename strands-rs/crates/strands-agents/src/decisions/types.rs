@@ -377,28 +377,36 @@ mod tests {
 
     use super::*;
 
+    /// `Message` carries a random tracking id, so compare the parts that matter.
+    fn turns(messages: Vec<Message>) -> Vec<(Role, Vec<ContentBlock>)> {
+        messages.into_iter().map(|m| (m.role, m.content)).collect()
+    }
+
     #[test]
     fn decision_input_from_impls_normalize_to_messages() {
-        assert_eq!(DecisionInput::from("hi").into_messages(), vec![Message::user("hi")]);
+        let user_hi = vec![(Role::User, vec![ContentBlock::text("hi")])];
+        assert_eq!(turns(DecisionInput::from("hi").into_messages()), user_hi);
+        assert_eq!(turns(DecisionInput::from("hi".to_owned()).into_messages()), user_hi);
         assert_eq!(
-            DecisionInput::from(vec![ContentBlock::text("hi")]).into_messages(),
-            vec![Message::new(Role::User, vec![ContentBlock::text("hi")])]
+            turns(DecisionInput::from(vec![ContentBlock::text("hi")]).into_messages()),
+            user_hi
         );
         assert_eq!(
-            DecisionInput::from(ContentBlock::text("hi")).into_messages(),
-            vec![Message::new(Role::User, vec![ContentBlock::text("hi")])]
+            turns(DecisionInput::from(ContentBlock::text("hi")).into_messages()),
+            user_hi
         );
+
         let history = vec![Message::user("a"), Message::assistant("b")];
         assert_eq!(
-            DecisionInput::from(history.clone()).into_messages(),
-            history
+            turns(DecisionInput::from(history.clone()).into_messages()),
+            turns(history)
         );
         assert_eq!(
-            DecisionInput::from(Message::user("a")).into_messages(),
-            vec![Message::user("a")]
+            turns(DecisionInput::from(Message::user("a")).into_messages()),
+            vec![(Role::User, vec![ContentBlock::text("a")])]
         );
         // TS treats an empty array as an empty message history, not an empty user turn.
-        assert_eq!(DecisionInput::Blocks(vec![]).into_messages(), vec![]);
+        assert!(DecisionInput::Blocks(vec![]).into_messages().is_empty());
     }
 
     #[test]
