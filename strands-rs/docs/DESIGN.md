@@ -568,8 +568,9 @@ fallback. A `Choice` list axis drops values that are not options; `Inherit` reso
 - **`AgentNode::handle` reloads `NodeState::interrupted_snapshot` before streaming** (TS
   `nodes.ts`), independently of `preserve_context`: the post-run restore puts the agent back to its
   pre-run state, so without the reload a resumed run would re-enter the node with no history.
-  Note the agent snapshot itself does not yet carry interrupt state (`agent/snapshot.rs` captures
-  `interrupts` as `null`), so resume across a *process* boundary still needs that gap closed.
+  The agent snapshot carries the paused agent's interrupt state (`agent/snapshot.rs` captures
+  `InterruptState::to_json`, `load_snapshot` restores it through `InterruptState::from_json`), so
+  resume works across a *process* boundary too.
 - **`EdgeHandler` takes the `MultiAgentStateHandle` and returns `BoxFuture<'static, bool>`** so
   conditions can be async as in TS *and* an orchestrator can actually await one: a
   `&MultiAgentState` only exists inside `MultiAgentStateHandle::with`, whose borrow cannot escape
@@ -679,9 +680,13 @@ Divergences from TS (details in `docs/matrices/swarm.md`):
 - **`warnOnce` → `tracing::warn!`** for the unbounded-execution warning; no warn-once helper
   exists in the crate.
 - **The loop is an `mpsc` channel the invocation writes events to** (like `Agent::stream_with`),
-  not an async generator: `stream_with` spawns the loop and dropping the stream ends the
-  invocation, while `invoke_with` runs it inline (`tokio::join!` of the loop and a drain) so a
-  panic in a hook or node propagates to the caller instead of ending the stream.
+  not an async generator: `stream_with` spawns the loop under a child cancel token and hands the
+  task to the shared `multiagent::CancelOnDrop` guard (also used by `Graph`), so dropping the
+  stream cancels the invocation and aborts the task — TS's `gen.return()` cleanup, with node
+  cancellation still cooperative. `invoke_with` runs the loop inline (`tokio::join!` of the loop
+  and a drain) so a panic in a hook or node propagates to the caller instead of ending the stream.
+- **`take_snapshot(None, ..)` snapshots the most recent invocation's state**, erroring before the
+  first run — the same fallback as `Graph`.
 - **The swarm deadline is armed after the before-invocation hook and routing**, as TS does, so a
   slow session restore does not eat the node budget.
 - **Wall-clock budgets are `tokio` deadlines** raced against the node future in one `select!`,

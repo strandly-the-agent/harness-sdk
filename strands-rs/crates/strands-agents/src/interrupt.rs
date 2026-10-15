@@ -14,7 +14,9 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::types::{InterruptParams, InterruptResponse, JsonValue, Message, ToolResultBlock};
+use crate::types::{
+    InterruptParams, InterruptResponse, InterruptResponseContent, JsonValue, Message, ToolResultBlock,
+};
 
 /// Who raised an interrupt.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -272,6 +274,39 @@ impl InterruptState {
         }
         JsonValue::Object(out)
     }
+
+    /// Rebuild state from the wire form produced by [`InterruptState::to_json`].
+    ///
+    /// # Errors
+    /// Fails when `data` is not an object, or a field does not match its wire shape.
+    pub fn from_json(data: &JsonValue) -> Result<Self> {
+        let Some(object) = data.as_object() else {
+            return Err(Error::other("interrupt state must be a JSON object"));
+        };
+        let mut state = Self::new();
+        state.activated = object
+            .get("activated")
+            .and_then(JsonValue::as_bool)
+            .unwrap_or(false);
+        if let Some(interrupts) = object.get("interrupts") {
+            let by_id: serde_json::Map<String, JsonValue> = serde_json::from_value(interrupts.clone())?;
+            state.interrupts = by_id
+                .into_iter()
+                .map(|(_, interrupt)| serde_json::from_value(interrupt))
+                .collect::<serde_json::Result<Vec<Interrupt>>>()?;
+        }
+        if let Some(responses) = object.get("resumeResponses") {
+            let blocks: Vec<InterruptResponseContent> = serde_json::from_value(responses.clone())?;
+            state.resume_responses = Some(blocks.into_iter().map(|b| b.interrupt_response).collect());
+        }
+        if let Some(pending) = object.get("pendingToolExecution") {
+            state.pending_tool_execution = Some(serde_json::from_value(pending.clone())?);
+        }
+        if let Some(context) = object.get("context") {
+            state.context = serde_json::from_value(context.clone())?;
+        }
+        Ok(state)
+    }
 }
 
 /// Shared handle to an agent's interrupt state (the loop and raisers both hold one).
@@ -435,6 +470,64 @@ mod tests {
         assert!(!state.activated());
         assert!(state.list().is_empty());
         assert!(state.pending_tool_execution().is_none());
+    }
+
+    #[test]
+    fn json_round_trip_preserves_everything_including_the_pending_batch() {
+        let mut state = InterruptState::new();
+        state.activate();
+        state.get_or_create(
+            "tool:call-1:confirm",
+            &InterruptParams::new("confirm").with_reason("ok?"),
+            InterruptSource::Tool,
+        );
+        state.get_or_create(
+            "tool:call-2:confirm",
+            &InterruptParams::new("confirm"),
+            InterruptSource::Tool,
+        );
+        state
+            .resume(vec![InterruptResponse::new(
+                "tool:call-1:confirm",
+                serde_json::json!("yes"),
+            )])
+            .unwrap();
+        state.set_pending_tool_execution(PendingToolExecution {
+            assistant_message: Message::assistant("calling"),
+            completed_tool_results: HashMap::new(),
+        });
+        state.context().insert("k".to_owned(), serde_json::json!(1));
+
+        let restored = InterruptState::from_json(&state.to_json()).unwrap();
+
+        assert!(restored.activated());
+        // Insertion order survives the id-keyed wire map.
+        assert_eq!(
+            restored.list().iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+            vec!["tool:call-1:confirm", "tool:call-2:confirm"]
+        );
+        assert_eq!(restored.list()[0].response, Some(serde_json::json!("yes")));
+        assert_eq!(restored.list()[0].source, InterruptSource::Tool);
+        assert_eq!(restored.unanswered().len(), 1);
+        assert_eq!(
+            restored
+                .pending_tool_execution()
+                .unwrap()
+                .assistant_message
+                .text(),
+            "calling"
+        );
+        assert_eq!(restored.to_json(), state.to_json());
+    }
+
+    #[test]
+    fn from_json_defaults_an_empty_object_and_rejects_a_non_object() {
+        let empty = InterruptState::from_json(&serde_json::json!({})).unwrap();
+        assert!(!empty.activated());
+        assert!(empty.list().is_empty());
+
+        let err = InterruptState::from_json(&serde_json::json!("nope")).unwrap_err();
+        assert_eq!(err.to_string(), "interrupt state must be a JSON object");
     }
 
     #[test]

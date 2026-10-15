@@ -4,6 +4,7 @@ use serde_json::{Map, Value};
 
 use super::Agent;
 use crate::error::{Error, Result};
+use crate::interrupt::InterruptState;
 use crate::session::types::{now_iso8601, Scope, Snapshot, SNAPSHOT_SCHEMA_VERSION};
 use crate::types::{JsonValue, Message, SystemPrompt};
 
@@ -18,7 +19,7 @@ pub enum SnapshotField {
     SystemPrompt,
     /// Model-owned state (`modelState`).
     ModelState,
-    /// Interrupt state (`interrupts`), `null` when the agent has none.
+    /// Interrupt state (`interrupts`), the wire form of [`InterruptState::to_json`].
     Interrupts,
 }
 
@@ -120,8 +121,7 @@ impl SnapshotField {
                 None => Value::Null,
             },
             SnapshotField::ModelState => agent.model_state().to_json(),
-            // The interrupts module has not landed; an agent never has interrupt state yet.
-            SnapshotField::Interrupts => Value::Null,
+            SnapshotField::Interrupts => agent.interrupt_state_shared().lock().to_json(),
         }
     }
 }
@@ -185,6 +185,12 @@ impl Agent {
             self.model_state().load_json(model_state.clone());
         }
 
+        if let Some(interrupts) = snapshot.data.get("interrupts") {
+            if !interrupts.is_null() {
+                *self.interrupt_state_shared().lock() = InterruptState::from_json(interrupts)?;
+            }
+        }
+
         Ok(())
     }
 }
@@ -193,6 +199,8 @@ impl Agent {
 mod tests {
     use super::*;
     use crate::agent::test_agent_for_session;
+    use crate::interrupt::InterruptSource;
+    use crate::types::InterruptParams;
     use serde_json::json;
 
     #[test]
@@ -254,7 +262,10 @@ mod tests {
         assert_eq!(snapshot.data["state"], json!({ "k": "v" }));
         assert_eq!(snapshot.data["systemPrompt"], json!("Test prompt"));
         assert_eq!(snapshot.data["modelState"], json!({ "m": 1 }));
-        assert_eq!(snapshot.data["interrupts"], Value::Null);
+        assert_eq!(
+            snapshot.data["interrupts"],
+            json!({ "interrupts": {}, "activated": false })
+        );
         assert!(snapshot.app_data.is_empty());
     }
 
@@ -351,6 +362,49 @@ mod tests {
         assert_eq!(agent.messages()[0].text(), "keep");
         assert_eq!(agent.state().to_json(), json!({ "keep": true }));
         assert!(agent.system_prompt().is_some());
+    }
+
+    #[test]
+    fn captures_and_restores_interrupt_state() {
+        let agent = test_agent_for_session("a");
+        {
+            let shared = agent.interrupt_state_shared();
+            let mut state = shared.lock();
+            state.get_or_create(
+                "tool:call-1:confirm",
+                &InterruptParams::new("confirm").with_reason("ok?"),
+                InterruptSource::Tool,
+            );
+            state.activate();
+        }
+        let snapshot = agent.take_snapshot(TakeSnapshotOptions::default());
+        assert_eq!(snapshot.data["interrupts"]["activated"], json!(true));
+        assert_eq!(
+            snapshot.data["interrupts"]["interrupts"]["tool:call-1:confirm"]["name"],
+            json!("confirm")
+        );
+
+        let target = test_agent_for_session("b");
+        target.load_snapshot(&snapshot).unwrap();
+
+        assert!(target.interrupt_state().is_activated());
+        let restored = target.interrupt_state().interrupts();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].id, "tool:call-1:confirm");
+        assert_eq!(restored[0].reason, Some(json!("ok?")));
+        assert_eq!(restored[0].source, InterruptSource::Tool);
+    }
+
+    #[test]
+    fn leaves_interrupt_state_alone_when_the_snapshot_carries_null() {
+        let agent = test_agent_for_session("a");
+        agent.interrupt_state_shared().lock().activate();
+        let mut snapshot = agent.take_snapshot(TakeSnapshotOptions::default());
+        snapshot.data.insert("interrupts".to_owned(), Value::Null);
+
+        agent.load_snapshot(&snapshot).unwrap();
+
+        assert!(agent.interrupt_state().is_activated());
     }
 
     #[test]

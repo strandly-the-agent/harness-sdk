@@ -33,7 +33,7 @@ use super::snapshot::{self, TakeMultiAgentSnapshotOptions};
 use super::state::{
     now_ms, MultiAgentResult, MultiAgentState, MultiAgentStateHandle, NodeResult, ResultStatus, Status,
 };
-use super::{EVENT_BUFFER, HOOK_CANCEL_MESSAGE};
+use super::{CancelOnDrop, EVENT_BUFFER, HOOK_CANCEL_MESSAGE};
 use crate::agent::InvocationState;
 use crate::error::{Error, Result};
 use crate::hooks::{Cancel, HookEvent, HookFn, HookRegistry};
@@ -1243,19 +1243,6 @@ impl MultiAgent for Graph {
 impl From<Graph> for NodeDefinition {
     fn from(graph: Graph) -> Self {
         NodeDefinition::from(Arc::new(graph) as Arc<dyn MultiAgent>)
-    }
-}
-
-/// Cancels the invocation, then aborts its task, when the consumer drops the stream.
-struct CancelOnDrop {
-    cancel: CancellationToken,
-    task: tokio::task::JoinHandle<()>,
-}
-
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-        self.task.abort();
     }
 }
 

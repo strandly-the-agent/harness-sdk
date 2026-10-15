@@ -27,7 +27,7 @@ use super::snapshot::{load_snapshot, take_snapshot, TakeMultiAgentSnapshotOption
 use super::state::{
     now_ms, MultiAgentResult, MultiAgentState, MultiAgentStateHandle, NodeResult, ResultStatus, Status,
 };
-use super::{EVENT_BUFFER, HOOK_CANCEL_MESSAGE};
+use super::{CancelOnDrop, EVENT_BUFFER, HOOK_CANCEL_MESSAGE};
 use crate::agent::InvocationState;
 use crate::error::{Error, Result};
 use crate::hooks::{Cancel, HookEvent, HookRegistry};
@@ -89,6 +89,7 @@ struct SwarmInner {
     plugins: MultiAgentPluginRegistry,
     initialized: Mutex<bool>,
     pending_interrupt_state: Mutex<Option<MultiAgentStateHandle>>,
+    last_state: Mutex<Option<MultiAgentStateHandle>>,
     tracer: Tracer,
 }
 
@@ -174,16 +175,35 @@ impl Swarm {
 
     /// Capture the swarm's identity as a snapshot (`scope: "multiAgent"`).
     ///
-    /// Pass the state handle of a live invocation to include its execution state.
+    /// Pass the state handle of a live invocation to include its execution state; `None` uses the
+    /// most recent invocation's state.
     ///
     /// # Errors
-    /// Propagates [`take_snapshot`] serialization failures.
+    /// Propagates [`take_snapshot`] serialization failures, or fails when `None` is passed before
+    /// the first run.
     pub fn take_snapshot(
         &self,
         state: Option<&MultiAgentStateHandle>,
         options: TakeMultiAgentSnapshotOptions,
     ) -> Result<Snapshot> {
-        take_snapshot(self, state, options)
+        match state {
+            Some(state) => take_snapshot(self, Some(state), options),
+            None => {
+                let last = self
+                    .0
+                    .last_state
+                    .lock()
+                    .expect("last_state mutex poisoned")
+                    .clone()
+                    .ok_or_else(|| {
+                        Error::other(format!(
+                            "swarm_id=<{}> | no invocation state to snapshot; run the swarm or pass a state handle",
+                            self.0.id
+                        ))
+                    })?;
+                take_snapshot(self, Some(&last), options)
+            }
+        }
     }
 
     /// Restore a snapshot into this swarm, replacing `state` when the snapshot carries one.
@@ -239,28 +259,37 @@ impl Swarm {
     /// [`Swarm::stream`] with options.
     ///
     /// The loop runs in a spawned task, so cleanup events are emitted even when the consumer stops
-    /// reading. Dropping the stream ends the invocation.
+    /// reading. Dropping the stream cancels the invocation, as TS cancels the run in `gen.return()`.
+    /// Node cancellation stays cooperative.
     ///
     /// # Panics
     /// Panics if called outside a tokio runtime (it spawns the invocation task).
     pub fn stream_with(
         &self,
         input: impl Into<MultiAgentInput>,
-        options: MultiAgentInvokeOptions,
+        mut options: MultiAgentInvokeOptions,
     ) -> MultiAgentStream {
-        let (tx, mut rx) = mpsc::channel(EVENT_BUFFER);
+        let (tx, events) = mpsc::channel(EVENT_BUFFER);
         let swarm = self.clone();
         let input = input.into();
-        tokio::spawn(async move {
-            if let Err(error) = swarm.run(input, options, tx.clone()).await {
-                let _ = tx.send(Err(error)).await;
-            }
-        });
-        MultiAgentStream::new(Box::pin(async_stream::stream! {
-            while let Some(event) = rx.recv().await {
-                yield event;
-            }
-        }))
+        // A child of the caller's token, so dropping the stream cancels this run only.
+        let cancel = options
+            .cancel
+            .as_ref()
+            .map_or_else(CancellationToken::new, CancellationToken::child_token);
+        options.cancel = Some(cancel.clone());
+        let driver = CancelOnDrop {
+            cancel,
+            task: tokio::spawn(async move {
+                if let Err(error) = swarm.run(input, options, tx.clone()).await {
+                    let _ = tx.send(Err(error)).await;
+                }
+            }),
+        };
+        MultiAgentStream::new(Box::pin(futures::stream::unfold(
+            (events, driver),
+            |(mut events, driver)| async move { events.recv().await.map(|event| (event, (events, driver))) },
+        )))
     }
 
     /// Initialize plugins and fire [`MultiAgentInitializedEvent`](super::MultiAgentInitializedEvent).
@@ -313,6 +342,7 @@ impl Swarm {
                 input: serde_json::to_value(&input).ok().as_ref(),
             })),
         };
+        *self.0.last_state.lock().expect("last_state mutex poisoned") = Some(run.state.clone());
 
         // A session manager (or any plugin) may restore `state.results` from this hook.
         self.emit(
@@ -1171,6 +1201,7 @@ impl SwarmBuilder {
             plugins: MultiAgentPluginRegistry::new(self.plugins),
             initialized: Mutex::new(false),
             pending_interrupt_state: Mutex::new(None),
+            last_state: Mutex::new(None),
             tracer: Tracer::new(TelemetryConfig::from_env().with_trace_attributes(self.trace_attributes)),
         })))
     }
@@ -1472,6 +1503,17 @@ mod tests {
             builder = builder.node(agent(id, None));
         }
         builder.build().expect("swarm builds")
+    }
+
+    #[test]
+    fn snapshotting_without_a_state_handle_errors_before_the_first_run() {
+        let error = swarm(&["a"])
+            .take_snapshot(None, TakeMultiAgentSnapshotOptions::default())
+            .expect_err("there is no state to snapshot yet");
+        assert_eq!(
+            error.to_string(),
+            "swarm_id=<swarm> | no invocation state to snapshot; run the swarm or pass a state handle"
+        );
     }
 
     #[test]
