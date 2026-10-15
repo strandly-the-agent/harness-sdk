@@ -206,9 +206,9 @@ are the swarm half (the graph half is in `graph.md`).
 | a three-agent handoff chain: handoff events, per-node decisions, final content | `a_swarm_chains_handoffs_through_every_agent_to_a_final_answer` | ported |
 | a `Graph` as a swarm node ends the swarm with its content (a nested orchestrator is handed no handoff schema, as in TS `nodes.ts`) | `a_graph_node_inside_a_swarm_ends_the_swarm_with_its_own_content` | ported |
 | the pending handoff target resumes on a new instance from a serialized snapshot, carrying the in-flight handoff message | `a_swarm_resumes_its_pending_handoff_target_on_a_new_instance` | ported |
-| an interrupt resumes on a new instance from a serialized snapshot | `a_swarm_interrupt_resumes_on_a_new_instance_through_a_serialized_snapshot` | `#[ignore]`d: `Agent::take_snapshot` never captures interrupt state (`src/agent/snapshot.rs:124`), so the restored node re-raises the interrupt |
-| `take_snapshot(None, ..)` carries the last run's state, as DESIGN.md and `Graph` do | `a_swarm_snapshot_without_a_state_handle_carries_the_last_runs_state` | `#[ignore]`d: `Swarm::take_snapshot` passes `None` straight through (`src/multiagent/swarm.rs:176-182`), producing a stateless snapshot |
-| dropping the stream cancels the node in flight | `dropping_a_swarm_stream_mid_run_cancels_the_node_in_flight` | `#[ignore]`d: `Swarm::stream_with` has no `CancelOnDrop` guard (`src/multiagent/swarm.rs:241-259`), so the run continues detached; `Graph` cancels |
+| an interrupt resumes on a new instance from a serialized snapshot | `a_swarm_interrupt_resumes_on_a_new_instance_through_a_serialized_snapshot` | ported |
+| `take_snapshot(None, ..)` carries the last run's state, as DESIGN.md and `Graph` do | `a_swarm_snapshot_without_a_state_handle_carries_the_last_runs_state`, `swarm::tests::snapshotting_without_a_state_handle_errors_before_the_first_run` | ported |
+| dropping the stream cancels the node in flight | `dropping_a_swarm_stream_mid_run_cancels_the_node_in_flight` | ported (shared `multiagent::CancelOnDrop` guard) |
 
 `tests/integ_multiagent.rs` (live Bedrock, `#[ignore]`d):
 

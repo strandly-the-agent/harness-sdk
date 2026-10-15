@@ -142,7 +142,7 @@ are the graph half (the swarm half is in `swarm.md`).
 | an external cancel reaches the tool inside the node and skips the rest | `cancelling_through_the_invoke_options_stops_the_in_flight_tool_and_skips_the_rest` | ported |
 | dropping the stream cancels the in-flight tool and skips the rest | `dropping_a_graph_stream_mid_run_cancels_the_tool_and_skips_the_rest` | ported |
 | the invocation state reaches a tool two orchestrators down | `the_invocation_state_reaches_a_tool_inside_a_nested_orchestrator` | ported |
-| an interrupt resumes on a new instance from a serialized snapshot | `a_graph_interrupt_resumes_on_a_new_instance_through_a_serialized_snapshot` | `#[ignore]`d: `Agent::take_snapshot` never captures interrupt state (`src/agent/snapshot.rs:124`), so the restored node re-raises the interrupt |
+| an interrupt resumes on a new instance from a serialized snapshot | `a_graph_interrupt_resumes_on_a_new_instance_through_a_serialized_snapshot` | ported |
 
 `tests/integ_multiagent.rs` (live Bedrock, `#[ignore]`d):
 

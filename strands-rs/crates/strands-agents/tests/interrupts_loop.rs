@@ -4,10 +4,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use serde_json::json;
-use strands_agents::agent::INTERRUPT_RESUME_REQUIRED_MESSAGE;
+use strands_agents::agent::{TakeSnapshotOptions, INTERRUPT_RESUME_REQUIRED_MESSAGE};
 use strands_agents::hooks::BeforeToolCallEvent;
 use strands_agents::interventions::vended::HumanInTheLoop;
 use strands_agents::interventions::{InterventionHandler, CONFIRMATION_FAILED_PREFIX};
+use strands_agents::session::Snapshot;
 use strands_agents::test_support::{MockMessageModel, MockResponse};
 use strands_agents::tools::FunctionTool;
 use strands_agents::types::{ContentBlock, Role, StopReason, ToolUseBlock};
@@ -114,6 +115,49 @@ async fn tool_interrupt_stops_the_loop_and_resume_finishes_the_tool() {
         })
         .count();
     assert_eq!(results, 1);
+}
+
+#[tokio::test]
+async fn a_snapshot_of_an_interrupted_agent_resumes_on_a_fresh_instance() {
+    let runs = Arc::new(AtomicUsize::new(0));
+    let build = |responses: Vec<Message>, runs: Arc<AtomicUsize>| {
+        Agent::builder()
+            .model(model(responses) as Arc<dyn strands_agents::models::Model>)
+            .tool(approve_tool(runs))
+            .build()
+            .unwrap()
+    };
+
+    let first = build(
+        vec![tool_use_message(&[("approve", "call-1")])],
+        Arc::clone(&runs),
+    );
+    let interrupted = first.invoke("write the file").await.unwrap();
+    assert_eq!(interrupted.stop_reason, StopReason::Interrupt);
+    let snapshot: Snapshot = serde_json::from_str(
+        &serde_json::to_string(&first.take_snapshot(TakeSnapshotOptions::default())).unwrap(),
+    )
+    .unwrap();
+
+    // A fresh instance: the resume replays the stored tool batch, so this model is only asked for
+    // the turn that follows it.
+    let second = build(vec![Message::assistant("all done")], Arc::clone(&runs));
+    second.load_snapshot(&snapshot).unwrap();
+    let resumed = second
+        .invoke(InvokeInput::InterruptResponses(vec![
+            InterruptResponseContent::new(&interrupted.interrupts[0].id, json!("yes")),
+        ]))
+        .await
+        .unwrap();
+
+    assert_eq!(resumed.stop_reason, StopReason::EndTurn);
+    assert_eq!(resumed.text(), "all done");
+    assert_eq!(
+        runs.load(Ordering::SeqCst),
+        1,
+        "the paused tool resumes instead of restarting"
+    );
+    assert!(second.unanswered_interrupts().is_empty());
 }
 
 #[tokio::test]

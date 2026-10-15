@@ -111,6 +111,16 @@ fn tracking(id: &str, in_flight: Arc<AtomicUsize>, peak: Arc<AtomicUsize>) -> Ag
 
 /// Agent whose tool interrupts for approval, then answers with `final_turn`.
 fn approving_with(id: &str, final_turn: MockResponse) -> Agent {
+    approving_from(id, vec![calling("confirm"), final_turn])
+}
+
+/// `approving_with` for an agent that resumes a snapshot: a fresh mock model starts at response 0,
+/// and a resumed run replays the stored tool batch instead of asking for the tool-use turn again.
+fn approving_resumed(id: &str, final_turn: MockResponse) -> Agent {
+    approving_from(id, vec![final_turn])
+}
+
+fn approving_from(id: &str, turns: Vec<MockResponse>) -> Agent {
     let tool = Arc::new(
         FunctionTool::builder("confirm")
             .description("Interrupts for approval")
@@ -122,7 +132,7 @@ fn approving_with(id: &str, final_turn: MockResponse) -> Agent {
     );
     Agent::builder()
         .id(id)
-        .model(MockMessageModel::shared(vec![calling("confirm"), final_turn]))
+        .model(MockMessageModel::shared(turns))
         .tool(tool)
         .build()
         .expect("agent builds")
@@ -628,12 +638,10 @@ async fn a_snapshot_taken_from_one_orchestrator_is_rejected_by_another() {
 }
 
 #[tokio::test]
-#[ignore = "bug: Agent::take_snapshot never captures interrupt state (src/agent/snapshot.rs:124), \
-            so a node restored from a snapshot restarts its agent instead of resuming the paused tool"]
 async fn a_graph_interrupt_resumes_on_a_new_instance_through_a_serialized_snapshot() {
-    let build = || {
+    let build = |gate: Agent| {
         Graph::builder()
-            .node(approving("gate"))
+            .node(gate)
             .node(saying("finish", "shipped"))
             .edge("gate", "finish")
             .max_steps(10)
@@ -641,7 +649,7 @@ async fn a_graph_interrupt_resumes_on_a_new_instance_through_a_serialized_snapsh
             .expect("graph builds")
     };
 
-    let first = build();
+    let first = build(approving("gate"));
     let interrupted = first.invoke("go").await.expect("graph runs");
     assert_eq!(interrupted.status, ResultStatus::Interrupted);
     assert_eq!(node_ids(&interrupted), vec!["gate"]);
@@ -651,7 +659,10 @@ async fn a_graph_interrupt_resumes_on_a_new_instance_through_a_serialized_snapsh
             .expect("snapshot"),
     );
 
-    let second = build();
+    let second = build(approving_resumed(
+        "gate",
+        MockResponse::message(Message::assistant("approved")),
+    ));
     second.load_snapshot(&snapshot, None).expect("snapshot loads");
     let resumed = second
         .invoke(MultiAgentInput::InterruptResponses(vec![
@@ -660,8 +671,6 @@ async fn a_graph_interrupt_resumes_on_a_new_instance_through_a_serialized_snapsh
         .await
         .expect("graph resumes");
 
-    // Observed: INTERRUPTED again, with the same interrupt, because the restored agent replays
-    // the tool call from its first message instead of resuming it.
     assert_eq!(resumed.status, ResultStatus::Completed);
     assert_eq!(node_ids(&resumed), vec!["gate", "finish"]);
     assert_eq!(text(&resumed), vec!["shipped".to_owned()]);
@@ -669,8 +678,6 @@ async fn a_graph_interrupt_resumes_on_a_new_instance_through_a_serialized_snapsh
 }
 
 #[tokio::test]
-#[ignore = "bug: Swarm::take_snapshot(None, ..) drops the state (src/multiagent/swarm.rs:176-182), \
-            where DESIGN.md and Graph (src/multiagent/graph.rs:539-556) snapshot the last run"]
 async fn a_swarm_snapshot_without_a_state_handle_carries_the_last_runs_state() {
     let swarm = Swarm::builder()
         .id("crew")
@@ -684,7 +691,6 @@ async fn a_swarm_snapshot_without_a_state_handle_carries_the_last_runs_state() {
         .take_snapshot(None, TakeMultiAgentSnapshotOptions::default())
         .expect("snapshot");
 
-    // Observed: `data` holds `orchestratorId` only, so the snapshot restores nothing.
     assert!(
         snapshot.data.contains_key("state"),
         "the last invocation's state is captured: {:?}",
@@ -824,9 +830,6 @@ async fn cancelling_through_the_invoke_options_stops_the_in_flight_tool_and_skip
 }
 
 #[tokio::test]
-#[ignore = "bug: Swarm::stream_with spawns a detached task with no CancelOnDrop guard \
-            (src/multiagent/swarm.rs:241-259), so dropping the stream leaves the run going; \
-            Graph does cancel (src/multiagent/graph.rs:512-525, 1200-1211)"]
 async fn dropping_a_swarm_stream_mid_run_cancels_the_node_in_flight() {
     let outcome = Arc::new(Mutex::new(None));
     let swarm = Swarm::builder()
@@ -851,7 +854,6 @@ async fn dropping_a_swarm_stream_mid_run_cancels_the_node_in_flight() {
     drop(stream);
 
     // The tool's own sleep is 500 ms; dropping the stream has to cut it short.
-    // Observed: nothing cancels, the tool sleeps the full 500 ms and the run finishes detached.
     tokio::time::timeout(Duration::from_millis(400), async {
         while outcome.lock().expect("not poisoned").is_none() {
             tokio::time::sleep(Duration::from_millis(5)).await;
@@ -972,13 +974,11 @@ async fn dropping_a_graph_stream_mid_run_cancels_the_tool_and_skips_the_rest() {
 }
 
 #[tokio::test]
-#[ignore = "bug: same as the graph case — Agent::take_snapshot drops interrupt state \
-            (src/agent/snapshot.rs:124), so the restored node re-raises the same interrupt"]
 async fn a_swarm_interrupt_resumes_on_a_new_instance_through_a_serialized_snapshot() {
     let saved: Arc<Mutex<Option<Snapshot>>> = Arc::new(Mutex::new(None));
     let record = Arc::clone(&saved);
-    // The snapshot is taken from the live state handle, the one path that works today
-    // (`Swarm::take_snapshot(None, ..)` drops the state — see the test above).
+    // The snapshot is taken from the live state handle, as a session manager's
+    // after-invocation hook does.
     let first = Swarm::builder()
         .id("approvals")
         .node(approving_in_a_swarm("gate"))
@@ -1007,7 +1007,10 @@ async fn a_swarm_interrupt_resumes_on_a_new_instance_through_a_serialized_snapsh
 
     let second = Swarm::builder()
         .id("approvals")
-        .node(approving_in_a_swarm("gate"))
+        .node(approving_resumed(
+            "gate",
+            handoff_turn(json!({ "message": "approved" })),
+        ))
         .max_steps(4)
         .build()
         .expect("swarm builds");
