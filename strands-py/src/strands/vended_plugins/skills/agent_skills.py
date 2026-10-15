@@ -430,10 +430,12 @@ class AgentSkills(Plugin):
 
         Args:
             agent: When provided, returns that agent's full skill set (base skills
-                plus filesystem skills loaded from its sandbox). When omitted,
-                returns only the sandbox-independent base skills (Skill instances
-                and URLs); filesystem skills are excluded because they are loaded
-                per-agent at ``init_agent`` time.
+                plus filesystem skills loaded from its sandbox, plus any skills the
+                agent loaded at runtime with ``dynamic_loading``; configured skills
+                win on name collisions). When omitted, returns only the
+                sandbox-independent base skills (Skill instances and URLs);
+                filesystem skills are excluded because they are loaded per-agent
+                at ``init_agent`` time.
 
         Returns:
             A copy of the resolved skills list.
