@@ -193,7 +193,10 @@ def calculate_area(shape: str, radius: float = None, width: float = None, height
 </Tab>
 <Tab label="Rust">
 
-`#[tool]` always derives the schema from the function signature. To supply your own, build the tool with `FunctionTool::builder` and pass it to `input_schema`:
+`#[tool]` always derives the schema from the function signature. To supply your own, build ent("What is your name?")
+```
+</Tab>
+<Tab label="TypeScrithe tool with `FunctionTool::builder` and pass it to `input_schema`:
 
 ```rust
 --8<-- "user-guide/sdk/tools/custom-tools.rs:json_schema_tool"
@@ -414,10 +417,7 @@ def get_self_name(context: ToolContext) -> str:
 
 agent = Agent(tools=[get_self_name], name="Best agent")
 
-agent("What is your name?")
-```
-</Tab>
-<Tab label="TypeScript">
+agpt">
 
 ```ts
 // Renaming the context parameter is not supported
@@ -681,6 +681,12 @@ A Python module tool requires two key components:
 1. A `TOOL_SPEC` variable that defines the tool's name, description, and input schema
 2. A function with the same name as specified in the tool spec that implements the tool's functionality
 </Tab>
+<Tab label="Rust">
+
+:::note[Python only]
+Module based to= "..."` (or to `FunctionTool::builder().description(..)`ols are a Python packaging convention. In Rust, define tools with the `#[tool]` macro, `FunctionTool`, or the `Tool` trait.
+:::
+</Tab>
 </Tabs>
 
 
@@ -740,6 +746,12 @@ def weather_forecast(tool, **kwargs: Any):
     }
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+// Module based tools are Python only
+```
+</Tab>
 </Tabs>
 
 
@@ -768,6 +780,12 @@ from strands import Agent
 agent = Agent(
     tools=["./weather_forecast.py"]
 )
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// Module based tools are Python only
 ```
 </Tab>
 </Tabs>
@@ -802,6 +820,12 @@ async def call_api(tool, **kwargs):
         "status": "success",
         "content": [{"text": result}],
     }
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// Module based tools are Python only
 ```
 </Tab>
 </Tabs>
@@ -887,6 +911,6 @@ def search_database(query: str, max_results: int = 10) -> list:
 --8<-- "user-guide/sdk/tools/custom-tools.rs:search_database"
 ```
 
-`#[tool]` joins a doc comment into a single paragraph, so pass a multi-paragraph description to the macro as `description = "..."` (or to `FunctionTool::builder().description(..)`) when the structure matters.
+`#[tool]` joins a doc comment into a single paragraph, so pass a multi-paragraph description to the macro as `description ) when the structure matters.
 </Tab>
 </Tabs>
