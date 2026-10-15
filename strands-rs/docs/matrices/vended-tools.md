@@ -176,3 +176,83 @@ module (no new dev-dependencies).
   send and body read exactly as the TS signal does.
 - `tokio`'s `net` feature was added to `strands-rs/Cargo.toml` for the test server (dev-only use;
   additive).
+
+# `mcp_router`
+
+`strands-ts/src/vended-tools/mcp-router/{mcp-router.ts,types.ts}` →
+`crates/strands-agents/src/tools/vended/mcp_router.rs`, behind the existing `mcp` cargo feature.
+Re-exported as `tools::vended::McpRouterTool` and `strands_agents::McpRouterTool`
+(both `#[cfg(feature = "mcp")]`).
+
+## API
+
+| TS | Rust |
+| --- | --- |
+| `makeMcpRouter({ name?, description?, servers, maxConnections? })` | `McpRouterTool::new(servers) -> Result<Self>` / `with_config(McpRouterConfig) -> Result<Self>` |
+| `MakeMcpRouterOptions` | `McpRouterConfig { name, description: Option<String>, servers: IndexMap<String, McpServerConfig>, max_connections }` |
+| `McpRouterInput { command, connection_id?, server_name?, tool_name?, arguments? }` | `McpRouterInput` (same fields; `command: McpRouterCommand`) |
+| `'connect' \| 'list_connections' \| 'list_tools' \| 'call_tool' \| 'disconnect'` | `McpRouterCommand` (`#[serde(rename_all = "snake_case")]`) |
+| `MCP_ROUTER_DESCRIPTION`, `'mcp_router'`, `DEFAULT_MAX_CONNECTIONS = 10` | `MCP_ROUTER_DESCRIPTION`, `MCP_ROUTER_TOOL_NAME`, `DEFAULT_MAX_CONNECTIONS` |
+| `McpRouterToolError` | `Error::ToolValidation` with the TS messages verbatim |
+| `McpClient.loadServers` + `client.connect()` | `McpClient::load_servers(IndexMap, LoadOptions::default(), prefix "")` (which connects) |
+| `client.listTools({ prefix: '' })` → `ToolSpec[]` | `client.list_tools_with(prefix "")` → JSON array of `ToolSpec` |
+| ad-hoc `McpTool.stream` for `call_tool` | `McpClient::call_tool` + `mcp::tool::map_call_tool_result` (same content mapping) |
+| per-agent `WeakMap` + `FinalizationRegistry` | `Mutex<IndexMap<String, McpClient>>` on the tool instance |
+
+Name, description (incl. the ` Permitted server names: 'a', 'b'.` suffix) and the input schema
+(property descriptions, command enum, `required: ["command"]`) are verbatim TS.
+
+## Tests
+
+13 unit tests in `mod tests` (`cargo test -p strands-agents --all-features --lib
+tools::vended::mcp_router` → 13 passed). The TS suite fakes `McpClient` with `vi.spyOn`; Rust's
+`McpClient` is a concrete type with no trait seam, so the cases that need a live server are **not
+ported as unit tests** — they need a real MCP server (the `mcp_echo_server` test binary, only
+reachable from `tests/`).
+
+| TS `it` | Rust test | state |
+| --- | --- | --- |
+| `rejects empty allowlist` | `rejects_empty_allowlist` | pass |
+| `rejects zero maxConnections` | `rejects_zero_max_connections` | pass |
+| `description includes server names` | `description_includes_server_names` | pass |
+| `uses default description with MCP_ROUTER_DESCRIPTION` | `uses_default_description_with_mcp_router_description` | pass |
+| `uses custom name` / `accepts custom description` | `accepts_custom_name_and_description` | pass |
+| `exposes expected schema fields` | `exposes_expected_schema_fields` | pass |
+| `rejects server not on allowlist` | `rejects_server_not_on_allowlist` | pass |
+| `rejects missing connection_id` | `rejects_missing_connection_id` | pass |
+| `rejects missing server_name` | `rejects_missing_server_name` | pass |
+| `returns sorted open connection IDs` (empty case) | `returns_empty_string_when_no_connections_are_open` | pass |
+| `rejects call_tool without tool_name` | covered by `rejects_commands_for_an_unknown_connection_id` (the connection check runs first) | pass |
+| — | `rejects_commands_for_an_unknown_connection_id`, `invoke_returns_an_error_result_for_a_failed_command`, `invoke_lists_connections_as_a_success_result` | pass (added) |
+| `supports multiple simultaneous connections`, `rejects reconnect with same id`, `enforces connection cap`, `cleans up on start failure`, `rejects when client silently enters failed state`, `throws when allowlisted server has disabled: true`, `runs full connect → list_tools → call_tool → disconnect flow`, `throws McpRouterToolError when MCP tool returns isError`, `disconnect succeeds even when client.disconnect throws`, `forwards cancel signal to callTool`, `forwards server config and name to loadServers` | **not ported** — need a live MCP server; next session should add `tests/mcp_router_e2e.rs` driving `mcp_echo_server` | TODO |
+| `isolates connections between agents` (×2), `disconnects all connections when the callback fires` | **not applicable** — see divergences (connections are per tool instance; no GC hook) | n/a |
+
+## Divergences
+
+- **Connections live on the tool instance**, in a `Mutex<IndexMap<String, McpClient>>`, instead of
+  a `WeakMap` keyed by the agent. Give each agent its own `McpRouterTool` for the TS isolation
+  property. Rust has no `FinalizationRegistry`, so there is no garbage-collection cleanup hook:
+  connections close on `disconnect` or when the tool is dropped.
+- **`McpRouterToolError` has no Rust equivalent**; every failure is `Error::ToolValidation` with
+  the TS message verbatim, which the executor turns into an error tool result (TS throws and the
+  tool factory does the same).
+- **`call_tool` uses `McpClient::call_tool`** plus the crate's `map_call_tool_result` rather than
+  building a throwaway `McpTool` and draining its stream — same content mapping, no fake tool spec.
+  `mcp::tool` became `pub(crate)` so the mapping could be shared (no public API change).
+- **Constructors return `Result`** (`new`/`with_config`) because TS throws from `makeMcpRouter`.
+
+# Review notes
+
+Two known footguns in `http_request`, both deliberate and both unresolved — raised for the
+orchestrator rather than fixed, to keep the TS behavioural contract:
+
+1. **No response-size cap.** `send()` reads the whole body with `response.text()`, as TS does with
+   `await response.text()`. An unbounded read is a real memory footgun in a long-running agent.
+   Suggested fix: a `max_response_bytes: Option<usize>` on `HttpRequestConfig` (sensible default,
+   e.g. 10 MiB) that streams the body and truncates with a marker. This is a deliberate divergence
+   from TS, so it needs a decision, not just a patch.
+2. **`HttpRequestTool::new()` can panic.** `HttpRequestConfig::default()` calls
+   `reqwest::Client::new()`, which panics if the TLS backend fails to initialize. Suggested fix:
+   build with `Client::builder().build()` and either make the fallible path explicit
+   (`try_new() -> Result<Self>`, `new()` kept for the infallible common case) or document the
+   panic on `new()` and point at `with_config` as the escape hatch.

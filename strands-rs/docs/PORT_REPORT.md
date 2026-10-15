@@ -336,6 +336,13 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 
 ## Phase 4
 
+- **Vended tool `mcp_router`** (`tools::vended`, branch `agent-tasks/strands-rs-vended-tools`):
+  `McpRouterTool`/`McpRouterConfig` port the runtime MCP router behind the existing `mcp` feature —
+  `connect`/`list_connections`/`list_tools`/`call_tool`/`disconnect` over an allowlist of
+  `McpServerConfig`s, with TS's name, description and schema verbatim and its connection cap and
+  duplicate-id rules. Connections are held per tool instance (no `WeakMap`/finalizer in Rust).
+  13 unit tests cover validation and dispatch; the live-server cases still need a
+  `tests/mcp_router_e2e.rs` against `mcp_echo_server`.
 - **Vended tools `fileEditor` + `http_request`** (`tools::vended`, branch
   `agent-tasks/strands-rs-vended-tools`): `FileEditorTool` ports `view`/`create`/`str_replace`/
   `insert` with TS's exact error strings and snippet format, routing every file access through a
