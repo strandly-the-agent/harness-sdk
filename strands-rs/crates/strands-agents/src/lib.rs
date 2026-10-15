@@ -53,6 +53,8 @@
 //! - `telemetry` — OpenTelemetry export.
 //! - `test-support` — the [`testing`] module.
 
+#[cfg(feature = "a2a")]
+pub mod a2a;
 pub mod agent;
 pub mod background_tasks;
 pub mod context_manager;

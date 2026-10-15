@@ -23,6 +23,7 @@ mcp = ["dep:rmcp", "dep:http", "dep:regex"]
 # this crate's own e2e tests). Not part of the supported public feature set; do not enable it
 # from downstream crates.
 mcp-echo-server = ["mcp", "rmcp/server", "rmcp/transport-io", "rmcp/macros"]
+a2a = ["dep:axum", "dep:reqwest", "dep:tokio-stream"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-smithy-runtime-api"]
 
 [dependencies]
@@ -49,6 +50,8 @@ rmcp = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
 aws-config = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
