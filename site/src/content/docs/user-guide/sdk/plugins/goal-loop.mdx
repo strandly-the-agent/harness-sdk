@@ -10,13 +10,13 @@ sourceLinks:
 addedDate: 2026-06-15
 ---
 
-When your agent's response needs to meet a quality bar before returning, `GoalLoop` handles the retry loop. It validates the response after each invocation, feeds feedback back as a user message on failure, and re-invokes the agent. This continues until validation passes, a max attempt count is reached, or a timeout elapses.
+When your agent's response needs to meet a quality bar before returning, `GoalLoop` handles the retry loop. It validates the response after each invocation, feeds feedback back as a user message on failure, and re-invokes the agent. This continues until validation passes, aa plugin. Define what "done" means, attach it to your age max attempt count is reached, or a timeout elapses.
 
 ## The Problem
 
 A single-pass agent response often misses the mark: too verbose, wrong format, incomplete reasoning, or failing a test suite. You could wrap the agent call in a manual retry loop, but that means reimplementing timeout logic, attempt tracking, feedback injection, and state management every time.
 
-GoalLoop handles all of that as a plugin. Define what "done" means, attach it to your agent, and the retry loop runs automatically inside the existing hook lifecycle.
+GoalLoop handles all of that as nt, and the retry loop runs automatically inside the existing hook lifecycle.
 
 ## How It Works
 
@@ -37,7 +37,7 @@ flowchart LR
 
 ## Getting Started
 
-Pass a natural-language goal string. GoalLoop builds an internal judge agent (using the host agent's <Syntax py="aux_model" ts="auxModel" />) that grades each response against the goal and returns structured feedback on failure.
+Pass a natural-language goal string. GoalLoop builds an internal judge agent (using the host agent's <Syntax py="aux_model" ts="auxModel" rs="aux_model" />) that grades each response against the goal and returns structured feedback on failure.
 
 <Tabs>
 <Tab label="Python">
@@ -66,6 +66,12 @@ print(concise.last_result(agent))
 --8<-- "user-guide/sdk/plugins/goal-loop_imports.ts:getting_started"
 
 --8<-- "user-guide/sdk/plugins/goal-loop.ts:getting_started"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/goal-loop.rs:getting_started"
 ```
 </Tab>
 </Tabs>
@@ -115,6 +121,15 @@ plugin = GoalLoop(
 --8<-- "user-guide/sdk/plugins/goal-loop.ts:word_count_validator"
 ```
 </Tab>
+<Tab label="Rust">
+
+`GoalLoop::sync_validator` takes a synchronous validator; `GoalLoop::validator` takes an async
+one. Timeouts are a `Duration`:
+
+```rust
+--8<-- "user-guide/sdk/plugins/goal-loop.rs:word_count_validator"
+```
+</Tab>
 </Tabs>
 
 Async validators work too. Run a test suite, call an external API, or await any I/O inside the validator:
@@ -152,6 +167,12 @@ plugin = GoalLoop(goal=tests_pass, max_attempts=10)
 --8<-- "user-guide/sdk/plugins/goal-loop.ts:async_validator"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/goal-loop.rs:async_validator"
+```
+</Tab>
 </Tabs>
 
 ## Configuration Reference
@@ -183,6 +204,22 @@ plugin = GoalLoop(goal=tests_pass, max_attempts=10)
 | `name` | `"strands:goal-loop"` | Plugin name (must be unique per agent) |
 
 </Tab>
+<Tab label="Rust">
+
+The goal is the constructor (`GoalLoop::goal`, `GoalLoop::validator`, or
+`GoalLoop::sync_validator`); everything else is a builder method.
+
+| Method | Default | Description |
+|--------|---------|-------------|
+| `GoalLoop::goal` / `validator` / `sync_validator` | *(required)* | Natural-language goal (judged by an internal agent), or an async / sync validator |
+| `with_max_attempts` | unbounded | Maximum attempts before stopping |
+| `with_timeout` | unbounded | Wall-clock budget for the entire run, as a `Duration` |
+| `with_judge` | `JudgeConfig::default()` | `JudgeConfig` with optional `model` and `system_prompt` for the NL judge |
+| `with_preserve_context` | `true` | Keep conversation history across retries |
+| `with_resume_prompt_template` | *(built-in)* | `Fn(Option<&str>) -> InvokeInput` that builds the retry message |
+| `with_name` | `"strands:goal-loop"` | Plugin name (must be unique per agent) |
+
+</Tab>
 </Tabs>
 
 When both the attempt limit and timeout are left unbounded (the defaults), the plugin warns at construction time. Set at least one bound in production to prevent runaway loops.
@@ -211,9 +248,15 @@ if result and not result.passed:
 --8<-- "user-guide/sdk/plugins/goal-loop.ts:inspecting_results"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/goal-loop.rs:inspecting_results"
+```
+</Tab>
 </Tabs>
 
-The result is <Syntax py="None" ts="undefined" /> before the first completed run and while a run is in-flight. It resets at the start of each new invocation.
+The result is <Syntax py="None" ts="undefined" rs="None" /> before the first completed run and while a run is in-flight. It resets at the start of each new invocation.
 
 ### Stateless Retries
 
@@ -236,13 +279,19 @@ plugin = GoalLoop(
 --8<-- "user-guide/sdk/plugins/goal-loop.ts:preserve_context_false"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/goal-loop.rs:preserve_context_false"
+```
+</Tab>
 </Tabs>
 
-The snapshot excludes agent state (<Syntax py="state" ts="appState" />) deliberately: other plugins (rate limiters, cost trackers) rely on their mutations persisting across attempts.
+The snapshot excludes agent state (<Syntax py="state" ts="appState" rs="state" />) deliberately: other plugins (rate limiters, cost trackers) rely on their mutations persisting across attempts.
 
 ### Custom Judge Configuration
 
-When `goal` is a string, GoalLoop builds a judge agent using the host agent's <Syntax py="aux_model" ts="auxModel" />. Override the model or system prompt to tune cost and behavior:
+When `goal` is a string, GoalLoop builds a judge agent using the host agent's <Syntax py="aux_model" ts="auxModel" rs="aux_model" />. Override the model or system prompt to tune cost and behavior:
 
 <Tabs>
 <Tab label="Python">
@@ -268,11 +317,20 @@ plugin = GoalLoop(
 --8<-- "user-guide/sdk/plugins/goal-loop.ts:judge_config"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/goal-loop.rs:judge_config"
+```
+</Tab>
 </Tabs>
 
 ### Custom Resume Prompt
 
-Override how feedback is injected before each retry. The template receives the trimmed feedback string (or <Syntax py="None" ts="undefined" /> when the validator gave none) and returns the user message content:
+Override how feedback is injected before each judge_prompt,
+    JUDGE_SYSTEM_PROMPT,
+    JudgeOutcome,
+retry. The template receives the trimmed feedback string (or <Syntax py="None" ts="undefined" rs="None" /> when the validator gave none) and returns the user message content:
 
 <Tabs>
 <Tab label="Python">
@@ -300,6 +358,14 @@ plugin = GoalLoop(
 --8<-- "user-guide/sdk/plugins/goal-loop.ts:custom_resume_prompt"
 ```
 </Tab>
+<Tab label="Rust">
+
+The template returns an `InvokeInput`, so it can be a string or content blocks:
+
+```rust
+--8<-- "user-guide/sdk/plugins/goal-loop.rs:custom_resume_prompt"
+```
+</Tab>
 </Tabs>
 
 ### Building a Custom Judge
@@ -312,10 +378,7 @@ The judge primitives are exported for use in function validators. Build your own
 ```python
 from strands.vended_plugins.goal import (
     GoalLoop,
-    build_judge_prompt,
-    JUDGE_SYSTEM_PROMPT,
-    JudgeOutcome,
-)
+    build_)
 
 async def custom_judge(response, agent):
     from strands import Agent as JudgeAgent
@@ -341,6 +404,12 @@ plugin = GoalLoop(goal=custom_judge, max_attempts=3)
 --8<-- "user-guide/sdk/plugins/goal-loop_imports.ts:custom_judge"
 
 --8<-- "user-guide/sdk/plugins/goal-loop.ts:custom_judge"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/goal-loop.rs:custom_judge"
 ```
 </Tab>
 </Tabs>
