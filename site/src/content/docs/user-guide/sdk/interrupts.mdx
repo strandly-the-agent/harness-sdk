@@ -184,6 +184,22 @@ Both `BeforeToolCallEvent` and `BeforeToolsEvent` are interruptible. Interruptin
 --8<-- "user-guide/sdk/interrupts.ts:hooks_before_tools"
 ```
 </Tab>
+<Tab label="Rust">
+
+Both `BeforeToolCallEvent` and `BeforeToolsEvent` are interruptible. Interrupting on a `BeforeToolCallEvent` intercepts an individual tool call before execution, while interrupting on `BeforeToolsEvent` pauses the entire batch of tool calls before any of them execute, which is useful for approving a whole set of tool calls at once.
+
+#### BeforeToolCallEvent
+
+```rust
+--8<-- "user-guide/sdk/interrupts.rs:hooks_before_tool_call"
+```
+
+#### BeforeToolsEvent
+
+```rust
+--8<-- "user-guide/sdk/interrupts.rs:hooks_before_tools"
+```
+</Tab>
 </Tabs>
 
 ### Components
@@ -202,7 +218,7 @@ Interrupts in Strands are comprised of the following components:
 - `interruptResponse` - Content block type for configuring the interrupt responses.
     - Each `response` is uniquely identified by their interrupt's id and will be returned from the associated interrupt call when invoked the second time around. Note, the `response` must be JSON-serializable.
 - `event.cancel_tool` (`BeforeToolCallEvent`) - Cancel a single tool call based on the interrupt response
-    - You can either set `cancel_tool` to `True` or provide a custom cancellation message.
+    - Youson` is any `serde_json::Value` providing context for why can either set `cancel_tool` to `True` or provide a custom cancellation message.
 - `event.cancel` (`BeforeToolsEvent`) - Cancel every tool call in the batch based on the interrupt response
     - You can either set `cancel` to `True` or provide a custom cancellation message.
 
@@ -218,7 +234,19 @@ For additional details on each of these components, refer to the [Python API Ref
     - `result.stopReason`: check if agent stopped due to `'interrupt'`
     - `result.interrupts`: array of `Interrupt` objects, each containing the user-provided `name` and `reason`, along with a unique `id`
 - `InterruptResponseContent`: content block type for resuming from an interrupt
-    - Pass an array of these to `agent.invoke()` to resume. Each response is keyed by the interrupt's `id` and will be returned from the associated `interrupt()` call when the tool/hook re-executes. The `response` must be JSON-serializable.
+    - Pass an array of these to `agent.invoke()` to resume. Each response is keyed by the interrupt's `id` and will be returned from the associated `intn other words, within a single hook, you can interrupt, rerrupt()` call when the tool/hook re-executes. The `response` must be JSON-serializable.
+</Tab>
+<Tab label="Rust">
+
+- `BeforeToolCallEvent` / `BeforeToolsEvent`: hook events that expose the ability to interrupt via the `interrupt` method
+    - `event.interrupt::<T>(InterruptParams::new(name).with_reason(reason))`: halts the agent loop. `rea the interrupt was raised. With no answer yet it returns `Err(Error::Interrupt)`, so `?` both raises the interrupt and pauses the loop; on resume the same call deserializes the stored answer into `T`.
+    - The `name` must be unique across all interrupt calls configured on the same event. In the example above, we demonstrate using a namespace prefix for the interrupt call. This is particularly helpful if you plan to vend your hooks to other users.
+    - `event.cancel`: cancel tool execution based on the interrupt response. Assign `Cancel::Yes` for a default message, or a custom message with `"...".into()`.
+- `AgentResult`: returned by `invoke()` / `stream()`, contains interrupt information when the agent pauses
+    - `result.stop_reason`: check if the agent stopped with `StopReason::Interrupt`
+    - `result.interrupts`: `Vec<Interrupt>`, each containing the user-provided `name` and `reason`, along with a unique `id`
+- `InterruptResponseContent`: content block type for resuming from an interrupt
+    - Pass a `Vec<InterruptResponseContent>` to `agent.invoke()` to resume. Each response is keyed by the interrupt's `id` and will be returned from the associated `interrupt()` call when the tool/hook re-executes. The `response` must be JSON-serializable.
 </Tab>
 </Tabs>
 
@@ -232,7 +260,7 @@ Strands enforces the following rules for interrupts:
 - All hooks configured on the interrupted event will execute
 - All hooks configured on the interrupted event are allowed to raise an interrupt
 - A single hook can raise multiple interrupts but only one at a time
-    - In other words, within a single hook, you can interrupt, respond to that interrupt, and then proceed to interrupt again.
+    - Iespond to that interrupt, and then proceed to interrupt again.
 - All tools running concurrently are interruptible
 - All tools running concurrently that are not interrupted will execute
 - When an interrupt fires from `BeforeToolCallEvent`, `AfterToolCallEvent` does not fire for that tool, but `AfterToolsEvent` still fires
@@ -249,6 +277,17 @@ Strands enforces the following rules for interrupts:
 - `AfterToolsEvent` fires once per event-loop cycle rather than once per logical batch. A per-tool interrupt splits a batch across cycles, so it fires on the interrupt cycle (carrying only the results collected so far) and again on resume (carrying the results produced that cycle): a hook with side effects there can run more than once for one assistant message
 - When an interrupt fires mid-batch, completed tool results are preserved so the agent skips the model call on resume and only executes remaining tools
 - Both assistant and tool result messages are appended only after tool execution completes, preventing dangling `toolUse` blocks without matching results
+</Tab>
+<Tab label="Rust">
+
+- All hooks configured on the interrupted event will execute
+- All hooks configured on the interrupted event are allowed to raise an interrupt
+- A single hook can raise multiple interrupts but only one at a time
+    - In other words, within a single hook, you can interrupt, respond to that interrupt, and then proceed to interrupt again.
+- When an interrupt fires from `BeforeToolCallEvent`, `AfterToolCallEvent` does not fire for that tool, but `AfterToolsEvent` still fires
+- When an interrupt fires mid-batch, completed tool results are preserved so the agent skips the model call on resume and only executes remaining tools
+- Both assistant and tool result messages are appended only after tool execution completes, preventing dangling `toolUse` blocks without matching results
+- Invoking with new input while the agent is interrupted is an error: resume with `InterruptResponseContent` values first
 </Tab>
 </Tabs>
 
@@ -310,6 +349,12 @@ The tool callback receives a `context` parameter (the second argument) which pro
 --8<-- "user-guide/sdk/interrupts.ts:tools_example"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/interrupts.rs:tools_example"
+```
+</Tab>
 </Tabs>
 
 ### Components
@@ -327,6 +372,12 @@ Tool interrupts work like hook interrupts, with two differences: tools receive `
 
 - [`ToolContext`](@api/typescript/ToolContext): the second argument passed to the tool callback, providing access to the `interrupt` method
     - `context.interrupt({ name, reason? })`: halts the agent loop. `name` is a string identifier and `reason` is an optional JSON-serializable value.
+    - The `name` must be unique only among interrupt calls configured in the same tool definition. It is still advisable however to namespace your interrupts so as to more easily distinguish the calls when constructing responses outside the agent.
+</Tab>
+<Tab label="Rust">
+
+- `ToolContext`: the second argument passed to the tool handler, providing access to the `interrupt` method
+    - `ctx.interrupt::<T>(InterruptParams::new(name).with_reason(reason))`: halts the agent loop. `reason` is any `serde_json::Value`.
     - The `name` must be unique only among interrupt calls configured in the same tool definition. It is still advisable however to namespace your interrupts so as to more easily distinguish the calls when constructing responses outside the agent.
 </Tab>
 </Tabs>
@@ -354,6 +405,19 @@ Strands enforces the following rules for tool interrupts:
 --8<-- "user-guide/sdk/interrupts_imports.ts:tools_rethrow_imports"
 
 --8<-- "user-guide/sdk/interrupts.ts:tools_rethrow"
+```
+</Tab>
+<Tab label="Rust">
+
+- All tools running concurrently will execute
+- All tools running concurrently are interruptible
+- A single tool can raise multiple interrupts but only one at a time
+    - In other words, within a single tool, you can interrupt, respond to that interrupt, and then proceed to interrupt again.
+- When an interrupt fires mid-batch, completed tool results are preserved so the agent skips the model call on resume and only executes remaining tools
+- When no response exists yet, `ctx.interrupt()` returns `Err(Error::Interrupt)`, which the agent loop catches to pause. If your tool handles its own errors, re-propagate that one — `Error::is_control_flow()` identifies it:
+
+```rust
+--8<-- "user-guide/sdk/interrupts.rs:tools_rethrow"
 ```
 </Tab>
 </Tabs>
@@ -459,6 +523,12 @@ print(f"MESSAGE: {json.dumps(result.message)}")
 --8<-- "user-guide/sdk/interrupts.ts:session_management"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/interrupts.rs:session_management"
+```
+</Tab>
 </Tabs>
 
 ### Components
@@ -479,6 +549,13 @@ Session managing interrupts involves the following key components:
     - See [Session Management](./agents/session-management.md) for more.
 - `agent.appState` - General purpose key-value store that can be used to persist interrupt responses
     - On subsequent tool calls, you can reference the responses stored in `appState` to decide whether another interrupt is necessary. See [Agent State](./agents/state.md#agent-state) for more.
+</Tab>
+<Tab label="Rust">
+
+- `session_manager` - Automatically persists the agent interrupt state between tear down and start up
+    - See [Session Management](./agents/session-management.md) for more.
+- `agent.state()` - General purpose key-value store that can be used to persist interrupt responses
+    - On subsequent tool calls, you can reference the responses stored in `agent.state()` to decide whether another interrupt is necessary. See [Agent State](./agents/state.md#agent-state) for more.
 </Tab>
 </Tabs>
 

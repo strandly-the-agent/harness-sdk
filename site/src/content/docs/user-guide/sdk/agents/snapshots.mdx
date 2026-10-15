@@ -42,6 +42,13 @@ The `"session"` preset captures `messages`, `state`, `conversation_manager_state
 --8<-- "user-guide/sdk/agents/snapshots.ts:take_snapshot"
 ```
 
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/snapshots.rs:take_snapshot"
+```
+
 The `"session"` preset captures `messages`, `state`, `systemPrompt`, `modelState`, and `interrupts`.
 </Tab>
 </Tabs>
@@ -79,6 +86,12 @@ print(len(agent.messages))  # Only the messages from before the jokes
 --8<-- "user-guide/sdk/agents/snapshots_imports.ts:imports"
 
 --8<-- "user-guide/sdk/agents/snapshots.ts:load_snapshot"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/snapshots.rs:load_snapshot"
 ```
 </Tab>
 </Tabs>
@@ -122,6 +135,17 @@ Select fields through presets, includes, and excludes. The resolution order is *
 | `interrupts` | Human-in-the-loop interrupt state |
 
 </Tab>
+<Tab label="Rust">
+
+| `SnapshotField` | Description |
+|-------|-------------|
+| `Messages` | Conversation history |
+| `State` | Agent key-value state (`agent.state()`) |
+| `SystemPrompt` | System prompt content |
+| `ModelState` | Model provider state (e.g. response IDs for stateful models) |
+| `Interrupts` | Human-in-the-loop interrupt state |
+
+</Tab>
 </Tabs>
 
 :::note
@@ -152,18 +176,30 @@ snapshot = agent.take_snapshot(preset="session", exclude=["interrupt_state"])
 --8<-- "user-guide/sdk/agents/snapshots.ts:field_selection"
 ```
 </Tab>
+<Tab label="Rust">
+
+`TakeSnapshotOptions` always starts from a preset, so narrow a snapshot with `exclude` rather than listing the fields you want:
+
+```rust
+--8<-- "user-guide/sdk/agents/snapshots.rs:field_selection"
+```
+</Tab>
 </Tabs>
 
 ## Application Data
 
-Snapshots carry an <Syntax py="app_data" ts="appData" /> field for storing application-owned data alongside the agent state. Strands passes this data through verbatim, without reading or modifying it.
+Snapshots carry an <Syntax py="app_data" ts="appData" rs="app_data" /> field for storing application-owned data alongside the agent state. Strands passes this data through verbatim, without reading or modifying it.
 
-This is useful for attaching metadata like a display name for the snapshot, the current step in a workflow, user preferences, or any other context your application needs to associate with a particular point in time.
+This is useful for attaching metadata like a display name for the snapshot, the current step in a workflow, user preferences, or any other context your application needs to associate witt">
+
+```typescript
+--8<-- "user-guide/sdk/agents/snapshoth a particular point in time.
 
 <Tabs>
 <Tab label="Python">
 
-```python
+``ding"
+print(snapshot.app_data["user_display_name"])  # "A`python
 snapshot = agent.take_snapshot(
     preset="session",
     app_data={
@@ -174,8 +210,7 @@ snapshot = agent.take_snapshot(
 )
 
 # Access app data later
-print(snapshot.app_data["snapshot_label"])     # "After onboarding"
-print(snapshot.app_data["user_display_name"])  # "Alice"
+print(snapshot.app_data["snapshot_label"])     # "After onboarlice"
 ```
 </Tab>
 <Tab label="TypeScript">
@@ -184,6 +219,12 @@ print(snapshot.app_data["user_display_name"])  # "Alice"
 --8<-- "user-guide/sdk/agents/snapshots_imports.ts:imports"
 
 --8<-- "user-guide/sdk/agents/snapshots.ts:app_data"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/snapshots.rs:app_data"
 ```
 </Tab>
 </Tabs>
@@ -223,12 +264,15 @@ new_agent = Agent()
 new_agent.load_snapshot(restored_snapshot)
 ```
 </Tab>
-<Tab label="TypeScript">
-
-```typescript
---8<-- "user-guide/sdk/agents/snapshots_imports.ts:imports_snapshot"
+<Tab label="TypeScrips_imports.ts:imports_snapshot"
 
 --8<-- "user-guide/sdk/agents/snapshots.ts:serialization"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/snapshots.rs:serialization"
 ```
 </Tab>
 </Tabs>
@@ -268,6 +312,12 @@ agent("Focus specifically on multi-agent systems and summarize")
 --8<-- "user-guide/sdk/agents/snapshots.ts:checkpointing"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/snapshots.rs:checkpointing"
+```
+</Tab>
 </Tabs>
 
 ### Branching Conversations
@@ -302,6 +352,12 @@ casual_snapshot = agent.take_snapshot(preset="session")
 --8<-- "user-guide/sdk/agents/snapshots_imports.ts:imports"
 
 --8<-- "user-guide/sdk/agents/snapshots.ts:branching"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/snapshots.rs:branching"
 ```
 </Tab>
 </Tabs>
