@@ -85,6 +85,11 @@ impl RoutingContext {
 /// `context.candidates` (compared by identity).
 #[async_trait]
 pub trait RoutingStrategy: Send + Sync {
+    /// Strategy name, for logs that explain a routing decision (TS uses the class name).
+    fn name(&self) -> &str {
+        "RoutingStrategy"
+    }
+
     /// Select a candidate from `context.candidates`, or decline with `None`.
     ///
     /// Declining the opening selection uses the router's default model; declining after a failure

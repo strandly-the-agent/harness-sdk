@@ -33,6 +33,7 @@ pub struct AgentBuilder {
     name: Option<String>,
     description: Option<String>,
     model: Option<Arc<dyn Model>>,
+    model_router: Option<Arc<crate::models::routing::ModelRouter>>,
     aux_model: Option<Arc<dyn Model>>,
     system_prompt: Option<SystemPrompt>,
     messages: Vec<Message>,
@@ -84,7 +85,21 @@ impl AgentBuilder {
         self
     }
 
+    /// Route each invocation among candidate models instead of calling one model.
+    ///
+    /// The router is registered as a plugin and its first candidate's concrete model becomes
+    /// [`Agent::model`], which is what token estimation and the opening before-model hook report;
+    /// the routed model is applied to each model call. Overrides [`AgentBuilder::model`].
+    pub fn model_router(mut self, router: Arc<crate::models::routing::ModelRouter>) -> Self {
+        self.model = Some(router.default_model());
+        self.model_router = Some(router);
+        self
+    }
+
     /// Auxiliary model for internal side calls (memory extraction, summarization).
+    ///
+    /// A [`ModelRouter`](crate::models::routing::ModelRouter) is not a `Model`, so TS's
+    /// `auxModel must be a Model or a Bedrock model id, not a ModelRouter` is unrepresentable.
     ///
     /// Defaults to [`AgentBuilder::model`] when unset.
     pub fn aux_model(mut self, model: impl Model + 'static) -> Self {
@@ -301,6 +316,9 @@ impl AgentBuilder {
                 DefaultModelRetryStrategyOptions::default(),
             )?)),
         }
+        if let Some(router) = &self.model_router {
+            plugins.push(Arc::clone(router) as Arc<dyn Plugin>);
+        }
         plugins.extend(self.plugins);
         if !self.interventions.is_empty() {
             plugins.push(Arc::new(crate::interventions::InterventionRegistry::new(
@@ -366,6 +384,9 @@ impl AgentBuilder {
                 middleware: crate::middleware::MiddlewareRegistry::new(),
             }),
         };
+        if let Some(router) = &self.model_router {
+            crate::models::routing::ModelRouter::attach_to_agent(router, &agent);
+        }
         Ok(agent)
     }
 }

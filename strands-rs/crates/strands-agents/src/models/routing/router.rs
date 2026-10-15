@@ -2,15 +2,20 @@
 
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, Weak};
 
+use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::fallback::FallbackStrategy;
+use super::selection::{mark, marked, NOT_THE_MODEL_MESSAGE};
 use super::strategy::RoutingStrategy;
+use crate::agent::{Agent, AgentInner};
 use crate::error::{Error, Result};
 use crate::models::Model;
+use crate::plugins::Plugin;
 
 /// What a [`RoutingCandidate`] routes to: a concrete model or an opaque nested router.
 #[derive(Clone)]
@@ -181,6 +186,9 @@ pub struct ModelRouter {
     candidates: Vec<RoutingCandidate>,
     strategy: Arc<dyn RoutingStrategy>,
     max_switches: Option<usize>,
+    shared: OnceLock<Weak<ModelRouter>>,
+    attached: Mutex<Vec<Weak<AgentInner>>>,
+    pub(super) initialized: Mutex<Vec<Weak<AgentInner>>>,
 }
 
 impl ModelRouter {
@@ -201,6 +209,9 @@ impl ModelRouter {
             candidates,
             strategy: Arc::new(FallbackStrategy),
             max_switches: None,
+            shared: OnceLock::new(),
+            attached: Mutex::new(Vec::new()),
+            initialized: Mutex::new(Vec::new()),
         })
     }
 
@@ -236,12 +247,43 @@ impl ModelRouter {
         self.max_switches
     }
 
+    /// Record that `agent` was built with this router as its model.
+    ///
+    /// `init_agent` refuses to wire an agent that did not come through here, mirroring TS's
+    /// `attachToAgent`/`initAgent` split.
+    pub(crate) fn attach_to_agent(router: &Arc<Self>, agent: &Agent) {
+        let _ = router.shared.set(Arc::downgrade(router));
+        mark(&router.attached, agent);
+    }
+
+    /// The shared handle recorded by [`Self::attach_to_agent`], for closures that outlive the call.
+    pub(super) fn shared_handle(&self, agent: &Agent) -> Result<Arc<Self>> {
+        if !marked(&self.attached, agent) {
+            return Err(Error::other(NOT_THE_MODEL_MESSAGE));
+        }
+        self.shared
+            .get()
+            .and_then(Weak::upgrade)
+            .ok_or_else(|| Error::other(NOT_THE_MODEL_MESSAGE))
+    }
+
     /// First declared candidate resolved without consulting a strategy.
     pub fn default_model(&self) -> Arc<dyn Model> {
         match self.candidates[0].model() {
             CandidateModel::Model(model) => Arc::clone(model),
             CandidateModel::Router(router) => router.default_model(),
         }
+    }
+}
+
+#[async_trait]
+impl Plugin for ModelRouter {
+    fn name(&self) -> &str {
+        Self::NAME
+    }
+
+    async fn init_agent(&self, agent: &Agent) -> Result<()> {
+        self.register(agent)
     }
 }
 

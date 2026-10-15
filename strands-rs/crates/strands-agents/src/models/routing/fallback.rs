@@ -14,7 +14,13 @@ pub struct FallbackStrategy;
 
 #[async_trait]
 impl RoutingStrategy for FallbackStrategy {
+    fn name(&self) -> &str {
+        "FallbackStrategy"
+    }
+
     /// Select the least-failed available candidate, breaking ties by declaration order.
+    // Candidate hashing is by `Arc` identity, so interior mutability cannot change a key.
+    #[allow(clippy::mutable_key_type)]
     async fn select(&self, context: &RoutingContext) -> Result<Option<RoutingCandidate>> {
         let mut failures: HashMap<&RoutingCandidate, usize> = HashMap::new();
         for attempt in &context.attempts {

@@ -13,9 +13,16 @@
 //!   `strategy must implement RoutingStrategy`, `maxSwitches must be a non-negative integer`
 //!   (`usize`), and metadata containing a non-finite number (`serde_json::Value` cannot hold one).
 //! - Candidate labels use `Model::model_id`; Rust has no runtime provider class name.
+//! - Selection runs as wrap-phase middleware, not TS's `InvokeModelStage.Input`: `add_input` is
+//!   sync while `RoutingStrategy::select` is async. Wrap composes innermost, so it still sees the
+//!   context after continuation input middleware, as TS requires.
+//! - `RoutingStrategy::name` replaces TS's `strategy.constructor.name` in routing logs.
+//! - `AgentBuilder::aux_model` takes `impl Model`, so TS's
+//!   `auxModel must be a Model or a Bedrock model id, not a ModelRouter` has no error path.
 
 mod fallback;
 mod router;
+mod selection;
 mod strategy;
 
 pub use fallback::FallbackStrategy;
