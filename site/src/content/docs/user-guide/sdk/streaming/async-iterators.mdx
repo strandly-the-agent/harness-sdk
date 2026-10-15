@@ -55,6 +55,14 @@ TypeScript uses the [`stream`](@api/typescript/Agent) method for streaming, whic
 --8<-- "user-guide/sdk/streaming/async-iterators.ts:basic_usage"
 ```
 </Tab>
+<Tab label="Rust">
+
+Rust's [`stream`](https://docs.rs/strands-agents/latest/strands_agents/struct.Agent.html) method returns a `futures::Stream` of `Result<AgentStreamEvent>`, so consume it with `StreamExt::next` inside any tokio task or handler.
+
+```rust
+--8<-- "user-guide/sdk/streaming/async-iterators.rs:basic_usage"
+```
+</Tab>
 </Tabs>
 
 ## Server examples
@@ -109,6 +117,14 @@ async def stream_response(request: PromptRequest):
 You can then curl your local server with:
 ```bash
 curl localhost:3000/stream -d '{"prompt": "Hello"}' -H "Content-Type: application/json"
+```
+</Tab>
+<Tab label="Rust">
+
+The stream is framework-agnostic: the handler below writes newline-delimited JSON into any `AsyncWrite`, which covers an axum or actix-web response body.
+
+```rust
+--8<-- "user-guide/sdk/streaming/async-iterators.rs:ndjson_handler"
 ```
 </Tab>
 </Tabs>
@@ -179,6 +195,21 @@ The output will show the sequence of events:
 4. Tools may be executed (`beforeToolsEvent`, `afterToolsEvent`)
 5. The model may be called again in subsequent cycles
 6. Finally, the invocation completes (`afterInvocationEvent`)
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/streaming/async-iterators.rs:agent_loop_lifecycle"
+```
+
+The output will show the sequence of events:
+
+1. First the invocation starts (`AgentStreamEvent::BeforeInvocation`)
+2. Then the model is called (`BeforeModelCall`)
+3. The model generates content with delta events (wrapped in `ModelStreamUpdate`)
+4. Tools may be executed (`BeforeTools`, `AfterTools`)
+5. The model may be called again in subsequent cycles
+6. Finally, the invocation completes (`AfterInvocation`)
 </Tab>
 </Tabs>
 
@@ -265,6 +296,14 @@ orchestrator_callback('Add two more ideas to the "ideas" notebook.')
 
 ```typescript
 --8<-- "user-guide/sdk/streaming/overview.ts:sub_agent_basic"
+```
+</Tab>
+<Tab label="Rust">
+
+A tool reports progress with `ToolContext::progress`, which the parent stream surfaces as `ToolStreamUpdate` events:
+
+```rust
+--8<-- "user-guide/sdk/streaming/async-iterators.rs:sub_agent_basic"
 ```
 </Tab>
 </Tabs>
