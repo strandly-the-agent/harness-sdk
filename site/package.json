@@ -9,6 +9,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "typecheck:snippets": "npm run typecheck --prefix test-snippets",
+    "check:snippets:rust": "cargo check --manifest-path test-snippets/rust/Cargo.toml",
     "format": "prettier --write docs 'src/content/docs/**/*.ts'",
     "format:check": "prettier --check docs 'src/content/docs/**/*.ts'",
     "clean": "rm -rf .build && rm -rf .astro",
