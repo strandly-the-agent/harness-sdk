@@ -53,6 +53,28 @@ The base class also provides optional methods you can override:
 - `countTokens()`: Estimate input token count (defaults to a character-based heuristic).
 - `estimateUtilization()`: Compute the ratio of input tokens to `contextWindowLimit` (defaults to 200,000 when not configured). See [Utilization Estimation](../agents/conversation-management/#utilization-estimation).
 </Tab>
+<Tab label="Rust">
+
+Implement the `Model` trait from `strands_agents::models`. Only two methods are
+required:
+
+- `stream()`: return a `ModelEventStream` — a boxed stream of
+  `Result<ModelStreamEvent>`. It is not `async`; build the stream and return it.
+- `model_id()`: the provider model id, if configured.
+
+The trait also has methods with defaults you can override:
+
+- `context_window_limit()`: context window in tokens (`None` by default).
+- `stateful()`: whether the provider keeps conversation state server-side (`false`).
+- `count_tokens()`: estimate input token count (defaults to a character-based
+  heuristic).
+- `estimate_utilization()`: the ratio of input tokens to `context_window_limit`
+  (defaults to 200,000 when not configured). See
+  [Utilization Estimation](../agents/conversation-management/#utilization-estimation).
+
+There is no `update_config()`/`get_config()` pair: the config is yours to own, and
+`StreamOptions` carries the per-call inputs.
+</Tab>
 </Tabs>
 
 ## Implementing a Custom Model Provider
@@ -143,6 +165,15 @@ Create a TypeScript module that extends the `Model` class. Define an interface f
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/custom_model_provider.ts:create_model_class"
+```
+</Tab>
+<Tab label="Rust">
+
+Return errors as `strands_agents::Error` — `Error::model("…")` for a generic provider
+failure — so the agent loop can classify them:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/custom_model_provider.rs:create_model_class"
 ```
 </Tab>
 </Tabs>
@@ -274,6 +305,15 @@ The `stream` method is the core interface that handles model invocation and retu
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/custom_model_provider.ts:implement_stream"
+```
+</Tab>
+<Tab label="Rust">
+
+Construct `StreamOptions` with `..Default::default()` so added fields stay
+non-breaking:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/custom_model_provider.rs:implement_stream"
 ```
 </Tab>
 </Tabs>
@@ -447,6 +487,15 @@ const metadata: ModelMetadataEventData = {
 }
 ```
 </Tab>
+<Tab label="Rust">
+
+`ModelStreamEvent` is an enum, so the compiler checks the sequence you emit:
+`MessageStart { role }`, `ContentBlockStart { start }` (`Some(ContentBlockStart)` for a
+tool use), `ContentBlockDelta { delta }` (`ContentBlockDelta::Text`, `::ToolUseInput`,
+`::ReasoningContent`, `::Citations`), `ContentBlockStop {}`, `MessageStop
+{ stop_reason, additional_model_response_fields }`, `Metadata { usage, metrics, trace }`,
+and `Redaction { input_redaction, output_redaction }`.
+</Tab>
 </Tabs>
 
 ### 4. Use Your Custom Model Provider
@@ -481,6 +530,12 @@ response = agent("Hello, how are you today?")
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/custom_model_provider.ts:usage_example"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/custom_model_provider.rs:usage_example"
 ```
 </Tab>
 </Tabs>

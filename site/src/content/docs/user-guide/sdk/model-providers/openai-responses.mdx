@@ -27,6 +27,17 @@ Requires `openai>=2.0.0`. Install or upgrade with `pip install -U openai`.
 npm install @strands-agents/sdk openai
 ```
 </Tab>
+<Tab label="Rust">
+
+Enable the `openai` feature on the crate:
+
+```toml
+[dependencies.strands-agents]
+git = "https://github.com/strands-agents/harness-sdk"
+package = "strands-agents"
+features = ["openai"]
+```
+</Tab>
 </Tabs>
 
 ## Usage
@@ -60,6 +71,16 @@ print(response)
 
 In TypeScript, both the Responses API and Chat Completions API are available through a single `OpenAIModel` class. The Responses API is selected by default. Pass `api: 'chat'` to use [Chat Completions](./openai) instead.
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai-responses.rs:basic_usage"
+```
+
+In Rust, both the Responses API and Chat Completions are served by one `OpenAIModel`.
+The Responses API is the default; set `api: OpenAIApi::Chat` to use
+[Chat Completions](./openai) instead.
+</Tab>
 </Tabs>
 
 To connect to Amazon Bedrock's OpenAI-compatible Mantle endpoints, see
@@ -78,6 +99,12 @@ The `client_args` configure the underlying OpenAI client. For a complete list of
 <Tab label="TypeScript">
 
 The `clientConfig` configures the underlying OpenAI client. For a complete list of available options, refer to the [OpenAI TypeScript SDK](https://github.com/openai/openai-node).
+</Tab>
+<Tab label="Rust">
+
+There is no separate client config: `api_key` (falling back to `OPENAI_API_KEY`) and
+`base_url` are fields on `OpenAIModelConfig`. To control how requests are sent, pass
+your own `OpenAITransport` to `OpenAIModel::with_transport`.
 </Tab>
 </Tabs>
 
@@ -105,6 +132,14 @@ The model configuration sets parameters for inference:
 | `stateful` | Enable server-side conversation state | `true` | `true` / `false` |
 | `params` | Additional parameters (e.g., built-in tools) | `{ tools: [{ type: 'web_search' }] }` | [reference](https://platform.openai.com/docs/api-reference/responses/create) |
 </Tab>
+<Tab label="Rust">
+
+`OpenAIModelConfig` holds the inference settings as struct fields — `model_id`,
+`max_tokens`, `temperature`, `top_p`, `reasoning_effort`, `strict_tools`, and
+`stateful` — plus `params` (a `serde_json::Map`) for anything else, including the
+built-in tools below. Keys in `params` cannot override the fields the provider manages
+(`model`, `input`, `stream`, `store`).
+</Tab>
 </Tabs>
 
 ## Built-in Tools
@@ -131,6 +166,12 @@ response = agent("What are the latest developments in AI?")
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/openai-responses.ts:web_search"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai-responses.rs:web_search"
 ```
 </Tab>
 </Tabs>
@@ -161,6 +202,12 @@ response = agent("What does the document say about pricing?")
 --8<-- "user-guide/sdk/model-providers/openai-responses.ts:file_search"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai-responses.rs:file_search"
+```
+</Tab>
 </Tabs>
 
 File search requires a [vector store](https://platform.openai.com/docs/guides/tools-file-search) with uploaded files. Text responses stream correctly; file citation annotations are not yet mapped to the SDK citation schema.
@@ -187,6 +234,12 @@ response = agent("Calculate the SHA-256 hash of 'hello world'")
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/openai-responses.ts:code_interpreter"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai-responses.rs:code_interpreter"
 ```
 </Tab>
 </Tabs>
@@ -226,6 +279,12 @@ response = agent("Using deepwiki, what language is the strands-agents/harness-sd
 --8<-- "user-guide/sdk/model-providers/openai-responses.ts:remote_mcp"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai-responses.rs:remote_mcp"
+```
+</Tab>
 </Tabs>
 
 The model discovers and calls tools exposed by the remote MCP server. The approval flow is not currently surfaced, so `require_approval` must be set to `"never"`.
@@ -254,6 +313,12 @@ response = agent("Use the shell to compute the md5sum of the string 'hello world
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/openai-responses.ts:shell"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai-responses.rs:shell"
 ```
 </Tab>
 </Tabs>
@@ -288,6 +353,12 @@ response = agent("What is my name?")
 --8<-- "user-guide/sdk/model-providers/openai-responses.ts:stateful"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/openai-responses.rs:stateful"
+```
+</Tab>
 </Tabs>
 
 When using a stateful model, the agent automatically uses a null conversation manager and throws an error if a conversation manager is also supplied.
@@ -317,6 +388,12 @@ When disabled (or if the API call fails), falls back to estimation with a charac
 <Tab label="TypeScript">
 
 The OpenAI Responses provider does not currently implement native token counting in the TypeScript SDK. It uses estimation with a character-based heuristic (characters ÷ 4 for text, characters ÷ 2 for JSON).
+</Tab>
+<Tab label="Rust">
+
+The Rust SDK does not implement native token counting for this provider. It uses
+estimation with a character-based heuristic (characters / 4 for text, characters / 2
+for JSON), via `estimate_tokens_heuristic`.
 </Tab>
 </Tabs>
 
