@@ -603,3 +603,96 @@ fallback. A `Choice` list axis drops values that are not options; `Inherit` reso
 - **`_defaultBuilder` is not ported in this increment**: it needs parent-agent internals the Rust
   `Agent` does not expose yet (MCP client inheritance, sandbox, printer, tracer trace-attributes).
   It belongs with the vended multi-agent tools that call it.
+
+## A2A
+
+The `a2a` cargo feature serves a Strands agent over the Agent-to-Agent protocol and calls remote
+ones. Protocol wire types live in-tree (`a2a::types`) rather than coming
+from an SDK as in TS (`@a2a-js/sdk`); serde matches the wire format byte-for-byte. Decisions, each
+a deliberate divergence from `strands-ts/src/a2a/`:
+
+- `A2AExecutor` takes a concrete `Agent` (and an `AgentFactory = Arc<dyn Fn(&str) -> Agent>`), not
+  an `InvokableAgent`: streaming and snapshots are local-agent capabilities, so TS's runtime
+  `asSnapshotAgent` check is a compile-time guarantee here.
+- TS's cross-cutting `InvokableAgent` trait is deliberately **out** of this port: it was removed
+  from the public surface because nothing in-tree consumes it and it has no `stream`. A trait
+  covering both a local `Agent` and an `A2AAgent` (with streaming) is a follow-up that needs API
+  review together with `AgentNode` and `A2AExecutor`; `A2AAgent`'s inherent
+  `invoke`/`invoke_with`/`stream`/`stream_with`/`as_tool` cover the use until then.
+- The two context-isolation modes are separate constructors — `A2AExecutor::with_factory` (a
+  dedicated agent per A2A `contextId`, the recommended mode) and `A2AExecutor::new` (one shared
+  agent whose session snapshot is swapped per context under a lock) — so TS's "provide exactly one
+  of `agent`/`agentFactory`" runtime throw becomes impossible to express.
+- `with_max_contexts(0)` clamps to 1 instead of throwing, matching the crate's "setters don't
+  fail" convention.
+- `AsyncLock` is not ported: in factory mode a `tokio::sync::Mutex<Agent>` *is* the per-context
+  lock, so acquiring it and getting the agent are one step; shared mode uses a plain
+  `tokio::sync::Mutex<()>`.
+- `A2AError` has no Rust twin. Protocol errors travel as `Error::Other(JsonRpcError)` so a server
+  can recover the JSON-RPC code; agent failures propagate as the crate's own errors unchanged.
+- `ExecutionEventBus` becomes `a2a::EventBus`, an unbounded `tokio::sync::mpsc` sender. The server
+  drains it in a task of its own, folding every event into the store before fanning it out to
+  subscribers, so a client that disconnects mid-run cannot leave its task stuck `working`.
+
+The server (`a2a::A2AServer`) is `axum` rather than express, and the request handling TS gets from
+`@a2a-js/sdk`'s `DefaultRequestHandler` + `InMemoryTaskStore` is in-tree over `a2a::TaskStore`,
+which folds the executor's events into one `Task`. `A2AServer::builder(name)` mirrors
+`AgentBuilder`; `router() -> axum::Router` mounts into a host application and
+`serve() -> ServerHandle` runs it (`local_addr`, `agent_card`, graceful `shutdown`). Further
+deliberate divergences:
+
+- `.agent()` and `.executor()` write the same builder slot, so TS's "provide exactly one of
+  `agent`/`agentFactory`" throw is unexpressible; `build()` fails only when neither was set.
+- The task store is concrete and in-memory, not a trait: TS's `taskStore` option becomes
+  `.task_store(Arc<TaskStore>)` (share *that* store) plus `.max_tasks(n)`, since there is no second
+  implementation to abstract over. The store is bounded — `DEFAULT_MAX_TASKS` with
+  least-recently-updated eviction — where the SDK's map grows without limit.
+- The card is served at both `/.well-known/agent-card.json` and the legacy
+  `/.well-known/agent.json`, advertises protocol version `0.3.0` (not TS's `0.2.0`), and takes its
+  description from the served agent in `.agent()` mode — TS's `__agent_card__` placeholder factory
+  call is not ported. A server mounted under an `http_url` path also serves its card at the *root*
+  well-known paths, so a client that only knows the host can still discover it.
+- `AgentCard` carries the optional 0.3 fields (`securitySchemes`, `security`, `preferredTransport`,
+  `additionalInterfaces`, `supportsAuthenticatedExtendedCard`, `signatures`) so a server can
+  advertise auth; the security shapes stay free-form JSON rather than porting the SDK's scheme
+  union, and only `additionalInterfaces` gets a typed `AgentInterface`.
+- Routes mount under the path of `http_url` with `serve_at_root(true)` forcing the root, following
+  Python rather than TS (whose express server always mounts at `/`).
+- `message/send` always runs to completion: `configuration.blocking: false` is treated as blocking
+  since nothing delivers a result out of band yet.
+- Request handling follows `DefaultRequestHandler`: a message naming a `taskId` continues that task
+  (unknown → `-32001`, terminal → `-32600`, otherwise the message is appended to its history and
+  the task reaches the executor as `RequestContext::task`); an executor failure publishes a `failed`
+  task and is returned as a **successful** result, leaving `-32600`/`-32602` for request-level
+  validation; `tasks/cancel` marks a stored task with no live run `canceled` and only delegates a
+  live run to the executor; `tasks/resubscribe` replays the stored task then follows its live run.
+- No auth hook (TS's `UserBuilder`): hosts wrap `router()` in their own `axum` middleware.
+
+The client half is `a2a::A2AAgent` — a remote agent built with `A2AAgent::builder(url)`, invocable
+(`invoke`/`invoke_with`) and streamable (`stream`/`stream_with`, yielding `A2AStreamEvent`s) like a
+local one, and usable via `as_tool` as a tool of a local agent. `tools::vended::A2AClientTool` is the vended `a2a_client` tool: `discover` plus
+`send_message` over an allow-list of endpoints. Deliberate divergences from
+`strands-ts/src/a2a/a2a-agent.ts` and `strands-ts/src/vended-tools/a2a-client/`:
+
+- TS's per-endpoint `ClientFactory` has no twin: auth, proxies and timeouts belong on a
+  `reqwest::Client`, so `.http_client(..)` (and `.endpoint_with_client(..)` on the tool) is the
+  extension point.
+- `A2AAgent::name()` returns `&str`, so an unnamed agent reports its URL until the card arrives
+  (TS's `name` is `undefined` until then); the card's values land in a `OnceLock` and never
+  overwrite a configured name or description.
+- `A2AAgent` can remember the remote's `contextId` and send it on later turns, but only when asked:
+  `.continue_context(true)` or `.context_id(id)` opts in, `context_id()` exposes it and
+  `reset_context()` clears it. Off by default (as in TS), because clones share the context and two
+  callers would otherwise merge into one remote conversation.
+- `A2AAgent` posts to the endpoint the fetched card advertises (`AgentCard::url`), like the TS SDK
+  client, falling back to the configured URL when the card's is empty (TS errors instead).
+- A protocol or transport failure is `Error::Model` with the `JsonRpcError`/`reqwest::Error` kept
+  as its source, so the JSON-RPC code survives (TS throws with `{ cause }`).
+- `InvokeInput::{InterruptResponses, CheckpointResume}` are rejected: a remote agent cannot resume
+  a local interrupt or checkpoint. Non-text content blocks are stripped with a `tracing::warn!`
+  carrying the count, as TS does.
+- `as_tool` is additive (TS has none) and mirrors `Agent::as_tool`'s defaults and `prompt` schema
+  without interrupt propagation, which a remote agent cannot do.
+- The vended tool is a `Tool` struct rather than a `tool()` factory call; its endpoints live in a
+  sorted `BTreeMap`, so the description's endpoint list is deterministic, and failures come back as
+  tool-error results with TS's wording preserved.

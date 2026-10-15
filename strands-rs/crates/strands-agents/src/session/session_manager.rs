@@ -17,7 +17,7 @@ use crate::plugins::Plugin;
 pub const DEFAULT_SESSION_ID: &str = "default-session";
 
 /// Plugin name registered on the agent.
-const PLUGIN_NAME: &str = "strands:session-manager";
+pub(crate) const PLUGIN_NAME: &str = "strands:session-manager";
 
 /// Controls when `snapshot_latest` is saved automatically.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

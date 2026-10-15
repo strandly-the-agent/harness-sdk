@@ -1,5 +1,7 @@
 //! Vended tools shipped with the SDK (`strands-ts/src/vended-tools/`).
 
+#[cfg(feature = "a2a")]
+mod a2a_client;
 mod file_editor;
 mod handoff_to_user;
 #[cfg(feature = "http")]
@@ -9,6 +11,11 @@ mod mcp_router;
 mod shell;
 mod sleep;
 
+#[cfg(feature = "a2a")]
+pub use a2a_client::{
+    A2AClientOperation, A2AClientTool, A2AClientToolBuilder, A2A_CLIENT_TOOL_NAME,
+    DEFAULT_A2A_CLIENT_DESCRIPTION,
+};
 pub use file_editor::{
     FileEditorConfig, FileEditorTool, DEFAULT_FILE_EDITOR_DESCRIPTION, DEFAULT_MAX_FILE_SIZE,
     FILE_EDITOR_TOOL_NAME,
