@@ -385,3 +385,85 @@ async fn native_token_count() -> Result<(), Error> {
     let _ = model;
     Ok(())
 }
+
+async fn mantle_config() -> Result<(), Error> {
+    // --8<-- [start:mantle_config]
+    use strands_agents::models::{
+        BedrockMantleConfig, OpenAIApi, OpenAIModel, OpenAIModelConfig,
+    };
+    use strands_agents::Agent;
+
+    let model = OpenAIModel::new(OpenAIModelConfig {
+        api: OpenAIApi::Responses,
+        model_id: Some("openai.gpt-oss-120b".to_owned()),
+        mantle: Some(BedrockMantleConfig {
+            region: Some("us-east-1".to_owned()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })?;
+
+    let agent = Agent::new(model)?;
+    println!("{}", agent.invoke("What is 2+2?").await?);
+    // --8<-- [end:mantle_config]
+    Ok(())
+}
+
+async fn bedrock_mantle() -> Result<(), Error> {
+    // --8<-- [start:bedrock_mantle]
+    use strands_agents::models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};
+    use strands_agents::Agent;
+
+    let region = "us-east-1";
+    let model = OpenAIModel::new(OpenAIModelConfig {
+        api: OpenAIApi::Responses,
+        model_id: Some("openai.gpt-oss-120b".to_owned()),
+        api_key: Some("<BEDROCK_API_KEY>".to_owned()),
+        base_url: Some(format!("https://bedrock-mantle.{region}.api.aws/v1")),
+        ..Default::default()
+    })?;
+
+    let agent = Agent::new(model)?;
+    println!("{}", agent.invoke("What is 2+2?").await?);
+    // --8<-- [end:bedrock_mantle]
+    Ok(())
+}
+
+async fn invalid_model_id() -> Result<(), Error> {
+    // --8<-- [start:invalid_model_id]
+    use strands_agents::models::BedrockModel;
+    use strands_agents::Agent;
+
+    let model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0";
+    let model = BedrockModel::with_model_id(model_id).await?;
+    let agent = Agent::new(model)?;
+    // --8<-- [end:invalid_model_id]
+    let _ = agent;
+    Ok(())
+}
+
+async fn cache_config_arn() -> Result<(), Error> {
+    // --8<-- [start:cache_config_arn]
+    use strands_agents::models::{
+        BedrockModel, BedrockModelConfig, CacheConfig, CacheStrategy,
+    };
+    use strands_agents::Agent;
+
+    let bedrock_model = BedrockModel::new(BedrockModelConfig {
+        model_id: Some(
+            "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123"
+                .to_owned(),
+        ),
+        cache_config: Some(CacheConfig {
+            strategy: Some(CacheStrategy::Anthropic),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+    .await?;
+
+    let agent = Agent::new(bedrock_model)?;
+    // --8<-- [end:cache_config_arn]
+    let _ = agent;
+    Ok(())
+}

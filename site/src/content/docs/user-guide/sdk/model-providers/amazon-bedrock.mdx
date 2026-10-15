@@ -165,7 +165,7 @@ For complete details on credential configuration, see the [AWS SDK for JavaScrip
 </Tab>
 <Tab label="Rust">
 
-Strands uses the [AWS SDK for Rust](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/welcome.html), which resolves credentials from its default provider chain: environment variables, a shared profile, SSO, or the instance role. `aws configure` and the `AWS_*` environment variables above both work unchanged. `BedrockModel::builder()` takes the region and an optional bearer token; for anything else, construct an `aws_sdk_bedrockruntime::Client` yourself and pass it to `BedrockModel::from_client`.
+Strands uses the [AWS SDK for Rust](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/welcome.html), which resolves credentials from its default provider chain: environment variables, a shared profile, SSO, or the instance role. `aws configure` and the `AWS_*` environment variables above both work unchanged. `BedrockModel::builder()` takes the region, the per-request timeout, and a Bedrock API key (`.api_key(...)`, passed as a bearer token rather than relying on `AWS_BEARER_TOKEN_BEDROCK`). For anything else — static credentials, a custom retry policy, an endpoint override — construct an `aws_sdk_bedrockruntime::Client` yourself and pass it to `BedrockModel::from_client`.
 
 ```rust
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:custom_credentials"
@@ -897,7 +897,7 @@ In Python, that provider can also target `bedrock-runtime`; see
 
 #### Connecting with AWS Credentials
 
-Pass <Syntax py="bedrock_mantle_config" ts="bedrockMantleConfig" /> and the provider
+Pass <Syntax py="bedrock_mantle_config" ts="bedrockMantleConfig" rs="mantle" /> and the provider
 derives the endpoint from your region, routes the model to the correct Mantle base
 path, and mints short-lived bearer tokens from your AWS credentials (via the
 standard credential chain), refreshing them so long-running agents survive token
@@ -930,13 +930,22 @@ print(response)
 
 Requires the optional dependency: `npm install @aws/bedrock-token-generator`
 </Tab>
+<Tab label="Rust">
+
+Enable the `openai` feature. `BedrockMantleConfig` takes the region and an optional token lifetime (`expires_in_seconds`) and derives the Mantle base URL and model path. Minting tokens from AWS credentials is not implemented in Rust yet, so supply the bearer token yourself: set `AWS_BEARER_TOKEN_BEDROCK`, or pass `api_key` as in [Connecting with a Bedrock API Key](#connecting-with-a-bedrock-api-key).
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:mantle_config"
+```
+</Tab>
 </Tabs>
 
 Omit the region to resolve it from your AWS environment. The config also accepts AWS
 credentials to forward to the token generator
-(<Syntax py="credentials_provider" ts="credentials" />, a
-<Syntax py="botocore CredentialProvider" ts="static identity or provider function" plain />)
-and a token-lifetime override (<Syntax py="expiry" ts="expiresInSeconds" />). In
+(<Syntax py="credentials_provider" ts="credentials" rs="no equivalent" />, a
+<Syntax py="botocore CredentialProvider" ts="static identity or provider function"
+rs="the AWS credential chain only" plain />)
+and a token-lifetime override (<Syntax py="expiry" ts="expiresInSeconds" rs="expires_in_seconds" />). In
 Python, `boto_session` can also supply the region from a configured profile.
 
 #### Choosing the Endpoint
@@ -962,6 +971,12 @@ agent = Agent(model=model)
 response = agent("What is 2+2?")
 print(response)
 ```
+</Tab>
+<Tab label="Rust">
+
+:::note[Python only]
+The Rust `BedrockMantleConfig` has no `endpoint` field, so it always targets `bedrock-mantle`. Use `BedrockModel` for models served on `bedrock-runtime`.
+:::
 </Tab>
 </Tabs>
 
@@ -1003,6 +1018,12 @@ print(response)
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock_imports.ts:bedrock_mantle_imports"
 
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:bedrock_mantle"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:bedrock_mantle"
 ```
 </Tab>
 </Tabs>
@@ -1052,6 +1073,12 @@ const agent = new Agent({
 })
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:invalid_model_id"
+```
+</Tab>
 </Tabs>
 
 
@@ -1095,6 +1122,12 @@ const bedrockModel = new BedrockModel({
 })
 
 const agent = new Agent({ model: bedrockModel })
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:cache_config_arn"
 ```
 </Tab>
 </Tabs>
