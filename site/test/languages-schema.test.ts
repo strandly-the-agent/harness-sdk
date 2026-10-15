@@ -5,11 +5,18 @@ describe('docsLanguagesSchema', () => {
   it('accepts a single language string', () => {
     expect(docsLanguagesSchema.safeParse('python').success).toBe(true)
     expect(docsLanguagesSchema.safeParse('typescript').success).toBe(true)
+    expect(docsLanguagesSchema.safeParse('rust').success).toBe(true)
   })
 
   it('accepts a single-element array', () => {
     expect(docsLanguagesSchema.safeParse(['python']).success).toBe(true)
     expect(docsLanguagesSchema.safeParse(['typescript']).success).toBe(true)
+    expect(docsLanguagesSchema.safeParse(['rust']).success).toBe(true)
+  })
+
+  it('accepts a subset of the SDK languages', () => {
+    expect(docsLanguagesSchema.safeParse(['python', 'typescript']).success).toBe(true)
+    expect(docsLanguagesSchema.safeParse(['python', 'rust']).success).toBe(true)
   })
 
   it('accepts undefined (field omitted)', () => {
@@ -17,7 +24,7 @@ describe('docsLanguagesSchema', () => {
   })
 
   it('rejects an array listing all SDK languages', () => {
-    const result = docsLanguagesSchema.safeParse(['python', 'typescript'])
+    const result = docsLanguagesSchema.safeParse(['python', 'typescript', 'rust'])
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error.issues[0].message).toContain('omit the field entirely')
@@ -25,10 +32,10 @@ describe('docsLanguagesSchema', () => {
   })
 
   it('rejects regardless of order', () => {
-    expect(docsLanguagesSchema.safeParse(['typescript', 'python']).success).toBe(false)
+    expect(docsLanguagesSchema.safeParse(['rust', 'typescript', 'python']).success).toBe(false)
   })
 
   it('rejects regardless of case', () => {
-    expect(docsLanguagesSchema.safeParse(['Python', 'TypeScript']).success).toBe(false)
+    expect(docsLanguagesSchema.safeParse(['Python', 'TypeScript', 'Rust']).success).toBe(false)
   })
 })

@@ -7,10 +7,12 @@ describe('getLanguageSwitchTarget', () => {
   const docIds = new Set([
     'docs/user-guide/quickstart/python',
     'docs/user-guide/quickstart/typescript',
+    'docs/user-guide/quickstart/rust',
     'docs/user-guide/deploy/deploy_to_docker/python',
     'docs/user-guide/deploy/deploy_to_docker/typescript',
     'docs/api/python',
     'docs/api/typescript',
+    'docs/api/rust',
     'docs/api/python/strands.agent.a2a_agent',
     'docs/api/python/strands.models.bedrock',
     'docs/api/typescript/Agent',
@@ -37,6 +39,21 @@ describe('getLanguageSwitchTarget', () => {
 
   it('swaps between API index pages directly', () => {
     expect(getLanguageSwitchTarget('/docs/api/python/', 'typescript', docIds)).toBe('/docs/api/typescript/')
+  })
+
+  it('resolves Rust counterparts', () => {
+    expect(getLanguageSwitchTarget('/docs/user-guide/quickstart/typescript/', 'rust', docIds)).toBe(
+      '/docs/user-guide/quickstart/rust/'
+    )
+    expect(getLanguageSwitchTarget('/docs/user-guide/quickstart/rust/', 'python', docIds)).toBe(
+      '/docs/user-guide/quickstart/python/'
+    )
+    // The Rust reference is a single rustdoc landing page, so symbol pages in
+    // the other languages fall back to its section index.
+    expect(getLanguageSwitchTarget('/docs/api/typescript/Agent/', 'rust', docIds)).toBe('/docs/api/rust/')
+    expect(getLanguageSwitchTarget('/docs/api/python/strands.models.bedrock/', 'rust', docIds)).toBe(
+      '/docs/api/rust/'
+    )
   })
 
   it('returns null when the page has no language segment', () => {
@@ -68,7 +85,7 @@ describe('getLanguageSwitchTarget', () => {
 
       const broken: string[] = []
       for (const doc of docs) {
-        for (const target of ['python', 'typescript'] as const) {
+        for (const target of ['python', 'typescript', 'rust'] as const) {
           const result = getLanguageSwitchTarget(`/${doc.id}/`, target, ids, counterparts)
           const resultSlug = result?.replace(/^\//, '').replace(/\/(#.*)?$/, '')
           if (resultSlug && !ids.has(resultSlug)) {

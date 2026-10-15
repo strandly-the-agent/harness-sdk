@@ -5,7 +5,7 @@ import { glob, file } from 'astro/loaders'
 import { pathToDocsSlug } from './util/links'
 import { TagSchema } from './config/tags'
 
-export const ALL_SDK_LANGUAGES = ['python', 'typescript'] as const
+export const ALL_SDK_LANGUAGES = ['python', 'typescript', 'rust'] as const
 
 export const docsLanguagesSchema = z
   .union([z.string(), z.array(z.string())])
@@ -17,7 +17,7 @@ export const docsLanguagesSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'languages must not list all supported SDKs (python and typescript) — ' +
+          'languages must not list all supported SDKs (python, typescript and rust) — ' +
           'omit the field entirely when a feature is available in all languages',
       })
     }

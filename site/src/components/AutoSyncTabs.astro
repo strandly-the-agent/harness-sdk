@@ -12,11 +12,13 @@
  * </AutoSyncTabs>
  *
  * Special case: language tabs.
- * When the labels are exactly the language pair {"Python", "TypeScript"},
+ * When the labels include at least two of {"Python", "TypeScript", "Rust"},
  * the wrapper is marked with `data-language-tabs` so the inline tablist
- * can be visually hidden via global CSS. The site's header LanguageToggle
- * remains the single language selector. Tab logic, syncing, and switching
- * are unchanged — only the inline UI is hidden.
+ * can be visually hidden via global CSS, and the group gets the canonical
+ * language syncKey (see LANGUAGE_SYNC_KEY below) so two- and three-language
+ * groups sync with each other. The site's header LanguageToggle remains the
+ * single language selector. Tab logic, syncing, and switching are unchanged —
+ * only the inline UI is hidden.
  */
 import { Tabs } from '@astrojs/starlight/components';
 
@@ -48,17 +50,24 @@ function hashString(str: string): string {
   return Math.abs(hash).toString(36);
 }
 
-// Generate syncKey from labels if not explicitly provided
-const syncKey = explicitSyncKey ?? (labels.length > 0 ? hashString(labels.join('|')) : undefined);
-
-// Detect language tabs (Python + TypeScript pair, in any order).
-// Only this exact pair is treated as a "language tab" — other tab groups
-// (npm/yarn, OS variants, IDE choice, etc.) keep their normal tablist UI.
+// Detect language tabs: any group whose labels include at least two of the
+// three documented SDK languages. Other tab groups (npm/yarn, OS variants,
+// IDE choice, etc.) keep their normal tablist UI.
+const LANGUAGE_LABELS = ['Python', 'TypeScript', 'Rust'];
 const labelSet = new Set(labels);
-const isLanguageTabs =
-  labels.length === 2 &&
-  labelSet.has('Python') &&
-  labelSet.has('TypeScript');
+const isLanguageTabs = LANGUAGE_LABELS.filter((label) => labelSet.has(label)).length >= 2;
+
+// Canonical syncKey for every language tab group — the hash of the original
+// "Python|TypeScript" pair, so a Python/TypeScript group and a
+// Python/TypeScript/Rust group share one localStorage key
+// (`starlight-synced-tabs__jarkqt`, see util/language-preference.ts) and
+// preferences already stored in a reader's browser keep working.
+const LANGUAGE_SYNC_KEY = hashString('Python|TypeScript');
+
+// Generate syncKey from labels if not explicitly provided
+const syncKey =
+  explicitSyncKey ??
+  (isLanguageTabs ? LANGUAGE_SYNC_KEY : labels.length > 0 ? hashString(labels.join('|')) : undefined);
 ---
 
 {isLanguageTabs ? (

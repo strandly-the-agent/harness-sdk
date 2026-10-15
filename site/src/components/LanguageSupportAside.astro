@@ -7,7 +7,24 @@ interface Props {
 
 const { languages } = Astro.props;
 
-const languageText = Array.isArray(languages) ? languages.join(' and ') : languages;
+// Frontmatter `languages` is authored lowercase (`[python, typescript]`), but
+// older pages use the display form (`[Python, TypeScript]`) — render both.
+const LANGUAGE_LABELS: Record<string, string> = {
+  python: 'Python',
+  typescript: 'TypeScript',
+  rust: 'Rust',
+};
+
+const label = (lang: string) => LANGUAGE_LABELS[lang.toLowerCase()] ?? lang;
+
+/** "Python", "Python and TypeScript", "Python, TypeScript and Rust". */
+function listLanguages(langs: string[]): string {
+  const labels = langs.map(label);
+  if (labels.length < 2) return labels.join('');
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
+const languageText = Array.isArray(languages) ? listLanguages(languages) : label(languages);
 ---
 
 <Aside type="note" title="Language Support">
