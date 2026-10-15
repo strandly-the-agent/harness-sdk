@@ -8,12 +8,14 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use indexmap::IndexMap;
 
 use super::edge::{Edge, EdgeDefinition, EdgeHandler};
-use super::nodes::{Node, NodeDefinition};
+use super::multiagent::MultiAgentInput;
+use super::nodes::{Node, NodeConfig, NodeDefinition, NodeInputOptions, NodeSink, NodeType};
 use super::plugins::{MultiAgentPlugin, MultiAgentPluginRegistry};
-use super::state::{MultiAgentState, MultiAgentStateHandle};
+use super::state::{MultiAgentState, MultiAgentStateHandle, NodeResultUpdate};
 use crate::agent::InvocationState;
 use crate::error::{Error, Result};
 use crate::hooks::{HookEvent, HookFn, HookRegistry};
@@ -71,7 +73,6 @@ pub struct Graph {
 
 impl Graph {
     /// A fresh [`GraphBuilder`].
-    #[must_use]
     pub fn builder() -> GraphBuilder {
         GraphBuilder::new()
     }
@@ -345,9 +346,56 @@ fn resolve_nodes(definitions: Vec<(String, NodeDefinition)>) -> Result<IndexMap<
         if nodes.contains_key(&id) {
             return Err(Error::other(format!("node_id=<{id}> | duplicate node id")));
         }
-        nodes.insert(id, definition.into_node()?);
+        let node = definition.into_node()?;
+        let node = if node.id() == id {
+            node
+        } else {
+            Arc::new(RenamedNode {
+                id: id.clone(),
+                inner: node,
+            }) as Arc<dyn Node>
+        };
+        nodes.insert(id, node);
     }
     Ok(nodes)
+}
+
+/// A node addressed by the id its graph gave it rather than the one its agent carries.
+///
+/// TS takes a node's id from the wrapped agent; the builder lets a caller name the node, so the
+/// graph-facing id has to win everywhere topology is compared.
+struct RenamedNode {
+    id: String,
+    inner: Arc<dyn Node>,
+}
+
+#[async_trait]
+impl Node for RenamedNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn node_type(&self) -> NodeType {
+        self.inner.node_type()
+    }
+
+    fn config(&self) -> &NodeConfig {
+        self.inner.config()
+    }
+
+    fn timeout(&self) -> Option<Duration> {
+        self.inner.timeout()
+    }
+
+    async fn handle(
+        &self,
+        input: MultiAgentInput,
+        state: &MultiAgentStateHandle,
+        options: &NodeInputOptions,
+        events: &NodeSink,
+    ) -> Result<NodeResultUpdate> {
+        self.inner.handle(input, state, options, events).await
+    }
 }
 
 fn resolve_edges(
@@ -456,4 +504,294 @@ fn can_run_concurrently(config: &GraphConfig, edges: &[Edge], sources: &[Arc<dyn
         *fan_out.entry(edge.source.id()).or_default() += 1;
     }
     fan_out.values().any(|count| *count > 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::Agent;
+    use crate::multiagent::edge::edge_handler;
+    use crate::multiagent::nodes::{AgentNode, AgentNodeOptions, NodeType};
+    use crate::test_support::{MockMessageModel, MockResponse};
+    use crate::types::Message;
+
+    fn agent(id: &str) -> Agent {
+        Agent::builder()
+            .id(id)
+            .model(MockMessageModel::shared(vec![MockResponse::message(
+                Message::assistant("reply"),
+            )]))
+            .build()
+            .expect("agent builds")
+    }
+
+    fn one_node(id: &str) -> GraphBuilder {
+        Graph::builder().node(id, agent(id))
+    }
+
+    fn error(builder: GraphBuilder) -> String {
+        builder.build().expect_err("build fails").to_string()
+    }
+
+    #[test]
+    fn defaults_id_to_graph() {
+        let graph = one_node("a").build().unwrap();
+        assert_eq!(graph.id(), DEFAULT_GRAPH_ID);
+        assert_eq!(graph.name(), "graph");
+    }
+
+    #[test]
+    fn accepts_a_custom_id() {
+        let graph = one_node("a").id("custom").build().unwrap();
+        assert_eq!(graph.id(), "custom");
+    }
+
+    #[test]
+    fn accepts_agent_node_options() {
+        let graph = Graph::builder()
+            .node("a", AgentNodeOptions::new(agent("a")).with_description("does a"))
+            .build()
+            .unwrap();
+        let node = graph.nodes().get("a").unwrap();
+        assert_eq!(node.node_type(), NodeType::Agent);
+        assert_eq!(node.config().description.as_deref(), Some("does a"));
+    }
+
+    #[test]
+    fn accepts_multi_agent_node_options() {
+        let inner: Arc<dyn Node> = Arc::new(AgentNode::new(AgentNodeOptions::new(agent("x"))).unwrap());
+        let graph = Graph::builder().node("inner", inner).build().unwrap();
+        assert_eq!(graph.nodes().get("inner").unwrap().node_type(), NodeType::Agent);
+    }
+
+    #[test]
+    fn accepts_pre_built_node_instances() {
+        let node: Arc<dyn Node> = Arc::new(AgentNode::new(AgentNodeOptions::new(agent("a"))).unwrap());
+        let graph = Graph::builder().node("a", Arc::clone(&node)).build().unwrap();
+        assert!(Arc::ptr_eq(graph.nodes().get("a").unwrap(), &node));
+    }
+
+    #[test]
+    fn renames_a_node_whose_agent_id_differs_from_its_graph_id() {
+        let graph = Graph::builder()
+            .node("first", agent("a"))
+            .node("second", agent("b"))
+            .edge("first", "second")
+            .build()
+            .unwrap();
+        assert_eq!(graph.nodes().get("first").unwrap().id(), "first");
+        assert_eq!(graph.edges()[0].source.id(), "first");
+        assert_eq!(graph.edges()[0].target.id(), "second");
+    }
+
+    #[test]
+    fn accepts_edge_options() {
+        let graph = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .edge_when("a", "b", edge_handler(|_| true))
+            .build()
+            .unwrap();
+        assert_eq!(graph.edges().len(), 1);
+        assert!(graph.edges()[0].handler.is_some());
+    }
+
+    #[test]
+    fn errors_on_duplicate_node_ids() {
+        let builder = Graph::builder().node("a", agent("a")).node("a", agent("a2"));
+        assert_eq!(error(builder), "node_id=<a> | duplicate node id");
+    }
+
+    #[test]
+    fn errors_on_edge_referencing_unknown_source_node() {
+        let builder = one_node("a").edge("missing", "a");
+        assert_eq!(
+            error(builder),
+            "source=<missing> | edge references unknown source node"
+        );
+    }
+
+    #[test]
+    fn errors_on_edge_referencing_unknown_target_node() {
+        let builder = one_node("a").edge("a", "missing");
+        assert_eq!(
+            error(builder),
+            "target=<missing> | edge references unknown target node"
+        );
+    }
+
+    #[test]
+    fn errors_when_graph_has_no_source_nodes() {
+        let builder = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .edge("a", "b")
+            .edge("b", "a");
+        assert_eq!(error(builder), "graph has no source nodes");
+    }
+
+    #[test]
+    fn errors_on_unreachable_nodes() {
+        let builder = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .node("c", agent("c"))
+            .edge("a", "b")
+            .edge("c", "c");
+        assert_eq!(error(builder), "node_id=<c> | unreachable from any source node");
+    }
+
+    #[test]
+    fn errors_when_explicit_entry_point_references_unknown_node() {
+        let builder = one_node("a").entry_point("missing");
+        assert_eq!(
+            error(builder),
+            "source=<missing> | source references unknown node"
+        );
+    }
+
+    #[test]
+    fn errors_when_max_steps_is_below_one() {
+        assert_eq!(
+            error(one_node("a").max_steps(0)),
+            "max_steps=<0> | must be at least 1"
+        );
+    }
+
+    #[test]
+    fn errors_when_max_concurrency_is_below_one() {
+        assert_eq!(
+            error(one_node("a").max_concurrency(0)),
+            "max_concurrency=<0> | must be at least 1"
+        );
+    }
+
+    #[test]
+    fn errors_when_timeout_is_below_one() {
+        assert_eq!(
+            error(one_node("a").timeout(Duration::ZERO)),
+            "timeout=<0> | must be at least 1"
+        );
+    }
+
+    #[test]
+    fn errors_when_node_timeout_is_below_one() {
+        assert_eq!(
+            error(one_node("a").node_timeout(Duration::ZERO)),
+            "node_timeout=<0> | must be at least 1"
+        );
+    }
+
+    #[test]
+    fn defaults_every_limit_to_unbounded() {
+        let graph = one_node("a").build().unwrap();
+        let config = graph.config();
+        assert!(config.max_concurrency.is_none());
+        assert!(config.max_steps.is_none());
+        assert!(config.timeout.is_none());
+        assert!(config.node_timeout.is_none());
+    }
+
+    #[test]
+    fn auto_detects_entry_points_from_nodes_without_incoming_edges() {
+        let graph = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .edge("a", "b")
+            .build()
+            .unwrap();
+        let ids: Vec<_> = graph.sources().iter().map(|node| node.id().to_owned()).collect();
+        assert_eq!(ids, ["a"]);
+    }
+
+    #[test]
+    fn explicit_entry_points_override_auto_detection() {
+        let graph = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .edge("a", "b")
+            .entry_point("a")
+            .entry_point("b")
+            .build()
+            .unwrap();
+        assert_eq!(graph.sources().len(), 2);
+    }
+
+    #[test]
+    fn can_run_concurrently_is_false_for_a_single_linear_path() {
+        let graph = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .edge("a", "b")
+            .max_concurrency(1)
+            .build()
+            .unwrap();
+        assert!(!graph.can_run_concurrently());
+    }
+
+    #[test]
+    fn can_run_concurrently_is_true_when_a_node_fans_out() {
+        let graph = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .node("c", agent("c"))
+            .edge("a", "b")
+            .edge("a", "c")
+            .build()
+            .unwrap();
+        assert!(graph.can_run_concurrently());
+    }
+
+    #[test]
+    fn seeds_the_shared_state_with_every_node_id() {
+        let graph = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .edge("a", "b")
+            .build()
+            .unwrap();
+        let ids: Vec<_> = graph
+            .state()
+            .with(|state| state.nodes().keys().cloned().collect());
+        assert_eq!(ids, ["a", "b"]);
+    }
+
+    #[test]
+    fn clones_share_one_state_handle() {
+        let graph = one_node("a").build().unwrap();
+        let clone = graph.clone();
+        clone.state().with_mut(|state| state.steps = 7);
+        assert_eq!(graph.state().steps(), 7);
+    }
+
+    #[test]
+    fn edge_handlers_read_the_shared_state() {
+        let graph = Graph::builder()
+            .node("a", agent("a"))
+            .node("b", agent("b"))
+            .edge_when("a", "b", edge_handler(|state| state.steps > 0))
+            .build()
+            .unwrap();
+        let handler = graph.edges()[0].handler.clone().unwrap();
+        assert!(!futures::executor::block_on(handler(graph.state())));
+        graph.state().with_mut(|state| state.steps = 1);
+        assert!(futures::executor::block_on(handler(graph.state())));
+    }
+
+    #[test]
+    fn node_description_falls_back_to_the_agent_description() {
+        let described = Agent::builder()
+            .id("a")
+            .description("writes things")
+            .model(MockMessageModel::shared(vec![MockResponse::message(
+                Message::assistant("reply"),
+            )]))
+            .build()
+            .unwrap();
+        let graph = Graph::builder().node("a", described).build().unwrap();
+        assert_eq!(
+            graph.nodes().get("a").unwrap().config().description.as_deref(),
+            Some("writes things")
+        );
+    }
 }
