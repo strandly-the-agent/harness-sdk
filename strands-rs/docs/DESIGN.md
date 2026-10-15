@@ -622,6 +622,14 @@ impl Graph {
     pub fn plugins(&self) -> &MultiAgentPluginRegistry;
     pub fn state(&self) -> &MultiAgentStateHandle;
     pub fn invocation_state(&self) -> &InvocationState;
+    // execution (inherent, per the MultiAgent binding rule; `impl MultiAgent for Graph` delegates)
+    pub async fn invoke(&self, impl Into<MultiAgentInput>) -> Result<MultiAgentResult>;
+    pub async fn invoke_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions)
+        -> Result<MultiAgentResult>;
+    pub fn stream(&self, impl Into<MultiAgentInput>) -> MultiAgentStream;
+    pub fn stream_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions) -> MultiAgentStream;
+    pub fn take_snapshot(&self, TakeMultiAgentSnapshotOptions) -> Result<Snapshot>;
+    pub fn load_snapshot(&self, &Snapshot) -> Result<()>;
 }
 
 pub struct GraphBuilder;                     // #[must_use]
@@ -647,6 +655,31 @@ impl GraphBuilder {
 ```
 
 Divergences from TS:
+
+- **One state handle, reset per invocation.** TS allocates a fresh `MultiAgentState` inside
+  `_stream`; the Rust `Graph` owns one `MultiAgentStateHandle` (so `Graph::state()` and every hook
+  event observe the same handle), and an invocation overwrites its contents instead — unless it is
+  resuming, in which case the pending state is restored into it.
+- **`load_snapshot` arms the next invocation.** TS has no `Graph.takeSnapshot`/`loadSnapshot`: a
+  session plugin restores state inside the `BeforeMultiAgentInvocationEvent` hook. The Rust methods
+  delegate to `multiagent::snapshot` and, because the invocation resets the handle,
+  `load_snapshot` also stores the restored state as the pending state so the next
+  `invoke`/`stream` resumes from it (same mechanism as an interrupt resume).
+- **Interrupt resume is same-instance.** The paused `MultiAgentState` is kept on the graph, so
+  `graph.invoke(MultiAgentInput::InterruptResponses(..))` resumes it. Cross-process resume needs
+  the `session_manager` slot, which is not ported yet (register a session plugin via
+  `.plugin(..)`), so TS's session-manager resume tests are covered through `load_snapshot`.
+- **Per-node `timeout: None` inherits `GraphConfig::node_timeout`**; TS's per-node `Infinity`
+  (which *disables* a finite graph-level `nodeTimeout`) has no `Option<Duration>` spelling. A node
+  that must never time out needs a graph without `node_timeout`.
+- **A node timeout surfaces after the node's `CANCELLED` result.** `run_node` maps the cancel to a
+  `CANCELLED` `NodeResult` (which is emitted and recorded) and the graph then fails the invocation
+  with TS's `node_timeout=<ms>, node_id=<id>, graph_id=<id>` error; TS throws before recording the
+  result. The error is the same, the discarded aggregate differs.
+- **Node events pass through the orchestrator.** `run_node` writes to a `NodeSink`; the graph owns
+  that channel, invokes hook callbacks on each event, and forwards it to the consumer's stream —
+  which is how TS's queue-and-`_emit` ordering (`nodeResult` → `handoff` → `afterNodeCall`) is
+  preserved while nodes run concurrently.
 
 - **Builder instead of `new Graph({...})`**: matches `AgentBuilder` (the crate's own convention)
   and keeps construction fallible without an options struct that half its fields can invalidate.
