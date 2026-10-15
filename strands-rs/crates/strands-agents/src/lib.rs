@@ -115,6 +115,8 @@ pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
 #[cfg(feature = "http")]
 pub use tools::vended::HttpRequestTool;
+#[cfg(feature = "mcp")]
+pub use tools::vended::McpRouterTool;
 pub use tools::vended::{FileEditorTool, HandoffToUserTool, ShellTool, SleepTool};
 pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,

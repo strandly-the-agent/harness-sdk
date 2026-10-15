@@ -4,6 +4,8 @@ mod file_editor;
 mod handoff_to_user;
 #[cfg(feature = "http")]
 mod http_request;
+#[cfg(feature = "mcp")]
+mod mcp_router;
 mod shell;
 mod sleep;
 
@@ -19,6 +21,11 @@ pub use handoff_to_user::{
 pub use http_request::{
     HttpRequestConfig, HttpRequestInput, HttpRequestOutput, HttpRequestTool,
     DEFAULT_HTTP_REQUEST_DESCRIPTION, DEFAULT_TIMEOUT_SECONDS, HTTP_REQUEST_TOOL_NAME,
+};
+#[cfg(feature = "mcp")]
+pub use mcp_router::{
+    McpRouterCommand, McpRouterConfig, McpRouterInput, McpRouterTool, DEFAULT_MAX_CONNECTIONS,
+    MCP_ROUTER_DESCRIPTION, MCP_ROUTER_TOOL_NAME,
 };
 pub use shell::{
     ShellConfig, ShellError, ShellOutput, ShellTool, SANDBOX_SHELL_DESCRIPTION, SHELL_TOOL_NAME,

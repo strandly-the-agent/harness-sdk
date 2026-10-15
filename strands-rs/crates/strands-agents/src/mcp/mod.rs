@@ -12,7 +12,7 @@
 
 mod client;
 mod config;
-mod tool;
+pub(crate) mod tool;
 
 pub use client::{
     ListOptions, LoadOptions, McpClient, McpConnectionState, McpServerInfo, ToolsChangedCallback,
