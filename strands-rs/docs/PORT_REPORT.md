@@ -274,7 +274,7 @@ ended on interrupt paths); `mcp/` over rmcp 3.5 (`McpClient`, `McpTool`, `load_s
 streamable-http; owned `McpServerInfo`, no rmcp types leaked); background-tasks engine
 (`max_concurrency` semaphore, per-task `timeout`, pass-id dedup, `Cancelled` guard,
 `AfterToolCallEvent` for background runs, `JoinHandle` abort); memory pass C (key-aware extractor,
-`resolve_extraction_config`, read-only views, `TestMemoryStore`); `Continuations` API (mark
+`resolve_extraction_config`, read-only views); `Continuations` API (mark
 appended after the real append, abandon on early exit, same-role merge); `Agent::as_tool`
 (interrupt namespacing/resume), `AgentDelegation`; Anthropic + OpenAI (Responses/Chat/bedrock-mantle)
 providers over a byte-based `SseParser` (UTF-8 split + CRLF-across-chunks fixed) with injectable
@@ -333,3 +333,15 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `invoke_structured` → `structured_output`, `AgentResult::structured_output_as`; `ModelStopData.usage`;
 `testing` module (alias `test_support`), crate-level guide, actionable no-credentials error, default features
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
+
+## Phase 4
+
+- **memory-stores part A — `TestMemoryStore`** (`src/memory/test_memory_store.rs`, public, mirroring
+  `file_memory_store.rs`): JSON-file store with lexical token-overlap recall, in the record format
+  shared with the TS and Python SDKs (camelCase keys, Z-suffixed millisecond `createdAt`), so a
+  backing file written by any of the three SDKs is readable by the others. All 36 TS `it(...)` cases
+  ported — 33 unit tests beside the code plus 3 agent-loop tests in `tests/memory_stores_loop.rs`
+  (injection round-trip + extraction through the real `Agent`/`MemoryManager` wiring). Matrix:
+  `docs/matrices/memory-stores.md`. The phase-3 entry above previously listed `TestMemoryStore` as
+  landed; it was not, and the claim has been corrected. `BedrockKnowledgeBaseStore` (part B) is
+  still unported.
