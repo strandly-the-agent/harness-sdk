@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import weakref
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
@@ -551,8 +552,7 @@ class AgentSkills(Plugin):
         except Exception:
             # Not a directory: accept a direct path to a SKILL.md file, as Skill.from_file does.
             if skill_path_str.lower().endswith("skill.md"):
-                slash_index = skill_path_str.rfind("/")
-                await load_skill("." if slash_index == -1 else skill_path_str[:slash_index], skill_path_str)
+                await load_skill(os.path.dirname(skill_path_str) or ".", skill_path_str)
             else:
                 logger.warning("path=<%s> | skill source does not exist or is not a valid path", skill_path_str)
             return skills

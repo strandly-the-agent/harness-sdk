@@ -1081,7 +1081,7 @@ class TestDynamicLoading:
         agent = await self._ready_agent(plugin)
         assert plugin._generate_skills_xml(agent) == (
             "<available_skills>\n<skill>\n<name>alpha</name>\n<description>Alpha</description>\n"
-            f"<location>{tmp_path}/alpha/SKILL.md</location>\n</skill>\n</available_skills>"
+            f"<location>{tmp_path / 'alpha' / 'SKILL.md'}</location>\n</skill>\n</available_skills>"
         )
         assert AgentSkills(skills=[])._generate_skills_xml() == (
             "<available_skills>\nNo skills are currently available.\n</available_skills>"
