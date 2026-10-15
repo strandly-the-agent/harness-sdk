@@ -9,6 +9,7 @@ pub mod multiagent;
 pub mod nodes;
 pub mod plugins;
 pub mod snapshot;
+pub mod spec;
 pub mod state;
 #[cfg(test)]
 pub(crate) mod test_orchestrator;
@@ -30,6 +31,10 @@ pub use nodes::{
 };
 pub use plugins::{MultiAgentPlugin, MultiAgentPluginRegistry};
 pub use snapshot::{load_snapshot, take_snapshot, TakeMultiAgentSnapshotOptions};
+pub use spec::{
+    resolve_spec, AgentBuilder, AgentSpec, Choice, ChoiceOption, ListAxis, Preset, ResolveSpecAxes,
+    ScalarAxis, SpecModel,
+};
 pub use state::{
     aggregate_node_usage, resolve_status, MultiAgentResult, MultiAgentState, MultiAgentStateHandle,
     NodeResult, NodeResultUpdate, NodeState, ResultStatus, Status,
