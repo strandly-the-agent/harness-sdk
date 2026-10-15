@@ -20,10 +20,7 @@ pub fn parts_to_content_blocks(parts: &[Part]) -> Vec<ContentBlock> {
             Part::Text { text, .. } => blocks.push(ContentBlock::text(text.clone())),
             Part::File { file, .. } => match file_part_to_block(file) {
                 Some(block) => blocks.push(block),
-                None => tracing::warn!(
-                    part_kind = "file",
-                    "failed to convert A2A part to content block"
-                ),
+                None => tracing::warn!(part_kind = "file", "failed to convert A2A part to content block"),
             },
             Part::Data { data, .. } => {
                 let json = serde_json::to_string_pretty(data).unwrap_or_else(|_| "{}".to_owned());
@@ -184,13 +181,9 @@ fn document_mime_type(format: DocumentFormat) -> &'static str {
         DocumentFormat::Pdf => "application/pdf",
         DocumentFormat::Csv => "text/csv",
         DocumentFormat::Doc => "application/msword",
-        DocumentFormat::Docx => {
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        }
+        DocumentFormat::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         DocumentFormat::Xls => "application/vnd.ms-excel",
-        DocumentFormat::Xlsx => {
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        }
+        DocumentFormat::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         DocumentFormat::Html => "text/html",
         DocumentFormat::Txt => "text/plain",
         DocumentFormat::Md => "text/markdown",
@@ -234,9 +227,7 @@ fn document_format(mime_type: Option<&str>) -> DocumentFormat {
             DocumentFormat::Docx
         }
         Some("application/vnd.ms-excel") => DocumentFormat::Xls,
-        Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") => {
-            DocumentFormat::Xlsx
-        }
+        Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") => DocumentFormat::Xlsx,
         Some("text/html") => DocumentFormat::Html,
         Some("text/markdown") => DocumentFormat::Md,
         Some("application/json") => DocumentFormat::Json,
@@ -248,14 +239,11 @@ fn document_format(mime_type: Option<&str>) -> DocumentFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ToolUseBlock, ReasoningBlock};
+    use crate::types::{ReasoningBlock, ToolUseBlock};
     use serde_json::json;
 
     fn file_part(file: FileContent) -> Part {
-        Part::File {
-            file,
-            metadata: None,
-        }
+        Part::File { file, metadata: None }
     }
 
     fn bytes_file(mime_type: &str, name: Option<&str>) -> FileContent {
@@ -357,9 +345,7 @@ mod tests {
         })]);
         assert_eq!(
             unnamed,
-            vec![ContentBlock::text(
-                "[File: file (https://example.com/file.txt)]"
-            )]
+            vec![ContentBlock::text("[File: file (https://example.com/file.txt)]")]
         );
     }
 
@@ -479,7 +465,11 @@ mod tests {
             ),
         ];
         for (block, expected) in cases {
-            assert_eq!(content_blocks_to_parts(&[block.clone()]), vec![expected], "{block:?}");
+            assert_eq!(
+                content_blocks_to_parts(std::slice::from_ref(&block)),
+                vec![expected],
+                "{block:?}"
+            );
         }
     }
 
