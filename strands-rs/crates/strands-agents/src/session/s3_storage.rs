@@ -967,7 +967,7 @@ mod tests {
             .match_requests(move |req| {
                 let keys: Vec<&str> = req
                     .delete()
-                    .and_then(|d| Some(d.objects()))
+                    .map(|d| d.objects())
                     .map(|objects| objects.iter().map(|o| o.key()).collect())
                     .unwrap_or_default();
                 deleted.lock().push(format!("delete|{}", keys.join(",")));
