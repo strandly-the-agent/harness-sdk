@@ -206,10 +206,8 @@ export const CONTEXT_MODES: readonly ContextMode[] = ['none', 'all', 'no_tools']
 // Depth travels on each child's own state, not a build-time parameter.
 const DEPTH_STATE_KEY = 'subagentDepth'
 
-// Stop reasons that mean the child never finished its task; the parent must see a failure, not its partial text.
+// Stop reasons that mean the child never produced an answer; the parent must see a failure, not its partial text.
 const FAILED_STOP_REASONS: ReadonlySet<string> = new Set(['cancelled', 'contentFiltered', 'refusal'])
-// Stop reasons that mean the child finished normally; anything else is a truncated run the parent should know about.
-const FINISHED_STOP_REASONS: ReadonlySet<string> = new Set(['endTurn', 'stopSequence'])
 
 /** The option names a `Choice` axis (tools, mcp_servers) admits, or `null` when it exposes none. */
 function allowedNames(axis: ToolsMode): string[] | null {
@@ -582,18 +580,13 @@ function errorResult(toolUseId: string, message: string): ToolResultBlock {
 
 /** Maps the child's stop reason onto the parent's tool result. */
 function finalToolResult(toolUseId: string, result: AgentResult): ToolResultBlock {
-  let text = result.toString().replace(/\n+$/, '')
-  // Bedrock reports guardrailIntervened for masked output too, where the answer is complete; only empty output failed
-  const failed = FAILED_STOP_REASONS.has(result.stopReason) || (result.stopReason === 'guardrailIntervened' && !text)
-  if (failed) {
-    let message = `Subagent stopped before finishing (stopReason=${result.stopReason}).`
-    if (text) message += `\n\nPartial output:\n${text}`
-    return errorResult(toolUseId, message)
+  if (!FAILED_STOP_REASONS.has(result.stopReason)) {
+    return new ToolResultBlock({ toolUseId, status: 'success', content: [new TextBlock(result.toString())] })
   }
-  if (!FINISHED_STOP_REASONS.has(result.stopReason)) {
-    text = `${text}\n\n[subagent stopped early: stopReason=${result.stopReason}]`
-  }
-  return new ToolResultBlock({ toolUseId, status: 'success', content: [new TextBlock(text)] })
+  let message = `Subagent stopped before finishing (stopReason=${result.stopReason}).`
+  const partial = result.toString().replace(/\n+$/, '')
+  if (partial) message += `\n\nPartial output:\n${partial}`
+  return errorResult(toolUseId, message)
 }
 
 function errorString(error: unknown): string {

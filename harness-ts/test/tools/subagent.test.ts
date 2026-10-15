@@ -863,54 +863,47 @@ describe('subagent cancellation and failure', () => {
       const child = fakeChild([fakeResult("I'll retrieve that now.\n", stopReason)])
       const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
       const { result } = await drive(tool, { task: 'x' })
-      expect(result.status).toBe('error')
-      expect((result.content[0] as { text: string }).text).toBe(
-        `Subagent stopped before finishing (stopReason=${stopReason}).\n\nPartial output:\nI'll retrieve that now.`
+      expect(result).toEqual(
+        new ToolResultBlock({
+          toolUseId: 't1',
+          status: 'error',
+          content: [
+            new TextBlock(
+              `Subagent stopped before finishing (stopReason=${stopReason}).\n\nPartial output:\nI'll retrieve that now.`
+            ),
+          ],
+        })
       )
       expect((tool as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0)
     }
   )
 
-  it('turns a guardrail that blocked the whole answer into an error', async () => {
-    const child = fakeChild([fakeResult('', 'guardrailIntervened')])
+  it('reports only the stop reason when a blocked child produced no output', async () => {
+    const child = fakeChild([fakeResult('', 'contentFiltered')])
     const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
     const { result } = await drive(tool, { task: 'x' })
-    expect(result.status).toBe('error')
-    expect((result.content[0] as { text: string }).text).toBe(
-      'Subagent stopped before finishing (stopReason=guardrailIntervened).'
+    expect(result).toEqual(
+      new ToolResultBlock({
+        toolUseId: 't1',
+        status: 'error',
+        content: [new TextBlock('Subagent stopped before finishing (stopReason=contentFiltered).')],
+      })
     )
   })
 
-  it('keeps a guardrail that only masked the answer as a success', async () => {
-    // Bedrock reports guardrailIntervened for masked (anonymized) output too; the answer is complete.
-    const child = fakeChild([fakeResult('SSN is {MASKED}', 'guardrailIntervened')])
-    const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
-    const { result } = await drive(tool, { task: 'x' })
-    expect(result.status).toBe('success')
-    expect((result.content[0] as { text: string }).text).toBe(
-      'SSN is {MASKED}\n\n[subagent stopped early: stopReason=guardrailIntervened]'
-    )
-  })
-
-  it('keeps a budget-limited child a success but reports the stop reason', async () => {
-    // Running out of turns is graceful exhaustion, not failure: the partial text is still useful,
-    // but the parent is told the child stopped early.
-    const child = fakeChild([fakeResult('partial\n', 'limitTurns')])
-    const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
-    const { result } = await drive(tool, { task: 'x' })
-    expect(result.status).toBe('success')
-    expect((result.content[0] as { text: string }).text).toBe(
-      'partial\n\n[subagent stopped early: stopReason=limitTurns]'
-    )
-  })
-
-  it("returns a finished child's text unannotated", async () => {
-    const child = fakeChild([fakeResult('done\n', 'stopSequence')])
-    const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
-    const { result } = await drive(tool, { task: 'x' })
-    expect(result.status).toBe('success')
-    expect((result.content[0] as { text: string }).text).toBe('done')
-  })
+  it.each(['guardrailIntervened', 'limitTurns', 'stopSequence'])(
+    "returns a %s child's text as a success",
+    async (stopReason) => {
+      // A guardrail substitutes its own message and a budget limit is graceful exhaustion; both keep
+      // the child's text so the parent can judge it, so neither is turned into an error.
+      const child = fakeChild([fakeResult('the text\n', stopReason)])
+      const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
+      const { result } = await drive(tool, { task: 'x' })
+      expect(result).toEqual(
+        new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('the text\n')] })
+      )
+    }
+  )
 
   it('surfaces an error when the child produces no result', async () => {
     // An empty child stream returns undefined; the tool must report a model-visible error, not throw

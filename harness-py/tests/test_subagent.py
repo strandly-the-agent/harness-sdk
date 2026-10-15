@@ -784,48 +784,31 @@ async def test_a_blocked_child_becomes_an_error_result_naming_the_stop_reason(st
     child = _FakeChild(_FakeResult("I'll retrieve that now.\n", stop_reason=stop_reason))
     tool = make_subagent(builder=lambda spec: child, presets={"generalist": GENERALIST})
     result = _final_result(await _events(tool, {"task": "x"}))
-    assert result["status"] == "error"
-    assert result["content"][0]["text"] == (
+    message = (
         f"Subagent stopped before finishing (stop_reason={stop_reason}).\n\nPartial output:\nI'll retrieve that now."
     )
+    assert result == {"toolUseId": "t1", "status": "error", "content": [{"text": message}]}
     assert tool._pending == {}
 
 
 @pytest.mark.asyncio
-async def test_a_guardrail_that_blocked_the_whole_answer_is_an_error():
-    child = _FakeChild(_FakeResult("", stop_reason="guardrail_intervened"))
+async def test_a_blocked_child_with_no_output_reports_only_the_stop_reason():
+    child = _FakeChild(_FakeResult("", stop_reason="content_filtered"))
     tool = make_subagent(builder=lambda spec: child, presets={"generalist": GENERALIST})
     result = _final_result(await _events(tool, {"task": "x"}))
-    assert result["status"] == "error"
-    assert result["content"][0]["text"] == "Subagent stopped before finishing (stop_reason=guardrail_intervened)."
+    assert result == {
+        "toolUseId": "t1",
+        "status": "error",
+        "content": [{"text": "Subagent stopped before finishing (stop_reason=content_filtered)."}],
+    }
 
 
 @pytest.mark.asyncio
-async def test_a_guardrail_that_only_masked_the_answer_keeps_it_as_a_success():
-    # Bedrock reports guardrail_intervened for masked (anonymized) output too; the answer is complete.
-    child = _FakeChild(_FakeResult("SSN is {MASKED}", stop_reason="guardrail_intervened"))
+@pytest.mark.parametrize("stop_reason", ["guardrail_intervened", "limit_turns", "stop_sequence"])
+async def test_any_other_stop_reason_returns_the_childs_text_as_a_success(stop_reason):
+    # A guardrail substitutes its own message and a budget limit is graceful exhaustion; both keep
+    # the child's text so the parent can judge it, so neither is turned into an error.
+    child = _FakeChild(_FakeResult("the text\n", stop_reason=stop_reason))
     tool = make_subagent(builder=lambda spec: child, presets={"generalist": GENERALIST})
     result = _final_result(await _events(tool, {"task": "x"}))
-    assert result["status"] == "success"
-    assert (
-        result["content"][0]["text"] == "SSN is {MASKED}\n\n[subagent stopped early: stop_reason=guardrail_intervened]"
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_budget_limited_child_stays_a_success_but_reports_the_stop_reason():
-    # Running out of turns is graceful exhaustion, not failure: the partial text is still useful,
-    # but the parent is told the child stopped early.
-    child = _FakeChild(_FakeResult("partial\n", stop_reason="limit_turns"))
-    tool = make_subagent(builder=lambda spec: child, presets={"generalist": GENERALIST})
-    result = _final_result(await _events(tool, {"task": "x"}))
-    assert result["status"] == "success"
-    assert result["content"][0]["text"] == "partial\n\n[subagent stopped early: stop_reason=limit_turns]"
-
-
-@pytest.mark.asyncio
-async def test_a_finished_child_returns_its_text_unannotated():
-    child = _FakeChild(_FakeResult("done\n", stop_reason="stop_sequence"))
-    tool = make_subagent(builder=lambda spec: child, presets={"generalist": GENERALIST})
-    result = _final_result(await _events(tool, {"task": "x"}))
-    assert result == {"toolUseId": "t1", "status": "success", "content": [{"text": "done"}]}
+    assert result == {"toolUseId": "t1", "status": "success", "content": [{"text": "the text\n"}]}
