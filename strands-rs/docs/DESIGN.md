@@ -591,3 +591,80 @@ fallback. A `Choice` list axis drops values that are not options; `Inherit` reso
 - **`_defaultBuilder` is not ported in this increment**: it needs parent-agent internals the Rust
   `Agent` does not expose yet (MCP client inheritance, sandbox, printer, tracer trace-attributes).
   It belongs with the vended multi-agent tools that call it.
+
+### Graph
+
+`multiagent::graph` ports `strands-ts/src/multiagent/graph.ts`. Increment 1 landed the handle,
+the builder, and the TS constructor validation; the execution loop and `impl MultiAgent` are
+increment 2.
+
+```rust
+pub const DEFAULT_GRAPH_ID: &str = "graph";
+
+#[non_exhaustive]
+pub struct GraphConfig {                     // TS GraphConfig; None == TS Infinity
+    pub max_concurrency: Option<usize>, pub max_steps: Option<u64>,
+    pub timeout: Option<Duration>, pub node_timeout: Option<Duration>,
+}
+
+pub struct Graph;                            // Clone handle over Arc<GraphInner>
+impl Graph {
+    pub fn builder() -> GraphBuilder;
+    pub fn id(&self) -> &str;
+    pub fn name(&self) -> &str;
+    pub fn description(&self) -> Option<&str>;
+    pub fn nodes(&self) -> &IndexMap<String, Arc<dyn Node>>;
+    pub fn edges(&self) -> &[Edge];
+    pub fn sources(&self) -> &[Arc<dyn Node>];
+    pub fn config(&self) -> &GraphConfig;
+    pub fn can_run_concurrently(&self) -> bool;
+    pub fn hooks(&self) -> &HookRegistry;
+    pub fn plugins(&self) -> &MultiAgentPluginRegistry;
+    pub fn state(&self) -> &MultiAgentStateHandle;
+    pub fn invocation_state(&self) -> &InvocationState;
+}
+
+pub struct GraphBuilder;                     // #[must_use]
+impl GraphBuilder {
+    pub fn new() -> Self;
+    pub fn id(self, impl Into<String>) -> Self;
+    pub fn name(self, impl Into<String>) -> Self;
+    pub fn description(self, impl Into<String>) -> Self;
+    pub fn node(self, id: impl Into<String>, impl Into<NodeDefinition>) -> Self;
+    pub fn edge(self, source: impl Into<String>, target: impl Into<String>) -> Self;
+    pub fn edge_when(self, source: .., target: .., handler: EdgeHandler) -> Self;
+    pub fn edge_definition(self, impl Into<EdgeDefinition>) -> Self;
+    pub fn entry_point(self, id: impl Into<String>) -> Self;
+    pub fn max_concurrency(self, usize) -> Self;
+    pub fn max_steps(self, u64) -> Self;
+    pub fn timeout(self, Duration) -> Self;
+    pub fn node_timeout(self, Duration) -> Self;
+    pub fn set_state(self, InvocationState) -> Self;
+    pub fn plugin(self, Arc<dyn MultiAgentPlugin>) -> Self;
+    pub fn hook<E, F>(self, F) -> Self;
+    pub fn build(self) -> Result<Graph>;
+}
+```
+
+Divergences from TS:
+
+- **Builder instead of `new Graph({...})`**: matches `AgentBuilder` (the crate's own convention)
+  and keeps construction fallible without an options struct that half its fields can invalidate.
+  Validation runs in `build()`, in TS's order, with TS's exact messages.
+- **`Option<T>` limits instead of `Infinity`**: Rust has no `Infinity` for `usize`/`Duration`, so
+  `None` is "no limit". Consequently the TS `< 1` checks become `== 0` checks and their messages
+  stay byte-identical (`max_steps=<0> | must be at least 1`).
+- **`.node(id, definition)` — the graph names its nodes; TS takes the id from the agent.** The
+  builder needs a stable key for `.edge(..)`, so when the supplied id differs from
+  `Node::id()` the node is wrapped in a private id-overriding delegate and the graph-facing id
+  wins everywhere topology is compared (edges, reachability, state keys).
+- **`.entry_point(id)` instead of `sources: string[]`**: reads as a builder call and matches the
+  Python `GraphBuilder`. The accessor is still `Graph::sources()`, and the unknown-id error keeps
+  TS's `source=<id> | source references unknown node` wording.
+- **No `reset_on_revisit`**: that is a Python knob. TS agent nodes are stateless by default
+  (snapshot/restore per execution) and opt into accumulation via `AgentNodeOptions::preserve_context`,
+  which the Rust port already carries.
+- **No `session_manager` constructor slot yet**: TS accepts one and rejects it when it is also in
+  `plugins`. A session manager is a `MultiAgentPlugin` here, so it goes through `.plugin(..)`;
+  the duplicate-registration check lands with the loop.
+- **`trace_attributes` not wired yet**: it belongs with the tracer work in increment 2.
