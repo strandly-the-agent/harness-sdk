@@ -855,6 +855,42 @@ describe('subagent cancellation and failure', () => {
     expect((result.content[0] as { text: string }).text).toContain('kaboom')
   })
 
+  it.each(['contentFiltered', 'guardrailIntervened'])(
+    'turns a %s child into an error result naming the stop reason',
+    async (stopReason) => {
+      // A content filter or guardrail ends the child's run without a real answer; the parent must see
+      // a failure that names the stop reason, never a success wrapping the partial text.
+      const child = fakeChild([fakeResult("I'll retrieve that now.", stopReason)])
+      const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
+      const { result } = await drive(tool, { task: 'x' })
+      expect(result.status).toBe('error')
+      const text = (result.content[0] as { text: string }).text
+      expect(text).toContain(stopReason)
+      expect(text).toContain("I'll retrieve that now.")
+      expect((tool as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0)
+    }
+  )
+
+  it('keeps a budget-limited child a success but reports the stop reason', async () => {
+    // Running out of turns is graceful exhaustion, not failure: the partial text is still useful,
+    // but the parent is told the child stopped early.
+    const child = fakeChild([fakeResult('partial', 'limitTurns')])
+    const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
+    const { result } = await drive(tool, { task: 'x' })
+    expect(result.status).toBe('success')
+    const text = (result.content[0] as { text: string }).text
+    expect(text.startsWith('partial')).toBe(true)
+    expect(text).toContain('limitTurns')
+  })
+
+  it("returns a finished child's text unannotated", async () => {
+    const child = fakeChild([fakeResult('done', 'stopSequence')])
+    const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
+    const { result } = await drive(tool, { task: 'x' })
+    expect(result.status).toBe('success')
+    expect((result.content[0] as { text: string }).text).toBe('done')
+  })
+
   it('surfaces an error when the child produces no result', async () => {
     // An empty child stream returns undefined; the tool must report a model-visible error, not throw
     // into the parent loop when result.stopReason is read (parity with Python).

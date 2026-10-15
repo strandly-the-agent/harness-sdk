@@ -32,6 +32,7 @@
 
 import {
   type Agent,
+  type AgentResult,
   type ContentBlock,
   InterruptResponseContent,
   type InvokeArgs,
@@ -204,6 +205,11 @@ export const CONTEXT_MODES: readonly ContextMode[] = ['none', 'all', 'no_tools']
 
 // Depth travels on each child's own state, not a build-time parameter.
 const DEPTH_STATE_KEY = 'subagentDepth'
+
+// Stop reasons that mean the child never finished its task; the parent must see a failure, not its partial text.
+const FAILED_STOP_REASONS: ReadonlySet<string> = new Set(['cancelled', 'contentFiltered', 'guardrailIntervened'])
+// Stop reasons that mean the child finished normally; anything else is a truncated run the parent should know about.
+const FINISHED_STOP_REASONS: ReadonlySet<string> = new Set(['endTurn', 'stopSequence'])
 
 /** The option names a `Choice` axis (tools, mcp_servers) admits, or `null` when it exposes none. */
 function allowedNames(axis: ToolsMode): string[] | null {
@@ -574,6 +580,22 @@ function errorResult(toolUseId: string, message: string): ToolResultBlock {
   return new ToolResultBlock({ toolUseId, status: 'error', content: [new TextBlock(message)] })
 }
 
+/** Maps the child's stop reason onto the parent's tool result. */
+function finalToolResult(toolUseId: string, result: AgentResult): ToolResultBlock {
+  let text = result.toString()
+  if (FAILED_STOP_REASONS.has(result.stopReason)) {
+    const partial = JSON.stringify(text)
+    return errorResult(
+      toolUseId,
+      `Subagent stopped before finishing (stopReason=${result.stopReason}); partial output: ${partial}`
+    )
+  }
+  if (!FINISHED_STOP_REASONS.has(result.stopReason)) {
+    text = `${text}\n\n[subagent stopped early: stopReason=${result.stopReason}]`
+  }
+  return new ToolResultBlock({ toolUseId, status: 'success', content: [new TextBlock(text)] })
+}
+
 function errorString(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -693,14 +715,8 @@ class SubagentTool extends Tool {
       }
     }
 
-    if (result.stopReason === 'cancelled') {
-      // Cancellation is data, not an exception: surface it as an error result, not a success.
-      this.pending.delete(toolUseId)
-      return errorResult(toolUseId, 'Subagent was cancelled.')
-    }
-
     this.pending.delete(toolUseId)
-    return new ToolResultBlock({ toolUseId, status: 'success', content: [new TextBlock(result.toString())] })
+    return finalToolResult(toolUseId, result)
   }
 }
 

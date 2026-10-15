@@ -774,3 +774,37 @@ async def test_cancelled_child_becomes_an_error_result():
     assert result["status"] == "error"
     assert "cancel" in result["content"][0]["text"].lower()
     assert tool._pending == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stop_reason", ["content_filtered", "guardrail_intervened"])
+async def test_a_blocked_child_becomes_an_error_result_naming_the_stop_reason(stop_reason):
+    # A content filter or guardrail ends the child's run without a real answer; the parent must see
+    # a failure that names the stop reason, never a success wrapping the partial text.
+    child = _FakeChild(_FakeResult("I'll retrieve that now.", stop_reason=stop_reason))
+    tool = make_subagent(builder=lambda spec: child, presets={"generalist": GENERALIST})
+    result = _final_result(await _events(tool, {"task": "x"}))
+    assert result["status"] == "error"
+    assert stop_reason in result["content"][0]["text"]
+    assert "I'll retrieve that now." in result["content"][0]["text"]
+    assert tool._pending == {}
+
+
+@pytest.mark.asyncio
+async def test_a_budget_limited_child_stays_a_success_but_reports_the_stop_reason():
+    # Running out of turns is graceful exhaustion, not failure: the partial text is still useful,
+    # but the parent is told the child stopped early.
+    child = _FakeChild(_FakeResult("partial", stop_reason="limit_turns"))
+    tool = make_subagent(builder=lambda spec: child, presets={"generalist": GENERALIST})
+    result = _final_result(await _events(tool, {"task": "x"}))
+    assert result["status"] == "success"
+    assert result["content"][0]["text"].startswith("partial")
+    assert "limit_turns" in result["content"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_a_finished_child_returns_its_text_unannotated():
+    child = _FakeChild(_FakeResult("done", stop_reason="stop_sequence"))
+    tool = make_subagent(builder=lambda spec: child, presets={"generalist": GENERALIST})
+    result = _final_result(await _events(tool, {"task": "x"}))
+    assert result == {"toolUseId": "t1", "status": "success", "content": [{"text": "done"}]}
