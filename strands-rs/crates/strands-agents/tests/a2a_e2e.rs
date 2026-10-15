@@ -114,15 +114,20 @@ async fn a2a_agent_streams_protocol_events_then_a_result() {
 }
 
 #[tokio::test]
-async fn a2a_agent_keeps_one_remote_context_across_turns() {
+async fn a2a_agent_keeps_one_remote_context_across_turns_only_when_asked() {
     let handle = serve(&["first", "second"]).await;
-    let remote = A2AAgent::builder(base_url(&handle)).build();
+    let remote = A2AAgent::builder(base_url(&handle))
+        .continue_context(true)
+        .build();
 
     assert_eq!(remote.invoke("one").await.unwrap().text(), "first");
     let context = remote.context_id().expect("the server assigned a context");
     assert_eq!(remote.invoke("two").await.unwrap().text(), "second");
-
     assert_eq!(remote.context_id().as_deref(), Some(context.as_str()));
+
+    let fresh = A2AAgent::builder(base_url(&handle)).build();
+    fresh.invoke("one").await.unwrap();
+    assert_eq!(fresh.context_id(), None, "continuity is opt-in");
     handle.shutdown().await;
 }
 

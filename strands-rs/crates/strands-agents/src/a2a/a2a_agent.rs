@@ -31,9 +31,11 @@ pub const DEFAULT_AGENT_CARD_PATH: &str = "/.well-known/agent-card.json";
 
 /// A remote A2A agent, invocable like a local one.
 ///
-/// Fetches the remote agent's card on first use (for its name and description), sends the input as
-/// one A2A `message/stream` request, and assembles the streamed protocol events into an
-/// [`AgentResult`]. Cheap to clone: clones share one HTTP client, card and conversation context.
+/// Fetches the remote agent's card on first use (for its name, description and RPC endpoint),
+/// sends the input as one A2A `message/stream` request, and assembles the streamed protocol events
+/// into an [`AgentResult`]. Each invocation starts a fresh remote conversation unless
+/// [`A2AAgentBuilder::continue_context`] asks otherwise. Cheap to clone: clones share one HTTP
+/// client, card and conversation context.
 #[derive(Clone, Debug)]
 pub struct A2AAgent {
     inner: Arc<Inner>,
@@ -49,6 +51,7 @@ struct Inner {
     name: OnceLock<String>,
     description: OnceLock<String>,
     card: tokio::sync::OnceCell<AgentCard>,
+    continue_context: bool,
     context_id: Mutex<Option<String>>,
 }
 
@@ -64,6 +67,8 @@ impl A2AAgent {
             name: None,
             description: None,
             card: None,
+            continue_context: false,
+            context_id: None,
         }
     }
 
@@ -88,9 +93,17 @@ impl A2AAgent {
         self.inner.description.get().map(String::as_str)
     }
 
-    /// The A2A `contextId` this agent is continuing, once the remote has assigned one.
+    /// The A2A `contextId` this agent is continuing, when context continuity is on.
+    ///
+    /// Always `None` unless [`A2AAgentBuilder::continue_context`] or
+    /// [`A2AAgentBuilder::context_id`] asked for it.
     pub fn context_id(&self) -> Option<String> {
         self.inner.context_id.lock().clone()
+    }
+
+    /// Forget the remote `contextId`, so the next invocation starts a fresh conversation.
+    pub fn reset_context(&self) {
+        *self.inner.context_id.lock() = None;
     }
 
     /// The remote agent's card, fetched and cached on first call.
@@ -161,7 +174,7 @@ impl A2AAgent {
         let invocation_state = options.invocation_state.unwrap_or_default();
         try_stream! {
             let text = text_from_input(&input)?;
-            agent.agent_card().await?;
+            let endpoint = agent.endpoint().await?;
 
             let mut message = A2AMessage::user(text);
             message.context_id = agent.context_id();
@@ -170,7 +183,7 @@ impl A2AAgent {
 
             let inner = &agent.inner;
             let response = inner
-                .request(inner.http.post(&inner.url).json(&request))
+                .request(inner.http.post(&endpoint).json(&request))
                 .send()
                 .await
                 .map_err(|error| remote_error("the A2A message/stream request failed", error))?
@@ -229,8 +242,24 @@ impl A2AAgent {
         Arc::new(A2AAgentAsTool::new(self.clone(), options))
     }
 
+    /// The RPC endpoint: the card's own `url`, else the configured base URL.
+    ///
+    /// Fetches the card first, as the TS client does — it addresses `agentCard.url` rather than
+    /// the URL it discovered the card at.
+    async fn endpoint(&self) -> Result<String> {
+        let card = self.agent_card().await?;
+        Ok(if card.url.is_empty() {
+            self.inner.url.clone()
+        } else {
+            card.url.clone()
+        })
+    }
+
     /// Remember the remote's `contextId` so the next turn continues the same conversation.
     fn remember_context(&self, event: &A2AEventData) {
+        if !self.inner.continue_context {
+            return;
+        }
         let context_id = match event {
             A2AEventData::Message(message) => message.context_id.clone(),
             A2AEventData::Task(task) => Some(task.context_id.clone()),
@@ -284,6 +313,8 @@ pub struct A2AAgentBuilder {
     name: Option<String>,
     description: Option<String>,
     card: Option<AgentCard>,
+    continue_context: bool,
+    context_id: Option<String>,
 }
 
 impl A2AAgentBuilder {
@@ -329,6 +360,23 @@ impl A2AAgentBuilder {
         self
     }
 
+    /// Continue one remote conversation across invocations, instead of a fresh one each time.
+    ///
+    /// Off by default (TS starts a fresh context every turn). Clones share the context, so two
+    /// callers holding clones of one agent are in the same remote conversation.
+    pub fn continue_context(mut self, continue_context: bool) -> Self {
+        self.continue_context = continue_context;
+        self
+    }
+
+    /// Continue the remote conversation `context_id`, implying
+    /// [`A2AAgentBuilder::continue_context`].
+    pub fn context_id(mut self, context_id: impl Into<String>) -> Self {
+        self.context_id = Some(context_id.into());
+        self.continue_context = true;
+        self
+    }
+
     /// Build the agent. No request is made until it is invoked.
     pub fn build(self) -> A2AAgent {
         let url = self.url.trim_end_matches('/').to_owned();
@@ -360,7 +408,8 @@ impl A2AAgentBuilder {
                 name,
                 description,
                 card,
-                context_id: Mutex::new(None),
+                continue_context: self.continue_context,
+                context_id: Mutex::new(self.context_id),
             }),
         }
     }
@@ -408,8 +457,15 @@ fn text_from_input(input: &InvokeInput) -> Result<String> {
             ))
         }
     };
-    if blocks.iter().any(|block| !matches!(block, ContentBlock::Text(_))) {
-        return Err(Error::model("an A2A agent does not yet support non-text content"));
+    let non_text = blocks
+        .iter()
+        .filter(|block| !matches!(block, ContentBlock::Text(_)))
+        .count();
+    if non_text > 0 {
+        tracing::warn!(
+            non_text_blocks = non_text,
+            "stripping non-text content blocks, A2AAgent does not yet support non-text content"
+        );
     }
     Ok(blocks
         .iter()
@@ -692,16 +748,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn continues_the_same_remote_context_across_turns() {
+    async fn starts_a_fresh_remote_context_per_invocation_by_default() {
         let handle = serve(&["first", "second"]).await;
         let agent = remote(&handle);
 
         assert_eq!(agent.invoke("one").await.unwrap().text(), "first");
+
+        assert_eq!(agent.context_id(), None);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn continues_the_same_remote_context_across_turns_when_asked() {
+        let handle = serve(&["first", "second"]).await;
+        let agent = A2AAgent::builder(format!("http://{}", handle.local_addr()))
+            .continue_context(true)
+            .build();
+
+        assert_eq!(agent.invoke("one").await.unwrap().text(), "first");
         let context = agent.context_id().expect("the remote assigned a context");
         assert_eq!(agent.invoke("two").await.unwrap().text(), "second");
-
         assert_eq!(agent.context_id().as_deref(), Some(context.as_str()));
+
+        agent.reset_context();
+        assert_eq!(agent.context_id(), None);
         handle.shutdown().await;
+    }
+
+    #[test]
+    fn a_configured_context_id_turns_continuity_on() {
+        let agent = A2AAgent::builder("http://localhost:9999")
+            .context_id("ctx-42")
+            .build();
+        assert_eq!(agent.context_id().as_deref(), Some("ctx-42"));
+    }
+
+    #[tokio::test]
+    async fn sends_requests_to_the_endpoint_the_agent_card_advertises() {
+        // The card is served by one server and advertises another as the RPC endpoint.
+        let answering = serve(&["from the card url"]).await;
+        let mut card = AgentCard::new("Carded", "Advertises another endpoint", "");
+        card.url = format!("http://{}", answering.local_addr());
+        let advertising = A2AServer::builder("Advertising")
+            .executor(A2AExecutor::with_factory(|_| agent_saying(&["wrong server"])))
+            .agent_card(card)
+            .build()
+            .unwrap()
+            .serve()
+            .await
+            .unwrap();
+
+        let agent = A2AAgent::builder(format!("http://{}", advertising.local_addr())).build();
+        let result = agent.invoke("hi").await.unwrap();
+
+        assert_eq!(result.text(), "from the card url");
+        advertising.shutdown().await;
+        answering.shutdown().await;
     }
 
     #[tokio::test]
@@ -772,13 +874,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_text_content() {
+    fn strips_non_text_content_instead_of_failing() {
         let input = InvokeInput::Blocks(vec![
             ContentBlock::text("hi"),
             ContentBlock::CachePoint(Default::default()),
+            ContentBlock::text("there"),
         ]);
-        let error = text_from_input(&input).unwrap_err();
-        assert!(error.to_string().contains("non-text content"));
+        assert_eq!(text_from_input(&input).unwrap(), "hi\nthere");
     }
 
     #[test]
