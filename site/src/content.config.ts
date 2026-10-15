@@ -343,6 +343,7 @@ export const collections = {
         'docs/labs/**/*.mdx',
         'docs/api/python/**/*.mdx',
         'docs/api/typescript/**/*.(md|mdx)',
+        'docs/api/rust/**/*.mdx',
       ],
       generateId: generateDocsId,
     }),
