@@ -1,10 +1,12 @@
-//! The vended `sleep` and `handoff_to_user` tools driven through the public agent loop.
+//! The vended tools driven through the public agent loop.
 
 use std::sync::Arc;
 
 use serde_json::json;
 use strands_agents::test_support::{MockMessageModel, MockResponse};
-use strands_agents::tools::vended::{HandoffToUserTool, SleepConfig, SleepTool, HANDOFF_INTERRUPT_NAME};
+use strands_agents::tools::vended::{
+    FileEditorTool, HandoffToUserTool, SleepConfig, SleepTool, HANDOFF_INTERRUPT_NAME,
+};
 use strands_agents::types::{ContentBlock, Role, StopReason, ToolUseBlock};
 use strands_agents::{Agent, InterruptResponseContent, InvokeInput, Message};
 
@@ -26,6 +28,25 @@ fn tool_result_texts(agent: &Agent) -> Vec<String> {
         .flat_map(|m| m.content.clone())
         .filter_map(|block| match block {
             ContentBlock::ToolResult(result) => Some(result.text()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The JSON payloads of the tool results in the agent's messages, in order.
+#[cfg(feature = "http")]
+fn tool_result_json(agent: &Agent) -> Vec<serde_json::Value> {
+    agent
+        .messages()
+        .iter()
+        .flat_map(|m| m.content.clone())
+        .filter_map(|block| match block {
+            ContentBlock::ToolResult(result) => Some(result.content),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|content| match content {
+            strands_agents::types::ToolResultContent::Json(value) => Some(value),
             _ => None,
         })
         .collect()
@@ -117,4 +138,64 @@ async fn handoff_returns_the_reply_as_the_tool_result_and_the_model_continues_on
     assert_eq!(resumed.text(), "deploying to us-west-2");
     assert_eq!(tool_result_texts(&agent), vec!["us-west-2"]);
     assert!(agent.unanswered_interrupts().is_empty());
+}
+
+#[tokio::test]
+async fn file_editor_creates_a_file_in_the_loop_and_views_it_back() {
+    let dir = std::env::temp_dir().join(format!("strands-file-editor-loop-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("note.txt").to_string_lossy().into_owned();
+    let model = model(vec![
+        tool_use_message(
+            "fileEditor",
+            "call-1",
+            json!({ "command": "create", "path": path, "file_text": "hello\n" }),
+        ),
+        tool_use_message("fileEditor", "call-2", json!({ "command": "view", "path": path })),
+        Message::assistant("done"),
+    ]);
+    let agent = Agent::builder()
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(Arc::new(FileEditorTool::new()))
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("write a note").await.unwrap();
+    assert_eq!(result.text(), "done");
+    let texts = tool_result_texts(&agent);
+    assert_eq!(texts[0], format!("File created successfully at: {path}"));
+    assert!(texts[1].contains("     1  hello"), "{:?}", texts[1]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(feature = "http")]
+#[tokio::test]
+async fn http_request_runs_in_the_loop_against_a_loopback_server() {
+    use tokio::io::AsyncWriteExt;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/ping", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        if let Ok((mut stream, _)) = listener.accept().await {
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 4\r\n\r\npong";
+            let _ = stream.write_all(response.as_bytes()).await;
+            let _ = stream.flush().await;
+        }
+    });
+
+    let model = model(vec![
+        tool_use_message("http_request", "call-1", json!({ "method": "GET", "url": url })),
+        Message::assistant("got pong"),
+    ]);
+    let agent = Agent::builder()
+        .model(Arc::clone(&model) as Arc<dyn strands_agents::models::Model>)
+        .tool(Arc::new(strands_agents::tools::vended::HttpRequestTool::new()))
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("ping it").await.unwrap();
+    assert_eq!(result.text(), "got pong");
+    let response = &tool_result_json(&agent)[0];
+    assert_eq!(response["status"], 200);
+    assert_eq!(response["body"], "pong");
 }
