@@ -333,3 +333,11 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `invoke_structured` → `structured_output`, `AgentResult::structured_output_as`; `ModelStopData.usage`;
 `testing` module (alias `test_support`), crate-level guide, actionable no-credentials error, default features
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
+
+## Phase 4
+
+- `GoalLoop` (`plugins::vended::goal`): iterative refinement against a natural-language goal (graded
+  by an auto-built judge agent on `Agent::aux_model`) or a validator closure, re-entering the agent
+  loop through `AfterInvocationEvent::resume` until it passes, `max_attempts` is hit or `timeout`
+  elapses; `preserve_context: false` restores the attempt-1 session each retry. 12 unit + 19
+  agent-loop tests; see `docs/matrices/goal.md`.
