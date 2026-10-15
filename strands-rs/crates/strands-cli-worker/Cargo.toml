@@ -8,8 +8,14 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-[lints]
-workspace = true
+# Workspace lints, except `unsafe_code` is `deny` instead of `forbid`: `message_output` needs one
+# `dup(3)` to adopt the pipe the CLI hands us (see the SAFETY note there).
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
 
 [[bin]]
 name = "strands-cli-worker"

@@ -10,7 +10,7 @@ use serde_json::Value as JsonValue;
 use strands_agents::error::{Error, Result};
 use strands_agents::plugins::vended::skills::AgentSkills;
 use strands_cli_worker::{BuildOptions, BuiltAgent};
-use strands_harness::defaults::DEFAULT_SKILLS_DIR;
+use strands_harness::defaults::{DEFAULT_BUILTIN_TOOLS, DEFAULT_SKILLS_DIR};
 use strands_harness::{
     create_harness, BuiltinPluginName, BuiltinToolsConfig, CachingOption, Effort, HarnessAgentOptions,
     McpServersOption, MemoryConfig, MemoryOption, ModelOption, SessionConfig, SessionOption, SkillsOption,
@@ -41,20 +41,32 @@ async fn main() {
 }
 
 /// fd 3 as an async writer; stdout when `--stdout` is passed (handy for manual poking).
+#[cfg(unix)]
+#[allow(unsafe_code)]
 fn message_output() -> std::io::Result<tokio::fs::File> {
-    if std::env::args().any(|arg| arg == "--stdout") {
-        use std::os::fd::AsFd;
-        let owned = std::io::stdout().as_fd().try_clone_to_owned()?;
-        return Ok(tokio::fs::File::from_std(std::fs::File::from(owned)));
-    }
-    // Reopening the inherited pipe through the fd filesystem keeps this crate free of `unsafe`.
-    let file = ["/dev/fd/3", "/proc/self/fd/3"]
-        .iter()
-        .find_map(|path| std::fs::OpenOptions::new().write(true).open(path).ok())
-        .ok_or_else(|| {
-            std::io::Error::other("fd 3 is not open; the CLI must spawn the worker with a fourth pipe")
-        })?;
-    Ok(tokio::fs::File::from_std(file))
+    use std::os::fd::{AsFd, BorrowedFd};
+    let owned = if std::env::args().any(|arg| arg == "--stdout") {
+        std::io::stdout().as_fd().try_clone_to_owned()?
+    } else {
+        // SAFETY: the CLI spawns us with `stdio: ['pipe','pipe','pipe','pipe']`, so fd 3 is open
+        // for the life of the process and nothing else in this binary owns or closes it. We only
+        // borrow it long enough to `dup` our own descriptor.
+        let fd3 = unsafe { BorrowedFd::borrow_raw(3) };
+        fd3.try_clone_to_owned().map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                "fd 3 is not open; the CLI must spawn the worker with a fourth pipe",
+            )
+        })?
+    };
+    Ok(tokio::fs::File::from_std(std::fs::File::from(owned)))
+}
+
+#[cfg(not(unix))]
+fn message_output() -> std::io::Result<tokio::fs::File> {
+    Err(std::io::Error::other(
+        "the fd 3 message channel is only supported on unix",
+    ))
 }
 
 async fn build_harness(options: BuildOptions) -> Result<BuiltAgent> {
@@ -165,9 +177,15 @@ fn effort(value: &JsonValue) -> Result<Effort> {
 fn builtin_tools(value: Option<&JsonValue>) -> Result<Option<BuiltinToolsConfig>> {
     Ok(match value {
         None | Some(JsonValue::Null) => None,
-        Some(JsonValue::Array(items)) => Some(BuiltinToolsConfig::list(
-            items.iter().filter_map(JsonValue::as_str).map(str::to_owned),
-        )),
+        Some(JsonValue::Array(items)) => {
+            let names: Vec<&str> = items.iter().filter_map(JsonValue::as_str).collect();
+            // Like the TS `builtinToolsOption`: the default list is not an explicit choice.
+            let mut sorted = names.clone();
+            sorted.sort_unstable();
+            let mut defaults = DEFAULT_BUILTIN_TOOLS.to_vec();
+            defaults.sort_unstable();
+            (sorted != defaults).then(|| BuiltinToolsConfig::list(names))
+        }
         Some(JsonValue::Object(map)) => Some(BuiltinToolsConfig::Mapping(map.clone())),
         Some(other) => return Err(Error::other(format!("Unsupported builtinTools value: {other}"))),
     })
