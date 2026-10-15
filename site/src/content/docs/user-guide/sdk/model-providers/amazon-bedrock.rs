@@ -256,3 +256,132 @@ async fn update_config() -> Result<(), Error> {
     // --8<-- [end:update_config]
     Ok(())
 }
+
+// --8<-- [start:tool_update_config]
+use strands_agents::models::{BedrockModel, BedrockModelConfig};
+use strands_agents::tools::ToolContext;
+use strands_agents::tool;
+
+/// Update the temperature of the agent.
+#[tool]
+async fn update_temperature(
+    /// Temperature value for the model to use.
+    temperature: f32,
+    context: ToolContext,
+) -> Result<String, Error> {
+    // `Agent::model()` hands out an `Arc<dyn Model>`, so swap in a model built with the
+    // new temperature instead of mutating the running one.
+    let model = BedrockModel::new(BedrockModelConfig {
+        model_id: Some("global.anthropic.claude-sonnet-5".to_owned()),
+        temperature: Some(temperature),
+        ..Default::default()
+    })
+    .await?;
+    context.agent.set_model(model);
+    Ok(format!("Temperature updated to {temperature}"))
+}
+// --8<-- [end:tool_update_config]
+
+async fn tool_update_config() -> Result<(), Error> {
+    // --8<-- [start:tool_update_config_agent]
+    use strands_agents::models::BedrockModel;
+    use strands_agents::Agent;
+
+    let agent = Agent::builder()
+        .model(BedrockModel::with_model_id("global.anthropic.claude-sonnet-5").await?)
+        .tool(UpdateTemperatureTool::new())
+        .build()?;
+    // --8<-- [end:tool_update_config_agent]
+    let _ = agent;
+    Ok(())
+}
+
+async fn reasoning() -> Result<(), Error> {
+    // --8<-- [start:reasoning]
+    use serde_json::json;
+    use strands_agents::models::{BedrockModel, BedrockModelConfig};
+    use strands_agents::Agent;
+
+    // Create a Bedrock model with reasoning configuration
+    let bedrock_model = BedrockModel::new(BedrockModelConfig {
+        model_id: Some("global.anthropic.claude-sonnet-5".to_owned()),
+        additional_request_fields: Some(json!({
+            "thinking": {
+                "type": "enabled",
+                "budget_tokens": 4096, // Minimum of 1,024
+            }
+        })),
+        ..Default::default()
+    })
+    .await?;
+
+    // Create an agent with the reasoning-enabled model
+    let agent = Agent::new(bedrock_model)?;
+
+    // Ask a question that requires reasoning
+    let response = agent
+        .invoke(
+            "If a train travels at 120 km/h and needs to cover 450 km, \
+             how long will the journey take?",
+        )
+        .await?;
+    // --8<-- [end:reasoning]
+    let _ = response;
+    Ok(())
+}
+
+async fn structured_output() -> Result<(), Error> {
+    // --8<-- [start:structured_output]
+    use schemars::JsonSchema;
+    use serde::Deserialize;
+    use strands_agents::models::BedrockModel;
+    use strands_agents::Agent;
+
+    /// Analyze product information from text.
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct ProductAnalysis {
+        /// Product name.
+        name: String,
+        /// Product category.
+        category: String,
+        /// Price in USD.
+        price: f64,
+        /// Key product features.
+        features: Vec<String>,
+        /// Customer rating 1-5.
+        rating: Option<f64>,
+    }
+
+    let agent = Agent::new(BedrockModel::default_model().await?)?;
+
+    let product: ProductAnalysis = agent
+        .structured_output(
+            r#"Analyze this product: The UltraBook Pro is a premium laptop computer
+            priced at $1,299. It features a 15-inch 4K display, 16GB RAM, 512GB SSD,
+            and 12-hour battery life. Customer reviews average 4.5 stars."#,
+        )
+        .await?;
+
+    println!("Product: {}", product.name);
+    println!("Category: {}", product.category);
+    println!("Price: ${}", product.price);
+    println!("Features: {}", product.features.join(", "));
+    println!("Rating: {:?}", product.rating);
+    // --8<-- [end:structured_output]
+    Ok(())
+}
+
+async fn native_token_count() -> Result<(), Error> {
+    // --8<-- [start:native_token_count]
+    use strands_agents::models::{BedrockModel, BedrockModelConfig};
+
+    let model = BedrockModel::new(BedrockModelConfig {
+        model_id: Some("global.anthropic.claude-sonnet-5".to_owned()),
+        use_native_token_count: Some(true),
+        ..Default::default()
+    })
+    .await?;
+    // --8<-- [end:native_token_count]
+    let _ = model;
+    Ok(())
+}

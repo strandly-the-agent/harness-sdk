@@ -700,6 +700,18 @@ def update_temperature(temperature: float, agent: Agent) -> str:
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:tool_update_config"
 ```
 </Tab>
+<Tab label="Rust">
+
+The tool reaches the agent through `ToolContext`. `Agent::model()` returns an `Arc<dyn Model>`, so the tool builds a model with the new temperature and swaps it in with `Agent::set_model` rather than updating the running one in place:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:tool_update_config"
+```
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:tool_update_config_agent"
+```
+</Tab>
 </Tabs>
 
 ### Reasoning Support
@@ -739,6 +751,12 @@ Enable reasoning on your [`BedrockModel`](@api/typescript/BedrockModel):
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:reasoning"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:reasoning"
 ```
 </Tab>
 </Tabs>
@@ -798,6 +816,14 @@ Define a Zod schema and pass it as `structuredOutputSchema`. Validated output is
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:structured_output"
 ```
 </Tab>
+<Tab label="Rust">
+
+Define a type deriving `Deserialize` and `JsonSchema`, then call `agent.structured_output()`:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:structured_output"
+```
+</Tab>
 </Tabs>
 
 For schema patterns, error handling, and per-invocation overrides, see [Structured Output](../agents/structured-output/).
@@ -835,6 +861,18 @@ const model = new BedrockModel({
   modelId: 'global.anthropic.claude-sonnet-5',
   useNativeTokenCount: true,
 })
+```
+</Tab>
+<Tab label="Rust">
+
+The Bedrock provider can use the native `CountTokens` API. This includes system prompts, messages, and tool specifications in the count.
+
+Not all Bedrock models support the `CountTokens` API. When a model doesn't support it or the caller doesn't have the required IAM permissions, the provider caches this result and falls back to estimation with a character-based heuristic (characters ÷ 4 for text, characters ÷ 2 for JSON) for subsequent calls.
+
+You can enable native token counting with:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:native_token_count"
 ```
 </Tab>
 </Tabs>
