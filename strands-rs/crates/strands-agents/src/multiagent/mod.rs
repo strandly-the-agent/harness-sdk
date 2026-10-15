@@ -2,6 +2,8 @@
 //! orchestrator (Graph, Swarm, …) implements (`strands-ts/src/multiagent/`).
 
 pub mod events;
+// Mirrors the TS file layout (`multiagent/multiagent.ts`).
+#[allow(clippy::module_inception)]
 pub mod multiagent;
 pub mod nodes;
 pub mod state;

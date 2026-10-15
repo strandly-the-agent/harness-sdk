@@ -81,3 +81,179 @@ installs the exporter).
   `()` and the `*_scoped` variants return the `#[must_use]` `HookCleanup`. `add_callback_boxed*` keeps the
   `|e| Box::pin(async move { .. })` form, needed when the future borrows the event (a closure's return
   type cannot capture the event's lifetime).
+
+## Multi-agent
+
+`strands_agents::multiagent` ports `strands-ts/src/multiagent/`. Increment 1 landed the shared
+state types, the `MultiAgent` trait with its invocation types, and the hook/stream events; Graph
+and Swarm code against the signatures below.
+
+### `multiagent::state`
+
+```rust
+pub enum Status { Pending, Executing, Completed, Failed, Cancelled, Interrupted }   // serde SCREAMING
+pub enum ResultStatus { Completed, Failed, Cancelled, Interrupted }
+impl From<ResultStatus> for Status;
+impl Status { pub fn as_result(self) -> Option<ResultStatus>; }
+
+pub struct NodeResult {                      // serde: {"type":"nodeResult", camelCase}
+    pub node_id: String, pub status: ResultStatus, pub duration: u64,
+    pub content: Vec<ContentBlock>, pub error: Option<String>,
+    pub structured_output: Option<JsonValue>, pub usage: Option<Usage>,
+    pub interrupts: Vec<Interrupt>,
+}
+impl NodeResult {
+    pub fn new(node_id: impl Into<String>, status: ResultStatus, duration: u64) -> Self;
+    pub fn with_content(self, Vec<ContentBlock>) -> Self;
+    pub fn with_error(self, impl Into<String>) -> Self;
+    pub fn with_structured_output(self, JsonValue) -> Self;
+    pub fn with_usage(self, Usage) -> Self;
+    pub fn with_interrupts(self, Vec<Interrupt>) -> Self;
+    pub fn merge(self, NodeResultUpdate) -> Self;
+}
+pub struct NodeResultUpdate {                // TS NodeResultUpdate; all fields Option
+    pub status: Option<ResultStatus>, pub content: Option<Vec<ContentBlock>>,
+    pub error: Option<String>, pub structured_output: Option<JsonValue>,
+    pub usage: Option<Usage>, pub interrupts: Option<Vec<Interrupt>>,
+}
+
+pub struct NodeState {                       // serde: camelCase, no `type` tag (TS omits it)
+    pub status: Status, pub terminus: bool, pub start_time: u64,
+    pub results: Vec<NodeResult>, pub interrupts: Vec<Interrupt>,
+    pub interrupted_snapshot: Option<Snapshot>,
+}
+impl NodeState { pub fn new() -> Self; pub fn content(&self) -> &[ContentBlock]; }
+
+pub struct MultiAgentResult {                // serde: {"type":"multiAgentResult", camelCase}
+    pub status: ResultStatus, pub results: Vec<NodeResult>, pub content: Vec<ContentBlock>,
+    pub duration: u64, pub usage: Usage, pub error: Option<String>, pub interrupts: Vec<Interrupt>,
+}
+impl MultiAgentResult {
+    pub fn new(results: Vec<NodeResult>, duration: u64) -> Self;   // derives status + usage + interrupts
+    pub fn with_status(self, ResultStatus) -> Self;
+    pub fn with_content(self, Vec<ContentBlock>) -> Self;
+    pub fn with_error(self, impl Into<String>) -> Self;
+    pub fn with_interrupts(self, Vec<Interrupt>) -> Self;
+}
+impl Display for MultiAgentResult;           // joined text blocks of `content`
+
+pub struct MultiAgentState {                 // serde: camelCase, `app` flattens StateStore JSON
+    pub start_time: u64, pub steps: u64, pub results: Vec<NodeResult>,
+    pub app: StateStore, pub pending_input: Option<MultiAgentInput>,   // serialized as `_pendingInput`
+}
+impl MultiAgentState {
+    pub fn new(node_ids: impl IntoIterator<Item = impl Into<String>>) -> Self;
+    pub fn node(&self, id: &str) -> Option<&NodeState>;
+    pub fn node_mut(&mut self, id: &str) -> Option<&mut NodeState>;
+    pub fn node_or_insert(&mut self, id: impl Into<String>) -> &mut NodeState;
+    pub fn nodes(&self) -> &BTreeMap<String, NodeState>;
+}
+
+pub struct MultiAgentStateHandle(Arc<Mutex<MultiAgentState>>);   // Clone; events carry this
+impl MultiAgentStateHandle {
+    pub fn new(MultiAgentState) -> Self;
+    pub fn with<R>(&self, impl FnOnce(&MultiAgentState) -> R) -> R;
+    pub fn with_mut<R>(&self, impl FnOnce(&mut MultiAgentState) -> R) -> R;
+    pub fn node(&self, id: &str) -> Option<NodeState>;
+}
+
+pub fn resolve_status(&[NodeResult]) -> ResultStatus;   // FAILED > INTERRUPTED > CANCELLED > COMPLETED
+pub fn aggregate_node_usage(&[NodeResult]) -> Usage;
+```
+
+### `multiagent::multiagent`
+
+```rust
+pub enum MultiAgentInput { None, Text(String), Blocks(Vec<ContentBlock>), InterruptResponses(Vec<InterruptResponseContent>) }
+// From<&str>, From<String>, From<Vec<ContentBlock>>, From<Vec<InterruptResponseContent>>,
+// TryFrom<InvokeInput> (rejects Messages / CheckpointResume with UNSUPPORTED_MULTIAGENT_INPUT_MESSAGE)
+impl MultiAgentInput { pub fn resume_responses(&self) -> Option<&[InterruptResponseContent]>; }
+
+pub struct MultiAgentInvokeOptions { pub invocation_state: Option<InvocationState>, pub cancel: Option<CancellationToken> }
+// with_invocation_state, with_cancel — mirrors agent::InvokeOptions
+
+pub trait MultiAgent: Send + Sync {          // object-safe; used as Arc<dyn MultiAgent>
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn description(&self) -> Option<&str> { None }
+    fn hooks(&self) -> &HookRegistry;
+    fn invoke_with<'a>(&'a self, MultiAgentInput, MultiAgentInvokeOptions) -> BoxFuture<'a, Result<MultiAgentResult>>;
+    fn stream_with(&self, MultiAgentInput, MultiAgentInvokeOptions) -> MultiAgentStream;
+}
+pub trait MultiAgentExt: MultiAgent {        // blanket impl, incl. dyn MultiAgent
+    fn invoke(&self, impl Into<MultiAgentInput>) -> BoxFuture<'_, Result<MultiAgentResult>>;
+    fn stream(&self, impl Into<MultiAgentInput>) -> MultiAgentStream;
+}
+
+pub struct MultiAgentStream;                 // newtype over BoxStream<'static, Result<MultiAgentStreamEvent>>
+impl MultiAgentStream { pub fn new(BoxStream<..>) -> Self; pub fn into_inner(self) -> BoxStream<..>; }
+impl Stream for MultiAgentStream { type Item = Result<MultiAgentStreamEvent>; }
+
+pub fn group_interrupt_responses_by_node(&[InterruptResponseContent], &MultiAgentState)
+    -> Result<BTreeMap<String, Vec<InterruptResponseContent>>>;
+pub fn drop_stale_interrupted_result(node_id: &str, &mut MultiAgentState);
+pub fn record_hook_interrupt(node_id: &str, &mut NodeState) -> NodeResult;
+pub fn interrupted_result(&MultiAgentState, content: Vec<ContentBlock>) -> MultiAgentResult;
+pub fn apply_orchestrator_hook_responses(&mut NodeState, Vec<InterruptResponseContent>)
+    -> Vec<InterruptResponseContent>;         // returns the responses bound for the child agent
+```
+
+### `multiagent::events` / `multiagent::nodes`
+
+Ten hook events, each `impl HookEvent`, each carrying `state: MultiAgentStateHandle` and
+`invocation_state: InvocationState`; orchestrator-scoped ones also carry
+`orchestrator: OrchestratorRef` (`= Arc<dyn MultiAgent>`):
+`MultiAgentInitializedEvent`, `BeforeMultiAgentInvocationEvent`, `AfterMultiAgentInvocationEvent`
+(reverse), `BeforeNodeCallEvent` (`cancel: Cancel`, `interrupt(InterruptParams) -> Result<JsonValue>`),
+`AfterNodeCallEvent` (reverse, `error: Option<String>`), `NodeStreamUpdateEvent`
+(`inner: NodeInnerEvent`), `NodeResultEvent`, `MultiAgentHandoffEvent`, `NodeCancelEvent`,
+`MultiAgentResultEvent`.
+
+```rust
+pub enum NodeInnerEvent { Agent(Box<AgentStreamEvent>), MultiAgent(Box<MultiAgentStreamEvent>), Custom(JsonValue) }
+impl NodeInnerEvent { pub fn source(&self) -> &'static str; }   // "agent" | "multiAgent" | "custom"
+
+pub enum MultiAgentStreamEvent { BeforeMultiAgentInvocation(..), AfterMultiAgentInvocation(..),
+    BeforeNodeCall(..), AfterNodeCall(..), NodeStreamUpdate(..), NodeResult(..), NodeCancel(..),
+    MultiAgentHandoff(..), MultiAgentResult(..) }
+impl MultiAgentStreamEvent {
+    pub fn type_name(&self) -> &'static str;   // TS discriminators, e.g. "nodeResultEvent"
+    pub fn node_id(&self) -> Option<&str>;
+    pub fn result(&self) -> Option<&MultiAgentResult>;
+}
+
+pub enum NodeType { Agent, MultiAgent, Custom(String) }   // serde "agentNode"/"multiAgentNode"/<name>
+```
+
+### Decision log
+
+- **`ResultStatus` is its own enum**, not a runtime-checked subset of `Status`, so a `NodeResult`
+  cannot hold `PENDING`/`EXECUTING`. `From<ResultStatus> for Status` and `Status::as_result` bridge
+  the two; serde strings are identical to TS.
+- **`error: Option<String>`**, not a boxed error: TS `serializeError` serialises an `Error` to its
+  message, so the message is the whole wire shape and the only thing that survives a round-trip.
+- **`interrupts: Vec<Interrupt>` with `skip_serializing_if = "Vec::is_empty"`** instead of
+  `Option<Vec<_>>`, matching `AgentResult.interrupts`. The JSON is identical to TS (omitted when
+  empty); callers get one shape instead of two.
+- **`structured_output` round-trips an explicit `null`** via a `deserialize_some` helper — plain
+  `Option<JsonValue>` would collapse a present `null` to absent, which TS distinguishes.
+- **`NodeState` / `MultiAgentState` serialise without a `type` tag.** The TS classes declare
+  `type` but their `stateToJSON` omits it; only `NodeResult` and `MultiAgentResult` (which have a
+  real `toJSON`) carry the tag.
+- **`MultiAgentState.nodes` is a `BTreeMap`** (TS uses an insertion-ordered `Map`): deterministic
+  JSON key order without a new dependency. Node *execution* order is the orchestrator's queue, not
+  this map, so the ordering difference is not observable in behaviour.
+- **`MultiAgentStateHandle` is the handle events carry**, mirroring `InterruptStateHandle`: hook
+  callbacks get `&mut Event`, so sharing the state has to go through an `Arc<Mutex<..>>` rather
+  than a borrow. `MultiAgentState` itself stays a plain struct.
+- **`MultiAgentInvokeOptions.cancel`**, not `cancellation_token`, to match
+  `InvokeOptions::cancel`/`with_cancel` exactly (crate consistency over the plan's sketch name).
+- **`invoke`/`stream` live on `MultiAgentExt`**, a blanket extension trait: generic
+  `impl Into<..>` methods are not object-safe, and `dyn MultiAgent` must stay usable as a node.
+- **Multi-agent events do not implement `Serialize`** (TS events have `toJSON`): they hold live
+  handles (`Arc<dyn MultiAgent>`, the state handle). `MultiAgentStreamEvent::type_name` provides
+  the TS `type` discriminator, which is what the TS tests assert on.
+- **`NodeInnerEvent::Custom(JsonValue)`**: TS wraps an arbitrary `StreamEvent` from a non-`Agent`
+  runnable; the Rust port has no such common event type, so custom nodes forward opaque JSON.
+- **`NodeType` lives in `multiagent::nodes`** (increment 1 defines only the enum; the `Node` trait
+  and the concrete node types land there next) because the events reference it.
