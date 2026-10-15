@@ -302,7 +302,7 @@ impl Swarm {
         )))
     }
 
-    /// Initialize plugins and fire [`MultiAgentInitializedEvent`](super::MultiAgentInitializedEvent).
+    /// Initialize plugins and fire [`MultiAgentInitializedEvent`].
     ///
     /// Called automatically on the first invocation.
     ///
