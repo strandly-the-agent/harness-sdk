@@ -5,7 +5,7 @@ import IntegrationsBackLink from '../IntegrationsBackLink.astro';
 import LanguageSupportAside from '../LanguageSupportAside.astro';
 import ExperimentalAside from '../ExperimentalAside.astro';
 import PageTags from '../PageTags.astro';
-import { ALL_SDK_LANGUAGES } from '../../content.config';
+import { ALL_SDK_LANGUAGES } from '../../config/languages';
 
 const { starlightRoute } = Astro.locals;
 const { languages, community, experimental } = starlightRoute.entry.data;

@@ -4,8 +4,9 @@ import { docsSchema } from '@astrojs/starlight/schema'
 import { glob, file } from 'astro/loaders'
 import { pathToDocsSlug } from './util/links'
 import { TagSchema } from './config/tags'
+import { ALL_SDK_LANGUAGES } from './config/languages'
 
-export const ALL_SDK_LANGUAGES = ['python', 'typescript', 'rust'] as const
+export { ALL_SDK_LANGUAGES }
 
 export const docsLanguagesSchema = z
   .union([z.string(), z.array(z.string())])
