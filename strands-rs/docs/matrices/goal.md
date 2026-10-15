@@ -105,3 +105,15 @@ Rust-only coverage (no TS counterpart): `validation_outcome_from_bool_is_the_ts_
 - `tests/integ_goal.rs` (live Bedrock, `#[ignore]`) covers the judge path and a validator retry
   against `us.anthropic.claude-haiku-4-5-20251001-v1:0`; both pass.
 - The two log-assertion gaps above need a log-capture harness to close.
+
+## Review disposition (round 1)
+
+| Finding | Disposition |
+| --- | --- |
+| 🟠 `goal.rs:604` `resumed` armed before `load_snapshot` can fail | fixed — `resumed` is now set after a successful rewind, next to `event.resume`; regression test `a_failed_snapshot_load_does_not_leak_the_run_into_the_next_invocation` (unit test: it needs private `runs` access to corrupt the snapshot) |
+| 🟠 root re-exports limited to `GoalLoop` | fixed — `GoalResult`, `GoalStopReason`, `ValidationContext`, `ValidationOutcome` added to `lib.rs` and `plugins/mod.rs` |
+| 🟠 `validate_config` private | fixed — now `pub fn validate(&self) -> Result<()>` (the private per-attempt helper was renamed `validate_response` to free the name); `with_max_attempts`/`with_timeout` docs say rejected when attached |
+| 🟠 timeout loop test weak/flaky | fixed — attempt 1 only sleeps 30 ms against a 10 ms budget, asserts the exact attempts vec and `model.call_count() == 2`; new `awaits_an_async_validator_before_deciding` covers TS's async-validator case |
+| 🟡 `goal.rs:466-471` rewrap | fixed |
+| 🟡 `#[non_exhaustive]` on read-only types | fixed — on `ValidationContext`, `GoalResult`, `GoalAttempt`, `GoalStopReason`; `ValidationOutcome` left exhaustive. Loop tests compare attempts through a tuple helper since they can no longer build `GoalAttempt` |
+| API alternative (`NonZeroUsize`) | not adopted — reviewer's own recommendation |
