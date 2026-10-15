@@ -1,6 +1,6 @@
 //! `GoalLoop` through the agent loop (`strands-ts/src/vended-plugins/goal/goal.test.ts`).
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
@@ -500,4 +500,58 @@ async fn a_failed_invocation_leaves_no_result_and_does_not_leak_into_the_next_ru
     let run = goal.last_result(&agent).unwrap();
     assert!(run.passed);
     assert_eq!(run.attempts.len(), 1);
+}
+
+// ---- mid-run observability ------------------------------------------------
+
+#[tokio::test]
+async fn last_result_is_none_while_the_run_is_in_flight() {
+    // The validator is the only hook that runs between attempts, so it is where we probe.
+    let holder: Arc<OnceLock<GoalLoop>> = Arc::new(OnceLock::new());
+    let probe = holder.clone();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    let goal = GoalLoop::sync_validator(move |ctx: &ValidationContext| {
+        let plugin = probe.get().expect("plugin registered before the run");
+        sink.lock()
+            .unwrap()
+            .push(plugin.last_result(&ctx.agent).is_some());
+        Ok(ValidationOutcome::from(ctx.response.text() == "good"))
+    });
+    let _ = holder.set(goal.clone());
+    let agent = Agent::builder()
+        .model(replies(&["bad", "good"]))
+        .plugin(goal.clone())
+        .build()
+        .unwrap();
+
+    agent.invoke("go").await.unwrap();
+
+    assert_eq!(&*seen.lock().unwrap(), &[false, false]);
+    assert!(goal.last_result(&agent).is_some());
+}
+
+#[tokio::test]
+async fn preserve_context_false_does_not_roll_back_the_agent_state() {
+    let goal = GoalLoop::sync_validator(|ctx: &ValidationContext| {
+        let runs = ctx
+            .agent
+            .state()
+            .get("runs")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        ctx.agent.state().set("runs", json!(runs + 1));
+        Ok(ValidationOutcome::from(ctx.response.text() == "good"))
+    })
+    .with_preserve_context(false);
+    let agent = Agent::builder()
+        .model(replies(&["bad", "good"]))
+        .plugin(goal)
+        .build()
+        .unwrap();
+
+    agent.invoke("go").await.unwrap();
+
+    // Plugin scratch space is invisible to the model, so it survives the rewind (TS parity).
+    assert_eq!(agent.state().get("runs"), Some(json!(2)));
 }

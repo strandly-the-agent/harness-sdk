@@ -4,7 +4,8 @@ Branch `agent-tasks/strands-rs-goal`. Port of `strands-ts/src/vended-plugins/goa
 (`plugin.ts`, `judge.ts`, `index.ts`).
 
 Files: `crates/strands-agents/src/plugins/vended/goal.rs` (impl + 12 unit tests),
-`crates/strands-agents/tests/goal_loop.rs` (19 agent-loop tests); exports in
+`crates/strands-agents/tests/goal_loop.rs` (21 agent-loop tests),
+`crates/strands-agents/tests/integ_goal.rs` (2 live Bedrock tests); exports in
 `plugins/vended/mod.rs`.
 
 Gates (last line each):
@@ -12,7 +13,9 @@ Gates (last line each):
 cargo fmt --all                                                      -> (no output)
 cargo clippy -p strands-agents --all-features --tests -- -D warnings -> Finished `dev` profile in 37.26s
 cargo test -p strands-agents --all-features --lib goal::             -> test result: ok. 12 passed
-cargo test -p strands-agents --all-features --test goal_loop         -> test result: ok. 19 passed
+cargo test -p strands-agents --all-features --test goal_loop         -> test result: ok. 21 passed
+AWS_REGION=us-west-2 cargo test -p strands-agents --all-features --test integ_goal -- --ignored
+                                                                     -> test result: ok. 2 passed
 ```
 
 ## API (TS → Rust)
@@ -57,13 +60,13 @@ cargo test -p strands-agents --all-features --test goal_loop         -> test res
 | lastResult is undefined before first invoke | `last_result_is_none_before_any_run_and_per_agent` | loop | pass |
 | lastResult is replaced on each completed run | `a_second_invocation_replaces_the_previous_result` | loop | pass |
 | lastResult is undefined after a host throw mid-run | `a_failed_invocation_leaves_no_result_and_does_not_leak_into_the_next_run` | loop | pass |
-| lastResult is undefined while a run is mid-flight | — | — | gap: needs a hook reading `last_result` between attempts |
+| lastResult is undefined while a run is mid-flight | `last_result_is_none_while_the_run_is_in_flight` | loop | pass |
 | feedback messages accumulate as user-role messages | `resumes_with_the_feedback_and_counts_the_attempts` | loop | pass |
 | resumePromptTemplate replaces the default canned English | `the_resume_prompt_can_be_overridden` | loop | pass |
 | shares one plugin across agents with independent run state | `one_plugin_instance_serves_several_agents_with_independent_run_state` | loop | pass |
 | throws when two GoalLoops are attached to the same agent | `only_one_goal_loop_can_attach_to_an_agent` | loop | pass |
 | preserveContext false: agent never sees prior attempts | `preserve_context_false_hides_the_earlier_attempts_from_the_model` | loop | pass |
-| preserveContext false: does not roll back appState | — | — | gap: `Agent::state` is excluded from the snapshot (`SnapshotField::State`); untested |
+| preserveContext false: does not roll back appState | `preserve_context_false_does_not_roll_back_the_agent_state` | loop | pass |
 | preserves context by default | `preserve_context_true_keeps_the_earlier_attempts_in_the_prompt` | loop | pass |
 | clears stale lastResult after a thrown invoke | `a_failed_invocation_leaves_no_result_and_does_not_leak_into_the_next_run` | loop | pass |
 | JUDGE_OUTCOME_SCHEMA validates pass/fail shapes | `judge_outcome_schema_describes_pass_fail_shape` | unit | pass |
@@ -99,5 +102,6 @@ Rust-only coverage (no TS counterpart): `validation_outcome_from_bool_is_the_ts_
 
 ## Still open
 
-- `tests/integ_goal.rs` (live Bedrock, `#[ignore]`) is not written yet.
+- `tests/integ_goal.rs` (live Bedrock, `#[ignore]`) covers the judge path and a validator retry
+  against `us.anthropic.claude-haiku-4-5-20251001-v1:0`; both pass.
 - The two log-assertion gaps above need a log-capture harness to close.
