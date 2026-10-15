@@ -9,6 +9,8 @@
 
 use std::sync::Arc;
 
+use parking_lot::Mutex;
+use strands_agents::middleware::{wrap_fn, InvokeModelContext, InvokeModelStage};
 use strands_agents::models::routing::{ClassifierStrategy, FallbackStrategy, ModelRouter, RoutingCandidate};
 use strands_agents::models::{BedrockModel, BedrockModelConfig, Model};
 use strands_agents::Agent;
@@ -23,6 +25,29 @@ async fn bedrock(model_id: &str) -> Arc<dyn Model> {
         ..Default::default()
     };
     Arc::new(BedrockModel::new(config).await.expect("bedrock client"))
+}
+
+/// Record, per model call, which candidate the router selected for this invocation.
+/// The selection is scoped to the invocation, so it must be read from inside the loop.
+fn watch_routed(agent: &Agent, router: Arc<ModelRouter>) -> Arc<Mutex<Vec<String>>> {
+    let routed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink_routed = Arc::clone(&routed);
+    agent
+        .middleware()
+        .add::<InvokeModelStage>(wrap_fn(move |context: InvokeModelContext, sink, next| {
+            let routed = Arc::clone(&sink_routed);
+            let router = Arc::clone(&router);
+            async move {
+                let agent = context.agent.clone();
+                let state = context.invocation_state.clone();
+                let result = next.run(context, &sink).await;
+                if let Some(model) = router.routed_model(&agent, &state) {
+                    routed.lock().push(model.model_id().unwrap_or_default());
+                }
+                result
+            }
+        }));
+    routed
 }
 
 #[tokio::test]
@@ -42,6 +67,7 @@ async fn falls_back_from_an_unknown_model_id_to_haiku() {
         .system_prompt("Answer with a single word.")
         .build()
         .unwrap();
+    let routed = watch_routed(&agent, Arc::clone(&router));
 
     let result = agent.invoke("What is the capital of France?").await.unwrap();
 
@@ -51,10 +77,9 @@ async fn falls_back_from_an_unknown_model_id_to_haiku() {
         "unexpected answer: {}",
         result.last_message.text()
     );
-    let routed = router
-        .routed_model(&agent, &result.invocation_state)
-        .expect("a routed model");
-    assert_eq!(routed.model_id().as_deref(), Some(HAIKU));
+    let routed = routed.lock().clone();
+    println!("routed: {routed:?}");
+    assert_eq!(routed.last().map(String::as_str), Some(HAIKU));
 }
 
 #[tokio::test]
@@ -79,6 +104,7 @@ async fn classifier_picks_a_candidate_from_its_description() {
         .system_prompt("Be brief.")
         .build()
         .unwrap();
+    let routed = watch_routed(&agent, Arc::clone(&router));
 
     let result = agent
         .invoke("Write a two-line poem about the sea.")
@@ -87,9 +113,7 @@ async fn classifier_picks_a_candidate_from_its_description() {
 
     println!("answer: {}", result.last_message.text());
     assert!(!result.last_message.text().is_empty());
-    let routed = router
-        .routed_model(&agent, &result.invocation_state)
-        .expect("a routed model");
-    println!("routed: {:?}", routed.model_id());
-    assert!(Arc::ptr_eq(&routed, &poetry) || Arc::ptr_eq(&routed, &coding));
+    let routed = routed.lock().clone();
+    println!("routed: {routed:?}");
+    assert_eq!(routed.last().map(String::as_str), Some(HAIKU));
 }
