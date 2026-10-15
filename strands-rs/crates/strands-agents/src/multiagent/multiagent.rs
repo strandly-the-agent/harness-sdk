@@ -80,6 +80,17 @@ impl TryFrom<InvokeInput> for MultiAgentInput {
     }
 }
 
+impl From<MultiAgentInput> for InvokeInput {
+    fn from(input: MultiAgentInput) -> Self {
+        match input {
+            MultiAgentInput::None => InvokeInput::None,
+            MultiAgentInput::Text(text) => InvokeInput::Text(text),
+            MultiAgentInput::Blocks(blocks) => InvokeInput::Blocks(blocks),
+            MultiAgentInput::InterruptResponses(responses) => InvokeInput::InterruptResponses(responses),
+        }
+    }
+}
+
 impl MultiAgentInput {
     /// The interrupt responses this input resumes with, if it is a resume.
     pub fn resume_responses(&self) -> Option<&[InterruptResponseContent]> {

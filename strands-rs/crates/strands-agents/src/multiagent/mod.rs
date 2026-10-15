@@ -18,7 +18,10 @@ pub use multiagent::{
     interrupted_result, record_hook_interrupt, MultiAgent, MultiAgentExt, MultiAgentInput,
     MultiAgentInvokeOptions, MultiAgentStream, UNSUPPORTED_MULTIAGENT_INPUT_MESSAGE,
 };
-pub use nodes::NodeType;
+pub use nodes::{
+    run_node, AgentNode, AgentNodeOptions, MultiAgentNode, MultiAgentNodeOptions, Node, NodeConfig,
+    NodeDefinition, NodeInputOptions, NodeSink, NodeType,
+};
 pub use state::{
     aggregate_node_usage, resolve_status, MultiAgentResult, MultiAgentState, MultiAgentStateHandle,
     NodeResult, NodeResultUpdate, NodeState, ResultStatus, Status,
