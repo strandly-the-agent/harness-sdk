@@ -620,3 +620,395 @@ fn json_to_document(value: &JsonValue) -> Document {
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use aws_sdk_bedrockagentruntime::operation::retrieve::{RetrieveError, RetrieveOutput};
+    use aws_smithy_mocks::{mock, mock_client, Rule};
+    use aws_smithy_types::error::ErrorMetadata;
+    use parking_lot::Mutex;
+
+    use super::*;
+
+    /// The `retrievalConfiguration` each mocked request carried.
+    type Seen = Arc<Mutex<Vec<rt::KnowledgeBaseRetrievalConfiguration>>>;
+
+    fn seen() -> Seen {
+        Arc::new(Mutex::new(Vec::new()))
+    }
+
+    fn capturing_rule(seen: &Seen, results: Vec<rt::KnowledgeBaseRetrievalResult>) -> Rule {
+        let captured = Arc::clone(seen);
+        mock!(aws_sdk_bedrockagentruntime::Client::retrieve)
+            .match_requests(move |req| {
+                if let Some(config) = req.retrieval_configuration() {
+                    captured.lock().push(config.clone());
+                }
+                true
+            })
+            .then_output(move || {
+                RetrieveOutput::builder()
+                    .set_retrieval_results(Some(results.clone()))
+                    .build()
+                    .expect("retrieve output")
+            })
+    }
+
+    fn result(text: &str, score: Option<f64>) -> rt::KnowledgeBaseRetrievalResult {
+        let mut builder = rt::KnowledgeBaseRetrievalResult::builder()
+            .content(rt::RetrievalResultContent::builder().text(text).build());
+        if let Some(score) = score {
+            builder = builder.score(score);
+        }
+        builder.build()
+    }
+
+    async fn store_with(rule: &Rule, config: BedrockKnowledgeBaseStoreConfig) -> BedrockKnowledgeBaseStore {
+        let mut config = config;
+        config.name = "kb".to_owned();
+        config.config.knowledge_base_id = "kb-123".to_owned();
+        config.config.runtime_client = Some(mock_client!(aws_sdk_bedrockagentruntime, [rule]));
+        if config.config.knowledge_base_type.is_none() {
+            config.config.knowledge_base_type = Some(KnowledgeBaseType::Vector);
+        }
+        BedrockKnowledgeBaseStore::new(config).await.expect("builds")
+    }
+
+    fn vector_config(
+        config: &rt::KnowledgeBaseRetrievalConfiguration,
+    ) -> &rt::KnowledgeBaseVectorSearchConfiguration {
+        config
+            .vector_search_configuration()
+            .expect("vector search configuration")
+    }
+
+    #[tokio::test]
+    async fn maps_results_to_memory_entries() {
+        let seen = seen();
+        let mut metadata = HashMap::new();
+        metadata.insert("namespace".to_owned(), Document::String("tenant-a".to_owned()));
+        metadata.insert("count".to_owned(), Document::Number(Number::PosInt(3)));
+        let result = rt::KnowledgeBaseRetrievalResult::builder()
+            .content(rt::RetrievalResultContent::builder().text("remembered").build())
+            .score(0.75)
+            .location(
+                rt::RetrievalResultLocation::builder()
+                    .r#type(rt::RetrievalResultLocationType::S3)
+                    .s3_location(
+                        rt::RetrievalResultS3Location::builder()
+                            .uri("s3://bucket/doc.txt")
+                            .build(),
+                    )
+                    .build()
+                    .expect("location"),
+            )
+            .set_metadata(Some(metadata))
+            .build();
+        let rule = capturing_rule(&seen, vec![result]);
+        let store = store_with(&rule, BedrockKnowledgeBaseStoreConfig::default()).await;
+
+        let entries = store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].content, "remembered");
+        let metadata = entries[0].metadata.as_ref().expect("metadata");
+        assert_eq!(metadata["namespace"], JsonValue::String("tenant-a".to_owned()));
+        assert_eq!(metadata["count"], JsonValue::Number(3.into()));
+        assert_eq!(metadata["_relevanceScore"], json_number(0.75));
+        assert_eq!(
+            metadata["_sourceLocation"]["uri"],
+            JsonValue::String("s3://bucket/doc.txt".to_owned())
+        );
+        assert_eq!(
+            metadata["_sourceLocation"]["type"],
+            JsonValue::String("S3".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn defaults_the_result_limit() {
+        let seen = seen();
+        let rule = capturing_rule(&seen, vec![]);
+        let store = store_with(&rule, BedrockKnowledgeBaseStoreConfig::default()).await;
+
+        store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        assert_eq!(vector_config(&seen.lock()[0]).number_of_results(), 10);
+    }
+
+    #[tokio::test]
+    async fn per_search_limit_overrides_the_store_default() {
+        let seen = seen();
+        let rule = capturing_rule(&seen, vec![]);
+        let store = store_with(
+            &rule,
+            BedrockKnowledgeBaseStoreConfig {
+                max_search_results: Some(5),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        store
+            .search(
+                "query",
+                &SearchOptions {
+                    max_search_results: Some(2),
+                },
+            )
+            .await
+            .expect("search");
+
+        assert_eq!(vector_config(&seen.lock()[0]).number_of_results(), 2);
+    }
+
+    #[tokio::test]
+    async fn rejects_a_per_search_limit_below_one() {
+        let seen = seen();
+        let rule = capturing_rule(&seen, vec![]);
+        let store = store_with(&rule, BedrockKnowledgeBaseStoreConfig::default()).await;
+
+        let error = store
+            .search(
+                "query",
+                &SearchOptions {
+                    max_search_results: Some(0),
+                },
+            )
+            .await
+            .expect_err("rejects");
+        assert!(
+            error.to_string().contains("maxSearchResults must be at least 1"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_a_store_limit_below_one() {
+        let error = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+            name: "kb".to_owned(),
+            config: BedrockKnowledgeBaseConfig {
+                knowledge_base_id: "kb-123".to_owned(),
+                runtime_client: Some(mock_client!(aws_sdk_bedrockagentruntime, [&no_op_rule()])),
+                ..Default::default()
+            },
+            max_search_results: Some(0),
+            ..Default::default()
+        })
+        .await
+        .map(|_| ())
+        .expect_err("rejects");
+        assert!(
+            error.to_string().contains("maxSearchResults must be at least 1"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_min_and_max_score_together() {
+        let error = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+            name: "kb".to_owned(),
+            config: BedrockKnowledgeBaseConfig {
+                knowledge_base_id: "kb-123".to_owned(),
+                runtime_client: Some(mock_client!(aws_sdk_bedrockagentruntime, [&no_op_rule()])),
+                ..Default::default()
+            },
+            min_score: Some(0.5),
+            max_score: Some(0.9),
+            ..Default::default()
+        })
+        .await
+        .map(|_| ())
+        .expect_err("rejects");
+        assert!(error.to_string().contains("mutually exclusive"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn drops_results_below_min_score_and_keeps_unscored_ones() {
+        let seen = seen();
+        let rule = capturing_rule(
+            &seen,
+            vec![
+                result("kept", Some(0.8)),
+                result("dropped", Some(0.2)),
+                result("unscored", None),
+            ],
+        );
+        let store = store_with(
+            &rule,
+            BedrockKnowledgeBaseStoreConfig {
+                min_score: Some(0.5),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let entries = store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        let contents: Vec<&str> = entries.iter().map(|entry| entry.content.as_str()).collect();
+        assert_eq!(contents, vec!["kept", "unscored"]);
+    }
+
+    #[tokio::test]
+    async fn drops_results_above_max_score() {
+        let seen = seen();
+        let rule = capturing_rule(&seen, vec![result("near", Some(0.2)), result("far", Some(0.9))]);
+        let store = store_with(
+            &rule,
+            BedrockKnowledgeBaseStoreConfig {
+                max_score: Some(0.5),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let entries = store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        let contents: Vec<&str> = entries.iter().map(|entry| entry.content.as_str()).collect();
+        assert_eq!(contents, vec!["near"]);
+    }
+
+    #[tokio::test]
+    async fn derives_a_scope_filter() {
+        let seen = seen();
+        let rule = capturing_rule(&seen, vec![]);
+        let store = store_with(
+            &rule,
+            BedrockKnowledgeBaseStoreConfig {
+                scope: Some("tenant-a".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        let filter = vector_config(&seen.lock()[0]).filter().cloned().expect("filter");
+        let rt::RetrievalFilter::Equals(attribute) = filter else {
+            panic!("expected an equals filter");
+        };
+        assert_eq!(attribute.key(), "namespace");
+        assert_eq!(attribute.value(), &Document::String("tenant-a".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn an_explicit_filter_overrides_the_scope_filter() {
+        let seen = seen();
+        let rule = capturing_rule(&seen, vec![]);
+        let store = store_with(
+            &rule,
+            BedrockKnowledgeBaseStoreConfig {
+                scope: Some("tenant-a".to_owned()),
+                filter: Some(RetrievalFilter::StringContains(FilterAttribute::new(
+                    "topic",
+                    JsonValue::String("rust".to_owned()),
+                ))),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        let filter = vector_config(&seen.lock()[0]).filter().cloned().expect("filter");
+        let rt::RetrievalFilter::StringContains(attribute) = filter else {
+            panic!("expected a stringContains filter");
+        };
+        assert_eq!(attribute.key(), "topic");
+    }
+
+    #[tokio::test]
+    async fn uses_managed_search_configuration_for_a_managed_knowledge_base() {
+        let seen = seen();
+        let rule = capturing_rule(&seen, vec![]);
+        let store = store_with(
+            &rule,
+            BedrockKnowledgeBaseStoreConfig {
+                config: BedrockKnowledgeBaseConfig {
+                    knowledge_base_type: Some(KnowledgeBaseType::Managed),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await;
+
+        store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        let config = &seen.lock()[0];
+        assert!(config.vector_search_configuration().is_none());
+        assert_eq!(
+            config
+                .managed_search_configuration()
+                .expect("managed search configuration")
+                .number_of_results(),
+            Some(10)
+        );
+    }
+
+    #[tokio::test]
+    async fn wraps_retrieve_failures() {
+        let rule = mock!(aws_sdk_bedrockagentruntime::Client::retrieve).then_error(|| {
+            RetrieveError::generic(
+                ErrorMetadata::builder()
+                    .code("AccessDenied")
+                    .message("denied")
+                    .build(),
+            )
+        });
+        let store = store_with(&rule, BedrockKnowledgeBaseStoreConfig::default()).await;
+
+        let error = store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect_err("search fails");
+        assert!(error.to_string().contains("Retrieve failed"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn rejects_a_writable_store_without_a_writable_data_source() {
+        let error = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+            name: "kb".to_owned(),
+            config: BedrockKnowledgeBaseConfig {
+                knowledge_base_id: "kb-123".to_owned(),
+                data_source_type: Some(DataSourceType::Other),
+                runtime_client: Some(mock_client!(aws_sdk_bedrockagentruntime, [&no_op_rule()])),
+                ..Default::default()
+            },
+            writable: Some(true),
+            ..Default::default()
+        })
+        .await
+        .map(|_| ())
+        .expect_err("rejects");
+        assert!(error.to_string().contains("dataSourceType"), "{error}");
+    }
+
+    fn no_op_rule() -> Rule {
+        mock!(aws_sdk_bedrockagentruntime::Client::retrieve)
+            .then_output(|| RetrieveOutput::builder().build().expect("retrieve output"))
+    }
+}
