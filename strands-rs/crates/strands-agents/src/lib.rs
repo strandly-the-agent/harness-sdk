@@ -50,6 +50,7 @@
 //! - `macros` (default) — the `#[tool]` attribute macro.
 //! - `anthropic`, `openai` — HTTP providers.
 //! - `mcp` — MCP client transports and tool discovery.
+//! - `a2a` — the [`a2a`] module: serving an agent over the A2A protocol and calling remote ones.
 //! - `telemetry` — OpenTelemetry export.
 //! - `test-support` — the [`testing`] module.
 

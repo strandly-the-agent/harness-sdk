@@ -152,6 +152,10 @@ impl A2AExecutor {
                  A2AExecutor::with_factory to build a per-context agent with its own session manager.",
             ));
         }
+        tracing::warn!(
+            "a single agent serializes every A2A request; pass A2AExecutor::with_factory a \
+             closure taking the contextId to isolate conversations per context"
+        );
         let template = capture_state(&agent);
         Ok(Self {
             mode: Mode::Shared(Box::new(SharedMode {
@@ -256,7 +260,8 @@ impl A2AExecutor {
         let agent = Arc::new(Mutex::new(factory(context_id)));
         contexts.push((context_id.to_owned(), Arc::clone(&agent)));
         while contexts.len() > self.max_contexts {
-            contexts.remove(0);
+            let (evicted, _) = contexts.remove(0);
+            tracing::debug!(context_id = %evicted, "evicted the least recently used A2A context");
         }
         agent
     }
@@ -273,62 +278,69 @@ impl A2AExecutor {
         let context_id = &context.context_id;
         let artifact_id = Uuid::new_v4().to_string();
         let mut first_chunk = true;
-        let mut last_delta = String::new();
+        let mut result_text = String::new();
 
         let state = InvocationState::new();
         state.insert(A2A_REQUEST_CONTEXT_KEY, context.clone());
         let mut stream = agent.stream_with(blocks, InvokeOptions::default().with_invocation_state(state));
 
         while let Some(event) = stream.next().await {
-            let event = event?;
+            let event = event.inspect_err(|error| {
+                tracing::error!(%task_id, %error, "error in streaming A2A execution");
+            })?;
             if let Some(delta) = event.text_delta() {
-                bus.publish(A2AEventData::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: task_id.clone(),
-                    context_id: context_id.clone(),
-                    artifact: Artifact::new(artifact_id.clone(), vec![Part::text(delta)]),
-                    append: Some(!first_chunk),
-                    last_chunk: None,
-                    metadata: None,
-                }));
+                bus.publish(A2AEventData::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        task_id.clone(),
+                        context_id.clone(),
+                        Artifact::new(artifact_id.clone(), vec![Part::text(delta)]),
+                    )
+                    .with_append(!first_chunk),
+                ));
                 first_chunk = false;
-                last_delta = delta.to_owned();
+            }
+            if let Some(result) = event.result() {
+                result_text = result.text();
             }
             if let AgentStreamEvent::ContentBlock(event) = &event {
                 if !matches!(event.content_block, ContentBlock::Text { .. }) {
                     let parts = content_blocks_to_parts(std::slice::from_ref(&event.content_block));
                     if !parts.is_empty() {
-                        bus.publish(A2AEventData::ArtifactUpdate(TaskArtifactUpdateEvent {
-                            task_id: task_id.clone(),
-                            context_id: context_id.clone(),
-                            artifact: Artifact::new(Uuid::new_v4().to_string(), parts),
-                            append: Some(false),
-                            last_chunk: Some(true),
-                            metadata: None,
-                        }));
+                        bus.publish(A2AEventData::ArtifactUpdate(
+                            TaskArtifactUpdateEvent::new(
+                                task_id.clone(),
+                                context_id.clone(),
+                                Artifact::new(Uuid::new_v4().to_string(), parts),
+                            )
+                            .with_append(false)
+                            .with_last_chunk(true),
+                        ));
                     }
                 }
             }
         }
 
-        // Close the text artifact; if nothing was streamed, publish the whole text in this chunk.
-        bus.publish(A2AEventData::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: task_id.clone(),
-            context_id: context_id.clone(),
-            artifact: Artifact::new(
-                artifact_id,
-                vec![Part::text(if first_chunk { last_delta.as_str() } else { "" })],
-            ),
-            append: Some(!first_chunk),
-            last_chunk: Some(true),
-            metadata: None,
-        }));
-        bus.publish(A2AEventData::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: task_id.clone(),
-            context_id: context_id.clone(),
-            status: TaskStatus::new(TaskState::Completed),
-            final_: true,
-            metadata: None,
-        }));
+        // Close the text artifact; if nothing was streamed, publish the whole result in this chunk.
+        bus.publish(A2AEventData::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                task_id.clone(),
+                context_id.clone(),
+                Artifact::new(
+                    artifact_id,
+                    vec![Part::text(if first_chunk { result_text.as_str() } else { "" })],
+                ),
+            )
+            .with_append(!first_chunk)
+            .with_last_chunk(true),
+        ));
+        bus.publish(A2AEventData::StatusUpdate(
+            TaskStatusUpdateEvent::new(
+                task_id.clone(),
+                context_id.clone(),
+                TaskStatus::new(TaskState::Completed),
+            )
+            .with_final(true),
+        ));
         Ok(())
     }
 }
@@ -363,7 +375,8 @@ fn put_recent(
     }
     snapshots.push((context_id, snapshot));
     while snapshots.len() > max_contexts {
-        snapshots.remove(0);
+        let (evicted, _) = snapshots.remove(0);
+        tracing::debug!(context_id = %evicted, "evicted the least recently used A2A context");
     }
 }
 

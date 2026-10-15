@@ -575,6 +575,24 @@ pub struct AgentCard {
     /// Link to its icon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_url: Option<String>,
+    /// Security schemes a caller can authenticate with, by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_schemes: Option<Metadata>,
+    /// Which of those schemes, and which scopes, a call must satisfy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security: Option<Vec<Metadata>>,
+    /// The transport of [`AgentCard::url`] (default `JSONRPC`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_transport: Option<String>,
+    /// Further endpoints this agent is reachable at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub additional_interfaces: Option<Vec<AgentInterface>>,
+    /// Whether an authenticated caller gets an extended card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_authenticated_extended_card: Option<bool>,
+    /// JWS signatures over this card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signatures: Option<Vec<Metadata>>,
 }
 
 impl AgentCard {
@@ -596,6 +614,33 @@ impl AgentCard {
             provider: None,
             documentation_url: None,
             icon_url: None,
+            security_schemes: None,
+            security: None,
+            preferred_transport: None,
+            additional_interfaces: None,
+            supports_authenticated_extended_card: None,
+            signatures: None,
+        }
+    }
+}
+
+/// One endpoint an agent is reachable at, and the transport it speaks there.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct AgentInterface {
+    /// The endpoint URL.
+    pub url: String,
+    /// The transport spoken there, such as `JSONRPC` or `GRPC`.
+    pub transport: String,
+}
+
+impl AgentInterface {
+    /// An endpoint speaking `transport`.
+    pub fn new(url: impl Into<String>, transport: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            transport: transport.into(),
         }
     }
 }
@@ -933,6 +978,54 @@ impl JsonRpcResponse {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn every_non_exhaustive_type_is_constructible_without_a_struct_literal() {
+        let status = TaskStatusUpdateEvent::new("task-1", "ctx-1", TaskStatus::new(TaskState::Working))
+            .with_final(true);
+        assert!(status.final_);
+
+        let artifact = TaskArtifactUpdateEvent::new(
+            "task-1",
+            "ctx-1",
+            Artifact::new("artifact-1", vec![Part::text("hi")]),
+        )
+        .with_append(true)
+        .with_last_chunk(true);
+        assert_eq!(artifact.append, Some(true));
+
+        let mut card = AgentCard::new("Named", "Does things", "http://example.com");
+        card.provider = Some(AgentProvider::new("Acme", "https://acme.example"));
+        card.additional_interfaces = Some(vec![AgentInterface::new("http://example.com", "JSONRPC")]);
+        card.supports_authenticated_extended_card = Some(true);
+        assert_eq!(card.provider.unwrap().organization, "Acme");
+
+        let configuration = MessageSendConfiguration::default()
+            .with_accepted_output_modes(["text/plain"])
+            .with_blocking(false)
+            .with_history_length(3);
+        assert_eq!(configuration.history_length, Some(3));
+    }
+
+    #[test]
+    fn an_agent_card_omits_the_optional_0_3_fields_until_they_are_set() {
+        let card = AgentCard::new("Named", "Does things", "http://example.com");
+        let json = serde_json::to_value(&card).unwrap();
+        assert!(json.get("securitySchemes").is_none());
+        assert!(json.get("preferredTransport").is_none());
+
+        let mut authenticated = card;
+        authenticated.preferred_transport = Some("JSONRPC".to_owned());
+        authenticated.security_schemes = Some(
+            json!({ "bearer": { "type": "http", "scheme": "bearer" } })
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        let json = serde_json::to_value(&authenticated).unwrap();
+        assert_eq!(json["preferredTransport"], "JSONRPC");
+        assert_eq!(json["securitySchemes"]["bearer"]["scheme"], "bearer");
+    }
 
     #[test]
     fn message_serializes_with_its_kind_discriminator() {
