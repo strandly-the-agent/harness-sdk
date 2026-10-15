@@ -1026,6 +1026,9 @@ fn json_to_document(value: &JsonValue) -> Document {
 mod tests {
     use std::sync::Arc;
 
+    use aws_sdk_bedrockagent::operation::get_knowledge_base::{
+        GetKnowledgeBaseError, GetKnowledgeBaseOutput,
+    };
     use aws_sdk_bedrockagent::operation::ingest_knowledge_base_documents::{
         IngestKnowledgeBaseDocumentsError, IngestKnowledgeBaseDocumentsInput,
         IngestKnowledgeBaseDocumentsOutput,
@@ -1899,6 +1902,347 @@ mod tests {
             "{error}"
         );
         assert!(ingested.lock().is_empty(), "nothing is ingested");
+    }
+
+    /// Counts the `GetKnowledgeBase` calls a mocked agent client served.
+    type Hits = Arc<Mutex<usize>>;
+
+    fn get_kb_rule(kb_type: Option<&'static str>, hits: &Hits) -> Rule {
+        let counter = Arc::clone(hits);
+        mock!(aws_sdk_bedrockagent::Client::get_knowledge_base)
+            .match_requests(move |_| {
+                *counter.lock() += 1;
+                true
+            })
+            .sequence()
+            .output(move || {
+                let mut builder = agent::KnowledgeBase::builder()
+                    .knowledge_base_id("kb-123")
+                    .name("kb")
+                    .knowledge_base_arn("arn:aws:bedrock:us-west-2:1:knowledge-base/kb-123")
+                    .role_arn("arn:aws:iam::1:role/kb")
+                    .status(agent::KnowledgeBaseStatus::Active)
+                    .created_at(aws_smithy_types::DateTime::from_secs(0))
+                    .updated_at(aws_smithy_types::DateTime::from_secs(0));
+                if let Some(kb_type) = kb_type {
+                    builder = builder.knowledge_base_configuration(
+                        agent::KnowledgeBaseConfiguration::builder()
+                            .r#type(agent::KnowledgeBaseType::from(kb_type))
+                            .build()
+                            .expect("knowledge base configuration"),
+                    );
+                }
+                GetKnowledgeBaseOutput::builder()
+                    .knowledge_base(builder.build().expect("knowledge base"))
+                    .build()
+            })
+            .repeatedly()
+            .build()
+    }
+
+    /// A store that must ask `GetKnowledgeBase` for its type, with `agent` serving the lookup.
+    async fn detecting_store(retrieve: &Rule, agent: &Rule) -> BedrockKnowledgeBaseStore {
+        BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+            name: "kb".to_owned(),
+            config: BedrockKnowledgeBaseConfig {
+                knowledge_base_id: "kb-123".to_owned(),
+                runtime_client: Some(mock_client!(aws_sdk_bedrockagentruntime, [retrieve])),
+                agent_client: Some(mock_client!(aws_sdk_bedrockagent, [agent])),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+        .expect("builds")
+    }
+
+    #[tokio::test]
+    async fn carries_through_the_config_surface() {
+        let store = store_with(
+            &no_op_rule(),
+            BedrockKnowledgeBaseStoreConfig {
+                description: Some("product docs".to_owned()),
+                max_search_results: Some(7),
+                scope: Some("user-abc".to_owned()),
+                min_score: Some(0.4),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(store.name(), "kb");
+        assert_eq!(store.description(), Some("product docs"));
+        assert_eq!(store.max_search_results(), Some(7));
+        assert_eq!(store.scope(), Some("user-abc"));
+        assert!(!store.writable());
+        assert!(!store.supports_add());
+        assert!(store.extraction().is_none());
+        assert_eq!(store.scope_metadata_key(), DEFAULT_SCOPE_METADATA_KEY);
+    }
+
+    #[tokio::test]
+    async fn exposes_a_configured_extraction_config() {
+        let store = store_with(
+            &no_op_rule(),
+            BedrockKnowledgeBaseStoreConfig {
+                extraction: Some(ExtractionConfig {
+                    system_prompt: Some("extract facts".to_owned()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let extraction = store.extraction().expect("extraction");
+        assert_eq!(extraction.system_prompt.as_deref(), Some("extract facts"));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_zero_min_score_paired_with_a_max_score() {
+        let error = store_config_error(BedrockKnowledgeBaseStoreConfig {
+            min_score: Some(0.0),
+            max_score: Some(0.4),
+            ..Default::default()
+        })
+        .await;
+        assert!(
+            error
+                .to_string()
+                .contains("minScore and maxScore are mutually exclusive"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_an_empty_knowledge_base_id() {
+        let error = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+            name: "kb".to_owned(),
+            config: BedrockKnowledgeBaseConfig {
+                runtime_client: Some(mock_client!(aws_sdk_bedrockagentruntime, [&no_op_rule()])),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+        .map(|_| ())
+        .expect_err("rejects");
+        assert!(
+            error.to_string().contains("knowledgeBaseId must not be empty"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_a_writable_store_without_a_data_source_id() {
+        let error = store_config_error(BedrockKnowledgeBaseStoreConfig {
+            writable: Some(true),
+            config: BedrockKnowledgeBaseConfig {
+                data_source_type: Some(DataSourceType::Custom),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+        assert!(
+            error.to_string().contains("requires config.dataSourceId"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_a_writable_s3_store_without_an_s3_config() {
+        let error = store_config_error(BedrockKnowledgeBaseStoreConfig {
+            writable: Some(true),
+            config: BedrockKnowledgeBaseConfig {
+                data_source_type: Some(DataSourceType::S3),
+                data_source_id: Some("ds-1".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+        assert!(error.to_string().contains("'S3' requires config.s3"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn detects_a_managed_knowledge_base_and_caches_the_lookup() {
+        let hits: Hits = Arc::new(Mutex::new(0));
+        let seen = seen();
+        let store = detecting_store(
+            &capturing_rule(&seen, vec![]),
+            &get_kb_rule(Some("MANAGED"), &hits),
+        )
+        .await;
+
+        store.initialize().await.expect("initializes");
+        store.initialize().await.expect("initializes again");
+        store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        assert_eq!(*hits.lock(), 1, "the knowledge base type is looked up once");
+        let config = &seen.lock()[0];
+        assert!(config.vector_search_configuration().is_none());
+        assert!(config.managed_search_configuration().is_some());
+    }
+
+    #[tokio::test]
+    async fn treats_an_unrecognized_knowledge_base_type_as_vector() {
+        let hits: Hits = Arc::new(Mutex::new(0));
+        let seen = seen();
+        let store = detecting_store(
+            &capturing_rule(&seen, vec![]),
+            &get_kb_rule(Some("SOMETHING_NEW"), &hits),
+        )
+        .await;
+
+        store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        assert!(seen.lock()[0].vector_search_configuration().is_some());
+    }
+
+    #[tokio::test]
+    async fn rejects_a_knowledge_base_with_no_reported_type() {
+        let hits: Hits = Arc::new(Mutex::new(0));
+        let store = detecting_store(&no_op_rule(), &get_kb_rule(None, &hits)).await;
+
+        let error = store.initialize().await.expect_err("fails");
+        assert!(
+            error.to_string().contains("returned no knowledge base type"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn wraps_get_knowledge_base_failures() {
+        let rule = mock!(aws_sdk_bedrockagent::Client::get_knowledge_base).then_error(|| {
+            GetKnowledgeBaseError::ResourceNotFoundException(
+                agent::error::ResourceNotFoundException::builder()
+                    .message("no such knowledge base")
+                    .build(),
+            )
+        });
+        let store = detecting_store(&no_op_rule(), &rule).await;
+
+        let error = store.initialize().await.expect_err("fails");
+        assert!(
+            error.to_string().contains("GetKnowledgeBase failed for kb-123"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn uses_a_custom_scope_metadata_key_for_search_and_writes() {
+        let seen = seen();
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let config = BedrockKnowledgeBaseStoreConfig {
+            scope: Some("user-1".to_owned()),
+            config: BedrockKnowledgeBaseConfig {
+                scope_metadata_key: Some("tenant".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let search_store = store_with(&capturing_rule(&seen, vec![]), config.clone()).await;
+        let write_store = writable_store(&ingest_rule(&ingested), None, config).await;
+
+        search_store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+        write_store.add_document("a fact", None).await.expect("adds");
+
+        assert_eq!(search_store.scope_metadata_key(), "tenant");
+        let configs = seen.lock();
+        let filter = vector_config(&configs[0]).filter().expect("filter");
+        assert_eq!(filter.as_equals().expect("equals").key(), "tenant");
+        let document = ingested_document(&ingested);
+        let attributes = document.metadata().expect("metadata").inline_attributes();
+        assert_eq!(attributes[0].key(), "tenant");
+    }
+
+    #[tokio::test]
+    async fn applies_no_filter_when_the_store_has_no_scope() {
+        let seen = seen();
+        let store = store_with(
+            &capturing_rule(&seen, vec![]),
+            BedrockKnowledgeBaseStoreConfig::default(),
+        )
+        .await;
+
+        store
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        assert!(vector_config(&seen.lock()[0]).filter().is_none());
+    }
+
+    #[tokio::test]
+    async fn scopes_writes_even_when_an_explicit_search_filter_is_set() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            None,
+            BedrockKnowledgeBaseStoreConfig {
+                scope: Some("user-1".to_owned()),
+                filter: Some(RetrievalFilter::Equals(FilterAttribute::new(
+                    "source",
+                    JsonValue::String("manual".to_owned()),
+                ))),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        store.add_document("a fact", None).await.expect("adds");
+
+        let document = ingested_document(&ingested);
+        let attributes = document.metadata().expect("metadata").inline_attributes();
+        assert_eq!(attributes[0].key(), DEFAULT_SCOPE_METADATA_KEY);
+        assert_eq!(
+            attributes[0].value().expect("value").string_value(),
+            Some("user-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn wraps_a_generic_ingestion_failure() {
+        let rule = mock!(aws_sdk_bedrockagent::Client::ingest_knowledge_base_documents).then_error(|| {
+            IngestKnowledgeBaseDocumentsError::generic(
+                ErrorMetadata::builder()
+                    .code("ThrottlingException")
+                    .message("slow down")
+                    .build(),
+            )
+        });
+        let store = writable_store(&rule, None, BedrockKnowledgeBaseStoreConfig::default()).await;
+
+        let error = store.add_document("a fact", None).await.expect_err("fails");
+        assert!(
+            error
+                .to_string()
+                .contains("IngestKnowledgeBaseDocuments failed for kb-123"),
+            "{error}"
+        );
+        assert!(!error.to_string().contains("accessControlList"), "{error}");
+    }
+
+    /// The error `new` rejects `config` with, after filling in a valid id and a mocked client.
+    async fn store_config_error(config: BedrockKnowledgeBaseStoreConfig) -> Error {
+        let mut config = config;
+        config.name = "kb".to_owned();
+        config.config.knowledge_base_id = "kb-123".to_owned();
+        config.config.runtime_client = Some(mock_client!(aws_sdk_bedrockagentruntime, [&no_op_rule()]));
+        BedrockKnowledgeBaseStore::new(config)
+            .await
+            .map(|_| ())
+            .expect_err("rejects")
     }
 
     fn no_op_rule() -> Rule {
