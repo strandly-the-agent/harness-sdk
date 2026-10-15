@@ -4,7 +4,9 @@
 //! guide, transform — or, at the tool-call gate only, [`Confirm`], which raises an interrupt and
 //! asks a human. The [`InterventionRegistry`] is a [`Plugin`] that wires handlers into the hook
 //! registry at [`hook_order::INTERVENTION_INPUT`] / [`hook_order::INTERVENTION_OUTPUT`], so
-//! interventions run last among before-hooks and first among after-hooks.
+//! interventions run last among before-hooks and first among after-hooks. A handler that needs
+//! hooks of its own gets the agent through [`InterventionHandler::init_agent`] (TS's
+//! `LifecycleObserver`), which the registry calls once at initialization.
 
 pub mod vended;
 
@@ -15,10 +17,12 @@ use async_trait::async_trait;
 
 use crate::agent::Agent;
 use crate::error::{Error, Result};
-use crate::hooks::events::{AfterToolCallEvent, BeforeInvocationEvent, BeforeToolCallEvent, Cancel};
+use crate::hooks::events::{
+    AfterModelCallEvent, AfterToolCallEvent, BeforeInvocationEvent, BeforeToolCallEvent, Cancel,
+};
 use crate::hooks::hook_order;
 use crate::plugins::Plugin;
-use crate::types::{InterruptParams, JsonValue};
+use crate::types::{ContentBlock, InterruptParams, JsonValue, Message, Role};
 
 /// Prefix of the cancel message a denied gate produces.
 pub const DENIED_PREFIX: &str = "DENIED: ";
@@ -127,6 +131,12 @@ pub trait InterventionHandler: Send + Sync {
     /// Unique handler name; also the interrupt name a [`Confirm`] raises under.
     fn name(&self) -> &str;
 
+    /// Receive the agent at registration time, to subscribe to hooks of the handler's choosing
+    /// (TS `LifecycleObserver.observeAgent`). Runs once, during `Agent::initialize`.
+    async fn init_agent(&self, _agent: &Agent) -> Result<()> {
+        Ok(())
+    }
+
     /// Gate the whole invocation.
     async fn before_invocation(
         &self,
@@ -138,6 +148,12 @@ pub trait InterventionHandler: Send + Sync {
     /// Gate one tool call.
     async fn before_tool_call(&self, _event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
         Ok(ToolCallAction::Proceed)
+    }
+
+    /// Gate a model response. [`Action::Guide`] retries the model call with the feedback
+    /// appended as a user message; `Deny` has no effect.
+    async fn after_model_call(&self, _event: &AfterModelCallEvent) -> Result<Action<AfterModelCallEvent>> {
+        Ok(Action::Proceed)
     }
 
     /// Observe (and optionally rewrite) a tool result.
@@ -184,6 +200,10 @@ impl Plugin for InterventionRegistry {
     }
 
     async fn init_agent(&self, agent: &Agent) -> Result<()> {
+        for handler in &self.handlers {
+            handler.init_agent(agent).await?;
+        }
+
         let handlers = self.handlers.clone();
         agent
             .hooks()
@@ -278,6 +298,37 @@ impl Plugin for InterventionRegistry {
                 },
             );
 
+        let handlers = self.handlers.clone();
+        agent
+            .hooks()
+            .add_callback_boxed_with_order::<AfterModelCallEvent, _>(
+                hook_order::INTERVENTION_OUTPUT,
+                move |event: &mut AfterModelCallEvent| {
+                    let handlers = handlers.clone();
+                    Box::pin(async move {
+                        for handler in &handlers {
+                            match handler.after_model_call(event).await? {
+                                Action::Guide(feedback) => {
+                                    event.retry = true;
+                                    // Pushed directly, as in TS: no `MessageAddedEvent`, no
+                                    // conversation management.
+                                    event.agent.with_messages(|messages| {
+                                        messages.push(Message::new(
+                                            Role::User,
+                                            vec![ContentBlock::text(feedback)],
+                                        ));
+                                    });
+                                }
+                                Action::Transform(apply) => apply(event),
+                                // Only `guide` and `transform` have an effect after a model call.
+                                Action::Proceed | Action::Deny(_) => {}
+                            }
+                        }
+                        Ok(())
+                    })
+                },
+            );
+
         Ok(())
     }
 }
@@ -323,6 +374,49 @@ mod tests {
         ] {
             assert!(!default_evaluate(&rejected), "{rejected} should reject");
         }
+    }
+
+    #[tokio::test]
+    async fn an_after_model_guide_retries_and_appends_the_feedback() {
+        struct Guider;
+
+        #[async_trait]
+        impl InterventionHandler for Guider {
+            fn name(&self) -> &str {
+                "guider"
+            }
+
+            async fn after_model_call(
+                &self,
+                _event: &AfterModelCallEvent,
+            ) -> Result<Action<AfterModelCallEvent>> {
+                Ok(Action::Guide("be nicer".to_owned()))
+            }
+        }
+
+        let model = crate::testing::MockMessageModel::shared(vec![]);
+        let agent = Agent::builder()
+            .model(model.clone())
+            .intervention(Guider)
+            .build()
+            .unwrap();
+        agent.initialize().await.unwrap();
+
+        let mut event = AfterModelCallEvent {
+            agent: agent.clone(),
+            model,
+            stop_data: None,
+            error: None,
+            invocation_state: crate::InvocationState::new(),
+            attempt_count: 1,
+            retry: false,
+        };
+        agent.hooks().invoke_callbacks(&mut event).await.unwrap();
+
+        assert!(event.retry);
+        let last = agent.messages().last().cloned().unwrap();
+        assert_eq!(last.role, Role::User);
+        assert!(matches!(&last.content[0], ContentBlock::Text(t) if t == "be nicer"));
     }
 
     #[test]

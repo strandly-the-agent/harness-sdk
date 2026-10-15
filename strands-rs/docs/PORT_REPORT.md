@@ -378,3 +378,11 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   namespacing, file-backed sources with `reload()`. Engine is the first-party `cedar_policy` crate
   (pinned `=4.11.0`) instead of TS's WASM bundle. 43 unit tests + 1 agent-loop test
   (`tests/cedar_loop.rs`); matrix in `docs/matrices/cedar.md`.
+- **Steering** (`interventions::vended::steering`, branch `agent-tasks/strands-rs-steering`):
+  `SteeringProviders`/`SteeringAction` (TS's abstract `SteeringHandler`), `LlmSteeringHandler`
+  (model-judged guidance, TS prompt text verbatim), `SteeringContextProvider` + `ToolLedgerProvider`.
+  Adds a defaulted `InterventionHandler::init_agent` so providers can self-register hooks (TS
+  `LifecycleObserver`). 21 unit tests + 4 agent-loop tests (`tests/steering_loop.rs`) pass, and the
+  live `tests/integ_steering.rs` passes against Bedrock haiku 4.5 in us-west-2; clippy clean.
+  Tool-call gate only — Rust has no after-model intervention gate; see
+  `docs/matrices/steering.md`.
