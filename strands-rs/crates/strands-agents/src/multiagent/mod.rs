@@ -3,6 +3,7 @@
 
 pub mod edge;
 pub mod events;
+pub mod graph;
 // Mirrors the TS file layout (`multiagent/multiagent.ts`).
 #[allow(clippy::module_inception)]
 pub mod multiagent;
@@ -11,8 +12,15 @@ pub mod plugins;
 pub mod snapshot;
 pub mod spec;
 pub mod state;
+pub mod swarm;
 #[cfg(test)]
 pub(crate) mod test_orchestrator;
+
+/// Buffer of the channel an invocation task writes its events to.
+pub(crate) const EVENT_BUFFER: usize = 64;
+
+/// Reason reported when a hook cancels a node without giving one.
+pub(crate) const HOOK_CANCEL_MESSAGE: &str = "node cancelled by hook";
 
 pub use edge::{edge_handler, Edge, EdgeDefinition, EdgeHandler};
 pub use events::{
@@ -20,6 +28,7 @@ pub use events::{
     MultiAgentHandoffEvent, MultiAgentInitializedEvent, MultiAgentResultEvent, MultiAgentStreamEvent,
     NodeCancelEvent, NodeInnerEvent, NodeResultEvent, NodeStreamUpdateEvent, OrchestratorRef,
 };
+pub use graph::{Graph, GraphBuilder, GraphConfig, DEFAULT_GRAPH_ID};
 pub use multiagent::{
     apply_orchestrator_hook_responses, drop_stale_interrupted_result, group_interrupt_responses_by_node,
     interrupted_result, record_hook_interrupt, MultiAgent, MultiAgentExt, MultiAgentInput,
@@ -39,3 +48,4 @@ pub use state::{
     aggregate_node_usage, resolve_status, MultiAgentResult, MultiAgentState, MultiAgentStateHandle,
     NodeResult, NodeResultUpdate, NodeState, ResultStatus, Status,
 };
+pub use swarm::{HandoffResult, Swarm, SwarmBuilder, SwarmConfig, DEFAULT_SWARM_ID};

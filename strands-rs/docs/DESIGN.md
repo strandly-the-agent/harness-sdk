@@ -168,6 +168,11 @@ Decision log:
 state types, the `MultiAgent` trait with its invocation types, and the hook/stream events; Graph
 and Swarm code against the signatures below.
 
+Known gap: `HookRegistry::invoke_callbacks` (`hooks/registry.rs:259-264`) short-circuits on the
+first interrupt, where TS collects every callback's interrupts (`hooks/registry.ts:86-116`), so an
+orchestrator with two gating hooks on one event records only the first — a core registry fix, not
+an orchestrator one.
+
 ### `multiagent::state`
 
 ```rust
@@ -603,6 +608,199 @@ fallback. A `Choice` list axis drops values that are not options; `Inherit` reso
 - **`_defaultBuilder` is not ported in this increment**: it needs parent-agent internals the Rust
   `Agent` does not expose yet (MCP client inheritance, sandbox, printer, tracer trace-attributes).
   It belongs with the vended multi-agent tools that call it.
+
+### Swarm
+
+`multiagent::swarm` ports `strands-ts/src/multiagent/swarm.ts`. Agents run one at a time; each
+is handed a handoff JSON schema and routes the swarm by returning a target agent id, or ends it
+by omitting one. Increment 1 landed the handle, builder and validation; increment 2 the execution
+loop (routing, handoffs, limits, interrupts, hook and stream events) and its tests. Telemetry
+spans are the remaining gap (`docs/matrices/swarm.md`).
+
+```rust
+pub struct SwarmConfig {                    // None = TS Infinity (no limit)
+    pub max_steps: Option<u64>,
+    pub repetitive_handoff_detection_window: usize,
+    pub repetitive_handoff_min_unique_agents: usize,
+    pub timeout: Option<Duration>,
+    pub node_timeout: Option<Duration>,
+}
+
+pub struct HandoffResult {                  // serde camelCase; the nodes' structured output
+    pub agent_id: Option<String>, pub message: String,
+    pub context: Option<serde_json::Map<String, JsonValue>>,
+}
+
+pub const DEFAULT_SWARM_ID: &str = "swarm";   // re-exported from `multiagent`
+
+#[derive(Clone)]
+pub struct Swarm(Arc<SwarmInner>);
+impl Swarm {
+    pub fn builder() -> SwarmBuilder;
+    pub fn id(&self) -> &str;
+    pub fn name(&self) -> &str;
+    pub fn description(&self) -> Option<&str>;
+    pub fn nodes(&self) -> &IndexMap<String, Arc<dyn Node>>;
+    pub fn start(&self) -> &Arc<dyn Node>;
+    pub fn config(&self) -> &SwarmConfig;
+    pub fn hooks(&self) -> &HookRegistry;
+    pub fn plugins(&self) -> &MultiAgentPluginRegistry;
+    pub async fn initialize(&self) -> Result<()>;
+    pub async fn invoke(&self, input: impl Into<MultiAgentInput>) -> Result<MultiAgentResult>;
+    pub async fn invoke_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions) -> Result<MultiAgentResult>;
+    pub fn stream(&self, input: impl Into<MultiAgentInput>) -> MultiAgentStream;
+    pub fn stream_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions) -> MultiAgentStream;
+    pub fn take_snapshot(&self, Option<&MultiAgentStateHandle>, TakeMultiAgentSnapshotOptions) -> Result<Snapshot>;
+    pub fn load_snapshot(&self, &Snapshot, Option<&MultiAgentStateHandle>) -> Result<()>;  // None arms the next invocation
+}
+impl MultiAgent for Swarm;                  // invoke_with / stream_with / as_any
+impl From<Swarm> for NodeDefinition;        // nest a swarm as a node
+
+pub struct SwarmBuilder;                    // Default; ::new() .id .name .description .node .entry_point
+                                            // .plugin .hook::<E, _> .max_steps .timeout
+                                            // .node_timeout .repetitive_handoff_detection_window
+                                            // .repetitive_handoff_min_unique_agents
+                                            // .build() -> Result<Swarm>
+```
+
+Divergences from TS (details in `docs/matrices/swarm.md`):
+
+- **Builder, not an options struct**, per crate convention; the validation messages are
+  TS-identical but arrive as `Err` from `build()` rather than a constructor throw.
+- **`Option<T>` replaces `Infinity`** for the three limits, so TS's "must be at least 1" checks
+  become "must not be zero" — `u64`/`Duration` cannot be negative.
+- **`.node(impl Into<NodeDefinition>)` derives the node id from the definition**, as TS
+  `SwarmNodeDefinition` does, rather than the `.node(id, def)` shape sketched in the increment
+  brief: `AgentNode` already takes its id from the agent, so a separate id argument would only
+  be able to disagree with it.
+- **No injected `handoff_to_agent` tool**: TS deliberately routes through structured output and
+  keeps routing in the orchestrator. The Rust port follows TS over Python here.
+- **The handoff schema is hand-written JSON Schema** (`structured_output_schema` is a
+  `serde_json::Value`); TS's `z.never()` for a single-node swarm becomes `{"not": {}}`.
+- **`warnOnce` → `tracing::warn!`** for the unbounded-execution warning; no warn-once helper
+  exists in the crate.
+- **The loop is an `mpsc` channel the invocation writes events to** (like `Agent::stream_with`),
+  not an async generator: `stream_with` spawns the loop and dropping the stream ends the
+  invocation, while `invoke_with` runs it inline (`tokio::join!` of the loop and a drain) so a
+  panic in a hook or node propagates to the caller instead of ending the stream.
+- **The swarm deadline is armed after the before-invocation hook and routing**, as TS does, so a
+  slow session restore does not eat the node budget.
+- **Wall-clock budgets are `tokio` deadlines** raced against the node future in one `select!`,
+  which cancels the node's `CancellationToken` — TS's `AbortSignal.any` composition. Messages keep
+  TS's text with milliseconds (`node_timeout=<20>`, `timeout=<20>`).
+- **The orchestrator appends node results to `state.results`** (`run_node` only records them on
+  the node), and an unknown handoff target is an `Err` rather than TS's non-null assertion, since
+  the Rust handoff schema is advisory JSON Schema rather than an enforced Zod enum.
+
+### Graph
+
+`multiagent::graph` ports `strands-ts/src/multiagent/graph.ts`. Increment 1 landed the handle,
+the builder, and the TS constructor validation; the execution loop and `impl MultiAgent` are
+increment 2.
+
+```rust
+pub const DEFAULT_GRAPH_ID: &str = "graph";
+
+#[non_exhaustive]
+pub struct GraphConfig {                     // TS GraphConfig; None == TS Infinity
+    pub max_concurrency: Option<usize>, pub max_steps: Option<u64>,
+    pub timeout: Option<Duration>, pub node_timeout: Option<Duration>,
+}
+
+pub struct Graph;                            // Clone handle over Arc<GraphInner>
+impl Graph {
+    pub fn builder() -> GraphBuilder;
+    pub fn id(&self) -> &str;
+    pub fn name(&self) -> &str;
+    pub fn description(&self) -> Option<&str>;
+    pub fn nodes(&self) -> &IndexMap<String, Arc<dyn Node>>;
+    pub fn edges(&self) -> &[Edge];
+    pub fn sources(&self) -> &[Arc<dyn Node>];
+    pub fn config(&self) -> &GraphConfig;
+    pub fn hooks(&self) -> &HookRegistry;
+    pub fn plugins(&self) -> &MultiAgentPluginRegistry;
+    pub async fn initialize(&self) -> Result<()>;
+    // execution (inherent, per the MultiAgent binding rule; `impl MultiAgent for Graph` delegates)
+    pub async fn invoke(&self, impl Into<MultiAgentInput>) -> Result<MultiAgentResult>;
+    pub async fn invoke_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions)
+        -> Result<MultiAgentResult>;
+    pub fn stream(&self, impl Into<MultiAgentInput>) -> MultiAgentStream;
+    pub fn stream_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions) -> MultiAgentStream;
+    pub fn take_snapshot(&self, Option<&MultiAgentStateHandle>, TakeMultiAgentSnapshotOptions)
+        -> Result<Snapshot>;
+    pub fn load_snapshot(&self, &Snapshot, Option<&MultiAgentStateHandle>) -> Result<()>;
+}
+
+pub struct GraphBuilder;                     // #[must_use]
+impl GraphBuilder {
+    pub fn new() -> Self;
+    pub fn id(self, impl Into<String>) -> Self;
+    pub fn name(self, impl Into<String>) -> Self;
+    pub fn description(self, impl Into<String>) -> Self;
+    pub fn node(self, impl Into<NodeDefinition>) -> Self;
+    pub fn edge(self, source: impl Into<String>, target: impl Into<String>) -> Self;
+    pub fn edge_when(self, source: .., target: .., handler: EdgeHandler) -> Self;
+    pub fn edge_definition(self, impl Into<EdgeDefinition>) -> Self;
+    pub fn entry_point(self, id: impl Into<String>) -> Self;
+    pub fn max_concurrency(self, usize) -> Self;
+    pub fn max_steps(self, u64) -> Self;
+    pub fn timeout(self, Duration) -> Self;
+    pub fn node_timeout(self, Duration) -> Self;
+    pub fn plugin(self, Arc<dyn MultiAgentPlugin>) -> Self;
+    pub fn hook<E, F>(self, F) -> Self;
+    pub fn build(self) -> Result<Graph>;
+}
+```
+
+Divergences from TS:
+
+- **`load_snapshot` arms the next invocation.** TS has no `Graph.takeSnapshot`/`loadSnapshot`: a
+  session plugin restores state inside the `BeforeMultiAgentInvocationEvent` hook. The Rust methods
+  delegate to `multiagent::snapshot` and take an optional state handle, like `Swarm`'s:
+  `take_snapshot(None, ..)` snapshots the most recent invocation's state (an error before the first
+  run), and `load_snapshot(.., None)` validates identity and arms the restored state so the next
+  `invoke`/`stream` resumes from it (same mechanism as an interrupt resume).
+- **Interrupt resume is same-instance.** The paused `MultiAgentState` is kept on the graph, so
+  `graph.invoke(MultiAgentInput::InterruptResponses(..))` resumes it. Cross-process resume needs
+  the `session_manager` slot, which is not ported yet (register a session plugin via
+  `.plugin(..)`), so TS's session-manager resume tests are covered through `load_snapshot`.
+- **Per-node `timeout: None` inherits `GraphConfig::node_timeout`**, and
+  `AgentNodeOptions::with_timeout(Duration::MAX)` is the spelling of TS's per-node `Infinity` that
+  disables a finite graph-level `node_timeout`.
+- **A node timeout surfaces after the node's `CANCELLED` result.** `run_node` maps the cancel to a
+  `CANCELLED` `NodeResult` (which is emitted and recorded) and the graph then fails the invocation
+  with TS's `node_timeout=<ms>, node_id=<id>, graph_id=<id>` error; TS throws before recording the
+  result. The error is the same, the discarded aggregate differs.
+- **`stream_with` runs under a child cancel token.** The invocation task gets
+  `options.cancel.child_token()` (or a fresh token), and dropping the stream cancels it and aborts
+  the task — TS's `gen.return()` cleanup. The caller's own token is never cancelled, and node
+  cancellation stays cooperative.
+- **Node events pass through the orchestrator.** `run_node` writes to a `NodeSink`; the graph owns
+  that channel, invokes hook callbacks on each event, and forwards it to the consumer's stream —
+  which is how TS's queue-and-`_emit` ordering (`nodeResult` → `handoff` → `afterNodeCall`) is
+  preserved while nodes run concurrently.
+
+- **Builder instead of `new Graph({...})`**: matches `AgentBuilder` (the crate's own convention)
+  and keeps construction fallible without an options struct that half its fields can invalidate.
+  Validation runs in `build()`, in TS's order, with TS's exact messages.
+- **`Option<T>` limits instead of `Infinity`**: Rust has no `Infinity` for `usize`/`Duration`, so
+  `None` is "no limit". Consequently the TS `< 1` checks become `== 0` checks and their messages
+  stay byte-identical (`max_steps=<0> | must be at least 1`).
+- **`.node(definition)` takes one argument; the id comes from the node** (`Node::id()`, i.e. the
+  agent's id for an agent node), exactly as TS `nodes: NodeDefinition[]` does, and consistently
+  with the sibling `Swarm` builder. `.edge(src, dst)` / `.entry_point(id)` still refer to nodes
+  by id string; a repeated id fails with TS's `node_id=<id> | duplicate node id`. Rename a node
+  by giving its agent the id you want.
+- **`.entry_point(id)` instead of `sources: string[]`**: reads as a builder call and matches the
+  Python `GraphBuilder`. The accessor is still `Graph::sources()`, and the unknown-id error keeps
+  TS's `source=<id> | source references unknown node` wording.
+- **No `reset_on_revisit`**: that is a Python knob. TS agent nodes are stateless by default
+  (snapshot/restore per execution) and opt into accumulation via `AgentNodeOptions::preserve_context`,
+  which the Rust port already carries.
+- **No `session_manager` constructor slot yet**: TS accepts one and rejects it when it is also in
+  `plugins`. A session manager is a `MultiAgentPlugin` here, so it goes through `.plugin(..)`;
+  the duplicate-registration check lands with the loop.
+- **`trace_attributes` not wired yet**: it belongs with the tracer work in increment 2.
 
 ## A2A
 
