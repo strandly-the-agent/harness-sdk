@@ -8,7 +8,8 @@ sourceLinks:
   - path: strands-ts/src/retry/default-model-retry-strategy.ts
 ---
 
-Model providers occasionally encounter errors such as rate limits, service unavailability, or network timeouts. By default, the agent retries throttled responses automatically with exponential backoff. The <Syntax py="Agent.retry_strategy" ts="Agent.retryStrategy" /> parameter lets you customize this behavior.
+Model providers occasionally encounter errors such as rate limits, service unavailability, or network timeouts. By default, the agent retries throttled responses automatically with exponential backoff. The <Syntax py="Agent.retry_strategy" ts="Agent.retryStrategy"
+rs="AgentBuilder::retry_strategy" /> parameter lets you customize this behavior.
 
 ## Default Behavior
 
@@ -52,6 +53,15 @@ In TypeScript, `ModelRetryStrategy` is the abstract base class. Use `DefaultMode
 --8<-- "user-guide/sdk/agents/retry-strategies.ts:default_strategy"
 ```
 </Tab>
+<Tab label="Rust">
+
+`DefaultModelRetryStrategy` is the standard configurable strategy; it is
+constructed from an options struct and validates `max_attempts`:
+
+```rust
+--8<-- "user-guide/sdk/agents/retry-strategies.rs:default_strategy"
+```
+</Tab>
 </Tabs>
 
 ### Parameters
@@ -63,7 +73,7 @@ In TypeScript, `ModelRetryStrategy` is the abstract base class. Use `DefaultMode
 |-----------|------|---------|-------------|
 | `max_attempts` | `int` | `6` | Total number of attempts including the initial call. Set to `1` to disable retries. |
 | `initial_delay` | `float` | `4` | Seconds to wait before the first retry. Subsequent retries double this value. |
-| `max_delay` | `float` | `128` | Maximum seconds to wait between retries. Caps the exponential growth. |
+| `max_delay` | `float` | `128` re exponential backoff through the `initial_delay` and `m| Maximum seconds to wait between retries. Caps the exponential growth. |
 
 </Tab>
 <Tab label="TypeScript">
@@ -76,11 +86,24 @@ In TypeScript, `ModelRetryStrategy` is the abstract base class. Use `DefaultMode
 | `backoff` | `BackoffStrategy` | `new ExponentialBackoff({ baseMs: 4000, maxMs: 240000 })` | Computes delay between retries. See [Backoff Strategies](#backoff-strategies). |
 
 </Tab>
+<Tab label="Rust">
+
+`DefaultModelRetryStrategyOptions` has these fields, all of which
+`Default::default()` fills in:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_attempts` | `u32` | `6` | Total number of attempts including the initial call. Must be `>= 1`. |
+| `backoff` | `Arc<dyn BackoffStrategy>` | `ExponentialBackoff` with `base_ms: 4_000.0`, `max_ms: 240_000.0` | Computes delay between retries. See [Backoff Strategies](#backoff-strategies). |
+| `retryable` | `Arc<dyn Fn(&Error) -> bool>` | `is_default_retryable` | Which errors to retry. |
+| `sleeper` | `Arc<dyn Sleeper>` | `TokioSleeper` | Sleeps for the backoff delay. |
+
+</Tab>
 </Tabs>
 
 ### Backoff Strategies
 
-In TypeScript, the delay between retries is delegated to a `BackoffStrategy` passed via the `backoff` parameter. The Python SDK does not expose a separate backoff interface; configure exponential backoff through the `initial_delay` and `max_delay` parameters above.
+In TypeScript and Rust, the delay between retries is delegated to a `BackoffStrategy` passed via the `backoff` parameter. The Python SDK does not expose a separate backoff interface; configuax_delay` parameters above.
 
 <Tabs>
 <Tab label="Python">
@@ -102,6 +125,24 @@ The TypeScript SDK ships three built-in strategies:
 --8<-- "user-guide/sdk/agents/retry-strategies_imports.ts:custom_backoff_imports"
 
 --8<-- "user-guide/sdk/agents/retry-strategies.ts:custom_backoff"
+```
+
+</Tab>
+<Tab label="Rust">
+
+The Rust SDK ships the same three strategies behind the `BackoffStrategy` trait:
+
+- `ExponentialBackoff` (default): delay grows as `base_ms * multiplier^(attempt-1)`, capped at `max_ms`.
+- `LinearBackoff`: delay grows as `base_ms * attempt`, capped at `max_ms`.
+- `ConstantBackoff`: same delay for every retry.
+
+`ExponentialBackoff` and `LinearBackoff` take a `jitter` option
+(`JitterKind::{None, Full, Equal, Decorrelated}`), defaulting to `Full`, which
+spreads concurrent clients across the wait window. `ConstantBackoff` returns the
+configured delay unchanged.
+
+```rust
+--8<-- "user-guide/sdk/agents/retry-strategies.rs:custom_backoff"
 ```
 
 </Tab>
@@ -130,11 +171,18 @@ agent = Agent(
 --8<-- "user-guide/sdk/agents/retry-strategies.ts:disable"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/retry-strategies.rs:disable"
+```
+</Tab>
 </Tabs>
 
 ## When Retries Occur
 
-Default retry strategies handle throttling errors (<Syntax py="ModelThrottledException" ts="ModelThrottledError" />) raised by model providers for rate-limiting. Other exceptions propagate immediately without retry.
+Default retry strategies handle throttling errors (<Syntax py="ModelThrottledException" ts="ModelThrottledError"
+rs="Error::ModelThrottled" />) raised by model providers for rate-limiting. Other exceptions propagate immediately without retry.
 
 To extend or narrow the retryable set, see [Custom Retry Logic](#custom-retry-logic).
 
@@ -183,6 +231,25 @@ For full control over the retry decision (custom backoff state, attempt-aware lo
 A retry-strategy instance carries per-turn state and must not be shared across agents. Create a new instance per agent.
 
 </Tab>
+<Tab label="Rust">
+
+Rust has no subclassing. To extend or narrow which errors are retryable, pass a
+`retryable` predicate in `DefaultModelRetryStrategyOptions`; `is_default_retryable`
+is the default set (throttling only), so calling it keeps that base behavior:
+
+```rust
+--8<-- "user-guide/sdk/agents/retry-strategies.rs:custom_retryable"
+```
+
+For full control over the retry decision (custom backoff state, attempt-aware
+logic), implement the `ModelRetryStrategy` trait and its `compute_retry_decision`
+method. The trait's provided `retry_model` handles short-circuits, per-turn state
+reset, and sleeping between attempts.
+
+A strategy instance carries per-turn state and must not be shared across agents.
+Create a new instance per agent.
+
+</Tab>
 </Tabs>
 
 ### Using a Hook
@@ -223,6 +290,15 @@ The `AfterModelCallEvent` exposes `attemptCount` (1-indexed). Use it to bound re
 --8<-- "user-guide/sdk/agents/retry-strategies_imports.ts:hook_retry_imports"
 
 --8<-- "user-guide/sdk/agents/retry-strategies.ts:hook_retry"
+```
+</Tab>
+<Tab label="Rust">
+
+`AfterModelCallEvent` exposes `attempt_count` (1-indexed). Use it to bound retry
+counts without tracking state outside the hook.
+
+```rust
+--8<-- "user-guide/sdk/agents/retry-strategies.rs:hook_retry"
 ```
 </Tab>
 </Tabs>

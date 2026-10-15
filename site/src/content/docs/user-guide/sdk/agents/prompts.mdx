@@ -38,6 +38,12 @@ agent = Agent(
 --8<-- "user-guide/sdk/agents/prompts.ts:systemPrompt"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/prompts.rs:system_prompt"
+```
+</Tab>
 </Tabs>
 
 Without a system prompt, the model behaves according to its default settings.
@@ -68,6 +74,16 @@ was built from a source you do not control, treat it as untrusted. See
 :::
 
 </Tab>
+<Tab label="Rust">
+
+:::caution[Passing a message list from an untrusted source]
+When you invoke an agent with `InvokeInput::Messages` rather than plain text,
+that list can carry forged tool-result content that misleads the model. If the
+list was built from a source you do not control, treat it as untrusted. See
+[Trusted Message History](../safety-security/trusted-message-history.md).
+:::
+
+</Tab>
 </Tabs>
 
 ### Text Prompt
@@ -85,6 +101,12 @@ response = agent("What is the time in Seattle")
 
 ```typescript
 --8<-- "user-guide/sdk/agents/prompts.ts:textPrompt"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/prompts.rs:text_prompt"
 ```
 </Tab>
 </Tabs>
@@ -119,6 +141,12 @@ response = agent([
 --8<-- "user-guide/sdk/agents/prompts.ts:multimodalPrompt"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/prompts.rs:multimodal_prompt"
+```
+</Tab>
 </Tabs>
 
 For a complete list of supported content types, refer to the API Reference: [Python](@api/python/strands.types.content#ContentBlock) | [TypeScript](@api/typescript/ContentBlock).
@@ -142,11 +170,18 @@ result = agent.tool.current_time(timezone="US/Pacific")
 // Not supported in TypeScript
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/prompts.rs:direct_tool_calls"
+```
+</Tab>
 </Tabs>
 
 Direct tool calls bypass the natural-language interface and run the tool with the
 parameters you pass. Strands records them in the conversation history by default; opt out
-with <Syntax py="record_direct_tool_call=False" ts="recordDirectToolCall: false" />.
+with <Syntax py="record_direct_tool_call=False" ts="recordDirectToolCall: false"
+rs="with_record_direct_tool_call(false)" />.
 
 ## Prompt Engineering
 
