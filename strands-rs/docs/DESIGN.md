@@ -21,7 +21,7 @@ owned `Next`), interrupts/HITL (`Error::Interrupt`, `ToolContext::interrupt`,
 `gen_ai.*`), MCP (rmcp 3.x; stdio + streamable-http — rmcp has no SSE client), agent-as-tool,
 delegation, continuations, Anthropic + OpenAI (Responses/Chat/bedrock-mantle) providers.
 
-Still out: printer, A2A, multiagent (swarm/graph), S3 session storage, docker/ssh sandboxes,
+Still out: printer, A2A, multiagent (swarm/graph), S3 session storage,
 Gemini/LiteLLM/OpenRouter providers, OTLP exporter installation (the SDK emits spans; the host
 installs the exporter).
 
@@ -55,6 +55,9 @@ installs the exporter).
   integration tests in `crates/strands-agents/tests/`. Every TS `it(...)` has a Rust test with the
   same intent; the name is the TS name in snake_case. Fixtures (`MockMessageModel`, hook
   recorder) live in `src/test_support.rs` (`#[cfg(test)]`/`pub` behind `test-support` feature).
+- Inherited behaviour becomes free functions, not a default-method trait: TS's `PosixShellSandbox`
+  base class is `sandbox::posix_shell::*` over `&dyn Sandbox`, so shell-specific internals stay off
+  the public `Sandbox` trait and each backend forwards explicitly.
 - Gates: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
   `cargo test --all-features`.
 - Public API shape: builders take `impl Trait + 'static` and wrap in `Arc` internally

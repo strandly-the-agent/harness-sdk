@@ -71,7 +71,7 @@ const ALLOWED_SSH_OPTIONS: &[&str] = &[
 /// prefix ([`posix_shell::shell_env_prefix`]) rather than passed as argv flags the way
 /// [`DockerSandbox`](super::DockerSandbox) uses `docker exec -e`.
 ///
-/// Unlike TS, an `ssh_options` entry outside [`ALLOWED_SSH_OPTIONS`] is rejected when the argv is
+/// Unlike TS, an `ssh_options` entry outside the `ALLOWED_SSH_OPTIONS` allowlist is rejected when the argv is
 /// built rather than at construction time (Rust builders do not fail); no connection is ever made
 /// with an unvetted option either way.
 #[derive(Clone, Debug)]
@@ -128,7 +128,7 @@ impl SshSandbox {
         self
     }
 
-    /// Extra `ssh -o` options, each `"Name=value"`; rejected unless in [`ALLOWED_SSH_OPTIONS`] or
+    /// Extra `ssh -o` options, each `"Name=value"`; rejected unless known-safe or
     /// [`with_allow_unsafe_ssh_options`](Self::with_allow_unsafe_ssh_options) is set.
     pub fn with_ssh_options(mut self, options: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.ssh_options = options.into_iter().map(Into::into).collect();
