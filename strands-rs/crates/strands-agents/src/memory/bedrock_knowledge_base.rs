@@ -12,6 +12,7 @@
 //!   S3 client the `S3` write path uses.
 //! - [`MemoryStore::add`] returns `()`, so the document id a write mints is returned by the
 //!   inherent [`BedrockKnowledgeBaseStore::add_document`] instead.
+//! - `s3.prefix` is optional (TS requires it); `None` uploads to the bucket root.
 //! - Metadata attribute values go through an owned `AttributeValue`, which serves both the inline
 //!   `CUSTOM` attributes and the JSON S3 sidecar (TS reuses the SDK type for both).
 
@@ -1309,6 +1310,71 @@ mod tests {
         };
         assert_eq!(attribute.key(), "namespace");
         assert_eq!(attribute.value(), &Document::String("tenant-a".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn reuses_one_connection_config_across_scopes() {
+        let seen = seen();
+        let captured = Arc::clone(&seen);
+        let rule = mock!(aws_sdk_bedrockagentruntime::Client::retrieve)
+            .match_requests(move |req| {
+                if let Some(config) = req.retrieval_configuration() {
+                    captured.lock().push(config.clone());
+                }
+                true
+            })
+            .sequence()
+            .output(|| {
+                RetrieveOutput::builder()
+                    .set_retrieval_results(Some(vec![]))
+                    .build()
+                    .expect("retrieve output")
+            })
+            .repeatedly()
+            .build();
+        let connection = BedrockKnowledgeBaseConfig {
+            knowledge_base_id: "kb-123".to_owned(),
+            knowledge_base_type: Some(KnowledgeBaseType::Vector),
+            runtime_client: Some(mock_client!(aws_sdk_bedrockagentruntime, [&rule])),
+            ..Default::default()
+        };
+        let store_for = |name: &str, scope: &str| {
+            BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
+                name: name.to_owned(),
+                config: connection.clone(),
+                scope: Some(scope.to_owned()),
+                ..Default::default()
+            })
+        };
+        let tenant_a = store_for("kb-a", "tenant-a").await.expect("builds");
+        let tenant_b = store_for("kb-b", "tenant-b").await.expect("builds");
+
+        tenant_a
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+        tenant_b
+            .search("query", &SearchOptions::default())
+            .await
+            .expect("search");
+
+        let requests = seen.lock();
+        assert_eq!(requests.len(), 2, "one retrieve per store");
+        let scopes: Vec<String> = requests
+            .iter()
+            .map(|request| {
+                let filter = vector_config(request).filter().cloned().expect("filter");
+                let rt::RetrievalFilter::Equals(attribute) = filter else {
+                    panic!("expected an equals filter");
+                };
+                assert_eq!(attribute.key(), "namespace");
+                match attribute.value() {
+                    Document::String(value) => value.clone(),
+                    other => panic!("expected a string scope, got {other:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(scopes, vec!["tenant-a".to_owned(), "tenant-b".to_owned()]);
     }
 
     #[tokio::test]

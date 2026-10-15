@@ -5,9 +5,6 @@ Python tie-break: `strands-py/src/strands/vended_memory_stores/test_memory_store
 Rust: `crates/strands-agents/src/memory/test_memory_store.rs` (public, mirroring
 `file_memory_store.rs`; re-exported from `memory/mod.rs` and `lib.rs`).
 
-Part B (`BedrockKnowledgeBaseStore`) is not ported yet — the `Bedrock Knowledge Base memory store`
-row in `FEATURE_MATRIX.md` stays ❌.
-
 ## API
 
 | TS | Rust | Notes |
@@ -88,11 +85,11 @@ Rust: `crates/strands-agents/src/memory/bedrock_knowledge_base.rs`, feature `bed
 
 | TS | Rust |
 | --- | --- |
-| `new BedrockKnowledgeBaseStore(config)` | `BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig) -> Result<Self>` (async: may build a default client) |
+| `new BedrockKnowledgeBaseStore(config)` | `BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig) -> Result<Self>`; `BedrockKnowledgeBaseStore::new(knowledge_base_id) -> Result<Self>` for a read-only store named after the knowledge base (both async: they may build a default client) |
 | `BedrockKnowledgeBaseStoreConfig` | `BedrockKnowledgeBaseStoreConfig { name, description, config, scope, filter, max_search_results, min_score, max_score, writable, access_control_list, extraction }` |
 | `BedrockKnowledgeBaseConfig` | `BedrockKnowledgeBaseConfig { knowledge_base_id, data_source_id, data_source_type, s3, scope_metadata_key, knowledge_base_type, region, runtime_client, agent_client }` |
 | `s3: { bucket, prefix, client }` | `BedrockKnowledgeBaseS3Config { bucket, prefix, client }` |
-| `accessControlList: AccessControlEntry[]` | `Vec<AccessControlEntry { name, r#type, access }>` |
+| `accessControlList: AccessControlEntry[]` | `Vec<AccessControlEntry { name, r#type, access: AccessControlAccess }>` (`Allow` / `Deny`, `as_str()` for the wire value) |
 | `filter: RetrievalFilter` (SDK type) | owned `RetrievalFilter` enum + `FilterAttribute { key, value }` |
 | `store.search(query, options)` | `MemoryStore::search(&self, query, &SearchOptions) -> Result<Vec<MemoryEntry>>` |
 | `store.add(content, metadata) -> { id }` | `add_document(&self, content, metadata) -> Result<String>`; `MemoryStore::add` delegates and drops the id |
@@ -125,6 +122,7 @@ Rust tests fold two or three closely related TS assertions together).
 | search: prefers an explicit filter over a scope-derived one | `an_explicit_filter_overrides_the_scope_filter` | pass |
 | scope/filter resolution: applies no filter when there is no scope | `applies_no_filter_when_the_store_has_no_scope` | pass |
 | scope/filter resolution: writes are scoped even with an explicit search filter | `scopes_writes_even_when_an_explicit_search_filter_is_set` | pass |
+| config reuse: one connection config serves several scoped stores | `reuses_one_connection_config_across_scopes` | pass |
 | search: maps content, metadata, location, score onto each entry; defaults missing content to `""` | `maps_results_to_memory_entries` | pass |
 | score bounds: min/max kept, zero not treated as unset, unscored kept, nothing clears the bound | `drops_results_below_min_score_and_keeps_unscored_ones`, `drops_results_above_max_score` | pass |
 | search: logs and rethrows when retrieve fails | `wraps_retrieve_failures` | pass |
@@ -164,10 +162,9 @@ Rust tests fold two or three closely related TS assertions together).
 - `unwraps NumericValue metadata back into the number that was stored` and the two related cases
   (3) — the Rust SDK returns `Document`, already typed, so there is no `NumericValue` wrapper to
   unwrap. See divergences.
-- `config reuse across namespaces` (5 cases incl. the two `MemoryManager` registration ones) — the
-  registration behaviour is `MemoryManager`'s and is already covered in `memory_manager.rs`;
-  a per-store scoped-filter test was written but dropped this session because the shared mocked
-  retrieve rule is single-use (it needs a repeating rule). **Next session: re-add it.**
+- `config reuse across namespaces` — the two `MemoryManager` registration cases are `MemoryManager`'s
+  behaviour and are covered in `memory_manager.rs`; the per-store scoped-filter case is covered by
+  `reuses_one_connection_config_across_scopes`.
 - `metadata logging` (1) and `extraction via MemoryManager` (1) — the debug line is observable only
   with a tracing subscriber, and the extraction path needs an agent-loop test. **Not yet written.**
 - The remaining per-case duplicates inside the `search`, `score bounds`, and `add — S3` describes
@@ -191,5 +188,22 @@ Rust tests fold two or three closely related TS assertions together).
 - Agent and S3 clients are built lazily through a `OnceCell` on first use, so a read-only store
   never constructs them.
 - Construction is fallible (`Result`) and `async`, not throwing.
+- `BedrockKnowledgeBaseS3Config::prefix` is `Option<String>` where TS requires `prefix: string`:
+  `None` uploads to the bucket root, and a set prefix gets the same trailing slash TS adds.
 - `initialize` is the only `GetKnowledgeBase` caller a user needs; `search` resolves the type
   itself when `initialize` was not run.
+
+## Review disposition (round 1)
+
+| Finding | Disposition |
+| --- | --- |
+| 🔴 constructor shape inconsistent with siblings | fixed — `with_config(config)` + `new(knowledge_base_id)`; call sites and the API map updated |
+| 🟠 incomplete root re-exports | fixed — `lib.rs` exports the same ten names as `memory/mod.rs` (the eight plus `AccessControlAccess`, `AccessControlEntry`) |
+| 🟠 relocated `passes_score_bound` doc comment | fixed — moved back above the function |
+| 🟠 `AccessControlEntry.access: String` | fixed — `AccessControlAccess { Allow, Deny }` with `as_str()` for the wire value |
+| 🟠 duplicated `document_to_json` / `json_to_document` | fixed — one `pub(crate)` copy in `src/aws_document.rs` (gated `bedrock` or `bedrock-kb`), keeping `format.rs`'s fallible/sorted semantics; used by the model provider and the KB store |
+| 🟠 missing `config reuse across scopes` test | fixed — `reuses_one_connection_config_across_scopes` asserts both `Retrieve` filters through a repeating mock rule |
+| 🟠 stale "Part B not ported" line in this matrix | fixed — removed |
+| 🟡 undocumented `prefix: Option` divergence | fixed — module `//!` doc and the divergence list |
+| 🟡 `region` + a pre-built client both set should error | deferred — the `S3StorageBuilder` sibling it should mirror is not on this branch, and TS ignores `region` when a client is supplied; wants its own test alongside the mirrored message |
+| 🟡 `#[non_exhaustive]` on the new public enums | deferred — no other public enum in `strands-agents` is `#[non_exhaustive]` except `interrupt`'s; a crate-wide call, not a memory-stores one |
