@@ -8,6 +8,7 @@ sourceLinks:
   - path: strands-py/src/strands/multiagent/base.py
   - path: strands-py/src/strands/multiagent/graph.py
   - path: strands-ts/src/multiagent/graph.ts
+languages: [python, typescript]
 ---
 
 A Graph gives you deterministic control over how a set of agents runs. You define the nodes (agents, custom nodes, or nested multi-agent systems like a [Swarm](./swarm.md)) and the edges between them. Each node runs according to its edge dependencies, and its output passes as input to the nodes that depend on it. Graphs support both acyclic (DAG) and cyclic topologies, so you can build feedback loops and iterative refinement workflows.
