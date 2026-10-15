@@ -385,6 +385,11 @@ impl Node for AgentNode {
         Box::pin(async move {
             let snapshot =
                 (!self.preserve_context).then(|| self.agent.take_snapshot(TakeSnapshotOptions::default()));
+            // Rehydrate the agent paused by an earlier INTERRUPTED run, independently of
+            // `preserve_context`: a resumed run always picks up where it left off (TS `nodes.ts`).
+            if let Some(interrupted) = state.node(&self.id).and_then(|node| node.interrupted_snapshot) {
+                self.agent.load_snapshot(&interrupted)?;
+            }
             let result = self.run(input, state, options, events).await;
             // Restore pre-run state — keeps the agent observably unchanged across runs.
             if let Some(snapshot) = snapshot {
@@ -583,7 +588,10 @@ mod tests {
     use crate::multiagent::state::{MultiAgentResult, MultiAgentState};
     use crate::multiagent::test_orchestrator::TestOrchestrator;
     use crate::test_support::{MockMessageModel, MockResponse};
-    use crate::types::{ContentBlock, Message};
+    use crate::tools::FunctionTool;
+    use crate::types::{
+        ContentBlock, InterruptParams, InterruptResponseContent, Message, Role, ToolUseBlock,
+    };
     use serde_json::json;
 
     #[test]
@@ -888,6 +896,79 @@ mod tests {
                 .iter()
                 .any(|spec| spec.input_schema.as_ref() == Some(&schema)),
             "structured output schema reached the model as a tool spec"
+        );
+    }
+
+    /// `approve`: interrupts for an approval, then reports the answer.
+    fn approve_tool() -> Arc<FunctionTool> {
+        Arc::new(
+            FunctionTool::builder("approve")
+                .description("Interrupts for approval, then reports the answer")
+                .input_schema(json!({ "type": "object", "properties": {} }))
+                .handler(|_input, ctx| async move {
+                    let answer: String = ctx.interrupt(InterruptParams::new("confirm"))?;
+                    Ok(json!(format!("did it: {answer}")))
+                }),
+        )
+    }
+
+    #[tokio::test]
+    async fn resumes_an_interrupted_agent_from_the_snapshot_stored_on_the_node() {
+        let model = MockMessageModel::shared(vec![
+            MockResponse::message(Message::new(
+                Role::Assistant,
+                vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                    "approve",
+                    "call-1",
+                    json!({}),
+                ))],
+            )),
+            MockResponse::message(Message::assistant("all done")),
+        ]);
+        let agent = Agent::builder()
+            .model(model.clone())
+            .tool(approve_tool())
+            .build()
+            .unwrap();
+        let node = agent_node(agent);
+        let state = MultiAgentStateHandle::new(MultiAgentState::new([node.id().to_owned()]));
+
+        let (tx, _rx) = mpsc::channel(256);
+        let options = NodeInputOptions::default();
+        let interrupted = run_node(&node, "go".into(), &state, &options, &tx).await;
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+        assert_eq!(interrupted.interrupts.len(), 1);
+        assert!(
+            state.node(node.id()).unwrap().interrupted_snapshot.is_some(),
+            "the paused agent is snapshot on the node state"
+        );
+
+        let responses = vec![InterruptResponseContent::new(
+            &interrupted.interrupts[0].id,
+            json!("yes"),
+        )];
+        let resumed = run_node(
+            &node,
+            MultiAgentInput::InterruptResponses(responses),
+            &state,
+            &options,
+            &tx,
+        )
+        .await;
+
+        assert_eq!(resumed.status, ResultStatus::Completed);
+        assert_eq!(resumed.content, vec![ContentBlock::Text("all done".into())]);
+        // The resumed turn sees the conversation the paused run left behind: without reloading the
+        // node's snapshot the agent starts from the restored pre-run (empty) history.
+        let resume_messages = &model.calls()[1].0;
+        let first = resume_messages.first().expect("the resumed turn sees history");
+        assert_eq!(
+            (first.role, first.content.as_slice()),
+            (Role::User, [ContentBlock::Text("go".into())].as_slice())
+        );
+        assert!(
+            state.node(node.id()).unwrap().interrupted_snapshot.is_none(),
+            "a completed run clears the stored snapshot"
         );
     }
 
