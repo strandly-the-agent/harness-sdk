@@ -22,7 +22,9 @@ async fn agents_as_tools_hub_scope() -> Result<(), Box<dyn std::error::Error>> {
     // The orchestrator calls the specialist when the query fits
     let orchestrator = Agent::builder()
         .model(model)
-        .system_prompt("Route weather questions to weather_agent; answer the rest yourself.")
+        .system_prompt(
+            "Route weather questions to weather_agent; answer the rest yourself.",
+        )
         .tools([weather_agent.as_tool(AgentAsToolOptions::default())])
         .build()?;
 
