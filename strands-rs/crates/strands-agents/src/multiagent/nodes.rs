@@ -3,6 +3,7 @@
 //! [`Node`] implementations provide [`Node::handle`]; [`run_node`] is the shared wrapper around
 //! it (TS `Node.stream`) that owns state bookkeeping and emits the terminal [`NodeResultEvent`].
 
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -92,18 +93,21 @@ pub struct NodeInputOptions {
 
 impl NodeInputOptions {
     /// Request structured output from this node's invocation.
+    #[must_use]
     pub fn with_structured_output_schema(mut self, schema: JsonValue) -> Self {
         self.structured_output_schema = Some(schema);
         self
     }
 
     /// Share the orchestrator's invocation state with this node.
+    #[must_use]
     pub fn with_invocation_state(mut self, state: InvocationState) -> Self {
         self.invocation_state = state;
         self
     }
 
     /// Forward a cancellation token (per-node timeout or external cancel).
+    #[must_use]
     pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
         self.cancel = Some(cancel);
         self
@@ -239,21 +243,35 @@ impl AgentNodeOptions {
     }
 
     /// Override the node's description.
+    #[must_use]
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
     }
 
     /// Set this node's wall-clock ceiling; [`Duration::MAX`] opts out of the orchestrator's.
+    #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
     /// Keep the wrapped agent's state across node runs.
+    #[must_use]
     pub fn with_preserve_context(mut self, preserve_context: bool) -> Self {
         self.preserve_context = preserve_context;
         self
+    }
+}
+
+impl fmt::Debug for AgentNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AgentNode")
+            .field("id", &self.id)
+            .field("agent", &self.agent)
+            .field("timeout", &self.timeout)
+            .field("preserve_context", &self.preserve_context)
+            .finish()
     }
 }
 
@@ -285,7 +303,7 @@ impl AgentNode {
         let id = options.agent.id().to_owned();
         if options.timeout == Some(Duration::ZERO) {
             return Err(Error::other(format!(
-                "timeout=<0>, node_id=<{id}> | must be greater than zero"
+                "timeout=<0>, node_id=<{id}> | must be at least 1"
             )));
         }
         let description = options
@@ -426,9 +444,19 @@ impl MultiAgentNodeOptions {
     }
 
     /// Override the node's description.
+    #[must_use]
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
+    }
+}
+
+impl fmt::Debug for MultiAgentNodeOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MultiAgentNodeOptions")
+            .field("orchestrator", &self.orchestrator.id())
+            .field("description", &self.description)
+            .finish()
     }
 }
 
@@ -529,6 +557,15 @@ impl Node for MultiAgentNode {
     }
 }
 
+impl fmt::Debug for MultiAgentNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MultiAgentNode")
+            .field("id", &self.id)
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 /// A node as accepted by an orchestrator builder (TS `NodeDefinition`).
 ///
 /// Pass an [`Agent`] or an `Arc<dyn MultiAgent>` for the simple case, the options structs for
@@ -553,6 +590,16 @@ impl NodeDefinition {
             NodeDefinition::Agent(options) => Ok(Arc::new(AgentNode::new(options)?)),
             NodeDefinition::MultiAgent(options) => Ok(Arc::new(MultiAgentNode::new(options))),
             NodeDefinition::Node(node) => Ok(node),
+        }
+    }
+}
+
+impl fmt::Debug for NodeDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NodeDefinition::Agent(options) => f.debug_tuple("Agent").field(options).finish(),
+            NodeDefinition::MultiAgent(options) => f.debug_tuple("MultiAgent").field(options).finish(),
+            NodeDefinition::Node(node) => f.debug_tuple("Node").field(&node.id()).finish(),
         }
     }
 }
@@ -776,9 +823,8 @@ mod tests {
     fn rejects_a_zero_timeout() {
         let (agent, _) = agent_with(vec![]);
         let error = AgentNode::new(AgentNodeOptions::new(agent).with_timeout(Duration::ZERO))
-            .err()
-            .expect("zero timeout is rejected");
-        assert!(error.to_string().contains("must be greater than zero"), "{error}");
+            .expect_err("zero timeout is rejected");
+        assert!(error.to_string().contains("must be at least 1"), "{error}");
     }
 
     #[test]

@@ -1,13 +1,14 @@
 //! The [`MultiAgent`] trait, its invocation types, and the shared interrupt helpers every
 //! orchestrator uses (`strands-ts/src/multiagent/multiagent.ts`).
 
-use std::collections::BTreeMap;
+use std::any::Any;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use futures::stream::{BoxStream, Stream};
+use indexmap::IndexMap;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
@@ -160,6 +161,10 @@ pub trait MultiAgent: Send + Sync {
 
     /// Run and stream events as they occur; the last event carries the aggregate result.
     fn stream_with(&self, input: MultiAgentInput, options: MultiAgentInvokeOptions) -> MultiAgentStream;
+
+    /// This orchestrator as [`Any`], so a hook or plugin can downcast to the concrete type
+    /// (the Rust stand-in for TS's `instanceof Graph`). Implement it as `{ self }`.
+    fn as_any(&self) -> &dyn Any;
 }
 
 /// `impl Into<MultiAgentInput>` conveniences for every [`MultiAgent`], including `dyn MultiAgent`.
@@ -179,6 +184,7 @@ impl<T: MultiAgent + ?Sized> MultiAgentExt for T {}
 
 /// Stream of [`MultiAgentStreamEvent`]s from one invocation, like
 /// [`AgentStream`](crate::agent::AgentStream).
+#[must_use = "a stream does nothing unless polled"]
 pub struct MultiAgentStream {
     inner: BoxStream<'static, Result<MultiAgentStreamEvent>>,
 }
@@ -210,8 +216,8 @@ impl Stream for MultiAgentStream {
 pub fn group_interrupt_responses_by_node(
     responses: &[InterruptResponseContent],
     state: &MultiAgentState,
-) -> Result<BTreeMap<String, Vec<InterruptResponseContent>>> {
-    let mut grouped: BTreeMap<String, Vec<InterruptResponseContent>> = BTreeMap::new();
+) -> Result<IndexMap<String, Vec<InterruptResponseContent>>> {
+    let mut grouped: IndexMap<String, Vec<InterruptResponseContent>> = IndexMap::new();
     for response in responses {
         let id = &response.interrupt_response.interrupt_id;
         let target = state

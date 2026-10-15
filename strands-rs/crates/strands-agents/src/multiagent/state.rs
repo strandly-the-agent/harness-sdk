@@ -1,10 +1,10 @@
 //! Multi-agent execution state (`strands-ts/src/multiagent/state.ts`).
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use indexmap::IndexMap;
 use parking_lot::Mutex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -471,7 +471,7 @@ pub struct MultiAgentState {
     #[serde(serialize_with = "serialize_app", deserialize_with = "deserialize_app")]
     pub app: StateStore,
     #[serde(default)]
-    nodes: BTreeMap<String, NodeState>,
+    nodes: IndexMap<String, NodeState>,
     /// The invocation's input, carried through an interrupt pause so a resumed run can re-enter
     /// nodes that never ran with the original content. Cleared on any non-`INTERRUPTED` exit.
     #[serde(
@@ -483,6 +483,21 @@ pub struct MultiAgentState {
     pub pending_input: Option<MultiAgentInput>,
 }
 
+/// Detaches the app store (every other field is a plain value), so a clone never aliases the
+/// original's state.
+impl Clone for MultiAgentState {
+    fn clone(&self) -> Self {
+        Self {
+            start_time: self.start_time,
+            steps: self.steps,
+            results: self.results.clone(),
+            app: StateStore::from_map(self.app.get_all()),
+            nodes: self.nodes.clone(),
+            pending_input: self.pending_input.clone(),
+        }
+    }
+}
+
 impl Default for MultiAgentState {
     fn default() -> Self {
         Self {
@@ -490,7 +505,7 @@ impl Default for MultiAgentState {
             steps: 0,
             results: Vec::new(),
             app: StateStore::new(),
-            nodes: BTreeMap::new(),
+            nodes: IndexMap::new(),
             pending_input: None,
         }
     }
@@ -524,7 +539,7 @@ impl MultiAgentState {
     }
 
     /// All tracked node states, by id.
-    pub fn nodes(&self) -> &BTreeMap<String, NodeState> {
+    pub fn nodes(&self) -> &IndexMap<String, NodeState> {
         &self.nodes
     }
 }
@@ -541,18 +556,40 @@ impl MultiAgentStateHandle {
     }
 
     /// Runs `f` with the state locked for reading.
+    ///
+    /// Not reentrant: do not call other methods on this handle (or anything that reaches the
+    /// state, such as a hook event's `state`) from `f`; the lock is held. For a single read,
+    /// prefer [`snapshot`](Self::snapshot), [`results`](Self::results), [`steps`](Self::steps) or
+    /// [`node`](Self::node), which copy out and release the lock.
     pub fn with<R>(&self, f: impl FnOnce(&MultiAgentState) -> R) -> R {
         f(&self.0.lock())
     }
 
-    /// Runs `f` with the state locked for writing.
+    /// Runs `f` with the state locked for writing; use it for compound mutations.
+    ///
+    /// Not reentrant — see [`with`](Self::with).
     pub fn with_mut<R>(&self, f: impl FnOnce(&mut MultiAgentState) -> R) -> R {
         f(&mut self.0.lock())
+    }
+
+    /// A detached copy of the whole state.
+    pub fn snapshot(&self) -> MultiAgentState {
+        self.0.lock().clone()
     }
 
     /// A copy of the node `id`'s state, or `None` if it is not tracked.
     pub fn node(&self, id: &str) -> Option<NodeState> {
         self.0.lock().node(id).cloned()
+    }
+
+    /// A copy of the node results collected so far, in completion order.
+    pub fn results(&self) -> Vec<NodeResult> {
+        self.0.lock().results.clone()
+    }
+
+    /// Number of node executions started so far.
+    pub fn steps(&self) -> u64 {
+        self.0.lock().steps
     }
 }
 
@@ -997,6 +1034,28 @@ mod tests {
         let mut state = MultiAgentState::new(Vec::<String>::new());
         state.node_or_insert("late").status = Status::Executing;
         assert_eq!(state.node("late").unwrap().status, Status::Executing);
+    }
+
+    #[test]
+    fn handle_accessors_copy_out_without_holding_the_lock() {
+        let handle = MultiAgentStateHandle::new(MultiAgentState::new(["a"]));
+        handle.with_mut(|state| {
+            state.steps = 3;
+            state
+                .results
+                .push(NodeResult::new("a", ResultStatus::Completed, 1));
+            state.app.set("topic", "rust");
+        });
+
+        assert_eq!(handle.steps(), 3);
+        assert_eq!(handle.results().len(), 1);
+
+        let copy = handle.snapshot();
+        // Reading inside `with` would deadlock if `snapshot` still held the lock.
+        handle.with(|state| assert_eq!(state.steps, copy.steps));
+
+        copy.app.set("topic", "ts");
+        assert_eq!(handle.snapshot().app.get("topic"), Some(json!("rust")));
     }
 
     #[test]

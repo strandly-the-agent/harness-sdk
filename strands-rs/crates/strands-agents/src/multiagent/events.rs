@@ -324,6 +324,10 @@ mod tests {
             Ok(MultiAgentResult::new(vec![], 0))
         }
 
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
         fn stream_with(
             &self,
             _input: MultiAgentInput,

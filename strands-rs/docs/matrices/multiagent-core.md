@@ -11,35 +11,35 @@ Rust: `crates/strands-agents/src/multiagent/{state,multiagent,events,nodes,edge,
 | `Status` (const object + union) | `state::Status` (enum, serde SCREAMING) |
 | `ResultStatus` | `state::ResultStatus` |
 | `NodeResult` + `toJSON`/`fromJSON` | `state::NodeResult` (serde `type: "nodeResult"`) |
-| `NodeResultUpdate` | `state::NodeResultUpdate` + `NodeResult::merge` |
+| `NodeResultUpdate` | `state::NodeResultUpdate` (`with_*` setters) + `NodeResult::merge` |
 | `NodeState` (+ `content` getter) | `state::NodeState` (+ `content()`) |
 | `MultiAgentResult` (+ `_resolveStatus`, `_aggregateNodeUsage`) | `state::MultiAgentResult`, `resolve_status`, `aggregate_node_usage` |
-| `MultiAgentState` (+ `node`, `nodes`, `_pendingInput`) | `state::MultiAgentState` (+ `node`, `node_mut`, `node_or_insert`, `nodes`, `pending_input`) |
-| — (TS passes the state object directly) | `state::MultiAgentStateHandle` |
+| `MultiAgentState` (+ `node`, `nodes`, `_pendingInput`) | `state::MultiAgentState` (+ `node`, `node_mut`, `node_or_insert`, `nodes` as an `IndexMap`, `pending_input`) |
+| — (TS passes the state object directly) | `state::MultiAgentStateHandle` (`with`/`with_mut` + the copy-out `snapshot`/`node`/`results`/`steps`) |
 | `MultiAgentInput` / `MultiAgentContentInput` | `multiagent::MultiAgentInput` (+ `resume_responses`) |
 | `MultiAgentInvokeOptions` | `multiagent::MultiAgentInvokeOptions` |
-| `MultiAgent` interface | `multiagent::MultiAgent` + `MultiAgentExt` |
+| `MultiAgent` interface | `multiagent::MultiAgent` (`#[async_trait]`, + `as_any`) + `MultiAgentExt`; Graph/Swarm also expose inherent `invoke`/`stream` |
 | `AsyncGenerator<MultiAgentStreamEvent, ..>` | `multiagent::MultiAgentStream` |
 | `extractResumeResponses` | `MultiAgentInput::resume_responses` (typed enum makes the mixed-content check unnecessary) |
-| `groupInterruptResponsesByNode` | `multiagent::group_interrupt_responses_by_node` |
+| `groupInterruptResponsesByNode` | `multiagent::group_interrupt_responses_by_node` (`IndexMap`, response order) |
 | `dropStaleInterruptedResult` | `multiagent::drop_stale_interrupted_result` |
 | `recordHookInterrupt` | `multiagent::record_hook_interrupt` |
 | `applyOrchestratorHookResponses` | `multiagent::apply_orchestrator_hook_responses` |
 | — | `multiagent::interrupted_result` (shared INTERRUPTED aggregate construction) |
 | the ten `*Event` classes | `events::*` (same names), each `impl HookEvent` |
-| `interruptFromMultiAgentNode` via `BeforeNodeCallEvent.interrupt` | `events::BeforeNodeCallEvent::interrupt` |
-| `NodeStreamUpdateInnerEvent` | `events::NodeInnerEvent` |
+| `interruptFromMultiAgentNode` via `BeforeNodeCallEvent.interrupt` | `events::BeforeNodeCallEvent::interrupt<T>` (id from `interrupt::before_node_call_interrupt_id`) |
+| `NodeStreamUpdateInnerEvent` | `events::NodeInnerEvent` (+ `NodeStreamUpdateEvent::wrapping`) |
 | `MultiAgentStreamEvent` union | `events::MultiAgentStreamEvent` enum |
 | `NodeType` | `nodes::NodeType` |
-| `Node` abstract class (`stream` + abstract `handle`) | `nodes::Node` trait (`handle` only) + the free fn `nodes::run_node` (the `stream` wrapper) |
+| `Node` abstract class (`stream` + abstract `handle`) | `nodes::Node` trait (`#[async_trait]`; `handle` + the provided `timeout`) + the free fn `nodes::run_node` (the `stream` wrapper) |
 | `NodeConfig` / `NodeInputOptions` | `nodes::NodeConfig` / `nodes::NodeInputOptions` (no `buffer_output`) |
-| `AgentNode` / `AgentNodeOptions` | `nodes::AgentNode` / `nodes::AgentNodeOptions` (`timeout: Option<Duration>`) |
+| `AgentNode` / `AgentNodeOptions` | `nodes::AgentNode` (rehydrates `interrupted_snapshot` in `handle`) / `nodes::AgentNodeOptions` (`timeout: Option<Duration>`) |
 | `MultiAgentNode` / `MultiAgentNodeOptions` | `nodes::MultiAgentNode` / `nodes::MultiAgentNodeOptions` |
 | `NodeDefinition` union | `nodes::NodeDefinition` enum + `From` impls + `into_node` |
-| `EdgeHandler` | `edge::EdgeHandler` (+ `edge::edge_handler` for sync predicates) |
-| `Edge` | `edge::Edge` (+ `should_traverse`) |
+| `EdgeHandler` | `edge::EdgeHandler` — takes `&MultiAgentStateHandle`, returns `BoxFuture<'static, bool>` (+ `edge::edge_handler` for sync predicates) |
+| `Edge` | `edge::Edge` (+ `should_traverse(&MultiAgentStateHandle)`) |
 | `EdgeOptions` / `EdgeDefinition` | `edge::EdgeDefinition` (one struct; `From<(S, T)>` for the tuple form) |
-| `MultiAgentPlugin` | `plugins::MultiAgentPlugin` (`init_multi_agent`) |
+| `MultiAgentPlugin` | `plugins::MultiAgentPlugin` (`init_multi_agent(&OrchestratorRef)`) |
 | `MultiAgentPluginRegistry` | `plugins::MultiAgentPluginRegistry` (`new`/`add`/`get`/`initialize`) |
 | `TakeMultiAgentSnapshotOptions` | `snapshot::TakeMultiAgentSnapshotOptions` |
 | `takeSnapshot` / `loadSnapshot` | `snapshot::take_snapshot` / `snapshot::load_snapshot` (over `&dyn MultiAgent`) |
@@ -90,7 +90,8 @@ MultiAgentState round-trips, status precedence, `_pendingInput` rehydration) and
 | propagates FAILED status from inner orchestrator | `propagates_failed_status_from_the_inner_orchestrator` |
 | propagates CANCELLED status from inner orchestrator | `propagates_cancelled_status_from_the_inner_orchestrator` |
 | exposes the wrapped orchestrator instance | `derives_id_and_description_from_the_orchestrator` |
-| — | `node_definitions_convert_from_every_accepted_shape`, `agent_node_description_defaults_to_the_agents_and_options_override_it` |
+| resumes an interrupted agent from the stored snapshot | `resumes_an_interrupted_agent_from_the_snapshot_stored_on_the_node` |
+| — | `node_definitions_convert_from_every_accepted_shape`, `agent_node_description_defaults_to_the_agents_and_options_override_it`, `node_timeout_defaults_to_none_and_agent_nodes_report_their_own` |
 
 | `__tests__/spec.test.ts` `it` | Rust test (`spec.rs::tests`) |
 | --- | --- |
@@ -135,16 +136,20 @@ TS interop fixtures (`tests/multiagent_interop.rs`) hard-code the JSON `state.ts
 | snapshot survives JSON.stringify/JSON.parse round-trip | `snapshot.rs::survives_a_json_round_trip` |
 | — | `snapshot.rs::loads_a_ts_shaped_snapshot_fixture` (TS-shaped JSON fixture) |
 
-`edge.rs::tests` covers the handler/no-handler traversal and the tuple `EdgeDefinition`
-conversion (`edge.ts` has no test file of its own).
+`edge.rs::tests` covers the handler/no-handler traversal, an async handler that awaits and reads
+the state through the handle, and the tuple `EdgeDefinition` conversion (`edge.ts` has no test file
+of its own). `state.rs::tests` adds `handle_accessors_copy_out_without_holding_the_lock` and
+`update_setters_build_the_same_overlay_as_the_struct_fields` for the handle/`NodeResultUpdate`
+additions.
 
 ## Divergences
 
 See the "Multi-agent" decision log in [DESIGN.md](../DESIGN.md). Summary: `ResultStatus` is a
 distinct enum; `error` is the serialised message; `interrupts` is a `Vec` with `skip_if_empty`
 rather than an `Option`; state types carry no `type` tag (TS omits it too); `nodes` is a
-`BTreeMap`; events carry `MultiAgentStateHandle` and do not implement `Serialize`;
-`NodeInnerEvent::Custom` is opaque JSON.
+an insertion-ordered `IndexMap` (as in TS); events carry `MultiAgentStateHandle` and do not
+implement `Serialize`; `NodeInnerEvent::Custom` is opaque JSON; async trait methods use
+`#[async_trait]`; `MultiAgent::as_any` replaces TS `instanceof`.
 
 ## Not ported yet
 

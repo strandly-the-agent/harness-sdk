@@ -21,6 +21,7 @@ pub struct TakeMultiAgentSnapshotOptions {
 
 impl TakeMultiAgentSnapshotOptions {
     /// Attach application-owned data to the snapshot.
+    #[must_use]
     pub fn with_app_data(mut self, app_data: Map<String, JsonValue>) -> Self {
         self.app_data = app_data;
         self

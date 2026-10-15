@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 
-use super::multiagent::MultiAgent;
+use super::events::OrchestratorRef;
 use crate::error::{Error, Result};
 
 /// An orchestrator extension. `init_multi_agent` runs once, when the orchestrator initializes.
@@ -16,8 +16,9 @@ use crate::error::{Error, Result};
 pub trait MultiAgentPlugin: Send + Sync {
     /// Unique plugin name; duplicates are rejected.
     fn name(&self) -> &str;
-    /// Register hooks / configure the orchestrator.
-    async fn init_multi_agent(&self, orchestrator: &dyn MultiAgent) -> Result<()>;
+    /// Register hooks / configure the orchestrator. Takes the shared [`OrchestratorRef`] so a
+    /// plugin can retain a handle (hook callbacks outlive this call).
+    async fn init_multi_agent(&self, orchestrator: &OrchestratorRef) -> Result<()>;
 }
 
 /// Shared plugins are plugins too, so `Arc<P>` works wherever `impl MultiAgentPlugin` is expected.
@@ -27,7 +28,7 @@ impl<P: MultiAgentPlugin + ?Sized> MultiAgentPlugin for Arc<P> {
         (**self).name()
     }
 
-    async fn init_multi_agent(&self, orchestrator: &dyn MultiAgent) -> Result<()> {
+    async fn init_multi_agent(&self, orchestrator: &OrchestratorRef) -> Result<()> {
         (**self).init_multi_agent(orchestrator).await
     }
 }
@@ -80,7 +81,7 @@ impl MultiAgentPluginRegistry {
     ///
     /// Safe to call multiple times: later calls share the first call's outcome, including a
     /// failure — plugin initialization is fail-closed.
-    pub async fn initialize(&self, orchestrator: &dyn MultiAgent) -> Result<()> {
+    pub async fn initialize(&self, orchestrator: &OrchestratorRef) -> Result<()> {
         let mut init = self.inner.init.lock().await;
         match &*init {
             InitState::Done => return Ok(()),
@@ -100,7 +101,7 @@ impl MultiAgentPluginRegistry {
         }
     }
 
-    async fn drain_pending(&self, orchestrator: &dyn MultiAgent) -> Result<()> {
+    async fn drain_pending(&self, orchestrator: &OrchestratorRef) -> Result<()> {
         loop {
             // Pop in its own statement so the guard is dropped before awaiting.
             let next = self.inner.pending.lock().pop_front();
@@ -113,7 +114,7 @@ impl MultiAgentPluginRegistry {
     async fn add_and_init(
         &self,
         plugin: Arc<dyn MultiAgentPlugin>,
-        orchestrator: &dyn MultiAgent,
+        orchestrator: &OrchestratorRef,
     ) -> Result<()> {
         let name = plugin.name().to_owned();
         {
@@ -149,7 +150,7 @@ mod tests {
             "failing-plugin"
         }
 
-        async fn init_multi_agent(&self, _orchestrator: &dyn MultiAgent) -> Result<()> {
+        async fn init_multi_agent(&self, _orchestrator: &OrchestratorRef) -> Result<()> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Err(Error::Plugin("plugin initialization failed".to_owned()))
         }
@@ -169,7 +170,7 @@ mod tests {
 
         for _ in 0..2 {
             let error = registry
-                .initialize(orchestrator.as_ref())
+                .initialize(&orchestrator)
                 .await
                 .expect_err("initialization stays failed");
             assert!(
@@ -192,7 +193,7 @@ mod tests {
         let orchestrator = TestOrchestrator::shared("inner", vec![], MultiAgentResult::new(vec![], 1));
 
         let error = registry
-            .initialize(orchestrator.as_ref())
+            .initialize(&orchestrator)
             .await
             .expect_err("duplicates are rejected");
 
@@ -208,7 +209,7 @@ mod tests {
             "noop-plugin"
         }
 
-        async fn init_multi_agent(&self, _orchestrator: &dyn MultiAgent) -> Result<()> {
+        async fn init_multi_agent(&self, _orchestrator: &OrchestratorRef) -> Result<()> {
             Ok(())
         }
     }

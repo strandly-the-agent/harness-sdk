@@ -57,6 +57,10 @@ impl MultiAgent for TestOrchestrator {
         Ok(self.result.clone())
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn stream_with(&self, _input: MultiAgentInput, _options: MultiAgentInvokeOptions) -> MultiAgentStream {
         let result = MultiAgentStreamEvent::MultiAgentResult(MultiAgentResultEvent {
             result: self.result.clone(),
