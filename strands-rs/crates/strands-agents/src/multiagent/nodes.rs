@@ -580,10 +580,8 @@ impl From<Arc<dyn Node>> for NodeDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hooks::HookRegistry;
-    use crate::multiagent::events::MultiAgentResultEvent;
     use crate::multiagent::state::{MultiAgentResult, MultiAgentState};
-    use crate::multiagent::MultiAgentStream;
+    use crate::multiagent::test_orchestrator::TestOrchestrator;
     use crate::test_support::{MockMessageModel, MockResponse};
     use crate::types::{ContentBlock, Message};
     use serde_json::json;
@@ -891,70 +889,6 @@ mod tests {
                 .any(|spec| spec.input_schema.as_ref() == Some(&schema)),
             "structured output schema reached the model as a tool spec"
         );
-    }
-
-    /// Minimal orchestrator that replays canned events then its result.
-    struct TestOrchestrator {
-        id: String,
-        hooks: HookRegistry,
-        events: Vec<MultiAgentStreamEvent>,
-        result: MultiAgentResult,
-    }
-
-    impl TestOrchestrator {
-        fn shared(
-            id: &str,
-            events: Vec<MultiAgentStreamEvent>,
-            result: MultiAgentResult,
-        ) -> Arc<dyn MultiAgent> {
-            Arc::new(Self {
-                id: id.to_owned(),
-                hooks: HookRegistry::default(),
-                events,
-                result,
-            })
-        }
-    }
-
-    impl MultiAgent for TestOrchestrator {
-        fn id(&self) -> &str {
-            &self.id
-        }
-
-        fn name(&self) -> &str {
-            &self.id
-        }
-
-        fn hooks(&self) -> &HookRegistry {
-            &self.hooks
-        }
-
-        fn invoke_with<'a>(
-            &'a self,
-            _input: MultiAgentInput,
-            _options: MultiAgentInvokeOptions,
-        ) -> BoxFuture<'a, Result<MultiAgentResult>> {
-            Box::pin(async move { Ok(self.result.clone()) })
-        }
-
-        fn stream_with(
-            &self,
-            _input: MultiAgentInput,
-            _options: MultiAgentInvokeOptions,
-        ) -> MultiAgentStream {
-            let result = MultiAgentStreamEvent::MultiAgentResult(MultiAgentResultEvent {
-                result: self.result.clone(),
-                invocation_state: InvocationState::new(),
-            });
-            let events: Vec<_> = self
-                .events
-                .iter()
-                .cloned()
-                .chain(std::iter::once(result))
-                .map(Ok)
-                .collect();
-            MultiAgentStream::new(Box::pin(futures::stream::iter(events)))
-        }
     }
 
     fn inner_result(status: ResultStatus) -> MultiAgentResult {

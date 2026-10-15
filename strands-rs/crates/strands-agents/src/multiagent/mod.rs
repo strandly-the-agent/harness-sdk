@@ -1,13 +1,18 @@
 //! Multi-agent orchestration: shared state, events, and the [`MultiAgent`] trait every
 //! orchestrator (Graph, Swarm, …) implements (`strands-ts/src/multiagent/`).
 
+pub mod edge;
 pub mod events;
 // Mirrors the TS file layout (`multiagent/multiagent.ts`).
 #[allow(clippy::module_inception)]
 pub mod multiagent;
 pub mod nodes;
+pub mod plugins;
 pub mod state;
+#[cfg(test)]
+pub(crate) mod test_orchestrator;
 
+pub use edge::{edge_handler, Edge, EdgeDefinition, EdgeHandler};
 pub use events::{
     AfterMultiAgentInvocationEvent, AfterNodeCallEvent, BeforeMultiAgentInvocationEvent, BeforeNodeCallEvent,
     MultiAgentHandoffEvent, MultiAgentInitializedEvent, MultiAgentResultEvent, MultiAgentStreamEvent,
@@ -22,6 +27,7 @@ pub use nodes::{
     run_node, AgentNode, AgentNodeOptions, MultiAgentNode, MultiAgentNodeOptions, Node, NodeConfig,
     NodeDefinition, NodeInputOptions, NodeSink, NodeType,
 };
+pub use plugins::{MultiAgentPlugin, MultiAgentPluginRegistry};
 pub use state::{
     aggregate_node_usage, resolve_status, MultiAgentResult, MultiAgentState, MultiAgentStateHandle,
     NodeResult, NodeResultUpdate, NodeState, ResultStatus, Status,
