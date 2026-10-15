@@ -8,6 +8,7 @@ pub mod events;
 pub mod multiagent;
 pub mod nodes;
 pub mod plugins;
+pub mod snapshot;
 pub mod state;
 #[cfg(test)]
 pub(crate) mod test_orchestrator;
@@ -28,6 +29,7 @@ pub use nodes::{
     NodeDefinition, NodeInputOptions, NodeSink, NodeType,
 };
 pub use plugins::{MultiAgentPlugin, MultiAgentPluginRegistry};
+pub use snapshot::{load_snapshot, take_snapshot, TakeMultiAgentSnapshotOptions};
 pub use state::{
     aggregate_node_usage, resolve_status, MultiAgentResult, MultiAgentState, MultiAgentStateHandle,
     NodeResult, NodeResultUpdate, NodeState, ResultStatus, Status,
