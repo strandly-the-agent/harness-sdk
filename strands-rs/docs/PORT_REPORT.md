@@ -340,6 +340,7 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   `SteeringProviders`/`SteeringAction` (TS's abstract `SteeringHandler`), `LlmSteeringHandler`
   (model-judged guidance, TS prompt text verbatim), `SteeringContextProvider` + `ToolLedgerProvider`.
   Adds a defaulted `InterventionHandler::observe_agent` so providers can self-register hooks (TS
-  `LifecycleObserver`). 21 unit tests pass; clippy clean. Tool-call gate only — Rust has no
-  after-model intervention gate. Agent-loop and live-Bedrock suites still to come; see
+  `LifecycleObserver`). 21 unit tests + 4 agent-loop tests (`tests/steering_loop.rs`) pass, and the
+  live `tests/integ_steering.rs` passes against Bedrock haiku 4.5 in us-west-2; clippy clean.
+  Tool-call gate only — Rust has no after-model intervention gate; see
   `docs/matrices/steering.md`.

@@ -86,8 +86,24 @@ so it is asserted rather than assumed).
 - **Prompt builder returns `Vec<ContentBlock>`** — TS's `string | ContentBlock[]` union has no
   ergonomic Rust equivalent; `ContentBlock::text` covers the string case.
 
-## Not yet done (next session)
+## Loop and live tests
 
-- `crates/strands-agents/tests/steering_loop.rs` — agent-loop coverage with `MockMessageModel`.
-- `crates/strands-agents/tests/integ_steering.rs` — live Bedrock haiku as judge + agent,
-  `#[ignore = "live …"]`.
+`crates/strands-agents/tests/steering_loop.rs` (4 tests, `MockMessageModel` for the agent and a
+separate scripted judge): `guide_cancels_the_tool_and_the_parent_model_sees_the_guidance`,
+`proceed_lets_the_tool_run`, `confirm_interrupts_and_the_humans_answer_decides` (approve and deny),
+`the_tool_ledger_accumulates_across_turns_of_one_invocation`.
+
+`crates/strands-agents/tests/integ_steering.rs` — `#[ignore = "live Bedrock"]`, haiku 4.5 as both
+agent and judge, system prompt forbidding `delete_file`; asserts the tool never ran and a
+`GUIDANCE:` tool result reached the agent. Passes against us-west-2.
+
+Note on the gate re-running: a `confirm` decision is evaluated again when the invocation resumes
+(the before-tool-call hook replays and reads the stored interrupt response), so the judge is called
+twice for one confirmed tool call.
+
+## Not yet done
+
+- No crate-root re-export for `LlmSteeringHandler` / `ToolLedgerProvider`: sibling
+  `HumanInTheLoop` has none either (`lib.rs` exports only `InterventionHandler` /
+  `InterventionRegistry`), so sibling style wins. Revisit if `HumanInTheLoop` gets one.
+- After-model steering (see Divergences) — needs a core `InterventionHandler` change.
