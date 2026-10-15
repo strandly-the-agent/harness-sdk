@@ -80,6 +80,16 @@ orchestrator("What should I pack for Seattle this weekend?")
 ```
 
 </Tab>
+<Tab label="Rust">
+
+Rust has no implicit agent-to-tool conversion: call `as_tool()` on the
+specialist and pass the result in `tools`.
+
+```rust
+--8<-- "user-guide/sdk/multi-agent/multi-agent-patterns.rs:agents_as_tools_hub"
+```
+
+</Tab>
 </Tabs>
 
 For structured orchestration, reach for the built-in Graph, Swarm, and Workflow patterns. The rest of this page compares them so you can decide which one fits your problem.
@@ -243,6 +253,16 @@ In addition to `invocationState`, the orchestrator's `MultiAgentState` is shared
 ```typescript
 --8<-- "user-guide/sdk/multi-agent/multi-agent-patterns.ts:multi_agent_state"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+The Rust SDK has no Graph, Swarm, or Workflow yet, so there is no shared
+multi-agent state. Compose agents with [`as_tool()`](#the-smallest-multi-agent-system)
+instead.
 </Tab>
 </Tabs>
 
