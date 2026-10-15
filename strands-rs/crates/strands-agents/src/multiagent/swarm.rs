@@ -290,7 +290,7 @@ impl Swarm {
         // Reuse the state of a prior INTERRUPTED run so `invoke(responses)` resumes on the same
         // instance without a session manager.
         let pending = self.pending_interrupt_state().take();
-        let run = Invocation {
+        let mut run = Invocation {
             orchestrator: Arc::new(self.clone()),
             state: pending.unwrap_or_else(|| {
                 MultiAgentStateHandle::new(MultiAgentState::new(self.0.nodes.keys().cloned()))
@@ -298,9 +298,7 @@ impl Swarm {
             // Shared by reference across every node, so mutations in one are visible to the next.
             invocation_state: options.invocation_state.unwrap_or_default(),
             cancel: options.cancel,
-            // The timer starts fresh per invocation: human response time between resumes is not
-            // deducted.
-            deadline: deadline_after(self.0.config.timeout),
+            deadline: None,
         };
 
         // A session manager (or any plugin) may restore `state.results` from this hook.
@@ -318,6 +316,11 @@ impl Swarm {
         // Routing runs before the guarded section, as in TS, so a resume that cannot be routed
         // never reaches the after-invocation hook.
         let routed = self.route(&input, &run)?;
+
+        // Armed after the before-invocation hook and routing, as TS does (`swarm.ts:331-335`), so a
+        // slow session restore does not eat the budget. The timer starts fresh per invocation:
+        // human response time between resumes is not deducted.
+        run.deadline = deadline_after(self.0.config.timeout);
 
         let outcome = self.execute(&input, routed, &run, tx).await;
 
@@ -1932,6 +1935,28 @@ mod tests {
             error.to_string().starts_with("timeout=<20>, swarm_id=<swarm>"),
             "{error}"
         );
+    }
+
+    #[tokio::test]
+    async fn arms_the_swarm_budget_after_the_before_invocation_hook() {
+        let swarm = Swarm::builder()
+            .node(final_agent("a", "done"))
+            .timeout(Duration::from_millis(500))
+            .build()
+            .expect("swarm builds");
+        // Longer than the budget: under TS's ordering the node still gets the full 500 ms.
+        swarm
+            .hooks()
+            .add_callback_boxed::<BeforeMultiAgentInvocationEvent, _>(|_event| {
+                Box::pin(async {
+                    tokio::time::sleep(Duration::from_millis(600)).await;
+                    Ok(())
+                })
+            });
+
+        let result = swarm.invoke("go").await.expect("swarm runs");
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), ["a"]);
     }
 
     #[tokio::test]
