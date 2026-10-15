@@ -19,6 +19,10 @@
 //!   consumed (TS leaks it).
 //! - Entity type and id are parsed into Cedar's own `EntityUid`, so Python's explicit
 //!   double-quote-injection guards are unnecessary.
+//!
+//! Cedar has no type for JSON floats or `null`, so a tool input containing either (anywhere in
+//! `context.input`) cannot be evaluated and the call is denied with `Cedar evaluation failed: ..`
+//! — as in TS.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -352,15 +356,17 @@ impl CedarAuthorization {
         };
 
         let tool_name = event.tool_use.name.clone();
-        let call_count = self.increment_call_count(event, &tool_name);
+        // Held across the decision so a denial's refund cannot hand budget to a concurrent call.
+        let mut counts = self.call_counts.lock();
+        let call_count = self.increment_call_count(&mut counts, event, &tool_name);
         match self.decide(event, &principal, &tool_name, call_count) {
             Ok(None) => Ok(ToolCallAction::Proceed),
             Ok(Some(reason)) => {
-                self.decrement_call_count(event, &tool_name);
+                self.decrement_call_count(&mut counts, event, &tool_name);
                 Ok(ToolCallAction::Deny(reason))
             }
             Err(error) => {
-                self.decrement_call_count(event, &tool_name);
+                self.decrement_call_count(&mut counts, event, &tool_name);
                 Err(error)
             }
         }
@@ -431,8 +437,12 @@ impl CedarAuthorization {
         .map_err(|e| Error::Plugin(e.to_string()))
     }
 
-    fn increment_call_count(&self, event: &BeforeToolCallEvent, tool_name: &str) -> i64 {
-        let mut counts = self.call_counts.lock();
+    fn increment_call_count(
+        &self,
+        counts: &mut HashMap<String, i64>,
+        event: &BeforeToolCallEvent,
+        tool_name: &str,
+    ) -> i64 {
         if counts.is_empty() {
             if let Some(stored) = event
                 .agent
@@ -444,17 +454,21 @@ impl CedarAuthorization {
         }
         let next = counts.get(tool_name).copied().unwrap_or(0) + 1;
         counts.insert(tool_name.to_owned(), next);
-        persist_call_counts(event, &counts);
+        persist_call_counts(event, counts);
         next
     }
 
-    fn decrement_call_count(&self, event: &BeforeToolCallEvent, tool_name: &str) {
-        let mut counts = self.call_counts.lock();
+    fn decrement_call_count(
+        &self,
+        counts: &mut HashMap<String, i64>,
+        event: &BeforeToolCallEvent,
+        tool_name: &str,
+    ) {
         match counts.get_mut(tool_name) {
             Some(current) if *current > 0 => *current -= 1,
             _ => return,
         }
-        persist_call_counts(event, &counts);
+        persist_call_counts(event, counts);
     }
 }
 
@@ -470,8 +484,15 @@ impl InterventionHandler for CedarAuthorization {
             Err(error) if error.is_control_flow() => Err(error),
             Err(error) => match self.on_error {
                 OnError::Propagate => Err(error),
-                OnError::Deny => Ok(ToolCallAction::Deny(error.to_string())),
-                OnError::Proceed => Ok(ToolCallAction::Proceed),
+                OnError::Deny => Ok(ToolCallAction::Deny(format!("Handler threw: {error}"))),
+                OnError::Proceed => {
+                    tracing::warn!(
+                        handler = "cedar-authorization",
+                        %error,
+                        "proceeding despite authorization failure"
+                    );
+                    Ok(ToolCallAction::Proceed)
+                }
             },
         }
     }
@@ -607,7 +628,7 @@ fn generate_schema(tools: &[ToolSpec], namespace: Option<&str>) -> Result<String
         Some(_) => Ok(schema),
         // Policies in the empty namespace (`Action::"search"`) only validate against an
         // un-namespaced schema, so unwrap the generated `namespace Agent { .. }`.
-        None => Ok(strip_namespace(&schema, ns)),
+        None => strip_namespace(&schema, ns),
     }
 }
 
@@ -628,7 +649,7 @@ fn mcp_tool_json(spec: &ToolSpec) -> JsonValue {
     })
 }
 
-fn strip_namespace(schema: &str, namespace: &str) -> String {
+fn strip_namespace(schema: &str, namespace: &str) -> Result<String> {
     let body = schema
         .trim()
         .strip_prefix("namespace")
@@ -639,8 +660,10 @@ fn strip_namespace(schema: &str, namespace: &str) -> String {
         .map(str::trim_end)
         .and_then(|rest| rest.strip_suffix('}'));
     match body {
-        Some(body) => body.replace(&format!("{namespace}::"), ""),
-        None => schema.to_owned(),
+        Some(body) => Ok(body.replace(&format!("{namespace}::"), "")),
+        None => Err(generation_failed(format!(
+            "generated schema is not a `namespace {namespace} {{ .. }}` block"
+        ))),
     }
 }
 
@@ -1373,6 +1396,7 @@ permit(principal is User, action == Action::"query_database", resource) when { p
             .await
             .unwrap()
             .expect("a failing callback must deny");
+        assert!(denial.starts_with("Handler threw: "), "{denial}");
         assert!(denial.contains("resolver crash"), "{denial}");
     }
 
@@ -1549,6 +1573,88 @@ permit(principal is User, action == Action::"query_database", resource) when { p
             .await
             .unwrap(),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn denies_tool_input_cedar_cannot_represent() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new("permit(principal, action, resource);")
+                .with_principal_resolver(fixed_user("User", "alice")),
+        )
+        .unwrap();
+
+        let agent = agent();
+        for input in [
+            serde_json::json!({ "temperature": 0.5 }),
+            serde_json::json!({ "note": null }),
+        ] {
+            let denial = gate(&cedar, &agent, "search", input.clone(), no_state())
+                .await
+                .unwrap()
+                .unwrap_or_else(|| panic!("{input} has no Cedar type, so it must be denied"));
+            assert!(denial.starts_with("Cedar evaluation failed: "), "{denial}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_enricher_cannot_overwrite_hour_utc_or_call_count() {
+        let cedar = CedarAuthorization::new(
+            CedarAuthorizationConfig::new(
+                r#"permit(principal, action, resource) when { context.session.hour_utc != 99 && context.session.call_count == 1 };"#,
+            )
+            .with_principal_resolver(fixed_user("User", "alice"))
+            .with_context_enricher(Arc::new(|_| {
+                Ok(Map::from_iter([
+                    ("hour_utc".to_owned(), 99.into()),
+                    ("call_count".to_owned(), 99.into()),
+                ]))
+            })),
+        )
+        .unwrap();
+
+        assert_eq!(
+            gate(&cedar, &agent(), "search", serde_json::json!({}), no_state())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn validates_nested_tool_input_schemas_without_breaking() {
+        let nested = ToolSpec::new("create_user", "create a user").with_input_schema(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "address": {
+                            "type": "object",
+                            "properties": { "city": { "type": "string" } },
+                        },
+                    },
+                },
+            },
+            "required": ["user"],
+        }));
+        let schema = generate_schema(std::slice::from_ref(&nested), None).unwrap();
+        assert!(schema.contains(r#"action "create_user""#), "{schema}");
+
+        CedarAuthorization::new(
+            CedarAuthorizationConfig::new(r#"permit(principal, action == Action::"create_user", resource);"#)
+                .with_tools(vec![nested]),
+        )
+        .expect("a nested input schema must still validate");
+    }
+
+    #[test]
+    fn stripping_a_namespace_from_an_unnamespaced_schema_is_an_error() {
+        let error = strip_namespace("entity User;", "Agent").expect_err("expected an error");
+        assert!(
+            error.to_string().starts_with("Schema generation failed: "),
+            "{error}"
         );
     }
 }

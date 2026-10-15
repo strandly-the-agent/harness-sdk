@@ -72,7 +72,7 @@ All Rust tests live in `cedar.rs` `mod tests` unless noted.
 | catches unknown action names via auto-generated schema | `catches_unknown_action_names_via_auto_generated_schema` | pass |
 | allows policies referencing context.session (handler-injected, not in schema) | `allows_policies_referencing_context_session_not_in_the_generated_schema` | pass |
 | allows tool calls when tools config is provided | `auto_generates_schema_and_validates_policies_when_tools_are_provided` (construction) + `works_with_a_namespace_and_tools` (runtime decision) | pass |
-| validates nested tool input schemas without breaking | — | **gap**: nested inputs are only exercised through the collision test below |
+| validates nested tool input schemas without breaking | `validates_nested_tool_input_schemas_without_breaking` | pass |
 | surfaces schema generator errors for naming collisions in nested inputs | `surfaces_schema_generator_errors_for_naming_collisions_in_nested_inputs` | pass |
 | uses namespaced action and resource types when namespace is set | `uses_namespaced_action_and_resource_types` | pass |
 | denies when principal is not in the role (namespaced) | `uses_namespaced_action_and_resource_types` (second half) | pass |
@@ -110,3 +110,15 @@ keeps one end-to-end loop test, `tests/cedar_loop.rs`, for the wiring.
 `strip_namespace` is string surgery on generator output, kept because it reproduces the TS
 generated-schema shape; it would break if the generator's formatting changes. The alternative is to
 validate un-namespaced policy sets against a namespaced schema with the namespace prepended.
+
+## Review disposition (round 1)
+
+| Finding | Disposition |
+| --- | --- |
+| 🟠 `OnError::Deny` must prefix `Handler threw: ` | fixed — `Deny(format!("Handler threw: {error}"))`; asserted in `denies_when_on_error_is_deny_and_a_callback_fails` |
+| 🟠 float/`null` tool input is denied, undocumented + untested | fixed — module `//!` note + `denies_tool_input_cedar_cannot_represent` |
+| 🟠 silent fail-open on `OnError::Proceed` | fixed — `tracing::warn!(handler = "cedar-authorization", %error, ..)` |
+| 🟡 `increment → decide → decrement` not atomic | fixed — the `call_counts` guard is taken once in `authorize` and passed `&mut` into increment/decrement, so the decision happens inside the lock |
+| 🟡 only `CedarAuthorization` re-exported from `vended` | fixed — `CedarAuthorizationConfig`, `CedarSource`, `EntityRef`, `OnError` re-exported too |
+| 🟡 enricher-cannot-override guarantee untested | fixed — `an_enricher_cannot_overwrite_hour_utc_or_call_count` |
+| 🟡 `strip_namespace` falls through on `None` | fixed — the `None` arm returns `Err(generation_failed(..))`; `stripping_a_namespace_from_an_unnamespaced_schema_is_an_error` |

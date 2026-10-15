@@ -5,5 +5,5 @@ pub mod cedar;
 pub mod hitl;
 
 #[cfg(feature = "cedar")]
-pub use cedar::CedarAuthorization;
+pub use cedar::{CedarAuthorization, CedarAuthorizationConfig, CedarSource, EntityRef, OnError};
 pub use hitl::HumanInTheLoop;
