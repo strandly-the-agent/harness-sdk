@@ -348,12 +348,7 @@ describe('resolveModel', () => {
     expect(model.getConfig().maxTokens).toBe(maxTokens)
   })
 
-  it.each(['claude-haiku-latest', 'claude-haiku'])('falls open to adaptive for %s', async (modelId) => {
-    const model = await resolve(`bedrock/global.anthropic.${modelId}`)
-    expect(model.getConfig().additionalRequestFields).toEqual(ADAPTIVE)
-  })
-
-  it('clamps the budget below a small max tokens', async () => {
+  it('clamps a version-led id against the anthropic-direct fallback', async () => {
     const model = await resolve('anthropic/claude-4-5-haiku', 'max')
     expect(model.getConfig().maxTokens).toBe(32_000)
     expect(model.getConfig().params).toEqual({ thinking: { type: 'enabled', budget_tokens: 31_999 } })
@@ -659,7 +654,7 @@ describe('supportsThinking', () => {
     expect(supportsThinking(`bedrock/global.anthropic.${modelId}`)).toBe(thinks)
   })
 
-  it.each(['claude-opus-latest', 'claude-sonnet-latest', 'claude-opus-100'])(
+  it.each(['claude-opus-latest', 'claude-sonnet-latest', 'claude-haiku-latest', 'claude-haiku', 'claude-opus-100'])(
     'fails open to adaptive for %s, whose version does not parse',
     async (modelId) => {
       expect(supportsThinking(`bedrock/global.anthropic.${modelId}`)).toBe(true)
