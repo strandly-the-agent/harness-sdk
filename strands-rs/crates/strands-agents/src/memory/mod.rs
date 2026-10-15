@@ -13,8 +13,9 @@ pub mod types;
 
 #[cfg(feature = "bedrock-kb")]
 pub use bedrock_knowledge_base::{
-    AccessControlEntry, BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseS3Config, BedrockKnowledgeBaseStore,
-    BedrockKnowledgeBaseStoreConfig, DataSourceType, FilterAttribute, KnowledgeBaseType, RetrievalFilter,
+    AccessControlAccess, AccessControlEntry, BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseS3Config,
+    BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig, DataSourceType, FilterAttribute,
+    KnowledgeBaseType, RetrievalFilter,
 };
 pub use extraction::{
     create_key_aware_extractor, resolve_extraction_config, ExtractionSetting, ModelExtractor,

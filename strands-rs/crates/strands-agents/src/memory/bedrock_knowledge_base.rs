@@ -15,17 +15,15 @@
 //! - Metadata attribute values go through an owned `AttributeValue`, which serves both the inline
 //!   `CUSTOM` attributes and the JSON S3 sidecar (TS reuses the SDK type for both).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use aws_sdk_bedrockagent::types as agent;
 use aws_sdk_bedrockagentruntime::types as rt;
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use aws_smithy_types::error::operation::BuildError;
-use aws_smithy_types::{Document, Number};
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
+use crate::aws_document::{document_to_json, json_to_document};
 use crate::error::{Error, Result};
 use crate::memory::types::{ExtractionConfig, MemoryEntry, MemoryStore, Metadata, SearchOptions};
 use crate::types::JsonValue;
@@ -88,8 +86,27 @@ pub struct AccessControlEntry {
     pub name: String,
     /// Principal type (e.g. `USER`, `GROUP`).
     pub r#type: String,
-    /// Access level (e.g. `ALLOW`).
-    pub access: String,
+    /// Access level granted to the principal.
+    pub access: AccessControlAccess,
+}
+
+/// Access level of an [`AccessControlEntry`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccessControlAccess {
+    /// Grant access.
+    Allow,
+    /// Deny access.
+    Deny,
+}
+
+impl AccessControlAccess {
+    /// The wire value Bedrock expects (`ALLOW` / `DENY`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Allow => "ALLOW",
+            Self::Deny => "DENY",
+        }
+    }
 }
 
 /// An owned retrieval filter, converted to the SDK type when a search runs.
@@ -144,7 +161,7 @@ impl FilterAttribute {
     fn to_sdk(&self) -> Result<rt::FilterAttribute> {
         rt::FilterAttribute::builder()
             .key(self.key.clone())
-            .value(json_to_document(&self.value))
+            .value(json_to_document(&self.value)?)
             .build()
             .map_err(|error| Error::other(format!("BedrockKnowledgeBaseStore: invalid filter: {error}")))
     }
@@ -251,8 +268,22 @@ pub struct BedrockKnowledgeBaseStore {
 }
 
 impl BedrockKnowledgeBaseStore {
+    /// Read-only store over `knowledge_base_id`, which also names the store.
+    pub async fn new(knowledge_base_id: impl Into<String>) -> Result<Self> {
+        let knowledge_base_id = knowledge_base_id.into();
+        Self::with_config(BedrockKnowledgeBaseStoreConfig {
+            name: knowledge_base_id.clone(),
+            config: BedrockKnowledgeBaseConfig {
+                knowledge_base_id,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+    }
+
     /// Store over the knowledge base named by `config`, building any client it does not supply.
-    pub async fn new(config: BedrockKnowledgeBaseStoreConfig) -> Result<Self> {
+    pub async fn with_config(config: BedrockKnowledgeBaseStoreConfig) -> Result<Self> {
         let connection = config.config;
         if connection.knowledge_base_id.is_empty() {
             return Err(Error::other(
@@ -598,7 +629,7 @@ impl BedrockKnowledgeBaseStore {
             .iter()
             .flatten()
             .map(|entry| {
-                serde_json::json!({ "Name": entry.name, "Type": entry.r#type, "Access": entry.access })
+                serde_json::json!({ "Name": entry.name, "Type": entry.r#type, "Access": entry.access.as_str() })
             })
             .collect()
     }
@@ -843,10 +874,6 @@ impl MemoryStore for BedrockKnowledgeBaseStore {
     }
 }
 
-/// Whether a retrieval score sits inside the configured bound.
-///
-/// Unset bounds keep everything, and so does an unscored result: there is nothing to compare it
-/// against, and a bound should not silently discard entries whose relevance is unknown.
 /// A metadata attribute value in the subset Bedrock accepts (TS `toAttributeValue`), owned so one
 /// resolved list serves both inline `CUSTOM` attributes and the JSON S3 sidecar.
 #[derive(Clone, Debug, PartialEq)]
@@ -943,6 +970,10 @@ fn build_s3_document(content_uri: &str, sidecar_uri: Option<&str>) -> Result<age
     Ok(document.build())
 }
 
+/// Whether a retrieval score sits inside the configured bound.
+///
+/// Unset bounds keep everything, and so does an unscored result: there is nothing to compare it
+/// against, and a bound should not silently discard entries whose relevance is unknown.
 fn passes_score_bound(score: Option<f64>, min_score: Option<f64>, max_score: Option<f64>) -> bool {
     match score {
         None => true,
@@ -980,50 +1011,9 @@ fn location_to_json(location: &rt::RetrievalResultLocation) -> JsonValue {
     JsonValue::Object(map)
 }
 
-fn document_to_json(document: &Document) -> JsonValue {
-    match document {
-        Document::Null => JsonValue::Null,
-        Document::Bool(value) => JsonValue::Bool(*value),
-        Document::String(value) => JsonValue::String(value.clone()),
-        Document::Number(Number::PosInt(value)) => JsonValue::Number((*value).into()),
-        Document::Number(Number::NegInt(value)) => JsonValue::Number((*value).into()),
-        Document::Number(Number::Float(value)) => json_number(*value),
-        Document::Array(values) => JsonValue::Array(values.iter().map(document_to_json).collect()),
-        Document::Object(values) => JsonValue::Object(
-            values
-                .iter()
-                .map(|(key, value)| (key.clone(), document_to_json(value)))
-                .collect(),
-        ),
-    }
-}
-
-fn json_to_document(value: &JsonValue) -> Document {
-    match value {
-        JsonValue::Null => Document::Null,
-        JsonValue::Bool(value) => Document::Bool(*value),
-        JsonValue::String(value) => Document::String(value.clone()),
-        JsonValue::Number(value) => {
-            if let Some(value) = value.as_u64() {
-                Document::Number(Number::PosInt(value))
-            } else if let Some(value) = value.as_i64() {
-                Document::Number(Number::NegInt(value))
-            } else {
-                Document::Number(Number::Float(value.as_f64().unwrap_or_default()))
-            }
-        }
-        JsonValue::Array(values) => Document::Array(values.iter().map(json_to_document).collect()),
-        JsonValue::Object(values) => Document::Object(
-            values
-                .iter()
-                .map(|(key, value)| (key.clone(), json_to_document(value)))
-                .collect::<HashMap<_, _>>(),
-        ),
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     use aws_sdk_bedrockagent::operation::get_knowledge_base::{
@@ -1038,6 +1028,7 @@ mod tests {
     use aws_sdk_s3::operation::put_object::{PutObjectError, PutObjectOutput};
     use aws_smithy_mocks::{mock, mock_client, Rule};
     use aws_smithy_types::error::ErrorMetadata;
+    use aws_smithy_types::{Document, Number};
     use parking_lot::Mutex;
 
     use super::*;
@@ -1083,7 +1074,9 @@ mod tests {
         if config.config.knowledge_base_type.is_none() {
             config.config.knowledge_base_type = Some(KnowledgeBaseType::Vector);
         }
-        BedrockKnowledgeBaseStore::new(config).await.expect("builds")
+        BedrockKnowledgeBaseStore::with_config(config)
+            .await
+            .expect("builds")
     }
 
     fn vector_config(
@@ -1203,7 +1196,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_a_store_limit_below_one() {
-        let error = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+        let error = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
             name: "kb".to_owned(),
             config: BedrockKnowledgeBaseConfig {
                 knowledge_base_id: "kb-123".to_owned(),
@@ -1224,7 +1217,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_min_and_max_score_together() {
-        let error = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+        let error = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
             name: "kb".to_owned(),
             config: BedrockKnowledgeBaseConfig {
                 knowledge_base_id: "kb-123".to_owned(),
@@ -1400,7 +1393,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_a_writable_store_without_a_writable_data_source() {
-        let error = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+        let error = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
             name: "kb".to_owned(),
             config: BedrockKnowledgeBaseConfig {
                 knowledge_base_id: "kb-123".to_owned(),
@@ -1659,7 +1652,7 @@ mod tests {
                 access_control_list: Some(vec![AccessControlEntry {
                     name: "alice".to_owned(),
                     r#type: "USER".to_owned(),
-                    access: "ALLOW".to_owned(),
+                    access: AccessControlAccess::Allow,
                 }]),
                 ..Default::default()
             },
@@ -1692,7 +1685,7 @@ mod tests {
                 access_control_list: Some(vec![AccessControlEntry {
                     name: "alice".to_owned(),
                     r#type: "USER".to_owned(),
-                    access: "ALLOW".to_owned(),
+                    access: AccessControlAccess::Allow,
                 }]),
                 ..Default::default()
             },
@@ -1727,7 +1720,7 @@ mod tests {
                 access_control_list: Some(vec![AccessControlEntry {
                     name: "alice".to_owned(),
                     r#type: "USER".to_owned(),
-                    access: "ALLOW".to_owned(),
+                    access: AccessControlAccess::Allow,
                 }]),
                 ..Default::default()
             },
@@ -1857,7 +1850,7 @@ mod tests {
                 access_control_list: Some(vec![AccessControlEntry {
                     name: "alice".to_owned(),
                     r#type: "USER".to_owned(),
-                    access: "ALLOW".to_owned(),
+                    access: AccessControlAccess::Allow,
                 }]),
                 ..Default::default()
             },
@@ -1942,7 +1935,7 @@ mod tests {
 
     /// A store that must ask `GetKnowledgeBase` for its type, with `agent` serving the lookup.
     async fn detecting_store(retrieve: &Rule, agent: &Rule) -> BedrockKnowledgeBaseStore {
-        BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+        BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
             name: "kb".to_owned(),
             config: BedrockKnowledgeBaseConfig {
                 knowledge_base_id: "kb-123".to_owned(),
@@ -2016,7 +2009,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_an_empty_knowledge_base_id() {
-        let error = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+        let error = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
             name: "kb".to_owned(),
             config: BedrockKnowledgeBaseConfig {
                 runtime_client: Some(mock_client!(aws_sdk_bedrockagentruntime, [&no_op_rule()])),
@@ -2239,7 +2232,7 @@ mod tests {
         config.name = "kb".to_owned();
         config.config.knowledge_base_id = "kb-123".to_owned();
         config.config.runtime_client = Some(mock_client!(aws_sdk_bedrockagentruntime, [&no_op_rule()]));
-        BedrockKnowledgeBaseStore::new(config)
+        BedrockKnowledgeBaseStore::with_config(config)
             .await
             .map(|_| ())
             .expect_err("rejects")

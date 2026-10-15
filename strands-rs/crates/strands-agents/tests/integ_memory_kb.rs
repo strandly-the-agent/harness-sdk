@@ -31,7 +31,7 @@ async fn ingests_a_document_and_searches_the_knowledge_base() {
     let data_source_id = env::var("STRANDS_TEST_KB_DATA_SOURCE_ID").ok();
     let writable = data_source_id.is_some();
 
-    let store = BedrockKnowledgeBaseStore::new(BedrockKnowledgeBaseStoreConfig {
+    let store = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
         name: "live-kb".to_owned(),
         scope: Some("strandly-managed-integ".to_owned()),
         writable: Some(writable),
