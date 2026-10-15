@@ -116,7 +116,7 @@ impl S3StorageBuilder {
 }
 
 /// `"a//b"` → `"a/b/"`, empty stays empty (`normalizePrefix` plus a trailing separator).
-fn resolve_prefix(prefix: Option<&str>) -> Result<String> {
+pub(crate) fn resolve_prefix(prefix: Option<&str>) -> Result<String> {
     let Some(prefix) = prefix else {
         return Ok(String::new());
     };
@@ -129,7 +129,7 @@ fn resolve_prefix(prefix: Option<&str>) -> Result<String> {
     }
 }
 
-async fn s3_client(region: Option<&str>) -> Client {
+pub(crate) async fn s3_client(region: Option<&str>) -> Client {
     let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .load()
         .await;
