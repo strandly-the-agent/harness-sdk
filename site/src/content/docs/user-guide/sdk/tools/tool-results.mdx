@@ -49,6 +49,19 @@ The `ToolResultBlock` schema:
 }
 ```
 </Tab>
+<Tab label="Rust">
+
+The `ToolResultBlock` struct:
+
+```rust
+pub struct ToolResultBlock {
+    pub tool_use_id: String,
+    pub status: ToolResultStatus,       // Success | Error
+    pub content: Vec<ToolResultContent>,
+    pub error: Option<Arc<BoxError>>,   // in-memory only, never serialized
+}
+```
+</Tab>
 </Tabs>
 
 ## Content Types
@@ -60,8 +73,9 @@ output:
 - `json`: any JSON-serializable data structure
 
 Both SDKs also accept `image` and `document` blocks; TypeScript additionally
-accepts `video`. A single result can mix block types, for example a text summary
-alongside a JSON payload.
+accepts `video`. In Rust these are the variants of the `ToolResultContent` enum:
+`Text`, `Json`, `Image`, `Video` and `Document`. A single result can mix block
+types, for example a text summary alongside a JSON payload.
 
 ## Response Examples
 
@@ -130,6 +144,20 @@ An error response carries an `'error'` status and an optional [`Error`](https://
 }
 ```
 </Tab>
+<Tab label="Rust">
+
+A success result carries `ToolResultStatus::Success` and one or more content blocks:
+
+```rust
+--8<-- "user-guide/sdk/tools/tool-results.rs:success_result"
+```
+
+`ToolResultBlock::error` builds an error result from a single message; `with_error(err)` attaches the originating error, which stays in memory and is never serialized:
+
+```rust
+--8<-- "user-guide/sdk/tools/tool-results.rs:error_result"
+```
+</Tab>
 </Tabs>
 
 ## How Return Values Become Tool Results
@@ -150,5 +178,14 @@ The `tool()` function converts a callback's return value into a `ToolResultBlock
 
 1. A value of type `string | number | boolean | null | { [key: string]: JSONValue } | JSONValue[]` is converted to a `ToolResultBlock`.
 2. A thrown exception is caught and converted to an error response.
+</Tab>
+<Tab label="Rust">
+
+`#[tool]` and `FunctionTool` serialize the handler's return value (any `Serialize` type) and wrap it with `tools::wrap_in_tool_result`:
+
+1. A string, number or boolean becomes a single text block; `null` becomes the text `"null"`.
+2. A single-key object that already is a content block (`{"text": ..}`, `{"json": ..}`, `{"image": ..}`) is used as that block, and an array of such objects becomes those blocks.
+3. Anything else becomes a `json` block; a plain array is wrapped as `{"$value": [..]}`, because Bedrock only accepts objects as JSON content.
+4. An `Err` from a handler returning `Result<T, E>` becomes an error result whose text is `Error: <message>`, except for the control-flow errors `Error::Interrupt` and `Error::Cancelled`, which propagate so they still pause or cancel the event loop.
 </Tab>
 </Tabs>
