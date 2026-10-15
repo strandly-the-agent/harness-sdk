@@ -1,9 +1,14 @@
 //! Vended tools shipped with the SDK (`strands-ts/src/vended-tools/`).
 
+mod file_editor;
 mod handoff_to_user;
 mod shell;
 mod sleep;
 
+pub use file_editor::{
+    FileEditorConfig, FileEditorTool, DEFAULT_FILE_EDITOR_DESCRIPTION, DEFAULT_MAX_FILE_SIZE,
+    FILE_EDITOR_TOOL_NAME,
+};
 pub use handoff_to_user::{
     HandoffToUserConfig, HandoffToUserTool, DEFAULT_HANDOFF_TO_USER_DESCRIPTION, HANDOFF_INTERRUPT_NAME,
     HANDOFF_TO_USER_TOOL_NAME,

@@ -113,7 +113,7 @@ pub use sandbox::{
 };
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
-pub use tools::vended::{HandoffToUserTool, ShellTool, SleepTool};
+pub use tools::vended::{FileEditorTool, HandoffToUserTool, ShellTool, SleepTool};
 pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
 };
