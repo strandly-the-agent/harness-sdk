@@ -8,17 +8,23 @@
 //!   hands back `aws_smithy_types::Document`, so numbers need no unwrapping.
 //! - `_sourceLocation` carries the location *type* plus its URI/id rather than the raw SDK shape,
 //!   which has no serde representation.
-//! - The agent client is built lazily like TS, via a [`OnceCell`](tokio::sync::OnceCell).
-//!
-//! The write path (`add`: `IngestKnowledgeBaseDocuments` for `CUSTOM`, S3 `PutObject` + ingest for
-//! `S3`) is not ported yet; the store is read-only until it is.
+//! - The agent client is built lazily like TS, via a [`OnceCell`](tokio::sync::OnceCell); so is the
+//!   S3 client the `S3` write path uses.
+//! - [`MemoryStore::add`] returns `()`, so the document id a write mints is returned by the
+//!   inherent [`BedrockKnowledgeBaseStore::add_document`] instead.
+//! - Metadata attribute values go through an owned `AttributeValue`, which serves both the inline
+//!   `CUSTOM` attributes and the JSON S3 sidecar (TS reuses the SDK type for both).
 
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use aws_sdk_bedrockagent::types as agent;
 use aws_sdk_bedrockagentruntime::types as rt;
+use aws_smithy_types::error::metadata::ProvideErrorMetadata;
+use aws_smithy_types::error::operation::BuildError;
 use aws_smithy_types::{Document, Number};
 use tokio::sync::OnceCell;
+use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::memory::types::{ExtractionConfig, MemoryEntry, MemoryStore, Metadata, SearchOptions};
@@ -69,8 +75,10 @@ pub enum DataSourceType {
 pub struct BedrockKnowledgeBaseS3Config {
     /// Bucket `add` uploads to.
     pub bucket: String,
-    /// Key prefix for uploaded objects.
+    /// Key prefix for uploaded objects; a trailing slash is added when missing.
     pub prefix: Option<String>,
+    /// Pre-built S3 client for uploads; one is built lazily when omitted.
+    pub client: Option<aws_sdk_s3::Client>,
 }
 
 /// Document-level access control entry stamped on writes, for ACL-aware data sources.
@@ -238,6 +246,7 @@ pub struct BedrockKnowledgeBaseStore {
     region: Option<String>,
     runtime_client: aws_sdk_bedrockagentruntime::Client,
     agent_client: OnceCell<aws_sdk_bedrockagent::Client>,
+    s3_client: OnceCell<aws_sdk_s3::Client>,
     kb_type: OnceCell<KnowledgeBaseType>,
 }
 
@@ -282,6 +291,10 @@ impl BedrockKnowledgeBaseStore {
         if let Some(client) = connection.agent_client {
             let _ = agent_client.set(client);
         }
+        let s3_client = OnceCell::new();
+        if let Some(client) = connection.s3.as_ref().and_then(|s3| s3.client.clone()) {
+            let _ = s3_client.set(client);
+        }
         let kb_type = OnceCell::new();
         if let Some(value) = connection.knowledge_base_type {
             let _ = kb_type.set(value);
@@ -309,6 +322,7 @@ impl BedrockKnowledgeBaseStore {
             region: connection.region,
             runtime_client,
             agent_client,
+            s3_client,
             kb_type,
         };
         if writable {
@@ -379,6 +393,289 @@ impl BedrockKnowledgeBaseStore {
             .await
     }
 
+    async fn s3_client(&self) -> &aws_sdk_s3::Client {
+        self.s3_client
+            .get_or_init(|| async {
+                let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .load()
+                    .await;
+                let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
+                if let Some(region) = &self.region {
+                    builder = builder.region(aws_sdk_s3::config::Region::new(region.clone()));
+                }
+                aws_sdk_s3::Client::from_conf(builder.build())
+            })
+            .await
+    }
+
+    /// Ingests `content` with optional `metadata` and returns the id Bedrock now tracks for the
+    /// document: a UUID for a `CUSTOM` data source, the uploaded object's `s3://` URI for `S3`.
+    ///
+    /// Only `CUSTOM` and `S3` data sources accept direct ingestion; other backends are read-only.
+    pub async fn add_document(&self, content: &str, metadata: Option<&Metadata>) -> Result<String> {
+        if !self.writable {
+            return Err(Error::other(
+                "BedrockKnowledgeBaseStore: store is not writable. Set writable: true in config to enable add().",
+            ));
+        }
+        if content.trim().is_empty() {
+            return Err(Error::other(
+                "BedrockKnowledgeBaseStore: content must not be empty.",
+            ));
+        }
+        self.validate_write_config()?;
+        let data_source_id = self.data_source_id.clone().unwrap_or_default();
+
+        // S3 ingests objects, so its document points at objects uploaded first; CUSTOM carries the
+        // text inline. Either way the store mints the id and hands it back to the caller.
+        let (document, document_id) = if self.data_source_type == Some(DataSourceType::S3) {
+            let (content_uri, sidecar_uri) = self.upload_s3_objects(content, metadata).await?;
+            (
+                build_s3_document(&content_uri, sidecar_uri.as_deref())?,
+                content_uri,
+            )
+        } else {
+            let document_id = Uuid::now_v7().to_string();
+            (
+                self.build_custom_document(&document_id, content, metadata)?,
+                document_id,
+            )
+        };
+
+        self.agent_client()
+            .await
+            .ingest_knowledge_base_documents()
+            .knowledge_base_id(&self.knowledge_base_id)
+            .data_source_id(&data_source_id)
+            .documents(document)
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    store = %self.name,
+                    knowledge_base_id = %self.knowledge_base_id,
+                    data_source_id = %data_source_id,
+                    error = %error,
+                    "knowledge base document ingestion failed"
+                );
+                if self.is_missing_acl_error(&error) {
+                    Error::other(
+                        "BedrockKnowledgeBaseStore: ingestion was rejected because the data source has ACL \
+                         awareness enabled but this store has no accessControlList configured. Set \
+                         accessControlList in the store config to write to an ACL-enabled data source.",
+                    )
+                } else {
+                    Error::other(format!(
+                        "BedrockKnowledgeBaseStore: IngestKnowledgeBaseDocuments failed for {}: {error}",
+                        self.knowledge_base_id
+                    ))
+                }
+            })?;
+        Ok(document_id)
+    }
+
+    fn is_missing_acl_error<E: ProvideErrorMetadata>(&self, error: &E) -> bool {
+        self.access_control_list.is_none()
+            && error.code() == Some("ValidationException")
+            && error
+                .message()
+                .is_some_and(|message| message.to_lowercase().contains("accesscontrollist"))
+    }
+
+    /// Uploads the content object plus, when there is anything to attach, a
+    /// `<key>.metadata.json` sidecar beside it; returns their `s3://` URIs. Uploads are not
+    /// transactional: a later failure leaves the objects in the bucket un-ingested.
+    async fn upload_s3_objects(
+        &self,
+        content: &str,
+        metadata: Option<&Metadata>,
+    ) -> Result<(String, Option<String>)> {
+        let s3 = self.s3_config.as_ref().ok_or_else(|| {
+            Error::other("BedrockKnowledgeBaseStore: dataSourceType 'S3' requires config.s3.")
+        })?;
+        let prefix = match s3.prefix.as_deref() {
+            None | Some("") => String::new(),
+            Some(prefix) if prefix.ends_with('/') => prefix.to_owned(),
+            Some(prefix) => format!("{prefix}/"),
+        };
+        let key = format!("{prefix}{}.txt", Uuid::now_v7());
+        let content_uri = self
+            .put_object(&s3.bucket, &key, content.to_owned(), "text/plain; charset=utf-8")
+            .await?;
+
+        let attributes = self.resolve_attributes(metadata);
+        let acl = self.sidecar_acl();
+        if attributes.is_empty() && acl.is_empty() {
+            return Ok((content_uri, None));
+        }
+        let mut body = serde_json::Map::new();
+        body.insert(
+            "metadataAttributes".to_owned(),
+            JsonValue::Object(
+                attributes
+                    .iter()
+                    .map(|(key, value)| {
+                        (
+                            key.clone(),
+                            serde_json::json!({ "value": value.to_json(), "includeForEmbedding": false }),
+                        )
+                    })
+                    .collect(),
+            ),
+        );
+        if !acl.is_empty() {
+            body.insert("accessControlList".to_owned(), JsonValue::Array(acl));
+        }
+        let sidecar_uri = self
+            .put_object(
+                &s3.bucket,
+                &format!("{key}.metadata.json"),
+                JsonValue::Object(body).to_string(),
+                "application/json",
+            )
+            .await?;
+        Ok((content_uri, Some(sidecar_uri)))
+    }
+
+    async fn put_object(&self, bucket: &str, key: &str, body: String, content_type: &str) -> Result<String> {
+        self.s3_client()
+            .await
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(aws_sdk_s3::primitives::ByteStream::from(body.into_bytes()))
+            .content_type(content_type)
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    store = %self.name,
+                    uri = %format!("s3://{bucket}/{key}"),
+                    error = %error,
+                    "S3 upload failed before ingestion"
+                );
+                Error::other(format!(
+                    "BedrockKnowledgeBaseStore: S3 upload to s3://{bucket}/{key} failed: {error}"
+                ))
+            })?;
+        Ok(format!("s3://{bucket}/{key}"))
+    }
+
+    /// Scope plus caller metadata as attribute pairs, dropping keys that collide with the scope key
+    /// and values of unsupported types. Shared by the inline `CUSTOM` and S3 sidecar builders.
+    fn resolve_attributes(&self, metadata: Option<&Metadata>) -> Vec<(String, AttributeValue)> {
+        let mut attributes = Vec::new();
+        if let Some(scope) = &self.scope {
+            attributes.push((
+                self.scope_metadata_key.clone(),
+                AttributeValue::String(scope.clone()),
+            ));
+        }
+        for (key, value) in metadata.into_iter().flatten() {
+            if self.scope.is_some() && key == &self.scope_metadata_key {
+                tracing::warn!(
+                    store = %self.name,
+                    key = %key,
+                    "dropping metadata key that collides with scopeMetadataKey"
+                );
+                continue;
+            }
+            match AttributeValue::from_json(value) {
+                Some(value) => attributes.push((key.clone(), value)),
+                None => tracing::debug!(
+                    store = %self.name,
+                    key = %key,
+                    "dropping metadata value of unsupported type"
+                ),
+            }
+        }
+        attributes
+    }
+
+    /// The sidecar's `accessControlList`, which uses capitalized keys unlike the inline shape.
+    fn sidecar_acl(&self) -> Vec<JsonValue> {
+        self.access_control_list
+            .iter()
+            .flatten()
+            .map(|entry| {
+                serde_json::json!({ "Name": entry.name, "Type": entry.r#type, "Access": entry.access })
+            })
+            .collect()
+    }
+
+    fn build_custom_document(
+        &self,
+        document_id: &str,
+        content: &str,
+        metadata: Option<&Metadata>,
+    ) -> Result<agent::KnowledgeBaseDocument> {
+        let attributes = self.resolve_attributes(metadata);
+        // An inline ACL rides on IN_LINE_ATTRIBUTE metadata, which Bedrock requires to carry at
+        // least one attribute, so an ACL with no scope/metadata has no valid inline shape.
+        if self.access_control_list.is_some() && attributes.is_empty() {
+            return Err(Error::other(
+                "BedrockKnowledgeBaseStore: an inline accessControlList requires at least one metadata \
+                 attribute, but this CUSTOM write has none. Set a scope or pass metadata to add().",
+            ));
+        }
+
+        let custom = agent::CustomContent::builder()
+            .custom_document_identifier(
+                agent::CustomDocumentIdentifier::builder()
+                    .id(document_id)
+                    .build()
+                    .map_err(build_failed)?,
+            )
+            .source_type(agent::CustomSourceType::InLine)
+            .inline_content(
+                agent::InlineContent::builder()
+                    .r#type(agent::InlineContentType::Text)
+                    .text_content(
+                        agent::TextContentDoc::builder()
+                            .data(content)
+                            .build()
+                            .map_err(build_failed)?,
+                    )
+                    .build()
+                    .map_err(build_failed)?,
+            )
+            .build()
+            .map_err(build_failed)?;
+        let mut document = agent::KnowledgeBaseDocument::builder().content(
+            agent::DocumentContent::builder()
+                .data_source_type(agent::ContentDataSourceType::Custom)
+                .custom(custom)
+                .build()
+                .map_err(build_failed)?,
+        );
+
+        if !attributes.is_empty() {
+            let mut document_metadata =
+                agent::DocumentMetadata::builder().r#type(agent::MetadataSourceType::InLineAttribute);
+            for (key, value) in &attributes {
+                document_metadata = document_metadata.inline_attributes(
+                    agent::MetadataAttribute::builder()
+                        .key(key)
+                        .value(value.to_sdk()?)
+                        .build()
+                        .map_err(build_failed)?,
+                );
+            }
+            for entry in self.access_control_list.iter().flatten() {
+                document_metadata = document_metadata.access_control_list(
+                    agent::DocumentAccessControlEntry::builder()
+                        .name(&entry.name)
+                        .r#type(agent::AccessControlPrincipalType::from(entry.r#type.as_str()))
+                        .access(agent::AccessControlAccess::from(entry.access.as_str()))
+                        .build()
+                        .map_err(build_failed)?,
+                );
+            }
+            document = document.metadata(document_metadata.build().map_err(build_failed)?);
+        }
+        Ok(document.build())
+    }
+
     async fn resolve_kb_type(&self) -> Result<KnowledgeBaseType> {
         if let Some(value) = self.kb_type.get() {
             return Ok(*value);
@@ -437,6 +734,14 @@ impl MemoryStore for BedrockKnowledgeBaseStore {
 
     fn extraction(&self) -> Option<&ExtractionConfig> {
         self.extraction.as_ref()
+    }
+
+    fn supports_add(&self) -> bool {
+        self.writable
+    }
+
+    async fn add(&self, content: &str, metadata: Option<&Metadata>) -> Result<()> {
+        self.add_document(content, metadata).await.map(|_| ())
     }
 
     async fn search(&self, query: &str, options: &SearchOptions) -> Result<Vec<MemoryEntry>> {
@@ -542,6 +847,102 @@ impl MemoryStore for BedrockKnowledgeBaseStore {
 ///
 /// Unset bounds keep everything, and so does an unscored result: there is nothing to compare it
 /// against, and a bound should not silently discard entries whose relevance is unknown.
+/// A metadata attribute value in the subset Bedrock accepts (TS `toAttributeValue`), owned so one
+/// resolved list serves both inline `CUSTOM` attributes and the JSON S3 sidecar.
+#[derive(Clone, Debug, PartialEq)]
+enum AttributeValue {
+    String(String),
+    Number(f64),
+    Boolean(bool),
+    StringList(Vec<String>),
+}
+
+impl AttributeValue {
+    fn from_json(value: &JsonValue) -> Option<Self> {
+        match value {
+            JsonValue::String(value) => Some(Self::String(value.clone())),
+            JsonValue::Number(value) => value.as_f64().map(Self::Number),
+            JsonValue::Bool(value) => Some(Self::Boolean(*value)),
+            JsonValue::Array(items) if !items.is_empty() => items
+                .iter()
+                .map(|item| item.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+                .map(Self::StringList),
+            _ => None,
+        }
+    }
+
+    fn to_sdk(&self) -> Result<agent::MetadataAttributeValue> {
+        let builder = agent::MetadataAttributeValue::builder();
+        let builder = match self {
+            Self::String(value) => builder
+                .r#type(agent::MetadataValueType::String)
+                .string_value(value),
+            Self::Number(value) => builder
+                .r#type(agent::MetadataValueType::Number)
+                .number_value(*value),
+            Self::Boolean(value) => builder
+                .r#type(agent::MetadataValueType::Boolean)
+                .boolean_value(*value),
+            Self::StringList(values) => builder
+                .r#type(agent::MetadataValueType::StringList)
+                .set_string_list_value(Some(values.clone())),
+        };
+        builder.build().map_err(build_failed)
+    }
+
+    /// The sidecar JSON for this value, mirroring the SDK attribute shape TS serializes.
+    fn to_json(&self) -> JsonValue {
+        match self {
+            Self::String(value) => serde_json::json!({ "type": "STRING", "stringValue": value }),
+            Self::Number(value) => serde_json::json!({ "type": "NUMBER", "numberValue": value }),
+            Self::Boolean(value) => serde_json::json!({ "type": "BOOLEAN", "booleanValue": value }),
+            Self::StringList(values) => {
+                serde_json::json!({ "type": "STRING_LIST", "stringListValue": values })
+            }
+        }
+    }
+}
+
+fn build_failed(error: BuildError) -> Error {
+    Error::other(format!(
+        "BedrockKnowledgeBaseStore: building the knowledge base document failed: {error}"
+    ))
+}
+
+/// An `S3` document referencing the uploaded content object, with its sidecar as metadata.
+fn build_s3_document(content_uri: &str, sidecar_uri: Option<&str>) -> Result<agent::KnowledgeBaseDocument> {
+    let mut document = agent::KnowledgeBaseDocument::builder().content(
+        agent::DocumentContent::builder()
+            .data_source_type(agent::ContentDataSourceType::S3)
+            .s3(agent::S3Content::builder()
+                .s3_location(
+                    agent::S3Location::builder()
+                        .uri(content_uri)
+                        .build()
+                        .map_err(build_failed)?,
+                )
+                .build())
+            .build()
+            .map_err(build_failed)?,
+    );
+    if let Some(uri) = sidecar_uri {
+        document = document.metadata(
+            agent::DocumentMetadata::builder()
+                .r#type(agent::MetadataSourceType::S3Location)
+                .s3_location(
+                    agent::CustomS3Location::builder()
+                        .uri(uri)
+                        .build()
+                        .map_err(build_failed)?,
+                )
+                .build()
+                .map_err(build_failed)?,
+        );
+    }
+    Ok(document.build())
+}
+
 fn passes_score_bound(score: Option<f64>, min_score: Option<f64>, max_score: Option<f64>) -> bool {
     match score {
         None => true,
@@ -625,7 +1026,13 @@ fn json_to_document(value: &JsonValue) -> Document {
 mod tests {
     use std::sync::Arc;
 
+    use aws_sdk_bedrockagent::operation::ingest_knowledge_base_documents::{
+        IngestKnowledgeBaseDocumentsError, IngestKnowledgeBaseDocumentsInput,
+        IngestKnowledgeBaseDocumentsOutput,
+    };
+    use aws_sdk_bedrockagent::types::error::ValidationException;
     use aws_sdk_bedrockagentruntime::operation::retrieve::{RetrieveError, RetrieveOutput};
+    use aws_sdk_s3::operation::put_object::{PutObjectError, PutObjectOutput};
     use aws_smithy_mocks::{mock, mock_client, Rule};
     use aws_smithy_types::error::ErrorMetadata;
     use parking_lot::Mutex;
@@ -1005,6 +1412,493 @@ mod tests {
         .map(|_| ())
         .expect_err("rejects");
         assert!(error.to_string().contains("dataSourceType"), "{error}");
+    }
+
+    /// Inputs each mocked `IngestKnowledgeBaseDocuments` carried.
+    type Ingested = Arc<Mutex<Vec<IngestKnowledgeBaseDocumentsInput>>>;
+    /// `(bucket, key, content_type, body)` of each mocked `PutObject`.
+    type Uploads = Arc<Mutex<Vec<(String, String, String, String)>>>;
+
+    fn ingest_rule(ingested: &Ingested) -> Rule {
+        let captured = Arc::clone(ingested);
+        mock!(aws_sdk_bedrockagent::Client::ingest_knowledge_base_documents)
+            .match_requests(move |req| {
+                captured.lock().push(req.clone());
+                true
+            })
+            .then_output(|| IngestKnowledgeBaseDocumentsOutput::builder().build())
+    }
+
+    fn validation_rule(message: &'static str) -> Rule {
+        mock!(aws_sdk_bedrockagent::Client::ingest_knowledge_base_documents).then_error(move || {
+            IngestKnowledgeBaseDocumentsError::ValidationException(
+                ValidationException::builder()
+                    .message(message)
+                    .meta(
+                        ErrorMetadata::builder()
+                            .code("ValidationException")
+                            .message(message)
+                            .build(),
+                    )
+                    .build(),
+            )
+        })
+    }
+
+    fn put_object_rule(uploads: &Uploads) -> Rule {
+        let captured = Arc::clone(uploads);
+        mock!(aws_sdk_s3::Client::put_object)
+            .match_requests(move |req| {
+                captured.lock().push((
+                    req.bucket().unwrap_or_default().to_owned(),
+                    req.key().unwrap_or_default().to_owned(),
+                    req.content_type().unwrap_or_default().to_owned(),
+                    String::from_utf8_lossy(req.body().bytes().unwrap_or_default()).into_owned(),
+                ));
+                true
+            })
+            .sequence()
+            .output(|| PutObjectOutput::builder().build())
+            .repeatedly()
+            .build()
+    }
+
+    async fn writable_store(
+        ingest: &Rule,
+        s3: Option<BedrockKnowledgeBaseS3Config>,
+        config: BedrockKnowledgeBaseStoreConfig,
+    ) -> BedrockKnowledgeBaseStore {
+        let mut config = config;
+        config.writable = Some(true);
+        config.config.data_source_id = Some("ds-1".to_owned());
+        config.config.data_source_type = Some(match s3 {
+            Some(_) => DataSourceType::S3,
+            None => DataSourceType::Custom,
+        });
+        config.config.s3 = s3;
+        config.config.agent_client = Some(mock_client!(aws_sdk_bedrockagent, [ingest]));
+        store_with(&no_op_rule(), config).await
+    }
+
+    fn s3_config(prefix: Option<&str>, put: &Rule) -> BedrockKnowledgeBaseS3Config {
+        BedrockKnowledgeBaseS3Config {
+            bucket: "memories".to_owned(),
+            prefix: prefix.map(str::to_owned),
+            client: Some(mock_client!(aws_sdk_s3, [put])),
+        }
+    }
+
+    /// The single document of the single captured ingestion request.
+    fn ingested_document(ingested: &Ingested) -> agent::KnowledgeBaseDocument {
+        let requests = ingested.lock();
+        assert_eq!(requests.len(), 1, "exactly one ingestion");
+        let documents = requests[0].documents();
+        assert_eq!(documents.len(), 1, "exactly one document");
+        documents[0].clone()
+    }
+
+    #[tokio::test]
+    async fn exposes_add_support_from_writable() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(&ingest_rule(&ingested), None, Default::default()).await;
+        assert!(store.supports_add());
+
+        let read_only = store_with(&no_op_rule(), BedrockKnowledgeBaseStoreConfig::default()).await;
+        assert!(!read_only.supports_add());
+    }
+
+    #[tokio::test]
+    async fn rejects_add_on_a_non_writable_store() {
+        let store = store_with(&no_op_rule(), BedrockKnowledgeBaseStoreConfig::default()).await;
+        let error = store.add("fact", None).await.expect_err("rejects");
+        assert!(error.to_string().contains("not writable"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn rejects_blank_content() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(&ingest_rule(&ingested), None, Default::default()).await;
+        let error = store.add_document("   ", None).await.expect_err("rejects");
+        assert!(error.to_string().contains("must not be empty"), "{error}");
+        assert!(ingested.lock().is_empty(), "no ingestion attempted");
+    }
+
+    #[tokio::test]
+    async fn ingests_an_inline_custom_document_and_returns_its_id() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(&ingest_rule(&ingested), None, Default::default()).await;
+
+        let document_id = store.add_document("a fact", None).await.expect("adds");
+
+        let requests = ingested.lock();
+        assert_eq!(requests[0].knowledge_base_id(), Some("kb-123"));
+        assert_eq!(requests[0].data_source_id(), Some("ds-1"));
+        drop(requests);
+        let document = ingested_document(&ingested);
+        let content = document.content().expect("content");
+        assert_eq!(content.data_source_type(), &agent::ContentDataSourceType::Custom);
+        let custom = content.custom().expect("custom content");
+        assert_eq!(custom.source_type(), &agent::CustomSourceType::InLine);
+        assert_eq!(
+            custom.custom_document_identifier().expect("identifier").id(),
+            document_id.as_str(),
+            "the returned id is the document identifier"
+        );
+        let inline = custom.inline_content().expect("inline content");
+        assert_eq!(inline.r#type(), &agent::InlineContentType::Text);
+        assert_eq!(inline.text_content().expect("text").data(), "a fact");
+        assert!(
+            document.metadata().is_none(),
+            "no metadata field without scope or metadata"
+        );
+        assert!(
+            uuid::Uuid::parse_str(&document_id).is_ok(),
+            "document id is a uuid: {document_id}"
+        );
+    }
+
+    #[tokio::test]
+    async fn attaches_the_scope_as_a_leading_inline_attribute() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            None,
+            BedrockKnowledgeBaseStoreConfig {
+                scope: Some("user-1".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        store.add_document("a fact", None).await.expect("adds");
+
+        let document = ingested_document(&ingested);
+        let metadata = document.metadata().expect("metadata");
+        assert_eq!(metadata.r#type(), &agent::MetadataSourceType::InLineAttribute);
+        let attributes = metadata.inline_attributes();
+        assert_eq!(attributes.len(), 1);
+        assert_eq!(attributes[0].key(), "namespace");
+        let value = attributes[0].value().expect("value");
+        assert_eq!(value.r#type(), &agent::MetadataValueType::String);
+        assert_eq!(value.string_value(), Some("user-1"));
+    }
+
+    #[tokio::test]
+    async fn drops_metadata_keys_that_collide_with_the_scope_key() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            None,
+            BedrockKnowledgeBaseStoreConfig {
+                scope: Some("user-1".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let metadata = Metadata::from([("namespace".to_owned(), JsonValue::String("hijack".to_owned()))]);
+
+        store.add_document("a fact", Some(&metadata)).await.expect("adds");
+
+        let document = ingested_document(&ingested);
+        let attributes = document.metadata().expect("metadata").inline_attributes();
+        assert_eq!(attributes.len(), 1, "the colliding key is dropped");
+        assert_eq!(
+            attributes[0].value().expect("value").string_value(),
+            Some("user-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn maps_supported_metadata_types_and_skips_unsupported_ones() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(&ingest_rule(&ingested), None, Default::default()).await;
+        let metadata = Metadata::from([
+            ("text".to_owned(), JsonValue::String("value".to_owned())),
+            ("count".to_owned(), json_number(7.0)),
+            ("flag".to_owned(), JsonValue::Bool(true)),
+            (
+                "tags".to_owned(),
+                JsonValue::Array(vec![JsonValue::String("a".to_owned())]),
+            ),
+            ("nested".to_owned(), JsonValue::Object(Default::default())),
+            ("empty_list".to_owned(), JsonValue::Array(Vec::new())),
+            ("nothing".to_owned(), JsonValue::Null),
+        ]);
+
+        store.add_document("a fact", Some(&metadata)).await.expect("adds");
+
+        let document = ingested_document(&ingested);
+        let attributes = document.metadata().expect("metadata").inline_attributes();
+        let rendered: Vec<(&str, &agent::MetadataValueType)> = attributes
+            .iter()
+            .map(|attribute| (attribute.key(), attribute.value().expect("value").r#type()))
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![
+                ("count", &agent::MetadataValueType::Number),
+                ("flag", &agent::MetadataValueType::Boolean),
+                ("tags", &agent::MetadataValueType::StringList),
+                ("text", &agent::MetadataValueType::String),
+            ],
+            "unsupported values are dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn attaches_the_access_control_list_in_inline_metadata() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            None,
+            BedrockKnowledgeBaseStoreConfig {
+                scope: Some("user-1".to_owned()),
+                access_control_list: Some(vec![AccessControlEntry {
+                    name: "alice".to_owned(),
+                    r#type: "USER".to_owned(),
+                    access: "ALLOW".to_owned(),
+                }]),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        store.add_document("a fact", None).await.expect("adds");
+
+        let document = ingested_document(&ingested);
+        let metadata = document.metadata().expect("metadata");
+        assert_eq!(
+            metadata.inline_attributes().len(),
+            1,
+            "the scope attribute rides along"
+        );
+        let acl = metadata.access_control_list();
+        assert_eq!(acl.len(), 1);
+        assert_eq!(acl[0].name(), "alice");
+        assert_eq!(acl[0].r#type(), &agent::AccessControlPrincipalType::User);
+        assert_eq!(acl[0].access(), &agent::AccessControlAccess::Allow);
+    }
+
+    #[tokio::test]
+    async fn rejects_an_inline_acl_with_no_attributes() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            None,
+            BedrockKnowledgeBaseStoreConfig {
+                access_control_list: Some(vec![AccessControlEntry {
+                    name: "alice".to_owned(),
+                    r#type: "USER".to_owned(),
+                    access: "ALLOW".to_owned(),
+                }]),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let error = store.add_document("a fact", None).await.expect_err("rejects");
+        assert!(error.to_string().contains("at least one metadata"), "{error}");
+        assert!(ingested.lock().is_empty(), "no ingestion attempted");
+    }
+
+    #[tokio::test]
+    async fn rewrites_a_missing_acl_validation_exception() {
+        let store = writable_store(
+            &validation_rule("accessControlList is required for this data source"),
+            None,
+            Default::default(),
+        )
+        .await;
+
+        let error = store.add_document("a fact", None).await.expect_err("fails");
+        assert!(error.to_string().contains("ACL awareness"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn does_not_rewrite_when_an_acl_is_configured() {
+        let store = writable_store(
+            &validation_rule("accessControlList is required for this data source"),
+            None,
+            BedrockKnowledgeBaseStoreConfig {
+                scope: Some("user-1".to_owned()),
+                access_control_list: Some(vec![AccessControlEntry {
+                    name: "alice".to_owned(),
+                    r#type: "USER".to_owned(),
+                    access: "ALLOW".to_owned(),
+                }]),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let error = store.add_document("a fact", None).await.expect_err("fails");
+        assert!(
+            error.to_string().contains("IngestKnowledgeBaseDocuments failed"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn uploads_the_content_object_and_ingests_an_s3_document() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let uploads = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            Some(s3_config(Some("memories"), &put_object_rule(&uploads))),
+            Default::default(),
+        )
+        .await;
+
+        let document_id = store.add_document("a fact", None).await.expect("adds");
+
+        let uploaded = uploads.lock().clone();
+        assert_eq!(uploaded.len(), 1, "no sidecar without scope or metadata");
+        let (bucket, key, content_type, body) = uploaded[0].clone();
+        assert_eq!(bucket, "memories");
+        assert!(key.starts_with("memories/") && key.ends_with(".txt"), "{key}");
+        assert_eq!(content_type, "text/plain; charset=utf-8");
+        assert_eq!(body, "a fact");
+        assert_eq!(document_id, format!("s3://memories/{key}"));
+
+        let document = ingested_document(&ingested);
+        let content = document.content().expect("content");
+        assert_eq!(content.data_source_type(), &agent::ContentDataSourceType::S3);
+        assert_eq!(
+            content
+                .s3()
+                .expect("s3 content")
+                .s3_location()
+                .expect("location")
+                .uri(),
+            document_id.as_str()
+        );
+        assert!(
+            document.metadata().is_none(),
+            "no sidecar means no document metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn does_not_double_the_prefix_slash() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let uploads = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            Some(s3_config(Some("memories/"), &put_object_rule(&uploads))),
+            Default::default(),
+        )
+        .await;
+
+        store.add_document("a fact", None).await.expect("adds");
+
+        let key = uploads.lock()[0].1.clone();
+        assert!(
+            key.starts_with("memories/") && !key.starts_with("memories//"),
+            "{key}"
+        );
+    }
+
+    #[tokio::test]
+    async fn writes_a_sidecar_carrying_scope_and_metadata_and_points_the_document_at_it() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let uploads = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            Some(s3_config(Some("memories"), &put_object_rule(&uploads))),
+            BedrockKnowledgeBaseStoreConfig {
+                scope: Some("user-1".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let metadata = Metadata::from([("nested".to_owned(), JsonValue::Object(Default::default()))]);
+
+        store.add_document("a fact", Some(&metadata)).await.expect("adds");
+
+        let uploaded = uploads.lock().clone();
+        assert_eq!(uploaded.len(), 2, "content object plus sidecar");
+        let (_, content_key, _, _) = uploaded[0].clone();
+        let (_, sidecar_key, sidecar_type, sidecar_body) = uploaded[1].clone();
+        assert_eq!(sidecar_key, format!("{content_key}.metadata.json"));
+        assert_eq!(sidecar_type, "application/json");
+        assert_eq!(
+            serde_json::from_str::<JsonValue>(&sidecar_body).expect("sidecar json"),
+            serde_json::json!({
+                "metadataAttributes": {
+                    "namespace": {
+                        "value": { "type": "STRING", "stringValue": "user-1" },
+                        "includeForEmbedding": false,
+                    }
+                }
+            }),
+            "unsupported metadata values are omitted"
+        );
+
+        let document = ingested_document(&ingested);
+        let document_metadata = document.metadata().expect("metadata");
+        assert_eq!(document_metadata.r#type(), &agent::MetadataSourceType::S3Location);
+        assert_eq!(
+            document_metadata.s3_location().expect("sidecar location").uri(),
+            format!("s3://memories/{sidecar_key}")
+        );
+    }
+
+    #[tokio::test]
+    async fn writes_an_acl_only_sidecar_with_capitalized_keys() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let uploads = Arc::new(Mutex::new(Vec::new()));
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            Some(s3_config(None, &put_object_rule(&uploads))),
+            BedrockKnowledgeBaseStoreConfig {
+                access_control_list: Some(vec![AccessControlEntry {
+                    name: "alice".to_owned(),
+                    r#type: "USER".to_owned(),
+                    access: "ALLOW".to_owned(),
+                }]),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        store.add_document("a fact", None).await.expect("adds");
+
+        let uploaded = uploads.lock().clone();
+        assert_eq!(uploaded.len(), 2, "an ACL alone still warrants a sidecar");
+        assert!(!uploaded[0].1.contains('/'), "no prefix means a bare key");
+        assert_eq!(
+            serde_json::from_str::<JsonValue>(&uploaded[1].3).expect("sidecar json"),
+            serde_json::json!({
+                "metadataAttributes": {},
+                "accessControlList": [{ "Name": "alice", "Type": "USER", "Access": "ALLOW" }],
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn wraps_an_s3_upload_failure_before_any_ingestion() {
+        let ingested = Arc::new(Mutex::new(Vec::new()));
+        let put = mock!(aws_sdk_s3::Client::put_object).then_error(|| {
+            PutObjectError::generic(
+                ErrorMetadata::builder()
+                    .code("AccessDenied")
+                    .message("denied")
+                    .build(),
+            )
+        });
+        let store = writable_store(
+            &ingest_rule(&ingested),
+            Some(s3_config(Some("memories"), &put)),
+            Default::default(),
+        )
+        .await;
+
+        let error = store.add_document("a fact", None).await.expect_err("fails");
+        assert!(
+            error.to_string().contains("S3 upload to s3://memories/"),
+            "{error}"
+        );
+        assert!(ingested.lock().is_empty(), "nothing is ingested");
     }
 
     fn no_op_rule() -> Rule {

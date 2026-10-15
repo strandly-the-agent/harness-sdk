@@ -73,6 +73,8 @@ opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 aws-smithy-mocks.workspace = true
 aws-sdk-bedrockagentruntime = { workspace = true, features = ["test-util"] }
+aws-sdk-bedrockagent = { workspace = true, features = ["test-util"] }
+aws-sdk-s3 = { workspace = true, features = ["test-util"] }
 
 # Test-only stdio MCP server used by tests/mcp_e2e.rs; never built without its feature.
 [[bin]]
