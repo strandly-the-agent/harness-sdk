@@ -33,6 +33,7 @@ pub struct AgentBuilder {
     name: Option<String>,
     description: Option<String>,
     model: Option<Arc<dyn Model>>,
+    model_router: Option<Arc<crate::models::routing::ModelRouter>>,
     aux_model: Option<Arc<dyn Model>>,
     system_prompt: Option<SystemPrompt>,
     messages: Vec<Message>,
@@ -84,7 +85,22 @@ impl AgentBuilder {
         self
     }
 
+    /// Route each invocation among candidate models instead of calling one model.
+    ///
+    /// The router is registered as a plugin and its first candidate's concrete model becomes
+    /// [`Agent::model`], which is what token estimation and the opening before-model hook report;
+    /// the routed model is applied to each model call. A configured router takes precedence over
+    /// [`AgentBuilder::model`] whichever is called first: the model is resolved in
+    /// [`AgentBuilder::build`], never here.
+    pub fn model_router(mut self, router: impl Into<Arc<crate::models::routing::ModelRouter>>) -> Self {
+        self.model_router = Some(router.into());
+        self
+    }
+
     /// Auxiliary model for internal side calls (memory extraction, summarization).
+    ///
+    /// A [`ModelRouter`](crate::models::routing::ModelRouter) is not a `Model`, so TS's
+    /// `auxModel must be a Model or a Bedrock model id, not a ModelRouter` is unrepresentable.
     ///
     /// Defaults to [`AgentBuilder::model`] when unset.
     pub fn aux_model(mut self, model: impl Model + 'static) -> Self {
@@ -286,9 +302,13 @@ impl AgentBuilder {
     /// Plugins are initialized lazily by the first `invoke`/`stream`; call
     /// [`Agent::initialize`] to do it eagerly (e.g. to read a restored session before invoking).
     pub fn build(self) -> Result<Agent> {
-        let model = self
-            .model
-            .ok_or_else(|| Error::DefaultNotConfigured(NO_MODEL_MESSAGE.to_owned()))?;
+        // A router wins over `model()` regardless of the order the two were called in.
+        let model = match self.model_router.as_ref() {
+            Some(router) => router.default_model(),
+            None => self
+                .model
+                .ok_or_else(|| Error::DefaultNotConfigured(NO_MODEL_MESSAGE.to_owned()))?,
+        };
 
         let mut plugins: Vec<Arc<dyn Plugin>> = Vec::new();
         let context_manager = crate::context_manager::ContextManager::from(
@@ -300,6 +320,9 @@ impl AgentBuilder {
             None => plugins.push(Arc::new(DefaultModelRetryStrategy::new(
                 DefaultModelRetryStrategyOptions::default(),
             )?)),
+        }
+        if let Some(router) = &self.model_router {
+            plugins.push(Arc::clone(router) as Arc<dyn Plugin>);
         }
         plugins.extend(self.plugins);
         if !self.interventions.is_empty() {
@@ -364,8 +387,12 @@ impl AgentBuilder {
                 continuations: Default::default(),
                 interrupt_state: Default::default(),
                 middleware: crate::middleware::MiddlewareRegistry::new(),
+                model_router: self.model_router.clone(),
             }),
         };
+        if let Some(router) = &self.model_router {
+            crate::models::routing::ModelRouter::attach_to_agent(router, &agent);
+        }
         Ok(agent)
     }
 }
@@ -379,5 +406,51 @@ impl Agent {
     /// An agent with default everything but the model.
     pub fn new(model: impl Model + 'static) -> Result<Agent> {
         AgentBuilder::new().model(model).build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::routing::ModelRouter;
+    use crate::testing::{MockMessageModel, MockResponse};
+
+    fn mock(text: &str) -> Arc<MockMessageModel> {
+        MockMessageModel::shared(vec![MockResponse::message(Message::assistant(text))])
+    }
+
+    #[tokio::test]
+    async fn the_model_router_wins_over_model_in_either_call_order() {
+        for router_first in [true, false] {
+            let routed = mock("from the router");
+            let direct = mock("from model()");
+            let router = Arc::new(ModelRouter::new(vec![Arc::clone(&routed) as Arc<dyn Model>]).unwrap());
+            let builder = AgentBuilder::new();
+            let agent = if router_first {
+                builder
+                    .model_router(Arc::clone(&router))
+                    .model(Arc::clone(&direct))
+            } else {
+                builder
+                    .model(Arc::clone(&direct))
+                    .model_router(Arc::clone(&router))
+            }
+            .build()
+            .unwrap();
+
+            assert!(
+                Arc::ptr_eq(&agent.model(), &(Arc::clone(&routed) as Arc<dyn Model>)),
+                "router_first={router_first}: agent.model() is not the router's default candidate"
+            );
+
+            let result = agent.invoke("hello").await.unwrap();
+
+            assert_eq!(
+                result.last_message.text(),
+                "from the router",
+                "router_first={router_first}"
+            );
+            assert_eq!(direct.call_count(), 0, "router_first={router_first}");
+        }
     }
 }

@@ -157,6 +157,7 @@ pub(crate) struct AgentInner {
     pub(crate) meter: crate::telemetry::Meter,
     pub(crate) interrupt_state: crate::interrupt::SharedInterruptState,
     pub(crate) middleware: crate::middleware::MiddlewareRegistry,
+    pub(crate) model_router: Option<Arc<crate::models::routing::ModelRouter>>,
 }
 
 /// An agent: a model, a system prompt, tools, and the conversation they share.
@@ -213,6 +214,11 @@ impl Agent {
     /// Replace the model; takes a value or an already shared `Arc<dyn Model>`.
     pub fn set_model(&self, model: impl Model + 'static) {
         *self.inner.model.write() = Arc::new(model);
+    }
+
+    /// The model router this agent was built with, if any (TS `this._modelRouter`).
+    pub(crate) fn model_router(&self) -> Option<&Arc<crate::models::routing::ModelRouter>> {
+        self.inner.model_router.as_ref()
     }
 
     /// The middleware registered on this agent.
@@ -530,6 +536,7 @@ pub(crate) mod test_fixtures {
                 background_tasks: None,
                 continuations: Continuations::default(),
                 middleware: crate::middleware::MiddlewareRegistry::new(),
+                model_router: None,
             }),
         }
     }

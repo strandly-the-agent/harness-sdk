@@ -8,6 +8,7 @@ pub mod defaults;
 mod model;
 #[cfg(feature = "openai")]
 pub mod openai;
+pub mod routing;
 pub mod sse;
 pub mod streaming;
 

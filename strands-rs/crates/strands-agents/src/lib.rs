@@ -113,6 +113,9 @@ pub use memory::{
 };
 #[cfg(feature = "anthropic")]
 pub use models::anthropic::{AnthropicModel, AnthropicModelConfig};
+pub use models::routing::{
+    ClassifierStrategy, FallbackStrategy, ModelRouter, RoutingCandidate, RoutingStrategy,
+};
 pub use models::Model;
 #[cfg(feature = "openai")]
 pub use models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};

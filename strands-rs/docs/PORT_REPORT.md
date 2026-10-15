@@ -335,6 +335,19 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
 
 ## Phase 4
+- **Model router** (`src/models/routing/`): `ModelRouter` (a `Plugin` named
+  `strands:model-router`) picks among `RoutingCandidate`s per invocation — plain models or nested
+  routers — through a `RoutingStrategy` (`FallbackStrategy` default, `ClassifierStrategy` asking a
+  classifier model with TS's verbatim prompt, an injectable-`Sleeper` timeout and
+  `StreamOptions::cancel` as TS's `AbortController`). Selection is wrap-phase middleware on
+  `InvokeModelStage` (TS uses the input phase; `select` is async here), records a `RoutingAttempt`
+  per model failure and switches up to `max_switches`; `routed_model(&agent, &state)` exposes the
+  choice for the life of the invocation. Wired through `AgentBuilder::model_router`. Tests:
+  `cargo test --lib models::routing` 38 passed, `--test model_router_loop` 9 passed,
+  `AWS_REGION=us-west-2 --test integ_model_router -- --ignored` 2 passed live (unknown model id →
+  haiku fallback, and a haiku classifier choosing between two described candidates).
+  TS→Rust mapping, the not-ported `router.test.ts` cases and the divergences are in
+  `docs/matrices/model-router.md`.
 - **Docker + SSH sandboxes** (`src/sandbox/{docker,ssh}.rs`): `DockerSandbox` (`docker exec`) and
   `SshSandbox` (`ssh`, with the TS `ALLOWED_SSH_OPTIONS` allowlist and `BatchMode=yes`) over a new
   shared layer — `sandbox/posix_shell.rs` (TS's `PosixShellSandbox` base class as free functions
