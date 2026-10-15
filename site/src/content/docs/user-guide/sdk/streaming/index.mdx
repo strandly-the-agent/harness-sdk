@@ -4,7 +4,6 @@ description: "Stream AI agent responses in real time. Handle partial results, to
 sidebar:
   label: "Overview"
 tags: [streaming]
-languages: [python, typescript]
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components'
@@ -60,6 +59,12 @@ asyncio.run(main())
 
 ```typescript
 --8<-- "user-guide/sdk/streaming/overview.ts:quick_example_async_iterator"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/streaming/index.rs:quick_example_async_iterator"
 ```
 </Tab>
 </Tabs>

@@ -3,7 +3,6 @@ title: Anatomy of an agent
 description: "The parts you compose into a Strands agent: the loop that reasons and calls tools, the prompts and state that shape it, and the hooks and interventions that control it."
 sidebar:
   label: Overview
-languages: [python, typescript]
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components'
@@ -112,6 +111,13 @@ agent("How many words are in this sentence?")
 --8<-- "user-guide/sdk/agents/index_imports.ts:agent_anatomy_imports"
 
 --8<-- "user-guide/sdk/agents/index.ts:agent_anatomy"
+```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/agents/index.rs:agent_anatomy"
 ```
 
 </Tab>

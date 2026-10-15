@@ -9,7 +9,6 @@ sourceLinks:
   - path: strands-py/src/strands/tools/registry.py
   - path: strands-ts/src/tools/tool.ts
   - path: strands-ts/src/tools/tool-factory.ts
-languages: [python, typescript]
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components'
@@ -93,6 +92,13 @@ agent("What's the weather in Seattle?")
 --8<-- "user-guide/sdk/tools/tools_imports.ts:hub_agent_imports"
 
 --8<-- "user-guide/sdk/tools/tools.ts:hub_agent"
+```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/tools/index.rs:hub_agent"
 ```
 
 </Tab>

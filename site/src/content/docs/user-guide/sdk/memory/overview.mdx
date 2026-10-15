@@ -8,7 +8,6 @@ sourceLinks:
   - path: strands-ts/src/memory/memory-manager.ts
   - path: strands-ts/src/memory/types.ts
 addedDate: 2026-06-17
-languages: [python, typescript]
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components'
@@ -50,7 +49,7 @@ Recall and injection are enabled by default when you attach a store; writing mem
 
 ## A running agent with memory
 
-Attach a memory manager to an agent through the <Syntax py="memory_manager" ts="memoryManager" /> parameter. The [test store](./test-memory-store) needs no cloud account and persists to disk by default, so this agent remembers across restarts with no setup:
+Attach a memory manager to an agent through the <Syntax py="memory_manager" ts="memoryManager" rs="memory_manager" /> parameter. The [test store](./test-memory-store) needs no cloud account and persists to disk by default, so this agent remembers across restarts with no setup:
 
 <Tabs>
 <Tab label="Python">
@@ -72,6 +71,12 @@ agent = Agent(memory_manager=MemoryManager(stores=[store]))
 --8<-- "user-guide/sdk/memory/overview_imports.ts:getting_started_imports"
 
 --8<-- "user-guide/sdk/memory/overview.ts:getting_started"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/overview.rs:getting_started"
 ```
 </Tab>
 </Tabs>
