@@ -50,7 +50,9 @@ async fn answers_boolean_and_choice_questions_on_live_bedrock() {
 
     assert_eq!(
         result.answer("is_complaint").and_then(Answer::as_bool),
-        Some(true)
+        Some(true),
+        "answers: {:?}",
+        result.answers
     );
     assert_eq!(
         result.answer("sentiment").and_then(Answer::as_choice),
