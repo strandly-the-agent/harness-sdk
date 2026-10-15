@@ -5,7 +5,6 @@ sourceLinks:
   - path: harness-py/src/strands_harness/agent.py
 sidebar:
   label: "Checkpoints vs memory"
-languages: [python, typescript]
 ---
 
 Strands harness has two independent ways to remember, and they answer different questions.
@@ -51,6 +50,11 @@ next time you build an agent with the same id:
 
     const agent = await createHarness({ session: { id: 'refactor-parser' } })
     await agent.invoke("Let's refactor the parser. Where should we start?")
+    ```
+  </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/checkpoints-and-memory.rs:checkpoints"
     ```
   </Tab>
 </Tabs>

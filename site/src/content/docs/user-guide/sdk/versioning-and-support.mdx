@@ -3,7 +3,6 @@ title: Versioning and Support Policy
 description: 'How the Strands Harness SDK versions releases: semantic versioning guarantees, experimental feature policies, and deprecation timelines explained.'
 sidebar:
   label: "Versioning & Support"
-languages: [python, typescript]
 ---
 
 ## Overview
@@ -128,6 +127,15 @@ def deprecated_function():
  * Use new_function() instead. See: https://strandsagents.com/...
  */
 export const deprecated_function = () => {}
+```
+</Tab>
+<Tab label="Rust">
+
+Rust uses the standard `#[deprecated]` attribute, so the compiler reports every
+call site at build time.
+
+```rust
+--8<-- "user-guide/sdk/versioning-and-support.rs:deprecation_warning"
 ```
 </Tab>
 </Tabs>

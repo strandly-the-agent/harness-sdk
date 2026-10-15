@@ -3,7 +3,6 @@ title: Contributing to the SDK
 description: 'Contribute to the Strands core SDK for Python and TypeScript: find open issues, set up your development environment, and submit changes for review.'
 sidebar:
   label: "SDK"
-languages: [python, typescript]
 ---
 
 The SDK powers every Strands agent: the agent loop, model integrations, tool execution, and streaming. When you fix a bug or improve performance here, you help every developer who uses Strands.
@@ -124,6 +123,28 @@ npm run format              # Format code with Prettier
 - Use `npm run test:integ` to run integration tests
 - Run `npm run test:all` to test in both Node.js and browser environments
 - Check [CONTRIBUTING.md](https://github.com/strands-agents/harness-sdk/blob/main/CONTRIBUTING.md) for the full development workflow
+</Tab>
+<Tab label="Rust">
+
+The Rust SDK is experimental. Clone the repository and enter the Rust SDK directory:
+
+```bash
+git clone https://github.com/strands-agents/harness-sdk.git
+cd harness-sdk/strands-rs
+```
+
+Cargo manages dependencies, formatting, linting, and tests. Verify your setup:
+
+```bash
+cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features
+```
+
+**Development tips:**
+
+- Most of the SDK sits behind cargo features; run checks with `--all-features`, as CI does
+- Scope a run to one crate with `-p strands-agents` or `-p strands-harness`
+- Check [AGENTS.md](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/AGENTS.md)
+  for Rust conventions and `strands-rs/docs/TESTING.md` for test rules
 </Tab>
 </Tabs>
 

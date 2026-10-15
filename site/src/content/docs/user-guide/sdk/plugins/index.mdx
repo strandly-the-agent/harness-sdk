@@ -5,12 +5,11 @@ description: "Extend agent behavior with plugins. Add steering, guardrails, and 
 sourceLinks:
   - path: strands-py/src/strands/plugins/plugin.py
   - path: strands-ts/src/plugins/plugin.ts
-languages: [python, typescript]
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components'
 
-Plugins change the typical behavior of an agent. They let you introduce concepts like [Skills](https://agentskills.io/specification), [steering](../agents/interventions/steering/), or other behavioral modifications into the agent loop by composing on the low-level primitives the Agent class exposes—`model`, <Syntax py="system_prompt" ts="systemPrompt" />, `messages`, `tools`, and `hooks`. Attach the built-in plugins the SDK ships, or write your own.
+Plugins change the typical behavior of an agent. They let you introduce concepts like [Skills](https://agentskills.io/specification), [steering](../agents/interventions/steering/), or other behavioral modifications into the agent loop by composing on the low-level primitives the Agent class exposes—`model`, <Syntax py="system_prompt" ts="systemPrompt" rs="system_prompt" />, `messages`, `tools`, and `hooks`. Attach the built-in plugins the SDK ships, or write your own.
 
 ## Extend your agent
 
@@ -70,6 +69,13 @@ agent("What time is it right now?")
 --8<-- "user-guide/sdk/plugins/index_imports.ts:hub_agent_imports"
 
 --8<-- "user-guide/sdk/plugins/index.ts:hub_agent"
+```
+
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/index.rs:hub_agent"
 ```
 
 </Tab>

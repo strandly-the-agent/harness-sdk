@@ -4,7 +4,6 @@ description: "See what your agent does in production: capture traces of every mo
 sidebar:
   label: Overview
 tags: [observability]
-languages: [python, typescript]
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components'
@@ -70,6 +69,18 @@ agent("What is agent observability?")
 --8<-- "user-guide/sdk/observability-evaluation/index_imports.ts:observe_agent_imports"
 
 --8<-- "user-guide/sdk/observability-evaluation/index.ts:observe_agent"
+```
+
+</Tab>
+<Tab label="Rust">
+
+Enable the `telemetry` feature. Rust has no console-exporter helper: install an
+OpenTelemetry stdout exporter and register it with
+`opentelemetry::global::set_tracer_provider` in your application, and the agent's
+spans follow it.
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/index.rs:observe_agent"
 ```
 
 </Tab>
