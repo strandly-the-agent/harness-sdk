@@ -19,7 +19,7 @@ The mechanism differs by SDK: in Python, steering handlers are [plugins](../../p
 
 ## What Is Steering?
 
-Building agents for complex multi-step tasks runs into a prompting wall. Traditional approaches require front-loading all instructions, business rules, and operational guidance into a single prompt. For tasks with 30+ steps, monolithic prompts become unwieldy: agents ignore instructions, hallucinate behaviors, or fail to follow critical procedures.
+Building agents for complex multi-step tasks runs into a prompting wall. Traditional approaches require front-loading all instructionr prompting where you define contextual guidance that apps, business rules, and operational guidance into a single prompt. For tasks with 30+ steps, monolithic prompts become unwieldy: agents ignore instructions, hallucinate behaviors, or fail to follow critical procedures.
 
 A common workaround is decomposing the agent into a graph with predefined nodes and edges that control execution flow. While this improves predictability and reduces prompt complexity, it limits the adaptive reasoning that makes agents valuable in the first place, and it is costly to maintain as requirements change.
 
@@ -29,7 +29,7 @@ Steering takes a different approach: **modular prompting**. Instead of front-loa
 
 ### Steering vs. Workflow Frameworks
 
-Workflow frameworks force you to specify discrete steps and control flow logic upfront, making agents brittle and requiring extensive developer time to define complex decision trees. When business requirements change, you rebuild the workflow logic. Steering uses modular prompting where you define contextual guidance that appears when relevant rather than prescribing exact execution paths. This maintains the adaptive reasoning that makes agents valuable while enabling reliable execution of complex procedures.
+Workflow frameworks force you to specify discrete steps and control flow logic upfront, making agents brittle and requiring extensive developer time to define complex decision trees. When business requirements change, you rebuild the workflow logic. Steering uses modulaears when relevant rather than prescribing exact execution paths. This maintains the adaptive reasoning that makes agents valuable while enabling reliable execution of complex procedures.
 
 ### Steering vs. Traditional Prompting
 
@@ -46,7 +46,7 @@ flowchart LR
     C --> D[Handler Access]
 ```
 
-**Context providers** observe agent activity and contribute structured data into the handler's steering context. The built-in tool ledger provider (<Syntax py="LedgerProvider" ts="ToolLedgerProvider" />) tracks tool call history, timing, and results. Steering handlers read from this context when deciding whether to intervene.
+**Context providers** observe agent activity and contribute structured data into the handler's steering context. The built-in tool ledger provider (<Syntax py="LedgerProvider" ts="ToolLedgerProvider" rs="ToolLedgerProvider" />) tracks tool call history, timing, and results. Steering handlers read from this context when deciding whether to intervene.
 
 ## Steering moments
 
@@ -81,6 +81,16 @@ The handler returns one of three actions:
 - **`InterventionActions.confirm(prompt)`**: tool execution pauses for human approval
 
 </Tab>
+<Tab label="Rust">
+
+A steering handler returns a `SteeringAction`, which the interventions framework converts to a
+`ToolCallAction`:
+
+- **`SteeringAction::Proceed`**: tool executes immediately
+- **`SteeringAction::Guide(feedback)`**: tool is cancelled, agent receives contextual feedback and retries
+- **`SteeringAction::Confirm(confirm)`**: tool execution pauses for human approval
+
+</Tab>
 </Tabs>
 
 ### After a model response
@@ -109,6 +119,14 @@ The handler returns one of two actions:
 
 - **`InterventionActions.proceed()`**: accept the response as-is
 - **`InterventionActions.guide(feedback)`**: discard the response and retry with guidance injected into the conversation
+
+</Tab>
+<Tab label="Rust">
+
+Implement `InterventionHandler::after_model_call` and return an `Action`:
+
+- **`Action::Proceed`**: accept the response as-is
+- **`Action::Guide(feedback)`**: discard the response and retry with the feedback appended as a user message
 
 </Tab>
 </Tabs>
@@ -169,6 +187,16 @@ Attach the handler through the interventions framework:
 --8<-- "user-guide/sdk/agents/interventions/steering_imports.ts:llm_steering_imports"
 
 --8<-- "user-guide/sdk/agents/interventions/steering.ts:llm_steering"
+```
+
+</Tab>
+<Tab label="Rust">
+
+Attach the handler with `AgentBuilder::intervention`. The handler judges tool calls with the
+agent's auxiliary model (`AgentBuilder::aux_model`) unless you pass one with `.model(..)`:
+
+```rust
+--8<-- "user-guide/sdk/agents/interventions/steering.rs:llm_steering"
 ```
 
 </Tab>
