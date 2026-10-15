@@ -65,7 +65,10 @@ pub async fn execute_code(
     let eof = eof_marker();
     let encoded = BASE64.encode(code);
     sandbox
-        .execute(&format!("base64 -d << '{eof}' | {language}\n{encoded}\n{eof}"), options)
+        .execute(
+            &format!("base64 -d << '{eof}' | {language}\n{encoded}\n{eof}"),
+            options,
+        )
         .await
 }
 
@@ -151,10 +154,7 @@ pub(super) fn merge_env(
 
 /// A heredoc delimiter that cannot collide with the payload (TS `STRANDS_EOF_<uuid>`).
 fn eof_marker() -> String {
-    format!(
-        "STRANDS_EOF_{}",
-        &uuid::Uuid::new_v4().simple().to_string()[..16]
-    )
+    format!("STRANDS_EOF_{}", &uuid::Uuid::new_v4().simple().to_string()[..16])
 }
 
 fn check(result: &ExecutionResult, path: &str, what: &str) -> SandboxResult<()> {
@@ -280,7 +280,9 @@ mod tests {
             ..ExecutionResult::default()
         };
         assert_eq!(
-            check(&failed, "/x", "Failed to remove file").unwrap_err().to_string(),
+            check(&failed, "/x", "Failed to remove file")
+                .unwrap_err()
+                .to_string(),
             "rm: permission denied\n"
         );
 
@@ -289,7 +291,9 @@ mod tests {
             ..ExecutionResult::default()
         };
         assert_eq!(
-            check(&silent, "/x", "Failed to remove file").unwrap_err().to_string(),
+            check(&silent, "/x", "Failed to remove file")
+                .unwrap_err()
+                .to_string(),
             "Failed to remove file: /x"
         );
     }

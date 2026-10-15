@@ -141,7 +141,11 @@ fn launch(
     options: &mut ExecuteOptions,
     chunks: Option<UnboundedSender<SandboxEvent>>,
 ) -> SandboxResult<Launched> {
-    if options.cancel.as_ref().is_some_and(|cancel| cancel.is_cancelled()) {
+    if options
+        .cancel
+        .as_ref()
+        .is_some_and(|cancel| cancel.is_cancelled())
+    {
         return Err(SandboxError::Aborted);
     }
 
@@ -323,7 +327,11 @@ where
                 if let Some(chunks) = &chunks {
                     pending.extend_from_slice(&chunk[..read]);
                     let data = take_decodable(&mut pending);
-                    if !data.is_empty() && chunks.send(SandboxEvent::Chunk(StreamChunk { data, stream_type })).is_err() {
+                    if !data.is_empty()
+                        && chunks
+                            .send(SandboxEvent::Chunk(StreamChunk { data, stream_type }))
+                            .is_err()
+                    {
                         break;
                     }
                 }
@@ -345,7 +353,11 @@ fn take_decodable(pending: &mut Vec<u8>) -> String {
     let valid = std::str::from_utf8(pending).map_or_else(|error| error.valid_up_to(), |_| pending.len());
     // A truncated character is at most 3 bytes; a longer tail is genuinely invalid, so decode it
     // now rather than stalling the stream until EOF.
-    let split = if pending.len() - valid > 3 { pending.len() } else { valid };
+    let split = if pending.len() - valid > 3 {
+        pending.len()
+    } else {
+        valid
+    };
     let rest = pending.split_off(split);
     String::from_utf8_lossy(&std::mem::replace(pending, rest)).into_owned()
 }
@@ -395,8 +407,12 @@ mod tests {
             }
         }
         assert!(!chunks.is_empty(), "expected at least one chunk");
-        assert!(chunks.iter().any(|c| c.stream_type == StreamType::Stdout && c.data.contains("out")));
-        assert!(chunks.iter().any(|c| c.stream_type == StreamType::Stderr && c.data.contains("err")));
+        assert!(chunks
+            .iter()
+            .any(|c| c.stream_type == StreamType::Stdout && c.data.contains("out")));
+        assert!(chunks
+            .iter()
+            .any(|c| c.stream_type == StreamType::Stderr && c.data.contains("err")));
         let result = result.expect("terminal result");
         assert_eq!(result.stdout, "out\n");
         assert_eq!(result.stderr, "err\n");
@@ -405,7 +421,8 @@ mod tests {
 
     #[tokio::test]
     async fn returns_enoent_message_when_the_program_does_not_exist() {
-        let spawn = Spawn::new("strands_nonexistent_binary_xyz", ["--version"]).enoent_message("docker is missing");
+        let spawn =
+            Spawn::new("strands_nonexistent_binary_xyz", ["--version"]).enoent_message("docker is missing");
         let result = run(spawn, ExecuteOptions::default()).await.unwrap();
         assert_eq!(result.exit_code, 127);
         assert_eq!(result.stderr, "docker is missing");
@@ -414,9 +431,12 @@ mod tests {
 
     #[tokio::test]
     async fn errors_when_the_program_does_not_exist_and_no_enoent_message_is_set() {
-        let error = run(Spawn::new("strands_nonexistent_binary_xyz", [""; 0]), ExecuteOptions::default())
-            .await
-            .unwrap_err();
+        let error = run(
+            Spawn::new("strands_nonexistent_binary_xyz", [""; 0]),
+            ExecuteOptions::default(),
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(error, SandboxError::Other(_)), "{error}");
     }
 

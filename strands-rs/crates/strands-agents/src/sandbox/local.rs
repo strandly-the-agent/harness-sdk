@@ -162,6 +162,9 @@ impl Sandbox for LocalSandbox {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {

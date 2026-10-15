@@ -3,10 +3,14 @@
 //!
 //! [`Sandbox`] mirrors the TS abstract class; [`LocalSandbox`] is the port of
 //! `NotASandboxLocalEnvironment` — host execution with **no isolation**, the registered default
-//! in Node. The Docker and SSH backends (and their `PosixShellSandbox` base) are **not ported**;
-//! the trait is left open so they can be added later.
+//! in Node. [`DockerSandbox`] runs commands in a container via `docker exec`. TS's
+//! `PosixShellSandbox` base class becomes the free functions in [`posix_shell`], since Rust has no
+//! abstract classes.
 
+mod docker;
 mod local;
+pub mod posix_shell;
+mod stream_process;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -20,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::tools::ToolRef;
 
+pub use docker::DockerSandbox;
 pub use local::LocalSandbox;
 
 /// Which standard stream a [`StreamChunk`] came from.

@@ -208,7 +208,10 @@ mod tests {
     #[test]
     fn terminates_flags_with_dashdash_so_a_dash_prefixed_container_is_not_parsed_as_a_flag() {
         let args = argv(&DockerSandbox::new("--privileged"), "echo hi");
-        assert_eq!(args[args.len() - 5..], ["--", "--privileged", "sh", "-c", "echo hi"]);
+        assert_eq!(
+            args[args.len() - 5..],
+            ["--", "--privileged", "sh", "-c", "echo hi"]
+        );
     }
 
     #[test]
@@ -226,7 +229,18 @@ mod tests {
             .with_working_dir("/app");
         assert_eq!(
             argv(&sandbox, "ls"),
-            ["exec", "--user", "root", "-w", "/app", "--", "my-container", "sh", "-c", "ls"]
+            [
+                "exec",
+                "--user",
+                "root",
+                "-w",
+                "/app",
+                "--",
+                "my-container",
+                "sh",
+                "-c",
+                "ls"
+            ]
         );
     }
 
@@ -308,7 +322,10 @@ mod tests {
     #[tokio::test]
     async fn reports_a_missing_docker_cli_as_exit_127() {
         let sandbox = DockerSandbox::new("c").with_docker_binary("/nonexistent/docker");
-        let result = sandbox.execute("echo hi", ExecuteOptions::default()).await.unwrap();
+        let result = sandbox
+            .execute("echo hi", ExecuteOptions::default())
+            .await
+            .unwrap();
         assert_eq!(result.exit_code, 127);
         assert_eq!(result.stderr, DOCKER_MISSING);
     }
@@ -336,10 +353,22 @@ mod tests {
         let sandbox = DockerSandbox::new("my-container")
             .with_user("root")
             .with_docker_binary(fake.path());
-        let result = sandbox.execute("echo hi", ExecuteOptions::default()).await.unwrap();
+        let result = sandbox
+            .execute("echo hi", ExecuteOptions::default())
+            .await
+            .unwrap();
         assert_eq!(
             result.stdout.lines().collect::<Vec<_>>(),
-            ["exec", "--user", "root", "--", "my-container", "sh", "-c", "echo hi"]
+            [
+                "exec",
+                "--user",
+                "root",
+                "--",
+                "my-container",
+                "sh",
+                "-c",
+                "echo hi"
+            ]
         );
         assert_eq!(result.exit_code, 0);
     }
@@ -375,7 +404,10 @@ mod tests {
         let fake = FakeBinary::script("printf stalling; sleep 5\n");
         let sandbox = DockerSandbox::new("c").with_docker_binary(fake.path());
         let error = sandbox
-            .execute("echo hi", ExecuteOptions::with_timeout(Duration::from_millis(300)))
+            .execute(
+                "echo hi",
+                ExecuteOptions::with_timeout(Duration::from_millis(300)),
+            )
             .await
             .unwrap_err();
         match error {
@@ -420,7 +452,10 @@ mod tests {
             SandboxError::PathNotFound(_)
         ));
         assert!(matches!(
-            sandbox.list_files("/tmp/strands-nonexistent-dir-xyz").await.unwrap_err(),
+            sandbox
+                .list_files("/tmp/strands-nonexistent-dir-xyz")
+                .await
+                .unwrap_err(),
             SandboxError::PathNotFound(_)
         ));
         let _ = std::fs::remove_dir_all(&dir);
