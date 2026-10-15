@@ -324,6 +324,57 @@ pub fn load_snapshot(orchestrator: &dyn MultiAgent, snapshot: &Snapshot,
                      state: Option<&MultiAgentStateHandle>) -> Result<()>;
 ```
 
+### `multiagent::spec`
+
+```rust
+pub type AgentBuilder = Arc<dyn Fn(AgentSpec) -> Result<Agent> + Send + Sync>;
+
+pub enum SpecModel { Id(String), Model(Arc<dyn Model>) }   // PartialEq by id / pointer identity
+
+pub struct ChoiceOption<T = String> { pub name: String, pub value: Option<T>, pub description: String }
+impl<T> ChoiceOption<T> {
+    pub fn new(name: impl Into<String>) -> Self;            // value = None, i.e. TS UNSET
+    pub fn with_value(self, value: impl Into<T>) -> Self;
+    pub fn with_description(self, description: impl Into<String>) -> Self;
+}
+impl<T> From<&str> for ChoiceOption<T>;
+impl<T> From<String> for ChoiceOption<T>;
+
+pub struct Choice<T = String> { pub options: Vec<ChoiceOption<T>>, pub multiple: bool }
+impl<T> Choice<T> {
+    pub fn new<O: Into<ChoiceOption<T>>>(options: impl IntoIterator<Item = O>) -> Self;
+    pub fn multiple(self) -> Self;
+}
+impl<T: Clone + From<String>> Choice<T> {
+    pub fn normalized(&self) -> Vec<ChoiceOption<T>>;       // fills None values from the name
+    pub fn to_schema_property(&self, description: &str) -> Map<String, JsonValue>;
+    pub fn value_for(&self, name: &str) -> T;               // passthrough when unknown
+}
+
+pub enum ScalarAxis<T = String> { Fixed(Option<T>), Inherit, Open, Choice(Choice<T>) }   // Default = Inherit
+impl<T> ScalarAxis<T> { pub fn fixed(value: impl Into<T>) -> Self }
+
+pub enum ListAxis<T = String> { Fixed(Option<Vec<T>>), Inherit, Choice(Choice<T>) }      // Default = Inherit
+impl<T> ListAxis<T> { pub fn fixed(values: impl IntoIterator<Item = impl Into<T>>) -> Self }
+
+pub struct Preset { pub instructions: Option<String>, pub tools: Option<Vec<String>>,
+                    pub model: Option<SpecModel>, pub description: String }              // Default + with_*
+
+pub struct AgentSpec { pub name: Option<String>, pub agent_type: Option<String>,
+                       pub instructions: Option<String>, pub tools: Option<Vec<String>>,
+                       pub mcp_servers: Option<Vec<String>>, pub model: Option<SpecModel> }  // None = inherit
+
+pub struct ResolveSpecAxes { pub presets: IndexMap<String, Preset>, pub default_preset: Option<String>,
+                             pub instructions: ScalarAxis<String>, pub tools: ListAxis<String>,
+                             pub mcp_servers: ListAxis<String>, pub model: ScalarAxis<SpecModel> }
+
+pub fn resolve_spec(model_input: &Map<String, JsonValue>, axes: &ResolveSpecAxes) -> Result<AgentSpec>;
+```
+
+Precedence per axis: a model-supplied argument, then the preset's value, then the axis default.
+An omitted `agent_type` falls back to `default_preset`; ad-hoc `instructions` suppress that
+fallback. A `Choice` list axis drops values that are not options; `Inherit` resolves to `None`.
+
 ### Decision log
 
 - **`ResultStatus` is its own enum**, not a runtime-checked subset of `Status`, so a `NodeResult`
@@ -379,3 +430,30 @@ pub fn load_snapshot(orchestrator: &dyn MultiAgent, snapshot: &Snapshot,
 - **`take_snapshot`/`load_snapshot` are free fns over `&dyn MultiAgent`** (TS takes
   `Graph | Swarm`) and take the state as `Option<&MultiAgentStateHandle>`; `take_snapshot` returns
   `Result` because serializing the state can fail in Rust.
+- **Spec axes are two enums, not four classes**: TS's `Fixed | Inherit | Open | Choice` class
+  union becomes `ScalarAxis<T>` (scalar axes: instructions, model) and `ListAxis<T>` (list axes:
+  tools, mcp_servers), each with `Fixed`/`Inherit`/`Choice` variants and `Open` only on
+  `ScalarAxis`. The enums encode per-axis policy at the type level — `ListAxis` has no `Open`,
+  matching the TS `ResolveSpecAxes` field types — and both default to `Inherit`.
+- **TS `Option` is `ChoiceOption<T>`** (`Option` is `std::option::Option` in Rust), generic over
+  the axis value with `T = String`. `value: Option<T>` replaces the `UNSET` sentinel, so TS's
+  "explicit `null` is not overwritten" case has no Rust analogue (Rust values are not nullable);
+  the test asserts an explicitly set empty value instead.
+- **`Choice::new` takes `impl IntoIterator<Item = impl Into<ChoiceOption<T>>>`**: a Rust array
+  cannot mix `&str` and `ChoiceOption`, so bare names convert via `From<&str>`/`From<String>` and
+  a heterogeneous list is written as `[ChoiceOption::from("a"), ChoiceOption::new("b").with_value(v)]`.
+- **`SpecModel` replaces TS's `Model | ModelRouter | string`**: an `Id(String)` the builder
+  resolves, or an `Arc<dyn Model>` handed over as-is. It compares by id or pointer identity,
+  mirroring TS reference equality (no `ModelRouter` in the Rust port yet).
+- **`resolve_spec` takes a `serde_json::Map` and returns `Result<AgentSpec>`**: the model's
+  arguments arrive as JSON from a tool call, and an unknown `agent_type` is an
+  `Error::ToolValidation` rather than a thrown `Error`. Non-string values for a string-typed axis
+  are ignored instead of passed through (TS `Open` returns whatever the model supplied).
+- **`AgentBuilder = Arc<dyn Fn(AgentSpec) -> Result<Agent> + Send + Sync>`**: shared and
+  `Send + Sync` because orchestrators build children from concurrent tasks, and fallible because
+  Rust agent construction can fail (TS's builder returns an `Agent` directly).
+- **`Fixed`'s `Object.freeze` has no port**: axis values are immutable by ownership in Rust, so
+  the TS "is frozen" test is dropped rather than translated.
+- **`_defaultBuilder` is not ported in this increment**: it needs parent-agent internals the Rust
+  `Agent` does not expose yet (MCP client inheritance, sandbox, printer, tracer trace-attributes).
+  It belongs with the vended multi-agent tools that call it.

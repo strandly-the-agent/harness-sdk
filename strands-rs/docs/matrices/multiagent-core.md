@@ -1,7 +1,8 @@
 # Multi-agent core — port matrix
 
-TS spec: `strands-ts/src/multiagent/{state,multiagent,events}.ts` + `__tests__/{state,events}.test.ts`.
-Rust: `crates/strands-agents/src/multiagent/{state,multiagent,events,nodes}.rs`.
+TS spec: `strands-ts/src/multiagent/*.ts` + `__tests__/{state,events,nodes,plugins,snapshot,spec}.test.ts`.
+Rust: `crates/strands-agents/src/multiagent/{state,multiagent,events,nodes,edge,plugins,snapshot,spec}.rs`
++ `crates/strands-agents/tests/multiagent_interop.rs`.
 
 ## API
 
@@ -42,6 +43,18 @@ Rust: `crates/strands-agents/src/multiagent/{state,multiagent,events,nodes}.rs`.
 | `MultiAgentPluginRegistry` | `plugins::MultiAgentPluginRegistry` (`new`/`add`/`get`/`initialize`) |
 | `TakeMultiAgentSnapshotOptions` | `snapshot::TakeMultiAgentSnapshotOptions` |
 | `takeSnapshot` / `loadSnapshot` | `snapshot::take_snapshot` / `snapshot::load_snapshot` (over `&dyn MultiAgent`) |
+| `AgentBuilder` | `spec::AgentBuilder` (`Arc<dyn Fn(AgentSpec) -> Result<Agent>>`) |
+| `UNSET` sentinel | `ChoiceOption::value: Option<T>` (`None` = unset) |
+| `Fixed` / `Inherit` / `Open` / `Choice` classes | `spec::ScalarAxis<T>` + `spec::ListAxis<T>` variants (`Open` is scalar-only) |
+| `Option` (choice entry) | `spec::ChoiceOption<T>` (renamed: `Option` is `std::option::Option`) |
+| `Choice.normalized` / `toSchemaProperty` / `valueFor` | `Choice::normalized` / `to_schema_property` / `value_for` |
+| `Preset` / `PresetOptions` | `spec::Preset` (`Default` + `with_*`) |
+| `AgentSpec` | `spec::AgentSpec` (public fields, `Default`) |
+| `Model \| ModelRouter \| string` | `spec::SpecModel` (`Id` / `Model`) |
+| `ResolveSpecAxes` | `spec::ResolveSpecAxes` |
+| `_resolveSpec` | `spec::resolve_spec` (`Result`, `Error::ToolValidation` on bad `agent_type`) |
+| `_resolveScalar` / `_resolveList` | private `resolve_scalar` / `resolve_list` |
+| `_defaultBuilder` | not ported yet — see DESIGN.md decision log |
 
 ## Tests
 
@@ -79,6 +92,34 @@ MultiAgentState round-trips, status precedence, `_pendingInput` rehydration) and
 | exposes the wrapped orchestrator instance | `derives_id_and_description_from_the_orchestrator` |
 | — | `node_definitions_convert_from_every_accepted_shape`, `agent_node_description_defaults_to_the_agents_and_options_override_it` |
 
+| `__tests__/spec.test.ts` `it` | Rust test (`spec.rs::tests`) |
+| --- | --- |
+| Choice.normalized wraps strings and fills UNSET | `wraps_strings_and_fills_unset` |
+| Choice.normalized does not overwrite an explicit null value | `does_not_overwrite_an_explicitly_set_value` (Rust has no `null`; asserts an explicitly set empty value) |
+| toSchemaProperty produces single enum and array enum | `produces_single_enum_and_array_enum` |
+| toSchemaProperty folds option descriptions | `folds_option_descriptions` |
+| valueFor returns mapped value for known option and passthrough for unknown | `returns_mapped_value_for_known_option_and_passthrough_for_unknown` |
+| _resolveSpec applies preset by default | `applies_preset_by_default` |
+| _resolveSpec throws on unknown agent_type | `throws_on_unknown_agent_type` |
+| _resolveSpec rejects prototype keys, null, and non-string agent_type values | `rejects_unknown_and_non_string_agent_type_values` (prototype keys are just unknown names in Rust) |
+| _resolveSpec suppresses default preset when ad-hoc instructions provided | `suppresses_default_preset_when_ad_hoc_instructions_provided` |
+| _resolveSpec clamps tools to allowed set | `clamps_tools_to_allowed_set` |
+| _resolveSpec Fixed ignores model-supplied value | `fixed_ignores_model_supplied_value` |
+| _resolveSpec Choice maps option value | `choice_maps_option_value` |
+| _resolveSpec clamps preset tools to Choice set | `clamps_preset_tools_to_choice_set` |
+| _resolveSpec resolves Fixed tools list | `resolves_fixed_tools_list` |
+| _resolveSpec resolves Fixed([]) to empty array, not undefined | `resolves_fixed_empty_list_to_empty_vec_not_none` |
+| Fixed is frozen | not applicable — axis values are immutable by ownership |
+| _defaultBuilder inherits MCP clients once per server and respects server selection | not ported (no `_default_builder` yet) |
+| _defaultBuilder skips/keeps the context manager per model statefulness | not ported (no `_default_builder` yet) |
+| _defaultBuilder propagates the parent's sandbox, trace attributes, and printer setting | not ported (no `_default_builder` yet) |
+
+TS interop fixtures (`tests/multiagent_interop.rs`) hard-code the JSON `state.ts` `toJSON()` and
+`snapshot.ts` emit and assert deserialize -> serialize is byte-identical (key order included):
+`node_result_round_trips` (all optional fields present, and all omitted),
+`multi_agent_result_round_trips`, `node_state_round_trips`, `multi_agent_state_round_trips`,
+`snapshot_round_trips` (with and without nested `data.state`).
+
 | `__tests__/plugins.test.ts` / `__tests__/snapshot.test.ts` `it` | Rust test |
 | --- | --- |
 | preserves initMultiAgent failures across initialization attempts | `plugins.rs::preserves_init_multi_agent_failures_across_initialization_attempts` |
@@ -105,8 +146,12 @@ rather than an `Option`; state types carry no `type` tag (TS omits it too); `nod
 `BTreeMap`; events carry `MultiAgentStateHandle` and do not implement `Serialize`;
 `NodeInnerEvent::Custom` is opaque JSON.
 
-## Not ported yet (increment 3+)
+## Not ported yet
 
-`spec.ts` (`MultiAgentSpec` and friends) and `__tests__/spec.test.ts`;
-`tests/multiagent_loop.rs`; `tests/integ_multiagent.rs`. Everything else in
-`multiagent/{state,multiagent,events,nodes,edge,plugins,snapshot}.ts` is ported.
+`tests/multiagent_loop.rs` (cross-module `MockMessageModel` orchestration) and
+`tests/integ_multiagent.rs` (live Bedrock) — both need a concrete orchestrator, so they belong to
+the graph/swarm builders. `spec.ts`'s `_defaultBuilder` is also open: it reads parent-agent
+internals (MCP client inheritance, sandbox, printer, tracer trace-attributes) that the Rust
+`Agent` does not expose yet, and it is only called by the vended multi-agent tools.
+Everything else in `multiagent/{state,multiagent,events,nodes,edge,plugins,snapshot,spec}.ts` is
+ported.
