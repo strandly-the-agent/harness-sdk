@@ -3,6 +3,7 @@
 
 pub mod edge;
 pub mod events;
+pub mod graph;
 // Mirrors the TS file layout (`multiagent/multiagent.ts`).
 #[allow(clippy::module_inception)]
 pub mod multiagent;
@@ -20,6 +21,7 @@ pub use events::{
     MultiAgentHandoffEvent, MultiAgentInitializedEvent, MultiAgentResultEvent, MultiAgentStreamEvent,
     NodeCancelEvent, NodeInnerEvent, NodeResultEvent, NodeStreamUpdateEvent, OrchestratorRef,
 };
+pub use graph::{Graph, GraphBuilder, GraphConfig, DEFAULT_GRAPH_ID};
 pub use multiagent::{
     apply_orchestrator_hook_responses, drop_stale_interrupted_result, group_interrupt_responses_by_node,
     interrupted_result, record_hook_interrupt, MultiAgent, MultiAgentExt, MultiAgentInput,
