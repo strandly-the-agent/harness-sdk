@@ -2833,6 +2833,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn two_gating_hooks_surface_both_interrupts_and_one_resume_answers_both() {
+        let session = Session::shared();
+        let gated = |builder: SwarmBuilder| {
+            builder
+                .id("my-swarm")
+                .hook::<BeforeNodeCallEvent, _>(|event| {
+                    let _: JsonValue = event.interrupt(crate::types::InterruptParams::new("gate_a"))?;
+                    Ok(())
+                })
+                .hook::<BeforeNodeCallEvent, _>(|event| {
+                    let _: JsonValue = event.interrupt(crate::types::InterruptParams::new("gate_b"))?;
+                    Ok(())
+                })
+        };
+
+        let interrupted_swarm = session
+            .install(gated(Swarm::builder().node(final_agent("a", "ran"))))
+            .build()
+            .expect("swarm builds");
+
+        let interrupted = interrupted_swarm.invoke("begin").await.expect("swarm runs");
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+        let mut names: Vec<&str> = interrupted.interrupts.iter().map(|i| i.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["gate_a", "gate_b"]);
+
+        let resumed_swarm = session
+            .install(gated(Swarm::builder().node(final_agent("a", "ran"))))
+            .build()
+            .expect("swarm builds");
+
+        let result = resumed_swarm
+            .invoke(
+                interrupted
+                    .interrupts
+                    .iter()
+                    .map(|i| InterruptResponseContent::new(&i.id, json!("approved")))
+                    .collect::<Vec<_>>(),
+            )
+            .await
+            .expect("swarm resumes");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert!(result.interrupts.is_empty());
+        assert_eq!(result.content, vec![ContentBlock::text("ran")]);
+    }
+
+    #[tokio::test]
     async fn a_hook_gated_node_still_emits_its_result_and_after_events() {
         let swarm = Swarm::builder()
             .node(final_agent("a", "never runs"))

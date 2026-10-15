@@ -168,10 +168,9 @@ Decision log:
 state types, the `MultiAgent` trait with its invocation types, and the hook/stream events; Graph
 and Swarm code against the signatures below.
 
-Known gap: `HookRegistry::invoke_callbacks` (`hooks/registry.rs:259-264`) short-circuits on the
-first interrupt, where TS collects every callback's interrupts (`hooks/registry.ts:86-116`), so an
-orchestrator with two gating hooks on one event records only the first — a core registry fix, not
-an orchestrator one.
+`HookRegistry::invoke_callbacks` runs every callback and accumulates their interrupts into one
+`Error::Interrupt` (as TS `invokeCallbacks` does), so an orchestrator with two gating hooks on one
+event records both and a single resume answers both.
 
 ### `multiagent::state`
 
