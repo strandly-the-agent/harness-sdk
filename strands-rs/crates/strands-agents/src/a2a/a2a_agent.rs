@@ -504,3 +504,391 @@ impl Tool for A2AAgentAsTool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::a2a::types::{
+        Artifact, Part, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent,
+    };
+    use crate::a2a::{A2AExecutor, A2AServer, ServerHandle};
+    use crate::agent::Agent;
+    use crate::testing::{MockMessageModel, MockResponse};
+
+    fn agent_saying(replies: &[&str]) -> Agent {
+        let responses = replies
+            .iter()
+            .map(|text| MockResponse::message(Message::new(Role::Assistant, vec![ContentBlock::text(*text)])))
+            .collect();
+        Agent::builder()
+            .model(MockMessageModel::shared(responses))
+            .build()
+            .unwrap()
+    }
+
+    /// An in-process A2A server whose agent answers with `replies`, in order, per context.
+    async fn serve(replies: &'static [&'static str]) -> ServerHandle {
+        A2AServer::builder("Remote Agent")
+            .description("A remote helper")
+            .executor(A2AExecutor::with_factory(move |_| agent_saying(replies)))
+            .build()
+            .unwrap()
+            .serve()
+            .await
+            .unwrap()
+    }
+
+    fn remote(handle: &ServerHandle) -> A2AAgent {
+        A2AAgent::builder(format!("http://{}", handle.local_addr())).build()
+    }
+
+    fn card() -> AgentCard {
+        AgentCard::new("Card Agent", "From the card", "http://example.com")
+    }
+
+    #[test]
+    fn defaults_id_to_the_url_when_not_provided() {
+        let agent = A2AAgent::builder("http://localhost:9999/").build();
+        assert_eq!(agent.id(), "http://localhost:9999");
+        assert_eq!(agent.url(), "http://localhost:9999");
+    }
+
+    #[test]
+    fn uses_provided_id_from_config() {
+        let agent = A2AAgent::builder("http://localhost:9999").id("custom-id").build();
+        assert_eq!(agent.id(), "custom-id");
+    }
+
+    #[test]
+    fn uses_provided_name_and_description_from_config() {
+        let agent = A2AAgent::builder("http://localhost:9999")
+            .name("My Agent")
+            .description("Does things")
+            .build();
+        assert_eq!(agent.name(), "My Agent");
+        assert_eq!(agent.description(), Some("Does things"));
+    }
+
+    #[test]
+    fn falls_back_to_the_url_as_the_name_before_connecting() {
+        let agent = A2AAgent::builder("http://localhost:9999").build();
+        assert_eq!(agent.name(), "http://localhost:9999");
+        assert_eq!(agent.description(), None);
+    }
+
+    #[test]
+    fn takes_name_and_description_from_a_prefetched_card() {
+        let agent = A2AAgent::builder("http://example.com").agent_card(card()).build();
+        assert_eq!(agent.name(), "Card Agent");
+        assert_eq!(agent.description(), Some("From the card"));
+    }
+
+    #[tokio::test]
+    async fn populates_name_and_description_from_agent_card_on_first_connection() {
+        let handle = serve(&["Hello"]).await;
+        let agent = remote(&handle);
+
+        let fetched = agent.agent_card().await.unwrap().clone();
+
+        assert_eq!(fetched.name, "Remote Agent");
+        assert_eq!(agent.name(), "Remote Agent");
+        assert_eq!(agent.description(), Some("A remote helper"));
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn does_not_overwrite_config_provided_name_and_description_with_agent_card_values() {
+        let handle = serve(&["Hello"]).await;
+        let agent = A2AAgent::builder(format!("http://{}", handle.local_addr()))
+            .name("Configured")
+            .description("Configured description")
+            .build();
+
+        agent.agent_card().await.unwrap();
+
+        assert_eq!(agent.name(), "Configured");
+        assert_eq!(agent.description(), Some("Configured description"));
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn invoke_returns_an_agent_result_with_the_response_text() {
+        let handle = serve(&["Hello from the remote"]).await;
+
+        let result = remote(&handle).invoke("hi").await.unwrap();
+
+        assert_eq!(result.text(), "Hello from the remote");
+        assert_eq!(result.stop_reason, StopReason::EndTurn);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn invoke_threads_the_callers_invocation_state_onto_the_result() {
+        let handle = serve(&["Hello"]).await;
+        let state = InvocationState::new();
+        state.insert("caller", json!("local"));
+
+        let result = remote(&handle)
+            .invoke_with("hi", InvokeOptions::default().with_invocation_state(state))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result.invocation_state.get("caller").as_deref(),
+            Some(&json!("local"))
+        );
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn auto_connects_on_first_invoke() {
+        let handle = serve(&["Hello"]).await;
+        let agent = remote(&handle);
+        assert_eq!(agent.description(), None);
+
+        agent.invoke("hi").await.unwrap();
+
+        assert_eq!(agent.name(), "Remote Agent");
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn uses_a_custom_http_client_when_provided() {
+        let handle = serve(&["Hello"]).await;
+        let client = reqwest::Client::builder()
+            .user_agent("strands-test")
+            .build()
+            .unwrap();
+        let agent = A2AAgent::builder(format!("http://{}", handle.local_addr()))
+            .http_client(client)
+            .timeout(Duration::from_secs(10))
+            .build();
+
+        assert_eq!(agent.invoke("hi").await.unwrap().text(), "Hello");
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn stream_yields_update_events_for_each_a2a_event_and_a_result_event_last() {
+        let handle = serve(&["Streamed answer"]).await;
+        let agent = remote(&handle);
+
+        let events: Vec<_> = Box::pin(agent.stream("hi"))
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(std::result::Result::unwrap)
+            .collect();
+
+        assert!(events.len() >= 2, "expected updates and a result, got {events:?}");
+        assert!(events
+            .iter()
+            .take(events.len() - 1)
+            .all(|event| event.type_name() == "a2aStreamUpdateEvent"));
+        let last = events.last().unwrap();
+        assert_eq!(last.type_name(), "a2aResultEvent");
+        assert_eq!(last.result().unwrap().text(), "Streamed answer");
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn continues_the_same_remote_context_across_turns() {
+        let handle = serve(&["first", "second"]).await;
+        let agent = remote(&handle);
+
+        assert_eq!(agent.invoke("one").await.unwrap().text(), "first");
+        let context = agent.context_id().expect("the remote assigned a context");
+        assert_eq!(agent.invoke("two").await.unwrap().text(), "second");
+
+        assert_eq!(agent.context_id().as_deref(), Some(context.as_str()));
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn surfaces_a_transport_failure_as_a_model_error() {
+        let agent = A2AAgent::builder("http://127.0.0.1:1")
+            .timeout(Duration::from_millis(500))
+            .build();
+
+        let error = agent.invoke("hi").await.unwrap_err();
+
+        assert!(error.is_model_error(), "expected a model error, got {error:?}");
+    }
+
+    #[test]
+    fn a_json_rpc_error_event_becomes_a_model_error_keeping_the_code() {
+        let data = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": JsonRpcError::task_not_found("task-1"),
+        })
+        .to_string();
+
+        let error = decode_event(&data).unwrap_err();
+
+        assert!(error.is_model_error());
+        let source = std::error::Error::source(&error).expect("the JSON-RPC error is the source");
+        let rpc = source.downcast_ref::<JsonRpcError>().expect("a JSON-RPC error");
+        assert_eq!(rpc.code, crate::a2a::types::error_codes::TASK_NOT_FOUND);
+    }
+
+    #[test]
+    fn an_event_with_neither_result_nor_error_is_an_error() {
+        assert!(decode_event(&json!({ "jsonrpc": "2.0", "id": 1 }).to_string()).is_err());
+    }
+
+    #[test]
+    fn extracts_the_text_to_send_from_every_kind_of_input() {
+        assert_eq!(
+            text_from_input(&InvokeInput::Text("hi".to_owned())).unwrap(),
+            "hi"
+        );
+        assert_eq!(text_from_input(&InvokeInput::None).unwrap(), "");
+        assert_eq!(
+            text_from_input(&InvokeInput::Blocks(vec![
+                ContentBlock::text("one"),
+                ContentBlock::text("two")
+            ]))
+            .unwrap(),
+            "one\ntwo"
+        );
+        assert_eq!(
+            text_from_input(&InvokeInput::Messages(vec![
+                Message::user("first"),
+                Message::new(Role::Assistant, vec![ContentBlock::text("reply")]),
+                Message::user("last"),
+            ]))
+            .unwrap(),
+            "last"
+        );
+        assert_eq!(
+            text_from_input(&InvokeInput::Messages(vec![Message::new(
+                Role::Assistant,
+                vec![ContentBlock::text("only assistant")]
+            )]))
+            .unwrap(),
+            ""
+        );
+    }
+
+    #[test]
+    fn rejects_non_text_content() {
+        let input = InvokeInput::Blocks(vec![
+            ContentBlock::text("hi"),
+            ContentBlock::CachePoint(Default::default()),
+        ]);
+        let error = text_from_input(&input).unwrap_err();
+        assert!(error.to_string().contains("non-text content"));
+    }
+
+    #[test]
+    fn builds_an_empty_result_when_no_events_are_received() {
+        let result = build_result(None, InvocationState::new(), "");
+        assert_eq!(result.text(), "");
+        assert_eq!(result.stop_reason, StopReason::EndTurn);
+    }
+
+    #[test]
+    fn joins_multiple_text_parts_from_task_artifacts() {
+        let mut task = Task::new("task-1", "ctx-1", TaskStatus::new(TaskState::Completed));
+        task.artifacts = Some(vec![
+            Artifact::new("a1", vec![Part::text("one"), Part::text("two")]),
+            Artifact::new("a2", vec![Part::text("three")]),
+        ]);
+
+        let result = build_result(Some(&A2AEventData::Task(task)), InvocationState::new(), "");
+
+        assert_eq!(result.text(), "one\ntwo\nthree");
+    }
+
+    #[test]
+    fn falls_back_to_the_task_status_message_when_there_are_no_artifacts() {
+        let mut task = Task::new("task-1", "ctx-1", TaskStatus::new(TaskState::Completed));
+        task.status.message = Some(A2AMessage::new(
+            crate::a2a::types::Role::Agent,
+            vec![Part::text("from the status")],
+        ));
+
+        let result = build_result(Some(&A2AEventData::Task(task)), InvocationState::new(), "");
+
+        assert_eq!(result.text(), "from the status");
+    }
+
+    #[test]
+    fn builds_the_result_from_a_completed_status_update() {
+        let event = A2AEventData::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: "task-1".to_owned(),
+            context_id: "ctx-1".to_owned(),
+            status: TaskStatus {
+                message: Some(A2AMessage::new(
+                    crate::a2a::types::Role::Agent,
+                    vec![Part::text("done streaming")],
+                )),
+                ..TaskStatus::new(TaskState::Completed)
+            },
+            final_: true,
+            metadata: None,
+        });
+
+        let result = build_result(Some(&event), InvocationState::new(), "");
+
+        assert_eq!(result.text(), "done streaming");
+    }
+
+    #[test]
+    fn falls_back_to_accumulated_artifact_chunks_when_the_last_event_has_no_text() {
+        let event = A2AEventData::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: "task-1".to_owned(),
+            context_id: "ctx-1".to_owned(),
+            artifact: Artifact::new("a1", vec![]),
+            append: Some(true),
+            last_chunk: Some(true),
+            metadata: None,
+        });
+
+        let result = build_result(Some(&event), InvocationState::new(), "Hello world");
+
+        assert_eq!(result.text(), "Hello world");
+    }
+
+    #[tokio::test]
+    async fn is_invocable_behind_the_invokable_agent_trait() {
+        let handle = serve(&["Hello"]).await;
+        let agent: Arc<dyn InvokableAgent> = Arc::new(remote(&handle));
+
+        let result = agent
+            .invoke_with(InvokeInput::Text("hi".to_owned()), InvokeOptions::default())
+            .await
+            .unwrap();
+
+        assert_eq!(result.text(), "Hello");
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn as_tool_names_and_describes_itself_from_the_remote_card() {
+        let handle = serve(&["Hello"]).await;
+        let agent = remote(&handle);
+        agent.agent_card().await.unwrap();
+
+        let tool = agent.as_tool(AgentAsToolOptions::default());
+
+        assert_eq!(tool.name(), "Remote Agent");
+        assert_eq!(tool.description(), "A remote helper");
+        assert_eq!(
+            tool.spec().input_schema.as_ref().unwrap()["required"][0],
+            "prompt"
+        );
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn as_tool_overrides_the_name_and_description() {
+        let agent = A2AAgent::builder("http://example.com").agent_card(card()).build();
+
+        let tool = agent.as_tool(AgentAsToolOptions::named("ask_remote").with_description("Ask the remote"));
+
+        assert_eq!(tool.name(), "ask_remote");
+        assert_eq!(tool.description(), "Ask the remote");
+    }
+}
