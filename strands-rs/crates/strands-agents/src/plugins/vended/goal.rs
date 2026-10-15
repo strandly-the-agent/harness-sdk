@@ -560,7 +560,7 @@ impl GoalLoop {
     async fn after_invocation(&self, event: &mut AfterInvocationEvent) -> Result<()> {
         let agent = event.agent.clone();
 
-        // `sta  let Some(response) = last_assistant_message(&agent.messrt` is wall-clock for the whole run, so the budget caps the agent invocations too.
+        // `start` is wall-clock for the whole run, so the budget caps the agent invocations too.
         // Checked before validation so an expensive validator cannot blow past it.
         let elapsed_out = self.runs.with(&agent, |run| match run {
             Some(run) => {
