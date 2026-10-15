@@ -832,8 +832,6 @@ class BedrockModel(Model):
         ``_MODELS_REJECT_REASONING_TEXT`` reject ``reasoningText`` outright and DeepSeek rejects any reasoning block.
         ``redactedContent`` is otherwise opaque and kept, as is every block when the model ID is an ARN or bare
         inference profile ID that names no vendor.
-
-        TODO: Replace with a model capability registry (https://github.com/strands-agents/harness-sdk/issues/780).
         """
         model_id = self.config["model_id"].lower()
         if "deepseek" in model_id:
