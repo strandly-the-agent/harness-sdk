@@ -24,6 +24,7 @@ mcp = ["dep:rmcp", "dep:http", "dep:regex"]
 # from downstream crates.
 mcp-echo-server = ["mcp", "rmcp/server", "rmcp/transport-io", "rmcp/macros"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-smithy-runtime-api"]
+bedrock-kb = ["dep:aws-config", "dep:aws-sdk-bedrockagent", "dep:aws-sdk-bedrockagentruntime", "dep:aws-sdk-s3", "dep:aws-smithy-types"]
 
 [dependencies]
 strands-agents-macros = { path = "../strands-agents-macros", version = "0.1.0", optional = true }
@@ -51,6 +52,9 @@ regex = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 aws-config = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }
+aws-sdk-s3 = { workspace = true, optional = true }
+aws-sdk-bedrockagent = { workspace = true, optional = true }
+aws-sdk-bedrockagentruntime = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
 aws-smithy-runtime-api = { workspace = true, optional = true }
 
@@ -67,6 +71,8 @@ tokio-stream.workspace = true
 tracing-subscriber.workspace = true
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
+aws-smithy-mocks.workspace = true
+aws-sdk-bedrockagentruntime = { workspace = true, features = ["test-util"] }
 
 # Test-only stdio MCP server used by tests/mcp_e2e.rs; never built without its feature.
 [[bin]]

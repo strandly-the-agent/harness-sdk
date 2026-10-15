@@ -96,6 +96,10 @@ pub use interrupt::{Interrupt, InterruptSource, InterruptState};
 pub use interventions::{InterventionHandler, InterventionRegistry};
 #[cfg(feature = "mcp")]
 pub use mcp::{McpClient, McpServerConfig, McpTool};
+#[cfg(feature = "bedrock-kb")]
+pub use memory::{
+    BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig, RetrievalFilter,
+};
 pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
     MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor, TestMemoryStore, TestMemoryStoreConfig,
