@@ -1916,7 +1916,7 @@ mod tests {
                 access_control_list: Some(vec![AccessControlEntry {
                     name: "alice".to_owned(),
                     r#type: "USER".to_owned(),
-                    access: AccessControlAccess::Allow,
+                    access: AccessControlAccess::Deny,
                 }]),
                 ..Default::default()
             },
@@ -1932,7 +1932,7 @@ mod tests {
             serde_json::from_str::<JsonValue>(&uploaded[1].3).expect("sidecar json"),
             serde_json::json!({
                 "metadataAttributes": {},
-                "accessControlList": [{ "Name": "alice", "Type": "USER", "Access": "ALLOW" }],
+                "accessControlList": [{ "Name": "alice", "Type": "USER", "Access": "DENY" }],
             })
         );
     }
