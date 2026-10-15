@@ -1,13 +1,16 @@
 //! The `http_request` tool (`strands-ts/src/vended-tools/http-request/http-request.ts`).
 //!
 //! Issues one HTTP request through an injectable [`reqwest::Client`] and returns the status,
-//! status text, headers and body. A non-2xx response is an error, as in TS.
+//! status text, headers and body. A non-2xx response is an error, as in TS. The body is read in
+//! full and never truncated, so a hostile or very large response is a memory risk — put such
+//! endpoints behind a client with its own limits.
 //!
 //! Divergences from TS: `fetch` reports the status text the server sent, while this port derives
 //! it from the code's canonical reason (empty for an unknown code); zod's `.url()` check becomes
 //! URL parsing, reported as [`Error::ToolValidation`]; and a cancelled call returns
 //! [`Error::Cancelled`] — the variant the executor already understands — rather than TS's
-//! `Request cancelled: …` message. The timeout message matches TS verbatim.
+//! `Request cancelled: …` message. `method` is accepted case-insensitively (`get` works) where
+//! TS's `z.enum` requires upper case. The timeout message matches TS verbatim.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -41,7 +44,7 @@ pub struct HttpRequestConfig {
     /// Tool description reported to the model.
     pub description: String,
     /// Timeout used when the input omits `timeout`.
-    pub default_timeout: Duration,
+    pub timeout: Duration,
     /// Client the requests go through; swap it out to add proxies, TLS roots or redirect policy.
     pub client: reqwest::Client,
 }
@@ -51,7 +54,7 @@ impl Default for HttpRequestConfig {
         Self {
             name: HTTP_REQUEST_TOOL_NAME.to_owned(),
             description: DEFAULT_HTTP_REQUEST_DESCRIPTION.to_owned(),
-            default_timeout: Duration::from_secs_f64(DEFAULT_TIMEOUT_SECONDS),
+            timeout: Duration::from_secs_f64(DEFAULT_TIMEOUT_SECONDS),
             client: reqwest::Client::new(),
         }
     }
@@ -104,6 +107,11 @@ impl Default for HttpRequestTool {
 
 impl HttpRequestTool {
     /// HTTP request tool with the default configuration (30 second timeout, a fresh client).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the default [`reqwest::Client`] cannot be built; pass your own client through
+    /// [`HttpRequestTool::with_config`] to control construction.
     pub fn new() -> Self {
         Self::with_config(HttpRequestConfig::default())
     }
@@ -146,10 +154,7 @@ impl HttpRequestTool {
     /// The timeout to apply, as a duration and as the seconds TS puts in its message.
     fn timeout(&self, requested: Option<f64>) -> Result<(Duration, f64)> {
         let Some(secs) = requested else {
-            return Ok((
-                self.config.default_timeout,
-                self.config.default_timeout.as_secs_f64(),
-            ));
+            return Ok((self.config.timeout, self.config.timeout.as_secs_f64()));
         };
         if !(secs.is_finite() && secs > 0.0) {
             return Err(Error::ToolValidation(format!(

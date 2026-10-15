@@ -292,7 +292,7 @@ async fn call_tool(
     cancel: CancellationToken,
 ) -> Result<JsonValue> {
     let result = client.call_tool(tool_name, arguments, cancel).await?;
-    let block = crate::mcp::tool::map_call_tool_result(result, tool_name);
+    let block = crate::mcp::map_call_tool_result(result, tool_name);
     if block.status == ToolResultStatus::Error {
         let text = block
             .content

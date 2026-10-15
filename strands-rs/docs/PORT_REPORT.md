@@ -356,5 +356,5 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   `HandoffToUserTool`/`HandoffToUserConfig` raise a `strands:handoff-to-user` interrupt via
   `ToolContext::interrupt` and return the human's reply as the tool result. Name, description and
   input-schema text match TS verbatim. 25 unit + 4 agent-loop tests; see
-  `docs/matrices/vended-tools.md`. Remaining in this module: `file_editor`, `http_request`,
-  `mcp_router`.
+  `docs/matrices/vended-tools.md`. `file_editor`, `http_request` and `mcp_router` landed on the
+  same branch (see the matrix); nothing is left in this module.

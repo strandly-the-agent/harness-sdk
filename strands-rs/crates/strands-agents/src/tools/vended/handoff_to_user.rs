@@ -119,7 +119,7 @@ impl Tool for HandoffToUserTool {
         }
 
         let reply: JsonValue =
-            ctx.interrupt(InterruptParams::new(HANDOFF_INTERRUPT_NAME).with_reason(input.message.clone()))?;
+            ctx.interrupt(InterruptParams::new(HANDOFF_INTERRUPT_NAME).with_reason(input.message))?;
         Ok(wrap_in_tool_result(reply, &ctx.tool_use.tool_use_id))
     }
 }

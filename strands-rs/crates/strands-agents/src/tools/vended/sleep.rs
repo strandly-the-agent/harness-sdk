@@ -35,24 +35,38 @@ pub fn sleep_description(max_duration: f64) -> String {
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct SleepConfig {
+    /// Tool name reported to the model.
+    pub name: String,
+    /// Model-facing description; [`SleepConfig::new`] derives it with [`sleep_description`].
+    pub description: String,
     /// Upper bound on the `duration` input, in seconds (TS default: 60).
     pub max_duration: f64,
     /// How the tool waits. Default [`TokioSleeper`]; swap it out in tests.
     pub sleeper: Arc<dyn Sleeper>,
 }
 
-impl Default for SleepConfig {
-    fn default() -> Self {
+impl SleepConfig {
+    /// Configuration with the given duration cap and the description derived from it.
+    pub fn new(max_duration: f64) -> Self {
         Self {
-            max_duration: DEFAULT_MAX_DURATION,
+            name: SLEEP_TOOL_NAME.to_owned(),
+            description: sleep_description(max_duration),
+            max_duration,
             sleeper: Arc::new(TokioSleeper),
         }
+    }
+}
+
+impl Default for SleepConfig {
+    fn default() -> Self {
+        Self::new(DEFAULT_MAX_DURATION)
     }
 }
 
 impl std::fmt::Debug for SleepConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SleepConfig")
+            .field("name", &self.name)
             .field("max_duration", &self.max_duration)
             .finish_non_exhaustive()
     }
@@ -93,7 +107,7 @@ impl SleepTool {
                 config.max_duration
             )));
         }
-        let spec = sleep_tool_spec(config.max_duration);
+        let spec = sleep_tool_spec(&config);
         Ok(Self { config, spec })
     }
 
@@ -126,10 +140,11 @@ impl SleepTool {
 }
 
 /// Spec of the sleep tool, with `max_duration` interpolated into the schema and description.
-fn sleep_tool_spec(max_duration: f64) -> ToolSpec {
+fn sleep_tool_spec(config: &SleepConfig) -> ToolSpec {
+    let max_duration = config.max_duration;
     ToolSpec {
-        name: SLEEP_TOOL_NAME.to_owned(),
-        description: sleep_description(max_duration),
+        name: config.name.clone(),
+        description: config.description.clone(),
         input_schema: Some(serde_json::json!({
             "type": "object",
             "properties": {
@@ -209,8 +224,8 @@ mod tests {
     fn instant_tool(max_duration: f64) -> (SleepTool, Arc<RecordingSleeper>) {
         let sleeper = Arc::new(RecordingSleeper::default());
         let tool = SleepTool::with_config(SleepConfig {
-            max_duration,
             sleeper: Arc::clone(&sleeper) as Arc<dyn Sleeper>,
+            ..SleepConfig::new(max_duration)
         })
         .unwrap();
         (tool, sleeper)

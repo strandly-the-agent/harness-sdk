@@ -1,8 +1,8 @@
-# vended tools: `sleep`, `handoff_to_user` (`tools::vended`) — strands-rs port
+# vended tools: `sleep`, `handoff_to_user`, `file_editor`, `http_request`, `mcp_router` (`tools::vended`) — strands-rs port
 
 Branch `agent-tasks/strands-rs-vended-tools`, worktree `/home/sandbox/work/wt/vended-tools`.
-Files added: `crates/strands-agents/src/tools/vended/{sleep.rs,handoff_to_user.rs}`,
-`crates/strands-agents/tests/vended_tools_loop.rs`.
+Files added: `crates/strands-agents/src/tools/vended/{sleep.rs,handoff_to_user.rs,file_editor.rs,http_request.rs,mcp_router.rs}`,
+`crates/strands-agents/tests/{vended_tools_loop.rs,mcp_router_e2e.rs}`.
 Files touched: `crates/strands-agents/src/tools/vended/mod.rs` (declarations + re-exports),
 `crates/strands-agents/src/lib.rs` (`pub use tools::vended::{HandoffToUserTool, ShellTool, SleepTool};`).
 
@@ -256,3 +256,21 @@ orchestrator rather than fixed, to keep the TS behavioural contract:
    build with `Client::builder().build()` and either make the fallible path explicit
    (`try_new() -> Result<Self>`, `new()` kept for the infallible common case) or document the
    panic on `new()` and point at `with_config` as the escape hatch.
+
+## Review disposition (round 1, review of `050f2c053`)
+
+| Finding | Disposition |
+| --- | --- |
+| 🔴 `mcp_router` has no test that opens a connection | fixed — `tests/mcp_router_e2e.rs`, 7 tests against the `mcp_echo_server` binary: full `connect → list_tools → call_tool → disconnect`, `isError` → error, disconnect with the server already killed, connection cap, duplicate id, two simultaneous connections, cleanup on start failure. The echo server gained a `fail` tool so the `isError` path has something to return. |
+| 🟠 `connections` guard held across `stop_client(..).await` | fixed — message built, `drop(connections)`, then `stop_client`, on both the cap and duplicate paths. |
+| 🟠 `Error::ToolValidation` for runtime failures | fixed — `Error::other` for connect/initialise failure and for an MCP tool's `isError`; `ToolValidation` kept for input shape, allowlist, cap and duplicate id. |
+| 🟠 nothing cleans up connections when the tool is dropped | fixed — `pub async fn disconnect_all(&self)` plus a module `//!` line saying the owner must call it (`Drop` cannot await). Exercised by the e2e tests. |
+| 🟠 config shapes inconsistent across the five tools | fixed — `SleepConfig` gained `name`/`description` with `SleepConfig::new(max_duration)` deriving the description; `McpRouterConfig::description` is now `String`, resolved in `McpRouterConfig::new`; `HttpRequestConfig::default_timeout` → `timeout`. |
+| 🟠 unbounded `response.text()` | fixed as recommended — module-doc sentence stating the body is never truncated; no truncation added. `max_response_bytes` left as a follow-up. |
+| 🟡 `HttpRequestTool::new` panic needs a doc line | fixed — `# Panics` section pointing at `with_config`. |
+| 🟡 `McpRouterTool::new(servers)` breaks the family's `new()` | fixed — renamed to `with_servers`; no zero-arg `new`. |
+| 🟡 `src/mcp/mod.rs` visibility widened | fixed — back to `mod tool;` with `pub(crate) use tool::map_call_tool_result;`. |
+| 🟡 needless `input.message.clone()` in handoff | fixed. `handoff_to_user_tool_spec` kept by value — disputed: the tool stores only the spec, so taking `&config` forces two `String` clones for no gain. |
+| 🟡 `parse_method` uppercases, TS's `z.enum` does not | fixed — listed under the module's divergences. |
+| 🟡 stale `PORT_REPORT.md` bullet / matrix title | fixed. |
+| 🟡 `FEATURE_MATRIX.md` column widths | deferred — cosmetic; the rows render correctly and rewrapping the table conflicts with the other lanes editing it. |
