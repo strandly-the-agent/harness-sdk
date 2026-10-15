@@ -244,6 +244,47 @@ impl Tracer {
         self.end(span, error);
     }
 
+    /// `decision` — one [`DecisionModel::ask`](crate::decisions::DecisionModelExt::ask) call.
+    pub fn start_decision_span(&self, question_ids: &[&str]) -> SpanHandle {
+        let mut attrs = self.common_attributes(Some("decision"), None);
+        self.apply_custom(&mut attrs);
+        let span = self.begin("decision", backend::Kind::Internal, attrs, None);
+        self.add_event(
+            &span,
+            "gen_ai.decision.questions",
+            vec![("ids".to_string(), serde_json::json!(question_ids))],
+        );
+        span
+    }
+
+    /// Close the decision span, recording latency, usage and the answer set.
+    pub fn end_decision_span(
+        &self,
+        span: &SpanHandle,
+        latency_ms: Option<u64>,
+        usage: Option<&Usage>,
+        answers: Option<&serde_json::Value>,
+        error: Option<&str>,
+    ) {
+        let mut attrs = Attrs::new();
+        if let Some(latency) = latency_ms {
+            attr(&mut attrs, "gen_ai.decision.latency_ms", latency);
+        }
+        if let Some(usage) = usage {
+            attr(&mut attrs, "gen_ai.usage.input_tokens", usage.input_tokens);
+            attr(&mut attrs, "gen_ai.usage.output_tokens", usage.output_tokens);
+        }
+        backend::set_attributes(&span.inner, &attrs);
+        if let Some(answers) = answers {
+            self.add_event(
+                span,
+                "gen_ai.decision.answers",
+                vec![("answers".to_string(), answers.clone())],
+            );
+        }
+        self.end(span, error);
+    }
+
     /// `execute_tool <name>` — one tool call, parented to the cycle span.
     pub fn start_tool_call_span(&self, parent: Option<&SpanHandle>, tool_use: &ToolUse) -> SpanHandle {
         let name = format!("execute_tool {}", tool_use.name);

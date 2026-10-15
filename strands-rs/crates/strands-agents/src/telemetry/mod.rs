@@ -138,6 +138,27 @@ pub fn service_name() -> String {
         .unwrap_or_else(|| DEFAULT_SERVICE_NAME.to_string())
 }
 
+/// Await `future` with `span` as the active OTel context, so spans started inside it (by code that
+/// has no `SpanHandle`, e.g. a model provider) are parented to `span`.
+///
+/// Without the `telemetry` feature this is just `future.await`.
+#[cfg(feature = "telemetry")]
+pub async fn in_span<F: std::future::Future>(span: &SpanHandle, future: F) -> F::Output {
+    use opentelemetry::trace::FutureExt;
+
+    match span.context() {
+        Some(cx) => future.with_context(cx.clone()).await,
+        None => future.await,
+    }
+}
+
+/// Await `future` with `span` as the active OTel context (a no-op without the `telemetry`
+/// feature).
+#[cfg(not(feature = "telemetry"))]
+pub async fn in_span<F: std::future::Future>(_span: &SpanHandle, future: F) -> F::Output {
+    future.await
+}
+
 fn detect_langfuse() -> bool {
     [
         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
