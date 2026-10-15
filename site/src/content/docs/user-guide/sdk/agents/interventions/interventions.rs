@@ -12,7 +12,9 @@ fn search_tool() -> FunctionTool {
             "type": "object",
             "properties": { "query": { "type": "string" } }
         }))
-        .handler(|_input: JsonValue, _ctx: ToolContext| async move { Ok("search results") })
+        .handler(
+            |_input: JsonValue, _ctx: ToolContext| async move { Ok("search results") },
+        )
 }
 
 fn delete_tool() -> FunctionTool {
@@ -52,7 +54,10 @@ async fn basic_usage_example() -> Result<(), Box<dyn std::error::Error>> {
             "tool-guard"
         }
 
-        async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
+        async fn before_tool_call(
+            &self,
+            event: &BeforeToolCallEvent,
+        ) -> Result<ToolCallAction> {
             if self.blocked_tools.contains(&event.tool_use.name) {
                 return Ok(ToolCallAction::Deny(format!(
                     "Tool '{}' is not allowed in this environment",
@@ -68,9 +73,7 @@ async fn basic_usage_example() -> Result<(), Box<dyn std::error::Error>> {
         .model(model)
         .tool(search_tool())
         .tool(delete_tool())
-        .intervention(ToolGuard {
-            blocked_tools: vec!["delete_file".to_owned()],
-        })
+        .intervention(ToolGuard { blocked_tools: vec!["delete_file".to_owned()] })
         .build()?;
 
     // The agent can search freely, but any attempt to call delete_file
@@ -101,7 +104,10 @@ fn action_types_example() {
             "environment-guard"
         }
 
-        async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
+        async fn before_tool_call(
+            &self,
+            event: &BeforeToolCallEvent,
+        ) -> Result<ToolCallAction> {
             let database = event.tool_use.input["database"].as_str().unwrap_or_default();
             if database.contains("prod") {
                 return Ok(ToolCallAction::Deny(
@@ -121,8 +127,13 @@ fn action_types_example() {
             "email-validator"
         }
 
-        async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
-            if event.tool_use.name == "send_email" && event.tool_use.input["subject"].is_null() {
+        async fn before_tool_call(
+            &self,
+            event: &BeforeToolCallEvent,
+        ) -> Result<ToolCallAction> {
+            if event.tool_use.name == "send_email"
+                && event.tool_use.input["subject"].is_null()
+            {
                 return Ok(ToolCallAction::Guide(
                     "All emails must include a subject line.".to_owned(),
                 ));
@@ -140,7 +151,10 @@ fn action_types_example() {
             "delete-approval"
         }
 
-        async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
+        async fn before_tool_call(
+            &self,
+            event: &BeforeToolCallEvent,
+        ) -> Result<ToolCallAction> {
             if event.tool_use.name == "delete_file" {
                 let path = event.tool_use.input["path"].as_str().unwrap_or_default();
                 return Ok(ToolCallAction::Confirm(Confirm::new(format!(
@@ -160,18 +174,19 @@ fn action_types_example() {
             "pii-redactor"
         }
 
-        async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
+        async fn before_tool_call(
+            &self,
+            event: &BeforeToolCallEvent,
+        ) -> Result<ToolCallAction> {
             if event.tool_use.name != "send_email" {
                 return Ok(ToolCallAction::Proceed);
             }
-            Ok(ToolCallAction::Transform(Box::new(
-                |event: &mut BeforeToolCallEvent| {
-                    // `redact_pii` is your own function; the SDK vends no redactor
-                    let body = event.tool_use.input["body"].as_str().unwrap_or_default();
-                    let redacted = redact_pii(body);
-                    event.tool_use.input["body"] = redacted.into();
-                },
-            )))
+            Ok(ToolCallAction::Transform(Box::new(|event: &mut BeforeToolCallEvent| {
+                // `redact_pii` is your own function; the SDK vends no redactor
+                let body = event.tool_use.input["body"].as_str().unwrap_or_default();
+                let redacted = redact_pii(body);
+                event.tool_use.input["body"] = redacted.into();
+            })))
         }
     }
     // --8<-- [end:action_types]
@@ -202,7 +217,10 @@ async fn short_circuiting_example() -> Result<(), Box<dyn std::error::Error>> {
             "rate-limiter"
         }
 
-        async fn before_tool_call(&self, _event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
+        async fn before_tool_call(
+            &self,
+            _event: &BeforeToolCallEvent,
+        ) -> Result<ToolCallAction> {
             if self.call_count.fetch_add(1, Ordering::Relaxed) >= 10 {
                 // Deny short-circuits: handlers registered after this one are skipped
                 return Ok(ToolCallAction::Deny("Rate limit exceeded".to_owned()));
@@ -260,7 +278,10 @@ fn confirm_example() {
             "delete-approval"
         }
 
-        async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
+        async fn before_tool_call(
+            &self,
+            event: &BeforeToolCallEvent,
+        ) -> Result<ToolCallAction> {
             if event.tool_use.name == "delete_file" {
                 let path = event.tool_use.input["path"].as_str().unwrap_or_default();
                 // With no `with_response`, the agent interrupts and waits for a human;

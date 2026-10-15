@@ -16,9 +16,8 @@ fn getting_started() -> Result<(), strands_agents::Error> {
         .model(MockMessageModel::shared(vec![]))
         .plugin(ContextInjector::new(|_context| {
             Box::pin(async {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default();
+                let now =
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
                 Ok(Some(format!("<now>{}</now>", now.as_secs())))
             })
         }))
@@ -42,9 +41,7 @@ fn every_turn() {
 
     let clock = ContextInjector::new(|_context| {
         Box::pin(async {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
             Ok(Some(format!("<now>{}</now>", now.as_secs())))
         })
     })
@@ -67,9 +64,9 @@ fn predicate() {
 
     let injector = ContextInjector::new(|context| {
         let turns = context.messages.len();
-        Box::pin(async move {
-            Ok(Some(format!("<context>{turns} turns so far</context>")))
-        })
+        Box::pin(
+            async move { Ok(Some(format!("<context>{turns} turns so far</context>"))) },
+        )
     })
     // Inject only when a tool stashed a flag in app state last turn.
     .with_trigger_fn(|context| {

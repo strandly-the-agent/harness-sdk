@@ -159,9 +159,8 @@ async fn track_user_action(
 async fn get_user_stats(ctx: strands_agents::ToolContext) -> String {
     let state = ctx.agent.state();
     let action_count = state.get("action_count").and_then(|v| v.as_i64()).unwrap_or(0);
-    let last_action = state
-        .get_as::<String>("last_action")
-        .unwrap_or_else(|| "none".to_owned());
+    let last_action =
+        state.get_as::<String>("last_action").unwrap_or_else(|| "none".to_owned());
 
     format!("Actions performed: {action_count}, Last action: {last_action}")
 }

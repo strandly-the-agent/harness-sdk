@@ -9,7 +9,10 @@ mod my_backend {
     use strands_agents::types::Message;
     use strands_agents::Result;
 
-    pub async fn retrieve(_query: &str, _limit: Option<usize>) -> Result<Vec<MemoryEntry>> {
+    pub async fn retrieve(
+        _query: &str,
+        _limit: Option<usize>,
+    ) -> Result<Vec<MemoryEntry>> {
         Ok(Vec::new())
     }
 
@@ -23,8 +26,9 @@ async fn turn_on_writes() -> Result<()> {
     use std::sync::Arc;
 
     use strands_agents::memory::{
-        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig,
-        DataSourceType, ExtractionConfig, MemoryManager, ModelExtractor,
+        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore,
+        BedrockKnowledgeBaseStoreConfig, DataSourceType, ExtractionConfig, MemoryManager,
+        ModelExtractor,
     };
     use strands_agents::models::BedrockModel;
     use strands_agents::Agent;
@@ -61,8 +65,8 @@ async fn multi_store() -> Result<()> {
     use std::sync::Arc;
 
     use strands_agents::memory::{
-        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig,
-        DataSourceType, MemoryManager,
+        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore,
+        BedrockKnowledgeBaseStoreConfig, DataSourceType, MemoryManager,
     };
     use strands_agents::models::BedrockModel;
     use strands_agents::Agent;
@@ -75,15 +79,16 @@ async fn multi_store() -> Result<()> {
         ..Default::default()
     };
 
-    let personal = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
-        name: "personal".to_string(),
-        description: Some("Knowledge specific to this user.".to_string()),
-        writable: Some(true),
-        scope: Some("user-abc".to_string()),
-        config: connection.clone(),
-        ..Default::default()
-    })
-    .await?;
+    let personal =
+        BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
+            name: "personal".to_string(),
+            description: Some("Knowledge specific to this user.".to_string()),
+            writable: Some(true),
+            scope: Some("user-abc".to_string()),
+            config: connection.clone(),
+            ..Default::default()
+        })
+        .await?;
 
     let team = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
         name: "team".to_string(),
@@ -108,9 +113,9 @@ async fn search_tool_config() -> Result<()> {
     use std::sync::Arc;
 
     use strands_agents::memory::{
-        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig,
-        DataSourceType, MemoryAddToolConfig, MemoryInjectionConfig, MemoryManager,
-        MemoryManagerConfig, MemoryToolConfig,
+        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore,
+        BedrockKnowledgeBaseStoreConfig, DataSourceType, MemoryAddToolConfig,
+        MemoryInjectionConfig, MemoryManager, MemoryManagerConfig, MemoryToolConfig,
     };
     use strands_agents::models::BedrockModel;
     use strands_agents::Agent;
@@ -134,7 +139,8 @@ async fn search_tool_config() -> Result<()> {
             name: Some("recall".to_string()),
             description: Some("Look up what you remember about the user.".to_string()),
         }),
-        // add_memory: opt in, and return as soon as writes dispatch instead of awaiting them
+        // add_memory: opt in, and return as soon as writes dispatch instead of
+        // awaiting them
         add_tool: Some(MemoryAddToolConfig {
             wait_for_writes: Some(false),
             ..Default::default()
@@ -158,9 +164,9 @@ async fn injection_custom() -> Result<()> {
     use std::sync::Arc;
 
     use strands_agents::memory::{
-        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig,
-        InjectionTrigger, MemoryEntry, MemoryInjectionConfig, MemoryManager, MemoryManagerConfig,
-        MemoryToolConfig,
+        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore,
+        BedrockKnowledgeBaseStoreConfig, InjectionTrigger, MemoryEntry,
+        MemoryInjectionConfig, MemoryManager, MemoryManagerConfig, MemoryToolConfig,
     };
     use strands_agents::models::BedrockModel;
     use strands_agents::types::Message;
@@ -211,12 +217,14 @@ async fn extraction_defaults() -> Result<()> {
     use std::sync::Arc;
 
     use strands_agents::memory::{
-        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig,
-        DataSourceType, ExtractionConfig, ModelExtractor,
+        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore,
+        BedrockKnowledgeBaseStoreConfig, DataSourceType, ExtractionConfig,
+        ModelExtractor,
     };
     use strands_agents::models::BedrockModel;
 
-    // An add-only store needs an explicit extractor; the trigger defaults to every 5 turns.
+    // An add-only store needs an explicit extractor; the trigger defaults to every
+    // 5 turns.
     let extractor = ModelExtractor::new(Arc::new(BedrockModel::default_model().await?));
 
     let store = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
@@ -242,20 +250,23 @@ async fn extraction_custom() -> Result<()> {
     use std::sync::Arc;
 
     use strands_agents::memory::{
-        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig,
-        DataSourceType, ExtractionConfig, ExtractionTrigger, MemoryManager, MemoryManagerConfig,
-        MemoryToolConfig, ModelExtractor,
+        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore,
+        BedrockKnowledgeBaseStoreConfig, DataSourceType, ExtractionConfig,
+        ExtractionTrigger, MemoryManager, MemoryManagerConfig, MemoryToolConfig,
+        ModelExtractor,
     };
     use strands_agents::models::BedrockModel;
 
     let store = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
         name: "preferences".to_string(),
         writable: Some(true),
-        extraction: Some(ExtractionConfig::default().extractor(Arc::new(
-            // a cheaper model than the agent's to cut cost
-            ModelExtractor::new(Arc::new(BedrockModel::default_model().await?))
-                .system_prompt("Extract durable user preferences as discrete facts."),
-        ))),
+        extraction: Some(
+            ExtractionConfig::default().extractor(Arc::new(
+                // a cheaper model than the agent's to cut cost
+                ModelExtractor::new(Arc::new(BedrockModel::default_model().await?))
+                    .system_prompt("Extract durable user preferences as discrete facts."),
+            )),
+        ),
         config: BedrockKnowledgeBaseConfig {
             knowledge_base_id: "KB123".to_string(),
             data_source_type: Some(DataSourceType::Custom),
@@ -285,9 +296,8 @@ async fn programmatic(memory_manager: &MemoryManager) -> Result<()> {
     use strands_agents::memory::{MemoryAddOptions, MemorySearchOptions, Metadata};
 
     // Search every store, or a subset by name.
-    let all = memory_manager
-        .search("travel plans", &MemorySearchOptions::default())
-        .await?;
+    let all =
+        memory_manager.search("travel plans", &MemorySearchOptions::default()).await?;
     let scoped = memory_manager
         .search(
             "travel plans",
@@ -304,7 +314,10 @@ async fn programmatic(memory_manager: &MemoryManager) -> Result<()> {
             "Prefers aisle seats",
             &MemoryAddOptions {
                 stores: Some(vec!["personal".to_string()]),
-                metadata: Some(Metadata::from([("category".to_string(), json!("travel"))])),
+                metadata: Some(Metadata::from([(
+                    "category".to_string(),
+                    json!("travel"),
+                )])),
             },
         )
         .await?;
@@ -344,7 +357,11 @@ fn custom_store() {
             true
         }
 
-        async fn search(&self, query: &str, options: &SearchOptions) -> Result<Vec<MemoryEntry>> {
+        async fn search(
+            &self,
+            query: &str,
+            options: &SearchOptions,
+        ) -> Result<Vec<MemoryEntry>> {
             let limit = options.max_search_results.unwrap_or(3);
             let entries = self.entries.lock().unwrap();
             Ok(entries
@@ -355,7 +372,8 @@ fn custom_store() {
                 .collect())
         }
 
-        // Opt into the optional `add` capability, otherwise the manager will not route to it.
+        // Opt into the optional `add` capability, otherwise the manager will not
+        // route to it.
         fn supports_add(&self) -> bool {
             true
         }
@@ -396,7 +414,11 @@ fn server_side_store() {
             Some(&self.extraction)
         }
 
-        async fn search(&self, query: &str, options: &SearchOptions) -> Result<Vec<MemoryEntry>> {
+        async fn search(
+            &self,
+            query: &str,
+            options: &SearchOptions,
+        ) -> Result<Vec<MemoryEntry>> {
             my_backend::retrieve(query, options.max_search_results).await
         }
 

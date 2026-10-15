@@ -96,20 +96,22 @@ mod hook_ordering {
         );
 
         // Arbitrary numbers for fine-grained control
-        agent
-            .hooks()
-            .add_sync_callback_with_order(-50, |_event: &mut BeforeToolCallEvent| {
+        agent.hooks().add_sync_callback_with_order(
+            -50,
+            |_event: &mut BeforeToolCallEvent| {
                 println!("[validation] Validating input");
                 Ok(())
-            });
+            },
+        );
 
         // Use i32::MIN/i32::MAX for guaranteed absolute first/last
-        agent
-            .hooks()
-            .add_sync_callback_with_order(i32::MIN, |_event: &mut BeforeToolCallEvent| {
+        agent.hooks().add_sync_callback_with_order(
+            i32::MIN,
+            |_event: &mut BeforeToolCallEvent| {
                 println!("[absolute] Always runs first, no matter what");
                 Ok(())
-            });
+            },
+        );
         // --8<-- [end:hook_ordering]
 
         Ok(())
@@ -147,7 +149,10 @@ mod invocation_state_in_hooks {
         state.insert("session_id", "sess456".to_owned());
 
         let result = agent
-            .invoke_with("Process the data", InvokeOptions::default().with_invocation_state(state))
+            .invoke_with(
+                "Process the data",
+                InvokeOptions::default().with_invocation_state(state),
+            )
             .await?;
 
         // The same handle is returned on the result
@@ -233,7 +238,9 @@ mod result_modification {
 
 mod composability {
     use async_trait::async_trait;
-    use strands_agents::hooks::{AfterInvocationEvent, BeforeInvocationEvent, BeforeToolCallEvent};
+    use strands_agents::hooks::{
+        AfterInvocationEvent, BeforeInvocationEvent, BeforeToolCallEvent,
+    };
     use strands_agents::plugins::Plugin;
     use strands_agents::{Agent, Result};
 
@@ -295,7 +302,7 @@ mod logging_modifications {
                     let ToolResultContent::Text(text) = block else {
                         continue;
                     };
-                    // Log the change before mutating so the audit trail captures both states.
+                    // Log before mutating so the audit trail captures both states.
                     println!("Modifying calculator result: {text}");
                     *block = ToolResultContent::Text(format!("Result: {text}"));
                 }
@@ -333,7 +340,8 @@ mod fixed_tool_arguments {
             let fixed = self.fixed_tool_arguments.clone();
             agent.hooks().add_sync_callback(move |event: &mut BeforeToolCallEvent| {
                 // If the tool is in our list of parameters, then use those parameters
-                let Some(parameters_to_fix) = fixed.get(&event.tool_use.name).and_then(JsonValue::as_object)
+                let Some(parameters_to_fix) =
+                    fixed.get(&event.tool_use.name).and_then(JsonValue::as_object)
                 else {
                     return Ok(());
                 };
@@ -364,7 +372,10 @@ mod fixed_tool_arguments {
         use serde_json::json;
 
         let fix_parameters = ConstantToolArguments {
-            fixed_tool_arguments: HashMap::from([("calculator".to_owned(), json!({ "precision": 1 }))]),
+            fixed_tool_arguments: HashMap::from([(
+                "calculator".to_owned(),
+                json!({ "precision": 1 }),
+            )]),
         };
 
         let agent = Agent::builder()
@@ -422,8 +433,8 @@ mod limit_tool_counts {
 
                 if max_tool_counts.get(&tool_name).is_some_and(|max| tool_count > *max) {
                     event.cancel = format!(
-                        "Tool '{tool_name}' has been invoked too many times and is now being \
-                         throttled. DO NOT CALL THIS TOOL ANYMORE"
+                        "Tool '{tool_name}' has been invoked too many times and is \
+                         now being throttled. DO NOT CALL THIS TOOL ANYMORE"
                     )
                     .into();
                 }
@@ -459,9 +470,7 @@ mod limit_tool_counts {
             .build()?;
 
         // This call will only have 3 successful sleeps
-        agent
-            .invoke("Sleep 5 times for 10ms each or until you can't anymore")
-            .await?;
+        agent.invoke("Sleep 5 times for 10ms each or until you can't anymore").await?;
         // This will sleep successfully again because the count resets every invocation
         agent.invoke("Sleep once").await?;
         // --8<-- [end:limit_tool_counts_usage]
@@ -492,10 +501,9 @@ mod model_call_retry {
             agent.hooks().add_sync_callback(move |event: &mut AfterModelCallEvent| {
                 // `attempt_count` is 1-indexed and includes the attempt that just failed,
                 // so no manual counter is needed to cap retries.
-                let failed_with_503 = event
-                    .error
-                    .as_ref()
-                    .is_some_and(|error| error.to_string().contains("ServiceUnavailable"));
+                let failed_with_503 = event.error.as_ref().is_some_and(|error| {
+                    error.to_string().contains("ServiceUnavailable")
+                });
                 if failed_with_503 && event.attempt_count <= max_retries {
                     event.retry = true;
                 }
@@ -671,7 +679,8 @@ mod summarize_after_tools {
         agent.hooks().add_sync_callback(move |event: &mut AfterInvocationEvent| {
             // Resume once after a clean turn to ask the model for a one-line summary.
             if resume_count.fetch_add(1, Ordering::Relaxed) == 0 {
-                event.resume = Some("Now summarize what you just did in one sentence.".into());
+                event.resume =
+                    Some("Now summarize what you just did in one sentence.".into());
             }
             Ok(())
         });

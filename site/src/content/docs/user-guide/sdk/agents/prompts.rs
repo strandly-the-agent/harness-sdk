@@ -81,10 +81,8 @@ async fn direct_tool_calls() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:direct_tool_calls]
     use serde_json::json;
 
-    let result = agent
-        .tool("current_time")?
-        .call(json!({ "timezone": "US/Pacific" }))
-        .await?;
+    let result =
+        agent.tool("current_time")?.call(json!({ "timezone": "US/Pacific" })).await?;
     // --8<-- [end:direct_tool_calls]
 
     let _ = result;

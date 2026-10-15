@@ -15,10 +15,7 @@ async fn getting_started() -> std::result::Result<(), Box<dyn std::error::Error>
             .with_max_attempts(3);
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder()
-        .model(model)
-        .plugin(concise.clone())
-        .build()?;
+    let agent = Agent::builder().model(model).plugin(concise.clone()).build()?;
     agent.invoke("Explain how rainbows form.").await?;
     println!("{:?}", concise.last_result(&agent));
 
@@ -45,9 +42,7 @@ fn word_count_validator_example() {
         if words <= 50 {
             return Ok(ValidationOutcome::passed());
         }
-        Ok(ValidationOutcome::failed(format!(
-            "Too long ({words} words). Cap at 50."
-        )))
+        Ok(ValidationOutcome::failed(format!("Too long ({words} words). Cap at 50.")))
     }
 
     let plugin = GoalLoop::sync_validator(word_count_validator)
@@ -157,9 +152,8 @@ fn custom_resume_prompt() {
     use strands_agents::plugins::GoalLoop;
     use strands_agents::InvokeInput;
 
-    let plugin = GoalLoop::goal("...")
-        .with_max_attempts(3)
-        .with_resume_prompt_template(|feedback| match feedback {
+    let plugin = GoalLoop::goal("...").with_max_attempts(3).with_resume_prompt_template(
+        |feedback| match feedback {
             None => InvokeInput::from(
                 "That didn't pass. Start over from scratch with a different approach.",
             ),
@@ -168,7 +162,8 @@ fn custom_resume_prompt() {
                  Do NOT edit your previous response. Start over \
                  from scratch and take a completely different approach."
             )),
-        });
+        },
+    );
     // --8<-- [end:custom_resume_prompt]
 
     let _ = plugin;
@@ -196,10 +191,7 @@ fn custom_judge() {
             let prompt = build_judge_prompt("Be concise.", &context.agent.messages());
             let outcome: JudgeOutcome = judge.structured_output(prompt).await?;
 
-            Ok(ValidationOutcome {
-                passed: outcome.passed,
-                feedback: outcome.feedback,
-            })
+            Ok(ValidationOutcome { passed: outcome.passed, feedback: outcome.feedback })
         })
     })
     .with_max_attempts(3);

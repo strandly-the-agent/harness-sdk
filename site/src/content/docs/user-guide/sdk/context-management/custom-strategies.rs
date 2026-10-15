@@ -10,13 +10,13 @@ async fn basic_config() -> Result<()> {
         Offload, OffloadConditions, OffloadTarget, TruncateConfig,
     };
     use strands_agents::models::BedrockModel;
-    use strands_agents::{Agent, ContextManagerConfig, ContextManagerOption, StashOption};
+    use strands_agents::{
+        Agent, ContextManagerConfig, ContextManagerOption, StashOption,
+    };
 
-    let truncate = Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default())
-        .when(OffloadConditions {
-            threshold: Some(2000.0),
-            ..Default::default()
-        });
+    let truncate =
+        Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default())
+            .when(OffloadConditions { threshold: Some(2000.0), ..Default::default() });
     let summarize = Offload::summarize(OffloadTarget::All).when(OffloadConditions {
         utilization: Some(0.8),
         preserve_recent: Some(4.0),
@@ -43,21 +43,17 @@ fn truncate() {
 
     Offload::truncate(
         OffloadTarget::ToolResults,
-        TruncateConfig {
-            preview_tokens: Some(750),
-            ..Default::default()
-        },
+        TruncateConfig { preview_tokens: Some(750), ..Default::default() },
     )
-    .when(OffloadConditions {
-        threshold: Some(1500.0),
-        ..Default::default()
-    });
+    .when(OffloadConditions { threshold: Some(1500.0), ..Default::default() });
     // --8<-- [end:truncate]
 }
 
 fn summarize() {
     // --8<-- [start:summarize]
-    use strands_agents::context_manager::strategies::{Offload, OffloadConditions, OffloadTarget};
+    use strands_agents::context_manager::strategies::{
+        Offload, OffloadConditions, OffloadTarget,
+    };
 
     Offload::summarize(OffloadTarget::All).when(OffloadConditions {
         utilization: Some(0.85),
@@ -69,12 +65,12 @@ fn summarize() {
 
 fn drop_strategy() {
     // --8<-- [start:drop]
-    use strands_agents::context_manager::strategies::{Offload, OffloadConditions, OffloadTarget};
+    use strands_agents::context_manager::strategies::{
+        Offload, OffloadConditions, OffloadTarget,
+    };
 
-    Offload::drop(OffloadTarget::ToolResults).when(OffloadConditions {
-        preserve_recent: Some(5.0),
-        ..Default::default()
-    });
+    Offload::drop(OffloadTarget::ToolResults)
+        .when(OffloadConditions { preserve_recent: Some(5.0), ..Default::default() });
     // --8<-- [end:drop]
 }
 
@@ -84,12 +80,8 @@ fn conditions() {
     };
 
     // --8<-- [start:conditions_threshold]
-    Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default()).when(
-        OffloadConditions {
-            threshold: Some(2000.0),
-            ..Default::default()
-        },
-    );
+    Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default())
+        .when(OffloadConditions { threshold: Some(2000.0), ..Default::default() });
     // --8<-- [end:conditions_threshold]
 
     // --8<-- [start:conditions_utilization]
@@ -114,7 +106,9 @@ fn conditions() {
 async fn stash_disabled() -> Result<()> {
     // --8<-- [start:stash_disabled]
     use strands_agents::models::BedrockModel;
-    use strands_agents::{Agent, ContextManagerConfig, ContextManagerOption, StashOption};
+    use strands_agents::{
+        Agent, ContextManagerConfig, ContextManagerOption, StashOption,
+    };
 
     let agent = Agent::builder()
         .model(BedrockModel::default_model().await?)

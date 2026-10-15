@@ -23,19 +23,21 @@ async fn sdk_context_manager() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::context_manager::strategies::{
         Offload, OffloadConditions, OffloadTarget, TruncateConfig,
     };
-    use strands_agents::context_manager::{ContextManagerConfig, ContextManagerOption, StashOption};
+    use strands_agents::context_manager::{
+        ContextManagerConfig, ContextManagerOption, StashOption,
+    };
     use strands_agents::models::BedrockModel;
     use strands_agents::Agent;
 
-    // The Rust SDK has no conversation manager; context management is a strategy pipeline.
+    // The Rust SDK has no conversation manager; context management is a strategy
+    // pipeline.
     let context_manager = ContextManagerOption::Config(ContextManagerConfig {
         strategies: Some(vec![Arc::new(
-            Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default()).when(
-                OffloadConditions {
+            Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default())
+                .when(OffloadConditions {
                     threshold: Some(2_000.0),
                     ..Default::default()
-                },
-            ),
+                }),
         )]),
         stash: StashOption::Enabled,
     });
@@ -71,10 +73,7 @@ async fn sdk_caching() -> Result<(), Box<dyn std::error::Error>> {
 
     let bedrock_model = BedrockModel::new(BedrockModelConfig {
         model_id: Some("global.anthropic.claude-sonnet-5".into()),
-        cache_config: Some(CacheConfig {
-            ttl: Some("1h".into()),
-            ..Default::default()
-        }),
+        cache_config: Some(CacheConfig { ttl: Some("1h".into()), ..Default::default() }),
         ..Default::default()
     })
     .await?;

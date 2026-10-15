@@ -3,7 +3,9 @@
 // --8<-- [start:create_model_class]
 use async_trait::async_trait;
 use futures::stream::{self, StreamExt};
-use strands_agents::models::{CountTokensOptions, Model, ModelEventStream, StreamOptions};
+use strands_agents::models::{
+    CountTokensOptions, Model, ModelEventStream, StreamOptions,
+};
 use strands_agents::types::Message;
 use strands_agents::{Error, Result};
 
@@ -62,14 +64,10 @@ impl Model for CustomModel {
         let _ = (messages, options);
 
         stream::iter(vec![
-            Ok(ModelStreamEvent::MessageStart {
-                role: Role::Assistant,
-            }),
+            Ok(ModelStreamEvent::MessageStart { role: Role::Assistant }),
             Ok(ModelStreamEvent::ContentBlockStart { start: None }),
             Ok(ModelStreamEvent::ContentBlockDelta {
-                delta: ContentBlockDelta::Text {
-                    text: "Hello".to_owned(),
-                },
+                delta: ContentBlockDelta::Text { text: "Hello".to_owned() },
             }),
             Ok(ModelStreamEvent::ContentBlockStop {}),
             Ok(ModelStreamEvent::MessageStop {
@@ -86,9 +84,7 @@ impl Model for CustomModel {
         options: &CountTokensOptions,
     ) -> Result<u64> {
         // Omit this to keep the trait's character-based heuristic.
-        Ok(strands_agents::models::estimate_tokens_heuristic(
-            messages, options,
-        ))
+        Ok(strands_agents::models::estimate_tokens_heuristic(messages, options))
     }
 }
 // --8<-- [end:implement_stream]

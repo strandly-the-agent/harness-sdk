@@ -45,7 +45,7 @@ async fn sdk_subagent_off() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::models::BedrockModel;
     use strands_agents::Agent;
 
-    // The generalist is Strands harness-specific; raw Strands Harness SDK has none to disable.
+    // The generalist is Strands harness-specific; the raw SDK has none to disable.
     let agent = Agent::new(BedrockModel::default_model().await?)?;
     // --8<-- [end:sdk_subagent_off]
 

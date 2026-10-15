@@ -33,9 +33,9 @@ async fn compose_sdk_features() -> Result<(), Box<dyn std::error::Error>> {
         // Runs next to Strands harness's built-in plugins.
         plugins: vec![Arc::new(MyMetricsPlugin)],
         // A Strands Harness SDK feature, wired straight through.
-        interventions: InterventionsOption::Values(vec![InterventionValue::Handler(Arc::new(
-            HumanInTheLoop::new(),
-        ))]),
+        interventions: InterventionsOption::Values(vec![InterventionValue::Handler(
+            Arc::new(HumanInTheLoop::new()),
+        )]),
         ..Default::default()
     })
     .await?;

@@ -30,9 +30,7 @@ async fn http_request_example_scope() -> Result<(), Box<dyn std::error::Error>> 
 
     // Make API requests
     agent.invoke("Get data from https://api.example.com/users").await?;
-    agent
-        .invoke(r#"Post {"name": "John"} to https://api.example.com/users"#)
-        .await?;
+    agent.invoke(r#"Post {"name": "John"} to https://api.example.com/users"#).await?;
     // --8<-- [end:http_request_example]
     Ok(())
 }
@@ -48,9 +46,7 @@ async fn shell_example_scope() -> Result<(), Box<dyn std::error::Error>> {
 
     // List files and create a new file
     agent.invoke("List all files in the current directory").await?;
-    agent
-        .invoke(r#"Create a new file called notes.txt with "Hello World""#)
-        .await?;
+    agent.invoke(r#"Create a new file called notes.txt with "Hello World""#).await?;
     // --8<-- [end:shell_example]
     Ok(())
 }
@@ -92,12 +88,16 @@ async fn handoff_to_user_example_scope() -> Result<(), Box<dyn std::error::Error
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
     let agent = Agent::builder()
         .model(model)
-        .system_prompt("Before deleting any files, call handoff_to_user to confirm with the user.")
+        .system_prompt(
+            "Before deleting any files, call handoff_to_user to confirm with the user.",
+        )
         .tool(HandoffToUserTool::new())
         .build()?;
 
     let result = agent.invoke("Delete all .tmp files in /workspace.").await?;
-    if let Some(interrupt) = result.interrupts.iter().find(|i| i.name == HANDOFF_INTERRUPT_NAME) {
+    if let Some(interrupt) =
+        result.interrupts.iter().find(|i| i.name == HANDOFF_INTERRUPT_NAME)
+    {
         println!("{:?}", interrupt.reason);
     }
     // --8<-- [end:handoff_to_user_example]

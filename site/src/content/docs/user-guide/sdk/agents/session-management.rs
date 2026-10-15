@@ -8,14 +8,15 @@ async fn basic_file_storage_example() -> Result<(), Box<dyn std::error::Error>> 
     use strands_agents::session::{FileStorage, SessionManager};
     use strands_agents::Agent;
 
-    let session = SessionManager::new("test-session", Arc::new(FileStorage::new("./sessions/")))?;
+    let session =
+        SessionManager::new("test-session", Arc::new(FileStorage::new("./sessions/")))?;
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
     let agent = Agent::builder().model(model).session_manager(session).build()?;
 
     // Use the agent - all messages and state are automatically persisted
     agent.invoke("Hello!").await?; // This conversation is persisted
-    // --8<-- [end:basic_file_storage]
+                                   // --8<-- [end:basic_file_storage]
     Ok(())
 }
 
@@ -27,7 +28,8 @@ async fn session_as_plugin_example() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::session::{FileStorage, SessionManager};
     use strands_agents::Agent;
 
-    let session = SessionManager::new("test-session", Arc::new(FileStorage::new("./sessions/")))?;
+    let session =
+        SessionManager::new("test-session", Arc::new(FileStorage::new("./sessions/")))?;
 
     // Equivalent to passing via the session_manager field
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
@@ -45,12 +47,10 @@ async fn session_id_example() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::session::{FileStorage, SessionManager};
     use strands_agents::Agent;
 
-    let session = SessionManager::new("user-123", Arc::new(FileStorage::new("./sessions/")))?;
+    let session =
+        SessionManager::new("user-123", Arc::new(FileStorage::new("./sessions/")))?;
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder()
-        .model(model)
-        .session_manager(session.clone())
-        .build()?;
+    let agent = Agent::builder().model(model).session_manager(session.clone()).build()?;
 
     println!("{}", agent.session_id()); // "user-123"
     println!("{}", session.session_id()); // "user-123"
@@ -95,8 +95,8 @@ async fn save_latest_strategy_example() -> Result<(), Box<dyn std::error::Error>
     // --8<-- [start:save_latest_strategy]
     use std::sync::Arc;
 
-    use strands_agents::session::{FileStorage, SaveLatestStrategy, SessionManager};
     use strands_agents::session::SessionManagerOptions;
+    use strands_agents::session::{FileStorage, SaveLatestStrategy, SessionManager};
 
     let options = SessionManagerOptions {
         // default; also: Message | Trigger
@@ -125,10 +125,7 @@ async fn list_and_restore_example() -> Result<(), Box<dyn std::error::Error>> {
     let session = SessionManager::new("my-session", storage)?;
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder()
-        .model(model)
-        .session_manager(session.clone())
-        .build()?;
+    let agent = Agent::builder().model(model).session_manager(session.clone()).build()?;
     agent.initialize().await?;
 
     // Force an immutable checkpoint, then list every snapshot id (chronological order)
@@ -147,7 +144,8 @@ async fn delete_session_example() -> Result<(), Box<dyn std::error::Error>> {
 
     use strands_agents::session::{FileStorage, SessionManager};
 
-    let session = SessionManager::new("my-session", Arc::new(FileStorage::new("./sessions/")))?;
+    let session =
+        SessionManager::new("my-session", Arc::new(FileStorage::new("./sessions/")))?;
 
     // Remove all snapshots and manifests for this session
     session.delete_session().await?;
@@ -157,7 +155,9 @@ async fn delete_session_example() -> Result<(), Box<dyn std::error::Error>> {
 
 // --8<-- [start:custom_storage]
 use async_trait::async_trait;
-use strands_agents::session::{Snapshot, SnapshotLocation, SnapshotManifest, SnapshotStorage};
+use strands_agents::session::{
+    Snapshot, SnapshotLocation, SnapshotManifest, SnapshotStorage,
+};
 use strands_agents::Result;
 
 // Implement SnapshotStorage to plug in any backend
@@ -198,7 +198,10 @@ impl SnapshotStorage for MyStorage {
         Ok(())
     }
 
-    async fn load_manifest(&self, location: &SnapshotLocation) -> Result<SnapshotManifest> {
+    async fn load_manifest(
+        &self,
+        location: &SnapshotLocation,
+    ) -> Result<SnapshotManifest> {
         Ok(SnapshotManifest {
             schema_version: "1.0".to_owned(),
             updated_at: "1970-01-01T00:00:00.000Z".to_owned(),

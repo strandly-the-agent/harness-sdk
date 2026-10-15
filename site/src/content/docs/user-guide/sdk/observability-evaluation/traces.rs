@@ -9,10 +9,8 @@ async fn code_configuration_example() -> Result<(), Box<dyn std::error::Error>> 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
 
     // Reads OTEL_SEMCONV_STABILITY_OPT_IN and detects Langfuse endpoints
-    let agent = Agent::builder()
-        .model(model)
-        .telemetry(TelemetryConfig::from_env())
-        .build()?;
+    let agent =
+        Agent::builder().model(model).telemetry(TelemetryConfig::from_env()).build()?;
 
     // Use agent normally
     let result = agent.invoke("What can you help me with?").await?;

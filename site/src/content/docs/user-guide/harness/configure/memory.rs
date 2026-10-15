@@ -19,14 +19,20 @@ impl MemoryStore for PostgresMemoryStore {
         "postgres"
     }
 
-    async fn search(&self, _query: &str, _options: &SearchOptions) -> Result<Vec<MemoryEntry>> {
+    async fn search(
+        &self,
+        _query: &str,
+        _options: &SearchOptions,
+    ) -> Result<Vec<MemoryEntry>> {
         Ok(Vec::new())
     }
 }
 
 async fn memory_dir() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:memory_dir]
-    use strands_harness::{create_harness, HarnessAgentOptions, MemoryConfig, MemoryOption};
+    use strands_harness::{
+        create_harness, HarnessAgentOptions, MemoryConfig, MemoryOption,
+    };
 
     let agent = create_harness(HarnessAgentOptions {
         memory: MemoryOption::Config(MemoryConfig {
@@ -46,7 +52,9 @@ async fn memory_stores() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:memory_stores]
     use std::sync::Arc;
 
-    use strands_harness::{create_harness, HarnessAgentOptions, MemoryConfig, MemoryOption};
+    use strands_harness::{
+        create_harness, HarnessAgentOptions, MemoryConfig, MemoryOption,
+    };
 
     // PostgresMemoryStore is your own MemoryStore implementation.
     let agent = create_harness(HarnessAgentOptions {
@@ -94,7 +102,9 @@ async fn memory_flush_scope(task: &str) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-async fn memory_flush(agent: &strands_agents::Agent) -> Result<(), Box<dyn std::error::Error>> {
+async fn memory_flush(
+    agent: &strands_agents::Agent,
+) -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:memory_flush]
     if let Some(memory) = agent.memory_manager() {
         memory.flush().await?;

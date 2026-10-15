@@ -36,10 +36,7 @@ fn builder_tool_scope() {
         .description("Get weather forecast for a city")
         .typed_handler(|input: WeatherInput, _ctx: ToolContext| async move {
             let days = input.days.unwrap_or(3);
-            Ok(format!(
-                "Weather forecast for {} for the next {days} days...",
-                input.city
-            ))
+            Ok(format!("Weather forecast for {} for the next {days} days...", input.city))
         });
     // --8<-- [end:builder_tool]
 }
@@ -112,10 +109,7 @@ async fn loading_tools_scope() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::Agent;
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder()
-        .model(model)
-        .tool(WeatherForecastTool::new())
-        .build()?;
+    let agent = Agent::builder().model(model).tool(WeatherForecastTool::new()).build()?;
     // --8<-- [end:loading_tools]
     Ok(())
 }
@@ -267,11 +261,8 @@ async fn tool_context_app_state_scope() -> Result<(), Box<dyn std::error::Error>
     state.set("workspace_id", "ws456");
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder()
-        .model(model)
-        .state(state)
-        .tool(GetProfileTool::new())
-        .build()?;
+    let agent =
+        Agent::builder().model(model).state(state).tool(GetProfileTool::new()).build()?;
 
     let result = agent.invoke("Show my profile").await?;
     // --8<-- [end:tool_context_app_state]
@@ -302,17 +293,11 @@ async fn tool_streaming_scope() -> Result<(), Box<dyn std::error::Error>> {
                     .await;
             }
         }
-        format!(
-            "Completed {records} records in {:.1}s",
-            start.elapsed().as_secs_f64()
-        )
+        format!("Completed {records} records in {:.1}s", start.elapsed().as_secs_f64())
     }
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder()
-        .model(model)
-        .tool(ProcessDatasetTool::new())
-        .build()?;
+    let agent = Agent::builder().model(model).tool(ProcessDatasetTool::new()).build()?;
 
     let mut stream = agent.stream("Process 50 records");
     while let Some(event) = stream.next().await {
@@ -351,9 +336,7 @@ async fn class_multiple_tools_scope() -> Result<(), Box<dyn std::error::Error>> 
         fn new(connection_string: &str) -> Self {
             // Establish the connection once; every tool shares it.
             let db = format!("example_db ({connection_string})");
-            Self {
-                connection: Arc::new(Connection { db }),
-            }
+            Self { connection: Arc::new(Connection { db }) }
         }
 
         fn query_tool(&self) -> FunctionTool {
@@ -375,10 +358,7 @@ async fn class_multiple_tools_scope() -> Result<(), Box<dyn std::error::Error>> 
     let db_tools = DatabaseTools::new("example_connection_string");
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder()
-        .model(model)
-        .tool(db_tools.query_tool())
-        .build()?;
+    let agent = Agent::builder().model(model).tool(db_tools.query_tool()).build()?;
     // --8<-- [end:class_multiple_tools]
     Ok(())
 }
@@ -397,7 +377,8 @@ fn search_database_scope() {
         category: Vec<String>,
     }
 
-    #[tool(description = "Search the product database for items matching the query string.
+    #[tool(
+        description = "Search the product database for items matching the query string.
 
 Use this tool when you need to find detailed product information based on keywords,
 product names, or categories. The search is case-insensitive and supports fuzzy
@@ -419,7 +400,8 @@ Notes:
   or availability information
 - Results are cached for 15 minutes to improve performance
 - The search index updates every 6 hours, so very recent products may not appear
-- For real-time inventory status, use a separate inventory check tool")]
+- For real-time inventory status, use a separate inventory check tool"
+    )]
     async fn search_database(
         /// The search string (product name, category, or keywords).
         /// Example: "red running shoes".

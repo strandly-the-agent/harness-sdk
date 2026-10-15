@@ -2,7 +2,9 @@
 
 async fn harness_session_id() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:harness_session_id]
-    use strands_harness::{create_harness, HarnessAgentOptions, SessionConfig, SessionOption};
+    use strands_harness::{
+        create_harness, HarnessAgentOptions, SessionConfig, SessionOption,
+    };
 
     fn session() -> SessionOption {
         SessionOption::Config(SessionConfig {
@@ -11,20 +13,14 @@ async fn harness_session_id() -> Result<(), Box<dyn std::error::Error>> {
         })
     }
 
-    let agent = create_harness(HarnessAgentOptions {
-        session: session(),
-        ..Default::default()
-    })
-    .await?;
-    agent
-        .invoke("Let's refactor the parser. Where should we start?")
-        .await?;
+    let agent =
+        create_harness(HarnessAgentOptions { session: session(), ..Default::default() })
+            .await?;
+    agent.invoke("Let's refactor the parser. Where should we start?").await?;
     // ...later, in a new process...
-    let resumed = create_harness(HarnessAgentOptions {
-        session: session(),
-        ..Default::default()
-    })
-    .await?;
+    let resumed =
+        create_harness(HarnessAgentOptions { session: session(), ..Default::default() })
+            .await?;
     resumed.invoke("Where did we leave off?").await?;
     // --8<-- [end:harness_session_id]
 
@@ -45,9 +41,7 @@ async fn sdk_session_id() -> Result<(), Box<dyn std::error::Error>> {
         .model(BedrockModel::default_model().await?)
         .session_manager(session)
         .build()?;
-    agent
-        .invoke("Let's refactor the parser. Where should we start?")
-        .await?;
+    agent.invoke("Let's refactor the parser. Where should we start?").await?;
     // ...later, in a new process...
     let resumed = Agent::builder()
         .model(BedrockModel::default_model().await?)
@@ -61,7 +55,9 @@ async fn sdk_session_id() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn harness_session_dir() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:harness_session_dir]
-    use strands_harness::{create_harness, HarnessAgentOptions, SessionConfig, SessionOption};
+    use strands_harness::{
+        create_harness, HarnessAgentOptions, SessionConfig, SessionOption,
+    };
 
     let agent = create_harness(HarnessAgentOptions {
         session: SessionOption::Config(SessionConfig {

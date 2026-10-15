@@ -11,10 +11,7 @@ async fn default_strategy() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::builder()
         .model(BedrockModel::default_model().await?)
         .retry_strategy(DefaultModelRetryStrategy::new(
-            DefaultModelRetryStrategyOptions {
-                max_attempts: 3,
-                ..Default::default()
-            },
+            DefaultModelRetryStrategyOptions { max_attempts: 3, ..Default::default() },
         )?)
         .build()?;
     // --8<-- [end:default_strategy]

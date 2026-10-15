@@ -1,4 +1,4 @@
-//! Snippets for `quickstart.mdx`. Each provider program is its own module so the file compiles.
+//! Snippets for `quickstart.mdx`. Each program is its own module so the file compiles.
 
 mod run_bedrock {
     // --8<-- [start:run_bedrock]
@@ -10,7 +10,8 @@ mod run_bedrock {
         let result = agent
             .invoke(
                 "Research the three most common strategies for versioning a REST API, \
-                 compare their tradeoffs, and write a recommendation to api-versioning.md",
+                 compare their tradeoffs, and write a recommendation to \
+                 api-versioning.md",
             )
             .await?;
         println!("{result}");
@@ -33,7 +34,8 @@ mod run_anthropic {
         let result = agent
             .invoke(
                 "Research the three most common strategies for versioning a REST API, \
-                 compare their tradeoffs, and write a recommendation to api-versioning.md",
+                 compare their tradeoffs, and write a recommendation to \
+                 api-versioning.md",
             )
             .await?;
         println!("{result}");
@@ -56,7 +58,8 @@ mod run_openai {
         let result = agent
             .invoke(
                 "Research the three most common strategies for versioning a REST API, \
-                 compare their tradeoffs, and write a recommendation to api-versioning.md",
+                 compare their tradeoffs, and write a recommendation to \
+                 api-versioning.md",
             )
             .await?;
         println!("{result}");
@@ -67,7 +70,9 @@ mod run_openai {
 
 async fn keep_a_conversation() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:keep_a_conversation]
-    use strands_harness::{create_harness, HarnessAgentOptions, SessionConfig, SessionOption};
+    use strands_harness::{
+        create_harness, HarnessAgentOptions, SessionConfig, SessionOption,
+    };
 
     let agent = create_harness(HarnessAgentOptions {
         session: SessionOption::Config(SessionConfig {
@@ -78,7 +83,9 @@ async fn keep_a_conversation() -> Result<(), Box<dyn std::error::Error>> {
     })
     .await?;
     agent
-        .invoke("Which of those would you pick for an API with external customers, and why?")
+        .invoke(
+            "Which of those would you pick for an API with external customers, and why?",
+        )
         .await?;
     // --8<-- [end:keep_a_conversation]
 

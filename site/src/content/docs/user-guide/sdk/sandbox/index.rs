@@ -60,8 +60,8 @@ async fn tool_override() -> Result<()> {
 
 // --8<-- [start:custom_tool]
 use strands_agents::sandbox::{ExecuteOptions, Sandbox};
-use strands_agents::tools::ToolContext;
 use strands_agents::tool;
+use strands_agents::tools::ToolContext;
 
 /// Lint a file and return structured errors
 #[tool]

@@ -49,9 +49,7 @@ async fn basic_example() -> std::result::Result<(), Box<dyn std::error::Error>> 
         .intervention(cedar)
         .build()?;
 
-    agent
-        .invoke("Search for quarterly reports then delete record 42")
-        .await?;
+    agent.invoke("Search for quarterly reports then delete record 42").await?;
     // A search call is permitted; delete_record is denied (no matching permit)
     // --8<-- [end:basic_example]
     Ok(())
@@ -66,7 +64,9 @@ async fn role_based_example() -> std::result::Result<(), Box<dyn std::error::Err
     use std::sync::Arc;
 
     use serde_json::Map;
-    use strands_agents::interventions::vended::cedar::{CedarAuthorizationConfig, EntityRef};
+    use strands_agents::interventions::vended::cedar::{
+        CedarAuthorizationConfig, EntityRef,
+    };
     use strands_agents::interventions::vended::CedarAuthorization;
     use strands_agents::models::{BedrockModel, BedrockModelConfig};
     use strands_agents::{Agent, InvocationState, InvokeOptions};
@@ -220,14 +220,20 @@ async fn namespace_example() -> std::result::Result<(), Box<dyn std::error::Erro
     use std::sync::Arc;
 
     use serde_json::json;
-    use strands_agents::interventions::vended::cedar::{CedarAuthorizationConfig, EntityRef};
+    use strands_agents::interventions::vended::cedar::{
+        CedarAuthorizationConfig, EntityRef,
+    };
     use strands_agents::interventions::vended::CedarAuthorization;
     use strands_agents::models::{BedrockModel, BedrockModelConfig};
     use strands_agents::tools::Tool;
     use strands_agents::{Agent, InvocationState, InvokeOptions};
 
     let entities = json!([
-        { "uid": { "type": "Agent::Resource", "id": "default" }, "attrs": {}, "parents": [] }
+        {
+            "uid": { "type": "Agent::Resource", "id": "default" },
+            "attrs": {},
+            "parents": []
+        }
     ]);
 
     let cedar = CedarAuthorization::new(
@@ -289,10 +295,7 @@ async fn env_gating_example() -> std::result::Result<(), Box<dyn std::error::Err
                 .invocation_state
                 .get::<String>("environment")
                 .map_or_else(|| "unknown".to_owned(), |env| env.to_string());
-            Ok(Map::from_iter([(
-                "environment".to_owned(),
-                environment.into(),
-            )]))
+            Ok(Map::from_iter([("environment".to_owned(), environment.into())]))
         })),
     )?;
 

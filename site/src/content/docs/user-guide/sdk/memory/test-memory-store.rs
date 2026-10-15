@@ -48,13 +48,10 @@ async fn search_and_add() -> Result<()> {
 
     // add_record returns the id of the stored (or already-present, on dedup) record.
     let metadata = Metadata::from([("category".to_string(), json!("travel"))]);
-    let id = store
-        .add_record("User prefers aisle seats", Some(&metadata))
-        .await?;
+    let id = store.add_record("User prefers aisle seats", Some(&metadata)).await?;
 
-    let results = store
-        .search_memories("which seats does the user prefer?", None)
-        .await?;
+    let results =
+        store.search_memories("which seats does the user prefer?", None).await?;
     for entry in &results {
         let score = entry.metadata.as_ref().and_then(|m| m.get("_relevanceScore"));
         println!("{} {score:?}", entry.content);

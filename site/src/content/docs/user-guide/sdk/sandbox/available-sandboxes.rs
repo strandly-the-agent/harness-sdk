@@ -54,17 +54,12 @@ async fn programmatic_access() -> Result<()> {
         .build()?;
 
     // Seed an input file, let the agent work, then read the result back
-    sandbox
-        .write_text("/workspace/input.csv", "id,value\n1,42\n")
-        .await?;
+    sandbox.write_text("/workspace/input.csv", "id,value\n1,42\n").await?;
 
-    agent
-        .invoke("Summarize /workspace/input.csv into /workspace/out.txt")
-        .await?;
+    agent.invoke("Summarize /workspace/input.csv into /workspace/out.txt").await?;
 
-    let result = sandbox
-        .execute("cat /workspace/out.txt", ExecuteOptions::default())
-        .await?;
+    let result =
+        sandbox.execute("cat /workspace/out.txt", ExecuteOptions::default()).await?;
     println!("{} {}", result.exit_code, result.stdout);
     // --8<-- [end:programmatic_access]
     Ok(())

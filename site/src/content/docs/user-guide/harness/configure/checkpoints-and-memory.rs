@@ -14,9 +14,7 @@ async fn checkpoints() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     })
     .await?;
-    agent
-        .invoke("Let's refactor the parser. Where should we start?")
-        .await?;
+    agent.invoke("Let's refactor the parser. Where should we start?").await?;
     // --8<-- [end:checkpoints]
 
     Ok(())

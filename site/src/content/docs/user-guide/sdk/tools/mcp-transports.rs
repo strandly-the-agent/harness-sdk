@@ -6,10 +6,8 @@ async fn stdio_transport_scope() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::models::{BedrockModel, BedrockModelConfig};
     use strands_agents::Agent;
 
-    let mut config = McpServerConfig::stdio(
-        "uvx",
-        ["awslabs.aws-documentation-mcp-server@latest"],
-    );
+    let mut config =
+        McpServerConfig::stdio("uvx", ["awslabs.aws-documentation-mcp-server@latest"]);
 
     // Optional: environment and working directory for the spawned process
     config.env.insert("FASTMCP_LOG_LEVEL".into(), "ERROR".into());
@@ -37,9 +35,7 @@ async fn streamable_http_scope() -> Result<(), Box<dyn std::error::Error>> {
 
     // Authentication and any other request headers
     let token = std::env::var("MCP_PAT")?;
-    config
-        .headers
-        .insert("Authorization".into(), format!("Bearer {token}"));
+    config.headers.insert("Authorization".into(), format!("Bearer {token}"));
 
     let mcp_client = McpClient::connect(config).await?;
     let tools = mcp_client.list_tools().await?;

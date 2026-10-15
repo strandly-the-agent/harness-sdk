@@ -73,12 +73,14 @@ async fn harness_cedar() -> Result<(), Box<dyn std::error::Error>> {
         create_harness, HarnessAgentOptions, InterventionValue, InterventionsOption,
     };
 
-    // The Rust harness does not load a `.cedar` path for you; build the handler and pass it.
-    let cedar = CedarAuthorization::from_policies(PathBuf::from("./policies/agent.cedar"))?;
+    // The Rust harness does not load a `.cedar` path for you; build the handler and
+    // pass it.
+    let cedar =
+        CedarAuthorization::from_policies(PathBuf::from("./policies/agent.cedar"))?;
     let agent = create_harness(HarnessAgentOptions {
-        interventions: InterventionsOption::Values(vec![InterventionValue::Handler(Arc::new(
-            cedar,
-        ))]),
+        interventions: InterventionsOption::Values(vec![InterventionValue::Handler(
+            Arc::new(cedar),
+        )]),
         ..Default::default()
     })
     .await?;

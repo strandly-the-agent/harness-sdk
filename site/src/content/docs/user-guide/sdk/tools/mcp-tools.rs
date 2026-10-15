@@ -15,10 +15,8 @@ async fn quick_start_scope() -> Result<(), Box<dyn std::error::Error>> {
 
     // Hand the server's tools to the agent
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder()
-        .model(model)
-        .tools(mcp_client.list_tools().await?)
-        .build()?;
+    let agent =
+        Agent::builder().model(model).tools(mcp_client.list_tools().await?).build()?;
 
     agent.invoke("What is AWS Lambda?").await?;
     // --8<-- [end:quick_start]
@@ -62,9 +60,10 @@ async fn multiple_servers_scope() -> Result<(), Box<dyn std::error::Error>> {
     ))
     .await?;
 
-    let remote_client =
-        McpClient::connect(McpServerConfig::streamable_http("https://api.example.com/mcp/"))
-            .await?;
+    let remote_client = McpClient::connect(McpServerConfig::streamable_http(
+        "https://api.example.com/mcp/",
+    ))
+    .await?;
 
     // Combine the tools of both servers into one agent
     let mut tools = local_client.list_tools().await?;
@@ -122,10 +121,8 @@ async fn tool_filtering_scope() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::mcp::{McpClient, McpServerConfig, McpToolFilters};
 
     // Allow list - loads only the tools whose names match
-    let mut filtered = McpServerConfig::stdio(
-        "uvx",
-        ["awslabs.aws-documentation-mcp-server@latest"],
-    );
+    let mut filtered =
+        McpServerConfig::stdio("uvx", ["awslabs.aws-documentation-mcp-server@latest"]);
     filtered.tool_filters = Some(McpToolFilters {
         allowed: vec!["search_documentation".into(), "read_documentation".into()],
         ..Default::default()
@@ -133,21 +130,15 @@ async fn tool_filtering_scope() -> Result<(), Box<dyn std::error::Error>> {
     let filtered_client = McpClient::connect(filtered).await?;
 
     // Patterns are regexes, anchored at the start of the server-side name
-    let mut regex = McpServerConfig::stdio(
-        "uvx",
-        ["awslabs.aws-documentation-mcp-server@latest"],
-    );
-    regex.tool_filters = Some(McpToolFilters {
-        allowed: vec!["search_.*".into()],
-        ..Default::default()
-    });
+    let mut regex =
+        McpServerConfig::stdio("uvx", ["awslabs.aws-documentation-mcp-server@latest"]);
+    regex.tool_filters =
+        Some(McpToolFilters { allowed: vec!["search_.*".into()], ..Default::default() });
     let regex_client = McpClient::connect(regex).await?;
 
     // Combined filters - applies allowed first, then rejected
-    let mut combined = McpServerConfig::stdio(
-        "uvx",
-        ["awslabs.aws-documentation-mcp-server@latest"],
-    );
+    let mut combined =
+        McpServerConfig::stdio("uvx", ["awslabs.aws-documentation-mcp-server@latest"]);
     combined.tool_filters = Some(McpToolFilters {
         allowed: vec![".*documentation$".into()],
         rejected: vec!["read_documentation".into()],
@@ -164,10 +155,8 @@ async fn tool_prefixing_scope() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::models::{BedrockModel, BedrockModelConfig};
     use strands_agents::Agent;
 
-    let mut aws_docs = McpServerConfig::stdio(
-        "uvx",
-        ["awslabs.aws-documentation-mcp-server@latest"],
-    );
+    let mut aws_docs =
+        McpServerConfig::stdio("uvx", ["awslabs.aws-documentation-mcp-server@latest"]);
     aws_docs.prefix = Some("aws_docs".into());
 
     let mut other = McpServerConfig::stdio("uvx", ["other-mcp-server@latest"]);

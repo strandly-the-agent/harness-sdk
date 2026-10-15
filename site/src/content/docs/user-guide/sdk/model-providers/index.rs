@@ -5,7 +5,9 @@ use strands_agents::Error;
 
 async fn basic_usage() -> Result<(), Error> {
     // --8<-- [start:basic_usage]
-    use strands_agents::models::{BedrockModel, OpenAIApi, OpenAIModel, OpenAIModelConfig};
+    use strands_agents::models::{
+        BedrockModel, OpenAIApi, OpenAIModel, OpenAIModelConfig,
+    };
     use strands_agents::Agent;
 
     // Use Bedrock

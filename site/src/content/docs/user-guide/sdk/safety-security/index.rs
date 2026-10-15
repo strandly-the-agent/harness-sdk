@@ -18,9 +18,7 @@ async fn guardrail_agent() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
 
     let agent = Agent::new(model)?;
-    agent
-        .invoke("Summarize our refund policy for a customer.")
-        .await?;
+    agent.invoke("Summarize our refund policy for a customer.").await?;
     // --8<-- [end:guardrail_agent]
 
     Ok(())

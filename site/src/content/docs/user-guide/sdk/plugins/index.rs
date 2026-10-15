@@ -12,9 +12,8 @@ async fn hub_agent() -> Result<(), Box<dyn std::error::Error>> {
         .model(BedrockModel::default_model().await?)
         .plugin(ContextInjector::new(|_context| {
             Box::pin(async {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default();
+                let now =
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
                 Ok(Some(format!("<now>{}</now>", now.as_secs())))
             })
         }))

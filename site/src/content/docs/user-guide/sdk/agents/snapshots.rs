@@ -156,9 +156,7 @@ async fn checkpointing_example() -> Result<(), Box<dyn std::error::Error>> {
 
     // If step 2 didn't go well, roll back to checkpoint 1
     agent.load_snapshot(&checkpoint1)?;
-    agent
-        .invoke("Focus specifically on multi-agent systems and summarize")
-        .await?;
+    agent.invoke("Focus specifically on multi-agent systems and summarize").await?;
     // --8<-- [end:checkpointing]
     let _ = checkpoint2;
     Ok(())

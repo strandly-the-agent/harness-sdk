@@ -24,7 +24,8 @@ async fn ask_user_via_slack(prompt: String) -> Result<JsonValue> {
 // Basic (Interrupt/Resume Mode)
 // =====================
 
-async fn basic_interrupt_example() -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn basic_interrupt_example() -> std::result::Result<(), Box<dyn std::error::Error>>
+{
     // --8<-- [start:basic_interrupt]
     use strands_agents::interventions::vended::HumanInTheLoop;
     use strands_agents::models::{BedrockModel, BedrockModelConfig};
@@ -76,9 +77,7 @@ async fn stdio_mode_example() -> std::result::Result<(), Box<dyn std::error::Err
         Box::pin(async move {
             println!("{prompt} (y/n)");
             let mut answer = String::new();
-            BufReader::new(tokio::io::stdin())
-                .read_line(&mut answer)
-                .await?;
+            BufReader::new(tokio::io::stdin()).read_line(&mut answer).await?;
             Ok(JsonValue::from(answer.trim()))
         })
     }));
@@ -188,7 +187,8 @@ async fn trust_mode_example() -> std::result::Result<(), Box<dyn std::error::Err
 // Custom Evaluate
 // =====================
 
-async fn custom_evaluate_example() -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn custom_evaluate_example() -> std::result::Result<(), Box<dyn std::error::Error>>
+{
     // --8<-- [start:custom_evaluate]
     use std::sync::Arc;
 
@@ -227,9 +227,7 @@ fn stdin_ask() -> strands_agents::interventions::vended::hitl::AskFn {
         Box::pin(async move {
             println!("{prompt} (y/n)");
             let mut answer = String::new();
-            BufReader::new(tokio::io::stdin())
-                .read_line(&mut answer)
-                .await?;
+            BufReader::new(tokio::io::stdin()).read_line(&mut answer).await?;
             Ok(JsonValue::from(answer.trim()))
         })
     })

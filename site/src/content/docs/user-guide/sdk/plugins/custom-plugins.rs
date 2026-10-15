@@ -45,9 +45,7 @@ mod using_plugins {
         let agent = Agent::builder()
             .model(model)
             .tool(my_tool())
-            .plugin(GuidancePlugin {
-                system_prompt: "Guide the agent...".to_owned(),
-            })
+            .plugin(GuidancePlugin { system_prompt: "Guide the agent...".to_owned() })
             .build()?;
         // --8<-- [end:using_plugins]
 
@@ -285,4 +283,3 @@ mod async_initialization {
     }
     // --8<-- [end:async_initialization]
 }
-

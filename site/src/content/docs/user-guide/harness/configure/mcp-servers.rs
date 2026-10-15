@@ -17,7 +17,10 @@ async fn harness_mcp_servers() -> Result<(), Box<dyn std::error::Error>> {
         mcp_servers: Some(McpServersOption::Servers(
             [(
                 "filesystem".to_owned(),
-                McpServerConfig::stdio("npx", ["-y", "@modelcontextprotocol/server-filesystem", "."]),
+                McpServerConfig::stdio(
+                    "npx",
+                    ["-y", "@modelcontextprotocol/server-filesystem", "."],
+                ),
             )]
             .into_iter()
             .collect(),

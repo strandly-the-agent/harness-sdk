@@ -74,9 +74,9 @@ async fn basic_model_instance() -> Result<(), Error> {
 
 async fn configuration() -> Result<(), Error> {
     // --8<-- [start:configuration]
+    use std::time::Duration;
     use strands_agents::models::{BedrockModel, BedrockModelConfig};
     use strands_agents::Agent;
-    use std::time::Duration;
 
     // Create a configured Bedrock model
     let bedrock_model = BedrockModel::builder()
@@ -95,9 +95,7 @@ async fn configuration() -> Result<(), Error> {
     let agent = Agent::new(bedrock_model)?;
 
     // Use the agent
-    let response = agent
-        .invoke("Write a short story about an AI assistant.")
-        .await?;
+    let response = agent.invoke("Write a short story about an AI assistant.").await?;
     // --8<-- [end:configuration]
     let _ = response;
     Ok(())
@@ -228,9 +226,8 @@ async fn guardrails() -> Result<(), Error> {
 
     let guardrail_agent = Agent::new(bedrock_model)?;
 
-    let response = guardrail_agent
-        .invoke("Can you tell me about the Strands Harness SDK?")
-        .await?;
+    let response =
+        guardrail_agent.invoke("Can you tell me about the Strands Harness SDK?").await?;
     // --8<-- [end:guardrails]
     let _ = response;
     Ok(())
@@ -259,8 +256,8 @@ async fn update_config() -> Result<(), Error> {
 
 // --8<-- [start:tool_update_config]
 use strands_agents::models::{BedrockModel, BedrockModelConfig};
-use strands_agents::tools::ToolContext;
 use strands_agents::tool;
+use strands_agents::tools::ToolContext;
 
 /// Update the temperature of the agent.
 #[tool]

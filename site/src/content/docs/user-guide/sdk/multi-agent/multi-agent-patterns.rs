@@ -28,9 +28,7 @@ async fn agents_as_tools_hub_scope() -> Result<(), Box<dyn std::error::Error>> {
         .tools([weather_agent.as_tool(AgentAsToolOptions::default())])
         .build()?;
 
-    orchestrator
-        .invoke("What should I pack for Seattle this weekend?")
-        .await?;
+    orchestrator.invoke("What should I pack for Seattle this weekend?").await?;
     // --8<-- [end:agents_as_tools_hub]
     Ok(())
 }

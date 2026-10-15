@@ -11,10 +11,7 @@ async fn agent_level() -> Result<()> {
     use strands_agents::storage::S3Storage;
     use strands_agents::{Agent, ContextManagerOption, SessionManager};
 
-    let storage = S3Storage::builder("my-bucket")
-        .prefix("agents/prod/")
-        .build()
-        .await?;
+    let storage = S3Storage::builder("my-bucket").prefix("agents/prod/").build().await?;
 
     // The context manager's stash resolves from the agent's storage; the session
     // manager takes a SnapshotStorage of its own.
@@ -40,7 +37,9 @@ async fn per_plugin() -> Result<()> {
     use strands_agents::models::BedrockModel;
     use strands_agents::session::S3SessionStorage;
     use strands_agents::storage::InMemoryStorage;
-    use strands_agents::{Agent, ContextManagerConfig, ContextManagerOption, SessionManager};
+    use strands_agents::{
+        Agent, ContextManagerConfig, ContextManagerOption, SessionManager,
+    };
 
     let snapshots = S3SessionStorage::new("my-bucket").await?;
 
@@ -82,10 +81,7 @@ async fn s3() -> Result<()> {
     // --8<-- [start:s3]
     use strands_agents::storage::S3Storage;
 
-    let storage = S3Storage::builder("my-bucket")
-        .prefix("agents/prod/")
-        .build()
-        .await?;
+    let storage = S3Storage::builder("my-bucket").prefix("agents/prod/").build().await?;
     // --8<-- [end:s3]
     let _ = storage;
     Ok(())

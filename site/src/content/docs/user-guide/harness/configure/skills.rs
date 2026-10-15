@@ -5,7 +5,10 @@ async fn harness_skills() -> Result<(), Box<dyn std::error::Error>> {
     use strands_harness::{create_harness, HarnessAgentOptions, SkillsOption};
 
     let agent = create_harness(HarnessAgentOptions {
-        skills: SkillsOption::Sources(vec!["./team-skills".into(), "./project-skills".into()]),
+        skills: SkillsOption::Sources(vec![
+            "./team-skills".into(),
+            "./project-skills".into(),
+        ]),
         ..Default::default()
     })
     .await?;

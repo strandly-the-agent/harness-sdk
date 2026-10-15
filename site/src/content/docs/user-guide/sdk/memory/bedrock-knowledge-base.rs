@@ -98,8 +98,8 @@ async fn scoped_stores() -> Result<()> {
 async fn s3_store() -> Result<()> {
     // --8<-- [start:s3_store]
     use strands_agents::memory::{
-        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseS3Config, BedrockKnowledgeBaseStore,
-        BedrockKnowledgeBaseStoreConfig, DataSourceType,
+        BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseS3Config,
+        BedrockKnowledgeBaseStore, BedrockKnowledgeBaseStoreConfig, DataSourceType,
     };
 
     let store = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
@@ -159,7 +159,8 @@ async fn search_and_add() -> Result<()> {
     use serde_json::json;
     use strands_agents::memory::{
         BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore,
-        BedrockKnowledgeBaseStoreConfig, DataSourceType, MemoryStore, Metadata, SearchOptions,
+        BedrockKnowledgeBaseStoreConfig, DataSourceType, MemoryStore, Metadata,
+        SearchOptions,
     };
 
     let store = BedrockKnowledgeBaseStore::with_config(BedrockKnowledgeBaseStoreConfig {
@@ -178,9 +179,7 @@ async fn search_and_add() -> Result<()> {
     let results = store
         .search(
             "what are my preferences?",
-            &SearchOptions {
-                max_search_results: Some(5),
-            },
+            &SearchOptions { max_search_results: Some(5) },
         )
         .await?;
     for entry in &results {
@@ -188,12 +187,11 @@ async fn search_and_add() -> Result<()> {
         println!("{} {score:?}", entry.content);
     }
 
-    // add_document returns the new document's id (a UUID for CUSTOM, an s3:// URI for S3);
-    // the trait's `add` discards it.
+    // add_document returns the new document's id (a UUID for CUSTOM, an s3:// URI
+    // for S3); the trait's `add` discards it.
     let metadata = Metadata::from([("category".to_string(), json!("travel"))]);
-    let document_id = store
-        .add_document("User prefers aisle seats", Some(&metadata))
-        .await?;
+    let document_id =
+        store.add_document("User prefers aisle seats", Some(&metadata)).await?;
     // --8<-- [end:search]
     let _ = document_id;
     Ok(())
@@ -205,7 +203,8 @@ async fn extraction() -> Result<()> {
 
     use strands_agents::memory::{
         BedrockKnowledgeBaseConfig, BedrockKnowledgeBaseStore,
-        BedrockKnowledgeBaseStoreConfig, DataSourceType, ExtractionConfig, ModelExtractor,
+        BedrockKnowledgeBaseStoreConfig, DataSourceType, ExtractionConfig,
+        ModelExtractor,
     };
     use strands_agents::models::BedrockModel;
 

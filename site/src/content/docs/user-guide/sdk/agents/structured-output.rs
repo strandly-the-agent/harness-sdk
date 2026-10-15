@@ -19,9 +19,8 @@ struct Person {
 async fn basic_usage() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::new(BedrockModel::default_model().await?)?;
 
-    let person: Person = agent
-        .structured_output("John Smith is a 30 year-old software engineer")
-        .await?;
+    let person: Person =
+        agent.structured_output("John Smith is a 30 year-old software engineer").await?;
 
     println!("{person:?}");
     Ok(())
@@ -167,9 +166,8 @@ struct Task {
 async fn multiple_types() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::new(BedrockModel::default_model().await?)?;
 
-    let contact: Contact = agent
-        .structured_output("Extract person: John Doe, 35, john@test.com")
-        .await?;
+    let contact: Contact =
+        agent.structured_output("Extract person: John Doe, 35, john@test.com").await?;
     let task: Task = agent
         .structured_output("Create task: Review code, high priority, completed")
         .await?;

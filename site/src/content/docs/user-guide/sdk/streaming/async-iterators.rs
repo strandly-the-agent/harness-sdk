@@ -55,13 +55,12 @@ async fn ndjson_handler() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:ndjson_handler]
 
     handle_stream_request("Hello".to_owned(), tokio::io::sink()).await
-
 }
 
 // --8<-- [start:agent_loop_lifecycle]
 use strands_agents::agent::AgentStreamEvent;
-use strands_agents::models::ModelStreamEvent;
 use strands_agents::models::ContentBlockStart;
+use strands_agents::models::ModelStreamEvent;
 
 fn process_event(event: &AgentStreamEvent) {
     // Track agent loop lifecycle

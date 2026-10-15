@@ -99,10 +99,10 @@ async fn hooks_before_tools_example() -> Result<(), Box<dyn std::error::Error>> 
             .count();
 
         if dangerous_tools > 0 {
-            let response: BatchApproval = event.interrupt(
-                InterruptParams::new("batch_approval")
-                    .with_reason(format!("Approve {dangerous_tools} dangerous calls?")),
-            )?;
+            let response: BatchApproval = event
+                .interrupt(InterruptParams::new("batch_approval").with_reason(
+                    format!("Approve {dangerous_tools} dangerous calls?"),
+                ))?;
             if !response.approved {
                 event.cancel = "Batch cancelled by user".into();
             }
@@ -248,8 +248,8 @@ async fn session_management_example() -> Result<(), Box<dyn std::error::Error>> 
             }
 
             let paths = event.tool_use.input["paths"].clone();
-            let params =
-                InterruptParams::new("myapp-approval").with_reason(json!({ "paths": paths }));
+            let params = InterruptParams::new("myapp-approval")
+                .with_reason(json!({ "paths": paths }));
             let approval: String = event.interrupt(params)?;
             if !["y", "t"].contains(&approval.to_lowercase().as_str()) {
                 event.cancel = "User denied permission to delete files".into();
@@ -285,4 +285,3 @@ async fn session_management_example() -> Result<(), Box<dyn std::error::Error>> 
     // --8<-- [end:session_management]
     Ok(())
 }
-
