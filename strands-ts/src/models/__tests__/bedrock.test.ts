@@ -490,7 +490,7 @@ describe('BedrockModel', () => {
 
   describe('format_message', async () => {
     const mockConverseStreamCommand = vi.mocked(ConverseStreamCommand)
-    it('defaults maxTokens to the model ceiling when not configured', async () => {
+    it('defaults maxTokens to the model output token limit when not configured', async () => {
       const provider = new BedrockModel({ region: 'us-west-2', modelId: 'global.anthropic.claude-haiku-5-5' })
       const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
 
