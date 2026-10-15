@@ -52,12 +52,13 @@ region, and ships in the default `bedrock` feature, so there is nothing extra to
 
 Give the SDK AWS credentials with permission to invoke the model, using one of:
 
-- **Bedrock API key**: set the `AWS_BEARER_TOKEN_BEDROCK` environment variable to a
-  [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-key-management.html).
-  Quickest for local development.
 - **AWS credentials**: `aws configure`, or the `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
   and optionally `AWS_SESSION_TOKEN` environment variables
 - **IAM roles**: on AWS services like EC2, ECS, or Lambda
+- **Bedrock API key**: pass a
+  [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-key-management.html)
+  explicitly with `BedrockModel::builder().api_key(key)`. Unlike the Python and TypeScript
+  SDKs, the Rust SDK does not read `AWS_BEARER_TOKEN_BEDROCK` from the environment.
 
 Enable access to the models you use in the Amazon Bedrock console, following the
 [AWS documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html).
