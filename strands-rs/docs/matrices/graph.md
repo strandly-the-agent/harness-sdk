@@ -57,7 +57,7 @@ increment 2.
 | `graph.tracer.test.ts` (all) | — | increment 2 |
 
 Rust tests with no TS counterpart (they cover Rust-only surface):
-`renames_a_node_whose_agent_id_differs_from_its_graph_id`,
+`takes_node_ids_from_the_nodes_themselves`,
 `can_run_concurrently_is_false_for_a_single_linear_path`,
 `can_run_concurrently_is_true_when_a_node_fans_out`,
 `seeds_the_shared_state_with_every_node_id`, `clones_share_one_state_handle`,
