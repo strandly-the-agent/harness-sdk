@@ -26,7 +26,7 @@ use super::storage::{SnapshotLocation, SnapshotStorage};
 use super::types::{now_iso8601, Snapshot, SnapshotManifest, SNAPSHOT_SCHEMA_VERSION};
 use super::validation::{validate_identifier, validate_uuid_v7};
 use crate::error::{BoxError, Error, Result};
-use crate::storage::s3_storage::resolve_prefix;
+use crate::storage::s3_storage::{is_missing_object_code, resolve_prefix};
 
 const MANIFEST: &str = "manifest.json";
 const SNAPSHOT_LATEST: &str = "snapshot_latest.json";
@@ -200,9 +200,10 @@ fn is_missing_object(error: &SdkError<GetObjectError, HttpResponse>) -> bool {
     is_not_found(error) || matches!(error.as_service_error(), Some(GetObjectError::NoSuchKey(_)))
 }
 
-/// `true` for the error codes S3 uses for a missing object or bucket.
+/// `true` for the error codes S3 uses for a missing object or bucket. The session backend also
+/// treats a missing bucket as "no snapshots", which TS does here but not in unified storage.
 fn is_not_found(error: &(impl ProvideErrorMetadata + ?Sized)) -> bool {
-    matches!(error.code(), Some("NoSuchKey" | "NotFound" | "NoSuchBucket"))
+    is_missing_object_code(error) || error.code() == Some("NoSuchBucket")
 }
 
 /// `snapshot_([\w-]+)\.json$` applied to an object key.
@@ -270,7 +271,10 @@ impl SnapshotStorage for S3SessionStorage {
         let mut continuation_token: Option<String> = None;
         loop {
             let max_keys = match limit {
-                Some(limit) => S3_PAGE_SIZE.min((limit - ids.len()) as i32),
+                Some(limit) => {
+                    let remaining = limit.saturating_sub(ids.len()).min(S3_PAGE_SIZE as usize);
+                    i32::try_from(remaining).unwrap_or(S3_PAGE_SIZE)
+                }
                 None => S3_PAGE_SIZE,
             };
             let mut request = self
@@ -515,11 +519,7 @@ mod tests {
 
     #[tokio::test]
     async fn stores_bucket_and_region_configuration() {
-        let storage = S3SessionStorage::builder("test-bucket")
-            .region("us-west-2")
-            .build()
-            .await
-            .expect("builds from a region");
+        let storage = storage(&put_rule(&seen()), None).await;
 
         assert_eq!(storage.bucket(), "test-bucket");
         assert_eq!(storage.prefix(), "");
@@ -894,6 +894,39 @@ mod tests {
 
         assert_eq!(ids, vec![IDS[0].to_owned(), IDS[1].to_owned()]);
         assert_eq!(*seen.lock(), vec![format!("test-bucket|{HISTORY_PREFIX}|2|none")]);
+    }
+
+    #[tokio::test]
+    async fn clamps_max_keys_for_a_limit_larger_than_a_page() {
+        let seen = seen();
+        let rule = list_rule(history_objects(&IDS), &seen);
+        let storage = storage(&rule, None).await;
+
+        let ids = storage
+            .list_snapshot_ids(&location(), Some(usize::MAX), None)
+            .await
+            .expect("lists");
+
+        assert_eq!(ids.len(), IDS.len());
+        assert_eq!(
+            *seen.lock(),
+            vec![format!("test-bucket|{HISTORY_PREFIX}|{S3_PAGE_SIZE}|none")]
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_empty_vec_when_the_bucket_is_missing() {
+        let rule = mock!(Client::list_objects_v2)
+            .then_error(|| ListObjectsV2Error::generic(error_metadata("NoSuchBucket")));
+        let storage = storage(&rule, None).await;
+
+        assert_eq!(
+            storage
+                .list_snapshot_ids(&location(), None, None)
+                .await
+                .expect("lists"),
+            Vec::<String>::new()
+        );
     }
 
     #[tokio::test]

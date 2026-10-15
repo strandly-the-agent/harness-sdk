@@ -140,9 +140,10 @@ pub(crate) async fn s3_client(region: Option<&str>) -> Client {
     Client::from_conf(config.build())
 }
 
-/// `true` for the error codes S3 uses for a missing object or bucket.
-fn is_not_found_code(error: &impl ProvideErrorMetadata) -> bool {
-    matches!(error.code(), Some("NoSuchKey" | "NotFound" | "NoSuchBucket"))
+/// `true` for the error codes S3 uses for a missing object. A missing *bucket* is a
+/// misconfiguration, not an absent value, so it propagates (as in TS).
+pub(crate) fn is_missing_object_code(error: &(impl ProvideErrorMetadata + ?Sized)) -> bool {
+    matches!(error.code(), Some("NoSuchKey" | "NotFound"))
 }
 
 fn storage_error(message: String, source: impl Into<BoxError>) -> Error {
@@ -196,7 +197,7 @@ impl Storage for S3Storage {
                 if error
                     .as_service_error()
                     .is_some_and(GetObjectError::is_no_such_key)
-                    || is_not_found_code(&error) =>
+                    || is_missing_object_code(&error) =>
             {
                 return Ok(None)
             }
@@ -450,6 +451,19 @@ mod tests {
         let storage = storage(&rule, None).await;
 
         assert_eq!(storage.read("missing").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn propagates_no_such_bucket_on_read() {
+        let rule =
+            mock!(Client::get_object).then_error(|| GetObjectError::generic(error_metadata("NoSuchBucket")));
+        let storage = storage(&rule, None).await;
+
+        let error = storage
+            .read("key")
+            .await
+            .expect_err("a missing bucket is not a missing value");
+        assert!(matches!(error, Error::Storage { .. }), "{error:?}");
     }
 
     #[tokio::test]
