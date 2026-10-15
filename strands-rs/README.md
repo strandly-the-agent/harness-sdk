@@ -52,6 +52,23 @@ Default: `bedrock`, `macros`. Everything else is opt-in.
 - `telemetry` — OpenTelemetry metrics/tracing export.
 - `test-support` — the [`testing`](#testing) module (test doubles).
 
+## Strands CLI runtime
+
+`crates/strands-cli-worker` builds the `strands-cli-worker` binary: the Rust runtime behind
+`strands --runtime rust` (or `STRANDS_RUNTIME=rust`). The TypeScript CLI spawns it and talks the
+worker protocol in [docs/CLI_WORKER_PROTOCOL.md](docs/CLI_WORKER_PROTOCOL.md) — JSON lines in on
+stdin, out on fd 3 — so the terminal UI stays in Node while the agent loop, tools, sessions and
+model calls run in Rust via `strands-harness`.
+
+```bash
+cargo build --release -p strands-cli-worker
+export STRANDS_RUST_WORKER=$PWD/target/release/strands-cli-worker   # or put it on PATH
+strands --runtime rust -p "What files are in the current directory?"
+```
+
+Not yet supported by the Rust worker: `/compact` (no summarizing conversation manager in the Rust
+SDK yet), the context stash on fork (sent as `{}`), and the `strands_config` reload tool.
+
 ## Testing
 
 Enable the `test-support` feature in `[dev-dependencies]` and drive an agent with

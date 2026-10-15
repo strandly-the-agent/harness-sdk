@@ -10,6 +10,8 @@ This document provides context and conventions for AI coding assistants working 
 
 The CLI is TypeScript-only. There is no Python CLI: a terminal command has one home, and Node distributes a global binary cleanly (and runs zero-install via `npx`).
 
+The agent itself can run out of process. `src/tui/project/worker.ts` (`WorkerBackend`) drives a subprocess over the worker protocol (`strands-rs/docs/CLI_WORKER_PROTOCOL.md`: JSON-lines commands on its stdin, messages on its fd 3): `openPython` runs an authored Python project through `worker.py`, and `openRust` runs the harness through the Rust `strands-cli-worker` binary (`--runtime rust` / `STRANDS_RUNTIME=rust`; located via `STRANDS_RUST_WORKER`, `PATH`, or a cargo target dir). Both runtimes share `createWorkerChat` / `runWorkerConsole` / `runWorkerAcpServer` in `src/tui/project/`. A protocol change must land in `worker.py`, the Rust crate, and the spec together.
+
 ## Directory Structure
 
 ```

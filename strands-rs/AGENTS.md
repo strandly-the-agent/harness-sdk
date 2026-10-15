@@ -18,8 +18,12 @@ TS → Rust construct map; [docs/TESTING.md](docs/TESTING.md) the test conventio
 
 ```
 strands-rs/
-├── Cargo.toml                    # workspace: strands-agents, strands-agents-macros, strands-harness
+├── Cargo.toml                    # workspace: strands-agents, strands-agents-macros, strands-harness, strands-cli-worker
 ├── crates/strands-agents-macros/ # `#[tool]` attribute macro (feature `macros`)
+├── crates/strands-cli-worker/    # `strands-cli-worker` binary: the CLI's Rust runtime (docs/CLI_WORKER_PROTOCOL.md)
+│   ├── src/{lib,runtime,protocol}.rs  # transport-agnostic worker loop, agent runtime, wire types
+│   ├── src/main.rs               # stdin + fd 3 wiring, strands-harness agent factory
+│   └── tests/worker.rs           # protocol round-trips over in-memory pipes with MockMessageModel
 ├── crates/strands-harness/       # the harness: create_harness(), defaults, prompt, models, builtin tools, plugins
 │   ├── src/{agent,defaults,prompt,models,builtin_tools,memory,interventions}.rs
 │   ├── src/tools/{file_tools,web_fetch,web_search,subagent}.rs
