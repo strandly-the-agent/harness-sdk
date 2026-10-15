@@ -933,7 +933,8 @@ mod tests {
 
     #[test]
     fn rejects_non_positive_character_limits() {
-        let limits: Vec<(&str, fn(ClassifierStrategy) -> Result<ClassifierStrategy>)> = vec![
+        type Limit = fn(ClassifierStrategy) -> Result<ClassifierStrategy>;
+        let limits: Vec<(&str, Limit)> = vec![
             ("maxMessageChars", |strategy| strategy.with_max_message_chars(0)),
             ("maxAgentInstructionsChars", |strategy| {
                 strategy.with_max_agent_instructions_chars(0)

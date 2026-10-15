@@ -5,10 +5,12 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use strands_agents::error::Error;
 use strands_agents::middleware::{wrap_fn, InvokeModelContext, InvokeModelStage};
-use strands_agents::models::routing::{ModelRouter, RoutingCandidate};
+use strands_agents::models::routing::{ClassifierStrategy, ModelRouter, RoutingCandidate};
 use strands_agents::models::Model;
 use strands_agents::test_support::{MockMessageModel, MockResponse};
-use strands_agents::{Agent, Message};
+use strands_agents::tools::STRUCTURED_OUTPUT_TOOL_NAME;
+use strands_agents::types::ToolUseBlock;
+use strands_agents::{Agent, ContentBlock, Message, Role, StopReason};
 
 fn text_model(text: &str) -> Arc<MockMessageModel> {
     MockMessageModel::shared(vec![MockResponse::message(Message::assistant(text))])
@@ -141,4 +143,125 @@ async fn exposes_the_routed_model_during_the_invocation() {
     // No selection before the router's own handler runs; a routed model from then on.
     assert_eq!(*observed.lock(), vec![false, true, true, true]);
     assert!(agent.model().model_id().is_some());
+}
+
+/// A classifier that answers with `{"selectedCandidateIndex": <index>}`.
+fn selection_model(index: usize) -> Arc<MockMessageModel> {
+    MockMessageModel::shared(vec![MockResponse::with_stop_reason(
+        Message::new(
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                STRUCTURED_OUTPUT_TOOL_NAME,
+                "classification",
+                serde_json::json!({ "selectedCandidateIndex": index }),
+            ))],
+        ),
+        StopReason::ToolUse,
+    )])
+}
+
+fn described(model: Arc<MockMessageModel>, name: &str) -> RoutingCandidate {
+    candidate(model, name).with_description(format!("Model suitable for {name} requests."))
+}
+
+#[tokio::test]
+async fn classifier_selects_the_second_candidate() {
+    let classifier = selection_model(1);
+    let first = text_model("from first");
+    let second = text_model("from second");
+    let agent = Agent::builder()
+        .model_router(Arc::new(
+            ModelRouter::new(vec![
+                described(Arc::clone(&first), "default"),
+                described(Arc::clone(&second), "other"),
+            ])
+            .unwrap()
+            .with_strategy(ClassifierStrategy::new(Arc::clone(&classifier) as Arc<dyn Model>)),
+        ))
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("hello").await.unwrap();
+
+    assert_eq!(result.last_message.text(), "from second");
+    assert_eq!(classifier.call_count(), 1);
+    assert_eq!(first.call_count(), 0);
+    assert_eq!(second.call_count(), 1);
+}
+
+#[tokio::test]
+async fn serves_candidate_zero_when_classification_fails() {
+    let classifier =
+        MockMessageModel::shared(vec![MockResponse::Error(Error::other("classifier unavailable"))]);
+    let first = text_model("default");
+    let second = text_model("other");
+    let agent = Agent::builder()
+        .model_router(Arc::new(
+            ModelRouter::new(vec![
+                described(Arc::clone(&first), "default"),
+                described(Arc::clone(&second), "other"),
+            ])
+            .unwrap()
+            .with_strategy(ClassifierStrategy::new(Arc::clone(&classifier) as Arc<dyn Model>)),
+        ))
+        .no_retry_strategy()
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("hello").await.unwrap();
+
+    assert_eq!(result.last_message.text(), "default");
+    assert_eq!(classifier.call_count(), 1);
+}
+
+#[tokio::test]
+async fn surfaces_a_selected_model_failure_without_switching() {
+    let classifier = selection_model(0);
+    let failing = failing_model();
+    let healthy = text_model("healthy");
+    let agent = Agent::builder()
+        .model_router(Arc::new(
+            ModelRouter::new(vec![
+                described(Arc::clone(&failing), "failing"),
+                described(Arc::clone(&healthy), "healthy"),
+            ])
+            .unwrap()
+            .with_strategy(ClassifierStrategy::new(Arc::clone(&classifier) as Arc<dyn Model>)),
+        ))
+        .no_retry_strategy()
+        .build()
+        .unwrap();
+
+    let error = agent.invoke("hello").await.unwrap_err();
+
+    assert!(error.to_string().contains("boom"), "unexpected error: {error}");
+    assert_eq!(classifier.call_count(), 1);
+    assert_eq!(healthy.call_count(), 0);
+}
+
+#[tokio::test]
+async fn selects_an_opaque_nested_router() {
+    let classifier = selection_model(0);
+    let nested_model = text_model("nested");
+    let nested = router(vec![described(Arc::clone(&nested_model), "nested-primary")]);
+    let other = text_model("other");
+    let agent = Agent::builder()
+        .model_router(Arc::new(
+            ModelRouter::new(vec![
+                RoutingCandidate::router(nested)
+                    .with_name("reasoning-group")
+                    .with_description("Specialized reasoning model group."),
+                described(Arc::clone(&other), "other"),
+            ])
+            .unwrap()
+            .with_strategy(ClassifierStrategy::new(Arc::clone(&classifier) as Arc<dyn Model>)),
+        ))
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("hello").await.unwrap();
+
+    assert_eq!(result.last_message.text(), "nested");
+    assert_eq!(classifier.call_count(), 1);
+    assert_eq!(other.call_count(), 0);
 }
