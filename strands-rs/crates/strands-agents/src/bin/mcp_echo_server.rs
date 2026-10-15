@@ -1,5 +1,6 @@
 //! Minimal stdio MCP server used by the MCP end-to-end tests (`tests/mcp_e2e.rs`).
-//! Exposes one tool, `echo`, that returns its `text` argument.
+//! Exposes `echo`, which returns its `text` argument, and `fail`, which returns a tool-level
+//! error result (`isError`) so the error path can be tested.
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -18,6 +19,11 @@ impl EchoServer {
     #[tool(name = "echo", description = "Echo the given text back")]
     fn echo(&self, Parameters(EchoInput { text }): Parameters<EchoInput>) -> CallToolResult {
         CallToolResult::success(vec![ContentBlock::text(text)])
+    }
+
+    #[tool(name = "fail", description = "Always returns a tool-level error")]
+    fn fail(&self) -> CallToolResult {
+        CallToolResult::error(vec![ContentBlock::text("boom: the tool failed")])
     }
 }
 

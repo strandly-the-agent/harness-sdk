@@ -391,3 +391,25 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   loop through `AfterInvocationEvent::resume` until it passes, `max_attempts` is hit or `timeout`
   elapses; `preserve_context: false` restores the attempt-1 session each retry. 12 unit + 19
   agent-loop tests; see `docs/matrices/goal.md`.
+- **Vended tool `mcp_router`** (`tools::vended`, branch `agent-tasks/strands-rs-vended-tools`):
+  `McpRouterTool`/`McpRouterConfig` port the runtime MCP router behind the existing `mcp` feature —
+  `connect`/`list_connections`/`list_tools`/`call_tool`/`disconnect` over an allowlist of
+  `McpServerConfig`s, with TS's name, description and schema verbatim and its connection cap and
+  duplicate-id rules. Connections are held per tool instance (no `WeakMap`/finalizer in Rust).
+  13 unit tests cover validation and dispatch; the live-server cases still need a
+  `tests/mcp_router_e2e.rs` against `mcp_echo_server`.
+- **Vended tools `fileEditor` + `http_request`** (`tools::vended`, branch
+  `agent-tasks/strands-rs-vended-tools`): `FileEditorTool` ports `view`/`create`/`str_replace`/
+  `insert` with TS's exact error strings and snippet format, routing every file access through a
+  `Sandbox` (upstream has no `undo_edit`, so neither does the port); `HttpRequestTool` ports the
+  `http_request` tool behind a new `http` cargo feature, with an injectable `reqwest::Client`, a
+  `tokio::select!` timeout and TS's name/description/schema verbatim. 70 unit tests
+  (53 + 17), the HTTP ones against a loopback `TcpListener` server.
+- **Vended tools `sleep` + `handoff_to_user`** (`tools::vended`, branch
+  `agent-tasks/strands-rs-vended-tools`): `SleepTool`/`SleepConfig` pause through an injected
+  `retry::Sleeper` (no real sleeps in tests) and race `ToolContext::cancel`;
+  `HandoffToUserTool`/`HandoffToUserConfig` raise a `strands:handoff-to-user` interrupt via
+  `ToolContext::interrupt` and return the human's reply as the tool result. Name, description and
+  input-schema text match TS verbatim. 25 unit + 4 agent-loop tests; see
+  `docs/matrices/vended-tools.md`. `file_editor`, `http_request` and `mcp_router` landed on the
+  same branch (see the matrix); nothing is left in this module.

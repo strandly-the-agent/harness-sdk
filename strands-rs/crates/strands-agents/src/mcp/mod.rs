@@ -14,6 +14,8 @@ mod client;
 mod config;
 mod tool;
 
+pub(crate) use tool::map_call_tool_result;
+
 pub use client::{
     ListOptions, LoadOptions, McpClient, McpConnectionState, McpServerInfo, ToolsChangedCallback,
 };

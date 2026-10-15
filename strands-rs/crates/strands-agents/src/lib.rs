@@ -121,7 +121,11 @@ pub use session::{S3SessionStorage, S3SessionStorageBuilder};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
 #[cfg(feature = "s3")]
 pub use storage::{S3Storage, S3StorageBuilder};
-pub use tools::vended::ShellTool;
+#[cfg(feature = "http")]
+pub use tools::vended::HttpRequestTool;
+#[cfg(feature = "mcp")]
+pub use tools::vended::McpRouterTool;
+pub use tools::vended::{FileEditorTool, HandoffToUserTool, ShellTool, SleepTool};
 pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,
 };
