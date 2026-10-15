@@ -39,6 +39,11 @@ Amazon Bedrock id.
         const agent = await createHarness({ model: 'openai/gpt-5.6-sol' })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/model.rs:harness_model"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -55,6 +60,11 @@ Amazon Bedrock id.
         import { Agent } from '@strands-agents/sdk'
 
         const agent = new Agent({ model: 'global.anthropic.claude-sonnet-5' })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/model.rs:sdk_model"
         ```
       </Tab>
     </Tabs>
@@ -84,10 +94,17 @@ yourself and pass it. Strands harness uses it as-is:
     const agent = await createHarness({ model })
     ```
   </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/configure/model.rs:model_instance"
+    ```
+  </Tab>
 </Tabs>
 
 An unknown provider prefix fails at construction with the list of supported providers, so
-a typo surfaces immediately rather than as a request error later.
+a typo surfaces immediately rather than as a request error later. In Rust the harness
+builds `bedrock`, `bedrock-mantle`, `anthropic`, and `openai` itself; `google`, `ollama`,
+and `litellm` are recognized but need a pre-built `Model` instance.
 
 ## Set reasoning effort
 
@@ -113,6 +130,11 @@ it once regardless of provider:
         import { createHarness } from '@strands-agents/harness'
 
         const agent = await createHarness({ model: 'anthropic/claude-opus-5', effort: 'high' })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/model.rs:harness_effort"
         ```
       </Tab>
     </Tabs>
@@ -144,6 +166,11 @@ it once regardless of provider:
           },
         })
         const agent = new Agent({ model: bedrockModel })
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/model.rs:sdk_effort"
         ```
       </Tab>
     </Tabs>

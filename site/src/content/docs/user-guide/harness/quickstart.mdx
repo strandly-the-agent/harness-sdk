@@ -15,7 +15,7 @@ different ways:
   Codex, Claude Code, or Kiro and let it guide you through the setup.
 - **[Build an agent with the CLI](#build-an-agent-with-the-cli)** — connect a model provider in
   the terminal and start chatting, then export to Python or TypeScript when you're ready.
-- **[Use it as a library](#use-it-as-a-library)** — install the Python or TypeScript package
+- **[Use it as a library](#use-it-as-a-library)** — install the package for your language
   and write a few lines yourself.
 
 ## Set up with your coding agent
@@ -65,13 +65,13 @@ strands --model anthropic/claude-sonnet-5      # use a different model for this 
 
 When you're ready to embed the agent in an application, run `/export` in a chat. The
 command writes a Python or TypeScript project with your choices set directly on
-<Syntax py="create_harness(...)" ts="createHarness(...)" />. The project exports a
-ready-to-import `agent`, so the CLI is a fast on-ramp to the library below: build
-interactively, then drop into code.
+<Syntax py="create_harness(...)" ts="createHarness(...)" rs="create_harness(...)" />. The
+project exports a ready-to-import `agent`, so the CLI is a fast on-ramp to the library
+below: build interactively, then drop into code.
 
 ## Use it as a library
 
-Prefer to write the code yourself? Install the Python or TypeScript package and run your
+Prefer to write the code yourself? Install the package for your language and run your
 first agent in a few lines. The source lives on GitHub:
 
 <Tabs>
@@ -80,6 +80,9 @@ first agent in a few lines. The source lives on GitHub:
   </Tab>
   <Tab label="TypeScript">
     [`harness-ts`](https://github.com/strands-agents/harness-sdk/tree/main/harness-ts) — the TypeScript package.
+  </Tab>
+  <Tab label="Rust">
+    [`strands-harness`](https://github.com/strands-agents/harness-sdk/tree/main/strands-rs/crates/strands-harness) — the Rust crate, experimental.
   </Tab>
 </Tabs>
 
@@ -99,6 +102,18 @@ first agent in a few lines. The source lives on GitHub:
     ```bash
     npm install @strands-agents/harness
     ```
+  </Tab>
+  <Tab label="Rust">
+    Requires Rust 1.85 or newer. The crate is not published to crates.io yet, so depend on
+    it from git:
+
+    ```toml
+    [dependencies]
+    strands-harness = { git = "https://github.com/strands-agents/harness-sdk" }
+    tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+    ```
+
+    `create_harness` is async, so you need a Tokio runtime.
   </Tab>
 </Tabs>
 
@@ -131,6 +146,11 @@ Strands harness can search the web, compare what it finds, and save the results 
 
         const agent = await createHarness()
         await agent.invoke('Research the three most common strategies for versioning a REST API, compare their tradeoffs, and write a recommendation to api-versioning.md')
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/quickstart.rs:run_bedrock"
         ```
       </Tab>
     </Tabs>
@@ -169,6 +189,11 @@ Strands harness can search the web, compare what it finds, and save the results 
         await agent.invoke('Research the three most common strategies for versioning a REST API, compare their tradeoffs, and write a recommendation to api-versioning.md')
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/quickstart.rs:run_anthropic"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="OpenAI">
@@ -193,6 +218,11 @@ Strands harness can search the web, compare what it finds, and save the results 
         await agent.invoke('Research the three most common strategies for versioning a REST API, compare their tradeoffs, and write a recommendation to api-versioning.md')
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/quickstart.rs:run_openai"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="Google">
@@ -215,6 +245,11 @@ Strands harness can search the web, compare what it finds, and save the results 
 
         const agent = await createHarness({ model: 'google/gemini-2.5-flash' })
         await agent.invoke('Research the three most common strategies for versioning a REST API, compare their tradeoffs, and write a recommendation to api-versioning.md')
+        ```
+      </Tab>
+      <Tab label="Rust">
+        ```rust
+        // This feature is not yet available in the Rust SDK
         ```
       </Tab>
     </Tabs>
@@ -244,6 +279,11 @@ Strands harness can search the web, compare what it finds, and save the results 
         await agent.invoke('Research the three most common strategies for versioning a REST API, compare their tradeoffs, and write a recommendation to api-versioning.md')
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        // This feature is not yet available in the Rust SDK
+        ```
+      </Tab>
     </Tabs>
   </Tab>
 </Tabs>
@@ -269,6 +309,11 @@ the same conversation:
 
     const agent = await createHarness({ session: { id: 'api-design' } })
     await agent.invoke("Which of those would you pick for an API with external customers, and why?")
+    ```
+  </Tab>
+  <Tab label="Rust">
+    ```rust
+    --8<-- "user-guide/harness/quickstart.rs:keep_a_conversation"
     ```
   </Tab>
 </Tabs>
