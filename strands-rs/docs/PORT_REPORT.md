@@ -336,6 +336,13 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 
 ## Phase 4
 
+- **Vended tools `fileEditor` + `http_request`** (`tools::vended`, branch
+  `agent-tasks/strands-rs-vended-tools`): `FileEditorTool` ports `view`/`create`/`str_replace`/
+  `insert` with TS's exact error strings and snippet format, routing every file access through a
+  `Sandbox` (upstream has no `undo_edit`, so neither does the port); `HttpRequestTool` ports the
+  `http_request` tool behind a new `http` cargo feature, with an injectable `reqwest::Client`, a
+  `tokio::select!` timeout and TS's name/description/schema verbatim. 70 unit tests
+  (53 + 17), the HTTP ones against a loopback `TcpListener` server.
 - **Vended tools `sleep` + `handoff_to_user`** (`tools::vended`, branch
   `agent-tasks/strands-rs-vended-tools`): `SleepTool`/`SleepConfig` pause through an injected
   `retry::Sleeper` (no real sleeps in tests) and race `ToolContext::cancel`;

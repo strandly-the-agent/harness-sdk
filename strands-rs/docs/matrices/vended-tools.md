@@ -86,3 +86,93 @@ Name, description text and input-schema wording match TS verbatim (asserted by
   rename behaviour is part of the TS contract.
 - **Cancellation** uses `ToolContext::cancel` (`CancellationToken`) raced with `tokio::select!`
   and surfaces as `Error::Cancelled`, where TS rejects with a `DOMException('AbortError')`.
+
+---
+
+# `fileEditor`
+
+TS: `strands-ts/src/vended-tools/file-editor/{file-editor.ts,types.ts}` →
+`crates/strands-agents/src/tools/vended/file_editor.rs`.
+
+## API
+
+| TS | Rust |
+| --- | --- |
+| `fileEditor` / `makeFileEditor(options)` | `FileEditorTool::new()` / `FileEditorTool::with_config(FileEditorConfig)` |
+| `MakeFileEditorOptions { name, description, maxFileSize }` | `FileEditorConfig { name, description, max_file_size }` |
+| `'fileEditor'`, `DEFAULT_FILE_EDITOR_DESCRIPTION`, 1 MB cap | `FILE_EDITOR_TOOL_NAME`, `DEFAULT_FILE_EDITOR_DESCRIPTION`, `DEFAULT_MAX_FILE_SIZE` |
+| commands `view` / `create` / `str_replace` / `insert` | same four, same input field names and error strings |
+| `node:fs` access via the agent's sandbox | `Sandbox`: the tool's own, else the agent's, else `LocalSandbox` |
+
+## Tests
+
+53 unit tests in `file_editor.rs`, one per TS `it(...)` in
+`__tests__/file-editor.test.ts` with the title snake_cased (`throws when ...` →
+`errors_when_...`), all passing. Rust-only additions, each covering a path TS leaves implicit:
+`omitting_new_str_deletes_old_str`, `errors_when_file_text_is_missing`,
+`errors_when_old_str_is_missing`, `errors_when_insert_params_are_missing`,
+`errors_when_the_file_exceeds_the_size_limit`, `handles_unicode_and_special_characters`,
+`expands_tabs_in_the_view_output`, `handles_a_trailing_slash_on_a_file_path`,
+`rejects_an_unknown_command`, `spec_matches_the_ts_name_description_and_schema`,
+`a_cancelled_call_returns_cancelled`.
+
+## Divergences
+
+- **No `undo_edit`.** Upstream TS has no `undo_edit` command and keeps no undo history, so this
+  port has neither (the scope's checklist assumed otherwise).
+- **`crates/strands-harness` ships its own file tools** that overlap in intent; they are
+  deliberately left alone rather than unified in this port.
+- Validation failures become an error tool result, as for `sleep`/`shell`.
+
+---
+
+# `http_request`
+
+TS: `strands-ts/src/vended-tools/http-request/{http-request.ts,types.ts}` →
+`crates/strands-agents/src/tools/vended/http_request.rs`, behind the new `http` cargo feature
+(`http = ["dep:reqwest"]`, mirroring `strands-harness`).
+
+## API
+
+| TS | Rust |
+| --- | --- |
+| `httpRequest` (a `tool({...})` constant) | `HttpRequestTool::new()` / `with_config(HttpRequestConfig)` |
+| — | `HttpRequestConfig { name, description, default_timeout, client }` |
+| `HttpRequestInput { method, url, headers?, body?, timeout? }` | `HttpRequestInput` (same fields; `timeout: Option<f64>` seconds) |
+| `HttpRequestOutput { status, statusText, headers, body }` | `HttpRequestOutput` (`status_text` serializes as `statusText`) |
+| `'http_request'` + description + zod schema | `HTTP_REQUEST_TOOL_NAME`, `DEFAULT_HTTP_REQUEST_DESCRIPTION`, same schema (enum, `required`, descriptions verbatim) |
+| default timeout 30 s | `DEFAULT_TIMEOUT_SECONDS` |
+| `globalThis.fetch` | injected `reqwest::Client` on the config |
+
+## Tests
+
+17 unit tests, all passing, against a `tokio::net::TcpListener` mini HTTP server in the test
+module (no new dev-dependencies).
+
+| TS `it` | Rust test | state |
+| --- | --- | --- |
+| `describe.each(7 methods) > returns successful response` | `returns_successful_response_for_every_method` (all 7, incl. 201/204 and HEAD) | pass |
+| `sends request with custom headers and body` | `sends_request_with_custom_headers_and_body` (asserts the bytes the server received) | pass |
+| `omits headers/body when not provided` | `omits_headers_and_body_when_not_provided` | pass |
+| `uses default timeout of 30 seconds` | `defaults_the_timeout_to_thirty_seconds` | pass |
+| `throws error for 3xx redirect status codes` | `throws_error_for_3xx_redirect_status_codes` | pass |
+| `throws error for 4xx client error codes` | `throws_error_for_4xx_client_error_codes` | pass |
+| `throws error for 5xx server error codes` | `throws_error_for_5xx_server_error_codes` | pass |
+| `throws timeout error when request exceeds timeout` | `throws_timeout_error_when_request_exceeds_timeout` (message verbatim) | pass |
+| `throws error for network failures` | `throws_error_for_network_failures` | pass |
+| `uses context.cancelSignal when it differs from the agent signal` | `uses_the_cancellation_token_mid_request` | pass |
+| — | `rejects_a_non_positive_timeout`, `rejects_an_unsupported_method`, `rejects_a_url_that_is_not_a_url`, `rejects_immediately_when_the_token_is_already_cancelled`, `invoke_returns_the_response_as_a_tool_result`, `invoke_reports_a_failed_request_as_an_error_result`, `spec_matches_the_ts_schema` | pass (added) |
+
+## Divergences
+
+- **Status text is derived**, not received: `StatusCode::canonical_reason()` (empty for an unknown
+  code), because `reqwest`/HTTP2 do not expose the server's reason phrase. TS reports what `fetch`
+  saw.
+- **Cancellation returns `Error::Cancelled`** (the variant the executor understands) instead of
+  TS's `Request cancelled: {method} {url}` message; the timeout message is verbatim TS.
+- **URL and method validation** happen in Rust (zod `.url()` / `z.enum` have no runtime
+  equivalent here) and surface as `Error::ToolValidation`.
+- **The timeout is a `tokio::select!` race**, not `AbortSignal.timeout`, so it covers connect,
+  send and body read exactly as the TS signal does.
+- `tokio`'s `net` feature was added to `strands-rs/Cargo.toml` for the test server (dev-only use;
+  additive).
