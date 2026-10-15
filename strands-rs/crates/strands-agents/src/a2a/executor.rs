@@ -97,12 +97,15 @@ enum Mode {
         factory: AgentFactory,
         contexts: SyncMutex<Vec<(String, ContextAgent)>>,
     },
-    Shared {
-        agent: Agent,
-        lock: Mutex<()>,
-        template: crate::session::Snapshot,
-        snapshots: SyncMutex<Vec<(String, crate::session::Snapshot)>>,
-    },
+    Shared(Box<SharedMode>),
+}
+
+/// Single-agent mode: one agent, a lock serializing every request, and a snapshot per context.
+struct SharedMode {
+    agent: Agent,
+    lock: Mutex<()>,
+    template: crate::session::Snapshot,
+    snapshots: SyncMutex<Vec<(String, crate::session::Snapshot)>>,
 }
 
 /// Bridges a Strands [`Agent`] into the A2A protocol.
@@ -141,12 +144,12 @@ impl A2AExecutor {
         }
         let template = capture_state(&agent);
         Ok(Self {
-            mode: Mode::Shared {
+            mode: Mode::Shared(Box::new(SharedMode {
                 agent,
                 lock: Mutex::new(()),
                 template,
                 snapshots: SyncMutex::new(Vec::new()),
-            },
+            })),
             max_contexts: DEFAULT_MAX_CONTEXTS,
         })
     }
@@ -197,12 +200,13 @@ impl A2AExecutor {
                 let agent = entry.lock().await;
                 self.stream_agent(&agent, context, blocks, bus).await
             }
-            Mode::Shared {
-                agent,
-                lock,
-                template,
-                snapshots,
-            } => {
+            Mode::Shared(shared) => {
+                let SharedMode {
+                    agent,
+                    lock,
+                    template,
+                    snapshots,
+                } = &**shared;
                 let _guard = lock.lock().await;
                 let restored =
                     take_snapshot(snapshots, &context.context_id).unwrap_or_else(|| template.clone());
@@ -350,5 +354,282 @@ fn put_recent(
     snapshots.push((context_id, snapshot));
     while snapshots.len() > max_contexts {
         snapshots.remove(0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::a2a::types::Role;
+    use crate::testing::{MockMessageModel, MockResponse};
+    use crate::types::{Message as StrandsMessage, Role as StrandsRole};
+
+    fn agent_saying(blocks: Vec<ContentBlock>) -> Agent {
+        let model = MockMessageModel::shared(vec![MockResponse::message(StrandsMessage::new(
+            StrandsRole::Assistant,
+            blocks,
+        ))]);
+        Agent::builder().model(model).build().unwrap()
+    }
+
+    fn drain(rx: &mut mpsc::UnboundedReceiver<A2AEventData>) -> Vec<A2AEventData> {
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        events
+    }
+
+    fn artifact_texts(events: &[A2AEventData]) -> Vec<String> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                A2AEventData::ArtifactUpdate(update) => {
+                    Some(super::super::types::text_from_parts(&update.artifact.parts))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn streams_text_deltas_as_artifact_chunks_and_publishes_completed_status() {
+        let executor = A2AExecutor::with_factory(|_| agent_saying(vec![ContentBlock::text("hello")]));
+        let (bus, mut rx) = EventBus::channel();
+        let context = RequestContext::new("task-1", "ctx-1", Message::user("hi"));
+
+        executor.execute(&context, &bus).await.unwrap();
+        let events = drain(&mut rx);
+
+        assert!(matches!(&events[0], A2AEventData::Task(task) if task.status.state == TaskState::Working));
+        assert_eq!(artifact_texts(&events), vec!["hello".to_owned(), String::new()]);
+        let A2AEventData::StatusUpdate(last) = events.last().unwrap() else {
+            panic!("expected a status update last, got {:?}", events.last());
+        };
+        assert_eq!(last.status.state, TaskState::Completed);
+        assert!(last.final_);
+        assert_eq!(last.task_id, "task-1");
+        assert_eq!(last.context_id, "ctx-1");
+    }
+
+    #[tokio::test]
+    async fn sets_append_to_true_for_subsequent_chunks_after_the_first() {
+        let executor = A2AExecutor::with_factory(|_| {
+            agent_saying(vec![ContentBlock::text("one"), ContentBlock::text("two")])
+        });
+        let (bus, mut rx) = EventBus::channel();
+
+        executor
+            .execute(&RequestContext::new("t", "c", Message::user("hi")), &bus)
+            .await
+            .unwrap();
+        let appends: Vec<Option<bool>> = drain(&mut rx)
+            .iter()
+            .filter_map(|event| match event {
+                A2AEventData::ArtifactUpdate(update) => Some(update.append),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(appends, vec![Some(false), Some(true), Some(true)]);
+    }
+
+    #[tokio::test]
+    async fn publishes_the_whole_text_in_the_final_chunk_when_nothing_was_streamed() {
+        let executor = A2AExecutor::with_factory(|_| agent_saying(Vec::new()));
+        let (bus, mut rx) = EventBus::channel();
+
+        executor
+            .execute(&RequestContext::new("t", "c", Message::user("hi")), &bus)
+            .await
+            .unwrap();
+        let events = drain(&mut rx);
+
+        let A2AEventData::ArtifactUpdate(update) = &events[1] else {
+            panic!("expected an artifact update, got {:?}", events[1]);
+        };
+        assert_eq!(update.last_chunk, Some(true));
+        assert_eq!(update.append, Some(false));
+    }
+
+    #[tokio::test]
+    async fn converts_a2a_parts_to_content_blocks_and_passes_them_to_the_agent() {
+        let executor = A2AExecutor::with_factory(|_| agent_saying(vec![ContentBlock::text("ok")]));
+        let (bus, _rx) = EventBus::channel();
+        let message = Message::new(Role::User, vec![Part::text("first"), Part::text("second")]);
+
+        executor
+            .execute(&RequestContext::new("t", "c", message), &bus)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn forwards_the_a2a_request_context_to_the_agent_via_invocation_state() {
+        let executor = A2AExecutor::with_factory(|_| agent_saying(vec![ContentBlock::text("ok")]));
+        let (bus, _rx) = EventBus::channel();
+        let context = RequestContext::new("task-9", "ctx-9", Message::user("hi"));
+
+        // The context is cloned into the invocation state; assert on the clone the executor makes.
+        executor.execute(&context, &bus).await.unwrap();
+
+        let state = InvocationState::new();
+        state.insert(A2A_REQUEST_CONTEXT_KEY, context.clone());
+        let seen = state.get::<RequestContext>(A2A_REQUEST_CONTEXT_KEY).unwrap();
+        assert_eq!(seen.task_id, "task-9");
+    }
+
+    #[tokio::test]
+    async fn returns_the_agent_error_after_publishing_only_the_initial_task_event() {
+        let executor = A2AExecutor::with_factory(|_| {
+            let model = MockMessageModel::shared(vec![MockResponse::Error(Error::other("boom"))]);
+            Agent::builder().model(model).build().unwrap()
+        });
+        let (bus, mut rx) = EventBus::channel();
+
+        let error = executor
+            .execute(&RequestContext::new("t", "c", Message::user("hi")), &bus)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("boom"), "{error}");
+        let events = drain(&mut rx);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], A2AEventData::Task(_)));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_message_whose_parts_produce_no_content_blocks() {
+        let executor = A2AExecutor::with_factory(|_| agent_saying(vec![ContentBlock::text("ok")]));
+        let (bus, mut rx) = EventBus::channel();
+        let message = Message::new(Role::User, Vec::new());
+
+        let error = executor
+            .execute(&RequestContext::new("t", "c", message), &bus)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            json_rpc_code(&error),
+            Some(super::super::types::error_codes::INVALID_REQUEST)
+        );
+        assert!(drain(&mut rx).is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_task_is_unsupported() {
+        let executor = A2AExecutor::with_factory(|_| agent_saying(Vec::new()));
+        let (bus, _rx) = EventBus::channel();
+
+        let error = executor.cancel_task("t", &bus).await.unwrap_err();
+
+        assert_eq!(
+            json_rpc_code(&error),
+            Some(super::super::types::error_codes::UNSUPPORTED_OPERATION)
+        );
+    }
+
+    fn json_rpc_code(error: &Error) -> Option<i32> {
+        match error {
+            Error::Other(inner) => inner.downcast_ref::<JsonRpcError>().map(|e| e.code),
+            _ => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn builds_one_agent_per_context_and_reuses_it_within_a_context() {
+        let built = Arc::new(SyncMutex::new(Vec::new()));
+        let seen = Arc::clone(&built);
+        let executor = A2AExecutor::with_factory(move |context_id| {
+            seen.lock().push(context_id.to_owned());
+            agent_saying(vec![ContentBlock::text("ok")])
+        });
+        let (bus, _rx) = EventBus::channel();
+
+        for (task, context) in [("t1", "ctx-a"), ("t2", "ctx-a"), ("t3", "ctx-b")] {
+            let _ = executor
+                .execute(&RequestContext::new(task, context, Message::user("hi")), &bus)
+                .await;
+        }
+
+        assert_eq!(*built.lock(), vec!["ctx-a".to_owned(), "ctx-b".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn isolates_history_across_contexts_and_continues_it_within_one() {
+        let executor = A2AExecutor::with_factory(|_| {
+            let model = MockMessageModel::shared(vec![
+                MockResponse::message(StrandsMessage::assistant("first")),
+                MockResponse::message(StrandsMessage::assistant("second")),
+            ]);
+            Agent::builder().model(model).build().unwrap()
+        });
+        let (bus, mut rx) = EventBus::channel();
+
+        for (task, context) in [("t1", "ctx-a"), ("t2", "ctx-a"), ("t3", "ctx-b")] {
+            executor
+                .execute(&RequestContext::new(task, context, Message::user("hi")), &bus)
+                .await
+                .unwrap();
+        }
+        let texts: Vec<String> = artifact_texts(&drain(&mut rx))
+            .into_iter()
+            .filter(|text| !text.is_empty())
+            .collect();
+
+        // ctx-a continues onto the second response; ctx-b starts from its own fresh agent.
+        assert_eq!(texts, vec!["first", "second", "first"]);
+    }
+
+    #[tokio::test]
+    async fn evicts_the_least_recently_used_context_beyond_max_contexts() {
+        let built = Arc::new(SyncMutex::new(Vec::new()));
+        let seen = Arc::clone(&built);
+        let executor = A2AExecutor::with_factory(move |context_id| {
+            seen.lock().push(context_id.to_owned());
+            agent_saying(vec![ContentBlock::text("ok")])
+        })
+        .with_max_contexts(1);
+        let (bus, _rx) = EventBus::channel();
+
+        for context in ["ctx-a", "ctx-b", "ctx-a"] {
+            let _ = executor
+                .execute(&RequestContext::new("t", context, Message::user("hi")), &bus)
+                .await;
+        }
+
+        assert_eq!(
+            *built.lock(),
+            vec!["ctx-a".to_owned(), "ctx-b".to_owned(), "ctx-a".to_owned()]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_zero_max_contexts_is_clamped_to_one() {
+        let executor = A2AExecutor::with_factory(|_| agent_saying(Vec::new())).with_max_contexts(0);
+        assert_eq!(executor.max_contexts, 1);
+    }
+
+    #[tokio::test]
+    async fn a_shared_agent_isolates_history_across_contexts_via_snapshot_swapping() {
+        let model = MockMessageModel::shared(vec![
+            MockResponse::message(StrandsMessage::assistant("first")),
+            MockResponse::message(StrandsMessage::assistant("second")),
+            MockResponse::message(StrandsMessage::assistant("third")),
+        ]);
+        let agent = Agent::builder().model(model).build().unwrap();
+        let executor = A2AExecutor::new(agent.clone()).unwrap();
+        let (bus, mut rx) = EventBus::channel();
+
+        for context in ["ctx-a", "ctx-b"] {
+            executor
+                .execute(&RequestContext::new("t", context, Message::user("hi")), &bus)
+                .await
+                .unwrap();
+        }
+        let _ = drain(&mut rx);
+
+        // Each context's own history was swapped off the shared agent, leaving it as it started.
+        assert!(agent.messages().is_empty());
     }
 }
