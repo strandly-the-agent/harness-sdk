@@ -4,7 +4,6 @@ description: >-
   Route each Strands agent invocation across multiple models with ordered fallback,
   request classification, custom strategies, and bounded switching.
 tags: [error-handling]
-languages: [python, typescript]
 sourceLinks:
   - path: strands-py/src/strands/models/routing/router.py
   - path: strands-py/src/strands/models/routing/classifier_strategy.py
@@ -65,6 +64,7 @@ To configure routing without changing how you invoke the agent:
    metadata as selection evidence.
 3. Choose the default fallback, `ClassifierStrategy`, or a custom `RoutingStrategy`.
 4. Construct `ModelRouter` with the candidates and optional strategy.
+```
 5. Pass the router as the agent's model. Do not attach it through the plugin list.
 
 The agent invocation API stays the same. The following sections show each strategy
@@ -106,13 +106,17 @@ agent("Summarize the tradeoffs of active-active deployment.")
 --8<-- "user-guide/sdk/model-providers/model-routing_imports.ts:mr_fallback_imports"
 
 --8<-- "user-guide/sdk/model-providers/model-routing.ts:mr_fallback"
+</Tab>
+<Tab label="Rust">
+```rust
+--8<-- "user-guide/sdk/model-providers/model-routing.rs:mr_fallback"
 ```
 </Tab>
 </Tabs>
 
-Set <Syntax py="max_switches" ts="maxSwitches" /> to cap successful candidate
-changes during one invocation. The cap does not count retries of the same model.
-Omit it when the strategy should decide when routing stops.
+Set <Syntax py="max_switches" ts="maxSwitches" rs="with_max_switches" /> to cap
+successful candidate changes during one invocation. The cap does not count retries
+of the same model. Omit it when the strategy should decide when routing stops.
 
 ## Route each request by content
 
@@ -172,6 +176,7 @@ router = ModelRouter(
 )
 agent = Agent(model=router)
 
+
 agent(
     "Design a rollback-safe migration from regional to global idempotency keys."
 )
@@ -184,16 +189,27 @@ agent(
 --8<-- "user-guide/sdk/model-providers/model-routing.ts:mr_classify"
 ```
 </Tab>
+<Tab label="Rust">
+```rust
+--8<-- "user-guide/sdk/model-providers/model-routing.rs:mr_classify"
+```
+</Tab>
 </Tabs>
 
 With two or more candidates, the classifier makes one additional model call before
 the first serving call. Choose a classifier model that supports
-<Syntax py="structured output" ts="tool calling and forced tool selection" plain />.
+<Syntax
+  py="structured output"
+  ts="tool calling and forced tool selection"
+  rs="tool calling and forced tool selection"
+  plain
+/>.
 
-Set <Syntax py="system_prompt" ts="systemPrompt" /> to supply your routing policy.
-The policy can prioritize cost, latency, region, capabilities, or another criterion
-represented in candidate evidence. The SDK appends mandatory isolation, valid-index,
-and structured-output rules to every custom policy.
+Set <Syntax py="system_prompt" ts="systemPrompt" rs="with_system_prompt" /> to
+supply your routing policy. The policy can prioritize cost, latency, region,
+capabilities, or another criterion represented in candidate evidence. The SDK
+appends mandatory isolation, valid-index, and structured-output rules to every
+custom policy.
 
 The classifier receives a bounded representation of the latest request-bearing user
 message, textual agent instructions, and candidate names, descriptions, and
@@ -203,8 +219,9 @@ boundary.
 The classifier prompt tells the model not to infer preference from declaration
 order. If the classifier call times out, fails, or returns an invalid choice, the
 router uses the first candidate. Candidate evidence that exceeds
-<Syntax py="max_candidate_chars" ts="maxCandidateChars" /> raises
-<Syntax py="ValueError" ts="Error" /> instead.
+<Syntax py="max_candidate_chars" ts="maxCandidateChars" rs="with_max_candidate_chars" />
+raises
+<Syntax py="ValueError" ts="Error" rs="Error" /> instead.
 
 `ClassifierStrategy` only chooses the opening model. If the selected model fails and
 no same-model retry claims the failure, the strategy declines further selection.
@@ -213,11 +230,11 @@ candidates.
 
 ## Build a custom routing strategy
 
-Implement `RoutingStrategy`, the <Syntax py="protocol" ts="interface" plain />,
+Implement `RoutingStrategy`, the <Syntax py="protocol" ts="interface" rs="trait" plain />,
 when the built-in policies do not match your routing goal. The contract defines one
 asynchronous `select` method. It receives a `RoutingContext` and returns one of
 that context's candidate instances or
-<Syntax py="None" ts="undefined" /> to decline.
+<Syntax py="None" ts="undefined" rs="None" /> to decline.
 
 `ModelRouter` decides when to call `select`, applies the selected candidate, and
 tracks switches and failure rounds. The strategy chooses a candidate or declines;
@@ -256,9 +273,8 @@ class ClassifyThenFallback:
         if not context.attempts:
             return await self._classifier.select(context, **kwargs)
         return await self._fallback.select(context, **kwargs)
-
-
 classifier_model = BedrockModel(
+
     model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
     max_tokens=64,
     streaming=False,
@@ -291,6 +307,11 @@ agent("Design a rollback-safe migration from regional to global idempotency keys
 --8<-- "user-guide/sdk/model-providers/model-routing_imports.ts:mr_composed_imports"
 
 --8<-- "user-guide/sdk/model-providers/model-routing.ts:mr_composed"
+```
+</Tab>
+<Tab label="Rust">
+```rust
+--8<-- "user-guide/sdk/model-providers/model-routing.rs:mr_composed"
 ```
 </Tab>
 </Tabs>
