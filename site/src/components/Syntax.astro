@@ -2,12 +2,17 @@
 import { LANGUAGE_STORAGE_KEY } from '../util/language-preference'
 
 interface Props {
+  /** Python form, e.g. `Agent(...)`. */
   py: string;
+  /** TypeScript form. Also the fallback when the selected language has no form here. */
   ts: string;
+  /** Rust form. Optional — omit it on pages with no Rust coverage. */
+  rs?: string;
+  /** Render as plain text instead of inline code. */
   plain?: boolean;
 }
 
-const { py, ts, plain = false } = Astro.props;
+const { py, ts, rs, plain = false } = Astro.props;
 ---
 
 <syntax-switch>
@@ -15,18 +20,21 @@ const { py, ts, plain = false } = Astro.props;
     <>
       <span data-lang="Python">{py}</span>
       <span data-lang="TypeScript">{ts}</span>
+      {rs && <span data-lang="Rust">{rs}</span>}
     </>
   ) : (
     <>
       <code data-lang="Python">{py}</code>
       <code data-lang="TypeScript">{ts}</code>
+      {rs && <code data-lang="Rust">{rs}</code>}
     </>
   )}
 </syntax-switch>
 
 <style>
-  /* Default: show TypeScript, hide Python (matches site-wide default) */
-  syntax-switch [data-lang="Python"] {
+  /* Default: show TypeScript, hide the others (matches site-wide default) */
+  syntax-switch [data-lang="Python"],
+  syntax-switch [data-lang="Rust"] {
     display: none;
   }
 </style>
@@ -43,10 +51,32 @@ const { py, ts, plain = false } = Astro.props;
       catch (e) { return DEFAULT_LANG; }
     }
 
-    function updateAll() {
+    /**
+     * The language actually in effect, resolved the same way LanguageToggle
+     * does it: on a page that disables the stored preference (`languages`
+     * frontmatter), the first enabled option wins. Without a toggle on the
+     * page the stored preference stands.
+     */
+    function effectiveLang() {
       var lang = getLang();
-      document.querySelectorAll('syntax-switch [data-lang]').forEach(function (el) {
-        el.style.display = el.getAttribute('data-lang') === lang ? 'inline' : 'none';
+      var enabled = Array.prototype.filter.call(
+        document.querySelectorAll('language-toggle .lang-option'),
+        function (btn) { return !btn.disabled; }
+      );
+      if (enabled.length === 0) return lang;
+      var match = enabled.some(function (btn) { return btn.dataset.lang === lang; });
+      return match ? lang : enabled[0].dataset.lang;
+    }
+
+    function updateAll() {
+      var lang = effectiveLang();
+      document.querySelectorAll('syntax-switch').forEach(function (group) {
+        // A <Syntax> without an `rs` form has no Rust element; show the
+        // TypeScript form rather than nothing.
+        var shown = group.querySelector('[data-lang="' + lang + '"]') ? lang : DEFAULT_LANG;
+        group.querySelectorAll('[data-lang]').forEach(function (el) {
+          el.style.display = el.getAttribute('data-lang') === shown ? 'inline' : 'none';
+        });
       });
     }
 

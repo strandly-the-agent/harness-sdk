@@ -130,8 +130,12 @@ const containsCurrent = (item: ProductNavItem): boolean =>
      the docs sidebar. Default (attr unset) = TypeScript. */
   :global(html:not([data-lang-pref='python'])) li:has(> a[href*='/quickstart/python']),
   :global(html:not([data-lang-pref='python'])) li:has(> a[href*='/api/python']),
+  :global(html:not([data-lang-pref='rust'])) li:has(> a[href*='/quickstart/rust']),
+  :global(html:not([data-lang-pref='rust'])) li:has(> a[href*='/api/rust']),
   :global(html[data-lang-pref='python']) li:has(> a[href*='/quickstart/typescript']),
-  :global(html[data-lang-pref='python']) li:has(> a[href*='/api/typescript']) {
+  :global(html[data-lang-pref='python']) li:has(> a[href*='/api/typescript']),
+  :global(html[data-lang-pref='rust']) li:has(> a[href*='/quickstart/typescript']),
+  :global(html[data-lang-pref='rust']) li:has(> a[href*='/api/typescript']) {
     display: none;
   }
 </style>

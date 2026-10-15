@@ -1,6 +1,6 @@
 ---
 /**
- * Global Python/TypeScript language toggle, rendered identically in the header
+ * Global Python/TypeScript/Rust language toggle, rendered identically in the header
  * (full and collapsed), the mobile menu, and the mobile "On this page" bar. Reads/writes the shared AutoSyncTabs
  * localStorage key so the toggle and inline code tabs stay in sync, and on
  * language-specific pages navigates to the counterpart resolved at build time
@@ -13,6 +13,7 @@ import { getApiCounterpartMap } from '../util/api-counterparts'
 import { getBase, pathWithBase } from '../util/links'
 import typescriptIcon from '../assets/lang/typescript.svg?raw'
 import pythonIcon from '../assets/lang/python.svg?raw'
+import rustIcon from '../assets/lang/rust.svg?raw'
 
 const allDocs = await getCollection('docs')
 const docIds = new Set(allDocs.map((doc) => doc.id))
@@ -28,7 +29,7 @@ function switchHref(lang: LanguageSlug): string | undefined {
   return target ? pathWithBase(target) : undefined
 }
 
-// On single-language docs pages, disable the unavailable side.
+// On language-restricted docs pages, disable the options the page lacks.
 // `starlightRoute` is a getter that throws off non-Starlight pages — try/catch required.
 let routeData
 try {
@@ -40,8 +41,20 @@ const pageLanguages = routeData?.languages
   ? (Array.isArray(routeData.languages) ? routeData.languages : [routeData.languages]).map((l) => l.toLowerCase())
   : undefined
 const resolvedLanguages = pageLanguages?.length ? pageLanguages : undefined
-const pythonDisabled = resolvedLanguages !== undefined && !resolvedLanguages.includes('python')
-const typescriptDisabled = resolvedLanguages !== undefined && !resolvedLanguages.includes('typescript')
+const isDisabled = (lang: LanguageSlug) =>
+  resolvedLanguages !== undefined && !resolvedLanguages.includes(lang)
+
+// Tooltip for a disabled option: "This page is Python-only" /
+// "This page is Python and Rust only", built from the languages the page does
+// support.
+const LABELS: Record<LanguageSlug, string> = { python: 'Python', typescript: 'TypeScript', rust: 'Rust' }
+const enabledLabels = (['typescript', 'python', 'rust'] as const)
+  .filter((lang) => !isDisabled(lang))
+  .map((lang) => LABELS[lang])
+const disabledTitle =
+  enabledLabels.length === 1
+    ? `This page is ${enabledLabels[0]}-only`
+    : `This page is ${enabledLabels.slice(0, -1).join(', ')} and ${enabledLabels[enabledLabels.length - 1]} only`
 ---
 
 <language-toggle
@@ -56,8 +69,8 @@ const typescriptDisabled = resolvedLanguages !== undefined && !resolvedLanguages
     aria-label="TypeScript"
     data-lang="TypeScript"
     data-switch-href={switchHref('typescript')}
-    disabled={typescriptDisabled}
-    title={typescriptDisabled ? 'This page is Python-only' : undefined}
+    disabled={isDisabled('typescript')}
+    title={isDisabled('typescript') ? disabledTitle : undefined}
   >
     <span class="lang-icon" set:html={typescriptIcon} />
     <span class="lang-label">TypeScript</span>
@@ -69,11 +82,24 @@ const typescriptDisabled = resolvedLanguages !== undefined && !resolvedLanguages
     aria-label="Python"
     data-lang="Python"
     data-switch-href={switchHref('python')}
-    disabled={pythonDisabled}
-    title={pythonDisabled ? 'This page is TypeScript-only' : undefined}
+    disabled={isDisabled('python')}
+    title={isDisabled('python') ? disabledTitle : undefined}
   >
     <span class="lang-icon" set:html={pythonIcon} />
     <span class="lang-label">Python</span>
+  </button>
+  <button
+    class="lang-option"
+    role="radio"
+    aria-checked="false"
+    aria-label="Rust"
+    data-lang="Rust"
+    data-switch-href={switchHref('rust')}
+    disabled={isDisabled('rust')}
+    title={isDisabled('rust') ? disabledTitle : undefined}
+  >
+    <span class="lang-icon" set:html={rustIcon} />
+    <span class="lang-label">Rust</span>
   </button>
 </language-toggle>
 

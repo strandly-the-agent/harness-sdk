@@ -145,7 +145,8 @@ const { id, categories } = Astro.props;
 
   function updateLangHrefs() {
     const lang = localStorage.getItem(LANGUAGE_STORAGE_KEY) || DEFAULT_LANGUAGE_LABEL
-    const slug = lang === 'Python' ? 'python' : 'typescript'
+    const slugs: Record<string, string> = { Python: 'python', TypeScript: 'typescript', Rust: 'rust' }
+    const slug = slugs[lang] ?? 'typescript'
     const base = import.meta.env.BASE_URL.replace(/\/$/, '')
     document.querySelectorAll<HTMLAnchorElement>('[data-lang-href]').forEach((a) => {
       a.href = `${base}/docs/api/${slug}/`
