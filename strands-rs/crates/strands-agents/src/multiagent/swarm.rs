@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::StreamExt;
 use indexmap::IndexMap;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
@@ -213,14 +212,12 @@ impl Swarm {
         input: impl Into<MultiAgentInput>,
         options: MultiAgentInvokeOptions,
     ) -> Result<MultiAgentResult> {
-        let mut stream = self.stream_with(input, options);
-        let mut result = None;
-        while let Some(event) = stream.next().await {
-            if let Some(aggregate) = event?.result() {
-                result = Some(aggregate.clone());
-            }
-        }
-        result.ok_or_else(|| Error::other("swarm stream ended without a result"))
+        // Inline, not spawned: the loop runs in the caller's task, so a panic in a hook or a node
+        // propagates to the caller instead of ending the stream without a result.
+        let (tx, mut rx) = mpsc::channel(EVENT_BUFFER);
+        let drain = async move { while rx.recv().await.is_some() {} };
+        let (result, ()) = tokio::join!(self.run(input.into(), options, tx), drain);
+        result
     }
 
     /// Stream the swarm with default options.
@@ -247,7 +244,7 @@ impl Swarm {
         let swarm = self.clone();
         let input = input.into();
         tokio::spawn(async move {
-            if let Err(error) = swarm.run(input, options, &tx).await {
+            if let Err(error) = swarm.run(input, options, tx.clone()).await {
                 let _ = tx.send(Err(error)).await;
             }
         });
@@ -279,12 +276,15 @@ impl Swarm {
     }
 
     /// One invocation, from `initialize` to the terminal result event (TS `Swarm._stream`).
+    ///
+    /// Takes `tx` by value so the channel closes when this future is dropped or completes.
     async fn run(
         &self,
         input: MultiAgentInput,
         options: MultiAgentInvokeOptions,
-        tx: &NodeSink,
-    ) -> Result<()> {
+        tx: NodeSink,
+    ) -> Result<MultiAgentResult> {
+        let tx = &tx;
         self.initialize().await?;
 
         // Reuse the state of a prior INTERRUPTED run so `invoke(responses)` resumes on the same
@@ -341,12 +341,13 @@ impl Swarm {
         self.emit(
             tx,
             MultiAgentResultEvent {
-                result,
+                result: result.clone(),
                 invocation_state: run.invocation_state.clone(),
             },
             MultiAgentStreamEvent::MultiAgentResult,
         )
-        .await
+        .await?;
+        Ok(result)
     }
 
     /// The node this invocation starts from, its input, and the handoff it is resuming, if any.
@@ -1162,6 +1163,8 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use futures::StreamExt;
+
     use crate::agent::Agent;
     use crate::multiagent::{AgentNodeOptions, NodeConfig, NodeResultUpdate, NodeType};
     use crate::testing::{MockMessageModel, MockResponse};
@@ -1976,6 +1979,21 @@ mod tests {
             error.to_string(),
             "swarm_id=<swarm> | swarm cancelled by external signal"
         );
+    }
+
+    #[tokio::test]
+    async fn propagates_a_panicking_hook_out_of_invoke() {
+        let task = tokio::spawn(async {
+            let swarm = Swarm::builder()
+                .node(final_agent("a", "done"))
+                .hook::<BeforeMultiAgentInvocationEvent, _>(|_event| panic!("hook exploded"))
+                .build()
+                .expect("swarm builds");
+            swarm.invoke("go").await
+        });
+
+        let error = task.await.expect_err("the panic reaches the caller");
+        assert!(error.is_panic(), "{error}");
     }
 
     #[tokio::test]
