@@ -48,7 +48,7 @@ async fn session_id_example() -> Result<(), Box<dyn std::error::Error>> {
     let session = SessionManager::new("user-123", Arc::new(FileStorage::new("./sessions/")))?;
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
     let agent = Agent::builder()
-        .model(model.clone())
+        .model(model)
         .session_manager(session.clone())
         .build()?;
 
@@ -56,7 +56,9 @@ async fn session_id_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", session.session_id()); // "user-123"
 
     // Without a session manager, the id is a generated, non-persisted handle
-    let plain = Agent::builder().model(model).build()?;
+    let plain = Agent::builder()
+        .model(BedrockModel::new(BedrockModelConfig::default()).await?)
+        .build()?;
     println!("{}", plain.session_id()); // e.g. "a1b2c3d4"
     // --8<-- [end:session_id]
     Ok(())
