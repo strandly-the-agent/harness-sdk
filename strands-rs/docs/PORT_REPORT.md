@@ -342,3 +342,8 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   its public API is unchanged). Delivery runs through `BeforeModelCallEvent` rather than a second
   middleware mechanism, and `ContextInjector` is now a thin wrapper over the engine. Loop coverage
   in `tests/injection_loop.rs`; matrix in [matrices/injection.md](matrices/injection.md).
+- **Printer (`agent/printer.rs`).** Port of `strands-ts/src/agent/printer.ts` — `AgentPrinter<W:
+  Write>` (default `Stdout`) printing text deltas, framed reasoning blocks and tool
+  announcements/results byte-identically to TS. `printer.print(agent.stream(input)).await` drives a
+  whole stream and returns the `AgentResult`; `on_event` is public for custom loops. All nine TS
+  tests ported, each asserting the captured bytes; `examples/printer.rs` shows the one-liner.

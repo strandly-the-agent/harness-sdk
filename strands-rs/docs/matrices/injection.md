@@ -64,3 +64,46 @@ tool-result turn).
   behaviour (injection skipped, call proceeds).
 - **XML helpers are owned here.** `memory::injection` previously carried its own copies; it now
   re-exports these. The public `memory` API is unchanged.
+
+## Printer (`src/agent/printer.rs`)
+
+Port of `strands-ts/src/agent/printer.ts` (+ `__tests__/printer.test.ts`).
+
+| TS | Rust |
+| --- | --- |
+| `interface Printer` | — (no trait; the sink is `W: std::io::Write`) |
+| `class AgentPrinter(appender)` | `AgentPrinter<W: Write = Stdout>`, `AgentPrinter::with_writer(w)` |
+| `getDefaultAppender()` | `AgentPrinter::new()` / `Default` (writes `std::io::stdout()`) |
+| `printer.write(content)` | `AgentPrinter::write(&mut self, &str)` |
+| `printer.processEvent(event)` | `AgentPrinter::on_event(&mut self, &AgentStreamEvent)` |
+| agent owns a printer (`printer: false` to opt out) | `AgentPrinter::print(stream) -> Result<AgentResult>` drives an `AgentStream` |
+
+| TS test | Rust test |
+| --- | --- |
+| `prints simple text output` | `prints_simple_text_output` |
+| `prints reasoning content wrapped in tags` | `prints_reasoning_content_wrapped_in_tags` |
+| `prints text and reasoning together` | `prints_text_and_reasoning_together` |
+| `handles newlines in reasoning content` | `handles_newlines_in_reasoning_content` |
+| `prints tool execution` | `prints_tool_execution` |
+| `prints tool error` | `prints_tool_error` |
+| `prints denied tool with denied icon` | `prints_denied_tool_with_denied_icon` |
+| `prints batch cancel notice when BeforeToolsEvent cancels` | `prints_batch_cancel_notice_when_before_tools_cancels` |
+| `prints comprehensive scenario with all output types` | `prints_comprehensive_scenario_with_all_output_types` |
+
+Every test asserts the captured `Vec<u8>` against the TS expectation byte for byte.
+
+### Divergences
+
+- **Sink, not callback.** TS takes an `(text: string) => void` appender; Rust takes any
+  `std::io::Write` (default `Stdout`), which is the idiomatic sink and makes capture in tests a
+  `Vec<u8>`. Write errors are ignored — TS's `void` appender cannot report them either — and the
+  printer flushes after every write so partial lines appear immediately.
+- **Driving the stream.** The TS agent owns a printer and feeds it from inside the loop. Rust keeps
+  the agent unchanged: `printer.print(agent.stream(input)).await` drains the stream, prints, and
+  returns the `AgentResult`; `on_event` stays public for callers with their own loop.
+- **No `Printer` trait.** The TS interface exists so an HTML/console implementation can be swapped
+  in; `W: Write` covers that in Rust, so no trait is added.
+- **Reasoning deltas in tests.** `MockMessageModel` replays a `Message`, which has no reasoning
+  deltas, so the reasoning and multi-turn tests script `ModelStreamEvent`s directly
+  (`TestModelProvider` and a test-local `ScriptedModel`).
+
