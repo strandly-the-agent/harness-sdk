@@ -8,14 +8,12 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use indexmap::IndexMap;
 
 use super::edge::{Edge, EdgeDefinition, EdgeHandler};
-use super::multiagent::MultiAgentInput;
-use super::nodes::{Node, NodeConfig, NodeDefinition, NodeInputOptions, NodeSink, NodeType};
+use super::nodes::{Node, NodeDefinition};
 use super::plugins::{MultiAgentPlugin, MultiAgentPluginRegistry};
-use super::state::{MultiAgentState, MultiAgentStateHandle, NodeResultUpdate};
+use super::state::{MultiAgentState, MultiAgentStateHandle};
 use crate::agent::InvocationState;
 use crate::error::{Error, Result};
 use crate::hooks::{HookEvent, HookFn, HookRegistry};
@@ -168,7 +166,7 @@ pub struct GraphBuilder {
     id: Option<String>,
     name: Option<String>,
     description: Option<String>,
-    nodes: Vec<(String, NodeDefinition)>,
+    nodes: Vec<NodeDefinition>,
     edges: Vec<EdgeDefinition>,
     entry_points: Option<Vec<String>>,
     config: GraphConfig,
@@ -201,9 +199,9 @@ impl GraphBuilder {
         self
     }
 
-    /// Add a node under `id`, overriding the wrapped agent's or orchestrator's own id.
-    pub fn node(mut self, id: impl Into<String>, definition: impl Into<NodeDefinition>) -> Self {
-        self.nodes.push((id.into(), definition.into()));
+    /// Add a node; its id comes from the node itself (an agent node uses the agent's id).
+    pub fn node(mut self, definition: impl Into<NodeDefinition>) -> Self {
+        self.nodes.push(definition.into());
         self
     }
 
@@ -340,62 +338,19 @@ fn validate_config(config: &GraphConfig) -> Result<()> {
     Ok(())
 }
 
-fn resolve_nodes(definitions: Vec<(String, NodeDefinition)>) -> Result<IndexMap<String, Arc<dyn Node>>> {
+fn resolve_nodes(definitions: Vec<NodeDefinition>) -> Result<IndexMap<String, Arc<dyn Node>>> {
     let mut nodes = IndexMap::with_capacity(definitions.len());
-    for (id, definition) in definitions {
-        if nodes.contains_key(&id) {
-            return Err(Error::other(format!("node_id=<{id}> | duplicate node id")));
-        }
+    for definition in definitions {
         let node = definition.into_node()?;
-        let node = if node.id() == id {
-            node
-        } else {
-            Arc::new(RenamedNode {
-                id: id.clone(),
-                inner: node,
-            }) as Arc<dyn Node>
-        };
-        nodes.insert(id, node);
+        if nodes.contains_key(node.id()) {
+            return Err(Error::other(format!(
+                "node_id=<{}> | duplicate node id",
+                node.id()
+            )));
+        }
+        nodes.insert(node.id().to_owned(), node);
     }
     Ok(nodes)
-}
-
-/// A node addressed by the id its graph gave it rather than the one its agent carries.
-///
-/// TS takes a node's id from the wrapped agent; the builder lets a caller name the node, so the
-/// graph-facing id has to win everywhere topology is compared.
-struct RenamedNode {
-    id: String,
-    inner: Arc<dyn Node>,
-}
-
-#[async_trait]
-impl Node for RenamedNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn node_type(&self) -> NodeType {
-        self.inner.node_type()
-    }
-
-    fn config(&self) -> &NodeConfig {
-        self.inner.config()
-    }
-
-    fn timeout(&self) -> Option<Duration> {
-        self.inner.timeout()
-    }
-
-    async fn handle(
-        &self,
-        input: MultiAgentInput,
-        state: &MultiAgentStateHandle,
-        options: &NodeInputOptions,
-        events: &NodeSink,
-    ) -> Result<NodeResultUpdate> {
-        self.inner.handle(input, state, options, events).await
-    }
 }
 
 fn resolve_edges(
@@ -526,7 +481,7 @@ mod tests {
     }
 
     fn one_node(id: &str) -> GraphBuilder {
-        Graph::builder().node(id, agent(id))
+        Graph::builder().node(agent(id))
     }
 
     fn error(builder: GraphBuilder) -> String {
@@ -549,7 +504,7 @@ mod tests {
     #[test]
     fn accepts_agent_node_options() {
         let graph = Graph::builder()
-            .node("a", AgentNodeOptions::new(agent("a")).with_description("does a"))
+            .node(AgentNodeOptions::new(agent("a")).with_description("does a"))
             .build()
             .unwrap();
         let node = graph.nodes().get("a").unwrap();
@@ -559,36 +514,36 @@ mod tests {
 
     #[test]
     fn accepts_multi_agent_node_options() {
-        let inner: Arc<dyn Node> = Arc::new(AgentNode::new(AgentNodeOptions::new(agent("x"))).unwrap());
-        let graph = Graph::builder().node("inner", inner).build().unwrap();
+        let inner: Arc<dyn Node> = Arc::new(AgentNode::new(AgentNodeOptions::new(agent("inner"))).unwrap());
+        let graph = Graph::builder().node(inner).build().unwrap();
         assert_eq!(graph.nodes().get("inner").unwrap().node_type(), NodeType::Agent);
     }
 
     #[test]
     fn accepts_pre_built_node_instances() {
         let node: Arc<dyn Node> = Arc::new(AgentNode::new(AgentNodeOptions::new(agent("a"))).unwrap());
-        let graph = Graph::builder().node("a", Arc::clone(&node)).build().unwrap();
+        let graph = Graph::builder().node(Arc::clone(&node)).build().unwrap();
         assert!(Arc::ptr_eq(graph.nodes().get("a").unwrap(), &node));
     }
 
     #[test]
-    fn renames_a_node_whose_agent_id_differs_from_its_graph_id() {
+    fn takes_node_ids_from_the_nodes_themselves() {
         let graph = Graph::builder()
-            .node("first", agent("a"))
-            .node("second", agent("b"))
-            .edge("first", "second")
+            .node(agent("a"))
+            .node(agent("b"))
+            .edge("a", "b")
             .build()
             .unwrap();
-        assert_eq!(graph.nodes().get("first").unwrap().id(), "first");
-        assert_eq!(graph.edges()[0].source.id(), "first");
-        assert_eq!(graph.edges()[0].target.id(), "second");
+        assert_eq!(graph.nodes().keys().collect::<Vec<_>>(), vec!["a", "b"]);
+        assert_eq!(graph.edges()[0].source.id(), "a");
+        assert_eq!(graph.edges()[0].target.id(), "b");
     }
 
     #[test]
     fn accepts_edge_options() {
         let graph = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
+            .node(agent("a"))
+            .node(agent("b"))
             .edge_when("a", "b", edge_handler(|_| true))
             .build()
             .unwrap();
@@ -598,7 +553,7 @@ mod tests {
 
     #[test]
     fn errors_on_duplicate_node_ids() {
-        let builder = Graph::builder().node("a", agent("a")).node("a", agent("a2"));
+        let builder = Graph::builder().node(agent("a")).node(agent("a"));
         assert_eq!(error(builder), "node_id=<a> | duplicate node id");
     }
 
@@ -623,8 +578,8 @@ mod tests {
     #[test]
     fn errors_when_graph_has_no_source_nodes() {
         let builder = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
+            .node(agent("a"))
+            .node(agent("b"))
             .edge("a", "b")
             .edge("b", "a");
         assert_eq!(error(builder), "graph has no source nodes");
@@ -633,9 +588,9 @@ mod tests {
     #[test]
     fn errors_on_unreachable_nodes() {
         let builder = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
-            .node("c", agent("c"))
+            .node(agent("a"))
+            .node(agent("b"))
+            .node(agent("c"))
             .edge("a", "b")
             .edge("c", "c");
         assert_eq!(error(builder), "node_id=<c> | unreachable from any source node");
@@ -695,8 +650,8 @@ mod tests {
     #[test]
     fn auto_detects_entry_points_from_nodes_without_incoming_edges() {
         let graph = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
+            .node(agent("a"))
+            .node(agent("b"))
             .edge("a", "b")
             .build()
             .unwrap();
@@ -707,8 +662,8 @@ mod tests {
     #[test]
     fn explicit_entry_points_override_auto_detection() {
         let graph = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
+            .node(agent("a"))
+            .node(agent("b"))
             .edge("a", "b")
             .entry_point("a")
             .entry_point("b")
@@ -720,8 +675,8 @@ mod tests {
     #[test]
     fn can_run_concurrently_is_false_for_a_single_linear_path() {
         let graph = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
+            .node(agent("a"))
+            .node(agent("b"))
             .edge("a", "b")
             .max_concurrency(1)
             .build()
@@ -732,9 +687,9 @@ mod tests {
     #[test]
     fn can_run_concurrently_is_true_when_a_node_fans_out() {
         let graph = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
-            .node("c", agent("c"))
+            .node(agent("a"))
+            .node(agent("b"))
+            .node(agent("c"))
             .edge("a", "b")
             .edge("a", "c")
             .build()
@@ -745,8 +700,8 @@ mod tests {
     #[test]
     fn seeds_the_shared_state_with_every_node_id() {
         let graph = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
+            .node(agent("a"))
+            .node(agent("b"))
             .edge("a", "b")
             .build()
             .unwrap();
@@ -767,8 +722,8 @@ mod tests {
     #[test]
     fn edge_handlers_read_the_shared_state() {
         let graph = Graph::builder()
-            .node("a", agent("a"))
-            .node("b", agent("b"))
+            .node(agent("a"))
+            .node(agent("b"))
             .edge_when("a", "b", edge_handler(|state| state.steps > 0))
             .build()
             .unwrap();
@@ -788,7 +743,7 @@ mod tests {
             )]))
             .build()
             .unwrap();
-        let graph = Graph::builder().node("a", described).build().unwrap();
+        let graph = Graph::builder().node(described).build().unwrap();
         assert_eq!(
             graph.nodes().get("a").unwrap().config().description.as_deref(),
             Some("writes things")
