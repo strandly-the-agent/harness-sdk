@@ -3,12 +3,16 @@
 
 mod agent_snapshot;
 mod file_storage;
+#[cfg(feature = "s3")]
+mod s3_storage;
 mod session_manager;
 mod storage;
 pub(crate) mod types;
 mod validation;
 
 pub use file_storage::FileStorage;
+#[cfg(feature = "s3")]
+pub use s3_storage::{S3SessionStorage, S3SessionStorageBuilder};
 pub use session_manager::{
     SaveLatestStrategy, SessionManager, SessionManagerOptions, SnapshotTrigger, DEFAULT_SESSION_ID,
 };

@@ -113,7 +113,11 @@ pub use sandbox::{
     StreamChunk, StreamType,
 };
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
+#[cfg(feature = "s3")]
+pub use session::{S3SessionStorage, S3SessionStorageBuilder};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
+#[cfg(feature = "s3")]
+pub use storage::{S3Storage, S3StorageBuilder};
 pub use tools::vended::ShellTool;
 pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,

@@ -65,6 +65,9 @@ installs the exporter).
   pointer hop when a shared handle is re-wrapped). Typed plugin slots take
   their own trait: `conversation_manager(impl ConversationManager)`,
   `retry_strategy(impl ModelRetryStrategy)`, `session_manager(impl Into<Arc<SessionManager>>)`.
+- S3 backends are built by an async builder (`S3Storage::builder(bucket).build().await`), since
+  resolving the AWS config is async; the snapshot one is `session::S3SessionStorage` (TS calls it
+  `S3Storage`) so it does not clash with the unified `storage::S3Storage`.
 - `AgentBuilder::build()` and `Agent::new()` are **synchronous**: they allocate the agent and
   nothing else. `Agent::initialize()` (plugins, session restore, sandbox tools) runs lazily on the
   first `invoke`/`stream`; call it explicitly to observe that state earlier.

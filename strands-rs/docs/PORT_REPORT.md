@@ -350,3 +350,8 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   announcements/results byte-identically to TS. `printer.print(agent.stream(input)).await` drives a
   whole stream and returns the `AgentResult`; `on_event` is public for custom loops. All nine TS
   tests ported, each asserting the captured bytes; `examples/printer.rs` shows the one-liner.
+- **S3 storage** (`s3` feature): `storage::S3Storage` (unified key/value `Storage`, keyword search) and
+  `session::S3SessionStorage` (`SnapshotStorage`, TS key layout verbatim). 52 mocked unit tests
+  (`aws-smithy-mocks`) plus `tests/integ_s3.rs` live round-trips — 2 passed against
+  `strandly-managed-strands-rs-e2e` in us-west-2. Session type renamed from TS `S3Storage` to
+  `S3SessionStorage` to avoid clashing with the unified one; see `docs/matrices/s3.md`.

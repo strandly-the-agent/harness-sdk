@@ -10,9 +10,13 @@ use parking_lot::RwLock;
 use crate::error::{Error, Result};
 
 pub mod local_file_storage;
+#[cfg(feature = "s3")]
+pub mod s3_storage;
 pub mod search;
 
 pub use local_file_storage::LocalFileStorage;
+#[cfg(feature = "s3")]
+pub use s3_storage::{S3Storage, S3StorageBuilder};
 pub use search::{KeywordSearchStrategy, SearchStrategy, SearchStrategyRef};
 
 /// A hit from [`Storage::search`].
