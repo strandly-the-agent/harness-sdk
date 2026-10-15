@@ -39,6 +39,8 @@ use crate::error::{Error, Result};
 use crate::hooks::{Cancel, HookEvent, HookFn, HookRegistry};
 use crate::logging::warn_once;
 use crate::session::Snapshot;
+use crate::telemetry::tracer::{MultiAgentSpanOptions, SpanHandle};
+use crate::telemetry::{AttrValue, TelemetryConfig, Tracer};
 use crate::types::{ContentBlock, InterruptResponseContent};
 
 /// Default graph id, matching TS `id ?? 'graph'`.
@@ -83,6 +85,7 @@ struct GraphInner {
     initialized: AtomicBool,
     pending_interrupt_state: Mutex<Option<MultiAgentState>>,
     last_state: Mutex<Option<MultiAgentStateHandle>>,
+    tracer: Tracer,
 }
 
 /// Directed graph orchestrator; a cheap `Clone` handle over one shared topology.
@@ -185,12 +188,19 @@ pub struct GraphBuilder {
     config: GraphConfig,
     plugins: Vec<Arc<dyn MultiAgentPlugin>>,
     hooks: HookRegistry,
+    trace_attributes: Vec<(String, AttrValue)>,
 }
 
 impl GraphBuilder {
     /// A fresh builder.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Custom attributes merged onto every span this graph emits.
+    pub fn trace_attributes(mut self, attrs: impl IntoIterator<Item = (String, AttrValue)>) -> Self {
+        self.trace_attributes = attrs.into_iter().collect();
+        self
     }
 
     /// Set the graph's id (default `"graph"`).
@@ -323,6 +333,7 @@ impl GraphBuilder {
                 initialized: AtomicBool::new(false),
                 pending_interrupt_state: Mutex::new(None),
                 last_state: Mutex::new(None),
+                tracer: Tracer::new(TelemetryConfig::from_env().with_trace_attributes(self.trace_attributes)),
             }),
         })
     }
@@ -605,6 +616,12 @@ impl Graph {
         );
         *self.inner.last_state.lock() = Some(state.clone());
 
+        let span = Arc::new(self.inner.tracer.start_multi_agent_span(MultiAgentSpanOptions {
+            orchestrator_id: &self.inner.id,
+            orchestrator_type: "graph",
+            input: serde_json::to_value(&input).ok().as_ref(),
+        }));
+
         let mut before = BeforeMultiAgentInvocationEvent {
             orchestrator: Arc::clone(&orchestrator),
             state: state.clone(),
@@ -622,6 +639,7 @@ impl Graph {
             done: CancellationToken::new(),
             external: options.cancel.clone(),
             timed_out: Arc::new(AtomicBool::new(false)),
+            span: Arc::clone(&span),
         };
         if let Some(timeout) = self.inner.config.timeout {
             let (cancel, done, timed_out) = (
@@ -651,6 +669,14 @@ impl Graph {
 
         let outcome = self.execute(input, &execution).await;
         execution.done.cancel();
+        let duration = state.with(|state| now_ms().saturating_sub(state.start_time));
+        let error = outcome.as_ref().err().map(ToString::to_string);
+        self.inner.tracer.end_multi_agent_span(
+            &span,
+            Some(duration),
+            outcome.as_ref().ok().map(|result| &result.usage),
+            error.as_deref(),
+        );
 
         let mut after = AfterMultiAgentInvocationEvent {
             orchestrator,
@@ -754,10 +780,24 @@ impl Graph {
                         Ok(input) => input,
                         Err(error) => break 'run Err(error),
                     };
+                let node_span = self.inner.tracer.start_node_span(
+                    Some(&execution.span),
+                    node.id(),
+                    node.node_type().as_str(),
+                );
                 match self.run_before_node_call(&node, execution).await {
-                    Ok(Some(result)) => pending.gated.push_back((node, result)),
+                    Ok(Some(result)) => {
+                        self.inner.tracer.end_node_span(
+                            &node_span,
+                            Some(result.status.as_str()),
+                            Some(result.duration),
+                            None,
+                            None,
+                        );
+                        pending.gated.push_back((node, result));
+                    }
                     Ok(None) => {
-                        self.spawn_node(&node, node_input, execution, &node_sink, &mut tasks);
+                        self.spawn_node(&node, node_input, execution, &node_sink, &mut tasks, node_span);
                         pending.running.insert(node.id().to_owned());
                     }
                     Err(error) => break 'run Err(error),
@@ -830,6 +870,7 @@ impl Graph {
         execution: &Execution,
         node_sink: &NodeSink,
         tasks: &mut JoinSet<()>,
+        node_span: SpanHandle,
     ) {
         let node_timeout = match node.node_type() {
             NodeType::Agent => node.timeout().or(self.inner.config.node_timeout),
@@ -855,8 +896,9 @@ impl Graph {
         let invocation_state = execution.invocation_state.clone();
         let graph_cancel = execution.cancel.clone();
         let graph_id = self.inner.id.clone();
+        let tracer = self.inner.tracer.clone();
         tasks.spawn(async move {
-            let _ = run_node(node.as_ref(), input, &state, &options, &sink).await;
+            let result = run_node(node.as_ref(), input, &state, &options, &sink).await;
             let error = (cancel.is_cancelled() && !graph_cancel.is_cancelled()).then(|| {
                 format!(
                     "node_timeout=<{}>, node_id=<{}>, graph_id=<{graph_id}> | node exceeded wall-clock budget",
@@ -864,6 +906,13 @@ impl Graph {
                     node.id()
                 )
             });
+            tracer.end_node_span(
+                &node_span,
+                Some(result.status.as_str()),
+                Some(result.duration),
+                result.usage.as_ref(),
+                error.as_deref(),
+            );
             if let Some(error) = &error {
                 let _ = sink.send(Err(Error::other(error.clone()))).await;
             }
@@ -1220,6 +1269,7 @@ struct Execution {
     done: CancellationToken,
     external: Option<CancellationToken>,
     timed_out: Arc<AtomicBool>,
+    span: Arc<SpanHandle>,
 }
 
 /// The execution loop's scheduling state.

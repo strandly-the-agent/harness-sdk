@@ -32,6 +32,8 @@ use crate::agent::InvocationState;
 use crate::error::{Error, Result};
 use crate::hooks::{Cancel, HookEvent, HookRegistry};
 use crate::session::types::Snapshot;
+use crate::telemetry::tracer::{MultiAgentSpanOptions, SpanHandle};
+use crate::telemetry::{AttrValue, TelemetryConfig, Tracer};
 use crate::types::{ContentBlock, InterruptResponseContent};
 
 /// Default swarm id, matching TS `id ?? 'swarm'`.
@@ -87,6 +89,7 @@ struct SwarmInner {
     plugins: MultiAgentPluginRegistry,
     initialized: Mutex<bool>,
     pending_interrupt_state: Mutex<Option<MultiAgentStateHandle>>,
+    tracer: Tracer,
 }
 
 /// What one invocation of the loop carries into every node run.
@@ -97,6 +100,8 @@ struct Invocation {
     cancel: Option<CancellationToken>,
     /// When the swarm's wall-clock budget runs out, if it has one.
     deadline: Option<Instant>,
+    /// The orchestration span every node span parents to.
+    span: Arc<SpanHandle>,
 }
 
 impl Invocation {
@@ -302,6 +307,11 @@ impl Swarm {
             invocation_state: options.invocation_state.unwrap_or_default(),
             cancel: options.cancel,
             deadline: None,
+            span: Arc::new(self.0.tracer.start_multi_agent_span(MultiAgentSpanOptions {
+                orchestrator_id: &self.0.id,
+                orchestrator_type: "swarm",
+                input: serde_json::to_value(&input).ok().as_ref(),
+            })),
         };
 
         // A session manager (or any plugin) may restore `state.results` from this hook.
@@ -326,6 +336,14 @@ impl Swarm {
         run.deadline = deadline_after(self.0.config.timeout);
 
         let outcome = self.execute(&input, routed, &run, tx).await;
+        let duration = now_ms().saturating_sub(run.state.with(|state| state.start_time));
+        let error = outcome.as_ref().err().map(ToString::to_string);
+        self.0.tracer.end_multi_agent_span(
+            &run.span,
+            Some(duration),
+            outcome.as_ref().ok().map(|result| &result.usage),
+            error.as_deref(),
+        );
 
         // TS emits this from a `finally`, so it runs on the error path too — and a hook that fails
         // there replaces the in-flight error, as a JS `finally` does.
@@ -479,8 +497,38 @@ impl Swarm {
         Ok(result)
     }
 
-    /// Runs one node: the hook gate, the node itself, and the events around it (TS `_streamNode`).
+    /// Runs one node under its own `node <id>` span (TS `_streamNode`).
     async fn stream_node(
+        &self,
+        node: &Arc<dyn Node>,
+        input: MultiAgentInput,
+        handoff: Option<&HandoffResult>,
+        run: &Invocation,
+        tx: &NodeSink,
+    ) -> Result<NodeResult> {
+        let span = self
+            .0
+            .tracer
+            .start_node_span(Some(&run.span), node.id(), node.node_type().as_str());
+        let outcome = self.run_node_span(node, input, handoff, run, tx).await;
+        match &outcome {
+            Ok(result) => self.0.tracer.end_node_span(
+                &span,
+                Some(result.status.as_str()),
+                Some(result.duration),
+                result.usage.as_ref(),
+                None,
+            ),
+            Err(error) => {
+                self.0
+                    .tracer
+                    .end_node_span(&span, None, None, None, Some(&error.to_string()));
+            }
+        }
+        outcome
+    }
+
+    async fn run_node_span(
         &self,
         node: &Arc<dyn Node>,
         input: MultiAgentInput,
@@ -980,12 +1028,19 @@ pub struct SwarmBuilder {
     config: SwarmConfig,
     plugins: Vec<Arc<dyn MultiAgentPlugin>>,
     hooks: HookRegistry,
+    trace_attributes: Vec<(String, AttrValue)>,
 }
 
 impl SwarmBuilder {
     /// A fresh builder.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Custom attributes merged onto every span this swarm emits.
+    pub fn trace_attributes(mut self, attrs: impl IntoIterator<Item = (String, AttrValue)>) -> Self {
+        self.trace_attributes = attrs.into_iter().collect();
+        self
     }
 
     /// Set the swarm's id. Defaults to `"swarm"`.
@@ -1116,6 +1171,7 @@ impl SwarmBuilder {
             plugins: MultiAgentPluginRegistry::new(self.plugins),
             initialized: Mutex::new(false),
             pending_interrupt_state: Mutex::new(None),
+            tracer: Tracer::new(TelemetryConfig::from_env().with_trace_attributes(self.trace_attributes)),
         })))
     }
 }

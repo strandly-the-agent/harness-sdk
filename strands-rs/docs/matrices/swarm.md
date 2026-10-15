@@ -123,15 +123,22 @@ Not applicable: the two `it.each` "must be a non-negative integer" validations
 (`repetitiveHandoffDetectionWindow` / `repetitiveHandoffMinUniqueAgents`) — both are `usize` in
 Rust, so a negative, fractional or `NaN` value cannot be constructed.
 
-Not ported: `swarm.tracer.test.ts` — `telemetry::Tracer` has no multi-agent or node spans yet, so
-there is nothing to assert against (see **Remaining** below). `interrupts.test.ts:264` (a swarm
+`swarm.tracer.test.ts` is ported in `tests/multiagent_tracer.rs`, asserting the exported spans
+rather than spying on the tracer: `swarm_starts_and_ends_the_multi_agent_span_on_a_successful_invocation`,
+`swarm_records_the_exact_result_usage_on_the_multi_agent_span`,
+`swarm_ends_a_node_span_with_completed_status_and_parents_it_to_the_multi_agent_span` (covers the
+handoff-chain node spans and the `withSpanContext` parenting test),
+`swarm_ends_a_node_span_with_cancelled_status_and_zero_duration_when_a_hook_cancels` and
+`swarm_merges_builder_trace_attributes_onto_its_spans` (`SwarmBuilder::trace_attributes`, TS
+`traceAttributes`). The null-span cases map to `telemetry::tracer::tests::ending_an_unstarted_span_is_a_no_op`
+(Rust has no nullable span); the multi-hop handoff and usage-accumulation `it`s are covered by the
+existing swarm execution tests plus the usage assertions above. `interrupts.test.ts:264` (a swarm
 nested in a graph orchestrator) needs Graph, so it lands with that workstream.
 
 ## Remaining
 
-- **Tracer spans.** `startMultiAgentSpan` / `startNodeSpan` / `withSpanContext` and
-  `swarm.tracer.test.ts`. The tracer additions are shared with Graph, so they belong in one
-  telemetry change rather than a swarm-local one.
+- **`withSpanContext`.** Not ported: the Rust tracer has no ambient span context, so a node's
+  agent span is a root span instead of a child of its `node <id>` span (recorded in DESIGN.md).
 - **`SessionManager` as a `MultiAgentPlugin`.** Not ported yet, so the resume tests install
   equivalent save/restore hooks (`Session` in the test module) over `take_snapshot` /
   `load_snapshot`, mirroring `SessionManager`'s restore-once-per-orchestrator behaviour.

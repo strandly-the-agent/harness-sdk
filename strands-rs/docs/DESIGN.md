@@ -613,8 +613,8 @@ fallback. A `Choice` list axis drops values that are not options; `Inherit` reso
 `multiagent::swarm` ports `strands-ts/src/multiagent/swarm.ts`. Agents run one at a time; each
 is handed a handoff JSON schema and routes the swarm by returning a target agent id, or ends it
 by omitting one. Increment 1 landed the handle, builder and validation; increment 2 the execution
-loop (routing, handoffs, limits, interrupts, hook and stream events) and its tests. Telemetry
-spans are the remaining gap (`docs/matrices/swarm.md`).
+loop (routing, handoffs, limits, interrupts, hook and stream events) and its tests; increment 3
+the telemetry spans (`invoke_swarm <id>` with a `node <id>` child per agent run).
 
 ```rust
 pub struct SwarmConfig {                    // None = TS Infinity (no limit)
@@ -656,7 +656,7 @@ impl MultiAgent for Swarm;                  // invoke_with / stream_with / as_an
 impl From<Swarm> for NodeDefinition;        // nest a swarm as a node
 
 pub struct SwarmBuilder;                    // Default; ::new() .id .name .description .node .entry_point
-                                            // .plugin .hook::<E, _> .max_steps .timeout
+                                            // .plugin .hook::<E, _> .trace_attributes .max_steps .timeout
                                             // .node_timeout .repetitive_handoff_detection_window
                                             // .repetitive_handoff_min_unique_agents
                                             // .build() -> Result<Swarm>
@@ -690,12 +690,16 @@ Divergences from TS (details in `docs/matrices/swarm.md`):
 - **The orchestrator appends node results to `state.results`** (`run_node` only records them on
   the node), and an unknown handoff target is an `Err` rather than TS's non-null assertion, since
   the Rust handoff schema is advisory JSON Schema rather than an enforced Zod enum.
+- **`node <id>` spans are ended once, from a wrapper around the node run.** TS ends the span on
+  each of `_streamNode`'s exit paths; the Rust `stream_node` starts the span, delegates to
+  `run_node_span`, and ends it from the single outcome — same attributes, one place.
 
 ### Graph
 
 `multiagent::graph` ports `strands-ts/src/multiagent/graph.ts`. Increment 1 landed the handle,
-the builder, and the TS constructor validation; the execution loop and `impl MultiAgent` are
-increment 2.
+the builder, and the TS constructor validation; increment 2 the execution loop and
+`impl MultiAgent`; increment 3 the telemetry spans (`invoke_graph <id>` with a `node <id>` child
+per node execution).
 
 ```rust
 pub const DEFAULT_GRAPH_ID: &str = "graph";
@@ -747,6 +751,7 @@ impl GraphBuilder {
     pub fn node_timeout(self, Duration) -> Self;
     pub fn plugin(self, Arc<dyn MultiAgentPlugin>) -> Self;
     pub fn hook<E, F>(self, F) -> Self;
+    pub fn trace_attributes(self, impl IntoIterator<Item = (String, AttrValue)>) -> Self;
     pub fn build(self) -> Result<Graph>;
 }
 ```
@@ -774,6 +779,15 @@ Divergences from TS:
   `options.cancel.child_token()` (or a fresh token), and dropping the stream cancels it and aborts
   the task — TS's `gen.return()` cleanup. The caller's own token is never cancelled, and node
   cancellation stays cooperative.
+- **Multi-agent spans take an explicit parent, not an ambient one.** `Tracer::start_node_span`
+  takes the orchestration span as a parameter where TS reads `this._multiAgentSpan`, matching
+  `start_agent_loop_span`/`start_tool_call_span`. There is no `withSpanContext` equivalent: a
+  node's **agent** span is therefore a root span rather than a child of its `node <id>` span —
+  the same ambient-context limitation already recorded for `decision` spans. Everything above the
+  agent span (orchestration → node) is parented as in TS.
+- **`.trace_attributes(..)` on both builders** replaces TS's `traceAttributes` constructor option
+  and feeds `TelemetryConfig::with_trace_attributes`, so the per-call `traceAttributes` argument
+  of TS's `startMultiAgentSpan`/`startNodeSpan` (which neither orchestrator passes) is not ported.
 - **Node events pass through the orchestrator.** `run_node` writes to a `NodeSink`; the graph owns
   that channel, invokes hook callbacks on each event, and forwards it to the consumer's stream —
   which is how TS's queue-and-`_emit` ordering (`nodeResult` → `handoff` → `afterNodeCall`) is

@@ -9,10 +9,11 @@ Increment 1: the `Graph` handle, `GraphBuilder`, and the full TS constructor val
 `describe('constructor')` tests ported. Increment 2 (this branch): the execution loop
 (`impl MultiAgent for Graph` + inherent `invoke`/`invoke_with`/`stream`/`stream_with`), hook and
 stream events in TS order, limits/cancellation, interrupts (hook gate + child agent) with
-same-instance resume, and the snapshot methods. Still open: the `session_manager` constructor slot
-and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no Rust
-`telemetry` multi-agent spans yet, so `graph.tracer.test.ts` is unported), and the cross-module
-`tests/multiagent_loop.rs` / `tests/integ_multiagent.rs` graph halves.
+same-instance resume, and the snapshot methods. Increment 3 added the telemetry spans
+(`invoke_graph <id>` + a `node <id>` child per node execution), `GraphBuilder::trace_attributes`,
+and `tests/multiagent_tracer.rs`. Still open: the `session_manager` constructor slot and its
+duplicate-plugin check, and the cross-module `tests/multiagent_loop.rs` /
+`tests/integ_multiagent.rs` graph halves.
 
 ## API
 
@@ -28,7 +29,7 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | `GraphOptions.sources` | `GraphBuilder::entry_point(id)` | accessor `Graph::sources()` |
 | `GraphOptions.plugins` | `GraphBuilder::plugin(..)` | |
 | `GraphOptions.sessionManager` | — | not yet; register via `.plugin(..)` |
-| `GraphOptions.traceAttributes` | — | not yet (no multi-agent tracer in `telemetry`) |
+| `GraphOptions.traceAttributes` | `GraphBuilder::trace_attributes(..)` | merged onto every span the graph emits |
 | `graph.id` / `.nodes` / `.edges` / `.config` | `Graph::{id, nodes, edges, config}` | |
 | `graph.hookRegistry` | `Graph::hooks()` | |
 | `Graph implements MultiAgent` | `impl MultiAgent for Graph` | `invoke_with`/`stream_with`/`as_any` |
@@ -96,7 +97,19 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | `interrupts.test.ts`: BeforeNodeCallEvent.interrupt gates a node, resumes | `a_before_node_call_interrupt_gates_a_node_and_resumes` | ported (also covers "hook-gated node still emits NodeResultEvent and AfterNodeCallEvent") |
 | `interrupts.test.ts`: resume against a changed topology throws | `resuming_a_graph_whose_topology_changed_errors` | ported |
 | `interrupts.test.ts`: Graph parallel interrupt lets sibling finish; hook gate + tool interrupt across runs; nested orchestrator bubbling | — | pending |
-| `graph.tracer.test.ts` (all) | — | not yet (no multi-agent tracer) |
+| `graph.tracer.test.ts`: starts and ends multi-agent span on successful invocation | `graph_starts_and_ends_the_multi_agent_span_on_a_successful_invocation` | ported (asserts the exported span, not a tracer spy) |
+| `graph.tracer.test.ts`: passes exact usage from result to endMultiAgentSpan | `graph_records_the_exact_result_usage_on_the_multi_agent_span` | ported |
+| `graph.tracer.test.ts`: ends multi-agent span with error when maxSteps exceeded | `graph_ends_the_multi_agent_span_with_an_error_when_max_steps_is_exceeded` | ported (span status = error) |
+| `graph.tracer.test.ts`: starts and ends node span for each node execution | `graph_starts_and_ends_a_node_span_for_each_node_execution` | ported |
+| `graph.tracer.test.ts`: ends node span with COMPLETED status, duration, and zero usage | `graph_ends_a_node_span_with_completed_status_duration_and_usage` | ported (asserts the node's real usage) |
+| `graph.tracer.test.ts`: passes exact usage from node result to endNodeSpan | `graph_ends_a_node_span_with_completed_status_duration_and_usage` | ported (merged) |
+| `graph.tracer.test.ts`: ends node span with FAILED status when node agent throws | `graph_ends_a_node_span_with_failed_status_when_the_node_agent_errors` | ported |
+| `graph.tracer.test.ts`: ends node span with CANCELLED status and zero duration | `graph_ends_a_node_span_with_cancelled_status_and_zero_duration_when_a_hook_cancels` | ported |
+| `graph.tracer.test.ts`: ends node span with INTERRUPTED status on a hook interrupt | `graph_ends_a_node_span_with_interrupted_status_when_a_hook_interrupts` | ported |
+| `graph.tracer.test.ts`: completes when startMultiAgentSpan / startNodeSpan return null | `telemetry::tracer::tests::ending_an_unstarted_span_is_a_no_op` | adapted — Rust has no nullable span; `SpanHandle::default()` is the no-op |
+| `graph.tracer.test.ts`: passes node span to every withSpanContext call | `graph_parents_every_node_span_to_the_multi_agent_span`, `agent_spans_inside_a_node_are_not_parented_to_the_node_span` | adapted — no `withSpanContext`; parenting asserted on the exported spans (divergence) |
+| `graph.tracer.test.ts`: creates separate node spans for parallel source nodes | `graph_creates_a_separate_node_span_for_each_parallel_source_node` | ported |
+| — | `graph_merges_builder_trace_attributes_onto_its_spans` | Rust-only: `GraphBuilder::trace_attributes` |
 
 Rust tests with no TS counterpart (they cover Rust-only surface):
 `takes_node_ids_from_the_nodes_themselves`,
