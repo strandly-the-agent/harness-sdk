@@ -32,6 +32,7 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | `graph.id` / `.nodes` / `.edges` / `.config` | `Graph::{id, nodes, edges, config}` | |
 | `graph.hookRegistry` | `Graph::hooks()` | |
 | `Graph implements MultiAgent` | `impl MultiAgent for Graph` | `invoke_with`/`stream_with`/`as_any` |
+| `nodes: [graph]` (`definition instanceof Graph`) | `impl From<Graph> for NodeDefinition` | wraps in a `MultiAgentNode` |
 | `graph.invoke(input, options?)` | `Graph::{invoke, invoke_with}` | inherent, `impl Into<MultiAgentInput>` |
 | `graph.stream(input, options?)` | `Graph::{stream, stream_with}` | inherent, returns `MultiAgentStream` |
 | `graph.initialize()` | — | run implicitly by the first invocation (idempotent) |

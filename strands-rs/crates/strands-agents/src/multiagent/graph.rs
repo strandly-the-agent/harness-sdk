@@ -1152,6 +1152,12 @@ impl MultiAgent for Graph {
     }
 }
 
+impl From<Graph> for NodeDefinition {
+    fn from(graph: Graph) -> Self {
+        NodeDefinition::from(Arc::new(graph) as Arc<dyn MultiAgent>)
+    }
+}
+
 /// Everything one invocation threads through the execution loop.
 struct Execution {
     orchestrator: OrchestratorRef,
@@ -1498,6 +1504,25 @@ mod tests {
         let result = graph.invoke("go").await.unwrap();
 
         assert_eq!(node_ids(&result), vec!["a", "inner"]);
+        assert_eq!(text(&result), vec!["from x".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn nests_a_graph_handed_to_the_builder_directly() {
+        let inner = Graph::builder()
+            .id("inner")
+            .node(saying("x", "from x"))
+            .max_steps(5)
+            .build()
+            .unwrap();
+        let graph = Graph::builder().node(inner).max_steps(5).build().unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(
+            graph.nodes().get("inner").unwrap().node_type(),
+            NodeType::MultiAgent
+        );
         assert_eq!(text(&result), vec!["from x".to_owned()]);
     }
 
