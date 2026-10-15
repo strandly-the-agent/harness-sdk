@@ -11,8 +11,9 @@ Increment 1: the `Graph` handle, `GraphBuilder`, and the full TS constructor val
 stream events in TS order, limits/cancellation, interrupts (hook gate + child agent) with
 same-instance resume, and the snapshot methods. Still open: the `session_manager` constructor slot
 and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no Rust
-`telemetry` multi-agent spans yet, so `graph.tracer.test.ts` is unported), and the cross-module
-`tests/multiagent_loop.rs` / `tests/integ_multiagent.rs` graph halves.
+`telemetry` multi-agent spans yet, so `graph.tracer.test.ts` is unported). The cross-module and
+live halves landed with `tests/multiagent_loop.rs` and `tests/integ_multiagent.rs` — see
+**Cross-module and live tests** below.
 
 ## API
 
@@ -52,12 +53,12 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | throws on duplicate node IDs | `errors_on_duplicate_node_ids` | ported |
 | throws on edge referencing unknown source node | `errors_on_edge_referencing_unknown_source_node` | ported |
 | throws on edge referencing unknown target node | `errors_on_edge_referencing_unknown_target_node` | ported |
-| throws when graph has no source nodes | `errors_when_graph_has_no_source_nodes` | ported |
+| throws when graph has no source nodes | `errors_when_graph_has_no_source_nodes` | ported |s_below_one` | ported |
+| throws when timeout < 1 | `erro
 | throws on unreachable nodes | `errors_on_unreachable_nodes` | ported |
 | throws when explicit source references unknown node | `errors_when_explicit_entry_point_references_unknown_node` | ported |
 | throws when maxSteps < 1 | `errors_when_max_steps_is_below_one` | ported |
-| throws when maxConcurrency < 1 | `errors_when_max_concurrency_is_below_one` | ported |
-| throws when timeout < 1 | `errors_when_timeout_is_below_one` | ported |
+| throws when maxConcurrency < 1 | `errors_when_max_concurrency_irs_when_timeout_is_below_one` | ported |
 | throws when nodeTimeout < 1 | `errors_when_node_timeout_is_below_one` | ported |
 | defaults maxConcurrency/maxSteps/timeout/nodeTimeout to Infinity | `defaults_every_limit_to_unbounded` | ported |
 | uses explicit sources instead of auto-detection | `explicit_entry_points_override_auto_detection`, `auto_detects_entry_points_from_nodes_without_incoming_edges`, `uses_explicit_entry_points_instead_of_auto_detection` | ported |
@@ -95,7 +96,8 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | `interrupts.test.ts`: Graph agent interrupts and resumes | `resumes_a_child_agent_interrupt_on_the_same_graph` | ported (same-instance resume) |
 | `interrupts.test.ts`: BeforeNodeCallEvent.interrupt gates a node, resumes | `a_before_node_call_interrupt_gates_a_node_and_resumes` | ported (also covers "hook-gated node still emits NodeResultEvent and AfterNodeCallEvent") |
 | `interrupts.test.ts`: resume against a changed topology throws | `resuming_a_graph_whose_topology_changed_errors` | ported |
-| `interrupts.test.ts`: Graph parallel interrupt lets sibling finish; hook gate + tool interrupt across runs; nested orchestrator bubbling | — | pending |
+| `interrupts.test.ts`: nested orchestrator bubbling | `a_nested_orchestrator_interrupt_bubbles_up_and_resumes_on_the_same_instances`, `a_nested_interrupt_cannot_be_resumed_on_fresh_instances_from_the_outer_snapshot` (in `tests/multiagent_loop.rs`) | ported |
+| `interrupts.test.ts`: Graph parallel interrupt lets sibling finish; hook gate + tool interrupt across runs | — | pending |
 | `graph.tracer.test.ts` (all) | — | not yet (no multi-agent tracer) |
 
 Rust tests with no TS counterpart (they cover Rust-only surface):
@@ -108,3 +110,31 @@ Rust tests with no TS counterpart (they cover Rust-only surface):
 `emits_an_after_node_call_event_for_every_node_that_ran`,
 `a_node_timeout_error_survives_the_post_loop_drain`,
 `edge_handlers_read_the_invocation_state`, `node_description_falls_back_to_the_agent_description`.
+
+## Cross-module and live tests
+
+`tests/multiagent_loop.rs` drives a `Graph` of real `Agent`s through the public API; the rows below
+are the graph half (the swarm half is in `swarm.md`).
+
+| Behaviour | Rust test | Status |
+| --- | --- | --- |
+| conditional edges take exactly the branch the router's own output selects | `conditional_edges_route_to_the_branch_the_router_chose` | ported |
+| `max_concurrency` caps the nodes actually in flight (measured inside a node's tool) | `max_concurrency_caps_the_nodes_actually_running_at_once` | ported |
+| fan-out with no cap runs every branch concurrently | `parallel_branches_without_a_concurrency_cap_all_run_together` | ported |
+| a `Swarm` as a graph node, with the inner agents' events keeping their own ids | `a_swarm_node_runs_inside_a_graph_and_keeps_its_inner_node_identities` | ported |
+| `interrupts.test.ts`: a nested orchestrator's interrupt bubbles up and resumes on the same instances | `a_nested_orchestrator_interrupt_bubbles_up_and_resumes_on_the_same_instances` | ported |
+| `interrupts.test.ts:264`: a nested interrupt does not round-trip through the outer snapshot alone | `a_nested_interrupt_cannot_be_resumed_on_fresh_instances_from_the_outer_snapshot` | ported |
+| remaining nodes resume on a new instance from a serialized snapshot | `a_graph_resumes_its_remaining_nodes_on_a_new_instance_through_a_serialized_snapshot` | ported |
+| a snapshot carrying another orchestrator's id is rejected | `a_snapshot_taken_from_one_orchestrator_is_rejected_by_another` | ported |
+| a plugin initializes once and its hook sees every node of every run | `a_plugin_initializes_once_and_its_hooks_see_every_node_of_every_run` | ported |
+| an external cancel reaches the tool inside the node and skips the rest | `cancelling_through_the_invoke_options_stops_the_in_flight_tool_and_skips_the_rest` | ported |
+| dropping the stream cancels the in-flight tool and skips the rest | `dropping_a_graph_stream_mid_run_cancels_the_tool_and_skips_the_rest` | ported |
+| the invocation state reaches a tool two orchestrators down | `the_invocation_state_reaches_a_tool_inside_a_nested_orchestrator` | ported |
+| an interrupt resumes on a new instance from a serialized snapshot | `a_graph_interrupt_resumes_on_a_new_instance_through_a_serialized_snapshot` | `#[ignore]`d: `Agent::take_snapshot` never captures interrupt state (`src/agent/snapshot.rs:124`), so the restored node re-raises the interrupt |
+
+`tests/integ_multiagent.rs` (live Bedrock, `#[ignore]`d):
+
+| Behaviour | Rust test |
+| --- | --- |
+| researcher → writer → reviewer, the reviewer reached through a conditional edge read from the writer's output | `a_three_node_graph_routes_through_a_conditional_edge` |
+| a graph node that is a two-agent swarm, with content and usage aggregating through it | `a_graph_runs_a_swarm_node` |

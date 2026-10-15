@@ -125,7 +125,8 @@ Rust, so a negative, fractional or `NaN` value cannot be constructed.
 
 Not ported: `swarm.tracer.test.ts` — `telemetry::Tracer` has no multi-agent or node spans yet, so
 there is nothing to assert against (see **Remaining** below). `interrupts.test.ts:264` (a swarm
-nested in a graph orchestrator) needs Graph, so it lands with that workstream.
+nested in a graph orchestrator) is covered in `tests/multiagent_loop.rs` — see **Cross-module and
+live tests** below.
 
 ## Remaining
 
@@ -135,8 +136,6 @@ nested in a graph orchestrator) needs Graph, so it lands with that workstream.
 - **`SessionManager` as a `MultiAgentPlugin`.** Not ported yet, so the resume tests install
   equivalent save/restore hooks (`Session` in the test module) over `take_snapshot` /
   `load_snapshot`, mirroring `SessionManager`'s restore-once-per-orchestrator behaviour.
-- **Nested orchestrator interrupts** (`interrupts.test.ts:264`): a swarm nested in a graph needs
-  Graph, so the test lands with that workstream.
 - **`sessionManager` constructor argument** (and its "provided twice" validation): waiting on the
   plugin above; today a session plugin is passed through `.plugin(..)`.
 
@@ -189,3 +188,24 @@ nested in a graph orchestrator) needs Graph, so it lands with that workstream.
   (`state._pendingInput ?? ''`); both mean "no new input" to the child agent.
 - **`pending_interrupt_state` holds the `MultiAgentStateHandle`**, not a cloned state, so the
   retained state is the same object a TS instance would retain.
+
+## Cross-module and live tests
+
+`tests/multiagent_loop.rs` drives a `Swarm` of real `Agent`s through the public API; the rows below
+are the swarm half (the graph half is in `graph.md`).
+
+| Behaviour | Rust test | Status |
+| --- | --- | --- |
+| a three-agent handoff chain: handoff events, per-node decisions, final content | `a_swarm_chains_handoffs_through_every_agent_to_a_final_answer` | ported |
+| a `Graph` as a swarm node ends the swarm with its content (a nested orchestrator is handed no handoff schema, as in TS `nodes.ts`) | `a_graph_node_inside_a_swarm_ends_the_swarm_with_its_own_content` | ported |
+| the pending handoff target resumes on a new instance from a serialized snapshot, carrying the in-flight handoff message | `a_swarm_resumes_its_pending_handoff_target_on_a_new_instance` | ported |
+| an interrupt resumes on a new instance from a serialized snapshot | `a_swarm_interrupt_resumes_on_a_new_instance_through_a_serialized_snapshot` | `#[ignore]`d: `Agent::take_snapshot` never captures interrupt state (`src/agent/snapshot.rs:124`), so the restored node re-raises the interrupt |
+| `take_snapshot(None, ..)` carries the last run's state, as DESIGN.md and `Graph` do | `a_swarm_snapshot_without_a_state_handle_carries_the_last_runs_state` | `#[ignore]`d: `Swarm::take_snapshot` passes `None` straight through (`src/multiagent/swarm.rs:176-182`), producing a stateless snapshot |
+| dropping the stream cancels the node in flight | `dropping_a_swarm_stream_mid_run_cancels_the_node_in_flight` | `#[ignore]`d: `Swarm::stream_with` has no `CancelOnDrop` guard (`src/multiagent/swarm.rs:241-259`), so the run continues detached; `Graph` cancels |
+
+`tests/integ_multiagent.rs` (live Bedrock, `#[ignore]`d):
+
+| Behaviour | Rust test |
+| --- | --- |
+| a two-agent swarm where triage must hand off to the specialist | `a_two_agent_swarm_hands_off_to_the_specialist` |
+| a swarm nested in a graph, handing off once inside the node | `a_graph_runs_a_swarm_node` |
