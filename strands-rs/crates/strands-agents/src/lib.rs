@@ -56,6 +56,7 @@
 pub mod agent;
 pub mod background_tasks;
 pub mod context_manager;
+pub mod decisions;
 pub mod error;
 pub mod hooks;
 pub mod interrupt;
