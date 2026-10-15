@@ -17,4 +17,4 @@ pub use executor::{
     A2AExecutor, AgentFactory, EventBus, RequestContext, A2A_REQUEST_CONTEXT_KEY, DEFAULT_MAX_CONTEXTS,
 };
 pub use server::{A2AServer, A2AServerBuilder, ServerHandle};
-pub use task_store::TaskStore;
+pub use task_store::{TaskStore, DEFAULT_MAX_TASKS};
