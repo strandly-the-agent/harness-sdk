@@ -343,6 +343,9 @@ describe('resolveModel', () => {
     ['claude-opus-4.5', 64_000],
     ['claude-opus-4-8', 128_000],
     ['claude-opus-5', 128_000],
+    ['claude-haiku-4-5-20251001-v1:0', 64_000],
+    ['claude-haiku-4.5', 64_000],
+    ['claude-haiku-5-5', 128_000],
   ] as const)('gives %s a max tokens ceiling of %d', async (modelId, maxTokens) => {
     const model = await resolve(`bedrock/global.anthropic.${modelId}`)
     expect(model.getConfig().maxTokens).toBe(maxTokens)

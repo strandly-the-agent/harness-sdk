@@ -641,6 +641,9 @@ def test_each_level_maps_to_a_budget_the_api_accepts(level, budget):
         ("claude-opus-4.5", 64_000),
         ("claude-opus-4-8", 128_000),
         ("claude-opus-5", 128_000),
+        ("claude-haiku-4-5-20251001-v1:0", 64_000),
+        ("claude-haiku-4.5", 64_000),
+        ("claude-haiku-5-5", 128_000),
     ],
 )
 def test_a_split_family_carries_its_version_max_tokens_ceiling(model_id, max_tokens):

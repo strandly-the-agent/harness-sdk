@@ -40,7 +40,7 @@ _ANTHROPIC_WEB_SEARCH = {"type": "web_search_20260318", "name": "web_search", "a
 _CLAUDE_MAX_TOKENS = {
     "claude-opus-": 128_000,
     "claude-sonnet-": 128_000,
-    "claude-haiku-": 64_000,
+    "claude-haiku-": 128_000,
     "claude-fable-": 128_000,
 }
 _CLAUDE_MAX_TOKENS_BY_VERSION = (
@@ -48,6 +48,8 @@ _CLAUDE_MAX_TOKENS_BY_VERSION = (
     ("claude-opus-4.5", 64_000),
     ("claude-sonnet-4-5", 64_000),
     ("claude-sonnet-4.5", 64_000),
+    ("claude-haiku-4-5", 64_000),
+    ("claude-haiku-4.5", 64_000),
 )
 
 

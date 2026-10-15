@@ -39,7 +39,7 @@ const ANTHROPIC_WEB_SEARCH = {
 const CLAUDE_MAX_TOKENS: Readonly<Record<string, number>> = {
   'claude-opus-': 128_000,
   'claude-sonnet-': 128_000,
-  'claude-haiku-': 64_000,
+  'claude-haiku-': 128_000,
   'claude-fable-': 128_000,
 }
 
@@ -48,6 +48,8 @@ const CLAUDE_MAX_TOKENS_BY_VERSION: ReadonlyArray<readonly [string, number]> = [
   ['claude-opus-4.5', 64_000],
   ['claude-sonnet-4-5', 64_000],
   ['claude-sonnet-4.5', 64_000],
+  ['claude-haiku-4-5', 64_000],
+  ['claude-haiku-4.5', 64_000],
 ]
 
 function claudeMaxTokens(modelId: string): number | undefined {
