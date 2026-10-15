@@ -304,21 +304,6 @@ transports. Harness: `interventions` → `HumanInTheLoop` (`ask` seam, collision
 HITL classifier/Cedar policies (hard errors naming the gap), OTLP exporter installation (the host
 installs it), printer, A2A, multiagent, Gemini/LiteLLM/OpenRouter.
 
-## Phase 4
-
-- **Docker + SSH sandboxes** (`src/sandbox/{docker,ssh}.rs`): `DockerSandbox` (`docker exec`) and
-  `SshSandbox` (`ssh`, with the TS `ALLOWED_SSH_OPTIONS` allowlist and `BatchMode=yes`) over a new
-  shared layer — `sandbox/posix_shell.rs` (TS's `PosixShellSandbox` base class as free functions
-  over `&dyn Sandbox`: base64 file transfer, `ls` parsing, `cd`/`export` prefixes) and
-  `sandbox/stream_process.rs` (TS `streamProcess`: process-group kill, UTF-8 chunk-boundary
-  decoding, 128+signal, ENOENT message). Both shell out to the CLI, as TS and Python do; the
-  binary path is a builder option (`with_docker_binary`/`with_ssh_binary`) that doubles as the
-  test seam, so argv/quoting/env/error-mapping are unit-tested against a fake binary with no
-  daemon or sshd. `tools()` vends `ShellTool` only — Rust has no `FileEditorTool` yet
-  (follow-up in `docs/matrices/sandboxes.md`). Tests: `cargo test --lib sandbox::` 87 passed,
-  `--test sandbox_loop` 8 passed, `--test integ_sandboxes -- --ignored` 4 passed (env-gated,
-  skipped with a message: no docker/sshd in the sandbox). Matrix: `docs/matrices/sandboxes.md`.
-
 ## Known gaps / follow-ups
 
 - Bedrock: throttling mapping and guardrail paths untested live (see above); bearer-token auth
@@ -350,6 +335,18 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
 
 ## Phase 4
+- **Docker + SSH sandboxes** (`src/sandbox/{docker,ssh}.rs`): `DockerSandbox` (`docker exec`) and
+  `SshSandbox` (`ssh`, with the TS `ALLOWED_SSH_OPTIONS` allowlist and `BatchMode=yes`) over a new
+  shared layer — `sandbox/posix_shell.rs` (TS's `PosixShellSandbox` base class as free functions
+  over `&dyn Sandbox`: base64 file transfer, `ls` parsing, `cd`/`export` prefixes) and
+  `sandbox/stream_process.rs` (TS `streamProcess`: process-group kill, UTF-8 chunk-boundary
+  decoding, 128+signal, ENOENT message). Both shell out to the CLI, as TS and Python do; the
+  binary path is a builder option (`with_docker_binary`/`with_ssh_binary`) that doubles as the
+  test seam, so argv/quoting/env/error-mapping are unit-tested against a fake binary with no
+  daemon or sshd. `tools()` vends `ShellTool` only — Rust has no `FileEditorTool` yet
+  (follow-up in `docs/matrices/sandboxes.md`). Tests: `cargo test --lib sandbox::` 87 passed,
+  `--test sandbox_loop` 8 passed, `--test integ_sandboxes -- --ignored` 4 passed (env-gated,
+  skipped with a message: no docker/sshd in the sandbox). Matrix: `docs/matrices/sandboxes.md`.
 
 - **Message injection (`injection/`).** Port of `strands-ts/src/injection/` — `is_user_turn`,
   `fold_into_last_user_message`, the `Trigger` gate and the `MessageInjection` engine, plus the XML
