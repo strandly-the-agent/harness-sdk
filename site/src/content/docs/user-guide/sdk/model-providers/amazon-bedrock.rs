@@ -126,3 +126,133 @@ async fn streaming() -> Result<(), Error> {
     let _ = (streaming_model, non_streaming_model);
     Ok(())
 }
+
+async fn multimodal_full() -> Result<(), Error> {
+    // --8<-- [start:multimodal_full]
+    use strands_agents::models::{BedrockModel, BedrockModelConfig};
+    use strands_agents::types::{
+        ContentBlock, DocumentBlock, DocumentFormat, DocumentSource,
+    };
+    use strands_agents::Agent;
+
+    let bedrock_model = BedrockModel::new(BedrockModelConfig {
+        model_id: Some("global.anthropic.claude-sonnet-5".to_owned()),
+        ..Default::default()
+    })
+    .await?;
+
+    let agent = Agent::new(bedrock_model)?;
+
+    let document_bytes = b"Once upon a time...".to_vec();
+
+    // Send multimodal content directly to invoke
+    let response = agent
+        .invoke(vec![
+            ContentBlock::Document(DocumentBlock {
+                format: DocumentFormat::Txt,
+                name: "example".to_owned(),
+                source: DocumentSource::Bytes(document_bytes),
+                citations: None,
+                context: None,
+            }),
+            ContentBlock::Text("Tell me about the document.".to_owned()),
+        ])
+        .await?;
+    // --8<-- [end:multimodal_full]
+    let _ = response;
+    Ok(())
+}
+
+async fn s3_location() -> Result<(), Error> {
+    // --8<-- [start:s3_location]
+    use strands_agents::models::BedrockModel;
+    use strands_agents::types::{
+        ContentBlock, DocumentBlock, DocumentFormat, DocumentSource, S3Location,
+    };
+    use strands_agents::Agent;
+
+    let agent = Agent::new(BedrockModel::default_model().await?)?;
+
+    let response = agent
+        .invoke(vec![
+            ContentBlock::Document(DocumentBlock {
+                format: DocumentFormat::Pdf,
+                name: "report.pdf".to_owned(),
+                source: DocumentSource::Location(S3Location {
+                    uri: "s3://my-bucket/documents/report.pdf".to_owned(),
+                    // Optional: for cross-account access
+                    bucket_owner: Some("123456789012".to_owned()),
+                }),
+                citations: None,
+                context: None,
+            }),
+            ContentBlock::Text("Summarize this document.".to_owned()),
+        ])
+        .await?;
+    // --8<-- [end:s3_location]
+    let _ = response;
+    Ok(())
+}
+
+async fn guardrails() -> Result<(), Error> {
+    // --8<-- [start:guardrails]
+    use strands_agents::models::{
+        BedrockGuardrailConfig, BedrockGuardrailRedactionConfig, BedrockModel,
+        BedrockModelConfig, GuardrailStreamProcessingMode, GuardrailTraceMode,
+    };
+    use strands_agents::Agent;
+
+    // Using guardrails with BedrockModel
+    let bedrock_model = BedrockModel::new(BedrockModelConfig {
+        model_id: Some("global.anthropic.claude-sonnet-5".to_owned()),
+        guardrail_config: Some(BedrockGuardrailConfig {
+            guardrail_identifier: "your-guardrail-id".to_owned(),
+            guardrail_version: "DRAFT".to_owned(),
+            // Options: Enabled, Disabled, EnabledFull
+            trace: Some(GuardrailTraceMode::Enabled),
+            // Options: Sync, Async
+            stream_processing_mode: Some(GuardrailStreamProcessingMode::Sync),
+            redaction: Some(BedrockGuardrailRedactionConfig {
+                input: Some(true), // Default: true
+                // Custom redaction message
+                input_message: Some("[User input redacted.]".to_owned()),
+                output: Some(false), // Default: false
+                output_message: Some("[Assistant output redacted.]".to_owned()),
+            }),
+            // Only evaluate the latest user message (default: false)
+            guard_latest_user_message: Some(true),
+        }),
+        ..Default::default()
+    })
+    .await?;
+
+    let guardrail_agent = Agent::new(bedrock_model)?;
+
+    let response = guardrail_agent
+        .invoke("Can you tell me about the Strands Harness SDK?")
+        .await?;
+    // --8<-- [end:guardrails]
+    let _ = response;
+    Ok(())
+}
+
+async fn update_config() -> Result<(), Error> {
+    // --8<-- [start:update_config]
+    use strands_agents::models::{BedrockModel, BedrockModelConfig};
+
+    // Create the model with initial configuration
+    let bedrock_model = BedrockModel::new(BedrockModelConfig {
+        model_id: Some("global.anthropic.claude-sonnet-5".to_owned()),
+        temperature: Some(0.7),
+        ..Default::default()
+    })
+    .await?;
+
+    // Update configuration later; `None` fields are left alone
+    bedrock_model.update_config(BedrockModelConfig {
+        temperature: Some(0.3),
+        ..Default::default()
+    });
+    // --8<-- [end:update_config]
+    Ok(())
+}

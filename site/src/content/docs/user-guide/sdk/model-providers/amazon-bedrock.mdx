@@ -479,6 +479,12 @@ response = agent(
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:multimodal_full"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:multimodal_full"
+```
+</Tab>
 </Tabs>
 
 For the full list of input types, see the [API Reference](@api/python/strands.types.content).
@@ -527,6 +533,12 @@ response = agent(
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:s3_location"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:s3_location"
 ```
 </Tab>
 </Tabs>
@@ -595,6 +607,16 @@ When `guardLatestUserMessage: true`, only the most recent user message is sent t
 :::
 
 </Tab>
+<Tab label="Rust">
+
+`BedrockGuardrailConfig` carries the same fields, with the trace level and the stream processing mode as enums:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:guardrails"
+```
+
+Redaction and `guard_latest_user_message` behave as described above: input redaction is on by default, output redaction is off, and both messages are overridable.
+</Tab>
 </Tabs>
 
 ### Caching
@@ -628,6 +650,12 @@ bedrock_model.update_config(
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:update_config"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:update_config"
 ```
 </Tab>
 </Tabs>
