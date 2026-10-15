@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use strands_agents::memory::{
-    ExtractionConfig, ExtractionResult, ExtractionTrigger, Extractor, MemoryAddOptions, MemoryInjectionConfig,
-    MemoryManager, MemoryManagerConfig, MemorySearchOptions, MemoryStore, MemoryStoreRef, TestMemoryStore,
-    TestMemoryStoreConfig,
+    ExtractionConfig, ExtractionResult, ExtractionTrigger, Extractor, MemoryAddOptions,
+    MemoryInjectionConfig, MemoryManager, MemoryManagerConfig, MemorySearchOptions, MemoryStoreRef,
+    TestMemoryStore, TestMemoryStoreConfig,
 };
 use strands_agents::models::Model;
 use strands_agents::test_support::{MockMessageModel, MockResponse};
@@ -101,19 +101,25 @@ async fn injects_stored_memories_into_the_model_call_and_extracts_facts_afterwar
         .build()
         .unwrap();
 
-    agent.invoke("what do I drink?").await.unwrap();
+    agent.invoke("remind me about tea").await.unwrap();
     manager.flush().await.unwrap();
 
     let (sent, _) = model.calls().remove(0);
     let last = sent.last().unwrap();
     assert!(
-        last.text().contains("<entry source=\"notes\">user likes tea</entry>"),
+        last.text()
+            .contains("<entry source=\"notes\">user likes tea</entry>"),
         "injected memory block missing: {}",
         last.text()
     );
-    assert_eq!(agent.messages()[0].content.len(), 1, "durable history is untouched");
+    assert_eq!(
+        agent.messages()[0].content.len(),
+        1,
+        "durable history is untouched"
+    );
 
-    let stored: Vec<&str> = records(&dir)
+    let on_disk = records(&dir);
+    let stored: Vec<&str> = on_disk
         .iter()
         .map(|record| record["content"].as_str().unwrap())
         .collect();
