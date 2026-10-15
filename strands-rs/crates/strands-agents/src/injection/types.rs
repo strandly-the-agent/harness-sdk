@@ -122,15 +122,15 @@ mod tests {
     fn uses_a_custom_predicate_over_the_context() {
         let trigger = Trigger::predicate(|context| context.messages.len() >= 2);
         assert!(!trigger.should_inject(&context(vec![Message::user("a")])));
-        assert!(trigger.should_inject(&context(vec![
-            Message::user("a"),
-            Message::assistant("b")
-        ])));
+        assert!(trigger.should_inject(&context(vec![Message::user("a"), Message::assistant("b")])));
     }
 
     #[test]
     fn debug_names_the_policy_without_leaking_the_predicate() {
         assert_eq!(format!("{:?}", Trigger::default()), "Trigger(UserTurn)");
-        assert_eq!(format!("{:?}", Trigger::predicate(|_| true)), "Trigger(predicate)");
+        assert_eq!(
+            format!("{:?}", Trigger::predicate(|_| true)),
+            "Trigger(predicate)"
+        );
     }
 }

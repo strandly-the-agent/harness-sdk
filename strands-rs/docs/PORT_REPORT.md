@@ -333,3 +333,12 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `invoke_structured` → `structured_output`, `AgentResult::structured_output_as`; `ModelStopData.usage`;
 `testing` module (alias `test_support`), crate-level guide, actionable no-credentials error, default features
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
+
+## Phase 4
+
+- **Message injection (`injection/`).** Port of `strands-ts/src/injection/` — `is_user_turn`,
+  `fold_into_last_user_message`, the `Trigger` gate and the `MessageInjection` engine, plus the XML
+  escaping helpers that `memory/injection.rs` used to own privately (memory now re-exports them;
+  its public API is unchanged). Delivery runs through `BeforeModelCallEvent` rather than a second
+  middleware mechanism, and `ContextInjector` is now a thin wrapper over the engine. Loop coverage
+  in `tests/injection_loop.rs`; matrix in [matrices/injection.md](matrices/injection.md).

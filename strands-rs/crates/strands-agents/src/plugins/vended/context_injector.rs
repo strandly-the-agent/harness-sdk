@@ -16,9 +16,7 @@ use crate::injection::{FoldOutcome, MessageInjection};
 use crate::plugins::Plugin;
 use crate::types::Message;
 
-pub use crate::injection::{
-    fold_into_last_user_message, is_user_turn, InjectionContext, InjectionTrigger,
-};
+pub use crate::injection::{fold_into_last_user_message, is_user_turn, InjectionContext, InjectionTrigger};
 
 const DEFAULT_NAME: &str = "strands:context-injector";
 

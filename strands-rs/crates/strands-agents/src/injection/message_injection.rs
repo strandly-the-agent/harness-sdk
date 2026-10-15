@@ -178,10 +178,7 @@ mod tests {
         assert_eq!(messages[1].content, vec![ContentBlock::text("prior step")]);
         assert_eq!(
             messages[2].content,
-            vec![
-                ContentBlock::text("next ask"),
-                ContentBlock::text("\n\nINJECTED")
-            ]
+            vec![ContentBlock::text("next ask"), ContentBlock::text("\n\nINJECTED")]
         );
         assert_eq!(
             outcome,
@@ -222,10 +219,7 @@ mod tests {
 
         assert_eq!(
             messages[2].content,
-            vec![
-                tool_result.content[0].clone(),
-                ContentBlock::text("\n\nINJECTED")
-            ]
+            vec![tool_result.content[0].clone(), ContentBlock::text("\n\nINJECTED")]
         );
     }
 
@@ -287,7 +281,10 @@ mod tests {
     fn is_user_turn_distinguishes_a_fresh_ask() {
         assert!(is_user_turn(&[Message::assistant("prior"), Message::user("ask")]));
         assert!(!is_user_turn(&[Message::user("task"), user_with_tool_result()]));
-        assert!(!is_user_turn(&[Message::user("ask"), Message::assistant("reply")]));
+        assert!(!is_user_turn(&[
+            Message::user("ask"),
+            Message::assistant("reply")
+        ]));
         assert!(!is_user_turn(&[]));
     }
 
@@ -295,7 +292,9 @@ mod tests {
     async fn folds_rendered_text_into_the_latest_user_message() {
         let agent = test_agent_with("i1", None, Vec::new());
         let mut messages = vec![Message::assistant("prior"), Message::user("ask")];
-        let outcome = MessageInjection::text("INJECTED").apply(&agent, &mut messages).await;
+        let outcome = MessageInjection::text("INJECTED")
+            .apply(&agent, &mut messages)
+            .await;
 
         assert_eq!(messages[1].content[1], ContentBlock::text("\n\nINJECTED"));
         assert_eq!(outcome.trailing_blocks, 1);
@@ -416,7 +415,9 @@ mod tests {
     async fn emits_no_cache_point_into_the_messages() {
         let agent = test_agent_with("i9", None, Vec::new());
         let mut messages = vec![Message::user("ask")];
-        MessageInjection::text("INJECTED").apply(&agent, &mut messages).await;
+        MessageInjection::text("INJECTED")
+            .apply(&agent, &mut messages)
+            .await;
 
         assert!(!messages
             .iter()

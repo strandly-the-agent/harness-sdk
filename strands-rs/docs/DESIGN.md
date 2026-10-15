@@ -16,7 +16,8 @@ Since then (phases 2–3) the scope grew to: storage, context manager (replaces 
 managers — `ContextManagerOption::Auto` is the Agent default), background tasks (engine with
 max_concurrency/timeout/dedup), memory manager, skills/context-injector plugins, sandbox
 (`Sandbox` trait + `LocalSandbox`; shell runs through it), middleware (TypeId-keyed stages,
-owned `Next`), interrupts/HITL (`Error::Interrupt`, `ToolContext::interrupt`,
+owned `Next`), message injection (`injection/`, delivered through `BeforeModelCallEvent`; owns the
+XML escaping helpers that `memory/` reuses), interrupts/HITL (`Error::Interrupt`, `ToolContext::interrupt`,
 `InvokeInput::InterruptResponses`, `HumanInTheLoop`), snapshots/checkpoints, telemetry (OpenTelemetry
 `gen_ai.*`), MCP (rmcp 3.x; stdio + streamable-http — rmcp has no SSE client), agent-as-tool,
 delegation, continuations, Anthropic + OpenAI (Responses/Chat/bedrock-mantle) providers.
