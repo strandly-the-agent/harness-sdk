@@ -20,7 +20,7 @@ For full control over the strategy pipeline, see [Custom Strategies](./custom-st
 
 ## Automatic context management
 
-Pass <Syntax py='context_manager="auto"' ts='contextManager: "auto"' /> and the SDK manages context in the background with no model involvement:
+Pass <Syntax py='context_manager="auto"' ts='contextManager: "auto"' rs="ContextManagerOption::Auto" /> and the SDK manages context in the background with no model involvement:
 
 <Tabs>
 <Tab label="Python">
@@ -39,6 +39,14 @@ agent = Agent(context_manager="auto")
 --8<-- "user-guide/sdk/context-management/built-in-modes.ts:auto"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/built-in-modes.rs:auto"
+```
+
+`Auto` is also what an agent built without <Syntax py="context_manager" ts="contextManager" rs=".context_manager(…)" /> gets in Rust.
+</Tab>
 </Tabs>
 
 ### What it sets up
@@ -54,7 +62,7 @@ Two strategies whose defaults scored highest across [ContextBench](https://arxiv
 Agentic context management is experimental and may change in future versions.
 :::
 
-Auto mode compresses on a fixed threshold the SDK controls. Agentic mode hands that control to the model. Pass <Syntax py='context_manager="agentic"' ts='contextManager: "agentic"' /> and the model manages its own working memory: it sees how full the context window is and chooses when to compress, what to compress, and what to protect.
+Auto mode compresses on a fixed threshold the SDK controls. Agentic mode hands that control to the model. Pass <Syntax py='context_manager="agentic"' ts='contextManager: "agentic"' rs="ContextManagerOption::Agentic" /> and the model manages its own working memory: it sees how full the context window is and chooses when to compress, what to compress, and what to protect.
 
 <Tabs>
 <Tab label="Python">
@@ -71,6 +79,12 @@ agent = Agent(context_manager="agentic")
 --8<-- "user-guide/sdk/context-management/built-in-modes_imports.ts:agentic_imports"
 
 --8<-- "user-guide/sdk/context-management/built-in-modes.ts:agentic"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/built-in-modes.rs:agentic"
 ```
 </Tab>
 </Tabs>
@@ -94,7 +108,7 @@ This is the signal the model acts on. It decides whether the window is full enou
 
 **Three tools the model can call**, each a different lever with its own choices:
 
-- `summarize_context` folds older messages into a model-written summary. The model chooses how many recent messages to keep verbatim, how aggressively to summarize, and whether to target tool results, discussion, or both.
+- `summarize_context` folds older messages into a model-written summary. The model chooses how many recent messages to keep verbatim, how aggressively to summarize, and whether to ta the background, with no model involvement and no extra trget tool results, discussion, or both.
 - `truncate_context` drops older messages outright when they no longer need preserving. The model again chooses how much recent history to keep and what kind of messages to target.
 - `pin_context` marks messages that must survive compression: a user constraint, a key fact, the current task. Pinned messages are never evicted by either tool. The model can pin the current exchange, the last few messages, or specific ones.
 
@@ -102,9 +116,15 @@ Recent messages stay verbatim regardless, and the first user message is always p
 
 Behind the tools, agentic mode also configures a `ContextManager` with truncation and summarization strategies. The truncation threshold is higher than auto mode (8,000 tokens versus 1,500), since the model is already managing context and benefits from seeing more tool output inline. Summarization only triggers on overflow (100% utilization), acting as a safety net if the model lets the window fill.
 
+:::note[Rust]
+Rust's `Agentic` is that higher-threshold pipeline only. The context-status block and the
+`summarize_context` / `truncate_context` / `pin_context` tools are not ported yet, so the model
+is not yet driving its own context there.
+:::
+
 ### Choosing between auto and agentic
 
-Use `"auto"` for most agents. It manages context in the background, with no model involvement and no extra tool calls. Reach for `"agentic"` when you want the model itself to decide what stays in context: it judges relevance per message rather than compressing on a fixed threshold. The tradeoff is the tokens the model spends reading telemetry and calling the tools.
+Use `"auto"` for most agents. It manages context inool calls. Reach for `"agentic"` when you want the model itself to decide what stays in context: it judges relevance per message rather than compressing on a fixed threshold. The tradeoff is the tokens the model spends reading telemetry and calling the tools.
 
 ## Disabling context management
 
@@ -125,6 +145,12 @@ agent = Agent(context_manager=False)
 --8<-- "user-guide/sdk/context-management/built-in-modes_imports.ts:disabled_imports"
 
 --8<-- "user-guide/sdk/context-management/built-in-modes.ts:disabled"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/context-management/built-in-modes.rs:disabled"
 ```
 </Tab>
 </Tabs>

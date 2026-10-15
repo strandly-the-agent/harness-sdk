@@ -27,7 +27,8 @@ Storage backend the same way in both SDKs: TypeScript's
 `SessionManager` and Python's recommended `SnapshotSessionManager`
 both persist snapshots through a Storage backend you pass them.
 Python's repository-based managers (`FileSessionManager`,
-`S3SessionManager`) are the exception: they configure storage
+`S3SessionManager`)mory | Tests, short-lived agents |
+| `LocalFileStorage` | are the exception: they configure storage
 directly rather than through a Storage backend, a difference the
 session management page documents.
 
@@ -36,8 +37,7 @@ your data to live:
 
 | Backend | Where data lives | Best for |
 |---------|-----------------|----------|
-| `InMemoryStorage` | Process memory | Tests, short-lived agents |
-| `LocalFileStorage` | Local filesystem | Development, single-machine |
+| `InMemoryStorage` | Process me Local filesystem | Development, single-machine |
 | `S3Storage` | Amazon S3 | Production, multi-instance |
 
 ## Agent-level storage
@@ -62,12 +62,25 @@ Agent and let subsystems resolve from it.
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/storage.rs:agent_level"
+```
+
+Enable the `s3` feature for `S3Storage`.
+</Tab>
 </Tabs>
 
 Both the session manager and context offloader read from the
 same backend without extra wiring. Each subsystem
 auto-namespaces its keys (`session/` for sessions,
 `offloader/` for offloaded content), so data never collides.
+
+In Rust only the context manager's stash resolves from
+agent-level storage. `SessionManager` takes a
+`SnapshotStorage` (`FileStorage` or `S3SessionStorage`) of its
+own, so pass it one explicitly.
 
 ## Per-plugin storage
 
@@ -92,6 +105,12 @@ for that plugin only.
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/storage.rs:per_plugin"
+```
+</Tab>
 </Tabs>
 
 ## Precedence
@@ -100,11 +119,15 @@ Storage resolves in this order for each subsystem:
 
 1. **Explicit**: storage passed directly to the plugin
 2. **Agent-level**: the agent's
-   <Syntax py="storage" ts="storage" /> parameter
+   <Syntax py="storage" ts="storage" rs="storage" /> parameter
    (namespaced automatically)
 3. **Fallback**: `InMemoryStorage` for Context Offloader;
    `LocalFileStorage` for Session Manager in Python, or an
    error in TypeScript
+
+In Rust the only subsystem in that chain is the context
+manager's stash: explicit `StashConfig.storage`, then the
+agent's storage, then `InMemoryStorage`.
 
 :::note
 Python `SessionManager` is deprecated, and does not use
@@ -137,6 +160,12 @@ zero-config, gone when the process exits.
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/storage.rs:in_memory"
+```
+</Tab>
 </Tabs>
 
 ### LocalFileStorage
@@ -146,8 +175,8 @@ Each key becomes a file under a base directory. Writes are atomic
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| <Syntax py="base_dir" ts="baseDir" /> | `"./.strands/"` | Root directory |
-| <Syntax py="sandbox" ts="sandbox" /> | `None`/`undefined` | Optional [Sandbox](./sandbox/index.mdx) |
+| <Syntax py="base_dir" ts="baseDir" rs="base_dir" /> | `"./.strands/"` (required in Rust) | Root directory |
+| <Syntax py="sandbox" ts="sandbox" rs="sandbox" /> | `None`/`undefined` | Optional [Sandbox](./sandbox/index.mdx) |
 
 <Tabs>
 <Tab label="Python">
@@ -166,11 +195,20 @@ Each key becomes a file under a base directory. Writes are atomic
 ```
 
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/storage.rs:local_file"
+```
+</Tab>
 </Tabs>
 
-You can also bind a sandbox after construction with
-<Syntax py="for_sandbox(sandbox)" ts="forSandbox(sandbox)" />,
-which returns a new instance routed through the sandbox.
+In Python and TypeScript you can also bind a sandbox after
+construction with
+<Syntax py="for_sandbox(sandbox)" ts="forSandbox(sandbox)" rs="for_sandbox(sandbox)" />,
+which returns a new instance routed through the sandbox. Rust's
+`LocalFileStorage` always uses the host filesystem; routing
+storage I/O through a sandbox is not ported yet.
 
 ### S3Storage
 
@@ -181,8 +219,8 @@ so applications that never construct an `S3Storage` pay nothing.
 |-----------|---------|-------------|
 | `bucket` | *(required)* | S3 bucket name |
 | `prefix` | `""` | Key prefix (namespace within the bucket) |
-| <Syntax py="region_name" ts="region" /> | `None`/`undefined` | AWS region override |
-| <Syntax py="boto_session" ts="s3Client" /> | `None`/`undefined` | Pre-configured client |
+| <Syntax py="region_name" ts="region" rs=".region()" /> | `None`/`undefined` | AWS region override |
+| <Syntax py="boto_session" ts="s3Client" rs=".client()" /> | `None`/`undefined` | Pre-configured client |
 
 <Tabs>
 <Tab label="Python">
@@ -200,6 +238,14 @@ so applications that never construct an `S3Storage` pay nothing.
 --8<-- "user-guide/sdk/storage.ts:s3"
 ```
 
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/storage.rs:s3"
+```
+
+Enable the `s3` feature.
 </Tab>
 </Tabs>
 
@@ -238,12 +284,15 @@ one or the other.
 ## Custom backends
 
 Implement four async methods
-(<Syntax py="write, read, delete, list" ts="write, read, delete, list" />)
+(<Syntax py="write, read, delete, list" ts="write, read, delete, list" rs="write, read, delete, list" />)
 and pass your class anywhere a `Storage` is accepted. In Python,
 `Storage` is a
 [protocol](@api/python/strands.storage.storage#Storage); in
 TypeScript, implement the
-[interface](@api/typescript/Storage).
+[interface](@api/typescript/Storage). In Rust, implement the
+`Storage` trait; `is_ephemeral`, `is_namespaced`, `namespace`
+and `search` have defaults you override only when your backend
+supports them.
 
 Community backends can add methods beyond the core four (e.g.
 `search` for vector similarity, or structured queries for
@@ -252,11 +301,17 @@ persistence use the four standard methods; plugins that need
 richer access can check for and use the extra surface your
 backend provides.
 
+Rust's built-in backends implement `search` with
+`KeywordSearchStrategy`, which scores results by how many
+distinct query words appear in the stored content. There is no
+BM25 or vector-similarity strategy in the Rust SDK; swap in your
+own with `with_search_strategy`.
+
 When using agent-level storage, each subsystem scopes its keys
 under its own prefix automatically (`session/`, `offloader/`),
 so you never need to worry about collisions. If you write a
 custom plugin that consumes agent-level storage, call
-<Syntax py="storage.namespace('my-prefix/')" ts="storage.namespace('my-prefix/')" />
+<Syntax py="storage.namespace('my-prefix/')" ts="storage.namespace('my-prefix/')" rs="storage::namespace(storage, prefix)" />
 to claim your own prefix and avoid overlapping with other
 subsystems.
 
