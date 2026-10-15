@@ -99,6 +99,12 @@ installs the exporter).
   panicking constructor; a goal is either a description judged by an auto-built judge agent or a
   validator closure (`validator` async / `sync_validator`, a TS `throw` becoming `Err`), and the
   judge's structured-output schema is derived from `JudgeOutcome` with `schemars` rather than zod.
+- `models::routing::ModelRouter` runs its per-invocation selection as **wrap-phase** middleware on
+  `InvokeModelStage`, not TS's `InvokeModelStage.Input`: `add_input` is sync while
+  `RoutingStrategy::select` is async, and wrap composes innermost so the stage still sees the
+  context after continuation input middleware. Candidates are `Arc<dyn Model>` / `Arc<ModelRouter>`
+  so identity (not `Object.freeze`) backs the duplicate guard and strategy health tracking; the
+  selection is readable only inside the invocation (`routed_model`) and cleared at its boundary.
 
 ## Decisions
 
