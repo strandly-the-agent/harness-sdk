@@ -2,14 +2,15 @@
 //! ordered by `order` (ties: registration order), and run sequentially.
 
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
 use parking_lot::Mutex;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::interrupt::Interrupt;
 
 /// A hookable event. Implemented by every struct in [`super::events`].
 pub trait HookEvent: Any + Send {
@@ -255,12 +256,39 @@ impl HookRegistry {
         out
     }
 
-    /// Run every callback registered for `E`, sequentially, stopping at the first error.
+    /// Run every callback registered for `E`, sequentially.
+    ///
+    /// Interrupts are accumulated instead of short-circuiting, so every callback gets to raise
+    /// its own; the collected interrupts are returned as one [`Error::Interrupt`] once all
+    /// callbacks have run. Duplicate interrupt names are rejected. Any non-interrupt error
+    /// propagates immediately and skips the remaining callbacks.
     pub async fn invoke_callbacks<E: HookEvent>(&self, event: &mut E) -> Result<()> {
+        let mut interrupts: Vec<Interrupt> = Vec::new();
         for callback in self.callbacks_for::<E>() {
-            callback(event).await?;
+            match callback(event).await {
+                Ok(()) => {}
+                Err(Error::Interrupt(raised)) => interrupts.extend(raised),
+                Err(err) => return Err(err),
+            }
         }
-        Ok(())
+        if interrupts.is_empty() {
+            return Ok(());
+        }
+
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut duplicates: Vec<&str> = Vec::new();
+        for interrupt in &interrupts {
+            if !seen.insert(interrupt.name.as_str()) && !duplicates.contains(&interrupt.name.as_str()) {
+                duplicates.push(interrupt.name.as_str());
+            }
+        }
+        if !duplicates.is_empty() {
+            return Err(Error::other(format!(
+                "interrupt_names=<{}> | duplicate interrupt names",
+                duplicates.join(", ")
+            )));
+        }
+        Err(Error::Interrupt(interrupts))
     }
 
     /// Number of callbacks registered for `E`.
@@ -345,6 +373,108 @@ mod tests {
         cleanup.remove();
         assert_eq!(hooks.count::<Forward>(), 0);
         assert_eq!(hooks.count::<Backward>(), 0);
+    }
+
+    fn interrupt(name: &str) -> crate::Error {
+        crate::Error::Interrupt(vec![Interrupt::new(
+            format!("hook:{name}"),
+            name.to_string(),
+            crate::interrupt::InterruptSource::Hook,
+        )])
+    }
+
+    #[tokio::test]
+    async fn collects_interrupts_from_multiple_callbacks_and_invokes_all_of_them() {
+        let hooks = HookRegistry::new();
+        hooks.add_sync_callback(|e: &mut Forward| {
+            e.0.push("first");
+            Err(interrupt("interrupt_a"))
+        });
+        hooks.add_sync_callback(|e: &mut Forward| {
+            e.0.push("second");
+            Err(interrupt("interrupt_b"))
+        });
+        let mut ev = Forward(vec![]);
+        let err = hooks.invoke_callbacks(&mut ev).await.unwrap_err();
+        assert_eq!(ev.0, vec!["first", "second"]);
+        let crate::Error::Interrupt(interrupts) = err else {
+            panic!("expected interrupt, got {err:?}");
+        };
+        assert_eq!(
+            interrupts.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(),
+            vec!["interrupt_a", "interrupt_b"]
+        );
+        assert_eq!(
+            crate::Error::Interrupt(interrupts).to_string(),
+            "2 interrupts raised: interrupt_a, interrupt_b"
+        );
+    }
+
+    #[tokio::test]
+    async fn stops_on_non_interrupt_error_even_when_interrupts_were_collected() {
+        let hooks = HookRegistry::new();
+        hooks.add_sync_callback(|_: &mut Forward| Err(interrupt("interrupt_a")));
+        hooks.add_sync_callback(|_: &mut Forward| Err(crate::Error::Plugin("boom".into())));
+        hooks.add_sync_callback(|e: &mut Forward| {
+            e.0.push("never");
+            Ok(())
+        });
+        let mut ev = Forward(vec![]);
+        let err = hooks.invoke_callbacks(&mut ev).await.unwrap_err();
+        assert!(matches!(err, crate::Error::Plugin(_)), "got {err:?}");
+        assert!(ev.0.is_empty());
+    }
+
+    #[tokio::test]
+    async fn runs_all_callbacks_when_only_some_raise_interrupts() {
+        let hooks = HookRegistry::new();
+        hooks.add_sync_callback(|e: &mut Forward| {
+            e.0.push("first");
+            Err(interrupt("interrupt_a"))
+        });
+        hooks.add_sync_callback(|e: &mut Forward| {
+            e.0.push("second-no-interrupt");
+            Ok(())
+        });
+        hooks.add_sync_callback(|e: &mut Forward| {
+            e.0.push("third");
+            Err(interrupt("interrupt_b"))
+        });
+        let mut ev = Forward(vec![]);
+        let err = hooks.invoke_callbacks(&mut ev).await.unwrap_err();
+        assert_eq!(ev.0, vec!["first", "second-no-interrupt", "third"]);
+        let crate::Error::Interrupt(interrupts) = err else {
+            panic!("expected interrupt, got {err:?}");
+        };
+        assert_eq!(interrupts.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn rejects_two_callbacks_using_the_same_interrupt_name() {
+        let hooks = HookRegistry::new();
+        hooks.add_sync_callback(|_: &mut Forward| Err(interrupt("confirm")));
+        hooks.add_sync_callback(|_: &mut Forward| Err(interrupt("confirm")));
+        let mut ev = Forward(vec![]);
+        let err = hooks.invoke_callbacks(&mut ev).await.unwrap_err();
+        assert!(!err.is_control_flow());
+        assert_eq!(
+            err.to_string(),
+            "interrupt_names=<confirm> | duplicate interrupt names"
+        );
+    }
+
+    #[tokio::test]
+    async fn reports_all_duplicate_interrupt_names_in_error() {
+        let hooks = HookRegistry::new();
+        for name in ["alpha", "alpha", "beta", "beta"] {
+            hooks.add_sync_callback(move |_: &mut Forward| Err(interrupt(name)));
+        }
+        let mut ev = Forward(vec![]);
+        let err = hooks.invoke_callbacks(&mut ev).await.unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "interrupt_names=<alpha, beta> | duplicate interrupt names"
+        );
     }
 
     #[tokio::test]

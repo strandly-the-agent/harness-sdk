@@ -104,6 +104,7 @@ Landed in increment 2 (the execution loop):
 | Swarm: agent interrupts, resumes via `SessionManager` | `interrupts_inside_an_agent_and_resumes_from_a_restored_session` |
 | Swarm: repetitive detection keeps a restored interrupt response | `repetitive_handoff_detection_does_not_swallow_a_restored_interrupt_response` |
 | Swarm: `BeforeNodeCallEvent.interrupt` gates a node, then resumes | `gates_a_node_with_a_before_node_call_interrupt_and_resumes` |
+| — (two gating `BeforeNodeCallEvent` hooks, both interrupts, one resume) | `two_gating_hooks_surface_both_interrupts_and_one_resume_answers_both` |
 | Swarm: hook-gated node still emits result + after events | `a_hook_gated_node_still_emits_its_result_and_after_events` |
 | — (same-instance resume, `pending_interrupt_state`) | `resumes_an_interrupted_run_on_the_same_instance_without_a_session` |
 | — (`load_snapshot(.., None)` arms the next invocation) | `a_snapshot_loaded_without_a_state_handle_resumes_the_next_invocation` |
@@ -136,13 +137,6 @@ nested in a graph orchestrator) needs Graph, so it lands with that workstream.
   `load_snapshot`, mirroring `SessionManager`'s restore-once-per-orchestrator behaviour.
 - **Nested orchestrator interrupts** (`interrupts.test.ts:264`): a swarm nested in a graph needs
   Graph, so the test lands with that workstream.
-- **Hook-registry interrupt accumulation.** TS `invokeCallbacks` (`hooks/registry.ts:86-116`) runs
-  *every* callback, collects each `InterruptError`, rejects duplicate interrupt names, and throws
-  one `InterruptError` with all of them; Rust `HookRegistry::invoke_callbacks`
-  (`hooks/registry.rs:259-264`) short-circuits on the first `Err`. With two gating
-  `BeforeNodeCallEvent` hooks the swarm therefore records only the first interrupt, and the second
-  gate re-interrupts on every resume. The fix belongs in the shared registry (it affects
-  agent-level hooks too), not in `swarm.rs` — raised for the core owner.
 - **`sessionManager` constructor argument** (and its "provided twice" validation): waiting on the
   plugin above; today a session plugin is passed through `.plugin(..)`.
 
