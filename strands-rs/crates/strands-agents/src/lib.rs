@@ -58,6 +58,7 @@ pub mod background_tasks;
 pub mod context_manager;
 pub mod error;
 pub mod hooks;
+pub mod injection;
 pub mod interrupt;
 pub mod interventions;
 pub mod logging;
@@ -82,8 +83,8 @@ pub mod tools;
 pub mod types;
 
 pub use agent::{
-    Agent, AgentBuilder, AgentResult, AgentStream, AgentStreamEvent, InvocationState, InvokeInput,
-    InvokeOptions, Limits,
+    Agent, AgentBuilder, AgentPrinter, AgentResult, AgentStream, AgentStreamEvent, InvocationState,
+    InvokeInput, InvokeOptions, Limits,
 };
 pub use agent::{CallOptions, ToolHandle};
 pub use background_tasks::{BackgroundTask, BackgroundTasks, BackgroundTasksConfig};
@@ -108,11 +109,15 @@ pub use models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use sandbox::{
-    ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError, SandboxEvent, SandboxRef,
-    StreamChunk, StreamType,
+    DockerSandbox, ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError,
+    SandboxEvent, SandboxRef, SshSandbox, StreamChunk, StreamType,
 };
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
+#[cfg(feature = "s3")]
+pub use session::{S3SessionStorage, S3SessionStorageBuilder};
 pub use storage::{InMemoryStorage, LocalFileStorage, Storage, StorageRef};
+#[cfg(feature = "s3")]
+pub use storage::{S3Storage, S3StorageBuilder};
 pub use tools::vended::ShellTool;
 pub use tools::{
     ConcurrentToolExecutor, FunctionTool, SequentialToolExecutor, Tool, ToolContext, ToolExecutor,

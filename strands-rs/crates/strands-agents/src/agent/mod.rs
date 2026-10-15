@@ -7,6 +7,7 @@ mod continuation;
 mod delegation;
 mod event_loop;
 mod invocation_state;
+mod printer;
 mod result;
 mod snapshot;
 mod tool_caller;
@@ -40,6 +41,7 @@ pub use event_loop::{
     STRUCTURED_OUTPUT_FORCED_FAILURE_MESSAGE,
 };
 pub use invocation_state::InvocationState;
+pub use printer::AgentPrinter;
 pub use result::AgentResult;
 pub use snapshot::{SnapshotField, SnapshotPreset, TakeSnapshotOptions, ALL_SNAPSHOT_FIELDS};
 pub use tool_caller::{CallOptions, ToolHandle, DIRECT_CALL_DURING_INVOCATION_MESSAGE};

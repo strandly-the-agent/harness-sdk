@@ -304,6 +304,21 @@ transports. Harness: `interventions` → `HumanInTheLoop` (`ask` seam, collision
 HITL classifier/Cedar policies (hard errors naming the gap), OTLP exporter installation (the host
 installs it), printer, A2A, multiagent, Gemini/LiteLLM/OpenRouter.
 
+## Phase 4
+
+- **Docker + SSH sandboxes** (`src/sandbox/{docker,ssh}.rs`): `DockerSandbox` (`docker exec`) and
+  `SshSandbox` (`ssh`, with the TS `ALLOWED_SSH_OPTIONS` allowlist and `BatchMode=yes`) over a new
+  shared layer — `sandbox/posix_shell.rs` (TS's `PosixShellSandbox` base class as free functions
+  over `&dyn Sandbox`: base64 file transfer, `ls` parsing, `cd`/`export` prefixes) and
+  `sandbox/stream_process.rs` (TS `streamProcess`: process-group kill, UTF-8 chunk-boundary
+  decoding, 128+signal, ENOENT message). Both shell out to the CLI, as TS and Python do; the
+  binary path is a builder option (`with_docker_binary`/`with_ssh_binary`) that doubles as the
+  test seam, so argv/quoting/env/error-mapping are unit-tested against a fake binary with no
+  daemon or sshd. `tools()` vends `ShellTool` only — Rust has no `FileEditorTool` yet
+  (follow-up in `docs/matrices/sandboxes.md`). Tests: `cargo test --lib sandbox::` 87 passed,
+  `--test sandbox_loop` 8 passed, `--test integ_sandboxes -- --ignored` 4 passed (env-gated,
+  skipped with a message: no docker/sshd in the sandbox). Matrix: `docs/matrices/sandboxes.md`.
+
 ## Known gaps / follow-ups
 
 - Bedrock: throttling mapping and guardrail paths untested live (see above); bearer-token auth
@@ -333,3 +348,33 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `invoke_structured` → `structured_output`, `AgentResult::structured_output_as`; `ModelStopData.usage`;
 `testing` module (alias `test_support`), crate-level guide, actionable no-credentials error, default features
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
+
+## Phase 4
+
+- **Message injection (`injection/`).** Port of `strands-ts/src/injection/` — `is_user_turn`,
+  `fold_into_last_user_message`, the `Trigger` gate and the `MessageInjection` engine, plus the XML
+  escaping helpers that `memory/injection.rs` used to own privately (memory now re-exports them;
+  its public API is unchanged). Delivery runs through `BeforeModelCallEvent` rather than a second
+  middleware mechanism, and `ContextInjector` is now a thin wrapper over the engine. One existing
+  public signature changed: `fold_into_last_user_message` now returns `FoldOutcome { folded,
+  trailing_blocks }` instead of `bool`, because the caller needs the trailing-block count for
+  cache-point placement. Loop coverage in `tests/injection_loop.rs`; matrix in
+  [matrices/injection.md](matrices/injection.md).
+- **Printer (`agent/printer.rs`).** Port of `strands-ts/src/agent/printer.ts` — `AgentPrinter<W:
+  Write>` (default `Stdout`) printing text deltas, framed reasoning blocks and tool
+  announcements/results byte-identically to TS. `printer.print(agent.stream(input)).await` drives a
+  whole stream and returns the `AgentResult`; `on_event` is public for custom loops. All nine TS
+  tests ported, each asserting the captured bytes; `examples/printer.rs` shows the one-liner.
+- **S3 storage** (`s3` feature): `storage::S3Storage` (unified key/value `Storage`, keyword search) and
+  `session::S3SessionStorage` (`SnapshotStorage`, TS key layout verbatim). 52 mocked unit tests
+  (`aws-smithy-mocks`) plus `tests/integ_s3.rs` live round-trips — 2 passed against
+  `strandly-managed-strands-rs-e2e` in us-west-2. Session type renamed from TS `S3Storage` to
+  `S3SessionStorage` to avoid clashing with the unified one; see `docs/matrices/s3.md`.
+- **Cedar policy intervention** (`interventions::vended::cedar`, `cedar` feature): `CedarAuthorization`
+  gates every tool call on a Cedar policy set — `principal`, `Action::"<tool>"`, `Resource::"agent"`,
+  `context = { input, session: { hour_utc, call_count, ..enricher } }`; default-deny. Static principal
+  or per-invocation `PrincipalResolver`, context enricher, per-tool rate limits persisted in agent
+  state (`CALL_COUNTS_KEY`), optional schema validation (supplied or generated from `ToolSpec`s),
+  namespacing, file-backed sources with `reload()`. Engine is the first-party `cedar_policy` crate
+  (pinned `=4.11.0`) instead of TS's WASM bundle. 43 unit tests + 1 agent-loop test
+  (`tests/cedar_loop.rs`); matrix in `docs/matrices/cedar.md`.

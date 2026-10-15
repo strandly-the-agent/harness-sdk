@@ -16,12 +16,13 @@ Since then (phases 2–3) the scope grew to: storage, context manager (replaces 
 managers — `ContextManagerOption::Auto` is the Agent default), background tasks (engine with
 max_concurrency/timeout/dedup), memory manager, skills/context-injector plugins, sandbox
 (`Sandbox` trait + `LocalSandbox`; shell runs through it), middleware (TypeId-keyed stages,
-owned `Next`), interrupts/HITL (`Error::Interrupt`, `ToolContext::interrupt`,
+owned `Next`), message injection (`injection/`, delivered through `BeforeModelCallEvent`; owns the
+XML escaping helpers that `memory/` reuses), interrupts/HITL (`Error::Interrupt`, `ToolContext::interrupt`,
 `InvokeInput::InterruptResponses`, `HumanInTheLoop`), snapshots/checkpoints, telemetry (OpenTelemetry
 `gen_ai.*`), MCP (rmcp 3.x; stdio + streamable-http — rmcp has no SSE client), agent-as-tool,
 delegation, continuations, Anthropic + OpenAI (Responses/Chat/bedrock-mantle) providers.
 
-Still out: printer, A2A, multiagent (swarm/graph), S3 session storage, docker/ssh sandboxes,
+Still out: printer, A2A, multiagent (swarm/graph), S3 session storage,
 Gemini/LiteLLM/OpenRouter providers, OTLP exporter installation (the SDK emits spans; the host
 installs the exporter).
 
@@ -55,6 +56,9 @@ installs the exporter).
   integration tests in `crates/strands-agents/tests/`. Every TS `it(...)` has a Rust test with the
   same intent; the name is the TS name in snake_case. Fixtures (`MockMessageModel`, hook
   recorder) live in `src/test_support.rs` (`#[cfg(test)]`/`pub` behind `test-support` feature).
+- Inherited behaviour becomes free functions, not a default-method trait: TS's `PosixShellSandbox`
+  base class is `sandbox::posix_shell::*` over `&dyn Sandbox`, so shell-specific internals stay off
+  the public `Sandbox` trait and each backend forwards explicitly.
 - Gates: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
   `cargo test --all-features`.
 - Public API shape: builders take `impl Trait + 'static` and wrap in `Arc` internally
@@ -64,6 +68,9 @@ installs the exporter).
   pointer hop when a shared handle is re-wrapped). Typed plugin slots take
   their own trait: `conversation_manager(impl ConversationManager)`,
   `retry_strategy(impl ModelRetryStrategy)`, `session_manager(impl Into<Arc<SessionManager>>)`.
+- S3 backends are built by an async builder (`S3Storage::builder(bucket).build().await`), since
+  resolving the AWS config is async; the snapshot one is `session::S3SessionStorage` (TS calls it
+  `S3Storage`) so it does not clash with the unified `storage::S3Storage`.
 - `AgentBuilder::build()` and `Agent::new()` are **synchronous**: they allocate the agent and
   nothing else. `Agent::initialize()` (plugins, session restore, sandbox tools) runs lazily on the
   first `invoke`/`stream`; call it explicitly to observe that state earlier.
@@ -76,6 +83,11 @@ installs the exporter).
 - `AgentStreamEvent` carries accessor shortcuts (`text_delta`, `tool_use`, `tool_result`,
   `result`) so the common streaming paths don't need a nested destructure; `Agent::stream_text`
   is the text-only view. `ModelStopData.usage` exposes the call's token usage to after-model hooks.
+- `interventions::vended::cedar` uses the first-party `cedar_policy` crate (+
+  `cedar_policy_mcp_schema_generator`) rather than TS's `@cedar-policy/cedar-wasm`, parses policies
+  / entities / schema once at construction and on `reload()`, takes `CedarSource::{Text,File}`
+  instead of a suffix-sniffed string, and exposes TS's base-class `onError` as the Cedar-local
+  `OnError` option; behind the `cedar` cargo feature.
 - Hook callbacks are plain closures returning a future (`hooks.add_callback(|e: &mut Event| async move
   { Ok(()) })`, plus `AgentBuilder::hook`/`sync_hook` for build-time registration); registration returns
   `()` and the `*_scoped` variants return the `#[must_use]` `HookCleanup`. `add_callback_boxed*` keeps the

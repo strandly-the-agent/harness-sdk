@@ -130,6 +130,13 @@ impl ShellTool {
         }
     }
 
+    /// Replace the spec's description, so a sandbox can tell the model which host or container
+    /// the command runs on.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.spec.description = description.into();
+        self
+    }
+
     fn fallback_sandbox(&self) -> SandboxRef {
         let mut sandbox = match &self.config.cwd {
             Some(cwd) => LocalSandbox::with_base_dir(cwd.clone()),

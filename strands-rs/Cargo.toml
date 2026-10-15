@@ -33,11 +33,13 @@ proc-macro2 = "1"
 jsonschema = { version = "0.33", default-features = false }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-bedrockruntime = "1"
+aws-sdk-s3 = "1"
 aws-smithy-types = "1"
 aws-smithy-runtime-api = { version = "1", features = ["client"] }
 regex = "1"
 http = "1"
 tempfile = "3"
+aws-smithy-mocks = "0.3"
 tokio-stream = "0.1"
 rmcp = { version = "3", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
@@ -45,6 +47,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 opentelemetry = "0.33"
 opentelemetry_sdk = "0.33"
 opentelemetry-semantic-conventions = "0.33"
+# Pinned exactly: `cedar-policy-mcp-schema-generator` depends on `cedar-policy-core =4.11.0`, and
+# only `cedar-policy` 4.11.0 pins the same core. Any other pair compiles two copies of it.
+cedar-policy = "=4.11.0"
+cedar-policy-mcp-schema-generator = "0.6"
+mcp-tools-sdk = "0.4"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

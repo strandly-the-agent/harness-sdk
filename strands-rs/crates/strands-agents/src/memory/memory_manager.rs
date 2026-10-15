@@ -12,12 +12,12 @@ use tokio::sync::Mutex;
 use crate::agent::Agent;
 use crate::error::{Error, Result};
 use crate::hooks::{hook_order, AfterInvocationEvent, BeforeModelCallEvent, MessageAddedEvent};
+use crate::injection::{fold_into_last_user_message, FoldOutcome};
 use crate::memory::injection::MemoryInjectionConfig;
 use crate::memory::types::{
     has_write_sink, AddMessagesContext, ExtractionTrigger, MemoryAddOptions, MemoryAddToolConfig,
     MemoryEntry, MemorySearchOptions, MemoryStoreRef, MemoryToolConfig, SearchOptions,
 };
-use crate::plugins::vended::context_injector::fold_into_last_user_message;
 use crate::plugins::Plugin;
 use crate::tools::{function_tool, ToolRef};
 use crate::types::{JsonValue, Message};
@@ -379,14 +379,20 @@ impl MemoryManager {
     /// search leaves `messages` untouched. `messages` is the per-call copy from
     /// [`BeforeModelCallEvent`], so durable history is never modified.
     pub async fn inject(&self, messages: &mut [Message]) -> bool {
+        self.inject_fold(messages).await.folded
+    }
+
+    /// [`Self::inject`], also reporting the per-call trailing blocks the model call must keep out
+    /// of its cached prefix (what the `BeforeModelCallEvent` hook accumulates).
+    async fn inject_fold(&self, messages: &mut [Message]) -> FoldOutcome {
         let Some(config) = &self.injection else {
-            return false;
+            return FoldOutcome::default();
         };
         if !config.should_inject(messages) {
-            return false;
+            return FoldOutcome::default();
         }
         let Some(query) = config.query(messages) else {
-            return false;
+            return FoldOutcome::default();
         };
         let max_entries = config.max_entries();
         let options = MemorySearchOptions {
@@ -397,16 +403,16 @@ impl MemoryManager {
             Ok(entries) => entries,
             Err(err) => {
                 tracing::warn!("reason=<{err}> | memory injection search failed");
-                return false;
+                return FoldOutcome::default();
             }
         };
         entries.truncate(max_entries);
         if entries.is_empty() {
-            return false;
+            return FoldOutcome::default();
         }
         let text = config.format(&entries);
         if text.trim().is_empty() {
-            return false;
+            return FoldOutcome::default();
         }
         fold_into_last_user_message(messages, &text)
     }
@@ -709,7 +715,8 @@ impl Plugin for MemoryManager {
                 .add_callback_boxed::<BeforeModelCallEvent, _>(move |event| {
                     let manager = Arc::clone(&injecting);
                     Box::pin(async move {
-                        manager.inject(&mut event.messages).await;
+                        let outcome = manager.inject_fold(&mut event.messages).await;
+                        event.dynamic_trailing_blocks += outcome.trailing_blocks;
                         Ok(())
                     })
                 });
@@ -1472,9 +1479,14 @@ mod tests {
 
         agent.invoke("what do I drink?").await.unwrap();
 
-        let (sent, _) = model.calls().remove(0);
+        let (sent, options) = model.calls().remove(0);
         let last = sent.last().unwrap();
         assert_eq!(last.content.len(), 2, "memory block folded into the user turn");
+        assert_eq!(
+            options.dynamic_trailing_blocks,
+            Some(1),
+            "the folded block is kept out of the cached prefix"
+        );
         assert!(last
             .text()
             .contains("<entry source=\"notes\">user likes tea</entry>"));
