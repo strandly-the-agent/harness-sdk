@@ -15,7 +15,7 @@ Source of truth: `strands-ts/src/vended-tools/sleep/{make-sleep.ts,sleep.ts,type
 | TS | Rust |
 |---|---|
 | `sleep` (default instance) | `SleepTool::new()` |
-| `makeSleep({ maxDuration, name, description })` | `SleepTool::with_config(SleepConfig { max_duration, sleeper })` |
+| `makeSleep({ maxDuration, name, description })` | `SleepTool::with_config(SleepConfig { name, description, max_duration, sleeper })` |
 | `DEFAULT_MAX_DURATION` | `DEFAULT_MAX_DURATION: f64` |
 | `sleepDescription(max)` / `SLEEP_DESCRIPTION` | `sleep_description(max_duration) -> String` |
 | `SleepInput { duration }` | private `SleepInput`; validated in `SleepTool::execute` |
@@ -81,8 +81,10 @@ Name, description text and input-schema wording match TS verbatim (asserted by
   `SleepTool::execute` still returns `Err(Error::ToolValidation(..))` with the TS message text.
 - **`max_duration` is validated at construction.** `SleepTool::with_config` returns
   `Result<Self>`; TS `makeSleep` throws. `SleepTool::new()` cannot fail.
-- **No `name`/`description` override on `SleepConfig`** (unlike `MakeSleepOptions`), matching
-  `ShellConfig`. `HandoffToUserConfig` does carry both, because the stable-interrupt-name-under-
+- **`name`/`description` are eager fields on `SleepConfig`**, like every other vended config, and
+  `SleepConfig::new(max_duration)` derives `description` from the cap. TS's `makeSleep` derives it
+  per call, so setting `max_duration` directly afterwards leaves a stale description (documented on
+  the field). `HandoffToUserConfig` carries both too, because the stable-interrupt-name-under-
   rename behaviour is part of the TS contract.
 - **Cancellation** uses `ToolContext::cancel` (`CancellationToken`) raced with `tokio::select!`
   and surfaces as `Error::Cancelled`, where TS rejects with a `DOMException('AbortError')`.
@@ -137,7 +139,7 @@ TS: `strands-ts/src/vended-tools/http-request/{http-request.ts,types.ts}` →
 | TS | Rust |
 | --- | --- |
 | `httpRequest` (a `tool({...})` constant) | `HttpRequestTool::new()` / `with_config(HttpRequestConfig)` |
-| — | `HttpRequestConfig { name, description, default_timeout, client }` |
+| — | `HttpRequestConfig { name, description, timeout, client }` |
 | `HttpRequestInput { method, url, headers?, body?, timeout? }` | `HttpRequestInput` (same fields; `timeout: Option<f64>` seconds) |
 | `HttpRequestOutput { status, statusText, headers, body }` | `HttpRequestOutput` (`status_text` serializes as `statusText`) |
 | `'http_request'` + description + zod schema | `HTTP_REQUEST_TOOL_NAME`, `DEFAULT_HTTP_REQUEST_DESCRIPTION`, same schema (enum, `required`, descriptions verbatim) |
@@ -188,8 +190,8 @@ Re-exported as `tools::vended::McpRouterTool` and `strands_agents::McpRouterTool
 
 | TS | Rust |
 | --- | --- |
-| `makeMcpRouter({ name?, description?, servers, maxConnections? })` | `McpRouterTool::new(servers) -> Result<Self>` / `with_config(McpRouterConfig) -> Result<Self>` |
-| `MakeMcpRouterOptions` | `McpRouterConfig { name, description: Option<String>, servers: IndexMap<String, McpServerConfig>, max_connections }` |
+| `makeMcpRouter({ name?, description?, servers, maxConnections? })` | `McpRouterTool::with_servers(servers) -> Result<Self>` / `with_config(McpRouterConfig) -> Result<Self>` |
+| `MakeMcpRouterOptions` | `McpRouterConfig { name, description: String, servers: IndexMap<String, McpServerConfig>, max_connections }` (`McpRouterConfig::new` derives `description` from `servers`) |
 | `McpRouterInput { command, connection_id?, server_name?, tool_name?, arguments? }` | `McpRouterInput` (same fields; `command: McpRouterCommand`) |
 | `'connect' \| 'list_connections' \| 'list_tools' \| 'call_tool' \| 'disconnect'` | `McpRouterCommand` (`#[serde(rename_all = "snake_case")]`) |
 | `MCP_ROUTER_DESCRIPTION`, `'mcp_router'`, `DEFAULT_MAX_CONNECTIONS = 10` | `MCP_ROUTER_DESCRIPTION`, `MCP_ROUTER_TOOL_NAME`, `DEFAULT_MAX_CONNECTIONS` |
@@ -206,9 +208,9 @@ Name, description (incl. the ` Permitted server names: 'a', 'b'.` suffix) and th
 
 13 unit tests in `mod tests` (`cargo test -p strands-agents --all-features --lib
 tools::vended::mcp_router` → 13 passed). The TS suite fakes `McpClient` with `vi.spyOn`; Rust's
-`McpClient` is a concrete type with no trait seam, so the cases that need a live server are **not
-ported as unit tests** — they need a real MCP server (the `mcp_echo_server` test binary, only
-reachable from `tests/`).
+`McpClient` is a concrete type with no trait seam, so the cases that need a live server live in
+`tests/mcp_router_e2e.rs` instead, driving the real `mcp_echo_server` stdio binary (7 tests,
+`cargo test -p strands-agents --all-features --test mcp_router_e2e`).
 
 | TS `it` | Rust test | state |
 | --- | --- | --- |
@@ -224,22 +226,33 @@ reachable from `tests/`).
 | `returns sorted open connection IDs` (empty case) | `returns_empty_string_when_no_connections_are_open` | pass |
 | `rejects call_tool without tool_name` | covered by `rejects_commands_for_an_unknown_connection_id` (the connection check runs first) | pass |
 | — | `rejects_commands_for_an_unknown_connection_id`, `invoke_returns_an_error_result_for_a_failed_command`, `invoke_lists_connections_as_a_success_result` | pass (added) |
-| `supports multiple simultaneous connections`, `rejects reconnect with same id`, `enforces connection cap`, `cleans up on start failure`, `rejects when client silently enters failed state`, `throws when allowlisted server has disabled: true`, `runs full connect → list_tools → call_tool → disconnect flow`, `throws McpRouterToolError when MCP tool returns isError`, `disconnect succeeds even when client.disconnect throws`, `forwards cancel signal to callTool`, `forwards server config and name to loadServers` | **not ported** — need a live MCP server; next session should add `tests/mcp_router_e2e.rs` driving `mcp_echo_server` | TODO |
+| `runs full connect → list_tools → call_tool → disconnect flow` | `mcp_router_e2e::runs_the_full_connect_list_tools_call_tool_disconnect_flow` | pass (e2e) |
+| `throws McpRouterToolError when MCP tool returns isError` | `mcp_router_e2e::returns_an_error_when_the_mcp_tool_reports_is_error` | pass (e2e) |
+| `disconnect succeeds even when client.disconnect throws` | `mcp_router_e2e::disconnect_succeeds_when_the_server_is_already_gone` (server exits via `--exit-after-ms`; a `call_tool` on the dead connection errors first, then `disconnect` still succeeds) | pass (e2e) |
+| `enforces connection cap` | `mcp_router_e2e::enforces_the_connection_cap` | pass (e2e) |
+| `rejects reconnect with same id` | `mcp_router_e2e::rejects_a_reconnect_with_the_same_id` | pass (e2e) |
+| `supports multiple simultaneous connections` | `mcp_router_e2e::supports_multiple_simultaneous_connections` (+ `disconnect_all`) | pass (e2e) |
+| `cleans up on start failure` | `mcp_router_e2e::cleans_up_when_the_server_fails_to_start` | pass (e2e) |
+| `forwards cancel signal to callTool`, `forwards server config and name to loadServers`, `rejects when client silently enters failed state`, `throws when allowlisted server has disabled: true` | **not ported** — they assert on a faked `McpClient` (spy args, injected failed state); Rust has no trait seam there and the echo server cannot be made to hang or half-fail on demand. Cancel forwarding is untested in Rust. | TODO |
 | `isolates connections between agents` (×2), `disconnects all connections when the callback fires` | **not applicable** — see divergences (connections are per tool instance; no GC hook) | n/a |
 
 ## Divergences
 
 - **Connections live on the tool instance**, in a `Mutex<IndexMap<String, McpClient>>`, instead of
   a `WeakMap` keyed by the agent. Give each agent its own `McpRouterTool` for the TS isolation
-  property. Rust has no `FinalizationRegistry`, so there is no garbage-collection cleanup hook:
-  connections close on `disconnect` or when the tool is dropped.
-- **`McpRouterToolError` has no Rust equivalent**; every failure is `Error::ToolValidation` with
-  the TS message verbatim, which the executor turns into an error tool result (TS throws and the
-  tool factory does the same).
+  property. Rust has no `FinalizationRegistry` and `Drop` cannot await, so there is no
+  garbage-collection cleanup hook and nothing closes connections on drop: the owner must call
+  `disconnect` per connection or `McpRouterTool::disconnect_all` before dropping the tool.
+- **`McpRouterToolError` has no Rust equivalent**; failures carry the TS message verbatim as
+  `Error::ToolValidation` for bad model input and `Error::other` for runtime failures (a server
+  that will not initialise or connect). Both reach the model as an error tool result via
+  `tool_error_or_propagate`, like the TS throw the tool factory converts.
 - **`call_tool` uses `McpClient::call_tool`** plus the crate's `map_call_tool_result` rather than
   building a throwaway `McpTool` and draining its stream — same content mapping, no fake tool spec.
-  `mcp::tool` became `pub(crate)` so the mapping could be shared (no public API change).
-- **Constructors return `Result`** (`new`/`with_config`) because TS throws from `makeMcpRouter`.
+  `src/mcp/mod.rs` keeps `mod tool;` private and re-exports just `pub(crate) use
+  tool::map_call_tool_result;` (no public API change).
+- **Constructors return `Result`** (`with_servers`/`with_config`) because TS throws from
+  `makeMcpRouter`. There is no zero-arg `new`: the allowlist has no default.
 
 # Review notes
 
@@ -274,3 +287,12 @@ orchestrator rather than fixed, to keep the TS behavioural contract:
 | 🟡 `parse_method` uppercases, TS's `z.enum` does not | fixed — listed under the module's divergences. |
 | 🟡 stale `PORT_REPORT.md` bullet / matrix title | fixed. |
 | 🟡 `FEATURE_MATRIX.md` column widths | deferred — cosmetic; the rows render correctly and rewrapping the table conflicts with the other lanes editing it. |
+
+## Review disposition (round 2)
+
+| Finding | Disposition |
+| --- | --- |
+| 🟠 this matrix was stale vs the round-1 changes (`SleepConfig` row + the "no `name`/`description`" bullet, `HttpRequestConfig::default_timeout`, `McpRouterTool::new`, `description: Option<String>`, the e2e TODO row, "connections close … when the tool is dropped", "every failure is `Error::ToolValidation`", "`mcp::tool` became `pub(crate)`", "Constructors return `Result` (`new`/`with_config`)") | fixed — every listed row/bullet updated; the seven ported cases now have their own `pass (e2e)` rows and the TODO row keeps only what is genuinely untested (`forwards cancel signal to callTool`, `forwards server config and name to loadServers`, the injected-failed-state and `disabled: true` cases, all of which need a faked `McpClient`). |
+| 🟠 `disconnect_succeeds_when_the_server_is_already_gone` used `sh -c "exec timeout -s KILL 1 …"` (Linux-only) and never proved the child was dead | fixed — `mcp_echo_server` takes `--exit-after-ms <n>`, so the test spawns our own binary with no shell; it now asserts a `call_tool` on `c1` fails before asserting `disconnect` still returns `"Successfully disconnected"`, pinning the swallow branch. |
+| 🟠 (folded in) `cleans_up_when_the_server_fails_to_start` asserted only `!error.is_empty()` | fixed — asserts the message names the failing command/server. |
+| 🟠 eager `description` can go stale when `max_duration` / `servers` is set directly | fixed as recommended — one doc line on `SleepConfig::max_duration` and `McpRouterConfig::servers` pointing at `sleep_description` / `McpRouterConfig::new` / `McpRouterTool::with_servers`. Shape unchanged (eager `String`), per the reviewer's own API conclusion. |

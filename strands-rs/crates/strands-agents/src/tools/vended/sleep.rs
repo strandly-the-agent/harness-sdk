@@ -39,7 +39,9 @@ pub struct SleepConfig {
     pub name: String,
     /// Model-facing description; [`SleepConfig::new`] derives it with [`sleep_description`].
     pub description: String,
-    /// Upper bound on the `duration` input, in seconds (TS default: 60).
+    /// Upper bound on the `duration` input, in seconds (TS default: 60). Setting this field
+    /// directly does not refresh `description`: re-derive it with [`sleep_description`], or build
+    /// the config with [`SleepConfig::new`].
     pub max_duration: f64,
     /// How the tool waits. Default [`TokioSleeper`]; swap it out in tests.
     pub sleeper: Arc<dyn Sleeper>,

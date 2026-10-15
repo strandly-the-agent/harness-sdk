@@ -42,7 +42,9 @@ pub struct McpRouterConfig {
     /// Tool description reported to the model; defaults to [`MCP_ROUTER_DESCRIPTION`] with the
     /// permitted server names appended.
     pub description: String,
-    /// Allowlisted MCP servers keyed by a developer-chosen name. Must not be empty.
+    /// Allowlisted MCP servers keyed by a developer-chosen name. Must not be empty. Setting this
+    /// field directly does not refresh the server names in `description`: build the config with
+    /// [`McpRouterConfig::new`], or the tool with [`McpRouterTool::with_servers`].
     pub servers: IndexMap<String, McpServerConfig>,
     /// Maximum simultaneous open connections.
     pub max_connections: usize,
