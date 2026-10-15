@@ -46,7 +46,9 @@ async fn a2a_agent_asks_a_bedrock_backed_served_agent_a_question() {
         .await
         .unwrap();
 
-    let remote = A2AAgent::builder(format!("http://{}", handle.local_addr())).build();
+    let remote = A2AAgent::builder(format!("http://{}", handle.local_addr()))
+        .continue_context(true)
+        .build();
     let card = remote.agent_card().await.unwrap().clone();
     assert_eq!(card.name, "Capital Expert");
 
@@ -59,5 +61,7 @@ async fn a2a_agent_asks_a_bedrock_backed_served_agent_a_question() {
         result.text()
     );
     assert!(remote.context_id().is_some(), "the server assigned a context");
+    remote.reset_context();
+    assert!(remote.context_id().is_none());
     handle.shutdown().await;
 }
