@@ -16,7 +16,7 @@ Once a [memory manager is attached to an agent](./overview), the manager decides
 
 Writing is opt-in, and comes in two modes:
 
-- **The `add_memory` tool** lets the agent decide what to save. Enable it on the manager with <Syntax py="add_tool_config=True" ts="addToolConfig: true" />.
+- **The `add_memory` tool** lets the agent decide what to save. Enable it on the manager with <Syntax py="add_tool_config=True" ts="addToolConfig: true" rs="MemoryManager::with_add_tool" />.
 - **Automatic extraction** captures memories from the conversation without tool call. Enable it on a writable store, where it runs every 5 turns by default using your agent's model.
 
 <Tabs>
@@ -50,6 +50,14 @@ agent = Agent(
 --8<-- "user-guide/sdk/memory/managing-memory.ts:turn_on_writes"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:turn_on_writes"
+```
+
+Enable the `bedrock-kb` feature for `BedrockKnowledgeBaseStore`.
+</Tab>
 </Tabs>
 
 ## Stores
@@ -75,6 +83,13 @@ agent = Agent(memory_manager=MemoryManager(stores=[personal, team]))
 --8<-- "user-guide/sdk/memory/managing-memory.ts:multi_store"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:multi_store"
+```
+
+</Tab>
 </Tabs>
 
 Each store carries its own identity and behavior:
@@ -83,7 +98,7 @@ Each store carries its own identity and behavior:
 |-------|---------|
 | `name` | Unique identifier, used to target the store from tools and the programmatic API. |
 | `description` | Human-readable summary, surfaced in the memory tool descriptions so the model knows what each store holds. |
-| <Syntax py="max_search_results" ts="maxSearchResults" /> | Default result cap per search when a caller does not pass one. The manager falls back to `3` if neither is set. |
+| <Syntax py="max_search_results" ts="maxSearchResults" rs="max_search_results" /> | Default result cap per search when a caller does not pass one. The manager falls back to `3` if neither is set. |
 | `writable` | Whether the store accepts writes. |
 
 The manager attaches each store's `name` to its results, so the model and your code can tell which store produced each entry and target follow-up queries.
@@ -121,11 +136,18 @@ agent = Agent(
 --8<-- "user-guide/sdk/memory/managing-memory.ts:search_tool_config"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:search_tool_config"
+```
+
+</Tab>
 </Tabs>
 
 `search_memory` lets the agent recall knowledge on demand. Rename or re-describe it through its config, or turn it off. When the manager owns multiple stores, their names and descriptions are folded into the tool description so the model can target a specific store by name or search them all.
 
-`add_memory` lets the agent write new memories. Enable it to allow writes to your writable stores, or pass a config to scope it to specific ones. By default it waits for writes so it can report failures back to the model. The fire-and-forget option returns as soon as writes are dispatched, so a slow backend never blocks the agent loop. This tool can only target stores implementing <Syntax py="add" ts="add" />.
+`add_memory` lets the agent write new memories. Enable it to allow writes to your writable stores, or pass a config to scope it to specific ones. By default it waits for writes so it can report failures back to the model. The fire-and-forget option returns as soon as writes are dispatched, so a slow backend never blocks the agent loop. This tool can only target stores implementing <Syntax py="add" ts="add" rs="add" />.
 
 ## Context Injection
 
@@ -163,10 +185,17 @@ agent = Agent(
 --8<-- "user-guide/sdk/memory/managing-memory.ts:injection_custom"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:injection_custom"
+```
+
+</Tab>
 </Tabs>
 
 - `trigger` accepts `'userTurn'` (the default, inject only on a fresh user ask), `'everyTurn'` (inject before every model call, for autonomous agents), or a predicate: a function that receives the injection context and returns whether to inject this call.
-- <Syntax py="max_entries" ts="maxEntries" /> caps how many entries are retrieved and injected.
+- <Syntax py="max_entries" ts="maxEntries" rs="max_entries" /> caps how many entries are retrieved and injected.
 - `query` overrides the adaptive default with your own query logic. Return an empty value to skip injection for this call.
 - `format` renders the retrieved entries. The default emits an escaped `<memory>` block; a custom formatter that emits markup owns its own escaping.
 
@@ -203,9 +232,17 @@ store = BedrockKnowledgeBaseStore(
 --8<-- "user-guide/sdk/memory/managing-memory.ts:extraction_defaults"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:extraction_defaults"
+```
+
+Rust takes the extractor explicitly: there is no aux-model fallback.
+</Tab>
 </Tabs>
 
-With defaults, extraction runs every 5 turns. For a store that implements only <Syntax py="add" ts="add" /> (like Bedrock Knowledge Bases), it uses a `ModelExtractor` to distill facts from the conversation; a store that implements <Syntax py="add_messages" ts="addMessages" /> extracts server-side instead, covered under [Custom Stores](#custom-stores).
+With defaults, extraction runs every 5 turns. For a store that implements only <Syntax py="add" ts="add" rs="add" /> (like Bedrock Knowledge Bases), it uses a `ModelExtractor` to distill facts from the conversation; a store that implements <Syntax py="add_messages" ts="addMessages" rs="add_messages" /> extracts server-side instead, covered under [Custom Stores](#custom-stores).
 
 ### Triggers and extractors
 
@@ -243,9 +280,16 @@ store = BedrockKnowledgeBaseStore(
 --8<-- "user-guide/sdk/memory/managing-memory.ts:extraction_custom"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:extraction_custom"
+```
+
+</Tab>
 </Tabs>
 
-The `ModelExtractor` distills messages into discrete facts with a model call. It uses <Syntax py="agent.aux_model" ts="agent.auxModel" /> by default. Pass a cheaper model to cut cost, or a system prompt to steer what information you want to save as memories. Some backends extract server-side instead: a store that implements the <Syntax py="add_messages" ts="addMessages" /> sink receives the raw message batch with no model call, so for those you omit the extractor.
+The `ModelExtractor` distills messages into discrete facts with a model call. It uses <Syntax py="agent.aux_model" ts="agent.auxModel" rs="ModelExtractor::new(model)" /> by default. Pass a cheaper model to cut cost, or a system prompt to steer what information you want to save as memories. Some backends extract server-side instead: a store that implements the <Syntax py="add_messages" ts="addMessages" rs="add_messages" /> sink receives the raw message batch with no model call, so for those you omit the extractor.
 
 Two triggers ship with the SDK. `InvocationTrigger` runs after every turn, `IntervalTrigger` runs every N turns. For a custom trigger, extend `ExtractionTrigger`. A trigger registers a hook on the agent and calls `fire()` when extraction should run. Tying it to agent state can let a tool decide the moment, rather than extracting on a turn cadence:
 
@@ -285,6 +329,16 @@ store = BedrockKnowledgeBaseStore(
 
 --8<-- "user-guide/sdk/memory/managing-memory.ts:custom_trigger"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+Rust takes the trigger as `ExtractionTrigger::Invocation` or
+`ExtractionTrigger::Interval { turns }` on the manager; custom trigger types are Python
+and TypeScript only.
 </Tab>
 </Tabs>
 
@@ -335,6 +389,13 @@ await agent.invoke('Summarize the conversation so far')
 // agent.shutdown() runs here as the scope exits, flushing pending memory
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:flush"
+```
+
+</Tab>
 </Tabs>
 
 This protects a graceful shutdown. A process killed without one (crash, `SIGKILL`, hard timeout) can still lose the last unsaved turn, since the flush never runs; a more frequent trigger narrows that window. Do not call `flush()` after every turn alongside a periodic trigger, since that forces a save each time and defeats the trigger's schedule.
@@ -368,6 +429,13 @@ await memory_manager.add(
 ```typescript
 --8<-- "user-guide/sdk/memory/managing-memory.ts:programmatic"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:programmatic"
+```
+
 </Tab>
 </Tabs>
 
@@ -418,12 +486,19 @@ A store implements `search`, and optionally `add`, `addMessages`, and `getTools`
 --8<-- "user-guide/sdk/memory/managing-memory.ts:custom_store"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:custom_store"
+```
+
+</Tab>
 </Tabs>
 
 A store exposes two write paths, and which ones it implements decides how it can be written to:
 
 - `add` takes a single piece of content. It backs the `add_memory` tool, the programmatic `add` method, and extraction that distills facts client-side with a `ModelExtractor`.
-- <Syntax py="add_messages" ts="addMessages" /> takes a batch of raw conversation messages. It backs **server-side extraction**: the manager hands the filtered message batch straight to this method with no client-side model call, so the backend does the distillation itself. The batch preserves the conversation's role structure.
+- <Syntax py="add_messages" ts="addMessages" rs="add_messages" /> takes a batch of raw conversation messages. It backs **server-side extraction**: the manager hands the filtered message batch straight to this method with no client-side model call, so the backend does the distillation itself. The batch preserves the conversation's role structure.
 
 A store can implement either path or both. The following store extracts server-side, delegating to `my_backend`, a stand-in for your managed backend's client:
 
@@ -459,6 +534,13 @@ class ServerSideStore:
 
 --8<-- "user-guide/sdk/memory/managing-memory.ts:server_side_store"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/memory/managing-memory.rs:server_side_store"
+```
+
 </Tab>
 </Tabs>
 
