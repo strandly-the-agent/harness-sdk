@@ -1,0 +1,194 @@
+---
+title: Rust Quickstart
+description: "Get an AI agent running in Rust in under 5 minutes. Install the SDK, pick a model provider, run the agent, then give it a tool."
+sidebar:
+  label: "Rust"
+tags: [quickstart]
+experimental: true
+---
+
+This quickstart takes you to a first running agent in Rust: install the SDK, pick a model
+provider, run the agent, then give it a tool. Everything past that (streaming, memory,
+observability, deployment) has its own guide, linked from [next steps](#next-steps).
+
+## Install the Strands Harness SDK
+
+Make sure you have Rust 1.85 or newer on the stable toolchain. See
+[rustup](https://rustup.rs/) if you need to install it. Then create a project:
+
+```bash
+cargo new my-agent
+cd my-agent
+```
+
+The Rust SDK is not published to crates.io yet, so depend on it from git. Add this to
+`Cargo.toml`:
+
+```toml
+[dependencies]
+strands-agents = { git = "https://github.com/strands-agents/harness-sdk" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```
+
+The agent loop is async, so you need a Tokio runtime; the `macros` and `rt-multi-thread`
+features give you `#[tokio::main]`.
+
+## Run your first agent
+
+Strands works with any major model provider. The model is one value you hand to the
+agent, and the rest of your code is the same no matter which provider is behind it. The
+tabs below cover the most common providers; pick the one you already have access to,
+then replace `src/main.rs` with the snippet from that tab:
+
+<Tabs>
+<Tab label="Amazon Bedrock">
+
+Amazon Bedrock is the default provider, using Claude Sonnet 4.6 in the `us-west-2`
+region, and ships in the default `bedrock` feature, so there is nothing extra to enable.
+
+```rust
+--8<-- "user-guide/sdk/quickstart/rust.rs:run_bedrock"
+```
+
+Give the SDK AWS credentials with permission to invoke the model, using one of:
+
+- **AWS credentials**: `aws configure`, or the `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  and optionally `AWS_SESSION_TOKEN` environment variables
+- **IAM roles**: on AWS services like EC2, ECS, or Lambda
+- **Bedrock API key**: pass a
+  [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-key-management.html)
+  explicitly with `BedrockModel::builder().api_key(key)`. Unlike the Python and TypeScript
+  SDKs, the Rust SDK does not read `AWS_BEARER_TOKEN_BEDROCK` from the environment.
+
+Enable access to the models you use in the Amazon Bedrock console, following the
+[AWS documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html).
+
+</Tab>
+<Tab label="Anthropic">
+
+The Anthropic provider is behind the non-default `anthropic` feature:
+
+```toml
+[dependencies.strands-agents]
+git = "https://github.com/strands-agents/harness-sdk"
+features = ["anthropic"]
+```
+
+```bash
+export ANTHROPIC_API_KEY=<your key>
+```
+
+```rust
+--8<-- "user-guide/sdk/quickstart/rust.rs:run_anthropic"
+```
+
+</Tab>
+<Tab label="OpenAI">
+
+The OpenAI provider is behind the non-default `openai` feature:
+
+```toml
+[dependencies.strands-agents]
+git = "https://github.com/strands-agents/harness-sdk"
+features = ["openai"]
+```
+
+```bash
+export OPENAI_API_KEY=<your key>
+```
+
+```rust
+--8<-- "user-guide/sdk/quickstart/rust.rs:run_openai"
+```
+
+</Tab>
+</Tabs>
+
+Run it:
+
+```bash
+cargo run
+```
+
+Nothing is printed as the model streams; `invoke` returns once the run finishes, and
+`println!("{result}")` prints the final text. To print tokens as they arrive, see
+[Streaming](../streaming/).
+
+**Don't see your provider?** The Rust SDK covers Amazon Bedrock, Anthropic and OpenAI
+today, plus any model behind a `Model` implementation you write. Google and local models
+through Ollama are available in the Python and TypeScript SDKs.
+[See all supported model providers](../model-providers/).
+
+## Add tools to your agent
+
+You now have a working agent loop, but the agent has nothing to act with. It can only
+answer from what the model already knows. Tools are what let an agent do things: read a
+file, call an API, run a command, or look something up.
+
+A tool is a function the model can decide to call. Tools come from two places: Strands
+ships [vended tools](../tools/vended-tools/) for common jobs like editing files,
+running shell commands, and making HTTP requests, and you can turn any function of your
+own into a tool with `#[tool]`. You'll use one of each.
+
+Add this above `main` in `src/main.rs`. It imports the `FileEditorTool` vended tool and
+defines a custom `letter_counter` tool. `#[tool]` reads the function signature for the
+input schema and the doc comments for the descriptions the model uses to decide when to
+call the tool and what to pass it:
+
+```rust
+--8<-- "user-guide/sdk/quickstart/rust.rs:custom_tool"
+```
+
+`#[tool]` generates a `LetterCounterTool` struct next to the function — the function
+name in pascal case, suffixed with `Tool`. Now replace the body of `main` with this.
+Both tools go on the builder, and the prompt asks for something that needs each of them:
+
+<Tabs>
+<Tab label="Amazon Bedrock">
+
+```rust
+--8<-- "user-guide/sdk/quickstart/rust.rs:tool_bedrock"
+```
+
+</Tab>
+<Tab label="Anthropic">
+
+```rust
+--8<-- "user-guide/sdk/quickstart/rust.rs:tool_anthropic"
+```
+
+</Tab>
+<Tab label="OpenAI">
+
+```rust
+--8<-- "user-guide/sdk/quickstart/rust.rs:tool_openai"
+```
+
+</Tab>
+</Tabs>
+
+Run it again. The model works out that counting letters is what `letter_counter` is for
+and that writing a file is what `fileEditor` is for, calls both, and you end up with an
+`answer.txt` in your working directory. You wrote one of those tools; the other came with
+the SDK.
+
+:::note
+`FunctionTool::builder` is the runtime equivalent of `#[tool]`, for tools whose schema you
+only know at runtime. See [Creating Custom Tools](../tools/custom-tools) for details.
+:::
+
+## Next Steps
+
+You have a running agent with a tool. From here:
+
+- [Vended Tools](../tools/vended-tools/) - file editing, shell, HTTP, and more, ready to drop into an agent
+- [MCP Tools](../tools/mcp-tools/) - connect to external tool servers
+- [Examples](https://github.com/strands-agents/harness-sdk/tree/main/strands-rs/crates/strands-agents/examples) - agents for many use cases
+- [Model Providers](../model-providers/) - every supported provider and its options
+- [Agent Loop](../agents/agent-loop.md) - how Strands agents work under the hood
+- [Context Management](../context-management/) - keep long conversations inside the model's context window
+- [Memory](../memory/overview/) - give the agent long-term memory across sessions with memory stores
+- [State](../agents/state.md) - how agents keep context across a conversation
+- [Streaming](../streaming/) - stream events to a UI with async streams
+- [Rust SDK Repository](https://github.com/strands-agents/harness-sdk/tree/main/strands-rs) - explore the source and contribute
+- [Operating Agents in Production](../deploy/operating-agents-in-production.md) - take agents from development to production at scale
