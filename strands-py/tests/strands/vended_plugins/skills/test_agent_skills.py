@@ -20,6 +20,7 @@ from strands.hooks.events import BeforeInvocationEvent
 from strands.hooks.registry import HookRegistry
 from strands.plugins.registry import _PluginRegistry
 from strands.sandbox.not_a_sandbox_local_environment import NotASandboxLocalEnvironment
+from strands.tools.decorator import tool
 from strands.types.tools import ToolContext
 from strands.vended_plugins.skills.agent_skills import AgentSkills
 from strands.vended_plugins.skills.skill import Skill
@@ -1047,11 +1048,30 @@ class TestDynamicLoading:
         await plugin._on_before_invocation(BeforeInvocationEvent(agent=agent))
         return agent
 
-    def test_load_skills_tool_registered_only_when_enabled(self):
-        assert [registered.tool_name for registered in AgentSkills(skills=[]).tools] == ["skills"]
-        assert [registered.tool_name for registered in AgentSkills(skills=[], dynamic_loading=True).tools] == [
+    def test_single_skills_tool_whose_schema_follows_the_mode(self):
+        default_tools = AgentSkills(skills=[]).tools
+        dynamic_tools = AgentSkills(skills=[], dynamic_loading=True).tools
+        assert [registered.tool_name for registered in default_tools] == ["skills"]
+        assert [registered.tool_name for registered in dynamic_tools] == ["skills"]
+        default_schema = default_tools[0].tool_spec["inputSchema"]["json"]
+        dynamic_schema = dynamic_tools[0].tool_spec["inputSchema"]["json"]
+        assert sorted(default_schema["properties"]) == ["skill_name"]
+        assert default_schema["required"] == ["skill_name"]
+        assert sorted(dynamic_schema["properties"]) == ["action", "skill_name", "source"]
+        assert dynamic_schema["required"] == ["action"]
+        assert dynamic_schema["properties"]["action"]["enum"] == ["activate", "load", "unload"]
+
+    def test_subclass_tools_survive_variant_filtering(self):
+        class Extended(AgentSkills):
+            @tool
+            def extra(self) -> str:
+                """An extra tool."""
+                return "extra"
+
+        assert sorted(registered.tool_name for registered in Extended(skills=[]).tools) == ["extra", "skills"]
+        assert sorted(registered.tool_name for registered in Extended(skills=[], dynamic_loading=True).tools) == [
+            "extra",
             "skills",
-            "load_skills",
         ]
 
     @pytest.mark.asyncio
@@ -1074,7 +1094,7 @@ class TestDynamicLoading:
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
 
-        result = await plugin.load_skills(source=str(tmp_path), tool_context=_mock_tool_context(agent))
+        result = await plugin.manage_skills(action="load", source=str(tmp_path), tool_context=_mock_tool_context(agent))
 
         assert result.startswith(f"Loaded 2 skill(s) from '{tmp_path}': alpha, beta.")
         assert sorted(skill.name for skill in plugin.get_available_skills(agent)) == ["alpha", "beta"]
@@ -1083,9 +1103,13 @@ class TestDynamicLoading:
         assert agent.system_prompt.count("<available_skills>") == 1
         assert agent.state.get("agent_skills")["dynamic_sources"] == [str(tmp_path)]
         assert plugin.get_dynamic_sources(agent) == [str(tmp_path)]
-        # Activation works through the regular skills tool.
-        activated = await plugin.skills(skill_name="alpha", tool_context=_mock_tool_context(agent))
+        # Activation works through the same tool.
+        activated = await plugin.manage_skills(
+            action="activate", skill_name="alpha", tool_context=_mock_tool_context(agent)
+        )
         assert "Instructions for alpha" in activated
+        missing = await plugin.manage_skills(action="activate", tool_context=_mock_tool_context(agent))
+        assert missing.startswith("Error: skill_name is required")
 
     @pytest.mark.asyncio
     async def test_load_from_skill_md_path(self, tmp_path):
@@ -1106,8 +1130,8 @@ class TestDynamicLoading:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with patch(f"{self._SKILL_MODULE}.urllib.request.urlopen", return_value=mock_response) as urlopen:
-            result = await plugin.load_skills(
-                source="https://example.com/SKILL.md", tool_context=_mock_tool_context(agent)
+            result = await plugin.manage_skills(
+                action="load", source="https://example.com/SKILL.md", tool_context=_mock_tool_context(agent)
             )
 
         assert urlopen.call_args[0][0].full_url == "https://example.com/SKILL.md"
@@ -1125,8 +1149,8 @@ class TestDynamicLoading:
             patch(f"{self._SKILL_MODULE}.urllib.request.urlopen", side_effect=error),
             caplog.at_level(logging.WARNING),
         ):
-            result = await plugin.load_skills(
-                source="https://example.com/SKILL.md", tool_context=_mock_tool_context(agent)
+            result = await plugin.manage_skills(
+                action="load", source="https://example.com/SKILL.md", tool_context=_mock_tool_context(agent)
             )
         assert result.startswith("No skills found at 'https://example.com/SKILL.md'.")
         assert "failed to load skill from URL" in caplog.text
@@ -1147,7 +1171,9 @@ class TestDynamicLoading:
     async def test_load_missing_path_reports_nothing_loaded(self, tmp_path):
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        result = await plugin.load_skills(source=str(tmp_path / "nope"), tool_context=_mock_tool_context(agent))
+        result = await plugin.manage_skills(
+            action="load", source=str(tmp_path / "nope"), tool_context=_mock_tool_context(agent)
+        )
         assert result.startswith(f"No skills found at '{tmp_path / 'nope'}'.")
         assert plugin.get_dynamic_sources(agent) == []
         assert "dynamic_sources" not in agent.state.get("agent_skills")
@@ -1156,8 +1182,8 @@ class TestDynamicLoading:
     async def test_empty_source_is_an_error(self):
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        result = await plugin.load_skills(source="  ", tool_context=_mock_tool_context(agent))
-        assert result.startswith("Error: source is required")
+        result = await plugin.manage_skills(action="load", source="  ", tool_context=_mock_tool_context(agent))
+        assert result == "Error: action 'load' requires a source (a sandbox path or an https:// URL)."
 
     @pytest.mark.asyncio
     async def test_unload_removes_skills_and_updates_prompt_and_state(self, tmp_path):
@@ -1166,7 +1192,9 @@ class TestDynamicLoading:
         agent = await self._ready_agent(plugin)
         await plugin.load_skills_for(agent, tmp_path)
 
-        result = await plugin.load_skills(source=str(tmp_path), action="unload", tool_context=_mock_tool_context(agent))
+        result = await plugin.manage_skills(
+            action="unload", source=str(tmp_path), tool_context=_mock_tool_context(agent)
+        )
 
         assert result == f"Unloaded 1 skill(s) from '{tmp_path}': alpha."
         assert plugin.get_available_skills(agent) == []
@@ -1179,7 +1207,9 @@ class TestDynamicLoading:
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
         await plugin.load_skills_for(agent, tmp_path)
-        result = await plugin.load_skills(source="/elsewhere", action="unload", tool_context=_mock_tool_context(agent))
+        result = await plugin.manage_skills(
+            action="unload", source="/elsewhere", tool_context=_mock_tool_context(agent)
+        )
         assert result == f"No skills are loaded from '/elsewhere'. Currently loaded sources: {tmp_path}."
 
     @pytest.mark.asyncio
@@ -1189,12 +1219,12 @@ class TestDynamicLoading:
         plugin = AgentSkills(skills=[_make_skill(name="alpha", description="Configured alpha")], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
 
-        result = await plugin.load_skills(source=str(tmp_path), tool_context=_mock_tool_context(agent))
+        result = await plugin.manage_skills(action="load", source=str(tmp_path), tool_context=_mock_tool_context(agent))
 
         # The tool tells the model which names were shadowed rather than claiming they were added.
         assert result == (
             f"Loaded 1 skill(s) from '{tmp_path}': beta. Skipped (name already taken by a configured skill): "
-            "alpha. Activate one with the skills tool."
+            'alpha. Activate one with action="activate".'
         )
         assert {skill.name: skill.description for skill in plugin.get_available_skills(agent)} == {
             "alpha": "Configured alpha",
@@ -1254,7 +1284,7 @@ class TestDynamicLoading:
         (source / "alpha").rmdir()
         source.rmdir()
 
-        result = await plugin.load_skills(source=str(source), tool_context=_mock_tool_context(agent))
+        result = await plugin.manage_skills(action="load", source=str(source), tool_context=_mock_tool_context(agent))
 
         assert result.startswith(f"No skills found at '{source}'.")
         assert result.endswith("Removed previously loaded: alpha.")

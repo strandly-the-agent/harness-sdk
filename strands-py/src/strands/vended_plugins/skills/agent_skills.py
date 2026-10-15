@@ -3,9 +3,9 @@
 This module provides the AgentSkills class that extends the Plugin base class
 to add Agent Skills support. The plugin registers a tool for activating
 skills, and injects skill metadata into the system prompt. With
-``dynamic_loading=True`` it also registers a ``load_skills`` tool so the agent
-can load and unload skills at runtime from paths in its sandbox or ``https://``
-URLs.
+``dynamic_loading=True`` the tool also takes ``load`` / ``unload`` actions so
+the agent can add skills at runtime from paths in its sandbox or ``https://``
+URLs and remove them again.
 
 Filesystem skill sources are loaded through the agent's sandbox (host or
 container) at ``init_agent`` time, not at construction, so each agent sees the
@@ -42,7 +42,6 @@ _DEFAULT_STATE_KEY = "agent_skills"
 _RESOURCE_DIRS = ("scripts", "references", "assets")
 _DEFAULT_MAX_RESOURCE_FILES = 20
 _MAX_RESOURCE_DEPTH = 3
-_LOAD_SKILLS_TOOL_NAME = "load_skills"
 
 SkillSource: TypeAlias = str | Path | Skill
 """A single skill source: path string, Path object, or Skill instance."""
@@ -84,8 +83,8 @@ class AgentSkills(Plugin):
     1. A ``skills`` tool that allows the agent to activate skills on demand
     2. System prompt injection of available skill metadata before each invocation
     3. Session persistence of active skill state via ``agent.state``
-    4. Optionally (``dynamic_loading=True``), a ``load_skills`` tool that lets the agent
-       load and unload skills at runtime from its sandbox or ``https://`` URLs
+    4. Optionally (``dynamic_loading=True``), ``load`` / ``unload`` actions on that tool so
+       the agent can add skills at runtime from its sandbox or ``https://`` URLs
 
     Skills can be provided as filesystem paths (to individual skill directories or
     parent directories containing multiple skills), ``https://`` URLs pointing to
@@ -139,8 +138,9 @@ class AgentSkills(Plugin):
             state_key: Key used to store plugin state in ``agent.state``.
             max_resource_files: Maximum number of resource files to list in skill responses.
             strict: If True, raise on skill validation issues. If False (default), warn and load anyway.
-            dynamic_loading: If True, register a ``load_skills`` tool so the agent can load skills at
-                runtime from a path in its sandbox or an ``https://`` URL, and unload them again.
+            dynamic_loading: If True, the ``skills`` tool becomes action-based (``activate`` /
+                ``load`` / ``unload``) so the agent can add skills at runtime from a path in its
+                sandbox or an ``https://`` URL, and remove them again.
                 Loaded sources are recorded in ``agent.state`` and restored on the next run over the
                 same session. Skills configured here take precedence over loaded ones with the same
                 name. Only enable this when the sandbox contents and reachable URLs are trusted:
@@ -165,8 +165,12 @@ class AgentSkills(Plugin):
         )
         self._dynamic_locks: weakref.WeakKeyDictionary[Agent, asyncio.Lock] = weakref.WeakKeyDictionary()
         super().__init__()
-        if not dynamic_loading:
-            self._tools = [registered for registered in self._tools if registered.tool_name != _LOAD_SKILLS_TOOL_NAME]
+        # Both variants publish the tool name ``skills``; keep the one matching the mode. ``__name__``
+        # is the defining method's name (functools.update_wrapper copies it onto the decorated tool).
+        unwanted_method = "skills" if dynamic_loading else "manage_skills"
+        self._tools = [
+            registered for registered in self._tools if getattr(registered, "__name__", None) != unwanted_method
+        ]
 
     async def init_agent(self, agent: Agent) -> None:
         """Initialize the plugin with an agent instance.
@@ -195,7 +199,10 @@ class AgentSkills(Plugin):
             skill_name: Name of the skill to activate.
             tool_context: Injected by the framework. Not user-facing.
         """
-        agent = tool_context.agent
+        return await self._activate_skill(tool_context.agent, skill_name)
+
+    async def _activate_skill(self, agent: Agent, skill_name: str) -> str:
+        """Return a skill's formatted instructions, or an error listing the available skills."""
         skills = self._skills_for(agent)
 
         if not skill_name:
@@ -211,32 +218,39 @@ class AgentSkills(Plugin):
         self._track_activated_skill(agent, skill_name)
         return await self._format_skill_response(found, agent.sandbox)
 
-    @tool(context=True)
-    async def load_skills(
+    @tool(name="skills", context=True)
+    async def manage_skills(
         self,
-        source: str,
-        action: Literal["load", "unload"] = "load",
+        action: Literal["activate", "load", "unload"],
+        skill_name: str = "",
+        source: str = "",
         *,
         tool_context: ToolContext,
     ) -> str:
-        """Load or unload skills at runtime.
+        """Activate a skill, or load and unload skills at runtime.
 
-        Use this to add skills from a source you discovered, for example a skills/ folder
-        inside a repository you cloned. Loaded skills appear in the available_skills section
-        of your system prompt and are activated with the skills tool like any other. Loading
-        the same source again refreshes it; unloading a source removes the skills it added.
+        Use "activate" to load the complete instructions for a skill listed in the
+        available_skills section of your system prompt. Use "load" to add skills from a
+        source you discovered, for example a skills/ folder inside a repository you cloned;
+        they then appear in available_skills and are activated the same way. Loading the same
+        source again refreshes it. Use "unload" with the same source to remove them.
 
         Args:
-            source: A path in your sandbox to a skill directory (containing SKILL.md), a parent
-                directory of skill directories, or a SKILL.md file; or an https:// URL to raw
-                SKILL.md content.
-            action: Whether to load skills from the source or unload the ones it added. Defaults to "load".
+            action: "activate" to get a skill's instructions, "load" to add skills from source,
+                "unload" to remove the skills previously loaded from source.
+            skill_name: Name of the skill to activate (required for "activate").
+            source: Required for "load" and "unload". A path in your sandbox to a skill directory
+                (containing SKILL.md), a parent directory of skill directories, or a SKILL.md file;
+                or an https:// URL to raw SKILL.md content.
             tool_context: Injected by the framework. Not user-facing.
         """
         agent = tool_context.agent
+        if action == "activate":
+            return await self._activate_skill(agent, skill_name)
+
         source = source.strip()
         if not source:
-            return "Error: source is required (a sandbox path or an https:// URL)."
+            return f"Error: action '{action}' requires a source (a sandbox path or an https:// URL)."
 
         if action == "unload":
             removed = await self.unload_skills_for(agent, source)
@@ -263,13 +277,13 @@ class AgentSkills(Plugin):
         if shadowed:
             parts.append(f"Skipped (name already taken by a configured skill): {', '.join(shadowed)}.")
         if added:
-            parts.append("Activate one with the skills tool.")
+            parts.append('Activate one with action="activate".')
         return " ".join(parts)
 
     async def load_skills_for(self, agent: Agent, source: str | Path) -> list[Skill]:
         """Load skills from a source into an agent's skill set at runtime.
 
-        Programmatic counterpart to the ``load_skills`` tool. Filesystem paths resolve through
+        Programmatic counterpart to the ``skills`` tool's ``load`` action. Filesystem paths resolve through
         the agent's sandbox; ``https://`` URLs are fetched. Loading a source again replaces what
         it contributed before (a source that no longer loads anything is dropped). Configured
         skills take precedence over loaded ones with the same name. The source is recorded in
@@ -300,12 +314,12 @@ class AgentSkills(Plugin):
     async def unload_skills_for(self, agent: Agent, source: str | Path) -> list[Skill]:
         """Remove the skills previously loaded from a source.
 
-        Programmatic counterpart to the ``load_skills`` tool's ``unload`` action. Unloading a
+        Programmatic counterpart to the ``skills`` tool's ``unload`` action. Unloading a
         source that is not loaded is a no-op.
 
         Args:
             agent: The agent to unload the skills from.
-            source: The source previously passed to :meth:`load_skills_for` or the ``load_skills`` tool.
+            source: The source previously passed to :meth:`load_skills_for` or the tool's ``load`` action.
 
         Returns:
             The skills that were removed.

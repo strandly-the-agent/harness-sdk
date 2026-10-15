@@ -222,7 +222,7 @@ print(f"Activated skills: {activated}")
 
 ### Letting the agent load skills itself
 
-With `dynamic_loading=True` (Python only), the plugin also registers a `load_skills` tool. The agent can then add skills it discovers at runtime — a `skills/` folder inside a repository it cloned, or an `https://` URL to a raw `SKILL.md` — and unload them again. Filesystem paths resolve through the agent's sandbox. Loaded skills show up in `<available_skills>` on the next model call and are activated with the regular `skills` tool. Skills configured on the plugin always take precedence over loaded ones with the same name, and the loaded sources are recorded in agent state so they are restored on the next run over the same session.
+With `dynamic_loading=True` (Python only), the `skills` tool becomes action-based: `action="activate"` works as before, and `action="load"` / `action="unload"` take a `source`. The agent can then add skills it discovers at runtime — a `skills/` folder inside a repository it cloned, or an `https://` URL to a raw `SKILL.md` — and remove them again. Filesystem paths resolve through the agent's sandbox. Loaded skills show up in `<available_skills>` on the next model call and are activated like any other. Skills configured on the plugin always take precedence over loaded ones with the same name, and the loaded sources are recorded in agent state so they are restored on the next run over the same session.
 
 ```python
 from strands import Agent, AgentSkills
@@ -307,7 +307,7 @@ The `AgentSkills` constructor accepts the following parameters.
 | `state_key` | `str` | `"agent_skills"` | Key for storing plugin state in `agent.state`. |
 | `max_resource_files` | `int` | `20` | Maximum number of resource files listed in skill activation responses. |
 | `strict` | `bool` | `False` | If `True`, raise exceptions on validation issues instead of logging warnings. |
-| `dynamic_loading` | `bool` | `False` | Keyword-only. If `True`, register a `load_skills` tool so the agent can load and unload skills at runtime (Python only). |
+| `dynamic_loading` | `bool` | `False` | Keyword-only. If `True`, the `skills` tool gains `load` / `unload` actions so the agent can add and remove skills at runtime (Python only). |
 
 </Tab>
 <Tab label="TypeScript">
