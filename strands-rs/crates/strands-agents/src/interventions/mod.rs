@@ -4,7 +4,9 @@
 //! guide, transform — or, at the tool-call gate only, [`Confirm`], which raises an interrupt and
 //! asks a human. The [`InterventionRegistry`] is a [`Plugin`] that wires handlers into the hook
 //! registry at [`hook_order::INTERVENTION_INPUT`] / [`hook_order::INTERVENTION_OUTPUT`], so
-//! interventions run last among before-hooks and first among after-hooks.
+//! interventions run last among before-hooks and first among after-hooks. A handler that needs
+//! hooks of its own gets the agent through [`InterventionHandler::observe_agent`] (TS's
+//! `LifecycleObserver`), which the registry calls once at initialization.
 
 pub mod vended;
 
@@ -127,6 +129,12 @@ pub trait InterventionHandler: Send + Sync {
     /// Unique handler name; also the interrupt name a [`Confirm`] raises under.
     fn name(&self) -> &str;
 
+    /// Receive the agent at registration time, to subscribe to hooks of the handler's choosing
+    /// (TS `LifecycleObserver.observeAgent`). Runs once, during `Agent::initialize`.
+    async fn observe_agent(&self, _agent: &Agent) -> Result<()> {
+        Ok(())
+    }
+
     /// Gate the whole invocation.
     async fn before_invocation(
         &self,
@@ -184,6 +192,10 @@ impl Plugin for InterventionRegistry {
     }
 
     async fn init_agent(&self, agent: &Agent) -> Result<()> {
+        for handler in &self.handlers {
+            handler.observe_agent(agent).await?;
+        }
+
         let handlers = self.handlers.clone();
         agent
             .hooks()
