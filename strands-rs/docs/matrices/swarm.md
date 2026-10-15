@@ -98,6 +98,16 @@ Landed in increment 2 (the execution loop):
 | Swarm: hook-gated node still emits result + after events | `a_hook_gated_node_still_emits_its_result_and_after_events` |
 | — (same-instance resume, `pending_interrupt_state`) | `resumes_an_interrupted_run_on_the_same_instance_without_a_session` |
 
+Hook and stream fidelity on the branches TS exercises implicitly (no single TS `it`; the behaviour
+is in `swarm.ts:411-420` and `496-523`):
+
+| Behaviour | Rust test |
+| --- | --- |
+| a failing node-event hook still reports on `AfterNodeCallEvent` | `a_failing_node_event_hook_still_reports_on_the_after_node_event` |
+| an unroutable resume fails before the after-invocation hook | `an_unroutable_resume_fails_before_the_after_invocation_hook` |
+| a failing after-invocation hook replaces the run's own error | `a_failing_after_invocation_hook_replaces_the_runs_own_error` |
+| hooks run for every event a node forwards | `dispatches_hooks_for_every_event_a_node_forwards` |
+
 Not ported: `swarm.tracer.test.ts` — `telemetry::Tracer` has no multi-agent or node spans yet, so
 there is nothing to assert against (see **Remaining** below).
 
@@ -109,6 +119,13 @@ there is nothing to assert against (see **Remaining** below).
 - **`SessionManager` as a `MultiAgentPlugin`.** Not ported yet, so the resume tests install
   equivalent save/restore hooks (`Session` in the test module) over `take_snapshot` /
   `load_snapshot`, mirroring `SessionManager`'s restore-once-per-orchestrator behaviour.
+- **Hook-registry interrupt accumulation.** TS `invokeCallbacks` (`hooks/registry.ts:86-116`) runs
+  *every* callback, collects each `InterruptError`, rejects duplicate interrupt names, and throws
+  one `InterruptError` with all of them; Rust `HookRegistry::invoke_callbacks`
+  (`hooks/registry.rs:259-264`) short-circuits on the first `Err`. With two gating
+  `BeforeNodeCallEvent` hooks the swarm therefore records only the first interrupt, and the second
+  gate re-interrupts on every resume. The fix belongs in the shared registry (it affects
+  agent-level hooks too), not in `swarm.rs` — raised for the core owner.
 - **`sessionManager` constructor argument** (and its "provided twice" validation): waiting on the
   plugin above; today a session plugin is passed through `.plugin(..)`.
 
@@ -129,6 +146,11 @@ there is nothing to assert against (see **Remaining** below).
   `{"not": {}}` for TS's `z.never()`.
 - **`warnOnce` is a plain `tracing::warn!`** for the unbounded-execution warning; the crate has
   no warn-once helper.
+- **An `Err` from a hook is TS's `throw`.** A hook that fails while a node's events are being
+  forwarded still gets `AfterNodeCallEvent` with `error` set before the run unwinds, and a failing
+  `AfterMultiAgentInvocationEvent` hook replaces the run's own error, as a throw from TS's
+  `finally` does. Resume routing runs before that guarded section, so an unroutable resume fails
+  without firing the after-invocation hook.
 - **The loop runs in a spawned task** writing to an `mpsc` channel, as `Agent::stream_with` does,
   instead of TS's async generator. Dropping the stream ends the invocation (the send fails with
   `Error::Cancelled`), and `invoke_with` is `stream_with` drained to the terminal result event.

@@ -315,22 +315,25 @@ impl Swarm {
         )
         .await?;
 
-        let outcome = self.execute(&input, &run, tx).await;
+        // Routing runs before the guarded section, as in TS, so a resume that cannot be routed
+        // never reaches the after-invocation hook.
+        let routed = self.route(&input, &run)?;
 
-        // TS emits this from a `finally`, so it runs on the error path too.
-        let after = self
-            .emit(
-                tx,
-                AfterMultiAgentInvocationEvent {
-                    orchestrator: run.orchestrator.clone(),
-                    state: run.state.clone(),
-                    invocation_state: run.invocation_state.clone(),
-                },
-                MultiAgentStreamEvent::AfterMultiAgentInvocation,
-            )
-            .await;
+        let outcome = self.execute(&input, routed, &run, tx).await;
+
+        // TS emits this from a `finally`, so it runs on the error path too — and a hook that fails
+        // there replaces the in-flight error, as a JS `finally` does.
+        self.emit(
+            tx,
+            AfterMultiAgentInvocationEvent {
+                orchestrator: run.orchestrator.clone(),
+                state: run.state.clone(),
+                invocation_state: run.invocation_state.clone(),
+            },
+            MultiAgentStreamEvent::AfterMultiAgentInvocation,
+        )
+        .await?;
         let result = outcome?;
-        after?;
 
         self.emit(
             tx,
@@ -343,41 +346,40 @@ impl Swarm {
         .await
     }
 
-    /// The step loop: routing, handoffs, limits and the aggregate result.
-    async fn execute(
+    /// The node this invocation starts from, its input, and the handoff it is resuming, if any.
+    ///
+    /// Resume input routes straight to the interrupted node, bypassing handoff-derived resume. On a
+    /// fresh run the input is stashed for replay if a hook gate pauses before the node runs.
+    fn route(
         &self,
         input: &MultiAgentInput,
         run: &Invocation,
+    ) -> Result<(Arc<dyn Node>, MultiAgentInput, Option<HandoffResult>)> {
+        if let Some(responses) = input.resume_responses() {
+            let grouped = run
+                .state
+                .with(|state| group_interrupt_responses_by_node(responses, state))?;
+            let (node, next_input) = self.route_resume(grouped, &run.state)?;
+            return Ok((node, next_input, None));
+        }
+
+        run.state
+            .with_mut(|state| state.pending_input = Some(input.clone()));
+        match self.find_resume_node(&run.state) {
+            Some((node, handoff)) => Ok((node, input.clone(), Some(handoff))),
+            None => Ok((self.start().clone(), input.clone(), None)),
+        }
+    }
+
+    /// The step loop: handoffs, limits and the aggregate result.
+    async fn execute(
+        &self,
+        input: &MultiAgentInput,
+        routed: (Arc<dyn Node>, MultiAgentInput, Option<HandoffResult>),
+        run: &Invocation,
         tx: &NodeSink,
     ) -> Result<MultiAgentResult> {
-        // Resume input routes straight to the interrupted node, bypassing handoff-derived resume.
-        // On a fresh run, stash the input for replay if a hook gate pauses before the node runs.
-        let responses: Option<Vec<InterruptResponseContent>> = input.resume_responses().map(<[_]>::to_vec);
-        let routed = match &responses {
-            Some(responses) => {
-                let grouped = run
-                    .state
-                    .with(|state| group_interrupt_responses_by_node(responses, state))?;
-                Some(self.route_resume(grouped, &run.state)?)
-            }
-            None => {
-                run.state
-                    .with_mut(|state| state.pending_input = Some(input.clone()));
-                None
-            }
-        };
-
-        let mut handoff = None;
-        let (mut node, mut next_input) = match routed {
-            Some(routed) => routed,
-            None => match self.find_resume_node(&run.state) {
-                Some((node, last_handoff)) => {
-                    handoff = Some(last_handoff);
-                    (node, input.clone())
-                }
-                None => (self.start().clone(), input.clone()),
-            },
-        };
+        let (mut node, mut next_input, mut handoff) = routed;
 
         let mut repetitive_handoff = None;
         let mut history: Vec<String> = Vec::new();
@@ -549,6 +551,33 @@ impl Swarm {
             return Ok(result);
         }
 
+        // TS wraps the node run in a try/catch that reports the error on `AfterNodeCallEvent`
+        // before rethrowing, so observers always see the node terminate.
+        match self.drive_node(node, input, handoff, run, tx).await {
+            Ok(result) => Ok(result),
+            Err(error) => {
+                self.emit(
+                    tx,
+                    run.after_node(node.id(), Some(error.to_string())),
+                    MultiAgentStreamEvent::AfterNodeCall,
+                )
+                .await?;
+                Err(error)
+            }
+        }
+    }
+
+    /// Runs the node itself: its timeout, its event stream, and its result (TS `_streamNode`'s
+    /// `try` block).
+    async fn drive_node(
+        &self,
+        node: &Arc<dyn Node>,
+        input: MultiAgentInput,
+        handoff: Option<&HandoffResult>,
+        run: &Invocation,
+        tx: &NodeSink,
+    ) -> Result<NodeResult> {
+        let node_id = node.id().to_owned();
         let node_timeout = node.timeout().or(self.0.config.node_timeout);
         let options = NodeInputOptions::default()
             .with_structured_output_schema(self.handoff_schema(&node_id))
@@ -597,18 +626,11 @@ impl Swarm {
         }
 
         if node_expired {
-            let error = Error::other(format!(
+            return Err(Error::other(format!(
                 "node_timeout=<{}>, node_id=<{node_id}>, swarm_id=<{}> | node exceeded wall-clock budget",
                 node_timeout.unwrap_or_default().as_millis(),
                 self.0.id
-            ));
-            self.emit(
-                tx,
-                run.after_node(&node_id, Some(error.to_string())),
-                MultiAgentStreamEvent::AfterNodeCall,
-            )
-            .await?;
-            return Err(error);
+            )));
         }
 
         // `run_node` records the result on the node; the orchestrator owns the aggregate list.
@@ -729,17 +751,23 @@ impl Swarm {
     }
 
     /// Forwards a node's event, dispatching it to the swarm's hooks first (TS `_emit`s every
-    /// `HookableEvent` a node yields).
+    /// `HookableEvent` a node yields, which is every multi-agent event).
     async fn forward(&self, tx: &NodeSink, event: MultiAgentStreamEvent) -> Result<()> {
+        use MultiAgentStreamEvent as Event;
         match event {
-            MultiAgentStreamEvent::NodeStreamUpdate(event) => {
-                self.emit(tx, event, MultiAgentStreamEvent::NodeStreamUpdate)
-                    .await
+            Event::NodeStreamUpdate(event) => self.emit(tx, event, Event::NodeStreamUpdate).await,
+            Event::NodeResult(event) => self.emit(tx, event, Event::NodeResult).await,
+            Event::NodeCancel(event) => self.emit(tx, event, Event::NodeCancel).await,
+            Event::BeforeNodeCall(event) => self.emit(tx, event, Event::BeforeNodeCall).await,
+            Event::AfterNodeCall(event) => self.emit(tx, event, Event::AfterNodeCall).await,
+            Event::MultiAgentHandoff(event) => self.emit(tx, event, Event::MultiAgentHandoff).await,
+            Event::MultiAgentResult(event) => self.emit(tx, event, Event::MultiAgentResult).await,
+            Event::BeforeMultiAgentInvocation(event) => {
+                self.emit(tx, event, Event::BeforeMultiAgentInvocation).await
             }
-            MultiAgentStreamEvent::NodeResult(event) => {
-                self.emit(tx, event, MultiAgentStreamEvent::NodeResult).await
+            Event::AfterMultiAgentInvocation(event) => {
+                self.emit(tx, event, Event::AfterMultiAgentInvocation).await
             }
-            event => self.send(tx, event).await,
         }
     }
 
@@ -1132,7 +1160,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::agent::Agent;
-    use crate::multiagent::AgentNodeOptions;
+    use crate::multiagent::{AgentNodeOptions, NodeConfig, NodeResultUpdate, NodeType};
     use crate::testing::{MockMessageModel, MockResponse};
     use crate::types::{Message, Role, StopReason, ToolUseBlock};
 
@@ -1317,6 +1345,46 @@ mod tests {
             ),
             StopReason::ToolUse,
         )
+    }
+
+    /// Node that writes an event the built-in nodes never emit, to prove the swarm dispatches its
+    /// hooks for everything a node forwards.
+    struct CancelEmittingNode {
+        id: String,
+        config: NodeConfig,
+    }
+
+    #[async_trait]
+    impl Node for CancelEmittingNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn node_type(&self) -> NodeType {
+            NodeType::from("custom")
+        }
+
+        fn config(&self) -> &NodeConfig {
+            &self.config
+        }
+
+        async fn handle(
+            &self,
+            _input: MultiAgentInput,
+            state: &MultiAgentStateHandle,
+            options: &NodeInputOptions,
+            events: &NodeSink,
+        ) -> Result<NodeResultUpdate> {
+            let _ = events
+                .send(Ok(MultiAgentStreamEvent::NodeCancel(NodeCancelEvent {
+                    node_id: self.id.clone(),
+                    state: state.clone(),
+                    message: "from the node".to_owned(),
+                    invocation_state: options.invocation_state.clone(),
+                })))
+                .await;
+            Ok(NodeResultUpdate::default().with_content(vec![ContentBlock::text("done")]))
+        }
     }
 
     fn node_ids(result: &MultiAgentResult) -> Vec<&str> {
@@ -2605,6 +2673,106 @@ mod tests {
         assert!(position("beforeNodeCallEvent") < position("nodeResultEvent"));
         assert!(position("nodeResultEvent") < position("afterNodeCallEvent"));
         assert!(position("afterNodeCallEvent").is_some(), "{events:?}");
+    }
+
+    // ---- hook and stream fidelity (`swarm.ts` `_stream` / `_streamNode` branches) ------------
+
+    #[tokio::test]
+    async fn a_failing_node_event_hook_still_reports_on_the_after_node_event() {
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        let recorded = errors.clone();
+        let swarm = Swarm::builder()
+            .node(final_agent("a", "done"))
+            .hook::<NodeResultEvent, _>(|_event| Err(Error::other("hook exploded")))
+            .hook::<AfterNodeCallEvent, _>(move |event| {
+                recorded.lock().expect("not poisoned").push(event.error.clone());
+                Ok(())
+            })
+            .build()
+            .expect("swarm builds");
+
+        let error = swarm.invoke("go").await.expect_err("hook error propagates");
+
+        assert_eq!(error.to_string(), "hook exploded");
+        assert_eq!(
+            *errors.lock().expect("not poisoned"),
+            [Some("hook exploded".to_owned())]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unroutable_resume_fails_before_the_after_invocation_hook() {
+        let fired = Arc::new(Mutex::new(Vec::new()));
+        let before = fired.clone();
+        let after = fired.clone();
+        let swarm = Swarm::builder()
+            .node(final_agent("a", "done"))
+            .hook::<BeforeMultiAgentInvocationEvent, _>(move |_event| {
+                before.lock().expect("not poisoned").push("before");
+                Ok(())
+            })
+            .hook::<AfterMultiAgentInvocationEvent, _>(move |_event| {
+                after.lock().expect("not poisoned").push("after");
+                Ok(())
+            })
+            .build()
+            .expect("swarm builds");
+
+        let error = swarm
+            .invoke(vec![InterruptResponseContent::new("missing", json!(true))])
+            .await
+            .expect_err("nothing to resume");
+
+        assert_eq!(
+            error.to_string(),
+            "interrupt_id=<missing> | no node found with matching interrupt"
+        );
+        // TS routes before its `try`, so the run never reaches the after-invocation hook.
+        assert_eq!(*fired.lock().expect("not poisoned"), ["before"]);
+    }
+
+    #[tokio::test]
+    async fn a_failing_after_invocation_hook_replaces_the_runs_own_error() {
+        let swarm = Swarm::builder()
+            .node(handoff_agent("a", json!({ "agentId": "b", "message": "to b" })))
+            .node(final_agent("b", "done"))
+            .max_steps(1)
+            .hook::<AfterMultiAgentInvocationEvent, _>(|_event| Err(Error::other("save failed")))
+            .build()
+            .expect("swarm builds");
+
+        let error = swarm.invoke("start").await.expect_err("hook error wins");
+
+        assert_eq!(error.to_string(), "save failed");
+    }
+
+    #[tokio::test]
+    async fn dispatches_hooks_for_every_event_a_node_forwards() {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let recorded = messages.clone();
+        let node: Arc<dyn Node> = Arc::new(CancelEmittingNode {
+            id: "custom".to_owned(),
+            config: NodeConfig::default(),
+        });
+        let swarm = Swarm::builder()
+            .node(node)
+            .hook::<NodeCancelEvent, _>(move |event| {
+                recorded
+                    .lock()
+                    .expect("not poisoned")
+                    .push((event.node_id.clone(), event.message.clone()));
+                Ok(())
+            })
+            .build()
+            .expect("swarm builds");
+
+        let result = swarm.invoke("go").await.expect("swarm runs");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(
+            *messages.lock().expect("not poisoned"),
+            [("custom".to_owned(), "from the node".to_owned())]
+        );
     }
 
     #[test]
