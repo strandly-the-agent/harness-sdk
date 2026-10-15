@@ -3,6 +3,7 @@
 //! Mirrors `strands-ts/src/a2a/server.ts` and `express-server.ts`, with the request handling
 //! `@a2a-js/sdk`'s `DefaultRequestHandler` performs implemented in-tree over [`TaskStore`].
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -13,21 +14,22 @@ use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use futures::{Stream, StreamExt};
+use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 use super::executor::{A2AExecutor, EventBus, RequestContext};
-use super::task_store::TaskStore;
+use super::task_store::{TaskStore, DEFAULT_MAX_TASKS};
 use super::types::{
     A2AEventData, AgentCard, AgentSkill, JsonRpcError, JsonRpcRequest, JsonRpcResponse, Message,
     MessageSendParams, Part, Role, Task, TaskIdParams, TaskQueryParams, TaskState, TaskStatus,
     TaskStatusUpdateEvent, AGENT_CARD_PATH, METHOD_MESSAGE_SEND, METHOD_MESSAGE_STREAM, METHOD_TASKS_CANCEL,
-    METHOD_TASKS_GET, PREV_AGENT_CARD_PATH,
+    METHOD_TASKS_GET, METHOD_TASKS_RESUBSCRIBE, PREV_AGENT_CARD_PATH,
 };
 use crate::agent::Agent;
 use crate::{Error, Result};
@@ -79,6 +81,8 @@ impl A2AServer {
             port: 0,
             listener: None,
             source: None,
+            store: None,
+            max_tasks: DEFAULT_MAX_TASKS,
         }
     }
 
@@ -94,22 +98,29 @@ impl A2AServer {
 
     /// The routes of this server, for mounting into an existing `axum` application.
     ///
-    /// Nested under the path of the configured `http_url` unless the server serves at root.
+    /// Nested under the path of the configured `http_url` unless the server serves at root; the
+    /// agent card is served at the root well-known paths either way, so a client can discover it.
     pub fn router(&self) -> Router {
         let state = Arc::new(ServerState {
             card: self.card.clone(),
             executor: Arc::clone(&self.executor),
             store: Arc::clone(&self.store),
+            runs: Mutex::new(HashMap::new()),
         });
         let routes = Router::new()
             .route("/", post(json_rpc))
             .route(AGENT_CARD_PATH, get(agent_card))
             .route(PREV_AGENT_CARD_PATH, get(agent_card))
-            .with_state(state);
+            .with_state(Arc::clone(&state));
         if self.mount_path.is_empty() {
             routes
         } else {
-            Router::new().nest(&self.mount_path, routes)
+            // The card stays at the root well-known paths too, where a client looks for it first.
+            let well_known = Router::new()
+                .route(AGENT_CARD_PATH, get(agent_card))
+                .route(PREV_AGENT_CARD_PATH, get(agent_card))
+                .with_state(state);
+            Router::new().nest(&self.mount_path, routes).merge(well_known)
         }
     }
 
@@ -160,6 +171,8 @@ pub struct A2AServerBuilder {
     port: u16,
     listener: Option<TcpListener>,
     source: Option<Source>,
+    store: Option<Arc<TaskStore>>,
+    max_tasks: usize,
 }
 
 enum Source {
@@ -249,6 +262,22 @@ impl A2AServerBuilder {
         self
     }
 
+    /// Serve through `store`, so a host can share or inspect the tasks (default: a fresh store).
+    ///
+    /// Takes precedence over [`A2AServerBuilder::max_tasks`].
+    #[must_use]
+    pub fn task_store(mut self, store: Arc<TaskStore>) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// Cap on tasks the default store retains (default: [`DEFAULT_MAX_TASKS`]).
+    #[must_use]
+    pub fn max_tasks(mut self, max_tasks: usize) -> Self {
+        self.max_tasks = max_tasks;
+        self
+    }
+
     /// Build the server.
     ///
     /// Fails when no agent or executor was configured, or when a shared agent cannot be served
@@ -279,7 +308,9 @@ impl A2AServerBuilder {
         Ok(A2AServer {
             card,
             executor: Arc::new(executor),
-            store: Arc::new(TaskStore::new()),
+            store: self
+                .store
+                .unwrap_or_else(|| Arc::new(TaskStore::new().with_max_tasks(self.max_tasks))),
             mount_path: if self.serve_at_root {
                 String::new()
             } else {
@@ -323,7 +354,17 @@ struct ServerState {
     card: AgentCard,
     executor: Arc<A2AExecutor>,
     store: Arc<TaskStore>,
+    runs: Mutex<HashMap<String, Run>>,
 }
+
+/// A task executing right now: the bus its executor publishes to, and who is listening.
+struct Run {
+    bus: EventBus,
+    subscribers: Subscribers,
+}
+
+/// The senders feeding every live subscriber of one run (its SSE response, any resubscription).
+type Subscribers = Arc<Mutex<Vec<mpsc::UnboundedSender<A2AEventData>>>>;
 
 /// The path component of `http_url`, without a trailing slash, as a mount path.
 fn mount_path(http_url: &str) -> String {
@@ -380,34 +421,33 @@ async fn json_rpc(State(state): State<Arc<ServerState>>, body: Bytes) -> Respons
             };
             respond(id, outcome)
         }
+        METHOD_TASKS_RESUBSCRIBE => match decode(params) {
+            Ok(params) => resubscribe(&state, id, params),
+            Err(error) => failure(id, error),
+        },
         method => failure(id, JsonRpcError::method_not_found(method)),
     }
 }
 
 /// Run the agent to completion and answer with the task it produced.
+///
+/// An executor failure is published as a `failed` task and returned as a successful result, as
+/// `DefaultRequestHandler.sendMessage` does; only request-level problems are JSON-RPC errors.
 async fn send(
-    state: &ServerState,
+    state: &Arc<ServerState>,
     params: MessageSendParams,
 ) -> std::result::Result<JsonValue, JsonRpcError> {
     let context = request_context(state, params.message)?;
+    let mut events = start_run(state, &context);
 
-    let (bus, mut events) = EventBus::channel();
-    let outcome = state.executor.execute(&context, &bus).await;
-    drop(bus);
-
+    // The run's events reach the store before they reach us, so the task is final once it ends.
     let mut answer = None;
-    while let Ok(event) = events.try_recv() {
-        if let A2AEventData::Message(message) = &event {
-            answer = Some(message.clone());
+    while let Some(event) = events.next().await {
+        if let A2AEventData::Message(message) = event {
+            answer = Some(message);
         }
-        state.store.apply(&event);
     }
 
-    if let Err(error) = outcome {
-        let error = to_json_rpc(error);
-        state.store.apply(&failed(&context, &error.message));
-        return Err(error);
-    }
     if let Some(message) = answer {
         return encode(&message);
     }
@@ -424,26 +464,77 @@ fn stream(state: Arc<ServerState>, id: Option<JsonValue>, params: MessageSendPar
         Ok(context) => context,
         Err(error) => return failure(id, error),
     };
+    sse(id, start_run(&state, &context))
+}
 
-    let (bus, events) = EventBus::channel();
-    let executing = Arc::clone(&state);
+/// Replay the stored task, then follow its live run when one is still going.
+///
+/// Mirrors `DefaultRequestHandler.resubscribe`: an unknown task is `-32001`, a terminal one is
+/// answered with its snapshot alone.
+fn resubscribe(state: &Arc<ServerState>, id: Option<JsonValue>, params: TaskIdParams) -> Response {
+    let Some(task) = state.store.get(&params.id) else {
+        return failure(id, JsonRpcError::task_not_found(&params.id));
+    };
+    let live = state
+        .runs
+        .lock()
+        .get(&params.id)
+        .map(|run| subscribe(&run.subscribers));
+    if live.is_none() && !task.status.state.is_terminal() {
+        tracing::warn!(task_id = %params.id, "a2a resubscribe: the task has no live run");
+    }
+
+    let snapshot = futures::stream::once(async move { A2AEventData::Task(task) });
+    match live {
+        Some(live) => sse(id, snapshot.chain(live)),
+        None => sse(id, snapshot),
+    }
+}
+
+/// Execute `context` in the background, returning a subscription to its events.
+///
+/// The events are folded into the task store by a task of their own, so a client that disconnects
+/// mid-run cannot leave the task stuck `working`.
+fn start_run(state: &Arc<ServerState>, context: &RequestContext) -> UnboundedReceiverStream<A2AEventData> {
+    let (bus, mut events) = EventBus::channel();
+    let subscribers: Subscribers = Arc::new(Mutex::new(Vec::new()));
+    let subscription = subscribe(&subscribers);
+    state.runs.lock().insert(
+        context.task_id.clone(),
+        Run {
+            bus: bus.clone(),
+            subscribers: Arc::clone(&subscribers),
+        },
+    );
+
+    let executing = Arc::clone(state);
     let running = context.clone();
     tokio::spawn(async move {
         if let Err(error) = executing.executor.execute(&running, &bus).await {
+            tracing::warn!(task_id = %running.task_id, %error, "an a2a execution failed");
             bus.publish(failed(&running, &to_json_rpc(error).message));
         }
+        // Drop the registration, and with it this bus clone, so the fold below ends.
+        executing.runs.lock().remove(&running.task_id);
     });
 
-    let sse = UnboundedReceiverStream::new(events).map(move |event| {
-        state.store.apply(&event);
-        let response = encode(&event)
-            .map(|result| JsonRpcResponse::success(id.clone(), result))
-            .unwrap_or_else(|error| JsonRpcResponse::error(id.clone(), error));
-        Ok::<Event, Infallible>(
-            Event::default().data(serde_json::to_string(&response).unwrap_or_else(|_| "{}".to_owned())),
-        )
+    let folding = Arc::clone(state);
+    tokio::spawn(async move {
+        while let Some(event) = events.recv().await {
+            folding.store.apply(&event);
+            subscribers
+                .lock()
+                .retain(|subscriber| subscriber.send(event.clone()).is_ok());
+        }
     });
-    Sse::new(sse).into_response()
+    subscription
+}
+
+/// Add one listener to a run's events.
+fn subscribe(subscribers: &Subscribers) -> UnboundedReceiverStream<A2AEventData> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    subscribers.lock().push(tx);
+    UnboundedReceiverStream::new(rx)
 }
 
 /// The stored task, with its history truncated to the requested length.
@@ -458,9 +549,9 @@ fn get_task(state: &ServerState, params: TaskQueryParams) -> std::result::Result
     encode(&task)
 }
 
-/// Route a cancellation to the executor, after checking the task exists and is not final.
+/// Cancel a task: through the executor while it runs, in the store once it no longer does.
 async fn cancel_task(
-    state: &ServerState,
+    state: &Arc<ServerState>,
     params: TaskIdParams,
 ) -> std::result::Result<JsonValue, JsonRpcError> {
     let task = state
@@ -471,18 +562,29 @@ async fn cancel_task(
         return Err(JsonRpcError::task_not_cancelable(&params.id));
     }
 
-    let (bus, mut events) = EventBus::channel();
-    let outcome = state.executor.cancel_task(&params.id, &bus).await;
-    drop(bus);
-    while let Ok(event) = events.try_recv() {
-        state.store.apply(&event);
+    let running = state.runs.lock().get(&params.id).map(|run| run.bus.clone());
+    match running {
+        Some(bus) => {
+            tracing::debug!(task_id = %params.id, "delegating an a2a cancellation to the executor");
+            state
+                .executor
+                .cancel_task(&params.id, &bus)
+                .await
+                .map_err(to_json_rpc)?;
+        }
+        None => {
+            tracing::debug!(task_id = %params.id, "canceling a stored a2a task");
+            state.store.apply(&canceled(&task));
+        }
     }
-    outcome.map_err(to_json_rpc)?;
 
     let task = state
         .store
         .get(&params.id)
         .ok_or_else(|| JsonRpcError::task_not_found(&params.id))?;
+    if task.status.state != TaskState::Canceled {
+        return Err(JsonRpcError::task_not_cancelable(&params.id));
+    }
     encode(&task)
 }
 
@@ -548,13 +650,38 @@ fn request_context(
 fn failed(context: &RequestContext, message: &str) -> A2AEventData {
     let mut status = TaskStatus::new(TaskState::Failed);
     status.message = Some(Message::new(Role::Agent, vec![Part::text(message)]));
-    A2AEventData::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: context.task_id.clone(),
-        context_id: context.context_id.clone(),
-        status,
-        final_: true,
-        metadata: None,
-    })
+    A2AEventData::StatusUpdate(
+        TaskStatusUpdateEvent::new(context.task_id.clone(), context.context_id.clone(), status)
+            .with_final(true),
+    )
+}
+
+/// A terminal `canceled` status update for a task no longer running (the SDK's wording).
+fn canceled(task: &Task) -> A2AEventData {
+    let mut status = TaskStatus::new(TaskState::Canceled);
+    status.message = Some(Message::new(
+        Role::Agent,
+        vec![Part::text("Task cancellation requested by user.")],
+    ));
+    A2AEventData::StatusUpdate(
+        TaskStatusUpdateEvent::new(task.id.clone(), task.context_id.clone(), status).with_final(true),
+    )
+}
+
+/// One JSON-RPC response per event, as an SSE body.
+fn sse<S>(id: Option<JsonValue>, events: S) -> Response
+where
+    S: Stream<Item = A2AEventData> + Send + 'static,
+{
+    let body = events.map(move |event| {
+        let response = encode(&event)
+            .map(|result| JsonRpcResponse::success(id.clone(), result))
+            .unwrap_or_else(|error| JsonRpcResponse::error(id.clone(), error));
+        Ok::<Event, Infallible>(
+            Event::default().data(serde_json::to_string(&response).unwrap_or_else(|_| "{}".to_owned())),
+        )
+    });
+    Sse::new(body).into_response()
 }
 
 /// Keep only the last `length` history messages.
@@ -597,7 +724,7 @@ fn failure(id: Option<JsonValue>, error: JsonRpcError) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::a2a::types::{error_codes, PROTOCOL_VERSION};
+    use crate::a2a::types::{error_codes, METHOD_TASKS_RESUBSCRIBE, PROTOCOL_VERSION};
     use crate::testing::{MockMessageModel, MockResponse};
     use crate::types::{ContentBlock, Message as StrandsMessage, Role as StrandsRole};
     use serde_json::json;
@@ -819,6 +946,7 @@ mod tests {
             card: AgentCard::new("Test Agent", "", ""),
             executor: Arc::new(A2AExecutor::with_factory(|_| agent_saying("Hello"))),
             store,
+            runs: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1052,9 +1180,23 @@ mod tests {
             .await
             .unwrap();
         let at_root = reqwest::get(format!("{base}{AGENT_CARD_PATH}")).await.unwrap();
+        let rpc_at_root = reqwest::Client::new()
+            .post(&base)
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap();
 
         assert!(mounted.status().is_success());
-        assert_eq!(at_root.status(), reqwest::StatusCode::NOT_FOUND);
+        assert!(
+            at_root.status().is_success(),
+            "the card is discoverable at the root"
+        );
+        assert_eq!(
+            rpc_at_root.status(),
+            reqwest::StatusCode::NOT_FOUND,
+            "only the card is served outside the mount path"
+        );
         handle.shutdown().await;
     }
 
@@ -1093,5 +1235,158 @@ mod tests {
         assert!(reqwest::get(format!("http://{addr}{AGENT_CARD_PATH}"))
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn a_client_disconnecting_mid_stream_still_lets_the_task_finish() {
+        let server = A2AServer::builder("Test Agent")
+            .executor(A2AExecutor::with_factory(|_| agent_saying("Hello")))
+            .build()
+            .unwrap();
+        server.task_store().save(Task::new(
+            "task-4",
+            "ctx-4",
+            TaskStatus::new(TaskState::Submitted),
+        ));
+        let store = Arc::clone(server.task_store());
+        let handle = server.serve().await.unwrap();
+        let base = format!("http://{}", handle.local_addr());
+
+        let mut message = Message::user("hi");
+        message.task_id = Some("task-4".to_owned());
+        let response = reqwest::Client::new()
+            .post(&base)
+            .json(&json!({
+                "jsonrpc": "2.0",
+                "id": "stream-2",
+                "method": METHOD_MESSAGE_STREAM,
+                "params": { "message": message },
+            }))
+            .send()
+            .await
+            .unwrap();
+        // Hang up without reading the body.
+        drop(response);
+
+        let finished = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if store
+                    .get("task-4")
+                    .is_some_and(|task| task.status.state.is_terminal())
+                {
+                    return store.get("task-4").unwrap();
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the task converged to a terminal state");
+
+        assert_eq!(finished.status.state, TaskState::Completed);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn message_send_returns_a_failed_agent_run_as_a_successful_result() {
+        let server = A2AServer::builder("Failing")
+            .executor(A2AExecutor::with_factory(|_| {
+                let model = MockMessageModel::shared(vec![MockResponse::Error(Error::other("boom"))]);
+                Agent::builder().model(model).build().unwrap()
+            }))
+            .build()
+            .unwrap();
+        let handle = server.serve().await.unwrap();
+        let base = format!("http://{}", handle.local_addr());
+
+        let response = call(
+            &base,
+            METHOD_MESSAGE_SEND,
+            json!({ "message": Message::user("hi") }),
+        )
+        .await;
+
+        assert!(response["error"].is_null(), "{response}");
+        let task: Task = serde_json::from_value(response["result"].clone()).unwrap();
+        assert_eq!(task.status.state, TaskState::Failed);
+        assert!(task.status.message.unwrap().text().contains("boom"));
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn tasks_cancel_cancels_a_stored_task_that_is_not_running() {
+        let server = server();
+        server.task_store().save(Task::new(
+            "task-5",
+            "ctx-5",
+            TaskStatus::new(TaskState::Submitted),
+        ));
+        let handle = server.serve().await.unwrap();
+        let base = format!("http://{}", handle.local_addr());
+
+        let response = call(&base, METHOD_TASKS_CANCEL, json!({ "id": "task-5" })).await;
+
+        assert!(response["error"].is_null(), "{response}");
+        let task: Task = serde_json::from_value(response["result"].clone()).unwrap();
+        assert_eq!(task.status.state, TaskState::Canceled);
+        assert!(task.status.message.unwrap().text().contains("cancellation"));
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn tasks_resubscribe_replays_a_finished_task_and_reports_an_unknown_one() {
+        let handle = server().serve().await.unwrap();
+        let base = format!("http://{}", handle.local_addr());
+
+        let sent = call(
+            &base,
+            METHOD_MESSAGE_SEND,
+            json!({ "message": Message::user("hi") }),
+        )
+        .await;
+        let id = sent["result"]["id"].as_str().unwrap().to_owned();
+
+        let body = reqwest::Client::new()
+            .post(&base)
+            .json(&json!({
+                "jsonrpc": "2.0",
+                "id": "resub-1",
+                "method": METHOD_TASKS_RESUBSCRIBE,
+                "params": { "id": id },
+            }))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        let events: Vec<JsonValue> = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .map(|data| serde_json::from_str(data).unwrap())
+            .collect();
+
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0]["result"]["kind"], "task");
+        assert_eq!(events[0]["result"]["status"]["state"], "completed");
+
+        let unknown = call(&base, METHOD_TASKS_RESUBSCRIBE, json!({ "id": "nope" })).await;
+        assert_eq!(unknown["error"]["code"], error_codes::TASK_NOT_FOUND);
+        handle.shutdown().await;
+    }
+
+    #[test]
+    fn the_task_store_can_be_shared_with_the_host() {
+        let store = Arc::new(TaskStore::new().with_max_tasks(5));
+        let server = A2AServer::builder("Shared store")
+            .executor(A2AExecutor::with_factory(|_| agent_saying("Hello")))
+            .task_store(Arc::clone(&store))
+            .build()
+            .unwrap();
+        store.save(Task::new(
+            "task-6",
+            "ctx-6",
+            TaskStatus::new(TaskState::Submitted),
+        ));
+        assert!(server.task_store().get("task-6").is_some());
     }
 }

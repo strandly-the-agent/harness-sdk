@@ -30,6 +30,9 @@ pub const METHOD_TASKS_GET: &str = "tasks/get";
 /// `tasks/cancel`: cancel a running task.
 pub const METHOD_TASKS_CANCEL: &str = "tasks/cancel";
 
+/// `tasks/resubscribe`: follow a task's events again.
+pub const METHOD_TASKS_RESUBSCRIBE: &str = "tasks/resubscribe";
+
 /// Free-form JSON metadata carried by most protocol types.
 pub type Metadata = serde_json::Map<String, JsonValue>;
 
@@ -365,6 +368,68 @@ pub struct TaskArtifactUpdateEvent {
     pub metadata: Option<Metadata>,
 }
 
+impl TaskStatusUpdateEvent {
+    /// A non-final status update for `task_id`.
+    pub fn new(task_id: impl Into<String>, context_id: impl Into<String>, status: TaskStatus) -> Self {
+        Self {
+            task_id: task_id.into(),
+            context_id: context_id.into(),
+            status,
+            final_: false,
+            metadata: None,
+        }
+    }
+
+    /// Whether this is the last event of the stream.
+    #[must_use]
+    pub fn with_final(mut self, final_: bool) -> Self {
+        self.final_ = final_;
+        self
+    }
+
+    /// Attach event metadata.
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: Metadata) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+}
+
+impl TaskArtifactUpdateEvent {
+    /// An artifact update for `task_id`, neither appending to nor closing the artifact.
+    pub fn new(task_id: impl Into<String>, context_id: impl Into<String>, artifact: Artifact) -> Self {
+        Self {
+            task_id: task_id.into(),
+            context_id: context_id.into(),
+            artifact,
+            append: None,
+            last_chunk: None,
+            metadata: None,
+        }
+    }
+
+    /// Whether to append to the artifact of the same id rather than replace it.
+    #[must_use]
+    pub fn with_append(mut self, append: bool) -> Self {
+        self.append = Some(append);
+        self
+    }
+
+    /// Whether this is the artifact's last chunk.
+    #[must_use]
+    pub fn with_last_chunk(mut self, last_chunk: bool) -> Self {
+        self.last_chunk = Some(last_chunk);
+        self
+    }
+
+    /// Attach event metadata.
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: Metadata) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+}
+
 /// Parameters of `message/send` and `message/stream`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -405,6 +470,29 @@ pub struct MessageSendConfiguration {
     /// How many history messages to include on the returned task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_length: Option<u32>,
+}
+
+impl MessageSendConfiguration {
+    /// The MIME types the caller accepts.
+    #[must_use]
+    pub fn with_accepted_output_modes(mut self, modes: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.accepted_output_modes = Some(modes.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Whether to wait for the task to finish before responding.
+    #[must_use]
+    pub fn with_blocking(mut self, blocking: bool) -> Self {
+        self.blocking = Some(blocking);
+        self
+    }
+
+    /// How many history messages to include on the returned task.
+    #[must_use]
+    pub fn with_history_length(mut self, history_length: u32) -> Self {
+        self.history_length = Some(history_length);
+        self
+    }
 }
 
 /// Parameters of `tasks/get`.
@@ -580,6 +668,16 @@ pub struct AgentProvider {
     pub organization: String,
     /// Organization URL.
     pub url: String,
+}
+
+impl AgentProvider {
+    /// The organization running an agent, and its URL.
+    pub fn new(organization: impl Into<String>, url: impl Into<String>) -> Self {
+        Self {
+            organization: organization.into(),
+            url: url.into(),
+        }
+    }
 }
 
 /// An event a `message/stream` subscription delivers, discriminated by `kind`.

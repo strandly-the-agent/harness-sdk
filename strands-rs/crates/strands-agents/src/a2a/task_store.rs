@@ -1,37 +1,68 @@
 //! In-memory task store: folds the events an [`A2AExecutor`](super::A2AExecutor) publishes into
 //! the [`Task`] a `message/send`, `tasks/get` or `tasks/cancel` call answers with.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use parking_lot::Mutex;
 
 use super::types::{A2AEventData, Artifact, Message, Task};
+
+/// Default cap on retained tasks.
+pub const DEFAULT_MAX_TASKS: usize = 1000;
 
 /// The tasks a server has served, keyed by task id, kept in memory for the server's lifetime.
 ///
 /// Mirrors `@a2a-js/sdk`'s `InMemoryTaskStore` plus the event aggregation its
 /// `DefaultRequestHandler` performs: [`TaskStore::apply`] folds one executor event into the
 /// stored task so the final snapshot carries the terminal status, the message history and every
-/// artifact.
-#[derive(Debug, Default)]
+/// artifact. Bounded: beyond [`TaskStore::with_max_tasks`] the least recently updated task is
+/// evicted, so a long-lived server cannot grow without limit.
+#[derive(Debug)]
 pub struct TaskStore {
-    tasks: Mutex<HashMap<String, Task>>,
+    tasks: Mutex<Tasks>,
+    max_tasks: usize,
+}
+
+/// The stored tasks plus their update order, least recently updated first.
+#[derive(Debug, Default)]
+struct Tasks {
+    by_id: HashMap<String, Task>,
+    recent: VecDeque<String>,
+}
+
+impl Default for TaskStore {
+    fn default() -> Self {
+        Self {
+            tasks: Mutex::new(Tasks::default()),
+            max_tasks: DEFAULT_MAX_TASKS,
+        }
+    }
 }
 
 impl TaskStore {
-    /// An empty store.
+    /// An empty store retaining up to [`DEFAULT_MAX_TASKS`] tasks.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Cap on retained tasks; the least recently updated is evicted beyond it. Zero means one.
+    #[must_use]
+    pub fn with_max_tasks(mut self, max_tasks: usize) -> Self {
+        self.max_tasks = max_tasks.max(1);
+        self
+    }
+
     /// The task under `id`, if this store has seen it.
     pub fn get(&self, id: &str) -> Option<Task> {
-        self.tasks.lock().get(id).cloned()
+        self.tasks.lock().by_id.get(id).cloned()
     }
 
     /// Insert `task`, replacing any task of the same id.
     pub fn save(&self, task: Task) {
-        self.tasks.lock().insert(task.id.clone(), task);
+        let mut tasks = self.tasks.lock();
+        tasks.touch(&task.id);
+        tasks.by_id.insert(task.id.clone(), task);
+        tasks.evict(self.max_tasks);
     }
 
     /// Append `message` to the history of the task under `id`, returning it as it now stands.
@@ -39,7 +70,8 @@ impl TaskStore {
     /// `None` when no such task is stored; a message already in the history is not appended twice.
     pub fn append_history(&self, id: &str, message: Message) -> Option<Task> {
         let mut tasks = self.tasks.lock();
-        let task = tasks.get_mut(id)?;
+        tasks.touch(id);
+        let task = tasks.by_id.get_mut(id)?;
         push_history(task, message);
         Some(task.clone())
     }
@@ -50,10 +82,12 @@ impl TaskStore {
     /// unknown task is dropped.
     pub fn apply(&self, event: &A2AEventData) -> Option<Task> {
         let mut tasks = self.tasks.lock();
-        match event {
+        let applied = match event {
             A2AEventData::Message(_) => None,
             A2AEventData::Task(incoming) => {
+                tasks.touch(&incoming.id);
                 let task = tasks
+                    .by_id
                     .entry(incoming.id.clone())
                     .or_insert_with(|| incoming.clone());
                 task.status = incoming.status.clone();
@@ -66,7 +100,8 @@ impl TaskStore {
                 Some(task.clone())
             }
             A2AEventData::StatusUpdate(update) => {
-                let task = tasks.get_mut(&update.task_id)?;
+                tasks.touch(&update.task_id);
+                let task = tasks.by_id.get_mut(&update.task_id)?;
                 task.status = update.status.clone();
                 if let Some(message) = update.status.message.clone() {
                     push_history(task, message);
@@ -74,9 +109,37 @@ impl TaskStore {
                 Some(task.clone())
             }
             A2AEventData::ArtifactUpdate(update) => {
-                let task = tasks.get_mut(&update.task_id)?;
+                tasks.touch(&update.task_id);
+                let task = tasks.by_id.get_mut(&update.task_id)?;
                 upsert_artifact(task, &update.artifact, update.append.unwrap_or(false));
                 Some(task.clone())
+            }
+        };
+        tasks.evict(self.max_tasks);
+        applied
+    }
+}
+
+impl Tasks {
+    /// Mark `id` as the most recently updated task.
+    fn touch(&mut self, id: &str) {
+        if self.recent.back().is_some_and(|last| last == id) {
+            return;
+        }
+        if let Some(index) = self.recent.iter().position(|seen| seen == id) {
+            self.recent.remove(index);
+        }
+        self.recent.push_back(id.to_owned());
+    }
+
+    /// Drop the least recently updated tasks beyond `max_tasks`.
+    fn evict(&mut self, max_tasks: usize) {
+        while self.by_id.len() > max_tasks {
+            let Some(id) = self.recent.pop_front() else {
+                break;
+            };
+            if self.by_id.remove(&id).is_some() {
+                tracing::debug!(task_id = %id, "evicted the least recently updated A2A task");
             }
         }
     }
@@ -223,6 +286,36 @@ mod tests {
         }));
         assert!(applied.is_none());
         assert!(store.get("nope").is_none());
+    }
+
+    #[test]
+    fn append_history_adds_to_an_existing_task_only() {
+        let store = TaskStore::new();
+        store.save(task());
+
+        let appended = store.append_history("task-1", Message::user("next")).unwrap();
+
+        assert_eq!(appended.history.unwrap()[0].text(), "next");
+        assert!(store.append_history("missing", Message::user("next")).is_none());
+    }
+
+    #[test]
+    fn evicts_the_least_recently_updated_task_beyond_max_tasks() {
+        let store = TaskStore::new().with_max_tasks(2);
+        for id in ["a", "b", "c"] {
+            store.save(Task::new(id, "ctx-1", TaskStatus::new(TaskState::Submitted)));
+        }
+
+        assert!(store.get("a").is_none());
+        assert!(store.get("b").is_some());
+        assert!(store.get("c").is_some());
+
+        // Updating "b" makes "c" the least recently updated, so the next task evicts it.
+        store.append_history("b", Message::user("still here"));
+        store.save(Task::new("d", "ctx-1", TaskStatus::new(TaskState::Submitted)));
+
+        assert!(store.get("c").is_none());
+        assert!(store.get("b").is_some());
     }
 
     #[test]
