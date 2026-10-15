@@ -37,16 +37,20 @@ Landed in increment 1 (`src/multiagent/swarm.rs` unit tests):
 | throws on an empty nodes list | `rejects_an_empty_node_list` |
 | throws on a duplicate agent id | `rejects_duplicate_agent_ids` |
 | throws when `start` is unknown | `rejects_an_unknown_entry_point` |
+| accepts a custom id | `accepts_a_custom_id` |
+| accepts `AgentNodeOptions` with per-node config | `accepts_agent_node_options_with_per_node_config` |
+| defaults the limits, repetitive detection off | `defaults_the_execution_limits_and_disables_repetitive_handoff_detection` |
 | uses an explicit `start` | `resolves_an_explicit_entry_point` |
 | throws when `maxSteps`/`timeout`/`nodeTimeout` < 1 | `rejects_limits_below_one` |
 | repetitive-handoff pair must both be 0 or positive | `rejects_a_half_configured_repetitive_handoff_pair` |
 | min unique agents cannot exceed the window | `rejects_a_uniqueness_threshold_above_the_window` |
 | min unique agents cannot exceed the node count | `rejects_a_uniqueness_threshold_above_the_node_count` |
-| handoff schema lists the other agents + descriptions | `builds_a_handoff_schema_listing_the_other_nodes_with_descriptions` |
-| single-node swarm gets a no-targets schema | `builds_a_handoff_schema_with_no_targets_for_a_single_node_swarm` |
-| detects a repetitive handoff loop | `detects_a_repetitive_handoff_loop_inside_the_window` |
-| no detection when the window has enough unique nodes | `allows_enough_unique_nodes_in_the_window` |
-| throws when the step limit is hit with a pending handoff | `errors_when_the_step_limit_is_reached_with_a_pending_handoff` |
+| — (schema construction unit test, Rust-only) | `builds_a_handoff_schema_listing_the_other_nodes_with_descriptions` |
+| — (schema construction unit test, Rust-only) | `builds_a_handoff_schema_with_no_targets_for_a_single_node_swarm` |
+| — (`check_repetitive_handoff` unit test, Rust-only) | `detects_a_repetitive_handoff_loop_inside_the_window` |
+| — (`check_repetitive_handoff` unit test, Rust-only) | `allows_enough_unique_nodes_in_the_window` |
+| — (empty nodes list reported before a bad config) | `reports_an_empty_node_list_before_an_invalid_config` |
+| — (`check_steps` unit test, Rust-only) | `errors_when_the_step_limit_is_reached_with_a_pending_handoff` |
 | — (serde parity, Rust-only) | `serializes_a_handoff_result_like_ts` |
 
 Landed in increment 2 (the execution loop):
@@ -64,6 +68,7 @@ Landed in increment 2 (the execution loop):
 | checks the trailing window after diverse handoffs | `checks_the_trailing_window_after_earlier_diverse_handoffs` |
 | continues when the window is diverse enough | `continues_when_the_window_has_enough_unique_nodes` |
 | throws when a node exceeds `nodeTimeout` | `errors_when_a_node_exceeds_the_node_timeout` |
+| — (a streaming node must not refresh its own deadline) | `a_streaming_node_does_not_refresh_its_own_timeout` |
 | applies the per-node timeout over `nodeTimeout` | `prefers_a_nodes_own_timeout_over_the_swarm_default` |
 | no throw when `nodeTimeout` is `Infinity` | `runs_without_a_node_timeout` |
 | per-node timeout of `Infinity` disables a finite `nodeTimeout` | `a_node_timeout_of_duration_max_opts_out_of_the_swarm_default` |
@@ -71,6 +76,9 @@ Landed in increment 2 (the execution loop):
 | throws when `timeout` is exceeded between steps | `errors_when_the_swarm_budget_runs_out_between_steps` |
 | aborts an in-flight node when `timeout` expires mid-step | `aborts_an_in_flight_node_when_the_swarm_budget_runs_out` |
 | — (external `cancelSignal`, no TS `it`) | `stops_at_the_loop_top_when_cancelled_externally` |
+| — (external `cancelSignal` mid-node, no TS `it`) | `aborts_an_in_flight_node_when_cancelled_externally` |
+| — (the timer is armed after the before-invocation hook) | `arms_the_swarm_budget_after_the_before_invocation_hook` |
+| — (a panicking hook reaches the `invoke_with` caller) | `propagates_a_panicking_hook_out_of_invoke` |
 | failed result when the agent throws | `fails_the_result_when_an_agent_errors` |
 | calls `initialize` only once across invocations | `initializes_once_across_invocations` |
 | preserves agent messages and state after execution | `leaves_the_agent_observably_unchanged` |
@@ -98,6 +106,7 @@ Landed in increment 2 (the execution loop):
 | Swarm: `BeforeNodeCallEvent.interrupt` gates a node, then resumes | `gates_a_node_with_a_before_node_call_interrupt_and_resumes` |
 | Swarm: hook-gated node still emits result + after events | `a_hook_gated_node_still_emits_its_result_and_after_events` |
 | — (same-instance resume, `pending_interrupt_state`) | `resumes_an_interrupted_run_on_the_same_instance_without_a_session` |
+| — (`load_snapshot(.., None)` arms the next invocation) | `a_snapshot_loaded_without_a_state_handle_resumes_the_next_invocation` |
 
 Hook and stream fidelity on the branches TS exercises implicitly (no single TS `it`; the behaviour
 is in `swarm.ts:411-420` and `496-523`):
@@ -109,8 +118,13 @@ is in `swarm.ts:411-420` and `496-523`):
 | a failing after-invocation hook replaces the run's own error | `a_failing_after_invocation_hook_replaces_the_runs_own_error` |
 | hooks run for every event a node forwards | `dispatches_hooks_for_every_event_a_node_forwards` |
 
+Not applicable: the two `it.each` "must be a non-negative integer" validations
+(`repetitiveHandoffDetectionWindow` / `repetitiveHandoffMinUniqueAgents`) — both are `usize` in
+Rust, so a negative, fractional or `NaN` value cannot be constructed.
+
 Not ported: `swarm.tracer.test.ts` — `telemetry::Tracer` has no multi-agent or node spans yet, so
-there is nothing to assert against (see **Remaining** below).
+there is nothing to assert against (see **Remaining** below). `interrupts.test.ts:264` (a swarm
+nested in a graph orchestrator) needs Graph, so it lands with that workstream.
 
 ## Remaining
 
@@ -120,6 +134,8 @@ there is nothing to assert against (see **Remaining** below).
 - **`SessionManager` as a `MultiAgentPlugin`.** Not ported yet, so the resume tests install
   equivalent save/restore hooks (`Session` in the test module) over `take_snapshot` /
   `load_snapshot`, mirroring `SessionManager`'s restore-once-per-orchestrator behaviour.
+- **Nested orchestrator interrupts** (`interrupts.test.ts:264`): a swarm nested in a graph needs
+  Graph, so the test lands with that workstream.
 - **Hook-registry interrupt accumulation.** TS `invokeCallbacks` (`hooks/registry.ts:86-116`) runs
   *every* callback, collects each `InterruptError`, rejects duplicate interrupt names, and throws
   one `InterruptError` with all of them; Rust `HookRegistry::invoke_callbacks`

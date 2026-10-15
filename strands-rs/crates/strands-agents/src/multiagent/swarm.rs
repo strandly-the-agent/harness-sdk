@@ -1075,8 +1075,8 @@ impl SwarmBuilder {
     /// Returns an error when the node list is empty, a node id is duplicated, the entry point is
     /// unknown, a limit is below 1, or the repetitive-handoff pair is inconsistent.
     pub fn build(self) -> Result<Swarm> {
-        validate_config(&self.config)?;
-
+        // Nodes resolve before the config is validated, as in TS, so an empty swarm reports that
+        // first whatever else is misconfigured.
         if self.definitions.is_empty() {
             return Err(Error::other("nodes list is empty"));
         }
@@ -1089,6 +1089,7 @@ impl SwarmBuilder {
             }
             nodes.insert(id, node);
         }
+        validate_config(&self.config)?;
         validate_repetitive_handoff(&self.config, nodes.len())?;
 
         let start = match self.entry_point {
@@ -1432,6 +1433,41 @@ mod tests {
     }
 
     #[test]
+    fn defaults_the_execution_limits_and_disables_repetitive_handoff_detection() {
+        let config = swarm(&["a"]).config().clone();
+
+        assert_eq!(config, SwarmConfig::default());
+        assert_eq!(config.max_steps, None);
+        assert_eq!(config.repetitive_handoff_detection_window, 0);
+        assert_eq!(config.repetitive_handoff_min_unique_agents, 0);
+        assert_eq!(config.timeout, None);
+        assert_eq!(config.node_timeout, None);
+    }
+
+    #[test]
+    fn accepts_a_custom_id() {
+        let swarm = Swarm::builder()
+            .id("my-swarm")
+            .node(agent("a", None))
+            .build()
+            .expect("swarm builds");
+
+        assert_eq!(swarm.id(), "my-swarm");
+    }
+
+    #[test]
+    fn accepts_agent_node_options_with_per_node_config() {
+        let swarm = Swarm::builder()
+            .node(AgentNodeOptions::new(agent("a", None)).with_timeout(Duration::from_secs(1)))
+            .build()
+            .expect("swarm builds");
+
+        let node = swarm.nodes().get("a").expect("node a");
+        assert_eq!(node.node_type(), NodeType::Agent);
+        assert_eq!(node.timeout(), Some(Duration::from_secs(1)));
+    }
+
+    #[test]
     fn rejects_an_empty_node_list() {
         let error = Swarm::builder().build().expect_err("empty");
         assert_eq!(error.to_string(), "nodes list is empty");
@@ -1490,6 +1526,13 @@ mod tests {
             let error = builder.node(agent("a", None)).build().expect_err("limit");
             assert_eq!(error.to_string(), message);
         }
+    }
+
+    #[test]
+    fn reports_an_empty_node_list_before_an_invalid_config() {
+        let error = Swarm::builder().max_steps(0).build().expect_err("no nodes");
+
+        assert_eq!(error.to_string(), "nodes list is empty");
     }
 
     #[test]
@@ -1676,7 +1719,12 @@ mod tests {
         let swarm = Swarm::builder()
             .node(handoff_agent(
                 "a",
-                json!({ "agentId": "b", "message": "handle this", "context": { "key": "value" } }),
+                json!({
+                    "agentId": "b",
+                    "message": "handle this",
+                    // Not in alphabetical order: the block keeps the model's key order, as TS does.
+                    "context": { "ticket": "T-1", "customer": "acme" },
+                }),
             ))
             .node(
                 Agent::builder()
@@ -1693,7 +1741,10 @@ mod tests {
         let (messages, _) = model.calls().remove(0);
         let input = messages[0].text();
         assert!(input.contains("handle this"), "{input}");
-        assert!(input.contains("Context:\n{\n  \"key\": \"value\"\n}"), "{input}");
+        assert!(
+            input.contains("Context:\n{\n  \"ticket\": \"T-1\",\n  \"customer\": \"acme\"\n}"),
+            "{input}"
+        );
     }
 
     #[tokio::test]
@@ -1996,6 +2047,36 @@ mod tests {
 
         let error = task.await.expect_err("the panic reaches the caller");
         assert!(error.is_panic(), "{error}");
+    }
+
+    #[tokio::test]
+    async fn aborts_an_in_flight_node_when_cancelled_externally() {
+        let cancel = CancellationToken::new();
+        let swarm = Swarm::builder()
+            .node(slow_agent("slow", Duration::from_secs(30)))
+            .build()
+            .expect("swarm builds");
+        let token = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            token.cancel();
+        });
+
+        let started = std::time::Instant::now();
+        let result = swarm
+            .invoke_with("go", MultiAgentInvokeOptions::default().with_cancel(cancel))
+            .await
+            .expect("swarm runs");
+
+        // The node's own 30 s sleep never finishes: the signal reaches it through the node's token.
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), ["slow"]);
+        assert_eq!(result.content, vec![ContentBlock::text("Cancelled by user")]);
     }
 
     #[tokio::test]
