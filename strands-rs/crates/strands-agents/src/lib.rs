@@ -98,7 +98,7 @@ pub use interventions::{InterventionHandler, InterventionRegistry};
 pub use mcp::{McpClient, McpServerConfig, McpTool};
 pub use memory::{
     FileMemoryStore, FileMemoryStoreConfig, MemoryEntry, MemoryInjectionConfig, MemoryManager,
-    MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor,
+    MemoryManagerConfig, MemoryStore, MemoryStoreRef, ModelExtractor, TestMemoryStore, TestMemoryStoreConfig,
 };
 #[cfg(feature = "anthropic")]
 pub use models::anthropic::{AnthropicModel, AnthropicModelConfig};

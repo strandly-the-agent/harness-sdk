@@ -6,6 +6,7 @@ pub mod file_memory_store;
 pub mod injection;
 pub mod memory_manager;
 pub mod read_only;
+pub mod test_memory_store;
 pub mod types;
 
 pub use extraction::{
@@ -19,6 +20,7 @@ pub use injection::{
 };
 pub use memory_manager::{MemoryManager, MemoryManagerConfig};
 pub use read_only::{to_read_only, ReadOnlyStore};
+pub use test_memory_store::{TestMemoryStore, TestMemoryStoreConfig};
 pub use types::{
     AddMessagesContext, ExtractionConfig, ExtractionResult, ExtractionTrigger, Extractor, ExtractorRef,
     MemoryAddOptions, MemoryAddToolConfig, MemoryEntry, MemoryMessageFilter, MemorySearchOptions,
