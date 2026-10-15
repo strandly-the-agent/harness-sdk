@@ -6,9 +6,11 @@
 mod adapters;
 mod events;
 mod executor;
+mod task_store;
 pub mod types;
 pub use adapters::{content_blocks_to_parts, parts_to_content_blocks};
 pub use events::{A2AResultEvent, A2AStreamEvent, A2AStreamUpdateEvent};
 pub use executor::{
     A2AExecutor, AgentFactory, EventBus, RequestContext, A2A_REQUEST_CONTEXT_KEY, DEFAULT_MAX_CONTEXTS,
 };
+pub use task_store::TaskStore;
