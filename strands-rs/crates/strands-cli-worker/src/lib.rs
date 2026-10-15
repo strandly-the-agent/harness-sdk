@@ -104,10 +104,11 @@ async fn serve<R: tokio::io::AsyncBufRead + Unpin>(
                 },
             ),
             Command::Prompt { prompt } => {
+                let token = runtime.begin_turn();
                 let runtime = runtime.clone();
                 let outbox = outbox.clone();
                 running = Some(tokio::spawn(async move {
-                    let reply = runtime.turn(prompt).await;
+                    let reply = runtime.turn(prompt, token).await;
                     send(&outbox, reply);
                 }));
             }
@@ -115,7 +116,14 @@ async fn serve<R: tokio::io::AsyncBufRead + Unpin>(
         }
     }
     if let Some(handle) = running {
-        drop(handle.await);
+        // `close` already cancelled the turn; give it a moment to report, then stop waiting so the
+        // CLI's own 1 s close timeout is never the thing that ends us.
+        if tokio::time::timeout(std::time::Duration::from_millis(500), handle)
+            .await
+            .is_err()
+        {
+            tracing::debug!("turn did not finish after close; exiting anyway");
+        }
     }
     Ok(())
 }

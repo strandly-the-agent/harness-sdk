@@ -37,6 +37,19 @@ impl Worker {
                         function_tool("echo")
                             .description("Echo the input")
                             .handler(|input: JsonValue, _| async move { Ok(input) }),
+                    )
+                    .tool(
+                        function_tool("confirm")
+                            .description("Asks before acting")
+                            .handler(
+                                |_: JsonValue, ctx: strands_agents::tools::ToolContext| async move {
+                                    let approved: bool = ctx.interrupt(
+                                        strands_agents::types::InterruptParams::new("confirm")
+                                            .with_reason(json!({ "why": "destructive" })),
+                                    )?;
+                                    Ok(if approved { "confirmed" } else { "declined" })
+                                },
+                            ),
                     );
                 if let Some(description) = options.overrides.get("description").and_then(JsonValue::as_str) {
                     builder = builder.description(description);
@@ -71,6 +84,9 @@ impl Worker {
 
     async fn next(&mut self) -> JsonValue {
         let line = self.messages.next_line().await.unwrap().expect("worker closed");
+        if std::env::var_os("WORKER_TRACE").is_some() {
+            eprintln!("<< {line}");
+        }
         serde_json::from_str(&line).unwrap()
     }
 
@@ -384,4 +400,88 @@ async fn init_failure_is_reported_and_exits() {
     assert_eq!(message["type"], "error");
     assert!(message["message"].as_str().unwrap().contains("boom"));
     assert!(task.await.unwrap().is_err());
+}
+
+#[tokio::test]
+async fn sdk_interrupts_become_permission_events_and_resume_with_the_answer() {
+    let mut worker = Worker::spawn(|| vec![tool_call("confirm", "c1", json!({})), text("after")]);
+    worker.init(json!({})).await;
+    worker.send(json!({ "type": "prompt", "prompt": "go" })).await;
+    let mut message = worker.next().await;
+    while !(message["type"] == "event" && message["event"]["type"] == "permission") {
+        message = worker.next().await;
+    }
+    let request = &message["event"]["request"];
+    assert_eq!(request["toolName"], "confirm");
+    assert_eq!(request["input"], json!({ "why": "destructive" }));
+    assert_eq!(request["options"][0]["id"], "allow");
+    worker
+        .send(json!({ "type": "permission", "requestId": request["id"], "approved": true }))
+        .await;
+    let (events, result) = worker.until_terminal().await;
+    let tool_result = events
+        .iter()
+        .find(|e| e["type"] == "toolResult")
+        .expect("toolResult after resume");
+    assert_eq!(tool_result["content"][0]["text"], "confirmed");
+    assert_eq!(result["result"]["stopReason"], "endTurn");
+    assert_eq!(result["result"]["finalText"], "after");
+    worker.close().await;
+}
+
+#[tokio::test]
+async fn a_cancelled_turn_leaves_no_stale_authorize_for_the_next_one() {
+    // The mock replays one response per model call: turn 1 is cancelled after the first.
+    let mut worker = Worker::spawn(|| {
+        vec![
+            tool_call("echo", "t1", json!({})),
+            tool_call("echo", "t2", json!({})),
+            text("done"),
+        ]
+    });
+    worker.init(json!({ "interactive": true })).await;
+    worker.send(json!({ "type": "prompt", "prompt": "go" })).await;
+    let mut message = worker.next().await;
+    while message["type"] != "authorize" {
+        message = worker.next().await;
+    }
+    worker.send(json!({ "type": "cancel" })).await;
+    let (_, cancelled) = worker.until_terminal().await;
+    assert_eq!(cancelled["result"]["stopReason"], "cancelled");
+
+    worker.send(json!({ "type": "prompt", "prompt": "again" })).await;
+    let mut authorizes = 0;
+    loop {
+        let message = worker.next().await;
+        match message["type"].as_str() {
+            Some("authorize") => {
+                authorizes += 1;
+                worker
+                    .send(json!({ "type": "permission", "requestId": message["id"], "approved": true }))
+                    .await;
+            }
+            Some("result") => break,
+            Some("error") => panic!("{message}"),
+            _ => {}
+        }
+    }
+    assert_eq!(
+        authorizes, 1,
+        "exactly one authorize for the new turn's single tool call"
+    );
+    worker.close().await;
+}
+
+#[tokio::test]
+async fn close_during_a_turn_exits_promptly() {
+    let mut worker = Worker::spawn(|| vec![tool_call("echo", "t1", json!({})), text("never")]);
+    worker.init(json!({ "interactive": true })).await;
+    worker.send(json!({ "type": "prompt", "prompt": "go" })).await;
+    let mut message = worker.next().await;
+    while message["type"] != "authorize" {
+        message = worker.next().await;
+    }
+    let started = std::time::Instant::now();
+    worker.close().await;
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
 }

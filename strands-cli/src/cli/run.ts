@@ -74,6 +74,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   }
 }
 
+/** The Rust runtime builds the harness from the profile; authored agent projects have their own runtime. */
+function rejectRustWithProject(args: Pick<ParsedArgs, 'runtime'>, project: { entrypoint: string } | undefined): void {
+  if (args.runtime === 'rust' && project) {
+    throw new Error(`--runtime rust cannot be combined with an agent project (${project.entrypoint}).`)
+  }
+}
+
 export function selectRunMode(
   args: Pick<ParsedArgs, 'acpServer' | 'oneShot'>,
   terminal: { stdinIsTty: boolean; stdoutIsTty: boolean }
@@ -105,6 +112,7 @@ async function runAcp(args: ParsedArgs): Promise<void> {
     const mcp = await resolveMcpConfig(args.mcpConfig, { discovery: settings.mcpDiscovery })
     const projectPath = args.agent ?? config.snapshot().agentProject
     const project = projectPath ? importAgentProject(projectPath) : undefined
+    rejectRustWithProject(args, project)
     if (project?.language === 'python' || args.runtime === 'rust') {
       const [{ runWorkerAcpServer }, { pythonOpener, rustOpener }] = await Promise.all([
         import('../tui/project/acp.js'),
@@ -143,6 +151,7 @@ async function runConsole(args: ParsedArgs, request: string | undefined, mode: '
     config.useEnvironmentFiles(args.envFiles)
     const projectPath = args.agent ?? config.snapshot().agentProject
     const project = projectPath ? importAgentProject(projectPath) : undefined
+    rejectRustWithProject(args, project)
     if (project?.language === 'python' || args.runtime === 'rust') {
       const { runWorkerConsole, pythonOpener, rustOpener } = await import('../tui/project/run.js')
       const settings = config.snapshot().settings
@@ -236,6 +245,7 @@ async function runInteractive(args: ParsedArgs, request: string | undefined): Pr
         const projectPath =
           launch?.agentProject ?? (launch?.configuration ? undefined : (args.agent ?? config.snapshot().agentProject))
         const project = projectPath ? importAgentProject(projectPath) : undefined
+        rejectRustWithProject(args, project)
         if (project?.language === 'python') {
           const { createWorkerChat, pythonOpener } = await import('../tui/project/run.js')
           const opener = pythonOpener(project.entrypoint, config)
@@ -249,7 +259,7 @@ async function runInteractive(args: ParsedArgs, request: string | undefined): Pr
             conversation
           )
         }
-        if (args.runtime === 'rust' && !project) {
+        if (args.runtime === 'rust') {
           const { createWorkerChat, rustOpener } = await import('../tui/project/run.js')
           if (launch?.configuration) config.applyProviderEnvironment()
           return createWorkerChat(

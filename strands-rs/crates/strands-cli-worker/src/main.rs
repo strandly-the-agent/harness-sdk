@@ -69,8 +69,63 @@ fn message_output() -> std::io::Result<tokio::fs::File> {
     ))
 }
 
+/// Profile keys the Rust runtime cannot honour yet. A non-empty value fails `init` loudly rather
+/// than silently producing an agent that is missing the user's tools or plugins.
+const UNSUPPORTED_KEYS: &[&str] = &[
+    "tools",
+    "subagents",
+    "plugins",
+    "interventions",
+    "interventionModules",
+    "modelModule",
+    "sandbox",
+    "agentConfig",
+    "agentConfigModules",
+    "memoryStores",
+    "webFetchModelModule",
+];
+
+fn is_empty_value(value: &JsonValue) -> bool {
+    match value {
+        JsonValue::Null => true,
+        JsonValue::Array(items) => items.is_empty(),
+        JsonValue::Object(map) => map.is_empty(),
+        JsonValue::String(s) => s.is_empty(),
+        _ => false,
+    }
+}
+
+fn check_supported(o: &serde_json::Map<String, JsonValue>) -> Result<()> {
+    let mut unsupported: Vec<String> = UNSUPPORTED_KEYS
+        .iter()
+        .filter(|key| o.get(**key).is_some_and(|value| !is_empty_value(value)))
+        .map(|key| (*key).to_owned())
+        .collect();
+    if o.get("memory")
+        .and_then(|m| m.get("stores"))
+        .is_some_and(|s| !is_empty_value(s))
+    {
+        unsupported.push("memory.stores".to_owned());
+    }
+    if o.get("contextManager")
+        .and_then(JsonValue::as_str)
+        .is_some_and(|mode| mode != "auto")
+    {
+        unsupported.push("contextManager".to_owned());
+    }
+    if unsupported.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::other(format!(
+            "The Rust runtime does not support these profile settings yet: {}. Remove them or run without --runtime rust.",
+            unsupported.join(", ")
+        )))
+    }
+}
+
 async fn build_harness(options: BuildOptions) -> Result<BuiltAgent> {
     let o = &options.overrides;
+    check_supported(o)?;
     let string = |key: &str| o.get(key).and_then(JsonValue::as_str).map(str::to_owned);
 
     let skill_sources: Vec<PathBuf> = match o.get("skills") {

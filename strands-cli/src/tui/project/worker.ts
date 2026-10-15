@@ -374,6 +374,7 @@ export class WorkerBackend implements ChatBackend {
   }
 
   async fork(options: WorkerOptions, signal?: AbortSignal): Promise<WorkerBackend> {
+    if (this._launch.project) await prepareArchiveDependencies(this._launch.project.root, this._launch.project.language)
     const target = await WorkerBackend._open(
       this._launch,
       this._config,

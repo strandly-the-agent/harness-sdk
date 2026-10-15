@@ -22,3 +22,8 @@ printf '%s\n' '{"type":"init","overrides":{"session":false}}' '{"type":"prompt",
 The crate is a library plus a thin binary: `strands_cli_worker::run` is transport-agnostic and
 takes an `AgentFactory`, which is how `tests/worker.rs` runs the whole protocol against
 `MockMessageModel` over in-memory pipes.
+
+Not supported yet (`init` fails with a clear message when the profile uses them): custom `tools`,
+`subagents`, `plugins`, `interventions`, module references (`modelModule`, `agentConfigModules`),
+`sandbox`, `memoryStores`, a non-`auto` `contextManager`. `/compact` reports unsupported and the
+context stash is not carried across a fork.

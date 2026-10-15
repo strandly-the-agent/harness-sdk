@@ -227,11 +227,21 @@ impl Runtime {
         self.reload_requested.swap(false, Ordering::SeqCst)
     }
 
-    /// Run one turn; the reply is a `result` or an `error`.
-    pub async fn turn(&self, prompt: JsonValue) -> WorkerMessage {
+    /// Arm the cancel token for the next turn. Called synchronously by the command loop before the
+    /// turn task is spawned, so a `cancel` that arrives before the task's first poll still lands.
+    pub fn begin_turn(&self) -> CancellationToken {
         let token = CancellationToken::new();
         *self.cancel.lock() = token.clone();
+        token
+    }
+
+    /// Run one turn; the reply is a `result` or an `error`.
+    pub async fn turn(&self, prompt: JsonValue, token: CancellationToken) -> WorkerMessage {
         self.reload_requested.store(false, Ordering::SeqCst);
+        // Anything a previous turn left behind (a hook denied by `cancel`, a stream that errored
+        // with a parked `authorize`) must not surface in this one.
+        self.shared.pending.lock().clear();
+        while self.requests.lock().await.try_recv().is_ok() {}
         let mut input = match parse_prompt(prompt) {
             Ok(input) => input,
             Err(error) => return self.error(error),
@@ -252,8 +262,14 @@ impl Runtime {
     }
 
     async fn run_once(&self, input: InvokeInput, token: &CancellationToken) -> Result<Turn> {
+        if token.is_cancelled() {
+            return Ok(Turn::Done(RunResult::stop("cancelled")));
+        }
         let agent = self.agent();
         let mut stream = agent.stream(input);
+        if token.is_cancelled() {
+            agent.cancel();
+        }
         let mut requests = self.requests.lock().await;
         let mut seen_results = std::collections::HashSet::new();
         loop {

@@ -98,3 +98,23 @@ describe('WorkerBackend.openRust', () => {
     }
   })
 })
+
+describe('--runtime rust with an agent project', () => {
+  it('is rejected instead of silently picking a runtime', async () => {
+    const { main } = await import('../src/cli/run.js')
+    const root = await mkdtemp(join(tmpdir(), 'strands-rust-project-'))
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      await writeFile(join(root, 'agent.ts'), 'export const agent = undefined\n')
+      await main(['--runtime', 'rust', '--agent', join(root, 'agent.ts'), '-p', 'hi'])
+      expect(process.exitCode).toBe(1)
+      expect(stderr.mock.calls.map((call) => String(call[0])).join('')).toContain(
+        'cannot be combined with an agent project'
+      )
+    } finally {
+      process.exitCode = undefined
+      stderr.mockRestore()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
