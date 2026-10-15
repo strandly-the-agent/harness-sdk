@@ -4,11 +4,12 @@
 //! invokes them, keeping the open connections across tool calls.
 //!
 //! Divergences from TS: connections live on the tool instance (one `McpRouterTool` per agent)
-//! instead of in a `WeakMap` keyed by agent, and they close when the tool is dropped or on
-//! `disconnect` — Rust has no finalization registry, so there is no GC hook. Errors are
-//! [`Error::ToolValidation`] with the TS messages verbatim rather than a dedicated
-//! `McpRouterToolError`, and `call_tool` goes through [`McpClient::call_tool`] plus the same
-//! content mapping [`crate::mcp::McpTool`] uses.
+//! instead of in a `WeakMap` keyed by agent. Rust has no finalization registry and `Drop` cannot
+//! await, so nothing closes orphaned connections implicitly — the owner must call
+//! [`McpRouterTool::disconnect_all`] before dropping the tool. Error messages are the TS ones
+//! verbatim, as [`Error::ToolValidation`] for bad model input and [`Error::other`] for runtime
+//! failures rather than a dedicated `McpRouterToolError`, and `call_tool` goes through
+//! [`McpClient::call_tool`] plus the same content mapping [`crate::mcp::McpTool`] uses.
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
@@ -38,9 +39,9 @@ pub const DEFAULT_MAX_CONNECTIONS: usize = 10;
 pub struct McpRouterConfig {
     /// Tool name reported to the model.
     pub name: String,
-    /// Tool description reported to the model; `None` appends the permitted server names to
-    /// [`MCP_ROUTER_DESCRIPTION`].
-    pub description: Option<String>,
+    /// Tool description reported to the model; defaults to [`MCP_ROUTER_DESCRIPTION`] with the
+    /// permitted server names appended.
+    pub description: String,
     /// Allowlisted MCP servers keyed by a developer-chosen name. Must not be empty.
     pub servers: IndexMap<String, McpServerConfig>,
     /// Maximum simultaneous open connections.
@@ -50,10 +51,11 @@ pub struct McpRouterConfig {
 impl McpRouterConfig {
     /// Configuration for the given server allowlist, with the TS defaults.
     pub fn new(servers: impl IntoIterator<Item = (String, McpServerConfig)>) -> Self {
+        let servers: IndexMap<String, McpServerConfig> = servers.into_iter().collect();
         Self {
             name: MCP_ROUTER_TOOL_NAME.to_owned(),
-            description: None,
-            servers: servers.into_iter().collect(),
+            description: default_description(&servers),
+            servers,
             max_connections: DEFAULT_MAX_CONNECTIONS,
         }
     }
@@ -106,7 +108,7 @@ impl McpRouterTool {
     /// Router over the given server allowlist, with the TS defaults.
     ///
     /// Errors when the allowlist is empty.
-    pub fn new(servers: impl IntoIterator<Item = (String, McpServerConfig)>) -> Result<Self> {
+    pub fn with_servers(servers: impl IntoIterator<Item = (String, McpServerConfig)>) -> Result<Self> {
         Self::with_config(McpRouterConfig::new(servers))
     }
 
@@ -182,6 +184,15 @@ impl McpRouterTool {
         }
     }
 
+    /// Close every open connection. Call this before dropping the tool: `Drop` cannot await, so
+    /// stdio servers otherwise outlive the router.
+    pub async fn disconnect_all(&self) {
+        let clients: Vec<McpClient> = self.connections.lock().await.drain(..).map(|(_, c)| c).collect();
+        for client in &clients {
+            stop_client(client).await;
+        }
+    }
+
     async fn connect(&self, server_name: &str, connection_id: &str) -> Result<JsonValue> {
         let Some(server_config) = self.config.servers.get(server_name) else {
             return Err(Error::ToolValidation(format!(
@@ -195,7 +206,7 @@ impl McpRouterTool {
             .collect();
         let mut loaded = McpClient::load_servers(servers, LoadOptions::default(), unprefixed()).await?;
         let Some(client) = loaded.pop() else {
-            return Err(Error::ToolValidation(format!(
+            return Err(Error::other(format!(
                 "Server \"{server_name}\" failed to initialise; check the server config"
             )));
         };
@@ -203,7 +214,7 @@ impl McpRouterTool {
         // `load_servers` swallows the failure when the server config sets `continue_on_error`.
         if client.connection_state() == McpConnectionState::Failed {
             stop_client(&client).await;
-            return Err(Error::ToolValidation(format!(
+            return Err(Error::other(format!(
                 "Server \"{server_name}\" failed to connect; check the server config"
             )));
         }
@@ -211,20 +222,24 @@ impl McpRouterTool {
         // Cap and duplicate checks after all awaits to avoid races.
         let mut connections = self.connections.lock().await;
         if connections.len() >= self.config.max_connections {
-            let active = sorted_join(connections.keys().map(String::as_str));
-            stop_client(&client).await;
-            return Err(Error::ToolValidation(format!(
+            let message = format!(
                 "Connection limit of {} reached. Disconnect one of the active connections before \
-                 opening a new one. Active connection_ids: {active}",
-                self.config.max_connections
-            )));
+                 opening a new one. Active connection_ids: {}",
+                self.config.max_connections,
+                sorted_join(connections.keys().map(String::as_str))
+            );
+            drop(connections);
+            stop_client(&client).await;
+            return Err(Error::ToolValidation(message));
         }
         if connections.contains_key(connection_id) {
-            stop_client(&client).await;
-            return Err(Error::ToolValidation(format!(
+            let message = format!(
                 "Connection \"{connection_id}\" already exists. Disconnect it first or use a \
                  different connection_id."
-            )));
+            );
+            drop(connections);
+            stop_client(&client).await;
+            return Err(Error::ToolValidation(message));
         }
         connections.insert(connection_id.to_owned(), client);
 
@@ -293,7 +308,7 @@ async fn call_tool(
         } else {
             text
         };
-        return Err(Error::ToolValidation(message));
+        return Err(Error::other(message));
     }
     serde_json::to_value(block.content).map_err(|err| Error::JsonValidation(err.to_string()))
 }
@@ -313,6 +328,13 @@ fn unprefixed() -> ListOptions {
     }
 }
 
+/// [`MCP_ROUTER_DESCRIPTION`] with the allowlisted server names appended (verbatim from TS).
+fn default_description(servers: &IndexMap<String, McpServerConfig>) -> String {
+    let quoted: Vec<String> = servers.keys().map(|name| format!("'{name}'")).collect();
+    let permitted = sorted_join(quoted.iter().map(String::as_str));
+    format!("{MCP_ROUTER_DESCRIPTION} Permitted server names: {permitted}.")
+}
+
 fn sorted_join<'a>(values: impl Iterator<Item = &'a str>) -> String {
     let mut values: Vec<&str> = values.collect();
     values.sort_unstable();
@@ -320,14 +342,9 @@ fn sorted_join<'a>(values: impl Iterator<Item = &'a str>) -> String {
 }
 
 fn mcp_router_tool_spec(config: &McpRouterConfig) -> ToolSpec {
-    let description = config.description.clone().unwrap_or_else(|| {
-        let quoted: Vec<String> = config.servers.keys().map(|name| format!("'{name}'")).collect();
-        let permitted = sorted_join(quoted.iter().map(String::as_str));
-        format!("{MCP_ROUTER_DESCRIPTION} Permitted server names: {permitted}.")
-    });
     ToolSpec {
         name: config.name.clone(),
-        description,
+        description: config.description.clone(),
         input_schema: Some(json!({
             "type": "object",
             "properties": {
@@ -379,7 +396,7 @@ mod tests {
     }
 
     fn router(names: &[&str]) -> McpRouterTool {
-        McpRouterTool::new(servers(names)).unwrap()
+        McpRouterTool::with_servers(servers(names)).unwrap()
     }
 
     async fn run(tool: &McpRouterTool, input: JsonValue) -> Result<JsonValue> {
@@ -389,7 +406,9 @@ mod tests {
 
     #[test]
     fn rejects_empty_allowlist() {
-        let error = McpRouterTool::new(IndexMap::new()).unwrap_err().to_string();
+        let error = McpRouterTool::with_servers(IndexMap::new())
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("must not be empty"), "{error}");
     }
 
@@ -418,7 +437,7 @@ mod tests {
     fn accepts_custom_name_and_description() {
         let mut config = McpRouterConfig::new(servers(&["mcp"]));
         config.name = "router".to_owned();
-        config.description = Some("custom".to_owned());
+        config.description = "custom".to_owned();
         let tool = McpRouterTool::with_config(config).unwrap();
         assert_eq!(tool.name(), "router");
         assert_eq!(tool.description(), "custom");
