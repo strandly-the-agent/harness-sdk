@@ -34,7 +34,7 @@ from ..types.exceptions import (
 )
 from ..types.streaming import CitationsDelta, StreamEvent
 from ..types.tools import ToolChoice, ToolChoiceAuto, ToolSpec
-from ._defaults import resolve_config_metadata
+from ._defaults import get_max_output_tokens, resolve_config_metadata
 from ._native_output import (
     StructuredOutputMechanism,
     handle_rejected_mechanism,
@@ -238,7 +238,8 @@ class BedrockModel(Model):
             guardrail_redact_output_message: If a Bedrock Output guardrail triggers, replace output with this message.
             guardrail_latest_message: Flag to send only the lastest user message to guardrails.
                 Defaults to False.
-            max_tokens: Maximum number of tokens to generate in the response
+            max_tokens: Maximum number of tokens to generate in the response. Defaults to the model's
+                known ceiling (see ``_defaults.py``); unknown models leave it to Bedrock.
             model_id: The Bedrock model ID (e.g., "global.anthropic.claude-sonnet-4-6")
             include_tool_result_status: Flag to include status field in tool results.
                 True includes status, False removes status, "auto" determines based on model_id. Defaults to "auto".
@@ -455,8 +456,9 @@ class BedrockModel(Model):
         if self._tool_result_turn_separation_model_id == self.config["model_id"]:
             formatted_messages = self._separate_tool_result_turns(formatted_messages)
 
+        model_id = self.config["model_id"]
         return {
-            "modelId": self.config["model_id"],
+            "modelId": model_id,
             "messages": formatted_messages,
             "system": self._apply_system_cache_ttl(system_blocks, tools_cache_point),
             **({"serviceTier": {"type": self.config["service_tier"]}} if self.config.get("service_tier") else {}),
@@ -512,7 +514,7 @@ class BedrockModel(Model):
             "inferenceConfig": {
                 key: value
                 for key, value in [
-                    ("maxTokens", self.config.get("max_tokens")),
+                    ("maxTokens", self.config.get("max_tokens") or get_max_output_tokens(model_id)),
                     ("temperature", self.config.get("temperature")),
                     ("topP", self.config.get("top_p")),
                     ("stopSequences", self.config.get("stop_sequences")),
