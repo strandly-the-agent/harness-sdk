@@ -3,12 +3,14 @@
 //!
 //! Mirrors `strands-ts/src/a2a/`. Behind the `a2a` cargo feature.
 
+mod a2a_agent;
 mod adapters;
 mod events;
 mod executor;
 mod server;
 mod task_store;
 pub mod types;
+pub use a2a_agent::{A2AAgent, A2AAgentBuilder, DEFAULT_AGENT_CARD_PATH};
 pub use adapters::{content_blocks_to_parts, parts_to_content_blocks};
 pub use events::{A2AResultEvent, A2AStreamEvent, A2AStreamUpdateEvent};
 pub use executor::{
