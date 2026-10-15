@@ -3,21 +3,42 @@
 //! Nodes run as a dependency graph: source nodes first, then every node whose incoming edges
 //! are all satisfied. [`Graph`] is a cheap `Clone` handle over the shared topology.
 
+use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use indexmap::IndexMap;
+use parking_lot::Mutex;
+use tokio::sync::mpsc;
+use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 
 use super::edge::{Edge, EdgeDefinition, EdgeHandler};
-use super::nodes::{Node, NodeDefinition};
+use super::events::{
+    AfterMultiAgentInvocationEvent, AfterNodeCallEvent, BeforeMultiAgentInvocationEvent, BeforeNodeCallEvent,
+    MultiAgentHandoffEvent, MultiAgentInitializedEvent, MultiAgentResultEvent, MultiAgentStreamEvent,
+    NodeCancelEvent, NodeResultEvent, OrchestratorRef,
+};
+use super::multiagent::{
+    apply_orchestrator_hook_responses, drop_stale_interrupted_result, group_interrupt_responses_by_node,
+    record_hook_interrupt, MultiAgent, MultiAgentInput, MultiAgentInvokeOptions, MultiAgentStream,
+};
+use super::nodes::{run_node, Node, NodeDefinition, NodeInputOptions, NodeSink, NodeType};
 use super::plugins::{MultiAgentPlugin, MultiAgentPluginRegistry};
-use super::state::{MultiAgentState, MultiAgentStateHandle};
+use super::snapshot::{self, TakeMultiAgentSnapshotOptions};
+use super::state::{
+    now_ms, MultiAgentResult, MultiAgentState, MultiAgentStateHandle, NodeResult, ResultStatus, Status,
+};
 use crate::agent::InvocationState;
 use crate::error::{Error, Result};
-use crate::hooks::{HookEvent, HookFn, HookRegistry};
+use crate::hooks::{Cancel, HookEvent, HookFn, HookRegistry};
 use crate::logging::warn_once;
+use crate::session::Snapshot;
+use crate::types::{ContentBlock, InterruptResponseContent};
 
 /// Default graph id, matching TS `id ?? 'graph'`.
 pub const DEFAULT_GRAPH_ID: &str = "graph";
@@ -58,6 +79,8 @@ struct GraphInner {
     state: MultiAgentStateHandle,
     hooks: HookRegistry,
     plugins: MultiAgentPluginRegistry,
+    initialized: AtomicBool,
+    pending_interrupt: Mutex<Option<MultiAgentState>>,
 }
 
 /// Directed graph orchestrator; a cheap `Clone` handle over one shared topology and state.
@@ -317,6 +340,8 @@ impl GraphBuilder {
                 state,
                 hooks: self.hooks,
                 plugins: MultiAgentPluginRegistry::new(self.plugins),
+                initialized: AtomicBool::new(false),
+                pending_interrupt: Mutex::new(None),
             }),
         })
     }
@@ -459,6 +484,762 @@ fn can_run_concurrently(config: &GraphConfig, edges: &[Edge], sources: &[Arc<dyn
         *fan_out.entry(edge.source.id()).or_default() += 1;
     }
     fan_out.values().any(|count| *count > 1)
+}
+
+const EVENT_BUFFER: usize = 32;
+const HOOK_CANCEL_MESSAGE: &str = "node cancelled by hook";
+
+impl Graph {
+    /// Run to completion with default options.
+    pub async fn invoke(&self, input: impl Into<MultiAgentInput>) -> Result<MultiAgentResult> {
+        self.invoke_with(input, MultiAgentInvokeOptions::default()).await
+    }
+
+    /// Run to completion with explicit invocation options.
+    ///
+    /// # Errors
+    /// Fails when a limit is exceeded, the run is cancelled, or a hook or plugin fails. A failing
+    /// node is not an error: it lands as a `FAILED` node result in the aggregate.
+    pub async fn invoke_with(
+        &self,
+        input: impl Into<MultiAgentInput>,
+        options: MultiAgentInvokeOptions,
+    ) -> Result<MultiAgentResult> {
+        let (sink, mut events) = mpsc::channel(EVENT_BUFFER);
+        let drain = async move { while events.recv().await.is_some() {} };
+        let (result, ()) = tokio::join!(self.run(input.into(), options, sink), drain);
+        result
+    }
+
+    /// Stream events as they occur, with default options.
+    pub fn stream(&self, input: impl Into<MultiAgentInput>) -> MultiAgentStream {
+        self.stream_with(input, MultiAgentInvokeOptions::default())
+    }
+
+    /// Stream events as they occur; the last event carries the aggregate result.
+    pub fn stream_with(
+        &self,
+        input: impl Into<MultiAgentInput>,
+        options: MultiAgentInvokeOptions,
+    ) -> MultiAgentStream {
+        let (sink, events) = mpsc::channel(EVENT_BUFFER);
+        let graph = self.clone();
+        let input = input.into();
+        tokio::spawn(async move {
+            if let Err(error) = graph.run(input, options, sink.clone()).await {
+                let _ = sink.send(Err(error)).await;
+            }
+        });
+        MultiAgentStream::new(Box::pin(futures::stream::unfold(
+            events,
+            |mut events| async move { events.recv().await.map(|event| (event, events)) },
+        )))
+    }
+
+    /// Capture the graph's current state as a multi-agent snapshot.
+    ///
+    /// # Errors
+    /// Fails when the state cannot be serialized.
+    pub fn take_snapshot(&self, options: TakeMultiAgentSnapshotOptions) -> Result<Snapshot> {
+        snapshot::take_snapshot(self, Some(&self.inner.state), options)
+    }
+
+    /// Restore state from `snapshot`; the next invocation resumes from it.
+    ///
+    /// # Errors
+    /// Fails when the snapshot's scope, schema version, or orchestrator id do not match.
+    pub fn load_snapshot(&self, snapshot: &Snapshot) -> Result<()> {
+        snapshot::load_snapshot(self, snapshot, Some(&self.inner.state))?;
+        *self.inner.pending_interrupt.lock() = Some(self.inner.state.snapshot());
+        Ok(())
+    }
+
+    async fn run(
+        &self,
+        input: MultiAgentInput,
+        options: MultiAgentInvokeOptions,
+        sink: NodeSink,
+    ) -> Result<MultiAgentResult> {
+        let orchestrator: OrchestratorRef = Arc::new(self.clone());
+        self.inner.plugins.initialize(&orchestrator).await?;
+        if !self.inner.initialized.swap(true, Ordering::SeqCst) {
+            let mut event = MultiAgentInitializedEvent {
+                orchestrator: Arc::clone(&orchestrator),
+            };
+            self.inner.hooks.invoke_callbacks(&mut event).await?;
+        }
+
+        let invocation_state = options
+            .invocation_state
+            .unwrap_or_else(|| self.inner.invocation_state.clone());
+        let state = self.inner.state.clone();
+        let resumed = self.inner.pending_interrupt.lock().take();
+        let node_ids: Vec<String> = self.inner.nodes.keys().cloned().collect();
+        state.with_mut(|current| {
+            *current = resumed.unwrap_or_else(|| MultiAgentState::new(node_ids));
+        });
+
+        let mut before = BeforeMultiAgentInvocationEvent {
+            orchestrator: Arc::clone(&orchestrator),
+            state: state.clone(),
+            invocation_state: invocation_state.clone(),
+        };
+        self.inner.hooks.invoke_callbacks(&mut before).await?;
+        send(&sink, MultiAgentStreamEvent::BeforeMultiAgentInvocation(before)).await;
+
+        let execution = Execution {
+            orchestrator: Arc::clone(&orchestrator),
+            state: state.clone(),
+            invocation_state: invocation_state.clone(),
+            sink: sink.clone(),
+            cancel: CancellationToken::new(),
+            done: CancellationToken::new(),
+            external: options.cancel.clone(),
+            timed_out: Arc::new(AtomicBool::new(false)),
+        };
+        if let Some(timeout) = self.inner.config.timeout {
+            let (cancel, done, timed_out) = (
+                execution.cancel.clone(),
+                execution.done.clone(),
+                Arc::clone(&execution.timed_out),
+            );
+            tokio::spawn(async move {
+                tokio::select! {
+                    () = tokio::time::sleep(timeout) => {
+                        timed_out.store(true, Ordering::SeqCst);
+                        cancel.cancel();
+                    }
+                    () = done.cancelled() => {}
+                }
+            });
+        }
+        if let Some(external) = options.cancel {
+            let (cancel, done) = (execution.cancel.clone(), execution.done.clone());
+            tokio::spawn(async move {
+                tokio::select! {
+                    () = external.cancelled() => cancel.cancel(),
+                    () = done.cancelled() => {}
+                }
+            });
+        }
+
+        let outcome = self.execute(input, &execution).await;
+        execution.done.cancel();
+
+        let mut after = AfterMultiAgentInvocationEvent {
+            orchestrator,
+            state,
+            invocation_state: invocation_state.clone(),
+        };
+        let after_result = self.inner.hooks.invoke_callbacks(&mut after).await;
+        send(&sink, MultiAgentStreamEvent::AfterMultiAgentInvocation(after)).await;
+        let result = outcome?;
+        after_result?;
+
+        let mut event = MultiAgentResultEvent {
+            result: result.clone(),
+            invocation_state,
+        };
+        self.inner.hooks.invoke_callbacks(&mut event).await?;
+        send(&sink, MultiAgentStreamEvent::MultiAgentResult(event)).await;
+        Ok(result)
+    }
+
+    async fn execute(&self, input: MultiAgentInput, execution: &Execution) -> Result<MultiAgentResult> {
+        let resume_responses = input.resume_responses().map(<[InterruptResponseContent]>::to_vec);
+        let content_input = if resume_responses.is_some() {
+            execution.state.with(|state| state.pending_input.clone())
+        } else {
+            execution
+                .state
+                .with_mut(|state| state.pending_input = Some(input.clone()));
+            Some(input)
+        };
+        let routed = match &resume_responses {
+            Some(responses) => Some(
+                execution
+                    .state
+                    .with(|state| group_interrupt_responses_by_node(responses, state))?,
+            ),
+            None => None,
+        };
+
+        let targets: VecDeque<Arc<dyn Node>> = match &routed {
+            Some(routed) => routed
+                .keys()
+                .map(|id| {
+                    self.inner.nodes.get(id).map(Arc::clone).ok_or_else(|| {
+                        Error::other(format!(
+                            "node_id=<{id}>, graph_id=<{}> | resume response targets a node missing from the graph; topology changed between save and resume?",
+                            self.inner.id
+                        ))
+                    })
+                })
+                .collect::<Result<_>>()?,
+            None => match self.find_resume_targets(&execution.state).await {
+                Some(ready) => ready.into(),
+                None => self.inner.sources.iter().map(Arc::clone).collect(),
+            },
+        };
+        let mut pending = Pending {
+            targets,
+            ..Pending::default()
+        };
+
+        let (node_sink, mut node_events) = mpsc::channel::<Result<MultiAgentStreamEvent>>(EVENT_BUFFER);
+        let mut tasks = JoinSet::new();
+        let max_concurrency = self.inner.config.max_concurrency.unwrap_or(usize::MAX);
+
+        let outcome: Result<()> = 'run: loop {
+            if pending.targets.is_empty() && pending.running.is_empty() && pending.gated.is_empty() {
+                break Ok(());
+            }
+            if execution.timed_out.load(Ordering::SeqCst) {
+                break Err(Error::other(format!(
+                    "timeout=<{}>, graph_id=<{}> | graph exceeded wall-clock budget",
+                    self.inner.config.timeout.unwrap_or_default().as_millis(),
+                    self.inner.id
+                )));
+            }
+            if execution
+                .external
+                .as_ref()
+                .is_some_and(CancellationToken::is_cancelled)
+            {
+                break Err(Error::other(format!(
+                    "graph_id=<{}> | graph cancelled by external signal",
+                    self.inner.id
+                )));
+            }
+
+            while !pending.interrupted
+                && !pending.targets.is_empty()
+                && pending.running.len() < max_concurrency
+            {
+                let node = pending.targets.pop_front().expect("targets is not empty");
+                if let Some(max_steps) = self.inner.config.max_steps {
+                    let steps = execution.state.steps();
+                    if steps >= max_steps {
+                        break 'run Err(Error::other(format!("steps=<{steps}> | max steps reached")));
+                    }
+                }
+                execution.state.with_mut(|state| state.steps += 1);
+                let routed = routed.as_ref().and_then(|routed| routed.get(node.id())).cloned();
+                let node_input =
+                    match self.resolve_input_for_scheduling(&node, routed, content_input.as_ref(), execution)
+                    {
+                        Ok(input) => input,
+                        Err(error) => break 'run Err(error),
+                    };
+                match self.run_before_node_call(&node, execution).await {
+                    Ok(Some(result)) => pending.gated.push_back((node, result)),
+                    Ok(None) => {
+                        self.spawn_node(&node, node_input, execution, &node_sink, &mut tasks);
+                        pending.running.insert(node.id().to_owned());
+                    }
+                    Err(error) => break 'run Err(error),
+                }
+            }
+
+            if pending.gated.is_empty() && !pending.running.is_empty() {
+                let Some(event) = node_events.recv().await else {
+                    break Ok(());
+                };
+                if let Err(error) = pending.handle_event(self, execution, event).await {
+                    break Err(error);
+                }
+            }
+            while let Ok(event) = node_events.try_recv() {
+                if let Err(error) = pending.handle_event(self, execution, event).await {
+                    break 'run Err(error);
+                }
+            }
+            while let Some((node, result)) = pending.gated.pop_front() {
+                if let Err(error) = pending.handle_result(self, execution, &node, result).await {
+                    break 'run Err(error);
+                }
+            }
+        };
+
+        drop(node_sink);
+        while !tasks.is_empty() {
+            tokio::select! {
+                _ = node_events.recv() => {}
+                _ = tasks.join_next() => {}
+            }
+        }
+        outcome?;
+
+        let content = self.resolve_content(&execution.state);
+        let (results, duration) = execution
+            .state
+            .with(|state| (state.results.clone(), now_ms().saturating_sub(state.start_time)));
+        let result = MultiAgentResult::new(results, duration).with_content(content);
+        if result.status == ResultStatus::Interrupted {
+            *self.inner.pending_interrupt.lock() = Some(execution.state.snapshot());
+        } else {
+            *self.inner.pending_interrupt.lock() = None;
+            execution.state.with_mut(|state| state.pending_input = None);
+        }
+        Ok(result)
+    }
+
+    fn spawn_node(
+        &self,
+        node: &Arc<dyn Node>,
+        input: MultiAgentInput,
+        execution: &Execution,
+        node_sink: &NodeSink,
+        tasks: &mut JoinSet<()>,
+    ) {
+        let node_timeout = match node.node_type() {
+            NodeType::Agent => node.timeout().or(self.inner.config.node_timeout),
+            _ => None,
+        };
+        let cancel = execution.cancel.child_token();
+        if let Some(timeout) = node_timeout {
+            let (node_cancel, done) = (cancel.clone(), execution.done.clone());
+            tokio::spawn(async move {
+                tokio::select! {
+                    () = tokio::time::sleep(timeout) => node_cancel.cancel(),
+                    () = done.cancelled() => {}
+                }
+            });
+        }
+        let options = NodeInputOptions::default()
+            .with_invocation_state(execution.invocation_state.clone())
+            .with_cancel(cancel.clone());
+        let node = Arc::clone(node);
+        let sink = node_sink.clone();
+        let state = execution.state.clone();
+        let orchestrator = Arc::clone(&execution.orchestrator);
+        let invocation_state = execution.invocation_state.clone();
+        let graph_cancel = execution.cancel.clone();
+        let graph_id = self.inner.id.clone();
+        tasks.spawn(async move {
+            let _ = run_node(node.as_ref(), input, &state, &options, &sink).await;
+            let error = (cancel.is_cancelled() && !graph_cancel.is_cancelled()).then(|| {
+                format!(
+                    "node_timeout=<{}>, node_id=<{}>, graph_id=<{graph_id}> | node exceeded wall-clock budget",
+                    node_timeout.unwrap_or_default().as_millis(),
+                    node.id()
+                )
+            });
+            let _ = sink
+                .send(Ok(MultiAgentStreamEvent::AfterNodeCall(AfterNodeCallEvent {
+                    orchestrator,
+                    state,
+                    node_id: node.id().to_owned(),
+                    invocation_state,
+                    error: error.clone(),
+                })))
+                .await;
+            if let Some(error) = error {
+                let _ = sink.send(Err(Error::other(error))).await;
+            }
+        });
+    }
+
+    /// Fires `BeforeNodeCallEvent`, handling a hook-raised interrupt or cancel inline. `Some`
+    /// result means a hook gated the node and it must not run.
+    async fn run_before_node_call(
+        &self,
+        node: &Arc<dyn Node>,
+        execution: &Execution,
+    ) -> Result<Option<NodeResult>> {
+        let mut event = BeforeNodeCallEvent {
+            orchestrator: Arc::clone(&execution.orchestrator),
+            state: execution.state.clone(),
+            node_id: node.id().to_owned(),
+            invocation_state: execution.invocation_state.clone(),
+            cancel: Cancel::default(),
+        };
+        match self.inner.hooks.invoke_callbacks(&mut event).await {
+            Ok(()) => {}
+            Err(error) if error.is_control_flow() => {
+                let result = execution.state.with_mut(|state| {
+                    let node_state = state.node_or_insert(node.id());
+                    record_hook_interrupt(node.id(), node_state)
+                });
+                send(&execution.sink, MultiAgentStreamEvent::BeforeNodeCall(event)).await;
+                self.emit_node_result(node, &result, execution).await?;
+                self.emit_after_node_call(node, execution).await?;
+                return Ok(Some(result));
+            }
+            Err(error) => return Err(error),
+        }
+        let cancel = event.cancel.clone();
+        send(&execution.sink, MultiAgentStreamEvent::BeforeNodeCall(event)).await;
+        if !cancel.is_cancelled() {
+            return Ok(None);
+        }
+        let message = cancel
+            .message_or(HOOK_CANCEL_MESSAGE)
+            .unwrap_or(HOOK_CANCEL_MESSAGE)
+            .to_owned();
+        let result = execution.state.with_mut(|state| {
+            drop_stale_interrupted_result(node.id(), state);
+            let result = NodeResult::new(node.id(), ResultStatus::Cancelled, 0);
+            let node_state = state.node_or_insert(node.id());
+            node_state.status = Status::Cancelled;
+            node_state.results.push(result.clone());
+            result
+        });
+        let mut event = NodeCancelEvent {
+            node_id: node.id().to_owned(),
+            state: execution.state.clone(),
+            message,
+            invocation_state: execution.invocation_state.clone(),
+        };
+        self.inner.hooks.invoke_callbacks(&mut event).await?;
+        send(&execution.sink, MultiAgentStreamEvent::NodeCancel(event)).await;
+        self.emit_after_node_call(node, execution).await?;
+        Ok(Some(result))
+    }
+
+    async fn emit_node_result(
+        &self,
+        node: &Arc<dyn Node>,
+        result: &NodeResult,
+        execution: &Execution,
+    ) -> Result<()> {
+        let mut event = NodeResultEvent {
+            node_id: node.id().to_owned(),
+            node_type: node.node_type(),
+            state: execution.state.clone(),
+            result: result.clone(),
+            invocation_state: execution.invocation_state.clone(),
+        };
+        self.inner.hooks.invoke_callbacks(&mut event).await?;
+        send(&execution.sink, MultiAgentStreamEvent::NodeResult(event)).await;
+        Ok(())
+    }
+
+    async fn emit_after_node_call(&self, node: &Arc<dyn Node>, execution: &Execution) -> Result<()> {
+        let mut event = AfterNodeCallEvent {
+            orchestrator: Arc::clone(&execution.orchestrator),
+            state: execution.state.clone(),
+            node_id: node.id().to_owned(),
+            invocation_state: execution.invocation_state.clone(),
+            error: None,
+        };
+        self.inner.hooks.invoke_callbacks(&mut event).await?;
+        send(&execution.sink, MultiAgentStreamEvent::AfterNodeCall(event)).await;
+        Ok(())
+    }
+
+    /// Nodes whose incoming edges are all satisfied by `node`'s completion.
+    async fn find_ready(
+        &self,
+        node: &Arc<dyn Node>,
+        state: &MultiAgentStateHandle,
+        pending: &Pending,
+    ) -> Vec<Arc<dyn Node>> {
+        if state.node(node.id()).map(|node| node.status) != Some(Status::Completed) {
+            return Vec::new();
+        }
+        let mut ready = Vec::new();
+        for edge in self
+            .inner
+            .edges
+            .iter()
+            .filter(|edge| edge.source.id() == node.id())
+        {
+            let target = &edge.target;
+            if pending.running.contains(target.id())
+                || pending.targets.iter().any(|queued| queued.id() == target.id())
+            {
+                continue;
+            }
+            if self.dependencies_satisfied(target.id(), state).await {
+                ready.push(Arc::clone(target));
+            }
+        }
+        ready
+    }
+
+    async fn dependencies_satisfied(&self, node_id: &str, state: &MultiAgentStateHandle) -> bool {
+        for edge in self.inner.edges.iter().filter(|edge| edge.target.id() == node_id) {
+            if state.node(edge.source.id()).map(|node| node.status) != Some(Status::Completed) {
+                return false;
+            }
+            if !edge.should_traverse(state).await {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Nodes to restart from when the state carries completed nodes from an earlier run.
+    async fn find_resume_targets(&self, state: &MultiAgentStateHandle) -> Option<Vec<Arc<dyn Node>>> {
+        let resumable = state.with(|state| {
+            state
+                .nodes()
+                .values()
+                .any(|node| node.status == Status::Completed)
+        });
+        if !resumable {
+            return None;
+        }
+        let mut ready = Vec::new();
+        for (id, node) in &self.inner.nodes {
+            if state.node(id).map(|node| node.status) == Some(Status::Completed) {
+                continue;
+            }
+            if self.dependencies_satisfied(id, state).await {
+                ready.push(Arc::clone(node));
+            }
+        }
+        if ready.is_empty() {
+            tracing::debug!("all nodes completed in restored state | starting fresh");
+            return None;
+        }
+        tracing::debug!(
+            resume_targets = %ready.iter().map(|node| node.id()).collect::<Vec<_>>().join(", "),
+            prior_steps = state.steps(),
+            "resuming graph from restored state"
+        );
+        Some(ready)
+    }
+
+    /// Content of every terminal node, which is what the aggregate result reports.
+    fn resolve_content(&self, state: &MultiAgentStateHandle) -> Vec<ContentBlock> {
+        state.with_mut(|state| {
+            let terminus: Vec<(String, bool)> = state
+                .nodes()
+                .iter()
+                .filter_map(|(id, node)| match node.status {
+                    Status::Failed | Status::Cancelled => Some((id.clone(), true)),
+                    Status::Completed => {
+                        let open =
+                            self.inner
+                                .edges
+                                .iter()
+                                .filter(|edge| edge.source.id() == id)
+                                .any(|edge| {
+                                    state.node(edge.target.id()).map(|node| node.status)
+                                        != Some(Status::Pending)
+                                });
+                        Some((id.clone(), !open))
+                    }
+                    _ => None,
+                })
+                .collect();
+            for (id, value) in terminus {
+                if let Some(node) = state.node_mut(&id) {
+                    node.terminus = value;
+                }
+            }
+            state
+                .nodes()
+                .values()
+                .filter(|node| node.terminus)
+                .flat_map(|node| node.content().to_vec())
+                .collect()
+        })
+    }
+
+    fn resolve_input_for_scheduling(
+        &self,
+        node: &Arc<dyn Node>,
+        routed: Option<Vec<InterruptResponseContent>>,
+        content_input: Option<&MultiAgentInput>,
+        execution: &Execution,
+    ) -> Result<MultiAgentInput> {
+        if let Some(routed) = routed {
+            let forwarded = execution.state.with_mut(|state| {
+                let node_state = state.node_mut(node.id()).ok_or_else(|| {
+                    Error::other(format!(
+                        "node_id=<{}>, graph_id=<{}> | routed interrupt response targets a node missing from state; topology changed between save and resume?",
+                        node.id(),
+                        self.inner.id
+                    ))
+                })?;
+                Ok::<_, Error>(apply_orchestrator_hook_responses(node_state, routed))
+            })?;
+            if !forwarded.is_empty() {
+                return Ok(MultiAgentInput::InterruptResponses(forwarded));
+            }
+        }
+        let Some(content_input) = content_input else {
+            tracing::warn!(
+                node_id = %node.id(),
+                graph_id = %self.inner.id,
+                "no pending input on resume; using empty"
+            );
+            return Ok(self.resolve_node_input(
+                node,
+                &MultiAgentInput::Text(String::new()),
+                &execution.state,
+            ));
+        };
+        Ok(self.resolve_node_input(node, content_input, &execution.state))
+    }
+
+    /// Appends every dependency's output to the node's input, labelled by source node id.
+    fn resolve_node_input(
+        &self,
+        node: &Arc<dyn Node>,
+        input: &MultiAgentInput,
+        state: &MultiAgentStateHandle,
+    ) -> MultiAgentInput {
+        let mut deps = Vec::new();
+        for edge in self
+            .inner
+            .edges
+            .iter()
+            .filter(|edge| edge.target.id() == node.id())
+        {
+            let Some(source) = state.node(edge.source.id()) else {
+                continue;
+            };
+            let content: Vec<ContentBlock> = source
+                .content()
+                .iter()
+                .filter(|block| !matches!(block, ContentBlock::Reasoning(_)))
+                .cloned()
+                .collect();
+            if !content.is_empty() {
+                deps.push(ContentBlock::Text(format!("[node: {}]", edge.source.id())));
+                deps.extend(content);
+            }
+        }
+        if deps.is_empty() {
+            return input.clone();
+        }
+        let mut blocks = match input.clone() {
+            MultiAgentInput::Text(text) => vec![ContentBlock::Text(text)],
+            MultiAgentInput::Blocks(blocks) => blocks,
+            _ => Vec::new(),
+        };
+        blocks.extend(deps);
+        MultiAgentInput::Blocks(blocks)
+    }
+}
+
+#[async_trait]
+impl MultiAgent for Graph {
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    fn name(&self) -> &str {
+        &self.inner.name
+    }
+
+    fn description(&self) -> Option<&str> {
+        self.inner.description.as_deref()
+    }
+
+    fn hooks(&self) -> &HookRegistry {
+        &self.inner.hooks
+    }
+
+    async fn invoke_with(
+        &self,
+        input: MultiAgentInput,
+        options: MultiAgentInvokeOptions,
+    ) -> Result<MultiAgentResult> {
+        Graph::invoke_with(self, input, options).await
+    }
+
+    fn stream_with(&self, input: MultiAgentInput, options: MultiAgentInvokeOptions) -> MultiAgentStream {
+        Graph::stream_with(self, input, options)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Everything one invocation threads through the execution loop.
+struct Execution {
+    orchestrator: OrchestratorRef,
+    state: MultiAgentStateHandle,
+    invocation_state: InvocationState,
+    sink: NodeSink,
+    cancel: CancellationToken,
+    done: CancellationToken,
+    external: Option<CancellationToken>,
+    timed_out: Arc<AtomicBool>,
+}
+
+/// The execution loop's scheduling state.
+#[derive(Default)]
+struct Pending {
+    targets: VecDeque<Arc<dyn Node>>,
+    running: HashSet<String>,
+    gated: VecDeque<(Arc<dyn Node>, NodeResult)>,
+    interrupted: bool,
+}
+
+impl Pending {
+    async fn handle_event(
+        &mut self,
+        graph: &Graph,
+        execution: &Execution,
+        event: Result<MultiAgentStreamEvent>,
+    ) -> Result<()> {
+        match event? {
+            MultiAgentStreamEvent::NodeResult(mut event) => {
+                graph.inner.hooks.invoke_callbacks(&mut event).await?;
+                let (node_id, result) = (event.node_id.clone(), event.result.clone());
+                send(&execution.sink, MultiAgentStreamEvent::NodeResult(event)).await;
+                self.running.remove(&node_id);
+                let node = graph.inner.nodes.get(&node_id).map(Arc::clone);
+                if let Some(node) = node {
+                    self.handle_result(graph, execution, &node, result).await?;
+                }
+            }
+            MultiAgentStreamEvent::NodeStreamUpdate(mut event) => {
+                graph.inner.hooks.invoke_callbacks(&mut event).await?;
+                send(&execution.sink, MultiAgentStreamEvent::NodeStreamUpdate(event)).await;
+            }
+            MultiAgentStreamEvent::AfterNodeCall(mut event) => {
+                graph.inner.hooks.invoke_callbacks(&mut event).await?;
+                send(&execution.sink, MultiAgentStreamEvent::AfterNodeCall(event)).await;
+            }
+            other => send(&execution.sink, other).await,
+        }
+        Ok(())
+    }
+
+    async fn handle_result(
+        &mut self,
+        graph: &Graph,
+        execution: &Execution,
+        node: &Arc<dyn Node>,
+        result: NodeResult,
+    ) -> Result<()> {
+        execution
+            .state
+            .with_mut(|state| state.results.push(result.clone()));
+        if self.interrupted {
+            return Ok(());
+        }
+        if result.status == ResultStatus::Interrupted {
+            self.interrupted = true;
+            return Ok(());
+        }
+        let ready = graph.find_ready(node, &execution.state, self).await;
+        if ready.is_empty() {
+            return Ok(());
+        }
+        let mut event = MultiAgentHandoffEvent {
+            source: node.id().to_owned(),
+            targets: ready.iter().map(|node| node.id().to_owned()).collect(),
+            state: execution.state.clone(),
+            invocation_state: execution.invocation_state.clone(),
+        };
+        graph.inner.hooks.invoke_callbacks(&mut event).await?;
+        send(&execution.sink, MultiAgentStreamEvent::MultiAgentHandoff(event)).await;
+        self.targets.extend(ready);
+        Ok(())
+    }
+}
+
+async fn send(sink: &NodeSink, event: MultiAgentStreamEvent) {
+    let _ = sink.send(Ok(event)).await;
 }
 
 #[cfg(test)]
