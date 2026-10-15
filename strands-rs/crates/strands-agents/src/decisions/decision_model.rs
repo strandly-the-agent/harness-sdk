@@ -136,7 +136,7 @@ mod tests {
     }
 
     fn error_of(result: Result<DecisionResult>) -> String {
-        result.err().expect("must fail").to_string()
+        result.expect_err("must fail").to_string()
     }
 
     #[tokio::test]
@@ -160,17 +160,28 @@ mod tests {
             "question id=<q> | choices must be 'boolean' or a non-empty string array"
         );
         assert_eq!(
-            error_of(model.ask("x", &Questions::new().choice("q", "pick", ["a", "a"])).await),
+            error_of(
+                model
+                    .ask("x", &Questions::new().choice("q", "pick", ["a", "a"]))
+                    .await
+            ),
             "question id=<q> | choices must be unique"
         );
         assert_eq!(
-            error_of(model.ask("x", &Questions::new().choice("q", "pick", ["a", ""])).await),
+            error_of(
+                model
+                    .ask("x", &Questions::new().choice("q", "pick", ["a", ""]))
+                    .await
+            ),
             "question id=<q> | choices must be non-empty strings"
         );
         assert_eq!(
             error_of(
                 model
-                    .ask("x", &Questions::new().choice("q", "pick", ["certain", "uncertain"]))
+                    .ask(
+                        "x",
+                        &Questions::new().choice("q", "pick", ["certain", "uncertain"])
+                    )
                     .await
             ),
             "question id=<q> | choice 'uncertain' is reserved for the Uncertain answer"
@@ -180,8 +191,10 @@ mod tests {
                 model
                     .ask(
                         "x",
-                        &Questions::new()
-                            .with("q", Question::boolean("ok?").with_uncertainty(Uncertainty::MinConfidence(1.5)))
+                        &Questions::new().with(
+                            "q",
+                            Question::boolean("ok?").with_uncertainty(Uncertainty::MinConfidence(1.5))
+                        )
                     )
                     .await
             ),
@@ -192,8 +205,10 @@ mod tests {
                 model
                     .ask(
                         "x",
-                        &Questions::new()
-                            .with("q", Question::boolean("ok?").with_uncertainty(Uncertainty::MinConfidence(f64::NAN)))
+                        &Questions::new().with(
+                            "q",
+                            Question::boolean("ok?").with_uncertainty(Uncertainty::MinConfidence(f64::NAN))
+                        )
                     )
                     .await
             ),
@@ -232,8 +247,10 @@ mod tests {
     async fn an_uncertainty_at_the_range_bounds_is_valid() {
         let model = RecordingDecisionModel::default();
         for min in [0.0, 1.0] {
-            let questions = Questions::new()
-                .with("q", Question::boolean("ok?").with_uncertainty(Uncertainty::MinConfidence(min)));
+            let questions = Questions::new().with(
+                "q",
+                Question::boolean("ok?").with_uncertainty(Uncertainty::MinConfidence(min)),
+            );
             assert!(model.ask("x", &questions).await.is_ok(), "min={min}");
         }
     }

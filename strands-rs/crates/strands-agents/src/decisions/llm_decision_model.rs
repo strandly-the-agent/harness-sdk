@@ -127,7 +127,9 @@ impl LlmDecisionModelBuilder {
         };
         Ok(LlmDecisionModel {
             model,
-            system_prompt: self.system_prompt.unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.to_owned()),
+            system_prompt: self
+                .system_prompt
+                .unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.to_owned()),
         })
     }
 }
@@ -169,7 +171,9 @@ impl DecisionModel for LlmDecisionModel {
                 })
             })
             .flatten()
-            .ok_or_else(|| Error::StructuredOutput("decision model returned no structured answers".to_owned()))?;
+            .ok_or_else(|| {
+                Error::StructuredOutput("decision model returned no structured answers".to_owned())
+            })?;
 
         let raw = tool
             .validate(&tool_use.input)
@@ -244,7 +248,10 @@ fn answer_literals(question: &Question) -> Vec<&str> {
     literals
 }
 
-fn convert_answers(raw: &IndexMap<String, RawAnswer>, questions: &Questions) -> Result<IndexMap<String, Answer>> {
+fn convert_answers(
+    raw: &IndexMap<String, RawAnswer>,
+    questions: &Questions,
+) -> Result<IndexMap<String, Answer>> {
     questions
         .iter()
         .map(|(id, question)| {
@@ -375,7 +382,9 @@ mod tests {
         latency_ms: Option<u64>,
     ) -> Arc<RecordingModel> {
         let mut events = vec![
-            ModelStreamEvent::MessageStart { role: Role::Assistant },
+            ModelStreamEvent::MessageStart {
+                role: Role::Assistant,
+            },
             ModelStreamEvent::ContentBlockStart {
                 start: Some(ContentBlockStart::ToolUse {
                     name: STRUCTURED_OUTPUT_TOOL_NAME.to_owned(),
@@ -410,10 +419,14 @@ mod tests {
     /// A model that returns a plain text message instead of a tool call (TS `textModel`).
     fn text_model(text: &str) -> Arc<RecordingModel> {
         RecordingModel::new(vec![
-            ModelStreamEvent::MessageStart { role: Role::Assistant },
+            ModelStreamEvent::MessageStart {
+                role: Role::Assistant,
+            },
             ModelStreamEvent::ContentBlockStart { start: None },
             ModelStreamEvent::ContentBlockDelta {
-                delta: ContentBlockDelta::Text { text: text.to_owned() },
+                delta: ContentBlockDelta::Text {
+                    text: text.to_owned(),
+                },
             },
             ModelStreamEvent::ContentBlockStop {},
             ModelStreamEvent::MessageStop {
@@ -469,7 +482,11 @@ mod tests {
 
         // Wall-clock fallback: a u64 is always >= 0, so assert it is plausible rather than the
         // provider's 42ms.
-        assert!(result.metadata.latency_ms < 60_000, "{}", result.metadata.latency_ms);
+        assert!(
+            result.metadata.latency_ms < 60_000,
+            "{}",
+            result.metadata.latency_ms
+        );
     }
 
     #[tokio::test]
@@ -478,7 +495,10 @@ mod tests {
         let decision = LlmDecisionModel::new(model);
 
         let result = decision
-            .ask("ambiguous", &Questions::new().choice("color", "color?", ["red", "green"]))
+            .ask(
+                "ambiguous",
+                &Questions::new().choice("color", "color?", ["red", "green"]),
+            )
             .await
             .expect("decision succeeds");
 
@@ -493,7 +513,10 @@ mod tests {
         let decision = LlmDecisionModel::new(model);
 
         let result = decision
-            .ask("ambiguous", &Questions::new().choice("color", "color?", ["red", "green"]))
+            .ask(
+                "ambiguous",
+                &Questions::new().choice("color", "color?", ["red", "green"]),
+            )
             .await
             .expect("decision succeeds");
 
@@ -513,7 +536,8 @@ mod tests {
                 "state",
                 &Questions::new().with(
                     "q",
-                    Question::choice("ok?", ["yes", "no"]).with_uncertainty(super::super::Uncertainty::Disabled),
+                    Question::choice("ok?", ["yes", "no"])
+                        .with_uncertainty(super::super::Uncertainty::Disabled),
                 ),
             )
             .await
@@ -657,7 +681,10 @@ mod tests {
             .await
             .is_err());
         assert!(decision
-            .ask("x", &Questions::new().choice("q", "pick", ["certain", "uncertain"]))
+            .ask(
+                "x",
+                &Questions::new().choice("q", "pick", ["certain", "uncertain"])
+            )
             .await
             .is_err());
         assert!(decision
@@ -700,7 +727,10 @@ mod tests {
             .expect_err("must fail")
             .to_string();
 
-        assert!(error.starts_with("decision model returned an invalid answer set:"), "{error}");
+        assert!(
+            error.starts_with("decision model returned an invalid answer set:"),
+            "{error}"
+        );
     }
 
     #[tokio::test]

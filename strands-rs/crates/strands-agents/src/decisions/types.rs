@@ -386,7 +386,10 @@ mod tests {
     fn decision_input_from_impls_normalize_to_messages() {
         let user_hi = vec![(Role::User, vec![ContentBlock::text("hi")])];
         assert_eq!(turns(DecisionInput::from("hi").into_messages()), user_hi);
-        assert_eq!(turns(DecisionInput::from("hi".to_owned()).into_messages()), user_hi);
+        assert_eq!(
+            turns(DecisionInput::from("hi".to_owned()).into_messages()),
+            user_hi
+        );
         assert_eq!(
             turns(DecisionInput::from(vec![ContentBlock::text("hi")]).into_messages()),
             user_hi
@@ -411,10 +414,10 @@ mod tests {
 
     #[test]
     fn questions_preserve_insertion_order() {
-        let questions = Questions::new()
-            .choice("b", "?", ["x"])
-            .boolean("a", "?")
-            .with("c", Question::boolean("?").with_uncertainty(Uncertainty::Disabled));
+        let questions = Questions::new().choice("b", "?", ["x"]).boolean("a", "?").with(
+            "c",
+            Question::boolean("?").with_uncertainty(Uncertainty::Disabled),
+        );
 
         assert_eq!(questions.ids().collect::<Vec<_>>(), ["b", "a", "c"]);
         assert_eq!(questions.len(), 3);
@@ -439,12 +442,18 @@ mod tests {
     #[test]
     fn uncertain_display_matches_ts_to_string() {
         assert_eq!(Uncertain::new().to_string(), "Uncertain");
-        assert_eq!(Uncertain::with_reason("no color").to_string(), "Uncertain(no color)");
+        assert_eq!(
+            Uncertain::with_reason("no color").to_string(),
+            "Uncertain(no color)"
+        );
     }
 
     #[test]
     fn uncertain_serializes_like_ts_to_json() {
-        assert_eq!(serde_json::to_value(Uncertain::new()).unwrap(), json!({ "uncertain": true }));
+        assert_eq!(
+            serde_json::to_value(Uncertain::new()).unwrap(),
+            json!({ "uncertain": true })
+        );
         assert_eq!(
             serde_json::to_value(Uncertain::with_reason("why")).unwrap(),
             json!({ "uncertain": true, "reason": "why" })
@@ -454,7 +463,10 @@ mod tests {
     #[test]
     fn answer_serializes_untagged_like_ts() {
         assert_eq!(serde_json::to_value(Answer::Bool(true)).unwrap(), json!(true));
-        assert_eq!(serde_json::to_value(Answer::Choice("red".into())).unwrap(), json!("red"));
+        assert_eq!(
+            serde_json::to_value(Answer::Choice("red".into())).unwrap(),
+            json!("red")
+        );
         assert_eq!(
             serde_json::to_value(Answer::Uncertain(Uncertain::with_reason("r"))).unwrap(),
             json!({ "uncertain": true, "reason": "r" })

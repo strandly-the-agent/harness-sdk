@@ -36,7 +36,10 @@ const USAGE: Usage = Usage {
 
 /// The option enum the model is offered for `id`.
 fn answer_enum(options: &StreamOptions, id: &str) -> serde_json::Value {
-    let schema = options.tool_specs[0].input_schema.as_ref().expect("an input schema");
+    let schema = options.tool_specs[0]
+        .input_schema
+        .as_ref()
+        .expect("an input schema");
     schema["properties"][id]["properties"]["answer"]["enum"].clone()
 }
 
@@ -66,7 +69,10 @@ async fn answers_boolean_and_choice_questions_in_one_call() {
     assert_eq!(result.answer("is_fruit").and_then(Answer::as_bool), Some(true));
     assert_eq!(result.answer("color").and_then(Answer::as_choice), Some("red"));
     assert_eq!(result.usage, Some(USAGE));
-    assert_eq!(result.metadata.latency_ms, 0, "mock reports zero provider latency");
+    assert_eq!(
+        result.metadata.latency_ms, 0,
+        "mock reports zero provider latency"
+    );
     assert_eq!(model.call_count(), 1, "a decision is a single model call");
 }
 
@@ -82,12 +88,18 @@ async fn forces_the_structured_output_tool_and_the_hardened_system_prompt() {
         .await
         .expect("builds");
 
-    decision.ask("a blueberry", &questions()).await.expect("decision succeeds");
+    decision
+        .ask("a blueberry", &questions())
+        .await
+        .expect("decision succeeds");
 
     let (messages, options): (Vec<Message>, StreamOptions) = model.calls().remove(0);
     assert_eq!(messages.len(), 1, "a string state becomes one user message");
     assert_eq!(messages[0].role, Role::User);
-    assert_eq!(messages[0].content, vec![ContentBlock::Text("a blueberry".to_owned())]);
+    assert_eq!(
+        messages[0].content,
+        vec![ContentBlock::Text("a blueberry".to_owned())]
+    );
     assert_eq!(
         options.tool_choice,
         Some(ToolChoice::Tool {
@@ -122,10 +134,16 @@ async fn returns_uncertain_with_a_reason_when_the_model_opts_out() {
         .answer("color")
         .and_then(Answer::as_uncertain)
         .expect("uncertain answer");
-    assert_eq!(uncertain.reason.as_deref(), Some("the content never mentions a color"));
+    assert_eq!(
+        uncertain.reason.as_deref(),
+        Some("the content never mentions a color")
+    );
 
     let options = model.calls().remove(0).1;
-    assert_eq!(answer_enum(&options, "color"), json!(["red", "green", "uncertain"]));
+    assert_eq!(
+        answer_enum(&options, "color"),
+        json!(["red", "green", "uncertain"])
+    );
 }
 
 #[tokio::test]
@@ -188,7 +206,10 @@ async fn an_answer_outside_the_allowed_options_is_an_error() {
     let decision = LlmDecisionModel::new(model);
 
     let error = decision
-        .ask("x", &Questions::new().choice("color", "What color?", ["red", "green"]))
+        .ask(
+            "x",
+            &Questions::new().choice("color", "What color?", ["red", "green"]),
+        )
         .await
         .expect_err("an unknown option is rejected");
 

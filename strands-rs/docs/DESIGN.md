@@ -81,3 +81,52 @@ installs the exporter).
   `()` and the `*_scoped` variants return the `#[must_use]` `HookCleanup`. `add_callback_boxed*` keeps the
   `|e| Box::pin(async move { .. })` form, needed when the future borrows the event (a closure's return
   type cannot capture the event's lifetime).
+
+## Decisions
+
+`decisions` ports `strands-ts/src/decisions/`: a stateless, single-shot question set answered by a
+model, with typed answers plus token usage and latency. Public surface:
+
+```rust
+#[async_trait] pub trait DecisionModel: Send + Sync {
+    async fn decide(&self, state: DecisionInput, questions: &Questions) -> Result<DecisionResult>;
+}
+#[async_trait] pub trait DecisionModelExt {                       // blanket impl over DecisionModel
+    async fn ask(&self, state: impl Into<DecisionInput> + Send, questions: &Questions)
+        -> Result<DecisionResult>;
+}
+pub enum DecisionInput { Text(String), Blocks(Vec<ContentBlock>), Messages(Vec<Message>) }
+pub enum Question { Boolean { question, uncertainty }, Choice { question, choices, uncertainty } }
+pub enum Uncertainty { Allowed, Disabled, MinConfidence(f64) }
+pub struct Questions(IndexMap<String, Question>);                 // .boolean() / .choice() / .with()
+pub enum Answer { Bool(bool), Choice(String), Uncertain(Uncertain) }
+pub struct Uncertain { pub reason: Option<String> }
+pub struct DecisionResult { pub answers: IndexMap<String, Answer>, pub usage: Option<Usage>,
+                            pub metadata: DecisionMetadata }
+pub struct LlmDecisionModel;                                      // ::new(impl Model) / ::builder()
+pub struct LlmDecisionModelBuilder;                               // .model() .system_prompt() .build()
+```
+
+Decision log:
+
+- TS narrows the answer type per question with a `const` type parameter (`choices: 'boolean'` →
+  `boolean`, a string tuple → its union). Rust has no equivalent over a heterogeneous question map,
+  so `Question` is an enum (`Boolean` / `Choice { choices }`, each carrying `uncertainty`) and
+  `Answer` is an enum (`Bool` / `Choice(String)` / `Uncertain`) with `as_bool`/`as_choice`/
+  `as_uncertain` accessors. This is what `docs/PLAN_PHASE5.md` specifies; `defineQuestions` has no
+  counterpart because `Questions` is already a value.
+- `ask` is a blanket-implemented extension trait (`DecisionModelExt`) over the object-safe
+  `DecisionModel::decide`, mirroring TS's concrete `ask` + abstract `_ask`. Validation and the
+  `decision` span therefore cannot be skipped by an implementation, and `Arc<dyn DecisionModel>`
+  still works — `ask` takes `impl Into<DecisionInput>`, so it cannot live on the object-safe trait.
+- `Questions` wraps an `IndexMap`, because insertion order is observable: it is the property order
+  of the generated answer schema, which TS inherits from JS object order.
+- Uncertainty is modelled on the wire exactly as in TS — an extra `"uncertain"` option appended to
+  each permitting question's enum, with an optional `reason` — so `Uncertainty::Disabled` only
+  removes that option and never changes the answer type. `MinConfidence` is carried for
+  implementations that return per-answer confidence; `LlmDecisionModel` ignores it.
+- Question validation errors are `Error::Other` carrying the TS message text verbatim
+  (`question id=<id> | …`), consistent with the rest of the crate's argument validation.
+- `LlmDecisionModel::builder().build()` is `async` and falls back to a zero-config `BedrockModel`,
+  like `AgentBuilder`; without the `bedrock` feature and without `.model(..)` it returns
+  `Error::DefaultNotConfigured`.
