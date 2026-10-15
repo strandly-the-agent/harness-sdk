@@ -1760,6 +1760,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn re_executes_a_node_in_a_cycle_while_the_edge_allows_re_entry() {
+        let visits = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&visits);
+        let agent = Agent::builder()
+            .id("a")
+            .model(MockMessageModel::shared(vec![
+                MockResponse::message(Message::assistant("first")),
+                MockResponse::message(Message::assistant("second")),
+            ]))
+            .build()
+            .unwrap();
+        let graph = Graph::builder()
+            .node(agent)
+            .edge_when(
+                "a",
+                "a",
+                edge_handler(move |_| seen.fetch_add(1, Ordering::SeqCst) < 1),
+            )
+            .entry_point("a")
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.unwrap();
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), vec!["a", "a"]);
+        assert_eq!(visits.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
     async fn yields_lifecycle_events_in_order_for_a_single_node() {
         let graph = Graph::builder()
             .node(saying("a", "from a"))

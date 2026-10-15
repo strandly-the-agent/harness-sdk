@@ -79,7 +79,7 @@ and its duplicate-plugin check, `trace_attributes` / the multi-agent tracer (no 
 | calls initialize only once across invocations | `initializes_plugins_only_once_across_invocations` | ported |
 | respects maxConcurrency limit | `respects_max_concurrency` | ported |
 | preserves agent messages and state after execution | — | pending (covered by `nodes.rs` `preserve_context` tests) |
-| re-executes node in a cycle when conditional edge allows re-entry | — | pending |
+| re-executes node in a cycle when conditional edge allows re-entry | `re_executes_a_node_in_a_cycle_while_the_edge_allows_re_entry` | ported |
 | yields lifecycle events in correct order for single node | `yields_lifecycle_events_in_order_for_a_single_node` | ported |
 | yields handoff events on transitions between nodes | `yields_a_handoff_event_between_nodes` | ported |
 | returns cancelled result when cancel is true / a string | `a_hook_cancels_a_node_with_its_own_message` | ported (string variant) |
