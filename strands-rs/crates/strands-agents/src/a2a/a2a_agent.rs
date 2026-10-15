@@ -16,9 +16,7 @@ use super::types::{
     A2AEventData, AgentCard, JsonRpcError, JsonRpcRequest, Message as A2AMessage, MessageSendParams,
     METHOD_MESSAGE_STREAM,
 };
-use crate::agent::{
-    AgentAsToolOptions, AgentResult, InvocationState, InvokableAgent, InvokeInput, InvokeOptions,
-};
+use crate::agent::{AgentAsToolOptions, AgentResult, InvocationState, InvokeInput, InvokeOptions};
 use crate::error::{Error, Result};
 use crate::models::sse::SseParser;
 use crate::tools::{create_error_result, Tool, ToolContext, ToolRef};
@@ -279,25 +277,6 @@ impl Inner {
             Some(timeout) => builder.timeout(timeout),
             None => builder,
         }
-    }
-}
-
-#[async_trait]
-impl InvokableAgent for A2AAgent {
-    fn id(&self) -> &str {
-        A2AAgent::id(self)
-    }
-
-    fn name(&self) -> &str {
-        A2AAgent::name(self)
-    }
-
-    fn description(&self) -> Option<&str> {
-        A2AAgent::description(self)
-    }
-
-    async fn invoke_with(&self, input: InvokeInput, options: InvokeOptions) -> Result<AgentResult> {
-        A2AAgent::invoke_with(self, input, options).await
     }
 }
 
@@ -954,16 +933,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn is_invocable_behind_the_invokable_agent_trait() {
+    async fn invoke_with_threads_the_invocation_state_onto_the_result() {
         let handle = serve(&["Hello"]).await;
-        let agent: Arc<dyn InvokableAgent> = Arc::new(remote(&handle));
+        let agent = remote(&handle);
+        let state = InvocationState::new();
+        state.insert("caller", "local".to_owned());
 
         let result = agent
-            .invoke_with(InvokeInput::Text("hi".to_owned()), InvokeOptions::default())
+            .invoke_with(
+                InvokeInput::Text("hi".to_owned()),
+                InvokeOptions::default().with_invocation_state(state),
+            )
             .await
             .unwrap();
 
         assert_eq!(result.text(), "Hello");
+        assert_eq!(
+            result.invocation_state.get::<String>("caller").as_deref(),
+            Some(&"local".to_owned())
+        );
         handle.shutdown().await;
     }
 
