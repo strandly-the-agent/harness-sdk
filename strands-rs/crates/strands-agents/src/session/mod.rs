@@ -3,7 +3,7 @@
 
 mod agent_snapshot;
 mod file_storage;
-mod session_manager;
+pub(crate) mod session_manager;
 mod storage;
 pub(crate) mod types;
 mod validation;
