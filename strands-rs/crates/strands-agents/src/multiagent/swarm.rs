@@ -34,7 +34,7 @@ use crate::session::types::Snapshot;
 use crate::types::{ContentBlock, InterruptResponseContent};
 
 /// Default swarm id, matching TS `id ?? 'swarm'`.
-const DEFAULT_ID: &str = "swarm";
+pub const DEFAULT_SWARM_ID: &str = "swarm";
 
 /// Reason reported when a hook cancels a node without giving one.
 const DEFAULT_CANCEL_MESSAGE: &str = "node cancelled by hook";
@@ -128,9 +128,8 @@ impl Invocation {
 
 impl Swarm {
     /// Start building a swarm.
-    #[must_use]
     pub fn builder() -> SwarmBuilder {
-        SwarmBuilder::default()
+        SwarmBuilder::new()
     }
 
     /// The swarm's unique id.
@@ -976,6 +975,7 @@ impl From<Swarm> for NodeDefinition {
 
 /// Builder for a [`Swarm`].
 #[derive(Default)]
+#[must_use = "a SwarmBuilder does nothing until you call build()"]
 pub struct SwarmBuilder {
     id: Option<String>,
     name: Option<String>,
@@ -988,50 +988,48 @@ pub struct SwarmBuilder {
 }
 
 impl SwarmBuilder {
+    /// A fresh builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Set the swarm's id. Defaults to `"swarm"`.
-    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
     }
 
     /// Set the swarm's human-readable name. Defaults to the id.
-    #[must_use]
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
     /// Set what this swarm does.
-    #[must_use]
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
     }
 
     /// Add a node; its id comes from the wrapped agent or orchestrator.
-    #[must_use]
     pub fn node(mut self, node: impl Into<NodeDefinition>) -> Self {
         self.definitions.push(node.into());
         self
     }
 
     /// Set the node that receives the initial input. Defaults to the first node added.
-    #[must_use]
     pub fn entry_point(mut self, id: impl Into<String>) -> Self {
         self.entry_point = Some(id.into());
         self
     }
 
     /// Register a plugin.
-    #[must_use]
     pub fn plugin(mut self, plugin: Arc<dyn MultiAgentPlugin>) -> Self {
         self.plugins.push(plugin);
         self
     }
 
     /// Register a hook callback on the swarm's registry.
-    #[must_use]
     pub fn hook<E, F>(self, callback: F) -> Self
     where
         E: crate::hooks::HookEvent,
@@ -1042,35 +1040,30 @@ impl SwarmBuilder {
     }
 
     /// Cap the total number of node executions, including the first.
-    #[must_use]
     pub fn max_steps(mut self, max_steps: u64) -> Self {
         self.config.max_steps = Some(max_steps);
         self
     }
 
     /// Wall-clock ceiling for the whole invocation.
-    #[must_use]
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.config.timeout = Some(timeout);
         self
     }
 
     /// Fallback per-node wall-clock ceiling, used for nodes that set none.
-    #[must_use]
     pub fn node_timeout(mut self, node_timeout: Duration) -> Self {
         self.config.node_timeout = Some(node_timeout);
         self
     }
 
     /// Window of completed nodes scanned for a handoff loop.
-    #[must_use]
     pub fn repetitive_handoff_detection_window(mut self, window: usize) -> Self {
         self.config.repetitive_handoff_detection_window = window;
         self
     }
 
     /// Unique nodes required within the detection window.
-    #[must_use]
     pub fn repetitive_handoff_min_unique_agents(mut self, minimum: usize) -> Self {
         self.config.repetitive_handoff_min_unique_agents = minimum;
         self
@@ -1114,7 +1107,7 @@ impl SwarmBuilder {
             tracing::warn!("swarm has no maxSteps or timeout set; execution is unbounded");
         }
 
-        let id = self.id.unwrap_or_else(|| DEFAULT_ID.to_owned());
+        let id = self.id.unwrap_or_else(|| DEFAULT_SWARM_ID.to_owned());
         let name = self.name.unwrap_or_else(|| id.clone());
         Ok(Swarm(Arc::new(SwarmInner {
             id,

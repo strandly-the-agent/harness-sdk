@@ -156,6 +156,11 @@ Decision log:
 state types, the `MultiAgent` trait with its invocation types, and the hook/stream events; Graph
 and Swarm code against the signatures below.
 
+Known gap: `HookRegistry::invoke_callbacks` (`hooks/registry.rs:259-264`) short-circuits on the
+first interrupt, where TS collects every callback's interrupts (`hooks/registry.ts:86-116`), so an
+orchestrator with two gating hooks on one event records only the first — a core registry fix, not
+an orchestrator one.
+
 ### `multiagent::state`
 
 ```rust
@@ -614,6 +619,8 @@ pub struct HandoffResult {                  // serde camelCase; the nodes' struc
     pub context: Option<serde_json::Map<String, JsonValue>>,
 }
 
+pub const DEFAULT_SWARM_ID: &str = "swarm";   // re-exported from `multiagent`
+
 #[derive(Clone)]
 pub struct Swarm(Arc<SwarmInner>);
 impl Swarm {
@@ -632,12 +639,12 @@ impl Swarm {
     pub fn stream(&self, input: impl Into<MultiAgentInput>) -> MultiAgentStream;
     pub fn stream_with(&self, impl Into<MultiAgentInput>, MultiAgentInvokeOptions) -> MultiAgentStream;
     pub fn take_snapshot(&self, Option<&MultiAgentStateHandle>, TakeMultiAgentSnapshotOptions) -> Result<Snapshot>;
-    pub fn load_snapshot(&self, &Snapshot, Option<&MultiAgentStateHandle>) -> Result<()>;
+    pub fn load_snapshot(&self, &Snapshot, Option<&MultiAgentStateHandle>) -> Result<()>;  // None arms the next invocation
 }
 impl MultiAgent for Swarm;                  // invoke_with / stream_with / as_any
 impl From<Swarm> for NodeDefinition;        // nest a swarm as a node
 
-pub struct SwarmBuilder;                    // .id .name .description .node .entry_point
+pub struct SwarmBuilder;                    // Default; ::new() .id .name .description .node .entry_point
                                             // .plugin .hook::<E, _> .max_steps .timeout
                                             // .node_timeout .repetitive_handoff_detection_window
                                             // .repetitive_handoff_min_unique_agents
@@ -660,9 +667,12 @@ Divergences from TS (details in `docs/matrices/swarm.md`):
   `serde_json::Value`); TS's `z.never()` for a single-node swarm becomes `{"not": {}}`.
 - **`warnOnce` → `tracing::warn!`** for the unbounded-execution warning; no warn-once helper
   exists in the crate.
-- **The loop is a spawned task over an `mpsc` channel** (like `Agent::stream_with`), not an async
-  generator: `stream_with` spawns, `invoke_with` drains the stream to the terminal result event,
-  and dropping the stream ends the invocation.
+- **The loop is an `mpsc` channel the invocation writes events to** (like `Agent::stream_with`),
+  not an async generator: `stream_with` spawns the loop and dropping the stream ends the
+  invocation, while `invoke_with` runs it inline (`tokio::join!` of the loop and a drain) so a
+  panic in a hook or node propagates to the caller instead of ending the stream.
+- **The swarm deadline is armed after the before-invocation hook and routing**, as TS does, so a
+  slow session restore does not eat the node budget.
 - **Wall-clock budgets are `tokio` deadlines** raced against the node future in one `select!`,
   which cancels the node's `CancellationToken` — TS's `AbortSignal.any` composition. Messages keep
   TS's text with milliseconds (`node_timeout=<20>`, `timeout=<20>`).

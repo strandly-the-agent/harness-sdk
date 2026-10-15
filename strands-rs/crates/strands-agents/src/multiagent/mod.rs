@@ -40,4 +40,4 @@ pub use state::{
     aggregate_node_usage, resolve_status, MultiAgentResult, MultiAgentState, MultiAgentStateHandle,
     NodeResult, NodeResultUpdate, NodeState, ResultStatus, Status,
 };
-pub use swarm::{HandoffResult, Swarm, SwarmBuilder, SwarmConfig};
+pub use swarm::{HandoffResult, Swarm, SwarmBuilder, SwarmConfig, DEFAULT_SWARM_ID};

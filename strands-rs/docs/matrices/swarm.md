@@ -6,7 +6,8 @@
 
 | TS | Rust |
 | --- | --- |
-| `new Swarm({ nodes, start, … })` | `Swarm::builder()…build() -> Result<Swarm>` |
+| `new Swarm({ nodes, start, … })` | `Swarm::builder()` / `SwarmBuilder::new()` / `Default`, then `.build() -> Result<Swarm>` |
+| `id ?? 'swarm'` | `DEFAULT_SWARM_ID` (re-exported from `multiagent`) |
 | `SwarmOptions.id` / `.nodes` / `.start` | `.id(..)` / `.node(impl Into<NodeDefinition>)` / `.entry_point(id)` |
 | `SwarmOptions.plugins` / `sessionManager` | `.plugin(Arc<dyn MultiAgentPlugin>)` |
 | `swarm.addHook(Event, cb)` | `.hook::<E, _>(cb)` on the builder; `Swarm::hooks()` after build |
@@ -24,7 +25,7 @@
 | `HandoffResult` (interface) | `HandoffResult` (serde `camelCase`) |
 | `SwarmNodeDefinition` | `NodeDefinition` (shared with Graph) |
 | nested swarm as a node | `impl From<Swarm> for NodeDefinition` |
-| snapshot via `SessionManager` | `Swarm::take_snapshot` / `load_snapshot` |
+| snapshot via `SessionManager` | `Swarm::take_snapshot` / `load_snapshot` (`load_snapshot(.., None)` arms the next invocation) |
 
 ## Tests
 
