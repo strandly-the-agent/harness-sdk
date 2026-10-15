@@ -97,6 +97,9 @@ orchestrator.hooks.add_callback(BeforeNodeCallEvent, my_callback)
 </Tab>
 <Tab label="Rust">
 
+Rust has the orchestrator hook events (`BeforeNodeCallEvent`, `AfterNodeCallEvent`) and
+`MultiAgent::hooks()`, but no built-in Graph or Swarm orchestrator to register them on yet.
+
 ```rust
 // This feature is not yet available in the Rust SDK
 ```
@@ -407,6 +410,10 @@ class ConditionalExecutionHook(HookProvider):
 </Tab>
 <Tab label="Rust">
 
+Rust has the orchestrator hook events (`BeforeNodeCallEvent`, `AfterNodeCallEvent`) and
+`MultiAgent::hooks()`, but no built-in Graph or Swarm orchestrator to register them on yet.
+When one exists, setting `BeforeNodeCallEvent.cancel` skips the node.
+
 ```rust
 // This feature is not yet available in the Rust SDK
 ```
@@ -520,6 +527,9 @@ class UniversalMultiAgentHook(HookProvider):
 </Tab>
 <Tab label="Rust">
 
+Rust has the orchestrator hook events (`BeforeNodeCallEvent`, `AfterNodeCallEvent`) and
+`MultiAgent::hooks()`, but no built-in Graph or Swarm orchestrator to register them on yet.
+
 ```rust
 // This feature is not yet available in the Rust SDK
 ```
@@ -568,6 +578,9 @@ orchestrator = Graph(
 ```
 </Tab>
 <Tab label="Rust">
+
+Rust has the orchestrator hook events (`BeforeNodeCallEvent`, `AfterNodeCallEvent`) and
+`MultiAgent::hooks()`, but no built-in Graph or Swarm orchestrator to register them on yet.
 
 ```rust
 // This feature is not yet available in the Rust SDK
@@ -1133,6 +1146,10 @@ result = agent("Send an email to alice@example.com saying hello")
 ```
 </Tab>
 <Tab label="Rust">
+
+Rust has the building blocks (`BeforeToolCallEvent::interrupt`, `AfterInvocationEvent.resume`,
+`agent.interrupts()`), but `AfterInvocationEvent` carries no `result`, so the collect-then-resume
+pattern shown here has no direct port yet.
 
 ```rust
 // This feature is not yet available in the Rust SDK
