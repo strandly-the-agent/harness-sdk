@@ -102,10 +102,7 @@ impl SleepTool {
     /// Rejects a negative, NaN, infinite or oversized `duration` with the TS message.
     pub async fn execute(&self, duration: f64) -> Result<String> {
         self.validate(duration)?;
-        self.config
-            .sleeper
-            .sleep(Duration::from_secs_f64(duration))
-            .await;
+        self.config.sleeper.sleep(Duration::from_secs_f64(duration)).await;
         Ok(format!("Slept for {duration} seconds"))
     }
 
@@ -116,9 +113,7 @@ impl SleepTool {
             ));
         }
         if duration < 0.0 {
-            return Err(Error::ToolValidation(
-                "duration must be non-negative".to_owned(),
-            ));
+            return Err(Error::ToolValidation("duration must be non-negative".to_owned()));
         }
         if duration > self.config.max_duration {
             return Err(Error::ToolValidation(format!(

@@ -11,6 +11,4 @@ pub use handoff_to_user::{
 pub use shell::{
     ShellConfig, ShellError, ShellOutput, ShellTool, SANDBOX_SHELL_DESCRIPTION, SHELL_TOOL_NAME,
 };
-pub use sleep::{
-    sleep_description, SleepConfig, SleepTool, DEFAULT_MAX_DURATION, SLEEP_TOOL_NAME,
-};
+pub use sleep::{sleep_description, SleepConfig, SleepTool, DEFAULT_MAX_DURATION, SLEEP_TOOL_NAME};

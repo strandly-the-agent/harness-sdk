@@ -118,9 +118,8 @@ impl Tool for HandoffToUserTool {
             ));
         }
 
-        let reply: JsonValue = ctx.interrupt(
-            InterruptParams::new(HANDOFF_INTERRUPT_NAME).with_reason(input.message.clone()),
-        )?;
+        let reply: JsonValue =
+            ctx.interrupt(InterruptParams::new(HANDOFF_INTERRUPT_NAME).with_reason(input.message.clone()))?;
         Ok(wrap_in_tool_result(reply, &ctx.tool_use.tool_use_id))
     }
 }
@@ -178,8 +177,7 @@ mod tests {
         // covered by `tests/vended_tools_loop.rs`.
         let answered: crate::interrupt::InterruptFn =
             std::sync::Arc::new(|_params| Ok(serde_json::json!("yes@example.com")));
-        let context =
-            ctx(serde_json::json!({ "message": "Confirm your email" })).with_interrupt(answered);
+        let context = ctx(serde_json::json!({ "message": "Confirm your email" })).with_interrupt(answered);
 
         let result = HandoffToUserTool::new().invoke(context).await.unwrap();
         assert_eq!(result.status, ToolResultStatus::Success);

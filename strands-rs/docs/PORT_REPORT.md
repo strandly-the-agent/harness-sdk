@@ -333,3 +333,14 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
 `invoke_structured` → `structured_output`, `AgentResult::structured_output_as`; `ModelStopData.usage`;
 `testing` module (alias `test_support`), crate-level guide, actionable no-credentials error, default features
 `bedrock + macros`. Gates: fmt, clippy `-D warnings`, 1224 tests, `--no-default-features`, examples — all green.
+
+## Phase 4
+
+- **Vended tools `sleep` + `handoff_to_user`** (`tools::vended`, branch
+  `agent-tasks/strands-rs-vended-tools`): `SleepTool`/`SleepConfig` pause through an injected
+  `retry::Sleeper` (no real sleeps in tests) and race `ToolContext::cancel`;
+  `HandoffToUserTool`/`HandoffToUserConfig` raise a `strands:handoff-to-user` interrupt via
+  `ToolContext::interrupt` and return the human's reply as the tool result. Name, description and
+  input-schema text match TS verbatim. 25 unit + 4 agent-loop tests; see
+  `docs/matrices/vended-tools.md`. Remaining in this module: `file_editor`, `http_request`,
+  `mcp_router`.
