@@ -53,6 +53,11 @@ be a flat `{name: {...}}` map, or that map nested under an `mcpServers` key:
         })
         ```
       </Tab>
+      <Tab label="Rust">
+        ```rust
+        --8<-- "user-guide/harness/configure/mcp-servers.rs:harness_mcp_servers"
+        ```
+      </Tab>
     </Tabs>
   </Tab>
   <Tab label="SDK">
@@ -87,6 +92,13 @@ be a flat `{name: {...}}` map, or that map nested under an `mcpServers` key:
         })
         const agent = new Agent({ tools: [mcpClient] })
         await agent.invoke('list the files in this project')
+        ```
+      </Tab>
+      <Tab label="Rust">
+        Enable the `mcp` feature on `strands-agents`.
+
+        ```rust
+        --8<-- "user-guide/harness/configure/mcp-servers.rs:sdk_mcp_servers"
         ```
       </Tab>
     </Tabs>
