@@ -83,8 +83,8 @@ pub mod tools;
 pub mod types;
 
 pub use agent::{
-    Agent, AgentBuilder, AgentResult, AgentStream, AgentStreamEvent, InvocationState, InvokeInput,
-    InvokeOptions, Limits,
+    Agent, AgentBuilder, AgentPrinter, AgentResult, AgentStream, AgentStreamEvent, InvocationState,
+    InvokeInput, InvokeOptions, Limits,
 };
 pub use agent::{CallOptions, ToolHandle};
 pub use background_tasks::{BackgroundTask, BackgroundTasks, BackgroundTasksConfig};
