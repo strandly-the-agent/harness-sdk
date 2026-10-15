@@ -6,7 +6,7 @@ async fn basic_metrics_example() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::Agent;
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder().model(model).build();
+    let agent = Agent::builder().model(model).build()?;
 
     let result = agent.invoke("What is the square root of 144?").await?;
 
@@ -33,7 +33,7 @@ async fn agent_loop_metrics_example() -> Result<(), Box<dyn std::error::Error>> 
     use strands_agents::Agent;
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder().model(model).build();
+    let agent = Agent::builder().model(model).build()?;
 
     // First invocation
     let _result1 = agent.invoke("What is 5 + 3?").await?;
@@ -72,7 +72,7 @@ async fn tool_metrics_example() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::Agent;
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder().model(model).build();
+    let agent = Agent::builder().model(model).build()?;
 
     let result = agent.invoke("Summarize my notes").await?;
 
@@ -92,7 +92,7 @@ async fn metrics_summary_example() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::Agent;
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder().model(model).build();
+    let agent = Agent::builder().model(model).build()?;
 
     let result = agent.invoke("What is the square root of 144?").await?;
 
@@ -108,7 +108,7 @@ async fn local_traces_example() -> Result<(), Box<dyn std::error::Error>> {
     use strands_agents::Agent;
 
     let model = BedrockModel::new(BedrockModelConfig::default()).await?;
-    let agent = Agent::builder().model(model).build();
+    let agent = Agent::builder().model(model).build()?;
 
     let result = agent.invoke("What is 15 * 8 + 42?").await?;
 
