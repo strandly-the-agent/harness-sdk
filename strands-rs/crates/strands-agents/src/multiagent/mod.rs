@@ -22,21 +22,13 @@ pub(crate) const EVENT_BUFFER: usize = 64;
 /// Reason reported when a hook cancels a node without giving one.
 pub(crate) const HOOK_CANCEL_MESSAGE: &str = "node cancelled by hook";
 
-/// Cancels the invocation, then aborts its task, when the consumer drops the stream.
+/// Cancels the invocation — and only that — when the consumer drops the stream.
 ///
-/// Every orchestrator's `stream_with` hands its spawned task to one of these and keeps it in the
-/// stream, so a dropped stream ends the run instead of leaving it going.
-pub(crate) struct CancelOnDrop {
-    pub(crate) cancel: tokio_util::sync::CancellationToken,
-    pub(crate) task: tokio::task::JoinHandle<()>,
-}
-
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-        self.task.abort();
-    }
-}
+/// Every orchestrator's `stream_with` keeps one of these in the stream, so a dropped stream ends
+/// the run cooperatively: the loop sees the token, drains its nodes, stops its watchers and fires
+/// the after-invocation hook, as TS's `gen.return()` runs the generator's `finally`. Aborting the
+/// task instead would skip all of that.
+pub(crate) type CancelOnDrop = tokio_util::sync::DropGuard;
 
 pub use edge::{edge_handler, Edge, EdgeDefinition, EdgeHandler};
 pub use events::{

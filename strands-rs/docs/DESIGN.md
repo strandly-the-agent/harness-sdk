@@ -680,10 +680,12 @@ Divergences from TS (details in `docs/matrices/swarm.md`):
 - **`warnOnce` → `tracing::warn!`** for the unbounded-execution warning; no warn-once helper
   exists in the crate.
 - **The loop is an `mpsc` channel the invocation writes events to** (like `Agent::stream_with`),
-  not an async generator: `stream_with` spawns the loop under a child cancel token and hands the
-  task to the shared `multiagent::CancelOnDrop` guard (also used by `Graph`), so dropping the
-  stream cancels the invocation and aborts the task — TS's `gen.return()` cleanup, with node
-  cancellation still cooperative. `invoke_with` runs the loop inline (`tokio::join!` of the loop
+  not an async generator: `stream_with` spawns the loop under a child cancel token held by the
+  shared `multiagent::CancelOnDrop` guard (a `tokio_util` `DropGuard`, also used by `Graph`), so
+  dropping the stream *cancels* the invocation without aborting its task — TS's `gen.return()`
+  cleanup. The loop therefore still drains, restores its agents, cancels its timeout watchers and
+  fires `AfterMultiAgentInvocationEvent`; sends to the gone consumer are no-ops, and node
+  cancellation stays cooperative. `invoke_with` runs the loop inline (`tokio::join!` of the loop
   and a drain) so a panic in a hook or node propagates to the caller instead of ending the stream.
 - **`take_snapshot(None, ..)` snapshots the most recent invocation's state**, erroring before the
   first run — the same fallback as `Graph`.
@@ -698,6 +700,15 @@ Divergences from TS (details in `docs/matrices/swarm.md`):
 - **`node <id>` spans are ended once, from a wrapper around the node run.** TS ends the span on
   each of `_streamNode`'s exit paths; the Rust `stream_node` starts the span, delegates to
   `run_node_span`, and ends it from the single outcome — same attributes, one place.
+- **Not a divergence, but worth knowing:** `node_timeout` covers a nested-orchestrator node here
+  while `Graph` exempts one. The asymmetry is TS's own (`swarm.ts:480` arms the deadline for every
+  node type, `graph.ts:529` only for an `AgentNode`) and is kept as-is.
+- **A resume does not re-count the interrupted node's step.** TS counts a fresh step for the
+  resumed node even though the run that interrupted already counted it, so a resume with the
+  budget exhausted breaks out of the loop before the node runs and re-stashes the same interrupt —
+  every resume then returns that interrupt forever. The Rust loop skips both the step increment
+  and the `max_steps` check on the first iteration of a resume, so the interrupted node finishes
+  (deliberate divergence from TS).
 
 ### Graph
 
@@ -780,10 +791,14 @@ Divergences from TS:
   `CANCELLED` `NodeResult` (which is emitted and recorded) and the graph then fails the invocation
   with TS's `node_timeout=<ms>, node_id=<id>, graph_id=<id>` error; TS throws before recording the
   result. The error is the same, the discarded aggregate differs.
-- **`stream_with` runs under a child cancel token.** The invocation task gets
-  `options.cancel.child_token()` (or a fresh token), and dropping the stream cancels it and aborts
-  the task — TS's `gen.return()` cleanup. The caller's own token is never cancelled, and node
-  cancellation stays cooperative.
+- **`stream_with` runs under a child cancel token, and dropping the stream only cancels it.** The
+  invocation task gets `options.cancel.child_token()` (or a fresh token) held by a `DropGuard`; the
+  task is never aborted, so the loop exits cooperatively and still drains, restores each agent node's
+  messages, stops its timeout watchers (`execution.done` is itself a `DropGuard`) and fires
+  `AfterMultiAgentInvocationEvent` — TS's `gen.return()` running the generator's `finally`. Aborting
+  instead would leave an agent holding a cancelled run's messages (and an interrupted agent
+  unusable), leak the watcher tasks and fail an immediate re-invoke with `ConcurrentInvocation`. The
+  caller's own token is never cancelled, and node cancellation stays cooperative.
 - **Multi-agent spans take an explicit parent, not an ambient one.** `Tracer::start_node_span`
   takes the orchestration span as a parameter where TS reads `this._multiAgentSpan`, matching
   `start_agent_loop_span`/`start_tool_call_span`. There is no `withSpanContext` equivalent: a
@@ -796,7 +811,14 @@ Divergences from TS:
 - **Node events pass through the orchestrator.** `run_node` writes to a `NodeSink`; the graph owns
   that channel, invokes hook callbacks on each event, and forwards it to the consumer's stream —
   which is how TS's queue-and-`_emit` ordering (`nodeResult` → `handoff` → `afterNodeCall`) is
-  preserved while nodes run concurrently.
+  preserved while nodes run concurrently. Because the node's `AfterNodeCall` arrives after its
+  `NodeResult`, `Pending::closing` holds the node until that event lands and the scheduling loop
+  waits on it, so a successor's `BeforeNodeCall` never overtakes its predecessor's `AfterNodeCall`
+  (TS gets this from draining the whole queue before scheduling again).
+- **A panicking node is a `FAILED` node result**, not a lost invocation: `run_node` wraps
+  `Node::handle` in `catch_unwind`, which is where TS's `try`/`catch` around `handle` lands. A panic
+  in the invocation task itself (a hook, say) surfaces as an `Err` on the stream, as in
+  `Agent::stream_with`.
 
 - **Builder instead of `new Graph({...})`**: matches `AgentBuilder` (the crate's own convention)
   and keeps construction fallible without an options struct that half its fields can invalidate.
@@ -819,6 +841,15 @@ Divergences from TS:
   `plugins`. A session manager is a `MultiAgentPlugin` here, so it goes through `.plugin(..)`;
   the duplicate-registration check lands with the loop.
 - **`trace_attributes` not wired yet**: it belongs with the tracer work in increment 2.
+
+TS-identical oddities, confirmed and deliberately kept (a change here would be a divergence):
+
+- **A duplicate edge schedules its target twice.** `a → b` declared twice runs `b` twice, in TS and
+  in Rust; neither builder rejects the duplicate.
+- **A cancelled agent node lands `COMPLETED`** with `"Cancelled by user"` as its content: the
+  agent's own cancellation path returns a normal result, so the node never sees an error.
+- **Events from in-flight nodes are still delivered after the loop fails** a `max_steps`/`timeout`
+  check — the loop drains the channel before returning the error, as TS's queue does.
 
 ## A2A
 

@@ -507,8 +507,9 @@ impl Graph {
 
     /// Stream events as they occur; the last event carries the aggregate result.
     ///
-    /// The invocation runs in a spawned task; dropping the stream cancels it, as TS cancels the
-    /// run in `gen.return()`. Node cancellation stays cooperative.
+    /// The invocation runs in a spawned task; dropping the stream cancels it cooperatively, as TS
+    /// cancels the run in `gen.return()` — the loop still drains, restores its agents and fires the
+    /// after-invocation hook. Node cancellation stays cooperative.
     ///
     /// # Panics
     /// Panics if called outside a tokio runtime (it spawns the invocation task).
@@ -526,14 +527,23 @@ impl Graph {
             .as_ref()
             .map_or_else(CancellationToken::new, CancellationToken::child_token);
         options.cancel = Some(cancel.clone());
-        let driver = CancelOnDrop {
-            cancel,
-            task: tokio::spawn(async move {
-                if let Err(error) = graph.run(input, options, sink.clone()).await {
-                    let _ = sink.send(Err(error)).await;
-                }
-            }),
-        };
+        let run_sink = sink.clone();
+        let task = tokio::spawn(async move {
+            if let Err(error) = graph.run(input, options, run_sink.clone()).await {
+                let _ = run_sink.send(Err(error)).await;
+            }
+        });
+        // A panic in the invocation task would otherwise end the stream with no error at all.
+        tokio::spawn(async move {
+            if let Err(error) = task.await {
+                let _ = sink
+                    .send(Err(Error::other(format!(
+                        "graph invocation task failed: {error}"
+                    ))))
+                    .await;
+            }
+        });
+        let driver: CancelOnDrop = cancel.drop_guard();
         MultiAgentStream::new(Box::pin(futures::stream::unfold(
             (events, driver),
             |(mut events, driver)| async move { events.recv().await.map(|event| (event, (events, driver))) },
@@ -630,13 +640,15 @@ impl Graph {
         self.inner.hooks.invoke_callbacks(&mut before).await?;
         send(&sink, MultiAgentStreamEvent::BeforeMultiAgentInvocation(before)).await;
 
+        let done = CancellationToken::new();
         let execution = Execution {
             orchestrator: Arc::clone(&orchestrator),
             state: state.clone(),
             invocation_state: invocation_state.clone(),
             sink: sink.clone(),
             cancel: CancellationToken::new(),
-            done: CancellationToken::new(),
+            done: done.clone(),
+            _watchers: done.drop_guard(),
             external: options.cancel.clone(),
             timed_out: Arc::new(AtomicBool::new(false)),
             span: Arc::clone(&span),
@@ -763,6 +775,7 @@ impl Graph {
 
             while !pending.interrupted
                 && !pending.targets.is_empty()
+                && pending.closing.is_empty()
                 && pending.running.len() < max_concurrency
             {
                 let node = pending.targets.pop_front().expect("targets is not empty");
@@ -1254,6 +1267,8 @@ struct Execution {
     sink: NodeSink,
     cancel: CancellationToken,
     done: CancellationToken,
+    /// Stops the timeout watchers even if the invocation task never reaches `done.cancel()`.
+    _watchers: tokio_util::sync::DropGuard,
     external: Option<CancellationToken>,
     timed_out: Arc<AtomicBool>,
     span: Arc<SpanHandle>,
@@ -1264,6 +1279,10 @@ struct Execution {
 struct Pending {
     targets: VecDeque<Arc<dyn Node>>,
     running: HashSet<String>,
+    /// Nodes whose result is in but whose `AfterNodeCall` has not arrived yet. Scheduling waits
+    /// for them, as TS drains the node's whole queue before looping. Kept apart from `running`:
+    /// `find_ready` skips running nodes, which would break a self-cycle's re-entry.
+    closing: HashSet<String>,
     gated: VecDeque<(Arc<dyn Node>, NodeResult)>,
     interrupted: bool,
 }
@@ -1281,6 +1300,7 @@ impl Pending {
                 let (node_id, result) = (event.node_id.clone(), event.result.clone());
                 send(&execution.sink, MultiAgentStreamEvent::NodeResult(event)).await;
                 self.running.remove(&node_id);
+                self.closing.insert(node_id.clone());
                 let node = graph.inner.nodes.get(&node_id).map(Arc::clone);
                 if let Some(node) = node {
                     self.handle_result(graph, execution, &node, result).await?;
@@ -1292,6 +1312,7 @@ impl Pending {
             }
             MultiAgentStreamEvent::AfterNodeCall(mut event) => {
                 graph.inner.hooks.invoke_callbacks(&mut event).await?;
+                self.closing.remove(&event.node_id);
                 send(&execution.sink, MultiAgentStreamEvent::AfterNodeCall(event)).await;
             }
             other => send(&execution.sink, other).await,
@@ -1487,6 +1508,47 @@ mod tests {
         }
     }
 
+    /// Node that panics, as user code in TS throws.
+    struct PanickingNode {
+        id: String,
+        config: NodeConfig,
+    }
+
+    impl PanickingNode {
+        fn shared(id: &str) -> Arc<dyn Node> {
+            Arc::new(Self {
+                id: id.to_owned(),
+                config: NodeConfig::default(),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl Node for PanickingNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn node_type(&self) -> NodeType {
+            NodeType::Custom("node".to_owned())
+        }
+
+        fn config(&self) -> &NodeConfig {
+            &self.config
+        }
+
+        async fn handle(
+            &self,
+            _input: MultiAgentInput,
+            _state: &MultiAgentStateHandle,
+            _options: &NodeInputOptions,
+            _events: &NodeSink,
+        ) -> Result<NodeResultUpdate> {
+            tokio::task::yield_now().await;
+            panic!("node exploded");
+        }
+    }
+
     /// Node that succeeds across an await point; unlike one `Agent`, it can run concurrently.
     struct EchoNode {
         id: String,
@@ -1537,6 +1599,23 @@ mod tests {
 
     fn names(events: &[MultiAgentStreamEvent]) -> Vec<&'static str> {
         events.iter().map(MultiAgentStreamEvent::type_name).collect()
+    }
+
+    /// `type:nodeId` for every node-scoped event, in order; a handoff is keyed by its source.
+    fn node_lifecycle(events: &[MultiAgentStreamEvent]) -> Vec<String> {
+        events
+            .iter()
+            .filter_map(|event| {
+                let node_id = match event {
+                    MultiAgentStreamEvent::BeforeNodeCall(event) => &event.node_id,
+                    MultiAgentStreamEvent::AfterNodeCall(event) => &event.node_id,
+                    MultiAgentStreamEvent::NodeResult(event) => &event.node_id,
+                    MultiAgentStreamEvent::MultiAgentHandoff(event) => &event.source,
+                    _ => return None,
+                };
+                Some(format!("{}:{node_id}", event.type_name()))
+            })
+            .collect()
     }
 
     fn node_ids(result: &MultiAgentResult) -> Vec<&str> {
@@ -1729,6 +1808,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_panicking_node_lands_as_a_failed_result_and_stops_its_branch() {
+        let graph = Graph::builder()
+            .node(PanickingNode::shared("a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(10)
+            .build()
+            .unwrap();
+
+        let result = graph.invoke("go").await.expect("the panic does not escape");
+
+        assert_eq!(result.status, ResultStatus::Failed);
+        assert_eq!(node_ids(&result), vec!["a"]);
+        assert_eq!(
+            result.results[0].error.as_deref(),
+            Some("node panicked: node exploded")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_panicking_invocation_task_surfaces_as_a_stream_error() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .hook(|_event: &mut BeforeMultiAgentInvocationEvent| async { panic!("hook exploded") })
+            .build()
+            .unwrap();
+
+        let events = graph.stream("go").collect::<Vec<_>>().await;
+
+        let [Err(error)] = events.as_slice() else {
+            panic!("expected one error event, got {} events", events.len());
+        };
+        assert!(
+            error.to_string().starts_with("graph invocation task failed:"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
     async fn errors_when_max_steps_is_exceeded() {
         let graph = Graph::builder()
             .node(saying("a", "from a"))
@@ -1839,6 +1957,87 @@ mod tests {
             !ran.load(Ordering::SeqCst),
             "the node kept running after the drop"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dropping_the_stream_restores_the_agent_and_still_runs_the_after_hook() {
+        let tool = Arc::new(
+            FunctionTool::builder("wait")
+                .description("Sleeps until cancelled")
+                .input_schema(json!({ "type": "object", "properties": {} }))
+                .handler(move |_input, ctx| async move {
+                    tokio::select! {
+                        () = tokio::time::sleep(Duration::from_millis(500)) => {}
+                        () = ctx.cancel.cancelled() => {}
+                    }
+                    Ok(json!("done"))
+                }),
+        );
+        let agent = Agent::builder()
+            .id("a")
+            .model(MockMessageModel::shared(vec![
+                MockResponse::message(Message::new(
+                    Role::Assistant,
+                    vec![ContentBlock::ToolUse(ToolUseBlock::new(
+                        "wait",
+                        "call-1",
+                        json!({}),
+                    ))],
+                )),
+                MockResponse::message(Message::assistant("after the drop")),
+            ]))
+            .tool(tool)
+            .build()
+            .unwrap();
+        let after = Arc::new(AtomicUsize::new(0));
+        let fired = Arc::clone(&after);
+        let graph = Graph::builder()
+            .node(agent.clone())
+            .timeout(Duration::from_secs(30))
+            .node_timeout(Duration::from_secs(30))
+            .max_steps(5)
+            .hook(move |_event: &mut AfterMultiAgentInvocationEvent| {
+                let fired = Arc::clone(&fired);
+                async move {
+                    fired.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            })
+            .build()
+            .unwrap();
+        let before = agent.messages();
+        let baseline = tokio::runtime::Handle::current().metrics().num_alive_tasks();
+
+        let mut stream = graph.stream("go");
+        stream.next().await.expect("first event").expect("stream event");
+        drop(stream);
+
+        // The cancelled run keeps going cooperatively, so its cleanup lands shortly after the drop.
+        for _ in 0..400 {
+            if after.load(Ordering::SeqCst) == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            after.load(Ordering::SeqCst),
+            1,
+            "the after-invocation hook did not fire once"
+        );
+        assert_eq!(agent.messages(), before, "the agent was left with junk messages");
+        for _ in 0..400 {
+            if tokio::runtime::Handle::current().metrics().num_alive_tasks() <= baseline {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(
+            tokio::runtime::Handle::current().metrics().num_alive_tasks() <= baseline,
+            "a timeout watcher outlived the dropped invocation"
+        );
+
+        let result = graph.invoke("again").await.expect("the graph takes another run");
+        assert_eq!(result.status, ResultStatus::Completed);
     }
 
     #[tokio::test]
@@ -2035,6 +2234,73 @@ mod tests {
 
         assert_eq!(handoff.source, "a");
         assert_eq!(handoff.targets, vec!["b".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn closes_a_node_before_the_next_one_starts() {
+        let graph = Graph::builder()
+            .node(saying("a", "from a"))
+            .node(saying("b", "from b"))
+            .edge("a", "b")
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let events = collect(graph.stream("go")).await;
+
+        assert_eq!(
+            node_lifecycle(&events),
+            vec![
+                "beforeNodeCallEvent:a",
+                "nodeResultEvent:a",
+                "multiAgentHandoffEvent:a",
+                "afterNodeCallEvent:a",
+                "beforeNodeCallEvent:b",
+                "nodeResultEvent:b",
+                "afterNodeCallEvent:b",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn closes_a_node_before_it_is_re_entered_in_a_cycle() {
+        let visits = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&visits);
+        let agent = Agent::builder()
+            .id("a")
+            .model(MockMessageModel::shared(vec![
+                MockResponse::message(Message::assistant("first")),
+                MockResponse::message(Message::assistant("second")),
+            ]))
+            .build()
+            .unwrap();
+        let graph = Graph::builder()
+            .node(agent)
+            .edge_when(
+                "a",
+                "a",
+                edge_handler(move |_| seen.fetch_add(1, Ordering::SeqCst) < 1),
+            )
+            .entry_point("a")
+            .max_steps(5)
+            .build()
+            .unwrap();
+
+        let events = collect(graph.stream("go")).await;
+
+        assert_eq!(
+            node_lifecycle(&events),
+            vec![
+                "beforeNodeCallEvent:a",
+                "nodeResultEvent:a",
+                "multiAgentHandoffEvent:a",
+                "afterNodeCallEvent:a",
+                "beforeNodeCallEvent:a",
+                "nodeResultEvent:a",
+                "afterNodeCallEvent:a",
+            ]
+        );
+        assert_eq!(visits.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
