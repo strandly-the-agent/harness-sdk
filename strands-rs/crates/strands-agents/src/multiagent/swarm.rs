@@ -259,7 +259,8 @@ impl Swarm {
     /// [`Swarm::stream`] with options.
     ///
     /// The loop runs in a spawned task, so cleanup events are emitted even when the consumer stops
-    /// reading. Dropping the stream cancels the invocation, as TS cancels the run in `gen.return()`.
+    /// reading. Dropping the stream cancels the invocation cooperatively, as TS cancels the run in
+    /// `gen.return()` — the loop still restores its agents and fires the after-invocation hook.
     /// Node cancellation stays cooperative.
     ///
     /// # Panics
@@ -278,14 +279,23 @@ impl Swarm {
             .as_ref()
             .map_or_else(CancellationToken::new, CancellationToken::child_token);
         options.cancel = Some(cancel.clone());
-        let driver = CancelOnDrop {
-            cancel,
-            task: tokio::spawn(async move {
-                if let Err(error) = swarm.run(input, options, tx.clone()).await {
-                    let _ = tx.send(Err(error)).await;
-                }
-            }),
-        };
+        let run_tx = tx.clone();
+        let task = tokio::spawn(async move {
+            if let Err(error) = swarm.run(input, options, run_tx.clone()).await {
+                let _ = run_tx.send(Err(error)).await;
+            }
+        });
+        // A panic in the invocation task would otherwise end the stream with no error at all.
+        tokio::spawn(async move {
+            if let Err(error) = task.await {
+                let _ = tx
+                    .send(Err(Error::other(format!(
+                        "swarm invocation task failed: {error}"
+                    ))))
+                    .await;
+            }
+        });
+        let driver: CancelOnDrop = cancel.drop_guard();
         MultiAgentStream::new(Box::pin(futures::stream::unfold(
             (events, driver),
             |(mut events, driver)| async move { events.recv().await.map(|event| (event, (events, driver))) },
@@ -438,12 +448,18 @@ impl Swarm {
 
         let mut repetitive_handoff = None;
         let mut history: Vec<String> = Vec::new();
+        // A resume re-runs the node that interrupted, whose step the interrupting run already
+        // counted: counting it twice (or re-checking the ceiling against it) makes a resume at
+        // the ceiling re-stash the same interrupt forever. TS livelocks here; see DESIGN.md.
+        let mut resumed_step = input.resume_responses().is_some();
         loop {
-            if self
-                .0
-                .config
-                .max_steps
-                .is_some_and(|max| run.state.steps() >= max)
+            let resuming = std::mem::take(&mut resumed_step);
+            if !resuming
+                && self
+                    .0
+                    .config
+                    .max_steps
+                    .is_some_and(|max| run.state.steps() >= max)
             {
                 break;
             }
@@ -461,7 +477,9 @@ impl Swarm {
                     self.0.id
                 )));
             }
-            run.state.with_mut(|state| state.steps += 1);
+            if !resuming {
+                run.state.with_mut(|state| state.steps += 1);
+            }
 
             let result = self
                 .stream_node(&node, next_input, handoff.as_ref(), run, tx)
@@ -2143,6 +2161,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_panicking_invocation_task_surfaces_as_a_stream_error() {
+        let swarm = Swarm::builder()
+            .node(final_agent("a", "done"))
+            .hook::<BeforeMultiAgentInvocationEvent, _>(|_event| panic!("hook exploded"))
+            .build()
+            .expect("swarm builds");
+
+        let events = swarm.stream("go").collect::<Vec<_>>().await;
+
+        let [Err(error)] = events.as_slice() else {
+            panic!("expected one error event, got {} events", events.len());
+        };
+        assert!(
+            error.to_string().starts_with("swarm invocation task failed:"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
     async fn aborts_an_in_flight_node_when_cancelled_externally() {
         let cancel = CancellationToken::new();
         let swarm = Swarm::builder()
@@ -2807,6 +2844,41 @@ mod tests {
         assert_eq!(result.status, ResultStatus::Completed);
         // The stale INTERRUPTED result is replaced, not appended to.
         assert_eq!(node_ids(&result), ["a"]);
+    }
+
+    #[tokio::test]
+    async fn resumes_an_interrupt_raised_by_the_last_step_the_budget_allowed() {
+        let swarm = Swarm::builder()
+            .node(handoff_agent("a", json!({ "agentId": "b", "message": "to b" })))
+            .node(
+                Agent::builder()
+                    .model(MockMessageModel::new(vec![
+                        interrupting_turn(),
+                        handoff_turn(json!({ "message": "all done" })),
+                    ]))
+                    .id("b")
+                    .tool(approve_tool())
+                    .build()
+                    .expect("agent builds"),
+            )
+            .entry_point("a")
+            .max_steps(2)
+            .build()
+            .expect("swarm builds");
+
+        let interrupted = swarm.invoke("start").await.expect("swarm runs");
+        assert_eq!(interrupted.status, ResultStatus::Interrupted);
+
+        let result = swarm
+            .invoke(vec![InterruptResponseContent::new(
+                &interrupted.interrupts[0].id,
+                json!("ok"),
+            )])
+            .await
+            .expect("swarm resumes");
+
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(node_ids(&result), ["a", "b"]);
     }
 
     #[tokio::test]

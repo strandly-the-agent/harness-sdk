@@ -69,6 +69,7 @@ MultiAgentState round-trips, status precedence, `_pendingInput` rehydration) and
 | returns COMPLETED NodeResult on successful execution | `returns_completed_node_result_on_successful_execution` |
 | catches errors and returns FAILED NodeResult | `catches_errors_and_returns_failed_node_result` |
 | — (TS covers cancel mapping in graph tests) | `maps_an_error_to_cancelled_when_the_run_was_cancelled` |
+| — (a Rust panic is TS's throw, caught by `catch_unwind` in `run_node`) | `graph::tests::a_panicking_node_lands_as_a_failed_result_and_stops_its_branch` |
 | throws when timeout < 1 | `rejects_a_zero_timeout` |
 | accepts a positive timeout | `accepts_a_positive_timeout` |
 | accepts Infinity as an explicit opt-out | `accepts_duration_max_as_an_explicit_timeout_opt_out` |

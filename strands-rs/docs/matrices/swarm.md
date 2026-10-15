@@ -119,6 +119,13 @@ is in `swarm.ts:411-420` and `496-523`):
 | a failing after-invocation hook replaces the run's own error | `a_failing_after_invocation_hook_replaces_the_runs_own_error` |
 | hooks run for every event a node forwards | `dispatches_hooks_for_every_event_a_node_forwards` |
 
+From the adversarial review of the loop (each test fails without its fix):
+
+| Behaviour | Rust test |
+| --- | --- |
+| a panic in the invocation task surfaces as an `Err` on the stream | `a_panicking_invocation_task_surfaces_as_a_stream_error` |
+| an interrupt raised by the last step the budget allowed can still be resumed (TS re-stashes it forever) | `resumes_an_interrupt_raised_by_the_last_step_the_budget_allowed` |
+
 Not applicable: the two `it.each` "must be a non-negative integer" validations
 (`repetitiveHandoffDetectionWindow` / `repetitiveHandoffMinUniqueAgents`) — both are `usize` in
 Rust, so a negative, fractional or `NaN` value cannot be constructed.
@@ -169,8 +176,10 @@ live tests** below.
   `finally` does. Resume routing runs before that guarded section, so an unroutable resume fails
   without firing the after-invocation hook.
 - **The loop runs in a spawned task** writing to an `mpsc` channel, as `Agent::stream_with` does,
-  instead of TS's async generator. Dropping the stream ends the invocation (the send fails with
-  `Error::Cancelled`), and `invoke_with` is `stream_with` drained to the terminal result event.
+  instead of TS's async generator. Dropping the stream cancels the invocation through the shared
+  `multiagent::CancelOnDrop` drop guard without aborting the task, so the loop still drains and
+  runs its cleanup (TS's `gen.return()`); `invoke_with` is `stream_with` drained to the terminal
+  result event.
 - **`Duration::MAX` is the Rust spelling of `Infinity`** for a timeout: a deadline that overflows
   the clock is no deadline (`deadline_after`), so a node's `Duration::MAX` opts out of the swarm's
   `node_timeout` (`AgentNodeOptions::with_timeout`, `nodes.rs`) and a swarm's leaves it unbounded.

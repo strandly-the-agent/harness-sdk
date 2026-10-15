@@ -53,12 +53,12 @@ below. Still open: the `session_manager` constructor slot and its duplicate-plug
 | throws on duplicate node IDs | `errors_on_duplicate_node_ids` | ported |
 | throws on edge referencing unknown source node | `errors_on_edge_referencing_unknown_source_node` | ported |
 | throws on edge referencing unknown target node | `errors_on_edge_referencing_unknown_target_node` | ported |
-| throws when graph has no source nodes | `errors_when_graph_has_no_source_nodes` | ported |s_below_one` | ported |
-| throws when timeout < 1 | `erro
+| throws when graph has no source nodes | `errors_when_graph_has_no_source_nodes` | ported |
 | throws on unreachable nodes | `errors_on_unreachable_nodes` | ported |
 | throws when explicit source references unknown node | `errors_when_explicit_entry_point_references_unknown_node` | ported |
 | throws when maxSteps < 1 | `errors_when_max_steps_is_below_one` | ported |
-| throws when maxConcurrency < 1 | `errors_when_max_concurrency_irs_when_timeout_is_below_one` | ported |
+| throws when maxConcurrency < 1 | `errors_when_max_concurrency_is_below_one` | ported |
+| throws when timeout < 1 | `errors_when_timeout_is_below_one` | ported |
 | throws when nodeTimeout < 1 | `errors_when_node_timeout_is_below_one` | ported |
 | defaults maxConcurrency/maxSteps/timeout/nodeTimeout to Infinity | `defaults_every_limit_to_unbounded` | ported |
 | uses explicit sources instead of auto-detection | `explicit_entry_points_override_auto_detection`, `auto_detects_entry_points_from_nodes_without_incoming_edges`, `uses_explicit_entry_points_instead_of_auto_detection` | ported |
@@ -122,6 +122,16 @@ Rust tests with no TS counterpart (they cover Rust-only surface):
 `emits_an_after_node_call_event_for_every_node_that_ran`,
 `a_node_timeout_error_survives_the_post_loop_drain`,
 `edge_handlers_read_the_invocation_state`, `node_description_falls_back_to_the_agent_description`.
+
+From the adversarial review of the loop (TS behaviour the Rust port was missing; each test fails
+without its fix):
+
+| Behaviour | Rust test |
+| --- | --- |
+| a panicking node lands `FAILED` and stops its branch, as TS's `catch` does (`nodes.ts:121-133`) | `a_panicking_node_lands_as_a_failed_result_and_stops_its_branch` |
+| a panic in the invocation task itself surfaces as an `Err` on the stream | `a_panicking_invocation_task_surfaces_as_a_stream_error` |
+| `afterNodeCall(a)` precedes `beforeNodeCall(b)`, across an edge and on a self-cycle | `closes_a_node_before_the_next_one_starts`, `closes_a_node_before_it_is_re_entered_in_a_cycle` |
+| dropping the stream restores the agent, still fires the after-invocation hook and leaks no timeout watcher | `dropping_the_stream_restores_the_agent_and_still_runs_the_after_hook` |
 
 ## Cross-module and live tests
 

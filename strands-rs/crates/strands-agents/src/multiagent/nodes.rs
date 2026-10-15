@@ -164,7 +164,21 @@ pub async fn run_node(
         node_state.start_time
     });
 
-    let result = match node.handle(input, state, options, events).await {
+    // A panicking `handle` becomes a FAILED result, as a throw does in TS.
+    let handled = futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(
+        node.handle(input, state, options, events),
+    ))
+    .await
+    .unwrap_or_else(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_owned())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic".to_owned());
+        Err(Error::other(format!("node panicked: {message}")))
+    });
+
+    let result = match handled {
         Ok(update) => {
             let interrupted = update.interrupts.as_ref().is_some_and(|i| !i.is_empty());
             let status = if interrupted {
