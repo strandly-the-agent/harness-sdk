@@ -120,3 +120,17 @@ async fn prompt_caching() -> Result<(), Error> {
     // --8<-- [end:prompt_caching]
     Ok(())
 }
+
+async fn token_counting() -> Result<(), Error> {
+    // --8<-- [start:token_counting]
+    use strands_agents::models::{AnthropicModel, AnthropicModelConfig};
+
+    let model = AnthropicModel::new(AnthropicModelConfig {
+        model_id: Some("claude-sonnet-5".to_owned()),
+        use_native_token_count: true,
+        ..Default::default()
+    })?;
+    // --8<-- [end:token_counting]
+    let _ = model;
+    Ok(())
+}

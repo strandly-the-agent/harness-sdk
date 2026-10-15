@@ -27,6 +27,17 @@ pip install 'strands-agents[anthropic]'
 npm install @strands-agents/sdk @anthropic-ai/sdk
 ```
 </Tab>
+<Tab label="Rust">
+
+Enable the `anthropic` feature on the crate:
+
+```toml
+[dependencies.strands-agents]
+git = "https://github.com/strands-agents/harness-sdk"
+package = "strands-agents"
+features = ["anthropic"]
+```
+</Tab>
 </Tabs>
 
 ## Usage
@@ -66,6 +77,12 @@ print(response)
 --8<-- "user-guide/sdk/model-providers/anthropic.ts:basic_usage"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/anthropic.rs:basic_usage"
+```
+</Tab>
 </Tabs>
 
 ## Configuration
@@ -80,6 +97,12 @@ The `client_args` configure the underlying Anthropic client. For a complete list
 <Tab label="TypeScript">
 
 The `clientConfig` configures the underlying Anthropic client. You can also pass a pre-configured `client` instance directly (see [Custom Client](#custom-client)). For a complete list of available options, please refer to the [Anthropic TypeScript SDK docs](https://platform.claude.com/docs/en/api/sdks/typescript).
+</Tab>
+<Tab label="Rust">
+
+`AnthropicModelConfig` carries the client settings itself: `api_key` (falling back to
+`ANTHROPIC_API_KEY`) and `base_url`. To control how requests are sent, supply your own
+transport (see [Custom Client](#custom-client)).
 </Tab>
 </Tabs>
 
@@ -110,6 +133,16 @@ The `model_config` configures the underlying model selected for inference. The s
 | `anthropicTools` | [Built-in tools](#built-in-tools), appended to the agent's function tools | `[{ type: 'web_search_20260318', name: 'web_search' }]` | [reference](https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/overview) |
 | `cacheConfig` | Enables [prompt caching](#prompt-caching) on the tool definitions, the system prompt, and the conversation | `{ ttl: '1h' }` | [reference](https://docs.claude.com/en/docs/build-with-claude/prompt-caching) |
 </Tab>
+<Tab label="Rust">
+
+`AnthropicModelConfig` holds the same settings as struct fields: `model_id`,
+`max_tokens`, `temperature`, `top_p`, `stop_sequences`, `params` (extra request-body
+keys, merged last), `anthropic_tools` ([built-in tools](#built-in-tools)), `betas`,
+`cache_config` ([prompt caching](#prompt-caching)), `use_native_token_count`,
+`api_key`, and `base_url`. Every field is an `Option` except
+`use_native_token_count`, so `..Default::default()` covers the rest. An unset
+`model_id` or `max_tokens` falls back to `MODEL_DEFAULTS.anthropic` with a warning.
+</Tab>
 </Tabs>
 
 ## Troubleshooting
@@ -126,6 +159,13 @@ If you encounter the error `ModuleNotFoundError: No module named 'anthropic'`, t
 ### Import Errors
 
 If you encounter import errors for `@anthropic-ai/sdk`, ensure the package is installed: `npm install @anthropic-ai/sdk`.
+</Tab>
+<Tab label="Rust">
+
+### Unresolved Import
+
+`unresolved import strands_agents::models::AnthropicModel` means the `anthropic`
+feature is off. Add it to the dependency, as in [Installation](#installation).
 </Tab>
 </Tabs>
 
@@ -147,6 +187,12 @@ The Python SDK does not currently support passing a pre-configured client. Use `
 
 --8<-- "user-guide/sdk/model-providers/anthropic.ts:custom_client"
 ```
+</Tab>
+<Tab label="Rust">
+
+Rust has no client object to pass. `AnthropicModel::with_transport` takes an
+`Arc<dyn AnthropicTransport>` instead, so implement that trait (or wrap
+`AnthropicReqwestTransport`) to control how requests are sent.
 </Tab>
 </Tabs>
 
@@ -205,6 +251,15 @@ Define a Zod schema and pass it as `structuredOutputSchema`. Validated output is
 --8<-- "user-guide/sdk/model-providers/anthropic.ts:structured_output"
 ```
 </Tab>
+<Tab label="Rust">
+
+Derive `JsonSchema` and `Deserialize` on a struct and pass it as the return type of
+[`agent.structured_output()`](https://docs.rs/strands-agents):
+
+```rust
+--8<-- "user-guide/sdk/model-providers/anthropic.rs:structured_output"
+```
+</Tab>
 </Tabs>
 
 For schema patterns, error handling, and per-invocation overrides, see [Structured Output](../agents/structured-output/).
@@ -242,6 +297,16 @@ Anthropic's built-in server-side tools (web search, web fetch, code execution) c
 --8<-- "user-guide/sdk/model-providers/anthropic.ts:builtin_tools"
 ```
 </Tab>
+<Tab label="Rust">
+
+Anthropic's built-in server-side tools (web search, web fetch, code execution) can be
+passed as `anthropic_tools`, as raw JSON values. These are appended alongside any
+function tools registered on the agent.
+
+```rust
+--8<-- "user-guide/sdk/model-providers/anthropic.rs:builtin_tools"
+```
+</Tab>
 </Tabs>
 
 Web search results are surfaced as citations on the response text when Claude calls the tool directly (`allowed_callers: ["direct"]`). On `web_search_20260318` the default is dynamic filtering, which runs the search inside code execution and returns no citations. For available built-in tools and their versioned `type` strings, see the [Anthropic tool use documentation](https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/overview).
@@ -260,7 +325,8 @@ Claude reuse an already-processed prefix of your prompt instead of reprocessing 
 every call. The mechanism, the cost model, and the cache metrics match
 [Amazon Bedrock](./amazon-bedrock-prompt-caching); this section covers what differs here.
 
-Caching is off by default. Set <Syntax py="cache_config" ts="cacheConfig" /> to cache
+Caching is off by default. Set
+<Syntax py="cache_config" ts="cacheConfig" rs="cache_config" /> to cache
 the system prompt and add a cache point to the last user message, which caches
 everything before it:
 
@@ -294,6 +360,12 @@ print(result.metrics.accumulated_usage)
 --8<-- "user-guide/sdk/model-providers/anthropic.ts:prompt_caching"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/anthropic.rs:prompt_caching"
+```
+</Tab>
 </Tabs>
 
 Cache activity is reported in the usage metrics, in the same fields Bedrock uses: see
@@ -323,6 +395,17 @@ on [Amazon Bedrock](./amazon-bedrock-prompt-caching#tool-caching), so a configur
 a provider switch unchanged.
 
 `strategy` is ignored by this provider.
+</Tab>
+<Tab label="Rust">
+
+One `AnthropicCacheConfig` covers the tool definitions, the system prompt, and the
+conversation: `ttl` sets the default duration, and `tools_ttl`, `system_prompt_ttl`,
+and `messages_ttl` override it per section with `AnthropicCacheSection::Ttl("1h")`,
+`::Enabled` (provider default), or `::Disabled`. The shape and the per-field behavior
+match [Amazon Bedrock](./amazon-bedrock-prompt-caching#tool-caching).
+
+`strategy` defaults to `AnthropicCacheStrategy::Auto`, which caches only on models
+known to support it; `::Anthropic` forces cache points regardless.
 </Tab>
 </Tabs>
 
@@ -384,6 +467,18 @@ const model = new AnthropicModel({
 ```
 
 When disabled (or if the API call fails), falls back to estimation with a character-based heuristic (characters ÷ 4 for text, characters ÷ 2 for JSON).
+</Tab>
+<Tab label="Rust">
+
+Set `use_native_token_count: true` to use the provider's `count_tokens` endpoint,
+which counts the system prompt, messages, and tool specifications exactly:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/anthropic.rs:token_counting"
+```
+
+When disabled (or if the API call fails), falls back to estimation with a
+character-based heuristic (characters / 4 for text, characters / 2 for JSON).
 </Tab>
 </Tabs>
 
