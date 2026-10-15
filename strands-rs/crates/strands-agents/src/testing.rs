@@ -267,6 +267,66 @@ pub fn empty_model() -> Arc<dyn Model> {
     Arc::new(TestModelProvider::new(Vec::new()))
 }
 
+/// A stand-in `docker` or `ssh` binary for sandbox tests: a `sh` script in a temporary directory
+/// that is deleted when the fixture is dropped.
+///
+/// Point [`DockerSandbox::with_docker_binary`](crate::sandbox::DockerSandbox::with_docker_binary)
+/// or [`SshSandbox::with_ssh_binary`](crate::sandbox::SshSandbox::with_ssh_binary) at
+/// [`path`](Self::path) to exercise a remote backend without a container or a remote host.
+#[derive(Debug)]
+pub struct FakeBinary {
+    dir: std::path::PathBuf,
+}
+
+impl FakeBinary {
+    /// Prints every argument it was given on its own line, so a test can assert on the argv the
+    /// backend built.
+    pub fn argv_echo() -> Self {
+        Self::script("for arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n")
+    }
+
+    /// Runs the backend's shell command on the local host: it skips the flags up to `--`, drops
+    /// the container/host argument, and executes what is left. Lets the shared
+    /// [`posix_shell`](crate::sandbox::posix_shell) layer (base64 file transfer, `ls` parsing,
+    /// `cd`/`export` prefixes) be tested for real.
+    pub fn local_exec() -> Self {
+        Self::script(concat!(
+            "while [ \"$#\" -gt 0 ] && [ \"$1\" != \"--\" ]; do shift; done\n",
+            "[ \"$#\" -ge 2 ] || exit 2\n",
+            "shift 2\n",
+            // `ssh` passes one remote command string; `docker exec` passes `sh -c <command>`.
+            "if [ \"$#\" -eq 1 ]; then exec sh -c \"$1\"; fi\n",
+            "exec \"$@\"\n",
+        ))
+    }
+
+    /// A binary that runs `body` as a `sh` script.
+    pub fn script(body: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("strands-fake-binary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("fake binary dir");
+        let path = dir.join("fake");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}")).expect("write fake binary");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod fake binary");
+        }
+        Self { dir }
+    }
+
+    /// Path of the stand-in binary.
+    pub fn path(&self) -> std::path::PathBuf {
+        self.dir.join("fake")
+    }
+}
+
+impl Drop for FakeBinary {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use futures::StreamExt;

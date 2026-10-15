@@ -109,8 +109,8 @@ pub use models::{OpenAIApi, OpenAIModel, OpenAIModelConfig};
 pub use plugins::vended::{AgentSkills, ContextInjector, Skill, SkillSource};
 pub use plugins::{ModelPlugin, Plugin, PluginRegistry};
 pub use sandbox::{
-    ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError, SandboxEvent, SandboxRef,
-    StreamChunk, StreamType,
+    DockerSandbox, ExecuteOptions, ExecutionResult, FileInfo, LocalSandbox, Sandbox, SandboxError,
+    SandboxEvent, SandboxRef, SshSandbox, StreamChunk, StreamType,
 };
 pub use session::{FileStorage, SessionManager, Snapshot, SnapshotStorage};
 #[cfg(feature = "s3")]
