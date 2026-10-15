@@ -130,3 +130,10 @@ Decision log:
 - `LlmDecisionModel::builder().build()` is `async` and falls back to a zero-config `BedrockModel`,
   like `AgentBuilder`; without the `bedrock` feature and without `.model(..)` it returns
   `Error::DefaultNotConfigured`.
+- The three runtime failures (no tool call, an unparseable answer set, an answer outside a
+  question's options) are `Error::StructuredOutput`, where TS throws a plain `Error`: the crate has
+  no decision-specific variant and these are exactly structured-output failures.
+- A decision taken inside an agent run opens a **root** `decision` span; TS parents it under the
+  `execute_tool` span of the calling tool. `DecisionModelExt::ask` has no handle on the surrounding
+  span and the Rust tracer has no ambient-context plumbing for it — a pre-existing limitation, not
+  specific to decisions.

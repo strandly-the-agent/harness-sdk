@@ -9,7 +9,7 @@ Run with:
 
 ```text
 cargo test --all-features -p strands-agents decisions           # 33 unit tests
-cargo test --all-features -p strands-agents --test decisions_loop   # 10 e2e tests
+cargo test --all-features -p strands-agents --test decisions_loop   # 11 e2e tests
 cargo test --all-features -p strands-agents --test integ_decisions -- --ignored  # 1 live Bedrock
 ```
 
@@ -50,9 +50,11 @@ and the `types::tests::*` serde tests (`uncertain_serializes_like_ts_to_json`,
 
 ## `__tests__/llm-decision-model.tracing.test.node.ts` → `tests/decisions_loop.rs`
 
-Both TS tracing `it`s collapse into one Rust test, because the Rust decision span is created by
-`DecisionModelExt::ask` (never by the caller) and therefore has no parent in either case — the
-"no active parent span" assertion is the same assertion as "the decision span is a root".
+Both TS tracing `it`s collapse into one Rust test: no caller in these tests establishes an ambient
+OTel context, so the decision span is a root span in both of them — the "no active parent span"
+assertion is the same assertion as "the decision span is a root". (`Tracer::begin` does fall back
+to `Context::current()`, so a caller that *did* establish an ambient context would get a parented
+decision span.)
 
 | TS test | Rust test | Status |
 | --- | --- | --- |
@@ -70,13 +72,16 @@ Both TS tracing `it`s collapse into one Rust test, because the Rust decision spa
 | `falls_back_to_wall_clock_latency_when_the_provider_omits_metrics` | no metadata event → wall-clock latency, `usage == None` |
 | `an_invalid_question_set_fails_before_the_model_is_called` | validation error, `call_count() == 0` |
 | `an_answer_outside_the_allowed_options_is_an_error` | unknown option |
+| `an_extra_key_in_an_answer_is_ignored` | unknown keys are ignored, as zod `.parse` strips them |
 | `a_text_only_turn_is_an_error` | non-tool-use stop |
 | `a_decision_model_is_usable_behind_a_trait_object` | `Arc<dyn DecisionModel>` |
 | `tracing::the_decision_span_parents_child_spans_and_records_the_answers` | span tree + `gen_ai.*` attributes/events |
 
 `tests/integ_decisions.rs::answers_boolean_and_choice_questions_on_live_bedrock` —
-`#[ignore = "live Bedrock"]`, `us.anthropic.claude-haiku-4-5-20251001-v1:0`; prints
-`skipping: no usable AWS credentials (…)` and returns when the client cannot be built.
+`#[ignore = "live Bedrock"]`, `us.anthropic.claude-haiku-4-5-20251001-v1:0`, both questions
+`Uncertainty::Disabled` so the answers are assertable; skips on `Error::ModelThrottled` and
+requires usable AWS credentials (`BedrockModel::new` never resolves them, so there is nothing to
+probe before the call).
 
 ## API map
 
@@ -109,3 +114,9 @@ Both TS tracing `it`s collapse into one Rust test, because the Rust decision spa
 4. **Uncertainty opt-out only affects the schema.** Same as TS: `Uncertainty::Disabled` removes
    `"uncertain"` from the model's enum; it does not change the answer type.
 5. **The two TS tracing tests collapse into one** (see above).
+6. **No local schema validation of the answer set.** TS parses the tool input with zod `.parse`,
+   which strips unknown keys; validating against the generated schema (`additionalProperties:
+   false`) would reject payloads TS accepts. `serde_json` ignores unknown fields, and the allowed
+   option set is enforced per answer in `convert_single_answer`.
+7. **A decision inside an agent run is a root span**, not a child of `execute_tool` as in TS — a
+   pre-existing limitation of the Rust tracer (see `DESIGN.md`).

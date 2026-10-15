@@ -217,6 +217,26 @@ async fn an_answer_outside_the_allowed_options_is_an_error() {
 }
 
 #[tokio::test]
+async fn an_extra_key_in_an_answer_is_ignored() {
+    // TS parses with zod `.parse`, which strips unknown keys instead of rejecting them.
+    let model = MockMessageModel::shared(vec![MockResponse::message(answers(json!({
+        "is_fruit": { "answer": "true", "confidence": 0.9 },
+        "color": { "answer": "red" },
+        "not_a_question": { "answer": "whatever" },
+    })))]);
+    let decision = LlmDecisionModel::new(model);
+
+    let result = decision
+        .ask("The fruit is an apple", &questions())
+        .await
+        .expect("decision succeeds despite the extra keys");
+
+    assert_eq!(result.answer("is_fruit").and_then(Answer::as_bool), Some(true));
+    assert_eq!(result.answer("color").and_then(Answer::as_choice), Some("red"));
+    assert_eq!(result.answers.len(), 2, "only the questions asked are answered");
+}
+
+#[tokio::test]
 async fn a_text_only_turn_is_an_error() {
     let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("red, I think"))]);
     let decision = LlmDecisionModel::new(model);
@@ -298,14 +318,20 @@ mod tracing {
             .expect("decision succeeds");
         provider.force_flush().expect("flush");
 
+        // Other tests in this binary emit `decision` spans into the same globally-installed
+        // exporter, so start from the child only this test creates and walk up to its parent.
         let spans = exporter.get_finished_spans().expect("spans");
-        let decision_span = find(&spans, "decision");
         let child = find(&spans, "child_in_decide");
+        let decision_span = spans
+            .iter()
+            .find(|span| span.span_context.span_id() == child.parent_span_id)
+            .expect("the child's parent span was exported");
 
+        assert_eq!(decision_span.name, "decision");
         assert_eq!(
             decision_span.parent_span_id,
             SpanId::INVALID,
-            "a decision runs with no parent span"
+            "no caller here establishes an ambient OTel context, so the decision span is a root"
         );
         assert_eq!(child.parent_span_id, decision_span.span_context.span_id());
 

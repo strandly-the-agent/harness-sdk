@@ -48,8 +48,7 @@ impl StructuredOutputTool {
         }
     }
 
-    /// Validate `input` against the schema, with every issue listed in the error message.
-    pub(crate) fn validate(&self, input: &JsonValue) -> Result<()> {
+    fn validate(&self, input: &JsonValue) -> Result<()> {
         let validator = self
             .validator
             .as_ref()

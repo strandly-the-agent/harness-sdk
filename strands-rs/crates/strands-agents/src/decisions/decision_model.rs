@@ -102,7 +102,7 @@ fn validate_questions(questions: &Questions) -> Result<()> {
                 return invalid("choice 'uncertain' is reserved for the Uncertain answer");
             }
         }
-        if let Some(Uncertainty::MinConfidence(min)) = question.uncertainty() {
+        if let Uncertainty::MinConfidence(min) = question.uncertainty() {
             if !min.is_finite() || min < 0.0 || min > 1.0 {
                 return invalid("uncertainty.minConfidence must be in [0.0, 1.0]");
             }

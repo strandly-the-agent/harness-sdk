@@ -66,9 +66,10 @@ impl From<Message> for DecisionInput {
 ///
 /// [`MinConfidence`](Self::MinConfidence) is read only by implementations that return per-answer
 /// confidence (e.g. System One models); [`LlmDecisionModel`](super::LlmDecisionModel) ignores it.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Uncertainty {
     /// [`Uncertain`] is a permitted answer (the default; TS `uncertainty: true`).
+    #[default]
     Allowed,
     /// [`Uncertain`] is disabled; the model must commit to one of the choices (TS `false`).
     Disabled,
@@ -87,8 +88,8 @@ pub enum Question {
     Boolean {
         /// The question posed to the model, in natural language.
         question: String,
-        /// Uncertainty configuration; `None` means [`Uncertainty::Allowed`].
-        uncertainty: Option<Uncertainty>,
+        /// Uncertainty configuration.
+        uncertainty: Uncertainty,
     },
     /// A question answered with exactly one of `choices`.
     Choice {
@@ -96,8 +97,8 @@ pub enum Question {
         question: String,
         /// The allowed answers: non-empty, unique, and none of them `"uncertain"`.
         choices: Vec<String>,
-        /// Uncertainty configuration; `None` means [`Uncertainty::Allowed`].
-        uncertainty: Option<Uncertainty>,
+        /// Uncertainty configuration.
+        uncertainty: Uncertainty,
     },
 }
 
@@ -106,7 +107,7 @@ impl Question {
     pub fn boolean(question: impl Into<String>) -> Self {
         Question::Boolean {
             question: question.into(),
-            uncertainty: None,
+            uncertainty: Uncertainty::default(),
         }
     }
 
@@ -115,7 +116,7 @@ impl Question {
         Question::Choice {
             question: question.into(),
             choices: choices.into_iter().map(Into::into).collect(),
-            uncertainty: None,
+            uncertainty: Uncertainty::default(),
         }
     }
 
@@ -124,7 +125,7 @@ impl Question {
     pub fn with_uncertainty(mut self, value: Uncertainty) -> Self {
         match &mut self {
             Question::Boolean { uncertainty, .. } | Question::Choice { uncertainty, .. } => {
-                *uncertainty = Some(value)
+                *uncertainty = value
             }
         }
         self
@@ -137,8 +138,8 @@ impl Question {
         }
     }
 
-    /// This question's uncertainty configuration, if set.
-    pub fn uncertainty(&self) -> Option<Uncertainty> {
+    /// This question's uncertainty configuration.
+    pub fn uncertainty(&self) -> Uncertainty {
         match self {
             Question::Boolean { uncertainty, .. } | Question::Choice { uncertainty, .. } => *uncertainty,
         }
@@ -146,7 +147,7 @@ impl Question {
 
     /// Whether [`Uncertain`] is a permitted answer (TS `uncertaintyAllowed`).
     pub fn uncertainty_allowed(&self) -> bool {
-        !matches!(self.uncertainty(), Some(Uncertainty::Disabled))
+        !matches!(self.uncertainty(), Uncertainty::Disabled)
     }
 }
 
@@ -430,12 +431,12 @@ mod tests {
     fn question_accessors_read_both_variants() {
         let boolean = Question::boolean("ok?");
         assert_eq!(boolean.text(), "ok?");
-        assert_eq!(boolean.uncertainty(), None);
+        assert_eq!(boolean.uncertainty(), Uncertainty::Allowed);
         assert!(boolean.uncertainty_allowed());
 
         let choice = Question::choice("c?", ["red"]).with_uncertainty(Uncertainty::MinConfidence(0.5));
         assert_eq!(choice.text(), "c?");
-        assert_eq!(choice.uncertainty(), Some(Uncertainty::MinConfidence(0.5)));
+        assert_eq!(choice.uncertainty(), Uncertainty::MinConfidence(0.5));
         assert!(choice.uncertainty_allowed());
     }
 

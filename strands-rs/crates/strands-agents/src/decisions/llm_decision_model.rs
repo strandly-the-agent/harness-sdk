@@ -74,8 +74,9 @@ impl LlmDecisionModel {
         LlmDecisionModelBuilder::default()
     }
 
-    /// The system prompt sent to the model, including the mandatory rules the SDK appends.
-    pub fn system_prompt(&self) -> String {
+    /// The system prompt sent to the model: the configured prompt plus the mandatory rules the
+    /// SDK appends.
+    pub fn hardened_system_prompt(&self) -> String {
         build_system_prompt(&self.system_prompt)
     }
 }
@@ -175,12 +176,11 @@ impl DecisionModel for LlmDecisionModel {
                 Error::StructuredOutput("decision model returned no structured answers".to_owned())
             })?;
 
-        let raw = tool
-            .validate(&tool_use.input)
-            .and_then(|()| parse_raw_answers(&tool_use.input))
-            .map_err(|err| {
-                Error::StructuredOutput(format!("decision model returned an invalid answer set: {err}"))
-            })?;
+        // No schema validation here: TS parses with zod `.parse`, which strips unknown keys, so
+        // the per-answer enum check below is the only rejection both runtimes make.
+        let raw = parse_raw_answers(&tool_use.input).map_err(|err| {
+            Error::StructuredOutput(format!("decision model returned an invalid answer set: {err}"))
+        })?;
         let answers = convert_answers(&raw, questions)?;
 
         let latency_ms = match &result.metrics {
@@ -258,21 +258,27 @@ fn convert_answers(
             let entry = raw.get(id).ok_or_else(|| {
                 Error::StructuredOutput(format!("decision model omitted answer for question id=<{id}>"))
             })?;
-            Ok((id.to_owned(), convert_single_answer(question, entry)))
+            Ok((id.to_owned(), convert_single_answer(id, question, entry)?))
         })
         .collect()
 }
 
-fn convert_single_answer(question: &Question, entry: &RawAnswer) -> Answer {
-    if entry.answer == UNCERTAIN_LITERAL {
-        return Answer::Uncertain(Uncertain {
-            reason: entry.reason.clone(),
-        });
+fn convert_single_answer(id: &str, question: &Question, entry: &RawAnswer) -> Result<Answer> {
+    if !answer_literals(question).contains(&entry.answer.as_str()) {
+        return Err(Error::StructuredOutput(format!(
+            "decision model returned an invalid answer set: question id=<{id}> | answer '{}' is not an allowed option",
+            entry.answer
+        )));
     }
-    match question {
+    if entry.answer == UNCERTAIN_LITERAL {
+        return Ok(Answer::Uncertain(Uncertain {
+            reason: entry.reason.clone(),
+        }));
+    }
+    Ok(match question {
         Question::Boolean { .. } => Answer::Bool(entry.answer == "true"),
         Question::Choice { .. } => Answer::Choice(entry.answer.clone()),
-    }
+    })
 }
 
 /// TS copies only the three token counts out of the provider's usage.
@@ -727,9 +733,9 @@ mod tests {
             .expect_err("must fail")
             .to_string();
 
-        assert!(
-            error.starts_with("decision model returned an invalid answer set:"),
-            "{error}"
+        assert_eq!(
+            error,
+            "decision model returned an invalid answer set: question id=<color> | answer 'purple' is not an allowed option"
         );
     }
 
@@ -744,9 +750,7 @@ mod tests {
             .expect_err("must fail")
             .to_string();
 
-        // A missing key fails schema validation first; both guards carry the question id.
-        assert!(error.contains("invalid answer set"), "{error}");
-        assert!(error.contains('b'), "{error}");
+        assert_eq!(error, "decision model omitted answer for question id=<b>");
     }
 
     #[test]
@@ -792,7 +796,9 @@ mod tests {
             .await
             .expect("builds");
 
-        assert!(decision.system_prompt().starts_with("Decide tersely.\n\n"));
+        assert!(decision
+            .hardened_system_prompt()
+            .starts_with("Decide tersely.\n\n"));
         let result = decision
             .ask("x", &Questions::new().boolean("q", "ok?"))
             .await

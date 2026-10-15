@@ -29,6 +29,8 @@ mod llm_decision_model;
 mod types;
 
 pub use decision_model::{DecisionModel, DecisionModelExt};
+/// Re-exported for [`DecisionResult::answers`]: the answer map preserves question order.
+pub use indexmap::IndexMap;
 pub use llm_decision_model::{LlmDecisionModel, LlmDecisionModelBuilder};
 pub use types::{
     Answer, DecisionInput, DecisionMetadata, DecisionResult, Question, Questions, Uncertain, Uncertainty,
