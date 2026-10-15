@@ -28,8 +28,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use cedar_policy::{
-    Authorizer, Context, Decision, Entities, EntityId, EntityTypeName, EntityUid, PolicySet, Request,
-    Schema, ValidationMode, Validator,
+    Authorizer, Context, Decision, Entities, EntityId, EntityTypeName, EntityUid, PolicySet, Request, Schema,
+    ValidationMode, Validator,
 };
 use cedar_policy_mcp_schema_generator::{SchemaGenerator, SchemaGeneratorConfig};
 use mcp_tools_sdk::description::ServerDescription;
@@ -128,8 +128,7 @@ pub enum OnError {
 }
 
 /// Resolves the Cedar principal from the invocation state. `Ok(None)` denies (fail-closed).
-pub type PrincipalResolver =
-    Arc<dyn Fn(&InvocationState) -> Result<Option<EntityRef>> + Send + Sync>;
+pub type PrincipalResolver = Arc<dyn Fn(&InvocationState) -> Result<Option<EntityRef>> + Send + Sync>;
 
 /// The tool call a [`ContextEnricher`] is enriching.
 #[non_exhaustive]
@@ -348,8 +347,7 @@ impl CedarAuthorization {
             (None, Some(resolve)) => resolve(&event.invocation_state)?,
             (None, None) => None,
         };
-        let Some(principal) = principal.filter(|p| !p.entity_type.is_empty() && !p.id.is_empty())
-        else {
+        let Some(principal) = principal.filter(|p| !p.entity_type.is_empty() && !p.id.is_empty()) else {
             return Ok(ToolCallAction::Deny(NO_PRINCIPAL.to_owned()));
         };
 
@@ -421,14 +419,8 @@ impl CedarAuthorization {
         Ok(Some(format!("Access denied by Cedar policy{suffix}")))
     }
 
-    fn build_request(
-        &self,
-        principal: &EntityRef,
-        tool_name: &str,
-        context: JsonValue,
-    ) -> Result<Request> {
-        let context =
-            Context::from_json_value(context, None).map_err(|e| Error::Plugin(e.to_string()))?;
+    fn build_request(&self, principal: &EntityRef, tool_name: &str, context: JsonValue) -> Result<Request> {
+        let context = Context::from_json_value(context, None).map_err(|e| Error::Plugin(e.to_string()))?;
         Request::new(
             principal.to_uid()?,
             EntityRef::new(&self.action_type, tool_name).to_uid()?,
@@ -509,8 +501,8 @@ fn current_utc_hour() -> i64 {
 
 fn compile(sources: &Sources) -> Result<Compiled> {
     let policy_text = load(&sources.policies, "policy")?;
-    let policies = PolicySet::from_str(&policy_text)
-        .map_err(|e| Error::Plugin(format!("Invalid Cedar policy: {e}")))?;
+    let policies =
+        PolicySet::from_str(&policy_text).map_err(|e| Error::Plugin(format!("Invalid Cedar policy: {e}")))?;
     let entities = load_entities(sources.entities.as_ref())?;
 
     let (schema, auto_generated) = match (&sources.schema, sources.tools.is_empty()) {
@@ -530,12 +522,8 @@ fn compile(sources: &Sources) -> Result<Compiled> {
 fn load(source: &CedarSource, what: &str) -> Result<String> {
     match source {
         CedarSource::Text(text) => Ok(text.clone()),
-        CedarSource::File(path) => std::fs::read_to_string(path).map_err(|e| {
-            Error::Plugin(format!(
-                "Cedar {what} file not found: {} ({e})",
-                path.display()
-            ))
-        }),
+        CedarSource::File(path) => std::fs::read_to_string(path)
+            .map_err(|e| Error::Plugin(format!("Cedar {what} file not found: {} ({e})", path.display()))),
     }
 }
 
@@ -546,8 +534,7 @@ fn load_entities(source: Option<&CedarSource>) -> Result<Entities> {
     let json: JsonValue = serde_json::from_str(&load(source, "entity")?)
         .map_err(|e| Error::Plugin(format!("Invalid Cedar entities: {e}")))?;
     check_entity_uids(&json)?;
-    Entities::from_json_value(json, None)
-        .map_err(|e| Error::Plugin(format!("Invalid Cedar entities: {e}")))
+    Entities::from_json_value(json, None).map_err(|e| Error::Plugin(format!("Invalid Cedar entities: {e}")))
 }
 
 fn check_entity_uids(json: &JsonValue) -> Result<()> {
@@ -568,18 +555,15 @@ fn check_entity_uids(json: &JsonValue) -> Result<()> {
 }
 
 fn validate(policies: &PolicySet, schema: &str, auto_generated: bool) -> Result<()> {
-    let schema = Schema::from_str(schema).map_err(|e| {
-        Error::Plugin(format!("Cedar policy validation failed: invalid schema: {e}"))
-    })?;
+    let schema = Schema::from_str(schema)
+        .map_err(|e| Error::Plugin(format!("Cedar policy validation failed: invalid schema: {e}")))?;
     let errors = Validator::new(schema)
         .validate(policies, ValidationMode::Strict)
         .validation_errors()
         .map(|error| (error.policy_id().to_string(), error.to_string()))
         // An auto-generated schema only describes tool inputs, not the handler-injected session
         // context, so only surface typos in tool names.
-        .filter(|(_, message)| {
-            !auto_generated || ACTION_ERRORS.iter().any(|needle| message.contains(needle))
-        })
+        .filter(|(_, message)| !auto_generated || ACTION_ERRORS.iter().any(|needle| message.contains(needle)))
         .map(|(policy_id, message)| format!("{policy_id}: {message}"))
         .collect::<Vec<_>>();
     if errors.is_empty() {
@@ -610,11 +594,10 @@ fn generate_schema(tools: &[ToolSpec], namespace: Option<&str>) -> Result<String
 "
     );
     let config = SchemaGeneratorConfig::default().flatten_namespaces(true);
-    let mut generator = SchemaGenerator::from_cedarschema_str_with_config(&stub, config)
-        .map_err(generation_failed)?;
+    let mut generator =
+        SchemaGenerator::from_cedarschema_str_with_config(&stub, config).map_err(generation_failed)?;
     let tools_json = JsonValue::Array(tools.iter().map(mcp_tool_json).collect());
-    let description =
-        ServerDescription::from_json_str(&tools_json.to_string()).map_err(generation_failed)?;
+    let description = ServerDescription::from_json_str(&tools_json.to_string()).map_err(generation_failed)?;
     generator
         .add_actions_from_server_description(&description)
         .map_err(generation_failed)?;
@@ -735,7 +718,11 @@ action "search" appliesTo {
     fn reloads_policies_from_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.cedar");
-        std::fs::write(&path, r#"permit(principal, action == Action::"search", resource);"#).unwrap();
+        std::fs::write(
+            &path,
+            r#"permit(principal, action == Action::"search", resource);"#,
+        )
+        .unwrap();
         let cedar = CedarAuthorization::from_policies(path).unwrap();
         cedar.reload().expect("reload of an unchanged valid file");
     }
@@ -748,7 +735,7 @@ action "search" appliesTo {
         let cedar = CedarAuthorization::from_policies(path.clone()).unwrap();
 
         std::fs::remove_file(&path).unwrap();
-        let error = cedar.reload().err().expect("reload must fail").to_string();
+        let error = cedar.reload().expect_err("reload must fail").to_string();
         assert!(error.starts_with("Cedar policy file not found: "), "{error}");
     }
 
@@ -760,7 +747,7 @@ action "search" appliesTo {
         let cedar = CedarAuthorization::from_policies(path.clone()).unwrap();
 
         std::fs::write(&path, "this is broken!!!").unwrap();
-        let error = cedar.reload().err().expect("reload must fail").to_string();
+        let error = cedar.reload().expect_err("reload must fail").to_string();
         assert!(error.starts_with("Invalid Cedar policy: "), "{error}");
         // The live policy set is untouched: a second reload still reports the same failure.
         assert!(cedar.reload().is_err());
@@ -893,8 +880,8 @@ action "search" appliesTo {
                 },
             }),
         )];
-        let config = CedarAuthorizationConfig::new("permit(principal, action, resource);")
-            .with_tools(colliding);
+        let config =
+            CedarAuthorizationConfig::new("permit(principal, action, resource);").with_tools(colliding);
         let error = error_of(CedarAuthorization::new(config));
         assert!(error.starts_with("Schema generation failed: "), "{error}");
     }
