@@ -49,6 +49,7 @@ Default: `bedrock`, `macros`. Everything else is opt-in.
 - `anthropic` — Anthropic Messages provider.
 - `openai` — OpenAI Chat Completions provider.
 - `mcp` — MCP client transports and tool discovery.
+- `bedrock-kb` — Bedrock Knowledge Base memory store (`aws-sdk-bedrockagent{,runtime}`, `aws-sdk-s3`).
 - `telemetry` — OpenTelemetry metrics/tracing export.
 - `test-support` — the [`testing`](#testing) module (test doubles).
 

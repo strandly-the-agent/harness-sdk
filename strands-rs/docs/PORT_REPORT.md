@@ -343,5 +343,14 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   ported — 33 unit tests beside the code plus 3 agent-loop tests in `tests/memory_stores_loop.rs`
   (injection round-trip + extraction through the real `Agent`/`MemoryManager` wiring). Matrix:
   `docs/matrices/memory-stores.md`. The phase-3 entry above previously listed `TestMemoryStore` as
-  landed; it was not, and the claim has been corrected. `BedrockKnowledgeBaseStore` (part B) is
-  still unported.
+  landed; it was not, and the claim has been corrected.
+- **memory-stores part B — `BedrockKnowledgeBaseStore`** (`src/memory/bedrock_knowledge_base.rs`,
+  feature `bedrock-kb`): search over `Retrieve` (scope/explicit filter, score bounds, metadata and
+  `_sourceLocation`/`_relevanceScore` mapping), vector-vs-managed knowledge-base detection via
+  `GetKnowledgeBase` cached in a `OnceCell`, and the write path for `CUSTOM` (inline document with
+  scope/metadata/ACL inline attributes) and `S3` (object upload plus a `.metadata.json` sidecar)
+  data sources, with the missing-ACL `ValidationException` rewritten to name `accessControlList`.
+  43 unit tests cover 48 of the 84 TS `it(...)` cases; the live round trip
+  (`tests/integ_memory_kb.rs`) is `#[ignore]`d and skips unless `STRANDS_TEST_KB_ID` is set — no
+  knowledge base exists in the sandbox account, so only its skip path has been exercised. Cases
+  not ported, and why, are listed in `docs/matrices/memory-stores.md`.
