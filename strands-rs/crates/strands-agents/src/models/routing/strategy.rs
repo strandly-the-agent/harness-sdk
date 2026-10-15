@@ -43,6 +43,7 @@ impl RoutingAttempt {
 
 /// Read-only inputs supplied to a routing strategy.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct RoutingContext {
     /// Fresh copy of the messages for this strategy ask.
     pub messages: Vec<Message>,

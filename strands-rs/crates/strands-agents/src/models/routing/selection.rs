@@ -298,6 +298,7 @@ impl ModelRouter {
                 from_candidate = inner.candidate.label(),
                 to_candidate = candidate.label(),
                 model = label(&model),
+                error = event.error.as_deref().map_or("", Error::name),
                 "model call failed, switching candidate"
             );
             inner.candidate = candidate.clone();

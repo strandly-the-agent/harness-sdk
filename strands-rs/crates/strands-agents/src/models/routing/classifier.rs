@@ -102,7 +102,7 @@ impl ClassifierStrategy {
     /// When `timeout` is zero.
     pub fn with_timeout(mut self, timeout: Duration) -> Result<Self> {
         if timeout.is_zero() {
-            return Err(Error::other("timeoutMs must be finite and greater than zero"));
+            return Err(Error::other("timeout must be greater than zero"));
         }
         self.timeout = timeout;
         Ok(self)
@@ -113,7 +113,7 @@ impl ClassifierStrategy {
     /// # Errors
     /// When `limit` is zero.
     pub fn with_max_message_chars(mut self, limit: usize) -> Result<Self> {
-        self.max_message_chars = validated_character_limit("maxMessageChars", limit)?;
+        self.max_message_chars = validated_character_limit("max_message_chars", limit)?;
         Ok(self)
     }
 
@@ -122,7 +122,7 @@ impl ClassifierStrategy {
     /// # Errors
     /// When `limit` is zero.
     pub fn with_max_agent_instructions_chars(mut self, limit: usize) -> Result<Self> {
-        self.max_agent_instructions_chars = validated_character_limit("maxAgentInstructionsChars", limit)?;
+        self.max_agent_instructions_chars = validated_character_limit("max_agent_instructions_chars", limit)?;
         Ok(self)
     }
 
@@ -132,7 +132,7 @@ impl ClassifierStrategy {
     /// # Errors
     /// When `limit` is zero.
     pub fn with_max_candidate_chars(mut self, limit: usize) -> Result<Self> {
-        self.max_candidate_chars = validated_character_limit("maxCandidateChars", limit)?;
+        self.max_candidate_chars = validated_character_limit("max_candidate_chars", limit)?;
         Ok(self)
     }
 
@@ -226,8 +226,10 @@ impl RoutingStrategy for ClassifierStrategy {
             Err((reason, error_type)) => {
                 // Logs only the error type: failures may carry request or candidate evidence.
                 tracing::warn!(
-                    "strategy=<{}>, reason=<{reason}>, error_type=<{error_type}> | classification declined",
-                    self.name()
+                    strategy = self.name(),
+                    reason,
+                    error_type,
+                    "classification declined"
                 );
                 Ok(None)
             }
@@ -348,7 +350,8 @@ fn build_classifier_system_prompt(
         agent_instructions: extract_bounded_agent_instructions(agent_system_prompt, agent_instructions_limit),
         candidates: profiles,
     };
-    let serialized = serde_json::to_string(&context).unwrap_or_else(|_| "{}".to_owned());
+    let serialized =
+        serde_json::to_string(&context).expect("candidate metadata is validated to be a JSON object");
     let escaped = serialized
         .replace('&', "\\u0026")
         .replace('<', "\\u003c")
@@ -394,7 +397,7 @@ fn truncate_text(text: &str, character_limit: usize) -> String {
 /// Return a validated positive character limit.
 fn validated_character_limit(name: &str, value: usize) -> Result<usize> {
     if value == 0 {
-        return Err(Error::other(format!("{name} must be a positive integer")));
+        return Err(Error::other(format!("{name} must be greater than zero")));
     }
     Ok(value)
 }
@@ -925,28 +928,25 @@ mod tests {
             .with_timeout(Duration::ZERO)
             .unwrap_err()
             .to_string();
-        assert!(
-            error.contains("timeoutMs must be finite and greater than zero"),
-            "{error}"
-        );
+        assert!(error.contains("timeout must be greater than zero"), "{error}");
     }
 
     #[test]
     fn rejects_non_positive_character_limits() {
         type Limit = fn(ClassifierStrategy) -> Result<ClassifierStrategy>;
         let limits: Vec<(&str, Limit)> = vec![
-            ("maxMessageChars", |strategy| strategy.with_max_message_chars(0)),
-            ("maxAgentInstructionsChars", |strategy| {
+            ("max_message_chars", |strategy| strategy.with_max_message_chars(0)),
+            ("max_agent_instructions_chars", |strategy| {
                 strategy.with_max_agent_instructions_chars(0)
             }),
-            ("maxCandidateChars", |strategy| {
+            ("max_candidate_chars", |strategy| {
                 strategy.with_max_candidate_chars(0)
             }),
         ];
         for (name, apply) in limits {
             let error = apply(ClassifierStrategy::new(model())).unwrap_err().to_string();
             assert!(
-                error.contains(&format!("{name} must be a positive integer")),
+                error.contains(&format!("{name} must be greater than zero")),
                 "{error}"
             );
         }

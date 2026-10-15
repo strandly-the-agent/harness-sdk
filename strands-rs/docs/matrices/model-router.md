@@ -37,13 +37,13 @@ Re-exported from `strands_agents`: `ModelRouter`, `RoutingCandidate`, `RoutingSt
 | keys cached state by router and agent object identity rather than caller id | — | not ported (identity keying is exercised indirectly by every loop test) |
 | registers idempotent middleware, routing hook, and scoped boundary cleanup | — | not ported (boundary cleanup is observed by `tests/integ_model_router.rs`, which must read the selection from inside the loop) |
 | rejects plugin initialization even when another router shares the default model | `selection::tests::rejects_a_router_registered_as_an_ordinary_plugin` | pass |
-| ignores cancellation without recording a failure or selecting another candidate | — | not ported |
+| ignores cancellation without recording a failure or selecting another candidate | `tests/model_router_loop.rs::a_cancelled_model_call_neither_records_a_failure_nor_switches` | pass (loop level: `RoutingState` only exists once the before-model hook has run, so the branch is driven through a real invocation; a cancelled model call ends the loop with `StopReason::Cancelled`, not an error) |
 | records complete outcomes, switches once, and opens a new round after success | `tests/model_router_loop.rs::switches_to_the_next_candidate_when_the_model_call_fails` + `fallback::tests::rearms_after_success_while_retaining_other_candidates_failure_history` | pass (split across loop and strategy level) |
 | consumes an unresolvable nested candidate and continues to a healthy candidate | `tests/model_router_loop.rs::resolves_a_nested_router_as_one_candidate` | partial (nested resolution after a failure; no unresolvable nested router) |
 | stops when a strategy repeats an unresolvable candidate in the same round | — | not ported |
 | does not replace a pending model error when strategy selection fails or repeats a used candidate | `tests/model_router_loop.rs::surfaces_the_error_once_every_candidate_has_failed` | partial (exhausted candidates; not a failing/repeating strategy) |
 | honors maxSwitches as a cap on successful switches | `tests/model_router_loop.rs::stops_switching_at_max_switches` | pass |
-| allows exactly maxSwitches successful candidate changes | — | not ported |
+| allows exactly maxSwitches successful candidate changes | `tests/model_router_loop.rs::allows_exactly_max_switches_successful_changes` | pass |
 | bounds a failure round when a strategy cycles to an already-used candidate | `fallback::tests::advances_through_each_candidate_once_in_a_failure_round` | partial (strategy level) |
 | keeps the successful candidate used when opening the next failure round | `fallback::tests::clears_a_successful_candidates_own_accumulated_failure_count`, `rearms_the_other_candidate_after_a_fallback_succeeds_and_later_fails` | partial (strategy level) |
 | uses the default on decline and propagates invalid opening results | — | not ported |
@@ -98,12 +98,38 @@ Full list in the `routing/mod.rs` `//!` block. The load-bearing ones:
   `auxModel must be a Model or a Bedrock model id, not a ModelRouter` (`aux_model` takes `impl Model`).
 - `RoutingStrategy::name()` replaces `strategy.constructor.name` in routing logs; candidate labels
   use `Model::model_id` (no runtime provider class name).
-- `ClassifierStrategy` takes fallible `with_*` builders instead of an options bag, keeps TS's
-  verbatim messages, replaces zod with an explicit `serde_json` schema, counts `char`s rather than
+- `ClassifierStrategy` takes fallible `with_*` builders instead of an options bag, names the Rust
+  setter in its config errors (`timeout must be greater than zero`,
+  `max_message_chars must be greater than zero`) where TS names the JS parameter
+  (`timeoutMs must be finite and greater than zero`) — verbatim TS is kept for model-facing and
+  selection-failure strings — replaces zod with an explicit `serde_json` schema, counts `char`s rather than
   UTF-16 code units, and races an injectable `Sleeper` against the classifier call, cancelling it
   through `StreamOptions::cancel` (TS's `AbortController`).
 - One router cannot serve two *concurrent* invocations of the same agent: per-invocation state is
   keyed by `Agent`/router pointer identity. TS documents the identical limitation.
+- Once `max_switches` is exhausted the router stops claiming the failure, so the error falls
+  through to the installed retry strategy, which may retry the *same* failed candidate
+  (`tests/model_router_loop.rs::retries_the_failed_candidate_once_max_switches_is_exhausted`
+  pins this). Same shape as TS; deliberate.
+- A configured `AgentBuilder::model_router` wins over `AgentBuilder::model` in either call order:
+  `Agent::model` is derived from the router inside `build()`.
 - After a candidate switch the loop's `attempt_count` keeps incrementing, so
   `ModelRetryStrategy::on_first_model_attempt` is not re-fired on a switch. TS has the same shape;
   left as is rather than changing `event_loop.rs`.
+
+## Review disposition (round 1, review of `833705a14`)
+
+| # | Finding | Disposition |
+| --- | --- | --- |
+| 🔴 | `builder.rs` `model_router()` eagerly set `self.model`, so the override only held in one call order | fixed — `model_router()` stores only the router; `build()` derives `model` from it, documented on both methods; `agent::builder::tests::the_model_router_wins_over_model_in_either_call_order` covers both orders |
+| 🟠 | switch log dropped TS/Python's `error=<…>` field | fixed — `selection.rs` logs `error = <Error::name()>` alongside `model` |
+| 🟠 | no loop coverage of router ↔ `DefaultModelRetryStrategy` (mocks raised non-retryable errors) | fixed — `switches_on_a_retryable_error_instead_of_retrying_the_failed_candidate` and `retries_the_failed_candidate_once_max_switches_is_exhausted` use a throttling model; the exhaustion behaviour is now asserted and documented as a deliberate TS-shaped decision |
+| 🟠 | `max_switches` boundary only covered at 0 | fixed — `allows_exactly_max_switches_successful_changes` (`with_max_switches(1)`, three candidates) |
+| 🟠 | `Error::Cancelled` branch untested | fixed — `a_cancelled_model_call_neither_records_a_failure_nor_switches` (loop level, see the row above for why) |
+| 🟠 | config errors used JS names (`timeoutMs`, `maxMessageChars`) | fixed — Rust-named messages (`timeout must be greater than zero`, `max_*_chars must be greater than zero`); divergence recorded above. The selection-failure message `exceeding maxCandidateChars=…` stays verbatim TS |
+| 🟡 | preformatted TS-style log in `classifier.rs` | fixed — structured `strategy` / `reason` / `error_type` fields |
+| 🟡 | silent `"{}"` fallback when serializing the classification context | fixed — `expect` (metadata is validated to be a JSON object at construction) |
+| 🟡 | inherent `ModelRouter::name()` duplicated `Plugin::name` | fixed — removed; callers resolve through the trait |
+| 🟡 | `RoutingContext` froze its shape | fixed — `#[non_exhaustive]` |
+| 🟡 | `model_router()` should take `impl Into<Arc<ModelRouter>>` | fixed |
+| note | single `model(impl Into<ModelSource>)` alternative | not adopted — the reviewer's own recommendation; deriving `model` in `build()` is the two-line fix and leaves `model()`'s signature (and every call site/doctest) alone |

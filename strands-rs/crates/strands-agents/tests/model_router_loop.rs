@@ -1,12 +1,16 @@
 //! Model routing through the real agent loop (`models/routing/__tests__/router.test.ts`).
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 use strands_agents::error::Error;
 use strands_agents::middleware::{wrap_fn, InvokeModelContext, InvokeModelStage};
 use strands_agents::models::routing::{ClassifierStrategy, ModelRouter, RoutingCandidate};
-use strands_agents::models::Model;
+use strands_agents::models::{Model, ModelEventStream, StreamOptions};
+use strands_agents::retry::{
+    ConstantBackoff, ConstantBackoffOptions, DefaultModelRetryStrategy, DefaultModelRetryStrategyOptions,
+};
 use strands_agents::test_support::{MockMessageModel, MockResponse};
 use strands_agents::tools::STRUCTURED_OUTPUT_TOOL_NAME;
 use strands_agents::types::ToolUseBlock;
@@ -264,4 +268,140 @@ async fn selects_an_opaque_nested_router() {
     assert_eq!(result.last_message.text(), "nested");
     assert_eq!(classifier.call_count(), 1);
     assert_eq!(other.call_count(), 0);
+}
+
+/// A model that always fails with a fresh `error`, counting its calls.
+struct FailingModel {
+    error: fn() -> Error,
+    calls: AtomicUsize,
+}
+
+impl FailingModel {
+    fn shared(error: fn() -> Error) -> Arc<Self> {
+        Arc::new(Self {
+            error,
+            calls: AtomicUsize::new(0),
+        })
+    }
+
+    fn call_count(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl Model for FailingModel {
+    fn model_id(&self) -> Option<String> {
+        Some("failing-model".to_owned())
+    }
+
+    fn stream<'a>(&'a self, _messages: &'a [Message], _options: &'a StreamOptions) -> ModelEventStream<'a> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(tokio_stream::iter(vec![Err((self.error)())]))
+    }
+}
+
+fn failing_candidate(model: Arc<FailingModel>, name: &str) -> RoutingCandidate {
+    RoutingCandidate::new(model as Arc<dyn Model>).with_name(name)
+}
+
+/// The default policy with no real backoff delay, so the loop's retries are instant.
+fn retry_strategy(max_attempts: u32) -> DefaultModelRetryStrategy {
+    DefaultModelRetryStrategy::new(DefaultModelRetryStrategyOptions {
+        max_attempts,
+        backoff: Arc::new(ConstantBackoff::new(ConstantBackoffOptions { delay_ms: 0.0 })),
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+#[tokio::test]
+async fn switches_on_a_retryable_error_instead_of_retrying_the_failed_candidate() {
+    let primary = FailingModel::shared(|| Error::throttled("slow down"));
+    let fallback = text_model("from fallback");
+    let agent = Agent::builder()
+        .model_router(router(vec![
+            failing_candidate(Arc::clone(&primary), "primary"),
+            candidate(Arc::clone(&fallback), "fallback"),
+        ]))
+        .retry_strategy(retry_strategy(3))
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("hello").await.unwrap();
+
+    assert_eq!(result.last_message.text(), "from fallback");
+    // The router claims the retry, so the retry strategy stands down: no second primary call.
+    assert_eq!(primary.call_count(), 1);
+    assert_eq!(fallback.call_count(), 1);
+}
+
+#[tokio::test]
+async fn retries_the_failed_candidate_once_max_switches_is_exhausted() {
+    let primary = FailingModel::shared(|| Error::throttled("slow down"));
+    let fallback = text_model("never reached");
+    let agent = Agent::builder()
+        .model_router(Arc::new(
+            ModelRouter::new(vec![
+                failing_candidate(Arc::clone(&primary), "primary"),
+                candidate(Arc::clone(&fallback), "fallback"),
+            ])
+            .unwrap()
+            .with_max_switches(0),
+        ))
+        .retry_strategy(retry_strategy(2))
+        .build()
+        .unwrap();
+
+    let error = agent.invoke("hello").await.unwrap_err();
+
+    assert_eq!(error.name(), "ModelThrottledError", "unexpected error: {error}");
+    // Deliberate (same as TS): routing stands down at the cap and the retry strategy owns the
+    // error from then on, so the failed candidate is called again.
+    assert_eq!(primary.call_count(), 2);
+    assert_eq!(fallback.call_count(), 0);
+}
+
+#[tokio::test]
+async fn allows_exactly_max_switches_successful_changes() {
+    let primary = failing_model();
+    let second = failing_model();
+    let third = text_model("never reached");
+    let agent = Agent::builder()
+        .model_router(Arc::new(
+            ModelRouter::new(vec![
+                candidate(Arc::clone(&primary), "primary"),
+                candidate(Arc::clone(&second), "second"),
+                candidate(Arc::clone(&third), "third"),
+            ])
+            .unwrap()
+            .with_max_switches(1),
+        ))
+        .build()
+        .unwrap();
+
+    agent.invoke("hello").await.unwrap_err();
+
+    assert_eq!(primary.call_count(), 1);
+    assert_eq!(second.call_count(), 1);
+    assert_eq!(third.call_count(), 0);
+}
+
+#[tokio::test]
+async fn a_cancelled_model_call_neither_records_a_failure_nor_switches() {
+    let primary = FailingModel::shared(|| Error::Cancelled);
+    let fallback = text_model("never reached");
+    let agent = Agent::builder()
+        .model_router(router(vec![
+            failing_candidate(Arc::clone(&primary), "primary"),
+            candidate(Arc::clone(&fallback), "fallback"),
+        ]))
+        .build()
+        .unwrap();
+
+    // A cancelled model call ends the loop with `StopReason::Cancelled`, not an error.
+    let result = agent.invoke("hello").await.unwrap();
+
+    assert!(matches!(result.stop_reason, StopReason::Cancelled));
+    assert_eq!(primary.call_count(), 1);
+    assert_eq!(fallback.call_count(), 0);
 }

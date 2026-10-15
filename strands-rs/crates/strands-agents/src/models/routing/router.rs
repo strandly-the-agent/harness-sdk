@@ -227,11 +227,6 @@ impl ModelRouter {
         self
     }
 
-    /// Plugin name.
-    pub fn name(&self) -> &str {
-        Self::NAME
-    }
-
     /// The configured candidate instances, in declaration order.
     pub fn candidates(&self) -> &[RoutingCandidate] {
         &self.candidates

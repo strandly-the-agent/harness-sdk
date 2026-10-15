@@ -18,11 +18,16 @@
 //!   context after continuation input middleware, as TS requires.
 //! - `RoutingStrategy::name` replaces TS's `strategy.constructor.name` in routing logs.
 //! - [`ClassifierStrategy`] options are fallible `with_*` builders instead of an options bag, and
-//!   keep TS's verbatim messages (`maxMessageChars must be a positive integer`); non-integer and
+//!   their config errors name the Rust setter (`max_message_chars must be greater than zero`,
+//!   `timeout must be greater than zero`) rather than TS's JS parameter; non-integer and
 //!   negative values are unrepresentable. Its timeout races an injectable [`Sleeper`](crate::retry::Sleeper)
 //!   and cancels the in-flight call through `StreamOptions::cancel` (TS's `AbortController`).
 //! - `AgentBuilder::aux_model` takes `impl Model`, so TS's
 //!   `auxModel must be a Model or a Bedrock model id, not a ModelRouter` has no error path.
+//!
+//! Once `max_switches` is exhausted the router stops claiming the failure, which leaves the
+//! error to whatever retry strategy is installed — so a retryable error can still be retried on
+//! the *same* failed candidate. That is TS's behaviour and is deliberate here.
 
 mod classifier;
 mod fallback;
