@@ -217,6 +217,50 @@ pub struct NodeResultUpdate {
     pub interrupts: Option<Vec<Interrupt>>,
 }
 
+impl NodeResultUpdate {
+    /// Override the terminal status.
+    #[must_use]
+    pub fn with_status(mut self, status: ResultStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    /// Override the produced content.
+    #[must_use]
+    pub fn with_content(mut self, content: Vec<ContentBlock>) -> Self {
+        self.content = Some(content);
+        self
+    }
+
+    /// Set the failure message.
+    #[must_use]
+    pub fn with_error(mut self, error: impl Into<String>) -> Self {
+        self.error = Some(error.into());
+        self
+    }
+
+    /// Set the structured output.
+    #[must_use]
+    pub fn with_structured_output(mut self, output: JsonValue) -> Self {
+        self.structured_output = Some(output);
+        self
+    }
+
+    /// Set the token usage.
+    #[must_use]
+    pub fn with_usage(mut self, usage: Usage) -> Self {
+        self.usage = Some(usage);
+        self
+    }
+
+    /// Set the raised interrupts.
+    #[must_use]
+    pub fn with_interrupts(mut self, interrupts: Vec<Interrupt>) -> Self {
+        self.interrupts = Some(interrupts);
+        self
+    }
+}
+
 /// Execution state of a single node within a multi-agent orchestration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -953,6 +997,28 @@ mod tests {
         let mut state = MultiAgentState::new(Vec::<String>::new());
         state.node_or_insert("late").status = Status::Executing;
         assert_eq!(state.node("late").unwrap().status, Status::Executing);
+    }
+
+    #[test]
+    fn update_setters_build_the_same_overlay_as_the_struct_fields() {
+        let update = NodeResultUpdate::default()
+            .with_status(ResultStatus::Failed)
+            .with_content(vec![ContentBlock::text("new")])
+            .with_error("boom")
+            .with_structured_output(json!({ "ok": false }))
+            .with_usage(Usage::default())
+            .with_interrupts(vec![interrupt("i-1")]);
+        assert_eq!(
+            update,
+            NodeResultUpdate {
+                status: Some(ResultStatus::Failed),
+                content: Some(vec![ContentBlock::text("new")]),
+                error: Some("boom".to_owned()),
+                structured_output: Some(json!({ "ok": false })),
+                usage: Some(Usage::default()),
+                interrupts: Some(vec![interrupt("i-1")]),
+            }
+        );
     }
 
     #[test]

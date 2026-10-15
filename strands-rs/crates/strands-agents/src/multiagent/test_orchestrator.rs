@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
+use async_trait::async_trait;
 
 use super::events::MultiAgentResultEvent;
 use super::multiagent::{MultiAgent, MultiAgentInput, MultiAgentInvokeOptions, MultiAgentStream};
@@ -35,6 +35,7 @@ impl TestOrchestrator {
     }
 }
 
+#[async_trait]
 impl MultiAgent for TestOrchestrator {
     fn id(&self) -> &str {
         &self.id
@@ -48,12 +49,12 @@ impl MultiAgent for TestOrchestrator {
         &self.hooks
     }
 
-    fn invoke_with<'a>(
-        &'a self,
+    async fn invoke_with(
+        &self,
         _input: MultiAgentInput,
         _options: MultiAgentInvokeOptions,
-    ) -> BoxFuture<'a, Result<MultiAgentResult>> {
-        Box::pin(async move { Ok(self.result.clone()) })
+    ) -> Result<MultiAgentResult> {
+        Ok(self.result.clone())
     }
 
     fn stream_with(&self, _input: MultiAgentInput, _options: MultiAgentInvokeOptions) -> MultiAgentStream {

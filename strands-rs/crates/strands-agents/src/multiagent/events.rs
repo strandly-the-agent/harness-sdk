@@ -3,12 +3,12 @@
 use std::sync::Arc;
 
 use super::multiagent::MultiAgent;
-use super::nodes::NodeType;
+use super::nodes::{Node, NodeInputOptions, NodeType};
 use super::state::{MultiAgentResult, MultiAgentStateHandle, NodeResult};
 use crate::agent::{AgentStreamEvent, InvocationState};
 use crate::error::{Error, Result};
 use crate::hooks::{Cancel, HookEvent};
-use crate::interrupt::{Interrupt, InterruptSource};
+use crate::interrupt::{before_node_call_interrupt_id, Interrupt, InterruptSource};
 use crate::types::{InterruptParams, JsonValue};
 
 /// Handle to the orchestrator an event was raised by.
@@ -73,8 +73,8 @@ impl BeforeNodeCallEvent {
     /// [`Error::Interrupt`] and the orchestrator produces an `INTERRUPTED` result. The interrupt
     /// is stored on the target node's state, so resuming routes through the same machinery as a
     /// child-agent interrupt.
-    pub fn interrupt(&self, params: InterruptParams) -> Result<JsonValue> {
-        let id = format!("multiagent-hook:beforeNodeCall:{}:{}", self.node_id, params.name);
+    pub fn interrupt<T: serde::de::DeserializeOwned>(&self, params: InterruptParams) -> Result<T> {
+        let id = before_node_call_interrupt_id(&self.node_id, &params.name);
         let interrupt = self.state.with_mut(|state| {
             let node_id = self.node_id.clone();
             let Some(node) = state.node_mut(&node_id) else {
@@ -92,7 +92,7 @@ impl BeforeNodeCallEvent {
             Ok(interrupt)
         })?;
         match interrupt.response.clone() {
-            Some(response) => Ok(response),
+            Some(response) => serde_json::from_value(response).map_err(|e| Error::other(e.to_string())),
             None => Err(Error::Interrupt(vec![interrupt])),
         }
     }
@@ -157,6 +157,24 @@ pub struct NodeStreamUpdateEvent {
 }
 impl HookEvent for NodeStreamUpdateEvent {}
 
+impl NodeStreamUpdateEvent {
+    /// Wraps `inner` under `node`'s identity, filling the fields every node repeats.
+    pub fn wrapping(
+        node: &dyn Node,
+        state: &MultiAgentStateHandle,
+        options: &NodeInputOptions,
+        inner: NodeInnerEvent,
+    ) -> Self {
+        Self {
+            node_id: node.id().to_owned(),
+            node_type: node.node_type(),
+            state: state.clone(),
+            inner,
+            invocation_state: options.invocation_state.clone(),
+        }
+    }
+}
+
 /// A node produced its result.
 #[derive(Clone)]
 pub struct NodeResultEvent {
@@ -213,6 +231,7 @@ impl HookEvent for MultiAgentResultEvent {}
 
 /// Union of all multi-agent streaming events, like [`crate::agent::AgentStreamEvent`].
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum MultiAgentStreamEvent {
     /// Before the invocation starts.
     BeforeMultiAgentInvocation(BeforeMultiAgentInvocationEvent),
@@ -277,13 +296,13 @@ mod tests {
     use crate::hooks::HookRegistry;
     use crate::multiagent::multiagent::{MultiAgentInput, MultiAgentInvokeOptions, MultiAgentStream};
     use crate::multiagent::state::{MultiAgentState, ResultStatus, Status};
-    use futures::future::BoxFuture;
     use serde_json::json;
 
     struct TestOrchestrator {
         hooks: HookRegistry,
     }
 
+    #[async_trait::async_trait]
     impl MultiAgent for TestOrchestrator {
         fn id(&self) -> &str {
             "test-orchestrator"
@@ -297,12 +316,12 @@ mod tests {
             &self.hooks
         }
 
-        fn invoke_with<'a>(
-            &'a self,
+        async fn invoke_with(
+            &self,
             _input: MultiAgentInput,
             _options: MultiAgentInvokeOptions,
-        ) -> BoxFuture<'a, Result<MultiAgentResult>> {
-            Box::pin(async { Ok(MultiAgentResult::new(vec![], 0)) })
+        ) -> Result<MultiAgentResult> {
+            Ok(MultiAgentResult::new(vec![], 0))
         }
 
         fn stream_with(
@@ -487,7 +506,9 @@ mod tests {
     #[test]
     fn hook_interrupt_halts_then_returns_the_stored_response() {
         let event = before_node_call();
-        let err = event.interrupt(InterruptParams::new("approve")).unwrap_err();
+        let err = event
+            .interrupt::<JsonValue>(InterruptParams::new("approve"))
+            .unwrap_err();
         let Error::Interrupt(interrupts) = &err else {
             panic!("expected interrupt, got {err:?}");
         };
@@ -498,26 +519,25 @@ mod tests {
         event.state.with_mut(|state| {
             state.node_mut("a").unwrap().interrupts[0].response = Some(json!(true));
         });
-        assert_eq!(
-            event.interrupt(InterruptParams::new("approve")).unwrap(),
-            json!(true)
-        );
+        assert!(event.interrupt::<bool>(InterruptParams::new("approve")).unwrap());
     }
 
     #[test]
     fn hook_interrupt_with_a_preemptive_response_does_not_halt() {
         let event = before_node_call();
-        let response = event
+        let response: String = event
             .interrupt(InterruptParams::new("approve").with_response(json!("yes")))
             .unwrap();
-        assert_eq!(response, json!("yes"));
+        assert_eq!(response, "yes");
     }
 
     #[test]
     fn hook_interrupt_fails_when_the_node_is_not_tracked() {
         let mut event = before_node_call();
         event.node_id = "missing".to_owned();
-        let err = event.interrupt(InterruptParams::new("approve")).unwrap_err();
+        let err = event
+            .interrupt::<JsonValue>(InterruptParams::new("approve"))
+            .unwrap_err();
         assert_eq!(err.to_string(), "node_id=<missing> | node state not found");
     }
 

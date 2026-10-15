@@ -92,6 +92,12 @@ pub fn before_tools_interrupt_id(name: &str) -> String {
     format!("hook:beforeTools:{name}")
 }
 
+/// Interrupt id for
+/// [`BeforeNodeCallEvent::interrupt`](crate::multiagent::BeforeNodeCallEvent::interrupt).
+pub fn before_node_call_interrupt_id(node_id: &str, name: &str) -> String {
+    format!("multiagent-hook:beforeNodeCall:{node_id}:{name}")
+}
+
 /// A tool batch halted mid-flight: what to replay on resume.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

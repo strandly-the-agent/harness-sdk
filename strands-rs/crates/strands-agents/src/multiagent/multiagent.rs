@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use async_trait::async_trait;
 use futures::future::BoxFuture;
 use futures::stream::{BoxStream, Stream};
 use serde::Serialize;
@@ -104,6 +105,7 @@ impl MultiAgentInput {
 /// Options for a single multi-agent orchestrator invocation, mirroring
 /// [`InvokeOptions`](crate::agent::InvokeOptions).
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct MultiAgentInvokeOptions {
     /// Per-invocation state forwarded to every node's child agent. Mutable — one node's
     /// hooks/tools can read state written by a previous node.
@@ -133,6 +135,7 @@ impl MultiAgentInvokeOptions {
 ///
 /// Object-safe: implementors are used as `Arc<dyn MultiAgent>`. The generic
 /// `invoke(impl Into<MultiAgentInput>)` conveniences live on [`MultiAgentExt`].
+#[async_trait]
 pub trait MultiAgent: Send + Sync {
     /// Unique identifier for this orchestrator.
     fn id(&self) -> &str;
@@ -149,11 +152,11 @@ pub trait MultiAgent: Send + Sync {
     fn hooks(&self) -> &HookRegistry;
 
     /// Run to completion and return the aggregate result.
-    fn invoke_with<'a>(
-        &'a self,
+    async fn invoke_with(
+        &self,
         input: MultiAgentInput,
         options: MultiAgentInvokeOptions,
-    ) -> BoxFuture<'a, Result<MultiAgentResult>>;
+    ) -> Result<MultiAgentResult>;
 
     /// Run and stream events as they occur; the last event carries the aggregate result.
     fn stream_with(&self, input: MultiAgentInput, options: MultiAgentInvokeOptions) -> MultiAgentStream;

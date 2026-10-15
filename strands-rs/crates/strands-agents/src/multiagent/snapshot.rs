@@ -13,6 +13,7 @@ use crate::types::JsonValue;
 
 /// Options for [`take_snapshot`].
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct TakeMultiAgentSnapshotOptions {
     /// Application-owned data. Strands never reads or modifies it.
     pub app_data: Map<String, JsonValue>,

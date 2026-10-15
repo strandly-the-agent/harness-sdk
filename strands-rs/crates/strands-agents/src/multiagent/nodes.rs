@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::BoxFuture;
+use async_trait::async_trait;
 use futures::StreamExt;
 use serde::de::{Deserialize, Deserializer};
 use serde::{Serialize, Serializer};
@@ -72,6 +72,7 @@ pub type NodeSink = mpsc::Sender<Result<MultiAgentStreamEvent>>;
 
 /// Per-node configuration (TS `NodeConfig`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct NodeConfig {
     /// What this node does; defaults to the wrapped agent's or orchestrator's description.
     pub description: Option<String>,
@@ -79,6 +80,7 @@ pub struct NodeConfig {
 
 /// Per-invocation options an orchestrator passes to a node (TS `NodeInputOptions`).
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct NodeInputOptions {
     /// Structured output schema for this node invocation.
     pub structured_output_schema: Option<JsonValue>,
@@ -112,6 +114,7 @@ impl NodeInputOptions {
 ///
 /// Implementations provide [`Node::handle`]; orchestrators drive them through [`run_node`], which
 /// adds the duration, status and result bookkeeping every node shares.
+#[async_trait]
 pub trait Node: Send + Sync {
     /// Unique id of this node within the orchestration.
     fn id(&self) -> &str;
@@ -122,15 +125,20 @@ pub trait Node: Send + Sync {
     /// This node's configuration.
     fn config(&self) -> &NodeConfig;
 
+    /// This node's wall-clock ceiling, overriding the orchestrator's node timeout.
+    fn timeout(&self) -> Option<Duration> {
+        None
+    }
+
     /// Run the node, writing stream events to `events` and returning the fields of its result
     /// that are not framework-managed.
-    fn handle<'a>(
-        &'a self,
+    async fn handle(
+        &self,
         input: MultiAgentInput,
-        state: &'a MultiAgentStateHandle,
-        options: &'a NodeInputOptions,
-        events: &'a NodeSink,
-    ) -> BoxFuture<'a, Result<NodeResultUpdate>>;
+        state: &MultiAgentStateHandle,
+        options: &NodeInputOptions,
+        events: &NodeSink,
+    ) -> Result<NodeResultUpdate>;
 }
 
 /// Runs `node` with the bookkeeping every node shares (TS `Node.stream`): transitions the node
@@ -207,6 +215,7 @@ pub async fn run_node(
 
 /// Options for an [`AgentNode`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct AgentNodeOptions {
     /// The agent to wrap.
     pub agent: Agent,
@@ -296,11 +305,6 @@ impl AgentNode {
         &self.agent
     }
 
-    /// This node's wall-clock ceiling, if it overrides the orchestrator's.
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout
-    }
-
     /// Whether the wrapped agent keeps its state across node runs.
     pub fn preserve_context(&self) -> bool {
         self.preserve_context
@@ -330,13 +334,12 @@ impl AgentNode {
             }
             let _ = events
                 .send(Ok(MultiAgentStreamEvent::NodeStreamUpdate(
-                    NodeStreamUpdateEvent {
-                        node_id: self.id.clone(),
-                        node_type: self.node_type(),
-                        state: state.clone(),
-                        inner: NodeInnerEvent::Agent(Box::new(event)),
-                        invocation_state: options.invocation_state.clone(),
-                    },
+                    NodeStreamUpdateEvent::wrapping(
+                        self,
+                        state,
+                        options,
+                        NodeInnerEvent::Agent(Box::new(event)),
+                    ),
                 )))
                 .await;
         }
@@ -362,6 +365,7 @@ impl AgentNode {
     }
 }
 
+#[async_trait]
 impl Node for AgentNode {
     fn id(&self) -> &str {
         &self.id
@@ -375,33 +379,36 @@ impl Node for AgentNode {
         &self.config
     }
 
-    fn handle<'a>(
-        &'a self,
+    fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+
+    async fn handle(
+        &self,
         input: MultiAgentInput,
-        state: &'a MultiAgentStateHandle,
-        options: &'a NodeInputOptions,
-        events: &'a NodeSink,
-    ) -> BoxFuture<'a, Result<NodeResultUpdate>> {
-        Box::pin(async move {
-            let snapshot =
-                (!self.preserve_context).then(|| self.agent.take_snapshot(TakeSnapshotOptions::default()));
-            // Rehydrate the agent paused by an earlier INTERRUPTED run, independently of
-            // `preserve_context`: a resumed run always picks up where it left off (TS `nodes.ts`).
-            if let Some(interrupted) = state.node(&self.id).and_then(|node| node.interrupted_snapshot) {
-                self.agent.load_snapshot(&interrupted)?;
-            }
-            let result = self.run(input, state, options, events).await;
-            // Restore pre-run state — keeps the agent observably unchanged across runs.
-            if let Some(snapshot) = snapshot {
-                self.agent.load_snapshot(&snapshot)?;
-            }
-            result
-        })
+        state: &MultiAgentStateHandle,
+        options: &NodeInputOptions,
+        events: &NodeSink,
+    ) -> Result<NodeResultUpdate> {
+        let snapshot =
+            (!self.preserve_context).then(|| self.agent.take_snapshot(TakeSnapshotOptions::default()));
+        // Rehydrate the agent paused by an earlier INTERRUPTED run, independently of
+        // `preserve_context`: a resumed run always picks up where it left off (TS `nodes.ts`).
+        if let Some(interrupted) = state.node(&self.id).and_then(|node| node.interrupted_snapshot) {
+            self.agent.load_snapshot(&interrupted)?;
+        }
+        let result = self.run(input, state, options, events).await;
+        // Restore pre-run state — keeps the agent observably unchanged across runs.
+        if let Some(snapshot) = snapshot {
+            self.agent.load_snapshot(&snapshot)?;
+        }
+        result
     }
 }
 
 /// Options for a [`MultiAgentNode`].
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct MultiAgentNodeOptions {
     /// The orchestrator to wrap.
     pub orchestrator: Arc<dyn MultiAgent>,
@@ -461,6 +468,7 @@ impl MultiAgentNode {
     }
 }
 
+#[async_trait]
 impl Node for MultiAgentNode {
     fn id(&self) -> &str {
         &self.id
@@ -474,52 +482,49 @@ impl Node for MultiAgentNode {
         &self.config
     }
 
-    fn handle<'a>(
-        &'a self,
+    async fn handle(
+        &self,
         input: MultiAgentInput,
-        state: &'a MultiAgentStateHandle,
-        options: &'a NodeInputOptions,
-        events: &'a NodeSink,
-    ) -> BoxFuture<'a, Result<NodeResultUpdate>> {
-        Box::pin(async move {
-            let mut invoke =
-                MultiAgentInvokeOptions::default().with_invocation_state(options.invocation_state.clone());
-            if let Some(cancel) = &options.cancel {
-                invoke = invoke.with_cancel(cancel.clone());
+        state: &MultiAgentStateHandle,
+        options: &NodeInputOptions,
+        events: &NodeSink,
+    ) -> Result<NodeResultUpdate> {
+        let mut invoke =
+            MultiAgentInvokeOptions::default().with_invocation_state(options.invocation_state.clone());
+        if let Some(cancel) = &options.cancel {
+            invoke = invoke.with_cancel(cancel.clone());
+        }
+
+        let mut stream = self.orchestrator.stream_with(input, invoke);
+        let mut inner_result = None;
+        while let Some(event) = stream.next().await {
+            let event = event?;
+            if let MultiAgentStreamEvent::MultiAgentResult(result) = &event {
+                inner_result = Some(result.result.clone());
             }
+            let forwarded = match event {
+                MultiAgentStreamEvent::NodeStreamUpdate(_) => event,
+                inner => MultiAgentStreamEvent::NodeStreamUpdate(NodeStreamUpdateEvent::wrapping(
+                    self,
+                    state,
+                    options,
+                    NodeInnerEvent::MultiAgent(Box::new(inner)),
+                )),
+            };
+            let _ = events.send(Ok(forwarded)).await;
+        }
 
-            let mut stream = self.orchestrator.stream_with(input, invoke);
-            let mut inner_result = None;
-            while let Some(event) = stream.next().await {
-                let event = event?;
-                if let MultiAgentStreamEvent::MultiAgentResult(result) = &event {
-                    inner_result = Some(result.result.clone());
-                }
-                let forwarded = match event {
-                    MultiAgentStreamEvent::NodeStreamUpdate(_) => event,
-                    inner => MultiAgentStreamEvent::NodeStreamUpdate(NodeStreamUpdateEvent {
-                        node_id: self.id.clone(),
-                        node_type: self.node_type(),
-                        state: state.clone(),
-                        inner: NodeInnerEvent::MultiAgent(Box::new(inner)),
-                        invocation_state: options.invocation_state.clone(),
-                    }),
-                };
-                let _ = events.send(Ok(forwarded)).await;
-            }
+        let inner_result = inner_result.ok_or_else(|| {
+            Error::other(format!("node_id=<{}> | orchestrator produced no result", self.id))
+        })?;
 
-            let inner_result = inner_result.ok_or_else(|| {
-                Error::other(format!("node_id=<{}> | orchestrator produced no result", self.id))
-            })?;
-
-            Ok(NodeResultUpdate {
-                content: Some(inner_result.content),
-                usage: Some(inner_result.usage),
-                status: (inner_result.status != ResultStatus::Completed).then_some(inner_result.status),
-                error: inner_result.error,
-                interrupts: (!inner_result.interrupts.is_empty()).then_some(inner_result.interrupts),
-                ..Default::default()
-            })
+        Ok(NodeResultUpdate {
+            content: Some(inner_result.content),
+            usage: Some(inner_result.usage),
+            status: (inner_result.status != ResultStatus::Completed).then_some(inner_result.status),
+            error: inner_result.error,
+            interrupts: (!inner_result.interrupts.is_empty()).then_some(inner_result.interrupts),
+            ..Default::default()
         })
     }
 }
@@ -643,6 +648,7 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl Node for TestNode {
         fn id(&self) -> &str {
             &self.id
@@ -656,14 +662,14 @@ mod tests {
             &self.config
         }
 
-        fn handle<'a>(
-            &'a self,
+        async fn handle(
+            &self,
             _input: MultiAgentInput,
-            _state: &'a MultiAgentStateHandle,
-            _options: &'a NodeInputOptions,
-            _events: &'a NodeSink,
-        ) -> BoxFuture<'a, Result<NodeResultUpdate>> {
-            Box::pin(async move { (self.outcome)() })
+            _state: &MultiAgentStateHandle,
+            _options: &NodeInputOptions,
+            _events: &NodeSink,
+        ) -> Result<NodeResultUpdate> {
+            (self.outcome)()
         }
     }
 
@@ -752,6 +758,18 @@ mod tests {
 
     fn agent_node(agent: Agent) -> AgentNode {
         AgentNode::new(agent).unwrap()
+    }
+
+    #[test]
+    fn node_timeout_defaults_to_none_and_agent_nodes_report_their_own() {
+        let custom: Arc<dyn Node> = Arc::new(TestNode::new("test-node", || Ok(NodeResultUpdate::default())));
+        assert_eq!(custom.timeout(), None, "the provided default opts out");
+
+        let (agent, _) = agent_with(vec![]);
+        let node: Arc<dyn Node> = Arc::new(
+            AgentNode::new(AgentNodeOptions::new(agent).with_timeout(Duration::from_secs(5))).unwrap(),
+        );
+        assert_eq!(node.timeout(), Some(Duration::from_secs(5)));
     }
 
     #[test]
