@@ -340,8 +340,11 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   `fold_into_last_user_message`, the `Trigger` gate and the `MessageInjection` engine, plus the XML
   escaping helpers that `memory/injection.rs` used to own privately (memory now re-exports them;
   its public API is unchanged). Delivery runs through `BeforeModelCallEvent` rather than a second
-  middleware mechanism, and `ContextInjector` is now a thin wrapper over the engine. Loop coverage
-  in `tests/injection_loop.rs`; matrix in [matrices/injection.md](matrices/injection.md).
+  middleware mechanism, and `ContextInjector` is now a thin wrapper over the engine. One existing
+  public signature changed: `fold_into_last_user_message` now returns `FoldOutcome { folded,
+  trailing_blocks }` instead of `bool`, because the caller needs the trailing-block count for
+  cache-point placement. Loop coverage in `tests/injection_loop.rs`; matrix in
+  [matrices/injection.md](matrices/injection.md).
 - **Printer (`agent/printer.rs`).** Port of `strands-ts/src/agent/printer.ts` — `AgentPrinter<W:
   Write>` (default `Stdout`) printing text deltas, framed reasoning blocks and tool
   announcements/results byte-identically to TS. `printer.print(agent.stream(input)).await` drives a

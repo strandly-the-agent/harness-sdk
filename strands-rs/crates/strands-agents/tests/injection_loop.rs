@@ -30,6 +30,9 @@ async fn folds_injected_text_into_the_call_that_triggered_it_without_touching_hi
 
     agent.invoke("what colour is the sky?").await.expect("invoke");
 
+    let (_, options) = model.calls()[0].clone();
+    assert_eq!(options.dynamic_trailing_blocks, Some(1));
+
     let seen = last_user_text(&model, 0);
     assert!(seen.contains("what colour is the sky?"), "seen: {seen}");
     assert!(seen.contains("remember: the sky is green"), "seen: {seen}");
@@ -71,7 +74,5 @@ async fn the_default_user_turn_trigger_skips_a_tool_result_turn() {
     assert!(matches!(last.content.first(), Some(ContentBlock::ToolResult(_))));
     assert!(!messages
         .iter()
-        .any(|message| message.text().contains("ephemeral note")
-            && message.content.len() == 1
-            && matches!(message.content.first(), Some(ContentBlock::ToolResult(_)))));
+        .any(|message| message.text().contains("ephemeral note")));
 }

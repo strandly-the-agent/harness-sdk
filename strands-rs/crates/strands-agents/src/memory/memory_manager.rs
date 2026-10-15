@@ -1479,9 +1479,14 @@ mod tests {
 
         agent.invoke("what do I drink?").await.unwrap();
 
-        let (sent, _) = model.calls().remove(0);
+        let (sent, options) = model.calls().remove(0);
         let last = sent.last().unwrap();
         assert_eq!(last.content.len(), 2, "memory block folded into the user turn");
+        assert_eq!(
+            options.dynamic_trailing_blocks,
+            Some(1),
+            "the folded block is kept out of the cached prefix"
+        );
         assert!(last
             .text()
             .contains("<entry source=\"notes\">user likes tea</entry>"));

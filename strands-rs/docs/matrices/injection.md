@@ -11,11 +11,11 @@ Rust: `strands-rs/crates/strands-agents/src/injection/{mod,message_injection,typ
 | `escapeXmlText(value)`               | `injection::escape_xml_text(&str) -> String`                | Single home; `memory::injection` re-exports instead of keeping its own copy                     |
 | `escapeXmlAttr(value)`               | `injection::escape_xml_attr(&str) -> String`                | ditto                                                                                           |
 | `isUserTurn(messages)`               | `injection::is_user_turn(&[Message]) -> bool`               |                                                                                                 |
-| `foldIntoLastUserMessage(msgs, text)`| `injection::fold_into_last_user_message(&[Message], &str) -> FoldOutcome` | TS `{ messages, appended }` → named struct `FoldOutcome { messages, appended }`    |
+| `foldIntoLastUserMessage(msgs, text)`| `injection::fold_into_last_user_message(&mut [Message], &str) -> FoldOutcome` | Folds **in place** (TS returns a new array); `FoldOutcome { folded, trailing_blocks }` — see divergences |
 | `InjectionTrigger` (`'userTurn'`…)   | `injection::InjectionTrigger` enum                          | `UserTurn` / `EveryTurn`                                                                        |
 | `InjectionContext`                   | `injection::InjectionContext`                               | Carries `messages`, agent handle, app state                                                     |
 | `resolveTrigger(trigger)`            | `injection::Trigger` (`builtin`/`predicate`/`should_inject`) | Resolution is a value, not a function returning a closure — avoids boxing at every call site     |
-| `InjectionConfig` / `createInjectionMiddleware(opts)` | `injection::MessageInjection` (+ `RenderFn`)  | Engine struct with `inject(...)`; see divergence below                                          |
+| `InjectionConfig` / `createInjectionMiddleware(opts)` | `injection::MessageInjection`                | Engine struct with `inject(...)`; see divergence below                                          |
 
 ## Tests
 
@@ -35,7 +35,7 @@ Rust: `strands-rs/crates/strands-agents/src/injection/{mod,message_injection,typ
 | fails open when a custom predicate throws                            | n/a — a Rust `Trigger` predicate returns `bool` and cannot throw                   |
 | folds renderContent() text into the latest user message              | `folds_rendered_text_into_the_latest_user_message`                                 |
 | passes an InjectionContext carrying the conversation                 | `passes_the_conversation_and_the_agent_to_the_renderer`                            |
-| exposes appState and the agent on the InjectionContext               | ditto (one test covers both fields)                                                |
+| exposes appState and the agent on the InjectionContext               | ditto — Rust has no `app_state` field; reached as `context.agent.state()` (divergence) |
 | returns the context unchanged when the trigger does not fire         | `returns_the_messages_unchanged_when_the_trigger_does_not_fire`                     |
 | `everyTurn` injects on an autonomous tool-result turn                | `every_turn_injects_on_a_tool_result_turn_keeping_the_tool_result_first`            |
 | returns the context unchanged when renderContent yields empty text   | `blank_or_absent_text_is_a_no_op`                                                  |
@@ -59,7 +59,15 @@ tool-result turn).
 - **`resolveTrigger` → `Trigger` value.** A resolved policy is a value with `should_inject(&ctx)`
   rather than a returned closure; `Debug` names the policy (`Trigger(UserTurn)` /
   `Trigger(predicate)`) without leaking the predicate.
-- **Fail-open surface.** Only the renderer can fail in Rust (`RenderFn` returns `Result`), so the
+- **In-place fold.** TS's `foldIntoLastUserMessage` returns a new message array;
+  `fold_into_last_user_message(&mut [Message], &str)` mutates the per-call slice and returns
+  `FoldOutcome { folded, trailing_blocks }` — the caller already owns a copy of the conversation,
+  so cloning it again buys nothing. This changed the return type of an existing public fn
+  (`bool` → `FoldOutcome`, re-exported from `plugins::vended::context_injector`); `trailing_blocks`
+  is what the provider needs for cache-point placement and a `bool` could not carry it.
+- **No `appState` on `InjectionContext`.** TS carries `appState` alongside `agent`; Rust keeps only
+  `agent`, since the same value is `context.agent.state()`. One field, one source of truth.
+- **Fail-open surface.** Only the renderer can fail in Rust (the renderer returns `Result`), so the
   TS "predicate throws" case has no Rust analogue; the renderer-error path keeps TS's fail-open
   behaviour (injection skipped, call proceeds).
 - **XML helpers are owned here.** `memory::injection` previously carried its own copies; it now
@@ -106,4 +114,16 @@ Every test asserts the captured `Vec<u8>` against the TS expectation byte for by
 - **Reasoning deltas in tests.** `MockMessageModel` replays a `Message`, which has no reasoning
   deltas, so the reasoning and multi-turn tests script `ModelStreamEvent`s directly
   (`TestModelProvider` and a test-local `ScriptedModel`).
+
+## Review disposition (round 1, review of `131fd47bf`)
+
+| Finding | Disposition |
+| --- | --- |
+| 🟠 `tests/injection_loop.rs:72` vacuous "no injection" assertion | fixed — now `assert!(!messages.iter().any(|m| m.text().contains("ephemeral note")))`; it fails if the text leaks into the second call |
+| 🟠 matrix row misdescribes `fold_into_last_user_message` / `FoldOutcome` | fixed — row shows `&mut [Message]` and `{ folded, trailing_blocks }`; in-place divergence added |
+| 🟠 `bool` → `FoldOutcome` signature change not called out | fixed — PORT_REPORT Phase 4 bullet and the in-place divergence both state it |
+| 🟡 `InjectionContext` drops TS `appState` | fixed — divergence bullet added, matrix row points at `agent.state()` |
+| 🟡 `RenderFn` public (leaks `BoxFuture`) | fixed — now `pub(crate)` and dropped from the `injection` re-exports; `MessageInjection::new` is generic, so no caller needs to name it |
+| Not covered: 3 remaining printer expectations | disputed — all nine TS printer cases are ported and assert bytes exactly, including `prints_denied_tool_with_denied_icon`, `prints_batch_cancel_notice_when_before_tools_cancels` and `prints_comprehensive_scenario_with_all_output_types` |
+| Not covered: `MemoryManager` coverage of `dynamic_trailing_blocks` | fixed — `injection_reaches_the_model_and_extraction_runs_after_an_invocation` now asserts the model saw `StreamOptions::dynamic_trailing_blocks == Some(1)`; `injection_loop.rs` asserts the same for the `ContextInjector` path |
 

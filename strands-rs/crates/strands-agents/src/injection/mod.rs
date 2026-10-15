@@ -18,9 +18,7 @@ pub mod message_injection;
 pub mod types;
 pub mod xml;
 
-pub use message_injection::{
-    fold_into_last_user_message, is_user_turn, FoldOutcome, MessageInjection, RenderFn,
-};
+pub use message_injection::{fold_into_last_user_message, is_user_turn, FoldOutcome, MessageInjection};
 pub use types::{InjectionContext, InjectionTrigger, Trigger};
 pub use xml::{escape_xml_attr, escape_xml_text};
 

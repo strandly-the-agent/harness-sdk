@@ -12,7 +12,7 @@ use crate::types::{ContentBlock, Message, Role};
 use super::types::{InjectionContext, InjectionTrigger, Trigger};
 
 /// Renders the text to inject for one model call; `None` (or blank) skips this call.
-pub type RenderFn =
+pub(crate) type RenderFn =
     Arc<dyn for<'a> Fn(&'a InjectionContext) -> BoxFuture<'a, Result<Option<String>>> + Send + Sync>;
 
 /// What [`fold_into_last_user_message`] did.
