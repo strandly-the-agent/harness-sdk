@@ -538,6 +538,10 @@ ADAPTIVE_CLAUDE = [
     "global.anthropic.claude-opus-4-8",
     "global.anthropic.claude-opus-5",
     "global.anthropic.claude-sonnet-5",
+    "global.anthropic.claude-haiku-5-5",
+    "au.anthropic.claude-haiku-5-5",
+    "anthropic.claude-haiku-5-5",
+    "global.anthropic.claude-haiku-6",
     "global.anthropic.claude-fable-5",
     "global.anthropic.claude-fable-5-1",
     "anthropic.claude-mythos-preview",
@@ -642,9 +646,9 @@ def test_a_split_family_carries_its_version_max_tokens_ceiling(model_id, max_tok
 
 
 @pytest.mark.parametrize("model_id", ["claude-haiku-latest", "claude-haiku"])
-def test_a_versionless_haiku_falls_open_to_extended_not_adaptive(model_id):
+def test_a_versionless_haiku_falls_open_to_adaptive(model_id):
     config = resolve(f"bedrock/global.anthropic.{model_id}").config
-    assert config["additional_request_fields"] == EXTENDED
+    assert config["additional_request_fields"] == ADAPTIVE
 
 
 def test_the_budget_is_clamped_below_a_small_max_tokens():
@@ -652,9 +656,9 @@ def test_the_budget_is_clamped_below_a_small_max_tokens():
     assert _claude_extended_thinking("low", 64_000) == {"thinking": {"type": "enabled", "budget_tokens": 2_048}}
 
 
-def test_a_bare_family_name_clamps_against_the_anthropic_direct_fallback(monkeypatch):
+def test_a_version_led_id_clamps_against_the_anthropic_direct_fallback(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    config = resolve("anthropic/claude-haiku", effort="max").config
+    config = resolve("anthropic/claude-4-5-haiku", effort="max").config
     assert config["max_tokens"] == 32_000
     assert config["params"] == {"thinking": {"type": "enabled", "budget_tokens": 31_999}}
 

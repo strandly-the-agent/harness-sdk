@@ -301,6 +301,10 @@ describe('resolveModel', () => {
     'global.anthropic.claude-opus-4-8',
     'global.anthropic.claude-opus-5',
     'global.anthropic.claude-sonnet-5',
+    'global.anthropic.claude-haiku-5-5',
+    'au.anthropic.claude-haiku-5-5',
+    'anthropic.claude-haiku-5-5',
+    'global.anthropic.claude-haiku-6',
     'global.anthropic.claude-fable-5',
     'global.anthropic.claude-fable-5-1',
     'anthropic.claude-mythos-preview',
@@ -344,13 +348,13 @@ describe('resolveModel', () => {
     expect(model.getConfig().maxTokens).toBe(maxTokens)
   })
 
-  it.each(['claude-haiku-latest', 'claude-haiku'])('falls open to extended, not adaptive, for %s', async (modelId) => {
+  it.each(['claude-haiku-latest', 'claude-haiku'])('falls open to adaptive for %s', async (modelId) => {
     const model = await resolve(`bedrock/global.anthropic.${modelId}`)
-    expect(model.getConfig().additionalRequestFields).toEqual(EXTENDED)
+    expect(model.getConfig().additionalRequestFields).toEqual(ADAPTIVE)
   })
 
   it('clamps the budget below a small max tokens', async () => {
-    const model = await resolve('anthropic/claude-haiku', 'max')
+    const model = await resolve('anthropic/claude-4-5-haiku', 'max')
     expect(model.getConfig().maxTokens).toBe(32_000)
     expect(model.getConfig().params).toEqual({ thinking: { type: 'enabled', budget_tokens: 31_999 } })
   })

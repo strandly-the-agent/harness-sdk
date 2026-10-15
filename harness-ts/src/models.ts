@@ -93,7 +93,7 @@ const BEDROCK_XAI_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const
 const GOOGLE_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
 const NO_THINKING_LEVELS: readonly string[] = []
 
-const ADAPTIVE_THINKING_SINCE: Record<string, [number, number]> = { opus: [4, 6], sonnet: [4, 6] }
+const ADAPTIVE_THINKING_SINCE: Record<string, [number, number]> = { opus: [4, 6], sonnet: [4, 6], haiku: [5, 5] }
 const EXTENDED_THINKING_SINCE: Record<string, [number, number]> = { opus: [4, 5], sonnet: [4, 5], haiku: [4, 5] }
 const CLAUDE_ID =
   /claude-(?:(\d{1,2})(?:[-.](\d{1,2}))?-)?(opus|sonnet|haiku|fable|mythos)(?:[-.](\d{1,2}))?(?:[-.](\d{1,2}))?(?!\d)/
