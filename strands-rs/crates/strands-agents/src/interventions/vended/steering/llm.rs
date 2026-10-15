@@ -204,7 +204,7 @@ impl LlmSteeringHandler {
         self
     }
 
-    /// Replace the prompt builder ([`default_prompt_builder`] otherwise).
+    /// Replace the prompt builder (the TS default prompt is used otherwise).
     #[must_use]
     pub fn prompt_builder<F>(mut self, builder: F) -> Self
     where

@@ -8,7 +8,7 @@
 //!   hands back `aws_smithy_types::Document`, so numbers need no unwrapping.
 //! - `_sourceLocation` carries the location *type* plus its URI/id rather than the raw SDK shape,
 //!   which has no serde representation.
-//! - The agent client is built lazily like TS, via a [`OnceCell`](tokio::sync::OnceCell); so is the
+//! - The agent client is built lazily like TS, via a [`tokio::sync::OnceCell`]; so is the
 //!   S3 client the `S3` write path uses.
 //! - [`MemoryStore::add`] returns `()`, so the document id a write mints is returned by the
 //!   inherent [`BedrockKnowledgeBaseStore::add_document`] instead.

@@ -1,7 +1,7 @@
 //! `ContextInjector` (`strands-ts/src/vended-plugins/context-injector`): folds ephemeral text
 //! into the conversation for a single model call.
 //!
-//! The plugin is a thin wrapper over [`MessageInjection`](crate::injection::MessageInjection);
+//! The plugin is a thin wrapper over [`crate::injection::MessageInjection`];
 //! the delivery primitives live in [`crate::injection`]. TS does this with
 //! `InvokeModelStage.Input` middleware; Rust uses the equivalent seam, [`BeforeModelCallEvent`] —
 //! a per-call copy of the conversation. Durable history and the session are never touched.
