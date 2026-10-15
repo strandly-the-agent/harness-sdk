@@ -336,7 +336,64 @@ async fn switches_on_a_retryable_error_instead_of_retrying_the_failed_candidate(
 }
 
 #[tokio::test]
+async fn a_switched_to_candidate_gets_a_fresh_retry_budget() {
+    let primary = FailingModel::shared(|| Error::throttled("slow down"));
+    let second = FailingModel::shared(|| Error::throttled("slow down"));
+    let third = text_model("never reached");
+    let agent = Agent::builder()
+        .model_router(Arc::new(
+            ModelRouter::new(vec![
+                failing_candidate(Arc::clone(&primary), "primary"),
+                failing_candidate(Arc::clone(&second), "second"),
+                candidate(Arc::clone(&third), "third"),
+            ])
+            .unwrap()
+            .with_max_switches(1),
+        ))
+        .retry_strategy(retry_strategy(2))
+        .build()
+        .unwrap();
+
+    let error = agent.invoke("hello").await.unwrap_err();
+
+    assert_eq!(error.name(), "ModelThrottledError", "unexpected error: {error}");
+    assert_eq!(primary.call_count(), 1, "the router switched instead of retrying");
+    // The switch resets `attempt_count`, so the candidate switched to gets the full budget of 2.
+    assert_eq!(second.call_count(), 2);
+    assert_eq!(third.call_count(), 0, "max_switches=1 caps the switching");
+}
+
+#[tokio::test]
 async fn retries_the_failed_candidate_once_max_switches_is_exhausted() {
+    let primary = FailingModel::shared(|| Error::throttled("slow down"));
+    let second = FailingModel::shared(|| Error::throttled("slow down"));
+    let third = text_model("never reached");
+    let agent = Agent::builder()
+        .model_router(Arc::new(
+            ModelRouter::new(vec![
+                failing_candidate(Arc::clone(&primary), "primary"),
+                failing_candidate(Arc::clone(&second), "second"),
+                candidate(Arc::clone(&third), "third"),
+            ])
+            .unwrap()
+            .with_max_switches(1),
+        ))
+        .retry_strategy(retry_strategy(3))
+        .build()
+        .unwrap();
+
+    let error = agent.invoke("hello").await.unwrap_err();
+
+    assert_eq!(error.name(), "ModelThrottledError", "unexpected error: {error}");
+    assert_eq!(primary.call_count(), 1);
+    // Deliberate (same as TS): routing stands down at the cap and the retry strategy owns the
+    // error from then on, so the candidate switched to is re-called for its whole budget.
+    assert_eq!(second.call_count(), 3);
+    assert_eq!(third.call_count(), 0);
+}
+
+#[tokio::test]
+async fn retries_the_failed_candidate_when_switching_is_disabled() {
     let primary = FailingModel::shared(|| Error::throttled("slow down"));
     let fallback = text_model("never reached");
     let agent = Agent::builder()
@@ -355,8 +412,6 @@ async fn retries_the_failed_candidate_once_max_switches_is_exhausted() {
     let error = agent.invoke("hello").await.unwrap_err();
 
     assert_eq!(error.name(), "ModelThrottledError", "unexpected error: {error}");
-    // Deliberate (same as TS): routing stands down at the cap and the retry strategy owns the
-    // error from then on, so the failed candidate is called again.
     assert_eq!(primary.call_count(), 2);
     assert_eq!(fallback.call_count(), 0);
 }
@@ -398,7 +453,8 @@ async fn a_cancelled_model_call_neither_records_a_failure_nor_switches() {
         .build()
         .unwrap();
 
-    // A cancelled model call ends the loop with `StopReason::Cancelled`, not an error.
+    // A cancelled model call ends the loop with `StopReason::Cancelled`, not an error. Only the
+    // no-switch half is observable here: routing state is cleared before the invocation returns.
     let result = agent.invoke("hello").await.unwrap();
 
     assert!(matches!(result.stop_reason, StopReason::Cancelled));

@@ -387,6 +387,7 @@ impl AgentBuilder {
                 continuations: Default::default(),
                 interrupt_state: Default::default(),
                 middleware: crate::middleware::MiddlewareRegistry::new(),
+                model_router: self.model_router.clone(),
             }),
         };
         if let Some(router) = &self.model_router {

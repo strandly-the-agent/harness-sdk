@@ -49,6 +49,8 @@ Re-exported from `strands_agents`: `ModelRouter`, `RoutingCandidate`, `RoutingSt
 | uses the default on decline and propagates invalid opening results | — | not ported |
 | rejects null because only undefined declines selection | — | n/a (`Option<RoutingCandidate>`; no `null`) |
 | (no TS equivalent) | `router::tests::candidate_label_falls_back_to_the_model_id`, `fallback::tests::uses_declaration_order_before_any_attempt` | extra |
+| (no TS `it`; TS `Agent._nextAttemptCount`) | `tests/model_router_loop.rs::a_switched_to_candidate_gets_a_fresh_retry_budget` | extra |
+| (no TS `it`) | `tests/model_router_loop.rs::retries_the_failed_candidate_when_switching_is_disabled` | extra |
 
 Unit-test counts: `router.rs` 7, `fallback.rs` 5, `selection.rs` 1, `classifier.rs` 25 = 38.
 
@@ -113,9 +115,11 @@ Full list in the `routing/mod.rs` `//!` block. The load-bearing ones:
   pins this). Same shape as TS; deliberate.
 - A configured `AgentBuilder::model_router` wins over `AgentBuilder::model` in either call order:
   `Agent::model` is derived from the router inside `build()`.
-- After a candidate switch the loop's `attempt_count` keeps incrementing, so
-  `ModelRetryStrategy::on_first_model_attempt` is not re-fired on a switch. TS has the same shape;
-  left as is rather than changing `event_loop.rs`.
+- After a candidate switch the loop resets `attempt_count` to `1`
+  (`agent/event_loop.rs::next_attempt_count`, TS `Agent._nextAttemptCount`), so the candidate
+  switched to gets its own retry budget and `DefaultModelRetryStrategy`'s backoff state resets for
+  it. The agent holds the `Arc<ModelRouter>` (`AgentInner::model_router`, TS `this._modelRouter`)
+  only to answer "which model is this invocation routed to now?".
 
 ## Review disposition (round 1, review of `833705a14`)
 
@@ -133,3 +137,12 @@ Full list in the `routing/mod.rs` `//!` block. The load-bearing ones:
 | 🟡 | `RoutingContext` froze its shape | fixed — `#[non_exhaustive]` |
 | 🟡 | `model_router()` should take `impl Into<Arc<ModelRouter>>` | fixed |
 | note | single `model(impl Into<ModelSource>)` alternative | not adopted — the reviewer's own recommendation; deriving `model` in `build()` is the two-line fix and leaves `model()`'s signature (and every call site/doctest) alone |
+
+## Review disposition (round 2, review of `f3a4041eb`)
+
+| # | Finding | Disposition |
+| --- | --- | --- |
+| 🔴 | switching candidates carried the failed candidate's `attempt_count`, so the candidate switched to inherited a spent retry budget (TS `_nextAttemptCount` resets it to 1) | fixed — `agent/event_loop.rs::next_attempt_count` resets to `1` when the router's `routed_model()` after the after-model-call pass is a different `Arc` than the model just called, at all three `if after.retry` sites; the agent now keeps the `Arc<ModelRouter>` (`AgentInner::model_router`) like TS's `this._modelRouter`. New `tests/model_router_loop.rs::a_switched_to_candidate_gets_a_fresh_retry_budget` (two throttling candidates + a good third, `with_max_switches(1)`, `max_attempts(2)`) fails before the change (`second.call_count()` 1, expected 2) and passes after |
+| 🔴 | the divergence bullet claimed `attempt_count` keeps incrementing across a switch | fixed — bullet rewritten to describe the reset; `retry/default_model_retry_strategy.rs`'s "resets … or a router candidate switch" doc is now true as written, so it is unchanged |
+| 🟠 | `retries_the_failed_candidate_once_max_switches_is_exhausted` used `with_max_switches(0)`, so it never exercised the post-switch cap | fixed — it now uses `with_max_switches(1)` with three candidates (two throttling) and asserts primary == 1, the candidate switched to is retried for its whole budget (3), third never called; the cap-0 case is kept as `retries_the_failed_candidate_when_switching_is_disabled` |
+| 🟡 | `a_cancelled_model_call_neither_records_a_failure_nor_switches` tests less than its name claims | fixed — one-line comment: only the no-switch half is observable at loop level (routing state is cleared before the invocation returns) |

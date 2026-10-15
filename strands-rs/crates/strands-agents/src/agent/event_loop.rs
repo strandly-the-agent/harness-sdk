@@ -1091,7 +1091,7 @@ async fn invoke_model(
             )
             .await?;
             if after.retry {
-                attempt_count += 1;
+                attempt_count = next_attempt_count(agent, state, &model, attempt_count);
                 continue;
             }
             return Ok(denied);
@@ -1115,6 +1115,9 @@ async fn invoke_model(
             .middleware()
             .invoke::<InvokeModelStage>(context, &sink, terminal)
             .await;
+
+        // The model the call actually ran on, to compare with the routed one after the hook pass.
+        let called = routed_model(agent, state).unwrap_or_else(|| Arc::clone(&model));
 
         match outcome {
             Ok(result) => {
@@ -1156,7 +1159,7 @@ async fn invoke_model(
                 )
                 .await?;
                 if after.retry {
-                    attempt_count += 1;
+                    attempt_count = next_attempt_count(agent, state, &called, attempt_count);
                     continue;
                 }
                 return Ok(result);
@@ -1182,12 +1185,32 @@ async fn invoke_model(
                     return Err(Error::Cancelled);
                 }
                 if after.retry {
-                    attempt_count += 1;
+                    attempt_count = next_attempt_count(agent, state, &called, attempt_count);
                     continue;
                 }
                 return Err(unwrap_shared_error(shared));
             }
         }
+    }
+}
+
+fn routed_model(agent: &Agent, state: &InvocationState) -> Option<Arc<dyn Model>> {
+    agent
+        .model_router()
+        .and_then(|router| router.routed_model(agent, state))
+}
+
+/// TS `_nextAttemptCount`: a candidate the router switched to during the after-model-call pass
+/// starts a fresh retry budget instead of inheriting the failed candidate's attempts.
+fn next_attempt_count(
+    agent: &Agent,
+    state: &InvocationState,
+    called: &Arc<dyn Model>,
+    attempt_count: u32,
+) -> u32 {
+    match routed_model(agent, state) {
+        Some(next) if !Arc::ptr_eq(&next, called) => 1,
+        _ => attempt_count + 1,
     }
 }
 
