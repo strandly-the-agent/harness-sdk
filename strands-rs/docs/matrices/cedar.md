@@ -111,6 +111,12 @@ keeps one end-to-end loop test, `tests/cedar_loop.rs`, for the wiring.
 generated-schema shape; it would break if the generator's formatting changes. The alternative is to
 validate un-namespaced policy sets against a namespaced schema with the namespace prepended.
 
+## Live test
+
+`crates/strands-agents/tests/integ_cedar.rs` (`#[ignore = "live Bedrock"]`,
+`us.anthropic.claude-haiku-4-5-20251001-v1:0`, `AWS_REGION=us-west-2`): a permitted tool runs and a
+Cedar-denied tool never runs inside a real tool-use loop. 2 passed.
+
 ## Review disposition (round 1)
 
 | Finding | Disposition |
