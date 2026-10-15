@@ -163,6 +163,14 @@ export AWS_REGION="us-west-2"
 
 For complete details on credential configuration, see the [AWS SDK for JavaScript documentation](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html).
 </Tab>
+<Tab label="Rust">
+
+Strands uses the [AWS SDK for Rust](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/welcome.html), which resolves credentials from its default provider chain: environment variables, a shared profile, SSO, or the instance role. `aws configure` and the `AWS_*` environment variables above both work unchanged. `BedrockModel::builder()` takes the region and an optional bearer token; for anything else, construct an `aws_sdk_bedrockruntime::Client` yourself and pass it to `BedrockModel::from_client`.
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:custom_credentials"
+```
+</Tab>
 </Tabs>
 
 ## Basic Usage
@@ -209,6 +217,20 @@ You can specify which Bedrock model to use by passing in the model ID string dir
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:basic_model_id"
 ```
 </Tab>
+<Tab label="Rust">
+
+Rust has no implicit default model, so pass `BedrockModel::default_model()` to get the same default as Python and TypeScript:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:basic_default"
+```
+
+`BedrockModel::with_model_id` selects a model by its Bedrock model ID:
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:basic_model_id"
+```
+</Tab>
 </Tabs>
 
 > **Note:** See [Bedrock troubleshooting](amazon-bedrock.md#troubleshooting) if you encounter any issues.
@@ -244,6 +266,12 @@ For more control over model configuration, you can create an instance of the [`B
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:basic_model_instance"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:basic_model_instance"
 ```
 </Tab>
 </Tabs>
@@ -286,6 +314,23 @@ Common configuration parameters include:
 - `clientConfig` - AWS SDK client configuration
 - `additionalArgs` - Additional model-specific parameters
 </Tab>
+<Tab label="Rust">
+
+[`BedrockModelConfig`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/crates/strands-agents/src/models/bedrock/mod.rs) carries the model options; every field is an `Option`, so `..Default::default()` leaves the rest alone.
+
+Common configuration parameters include:
+
+- `model_id` - The Bedrock model identifier
+- `temperature` - Controls randomness (higher = more random)
+- `max_tokens` - Maximum number of tokens to generate
+- `stream` - Enable/disable streaming mode
+- `cache_config` - Enable prompt caching with `CacheConfig { strategy: Some(CacheStrategy::Auto), .. }`
+- `guardrail_config` - `BedrockGuardrailConfig` for the guardrail to apply
+- `strict_tools` - Enforce structured output on tool definitions
+- `additional_request_fields` - Additional model-specific parameters
+
+The region, a Bedrock API key, and the per-request timeout are set on the builder instead: `BedrockModel::builder().region(...).api_key(...).request_timeout(...)`.
+</Tab>
 </Tabs>
 
 ### Example with Configuration
@@ -325,6 +370,12 @@ response = agent("Write a short story about an AI assistant.")
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:configuration"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:configuration"
 ```
 </Tab>
 </Tabs>
@@ -374,6 +425,12 @@ non_streaming_model = BedrockModel(
 
 ```typescript
 --8<-- "user-guide/sdk/model-providers/amazon-bedrock.ts:streaming"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/model-providers/amazon-bedrock.rs:streaming"
 ```
 </Tab>
 </Tabs>
