@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use futures::stream::{self, BoxStream};
 
 use super::stream_process::{self, Spawn};
 use super::{
-    is_valid_env_key, ExecuteOptions, ExecutionResult, FileInfo, Sandbox, SandboxError, SandboxResult,
+    is_valid_env_key, ExecuteOptions, ExecutionResult, FileInfo, Sandbox, SandboxError, SandboxEvent,
+    SandboxResult,
 };
 
 /// Runs commands and file operations directly on the host — **no isolation whatsoever**.
@@ -41,6 +43,22 @@ impl LocalSandbox {
         self
     }
 
+    fn spawn(&self, command: &str, options: &ExecuteOptions) -> SandboxResult<Spawn> {
+        for key in options.env.iter().flat_map(|env| env.keys()) {
+            if !is_valid_env_key(key) {
+                return Err(SandboxError::Other(format!(
+                    "Invalid environment variable name: {key}"
+                )));
+            }
+        }
+        let cwd = options.cwd.clone().or_else(|| self.base_dir.clone());
+        let env = match (&self.env, &options.env) {
+            (None, None) => None,
+            (base, extra) => Some(super::posix_shell::merge_env(base.as_ref(), extra.as_ref())),
+        };
+        Ok(Spawn::new("sh", ["-c", command]).cwd(cwd).env(env))
+    }
+
     fn resolve(&self, path: &str) -> PathBuf {
         let path = Path::new(path);
         match (&self.base_dir, path.is_absolute()) {
@@ -70,19 +88,18 @@ impl Sandbox for LocalSandbox {
     }
 
     async fn execute(&self, command: &str, options: ExecuteOptions) -> SandboxResult<ExecutionResult> {
-        for key in options.env.iter().flat_map(|env| env.keys()) {
-            if !is_valid_env_key(key) {
-                return Err(SandboxError::Other(format!(
-                    "Invalid environment variable name: {key}"
-                )));
-            }
+        stream_process::run(self.spawn(command, &options)?, options).await
+    }
+
+    fn execute_streaming<'a>(
+        &'a self,
+        command: &'a str,
+        options: ExecuteOptions,
+    ) -> BoxStream<'a, SandboxResult<SandboxEvent>> {
+        match self.spawn(command, &options) {
+            Ok(spawn) => stream_process::stream(spawn, options),
+            Err(error) => Box::pin(stream::once(async move { Err(error) })),
         }
-        let cwd = options.cwd.clone().or_else(|| self.base_dir.clone());
-        let env = match (&self.env, &options.env) {
-            (None, None) => None,
-            (base, extra) => Some(super::posix_shell::merge_env(base.as_ref(), extra.as_ref())),
-        };
-        stream_process::run(Spawn::new("sh", ["-c", command]).cwd(cwd).env(env), options).await
     }
 
     async fn execute_code(
@@ -166,11 +183,28 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::sandbox::StreamType;
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("strands-sandbox-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    #[tokio::test]
+    async fn surfaces_an_invalid_env_var_name_from_execute_streaming() {
+        use futures::StreamExt;
+
+        let options = ExecuteOptions {
+            env: Some(HashMap::from([("BAD-KEY".to_owned(), "v".to_owned())])),
+            ..ExecuteOptions::default()
+        };
+        let events: Vec<_> = LocalSandbox::new()
+            .execute_streaming("echo hi", options)
+            .collect()
+            .await;
+        assert_eq!(events.len(), 1);
+        assert!(events[0].is_err());
     }
 
     #[tokio::test]
@@ -479,13 +513,22 @@ mod tests {
             .execute_streaming("echo streamed", ExecuteOptions::default())
             .collect()
             .await;
-        assert_eq!(events.len(), 1);
-        match events.into_iter().next().unwrap().unwrap() {
-            super::super::SandboxEvent::Result(result) => {
-                assert_eq!(result.stdout.trim(), "streamed");
+        let mut chunks = Vec::new();
+        let mut result = None;
+        for event in events {
+            match event.unwrap() {
+                SandboxEvent::Chunk(chunk) => chunks.push(chunk),
+                SandboxEvent::Result(terminal) => result = Some(terminal),
             }
-            other => panic!("expected a result event, got {other:?}"),
         }
+        assert!(!chunks.is_empty());
+        let result = result.expect("a terminal result event");
+        assert_eq!(result.stdout.trim(), "streamed");
+        assert_eq!(
+            chunks.iter().map(|c| c.data.as_str()).collect::<String>(),
+            result.stdout
+        );
+        assert!(chunks.iter().all(|c| c.stream_type == StreamType::Stdout));
     }
 
     #[test]

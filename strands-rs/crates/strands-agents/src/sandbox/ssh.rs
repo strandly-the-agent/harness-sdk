@@ -12,7 +12,7 @@ use super::{
     posix_shell, ExecuteOptions, ExecutionResult, FileInfo, Sandbox, SandboxError, SandboxEvent,
     SandboxResult,
 };
-use crate::tools::vended::ShellTool;
+use crate::tools::vended::{ShellTool, SANDBOX_SHELL_DESCRIPTION};
 use crate::tools::ToolRef;
 
 /// Stand-in stderr when the `ssh` CLI is not installed (verbatim from TS).
@@ -272,9 +272,14 @@ impl Sandbox for SshSandbox {
         posix_shell::list_files(self, path).await
     }
 
-    /// The shell tool bound to this host. Cloning is sound because the sandbox is stateless.
+    /// The shell tool bound to this host, its description naming the host so the model knows
+    /// where commands land. Cloning is sound because the sandbox is stateless.
     fn tools(&self) -> Vec<ToolRef> {
-        vec![Arc::new(ShellTool::with_sandbox(Arc::new(self.clone())))]
+        let shell = ShellTool::with_sandbox(Arc::new(self.clone())).with_description(format!(
+            "{SANDBOX_SHELL_DESCRIPTION} Runs on host \"{}\". Working directory: {}.",
+            self.host, self.working_dir
+        ));
+        vec![Arc::new(shell)]
     }
 }
 
@@ -651,6 +656,10 @@ mod tests {
         assert_eq!(
             tools.iter().map(|t| t.name()).collect::<Vec<_>>(),
             [crate::tools::vended::SHELL_TOOL_NAME]
+        );
+        assert_eq!(
+            tools[0].description(),
+            format!("{SANDBOX_SHELL_DESCRIPTION} Runs on host \"myhost\". Working directory: /workspace.")
         );
     }
 }

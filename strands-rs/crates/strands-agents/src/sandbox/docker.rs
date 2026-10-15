@@ -9,7 +9,7 @@ use futures::stream::{self, BoxStream};
 
 use super::stream_process::{self, Spawn};
 use super::{posix_shell, ExecuteOptions, ExecutionResult, FileInfo, Sandbox, SandboxEvent, SandboxResult};
-use crate::tools::vended::ShellTool;
+use crate::tools::vended::{ShellTool, SANDBOX_SHELL_DESCRIPTION};
 use crate::tools::ToolRef;
 
 /// Stand-in stderr when the `docker` CLI is not installed (verbatim from TS).
@@ -109,6 +109,7 @@ impl DockerSandbox {
         // Values are process argv, not shell syntax, so Docker stores them verbatim and they need
         // no quoting — unlike the SSH backend, which builds a shell command string.
         let env = posix_shell::merge_env(self.env.as_ref(), options.env.as_ref());
+        posix_shell::validate_env_keys(&env)?;
         for (key, value) in posix_shell::sorted_env(&env)? {
             args.extend(["-e".to_owned(), format!("{key}={value}")]);
         }
@@ -180,9 +181,18 @@ impl Sandbox for DockerSandbox {
         posix_shell::list_files(self, path).await
     }
 
-    /// The shell tool bound to this container. Cloning is sound because the sandbox is stateless.
+    /// The shell tool bound to this container, its description naming the container so the model
+    /// knows where commands land. Cloning is sound because the sandbox is stateless.
     fn tools(&self) -> Vec<ToolRef> {
-        vec![Arc::new(ShellTool::with_sandbox(Arc::new(self.clone())))]
+        let cwd = match &self.working_dir {
+            Some(dir) => format!(" Working directory: {dir}."),
+            None => String::new(),
+        };
+        let shell = ShellTool::with_sandbox(Arc::new(self.clone())).with_description(format!(
+            "{SANDBOX_SHELL_DESCRIPTION} Runs in Docker container \"{}\".{cwd}",
+            self.container
+        ));
+        vec![Arc::new(shell)]
     }
 }
 
@@ -473,5 +483,13 @@ mod tests {
             tools.iter().map(|t| t.name()).collect::<Vec<_>>(),
             [crate::tools::vended::SHELL_TOOL_NAME]
         );
+        assert_eq!(
+            tools[0].description(),
+            format!("{SANDBOX_SHELL_DESCRIPTION} Runs in Docker container \"my-container\".")
+        );
+        let with_cwd = DockerSandbox::new("my-container").with_working_dir("/workspace");
+        assert!(with_cwd.tools()[0]
+            .description()
+            .ends_with("Runs in Docker container \"my-container\". Working directory: /workspace."));
     }
 }

@@ -3,7 +3,8 @@
 //! Shared by every process-backed sandbox: [`LocalSandbox`](super::LocalSandbox) spawns `sh -c`,
 //! [`DockerSandbox`](super::DockerSandbox) spawns `docker exec`, [`SshSandbox`](super::SshSandbox)
 //! spawns `ssh`. The process runs in its own group, so a timeout or a cancelled call kills the
-//! whole tree.
+//! whole *local* tree; a command already running in a container or on a remote host keeps
+//! running, exactly as in TS.
 
 use std::collections::HashMap;
 use std::ffi::OsString;

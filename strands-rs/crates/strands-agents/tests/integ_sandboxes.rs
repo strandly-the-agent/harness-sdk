@@ -8,6 +8,7 @@
 //!
 //! STRANDS_TEST_SSH_HOST=example.com STRANDS_TEST_SSH_USER=ubuntu \
 //!   STRANDS_TEST_SSH_KEY=~/.ssh/id_ed25519 STRANDS_TEST_SSH_PORT=22 \
+//!   STRANDS_TEST_SSH_ALLOW_UNKNOWN_HOSTS=1 \
 //!   cargo test --all-features --test integ_sandboxes -- --ignored
 //! ```
 
@@ -40,7 +41,8 @@ fn docker() -> Option<DockerSandbox> {
     Some(DockerSandbox::new(container).with_working_dir("/tmp"))
 }
 
-/// `None` unless `ssh` is installed and `STRANDS_TEST_SSH_HOST` is set.
+/// `None` unless `ssh` is installed and `STRANDS_TEST_SSH_HOST` is set. `_USER`, `_PORT`, `_KEY`
+/// and `_ALLOW_UNKNOWN_HOSTS` are optional.
 fn ssh() -> Option<SshSandbox> {
     if !on_path("ssh") {
         eprintln!("skipping: ssh is not on PATH");
@@ -60,6 +62,11 @@ fn ssh() -> Option<SshSandbox> {
     }
     if let Some(key) = var("STRANDS_TEST_SSH_KEY") {
         sandbox = sandbox.with_identity_file(key);
+    }
+    // Default `accept-new` would record the test host in the runner's `known_hosts`; opt out when
+    // the target's key is not pinned anywhere.
+    if var("STRANDS_TEST_SSH_ALLOW_UNKNOWN_HOSTS").is_some() {
+        sandbox = sandbox.with_allow_unknown_hosts(true);
     }
     Some(sandbox)
 }

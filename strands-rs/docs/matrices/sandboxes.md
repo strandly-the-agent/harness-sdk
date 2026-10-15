@@ -91,3 +91,28 @@ rows that `sandbox.md` skipped ("`PosixShellSandbox` not ported") are now covere
   `vends_a_shell_tool` + the two TS `getTools` rows above.
 - `SandboxError::PathNotFound` also covers reads/removals (TS raises it only for listings).
 - No ssh/docker *library* divergence: TS and Python also shell out to the `ssh`/`docker` CLIs.
+- **Killing a timed-out or cancelled command kills only the local process tree.** `sh -c`,
+  `docker exec` and `ssh` all run in their own process group, but killing the group does not reach
+  a process inside the container or on the remote host (no `-tt`, no `docker kill`). TS behaves the
+  same way; `sandbox::stream_process`'s module doc says so.
+- **`docker exec -i` when `ExecuteOptions::stdin` is set.** TS never passes `-i`, so stdin cannot
+  reach the container there; Rust passes it only when there is stdin to write, so the Docker
+  backend honours `stdin` like every other backend.
+- **`posix_shell::parse_listing` sorts its entries by name.** `ls -1ap` is already sorted, so this
+  is a no-op in practice; it keeps the result deterministic if a backend's `ls` is not.
+
+## Review disposition (round 1)
+- 🟠 sandbox description never reaches the vended shell spec — **fixed**: `ShellTool::with_description`
+  + both backends build TS's wording (`Runs on host "…". Working directory: ….` /
+  `Runs in Docker container "…".`); `vends_a_shell_tool` / `describes_itself_by_container_and_vends_a_shell_tool`
+  now assert the full description, including the working-directory suffix.
+- 🟠 `LocalSandbox` lacks an `execute_streaming` override — **fixed**: spawn construction moved into
+  `LocalSandbox::spawn`, `execute_streaming` forwards to `stream_process::stream`;
+  `yields_stream_chunks_then_execution_result` now asserts chunks sum to the terminal stdout and
+  `surfaces_an_invalid_env_var_name_from_execute_streaming` covers the pre-spawn error path.
+- 🟠 `stream_process` doc overclaims kill-the-tree for remote backends — **fixed**: module doc
+  qualified to the local tree, divergence row added above.
+- 🟡 `validate_env_keys` public and dead — **fixed**: `DockerSandbox::argv` calls it explicitly like
+  TS's `docker.ts` does.
+- 🟡 `-i` when stdin is set — **fixed**: listed as a divergence above.
+- 🟡 `parse_listing` re-sorts — **fixed**: listed as a divergence above.
