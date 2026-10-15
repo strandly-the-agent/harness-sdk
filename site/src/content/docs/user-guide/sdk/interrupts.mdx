@@ -218,7 +218,7 @@ Interrupts in Strands are comprised of the following components:
 - `interruptResponse` - Content block type for configuring the interrupt responses.
     - Each `response` is uniquely identified by their interrupt's id and will be returned from the associated interrupt call when invoked the second time around. Note, the `response` must be JSON-serializable.
 - `event.cancel_tool` (`BeforeToolCallEvent`) - Cancel a single tool call based on the interrupt response
-    - Youson` is any `serde_json::Value` providing context for why can either set `cancel_tool` to `True` or provide a custom cancellation message.
+    - You can either set `cancel_tool` to `True` or provide a custom cancellation message.
 - `event.cancel` (`BeforeToolsEvent`) - Cancel every tool call in the batch based on the interrupt response
     - You can either set `cancel` to `True` or provide a custom cancellation message.
 
@@ -234,12 +234,12 @@ For additional details on each of these components, refer to the [Python API Ref
     - `result.stopReason`: check if agent stopped due to `'interrupt'`
     - `result.interrupts`: array of `Interrupt` objects, each containing the user-provided `name` and `reason`, along with a unique `id`
 - `InterruptResponseContent`: content block type for resuming from an interrupt
-    - Pass an array of these to `agent.invoke()` to resume. Each response is keyed by the interrupt's `id` and will be returned from the associated `intn other words, within a single hook, you can interrupt, rerrupt()` call when the tool/hook re-executes. The `response` must be JSON-serializable.
+    - Pass an array of these to `agent.invoke()` to resume. Each response is keyed by the interrupt's `id` and will be returned from the associated `interrupt()` call when the tool/hook re-executes. The `response` must be JSON-serializable.
 </Tab>
 <Tab label="Rust">
 
 - `BeforeToolCallEvent` / `BeforeToolsEvent`: hook events that expose the ability to interrupt via the `interrupt` method
-    - `event.interrupt::<T>(InterruptParams::new(name).with_reason(reason))`: halts the agent loop. `rea the interrupt was raised. With no answer yet it returns `Err(Error::Interrupt)`, so `?` both raises the interrupt and pauses the loop; on resume the same call deserializes the stored answer into `T`.
+    - `event.interrupt::<T>(InterruptParams::new(name).with_reason(reason))`: halts the agent loop. `reason` is any `serde_json::Value` providing context for why the interrupt was raised. With no answer yet it returns `Err(Error::Interrupt)`, so `?` both raises the interrupt and pauses the loop; on resume the same call deserializes the stored answer into `T`.
     - The `name` must be unique across all interrupt calls configured on the same event. In the example above, we demonstrate using a namespace prefix for the interrupt call. This is particularly helpful if you plan to vend your hooks to other users.
     - `event.cancel`: cancel tool execution based on the interrupt response. Assign `Cancel::Yes` for a default message, or a custom message with `"...".into()`.
 - `AgentResult`: returned by `invoke()` / `stream()`, contains interrupt information when the agent pauses

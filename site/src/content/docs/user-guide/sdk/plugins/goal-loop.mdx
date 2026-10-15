@@ -10,13 +10,13 @@ sourceLinks:
 addedDate: 2026-06-15
 ---
 
-When your agent's response needs to meet a quality bar before returning, `GoalLoop` handles the retry loop. It validates the response after each invocation, feeds feedback back as a user message on failure, and re-invokes the agent. This continues until validation passes, aa plugin. Define what "done" means, attach it to your age max attempt count is reached, or a timeout elapses.
+When your agent's response needs to meet a quality bar before returning, `GoalLoop` handles the retry loop. It validates the response after each invocation, feeds feedback back as a user message on failure, and re-invokes the agent. This continues until validation passes, a max attempt count is reached, or a timeout elapses.
 
 ## The Problem
 
 A single-pass agent response often misses the mark: too verbose, wrong format, incomplete reasoning, or failing a test suite. You could wrap the agent call in a manual retry loop, but that means reimplementing timeout logic, attempt tracking, feedback injection, and state management every time.
 
-GoalLoop handles all of that as nt, and the retry loop runs automatically inside the existing hook lifecycle.
+GoalLoop handles all of that as a plugin. Define what "done" means, attach it to your agent, and the retry loop runs automatically inside the existing hook lifecycle.
 
 ## How It Works
 
@@ -327,10 +327,7 @@ plugin = GoalLoop(
 
 ### Custom Resume Prompt
 
-Override how feedback is injected before each judge_prompt,
-    JUDGE_SYSTEM_PROMPT,
-    JudgeOutcome,
-retry. The template receives the trimmed feedback string (or <Syntax py="None" ts="undefined" rs="None" /> when the validator gave none) and returns the user message content:
+Override how feedback is injected before each retry. The template receives the trimmed feedback string (or <Syntax py="None" ts="undefined" rs="None" /> when the validator gave none) and returns the user message content:
 
 <Tabs>
 <Tab label="Python">
@@ -378,7 +375,10 @@ The judge primitives are exported for use in function validators. Build your own
 ```python
 from strands.vended_plugins.goal import (
     GoalLoop,
-    build_)
+    build_judge_prompt,
+    JUDGE_SYSTEM_PROMPT,
+    JudgeOutcome,
+)
 
 async def custom_judge(response, agent):
     from strands import Agent as JudgeAgent

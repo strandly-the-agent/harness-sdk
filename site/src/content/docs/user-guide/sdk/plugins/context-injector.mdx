@@ -36,12 +36,6 @@ agent = Agent(
 )
 ```
 </Tab>
-nabled") is True,
-)
-```
-</Tab>
-<Tab label="TypeScript">
-
 <Tab label="TypeScript">
 
 ```typescript
@@ -107,7 +101,13 @@ from strands.vended_plugins.context_injector import ContextInjector
 injector = ContextInjector(
     lambda context: f"<context>{len(context.messages)} turns so far</context>",
     # Inject only when a tool stashed a flag in agent state last turn.
-    trigger=lambda context: context.state.get("recall_e engine to inject retrieved knowledge before a model call```typescript
+    trigger=lambda context: context.state.get("recall_enabled") is True,
+)
+```
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
 --8<-- "user-guide/sdk/plugins/context-injector_imports.ts:predicate_imports"
 
 --8<-- "user-guide/sdk/plugins/context-injector.ts:predicate"
@@ -135,4 +135,4 @@ The rendered text is a prompt-injection surface. If it interpolates attacker-inf
 
 ## Related
 
-- [Memory](../memory/managing-memory#context-injection) builds on this.
+- [Memory](../memory/managing-memory#context-injection) builds on this engine to inject retrieved knowledge before a model call.

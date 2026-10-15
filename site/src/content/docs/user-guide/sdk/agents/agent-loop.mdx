@@ -281,9 +281,7 @@ The `agent.cancel()` method provides a way to stop the loop from outside, such a
 
   You can also pass your own `CancellationToken` into `invoke_with()` or `stream_with()`
   via `InvokeOptions::with_cancel`. The invocation's own token is a child of it, so both
-  `agent.cancel()` anresh counters.
-
-When multiple caps trip simultaneously, td the external token can trigger cancellation independently. This is
+  `agent.cancel()` and the external token can trigger cancellation independently. This is
   useful for declarative timeouts, a token shared across agents, or framework-driven
   cancellation on client disconnect.
 
@@ -369,7 +367,9 @@ fires. The agent's message history stays in a valid,
 reinvokable state.
 
 Limits apply to the current invocation only. A reused agent
-starts each call with fhe reported stop reason
+starts each call with fresh counters.
+
+When multiple caps trip simultaneously, the reported stop reason
 follows priority order: turns, then total tokens, then output
 tokens.
 

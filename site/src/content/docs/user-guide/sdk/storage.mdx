@@ -27,8 +27,7 @@ Storage backend the same way in both SDKs: TypeScript's
 `SessionManager` and Python's recommended `SnapshotSessionManager`
 both persist snapshots through a Storage backend you pass them.
 Python's repository-based managers (`FileSessionManager`,
-`S3SessionManager`)mory | Tests, short-lived agents |
-| `LocalFileStorage` | are the exception: they configure storage
+`S3SessionManager`) are the exception: they configure storage
 directly rather than through a Storage backend, a difference the
 session management page documents.
 
@@ -37,7 +36,8 @@ your data to live:
 
 | Backend | Where data lives | Best for |
 |---------|-----------------|----------|
-| `InMemoryStorage` | Process me Local filesystem | Development, single-machine |
+| `InMemoryStorage` | Process memory | Tests, short-lived agents |
+| `LocalFileStorage` | Local filesystem | Development, single-machine |
 | `S3Storage` | Amazon S3 | Production, multi-instance |
 
 ## Agent-level storage
@@ -175,7 +175,7 @@ Each key becomes a file under a base directory. Writes are atomic
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| <Syntax py="base_dir" ts="baseDir" rs="base_dir" /> | `"./.strands/"` (required in Rust) | Root directory |
+| <Syntax py="base_dir" ts="baseDir" rs="base_dir" /> | `"./.strands/"` | Root directory |
 | <Syntax py="sandbox" ts="sandbox" rs="sandbox" /> | `None`/`undefined` | Optional [Sandbox](./sandbox/index.mdx) |
 
 <Tabs>

@@ -8,8 +8,7 @@ sourceLinks:
   - path: strands-ts/src/retry/default-model-retry-strategy.ts
 ---
 
-Model providers occasionally encounter errors such as rate limits, service unavailability, or network timeouts. By default, the agent retries throttled responses automatically with exponential backoff. The <Syntax py="Agent.retry_strategy" ts="Agent.retryStrategy"
-rs="AgentBuilder::retry_strategy" /> parameter lets you customize this behavior.
+Model providers occasionally encounter errors such as rate limits, service unavailability, or network timeouts. By default, the agent retries throttled responses automatically with exponential backoff. The <Syntax py="Agent.retry_strategy" ts="Agent.retryStrategy" /> parameter lets you customize this behavior.
 
 ## Default Behavior
 
@@ -73,7 +72,7 @@ constructed from an options struct and validates `max_attempts`:
 |-----------|------|---------|-------------|
 | `max_attempts` | `int` | `6` | Total number of attempts including the initial call. Set to `1` to disable retries. |
 | `initial_delay` | `float` | `4` | Seconds to wait before the first retry. Subsequent retries double this value. |
-| `max_delay` | `float` | `128` re exponential backoff through the `initial_delay` and `m| Maximum seconds to wait between retries. Caps the exponential growth. |
+| `max_delay` | `float` | `128` | Maximum seconds to wait between retries. Caps the exponential growth. |
 
 </Tab>
 <Tab label="TypeScript">
@@ -103,7 +102,7 @@ constructed from an options struct and validates `max_attempts`:
 
 ### Backoff Strategies
 
-In TypeScript and Rust, the delay between retries is delegated to a `BackoffStrategy` passed via the `backoff` parameter. The Python SDK does not expose a separate backoff interface; configuax_delay` parameters above.
+In TypeScript and Rust, the delay between retries is delegated to a `BackoffStrategy` passed via the `backoff` parameter. The Python SDK does not expose a separate backoff interface; configure exponential backoff through the `initial_delay` and `max_delay` parameters above.
 
 <Tabs>
 <Tab label="Python">
@@ -181,8 +180,7 @@ agent = Agent(
 
 ## When Retries Occur
 
-Default retry strategies handle throttling errors (<Syntax py="ModelThrottledException" ts="ModelThrottledError"
-rs="Error::ModelThrottled" />) raised by model providers for rate-limiting. Other exceptions propagate immediately without retry.
+Default retry strategies handle throttling errors (<Syntax py="ModelThrottledException" ts="ModelThrottledError" />) raised by model providers for rate-limiting. Other exceptions propagate immediately without retry.
 
 To extend or narrow the retryable set, see [Custom Retry Logic](#custom-retry-logic).
 

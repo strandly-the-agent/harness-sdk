@@ -42,6 +42,7 @@ The `"session"` preset captures `messages`, `state`, `conversation_manager_state
 --8<-- "user-guide/sdk/agents/snapshots.ts:take_snapshot"
 ```
 
+The `"session"` preset captures `messages`, `state`, `systemPrompt`, `modelState`, and `interrupts`.
 </Tab>
 <Tab label="Rust">
 
@@ -190,16 +191,12 @@ snapshot = agent.take_snapshot(preset="session", exclude=["interrupt_state"])
 
 Snapshots carry an <Syntax py="app_data" ts="appData" rs="app_data" /> field for storing application-owned data alongside the agent state. Strands passes this data through verbatim, without reading or modifying it.
 
-This is useful for attaching metadata like a display name for the snapshot, the current step in a workflow, user preferences, or any other context your application needs to associate witt">
-
-```typescript
---8<-- "user-guide/sdk/agents/snapshoth a particular point in time.
+This is useful for attaching metadata like a display name for the snapshot, the current step in a workflow, user preferences, or any other context your application needs to associate with a particular point in time.
 
 <Tabs>
 <Tab label="Python">
 
-``ding"
-print(snapshot.app_data["user_display_name"])  # "A`python
+```python
 snapshot = agent.take_snapshot(
     preset="session",
     app_data={
@@ -210,7 +207,8 @@ snapshot = agent.take_snapshot(
 )
 
 # Access app data later
-print(snapshot.app_data["snapshot_label"])     # "After onboarlice"
+print(snapshot.app_data["snapshot_label"])     # "After onboarding"
+print(snapshot.app_data["user_display_name"])  # "Alice"
 ```
 </Tab>
 <Tab label="TypeScript">
@@ -264,7 +262,10 @@ new_agent = Agent()
 new_agent.load_snapshot(restored_snapshot)
 ```
 </Tab>
-<Tab label="TypeScrips_imports.ts:imports_snapshot"
+<Tab label="TypeScript">
+
+```typescript
+--8<-- "user-guide/sdk/agents/snapshots_imports.ts:imports_snapshot"
 
 --8<-- "user-guide/sdk/agents/snapshots.ts:serialization"
 ```

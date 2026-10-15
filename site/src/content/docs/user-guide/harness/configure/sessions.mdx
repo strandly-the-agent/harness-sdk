@@ -37,7 +37,7 @@ start clean.
         import { createHarness } from '@strands-agents/harness'
 
         const agent = await createHarness({ session: { id: 'refactor-parser' } })
-        await agent.invoke("Let's refactor the        import { Agent, SessionManager, FileStorage } fromparser. Where should we start?")
+        await agent.invoke("Let's refactor the parser. Where should we start?")
         // ...later, in a new process...
         const resumed = await createHarness({ session: { id: 'refactor-parser' } })
         await resumed.invoke('Where did we leave off?')
@@ -72,7 +72,7 @@ start clean.
       <Tab label="TypeScript">
         ```typescript
         // npm install @strands-agents/sdk
-  '@strands-agents/sdk'
+        import { Agent, SessionManager, FileStorage } from '@strands-agents/sdk'
 
         const session = new SessionManager({ sessionId: 'refactor-parser',
           storage: { snapshot: new FileStorage('./sessions') } })
@@ -81,9 +81,7 @@ start clean.
         // ...later, in a new process...
         const resumed = new Agent({
           sessionManager: new SessionManager({ sessionId: 'refactor-parser',
-            storage: { snapshot: new FileStorage('./sor-parser', dir: '/var/lib/agent/sessions' },
-        })
-essions') } }),
+            storage: { snapshot: new FileStorage('./sessions') } }),
         })
         await resumed.invoke('Where did we leave off?')
         ```
@@ -121,7 +119,9 @@ it elsewhere:
         import { createHarness } from '@strands-agents/harness'
 
         const agent = await createHarness({
-          session: { id: 'refact        ```
+          session: { id: 'refactor-parser', dir: '/var/lib/agent/sessions' },
+        })
+        ```
       </Tab>
       <Tab label="Rust">
         ```rust

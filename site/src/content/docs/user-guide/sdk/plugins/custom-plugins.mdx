@@ -85,11 +85,7 @@ class LoggingPlugin(Plugin):
 
 # Using the plugin
 agent = Agent(plugins=[LoggingPlugin()])
-agent("Calculate /Tab>
-<Tab label="Rust">
-
-```rust
---8<-- "user-guide/sdk/2 + 2 and print the result")
+agent("Calculate 2 + 2 and print the result")
 ```
 </Tab>
 <Tab label="TypeScript">
@@ -99,7 +95,13 @@ agent("Calculate /Tab>
 
 --8<-- "user-guide/sdk/plugins/custom-plugins.ts:basic_plugin"
 ```
-<plugins/custom-plugins.rs:basic_plugin"
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:basic_plugin"
+
+--8<-- "user-guide/sdk/plugins/custom-plugins.rs:basic_plugin_usage"
 ```
 </Tab>
 </Tabs>

@@ -108,7 +108,7 @@ This is the signal the model acts on. It decides whether the window is full enou
 
 **Three tools the model can call**, each a different lever with its own choices:
 
-- `summarize_context` folds older messages into a model-written summary. The model chooses how many recent messages to keep verbatim, how aggressively to summarize, and whether to ta the background, with no model involvement and no extra trget tool results, discussion, or both.
+- `summarize_context` folds older messages into a model-written summary. The model chooses how many recent messages to keep verbatim, how aggressively to summarize, and whether to target tool results, discussion, or both.
 - `truncate_context` drops older messages outright when they no longer need preserving. The model again chooses how much recent history to keep and what kind of messages to target.
 - `pin_context` marks messages that must survive compression: a user constraint, a key fact, the current task. Pinned messages are never evicted by either tool. The model can pin the current exchange, the last few messages, or specific ones.
 

@@ -193,10 +193,8 @@ def calculate_area(shape: str, radius: float = None, width: float = None, height
 </Tab>
 <Tab label="Rust">
 
-`#[tool]` always derives the schema from the function signature. To supply your own, build ent("What is your name?")
-```
-</Tab>
-<Tab label="TypeScrithe tool with `FunctionTool::builder` and pass it to `input_schema`:
+`#[tool]` always derives the schema from the function signature. To supply your own, build
+the tool with `FunctionTool::builder` and pass it to `input_schema`:
 
 ```rust
 --8<-- "user-guide/sdk/tools/custom-tools.rs:json_schema_tool"
@@ -417,7 +415,10 @@ def get_self_name(context: ToolContext) -> str:
 
 agent = Agent(tools=[get_self_name], name="Best agent")
 
-agpt">
+agent("What is your name?")
+```
+</Tab>
+<Tab label="TypeScript">
 
 ```ts
 // Renaming the context parameter is not supported
