@@ -25,6 +25,8 @@ mcp = ["dep:rmcp", "dep:http", "dep:regex"]
 mcp-echo-server = ["mcp", "rmcp/server", "rmcp/transport-io", "rmcp/macros"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-smithy-runtime-api"]
 s3 = ["dep:aws-config", "dep:aws-sdk-s3"]
+# Cedar policy authorization intervention. Heavy: pulls in the Cedar engine and schema generator.
+cedar = ["dep:cedar-policy", "dep:cedar-policy-mcp-schema-generator", "dep:mcp-tools-sdk"]
 
 [dependencies]
 strands-agents-macros = { path = "../strands-agents-macros", version = "0.1.0", optional = true }
@@ -55,6 +57,9 @@ aws-sdk-bedrockruntime = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
 aws-smithy-runtime-api = { workspace = true, optional = true }
+cedar-policy = { workspace = true, optional = true }
+cedar-policy-mcp-schema-generator = { workspace = true, optional = true }
+mcp-tools-sdk = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true }

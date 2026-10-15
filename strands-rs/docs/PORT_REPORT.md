@@ -370,3 +370,11 @@ and per-parameter `///` docs; hook callbacks take plain async closures (no `Box:
   (`aws-smithy-mocks`) plus `tests/integ_s3.rs` live round-trips — 2 passed against
   `strandly-managed-strands-rs-e2e` in us-west-2. Session type renamed from TS `S3Storage` to
   `S3SessionStorage` to avoid clashing with the unified one; see `docs/matrices/s3.md`.
+- **Cedar policy intervention** (`interventions::vended::cedar`, `cedar` feature): `CedarAuthorization`
+  gates every tool call on a Cedar policy set — `principal`, `Action::"<tool>"`, `Resource::"agent"`,
+  `context = { input, session: { hour_utc, call_count, ..enricher } }`; default-deny. Static principal
+  or per-invocation `PrincipalResolver`, context enricher, per-tool rate limits persisted in agent
+  state (`CALL_COUNTS_KEY`), optional schema validation (supplied or generated from `ToolSpec`s),
+  namespacing, file-backed sources with `reload()`. Engine is the first-party `cedar_policy` crate
+  (pinned `=4.11.0`) instead of TS's WASM bundle. 43 unit tests + 1 agent-loop test
+  (`tests/cedar_loop.rs`); matrix in `docs/matrices/cedar.md`.
