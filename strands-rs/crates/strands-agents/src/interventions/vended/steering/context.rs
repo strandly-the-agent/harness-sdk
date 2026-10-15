@@ -42,7 +42,7 @@ impl SteeringContextData {
 
 /// A passive observer that accumulates data from agent lifecycle events.
 ///
-/// Providers register their own hook callbacks in [`observe_agent`](Self::observe_agent), which the
+/// Providers register their own hook callbacks in [`init_agent`](Self::init_agent), which the
 /// owning handler calls once at registration time, and expose what they accumulated through
 /// [`context`](Self::context) — read whenever a steering decision is made.
 #[async_trait]
@@ -51,7 +51,7 @@ pub trait SteeringContextProvider: Send + Sync {
     fn name(&self) -> &str;
 
     /// Subscribe to the agent's hooks. Called once, when the owning handler is registered.
-    async fn observe_agent(&self, agent: &Agent) -> Result<()>;
+    async fn init_agent(&self, agent: &Agent) -> Result<()>;
 
     /// Current context snapshot for steering evaluation.
     fn context(&self) -> SteeringContextData;

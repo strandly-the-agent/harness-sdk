@@ -134,9 +134,8 @@ async fn confirm_interrupts_and_the_humans_answer_decides() {
     for (answer, expect_run) in [("yes", true), ("no", false)] {
         let runs = Arc::new(AtomicUsize::new(0));
         let parent = model(vec![tool_use_message("call-1"), Message::assistant("finished")]);
-        // The gate is re-evaluated when the invocation resumes, hence two decisions.
         let decision = json!({ "type": "confirm", "reason": "searching the web needs approval" });
-        let judge = judge(vec![decision.clone(), decision]);
+        let judge = judge(vec![decision]);
         let agent = agent(
             Arc::clone(&parent),
             LlmSteeringHandler::new("You are a steering agent.").model(Arc::clone(&judge)),
@@ -164,6 +163,8 @@ async fn confirm_interrupts_and_the_humans_answer_decides() {
 
         assert_eq!(resumed.stop_reason, StopReason::EndTurn);
         assert_eq!(runs.load(Ordering::SeqCst), usize::from(expect_run));
+        // On resume the stored answer is reused instead of a second judgement.
+        assert_eq!(judge.call_count(), 1);
         if !expect_run {
             let denied = agent
                 .messages()

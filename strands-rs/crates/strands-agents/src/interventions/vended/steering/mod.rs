@@ -28,10 +28,11 @@
 //!   the existing handler impls. Handlers implement
 //!   [`InterventionHandler`](crate::interventions::InterventionHandler) directly.
 //! - Context providers self-register hooks through
-//!   [`InterventionHandler::observe_agent`](crate::interventions::InterventionHandler::observe_agent),
+//!   [`InterventionHandler::init_agent`](crate::interventions::InterventionHandler::init_agent),
 //!   this port's equivalent of TS's `LifecycleObserver` probe on intervention handlers.
-//! - Only the tool-call gate is steered: Rust's `InterventionHandler` has no after-model gate, so
-//!   TS's `afterModelCall` steering has no counterpart.
+//! - TS's `afterModelCall` steering gate is [`InterventionHandler::after_model_call`](crate::interventions::InterventionHandler::after_model_call):
+//!   an `Action::Guide` there retries the model call with the feedback appended as a user message.
+//!   `LlmSteeringHandler` leaves it at `proceed`, exactly as TS's `LLMSteeringHandler` does.
 
 mod context;
 mod handler;

@@ -43,6 +43,7 @@ installs the exporter).
 | `Error` subclasses | one `thiserror` `enum Error` with a variant per TS error class (`ContextWindowOverflow`, `ModelThrottled`, `MaxTokens`, `ToolNotFound`, `ToolValidation`, `Cancelled`, …) plus `Other(Box<dyn std::error::Error + Send + Sync>)` | The loop matches on error kinds. |
 | `logger` | `tracing` macros; `warn_once` keeps a process-wide `HashSet` | |
 | `Plugin` interface | `#[async_trait] trait Plugin: Send + Sync { fn name(&self) -> &str; async fn init_agent(&self, agent: &Agent) -> Result<()>; fn tools(&self) -> Vec<Arc<dyn Tool>> }` | |
+| `LifecycleObserver` structural probe (`'observeAgent' in handler`) | defaulted `InterventionHandler::init_agent(&Agent)`, called once by `InterventionRegistry` | A `dyn` trait object can't be probed for an extra method without an `Any` bound; a defaulted method is additive for existing handlers and reuses `Plugin`'s name for the same lifecycle point. |
 | `SessionStorage` / `ConversationManager` | traits `SnapshotStorage` / `ConversationManager`; `FileStorage`, `SlidingWindowConversationManager`, `NullConversationManager` | |
 
 ## Conventions

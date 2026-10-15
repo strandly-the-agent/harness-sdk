@@ -10,6 +10,7 @@ use serde::Deserialize;
 use crate::agent::Agent;
 use crate::error::Result;
 use crate::hooks::events::BeforeToolCallEvent;
+use crate::interrupt::before_tool_call_interrupt_id;
 use crate::interventions::{Confirm, InterventionHandler, ToolCallAction};
 use crate::models::Model;
 use crate::types::{CachePointBlock, ContentBlock, SystemPrompt, ToolUse};
@@ -160,9 +161,13 @@ that IS the current tool being evaluated. It is NOT already executing or a dupli
 /// model's answer into an intervention action: proceed, guide the agent with feedback, or ask a
 /// human. Register it with `AgentBuilder::intervention`.
 ///
-/// Only the tool-call gate is steered: Rust's
-/// [`InterventionHandler`](crate::interventions::InterventionHandler) has no after-model gate, so
-/// TS's `afterModelCall` steering has no counterpart here.
+/// Only the tool-call gate is judged, as in TS; implement
+/// [`InterventionHandler::after_model_call`](crate::interventions::InterventionHandler::after_model_call)
+/// on your own handler to steer model output too.
+///
+/// A confirmed call is judged **once**: on resume the handler reuses the human's stored answer
+/// instead of asking the model again, so a rejection cannot be overturned by a second, different
+/// decision.
 ///
 /// ```
 /// use strands_agents::interventions::vended::steering::LlmSteeringHandler;
@@ -226,9 +231,9 @@ impl LlmSteeringHandler {
         self
     }
 
-    /// The context providers this handler evaluates against.
-    pub fn providers(&self) -> &SteeringProviders {
-        &self.providers
+    /// The context providers this handler evaluates against, in evaluation order.
+    pub fn providers(&self) -> &[Arc<dyn SteeringContextProvider>] {
+        self.providers.providers()
     }
 
     /// Ask `model` for a decision. A fresh inner agent per call keeps the handler free of shared
@@ -248,11 +253,29 @@ impl InterventionHandler for LlmSteeringHandler {
         &self.name
     }
 
-    async fn observe_agent(&self, agent: &Agent) -> Result<()> {
-        self.providers.observe_agent(agent).await
+    async fn init_agent(&self, agent: &Agent) -> Result<()> {
+        self.providers.init_agent(agent).await
     }
 
     async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
+        // The gate is re-dispatched when the invocation resumes: reuse the human's stored answer
+        // rather than pay for a second judgement that could contradict it.
+        let suffix = before_tool_call_interrupt_id(&event.tool_use.tool_use_id, &self.name);
+        if let Some(answered) = event
+            .agent
+            .interrupt_state()
+            .interrupts()
+            .into_iter()
+            .find(|i| i.id.ends_with(&suffix) && i.response.is_some())
+        {
+            let prompt = answered
+                .reason
+                .as_ref()
+                .and_then(|r| r.as_str())
+                .unwrap_or_default();
+            return Ok(ToolCallAction::Confirm(Confirm::new(prompt)));
+        }
+
         let context = self.providers.steering_context();
         let prompt = (self.prompt_builder)(&context, Some(&event.tool_use));
         let model = self.model.clone().unwrap_or_else(|| event.agent.aux_model());
@@ -440,12 +463,7 @@ mod tests {
     #[tokio::test]
     async fn attaches_a_tool_ledger_provider_by_default() {
         let handler = LlmSteeringHandler::new("steer");
-        let names: Vec<_> = handler
-            .providers()
-            .providers()
-            .iter()
-            .map(|p| p.name().to_owned())
-            .collect();
+        let names: Vec<_> = handler.providers().iter().map(|p| p.name().to_owned()).collect();
         assert_eq!(names, vec![super::super::DEFAULT_TOOL_LEDGER_NAME]);
     }
 

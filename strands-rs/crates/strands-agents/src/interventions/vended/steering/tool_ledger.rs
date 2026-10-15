@@ -55,7 +55,7 @@ struct LedgerToolCall {
     error: Option<Option<String>>,
 }
 
-/// Context provider that tracks tool call history within a single invocation.
+/// Context provider that tracks tool call history for the life of the provider.
 ///
 /// Records every tool invocation with its input, timing and success/failure status, so a steering
 /// handler can spot patterns (repeated failures, excessive retries). Once the ledger exceeds
@@ -149,7 +149,7 @@ impl SteeringContextProvider for ToolLedgerProvider {
         &self.name
     }
 
-    async fn observe_agent(&self, agent: &Agent) -> Result<()> {
+    async fn init_agent(&self, agent: &Agent) -> Result<()> {
         let provider = self.clone();
         agent
             .hooks()
@@ -195,7 +195,7 @@ mod tests {
     async fn agent_observed_by(provider: &ToolLedgerProvider) -> Agent {
         let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("hi"))]);
         let agent = Agent::builder().model(model).build().unwrap();
-        provider.observe_agent(&agent).await.unwrap();
+        provider.init_agent(&agent).await.unwrap();
         agent
     }
 

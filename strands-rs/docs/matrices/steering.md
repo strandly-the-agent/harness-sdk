@@ -8,7 +8,7 @@ Branch `agent-tasks/strands-rs-steering`. Spec: `strands-ts/src/vended-intervent
 - `.../steering/handler.rs` — `SteeringProviders`, `SteeringAction` (+5 tests)
 - `.../steering/llm.rs` — `LlmSteeringHandler`, `PromptBuilder` (+11 tests)
 - `.../steering/tool_ledger.rs` — `ToolLedgerProvider` (+4 tests)
-- edits: `interventions/mod.rs` (`InterventionHandler::observe_agent` + registry call),
+- edits: `interventions/mod.rs` (`InterventionHandler::init_agent` + registry call),
   `interventions/vended/mod.rs` (exports)
 
 Gates (last line each):
@@ -24,11 +24,11 @@ cargo test -p strands-agents --all-features --lib steering::       -> test resul
 | TS | Rust |
 | --- | --- |
 | `SteeringContextData` (`{type, ...}`) | `SteeringContextData { type_name, fields }`, `new()` / `with()` |
-| `SteeringContextProvider` | `trait SteeringContextProvider { name, observe_agent, context }` |
+| `SteeringContextProvider` | `trait SteeringContextProvider { name, init_agent, context }` |
 | `abstract class SteeringHandler` | `SteeringProviders` (provider plumbing) + `SteeringAction` |
 | `SteeringHandlerConfig.contextProviders` | `SteeringProviders::new(providers)` |
 | `getSteeringContext()` | `SteeringProviders::steering_context()` |
-| `observeAgent(agent)` (`LifecycleObserver`) | `InterventionHandler::observe_agent(&Agent)` |
+| `observeAgent(agent)` (`LifecycleObserver`) | `InterventionHandler::init_agent(&Agent)` |
 | `LLMSteeringHandler` | `LlmSteeringHandler` |
 | config `name` / `model` / `systemPrompt` / `promptBuilder` / `contextProviders` | `LlmSteeringHandler::new(system_prompt)` + `.name()` / `.model()` / `.prompt_builder()` / `.context_providers()` |
 | `'strands:llm-steering-handler'` | `DEFAULT_LLM_STEERING_NAME` |
@@ -42,10 +42,10 @@ cargo test -p strands-agents --all-features --lib steering::       -> test resul
 | TS test | Rust test | Status |
 | --- | --- | --- |
 | routes beforeToolCall to subclass override with the event | `routes_before_tool_call_to_the_handler_with_the_event` | pass |
-| routes afterModelCall to subclass override with the event | — | n/a (no after-model gate in Rust) |
+| routes afterModelCall to subclass override with the event | `InterventionHandler::after_model_call` | `interventions::tests::an_after_model_guide_retries_and_appends_the_feedback` |
 | exposes provider context to subclasses via getSteeringContext | `exposes_provider_context_to_the_handler_via_steering_context` | pass |
 | siblings with distinct names can coexist on one agent | `siblings_with_distinct_names_can_coexist_on_one_agent` | pass |
-| does not invoke afterModelCall body when stopData is missing | — | n/a (no after-model gate in Rust) |
+| does not invoke afterModelCall body when stopData is missing | — | n/a — Rust dispatches the gate regardless of `stop_data`; handlers read `event.stop_data` |
 | confirm decision flows through the interrupt system on resume (approved) | `confirm_decision_flows_through_the_interrupt_system_on_resume_approved` | pass |
 | confirm decision sets cancel when human denies | `confirm_decision_sets_cancel_when_human_denies` | pass |
 
@@ -80,9 +80,11 @@ so it is asserted rather than assumed).
   plumbing, composed by handlers) and `SteeringAction` (the narrowed proceed/guide/confirm
   contract, converted into `ToolCallAction`). A blanket
   `impl<T: SteeringHandler> InterventionHandler for T` would overlap the existing handler impls.
-- **`observe_agent`** — new defaulted method on `InterventionHandler`, the port's equivalent of
+- **`init_agent`** — new defaulted method on `InterventionHandler`, the port's equivalent of
   TS's `LifecycleObserver` probe; `InterventionRegistry::init_agent` calls it once per handler.
-- **No `afterModelCall` steering** — Rust's `InterventionHandler` has no after-model gate.
+- **`after_model_call`** — new defaulted gate on `InterventionHandler`; an `Action::Guide` there
+  sets `event.retry` and pushes the feedback as a user message (TS `registry.ts:178-188`).
+  `LlmSteeringHandler` leaves it at proceed, as TS's `LLMSteeringHandler` does.
 - **Prompt builder returns `Vec<ContentBlock>`** — TS's `string | ContentBlock[]` union has no
   ergonomic Rust equivalent; `ContentBlock::text` covers the string case.
 
@@ -97,13 +99,27 @@ separate scripted judge): `guide_cancels_the_tool_and_the_parent_model_sees_the_
 agent and judge, system prompt forbidding `delete_file`; asserts the tool never ran and a
 `GUIDANCE:` tool result reached the agent. Passes against us-west-2.
 
-Note on the gate re-running: a `confirm` decision is evaluated again when the invocation resumes
-(the before-tool-call hook replays and reads the stored interrupt response), so the judge is called
-twice for one confirmed tool call.
+Note on the gate re-running: the before-tool-call hook replays when the invocation resumes, so
+`LlmSteeringHandler` short-circuits on an already-answered interrupt and the judge is called
+**once** per confirmed tool call (asserted in `confirm_interrupts_and_the_humans_answer_decides`).
 
 ## Not yet done
 
 - No crate-root re-export for `LlmSteeringHandler` / `ToolLedgerProvider`: sibling
   `HumanInTheLoop` has none either (`lib.rs` exports only `InterventionHandler` /
   `InterventionRegistry`), so sibling style wins. Revisit if `HumanInTheLoop` gets one.
-- After-model steering (see Divergences) — needs a core `InterventionHandler` change.
+- No narrowed steering type for the after-model gate: handlers return
+  `Action<AfterModelCallEvent>` there, so `Deny`/`Transform` are expressible (and `Deny` is a
+  documented no-op) where TS's `Proceed | Guide` return type rejects them at compile time.
+
+## Review disposition (round 1)
+
+| Finding | Disposition |
+|---|---|
+| 🟠 `observe_agent` is the wrong name → `init_agent` | fixed — renamed on `InterventionHandler`, `SteeringContextProvider`, `SteeringProviders` and all call sites/docs |
+| 🟠 core-shape change not recorded in `DESIGN.md` | fixed — one row under "Core shapes" |
+| 🟠 confirm re-runs the judge; second decision wins | fixed — documented on `LlmSteeringHandler` **and** short-circuited: an already-answered interrupt returns `Confirm` without a model call (`llm.rs`), asserted by `judge.call_count() == 1` in `confirm_interrupts_and_the_humans_answer_decides` |
+| 🟡 `handler.rs:42` mangled doc sentence | fixed |
+| 🟡 `tool_ledger.rs` "within a single invocation" | fixed — "for the life of the provider" |
+| 🟡 after-model steering is cheap to close | fixed — `InterventionHandler::after_model_call` gate + registry hook (guide ⇒ `retry` + user message), test `an_after_model_guide_retries_and_appends_the_feedback`, `FEATURE_MATRIX` row flipped to ✅ |
+| 🟡 `handler.providers().providers()` stutter | fixed — `LlmSteeringHandler::providers()` returns `&[Arc<dyn SteeringContextProvider>]` |

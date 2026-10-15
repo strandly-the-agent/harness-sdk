@@ -39,10 +39,10 @@ impl From<SteeringAction> for ToolCallAction {
 
 /// The context providers a steering handler evaluates against.
 ///
-/// Hold one in your handler, hand it the agent from
-/// [`InterventionHandler::observe_agent`](crate::interventions::InterventionHandler::observe_agent)
-/// so the providers can register their hooks, and read
-/// [`steering_context`](Self::steering_context) when deciding.
+/// Hold one in your handler. Hand it the agent from
+/// [`InterventionHandler::init_agent`](crate::interventions::InterventionHandler::init_agent) so
+/// the providers can register their hooks, and read [`steering_context`](Self::steering_context)
+/// when deciding.
 ///
 /// ```
 /// use std::sync::Arc;
@@ -65,8 +65,8 @@ impl From<SteeringAction> for ToolCallAction {
 ///         "no-writes"
 ///     }
 ///
-///     async fn observe_agent(&self, agent: &Agent) -> Result<()> {
-///         self.providers.observe_agent(agent).await
+///     async fn init_agent(&self, agent: &Agent) -> Result<()> {
+///         self.providers.init_agent(agent).await
 ///     }
 ///
 ///     async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
@@ -102,9 +102,9 @@ impl SteeringProviders {
     }
 
     /// Hand `agent` to every provider so they can register their hooks.
-    pub async fn observe_agent(&self, agent: &Agent) -> Result<()> {
+    pub async fn init_agent(&self, agent: &Agent) -> Result<()> {
         for provider in &self.providers {
-            provider.observe_agent(agent).await?;
+            provider.init_agent(agent).await?;
         }
         Ok(())
     }
@@ -134,7 +134,7 @@ mod tests {
             "fake"
         }
 
-        async fn observe_agent(&self, _agent: &Agent) -> Result<()> {
+        async fn init_agent(&self, _agent: &Agent) -> Result<()> {
             Ok(())
         }
 
@@ -171,8 +171,8 @@ mod tests {
             "spy"
         }
 
-        async fn observe_agent(&self, agent: &Agent) -> Result<()> {
-            self.providers.observe_agent(agent).await
+        async fn init_agent(&self, agent: &Agent) -> Result<()> {
+            self.providers.init_agent(agent).await
         }
 
         async fn before_tool_call(&self, event: &BeforeToolCallEvent) -> Result<ToolCallAction> {
