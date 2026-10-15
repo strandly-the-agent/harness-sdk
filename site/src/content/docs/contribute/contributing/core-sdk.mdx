@@ -133,7 +133,7 @@ git clone https://github.com/strands-agents/harness-sdk.git
 cd harness-sdk/strands-rs
 ```
 
-Cargo manages dependencies, formatting, linting, and tests. Verify your setup by running all quality checks:
+Cargo manages dependencies, formatting, linting, and tests. Verify your setup:
 
 ```bash
 cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features
@@ -141,9 +141,10 @@ cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings &&
 
 **Development tips:**
 
-- Most of the SDK sits behind cargo features, so run checks with `--all-features` the way CI does
-- Scope a run to one crate with `-p strands-agents`, `-p strands-agents-macros`, or `-p strands-harness`
-- Check [AGENTS.md](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/AGENTS.md) for Rust conventions and `strands-rs/docs/TESTING.md` for test rules
+- Most of the SDK sits behind cargo features; run checks with `--all-features`, as CI does
+- Scope a run to one crate with `-p strands-agents` or `-p strands-harness`
+- Check [AGENTS.md](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/AGENTS.md)
+  for Rust conventions and `strands-rs/docs/TESTING.md` for test rules
 </Tab>
 </Tabs>
 

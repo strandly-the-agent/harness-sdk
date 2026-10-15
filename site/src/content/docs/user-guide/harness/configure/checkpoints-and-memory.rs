@@ -2,7 +2,9 @@
 
 async fn checkpoints() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:checkpoints]
-    use strands_harness::{create_harness, HarnessAgentOptions, SessionConfig, SessionOption};
+    use strands_harness::{
+        create_harness, HarnessAgentOptions, SessionConfig, SessionOption,
+    };
 
     let agent = create_harness(HarnessAgentOptions {
         session: SessionOption::Config(SessionConfig {
