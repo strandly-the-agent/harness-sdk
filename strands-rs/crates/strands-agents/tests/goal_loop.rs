@@ -8,7 +8,7 @@ use serde_json::json;
 use strands_agents::agent::InvokeInput;
 use strands_agents::error::{Error, Result};
 use strands_agents::plugins::vended::{
-    GoalLoop, GoalStopReason, JudgeConfig, ValidationContext, ValidationOutcome,
+    GoalLoop, GoalResult, GoalStopReason, JudgeConfig, ValidationContext, ValidationOutcome,
 };
 use strands_agents::test_support::{MockMessageModel, MockResponse};
 use strands_agents::types::{ContentBlock, Role, StopReason, ToolUseBlock};
@@ -58,11 +58,36 @@ fn recording_validator(
     }
 }
 
-fn slow_failing_validator(_ctx: &ValidationContext) -> BoxFuture<'_, Result<ValidationOutcome>> {
-    Box::pin(async {
-        tokio::time::sleep(Duration::from_millis(30)).await;
-        Ok(ValidationOutcome::failed("keep going"))
+/// Overruns the budget on attempt 1 only (two messages in the transcript), then fails fast.
+fn slow_failing_validator(ctx: &ValidationContext) -> BoxFuture<'_, Result<ValidationOutcome>> {
+    let first_attempt = ctx.agent.messages().len() <= 2;
+    Box::pin(async move {
+        if first_attempt {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+        Ok(ValidationOutcome::failed("try again"))
     })
+}
+
+/// Sleeps before deciding, so the run only ends correctly if the plugin awaits the validator.
+fn async_validator(ctx: &ValidationContext) -> BoxFuture<'_, Result<ValidationOutcome>> {
+    let passed = ctx.response.text().contains("good");
+    Box::pin(async move {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        Ok(if passed {
+            ValidationOutcome::passed()
+        } else {
+            ValidationOutcome::failed("try again")
+        })
+    })
+}
+
+/// Fields of every attempt, for exact-vec assertions (the result types are `#[non_exhaustive]`).
+fn attempt_tuples(run: &GoalResult) -> Vec<(usize, bool, Option<&str>)> {
+    run.attempts
+        .iter()
+        .map(|attempt| (attempt.attempt, attempt.passed, attempt.feedback.as_deref()))
+        .collect()
 }
 
 // ---- function validator ---------------------------------------------------
@@ -174,10 +199,11 @@ async fn a_validator_error_becomes_failing_feedback() {
 
 #[tokio::test]
 async fn an_async_validator_stops_the_run_on_the_wall_clock_budget() {
-    let model = replies(&["bad"]);
-    let goal = GoalLoop::validator(slow_failing_validator).with_timeout(Duration::from_millis(50));
+    let model = replies(&["bad", "still bad"]);
+    // Attempt 1 alone overruns the budget, so attempt 2 is invoked but never validated.
+    let goal = GoalLoop::validator(slow_failing_validator).with_timeout(Duration::from_millis(10));
     let agent = Agent::builder()
-        .model(model)
+        .model(model.clone())
         .plugin(goal.clone())
         .build()
         .unwrap();
@@ -187,7 +213,30 @@ async fn an_async_validator_stops_the_run_on_the_wall_clock_budget() {
     let run = goal.last_result(&agent).unwrap();
     assert!(!run.passed);
     assert_eq!(run.stop_reason, GoalStopReason::Timeout);
-    assert!(!run.attempts.is_empty());
+    assert_eq!(attempt_tuples(&run), vec![(1, false, Some("try again"))]);
+    assert_eq!(model.call_count(), 2);
+}
+
+#[tokio::test]
+async fn awaits_an_async_validator_before_deciding() {
+    let model = replies(&["bad", "good"]);
+    let goal = GoalLoop::validator(async_validator);
+    let agent = Agent::builder()
+        .model(model.clone())
+        .plugin(goal.clone())
+        .build()
+        .unwrap();
+
+    agent.invoke("go").await.unwrap();
+
+    let run = goal.last_result(&agent).unwrap();
+    assert!(run.passed);
+    assert_eq!(run.stop_reason, GoalStopReason::Satisfied);
+    assert_eq!(
+        attempt_tuples(&run),
+        vec![(1, false, Some("try again")), (2, true, None)]
+    );
+    assert_eq!(model.call_count(), 2);
 }
 
 #[tokio::test]

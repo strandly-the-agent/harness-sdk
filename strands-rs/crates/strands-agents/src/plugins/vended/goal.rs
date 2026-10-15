@@ -185,6 +185,7 @@ impl From<bool> for ValidationOutcome {
 }
 
 /// What a validator sees when deciding whether the goal is met.
+#[non_exhaustive]
 pub struct ValidationContext {
     /// The agent's last assistant message.
     pub response: Message,
@@ -194,6 +195,7 @@ pub struct ValidationContext {
 
 /// Why a goal run ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GoalStopReason {
     /// The validator passed.
     Satisfied,
@@ -205,6 +207,7 @@ pub enum GoalStopReason {
 
 /// Single attempt summary preserved on [`GoalResult`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct GoalAttempt {
     /// 1-indexed attempt number.
     pub attempt: usize,
@@ -216,6 +219,7 @@ pub struct GoalAttempt {
 
 /// Aggregate result of a goal run, read back with [`GoalLoop::last_result`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct GoalResult {
     /// Whether the run ended because the goal was satisfied.
     pub passed: bool,
@@ -445,7 +449,8 @@ impl GoalLoop {
         self
     }
 
-    /// Cap the number of attempts (must be at least 1). Unbounded by default.
+    /// Cap the number of attempts. Unbounded by default; `0` is rejected when the plugin is
+    /// attached to an agent.
     #[must_use]
     pub fn with_max_attempts(mut self, max_attempts: usize) -> Self {
         self.max_attempts = Some(max_attempts);
@@ -454,7 +459,7 @@ impl GoalLoop {
 
     /// Wall-clock budget for the whole run, checked between attempts: an in-flight invocation is
     /// never interrupted, so the real elapsed time may overshoot by one attempt. Unbounded by
-    /// default.
+    /// default; a zero duration is rejected when the plugin is attached to an agent.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
@@ -465,8 +470,7 @@ impl GoalLoop {
     ///
     /// With `false` (Ralph-Wiggum mode) every retry restores the model-visible session captured
     /// just before attempt 1's first model call — messages, system prompt, model state and
-    /// interrupts — so the model never sees its
-    /// own earlier attempts, only the latest feedback.
+    /// interrupts — so the model never sees its own earlier attempts, only the latest feedback.
     /// Application state ([`Agent::state`]) is deliberately left alone: it is plugin scratch
     /// space other plugins rely on across attempts.
     #[must_use]
@@ -495,7 +499,9 @@ impl GoalLoop {
             .with(agent, |run| run.and_then(|run| run.result.clone()))
     }
 
-    fn validate_config(&self) -> Result<()> {
+    /// Every present cap must be positive. Run automatically when the plugin is attached, so an
+    /// invalid configuration fails [`Agent::build`](crate::agent::AgentBuilder::build).
+    pub fn validate(&self) -> Result<()> {
         if self.max_attempts == Some(0) {
             return Err(Error::other("maxAttempts=<0> | must be at least 1"));
         }
@@ -513,7 +519,7 @@ impl GoalLoop {
 
     /// Validates `response` against the configured goal, turning a validator error into failing
     /// feedback so a buggy validator is visible instead of silently burning the budget.
-    async fn validate(&self, agent: &Agent, response: Message) -> ValidationOutcome {
+    async fn validate_response(&self, agent: &Agent, response: Message) -> ValidationOutcome {
         let outcome = match &self.goal {
             Goal::Validator(validator) => {
                 let ctx = ValidationContext {
@@ -582,7 +588,7 @@ impl GoalLoop {
             return Ok(());
         };
 
-        let outcome = self.validate(&agent, response).await;
+        let outcome = self.validate_response(&agent, response).await;
 
         // `Some((feedback, snapshot))` arms another attempt; `None` means the run terminated.
         let retry = self.runs.with(&agent, |run| {
@@ -601,7 +607,6 @@ impl GoalLoop {
                 run.finish(GoalStopReason::MaxAttempts);
                 return None;
             }
-            run.resumed = true;
             let feedback = outcome
                 .feedback
                 .as_deref()
@@ -617,6 +622,13 @@ impl GoalLoop {
         if let Some(snapshot) = snapshot {
             agent.load_snapshot(&snapshot)?;
         }
+        // Armed only once the rewind succeeded: a failed load must not leave the run marked as
+        // resuming, or the next fresh invocation would inherit its attempts.
+        self.runs.with(&agent, |run| {
+            if let Some(run) = run {
+                run.resumed = true;
+            }
+        });
         event.resume = Some((self.resume_prompt)(feedback.as_deref()));
         Ok(())
     }
@@ -629,7 +641,7 @@ impl Plugin for GoalLoop {
     }
 
     async fn init_agent(&self, agent: &Agent) -> Result<()> {
-        self.validate_config()?;
+        self.validate()?;
         if !claim_agent(agent) {
             return Err(Error::other(format!(
                 "{}: another GoalLoop is already attached to this agent; only one GoalLoop is supported per agent",
@@ -713,7 +725,7 @@ mod tests {
         assert!(plugin.max_attempts.is_none());
         assert!(plugin.timeout.is_none());
         // Unbounded is legal (TS warns); only the invalid values below are rejected.
-        plugin.validate_config().unwrap();
+        plugin.validate().unwrap();
     }
 
     #[test]
@@ -726,16 +738,62 @@ mod tests {
     fn rejects_max_attempts_below_one() {
         let error = GoalLoop::goal("be concise")
             .with_max_attempts(0)
-            .validate_config()
+            .validate()
             .unwrap_err();
         assert!(error.to_string().contains("maxAttempts"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_failed_snapshot_load_does_not_leak_the_run_into_the_next_invocation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use crate::hooks::AfterModelCallEvent;
+        use crate::test_support::{MockMessageModel, MockResponse};
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        // Fails attempt 1 of the first invocation, passes every later attempt.
+        let plugin = GoalLoop::sync_validator(move |_| {
+            Ok(ValidationOutcome::from(calls.fetch_add(1, Ordering::SeqCst) > 0))
+        })
+        .with_preserve_context(false);
+        let model = MockMessageModel::shared(vec![MockResponse::message(Message::assistant("hi"))]);
+        let agent = Agent::builder()
+            .model(Arc::clone(&model) as Arc<dyn Model>)
+            .plugin(plugin.clone())
+            .build()
+            .unwrap();
+        // Corrupt the captured snapshot so the retry's rewind fails.
+        let corrupt = plugin.clone();
+        agent
+            .hooks()
+            .add_sync_callback::<AfterModelCallEvent, _>(move |event| {
+                corrupt.runs.with(&event.agent, |run| {
+                    if let Some(snapshot) = run.and_then(|run| run.initial_snapshot.as_mut()) {
+                        snapshot.schema_version = "0.0.0-unsupported".to_string();
+                    }
+                });
+                Ok(())
+            });
+
+        assert!(agent.invoke("go").await.is_err());
+        assert!(plugin.last_result(&agent).is_none());
+
+        agent.invoke("go").await.unwrap();
+
+        let run = plugin.last_result(&agent).unwrap();
+        assert_eq!(run.stop_reason, GoalStopReason::Satisfied);
+        assert_eq!(
+            run.attempts.len(),
+            1,
+            "the dead run's attempts must not carry into a fresh invocation"
+        );
     }
 
     #[test]
     fn rejects_zero_timeout() {
         let error = GoalLoop::goal("be concise")
             .with_timeout(Duration::ZERO)
-            .validate_config()
+            .validate()
             .unwrap_err();
         assert!(error.to_string().contains("timeout"), "{error}");
     }
