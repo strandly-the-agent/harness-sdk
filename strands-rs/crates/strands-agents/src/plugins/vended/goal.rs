@@ -511,7 +511,8 @@ impl GoalLoop {
         Ok(())
     }
 
-    /// Validates `response` against the configured goal, turning a validator is visible instead of silently burning the budget.
+    /// Validates `response` against the configured goal, turning a validator error into failing
+    /// feedback so a buggy validator is visible instead of silently burning the budget.
     async fn validate(&self, agent: &Agent, response: Message) -> ValidationOutcome {
         let outcome = match &self.goal {
             Goal::Validator(validator) => {
@@ -692,12 +693,177 @@ impl Plugin for GoalLoop {
 }
 
 #[cfg(test)]
-mod tmp_tests {
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::types::{ToolResultBlock, ToolUseBlock};
+
+    fn tool_use(name: &str, id: &str, input: JsonValue) -> Message {
+        Message::new(
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(ToolUseBlock::new(name, id, input))],
+        )
+    }
+
     #[test]
-    fn print_schema() {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&super::judge_outcome_schema()).unwrap()
+    fn uses_default_name_and_unbounded_budgets() {
+        let plugin = GoalLoop::sync_validator(|_| Ok(true.into()));
+        assert_eq!(plugin.name(), DEFAULT_NAME);
+        assert!(plugin.max_attempts.is_none());
+        assert!(plugin.timeout.is_none());
+        // Unbounded is legal (TS warns); only the invalid values below are rejected.
+        plugin.validate_config().unwrap();
+    }
+
+    #[test]
+    fn accepts_custom_name() {
+        let plugin = GoalLoop::sync_validator(|_| Ok(true.into())).with_name("my:goal");
+        assert_eq!(plugin.name(), "my:goal");
+    }
+
+    #[test]
+    fn rejects_max_attempts_below_one() {
+        let error = GoalLoop::goal("be concise")
+            .with_max_attempts(0)
+            .validate_config()
+            .unwrap_err();
+        assert!(error.to_string().contains("maxAttempts"), "{error}");
+    }
+
+    #[test]
+    fn rejects_zero_timeout() {
+        let error = GoalLoop::goal("be concise")
+            .with_timeout(Duration::ZERO)
+            .validate_config()
+            .unwrap_err();
+        assert!(error.to_string().contains("timeout"), "{error}");
+    }
+
+    #[test]
+    fn judge_outcome_schema_describes_pass_fail_shape() {
+        let schema = judge_outcome_schema();
+        assert_eq!(schema["properties"]["passed"]["type"], "boolean");
+        assert_eq!(schema["required"], json!(["passed"]));
+        let parsed: JudgeOutcome =
+            serde_json::from_value(json!({ "passed": false, "feedback": "x" })).unwrap();
+        assert_eq!(parsed.feedback.as_deref(), Some("x"));
+        assert!(serde_json::from_value::<JudgeOutcome>(json!({ "passed": "yes" })).is_err());
+    }
+
+    #[test]
+    fn build_judge_prompt_embeds_goal_and_role_tagged_transcript() {
+        let prompt = build_judge_prompt(
+            "be concise",
+            &[Message::user("hello?"), Message::assistant("hi there")],
         );
+        assert!(prompt.contains("Goal:\nbe concise"), "{prompt}");
+        assert!(prompt.contains("[user]\nhello?"), "{prompt}");
+        assert!(prompt.contains("[assistant]\nhi there"), "{prompt}");
+    }
+
+    #[test]
+    fn build_judge_prompt_summarises_tool_calls_and_results() {
+        let prompt = build_judge_prompt(
+            "ran the tests",
+            &[
+                Message::user("run the tests"),
+                tool_use("shell", "t1", json!({ "cmd": "npm test" })),
+                Message::new(
+                    Role::User,
+                    vec![ContentBlock::ToolResult(ToolResultBlock::success(
+                        "t1",
+                        vec![ToolResultContent::Text("all green".to_owned())],
+                    ))],
+                ),
+                tool_use("shell", "t2", json!({ "cmd": "echo done" })),
+                Message::new(
+                    Role::User,
+                    vec![ContentBlock::ToolResult(ToolResultBlock {
+                        tool_use_id: "t2".to_owned(),
+                        status: ToolResultStatus::Error,
+                        content: vec![ToolResultContent::Json(json!({ "code": 1 }))],
+                        error: None,
+                    })],
+                ),
+            ],
+        );
+        assert!(
+            prompt.contains(r#"[tool-call: shell] input={"cmd":"npm test"}"#),
+            "{prompt}"
+        );
+        assert!(prompt.contains("[tool-result: success] all green"), "{prompt}");
+        assert!(
+            prompt.contains(r#"[tool-call: shell] input={"cmd":"echo done"}"#),
+            "{prompt}"
+        );
+        assert!(prompt.contains(r#"[tool-result: error] {"code":1}"#), "{prompt}");
+    }
+
+    #[test]
+    fn build_judge_prompt_truncates_long_tool_inputs() {
+        let long = "x".repeat(2000);
+        let prompt = build_judge_prompt("ok", &[tool_use("shell", "t1", json!({ "data": long.clone() }))]);
+        assert!(prompt.contains("… ["), "{prompt}");
+        assert!(prompt.contains("more chars]"), "{prompt}");
+        assert!(prompt.len() < long.len());
+    }
+
+    #[test]
+    fn validation_outcome_from_bool_is_the_ts_shorthand() {
+        assert_eq!(ValidationOutcome::from(true), ValidationOutcome::passed());
+        assert_eq!(
+            ValidationOutcome::from(false),
+            ValidationOutcome {
+                passed: false,
+                feedback: None
+            }
+        );
+    }
+
+    #[test]
+    fn default_resume_prompt_includes_feedback_when_present() {
+        let InvokeInput::Text(bare) = default_resume_prompt(None) else {
+            panic!("expected text");
+        };
+        assert!(bare.starts_with("Your previous attempt did not satisfy the goal."));
+        assert!(!bare.contains("Feedback on what was wrong"));
+        let InvokeInput::Text(with) = default_resume_prompt(Some("too long")) else {
+            panic!("expected text");
+        };
+        assert!(with.contains("Feedback on what was wrong:\ntoo long"), "{with}");
+    }
+
+    #[test]
+    fn finish_records_stop_reason_and_pass_flag() {
+        let mut run = RunState::new();
+        run.attempts.push(GoalAttempt {
+            attempt: 1,
+            passed: false,
+            feedback: Some("nope".to_owned()),
+        });
+        run.resumed = true;
+        run.finish(GoalStopReason::MaxAttempts);
+        let result = run.result.clone().unwrap();
+        assert!(!result.passed);
+        assert_eq!(result.stop_reason, GoalStopReason::MaxAttempts);
+        assert_eq!(result.attempts.len(), 1);
+        assert!(!run.resumed, "a finished run must not arm another attempt");
+
+        let mut run = RunState::new();
+        run.finish(GoalStopReason::Satisfied);
+        assert!(run.result.unwrap().passed);
+    }
+
+    #[test]
+    fn last_assistant_message_picks_the_latest_assistant_turn() {
+        assert!(last_assistant_message(&[Message::user("hi")]).is_none());
+        let found = last_assistant_message(&[
+            Message::assistant("first"),
+            Message::user("again"),
+            Message::assistant("second"),
+        ])
+        .unwrap();
+        assert_eq!(found.text(), "second");
     }
 }
