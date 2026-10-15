@@ -463,16 +463,20 @@ def _with_context(task: str, block: str) -> str:
 _DEPTH_STATE_KEY = "subagent_depth"
 
 # Stop reasons that mean the child never finished its task; the parent must see a failure, not its partial text.
-_FAILED_STOP_REASONS = frozenset({"cancelled", "content_filtered", "guardrail_intervened"})
+_FAILED_STOP_REASONS = frozenset({"cancelled", "content_filtered", "refusal"})
 # Stop reasons that mean the child finished normally; anything else is a truncated run the parent should know about.
 _FINISHED_STOP_REASONS = frozenset({"end_turn", "stop_sequence"})
 
 
 def _final_tool_result(tool_use_id: str, result: AgentResult) -> ToolResult:
     """Map the child's stop reason onto the parent's tool result."""
-    text = str(result)
-    if result.stop_reason in _FAILED_STOP_REASONS:
-        message = f"Subagent stopped before finishing (stop_reason={result.stop_reason}); partial output: {text!r}"
+    text = str(result).rstrip("\n")
+    # Bedrock reports guardrail_intervened for masked output too, where the answer is complete; only empty output failed
+    failed = result.stop_reason in _FAILED_STOP_REASONS or (result.stop_reason == "guardrail_intervened" and not text)
+    if failed:
+        message = f"Subagent stopped before finishing (stop_reason={result.stop_reason})."
+        if text:
+            message += f"\n\nPartial output:\n{text}"
         return {"toolUseId": tool_use_id, "status": "error", "content": [{"text": message}]}
     if result.stop_reason not in _FINISHED_STOP_REASONS:
         text = f"{text}\n\n[subagent stopped early: stop_reason={result.stop_reason}]"

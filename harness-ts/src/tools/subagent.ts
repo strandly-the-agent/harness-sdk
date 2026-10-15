@@ -207,7 +207,7 @@ export const CONTEXT_MODES: readonly ContextMode[] = ['none', 'all', 'no_tools']
 const DEPTH_STATE_KEY = 'subagentDepth'
 
 // Stop reasons that mean the child never finished its task; the parent must see a failure, not its partial text.
-const FAILED_STOP_REASONS: ReadonlySet<string> = new Set(['cancelled', 'contentFiltered', 'guardrailIntervened'])
+const FAILED_STOP_REASONS: ReadonlySet<string> = new Set(['cancelled', 'contentFiltered', 'refusal'])
 // Stop reasons that mean the child finished normally; anything else is a truncated run the parent should know about.
 const FINISHED_STOP_REASONS: ReadonlySet<string> = new Set(['endTurn', 'stopSequence'])
 
@@ -582,13 +582,13 @@ function errorResult(toolUseId: string, message: string): ToolResultBlock {
 
 /** Maps the child's stop reason onto the parent's tool result. */
 function finalToolResult(toolUseId: string, result: AgentResult): ToolResultBlock {
-  let text = result.toString()
-  if (FAILED_STOP_REASONS.has(result.stopReason)) {
-    const partial = JSON.stringify(text)
-    return errorResult(
-      toolUseId,
-      `Subagent stopped before finishing (stopReason=${result.stopReason}); partial output: ${partial}`
-    )
+  let text = result.toString().replace(/\n+$/, '')
+  // Bedrock reports guardrailIntervened for masked output too, where the answer is complete; only empty output failed
+  const failed = FAILED_STOP_REASONS.has(result.stopReason) || (result.stopReason === 'guardrailIntervened' && !text)
+  if (failed) {
+    let message = `Subagent stopped before finishing (stopReason=${result.stopReason}).`
+    if (text) message += `\n\nPartial output:\n${text}`
+    return errorResult(toolUseId, message)
   }
   if (!FINISHED_STOP_REASONS.has(result.stopReason)) {
     text = `${text}\n\n[subagent stopped early: stopReason=${result.stopReason}]`

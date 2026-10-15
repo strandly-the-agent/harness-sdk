@@ -855,36 +855,57 @@ describe('subagent cancellation and failure', () => {
     expect((result.content[0] as { text: string }).text).toContain('kaboom')
   })
 
-  it.each(['contentFiltered', 'guardrailIntervened'])(
+  it.each(['contentFiltered', 'refusal'])(
     'turns a %s child into an error result naming the stop reason',
     async (stopReason) => {
-      // A content filter or guardrail ends the child's run without a real answer; the parent must see
+      // A content filter or refusal ends the child's run without a real answer; the parent must see
       // a failure that names the stop reason, never a success wrapping the partial text.
-      const child = fakeChild([fakeResult("I'll retrieve that now.", stopReason)])
+      const child = fakeChild([fakeResult("I'll retrieve that now.\n", stopReason)])
       const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
       const { result } = await drive(tool, { task: 'x' })
       expect(result.status).toBe('error')
-      const text = (result.content[0] as { text: string }).text
-      expect(text).toContain(stopReason)
-      expect(text).toContain("I'll retrieve that now.")
+      expect((result.content[0] as { text: string }).text).toBe(
+        `Subagent stopped before finishing (stopReason=${stopReason}).\n\nPartial output:\nI'll retrieve that now.`
+      )
       expect((tool as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0)
     }
   )
 
-  it('keeps a budget-limited child a success but reports the stop reason', async () => {
-    // Running out of turns is graceful exhaustion, not failure: the partial text is still useful,
-    // but the parent is told the child stopped early.
-    const child = fakeChild([fakeResult('partial', 'limitTurns')])
+  it('turns a guardrail that blocked the whole answer into an error', async () => {
+    const child = fakeChild([fakeResult('', 'guardrailIntervened')])
+    const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
+    const { result } = await drive(tool, { task: 'x' })
+    expect(result.status).toBe('error')
+    expect((result.content[0] as { text: string }).text).toBe(
+      'Subagent stopped before finishing (stopReason=guardrailIntervened).'
+    )
+  })
+
+  it('keeps a guardrail that only masked the answer as a success', async () => {
+    // Bedrock reports guardrailIntervened for masked (anonymized) output too; the answer is complete.
+    const child = fakeChild([fakeResult('SSN is {MASKED}', 'guardrailIntervened')])
     const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
     const { result } = await drive(tool, { task: 'x' })
     expect(result.status).toBe('success')
-    const text = (result.content[0] as { text: string }).text
-    expect(text.startsWith('partial')).toBe(true)
-    expect(text).toContain('limitTurns')
+    expect((result.content[0] as { text: string }).text).toBe(
+      'SSN is {MASKED}\n\n[subagent stopped early: stopReason=guardrailIntervened]'
+    )
+  })
+
+  it('keeps a budget-limited child a success but reports the stop reason', async () => {
+    // Running out of turns is graceful exhaustion, not failure: the partial text is still useful,
+    // but the parent is told the child stopped early.
+    const child = fakeChild([fakeResult('partial\n', 'limitTurns')])
+    const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
+    const { result } = await drive(tool, { task: 'x' })
+    expect(result.status).toBe('success')
+    expect((result.content[0] as { text: string }).text).toBe(
+      'partial\n\n[subagent stopped early: stopReason=limitTurns]'
+    )
   })
 
   it("returns a finished child's text unannotated", async () => {
-    const child = fakeChild([fakeResult('done', 'stopSequence')])
+    const child = fakeChild([fakeResult('done\n', 'stopSequence')])
     const tool = makeSubagent({ builder: () => child as never, presets: { generalist: GENERALIST } })
     const { result } = await drive(tool, { task: 'x' })
     expect(result.status).toBe('success')
