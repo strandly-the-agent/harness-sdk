@@ -2,10 +2,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use strands_agents::sandbox::{
-    posix_shell, ExecuteOptions, ExecutionResult, FileInfo, Sandbox, SandboxResult,
-};
 use strands_agents::tools::ToolRef;
 use strands_agents::ShellTool;
 
@@ -23,6 +19,11 @@ mod fc {
 }
 
 // --8<-- [start:custom_sandbox]
+use async_trait::async_trait;
+use strands_agents::sandbox::{
+    posix_shell, ExecuteOptions, ExecutionResult, FileInfo, Sandbox, SandboxResult,
+};
+
 #[derive(Clone, Debug)]
 struct FirecrackerSandbox {
     vm_id: String,
@@ -35,7 +36,11 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     // The one primitive: run a shell command in your environment.
-    async fn execute(&self, command: &str, options: ExecuteOptions) -> SandboxResult<ExecutionResult> {
+    async fn execute(
+        &self,
+        command: &str,
+        options: ExecuteOptions,
+    ) -> SandboxResult<ExecutionResult> {
         fc::exec(&self.vm_id, command, options).await
     }
 
