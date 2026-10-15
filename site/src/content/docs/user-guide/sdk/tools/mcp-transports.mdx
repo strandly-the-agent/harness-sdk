@@ -60,6 +60,15 @@ with stdio_mcp_client:
 --8<-- "user-guide/sdk/tools/mcp-transports.ts:stdio_transport"
 ```
 </Tab>
+<Tab label="Rust">
+
+Enable the `mcp` feature. `McpServerConfig::stdio` takes the command and its
+arguments; the transport is spawned when `connect` is called:
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-transports.rs:stdio_transport"
+```
+</Tab>
 </Tabs>
 
 ## Streamable HTTP
@@ -191,6 +200,20 @@ mcp_client = MCPClient(lambda: aws_iam_streamablehttp_client(
 --8<-- "user-guide/sdk/tools/mcp-transports.ts:streamable_http"
 ```
 </Tab>
+<Tab label="Rust">
+
+`McpServerConfig::streamable_http` takes the server `url`, and `headers` carries
+authentication or any other request header:
+
+```rust
+--8<-- "user-guide/sdk/tools/mcp-transports.rs:streamable_http"
+```
+
+There is no built-in OAuth grant: acquire the token yourself and set it as a
+header, or put `"Authorization": "Bearer ${MCP_PAT}"` in a
+[`load_servers`](mcp-tools.md#using-multiple-mcp-servers) config, where `${VAR}`
+interpolation keeps the secret in the environment.
+</Tab>
 </Tabs>
 
 ## Server-Sent Events (SSE)
@@ -217,5 +240,14 @@ with sse_mcp_client:
 ```typescript
 --8<-- "user-guide/sdk/tools/mcp-transports.ts:sse_transport"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+The Rust client has no SSE transport, and `transport: "sse"` in a config is
+rejected with an error. Use Streamable HTTP instead.
 </Tab>
 </Tabs>
