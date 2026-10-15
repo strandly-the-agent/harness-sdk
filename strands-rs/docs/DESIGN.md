@@ -84,8 +84,8 @@ installs the exporter).
 
 ## A2A
 
-The `a2a` cargo feature serves a Strands agent over the Agent-to-Agent protocol and (next
-increment) calls remote ones. Protocol wire types live in-tree (`a2a::types`) rather than coming
+The `a2a` cargo feature serves a Strands agent over the Agent-to-Agent protocol and calls remote
+ones. Protocol wire types live in-tree (`a2a::types`) rather than coming
 from an SDK as in TS (`@a2a-js/sdk`); serde matches the wire format byte-for-byte. Decisions, each
 a deliberate divergence from `strands-ts/src/a2a/`:
 
@@ -127,3 +127,29 @@ deliberate divergences:
   since nothing delivers a result out of band yet. An executor failure marks the task `failed` and
   returns its JSON-RPC code.
 - No auth hook (TS's `UserBuilder`): hosts wrap `router()` in their own `axum` middleware.
+
+The client half is `a2a::A2AAgent` — a remote agent built with `A2AAgent::builder(url)`, invocable
+(`invoke`/`invoke_with`) and streamable (`stream`/`stream_with`, yielding `A2AStreamEvent`s) like a
+local one, and usable as an `Arc<dyn InvokableAgent>` or, via `as_tool`, as a tool of a local
+agent. `tools::vended::A2AClientTool` is the vended `a2a_client` tool: `discover` plus
+`send_message` over an allow-list of endpoints. Deliberate divergences from
+`strands-ts/src/a2a/a2a-agent.ts` and `strands-ts/src/vended-tools/a2a-client/`:
+
+- TS's per-endpoint `ClientFactory` has no twin: auth, proxies and timeouts belong on a
+  `reqwest::Client`, so `.http_client(..)` (and `.endpoint_with_client(..)` on the tool) is the
+  extension point.
+- `A2AAgent::name()` returns `&str`, so an unnamed agent reports its URL until the card arrives
+  (TS's `name` is `undefined` until then); the card's values land in a `OnceLock` and never
+  overwrite a configured name or description.
+- `A2AAgent` remembers the remote's `contextId` and sends it on later turns, so successive
+  invocations continue one remote conversation (TS starts a fresh context every turn);
+  `context_id()` exposes it.
+- A protocol or transport failure is `Error::Model` with the `JsonRpcError`/`reqwest::Error` kept
+  as its source, so the JSON-RPC code survives (TS throws with `{ cause }`).
+- `InvokeInput::{InterruptResponses, CheckpointResume}` are rejected: a remote agent cannot resume
+  a local interrupt or checkpoint. Non-text content is rejected with TS's message.
+- `as_tool` is additive (TS has none) and mirrors `Agent::as_tool`'s defaults and `prompt` schema
+  without interrupt propagation, which a remote agent cannot do.
+- The vended tool is a `Tool` struct rather than a `tool()` factory call; its endpoints live in a
+  sorted `BTreeMap`, so the description's endpoint list is deterministic, and failures come back as
+  tool-error results with TS's wording preserved.
