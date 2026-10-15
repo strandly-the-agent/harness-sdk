@@ -112,6 +112,18 @@ npm install @opentelemetry/api @opentelemetry/sdk-trace-node @opentelemetry/sdk-
 ```
 :::
 </Tab>
+<Tab label="Rust">
+
+:::note[Enable the telemetry feature]
+Spans are emitted only when the `telemetry` feature is on; without it every tracer call is a no-op.
+
+```toml
+strands-agents = { git = "https://github.com/strands-agents/harness-sdk", package = "strands-agents", features = ["telemetry"] }
+```
+:::
+
+The Rust SDK emits its spans through the **global** OpenTelemetry tracer provider and ships no exporters of its own. Installing a provider and an exporter is your application's job — add `opentelemetry_sdk` and an exporter crate (for example `opentelemetry-otlp`) and register the provider before creating an agent.
+</Tab>
 </Tabs>
 
 
@@ -193,6 +205,16 @@ response = agent("What can you help me with?")
 
 --8<-- "user-guide/sdk/observability-evaluation/traces.ts:code_configuration_agent"
 ```
+</Tab>
+<Tab label="Rust">
+
+There is no SDK-side exporter setup to call. What the agent takes is a `TelemetryConfig`, which reads the same semantic-convention environment variables and detects Langfuse endpoints; the provider and exporter come from your own OpenTelemetry setup:
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/traces.rs:code_configuration_agent"
+```
+
+Omitting `.telemetry(...)` is the same as passing `TelemetryConfig::from_env()`.
 </Tab>
 </Tabs>
 
@@ -356,6 +378,14 @@ StrandsTelemetry().setup_console_exporter()
 --8<-- "user-guide/sdk/observability-evaluation/traces.ts:console_exporter"
 ```
 </Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+The Rust SDK has no console-exporter helper. Build a `SdkTracerProvider` with a stdout exporter in your application and register it with `opentelemetry::global::set_tracer_provider`; the SDK's spans follow the global provider.
+</Tab>
 </Tabs>
 
 
@@ -401,6 +431,14 @@ agent = Agent(
 
 --8<-- "user-guide/sdk/observability-evaluation/traces.ts:custom_attributes"
 ```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/traces.rs:custom_attributes"
+```
+
+Attribute values are typed: `AttrValue` converts from `&str`, `String`, `i64`, `u64`, `f64`, and `bool`.
 </Tab>
 </Tabs>
 
@@ -478,10 +516,18 @@ with tracer.start_as_current_span("my-custom-operation") as span:
 --8<-- "user-guide/sdk/observability-evaluation/traces.ts:custom_spans"
 ```
 </Tab>
+<Tab label="Rust">
+
+Use the `opentelemetry` re-export from `strands_agents::telemetry` rather than your own dependency, so the API version matches the one the SDK was built against:
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/traces.rs:custom_spans"
+```
+</Tab>
 </Tabs>
 
 :::tip
-<Syntax py="trace.get_tracer()" ts="getTracer()" /> uses the global tracer provider. When you use <Syntax py="StrandsTelemetry()" ts="setupTracer()" /> without a custom provider, it's automatically registered as global, so your custom spans use the same provider as the agent's auto-instrumented spans.
+<Syntax py="trace.get_tracer()" ts="getTracer()" rs="global::tracer()" /> uses the global tracer provider. When you use <Syntax py="StrandsTelemetry()" ts="setupTracer()" rs="global::set_tracer_provider()" /> without a custom provider, it's automatically registered as global, so your custom spans use the same provider as the agent's auto-instrumented spans.
 :::
 
 ### Configuring the exporters from source code
@@ -526,6 +572,14 @@ The `telemetry.setupTracer()` function reads OTLP configuration from standard Op
 ```
 
 For more information about the accepted arguments, refer to the [OpenTelemetry JS documentation](https://opentelemetry.io/docs/languages/js/).
+</Tab>
+<Tab label="Rust">
+
+```rust
+// This feature is not yet available in the Rust SDK
+```
+
+Exporter configuration lives entirely in your application: build the exporter and `SdkTracerProvider` with `opentelemetry_sdk` and `opentelemetry-otlp`, then call `opentelemetry::global::set_tracer_provider`. See the [OpenTelemetry Rust documentation](https://opentelemetry.io/docs/languages/rust/).
 </Tab>
 </Tabs>
 
@@ -588,6 +642,12 @@ print(response)
 --8<-- "user-guide/sdk/observability-evaluation/traces_imports.ts:end_to_end_imports"
 
 --8<-- "user-guide/sdk/observability-evaluation/traces.ts:end_to_end"
+```
+</Tab>
+<Tab label="Rust">
+
+```rust
+--8<-- "user-guide/sdk/observability-evaluation/traces.rs:end_to_end"
 ```
 </Tab>
 </Tabs>
