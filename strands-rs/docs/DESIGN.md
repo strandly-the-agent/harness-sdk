@@ -81,3 +81,27 @@ installs the exporter).
   `()` and the `*_scoped` variants return the `#[must_use]` `HookCleanup`. `add_callback_boxed*` keeps the
   `|e| Box::pin(async move { .. })` form, needed when the future borrows the event (a closure's return
   type cannot capture the event's lifetime).
+
+## A2A
+
+The `a2a` cargo feature serves a Strands agent over the Agent-to-Agent protocol and (next
+increment) calls remote ones. Protocol wire types live in-tree (`a2a::types`) rather than coming
+from an SDK as in TS (`@a2a-js/sdk`); serde matches the wire format byte-for-byte. Decisions, each
+a deliberate divergence from `strands-ts/src/a2a/`:
+
+- `A2AExecutor` takes a concrete `Agent` (and an `AgentFactory = Arc<dyn Fn(&str) -> Agent>`), not
+  an `InvokableAgent`: streaming and snapshots are local-agent capabilities, so TS's runtime
+  `asSnapshotAgent` check is a compile-time guarantee here.
+- The two context-isolation modes are separate constructors — `A2AExecutor::with_factory` (a
+  dedicated agent per A2A `contextId`, the recommended mode) and `A2AExecutor::new` (one shared
+  agent whose session snapshot is swapped per context under a lock) — so TS's "provide exactly one
+  of `agent`/`agentFactory`" runtime throw becomes impossible to express.
+- `with_max_contexts(0)` clamps to 1 instead of throwing, matching the crate's "setters don't
+  fail" convention.
+- `AsyncLock` is not ported: in factory mode a `tokio::sync::Mutex<Agent>` *is* the per-context
+  lock, so acquiring it and getting the agent are one step; shared mode uses a plain
+  `tokio::sync::Mutex<()>`.
+- `A2AError` has no Rust twin. Protocol errors travel as `Error::Other(JsonRpcError)` so a server
+  can recover the JSON-RPC code; agent failures propagate as the crate's own errors unchanged.
+- `ExecutionEventBus` becomes `a2a::EventBus`, an unbounded `tokio::sync::mpsc` sender; the
+  consumer (JSON-RPC handler) drains the receiver to aggregate a task or to emit SSE.

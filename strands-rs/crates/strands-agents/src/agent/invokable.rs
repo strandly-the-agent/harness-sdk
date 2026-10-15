@@ -73,15 +73,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_local_agent_is_invocable_behind_a_trait_object() {
-        let agent: Arc<dyn InvokableAgent> = Arc::new(crate::agent::test_agent());
-        assert_eq!(agent.id(), crate::agent::DEFAULT_AGENT_ID);
-        assert_eq!(agent.name(), "test-agent");
-        assert!(agent.description().is_none());
+        let model = crate::testing::MockMessageModel::shared(vec![crate::testing::MockResponse::message(
+            crate::types::Message::assistant("hi back"),
+        )]);
+        let local = Agent::builder().model(model).build().unwrap();
+        let agent: Arc<dyn InvokableAgent> = Arc::new(local.clone());
+        assert_eq!(agent.id(), local.id());
+        assert_eq!(agent.name(), local.name());
+        assert_eq!(agent.description(), local.description());
 
         let result = agent
             .invoke_with(InvokeInput::Text("hi".to_owned()), InvokeOptions::default())
             .await
             .unwrap();
-        assert_eq!(result.text(), "");
+        assert_eq!(result.text(), "hi back");
     }
 }
