@@ -580,7 +580,12 @@ impl From<Arc<dyn Node>> for NodeDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::multiagent::state::MultiAgentState;
+    use crate::hooks::HookRegistry;
+    use crate::multiagent::events::MultiAgentResultEvent;
+    use crate::multiagent::state::{MultiAgentResult, MultiAgentState};
+    use crate::multiagent::MultiAgentStream;
+    use crate::test_support::{MockMessageModel, MockResponse};
+    use crate::types::{ContentBlock, Message};
     use serde_json::json;
 
     #[test]
@@ -595,7 +600,496 @@ mod tests {
         }
     }
 
-    fn handle() -> MultiAgentStateHandle {
-        MultiAgentStateHandle::new(MultiAgentState::new(["n1"]))
+    fn state() -> MultiAgentStateHandle {
+        MultiAgentStateHandle::new(MultiAgentState::new(["test-node", "fail-node"]))
+    }
+
+    /// Drains a node's sink after the run so tests can assert on the emitted events.
+    async fn collect(
+        run: impl AsyncFnOnce(&NodeSink) -> NodeNodeOutcome,
+    ) -> (Vec<MultiAgentStreamEvent>, NodeNodeOutcome) {
+        let (tx, mut rx) = mpsc::channel(256);
+        let outcome = run(&tx).await;
+        drop(tx);
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event.unwrap());
+        }
+        (events, outcome)
+    }
+
+    type NodeNodeOutcome = Result<NodeResultUpdate>;
+
+    /// Node whose `handle` returns a canned outcome (TS `TestNode`).
+    struct TestNode {
+        id: String,
+        config: NodeConfig,
+        outcome: Box<dyn Fn() -> Result<NodeResultUpdate> + Send + Sync>,
+    }
+
+    impl TestNode {
+        fn new(id: &str, outcome: impl Fn() -> Result<NodeResultUpdate> + Send + Sync + 'static) -> Self {
+            Self {
+                id: id.to_owned(),
+                config: NodeConfig::default(),
+                outcome: Box::new(outcome),
+            }
+        }
+    }
+
+    impl Node for TestNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn node_type(&self) -> NodeType {
+            NodeType::Custom("node".to_owned())
+        }
+
+        fn config(&self) -> &NodeConfig {
+            &self.config
+        }
+
+        fn handle<'a>(
+            &'a self,
+            _input: MultiAgentInput,
+            _state: &'a MultiAgentStateHandle,
+            _options: &'a NodeInputOptions,
+            _events: &'a NodeSink,
+        ) -> BoxFuture<'a, Result<NodeResultUpdate>> {
+            Box::pin(async move { (self.outcome)() })
+        }
+    }
+
+    async fn drive(
+        node: &dyn Node,
+        state: &MultiAgentStateHandle,
+    ) -> (Vec<MultiAgentStreamEvent>, NodeResult) {
+        let (tx, mut rx) = mpsc::channel(256);
+        let options = NodeInputOptions::default();
+        let result = run_node(node, MultiAgentInput::None, state, &options, &tx).await;
+        drop(tx);
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event.unwrap());
+        }
+        (events, result)
+    }
+
+    #[tokio::test]
+    async fn returns_completed_node_result_on_successful_execution() {
+        let content = vec![ContentBlock::Text("result".into())];
+        let expected = content.clone();
+        let node = TestNode::new("test-node", move || {
+            Ok(NodeResultUpdate {
+                content: Some(expected.clone()),
+                ..Default::default()
+            })
+        });
+        let state = state();
+
+        let (events, result) = drive(&node, &state).await;
+
+        assert_eq!(result.node_id, "test-node");
+        assert_eq!(result.status, ResultStatus::Completed);
+        assert_eq!(result.content, content);
+        assert_eq!(result.error, None);
+
+        let event = events
+            .iter()
+            .find_map(|event| match event {
+                MultiAgentStreamEvent::NodeResult(event) => Some(event),
+                _ => None,
+            })
+            .expect("node result event");
+        assert_eq!(event.node_id, "test-node");
+        assert_eq!(event.node_type, NodeType::Custom("node".to_owned()));
+        assert_eq!(event.result, result);
+        assert_eq!(state.node("test-node").unwrap().status, Status::Completed);
+    }
+
+    #[tokio::test]
+    async fn catches_errors_and_returns_failed_node_result() {
+        let node = TestNode::new("fail-node", || Err(Error::other("boom")));
+        let state = state();
+
+        let (events, result) = drive(&node, &state).await;
+
+        assert_eq!(result.status, ResultStatus::Failed);
+        assert_eq!(result.content, vec![]);
+        assert_eq!(result.error.as_deref(), Some("boom"));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, MultiAgentStreamEvent::NodeResult(_))));
+        assert_eq!(state.node("fail-node").unwrap().status, Status::Failed);
+    }
+
+    #[tokio::test]
+    async fn maps_an_error_to_cancelled_when_the_run_was_cancelled() {
+        let node = TestNode::new("test-node", || Err(Error::other("boom")));
+        let state = state();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let options = NodeInputOptions::default().with_cancel(cancel);
+        let (tx, _rx) = mpsc::channel(256);
+
+        let result = run_node(&node, MultiAgentInput::None, &state, &options, &tx).await;
+
+        assert_eq!(result.status, ResultStatus::Cancelled);
+    }
+
+    fn agent_with(responses: Vec<MockResponse>) -> (Agent, Arc<MockMessageModel>) {
+        let model = MockMessageModel::shared(responses);
+        let agent = Agent::builder().model(model.clone()).build().unwrap();
+        (agent, model)
+    }
+
+    fn agent_node(agent: Agent) -> AgentNode {
+        AgentNode::new(agent).unwrap()
+    }
+
+    #[test]
+    fn rejects_a_zero_timeout() {
+        let (agent, _) = agent_with(vec![]);
+        let error = AgentNode::new(AgentNodeOptions::new(agent).with_timeout(Duration::ZERO))
+            .err()
+            .expect("zero timeout is rejected");
+        assert!(error.to_string().contains("must be greater than zero"), "{error}");
+    }
+
+    #[test]
+    fn accepts_a_positive_timeout() {
+        let (agent, _) = agent_with(vec![]);
+        let node = AgentNode::new(AgentNodeOptions::new(agent).with_timeout(Duration::from_secs(5))).unwrap();
+        assert_eq!(node.timeout(), Some(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn accepts_duration_max_as_an_explicit_timeout_opt_out() {
+        let (agent, _) = agent_with(vec![]);
+        let node = AgentNode::new(AgentNodeOptions::new(agent).with_timeout(Duration::MAX)).unwrap();
+        assert_eq!(node.timeout(), Some(Duration::MAX));
+    }
+
+    #[test]
+    fn defaults_preserve_context_to_false() {
+        let (agent, _) = agent_with(vec![]);
+        assert!(!agent_node(agent).preserve_context());
+    }
+
+    #[test]
+    fn stores_the_preserve_context_flag_when_provided() {
+        let (agent, _) = agent_with(vec![]);
+        let node = AgentNode::new(AgentNodeOptions::new(agent).with_preserve_context(true)).unwrap();
+        assert!(node.preserve_context());
+    }
+
+    #[test]
+    fn exposes_the_wrapped_agent() {
+        let (agent, _) = agent_with(vec![]);
+        let node = agent_node(agent.clone());
+        assert_eq!(node.agent().id(), agent.id());
+        assert_eq!(node.id(), agent.id());
+    }
+
+    #[tokio::test]
+    async fn wraps_agent_events_and_returns_content() {
+        let (agent, _) = agent_with(vec![MockResponse::message(Message::assistant("hello"))]);
+        let node = agent_node(agent);
+        let state = MultiAgentStateHandle::new(MultiAgentState::new([node.id().to_owned()]));
+        let options = NodeInputOptions::default();
+
+        let (events, update) = collect(async |tx| node.handle("go".into(), &state, &options, tx).await).await;
+        let update = update.unwrap();
+
+        assert_eq!(update.content, Some(vec![ContentBlock::Text("hello".into())]));
+        assert!(!events.is_empty());
+        for event in &events {
+            match event {
+                MultiAgentStreamEvent::NodeStreamUpdate(event) => {
+                    assert_eq!(event.node_type, NodeType::Agent);
+                    assert_eq!(event.inner.source(), "agent");
+                }
+                other => panic!("unexpected event: {}", other.type_name()),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn restores_agent_messages_after_execution() {
+        let (agent, _) = agent_with(vec![MockResponse::message(Message::assistant("hello"))]);
+        let node = agent_node(agent.clone());
+        let state = MultiAgentStateHandle::new(MultiAgentState::new([node.id().to_owned()]));
+        let options = NodeInputOptions::default();
+
+        collect(async |tx| node.handle("go".into(), &state, &options, tx).await)
+            .await
+            .1
+            .unwrap();
+
+        assert_eq!(agent.messages(), vec![]);
+    }
+
+    #[tokio::test]
+    async fn retains_agent_messages_across_executions_when_preserve_context_is_true() {
+        let (agent, _) = agent_with(vec![
+            MockResponse::message(Message::assistant("first")),
+            MockResponse::message(Message::assistant("second")),
+        ]);
+        let node = AgentNode::new(AgentNodeOptions::new(agent.clone()).with_preserve_context(true)).unwrap();
+        let state = MultiAgentStateHandle::new(MultiAgentState::new([node.id().to_owned()]));
+        let options = NodeInputOptions::default();
+
+        for _ in 0..2 {
+            collect(async |tx| node.handle("go".into(), &state, &options, tx).await)
+                .await
+                .1
+                .unwrap();
+        }
+
+        assert_eq!(
+            agent.messages().len(),
+            4,
+            "two user turns and two assistant turns"
+        );
+    }
+
+    #[tokio::test]
+    async fn retains_app_state_mutations_across_executions_when_preserve_context_is_true() {
+        let (agent, _) = agent_with(vec![MockResponse::message(Message::assistant("hello"))]);
+        let node = AgentNode::new(AgentNodeOptions::new(agent.clone()).with_preserve_context(true)).unwrap();
+        let state = MultiAgentStateHandle::new(MultiAgentState::new([node.id().to_owned()]));
+        let options = NodeInputOptions::default();
+
+        agent.state().set("seen", 1);
+        collect(async |tx| node.handle("go".into(), &state, &options, tx).await)
+            .await
+            .1
+            .unwrap();
+
+        assert_eq!(agent.state().get("seen"), Some(json!(1)));
+    }
+
+    #[tokio::test]
+    async fn passes_the_structured_output_schema_from_options_to_the_agent() {
+        let (agent, model) = agent_with(vec![MockResponse::message(Message::assistant("hello"))]);
+        let node = agent_node(agent);
+        let state = MultiAgentStateHandle::new(MultiAgentState::new([node.id().to_owned()]));
+        let schema = json!({"type": "object", "properties": {"answer": {"type": "string"}}});
+        let options = NodeInputOptions::default().with_structured_output_schema(schema.clone());
+
+        // The mock never calls the forced structured-output tool, so the run itself fails; what
+        // matters here is that the schema reached the agent.
+        let _ = collect(async |tx| node.handle("go".into(), &state, &options, tx).await).await;
+
+        let calls = model.calls();
+        assert!(
+            calls[0]
+                .1
+                .tool_specs
+                .iter()
+                .any(|spec| spec.input_schema.as_ref() == Some(&schema)),
+            "structured output schema reached the model as a tool spec"
+        );
+    }
+
+    /// Minimal orchestrator that replays canned events then its result.
+    struct TestOrchestrator {
+        id: String,
+        hooks: HookRegistry,
+        events: Vec<MultiAgentStreamEvent>,
+        result: MultiAgentResult,
+    }
+
+    impl TestOrchestrator {
+        fn shared(
+            id: &str,
+            events: Vec<MultiAgentStreamEvent>,
+            result: MultiAgentResult,
+        ) -> Arc<dyn MultiAgent> {
+            Arc::new(Self {
+                id: id.to_owned(),
+                hooks: HookRegistry::default(),
+                events,
+                result,
+            })
+        }
+    }
+
+    impl MultiAgent for TestOrchestrator {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn name(&self) -> &str {
+            &self.id
+        }
+
+        fn hooks(&self) -> &HookRegistry {
+            &self.hooks
+        }
+
+        fn invoke_with<'a>(
+            &'a self,
+            _input: MultiAgentInput,
+            _options: MultiAgentInvokeOptions,
+        ) -> BoxFuture<'a, Result<MultiAgentResult>> {
+            Box::pin(async move { Ok(self.result.clone()) })
+        }
+
+        fn stream_with(
+            &self,
+            _input: MultiAgentInput,
+            _options: MultiAgentInvokeOptions,
+        ) -> MultiAgentStream {
+            let result = MultiAgentStreamEvent::MultiAgentResult(MultiAgentResultEvent {
+                result: self.result.clone(),
+                invocation_state: InvocationState::new(),
+            });
+            let events: Vec<_> = self
+                .events
+                .iter()
+                .cloned()
+                .chain(std::iter::once(result))
+                .map(Ok)
+                .collect();
+            MultiAgentStream::new(Box::pin(futures::stream::iter(events)))
+        }
+    }
+
+    fn inner_result(status: ResultStatus) -> MultiAgentResult {
+        MultiAgentResult::new(vec![], 1)
+            .with_status(status)
+            .with_content(vec![ContentBlock::Text("inner".into())])
+    }
+
+    async fn drive_multiagent(node: &MultiAgentNode) -> (Vec<MultiAgentStreamEvent>, NodeResultUpdate) {
+        let state = MultiAgentStateHandle::new(MultiAgentState::new([node.id().to_owned()]));
+        let options = NodeInputOptions::default();
+        let (events, update) =
+            collect(async |tx| node.handle(MultiAgentInput::None, &state, &options, tx).await).await;
+        (events, update.unwrap())
+    }
+
+    #[test]
+    fn derives_id_and_description_from_the_orchestrator() {
+        let orchestrator = TestOrchestrator::shared("inner", vec![], inner_result(ResultStatus::Completed));
+        let node = MultiAgentNode::new(orchestrator.clone());
+        assert_eq!(node.id(), "inner");
+        assert_eq!(node.node_type(), NodeType::MultiAgent);
+        assert_eq!(node.orchestrator().id(), "inner");
+    }
+
+    #[tokio::test]
+    async fn passes_through_inner_node_stream_update_events() {
+        let state = MultiAgentStateHandle::new(MultiAgentState::new(["deep"]));
+        let inner_event = MultiAgentStreamEvent::NodeStreamUpdate(NodeStreamUpdateEvent {
+            node_id: "deep".to_owned(),
+            node_type: NodeType::Agent,
+            state,
+            inner: NodeInnerEvent::Custom(json!({"hello": "world"})),
+            invocation_state: InvocationState::new(),
+        });
+        let orchestrator =
+            TestOrchestrator::shared("inner", vec![inner_event], inner_result(ResultStatus::Completed));
+        let node = MultiAgentNode::new(orchestrator);
+
+        let (events, _) = drive_multiagent(&node).await;
+
+        let MultiAgentStreamEvent::NodeStreamUpdate(first) = &events[0] else {
+            panic!("expected a node stream update");
+        };
+        assert_eq!(first.node_id, "deep", "the original node identity is preserved");
+        assert_eq!(first.inner.source(), "custom");
+    }
+
+    #[tokio::test]
+    async fn wraps_non_node_stream_update_events_with_this_node_identity() {
+        let orchestrator = TestOrchestrator::shared("inner", vec![], inner_result(ResultStatus::Completed));
+        let node = MultiAgentNode::new(orchestrator);
+
+        let (events, _) = drive_multiagent(&node).await;
+
+        let MultiAgentStreamEvent::NodeStreamUpdate(wrapped) = &events[0] else {
+            panic!("expected a node stream update");
+        };
+        assert_eq!(wrapped.node_id, "inner");
+        assert_eq!(wrapped.node_type, NodeType::MultiAgent);
+        assert_eq!(wrapped.inner.source(), "multiAgent");
+    }
+
+    #[tokio::test]
+    async fn returns_orchestrator_content() {
+        let orchestrator = TestOrchestrator::shared("inner", vec![], inner_result(ResultStatus::Completed));
+        let node = MultiAgentNode::new(orchestrator);
+
+        let (_, update) = drive_multiagent(&node).await;
+
+        assert_eq!(update.content, Some(vec![ContentBlock::Text("inner".into())]));
+        assert_eq!(update.status, None, "COMPLETED is left to the framework default");
+    }
+
+    #[tokio::test]
+    async fn propagates_failed_status_from_the_inner_orchestrator() {
+        let orchestrator = TestOrchestrator::shared(
+            "inner",
+            vec![],
+            inner_result(ResultStatus::Failed).with_error("inner boom"),
+        );
+        let node = MultiAgentNode::new(orchestrator);
+
+        let (_, update) = drive_multiagent(&node).await;
+
+        assert_eq!(update.status, Some(ResultStatus::Failed));
+        assert_eq!(update.error.as_deref(), Some("inner boom"));
+    }
+
+    #[tokio::test]
+    async fn propagates_cancelled_status_from_the_inner_orchestrator() {
+        let orchestrator = TestOrchestrator::shared("inner", vec![], inner_result(ResultStatus::Cancelled));
+        let node = MultiAgentNode::new(orchestrator);
+
+        let (_, update) = drive_multiagent(&node).await;
+
+        assert_eq!(update.status, Some(ResultStatus::Cancelled));
+    }
+
+    #[test]
+    fn node_definitions_convert_from_every_accepted_shape() {
+        let (agent, _) = agent_with(vec![]);
+        let orchestrator = TestOrchestrator::shared("inner", vec![], inner_result(ResultStatus::Completed));
+        let built: Arc<dyn Node> = Arc::new(agent_node(agent.clone()));
+
+        let definitions: Vec<NodeDefinition> = vec![
+            agent.clone().into(),
+            AgentNodeOptions::new(agent.clone())
+                .with_description("does things")
+                .into(),
+            orchestrator.clone().into(),
+            MultiAgentNodeOptions::new(orchestrator).into(),
+            built.into(),
+        ];
+        let node_types: Vec<NodeType> = definitions
+            .into_iter()
+            .map(|definition| definition.into_node().unwrap().node_type())
+            .collect();
+
+        assert_eq!(
+            node_types,
+            vec![
+                NodeType::Agent,
+                NodeType::Agent,
+                NodeType::MultiAgent,
+                NodeType::MultiAgent,
+                NodeType::Agent
+            ]
+        );
+    }
+
+    #[test]
+    fn agent_node_description_defaults_to_the_agents_and_options_override_it() {
+        let (agent, _) = agent_with(vec![]);
+        let node = AgentNode::new(AgentNodeOptions::new(agent).with_description("explicit")).unwrap();
+        assert_eq!(node.config().description.as_deref(), Some("explicit"));
     }
 }
