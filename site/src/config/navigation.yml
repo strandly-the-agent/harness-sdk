@@ -229,12 +229,15 @@ sidebar:
         items:
           - label: "Overview"
             slug: docs/user-guide/sdk
-          # Both language quickstarts carry the same label; the sidebar shows
-          # only the one matching the header language toggle (see Sidebar.astro).
+          # All three language quickstarts carry the same label; the sidebar
+          # shows only the one matching the header language toggle (see
+          # Sidebar.astro).
           - label: "Quickstart"
             slug: docs/user-guide/sdk/quickstart/python
           - label: "Quickstart"
             slug: docs/user-guide/sdk/quickstart/typescript
+          - label: "Quickstart"
+            slug: docs/user-guide/sdk/quickstart/rust
       - label: Migrate
         items:
           - label: "Choosing an agent foundation"
@@ -453,12 +456,14 @@ sidebar:
       - label: Reference
         items:
           - docs/user-guide/sdk/versioning-and-support
-          # Both API references carry the same label; the sidebar shows only the
-          # one matching the header language toggle (see Sidebar.astro).
+          # All three API references carry the same label; the sidebar shows
+          # only the one matching the header language toggle (see Sidebar.astro).
           - label: "API reference"
             slug: docs/api/python
           - label: "API reference"
             slug: docs/api/typescript
+          - label: "API reference"
+            slug: docs/api/rust
 
   - label: Shell
     items:
