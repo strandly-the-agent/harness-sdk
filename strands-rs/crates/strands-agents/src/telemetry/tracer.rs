@@ -75,6 +75,17 @@ pub struct ModelSpanOptions<'a> {
     pub messages: &'a [Message],
 }
 
+/// Options for [`Tracer::start_multi_agent_span`].
+#[derive(Default)]
+pub struct MultiAgentSpanOptions<'a> {
+    /// Orchestrator id (`gen_ai.agent.id`), part of the span name.
+    pub orchestrator_id: &'a str,
+    /// Orchestration pattern, `graph` or `swarm` (`gen_ai.agent.name`).
+    pub orchestrator_type: &'a str,
+    /// Input task, recorded as `gen_ai.agent.input`.
+    pub input: Option<&'a serde_json::Value>,
+}
+
 /// Creates and ends the `gen_ai.*` spans, and collects local [`AgentTrace`]s.
 #[derive(Clone, Default)]
 pub struct Tracer {
@@ -215,23 +226,7 @@ impl Tracer {
     ) {
         let mut attrs = Attrs::new();
         if let Some(usage) = usage {
-            attr(&mut attrs, "gen_ai.usage.prompt_tokens", usage.input_tokens);
-            attr(&mut attrs, "gen_ai.usage.input_tokens", usage.input_tokens);
-            attr(&mut attrs, "gen_ai.usage.completion_tokens", usage.output_tokens);
-            attr(&mut attrs, "gen_ai.usage.output_tokens", usage.output_tokens);
-            attr(&mut attrs, "gen_ai.usage.total_tokens", usage.total_tokens);
-            if let Some(read) = usage.cache_read_input_tokens.filter(|v| *v > 0) {
-                attr(&mut attrs, "gen_ai.usage.cache_read.input_tokens", read);
-                if !self.config.use_latest_conventions {
-                    attr(&mut attrs, "gen_ai.usage.cache_read_input_tokens", read);
-                }
-            }
-            if let Some(write) = usage.cache_write_input_tokens.filter(|v| *v > 0) {
-                attr(&mut attrs, "gen_ai.usage.cache_creation.input_tokens", write);
-                if !self.config.use_latest_conventions {
-                    attr(&mut attrs, "gen_ai.usage.cache_write_input_tokens", write);
-                }
-            }
+            self.usage_attributes(&mut attrs, usage);
         }
         if let Some(metrics) = metrics {
             attr(&mut attrs, "gen_ai.server.request.duration", metrics.latency_ms);
@@ -333,6 +328,94 @@ impl Tracer {
             self.add_event(span, "gen_ai.choice", vec![("content".to_string(), payload)]);
         }
         self.end(span, error);
+    }
+
+    /// `invoke_graph <id>` / `invoke_swarm <id>` — the root span of an orchestration.
+    pub fn start_multi_agent_span(&self, options: MultiAgentSpanOptions<'_>) -> SpanHandle {
+        let operation = format!("invoke_{}", options.orchestrator_type);
+        let name = format!("{operation} {}", options.orchestrator_id);
+        let mut attrs = self.common_attributes(Some(operation.as_str()), None);
+        attr(&mut attrs, "gen_ai.agent.name", options.orchestrator_type);
+        attr(&mut attrs, "gen_ai.agent.id", options.orchestrator_id);
+        attr(&mut attrs, "name", name.as_str());
+        if let Some(input) = options.input {
+            attr(&mut attrs, "gen_ai.agent.input", to_telemetry_json(input));
+        }
+        self.apply_custom(&mut attrs);
+        self.begin(&name, backend::Kind::Internal, attrs, None)
+    }
+
+    /// Close the orchestration span, recording duration and aggregated usage.
+    pub fn end_multi_agent_span(
+        &self,
+        span: &SpanHandle,
+        duration_ms: Option<u64>,
+        usage: Option<&Usage>,
+        error: Option<&str>,
+    ) {
+        let mut attrs = Attrs::new();
+        if let Some(duration) = duration_ms {
+            attr(&mut attrs, "gen_ai.agent.execution_time", duration);
+        }
+        if let Some(usage) = usage {
+            self.usage_attributes(&mut attrs, usage);
+        }
+        backend::set_attributes(&span.inner, &attrs);
+        self.end(span, error);
+    }
+
+    /// `node <id>` — one node execution, parented to the orchestration span.
+    pub fn start_node_span(&self, parent: Option<&SpanHandle>, node_id: &str, node_type: &str) -> SpanHandle {
+        let name = format!("node {node_id}");
+        let mut attrs = self.common_attributes(Some("execute_node"), None);
+        attr(&mut attrs, "gen_ai.agent.id", node_id);
+        attr(&mut attrs, "gen_ai.agent.node_type", node_type);
+        attr(&mut attrs, "name", name.as_str());
+        self.apply_custom(&mut attrs);
+        self.begin(&name, backend::Kind::Internal, attrs, parent)
+    }
+
+    /// Close a node span, recording its status, duration and usage.
+    pub fn end_node_span(
+        &self,
+        span: &SpanHandle,
+        status: Option<&str>,
+        duration_ms: Option<u64>,
+        usage: Option<&Usage>,
+        error: Option<&str>,
+    ) {
+        let mut attrs = Attrs::new();
+        if let Some(status) = status {
+            attr(&mut attrs, "gen_ai.agent.status", status);
+        }
+        if let Some(duration) = duration_ms {
+            attr(&mut attrs, "gen_ai.agent.execution_time", duration);
+        }
+        if let Some(usage) = usage {
+            self.usage_attributes(&mut attrs, usage);
+        }
+        backend::set_attributes(&span.inner, &attrs);
+        self.end(span, error);
+    }
+
+    fn usage_attributes(&self, attrs: &mut Attrs, usage: &Usage) {
+        attr(attrs, "gen_ai.usage.prompt_tokens", usage.input_tokens);
+        attr(attrs, "gen_ai.usage.input_tokens", usage.input_tokens);
+        attr(attrs, "gen_ai.usage.completion_tokens", usage.output_tokens);
+        attr(attrs, "gen_ai.usage.output_tokens", usage.output_tokens);
+        attr(attrs, "gen_ai.usage.total_tokens", usage.total_tokens);
+        if let Some(read) = usage.cache_read_input_tokens.filter(|v| *v > 0) {
+            attr(attrs, "gen_ai.usage.cache_read.input_tokens", read);
+            if !self.config.use_latest_conventions {
+                attr(attrs, "gen_ai.usage.cache_read_input_tokens", read);
+            }
+        }
+        if let Some(write) = usage.cache_write_input_tokens.filter(|v| *v > 0) {
+            attr(attrs, "gen_ai.usage.cache_creation.input_tokens", write);
+            if !self.config.use_latest_conventions {
+                attr(attrs, "gen_ai.usage.cache_write_input_tokens", write);
+            }
+        }
     }
 
     fn common_attributes(&self, operation: Option<&str>, provider: Option<&str>) -> Attrs {
@@ -663,4 +746,37 @@ mod backend {
     pub(super) fn set_attributes(_span: &RawSpan, _attrs: &Attrs) {}
     pub(super) fn add_event(_span: &RawSpan, _name: &str, _attrs: &Attrs) {}
     pub(super) fn finish(_span: &RawSpan, _error: Option<&str>) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multi_agent_and_node_spans_stay_out_of_the_local_trace_tree() {
+        let tracer = Tracer::new(TelemetryConfig::new());
+        let input = serde_json::json!("task");
+        let span = tracer.start_multi_agent_span(MultiAgentSpanOptions {
+            orchestrator_id: "graph-1",
+            orchestrator_type: "graph",
+            input: Some(&input),
+        });
+        let node = tracer.start_node_span(Some(&span), "a", "agentNode");
+        tracer.end_node_span(&node, Some("COMPLETED"), Some(5), None, None);
+        tracer.end_multi_agent_span(&span, Some(7), None, None);
+        assert!(tracer.local_traces().is_empty());
+    }
+
+    #[test]
+    fn ending_an_unstarted_span_is_a_no_op() {
+        let tracer = Tracer::new(TelemetryConfig::new());
+        let usage = Usage {
+            input_tokens: 1,
+            output_tokens: 2,
+            total_tokens: 3,
+            ..Usage::default()
+        };
+        tracer.end_node_span(&SpanHandle::default(), None, None, Some(&usage), Some("boom"));
+        tracer.end_multi_agent_span(&SpanHandle::default(), None, Some(&usage), None);
+    }
 }

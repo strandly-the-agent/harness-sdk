@@ -56,6 +56,18 @@ pub enum ResultStatus {
     Interrupted,
 }
 
+impl ResultStatus {
+    /// The TS wire string for this status (`gen_ai.agent.status`).
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            ResultStatus::Completed => "COMPLETED",
+            ResultStatus::Failed => "FAILED",
+            ResultStatus::Cancelled => "CANCELLED",
+            ResultStatus::Interrupted => "INTERRUPTED",
+        }
+    }
+}
+
 impl From<ResultStatus> for Status {
     fn from(status: ResultStatus) -> Self {
         match status {
