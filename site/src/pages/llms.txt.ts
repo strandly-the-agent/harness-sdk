@@ -13,6 +13,13 @@ import path from 'node:path'
  * (including newlines from folded YAML) collapses to single spaces so an entry
  * can never span multiple lines of this machine-parsed format.
  */
+/** `docs/api/<segment>/` trees and their section headings, in listing order. */
+const API_LANGUAGES = [
+  ['python', 'Python'],
+  ['typescript', 'TypeScript'],
+  ['rust', 'Rust'],
+] as const
+
 function linkLine(label: string, url: string, description?: string, indent: string = ''): string {
   const normalized = description?.replace(/\s+/g, ' ').trim()
   const suffix = normalized ? `: ${normalized}` : ''
@@ -87,26 +94,16 @@ function buildLlmsTxt(
     }
   }
 
-  // API sections - group by python/typescript
+  // API sections - one per documented SDK language, skipped while a language
+  // has no generated reference pages (Rust today)
   const apiDocs = docs.filter((doc) => doc.id.startsWith('docs/api/'))
-  const pythonApi = apiDocs.filter((doc) => doc.id.startsWith('docs/api/python/'))
-  const typescriptApi = apiDocs.filter((doc) => doc.id.startsWith('docs/api/typescript/'))
 
-  if (pythonApi.length > 0) {
-    lines.push(`## Api Python`)
+  for (const [segment, label] of API_LANGUAGES) {
+    const languageApi = apiDocs.filter((doc) => doc.id.startsWith(`docs/api/${segment}/`))
+    if (languageApi.length === 0) continue
+    lines.push(`## Api ${label}`)
     lines.push('')
-    for (const doc of pythonApi) {
-      const url = `${base}/${doc.id}/index.md`
-      const title = doc.data.title || doc.id
-      lines.push(linkLine(title, url, doc.data.description))
-    }
-    lines.push('')
-  }
-
-  if (typescriptApi.length > 0) {
-    lines.push(`## Api TypeScript`)
-    lines.push('')
-    for (const doc of typescriptApi) {
+    for (const doc of languageApi) {
       const url = `${base}/${doc.id}/index.md`
       const title = doc.data.title || doc.id
       lines.push(linkLine(title, url, doc.data.description))

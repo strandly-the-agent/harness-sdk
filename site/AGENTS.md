@@ -3,7 +3,7 @@
 This document provides guidance for AI agents working on the Strands Agents documentation site (the `site/` directory). For human contributor guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Purpose and Scope
-This directory contains the documentation site for Strands Agents, providing guides on how to develop with the SDK in both Python and TypeScript.
+This directory contains the documentation site for Strands Agents, providing guides on how to develop with the SDK in Python, TypeScript and Rust (experimental).
 
 **AGENTS.md** contains agent-specific repository information including:
 - Directory structure with summaries of what is included in each directory
@@ -75,8 +75,9 @@ When authoring or reviewing documentation pages, follow the voice guide and the 
 │   │       ├── api/
 │   │       │   ├── python/
 │   │       │   │   └── _generated/   # Symlink to .build/api-docs/python
-│   │       │   └── typescript/
-│   │       │       └── _generated/   # Symlink to .build/api-docs/typescript
+│   │       │   ├── typescript/
+│   │       │   │   └── _generated/   # Symlink to .build/api-docs/typescript
+│   │       │   └── rust/             # Hand-written index (no generated reference yet)
 │   │       ├── assets/
 │   │       ├── contribute/
 │   │       ├── examples/
@@ -101,9 +102,11 @@ When authoring or reviewing documentation pages, follow the voice guide and the 
 ├── scripts/                      # Build and utility scripts (scripts/catalog/ — stats refresh
 │                                 #   run by the weekly catalog-stats workflow)
 ├── test/                         # Test files
-└── test-snippets/                # TypeScript snippet test files
+└── test-snippets/                # Compiled snippet projects
+    └── rust/                     # Rust snippet crate (npm run check:snippets:rust);
+                                  #   TypeScript snippets live at the top level
 ```
-### Directory Purposes
+t/docs/` are limited to 90 characters per line, including### Directory Purposes
 
 
 **IMPORTANT**: After making changes that affect the directory structure (adding new directories, moving files, or adding significant new files), you MUST update this directory structure section to reflect the current state of the repository.
@@ -159,7 +162,7 @@ All checks must pass before commit is allowed.
 
 TypeScript formatting and import organization follow the same conventions as the TypeScript SDK; see [strands-ts/AGENTS.md](../strands-ts/AGENTS.md). Prettier enforces formatting (no semicolons, single quotes, 120-character lines, 2-space indent, ES5 trailing commas); order imports as external dependencies, then internal modules, then type-only imports.
 
-One site-specific exception: files under `src/content/docs/` are limited to 90 characters per line, including template literal contents (not enforced by Prettier). See [.agents/references/mdx-authoring.md](../.agents/references/mdx-authoring.md).
+One site-specific exception: files under `src/conten template literal contents (not enforced by Prettier). See [.agents/references/mdx-authoring.md](../.agents/references/mdx-authoring.md).
 
 ### Code Examples in Documentation Pages
 

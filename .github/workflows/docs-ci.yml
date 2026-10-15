@@ -47,5 +47,16 @@ jobs:
       - name: Typecheck snippets
         run: npm run typecheck:snippets
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: site/test-snippets/rust
+
+      - name: Check Rust snippets
+        run: npm run check:snippets:rust
+
       - name: Test
         run: npm test
