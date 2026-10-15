@@ -42,16 +42,12 @@ fn verdict(passed: bool, feedback: Option<&str>) -> MockResponse {
     )
 }
 
-/// Records every response the validator sees, and passes on the attempt whose text contains `pass_on`.
+/// Records every response the validator sees into `sink`, passing once the text contains `pass_on`.
 fn recording_validator(
     pass_on: &'static str,
-) -> (
-    impl Fn(&ValidationContext) -> Result<ValidationOutcome>,
-    Arc<Mutex<Vec<String>>>,
-) {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let sink = seen.clone();
-    let validator = move |ctx: &ValidationContext| {
+    sink: Arc<Mutex<Vec<String>>>,
+) -> impl Fn(&ValidationContext) -> Result<ValidationOutcome> {
+    move |ctx: &ValidationContext| {
         let text = ctx.response.text();
         sink.lock().unwrap().push(text.clone());
         Ok(if text.contains(pass_on) {
@@ -59,8 +55,7 @@ fn recording_validator(
         } else {
             ValidationOutcome::failed(format!("missing {pass_on}"))
         })
-    };
-    (validator, seen)
+    }
 }
 
 fn slow_failing_validator(_ctx: &ValidationContext) -> BoxFuture<'_, Result<ValidationOutcome>> {
@@ -96,8 +91,8 @@ async fn stops_after_one_attempt_when_the_validator_passes() {
 #[tokio::test]
 async fn resumes_with_the_feedback_and_counts_the_attempts() {
     let model = replies(&["nope", "all good"]);
-    let (validator, seen) = recording_validator("good");
-    let goal = GoalLoop::sync_validator(validator);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let goal = GoalLoop::sync_validator(recording_validator("good", seen.clone()));
     let agent = Agent::builder()
         .model(model.clone())
         .plugin(goal.clone())
@@ -408,4 +403,101 @@ async fn the_judge_system_prompt_can_be_overridden() {
         judge.calls()[0].1.system_prompt.as_ref().unwrap().text(),
         "only say yes"
     );
+}
+
+#[tokio::test]
+async fn the_judge_falls_back_to_the_host_model() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::message(Message::assistant("draft")),
+        verdict(true, None),
+    ]);
+    let goal = GoalLoop::goal("Answer in one word.");
+    let agent = Agent::builder()
+        .model(model.clone())
+        .plugin(goal.clone())
+        .build()
+        .unwrap();
+
+    agent.invoke("go").await.unwrap();
+
+    assert_eq!(model.call_count(), 2, "one agent call, one judge call");
+    assert!(goal.last_result(&agent).unwrap().passed);
+}
+
+#[tokio::test]
+async fn a_judge_that_replies_in_prose_is_retried_for_structured_output() {
+    let judge = MockMessageModel::shared(vec![
+        MockResponse::message(Message::assistant("looks fine to me")),
+        verdict(true, None),
+    ]);
+    let goal =
+        GoalLoop::goal("Answer in one word.").with_judge(JudgeConfig::default().with_model(judge.clone()));
+    let agent = Agent::builder()
+        .model(replies(&["draft"]))
+        .plugin(goal.clone())
+        .build()
+        .unwrap();
+
+    agent.invoke("go").await.unwrap();
+
+    assert_eq!(judge.call_count(), 2);
+    assert!(goal.last_result(&agent).unwrap().passed);
+}
+
+// ---- run state across agents and failed invocations ----------------------
+
+#[tokio::test]
+async fn one_plugin_instance_serves_several_agents_with_independent_run_state() {
+    let goal = GoalLoop::sync_validator(|ctx: &ValidationContext| {
+        Ok(ValidationOutcome::from(ctx.response.text() == "good"))
+    })
+    .with_max_attempts(2);
+    let first = Agent::builder()
+        .model(replies(&["good"]))
+        .plugin(goal.clone())
+        .build()
+        .unwrap();
+    let second = Agent::builder()
+        .model(replies(&["bad"]))
+        .plugin(goal.clone())
+        .build()
+        .unwrap();
+
+    first.invoke("go").await.unwrap();
+    second.invoke("go").await.unwrap();
+
+    let first_run = goal.last_result(&first).unwrap();
+    let second_run = goal.last_result(&second).unwrap();
+    assert!(first_run.passed);
+    assert_eq!(first_run.attempts.len(), 1);
+    assert!(!second_run.passed);
+    assert_eq!(second_run.stop_reason, GoalStopReason::MaxAttempts);
+    assert_eq!(second_run.attempts.len(), 2);
+}
+
+#[tokio::test]
+async fn a_failed_invocation_leaves_no_result_and_does_not_leak_into_the_next_run() {
+    let model = MockMessageModel::shared(vec![
+        MockResponse::Error(Error::other("model down")),
+        MockResponse::message(Message::assistant("good")),
+    ]);
+    let goal = GoalLoop::sync_validator(|ctx: &ValidationContext| {
+        Ok(ValidationOutcome::from(ctx.response.text() == "good"))
+    });
+    let agent = Agent::builder()
+        .model(model)
+        .plugin(goal.clone())
+        .build()
+        .unwrap();
+
+    agent.invoke("go").await.unwrap_err();
+    assert!(
+        goal.last_result(&agent).is_none(),
+        "no result for a run that threw"
+    );
+
+    agent.invoke("again").await.unwrap();
+    let run = goal.last_result(&agent).unwrap();
+    assert!(run.passed);
+    assert_eq!(run.attempts.len(), 1);
 }
