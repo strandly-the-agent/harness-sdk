@@ -90,3 +90,8 @@ when a module lands or is dropped.
 Sources: `strands-py/src/strands`, `strands-ts/src`, `strands-rs/crates/strands-agents/src`,
 `strands-rs/crates/strands-harness/src`; Rust gaps per [PORT_REPORT.md](PORT_REPORT.md)
 ("Not ported" and "Known gaps").
+
+The docs site mirrors this table: pages for ✅/🟡 rows carry a Rust tab (snippets in
+`site/src/content/docs/**/*.rs`, compiled by `cd site && npm run check:snippets:rust`; 🟡 gaps
+are stub fences inside the tab), pages for ❌ rows carry `languages: [python, typescript]`
+and disable the Rust toggle. Keep both in step when a row changes.
