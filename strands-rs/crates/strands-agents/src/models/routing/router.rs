@@ -335,7 +335,7 @@ mod tests {
             .with_description("Handles images");
         let router = ModelRouter::new(vec![selected.clone()]).unwrap();
 
-        assert_eq!(router.candidates(), [selected.clone()]);
+        assert_eq!(router.candidates(), std::slice::from_ref(&selected));
         assert_eq!(selected.name(), Some("vision"));
         assert_eq!(selected.description(), Some("Handles images"));
         let CandidateModel::Model(candidate_model) = selected.model() else {
