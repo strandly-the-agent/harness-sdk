@@ -760,6 +760,7 @@ class OpenAIResponsesModel(Model):
 
         _log_skipped_blocks(logger, skipped)
 
+        # No trailing empty-content filter: replayed reasoning items legitimately carry no content.
         return formatted_messages
 
     @classmethod
@@ -768,6 +769,8 @@ class OpenAIResponsesModel(Model):
         if not isinstance(fields, dict):
             return None
         output = fields.get(_OPENAI_RESPONSES_OUTPUT_FIELD)
+        if output is None:
+            return None
         if (
             not isinstance(output, list)
             or not output
