@@ -619,6 +619,20 @@ describe("OpenAIModel (api: 'responses')", () => {
       expect(req.input).toEqual([{ role: 'assistant', content: 'answer' }])
     })
 
+    it('replays function_call output items without an id', async () => {
+      const output = [{ type: 'function_call', call_id: 'call_1', name: 'calculator', arguments: '{}' }]
+      const messages = [
+        new Message({
+          role: 'assistant',
+          content: [new TextBlock('answer')],
+          additionalModelResponseFields: { openaiResponsesOutput: output },
+        }),
+      ]
+
+      const req = await runOnce({}, messages)
+      expect(req.input).toEqual([...output, { role: 'assistant', content: 'answer' }])
+    })
+
     it('does not replay captured output items in stateful mode', async () => {
       const messages = [
         new Message({
