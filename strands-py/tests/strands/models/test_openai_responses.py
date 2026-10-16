@@ -2022,6 +2022,28 @@ async def test_stream_captures_completed_output_items(openai_client, model, agen
 
 
 @pytest.mark.asyncio
+async def test_stream_omits_output_items_that_do_not_cover_tool_calls(openai_client, model, agenerator, alist):
+    """Items missing an emitted function_call are not persisted, or its tool result would be orphaned on replay."""
+    reasoning = {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "encrypted"}
+    events = [
+        unittest.mock.Mock(type="response.output_item.done", output_index=0, item=reasoning),
+        unittest.mock.Mock(
+            type="response.output_item.added",
+            item=unittest.mock.Mock(type="function_call", call_id="call_1", name="calculator", id="item_1"),
+        ),
+        unittest.mock.Mock(
+            type="response.function_call_arguments.done", arguments='{"expression": "2+2"}', item_id="item_1"
+        ),
+        unittest.mock.Mock(type="response.completed", response=unittest.mock.Mock(usage=None, output=None)),
+    ]
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator(events))
+
+    streamed = await alist(model.stream([{"role": "user", "content": [{"text": "calculate"}]}]))
+
+    assert {"messageStop": {"stopReason": "tool_use"}} in streamed
+
+
+@pytest.mark.asyncio
 async def test_stream_captures_incomplete_output_items(openai_client, model, agenerator, alist):
     """A real `response.incomplete` output list is captured, with max_tokens still winning over tool_use."""
     reasoning = {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "encrypted"}

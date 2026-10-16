@@ -852,6 +852,28 @@ describe("OpenAIModel (api: 'responses')", () => {
       })
     })
 
+    it('omits captured output items when they do not cover an emitted tool call', async () => {
+      const reasoning = { id: 'rs_1', type: 'reasoning', summary: [], encrypted_content: 'encrypted' }
+      const client = createMockClient(async function* () {
+        yield { type: 'response.created', response: { id: 'r' } }
+        yield { type: 'response.output_item.done', output_index: 0, item: reasoning }
+        yield {
+          type: 'response.output_item.added',
+          item: { type: 'function_call', id: 'item_1', call_id: 'call_1', name: 'calc' },
+        }
+        yield { type: 'response.function_call_arguments.done', item_id: 'item_1', arguments: '{"a":1}' }
+        yield { type: 'response.completed', response: {} }
+      })
+      const model = new OpenAIModel({ api: 'responses', client })
+
+      const iterator = model.streamAggregated([new Message({ role: 'user', content: [new TextBlock('x')] })])
+      let result = await iterator.next()
+      while (!result.done) result = await iterator.next()
+
+      expect(result.value.stopReason).toBe('toolUse')
+      expect(result.value.message.additionalModelResponseFields).toBeUndefined()
+    })
+
     it('emits tool call triplet after stream close and sets stopReason=toolUse', async () => {
       const client = createMockClient(async function* () {
         yield { type: 'response.created', response: { id: 'r' } }

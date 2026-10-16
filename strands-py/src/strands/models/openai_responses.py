@@ -517,10 +517,12 @@ class OpenAIResponsesModel(Model):
             else:
                 finish_reason = "stop"
             additional_fields = None
-            if output_items:
-                additional_fields = {
-                    _OPENAI_RESPONSES_OUTPUT_FIELD: [output_items[index] for index in sorted(output_items)]
-                }
+            ordered_items = [output_items[index] for index in sorted(output_items)]
+            # Replay drops the toolUse blocks, so the items must carry every emitted call or a
+            # tool result would be orphaned on the next request. Fall back to legacy history otherwise.
+            captured_call_ids = {item.get("call_id") for item in ordered_items if item.get("type") == "function_call"}
+            if ordered_items and all(call["call_id"] in captured_call_ids for call in tool_calls.values()):
+                additional_fields = {_OPENAI_RESPONSES_OUTPUT_FIELD: ordered_items}
             yield self._format_chunk(
                 {
                     "chunk_type": "message_stop",
