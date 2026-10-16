@@ -2022,6 +2022,48 @@ async def test_stream_captures_completed_output_items(openai_client, model, agen
 
 
 @pytest.mark.asyncio
+async def test_stream_captures_incomplete_output_items(openai_client, model, agenerator, alist):
+    """A real `response.incomplete` output list is captured, with max_tokens still winning over tool_use."""
+    reasoning = {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "encrypted"}
+    truncated_call = {
+        "id": "fc_1",
+        "type": "function_call",
+        "call_id": "call_1",
+        "name": "write_file",
+        "arguments": '{"path": "notes.md", "content": "Lorem',
+        "status": "incomplete",
+    }
+    events = [
+        unittest.mock.Mock(
+            type="response.output_item.added",
+            item=unittest.mock.Mock(type="function_call", call_id="call_1", name="write_file", id="fc_1"),
+        ),
+        unittest.mock.Mock(
+            type="response.function_call_arguments.delta", item_id="fc_1", delta=truncated_call["arguments"]
+        ),
+        unittest.mock.Mock(
+            type="response.incomplete",
+            response=unittest.mock.Mock(
+                usage=None,
+                output=[reasoning, truncated_call],
+                incomplete_details=unittest.mock.Mock(reason="max_output_tokens"),
+            ),
+        ),
+    ]
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator(events))
+
+    streamed = await alist(model.stream([{"role": "user", "content": [{"text": "save my notes"}]}]))
+
+    assert {
+        "messageStop": {
+            "stopReason": "max_tokens",
+            "additionalModelResponseFields": {"openaiResponsesOutput": [reasoning, truncated_call]},
+        }
+    } in streamed
+    assert not any(event.get("messageStop", {}).get("stopReason") == "tool_use" for event in streamed)
+
+
+@pytest.mark.asyncio
 async def test_stream_stateful(openai_client, model_id, agenerator, alist):
     """When stateful is enabled, model writes response_id to model_state from response.created."""
     model = OpenAIResponsesModel(model_id=model_id, stateful=True)

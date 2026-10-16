@@ -318,9 +318,10 @@ function getResponsesOutputItems(message: Message): ResponseInputItem[] | undefi
 function isResponsesOutputItem(value: JSONValue): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const item = value as Record<string, JSONValue>
-  if (typeof item.id !== 'string' || typeof item.type !== 'string' || !RESPONSE_OUTPUT_ITEM_TYPES.has(item.type)) {
-    return false
-  }
+  if (typeof item.type !== 'string' || !RESPONSE_OUTPUT_ITEM_TYPES.has(item.type)) return false
+  // `id` is optional on function_call / custom_tool_call in the SDK types; required everywhere else.
+  const idOptional = item.type === 'function_call' || item.type === 'custom_tool_call'
+  if (typeof item.id !== 'string' && !(idOptional && item.id === undefined)) return false
   if (
     item.status !== undefined &&
     !['in_progress', 'completed', 'incomplete', 'generating', 'failed'].includes(String(item.status))

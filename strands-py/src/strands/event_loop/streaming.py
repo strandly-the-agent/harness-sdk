@@ -382,6 +382,7 @@ def handle_message_stop(event: MessageStopEvent, content: list[dict[str, Any]]) 
         The reason for stopping the stream.
     """
     stop_reason = event["stopReason"]
+
     if stop_reason == "end_turn" and any("toolUse" in item for item in content):
         logger.warning(
             "original_stop_reason=<%s>, new_stop_reason=<%s> | "
