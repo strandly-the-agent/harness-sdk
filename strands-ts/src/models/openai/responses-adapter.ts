@@ -730,12 +730,17 @@ export function finalizeResponsesStream(state: ResponsesStreamState): ModelStrea
   }
 
   const outputItems = [...state.outputItems.entries()].sort(([left], [right]) => left - right).map(([, item]) => item)
+  // Replay drops the toolUse blocks, so the items must carry every emitted call or a tool
+  // result would be orphaned on the next request. Fall back to legacy history otherwise.
+  const capturedCallIds = new Set(outputItems.flatMap((item) => (item.type === 'function_call' ? [item.call_id] : [])))
+  const coversToolCalls = [...state.toolCalls.values()].every((tc) => capturedCallIds.has(tc.callId))
   events.push({
     type: 'modelMessageStopEvent',
     stopReason,
-    ...(outputItems.length > 0 && {
-      additionalModelResponseFields: { [OPENAI_RESPONSES_OUTPUT_FIELD]: outputItems } as unknown as JSONValue,
-    }),
+    ...(outputItems.length > 0 &&
+      coversToolCalls && {
+        additionalModelResponseFields: { [OPENAI_RESPONSES_OUTPUT_FIELD]: outputItems } as unknown as JSONValue,
+      }),
   })
 
   return events
