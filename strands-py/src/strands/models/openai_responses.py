@@ -418,10 +418,7 @@ class OpenAIResponsesModel(Model):
                                 }
 
                         elif event.type == "response.output_item.done":
-                            output_index = getattr(event, "output_index", None)
-                            item = getattr(event, "item", None)
-                            if not self.stateful and isinstance(output_index, int) and item is not None:
-                                output_items[output_index] = self._response_item_to_dict(item)
+                            self._capture_output_item(event, output_items)
 
                         elif event.type == "response.function_call_arguments.delta":
                             # Tool arguments streaming - accumulate deltas by item_id
@@ -453,8 +450,7 @@ class OpenAIResponsesModel(Model):
                         elif event.type == "response.incomplete":
                             # Response stopped early (e.g., max tokens reached)
                             if hasattr(event, "response"):
-                                if not self.stateful:
-                                    self._capture_response_output(event.response, output_items)
+                                self._capture_response_output(event.response, output_items)
                                 if hasattr(event.response, "usage"):
                                     final_usage = event.response.usage
                                 # Check if stopped due to max_output_tokens or a content filter
@@ -472,8 +468,7 @@ class OpenAIResponsesModel(Model):
                         elif event.type == "response.completed":
                             # Response complete
                             if hasattr(event, "response"):
-                                if not self.stateful:
-                                    self._capture_response_output(event.response, output_items)
+                                self._capture_response_output(event.response, output_items)
                             if hasattr(event, "response") and hasattr(event.response, "usage"):
                                 final_usage = event.response.usage
                             break
@@ -516,18 +511,11 @@ class OpenAIResponsesModel(Model):
                 finish_reason = "tool_calls"
             else:
                 finish_reason = "stop"
-            additional_fields = None
-            ordered_items = [output_items[index] for index in sorted(output_items)]
-            # Replay drops the toolUse blocks, so the items must carry every emitted call or a
-            # tool result would be orphaned on the next request. Fall back to legacy history otherwise.
-            captured_call_ids = {item.get("call_id") for item in ordered_items if item.get("type") == "function_call"}
-            if ordered_items and all(call["call_id"] in captured_call_ids for call in tool_calls.values()):
-                additional_fields = {_OPENAI_RESPONSES_OUTPUT_FIELD: ordered_items}
             yield self._format_chunk(
                 {
                     "chunk_type": "message_stop",
                     "data": finish_reason,
-                    "additional_model_response_fields": additional_fields,
+                    "additional_model_response_fields": self._persisted_output_fields(output_items, tool_calls),
                 }
             )
 
@@ -687,15 +675,9 @@ class OpenAIResponsesModel(Model):
         for message in messages:
             role = message["role"]
             contents = message["content"]
-            output_items = cls._get_responses_output_items(message)
-            if replay_output_items and role == "assistant" and output_items:
-                formatted_messages.extend(output_items)
-                # Max-token recovery may retain only safe reasoning items after removing an
-                # incomplete tool call. Preserve the recovered visible text in that case.
-                if not any(item.get("type") == "message" for item in output_items):
-                    text = "\n".join(content["text"] for content in contents if "text" in content)
-                    if text:
-                        formatted_messages.append({"role": "assistant", "content": text})
+            output_items = cls._get_responses_output_items(message) if replay_output_items else None
+            if role == "assistant" and output_items:
+                formatted_messages.extend(cls._replay_output_items(output_items, contents))
                 continue
 
             filtered_contents = []
@@ -764,6 +746,17 @@ class OpenAIResponsesModel(Model):
 
         # No trailing empty-content filter: replayed reasoning items legitimately carry no content.
         return formatted_messages
+
+    @staticmethod
+    def _replay_output_items(output_items: list[dict[str, Any]], contents: list[ContentBlock]) -> list[dict[str, Any]]:
+        """Replay captured output items, keeping recovered visible text when no message item survived.
+
+        Max-token recovery may retain only safe reasoning items after removing an incomplete tool call.
+        """
+        if any(item.get("type") == "message" for item in output_items):
+            return output_items
+        text = "\n".join(content["text"] for content in contents if "text" in content)
+        return [*output_items, {"role": "assistant", "content": text}] if text else output_items
 
     @classmethod
     def _get_responses_output_items(cls, message: Message) -> list[dict[str, Any]] | None:
@@ -913,13 +906,35 @@ class OpenAIResponsesModel(Model):
             return cast(dict[str, Any], item.model_dump(mode="json", exclude_unset=True))
         raise TypeError(f"item_type=<{type(item).__name__}> | unsupported Responses output item")
 
-    @classmethod
-    def _capture_response_output(cls, response: Any, output_items: dict[int, dict[str, Any]]) -> None:
+    @staticmethod
+    def _persisted_output_fields(
+        output_items: dict[int, dict[str, Any]], tool_calls: dict[str, _ToolCallInfo]
+    ) -> dict[str, Any] | None:
+        """Return the response fields to persist, or None when the items cannot be replayed safely.
+
+        Replay drops the toolUse blocks, so the items must carry every emitted call or a tool
+        result would be orphaned on the next request. Legacy history is used otherwise.
+        """
+        ordered_items = [output_items[index] for index in sorted(output_items)]
+        captured_call_ids = {item.get("call_id") for item in ordered_items if item.get("type") == "function_call"}
+        if ordered_items and all(call["call_id"] in captured_call_ids for call in tool_calls.values()):
+            return {_OPENAI_RESPONSES_OUTPUT_FIELD: ordered_items}
+        return None
+
+    def _capture_output_item(self, event: Any, output_items: dict[int, dict[str, Any]]) -> None:
+        """Record a completed output item by index; stateful mode replays via previous_response_id instead."""
+        output_index = getattr(event, "output_index", None)
+        item = getattr(event, "item", None)
+        if not self.stateful and isinstance(output_index, int) and item is not None:
+            output_items[output_index] = self._response_item_to_dict(item)
+
+    def _capture_response_output(self, response: Any, output_items: dict[int, dict[str, Any]]) -> None:
+        """Replace streamed items with the terminal response's authoritative output list."""
         output = getattr(response, "output", None)
-        if not isinstance(output, (list, tuple)) or not output:
+        if self.stateful or not isinstance(output, (list, tuple)) or not output:
             return
         output_items.clear()
-        output_items.update({index: cls._response_item_to_dict(item) for index, item in enumerate(output)})
+        output_items.update({index: self._response_item_to_dict(item) for index, item in enumerate(output)})
 
     def _stream_switch_content(self, data_type: str, prev_data_type: str | None) -> tuple[list[StreamEvent], str]:
         """Handle switching to a new content stream.
