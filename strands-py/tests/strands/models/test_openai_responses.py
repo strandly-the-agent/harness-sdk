@@ -518,6 +518,98 @@ def test_format_request_merges_encrypted_reasoning_include(model, messages):
     assert model.config["params"]["include"] == ["web_search_call.results"]
 
 
+def test_format_request_does_not_duplicate_configured_encrypted_reasoning_include(model, messages):
+    model.config["params"] = {"include": ["reasoning.encrypted_content"]}
+
+    request = model._format_request(messages, None, None)
+
+    assert request["include"] == ["reasoning.encrypted_content"]
+
+
+def test_format_request_messages_replays_items_without_text_fallback():
+    """A replayed turn with no message item and no text content adds nothing beyond the items."""
+    reasoning = {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "enc"}
+    messages = [
+        {
+            "role": "assistant",
+            "content": [{"toolUse": {"name": "calculator", "input": {}, "toolUseId": "call_1"}}],
+            "additionalModelResponseFields": {
+                "openaiResponsesOutput": [
+                    reasoning,
+                    {
+                        "id": "fc_1",
+                        "type": "function_call",
+                        "call_id": "call_1",
+                        "name": "calculator",
+                        "arguments": "{}",
+                    },
+                ]
+            },
+        }
+    ]
+
+    result = OpenAIResponsesModel._format_request_messages(messages)
+
+    assert result == messages[0]["additionalModelResponseFields"]["openaiResponsesOutput"]
+
+
+def test_format_request_messages_ignores_foreign_response_fields(caplog):
+    """History from another provider carries additionalModelResponseFields without our key: no warning."""
+    messages = [
+        {"role": "assistant", "content": [{"text": "answer"}], "additionalModelResponseFields": {"bedrock": {"x": 1}}}
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        result = OpenAIResponsesModel._format_request_messages(messages)
+
+    assert result == [{"role": "assistant", "content": "answer"}]
+    assert "invalid Responses output items" not in caplog.text
+
+
+def test_format_request_messages_rejects_non_dict_output_items():
+    messages = [
+        {
+            "role": "assistant",
+            "content": [{"text": "answer"}],
+            "additionalModelResponseFields": {"openaiResponsesOutput": ["not-an-item"]},
+        }
+    ]
+
+    assert OpenAIResponsesModel._format_request_messages(messages) == [{"role": "assistant", "content": "answer"}]
+
+
+def test_response_item_to_dict_converts_sdk_models_and_rejects_unknown_types():
+    from openai.types.responses import ResponseReasoningItem
+
+    item = ResponseReasoningItem(id="rs_1", type="reasoning", summary=[], encrypted_content="enc")
+
+    assert OpenAIResponsesModel._response_item_to_dict(item) == {
+        "id": "rs_1",
+        "type": "reasoning",
+        "summary": [],
+        "encrypted_content": "enc",
+    }
+    with pytest.raises(TypeError, match="unsupported Responses output item"):
+        OpenAIResponsesModel._response_item_to_dict(42)
+
+
+@pytest.mark.asyncio
+async def test_stream_stateful_does_not_capture_output_items(openai_client, model_id, agenerator, alist):
+    model = OpenAIResponsesModel(model_id=model_id, stateful=True)
+    reasoning = {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "enc"}
+    events = [
+        unittest.mock.Mock(type="response.created", response=unittest.mock.Mock(id="resp_1")),
+        unittest.mock.Mock(type="response.output_text.delta", delta="answer"),
+        unittest.mock.Mock(type="response.output_item.done", output_index=0, item=reasoning),
+        unittest.mock.Mock(type="response.completed", response=unittest.mock.Mock(usage=None, output=[reasoning])),
+    ]
+    openai_client.responses.create = unittest.mock.AsyncMock(return_value=agenerator(events))
+
+    streamed = await alist(model.stream([{"role": "user", "content": [{"text": "x"}]}], model_state={}))
+
+    assert {"messageStop": {"stopReason": "end_turn"}} in streamed
+
+
 def test_format_request_messages_assistant_text_uses_string_content():
     """Assistant history must use the string EasyInputMessage form.
 

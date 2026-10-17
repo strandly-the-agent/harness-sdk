@@ -1,5 +1,7 @@
 """Tests for token limit recovery utility."""
 
+import pytest
+
 from strands.event_loop._recover_message_on_max_tokens_reached import (
     recover_message_on_max_tokens_reached,
 )
@@ -329,3 +331,28 @@ def test_recover_message_on_max_tokens_reached_keeps_only_reasoning_response_ite
     assert result["additionalModelResponseFields"] == {"openaiResponsesOutput": [reasoning]}
     assert result["content"][0] == {"text": "partial"}
     assert "incomplete due to maximum token limits" in result["content"][1]["text"]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"openaiResponsesOutput": "not-a-list"},
+        {
+            "openaiResponsesOutput": [
+                {"id": "fc_1", "type": "function_call", "call_id": "c", "name": "f", "arguments": ""}
+            ]
+        },
+        {"bedrock": {"x": 1}},
+    ],
+)
+def test_recover_message_on_max_tokens_reached_drops_response_fields_without_reasoning(fields):
+    message = {
+        "role": "assistant",
+        "content": [{"toolUse": {"name": "calculator", "input": {}, "toolUseId": "call_1"}}],
+        "additionalModelResponseFields": fields,
+    }
+
+    result = recover_message_on_max_tokens_reached(message)
+
+    assert "additionalModelResponseFields" not in result
+    assert "incomplete due to maximum token limits" in result["content"][0]["text"]
