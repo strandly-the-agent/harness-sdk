@@ -34,7 +34,8 @@ def sandbox() -> NotASandboxLocalEnvironment:
 async def test_execute_runs_a_command(sandbox):
     result = await sandbox.execute("echo hello")
     assert result.exit_code == 0
-    assert result.stdout == "hello\n"
+    # PowerShell ends lines with \r\n.
+    assert result.stdout.strip() == "hello"
 
 
 @pytest.mark.asyncio

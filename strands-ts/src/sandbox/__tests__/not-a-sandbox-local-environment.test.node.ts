@@ -34,12 +34,14 @@ describe('NotASandboxLocalEnvironment', () => {
     it('runs a command on the host', async () => {
       const result = await sandbox.execute('echo hello')
       expect(result.exitCode).toBe(0)
-      expect(result.stdout).toBe('hello\n')
+      // PowerShell ends lines with \r\n.
+      expect(result.stdout.trim()).toBe('hello')
     })
 
     it('respects the cwd option', async () => {
       const result = await sandbox.execute(PRINT_CWD, { cwd: TEST_DIR })
-      expect(fs.realpathSync(result.stdout.trim())).toBe(fs.realpathSync(TEST_DIR))
+      // `.native` expands Windows 8.3 short names (RUNNER~1), which os.tmpdir() may return.
+      expect(fs.realpathSync.native(result.stdout.trim())).toBe(fs.realpathSync.native(TEST_DIR))
     })
 
     it('reports a non-zero exit code and stderr from a failing command', async () => {
