@@ -439,6 +439,43 @@ def test_format_request_with_tool_result(model, model_id):
     assert actual_request == exp_request
 
 
+def test_format_request_messages_orders_tool_results_before_injected_text(model):
+    messages = [
+        {"role": "user", "content": [{"text": "What is 2+2?"}]},
+        {
+            "role": "assistant",
+            "content": [{"toolUse": {"toolUseId": "c1", "name": "calculator", "input": {"expression": "2+2"}}}],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"toolResult": {"toolUseId": "c1", "status": "success", "content": [{"text": "4"}]}},
+                {"text": "Injected context"},
+            ],
+        },
+    ]
+
+    tru_messages = model._format_request_messages(messages)
+    exp_messages = [
+        {"role": "user", "content": "What is 2+2?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "function": {"name": "calculator", "arguments": '{"expression": "2+2"}'},
+                    "id": "c1",
+                    "type": "function",
+                }
+            ],
+        },
+        {"role": "tool", "name": "c1", "content": "4", "tool_call_id": "c1"},
+        {"role": "user", "content": "Injected context"},
+    ]
+
+    assert tru_messages == exp_messages
+
+
 def test_format_request_with_tool_specs(model, messages, model_id):
     tool_specs = [
         {
