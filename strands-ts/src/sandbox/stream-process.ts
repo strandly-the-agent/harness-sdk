@@ -58,7 +58,6 @@ export async function* streamProcess(
   const proc = spawn(command, args, {
     ...(options?.cwd !== undefined && { cwd: options.cwd }),
     ...(options?.env !== undefined && { env: options.env }),
-    stdio: [options?.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
   })
   if (options?.input !== undefined) {
     // A missing binary surfaces through the 'error' event below; EPIPE here would only duplicate it.

@@ -130,6 +130,14 @@ async def test_windows_round_trips_utf8_output(sandbox):
     assert "\u20ac" in (await sandbox.execute('Write-Output "\u20ac"')).stdout
 
 
+@pytest.mark.skipif(not WINDOWS, reason="PowerShell semantics")
+@pytest.mark.asyncio
+async def test_windows_overrides_a_host_variable_whose_name_differs_only_by_case(sandbox, monkeypatch):
+    monkeypatch.setenv("Strands_Case_Probe", "host")
+    result = await sandbox.execute("echo $env:STRANDS_CASE_PROBE", env={"STRANDS_CASE_PROBE": "override"})
+    assert result.stdout.strip() == "override"
+
+
 # ---- read/write (native fs) ----
 
 

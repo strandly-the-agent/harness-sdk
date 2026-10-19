@@ -27,6 +27,18 @@ function powershellScript(command: string): string {
   ].join('\n')
 }
 
+/** The host environment with `extra` applied; Windows env names are case-insensitive, so `PATH` replaces `Path`. */
+function hostEnvWith(extra?: Record<string, string>): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env }
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    for (const existing of Object.keys(env)) {
+      if (existing.toLowerCase() === key.toLowerCase()) delete env[existing]
+    }
+    env[key] = value
+  }
+  return env
+}
+
 /** Returns true if the error is a missing entry (ENOENT) or a non-directory path component (ENOTDIR). */
 function isMissingPathError(error: unknown): boolean {
   if (error === null || typeof error !== 'object' || !('code' in error)) {
@@ -54,13 +66,13 @@ export class NotASandboxLocalEnvironment extends Sandbox {
       if (options?.env) validateEnvKeys(options.env)
       const script = join(tmpdir(), `strands-shell-${randomUUID()}.ps1`)
       // The BOM makes PowerShell 5.1 read the file as UTF-8 rather than the ANSI code page.
-      await writeFile(script, `\uFEFF${powershellScript(command)}`)
+      await writeFile(script, `\uFEFF${powershellScript(command)}`, { flag: 'wx', mode: 0o600 })
       try {
         yield* streamProcess('powershell.exe', [...POWERSHELL_ARGS, script], {
           timeout: options?.timeout,
           signal: options?.signal,
           cwd,
-          env: { ...process.env, ...options?.env },
+          env: hostEnvWith(options?.env),
         })
       } finally {
         await unlink(script).catch(() => undefined)
@@ -89,7 +101,7 @@ export class NotASandboxLocalEnvironment extends Sandbox {
         timeout: options?.timeout,
         signal: options?.signal,
         cwd,
-        env: { ...process.env, ...options?.env },
+        env: hostEnvWith(options?.env),
         input: code,
         enoentMessage: `Language interpreter not found: ${language}`,
       })

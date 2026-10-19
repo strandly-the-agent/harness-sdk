@@ -92,9 +92,9 @@ async def _stream_process(
         yield ExecutionResult(exit_code=127, stdout="", stderr=enoent_message)
         return
     if input is not None and proc.stdin is not None:
+        # No drain(): it could block before the timeout below is armed if the child never reads stdin.
+        # The transport flushes what it can on close; a child that exits early just drops the rest.
         proc.stdin.write(input.encode())
-        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
-            await proc.stdin.drain()
         proc.stdin.close()
 
     queue: asyncio.Queue[StreamChunk | None] = asyncio.Queue()

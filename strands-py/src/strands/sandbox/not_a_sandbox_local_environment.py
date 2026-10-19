@@ -33,6 +33,16 @@ from .types import ExecutionResult, FileInfo, StreamChunk
 _POWERSHELL_ARGS = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]
 
 
+def _host_env_with(extra: dict[str, str] | None) -> dict[str, str]:
+    """The host environment with ``extra`` applied, matching names case-insensitively as Windows does."""
+    env = dict(os.environ)
+    for key, value in (extra or {}).items():
+        for existing in [name for name in env if name.lower() == key.lower()]:
+            del env[existing]
+        env[key] = value
+    return env
+
+
 def _powershell_script(command: str) -> str:
     """Wrap ``command`` for PowerShell: UTF-8 in and out, and an exit code that mirrors ``sh -c``.
 
@@ -78,14 +88,14 @@ class NotASandboxLocalEnvironment(Sandbox):
         env: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[StreamChunk | ExecutionResult, None]:
-        """Execute a command on the host via ``sh -c``, streaming output.
+        """Execute a command on the host in its shell (``sh -c``; PowerShell on Windows), streaming output.
 
         Args:
             command: The shell command to execute.
             timeout: Maximum execution time in seconds. ``None`` means no timeout.
             cwd: Working directory for this command. Defaults to the process's
                 current working directory.
-            env: Environment variables to set, applied via a shell ``export`` prefix.
+            env: Environment variables to set on top of the host environment.
             **kwargs: Additional keyword arguments for forward compatibility.
 
         Yields:
@@ -112,7 +122,7 @@ class NotASandboxLocalEnvironment(Sandbox):
                     [*_POWERSHELL_ARGS, script],
                     timeout=timeout,
                     cwd=target_cwd,
-                    env={**os.environ, **(env or {})},
+                    env=_host_env_with(env),
                 ):
                     yield chunk
             finally:
@@ -134,13 +144,13 @@ class NotASandboxLocalEnvironment(Sandbox):
         env: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[StreamChunk | ExecutionResult, None]:
-        """Execute code on the host by piping it to a language interpreter via ``sh``.
+        """Execute code on the host by feeding it to a language interpreter on stdin.
 
-        The code is base64-encoded and decoded inside a quoted heredoc, then piped to
-        the interpreter (``base64 -d << 'EOF' | <lang>``), so arbitrary source —
-        including shell metacharacters, quotes, and newlines — reaches the interpreter
-        without injection risk. ``language`` is validated against
-        :data:`~strands.sandbox.constants.LANGUAGE_PATTERN` first.
+        On POSIX the code is base64-encoded and decoded inside a quoted heredoc, then piped
+        to the interpreter (``base64 -d << 'EOF' | <lang>``), so arbitrary source — including
+        shell metacharacters, quotes, and newlines — reaches the interpreter without injection
+        risk. On Windows the interpreter is spawned directly with the code on stdin. ``language``
+        is validated against :data:`~strands.sandbox.constants.LANGUAGE_PATTERN` first.
 
         Args:
             code: The source code to execute.
@@ -148,7 +158,7 @@ class NotASandboxLocalEnvironment(Sandbox):
             timeout: Maximum execution time in seconds. ``None`` means no timeout.
             cwd: Working directory for execution. Defaults to the process's current
                 working directory.
-            env: Environment variables to set, applied via a shell ``export`` prefix.
+            env: Environment variables to set on top of the host environment.
             **kwargs: Additional keyword arguments for forward compatibility.
 
         Yields:
@@ -171,7 +181,7 @@ class NotASandboxLocalEnvironment(Sandbox):
                 [],
                 timeout=timeout,
                 cwd=cwd if cwd is not None else os.getcwd(),
-                env={**os.environ, **(env or {})},
+                env=_host_env_with(env),
                 input=code,
                 enoent_message=f"Language interpreter not found: {language}",
             ):

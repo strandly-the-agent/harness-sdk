@@ -112,6 +112,25 @@ describe('NotASandboxLocalEnvironment', () => {
     it('round-trips UTF-8 output', async () => {
       expect((await sandbox.execute('Write-Output "€"')).stdout).toContain('€')
     })
+
+    it('overrides a host variable whose name differs only by case', async () => {
+      process.env.Strands_Case_Probe = 'host'
+      try {
+        const result = await sandbox.execute('echo $env:STRANDS_CASE_PROBE', {
+          env: { STRANDS_CASE_PROBE: 'override' },
+        })
+        expect(result.stdout.trim()).toBe('override')
+      } finally {
+        delete process.env.Strands_Case_Probe
+      }
+    })
+  })
+
+  // The POSIX path is unchanged: stdin stays an open pipe, so a command that reads it waits rather than seeing EOF.
+  describe.skipIf(WINDOWS)('execute on POSIX', () => {
+    it('keeps stdin open when no input is given', async () => {
+      await expect(sandbox.execute('cat', { timeout: 1 })).rejects.toThrow(/timed out/i)
+    })
   })
 
   describe('read/write (native fs)', () => {
