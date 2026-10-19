@@ -394,6 +394,61 @@ def test_format_request_with_reasoning(model, model_id, max_tokens):
     assert tru_request == exp_request
 
 
+def test_format_request_drops_unsigned_reasoning(model, model_id, max_tokens, caplog):
+    """Reasoning text replayed from another model family carries no signature, which Anthropic rejects."""
+    caplog.set_level(logging.WARNING, logger="strands.models.anthropic")
+
+    messages = [
+        {
+            "role": "assistant",
+            "content": [
+                {"reasoningContent": {"reasoningText": {"text": "reasoning_text"}}},
+                {"text": "answer"},
+            ],
+        },
+    ]
+
+    tru_request = model.format_request(messages)
+    exp_request = {
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [{"text": "answer", "type": "text"}],
+            },
+        ],
+        "model": model_id,
+        "tools": [],
+    }
+
+    assert tru_request == exp_request
+    assert "Unsigned reasoning content is not supported by Anthropic" in caplog.text
+
+
+def test_format_request_with_redacted_reasoning(model, model_id, max_tokens):
+    messages = [
+        {
+            "role": "assistant",
+            "content": [{"reasoningContent": {"redactedContent": b"redacted_reasoning"}}],
+        },
+    ]
+
+    tru_request = model.format_request(messages)
+    exp_request = {
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [{"data": "cmVkYWN0ZWRfcmVhc29uaW5n", "type": "redacted_thinking"}],
+            },
+        ],
+        "model": model_id,
+        "tools": [],
+    }
+
+    assert tru_request == exp_request
+
+
 def test_format_request_with_tool_result_preserves_non_ascii(model, model_id, max_tokens):
     messages = [
         {
