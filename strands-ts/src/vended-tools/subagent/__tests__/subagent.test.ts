@@ -74,6 +74,7 @@ class FakeChild {
     this.calls.push(options)
     yield { type: 'modelStreamUpdateEvent' }
     yield { type: 'agentResultEvent' }
+    this.cancelSignal = new AbortController().signal // mirrors stream()'s finally
     return this._results.shift()
   }
 

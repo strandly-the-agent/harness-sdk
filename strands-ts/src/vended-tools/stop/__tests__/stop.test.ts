@@ -3,6 +3,9 @@ import { stop, makeStop } from '../index.js'
 import { DEFAULT_STOP_MESSAGE, DEFAULT_MAX_STOP_MESSAGE_LENGTH } from '../types.js'
 import type { ToolContext } from '../../../index.js'
 import { createMockAgent } from '../../../__fixtures__/agent-helpers.js'
+import { Agent } from '../../../agent/agent.js'
+import { MockMessageModel } from '../../../__fixtures__/mock-message-model.js'
+import { TextBlock } from '../../../types/messages.js'
 
 const createFreshContext = (): { cancel: ReturnType<typeof vi.fn>; context: ToolContext } => {
   const cancel = vi.fn()
@@ -20,6 +23,22 @@ const createFreshContext = (): { cancel: ReturnType<typeof vi.fn>; context: Tool
 }
 
 describe('stop tool', () => {
+  describe('end to end', () => {
+    it('ends the loop after the batch with the message as the final assistant message', async () => {
+      const model = new MockMessageModel()
+        .addTurn({ type: 'toolUseBlock', name: 'stop', toolUseId: 't1', input: { message: 'All done' } })
+        .addTurn({ type: 'textBlock', text: 'unreachable' })
+      const agent = new Agent({ model, tools: [stop], printer: false })
+
+      const result = await agent.invoke('Go')
+
+      expect(result.stopReason).toBe('cancelled')
+      expect(result.lastMessage.content).toEqual([new TextBlock('All done')])
+      expect(agent.messages.at(-1)).toBe(result.lastMessage)
+      expect(model.callCount).toBe(1)
+    })
+  })
+
   describe('behavior', () => {
     it('returns the provided message verbatim', async () => {
       const { context } = createFreshContext()

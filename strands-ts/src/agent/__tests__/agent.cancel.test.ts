@@ -361,6 +361,25 @@ describe('Agent Cancellation', () => {
       expect(agent.cancelSignal.aborted).toBe(false)
     })
 
+    it('is a no-op when the turn has no tool use to defer behind', async () => {
+      const model = new MockMessageModel()
+        .addTurn({ type: 'textBlock', text: 'Plain answer' })
+        .addTurn({ type: 'textBlock', text: 'Next answer' })
+      const agent = new Agent({ model, printer: false })
+      let modelCalls = 0
+      agent.addHook(BeforeModelCallEvent, () => {
+        if (++modelCalls === 1) agent.cancel({ message: 'dropped', afterCurrentTools: true })
+      })
+
+      const first = await agent.invoke('Go')
+      expect(first.stopReason).toBe('endTurn')
+      expect(first.lastMessage.content[0]).toEqual(new TextBlock('Plain answer'))
+
+      const second = await agent.invoke('Again')
+      expect(second.stopReason).toBe('endTurn')
+      expect(second.lastMessage.content[0]).toEqual(new TextBlock('Next answer'))
+    })
+
     it('does not leak a deferred cancel into the next invocation', async () => {
       let toolCalls = 0
       let agent: Agent
