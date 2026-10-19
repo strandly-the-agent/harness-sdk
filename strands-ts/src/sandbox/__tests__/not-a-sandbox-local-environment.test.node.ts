@@ -84,7 +84,7 @@ describe('NotASandboxLocalEnvironment', () => {
   })
 
   // PowerShell semantics the model relies on: native exit codes propagate, stderr output alone is not a
-  // failure, a failing cmdlet is, a command is not capped by the command-line length limit, and UTF-8 survives.
+  // failure, a failing cmdlet is, a multi-KB command runs, and UTF-8 survives.
   describe.runIf(WINDOWS)('execute on Windows (PowerShell)', () => {
     it('propagates a native command exit code', async () => {
       expect((await sandbox.execute('cmd /c "exit 3"')).exitCode).toBe(3)
@@ -105,9 +105,9 @@ describe('NotASandboxLocalEnvironment', () => {
       expect(continued.stdout).toContain('after')
     })
 
-    it('runs a command longer than the Windows command-line limit', async () => {
-      const result = await sandbox.execute(`Write-Output '${'x'.repeat(40_000)}'`)
-      expect(result.stdout.trim()).toHaveLength(40_000)
+    it('runs an 8 KB command', async () => {
+      const result = await sandbox.execute(`Write-Output '${'x'.repeat(8_000)}'`)
+      expect(result.stdout.trim()).toHaveLength(8_000)
     })
 
     it('round-trips UTF-8 output', async () => {

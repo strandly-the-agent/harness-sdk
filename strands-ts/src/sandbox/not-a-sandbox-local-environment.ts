@@ -1,6 +1,5 @@
-import { randomUUID } from 'crypto'
+import { Buffer } from 'buffer'
 import { readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises'
-import { tmpdir } from 'os'
 import { dirname, isAbsolute, join } from 'path'
 import { Sandbox } from './base.js'
 import type { ExecuteOptions } from './base.js'
@@ -10,21 +9,22 @@ import { streamProcess } from './stream-process.js'
 import type { ExecutionResult, FileInfo, StreamChunk } from './types.js'
 import { buildShellEnvPrefix, validateEnvKeys } from './posix-shell.js'
 
-const POWERSHELL_ARGS = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File']
-
 /**
- * Wrap a command for PowerShell: UTF-8 in and out, and an exit code that mirrors `sh -c` (the last
- * statement's success, or the failing native command's own code). `$ErrorActionPreference` is left alone
- * because `Stop` turns native stderr output into a terminating error on PowerShell 5.1.
+ * The argv that runs `command` in PowerShell. `-EncodedCommand` (base64 of UTF-16LE) carries the script
+ * without any command-line quoting; it inflates the text 2.67x against Windows' 32,767-character limit, so
+ * commands over ~12 KB fail to spawn. The wrapper makes output UTF-8 (5.1 defaults to the OEM code page)
+ * and mirrors `sh -c`'s exit code: the last statement's success, or the failing native command's own code.
+ * `$ErrorActionPreference` is left alone because `Stop` turns native stderr output into a terminating error.
  */
-function powershellScript(command: string): string {
-  return [
+function powershellArgs(command: string): string[] {
+  const script = [
     '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
     '$OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
     command,
     '$ok = $?',
     'if (-not $ok) { if ($LASTEXITCODE) { exit $LASTEXITCODE } else { exit 1 } }',
   ].join('\n')
+  return ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]
 }
 
 /** The host environment with `extra` applied; Windows env names are case-insensitive, so `PATH` replaces `Path`. */
@@ -61,23 +61,15 @@ export class NotASandboxLocalEnvironment extends Sandbox {
   ): AsyncGenerator<StreamChunk | ExecutionResult, void, undefined> {
     const cwd = options?.cwd ?? process.cwd()
     if (process.platform === 'win32') {
-      // No `sh` on Windows: run the command in PowerShell from a temp script (no command-line length cap,
-      // no quoting layer); cwd and env go through spawn rather than a shell prefix.
+      // No `sh` on Windows: run the command in PowerShell; cwd and env go through spawn, not a shell prefix.
       if (options?.env) validateEnvKeys(options.env)
-      const script = join(tmpdir(), `strands-shell-${randomUUID()}.ps1`)
-      // The BOM makes PowerShell 5.1 read the file as UTF-8 rather than the ANSI code page.
-      await writeFile(script, `\uFEFF${powershellScript(command)}`, { flag: 'wx', mode: 0o600 })
-      try {
-        yield* streamProcess('powershell.exe', [...POWERSHELL_ARGS, script], {
-          timeout: options?.timeout,
-          signal: options?.signal,
-          cwd,
-          env: hostEnvWith(options?.env),
-          enoentMessage: 'PowerShell not found: powershell.exe is required to run commands on Windows',
-        })
-      } finally {
-        await unlink(script).catch(() => undefined)
-      }
+      yield* streamProcess('powershell.exe', powershellArgs(command), {
+        timeout: options?.timeout,
+        signal: options?.signal,
+        cwd,
+        env: hostEnvWith(options?.env),
+        enoentMessage: 'PowerShell not found: powershell.exe is required to run commands on Windows',
+      })
       return
     }
     yield* streamProcess('sh', ['-c', `cd ${shellQuote(cwd)} && ${buildShellEnvPrefix(options?.env)}${command}`], {

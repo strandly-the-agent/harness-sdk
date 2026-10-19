@@ -90,7 +90,7 @@ async def test_execute_code_reports_missing_interpreter_as_127(sandbox):
 
 # ---- execute on Windows (PowerShell) ----
 # PowerShell semantics the model relies on: native exit codes propagate, stderr output alone is not a
-# failure, a failing cmdlet is, a command is not capped by the command-line length limit, and UTF-8 survives.
+# failure, a failing cmdlet is, a multi-KB command runs, and UTF-8 survives.
 
 
 @pytest.mark.skipif(not WINDOWS, reason="PowerShell semantics")
@@ -120,9 +120,9 @@ async def test_windows_failing_cmdlet_is_exit_1_and_execution_continues(sandbox)
 
 @pytest.mark.skipif(not WINDOWS, reason="PowerShell semantics")
 @pytest.mark.asyncio
-async def test_windows_runs_a_command_longer_than_the_command_line_limit(sandbox):
-    result = await sandbox.execute(f"Write-Output '{'x' * 40_000}'")
-    assert len(result.stdout.strip()) == 40_000
+async def test_windows_runs_an_8kb_command(sandbox):
+    result = await sandbox.execute(f"Write-Output '{'x' * 8_000}'")
+    assert len(result.stdout.strip()) == 8_000
 
 
 @pytest.mark.skipif(not WINDOWS, reason="PowerShell semantics")

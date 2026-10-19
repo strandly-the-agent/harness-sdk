@@ -13,11 +13,9 @@ local ``sh``.
 """
 
 import base64
-import contextlib
 import os
 import shlex
 import sys
-import tempfile
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -30,8 +28,6 @@ from .posix_shell import build_shell_env_prefix, validate_env_keys
 from .stream_process import _stream_process
 from .types import ExecutionResult, FileInfo, StreamChunk
 
-_POWERSHELL_ARGS = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]
-
 
 def _host_env_with(extra: dict[str, str] | None) -> dict[str, str]:
     """The host environment with ``extra`` applied, matching names case-insensitively as Windows does."""
@@ -43,14 +39,17 @@ def _host_env_with(extra: dict[str, str] | None) -> dict[str, str]:
     return env
 
 
-def _powershell_script(command: str) -> str:
-    """Wrap ``command`` for PowerShell: UTF-8 in and out, and an exit code that mirrors ``sh -c``.
+def _powershell_args(command: str) -> list[str]:
+    """The argv that runs ``command`` in PowerShell.
 
-    The exit code is the last statement's success, or the failing native command's own code.
+    ``-EncodedCommand`` (base64 of UTF-16LE) carries the script without any command-line quoting; it
+    inflates the text 2.67x against Windows' 32,767-character limit, so commands over ~12 KB fail to
+    spawn. The wrapper makes output UTF-8 (5.1 defaults to the OEM code page) and mirrors ``sh -c``'s
+    exit code: the last statement's success, or the failing native command's own code.
     ``$ErrorActionPreference`` is left alone because ``Stop`` turns native stderr output into a
-    terminating error on PowerShell 5.1.
+    terminating error.
     """
-    return "\n".join(
+    script = "\n".join(
         [
             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
             "$OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
@@ -59,6 +58,8 @@ def _powershell_script(command: str) -> str:
             "if (-not $ok) { if ($LASTEXITCODE) { exit $LASTEXITCODE } else { exit 1 } }",
         ]
     )
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    return ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
 
 
 class NotASandboxLocalEnvironment(Sandbox):
@@ -108,27 +109,19 @@ class NotASandboxLocalEnvironment(Sandbox):
         """
         target_cwd = cwd if cwd is not None else os.getcwd()
         if sys.platform == "win32":
-            # No ``sh`` on Windows: run the command in PowerShell from a temp script (no command-line length
-            # cap, no quoting layer); cwd and env go through the process rather than a shell prefix.
+            # No ``sh`` on Windows: run the command in PowerShell; cwd and env go through the process, not a
+            # shell prefix.
             if env:
                 validate_env_keys(env)
-            fd, script = tempfile.mkstemp(prefix="strands-shell-", suffix=".ps1")
-            # The BOM makes PowerShell 5.1 read the file as UTF-8 rather than the ANSI code page.
-            with os.fdopen(fd, "w", encoding="utf-8-sig") as handle:
-                handle.write(_powershell_script(command))
-            try:
-                async for chunk in _stream_process(
-                    "powershell.exe",
-                    [*_POWERSHELL_ARGS, script],
-                    timeout=timeout,
-                    cwd=target_cwd,
-                    env=_host_env_with(env),
-                    enoent_message="PowerShell not found: powershell.exe is required to run commands on Windows",
-                ):
-                    yield chunk
-            finally:
-                with contextlib.suppress(OSError):
-                    os.unlink(script)
+            async for chunk in _stream_process(
+                "powershell.exe",
+                _powershell_args(command),
+                timeout=timeout,
+                cwd=target_cwd,
+                env=_host_env_with(env),
+                enoent_message="PowerShell not found: powershell.exe is required to run commands on Windows",
+            ):
+                yield chunk
             return
         env_prefix = build_shell_env_prefix(env)
         full_command = f"cd {shlex.quote(target_cwd)} && {env_prefix}{command}"
