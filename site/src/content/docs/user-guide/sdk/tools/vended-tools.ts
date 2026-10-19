@@ -1,11 +1,10 @@
 // --8<-- [start:basic_import]
 import { Agent } from '@strands-agents/sdk'
 import { bash } from '@strands-agents/sdk/vended-tools/bash'
-import { edit } from '@strands-agents/sdk/vended-tools/edit'
+import { fileEditor } from '@strands-agents/sdk/vended-tools/file-editor'
 import { httpRequest } from '@strands-agents/sdk/vended-tools/http-request'
 import { notebook, makeNotebook } from '@strands-agents/sdk/vended-tools/notebook'
 // --8<-- [end:basic_import]
-import { fileEditor } from '@strands-agents/sdk/vended-tools/file-editor'
 import {
   SessionManager,
   FileStorage,
@@ -18,7 +17,7 @@ import {
 import { sleep, makeSleep } from '@strands-agents/sdk/vended-tools/sleep'
 import { write } from '@strands-agents/sdk/vended-tools/write'
 import { read } from '@strands-agents/sdk/vended-tools/read'
-import { stop } from '@strands-agents/sdk/experimental/vended-tools/stop'
+import { stop } from '@strands-agents/sdk/vended-tools/stop'
 import { pythonRepl, makePythonRepl } from '@strands-agents/sdk/vended-tools/python-repl'
 import { DockerSandbox } from '@strands-agents/sdk/sandbox/docker'
 import { webFetch, makeWebFetch } from '@strands-agents/sdk/vended-tools/web-fetch'
@@ -42,7 +41,7 @@ import { Fixed, Inherit } from '@strands-agents/sdk/multiagent'
 async function agentWithVendedToolsExample() {
   // --8<-- [start:agent_with_vended_tools]
   const agent = new Agent({
-    tools: [bash, edit, httpRequest, notebook],
+    tools: [bash, fileEditor, httpRequest, notebook],
   })
   // --8<-- [end:agent_with_vended_tools]
 }
@@ -75,17 +74,6 @@ async function bashSessionPersistenceExample() {
   await agent.invoke('Restart the bash session')
   await agent.invoke('Run: echo $MY_VAR') // Variable will be empty
   // --8<-- [end:bash_session]
-}
-
-// Edit example
-async function editExample() {
-  // --8<-- [start:edit_example]
-  const agent = new Agent({
-    tools: [edit],
-  })
-
-  await agent.invoke("In /tmp/hello.txt, replace 'world' with 'Strands'.")
-  // --8<-- [end:edit_example]
 }
 
 // File editor example

@@ -276,7 +276,12 @@ class SubagentTool extends Tool {
         cancelSignal,
         ...(invocationContext && { invocationContext }),
       })
+      // Read on the result event, before stream()'s finally resets the signal.
+      let childCancelSignalAborted = false
       for await (const event of streamer.stream(this._adapter, child, gen)) {
+        if (event.type === 'agentResultEvent') {
+          childCancelSignalAborted = child.cancelSignal.aborted
+        }
         if (event.type === 'toolStreamUpdateEvent') {
           yield event.event
         } else {
@@ -284,7 +289,7 @@ class SubagentTool extends Tool {
         }
       }
 
-      return streamer.terminalResult()
+      return this._terminalResult(streamer, toolUseId, childCancelSignalAborted)
     } catch (error) {
       if (error instanceof InterruptError) {
         throw error
@@ -386,6 +391,24 @@ class SubagentTool extends Tool {
     }
     // resume() returns responses only for a child it restored.
     return { child: child!, prompt: resumed }
+  }
+
+  /** Renders the child's terminal state as this tool's result. */
+  private _terminalResult(
+    streamer: AgentToolStreamer<AgentResult>,
+    toolUseId: string,
+    childCancelSignalAborted: boolean
+  ): ToolResultBlock {
+    // Immediate cancel (signal aborted) is an abort → error; the stop tool's deferred
+    // cancel never aborts the signal and resolves as a normal completion.
+    if (streamer.result?.stopReason === 'cancelled' && !childCancelSignalAborted) {
+      return new ToolResultBlock({
+        toolUseId,
+        status: 'success',
+        content: [new TextBlock(streamer.result.toString())],
+      })
+    }
+    return streamer.terminalResult()
   }
 
   /**

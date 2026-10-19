@@ -1,4 +1,4 @@
-import { tool } from '../../../tools/tool-factory.js'
+import { tool } from '../../tools/tool-factory.js'
 import {
   DEFAULT_MAX_STOP_MESSAGE_LENGTH,
   DEFAULT_STOP_DESCRIPTION,
@@ -29,8 +29,6 @@ export interface MakeStopOptions {
 /**
  * Create a stop tool that gracefully ends the agent loop.
  *
- * **Experimental** — this tool is subject to change in future revisions without notice.
- *
  * Calls `agent.cancel({ message, afterCurrentTools: true })`, so the rest of the
  * current tool batch runs to completion and the loop then ends with
  * `stopReason: 'cancelled'` and the message as the final assistant message.
@@ -38,7 +36,7 @@ export interface MakeStopOptions {
  * @example
  * ```typescript
  * import { Agent } from '@strands-agents/sdk'
- * import { stop } from '@strands-agents/sdk/experimental/vended-tools/stop'
+ * import { stop } from '@strands-agents/sdk/vended-tools/stop'
  *
  * const agent = new Agent({ model, tools: [stop] })
  * ```
@@ -71,8 +69,6 @@ export function makeStop(options?: MakeStopOptions): ReturnType<typeof tool> {
 
 /**
  * Default stop tool.
- *
- * **Experimental** — this tool is subject to change in future revisions without notice.
  *
  * Ends the agent loop cooperatively when called by the model. Any tools the
  * model requested alongside `stop` in the same turn still run to completion —

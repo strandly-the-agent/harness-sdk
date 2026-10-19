@@ -87,7 +87,7 @@ import { makePythonRepl } from '@strands-agents/sdk/vended-tools/python-repl'
 
 // --8<-- [start:stop_import]
 import { Agent } from '@strands-agents/sdk'
-import { stop } from '@strands-agents/sdk/experimental/vended-tools/stop'
+import { stop } from '@strands-agents/sdk/vended-tools/stop'
 // --8<-- [end:stop_import]
 
 // --8<-- [start:web_fetch_import]

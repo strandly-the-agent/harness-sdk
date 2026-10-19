@@ -5,6 +5,7 @@ import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { createMockTool } from '../../__fixtures__/tool-helpers.js'
 import { TextBlock, ToolResultBlock } from '../../types/messages.js'
 import { tool } from '../../tools/tool-factory.js'
+import { z } from 'zod'
 
 describe('Agent Cancellation', () => {
   describe('cancel() when idle', () => {
@@ -284,6 +285,80 @@ describe('Agent Cancellation', () => {
 
       expect(result.stopReason).toBe('cancelled')
       expect(result.lastMessage.content[0]).toEqual(new TextBlock('second'))
+    })
+
+    it('keeps a stored message when a later cancel() carries none', async () => {
+      let agent: Agent
+      const stopTool = createMockTool('stopTool', () => {
+        agent.cancel({ message: 'summary', afterCurrentTools: true })
+        return new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('ok')] })
+      })
+      const abortTool = createMockTool('abortTool', () => {
+        agent.cancel()
+        return new ToolResultBlock({ toolUseId: 't2', status: 'success', content: [new TextBlock('ok')] })
+      })
+
+      const model = new MockMessageModel()
+        .addTurn([
+          { type: 'toolUseBlock', name: 'stopTool', toolUseId: 't1', input: {} },
+          { type: 'toolUseBlock', name: 'abortTool', toolUseId: 't2', input: {} },
+        ])
+        .addTurn({ type: 'textBlock', text: 'Should not reach' })
+
+      agent = new Agent({ model, tools: [stopTool, abortTool], toolExecutor: 'sequential', printer: false })
+      const result = await agent.invoke('Go')
+
+      expect(result.stopReason).toBe('cancelled')
+      expect(result.lastMessage.content[0]).toEqual(new TextBlock('summary'))
+    })
+
+    it('wins over a structured-output stop in the same batch and still carries the output', async () => {
+      let agent: Agent
+      const stopTool = createMockTool('stopTool', () => {
+        agent.cancel({ message: 'summary', afterCurrentTools: true })
+        return new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('ok')] })
+      })
+
+      const model = new MockMessageModel()
+        .addTurn([
+          { type: 'toolUseBlock', name: 'stopTool', toolUseId: 't1', input: {} },
+          { type: 'toolUseBlock', name: 'strands_structured_output', toolUseId: 't2', input: { value: 42 } },
+        ])
+        .addTurn({ type: 'textBlock', text: 'Should not reach' })
+
+      agent = new Agent({
+        model,
+        tools: [stopTool],
+        structuredOutputSchema: z.object({ value: z.number() }),
+        printer: false,
+      })
+      const result = await agent.invoke('Go')
+
+      expect(result.stopReason).toBe('cancelled')
+      expect(result.structuredOutput).toEqual({ value: 42 })
+      expect(result.lastMessage.content[0]).toEqual(new TextBlock('summary'))
+    })
+
+    it('leaves cancelSignal readable on AgentResultEvent and resets it after the stream', async () => {
+      let agent: Agent
+      const abortTool = createMockTool('abortTool', () => {
+        agent.cancel()
+        return new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('ok')] })
+      })
+      const model = new MockMessageModel()
+        .addTurn({ type: 'toolUseBlock', name: 'abortTool', toolUseId: 't1', input: {} })
+        .addTurn({ type: 'textBlock', text: 'Should not reach' })
+      agent = new Agent({ model, tools: [abortTool], printer: false })
+
+      let abortedOnResult: boolean | undefined
+      for await (const event of agent.stream('Go')) {
+        if (event.type === 'agentResultEvent') {
+          abortedOnResult = agent.cancelSignal.aborted
+        }
+      }
+
+      expect(abortedOnResult).toBe(true)
+      expect(agent.cancelSignal.aborted).toBe(false)
     })
 
     it('does not leak a deferred cancel into the next invocation', async () => {
