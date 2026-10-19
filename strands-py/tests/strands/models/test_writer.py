@@ -264,7 +264,8 @@ def test_format_request_with_tool_results(model, model_id, stream_options):
     assert request == exp_request
 
 
-def test_format_request_messages_orders_tool_results_before_injected_text(model):
+@pytest.mark.parametrize("text_position", [None, "before", "after"])
+def test_format_request_messages_orders_tool_results_before_injected_text(model, text_position):
     messages = [
         {"role": "user", "content": [{"text": "What is 2+2?"}]},
         {
@@ -274,8 +275,9 @@ def test_format_request_messages_orders_tool_results_before_injected_text(model)
         {
             "role": "user",
             "content": [
+                *([{"text": "Injected context"}] if text_position == "before" else []),
                 {"toolResult": {"toolUseId": "c1", "status": "success", "content": [{"text": "4"}]}},
-                {"text": "Injected context"},
+                *([{"text": "Injected context"}] if text_position == "after" else []),
             ],
         },
     ]
@@ -295,8 +297,9 @@ def test_format_request_messages_orders_tool_results_before_injected_text(model)
             ],
         },
         {"role": "tool", "content": [{"text": "4", "type": "text"}], "tool_call_id": "c1"},
-        {"role": "user", "content": [{"text": "Injected context", "type": "text"}]},
     ]
+    if text_position:
+        exp_messages.append({"role": "user", "content": [{"text": "Injected context", "type": "text"}]})
 
     assert tru_messages == exp_messages
 

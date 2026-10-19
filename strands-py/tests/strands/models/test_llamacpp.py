@@ -881,7 +881,8 @@ def test_format_messages_with_mixed_content() -> None:
     assert result[0]["content"][2]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 
-def test_format_messages_orders_tool_results_before_injected_text() -> None:
+@pytest.mark.parametrize("text_position", [None, "before", "after"])
+def test_format_messages_orders_tool_results_before_injected_text(text_position) -> None:
     """Test that tool results stay adjacent to the tool calls they answer."""
     model = LlamaCppModel()
 
@@ -894,8 +895,9 @@ def test_format_messages_orders_tool_results_before_injected_text() -> None:
         {
             "role": "user",
             "content": [
+                *([{"text": "Injected context"}] if text_position == "before" else []),
                 {"toolResult": {"toolUseId": "c1", "status": "success", "content": [{"text": "4"}]}},
-                {"text": "Injected context"},
+                *([{"text": "Injected context"}] if text_position == "after" else []),
             ],
         },
     ]
@@ -915,8 +917,9 @@ def test_format_messages_orders_tool_results_before_injected_text() -> None:
             ],
         },
         {"role": "tool", "content": [{"text": "4", "type": "text"}], "tool_call_id": "c1"},
-        {"role": "user", "content": [{"text": "Injected context", "type": "text"}]},
     ]
+    if text_position:
+        exp_messages.append({"role": "user", "content": [{"text": "Injected context", "type": "text"}]})
 
     assert tru_messages == exp_messages
 
