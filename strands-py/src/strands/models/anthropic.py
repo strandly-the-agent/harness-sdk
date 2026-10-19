@@ -175,14 +175,14 @@ class AnthropicModel(Model):
         """
         return resolve_config_metadata(self.config, self.config["model_id"])
 
-    def _format_request_message_content(self, content: ContentBlock) -> dict[str, Any]:
+    def _format_request_message_content(self, content: ContentBlock) -> dict[str, Any] | None:
         """Format an Anthropic content block.
 
         Args:
             content: Message content.
 
         Returns:
-            Anthropic formatted content block.
+            Anthropic formatted content block, or None if Anthropic cannot accept the block.
 
         Raises:
             TypeError: If the content block type or document format cannot be converted to an
@@ -232,11 +232,23 @@ class AnthropicModel(Model):
             }
 
         if "reasoningContent" in content:
-            return {
-                "signature": content["reasoningContent"]["reasoningText"]["signature"],
-                "thinking": content["reasoningContent"]["reasoningText"]["text"],
-                "type": "thinking",
-            }
+            reasoning_text = content["reasoningContent"].get("reasoningText", {})
+            if signature := reasoning_text.get("signature"):
+                return {
+                    "signature": signature,
+                    "thinking": reasoning_text.get("text", ""),
+                    "type": "thinking",
+                }
+
+            if redacted_content := content["reasoningContent"].get("redactedContent"):
+                return {
+                    "data": base64.b64encode(redacted_content).decode("utf-8"),
+                    "type": "redacted_thinking",
+                }
+
+            # Anthropic rejects reasoning text without a signature, which is how other model families emit it.
+            logger.warning("Unsigned reasoning content is not supported by Anthropic | skipping content block")
+            return None
 
         if "text" in content:
             return {"text": content["text"], "type": "text"}
@@ -317,7 +329,10 @@ class AnthropicModel(Model):
                     logger.warning("Location sources are not supported by Anthropic | skipping content block")
                     continue
 
-                formatted_contents.append(self._format_request_message_content(content))
+                formatted_content = self._format_request_message_content(content)
+                if formatted_content is None:
+                    continue
+                formatted_contents.append(formatted_content)
 
             # Automatic placement runs once the whole message is formatted, so the cache point lands on a
             # block that survived translation. It is skipped when a caller-placed point already marked one.
