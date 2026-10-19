@@ -1,0 +1,42 @@
+name: win-sdk-probe
+on: { push: { branches: [strandly/win-ci-probe] } }
+permissions: { contents: write }
+jobs:
+  sdk:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: strandly/local-sandbox-windows, path: src }
+      - uses: actions/checkout@v4
+        with: { ref: strandly/win-ci-probe, path: probe }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: strands-ts sandbox tests (PowerShell path)
+        shell: pwsh
+        working-directory: src
+        continue-on-error: true
+        run: |
+          "### strands-ts ###" | Out-File -Append -Encoding utf8 ..\probe\out.txt
+          "sh on PATH: $((Get-Command sh -ErrorAction SilentlyContinue).Source)" | Out-File -Append -Encoding utf8 ..\probe\out.txt
+          npm ci --no-audit --no-fund 2>&1 | Select-Object -Last 2 | Out-File -Append -Encoding utf8 ..\probe\out.txt
+          cd strands-ts
+          npx vitest run --project unit-node src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts src/sandbox/__tests__/stream-process.test.node.ts 2>&1 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "strands-ts sandbox tests exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+      - name: strands-py sandbox tests (PowerShell path)
+        shell: pwsh
+        working-directory: src/strands-py
+        continue-on-error: true
+        run: |
+          "### strands-py ###" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          pip install -q -e '.[dev]' 2>&1 | Select-Object -Last 2 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          python -m pytest tests/strands/sandbox -q -p no:cacheprovider 2>&1 | Select-Object -Last 30 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "strands-py sandbox tests exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+      - name: publish output
+        shell: bash
+        working-directory: probe
+        run: |
+          git config user.name strandly-the-agent; git config user.email strandly-the-agent@users.noreply.github.com
+          git add out.txt && git commit -m "sdk probe output [skip ci]" && git push
