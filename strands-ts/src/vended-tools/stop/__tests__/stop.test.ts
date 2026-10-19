@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { stop, makeStop } from '../index.js'
 import { DEFAULT_STOP_MESSAGE, DEFAULT_MAX_STOP_MESSAGE_LENGTH } from '../types.js'
-import type { ToolContext } from '../../../../index.js'
-import { createMockAgent } from '../../../../__fixtures__/agent-helpers.js'
+import type { ToolContext } from '../../../index.js'
+import { createMockAgent } from '../../../__fixtures__/agent-helpers.js'
 
 const createFreshContext = (): { cancel: ReturnType<typeof vi.fn>; context: ToolContext } => {
   const cancel = vi.fn()
