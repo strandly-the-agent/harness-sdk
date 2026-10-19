@@ -5245,3 +5245,36 @@ FAILED tests/strands/sandbox/test_not_a_sandbox_local_environment.py::test_execu
   ?      +
 1 failed, 57 passed, 71 skipped in 5.52s
 strands-py sandbox tests exit=1
+### strands-ts ###
+sh on PATH: C:\Program Files\Git\bin\sh.exe
+
+added 419 packages in 18s
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/strands-ts[39m
+
+ [32m✓[39m [30m[42m unit-node [49m[39m src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 6219[2mms[22m[39m
+       [33m[2m✓[22m[39m runs a command on the host [33m 2460[2mms[22m[39m
+       [33m[2m✓[22m[39m respects the cwd option [33m 411[2mms[22m[39m
+       [33m[2m✓[22m[39m runs code through the named interpreter [33m 688[2mms[22m[39m
+       [33m[2m✓[22m[39m reports a failing cmdlet as exit 1 and keeps going after it [33m 877[2mms[22m[39m
+       [33m[2m✓[22m[39m runs a command longer than the Windows command-line limit [33m 305[2mms[22m[39m
+       [33m[2m✓[22m[39m round-trips UTF-8 output [33m 302[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m24 passed[39m[22m[90m (24)[39m
+[2mType Errors [22m [2mno errors[22m
+[2m   Start at [22m 17:41:37
+[2m   Duration [22m 6.60s[2m (transform 140ms, setup 158ms, import 31ms, tests 6.22s, environment 0ms)[22m
+
+JSON report written to D:/a/harness-sdk/harness-sdk/src/strands-ts/test/.artifacts/test-report/json/report.json
+JUNIT report written to D:/a/harness-sdk/harness-sdk/src/strands-ts/test/.artifacts/test-report/junit/report.xml
+strands-ts sandbox tests exit=0
+### strands-py ###
+.................................sssssssssssssssssssssssssssssssssssssss [ 55%]
+ssssssssssssssssss.........................ssssssssssssss                [100%]
+58 passed, 71 skipped in 4.66s
+strands-py sandbox tests exit=0
