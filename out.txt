@@ -5278,3 +5278,40 @@ strands-ts sandbox tests exit=0
 ssssssssssssssssss.........................ssssssssssssss                [100%]
 58 passed, 71 skipped in 4.66s
 strands-py sandbox tests exit=0
+### strands-ts ###
+sh on PATH: C:\Program Files\Git\bin\sh.exe
+
+added 419 packages in 29s
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/strands-ts[39m
+
+ [32m✓[39m [30m[42m unit-node [49m[39m src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts [2m([22m[2m26 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 7203[2mms[22m[39m
+       [33m[2m✓[22m[39m runs a command on the host [33m 2757[2mms[22m[39m
+       [33m[2m✓[22m[39m respects the cwd option [33m 473[2mms[22m[39m
+       [33m[2m✓[22m[39m reports a non-zero exit code and stderr from a failing command [33m 333[2mms[22m[39m
+       [33m[2m✓[22m[39m applies the env option [33m 339[2mms[22m[39m
+       [33m[2m✓[22m[39m runs code through the named interpreter [33m 716[2mms[22m[39m
+       [33m[2m✓[22m[39m propagates a native command exit code [33m 318[2mms[22m[39m
+       [33m[2m✓[22m[39m reports a failing cmdlet as exit 1 and keeps going after it [33m 888[2mms[22m[39m
+       [33m[2m✓[22m[39m runs a command longer than the Windows command-line limit [33m 326[2mms[22m[39m
+       [33m[2m✓[22m[39m round-trips UTF-8 output [33m 342[2mms[22m[39m
+       [33m[2m✓[22m[39m overrides a host variable whose name differs only by case [33m 350[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m25 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (26)[39m
+[2mType Errors [22m [2mno errors[22m
+[2m   Start at [22m 18:11:58
+[2m   Duration [22m 7.63s[2m (transform 155ms, setup 174ms, import 35ms, tests 7.20s, environment 0ms)[22m
+
+JSON report written to D:/a/harness-sdk/harness-sdk/src/strands-ts/test/.artifacts/test-report/json/report.json
+JUNIT report written to D:/a/harness-sdk/harness-sdk/src/strands-ts/test/.artifacts/test-report/junit/report.xml
+strands-ts sandbox tests exit=0
+### strands-py ###
+..................................ssssssssssssssssssssssssssssssssssssss [ 55%]
+sssssssssssssssssss.........................ssssssssssssss               [100%]
+59 passed, 71 skipped in 5.38s
+strands-py sandbox tests exit=0
