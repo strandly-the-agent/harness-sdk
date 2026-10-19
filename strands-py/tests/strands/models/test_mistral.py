@@ -439,7 +439,8 @@ def test_format_request_with_tool_result(model, model_id):
     assert actual_request == exp_request
 
 
-def test_format_request_messages_orders_tool_results_before_injected_text(model):
+@pytest.mark.parametrize("text_position", [None, "before", "after"])
+def test_format_request_messages_orders_tool_results_before_injected_text(model, text_position):
     messages = [
         {"role": "user", "content": [{"text": "What is 2+2?"}]},
         {
@@ -449,8 +450,9 @@ def test_format_request_messages_orders_tool_results_before_injected_text(model)
         {
             "role": "user",
             "content": [
+                *([{"text": "Injected context"}] if text_position == "before" else []),
                 {"toolResult": {"toolUseId": "c1", "status": "success", "content": [{"text": "4"}]}},
-                {"text": "Injected context"},
+                *([{"text": "Injected context"}] if text_position == "after" else []),
             ],
         },
     ]
@@ -470,8 +472,9 @@ def test_format_request_messages_orders_tool_results_before_injected_text(model)
             ],
         },
         {"role": "tool", "name": "c1", "content": "4", "tool_call_id": "c1"},
-        {"role": "user", "content": "Injected context"},
     ]
+    if text_position:
+        exp_messages.append({"role": "user", "content": "Injected context"})
 
     assert tru_messages == exp_messages
 

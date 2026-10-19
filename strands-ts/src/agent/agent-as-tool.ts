@@ -266,7 +266,7 @@ export class AgentAsTool extends Tool {
       }
 
       if (FAILED_STOP_REASONS.has(result.stopReason)) {
-        let message = `Subagent stopped before finishing (stopReason=${result.stopReason}).`
+        let message = `Agent '${this.name}' stopped before finishing (stopReason=${result.stopReason}).`
         const partial = result.toString().replace(/\n+$/, '')
         if (partial) {
           message += `\n\nPartial output:\n${partial}`

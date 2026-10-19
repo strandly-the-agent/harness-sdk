@@ -157,9 +157,9 @@ describe('AgentAsTool', () => {
       [
         'contentFiltered',
         "I'll retrieve that now.",
-        "Subagent stopped before finishing (stopReason=contentFiltered).\n\nPartial output:\nI'll retrieve that now.",
+        "Agent 'test-agent' stopped before finishing (stopReason=contentFiltered).\n\nPartial output:\nI'll retrieve that now.",
       ],
-      ['refusal', '', 'Subagent stopped before finishing (stopReason=refusal).'],
+      ['refusal', '', "Agent 'test-agent' stopped before finishing (stopReason=refusal)."],
     ])('returns an error when the wrapped agent stops on %s', async (stopReason, text, message) => {
       const model = new MockMessageModel().addTurn({ type: 'textBlock', text }, { stopReason })
       const agent = new Agent({ model, name: 'test-agent', printer: false })

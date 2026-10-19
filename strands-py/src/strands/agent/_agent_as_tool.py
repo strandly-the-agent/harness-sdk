@@ -283,7 +283,7 @@ class _AgentAsTool(AgentTool):
                 return
 
             if result.stop_reason in _FAILED_STOP_REASONS:
-                message = f"Subagent stopped before finishing (stop_reason={result.stop_reason})."
+                message = f"Agent '{self._tool_name}' stopped before finishing (stop_reason={result.stop_reason})."
                 partial = str(result).rstrip("\n")
                 if partial:
                     message += f"\n\nPartial output:\n{partial}"

@@ -403,6 +403,7 @@ def test_format_request_drops_unsigned_reasoning(model, model_id, max_tokens, ca
             "role": "assistant",
             "content": [
                 {"reasoningContent": {"reasoningText": {"text": "reasoning_text"}}},
+                {"reasoningContent": {"reasoningText": {"text": "more_reasoning_text"}}},
                 {"text": "answer"},
             ],
         },
@@ -422,7 +423,7 @@ def test_format_request_drops_unsigned_reasoning(model, model_id, max_tokens, ca
     }
 
     assert tru_request == exp_request
-    assert "Unsigned reasoning content is not supported by Anthropic" in caplog.text
+    assert caplog.text.count("Unsigned reasoning content is not supported by Anthropic") == 1
 
 
 def test_format_request_with_redacted_reasoning(model, model_id, max_tokens):

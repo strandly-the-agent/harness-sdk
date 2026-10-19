@@ -986,6 +986,7 @@ describe('BedrockModel', () => {
     const UNSIGNED_REASONING = { reasoningContent: { reasoningText: { text: 'gpt-oss thinking' } } }
     const REDACTED_REASONING = { reasoningContent: { redactedContent: new Uint8Array([1, 2, 3]) } }
 
+    // Guards against https://github.com/strands-agents/harness-sdk/issues/4779
     it.each([
       // Non-Anthropic models reject the Anthropic-only signature; models with their own reasoning keep it unsigned.
       { modelId: 'openai.gpt-oss-120b-1:0', expReasoning: [UNSIGNED_REASONING, REDACTED_REASONING] },

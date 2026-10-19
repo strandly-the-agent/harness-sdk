@@ -804,10 +804,10 @@ async def test_stream_sub_agent_deferred_cancel_surfaces_as_success(tool, mock_a
         (
             "content_filtered",
             "I'll retrieve that now.",
-            "Subagent stopped before finishing (stop_reason=content_filtered)."
+            "Agent 'test_agent' stopped before finishing (stop_reason=content_filtered)."
             "\n\nPartial output:\nI'll retrieve that now.",
         ),
-        ("refusal", "", "Subagent stopped before finishing (stop_reason=refusal)."),
+        ("refusal", "", "Agent 'test_agent' stopped before finishing (stop_reason=refusal)."),
     ],
 )
 @pytest.mark.asyncio
