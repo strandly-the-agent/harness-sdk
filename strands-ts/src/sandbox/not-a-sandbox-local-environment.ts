@@ -1,4 +1,6 @@
+import { randomUUID } from 'crypto'
 import { readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises'
+import { tmpdir } from 'os'
 import { dirname, isAbsolute, join } from 'path'
 import { Sandbox } from './base.js'
 import type { ExecuteOptions } from './base.js'
@@ -6,7 +8,24 @@ import { LANGUAGE_PATTERN, shellQuote } from './constants.js'
 import { SandboxPathNotFoundError } from './errors.js'
 import { streamProcess } from './stream-process.js'
 import type { ExecutionResult, FileInfo, StreamChunk } from './types.js'
-import { buildShellEnvPrefix } from './posix-shell.js'
+import { buildShellEnvPrefix, validateEnvKeys } from './posix-shell.js'
+
+const POWERSHELL_ARGS = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File']
+
+/**
+ * Wrap a command for PowerShell: UTF-8 in and out, and an exit code that mirrors `sh -c` (the last
+ * statement's success, or the failing native command's own code). `$ErrorActionPreference` is left alone
+ * because `Stop` turns native stderr output into a terminating error on PowerShell 5.1.
+ */
+function powershellScript(command: string): string {
+  return [
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+    '$OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
+    command,
+    '$ok = $?',
+    'if (-not $ok) { if ($LASTEXITCODE) { exit $LASTEXITCODE } else { exit 1 } }',
+  ].join('\n')
+}
 
 /** Returns true if the error is a missing entry (ENOENT) or a non-directory path component (ENOTDIR). */
 function isMissingPathError(error: unknown): boolean {
@@ -29,6 +48,25 @@ export class NotASandboxLocalEnvironment extends Sandbox {
     options?: ExecuteOptions
   ): AsyncGenerator<StreamChunk | ExecutionResult, void, undefined> {
     const cwd = options?.cwd ?? process.cwd()
+    if (process.platform === 'win32') {
+      // No `sh` on Windows: run the command in PowerShell from a temp script (no command-line length cap,
+      // no quoting layer); cwd and env go through spawn rather than a shell prefix.
+      if (options?.env) validateEnvKeys(options.env)
+      const script = join(tmpdir(), `strands-shell-${randomUUID()}.ps1`)
+      // The BOM makes PowerShell 5.1 read the file as UTF-8 rather than the ANSI code page.
+      await writeFile(script, `\uFEFF${powershellScript(command)}`)
+      try {
+        yield* streamProcess('powershell.exe', [...POWERSHELL_ARGS, script], {
+          timeout: options?.timeout,
+          signal: options?.signal,
+          cwd,
+          env: { ...process.env, ...options?.env },
+        })
+      } finally {
+        await unlink(script).catch(() => undefined)
+      }
+      return
+    }
     yield* streamProcess('sh', ['-c', `cd ${shellQuote(cwd)} && ${buildShellEnvPrefix(options?.env)}${command}`], {
       timeout: options?.timeout,
       signal: options?.signal,
@@ -44,6 +82,19 @@ export class NotASandboxLocalEnvironment extends Sandbox {
       throw new Error(`language parameter contains invalid characters: ${language}`)
     }
     const cwd = options?.cwd ?? process.cwd()
+    if (process.platform === 'win32') {
+      // No shell involved: the interpreter is spawned directly and reads the code from stdin.
+      if (options?.env) validateEnvKeys(options.env)
+      yield* streamProcess(language, [], {
+        timeout: options?.timeout,
+        signal: options?.signal,
+        cwd,
+        env: { ...process.env, ...options?.env },
+        input: code,
+        enoentMessage: `Language interpreter not found: ${language}`,
+      })
+      return
+    }
     const encoded = btoa(Array.from(new TextEncoder().encode(code), (b) => String.fromCharCode(b)).join(''))
     const eof = `STRANDS_EOF_${crypto.randomUUID().slice(0, 16)}`
     yield* streamProcess(

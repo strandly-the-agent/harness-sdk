@@ -13,8 +13,11 @@ local ``sh``.
 """
 
 import base64
+import contextlib
 import os
 import shlex
+import sys
+import tempfile
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -23,9 +26,29 @@ from typing import Any
 from .base import Sandbox
 from .constants import LANGUAGE_PATTERN
 from .errors import SandboxPathNotFoundError
-from .posix_shell import build_shell_env_prefix
+from .posix_shell import build_shell_env_prefix, validate_env_keys
 from .stream_process import _stream_process
 from .types import ExecutionResult, FileInfo, StreamChunk
+
+_POWERSHELL_ARGS = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]
+
+
+def _powershell_script(command: str) -> str:
+    """Wrap ``command`` for PowerShell: UTF-8 in and out, and an exit code that mirrors ``sh -c``.
+
+    The exit code is the last statement's success, or the failing native command's own code.
+    ``$ErrorActionPreference`` is left alone because ``Stop`` turns native stderr output into a
+    terminating error on PowerShell 5.1.
+    """
+    return "\n".join(
+        [
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+            "$OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
+            command,
+            "$ok = $?",
+            "if (-not $ok) { if ($LASTEXITCODE) { exit $LASTEXITCODE } else { exit 1 } }",
+        ]
+    )
 
 
 class NotASandboxLocalEnvironment(Sandbox):
@@ -74,6 +97,28 @@ class NotASandboxLocalEnvironment(Sandbox):
             SandboxTimeoutError: If execution exceeds ``timeout`` seconds.
         """
         target_cwd = cwd if cwd is not None else os.getcwd()
+        if sys.platform == "win32":
+            # No ``sh`` on Windows: run the command in PowerShell from a temp script (no command-line length
+            # cap, no quoting layer); cwd and env go through the process rather than a shell prefix.
+            if env:
+                validate_env_keys(env)
+            fd, script = tempfile.mkstemp(prefix="strands-shell-", suffix=".ps1")
+            # The BOM makes PowerShell 5.1 read the file as UTF-8 rather than the ANSI code page.
+            with os.fdopen(fd, "w", encoding="utf-8-sig") as handle:
+                handle.write(_powershell_script(command))
+            try:
+                async for chunk in _stream_process(
+                    "powershell.exe",
+                    [*_POWERSHELL_ARGS, script],
+                    timeout=timeout,
+                    cwd=target_cwd,
+                    env={**os.environ, **(env or {})},
+                ):
+                    yield chunk
+            finally:
+                with contextlib.suppress(OSError):
+                    os.unlink(script)
+            return
         env_prefix = build_shell_env_prefix(env)
         full_command = f"cd {shlex.quote(target_cwd)} && {env_prefix}{command}"
         async for chunk in _stream_process("sh", ["-c", full_command], timeout=timeout):
@@ -117,6 +162,21 @@ class NotASandboxLocalEnvironment(Sandbox):
         """
         if not LANGUAGE_PATTERN.fullmatch(language):
             raise ValueError(f"language parameter contains invalid characters: {language}")
+        if sys.platform == "win32":
+            # No shell involved: the interpreter is spawned directly and reads the code from stdin.
+            if env:
+                validate_env_keys(env)
+            async for chunk in _stream_process(
+                language,
+                [],
+                timeout=timeout,
+                cwd=cwd if cwd is not None else os.getcwd(),
+                env={**os.environ, **(env or {})},
+                input=code,
+                enoent_message=f"Language interpreter not found: {language}",
+            ):
+                yield chunk
+            return
         encoded = base64.b64encode(code.encode()).decode("ascii")
         eof = f"STRANDS_EOF_{uuid.uuid4().hex[:16]}"
         command = f"base64 -d << '{eof}' | {language}\n{encoded}\n{eof}"
