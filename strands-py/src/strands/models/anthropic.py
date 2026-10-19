@@ -247,7 +247,6 @@ class AnthropicModel(Model):
                 }
 
             # Anthropic rejects reasoning text without a signature, which is how other model families emit it.
-            logger.warning("Unsigned reasoning content is not supported by Anthropic | skipping content block")
             return None
 
         if "text" in content:
@@ -266,15 +265,16 @@ class AnthropicModel(Model):
             }
 
         if "toolResult" in content:
+            formatted_results = [
+                self._format_request_message_content(
+                    {"text": json.dumps(tool_result_content["json"], ensure_ascii=False)}
+                    if "json" in tool_result_content
+                    else cast(ContentBlock, tool_result_content)
+                )
+                for tool_result_content in content["toolResult"]["content"]
+            ]
             return {
-                "content": [
-                    self._format_request_message_content(
-                        {"text": json.dumps(tool_result_content["json"], ensure_ascii=False)}
-                        if "json" in tool_result_content
-                        else cast(ContentBlock, tool_result_content)
-                    )
-                    for tool_result_content in content["toolResult"]["content"]
-                ],
+                "content": [block for block in formatted_results if block is not None],
                 "is_error": content["toolResult"]["status"] == "error",
                 "tool_use_id": content["toolResult"]["toolUseId"],
                 "type": "tool_result",
@@ -301,6 +301,7 @@ class AnthropicModel(Model):
         cache_config = self.config.get("cache_config")
         configured_ttl = cache_config.ttl if cache_config else None
         formatted_messages = []
+        dropped_unsigned_reasoning = False
 
         for message_idx, message in enumerate(messages):
             formatted_contents: list[dict[str, Any]] = []
@@ -331,6 +332,7 @@ class AnthropicModel(Model):
 
                 formatted_content = self._format_request_message_content(content)
                 if formatted_content is None:
+                    dropped_unsigned_reasoning = True
                     continue
                 formatted_contents.append(formatted_content)
 
@@ -346,6 +348,9 @@ class AnthropicModel(Model):
 
             if formatted_contents:
                 formatted_messages.append({"content": formatted_contents, "role": message["role"]})
+
+        if dropped_unsigned_reasoning:
+            logger.warning("Unsigned reasoning content is not supported by Anthropic | skipped content blocks")
 
         return formatted_messages
 
