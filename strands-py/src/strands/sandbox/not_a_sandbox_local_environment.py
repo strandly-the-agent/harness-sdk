@@ -123,6 +123,7 @@ class NotASandboxLocalEnvironment(Sandbox):
                     timeout=timeout,
                     cwd=target_cwd,
                     env=_host_env_with(env),
+                    enoent_message="PowerShell not found: powershell.exe is required to run commands on Windows",
                 ):
                     yield chunk
             finally:

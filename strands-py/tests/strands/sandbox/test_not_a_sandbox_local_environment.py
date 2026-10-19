@@ -20,6 +20,8 @@ PRINT_CWD = "(Get-Location).Path" if WINDOWS else "pwd"
 FAIL_WITH_STDERR = "[Console]::Error.WriteLine('oops'); exit 3" if WINDOWS else "echo oops >&2; exit 3"
 PRINT_GREETING = "echo $env:GREETING" if WINDOWS else "printenv GREETING"
 PYTHON = "python" if WINDOWS else "python3"
+# PowerShell and Windows Python end lines with \r\n.
+EOL = "\r\n" if WINDOWS else "\n"
 
 
 @pytest.fixture
@@ -34,8 +36,7 @@ def sandbox() -> NotASandboxLocalEnvironment:
 async def test_execute_runs_a_command(sandbox):
     result = await sandbox.execute("echo hello")
     assert result.exit_code == 0
-    # PowerShell ends lines with \r\n.
-    assert result.stdout.strip() == "hello"
+    assert result.stdout == f"hello{EOL}"
 
 
 @pytest.mark.asyncio
@@ -48,13 +49,13 @@ async def test_execute_respects_cwd_option(sandbox, tmp_path):
 async def test_execute_reports_nonzero_exit_and_stderr(sandbox):
     result = await sandbox.execute(FAIL_WITH_STDERR)
     assert result.exit_code == 3
-    assert result.stderr.strip() == "oops"
+    assert result.stderr == f"oops{EOL}"
 
 
 @pytest.mark.asyncio
 async def test_execute_applies_env_option(sandbox):
     result = await sandbox.execute(PRINT_GREETING, env={"GREETING": "hi"})
-    assert result.stdout.strip() == "hi"
+    assert result.stdout == f"hi{EOL}"
 
 
 # ---- execute_code ----
@@ -64,7 +65,7 @@ async def test_execute_applies_env_option(sandbox):
 async def test_execute_code_runs_interpreter(sandbox, tmp_path):
     result = await sandbox.execute_code("print(2 + 2)", PYTHON, cwd=str(tmp_path))
     assert result.exit_code == 0
-    assert result.stdout.strip() == "4"
+    assert result.stdout == f"4{EOL}"
 
 
 @pytest.mark.asyncio
@@ -76,7 +77,7 @@ async def test_execute_code_rejects_invalid_language(sandbox):
 @pytest.mark.asyncio
 async def test_execute_code_applies_env_option(sandbox):
     result = await sandbox.execute_code('import os; print(os.environ["GREETING"])', PYTHON, env={"GREETING": "hi"})
-    assert result.stdout.strip() == "hi"
+    assert result.stdout == f"hi{EOL}"
 
 
 @pytest.mark.asyncio

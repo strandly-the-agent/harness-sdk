@@ -73,6 +73,7 @@ export class NotASandboxLocalEnvironment extends Sandbox {
           signal: options?.signal,
           cwd,
           env: hostEnvWith(options?.env),
+          enoentMessage: 'PowerShell not found: powershell.exe is required to run commands on Windows',
         })
       } finally {
         await unlink(script).catch(() => undefined)

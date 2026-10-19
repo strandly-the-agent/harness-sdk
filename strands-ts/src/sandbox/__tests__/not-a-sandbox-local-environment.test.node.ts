@@ -15,6 +15,8 @@ const PRINT_CWD = WINDOWS ? '(Get-Location).Path' : 'pwd'
 const FAIL_WITH_STDERR = WINDOWS ? "[Console]::Error.WriteLine('oops'); exit 3" : 'echo oops >&2; exit 3'
 const PRINT_GREETING = WINDOWS ? 'echo $env:GREETING' : 'echo "$GREETING"'
 const PYTHON = WINDOWS ? 'python' : 'python3'
+// PowerShell and Windows Python end lines with \r\n.
+const EOL = WINDOWS ? '\r\n' : '\n'
 
 describe('NotASandboxLocalEnvironment', () => {
   let sandbox: NotASandboxLocalEnvironment
@@ -34,8 +36,7 @@ describe('NotASandboxLocalEnvironment', () => {
     it('runs a command on the host', async () => {
       const result = await sandbox.execute('echo hello')
       expect(result.exitCode).toBe(0)
-      // PowerShell ends lines with \r\n.
-      expect(result.stdout.trim()).toBe('hello')
+      expect(result.stdout).toBe(`hello${EOL}`)
     })
 
     it('respects the cwd option', async () => {
@@ -47,12 +48,12 @@ describe('NotASandboxLocalEnvironment', () => {
     it('reports a non-zero exit code and stderr from a failing command', async () => {
       const result = await sandbox.execute(FAIL_WITH_STDERR)
       expect(result.exitCode).toBe(3)
-      expect(result.stderr.trim()).toBe('oops')
+      expect(result.stderr).toBe(`oops${EOL}`)
     })
 
     it('applies the env option', async () => {
       const result = await sandbox.execute(PRINT_GREETING, { env: { GREETING: 'hi' } })
-      expect(result.stdout.trim()).toBe('hi')
+      expect(result.stdout).toBe(`hi${EOL}`)
     })
   })
 
@@ -60,7 +61,7 @@ describe('NotASandboxLocalEnvironment', () => {
     it('runs code through the named interpreter', async () => {
       const result = await sandbox.executeCode('print(2 + 2)', PYTHON, { cwd: TEST_DIR })
       expect(result.exitCode).toBe(0)
-      expect(result.stdout.trim()).toBe('4')
+      expect(result.stdout).toBe(`4${EOL}`)
     })
 
     it('rejects a language with invalid characters', async () => {
@@ -71,7 +72,7 @@ describe('NotASandboxLocalEnvironment', () => {
       const result = await sandbox.executeCode('import os; print(os.environ["GREETING"])', PYTHON, {
         env: { GREETING: 'hi' },
       })
-      expect(result.stdout.trim()).toBe('hi')
+      expect(result.stdout).toBe(`hi${EOL}`)
     })
 
     it('reports a missing interpreter as exit 127', async () => {
