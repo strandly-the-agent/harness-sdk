@@ -122,11 +122,11 @@ class NotASandboxLocalEnvironment(Sandbox):
                 enoent_message="PowerShell not found: powershell.exe is required to run commands on Windows",
             ):
                 yield chunk
-            return
-        env_prefix = build_shell_env_prefix(env)
-        full_command = f"cd {shlex.quote(target_cwd)} && {env_prefix}{command}"
-        async for chunk in _stream_process("sh", ["-c", full_command], timeout=timeout):
-            yield chunk
+        else:
+            env_prefix = build_shell_env_prefix(env)
+            full_command = f"cd {shlex.quote(target_cwd)} && {env_prefix}{command}"
+            async for chunk in _stream_process("sh", ["-c", full_command], timeout=timeout):
+                yield chunk
 
     async def execute_code_streaming(
         self,
@@ -180,12 +180,12 @@ class NotASandboxLocalEnvironment(Sandbox):
                 enoent_message=f"Language interpreter not found: {language}",
             ):
                 yield chunk
-            return
-        encoded = base64.b64encode(code.encode()).decode("ascii")
-        eof = f"STRANDS_EOF_{uuid.uuid4().hex[:16]}"
-        command = f"base64 -d << '{eof}' | {language}\n{encoded}\n{eof}"
-        async for chunk in self.execute_streaming(command, timeout=timeout, cwd=cwd, env=env, **kwargs):
-            yield chunk
+        else:
+            encoded = base64.b64encode(code.encode()).decode("ascii")
+            eof = f"STRANDS_EOF_{uuid.uuid4().hex[:16]}"
+            command = f"base64 -d << '{eof}' | {language}\n{encoded}\n{eof}"
+            async for chunk in self.execute_streaming(command, timeout=timeout, cwd=cwd, env=env, **kwargs):
+                yield chunk
 
     async def read_file(self, path: str, **kwargs: Any) -> bytes:
         """Read a file from the host filesystem as raw bytes.

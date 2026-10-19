@@ -70,12 +70,12 @@ export class NotASandboxLocalEnvironment extends Sandbox {
         env: hostEnvWith(options?.env),
         enoentMessage: 'PowerShell not found: powershell.exe is required to run commands on Windows',
       })
-      return
+    } else {
+      yield* streamProcess('sh', ['-c', `cd ${shellQuote(cwd)} && ${buildShellEnvPrefix(options?.env)}${command}`], {
+        timeout: options?.timeout,
+        signal: options?.signal,
+      })
     }
-    yield* streamProcess('sh', ['-c', `cd ${shellQuote(cwd)} && ${buildShellEnvPrefix(options?.env)}${command}`], {
-      timeout: options?.timeout,
-      signal: options?.signal,
-    })
   }
 
   async *executeCodeStreaming(

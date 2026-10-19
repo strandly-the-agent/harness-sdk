@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import fs from 'fs'
 import os from 'os'
 import { streamProcess } from '../stream-process.js'
 import type { ExecutionResult } from '../types.js'
@@ -17,7 +18,8 @@ async function run(
 describe.skipIf(process.platform === 'win32')('streamProcess options', () => {
   it('runs the child in cwd', async () => {
     const result = await run('sh', ['-c', 'pwd'], { cwd: os.tmpdir() })
-    expect(result.stdout.trim()).toBe(os.tmpdir())
+    // macOS's temp dir is a symlink (/var -> /private/var); compare resolved paths.
+    expect(fs.realpathSync(result.stdout.trim())).toBe(fs.realpathSync(os.tmpdir()))
   })
 
   it('replaces the environment with env', async () => {
