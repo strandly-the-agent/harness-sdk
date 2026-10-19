@@ -5100,3 +5100,30 @@ strands-cli check exit=0
 .........................................                                [100%]
 759 passed, 2 skipped in 153.85s (0:02:33)
 harness-py pytest exit=0
+### strands-ts ###
+sh on PATH: C:\Program Files\Git\bin\sh.exe
+
+added 419 packages in 23s
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/strands-ts[39m
+
+ [2m[90m↓[39m[22m [30m[42m unit-node [49m[39m src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts [2m([22m[2m18 tests[22m[2m | [22m[33m18 skipped[39m[2m)[22m
+
+[2m Test Files [22m [33m1 skipped[39m[90m (1)[39m
+[2m      Tests [22m [33m18 skipped[39m[90m (18)[39m
+[2mType Errors [22m [2mno errors[22m
+[2m   Start at [22m 17:06:32
+[2m   Duration [22m 411ms[2m (transform 147ms, setup 165ms, import 26ms, tests 0ms, environment 0ms)[22m
+
+JSON report written to D:/a/harness-sdk/harness-sdk/src/strands-ts/test/.artifacts/test-report/json/report.json
+JUNIT report written to D:/a/harness-sdk/harness-sdk/src/strands-ts/test/.artifacts/test-report/junit/report.xml
+strands-ts sandbox tests exit=0
+### strands-py ###
+.........sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss [ 58%]
+ssssssssssss.........................ssssssssssssss                      [100%]
+34 passed, 89 skipped in 2.42s
+strands-py sandbox tests exit=0
