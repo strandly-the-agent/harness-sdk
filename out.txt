@@ -5127,3 +5127,121 @@ strands-ts sandbox tests exit=0
 ssssssssssss.........................ssssssssssssss                      [100%]
 34 passed, 89 skipped in 2.42s
 strands-py sandbox tests exit=0
+### strands-ts ###
+sh on PATH: C:\Program Files\Git\bin\sh.exe
+
+added 419 packages in 25s
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+Testing types with tsc and vue-tsc is an experimental feature.
+Breaking changes might not follow SemVer, please pin Vitest's version when using it.
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/strands-ts[39m
+
+ [31m❯[39m [30m[42m unit-node [49m[39m src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts [2m([22m[2m24 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 9072[2mms[22m[39m
+[31m       [31m×[31m runs a command on the host[39m[33m 3852[2mms[22m[39m[33m (retry x2)[39m
+[31m       [31m×[31m respects the cwd option[39m[33m 1224[2mms[22m[39m[33m (retry x2)[39m
+       [32m✓[39m reports a non-zero exit code and stderr from a failing command[32m 294[2mms[22m[39m
+       [33m[2m✓[22m[39m applies the env option [33m 379[2mms[22m[39m
+       [33m[2m✓[22m[39m runs code through the named interpreter [33m 892[2mms[22m[39m
+       [32m✓[39m rejects a language with invalid characters[32m 3[2mms[22m[39m
+       [32m✓[39m applies the env option[32m 30[2mms[22m[39m
+       [32m✓[39m reports a missing interpreter as exit 127[32m 6[2mms[22m[39m
+       [33m[2m✓[22m[39m propagates a native command exit code [33m 302[2mms[22m[39m
+       [33m[2m✓[22m[39m does not treat stderr output from a successful native command as failure [33m 324[2mms[22m[39m
+       [33m[2m✓[22m[39m reports a failing cmdlet as exit 1 and keeps going after it [33m 1009[2mms[22m[39m
+       [33m[2m✓[22m[39m runs a command longer than the Windows command-line limit [33m 354[2mms[22m[39m
+       [33m[2m✓[22m[39m round-trips UTF-8 output [33m 360[2mms[22m[39m
+       [32m✓[39m text file roundtrip via absolute path[32m 4[2mms[22m[39m
+       [32m✓[39m binary roundtrip preserves all byte values[32m 4[2mms[22m[39m
+       [32m✓[39m creates missing parent directories on write[32m 4[2mms[22m[39m
+       [32m✓[39m throws when reading a nonexistent file[32m 1[2mms[22m[39m
+       [32m✓[39m removes a file[32m 2[2mms[22m[39m
+       [32m✓[39m throws on a nonexistent file[32m 1[2mms[22m[39m
+       [32m✓[39m returns entries sorted by name with isDir and size metadata[32m 17[2mms[22m[39m
+       [32m✓[39m throws SandboxPathNotFoundError on a nonexistent directory[32m 1[2mms[22m[39m
+       [32m✓[39m throws SandboxPathNotFoundError when a path component is a file[32m 2[2mms[22m[39m
+       [32m✓[39m writes absolute paths as-is[32m 2[2mms[22m[39m
+       [32m✓[39m resolves relative paths against process.cwd()[32m 2[2mms[22m[39m
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL   unit-node  src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts > NotASandboxLocalEnvironment > execute > runs a command on the host
+ FAIL   unit-node  src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts > NotASandboxLocalEnvironment > execute > runs a command on the host
+ FAIL   unit-node  src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts > NotASandboxLocalEnvironment > execute > runs a command on the host
+AssertionError: expected 'hello\r\n' to be 'hello\n' // Object.is equality
+
+- Expected
++ Received
+
+- hello
++ hello
+
+
+
+ ❯ src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts:37:29
+     35|       const result = await sandbox.execute('echo hello')
+     36|       expect(result.exitCode).toBe(0)
+     37|       expect(result.stdout).toBe('hello\n')
+       |                             ^
+     38|     })
+     39|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL   unit-node  src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts > NotASandboxLocalEnvironment > execute > respects the cwd option
+ FAIL   unit-node  src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts > NotASandboxLocalEnvironment > execute > respects the cwd option
+ FAIL   unit-node  src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts > NotASandboxLocalEnvironment > execute > respects the cwd option
+AssertionError: expected 'C:\Users\runneradmin\AppData\Local\Te…' to be 'C:\Users\RUNNER~1\AppData\Local\Temp\…' // Object.is equality
+
+Expected: "C:\Users\RUNNER~1\AppData\Local\Temp\strands-test-not-a-sandbox"
+Received: "C:\Users\runneradmin\AppData\Local\Temp\strands-test-not-a-sandbox"
+
+ ❯ src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts:42:53
+     40|     it('respects the cwd option', async () => {
+     41|       const result = await sandbox.execute(PRINT_CWD, { cwd: TEST_DIR …
+     42|       expect(fs.realpathSync(result.stdout.trim())).toBe(fs.realpathSy…
+       |                                                     ^
+     43|     })
+     44|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m22 passed[39m[22m[90m (24)[39m
+[2mType Errors [22m [2mno errors[22m
+[2m   Start at [22m 17:28:00
+[2m   Duration [22m 9.47s[2m (transform 148ms, setup 165ms, import 32ms, tests 9.07s, environment 0ms)[22m
+
+JSON report written to D:/a/harness-sdk/harness-sdk/src/strands-ts/test/.artifacts/test-report/json/report.json
+JUNIT report written to D:/a/harness-sdk/harness-sdk/src/strands-ts/test/.artifacts/test-report/junit/report.xml
+strands-ts sandbox tests exit=1
+### strands-py ###
+.........F.......................sssssssssssssssssssssssssssssssssssssss [ 55%]
+ssssssssssssssssss.........................ssssssssssssss                [100%]
+================================== FAILURES ===================================
+_________________________ test_execute_runs_a_command _________________________
+
+sandbox = <strands.sandbox.not_a_sandbox_local_environment.NotASandboxLocalEnvironment object at 0x00000280593B23F0>
+
+    @pytest.mark.asyncio
+    async def test_execute_runs_a_command(sandbox):
+        result = await sandbox.execute("echo hello")
+        assert result.exit_code == 0
+>       assert result.stdout == "hello\n"
+E       AssertionError: assert 'hello\r\n' == 'hello\n'
+E         
+E         - hello
+E         + hello
+E         ?      +
+
+tests\strands\sandbox\test_not_a_sandbox_local_environment.py:37: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/strands/sandbox/test_not_a_sandbox_local_environment.py::test_execute_runs_a_command - AssertionError: assert 'hello\r\n' == 'hello\n'
+  
+  - hello
+  + hello
+  ?      +
+1 failed, 57 passed, 71 skipped in 5.52s
+strands-py sandbox tests exit=1
