@@ -62,5 +62,6 @@ When the model calls stop, the tool calls `context.agent.cancel({ message, after
 ## Limitations
 
 - Cooperative only. If the model requests stop alongside a very long-running tool call, the loop still waits for that call to finish before ending. Use `agent.cancel()` without `afterCurrentTools` if you need to bail out immediately.
+- If another tool in the same batch raises an interrupt, the invocation returns `interrupt` and the pending stop is dropped; the resumed invocation calls the model again. (Python behaves the same.)
 - `stopReason: 'cancelled'` is also what external cancellation returns, so a caller that distinguishes the two needs to track the cancel it requested.
 - Ending the loop does not drop the tool-result message or the surrounding turn; those remain in `agent.messages` as normal history.
