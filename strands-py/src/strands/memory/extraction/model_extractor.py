@@ -106,6 +106,8 @@ class ModelExtractor:
             raise no_response_error
 
         stop_reason, message, usage, metrics = stop
+        if context is not None and context.invocation_context is not None:
+            context.invocation_context._record_usage(usage)
         tracer.end_model_invoke_span(span, message, usage, metrics, stop_reason)
 
         text = "".join(block.get("text", "") for block in final_message["content"]).strip()

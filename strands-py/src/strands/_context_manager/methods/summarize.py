@@ -14,10 +14,12 @@ from typing_extensions import TypedDict
 
 from ...event_loop.streaming import process_stream
 from ...types.content import ContentBlock, Message, Messages
+from ...types.event_loop import Usage
 from ...types.tools import ToolResultContent
 from ..types import is_text_block
 
 if TYPE_CHECKING:
+    from ...agent.invocation_context import InvocationContext
     from ...models.model import Model
 
 logger = logging.getLogger(__name__)
@@ -62,9 +64,10 @@ async def _summarize_content(
     content: list[ContentBlock],
     model: Model,
     config: SummarizeConfig | None = None,
+    invocation_context: InvocationContext | None = None,
 ) -> str | None:
     """Summarize content blocks via an LLM call, falling back to text-only on failure."""
-    result, succeeded = await _call_summarizer(content, model, config)
+    result, succeeded = await _call_summarizer(content, model, config, invocation_context)
     if result is not None:
         return result
     if succeeded:
@@ -74,7 +77,7 @@ async def _summarize_content(
     if not text_only or len(text_only) == len(content):
         return None
 
-    fallback_result, _ = await _call_summarizer(text_only, model, config)
+    fallback_result, _ = await _call_summarizer(text_only, model, config, invocation_context)
     return fallback_result
 
 
@@ -121,6 +124,7 @@ async def _call_summarizer(
     content: list[ContentBlock],
     model: Model,
     config: SummarizeConfig | None = None,
+    invocation_context: InvocationContext | None = None,
 ) -> tuple[str | None, bool]:
     """Call the model to generate a summary. Returns (text, succeeded)."""
     system_prompt = (config or {}).get("system_prompt", DEFAULT_SYSTEM_PROMPT)
@@ -136,9 +140,13 @@ async def _call_summarizer(
         chunks = model.stream(messages, tool_specs=None, system_prompt=system_prompt)
 
         result_message: Message | None = None
+        result_usage: Usage | None = None
         async for event in process_stream(chunks):
             if "stop" in event:
-                _, result_message, _, _ = event["stop"]
+                _, result_message, result_usage, _ = event["stop"]
+
+        if invocation_context is not None and result_usage is not None:
+            invocation_context._record_usage(result_usage)
 
         if result_message is None:
             logger.warning("result=<empty> | summarization produced no response")

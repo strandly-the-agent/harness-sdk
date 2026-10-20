@@ -29,6 +29,7 @@ from .base import (
 
 if TYPE_CHECKING:
     from ....agent.agent import Agent
+    from ....agent.invocation_context import InvocationContext
     from ....models.model import Model
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ class SummarizeStrategy(BaseOffloadStrategy):
             return False
 
         content_blocks = _flatten_messages_to_content(safe)
-        summary = await _summarize_content(content_blocks, model, self._config)
+        summary = await _summarize_content(content_blocks, model, self._config, context.invocation_context)
         if not summary:
             return False
 
@@ -122,6 +123,7 @@ class SummarizeStrategy(BaseOffloadStrategy):
         message: Message,
         agent: Agent,
         stash_refs: list[str],
+        invocation_context: InvocationContext | None = None,
     ) -> ContentBlock | None:
         model = self._resolve_model(agent)
         if not model:
@@ -132,7 +134,7 @@ class SummarizeStrategy(BaseOffloadStrategy):
         if "toolResult" in block:
             tool_result = block["toolResult"]
             content_blocks = _tool_result_to_content_blocks(tool_result["content"])
-            summary = await _summarize_content(content_blocks, model, self._config)
+            summary = await _summarize_content(content_blocks, model, self._config, invocation_context)
             if not summary:
                 return None
 
@@ -148,7 +150,7 @@ class SummarizeStrategy(BaseOffloadStrategy):
             )
 
         if "text" not in block:
-            summary = await _summarize_content([block], model, self._config)
+            summary = await _summarize_content([block], model, self._config, invocation_context)
             if summary:
                 logger.debug(
                     "tracking_id=<%s>, tokens=<%s> | summarized media block", message.get("tracking_id"), tokens
@@ -158,7 +160,7 @@ class SummarizeStrategy(BaseOffloadStrategy):
             logger.debug("tracking_id=<%s>, tokens=<%s> | offloaded media block", message.get("tracking_id"), tokens)
             return ContentBlock(text=f"[Offloaded: ~{tokens} tokens]{refs}")
 
-        summary = await _summarize_content([ContentBlock(text=block["text"])], model, self._config)
+        summary = await _summarize_content([ContentBlock(text=block["text"])], model, self._config, invocation_context)
         if not summary:
             return None
 

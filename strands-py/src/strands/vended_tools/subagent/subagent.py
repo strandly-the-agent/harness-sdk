@@ -30,6 +30,7 @@ from ...multiagent.spec import (
 from ...tools.tools import AgentTool
 from ...types._events import ToolInterruptEvent, ToolResultEvent, ToolStreamEvent
 from ...types.content import ContentBlock, Message
+from ...types.event_loop import _LIMIT_STOP_REASONS, _limit_stop_message
 from ...types.tools import ToolGenerator, ToolUse
 from .types import (
     DEFAULT_SUBAGENT_DESCRIPTION,
@@ -295,6 +296,9 @@ class _SubagentTool(AgentTool):
         if result.stop_reason == "cancelled" and child_cancel_signal_set:
             self._pending.pop(tool_use_id, None)
             return self._error_result(tool_use_id, "Subagent was cancelled.")
+        if result.stop_reason in _LIMIT_STOP_REASONS:
+            self._pending.pop(tool_use_id, None)
+            return self._error_result(tool_use_id, _limit_stop_message(self._name, result.stop_reason))
         self._pending.pop(tool_use_id, None)
         return ToolResultEvent(
             {
@@ -320,11 +324,18 @@ class _SubagentTool(AgentTool):
             cancel_signal = (
                 tool_context.cancel_signal if tool_context is not None else getattr(parent, "cancel_signal", None)
             )
+            # Join the request of the tool call so the child shares its limits and usage.
+            invocation_context = tool_context.invocation_context if tool_context is not None else None
             child_state = {**invocation_state} if isinstance(invocation_state, dict) else invocation_state
             result = None
             # Captured before stream_async's finally clears it.
             child_cancel_signal_set = False
-            async for event in child.stream_async(prompt, invocation_state=child_state, cancel_signal=cancel_signal):
+            async for event in child.stream_async(
+                prompt,
+                invocation_state=child_state,
+                cancel_signal=cancel_signal,
+                invocation_context=invocation_context,
+            ):
                 if "result" in event:
                     result = event["result"]
                     child_signal = getattr(child, "cancel_signal", None)

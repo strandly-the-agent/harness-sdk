@@ -19,6 +19,7 @@ from ..interrupt import Interrupt, _InterruptState
 from ..types._events import AgentAsToolStreamEvent, ToolInterruptEvent, ToolResultEvent
 from ..types._snapshot import Snapshot
 from ..types.content import Messages
+from ..types.event_loop import _LIMIT_STOP_REASONS, _limit_stop_message
 from ..types.exceptions import SnapshotException
 from ..types.interrupt import InterruptResponseContent
 from ..types.tools import AgentTool, ToolGenerator, ToolResultContent, ToolSpec, ToolUse
@@ -236,11 +237,15 @@ class _AgentAsTool(AgentTool):
                 if tool_context is not None
                 else getattr(invocation_state.get("agent"), "cancel_signal", None)
             )
+            # Join the request of the tool call so the sub-agent shares its limits and usage.
+            invocation_context = tool_context.invocation_context if tool_context is not None else None
 
             result = None
             # Captured before stream_async's finally clears it.
             sub_cancel_signal_set = False
-            async for event in self._agent.stream_async(prompt, cancel_signal=cancel_signal):
+            async for event in self._agent.stream_async(
+                prompt, cancel_signal=cancel_signal, invocation_context=invocation_context
+            ):
                 if "result" in event:
                     result = event["result"]
                     sub_cancel_signal_set = self._agent.cancel_signal.is_set()
@@ -274,6 +279,16 @@ class _AgentAsTool(AgentTool):
                         "toolUseId": tool_use_id,
                         "status": "error",
                         "content": [{"text": f"Agent '{self._tool_name}' cancelled"}],
+                    }
+                )
+                return
+
+            if result.stop_reason in _LIMIT_STOP_REASONS:
+                yield ToolResultEvent(
+                    {
+                        "toolUseId": tool_use_id,
+                        "status": "error",
+                        "content": [{"text": _limit_stop_message(self._tool_name, result.stop_reason)}],
                     }
                 )
                 return

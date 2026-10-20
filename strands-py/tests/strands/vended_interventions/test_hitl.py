@@ -1012,6 +1012,7 @@ class TestBuiltInClassifier:
         mock_result.structured_output = _RiskDecision(requires_approval=True, reason="destructive")
 
         event = MagicMock()
+        event.invocation_context = None
         event.tool_use = {"name": "delete_file", "input": {"path": "/data"}}
         event.agent.model = MagicMock()
 
@@ -1037,6 +1038,7 @@ class TestBuiltInClassifier:
         classifier = _create_llm_risk_classifier()
 
         event = MagicMock()
+        event.invocation_context = None
         event.tool_use = {"name": "tool", "input": {}}
         event.agent.aux_model = None
 
@@ -1056,6 +1058,7 @@ class TestBuiltInClassifier:
         mock_result.stop_reason = "end_turn"
 
         event = MagicMock()
+        event.invocation_context = None
         event.tool_use = {"name": "tool", "input": {}}
         event.agent.model = MagicMock()
 
@@ -1085,6 +1088,7 @@ class TestBuiltInClassifier:
         mock_result.structured_output = _RiskDecision(requires_approval=False, reason="safe")
 
         event = MagicMock()
+        event.invocation_context = None
         event.tool_use = {"name": "read", "input": {}}
         event.agent.model = agent_model
 
@@ -1110,6 +1114,7 @@ class TestBuiltInClassifier:
         mock_result.structured_output = _RiskDecision(requires_approval=False, reason="safe")
 
         event = MagicMock()
+        event.invocation_context = None
         event.tool_use = {"name": "read", "input": {}}
         event.agent.model = MagicMock(name="agent_model")
         event.agent.aux_model = MagicMock(name="aux_model")
@@ -1122,6 +1127,37 @@ class TestBuiltInClassifier:
             await classifier(event)
 
         assert mock_agent_cls.call_args[1]["model"] is event.agent.aux_model
+
+    @pytest.mark.asyncio
+    async def test_classifier_joins_the_request_the_tool_call_belongs_to(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from strands.agent.invocation_context import InvocationContext, _reached_limit
+        from strands.vended_interventions.hitl.classifier import _create_llm_risk_classifier, _RiskDecision
+
+        classifier = _create_llm_risk_classifier()
+
+        mock_result = MagicMock()
+        mock_result.structured_output = _RiskDecision(requires_approval=False, reason="safe")
+
+        request = InvocationContext({"turns": 1})
+        request._turns_taken = 1
+        event = MagicMock()
+        event.invocation_context = request
+        event.tool_use = {"name": "read", "input": {}}
+        event.agent.model = MagicMock()
+
+        with patch("strands.agent.Agent") as mock_agent_cls:
+            mock_agent = MagicMock()
+            mock_agent.invoke_async = AsyncMock(return_value=mock_result)
+            mock_agent_cls.return_value = mock_agent
+
+            await classifier(event)
+
+        handed = mock_agent.invoke_async.call_args.kwargs["invocation_context"]
+        handed._record_usage({"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
+        assert _reached_limit(handed) is None
+        assert (request.turns_taken, request.usage) == (1, {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
 
     @pytest.mark.asyncio
     async def test_uses_custom_system_prompt(self):
@@ -1140,6 +1176,7 @@ class TestBuiltInClassifier:
         mock_result.structured_output = _RiskDecision(requires_approval=False, reason="ok")
 
         event = MagicMock()
+        event.invocation_context = None
         event.tool_use = {"name": "read", "input": {}}
         event.agent.model = MagicMock()
 

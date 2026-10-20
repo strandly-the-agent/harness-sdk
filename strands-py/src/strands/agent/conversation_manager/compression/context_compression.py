@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING, Literal
 
 from ....event_loop.streaming import process_stream
 from ....types.content import ContentBlock, Message
+from ....types.event_loop import Usage
 from ....types.exceptions import ContextWindowOverflowException
 
 if TYPE_CHECKING:
+    from ....agent.invocation_context import InvocationContext
     from ....models.model import Model
 
 logger = logging.getLogger(__name__)
@@ -150,6 +152,7 @@ async def generate_summary(
     messages_to_summarize: list[Message],
     model: "Model",
     system_prompt: str | None = None,
+    invocation_context: "InvocationContext | None" = None,
 ) -> Message:
     """Generate a summary of the provided messages by calling the model directly.
 
@@ -161,6 +164,7 @@ async def generate_summary(
         model: The model used to generate the summary.
         system_prompt: Optional system prompt override. Defaults to
             :data:`DEFAULT_SUMMARIZATION_PROMPT`.
+        invocation_context: The request the summary call's usage adds to.
 
     Returns:
         A user-role message containing the model-generated summary.
@@ -181,12 +185,16 @@ async def generate_summary(
     )
 
     result_message: Message | None = None
+    result_usage: Usage | None = None
     async for event in process_stream(chunks):
         if "stop" in event:
-            _, result_message, _, _ = event["stop"]
+            _, result_message, result_usage, _ = event["stop"]
 
     if result_message is None:
         raise RuntimeError("Failed to generate summary: no response from model")
+
+    if invocation_context is not None and result_usage is not None:
+        invocation_context._record_usage(result_usage)
 
     return as_user_summary(result_message)
 

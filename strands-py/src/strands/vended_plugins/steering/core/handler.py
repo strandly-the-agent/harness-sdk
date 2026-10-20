@@ -95,7 +95,9 @@ class SteeringHandler(Plugin):
         logger.debug("tool_name=<%s> | providing tool steering guidance", tool_name)
 
         try:
-            action = await self.steer_before_tool(agent=event.agent, tool_use=event.tool_use)
+            action = await self.steer_before_tool(
+                agent=event.agent, tool_use=event.tool_use, invocation_context=event.invocation_context
+            )
         except Exception as e:
             logger.debug("tool_name=<%s>, error=<%s> | tool steering handler guidance failed", tool_name, e)
             return
