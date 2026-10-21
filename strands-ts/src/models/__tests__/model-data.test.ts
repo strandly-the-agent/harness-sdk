@@ -12,18 +12,22 @@ describe('shared model data', () => {
     expect(stripRegionPrefix('us.anthropic.claude-sonnet-4-6')).toBe('anthropic.claude-sonnet-4-6')
     expect(stripRegionPrefix('us-gov.anthropic.claude-sonnet-4-6')).toBe('anthropic.claude-sonnet-4-6')
     expect(stripRegionPrefix('anthropic.claude-sonnet-4-6')).toBe('anthropic.claude-sonnet-4-6')
-    expect(stripRegionPrefix('arn:aws:bedrock:us-west-2:123:inference-profile/us.anthropic.claude-sonnet-4-6')).toBe(
-      'arn:aws:bedrock:us-west-2:123:inference-profile/us.anthropic.claude-sonnet-4-6'
-    )
   })
 
-  it('looks up a model by base id after stripping leading segments, like the Python SDK', () => {
-    expect(lookupModel('global.anthropic.claude-sonnet-4-6')?.limits?.context_window).toBe(1_000_000)
-    expect(lookupModel('anthropic.claude-sonnet-4-6')?.limits?.context_window).toBe(1_000_000)
-    expect(
-      lookupModel('arn:aws:bedrock:us-west-2:123:inference-profile/us.anthropic.claude-sonnet-4-6')?.limits
-        ?.context_window
-    ).toBe(1_000_000)
+  it('resolves every spelling of a model to its one entry', () => {
+    const entry = lookupModel('claude-opus-5-5')
+    expect(entry?.limits?.contextWindow).toBe(1_000_000)
+    expect(lookupModel('anthropic.claude-opus-5-5')).toBe(entry)
+    expect(lookupModel('us.anthropic.claude-opus-5-5')).toBe(entry)
+    expect(lookupModel('arn:aws:bedrock:us-west-2:123:inference-profile/global.anthropic.claude-opus-5-5')).toBe(entry)
+  })
+
+  it('ignores a trailing Bedrock version suffix', () => {
+    expect(lookupModel('anthropic.claude-3-5-haiku-20241022-v1:0')).toBe(lookupModel('claude-3-5-haiku-20241022'))
+    expect(lookupModel('us.anthropic.claude-3-5-sonnet-20241022-v2:0')?.limits?.contextWindow).toBe(200_000)
+  })
+
+  it('returns undefined for unknown ids', () => {
     expect(lookupModel('unknown-model')).toBeUndefined()
     expect(lookupModel('')).toBeUndefined()
   })
@@ -33,12 +37,13 @@ describe('shared model data', () => {
     expect(lookupFamily('amazon.nova-pro-v1:0')).toBeUndefined()
   })
 
-  it('declares cache points for the Claude family and nothing for unknown ids', () => {
+  it('declares family facts for Claude, model facts on top, and nothing for unknown ids', () => {
     expect(declaredModelInfo('eu.anthropic.claude-sonnet-4-6')).toEqual({
       capabilities: { promptCaching: 'cachePoints' },
+      limits: { contextWindow: 1_000_000 },
     })
-    expect(declaredModelInfo('claude-opus-4-6')).toEqual({ capabilities: { promptCaching: 'cachePoints' } })
-    expect(declaredModelInfo('amazon.nova-pro-v1:0')).toEqual({})
+    expect(declaredModelInfo('claude-future-9')).toEqual({ capabilities: { promptCaching: 'cachePoints' } })
+    expect(declaredModelInfo('amazon.nova-pro-v1:0')).toEqual({ limits: { contextWindow: 300_000 } })
     expect(declaredModelInfo('')).toEqual({})
   })
 
