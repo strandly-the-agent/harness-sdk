@@ -26,7 +26,12 @@ interface ModelData {
   readonly models: Readonly<Record<string, ModelDataEntry>>
 }
 
+const SUPPORTED_VERSION = 1
+
 const data = modelData as ModelData
+if (data.version !== SUPPORTED_VERSION) {
+  throw new Error(`model-data version ${data.version} is not supported by this SDK (expected ${SUPPORTED_VERSION})`)
+}
 const idPrefixes = new Set(data.id_prefixes)
 
 /**
@@ -44,13 +49,22 @@ export function stripRegionPrefix(modelId: string): string {
 }
 
 /**
- * Finds the shared-data entry for a model id, trying the id as given and then without its region prefix.
+ * Finds the shared-data entry for a model id, trying the id as given and then with each leading
+ * dot-separated segment removed in turn (`us.anthropic.claude-x` → `anthropic.claude-x` → `claude-x`),
+ * the same rule the Python SDK applies.
  *
  * @param modelId - The model id to look up
  * @returns The entry, or undefined when the id is not in the data
  */
 export function lookupModel(modelId: string): ModelDataEntry | undefined {
-  return data.models[modelId] ?? data.models[stripRegionPrefix(modelId)]
+  let candidate = modelId
+  for (;;) {
+    const entry = data.models[candidate]
+    if (entry !== undefined) return entry
+    const dotIndex = candidate.indexOf('.')
+    if (dotIndex === -1) return undefined
+    candidate = candidate.substring(dotIndex + 1)
+  }
 }
 
 /**
@@ -67,7 +81,7 @@ export function lookupFamily(modelId: string): ModelDataFamily | undefined {
 }
 
 /**
- * Looks up the context window limit for a model id.
+ * Looks up the context window limit for a model id: the model's own entry, then its family's.
  *
  * For Bedrock cross-region model ids (e.g. `us.anthropic.claude-sonnet-4-6`),
  * the region prefix is stripped before lookup.
@@ -76,7 +90,7 @@ export function lookupFamily(modelId: string): ModelDataFamily | undefined {
  * @returns The context window limit in tokens, or undefined if not found
  */
 export function getContextWindowLimit(modelId: string): number | undefined {
-  return lookupModel(modelId)?.limits?.context_window
+  return lookupModel(modelId)?.limits?.context_window ?? lookupFamily(modelId)?.limits?.context_window
 }
 
 const PROMPT_CACHING = { unsupported: 'unsupported', automatic: 'automatic', cache_points: 'cachePoints' } as const

@@ -12,8 +12,9 @@ That rewrites the copies under each package (`strands-ts/src/models/data/models.
 
 ## Format
 
-- `id_prefixes`: Bedrock cross-region prefixes. A lookup tries the id as given, then with one leading prefix removed (`us.anthropic.claude-sonnet-4-6` → `anthropic.claude-sonnet-4-6`).
-- `families`: facts shared by every model whose id contains one of the `match` substrings. Per-model entries win over family entries.
-- `models`: keyed by the vendor-prefixed base id (`anthropic.claude-sonnet-4-6`) or the provider's native id (`gpt-5.4`). Fields mirror the SDK's model info record: `limits.context_window` in tokens; `capabilities` as in `ModelInfo`.
+- `version`: format version of this file; loaders reject a version they do not know.
+- `id_prefixes`: Bedrock cross-region prefixes, for code that needs to strip one (`us.anthropic.claude-sonnet-4-6` → `anthropic.claude-sonnet-4-6`).
+- `models`: keyed by the vendor-prefixed base id (`anthropic.claude-sonnet-4-6`) or the provider's native id (`gpt-5.4`). A lookup tries the id as given, then removes leading dot-separated segments one at a time until it finds an entry, so prefixed ids, ARNs and inference-profile ids resolve to their base id. Fields mirror the SDK's model info record: `limits.context_window` in tokens; `capabilities` as in `ModelInfo`; an optional `family` names the family explicitly.
+- `families`: facts shared by every model in a family. A model belongs to a family through its `family` field or, failing that, when its id contains one of the family's `match` substrings. Per-model fields win over family fields.
 
 Field names are `snake_case`; each SDK re-cases on read.
