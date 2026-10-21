@@ -1,14 +1,14 @@
-# Shared model data
+# Shared model info
 
 `models.json` is the source of truth for what the SDKs know about models: context windows, which models take cache points, and the id rules that map a provider's model id to the entry that describes it. Each entry is a `ModelInfo`, the same type the SDK exposes; every field is optional and a missing field means unknown. Both SDKs read a generated copy; the harness and CLI read it through the SDK.
 
 Edit `models.json`, then run:
 
 ```sh
-npm run model-data:generate
+npm run model-info:generate
 ```
 
-That rewrites the copies under each package (`strands-ts/src/models/data/models.json` today). `npm run model-data:check` fails when a copy differs from this file; the TypeScript test suite asserts the same.
+That rewrites the copies under each package (`strands-ts/src/models/model-info.json` today). `npm run model-info:check` fails when a copy differs from this file; the TypeScript test suite asserts the same.
 
 ## Format
 

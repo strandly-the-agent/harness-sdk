@@ -59,8 +59,7 @@ import {
   resolveCacheSection,
   resolveConfigMetadata,
 } from '../models/model.js'
-import type { ModelInfo } from '../models/model-info.js'
-import { declaredModelInfo } from '../models/model-data.js'
+import { lookupModelInfo, type ModelInfo } from '../models/model-info.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import type { ContentBlock, Message, ReasoningBlock, StopReason, ToolUseBlock } from '../types/messages.js'
 import type { AudioSource, ImageSource, VideoSource, DocumentSource } from '../types/media.js'
@@ -517,7 +516,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    * @returns The declared capabilities for the configured model id
    */
   protected override declareInfo(): ModelInfo {
-    return declaredModelInfo(this._config.modelId ?? '')
+    return lookupModelInfo(this._config.modelId ?? '')
   }
 
   /**

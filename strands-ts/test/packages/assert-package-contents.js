@@ -48,9 +48,9 @@ if (forbiddenFiles.length > 0) {
   throw new Error(`Published package includes test artifacts:\n${forbiddenFiles.slice(0, 20).join('\n')}`)
 }
 
-// The shared model data must ship with the package: model-data.ts imports it at runtime.
-if (!files.includes('dist/src/models/data/models.json')) {
-  throw new Error('Published package is missing dist/src/models/data/models.json')
+// The shared model data must ship with the package: model-info.ts imports it at runtime.
+if (!files.includes('dist/src/models/model-info.json')) {
+  throw new Error('Published package is missing dist/src/models/model-info.json')
 }
 
 console.log(`[package-contents] OK (${files.length} files)`)

@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared model data: what the SDKs know about models, as partial ModelInfo records. Edit here, then run `npm run model-data:generate`. See model-data/README.md.",
+  "$comment": "Shared model info: what the SDKs know about models, as ModelInfo records. Edit here, then run `npm run model-info:generate`. See model-info/README.md.",
   "version": 1,
   "idPrefixes": ["us", "eu", "ap", "apac", "au", "jp", "us-gov", "global"],
   "families": {

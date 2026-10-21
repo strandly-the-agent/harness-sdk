@@ -1,13 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import {
-  declaredModelInfo,
-  getContextWindowLimit,
-  lookupFamily,
-  lookupModel,
-  stripRegionPrefix,
-} from '../model-data.js'
+import { lookupModelInfo, getContextWindowLimit, lookupFamily, lookupModel, stripRegionPrefix } from '../model-info.js'
 
-describe('shared model data', () => {
+describe('shared model info data', () => {
   it('strips one known region prefix', () => {
     expect(stripRegionPrefix('us.anthropic.claude-sonnet-4-6')).toBe('anthropic.claude-sonnet-4-6')
     expect(stripRegionPrefix('us-gov.anthropic.claude-sonnet-4-6')).toBe('anthropic.claude-sonnet-4-6')
@@ -38,13 +32,13 @@ describe('shared model data', () => {
   })
 
   it('declares family facts for Claude, model facts on top, and nothing for unknown ids', () => {
-    expect(declaredModelInfo('eu.anthropic.claude-sonnet-4-6')).toEqual({
+    expect(lookupModelInfo('eu.anthropic.claude-sonnet-4-6')).toEqual({
       capabilities: { promptCaching: 'cachePoints' },
       limits: { contextWindow: 1_000_000 },
     })
-    expect(declaredModelInfo('claude-future-9')).toEqual({ capabilities: { promptCaching: 'cachePoints' } })
-    expect(declaredModelInfo('amazon.nova-pro-v1:0')).toEqual({ limits: { contextWindow: 300_000 } })
-    expect(declaredModelInfo('')).toEqual({})
+    expect(lookupModelInfo('claude-future-9')).toEqual({ capabilities: { promptCaching: 'cachePoints' } })
+    expect(lookupModelInfo('amazon.nova-pro-v1:0')).toEqual({ limits: { contextWindow: 300_000 } })
+    expect(lookupModelInfo('')).toEqual({})
   })
 
   it('keeps getContextWindowLimit working for ids the Python table already knew', () => {

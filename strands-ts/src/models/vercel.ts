@@ -39,8 +39,7 @@ import {
   type CacheTTL,
   type StreamOptions,
 } from './model.js'
-import type { ModelInfo } from './model-info.js'
-import { declaredModelInfo } from './model-data.js'
+import { lookupModelInfo, type ModelInfo } from './model-info.js'
 import { resolveOpenAICache, warnUnsupportedRetention } from './openai/cache.js'
 import {
   ModelContentBlockDeltaEvent,
@@ -168,7 +167,7 @@ export class VercelModel extends Model<VercelModelConfig> {
       case 'openai':
         return { capabilities: { promptCaching: 'automatic' } }
       case 'amazon-bedrock':
-        return declaredModelInfo(this._provider.modelId)
+        return lookupModelInfo(this._provider.modelId)
       default:
         return {}
     }
