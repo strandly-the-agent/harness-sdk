@@ -1229,6 +1229,20 @@ describe('info', () => {
     expect(provider.estimateUtilization(100_000)).toBe(100_000 / 200_000)
   })
 
+  it('lets an explicit contextWindowLimit win over the declaration', () => {
+    class DeclaringProvider extends TestModelProvider {
+      protected override declareInfo() {
+        return { limits: { contextWindow: 8_000 } }
+      }
+    }
+    const provider = new DeclaringProvider()
+    expect(provider.info.limits.contextWindow).toBe(8_000)
+
+    provider.updateConfig({ contextWindowLimit: 500_000 })
+
+    expect(provider.info.limits.contextWindow).toBe(500_000)
+  })
+
   it('reflects config changes on the next read', () => {
     const provider = new TestModelProvider()
     expect(provider.info.limits.contextWindow).toBeUndefined()

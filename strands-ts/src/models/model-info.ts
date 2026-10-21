@@ -14,7 +14,7 @@ export type PromptCaching = 'unsupported' | 'automatic' | 'cachePoints'
 /** What the model can do. */
 export interface ModelCapabilities {
   /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}; not overridable. */
-  readonly stateful: boolean | undefined
+  readonly stateful: boolean
   /** Whether and how the model caches prompts. */
   readonly promptCaching: PromptCaching | undefined
 }

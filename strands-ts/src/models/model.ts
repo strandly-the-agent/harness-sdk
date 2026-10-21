@@ -367,18 +367,17 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   }
 
   /**
-   * Everything the SDK knows about the configured model, resolved on each read from the config,
-   * {@link declareInfo}, and the `info` config override, in that order of precedence. Each read
-   * returns a new frozen record, so do not compare reads by reference.
+   * Everything the SDK knows about the configured model, resolved on each read from
+   * {@link declareInfo}, then the `contextWindowLimit` config value, then the `info` config
+   * override, in that order of precedence. Each read returns a new frozen record, so do not
+   * compare reads by reference.
    */
   get info(): ModelInfo {
     const config = this.getConfig()
     return mergeModelInfo(
-      {
-        capabilities: { stateful: this.stateful, promptCaching: undefined },
-        limits: { contextWindow: config.contextWindowLimit },
-      },
+      { capabilities: { stateful: this.stateful, promptCaching: undefined }, limits: { contextWindow: undefined } },
       this.declareInfo(),
+      config.contextWindowLimit === undefined ? undefined : { limits: { contextWindow: config.contextWindowLimit } },
       config.info
     )
   }
