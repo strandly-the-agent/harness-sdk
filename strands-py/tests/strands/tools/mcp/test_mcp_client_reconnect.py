@@ -4,6 +4,7 @@ import asyncio
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,7 +13,7 @@ from mcp.types import CallToolResult as MCPCallToolResult
 from mcp.types import TextContent as MCPTextContent
 from mcp.types import Tool as MCPTool
 
-from strands.tools.mcp import MCPClient
+from strands.tools.mcp import MCPClient, mcp_client
 from strands.types.exceptions import MCPClientInitializationError
 
 from .conftest import make_mcp_error
@@ -40,6 +41,14 @@ def _drop_session(client: MCPClient, error: Exception | None = None) -> None:
 
 def _call(client: MCPClient, tool_use_id: str = "tu-1"):
     return client.call_tool_sync(tool_use_id=tool_use_id, name="echo", arguments={"to_echo": "hi"})
+
+
+@pytest.fixture
+def backoff_sleeps(monkeypatch) -> list[float]:
+    """Record the reconnect backoff delays instead of sleeping through them."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(mcp_client, "time", SimpleNamespace(sleep=sleeps.append, monotonic=time.monotonic))
+    return sleeps
 
 
 def test_dropped_session_raises_without_auto_reconnect(mock_transport, mock_session):
@@ -142,7 +151,9 @@ def test_tool_errors_are_not_retried(mock_transport, mock_session):
 
 
 @pytest.mark.asyncio
-async def test_failed_reconnect_returns_error_result_and_next_call_tries_again(mock_transport, mock_session):
+async def test_failed_reconnect_returns_error_result_and_next_call_tries_again(
+    mock_transport, mock_session, backoff_sleeps
+):
     mock_session.list_tools.return_value = ListToolsResult(
         tools=[MCPTool(name="echo", description="echo", inputSchema={"type": "object"})]
     )
@@ -166,13 +177,117 @@ async def test_failed_reconnect_returns_error_result_and_next_call_tries_again(m
 
     assert result["status"] == "success"
     assert client._is_session_active()
-    assert mock_transport["transport_callable"].call_count == 3
+    assert mock_transport["transport_callable"].call_count == 1 + mcp_client._RECONNECT_MAX_ATTEMPTS + 1
 
     # Provider bookkeeping survives the failed attempt, so the last consumer still tears the client down.
     assert client._consumers == {"agent-1"}
     assert await client.load_tools() is tools
     client.remove_consumer("agent-1")
     assert client._background_thread is None
+
+
+def test_reconnect_backs_off_while_server_is_still_restarting(mock_transport, mock_session, backoff_sleeps):
+    """Connection attempts that fail are retried with a doubling delay until the server is back."""
+    mock_session.call_tool.return_value = _ok_result()
+    client = MCPClient(mock_transport["transport_callable"], auto_reconnect=True)
+    client.start()
+    _drop_session(client)
+    mock_transport["transport_cm"].__aenter__.side_effect = [
+        ConnectionError("still restarting"),
+        ConnectionError("still restarting"),
+        (mock_transport["read_stream"], mock_transport["write_stream"]),
+    ]
+
+    result = _call(client)
+
+    assert result["status"] == "success"
+    assert backoff_sleeps == [0.5, 1.0]
+    assert mock_transport["transport_callable"].call_count == 4
+    mock_session.call_tool.assert_called_once()
+    client.stop(None, None, None)
+
+
+def test_reconnect_gives_up_after_max_attempts(mock_transport, mock_session, backoff_sleeps):
+    mock_session.call_tool.return_value = _ok_result()
+    client = MCPClient(mock_transport["transport_callable"], auto_reconnect=True)
+    client.start()
+    _drop_session(client)
+    mock_transport["transport_cm"].__aenter__.side_effect = ConnectionError("server down")
+
+    result = _call(client)
+
+    assert result["status"] == "error"
+    assert "server down" in result["content"][0]["text"]
+    assert backoff_sleeps == [0.5, 1.0, 2.0]
+    assert mock_transport["transport_callable"].call_count == 1 + mcp_client._RECONNECT_MAX_ATTEMPTS
+    assert not client._is_session_active()
+    mock_session.call_tool.assert_not_called()
+
+
+def test_reconnect_does_not_retry_after_startup_timeout(mock_transport, mock_session, backoff_sleeps):
+    """An attempt that already waited out startup_timeout is not followed by more attempts."""
+    client = MCPClient(mock_transport["transport_callable"], auto_reconnect=True, startup_timeout=0.1)
+    client.start()
+    _drop_session(client)
+
+    async def hang_then_fail(*args, **kwargs):
+        await asyncio.sleep(0.5)
+        raise ConnectionError("too late")
+
+    mock_transport["transport_cm"].__aenter__.side_effect = hang_then_fail
+
+    result = _call(client)
+
+    assert result["status"] == "error"
+    assert "did not start in 0.1 seconds" in result["content"][0]["text"]
+    assert backoff_sleeps == []
+    assert mock_transport["transport_callable"].call_count == 2
+
+
+def test_reconnect_stops_when_startup_timeout_budget_is_spent(mock_transport, mock_session, backoff_sleeps):
+    """A slow failure that is not our own timeout still ends the cycle once the next delay would overrun the budget."""
+    client = MCPClient(mock_transport["transport_callable"], auto_reconnect=True, startup_timeout=0.4)
+    client.start()
+    _drop_session(client)
+
+    async def slow_refusal(*args, **kwargs):
+        await asyncio.sleep(0.2)
+        raise ConnectionError("slow refusal")
+
+    mock_transport["transport_cm"].__aenter__.side_effect = slow_refusal
+
+    result = _call(client)
+
+    assert result["status"] == "error"
+    assert "slow refusal" in result["content"][0]["text"]
+    assert backoff_sleeps == []
+    assert mock_transport["transport_callable"].call_count == 2
+
+
+def test_callers_queued_behind_a_failed_reconnect_fail_fast(mock_transport, mock_session, backoff_sleeps):
+    """Only the first caller sits out the backoff; the rest make a single attempt while the failure is fresh."""
+    client = MCPClient(mock_transport["transport_callable"], auto_reconnect=True)
+    client.start()
+    _drop_session(client)
+    mock_transport["transport_cm"].__aenter__.side_effect = ConnectionError("server down")
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda index: _call(client, f"tu-{index}"), range(4)))
+
+    assert all(result["status"] == "error" for result in results)
+    assert backoff_sleeps == [0.5, 1.0, 2.0]
+    assert mock_transport["transport_callable"].call_count == 1 + mcp_client._RECONNECT_MAX_ATTEMPTS + 3
+
+    # Once the cooldown has passed the next call backs off again.
+    client._reconnect_failed_at -= mcp_client._RECONNECT_FAILURE_COOLDOWN_SECONDS
+    _call(client, "tu-later")
+    assert backoff_sleeps == [0.5, 1.0, 2.0] * 2
+
+    # A successful start (here a manual one) disarms the cooldown.
+    mock_transport["transport_cm"].__aenter__.side_effect = None
+    client.start()
+    assert client._reconnect_failed_at is None
+    client.stop(None, None, None)
 
 
 def test_concurrent_calls_share_one_reconnect(mock_transport, mock_session):

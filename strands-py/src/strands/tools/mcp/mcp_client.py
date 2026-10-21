@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import threading
+import time
 import uuid
 from asyncio import AbstractEventLoop
 from collections.abc import Callable, Coroutine, Sequence
@@ -224,6 +225,14 @@ _SESSION_LOST_ERROR_PATTERNS = [
 
 _TOOLS_CHANGED_DEBOUNCE_SECONDS = 0.3
 
+# auto_reconnect: connection attempts per rebuild, with the delay doubling between them (0.5s, 1s, 2s)
+# so a server that is still restarting when the drop is noticed gets a chance to come back. A rebuild
+# that fails within the cooldown of the previous failure makes a single attempt instead, so callers
+# queued behind a failed rebuild fail fast rather than each sitting out the whole backoff.
+_RECONNECT_MAX_ATTEMPTS = 4
+_RECONNECT_INITIAL_DELAY_SECONDS = 0.5
+_RECONNECT_FAILURE_COOLDOWN_SECONDS = 5.0
+
 
 class MCPClient(ToolProvider):
     """Represents a connection to a Model Context Protocol (MCP) server.
@@ -384,7 +393,9 @@ class MCPClient(ToolProvider):
             auto_reconnect: When True, a tool call that finds the session dropped (the transport
                 closed, timed out, or the server reports the session as terminated) tears the
                 connection down, opens a fresh one through the transport callable, and retries the
-                call once before surfacing an error result. Concurrent calls share one reconnect.
+                call once before surfacing an error result. A refused connection is attempted up to
+                four times with exponential backoff (0.5s, 1s, 2s), within one ``startup_timeout``
+                budget for the whole rebuild. Concurrent calls share one reconnect.
                 A call that already reached the server may run twice, so leave this off for servers
                 whose tools are not safe to repeat or that keep per-session state. Defaults to False.
 
@@ -408,6 +419,7 @@ class MCPClient(ToolProvider):
         self._auto_reconnect = auto_reconnect
         # Re-entrant: _reconnect holds it across its own stop() and start().
         self._reconnect_lock = threading.RLock()
+        self._reconnect_failed_at: float | None = None
         # True after a reconnect attempt failed, so the next tool call tries again instead of
         # treating the (now stopped) client as never started.
         self._session_lost = False
@@ -496,6 +508,7 @@ class MCPClient(ToolProvider):
             # Blocking main thread until session is initialized in other thread or if the thread stops
             self._init_future.result(timeout=self._startup_timeout)
             self._session_lost = False
+            self._reconnect_failed_at = None
             self._log_debug_with_thread("the client initialization was successful")
         except futures.TimeoutError as e:
             logger.exception("client initialization timed out")
@@ -1533,15 +1546,47 @@ class MCPClient(ToolProvider):
             except RuntimeError as close_error:
                 logger.debug("error=<%s> | lost session closed with error", close_error.__cause__)
             try:
-                self.start()
+                self._start_with_backoff()
             except Exception:
                 self._session_lost = True
+                self._reconnect_failed_at = time.monotonic()
                 raise
             finally:
                 self._consumers = consumers
                 self._tool_provider_started = provider_started
                 self._loaded_tools = loaded_tools
             return True
+
+    def _start_with_backoff(self) -> None:
+        """Call ``start()`` up to ``_RECONNECT_MAX_ATTEMPTS`` times, doubling the delay between attempts.
+
+        The whole rebuild shares one ``startup_timeout`` budget, so only fast failures (e.g.
+        connection refused) are retried; an attempt that waited the server out is the last. A single
+        attempt is made when the previous rebuild failed less than
+        ``_RECONNECT_FAILURE_COOLDOWN_SECONDS`` ago.
+        """
+        recently_failed = (
+            self._reconnect_failed_at is not None
+            and time.monotonic() - self._reconnect_failed_at < _RECONNECT_FAILURE_COOLDOWN_SECONDS
+        )
+        max_attempts = 1 if recently_failed else _RECONNECT_MAX_ATTEMPTS
+        deadline = time.monotonic() + self._startup_timeout
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self.start()
+                return
+            except MCPClientInitializationError as e:
+                delay = _RECONNECT_INITIAL_DELAY_SECONDS * 2 ** (attempt - 1)
+                if attempt == max_attempts or time.monotonic() + delay >= deadline:
+                    raise
+                logger.warning(
+                    "attempt=<%d/%d>, delay=<%.1fs>, error=<%s> | mcp reconnect failed, retrying",
+                    attempt,
+                    max_attempts,
+                    delay,
+                    e,
+                )
+                time.sleep(delay)
 
     def _handle_tool_execution_error(self, tool_use_id: str, exception: Exception) -> MCPToolResult:
         """Create error ToolResult with consistent logging and elicitation callback support.
