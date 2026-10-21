@@ -98,10 +98,11 @@ describe('ContextManager tool registration', () => {
     await registry.initialize(agent)
 
     const stash = contextManager.stash!
+    // Large text is split out: a marker parent plus the raw text under a field ref (#4741).
     const keys = await stash.list()
-    expect(keys.length).toBe(1)
-    const retrieved = await stash.retrieve(keys[0]!)
-    expect((retrieved!.data as { text: string }).text).toBe(largeText)
+    expect(keys).toHaveLength(2)
+    const fieldKey = keys.find((key) => key.startsWith('fields/'))!
+    expect((await stash.retrieve(fieldKey))!.data).toBe(largeText)
   })
 })
 
@@ -120,12 +121,11 @@ describe('Offload strategies with stash', () => {
 
       expect(acted).toBe(true)
 
+      // Large text is split out: a marker parent plus the raw text under a field ref (#4741).
       const keys = await stash.list()
-      expect(keys.length).toBe(1)
-
-      const retrieved = await stash.retrieve(keys[0]!)
-      expect(retrieved).not.toBeNull()
-      expect((retrieved!.data as { text: string }).text).toBe(largeText)
+      expect(keys).toHaveLength(2)
+      const fieldKey = keys.find((key) => key.startsWith('fields/'))!
+      expect((await stash.retrieve(fieldKey))!.data).toBe(largeText)
     })
 
     it('includes stash reference in the truncated preview', async () => {
@@ -170,11 +170,11 @@ describe('Offload strategies with stash', () => {
 
       expect(acted).toBe(true)
 
+      // Large text is split out: a marker parent plus the raw text under a field ref (#4741).
       const keys = await stash.list()
-      expect(keys.length).toBe(1)
-
-      const retrieved = await stash.retrieve(keys[0]!)
-      expect((retrieved!.data as { text: string }).text).toBe(largeText)
+      expect(keys).toHaveLength(2)
+      const fieldKey = keys.find((key) => key.startsWith('fields/'))!
+      expect((await stash.retrieve(fieldKey))!.data).toBe(largeText)
     })
 
     it('includes stash reference in the drop marker', async () => {
@@ -277,11 +277,11 @@ describe('Offload strategies with stash', () => {
 
       await stash.storeMessage(message)
 
+      // Large text is split out: a marker parent plus the raw text under a field ref (#4741).
       const keys = await stash.list()
-      expect(keys.length).toBe(1)
-      const retrieved = await stash.retrieve(keys[0]!)
-      expect(retrieved).not.toBeNull()
-      expect((retrieved!.data as { text: string }).text).toBe(largeText)
+      expect(keys).toHaveLength(2)
+      const fieldKey = keys.find((key) => key.startsWith('fields/'))!
+      expect((await stash.retrieve(fieldKey))!.data).toBe(largeText)
     })
 
     it('persists text blocks from assistant messages on arrival', async () => {
