@@ -214,6 +214,7 @@ class TestSummarizeStrategyMessageLevel:
 
         request = seen[0]
         assert [msg["role"] for msg in request] == ["user", "assistant", "user", "assistant", "user"]
+        assert request[0]["content"] == [ContentBlock(text="<conversation>")]
         assert request[1]["content"] == [tool_use]
         assert request[2]["content"] == [tool_result]
         assert request[-1]["content"] == [ContentBlock(text=SUMMARIZE_CONVERSATION_INSTRUCTION)]

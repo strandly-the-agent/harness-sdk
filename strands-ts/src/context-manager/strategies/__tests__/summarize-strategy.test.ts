@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Offload } from '../offload/index.js'
-import { summarizeContent } from '../../methods/summarize.js'
+import { summarizeContent, summarizeMessages } from '../../methods/summarize.js'
 import { InvocationContextImpl } from '../../../agent/invocation-context.js'
 import { Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../../types/messages.js'
 import { createMockAgent } from '../../../__fixtures__/agent-helpers.js'
@@ -16,6 +16,8 @@ vi.mock('../../methods/summarize.js', async (importOriginal) => {
     summarizeMessages: vi.fn(async () => 'Summary of multimodal content'),
   }
 })
+
+const summarizeMessagesMock = vi.mocked(summarizeMessages)
 
 function makeToolResultMessage(text: string, toolUseId = 'tool-123'): Message {
   return new Message({
@@ -187,6 +189,29 @@ describe('Offload.summarize', () => {
       const result = await strategy.apply(context)
 
       expect(result).toBe(true)
+    })
+
+    it('hands the batch to summarizeMessages with tool pairs intact', async () => {
+      summarizeMessagesMock.mockClear()
+      const toolUse = new ToolUseBlock({ toolUseId: 't1', name: 'calc', input: {} })
+      const toolResult = new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('42')] })
+      const messages = [
+        new Message({ role: 'user', content: [new TextBlock('pin')] }),
+        new Message({ role: 'assistant', content: [toolUse] }),
+        new Message({ role: 'user', content: [toolResult] }),
+        new Message({ role: 'assistant', content: [new TextBlock('old')] }),
+        new Message({ role: 'user', content: [new TextBlock('recent')] }),
+      ]
+      const mockModel = { stream: vi.fn(), countTokens: vi.fn(async () => 5000) }
+      const strategy = Offload.summarize('*').when({ utilization: 0.8 })
+
+      expect(await strategy.apply(makeContext(messages, 0.9, mockModel))).toBe(true)
+
+      expect(summarizeMessagesMock).toHaveBeenCalledTimes(1)
+      const slice = summarizeMessagesMock.mock.calls[0]![0]
+      expect(slice.map((message) => message.role)).toEqual(['assistant', 'user', 'assistant'])
+      expect(slice[0]!.content).toEqual([toolUse])
+      expect(slice[1]!.content).toEqual([toolResult])
     })
 
     it('returns false on empty messages', async () => {
