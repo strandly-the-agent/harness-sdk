@@ -166,6 +166,46 @@ Declared facts come from code, so nothing needs to persist them; the record is r
 
 Learned facts are different. They live in a process-global store keyed by provider and model id, which is what the `CountTokens` check and #5190 already do. The fact is about the model at the endpoint, not the Python object, so a new `BedrockModel` per request in a warm process does not re-learn it. Across processes we save them with the session: the session manager stores the learned patch next to the agent state, and on restore it seeds the learned layer before the first model call. A restored session does not pay the failed request again. Sessions created before this change have nothing to restore and learn once, as today.
 
+### Shared model data
+
+The per-model knowledge layer (source 2 above) is data, not code, and today it is spelled out in 21 model-id-keyed tables across five packages, hand-mirrored and already drifting. The context-window table has 118 entries in Python and 109 in TypeScript. PR #5164 adds a fifth mirrored pair, `_OUTPUT_TOKEN_LIMITS` / `OUTPUT_TOKEN_LIMITS`, whose Claude Sonnet ceilings (65 536 / 64 000) contradict the harness's own `_CLAUDE_MAX_TOKENS` (128 000). The effort-level tables exist three times (both harnesses and `strands-cli/src/tui/model/selection.ts`), and the TypeScript harness is missing the `amazon.nova-2` branch the Python one has. Seven different functions normalize model ids (strip `us.`/`global.`/ARN prefixes), and they disagree: an ARN resolves a context window in Python but not in TypeScript, and `ap.anthropic.*` loses effort support in both harnesses because `_bedrock_family` does not know `ap.`.
+
+We propose one source of truth for this data in the repo, shared by `strands-py`, `strands-ts`, `harness-py`, `harness-ts` and `strands-cli`, kept current by an automated job.
+
+**The file.** `model-data/models.json` at the repo root. Keyed by the vendor-prefixed base id (`anthropic.claude-sonnet-4-6`), one entry per model, fields named after the record in this design so the file *is* the declared layer:
+
+```json
+{
+  "version": 1,
+  "id_prefixes": ["us", "eu", "ap", "apac", "au", "jp", "us-gov", "global"],
+  "models": {
+    "anthropic.claude-sonnet-4-6": {
+      "family": "claude",
+      "aliases": ["claude-sonnet-4-6"],
+      "limits": { "context_window": 1000000, "max_output_tokens": 64000 },
+      "capabilities": {
+        "prompt_caching": "cache_points",
+        "reasoning": { "supported": true, "effort_levels": { "off": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true } }
+      }
+    }
+  }
+}
+```
+
+Two things live in the file besides per-model facts, because they are the parts that diverge today: the **id normalization rules** (`id_prefixes`, plus ARN and inference-profile handling as a documented procedure both loaders implement identically) and the **family assignment** (`family`). Model families stay internal code, but which family an id belongs to is data, and every package currently guesses it with its own prefix list or regex. Runtime-learned facts (the `(provider, model_id)` caches) do not go in the file; they are per process.
+
+**Packaging.** The constraints were verified by building, not assumed. Hatch can `force-include` a file from outside `strands-py/`, but `python -m build` (what CI runs) builds the wheel from the sdist, which cannot carry a path above its root, and fails. `tsc` copies a JSON imported from inside `rootDir` into `dist` and silently does not for one outside it. Both harness packages and the CLI depend on *published* SDK versions, not the workspace. That rules out the naive "import the root file" and leaves three options:
+
+- **(a) Root file is the source; each SDK carries a generated copy.** A script writes `strands-py/src/strands/models/_data/models.json` and `strands-ts/src/models/data/models.json` from the root file; the copies are committed so sdist builds and `tsc` work unchanged, and a CI check fails when a copy differs from the source. The harnesses and CLI read the data through the SDK (`Model.info` and a lookup helper), which means their tables can be deleted once their SDK version floor includes it.
+- **(b) Publish the data as its own Python and npm package.** Clean for the harnesses, which could depend on it directly, but it adds two release pipelines to the six we have, for a file that changes with the SDK anyway.
+- **(c) Keep per-package copies and only add the parity check.** No packaging change, but it leaves five hand-edited tables and three id-normalization variants in place; the check would be red today.
+
+We recommend **(a)**. It is the only option where a human or the bot edits exactly one file, the build is unchanged, and the harness duplication goes away through the SDK rather than through a new dependency. The generated copies are build artifacts that happen to be committed; the parity check is what keeps that honest.
+
+**Keeping it current.** A scheduled workflow modeled on `catalog-stats.yml` (weekly cron, regenerate, open a PR with `create-pull-request`), owned by `strandly-the-agent`: pull what provider APIs publish (Anthropic `GET /v1/models` for limits, effort levels and capabilities; Bedrock `ListFoundationModels` for new ids, modalities and lifecycle; models.dev as a cross-check), diff against the file, and open one PR per week with the changes and their sources. Facts the APIs do not expose (which Bedrock models reject replayed reasoning, which hallucinate on JSON tool results) stay hand-maintained in the same file and are the ones the bot flags when a new id appears without them.
+
+**What it replaces.** `_CONTEXT_WINDOW_LIMITS` / `CONTEXT_WINDOW_LIMITS`, #5164's `_OUTPUT_TOKEN_LIMITS` / `OUTPUT_TOKEN_LIMITS`, the Bedrock lists (`_MODELS_INCLUDE_STATUS`, `_MODELS_CONVERT_JSON_TO_TEXT`, `_MODELS_REJECT_REASONING_TEXT`, `MODELS_SUPPORTING_ANTHROPIC_CACHING` and its Vercel copy), the Mantle path prefixes, and the harness tables for max tokens, effort levels, thinking mode by version, web-fetch summarizer models and web search, plus the CLI's effort-level copy. Full inventory with locations and entry counts in Appendix E.
+
 ### Alternatives considered
 
 - **Keep adding per-feature properties and config flags** (`stateful`, #4752's `supports_compaction`, #5173's `contextManagedServerSide`). This is the path we are on. Each one is binary, cannot learn, has no override, and adds a property to the base class.
@@ -226,7 +266,7 @@ Vended providers migrate one at a time, Bedrock first. Each migration relocates 
 | `input_modalities`, `tool_result_modalities` | harness `read` tool; router; formatters |
 | `mid_conversation_system_messages` | `Agent` (#5176) |
 | `stateful` | `agent.py:411`, `router.py:523`, `_agent_delegation.py:101` |
-| `server_compaction` | context manager (#4752, #5173) |
+| `server_compaction` | context manager (#4752, #5173); #5242 triggers server-side compaction on it instead of adding a new flag |
 | `limits.*` | `estimate_utilization`; harness `max_tokens` |
 | `pricing.*` | nobody yet; router strategies (0016) and telemetry later |
 
@@ -257,5 +297,29 @@ Fields we left out, and why: a per-mode `tool_choice` map (`any` vs `tool` diffe
 - #4752 `supports_compaction` and #5173 `contextManagedServerSide`: two shapes for one capability.
 - #5176: mid-conversation `system` messages. #5174, #5175, #5191: harness effort tables. #5187, #5188: web search dropped by a prefix miss. #5146: context window miss.
 - Design 0016 (model routing): candidates "carry limits, pricing, and capabilities in `metadata`"; the SDK ships no price data.
+- #5164: adds `_OUTPUT_TOKEN_LIMITS` / `OUTPUT_TOKEN_LIMITS`, another hand-mirrored pair. #5242: server-side compaction, which reads `server_compaction`. #4667: `ModelProxy`.
+
+</details>
+
+<details>
+<summary>Appendix E: model-id-keyed tables the shared file replaces</summary>
+
+| Fact | Python | TypeScript | Entries | Key format |
+|---|---|---|---|---|
+| Context window | `strands-py/src/strands/models/_defaults.py:33` | `strands-ts/src/models/defaults.ts:62` | 118 vs 109 | exact base id; Python strips every prefix segment, TS strips one known prefix |
+| Output-token ceiling (#5164) | `_defaults.py` `_OUTPUT_TOKEN_LIMITS` | `defaults.ts` `OUTPUT_TOKEN_LIMITS` | 16 each | exact id, mixed granularity |
+| Harness `max_tokens` ceiling | `harness-py/src/strands_harness/models.py:40-46` | `harness-ts/src/models.ts:39-46` | 4 + 6 | substring on tier + version pins; conflicts with #5164 for Sonnet |
+| Effort levels per family | `models.py:93-100,149` | `models.ts:89-96`; third copy `strands-cli/src/tui/model/selection.ts:8-14` | 8 sets | prefix on family after `_bedrock_family`; TS lacks `amazon.nova-2` |
+| Adaptive vs extended thinking by Claude version | `models.py:102-108` | `models.ts:100-118` | 3 + 3 + 5 | `_CLAUDE_ID` regex + version compare |
+| Tool-result `status` | `bedrock.py:75` | `bedrock.ts:90` | 1 | substring |
+| Nova JSON tool results | `bedrock.py:80` | none | 1 | substring |
+| Rejects replayed `reasoningText` | `bedrock.py:85` | `bedrock.ts:103` | 15 | substring; ARNs bail out |
+| Auto cache points | none (substring inline, `bedrock.py:326-340`) | `bedrock.ts:97`, copied at `vercel.ts:329` | 2 | substring |
+| Mantle base path | `_openai_bedrock.py:39` | `openai/mantle.ts:25` | 3 vs 5 | prefix on unprefixed id |
+| Web-fetch summarizer model | `models.py:66,84` | `models.ts:66` (no family table) | 5 + 3 | provider / vendor prefix |
+| Web search on Mantle | `models.py:375` | `models.ts:557` | 3 | prefix |
+| Default model and `maxTokens` per provider | scalars in `bedrock.py:53-55` | `defaults.ts:8` | 4 | provider name |
+
+Id-normalization variants today: Python SDK strips every dot segment in a loop; TS SDK strips one prefix from `{us, eu, ap, global, apac, au, jp, us-gov}`; both harnesses strip one from `{global, apac, us, eu, au, jp}` (no `ap`, no `us-gov`); the CLI uses a regex with `us-gov` but not `ap`; Mantle strips nothing; the Bedrock reasoning filter lowercases and bails on `arn:` or dotless ids. Runtime-learned caches (`_native_output.py` `_UNSUPPORTED_MECHANISMS`, `bedrock.py` `_SKIP_COUNT_TOKENS_MODELS`) are not static data and stay out of the file.
 
 </details>
