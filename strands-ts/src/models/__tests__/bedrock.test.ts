@@ -426,13 +426,13 @@ describe('BedrockModel', () => {
     it('declares cache points for Claude model ids', () => {
       const provider = new BedrockModel({ modelId: 'us.anthropic.claude-sonnet-4-6' })
 
-      expect(provider.info.capabilities.promptCaching).toBe('cachePoints')
+      expect(provider.info.capabilities?.promptCaching).toBe('cachePoints')
     })
 
     it('leaves caching unknown for other model ids', () => {
       const provider = new BedrockModel({ modelId: 'amazon.nova-pro-v1:0' })
 
-      expect(provider.info.capabilities.promptCaching).toBeUndefined()
+      expect(provider.info.capabilities?.promptCaching).toBeUndefined()
     })
 
     it('injects auto cache points on a model the info override says takes them', async () => {

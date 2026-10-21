@@ -2,18 +2,18 @@
  * Shared model data: what the SDK knows about models, shipped as data rather than code.
  *
  * `data/models.json` is a generated copy of `model-data/models.json` at the repository root, which is
- * the source of truth for every SDK. Each entry is a partial {@link ModelInfo}; a missing field is
+ * the source of truth for every SDK. Each entry is a {@link ModelInfo}; a missing field is
  * unknown. Edit the root file and run `npm run model-data:generate`.
  */
 
 import modelData from './data/models.json' with { type: 'json' }
-import type { ModelInfoPatch } from './model-info.js'
+import { mergeModelInfo, type ModelInfo } from './model-info.js'
 
-/** A model entry: a partial {@link ModelInfo}, optionally naming its family explicitly. */
-type ModelDataEntry = ModelInfoPatch & { readonly family?: string }
+/** A model entry: a {@link ModelInfo}, optionally naming its family explicitly. */
+type ModelDataEntry = ModelInfo & { readonly family?: string }
 
-/** A family entry: a partial {@link ModelInfo} shared by every model whose id contains one of `match`. */
-type ModelDataFamily = ModelInfoPatch & { readonly match: readonly string[] }
+/** A family entry: a {@link ModelInfo} shared by every model whose id contains one of `match`. */
+type ModelDataFamily = ModelInfo & { readonly match: readonly string[] }
 
 interface ModelData {
   readonly version: number
@@ -83,17 +83,10 @@ export function lookupFamily(modelId: string): ModelDataFamily | undefined {
  * What the shared data knows about a model: its family's facts, overridden by the model's own.
  *
  * @param modelId - The model id to describe
- * @returns A partial {@link ModelInfo}; empty when the data knows nothing about the id
+ * @returns What the data knows about the model; empty when it knows nothing
  */
-export function declaredModelInfo(modelId: string): ModelInfoPatch {
-  const family = lookupFamily(modelId)
-  const model = lookupModel(modelId)
-  const capabilities = { ...family?.capabilities, ...model?.capabilities }
-  const limits = { ...family?.limits, ...model?.limits }
-  return {
-    ...(Object.keys(capabilities).length > 0 && { capabilities }),
-    ...(Object.keys(limits).length > 0 && { limits }),
-  }
+export function declaredModelInfo(modelId: string): ModelInfo {
+  return mergeModelInfo(lookupFamily(modelId), lookupModel(modelId))
 }
 
 /**
@@ -103,5 +96,5 @@ export function declaredModelInfo(modelId: string): ModelInfoPatch {
  * @returns The context window limit in tokens, or undefined if not known
  */
 export function getContextWindowLimit(modelId: string): number | undefined {
-  return declaredModelInfo(modelId).limits?.contextWindow ?? undefined
+  return declaredModelInfo(modelId).limits?.contextWindow
 }

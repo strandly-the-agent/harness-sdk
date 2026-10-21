@@ -100,8 +100,8 @@ describe("OpenAIModel (api: 'responses')", () => {
       const stateful = new OpenAIModel({ api: 'responses', client: {} as OpenAI, stateful: true })
       const stateless = new OpenAIModel({ api: 'responses', client: {} as OpenAI })
 
-      expect(stateful.info.capabilities.stateful).toBe(true)
-      expect(stateless.info.capabilities.stateful).toBe(false)
+      expect(stateful.info.capabilities?.stateful).toBe(true)
+      expect(stateless.info.capabilities?.stateful).toBe(false)
     })
 
     it('is construction-only and cannot be changed via updateConfig', () => {

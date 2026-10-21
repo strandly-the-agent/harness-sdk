@@ -9,7 +9,7 @@ import {
   type CacheConfig,
   type ResolvedCacheSection,
 } from '../models/model.js'
-import type { ModelInfoPatch } from '../models/model-info.js'
+import type { ModelInfo } from '../models/model-info.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import type { Message, ContentBlock, SystemPrompt } from '../types/messages.js'
 import type { ModelStreamEvent } from '../models/streaming.js'
@@ -217,7 +217,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
    *
    * @returns The declared capabilities
    */
-  protected override declareInfo(): ModelInfoPatch {
+  protected override declareInfo(): ModelInfo {
     return { capabilities: { promptCaching: 'cachePoints' } }
   }
 

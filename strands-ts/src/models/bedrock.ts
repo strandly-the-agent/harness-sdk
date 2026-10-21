@@ -59,7 +59,7 @@ import {
   resolveCacheSection,
   resolveConfigMetadata,
 } from '../models/model.js'
-import type { ModelInfoPatch } from '../models/model-info.js'
+import type { ModelInfo } from '../models/model-info.js'
 import { declaredModelInfo } from '../models/model-data.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import type { ContentBlock, Message, ReasoningBlock, StopReason, ToolUseBlock } from '../types/messages.js'
@@ -508,7 +508,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    * @returns Cache strategy name or null
    */
   private _getCacheStrategy(): 'anthropic' | null {
-    return this.info.capabilities.promptCaching === 'cachePoints' ? 'anthropic' : null
+    return this.info.capabilities?.promptCaching === 'cachePoints' ? 'anthropic' : null
   }
 
   /**
@@ -516,7 +516,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    *
    * @returns The declared capabilities for the configured model id
    */
-  protected override declareInfo(): ModelInfoPatch {
+  protected override declareInfo(): ModelInfo {
     return declaredModelInfo(this._config.modelId ?? '')
   }
 

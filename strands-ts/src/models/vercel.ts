@@ -39,7 +39,7 @@ import {
   type CacheTTL,
   type StreamOptions,
 } from './model.js'
-import type { ModelInfo, ModelInfoPatch } from './model-info.js'
+import type { ModelInfo } from './model-info.js'
 import { declaredModelInfo } from './model-data.js'
 import { resolveOpenAICache, warnUnsupportedRetention } from './openai/cache.js'
 import {
@@ -161,7 +161,7 @@ export class VercelModel extends Model<VercelModelConfig> {
    *
    * @returns The declared capabilities for the wrapped model
    */
-  protected override declareInfo(): ModelInfoPatch {
+  protected override declareInfo(): ModelInfo {
     switch (this._provider.provider.split('.')[0]) {
       case 'anthropic':
         return { capabilities: { promptCaching: 'cachePoints' } }
@@ -407,7 +407,7 @@ function applyBedrockCache(
 function bedrockModelSupportsCaching(cacheConfig: CacheConfig, modelId: string, info: ModelInfo): boolean {
   if ((cacheConfig.strategy ?? 'auto') !== 'auto') return true
 
-  const supported = info.capabilities.promptCaching === 'cachePoints'
+  const supported = info.capabilities?.promptCaching === 'cachePoints'
   if (!supported) {
     warnOnce(
       logger,

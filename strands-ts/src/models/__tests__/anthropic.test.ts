@@ -184,7 +184,7 @@ describe('AnthropicModel', () => {
     it('declares cache points', () => {
       const model = new AnthropicModel({ apiKey: 'sk-ant-test', modelId: 'claude-sonnet-4-6' })
 
-      expect(model.info.capabilities.promptCaching).toBe('cachePoints')
+      expect(model.info.capabilities?.promptCaching).toBe('cachePoints')
     })
   })
 

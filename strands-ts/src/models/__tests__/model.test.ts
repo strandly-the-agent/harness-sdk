@@ -1169,17 +1169,14 @@ describe('info', () => {
   it('is all unknown except the mirrored stateful for a provider that declares nothing', () => {
     const provider = new TestModelProvider()
 
-    expect(provider.info).toEqual({
-      capabilities: { stateful: false, promptCaching: undefined },
-      limits: { contextWindow: undefined },
-    })
+    expect(provider.info).toEqual({ capabilities: { stateful: false } })
   })
 
   it('takes the context window from the config', () => {
     const provider = new TestModelProvider()
     provider.updateConfig({ contextWindowLimit: 50_000 })
 
-    expect(provider.info.limits.contextWindow).toBe(50_000)
+    expect(provider.info.limits?.contextWindow).toBe(50_000)
   })
 
   it('mirrors a stateful getter override into the record', () => {
@@ -1189,7 +1186,7 @@ describe('info', () => {
       }
     }
 
-    expect(new StatefulProvider().info.capabilities.stateful).toBe(true)
+    expect(new StatefulProvider().info.capabilities?.stateful).toBe(true)
   })
 
   it('applies what the provider declares', () => {
@@ -1199,7 +1196,7 @@ describe('info', () => {
       }
     }
 
-    expect(new DeclaringProvider().info.capabilities.promptCaching).toBe('automatic')
+    expect(new DeclaringProvider().info.capabilities?.promptCaching).toBe('automatic')
   })
 
   it('lets the info config override win over the declaration', () => {
@@ -1211,22 +1208,8 @@ describe('info', () => {
     const provider = new DeclaringProvider()
     provider.updateConfig({ info: { capabilities: { promptCaching: 'unsupported' } } })
 
-    expect(provider.info.capabilities.promptCaching).toBe('unsupported')
-    expect(provider.info.limits.contextWindow).toBe(8_000)
-  })
-
-  it('resets a declared field to unknown when the override is null', () => {
-    class DeclaringProvider extends TestModelProvider {
-      protected override declareInfo() {
-        return { capabilities: { promptCaching: 'automatic' as const }, limits: { contextWindow: 8_000 } }
-      }
-    }
-    const provider = new DeclaringProvider()
-    provider.updateConfig({ info: { capabilities: { promptCaching: null }, limits: { contextWindow: null } } })
-
-    expect(provider.info.capabilities.promptCaching).toBeUndefined()
-    expect(provider.info.limits.contextWindow).toBeUndefined()
-    expect(provider.estimateUtilization(100_000)).toBe(100_000 / 200_000)
+    expect(provider.info.capabilities?.promptCaching).toBe('unsupported')
+    expect(provider.info.limits?.contextWindow).toBe(8_000)
   })
 
   it('lets an explicit contextWindowLimit win over the declaration', () => {
@@ -1236,20 +1219,20 @@ describe('info', () => {
       }
     }
     const provider = new DeclaringProvider()
-    expect(provider.info.limits.contextWindow).toBe(8_000)
+    expect(provider.info.limits?.contextWindow).toBe(8_000)
 
     provider.updateConfig({ contextWindowLimit: 500_000 })
 
-    expect(provider.info.limits.contextWindow).toBe(500_000)
+    expect(provider.info.limits?.contextWindow).toBe(500_000)
   })
 
   it('reflects config changes on the next read', () => {
     const provider = new TestModelProvider()
-    expect(provider.info.limits.contextWindow).toBeUndefined()
+    expect(provider.info.limits?.contextWindow).toBeUndefined()
 
     provider.updateConfig({ contextWindowLimit: 4_096 })
 
-    expect(provider.info.limits.contextWindow).toBe(4_096)
+    expect(provider.info.limits?.contextWindow).toBe(4_096)
   })
 })
 

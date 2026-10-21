@@ -1,6 +1,6 @@
 # Shared model data
 
-`models.json` is the source of truth for what the SDKs know about models: context windows, which models take cache points, and the id rules that map a provider's model id to the entry that describes it. Each entry is a partial model info record, the same shape as the SDK's `ModelInfo`; a missing field means unknown. Both SDKs read a generated copy; the harness and CLI read it through the SDK.
+`models.json` is the source of truth for what the SDKs know about models: context windows, which models take cache points, and the id rules that map a provider's model id to the entry that describes it. Each entry is a `ModelInfo`, the same type the SDK exposes; every field is optional and a missing field means unknown. Both SDKs read a generated copy; the harness and CLI read it through the SDK.
 
 Edit `models.json`, then run:
 
@@ -12,7 +12,7 @@ That rewrites the copies under each package (`strands-ts/src/models/data/models.
 
 ## Format
 
-Keys are camelCase, matching the TypeScript `ModelInfoPatch` type; the Python loader re-cases them on read.
+Keys are camelCase, matching the TypeScript `ModelInfo` type; the Python loader re-cases them on read.
 
 - `version`: format version. A loader rejects a version it does not know.
 - `idPrefixes`: Bedrock cross-region prefixes, for code that needs to strip exactly one (`us.anthropic.claude-opus-5-5` → `anthropic.claude-opus-5-5`).
