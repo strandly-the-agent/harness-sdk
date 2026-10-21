@@ -37,7 +37,7 @@ def _validate_path(path: str) -> None:
 
 
 def _split_lines(content: str) -> list[str]:
-    # A trailing newline terminates the last line; it does not start another one (``cat -n`` / ``wc -l``).
+    # A trailing newline terminates the last line; it does not start another one (``cat -n`` semantics).
     lines = content.split("\n")
     if lines[-1] == "":
         lines.pop()

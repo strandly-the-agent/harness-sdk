@@ -53,6 +53,14 @@ describe('read/write/edit', () => {
     expect(await read.invoke({ path, offset: 72 }, ctx())).toBe('[File has 71 lines; offset 72 is past the end.]')
   })
 
+  it('fits a 2000-line file in the default limit', async () => {
+    const path = join(dir, 'f.txt')
+    await write.invoke({ path, content: 'x\n'.repeat(2000) }, ctx())
+    const out = (await read.invoke({ path }, ctx())) as string
+    expect(out).not.toContain('Showing lines')
+    expect(out).toMatch(/\n {2}2000\tx$/)
+  })
+
   it('keeps genuine blank lines', async () => {
     const path = join(dir, 'f.txt')
     await write.invoke({ path, content: 'a\n\nb\n\n' }, ctx())
@@ -66,6 +74,7 @@ describe('read/write/edit', () => {
     ['\n', 1],
     ['a\nb', 2],
     ['a\n\n', 2],
+    ['a\r\nb\r\n', 2],
   ])('reports the line count of %j as %i without altering bytes', async (content, expected) => {
     const path = join(dir, 'f.txt')
     expect(await write.invoke({ path, content }, ctx())).toBe(`Wrote ${expected} lines to ${path}.`)

@@ -37,7 +37,7 @@ function validatePath(path: string): void {
 }
 
 function splitLines(content: string): string[] {
-  // A trailing newline terminates the last line; it does not start another one (`cat -n` / `wc -l`).
+  // A trailing newline terminates the last line; it does not start another one (`cat -n` semantics).
   const lines = content.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
   return lines

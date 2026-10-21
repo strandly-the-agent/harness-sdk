@@ -46,6 +46,14 @@ async def test_trailing_newline_does_not_add_a_line(ctx, tmp_path):
     assert out == "[File has 71 lines; offset 72 is past the end.]"
 
 
+async def test_default_limit_fits_a_2000_line_file(ctx, tmp_path):
+    path = str(tmp_path / "f.txt")
+    await write._tool_func(path=path, content="x\n" * 2000, tool_context=ctx)
+    out = await read._tool_func(path=path, tool_context=ctx)
+    assert "Showing lines" not in out
+    assert out.endswith("  2000\tx")
+
+
 async def test_read_keeps_genuine_blank_lines(ctx, tmp_path):
     path = str(tmp_path / "f.txt")
     await write._tool_func(path=path, content="a\n\nb\n\n", tool_context=ctx)
@@ -55,13 +63,13 @@ async def test_read_keeps_genuine_blank_lines(ctx, tmp_path):
 
 @pytest.mark.parametrize(
     ("content", "expected"),
-    [("", 0), ("a", 1), ("a\n", 1), ("\n", 1), ("a\nb", 2), ("a\n\n", 2)],
+    [("", 0), ("a", 1), ("a\n", 1), ("\n", 1), ("a\nb", 2), ("a\n\n", 2), ("a\r\nb\r\n", 2)],
 )
 async def test_write_line_count(ctx, tmp_path, content, expected):
     path = str(tmp_path / "f.txt")
     ack = await write._tool_func(path=path, content=content, tool_context=ctx)
     assert ack == f"Wrote {expected} lines to {path}."
-    assert (tmp_path / "f.txt").read_text() == content
+    assert (tmp_path / "f.txt").read_bytes() == content.encode()
 
 
 async def test_read_empty_file(ctx, tmp_path):
