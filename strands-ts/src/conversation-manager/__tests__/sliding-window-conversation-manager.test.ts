@@ -1516,10 +1516,9 @@ describe('SlidingWindowConversationManager', () => {
         new Message({ role: 'user', content: [new TextBlock('Message 3')] }),
         new Message({ role: 'assistant', content: [new TextBlock('Response 3')] }),
       ]
-      const mockModel = {
+      const mockModel = Object.assign(Object.create(Model.prototype), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
-        estimateUtilization: Model.prototype.estimateUtilization,
-      } as any
+      }) as any
       const mockAgent = createMockAgent({ messages })
       manager.initAgent(mockAgent)
 
@@ -1543,10 +1542,9 @@ describe('SlidingWindowConversationManager', () => {
         new Message({ role: 'user', content: [new TextBlock('Message 1')] }),
         new Message({ role: 'assistant', content: [new TextBlock('Response 1')] }),
       ]
-      const mockModel = {
+      const mockModel = Object.assign(Object.create(Model.prototype), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
-        estimateUtilization: Model.prototype.estimateUtilization,
-      } as any
+      }) as any
       const mockAgent = createMockAgent({ messages })
       manager.initAgent(mockAgent)
 

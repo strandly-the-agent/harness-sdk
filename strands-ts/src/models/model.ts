@@ -28,6 +28,7 @@ import { MaxTokensError, ModelError, normalizeError } from '../errors.js'
 import type { Redaction } from '../hooks/events.js'
 import { logger } from '../logging/logger.js'
 import { DEFAULT_CONTEXT_WINDOW_LIMIT, getContextWindowLimit } from './defaults.js'
+import { mergeModelInfo, type ModelInfo, type ModelInfoPatch } from './model-info.js'
 import { warnOnce } from '../logging/warn-once.js'
 
 /**
@@ -214,6 +215,12 @@ export interface BaseModelConfig {
    * re-resolved if it was initially auto-populated. Explicitly set values are preserved.
    */
   contextWindowLimit?: number
+
+  /**
+   * Overrides for what the SDK knows about the model. Fields set here win over what the
+   * provider declares and what the built-in tables say; `null` resets a field to unknown.
+   */
+  info?: ModelInfoPatch
 }
 
 /**
@@ -349,6 +356,31 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   }
 
   /**
+   * What this provider knows about the configured model. Override to declare capabilities and
+   * limits; leave out anything unknown. Users override the result through the `info` config key.
+   *
+   * @returns A partial write to {@link ModelInfo}, empty by default
+   */
+  declareInfo(): ModelInfoPatch {
+    return {}
+  }
+
+  /**
+   * Everything the SDK knows about the configured model, resolved on each read from the built-in
+   * tables, {@link declareInfo}, and the `info` config override, in that order of precedence.
+   */
+  get info(): ModelInfo {
+    const config = this.getConfig()
+    const contextWindow =
+      config.contextWindowLimit ?? (config.modelId === undefined ? undefined : getContextWindowLimit(config.modelId))
+    return mergeModelInfo(
+      { capabilities: { stateful: this.stateful, promptCaching: undefined }, limits: { contextWindow } },
+      this.declareInfo(),
+      config.info
+    )
+  }
+
+  /**
    * Streams a conversation with the model.
    * Returns an async iterable that yields streaming events as they occur.
    *
@@ -386,7 +418,7 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
    * @returns Token usage ratio (0–1+; above 1.0 means overflow)
    */
   estimateUtilization(inputTokens: number): number {
-    let contextWindowLimit = this.getConfig().contextWindowLimit
+    let contextWindowLimit = this.info.limits.contextWindow
     if (!contextWindowLimit) {
       contextWindowLimit = DEFAULT_CONTEXT_WINDOW_LIMIT
       warnOnce(

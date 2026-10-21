@@ -422,6 +422,49 @@ describe('BedrockModel', () => {
     })
   })
 
+  describe('info', () => {
+    it('declares cache points for Claude model ids', () => {
+      const provider = new BedrockModel({ modelId: 'us.anthropic.claude-sonnet-4-6' })
+
+      expect(provider.info.capabilities.promptCaching).toBe('cachePoints')
+    })
+
+    it('leaves caching unknown for other model ids', () => {
+      const provider = new BedrockModel({ modelId: 'amazon.nova-pro-v1:0' })
+
+      expect(provider.info.capabilities.promptCaching).toBeUndefined()
+    })
+
+    it('injects auto cache points on a model the info override says takes them', async () => {
+      const provider = new BedrockModel({
+        modelId: 'amazon.nova-pro-v1:0',
+        cacheConfig: { strategy: 'auto' },
+        info: { capabilities: { promptCaching: 'cachePoints' } },
+      })
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
+
+      collectIterator(provider.stream(messages, { systemPrompt: 'Be helpful' }))
+
+      expect(vi.mocked(ConverseStreamCommand).mock.lastCall?.[0].system).toEqual([
+        { text: 'Be helpful' },
+        { cachePoint: { type: 'default' } },
+      ])
+    })
+
+    it('skips auto cache points on a Claude model the info override marks unsupported', async () => {
+      const provider = new BedrockModel({
+        modelId: 'us.anthropic.claude-sonnet-4-6',
+        cacheConfig: { strategy: 'auto' },
+        info: { capabilities: { promptCaching: 'unsupported' } },
+      })
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
+
+      collectIterator(provider.stream(messages, { systemPrompt: 'Be helpful' }))
+
+      expect(vi.mocked(ConverseStreamCommand).mock.lastCall?.[0].system).toEqual([{ text: 'Be helpful' }])
+    })
+  })
+
   describe('updateConfig', () => {
     it('merges new config with existing config', () => {
       const provider = new BedrockModel({ region: 'us-west-2', temperature: 0.5 })

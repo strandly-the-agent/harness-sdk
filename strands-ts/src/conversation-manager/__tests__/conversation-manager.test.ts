@@ -197,10 +197,9 @@ describe('ConversationManager', () => {
   })
 
   describe('proactiveCompression', () => {
-    const mockModel = {
+    const mockModel = Object.assign(Object.create(Model.prototype), {
       getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
-      estimateUtilization: Model.prototype.estimateUtilization,
-    } as any
+    }) as any
 
     it('always registers a BeforeModelCallEvent hook regardless of proactiveCompression setting', () => {
       const manager = new TestConversationManager()
@@ -332,10 +331,9 @@ describe('ConversationManager', () => {
       const mockAgent = createMockAgent({ messages })
       manager.initAgent(mockAgent)
 
-      const modelWithoutLimit = {
+      const modelWithoutLimit = Object.assign(Object.create(Model.prototype), {
         getConfig: () => ({}) as BaseModelConfig,
-        estimateUtilization: Model.prototype.estimateUtilization,
-      } as any
+      }) as any
       // 150000/200000 = 0.75 >= 0.7 — should trigger with the 200k default
       const event = new BeforeModelCallEvent({
         agent: mockAgent,
@@ -357,10 +355,9 @@ describe('ConversationManager', () => {
       const mockAgent = createMockAgent()
       manager.initAgent(mockAgent)
 
-      const modelWithoutLimit = {
+      const modelWithoutLimit = Object.assign(Object.create(Model.prototype), {
         getConfig: () => ({}) as BaseModelConfig,
-        estimateUtilization: Model.prototype.estimateUtilization,
-      } as any
+      }) as any
       // 100000/200000 = 0.5 < 0.7 — should NOT trigger
       const event = new BeforeModelCallEvent({
         agent: mockAgent,

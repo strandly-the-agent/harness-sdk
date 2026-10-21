@@ -1542,6 +1542,28 @@ describe('VercelModel', () => {
         )
       })
 
+      it('under the default auto strategy, caches a model the info override says takes cache points', async () => {
+        const config = { cacheConfig: {}, info: { capabilities: { promptCaching: 'cachePoints' as const } } }
+        const { collect, callArgs } = setupCaptureTest(minimalParts, config, 'amazon-bedrock', UNSUPPORTED_MODEL_ID)
+        await collect(userMessages, { systemPrompt: 'be helpful' })
+
+        expect(bedrockSystemCachePoint(callArgs())).toBeDefined()
+      })
+
+      it('declares cache points for Claude on Bedrock and leaves other providers unknown', () => {
+        expect(
+          setupCaptureTest(minimalParts, undefined, 'amazon-bedrock', CACHING_MODEL_ID).model.info.capabilities
+            .promptCaching
+        ).toBe('cachePoints')
+        expect(
+          setupCaptureTest(minimalParts, undefined, 'amazon-bedrock', UNSUPPORTED_MODEL_ID).model.info.capabilities
+            .promptCaching
+        ).toBeUndefined()
+        expect(
+          setupCaptureTest(minimalParts, undefined, 'openai', 'gpt-5').model.info.capabilities.promptCaching
+        ).toBeUndefined()
+      })
+
       it('caches on an unsupported model when the anthropic strategy is explicit', async () => {
         const config = { cacheConfig: { strategy: 'anthropic' as const, messagesTTL: '1h' as const } }
         const { collect, callArgs } = setupCaptureTest(minimalParts, config, 'amazon-bedrock', UNSUPPORTED_MODEL_ID)

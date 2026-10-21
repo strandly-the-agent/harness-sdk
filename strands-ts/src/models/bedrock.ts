@@ -59,6 +59,7 @@ import {
   resolveCacheSection,
   resolveConfigMetadata,
 } from '../models/model.js'
+import type { ModelInfoPatch } from '../models/model-info.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import type { ContentBlock, Message, ReasoningBlock, StopReason, ToolUseBlock } from '../types/messages.js'
 import type { AudioSource, ImageSource, VideoSource, DocumentSource } from '../types/media.js'
@@ -513,9 +514,20 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    * @returns Cache strategy name or null
    */
   private _getCacheStrategy(): 'anthropic' | null {
-    return MODELS_SUPPORTING_ANTHROPIC_CACHING.some((pattern) => this._config.modelId?.includes(pattern))
-      ? 'anthropic'
-      : null
+    return this.info.capabilities.promptCaching === 'cachePoints' ? 'anthropic' : null
+  }
+
+  /**
+   * Declares what Bedrock knows about the configured model: Claude models take cache points.
+   *
+   * @returns The declared capabilities for the configured model id
+   */
+  override declareInfo(): ModelInfoPatch {
+    const modelId = this._config.modelId ?? ''
+    if (MODELS_SUPPORTING_ANTHROPIC_CACHING.some((pattern) => modelId.includes(pattern))) {
+      return { capabilities: { promptCaching: 'cachePoints' } }
+    }
+    return {}
   }
 
   /**

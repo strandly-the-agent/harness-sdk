@@ -1165,7 +1165,83 @@ describe('countTokens', () => {
   })
 })
 
+describe('info', () => {
+  it('is all unknown except stateful for a provider that declares nothing', () => {
+    const provider = new TestModelProvider()
+
+    expect(provider.info).toEqual({
+      capabilities: { stateful: false, promptCaching: undefined },
+      limits: { contextWindow: undefined },
+    })
+  })
+
+  it('resolves the context window from the built-in table for a known model id', () => {
+    const provider = new TestModelProvider()
+    provider.updateConfig({ modelId: 'anthropic.claude-sonnet-4-6' })
+
+    expect(provider.info.limits.contextWindow).toBe(1_000_000)
+  })
+
+  it('prefers an explicit contextWindowLimit over the table', () => {
+    const provider = new TestModelProvider()
+    provider.updateConfig({ modelId: 'anthropic.claude-sonnet-4-6', contextWindowLimit: 50_000 })
+
+    expect(provider.info.limits.contextWindow).toBe(50_000)
+  })
+
+  it('applies what the provider declares', () => {
+    class DeclaringProvider extends TestModelProvider {
+      override declareInfo() {
+        return { capabilities: { promptCaching: 'automatic' as const } }
+      }
+    }
+
+    expect(new DeclaringProvider().info.capabilities.promptCaching).toBe('automatic')
+  })
+
+  it('lets the info config override win over the declaration', () => {
+    class DeclaringProvider extends TestModelProvider {
+      override declareInfo() {
+        return { capabilities: { promptCaching: 'automatic' as const }, limits: { contextWindow: 8_000 } }
+      }
+    }
+    const provider = new DeclaringProvider()
+    provider.updateConfig({ info: { capabilities: { promptCaching: 'unsupported' } } })
+
+    expect(provider.info.capabilities.promptCaching).toBe('unsupported')
+    expect(provider.info.limits.contextWindow).toBe(8_000)
+  })
+
+  it('resets a declared field to unknown when the override is null', () => {
+    class DeclaringProvider extends TestModelProvider {
+      override declareInfo() {
+        return { capabilities: { promptCaching: 'automatic' as const } }
+      }
+    }
+    const provider = new DeclaringProvider()
+    provider.updateConfig({ info: { capabilities: { promptCaching: null } } })
+
+    expect(provider.info.capabilities.promptCaching).toBeUndefined()
+  })
+
+  it('reflects config changes on the next read', () => {
+    const provider = new TestModelProvider()
+    expect(provider.info.limits.contextWindow).toBeUndefined()
+
+    provider.updateConfig({ contextWindowLimit: 4_096 })
+
+    expect(provider.info.limits.contextWindow).toBe(4_096)
+  })
+})
+
 describe('estimateUtilization', () => {
+  it('uses the context window from info, including an info override', () => {
+    const provider = new TestModelProvider()
+    provider.updateConfig({ info: { limits: { contextWindow: 10_000 } } })
+
+    expect(provider.estimateUtilization(5_000)).toBe(0.5)
+  })
+
   it('returns ratio of inputTokens to contextWindowLimit', () => {
     const provider = new TestModelProvider()
     provider.updateConfig({ contextWindowLimit: 100_000 })

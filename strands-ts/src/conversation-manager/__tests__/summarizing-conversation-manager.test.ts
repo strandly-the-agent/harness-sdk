@@ -374,10 +374,9 @@ describe('SummarizingConversationManager', () => {
       })
       const messages = makeMessages(20)
       const mockAgent = createMockAgent({ messages })
-      const mockModel = {
+      const mockModel = Object.assign(Object.create(ModelBase.prototype), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
-        estimateUtilization: ModelBase.prototype.estimateUtilization,
-      } as any
+      }) as any
 
       manager.initAgent(mockAgent)
 
@@ -408,10 +407,9 @@ describe('SummarizingConversationManager', () => {
       })
       const messages = makeMessages(20)
       const mockAgent = createMockAgent({ messages })
-      const mockModel = {
+      const mockModel = Object.assign(Object.create(ModelBase.prototype), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
-        estimateUtilization: ModelBase.prototype.estimateUtilization,
-      } as any
+      }) as any
 
       manager.initAgent(mockAgent)
 
@@ -438,10 +436,9 @@ describe('SummarizingConversationManager', () => {
       })
       const messages = makeMessages(20)
       const mockAgent = createMockAgent({ messages })
-      const mockModel = {
+      const mockModel = Object.assign(Object.create(ModelBase.prototype), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
-        estimateUtilization: ModelBase.prototype.estimateUtilization,
-      } as any
+      }) as any
 
       manager.initAgent(mockAgent)
 

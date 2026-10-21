@@ -25,6 +25,14 @@ async function drain(
 }
 
 describe('ModelProxy', () => {
+  it('exposes the wrapped model info', () => {
+    const model = new MockMessageModel()
+    model.updateConfig({ contextWindowLimit: 4_096 })
+
+    expect(new ModelProxy(model).info).toEqual(model.info)
+    expect(new ModelProxy(model).info.limits.contextWindow).toBe(4_096)
+  })
+
   describe('usage recording', () => {
     it('accumulates a clean call usage into the invocation context total', async () => {
       const model = new MockMessageModel().addTurn(

@@ -39,6 +39,7 @@ import {
   type CacheTTL,
   type StreamOptions,
 } from './model.js'
+import type { ModelInfo, ModelInfoPatch } from './model-info.js'
 import { resolveOpenAICache, warnUnsupportedRetention } from './openai/cache.js'
 import {
   ModelContentBlockDeltaEvent,
@@ -153,6 +154,19 @@ export class VercelModel extends Model<VercelModelConfig> {
     return { ...this._config }
   }
 
+  /**
+   * Declares what this provider knows about the wrapped model: Claude on Bedrock takes cache points.
+   *
+   * @returns The declared capabilities for the wrapped model
+   */
+  override declareInfo(): ModelInfoPatch {
+    const provider = this._provider.provider.split('.')[0]
+    const bedrockClaude =
+      provider === 'amazon-bedrock' &&
+      BEDROCK_MODELS_SUPPORTING_CACHING.some((pattern) => this._provider.modelId.includes(pattern))
+    return bedrockClaude ? { capabilities: { promptCaching: 'cachePoints' } } : {}
+  }
+
   updateConfig(config: VercelModelConfig): void {
     this._config = { ...this._config, ...config }
   }
@@ -172,7 +186,7 @@ export class VercelModel extends Model<VercelModelConfig> {
       ...callSettings,
     }
 
-    applyVercelCacheConfig(callOptions, this._provider, cacheConfig, options?.dynamicTrailingBlocks)
+    applyVercelCacheConfig(callOptions, this._provider, cacheConfig, this.info, options?.dynamicTrailingBlocks)
 
     let result
     try {
@@ -246,6 +260,7 @@ function applyVercelCacheConfig(
   callOptions: LanguageModelV3CallOptions,
   model: LanguageModelV3,
   cacheConfig: CacheConfig | undefined,
+  info: ModelInfo,
   dynamicTrailingBlocks = 0
 ): void {
   if (!cacheConfig) return
@@ -256,7 +271,7 @@ function applyVercelCacheConfig(
       applyAnthropicCache(callOptions, cacheConfig, dynamicTrailingBlocks)
       break
     case 'amazon-bedrock':
-      applyBedrockCache(callOptions, cacheConfig, dynamicTrailingBlocks, model.modelId)
+      applyBedrockCache(callOptions, cacheConfig, dynamicTrailingBlocks, model.modelId, info)
       break
     case 'openai':
       applyOpenAICache(callOptions, cacheConfig)
@@ -323,9 +338,8 @@ function applyAnthropicCache(
   }
 }
 
-// Bedrock models that support the Anthropic-style caching strategy, mirroring `BedrockModel`'s
-// auto-detect list. Kept local rather than imported so the caching path does not widen bedrock.ts's
-// surface for a two-element constant.
+// Bedrock models that take cache points, mirroring `BedrockModel`'s list. Declared through
+// `VercelModel.declareInfo()` so the cache gate reads `info` like every other provider.
 const BEDROCK_MODELS_SUPPORTING_CACHING = ['anthropic', 'claude']
 
 /**
@@ -339,10 +353,11 @@ function applyBedrockCache(
   callOptions: LanguageModelV3CallOptions,
   cacheConfig: CacheConfig,
   dynamicTrailingBlocks: number,
-  modelId: string
+  modelId: string,
+  info: ModelInfo
 ): void {
   if (!isCacheStrategySupported(cacheConfig)) return
-  if (!bedrockModelSupportsCaching(cacheConfig, modelId)) return
+  if (!bedrockModelSupportsCaching(cacheConfig, modelId, info)) return
 
   // The amazon-bedrock ai-sdk adapter accepts no tool-level cache point, so toolsTTL does nothing here.
   // Tool definitions are cached only as part of the system/messages prefix.
@@ -381,10 +396,10 @@ function applyBedrockCache(
  *
  * @internal
  */
-function bedrockModelSupportsCaching(cacheConfig: CacheConfig, modelId: string): boolean {
+function bedrockModelSupportsCaching(cacheConfig: CacheConfig, modelId: string, info: ModelInfo): boolean {
   if ((cacheConfig.strategy ?? 'auto') !== 'auto') return true
 
-  const supported = BEDROCK_MODELS_SUPPORTING_CACHING.some((pattern) => modelId.includes(pattern))
+  const supported = info.capabilities.promptCaching === 'cachePoints'
   if (!supported) {
     warnOnce(
       logger,
