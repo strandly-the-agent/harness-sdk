@@ -1,0 +1,52 @@
+name: win-web-fetch-probe
+on: { push: { branches: [strandly/win-ci-probe] } }
+permissions: { contents: write }
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: strandly/web-fetch-powershell, path: src }
+      - uses: actions/checkout@v4
+        with: { ref: strandly/win-ci-probe, path: probe }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - name: harness-py web_fetch tests (PowerShell 5.1 local environment)
+        shell: pwsh
+        working-directory: src/harness-py
+        continue-on-error: true
+        run: |
+          "### harness-py ### $(Get-Date -Format o)" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "powershell.exe: $(powershell.exe -NoProfile -c '$PSVersionTable.PSVersion.ToString()') curl.exe: $((Get-Command curl.exe).Source)" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          pip install -q -e '.[dev]' 2>&1 | Select-Object -Last 2 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "strands-agents $(pip show strands-agents | Select-String Version)" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          python -m pytest tests/tools/test_web_fetch.py -v -p no:cacheprovider 2>&1 | Select-Object -Last 70 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "harness-py web_fetch tests exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+      - name: harness-ts web-fetch tests against published SDK (sh via Git Bash) then local SDK (PowerShell)
+        shell: pwsh
+        working-directory: src
+        continue-on-error: true
+        run: |
+          "### harness-ts (published SDK) ###" | Out-File -Append -Encoding utf8 ..\probe\out.txt
+          cd harness-ts
+          npm ci --no-audit --no-fund 2>&1 | Select-Object -Last 1 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          npx vitest run test/tools/web-fetch.test.ts 2>&1 | Select-Object -Last 40 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "harness-ts (published) exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          cd ..
+          "### harness-ts (local strands-ts build) ###" | Out-File -Append -Encoding utf8 ..\probe\out.txt
+          npm ci --no-audit --no-fund 2>&1 | Select-Object -Last 1 | Out-File -Append -Encoding utf8 ..\probe\out.txt
+          npm run build -w strands-ts 2>&1 | Select-Object -Last 2 | Out-File -Append -Encoding utf8 ..\probe\out.txt
+          cd harness-ts
+          npm install --no-save --no-audit --no-fund ../strands-ts 2>&1 | Select-Object -Last 1 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "sdk has powershell branch: $(Select-String -Quiet powershell.exe node_modules/@strands-agents/sdk/dist/src/sandbox/not-a-sandbox-local-environment.js)" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          npx vitest run test/tools/web-fetch.test.ts 2>&1 | Select-Object -Last 40 | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+          "harness-ts (local sdk) exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 ..\..\probe\out.txt
+      - name: publish output
+        shell: bash
+        working-directory: probe
+        run: |
+          git config user.name strandly-the-agent; git config user.email strandly-the-agent@users.noreply.github.com
+          git add out.txt && git commit -m "web_fetch probe output [skip ci]" && git push
