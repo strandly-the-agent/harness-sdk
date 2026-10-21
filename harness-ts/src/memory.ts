@@ -2,7 +2,7 @@
  * File-based memory resolution: build a `MemoryManager` over a local `FileMemoryStore`.
  *
  * Memory is on by default. Facts the agent learns are distilled every few turns into markdown
- * files under `memory.dir` (default `./.agent/memory`), searched and injected before each turn
+ * files under `memory.dir` (default `./.agent/memory`), searched and injected before each user turn
  * so a returning agent recalls them without re-asking. Persistence is plain files, independent of
  * any session: memory survives across sessions and works with sessions off.
  *
@@ -53,7 +53,7 @@ export interface ResolveMemoryOptions {
 /**
  * Build the memory manager: a `MemoryManager` wrapping either the consumer's `stores` or a default
  * `FileMemoryStore` writing to `dir`, with the SDK's tool defaults (`search_memory` on, no
- * `add_memory` write tool) and injection on every turn.
+ * `add_memory` write tool) and injection on each user turn.
  *
  * The default store's keys are pre-namespaced to `dir` itself, so files land at
  * `dir/<slug>.md` without the store's own `memory/<name>/` scoping doubling the path.
@@ -70,9 +70,9 @@ export async function resolveMemory(options: ResolveMemoryOptions = {}): Promise
     supplied.length > 0
       ? supplied.map((store) => (writable ? store : toReadOnly(store)))
       : [await buildDefaultStore(model, dir, webFetch?.model, writable)]
-  // Inject on every model call, not only on a fresh user ask: the harness runs multi-step tool loops, so an
-  // autonomous step (or a delegate) consults memory at each turn rather than only when the user speaks.
-  return new MemoryManager({ stores: list, injection: { trigger: 'everyTurn' } })
+  // Injection keeps the SDK's `userTurn` trigger: memory is folded in on a fresh user ask, not on every
+  // tool-result step of a multi-step loop; `search_memory` covers mid-task recall.
+  return new MemoryManager({ stores: list })
 }
 
 /** The default file-backed store, writing markdown directly under `dir`. */
