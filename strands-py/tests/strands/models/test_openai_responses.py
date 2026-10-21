@@ -549,6 +549,23 @@ def test_format_request_messages_mantle_replays_reasoning_but_not_message_items(
     assert result == [reasoning, {"role": "assistant", "content": "4"}]
 
 
+def test_format_request_messages_mantle_keeps_calls_ahead_of_text_when_message_items_dropped():
+    reasoning = {"id": "rs_1", "type": "reasoning", "summary": []}
+    message = {"id": "msg_1", "type": "message", "role": "assistant", "status": "completed", "content": []}
+    call = {"id": "fc_1", "type": "function_call", "call_id": "call_1", "name": "calc", "arguments": "{}"}
+    messages = [
+        {
+            "role": "assistant",
+            "content": [{"text": "let me check"}, {"toolUse": {"name": "calc", "input": {}, "toolUseId": "call_1"}}],
+            "additionalModelResponseFields": {"openaiResponsesOutput": [reasoning, message, call]},
+        }
+    ]
+
+    result = OpenAIResponsesModel._format_request_messages(messages, replay_message_items=False)
+
+    assert result == [reasoning, call, {"role": "assistant", "content": "let me check"}]
+
+
 def test_format_request_messages_mantle_message_only_items_fall_back_to_legacy_history():
     message = {"id": "msg_1", "type": "message", "role": "assistant", "status": "completed", "content": []}
     messages = [

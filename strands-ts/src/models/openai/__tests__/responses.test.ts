@@ -664,6 +664,22 @@ describe("OpenAIModel (api: 'responses')", () => {
       expect(legacy.input).toEqual([{ role: 'assistant', content: 'answer' }])
     })
 
+    it('keeps reasoning and function_call items ahead of the text when message items are dropped', () => {
+      const reasoning = { id: 'rs_1', type: 'reasoning', summary: [] }
+      const message = { id: 'msg_1', type: 'message', role: 'assistant', status: 'completed', content: [] }
+      const call = { id: 'fc_1', type: 'function_call', call_id: 'call_1', name: 'calc', arguments: '{}' }
+      const messages = [
+        new Message({
+          role: 'assistant',
+          content: [new TextBlock('let me check'), new ToolUseBlock({ name: 'calc', toolUseId: 'call_1', input: {} })],
+          additionalModelResponseFields: { openaiResponsesOutput: [reasoning, message, call] },
+        }),
+      ]
+
+      const req = formatResponsesRequest({ modelId: 'm' }, messages, undefined, false, { replayMessageItems: false })
+      expect(req.input).toEqual([reasoning, call, { role: 'assistant', content: 'let me check' }])
+    })
+
     it('replays function_call output items without an id', async () => {
       const output = [{ type: 'function_call', call_id: 'call_1', name: 'calculator', arguments: '{}' }]
       const messages = [

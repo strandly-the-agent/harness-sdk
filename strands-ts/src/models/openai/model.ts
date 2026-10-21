@@ -98,7 +98,7 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
     if (bedrockMantleConfig && client) {
       throw new Error("'bedrockMantleConfig' cannot be combined with a pre-built 'client'.")
     }
-    this._mantle = bedrockMantleConfig !== undefined
+    this._mantle = Boolean(bedrockMantleConfig)
 
     if (client) {
       this._client = client

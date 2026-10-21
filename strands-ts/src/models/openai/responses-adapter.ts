@@ -179,8 +179,7 @@ export function formatResponsesRequest(
  * - Text/media → grouped in `{ role, content: [...] }`
  * - Tool calls → separate `{ type: 'function_call', ... }` items
  * - Tool results → separate `{ type: 'function_call_output', ... }` items
- */
-/**
+ *
  * `replayMessageItems=false` drops `message` output items and sends the string-form
  * assistant text instead: Bedrock Mantle rejects replayed message items (it strips
  * their id/status in flight) but accepts reasoning and function_call items.
