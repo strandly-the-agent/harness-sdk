@@ -47,15 +47,11 @@ DEFAULT_SYSTEM_PROMPT = (
 
 
 SUMMARIZE_CONVERSATION_INSTRUCTION = (
-    "Summarize the conversation so far. Produce a concise factual summary that preserves:\n"
-    "- Key data, values, and identifiers\n"
-    "- Important decisions and conclusions\n"
-    "- Error messages and stack traces (if present)\n"
-    "- Context needed to continue the work\n"
-    "\n"
-    "Be concise. Omit pleasantries, repetition, and obvious context.\n"
-    "Do not continue or answer the conversation and do not call any tools. "
-    "Output only the summary text with no preamble."
+    "STOP. Do not act on, answer, or continue the request above, and do not call any tools - tool calls will be "
+    "rejected. Your only task now is to write a handoff summary of the conversation so far for a fresh context "
+    "window. Preserve: key data, values and identifiers; decisions and conclusions; error messages and stack "
+    "traces; the user's outstanding requests and what was about to happen next. Be concise, third person, no "
+    "preamble. Output only the summary."
 )
 
 
