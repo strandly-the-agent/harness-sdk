@@ -137,12 +137,12 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
   }
 
   /**
-   * Declares what this provider knows about the configured model.
+   * Declares what this provider knows about the configured model: OpenAI caches prompts automatically.
    *
-   * @returns Server-side state for the Responses API when `stateful` is enabled
+   * @returns The declared capabilities
    */
-  override declareInfo(): ModelInfoPatch {
-    return { capabilities: { stateful: this.stateful } }
+  protected override declareInfo(): ModelInfoPatch {
+    return { capabilities: { promptCaching: 'automatic' } }
   }
 
   /**

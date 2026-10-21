@@ -218,7 +218,8 @@ export interface BaseModelConfig {
 
   /**
    * Overrides for what the SDK knows about the model. Fields set here win over what the
-   * provider declares and what the built-in tables say; `null` resets a field to unknown.
+   * provider declares; `null` resets a field to unknown. `updateConfig({ info })` replaces the
+   * previous override entirely, it does not merge into it.
    */
   info?: ModelInfoPatch
 }
@@ -347,7 +348,7 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
    * the agent's local message history is cleared automatically.
    *
    * Model providers that support server-side state management should override this
-   * to return `true`.
+   * to return `true`. `info.capabilities.stateful` mirrors it.
    *
    * @returns `false` by default
    */
@@ -361,20 +362,22 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
    *
    * @returns A partial write to {@link ModelInfo}, empty by default
    */
-  declareInfo(): ModelInfoPatch {
+  protected declareInfo(): ModelInfoPatch {
     return {}
   }
 
   /**
-   * Everything the SDK knows about the configured model, resolved on each read from the built-in
-   * tables, {@link declareInfo}, and the `info` config override, in that order of precedence.
+   * Everything the SDK knows about the configured model, resolved on each read from the config,
+   * {@link declareInfo}, and the `info` config override, in that order of precedence. Each read
+   * returns a new frozen record, so do not compare reads by reference.
    */
   get info(): ModelInfo {
     const config = this.getConfig()
-    const contextWindow =
-      config.contextWindowLimit ?? (config.modelId === undefined ? undefined : getContextWindowLimit(config.modelId))
     return mergeModelInfo(
-      { capabilities: { stateful: this.stateful, promptCaching: undefined }, limits: { contextWindow } },
+      {
+        capabilities: { stateful: this.stateful, promptCaching: undefined },
+        limits: { contextWindow: config.contextWindowLimit },
+      },
       this.declareInfo(),
       config.info
     )

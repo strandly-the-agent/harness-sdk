@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { TestModelProvider } from '../../__fixtures__/model-test-helpers.js'
 import { SlidingWindowConversationManager } from '../sliding-window-conversation-manager.js'
 import {
   ContextWindowOverflowError,
@@ -1516,7 +1517,7 @@ describe('SlidingWindowConversationManager', () => {
         new Message({ role: 'user', content: [new TextBlock('Message 3')] }),
         new Message({ role: 'assistant', content: [new TextBlock('Response 3')] }),
       ]
-      const mockModel = Object.assign(Object.create(Model.prototype), {
+      const mockModel = Object.assign(new TestModelProvider(), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
       }) as any
       const mockAgent = createMockAgent({ messages })
@@ -1542,7 +1543,7 @@ describe('SlidingWindowConversationManager', () => {
         new Message({ role: 'user', content: [new TextBlock('Message 1')] }),
         new Message({ role: 'assistant', content: [new TextBlock('Response 1')] }),
       ]
-      const mockModel = Object.assign(Object.create(Model.prototype), {
+      const mockModel = Object.assign(new TestModelProvider(), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
       }) as any
       const mockAgent = createMockAgent({ messages })

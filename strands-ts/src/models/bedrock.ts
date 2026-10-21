@@ -522,7 +522,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    *
    * @returns The declared capabilities for the configured model id
    */
-  override declareInfo(): ModelInfoPatch {
+  protected override declareInfo(): ModelInfoPatch {
     const modelId = this._config.modelId ?? ''
     if (MODELS_SUPPORTING_ANTHROPIC_CACHING.some((pattern) => modelId.includes(pattern))) {
       return { capabilities: { promptCaching: 'cachePoints' } }

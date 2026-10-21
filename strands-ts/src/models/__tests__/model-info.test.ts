@@ -26,11 +26,13 @@ describe('mergeModelInfo', () => {
   })
 
   it('lets a later patch win over an earlier one', () => {
-    const merged = mergeModelInfo(base, { capabilities: { stateful: true } }, undefined, {
-      capabilities: { stateful: false, promptCaching: 'unsupported' },
+    const merged = mergeModelInfo(base, { limits: { contextWindow: 1 } }, undefined, {
+      capabilities: { promptCaching: 'unsupported' },
+      limits: { contextWindow: 2 },
     })
 
     expect(merged.capabilities).toEqual({ stateful: false, promptCaching: 'unsupported' })
+    expect(merged.limits.contextWindow).toBe(2)
   })
 
   it('returns a frozen record', () => {

@@ -1166,7 +1166,7 @@ describe('countTokens', () => {
 })
 
 describe('info', () => {
-  it('is all unknown except stateful for a provider that declares nothing', () => {
+  it('is all unknown except the mirrored stateful for a provider that declares nothing', () => {
     const provider = new TestModelProvider()
 
     expect(provider.info).toEqual({
@@ -1175,23 +1175,26 @@ describe('info', () => {
     })
   })
 
-  it('resolves the context window from the built-in table for a known model id', () => {
+  it('takes the context window from the config', () => {
     const provider = new TestModelProvider()
-    provider.updateConfig({ modelId: 'anthropic.claude-sonnet-4-6' })
-
-    expect(provider.info.limits.contextWindow).toBe(1_000_000)
-  })
-
-  it('prefers an explicit contextWindowLimit over the table', () => {
-    const provider = new TestModelProvider()
-    provider.updateConfig({ modelId: 'anthropic.claude-sonnet-4-6', contextWindowLimit: 50_000 })
+    provider.updateConfig({ contextWindowLimit: 50_000 })
 
     expect(provider.info.limits.contextWindow).toBe(50_000)
   })
 
+  it('mirrors a stateful getter override into the record', () => {
+    class StatefulProvider extends TestModelProvider {
+      override get stateful() {
+        return true
+      }
+    }
+
+    expect(new StatefulProvider().info.capabilities.stateful).toBe(true)
+  })
+
   it('applies what the provider declares', () => {
     class DeclaringProvider extends TestModelProvider {
-      override declareInfo() {
+      protected override declareInfo() {
         return { capabilities: { promptCaching: 'automatic' as const } }
       }
     }
@@ -1201,7 +1204,7 @@ describe('info', () => {
 
   it('lets the info config override win over the declaration', () => {
     class DeclaringProvider extends TestModelProvider {
-      override declareInfo() {
+      protected override declareInfo() {
         return { capabilities: { promptCaching: 'automatic' as const }, limits: { contextWindow: 8_000 } }
       }
     }
@@ -1214,14 +1217,16 @@ describe('info', () => {
 
   it('resets a declared field to unknown when the override is null', () => {
     class DeclaringProvider extends TestModelProvider {
-      override declareInfo() {
-        return { capabilities: { promptCaching: 'automatic' as const } }
+      protected override declareInfo() {
+        return { capabilities: { promptCaching: 'automatic' as const }, limits: { contextWindow: 8_000 } }
       }
     }
     const provider = new DeclaringProvider()
-    provider.updateConfig({ info: { capabilities: { promptCaching: null } } })
+    provider.updateConfig({ info: { capabilities: { promptCaching: null }, limits: { contextWindow: null } } })
 
     expect(provider.info.capabilities.promptCaching).toBeUndefined()
+    expect(provider.info.limits.contextWindow).toBeUndefined()
+    expect(provider.estimateUtilization(100_000)).toBe(100_000 / 200_000)
   })
 
   it('reflects config changes on the next read', () => {

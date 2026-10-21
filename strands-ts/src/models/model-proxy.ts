@@ -1,7 +1,6 @@
 import { unwrapInvocationContext, type InvocationContext } from '../agent/invocation-context.js'
 import type { ContentBlock, Message } from '../types/messages.js'
 import type { Model, StreamAggregatedResult, StreamOptions } from './model.js'
-import type { ModelInfo } from './model-info.js'
 import type { ModelStreamEvent } from './streaming.js'
 
 /**
@@ -19,11 +18,6 @@ export class ModelProxy {
 
   constructor(model: Model) {
     this._model = model
-  }
-
-  /** What the SDK knows about the wrapped model. */
-  get info(): ModelInfo {
-    return this._model.info
   }
 
   /**

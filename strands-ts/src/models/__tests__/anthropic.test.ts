@@ -180,6 +180,14 @@ describe('AnthropicModel', () => {
     })
   })
 
+  describe('info', () => {
+    it('declares cache points', () => {
+      const model = new AnthropicModel({ apiKey: 'sk-ant-test', modelId: 'claude-sonnet-4-6' })
+
+      expect(model.info.capabilities.promptCaching).toBe('cachePoints')
+    })
+  })
+
   describe('updateConfig', () => {
     it('merges new config with existing config', () => {
       const provider = new AnthropicModel({ apiKey: 'sk-test', temperature: 0.5 })

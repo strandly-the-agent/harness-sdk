@@ -1,10 +1,10 @@
 /**
  * Facts about the model behind a provider: what it can do and its limits.
  *
- * Every field can be unknown (`undefined`). The SDK never withholds a feature because a fact is
- * unknown; it only skips features that are known to be unsupported.
+ * Every field can be unknown (`undefined`). A known `'unsupported'` disables a feature; `undefined`
+ * leaves the SDK's existing default for that feature in place.
  *
- * This is the first slice of the shape proposed in `team/designs/0022-model-metadata.md`. Fields are
+ * This is the first slice of the shape proposed in the model metadata design (PR #5305). Fields are
  * added when something outside the provider reads them.
  */
 
@@ -13,7 +13,7 @@ export type PromptCaching = 'unsupported' | 'automatic' | 'cachePoints'
 
 /** What the model can do. */
 export interface ModelCapabilities {
-  /** Whether the model keeps conversation state server-side. */
+  /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}; not overridable. */
   readonly stateful: boolean | undefined
   /** Whether and how the model caches prompts. */
   readonly promptCaching: PromptCaching | undefined
@@ -38,7 +38,6 @@ export interface ModelInfo {
  */
 export interface ModelInfoPatch {
   readonly capabilities?: {
-    readonly stateful?: boolean | null
     readonly promptCaching?: PromptCaching | null
   }
   readonly limits?: {
@@ -55,17 +54,17 @@ function mergeField<T>(base: T | undefined, patch: T | null | undefined): T | un
 /**
  * Applies patches to a {@link ModelInfo}, later patches winning.
  *
+ * @internal
  * @param base - The record to start from
  * @param patches - Partial writes, in order of increasing precedence
  * @returns A new frozen record
  */
 export function mergeModelInfo(base: ModelInfo, ...patches: (ModelInfoPatch | undefined)[]): ModelInfo {
-  let stateful = base.capabilities.stateful
+  const stateful = base.capabilities.stateful
   let promptCaching = base.capabilities.promptCaching
   let contextWindow = base.limits.contextWindow
   for (const patch of patches) {
     if (!patch) continue
-    stateful = mergeField(stateful, patch.capabilities?.stateful)
     promptCaching = mergeField(promptCaching, patch.capabilities?.promptCaching)
     contextWindow = mergeField(contextWindow, patch.limits?.contextWindow)
   }

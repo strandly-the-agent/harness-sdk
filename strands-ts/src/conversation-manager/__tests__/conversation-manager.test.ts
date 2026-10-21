@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { TestModelProvider } from '../../__fixtures__/model-test-helpers.js'
 import {
   ConversationManager,
   type ConversationManagerReduceOptions,
@@ -13,7 +14,6 @@ import { InvocationContextImpl, unwrapInvocationContext } from '../../agent/invo
 import { createMockAgent, invokeTrackedHook } from '../../__fixtures__/agent-helpers.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import type { BaseModelConfig } from '../../models/model.js'
-import { Model } from '../../models/model.js'
 import { warnOnce } from '../../logging/warn-once.js'
 
 vi.mock('../../logging/warn-once.js', () => ({
@@ -197,7 +197,7 @@ describe('ConversationManager', () => {
   })
 
   describe('proactiveCompression', () => {
-    const mockModel = Object.assign(Object.create(Model.prototype), {
+    const mockModel = Object.assign(new TestModelProvider(), {
       getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
     }) as any
 
@@ -331,7 +331,7 @@ describe('ConversationManager', () => {
       const mockAgent = createMockAgent({ messages })
       manager.initAgent(mockAgent)
 
-      const modelWithoutLimit = Object.assign(Object.create(Model.prototype), {
+      const modelWithoutLimit = Object.assign(new TestModelProvider(), {
         getConfig: () => ({}) as BaseModelConfig,
       }) as any
       // 150000/200000 = 0.75 >= 0.7 — should trigger with the 200k default
@@ -355,7 +355,7 @@ describe('ConversationManager', () => {
       const mockAgent = createMockAgent()
       manager.initAgent(mockAgent)
 
-      const modelWithoutLimit = Object.assign(Object.create(Model.prototype), {
+      const modelWithoutLimit = Object.assign(new TestModelProvider(), {
         getConfig: () => ({}) as BaseModelConfig,
       }) as any
       // 100000/200000 = 0.5 < 0.7 — should NOT trigger

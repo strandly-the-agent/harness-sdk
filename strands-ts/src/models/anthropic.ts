@@ -9,6 +9,7 @@ import {
   type CacheConfig,
   type ResolvedCacheSection,
 } from '../models/model.js'
+import type { ModelInfoPatch } from '../models/model-info.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import type { Message, ContentBlock, SystemPrompt } from '../types/messages.js'
 import type { ModelStreamEvent } from '../models/streaming.js'
@@ -209,6 +210,15 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
 
   getConfig(): AnthropicModelConfig {
     return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId)
+  }
+
+  /**
+   * Declares what this provider knows about the configured model: Claude takes cache points.
+   *
+   * @returns The declared capabilities
+   */
+  protected override declareInfo(): ModelInfoPatch {
+    return { capabilities: { promptCaching: 'cachePoints' } }
   }
 
   /**

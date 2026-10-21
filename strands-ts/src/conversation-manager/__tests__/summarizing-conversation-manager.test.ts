@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
+import { TestModelProvider } from '../../__fixtures__/model-test-helpers.js'
 import { SummarizingConversationManager } from '../summarizing-conversation-manager.js'
 import { ContextWindowOverflowError, Message, TextBlock, ToolUseBlock, ToolResultBlock } from '../../index.js'
 import { AfterModelCallEvent, BeforeModelCallEvent } from '../../hooks/events.js'
 import { createMockAgent, invokeTrackedHook } from '../../__fixtures__/agent-helpers.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { InvocationContextImpl } from '../../agent/invocation-context.js'
-import { Model as ModelBase } from '../../models/model.js'
 import type { Model, BaseModelConfig } from '../../models/model.js'
 
 function textMsg(role: 'user' | 'assistant', text: string): Message {
@@ -374,7 +374,7 @@ describe('SummarizingConversationManager', () => {
       })
       const messages = makeMessages(20)
       const mockAgent = createMockAgent({ messages })
-      const mockModel = Object.assign(Object.create(ModelBase.prototype), {
+      const mockModel = Object.assign(new TestModelProvider(), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
       }) as any
 
@@ -407,7 +407,7 @@ describe('SummarizingConversationManager', () => {
       })
       const messages = makeMessages(20)
       const mockAgent = createMockAgent({ messages })
-      const mockModel = Object.assign(Object.create(ModelBase.prototype), {
+      const mockModel = Object.assign(new TestModelProvider(), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
       }) as any
 
@@ -436,7 +436,7 @@ describe('SummarizingConversationManager', () => {
       })
       const messages = makeMessages(20)
       const mockAgent = createMockAgent({ messages })
-      const mockModel = Object.assign(Object.create(ModelBase.prototype), {
+      const mockModel = Object.assign(new TestModelProvider(), {
         getConfig: () => ({ contextWindowLimit: 1000 }) as BaseModelConfig,
       }) as any
 
