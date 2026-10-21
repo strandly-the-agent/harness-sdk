@@ -129,20 +129,7 @@ export async function summarizeMessages(
  * @internal
  */
 export function buildSummaryRequest(messages: Message[]): Message[] {
-  const request: Message[] = []
-  for (const message of messages) {
-    const content = message.content.filter(
-      (block) => !(block instanceof ReasoningBlock) && !(block instanceof CachePointBlock)
-    )
-    if (content.length === 0) continue
-    const previous = request[request.length - 1]
-    if (previous && previous.role === message.role) {
-      request[request.length - 1] = new Message({ role: message.role, content: [...previous.content, ...content] })
-    } else {
-      request.push(new Message({ role: message.role, content }))
-    }
-  }
-
+  const request = mergeSameRole(messages)
   if (request.length === 0) return []
   if (request[0]!.role !== 'user') {
     request.unshift(new Message({ role: 'user', content: [new TextBlock(OMITTED_PREFIX_TEXT)] }))
@@ -156,6 +143,24 @@ export function buildSummaryRequest(messages: Message[]): Message[] {
     request.push(new Message({ role: 'user', content: [instruction] }))
   }
   return request
+}
+
+/** Copies messages without reasoning or cache-point blocks, merging consecutive same-role messages. */
+function mergeSameRole(messages: Message[]): Message[] {
+  const merged: Message[] = []
+  for (const message of messages) {
+    const content = message.content.filter(
+      (block) => !(block instanceof ReasoningBlock) && !(block instanceof CachePointBlock)
+    )
+    if (content.length === 0) continue
+    const previous = merged[merged.length - 1]
+    if (previous && previous.role === message.role) {
+      merged[merged.length - 1] = new Message({ role: message.role, content: [...previous.content, ...content] })
+    } else {
+      merged.push(new Message({ role: message.role, content }))
+    }
+  }
+  return merged
 }
 
 /**

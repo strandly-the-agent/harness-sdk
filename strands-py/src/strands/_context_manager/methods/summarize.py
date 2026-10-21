@@ -118,16 +118,7 @@ def _build_summary_request(messages: Messages) -> Messages:
     Reasoning and cache-point blocks are left out (their signatures and placement are bound to the original
     conversation), consecutive same-role messages are merged, and a user message opens the request.
     """
-    request: Messages = []
-    for message in messages:
-        content = [b for b in message["content"] if "reasoningContent" not in b and "cachePoint" not in b]
-        if not content:
-            continue
-        if request and request[-1]["role"] == message["role"]:
-            request[-1] = Message(role=message["role"], content=[*request[-1]["content"], *content])
-        else:
-            request.append(Message(role=message["role"], content=content))
-
+    request = _merge_same_role(messages)
     if not request:
         return []
     if request[0]["role"] != "user":
@@ -139,6 +130,24 @@ def _build_summary_request(messages: Messages) -> Messages:
     else:
         request.append(Message(role="user", content=[instruction]))
     return request
+
+
+def _merge_same_role(messages: Messages) -> Messages:
+    """Copy messages without reasoning or cache-point blocks, merging consecutive same-role messages."""
+    merged: Messages = []
+    for message in messages:
+        content = [block for block in message["content"] if _is_summarizable_block(block)]
+        if not content:
+            continue
+        if merged and merged[-1]["role"] == message["role"]:
+            merged[-1] = Message(role=message["role"], content=[*merged[-1]["content"], *content])
+        else:
+            merged.append(Message(role=message["role"], content=content))
+    return merged
+
+
+def _is_summarizable_block(block: ContentBlock) -> bool:
+    return "reasoningContent" not in block and "cachePoint" not in block
 
 
 def _tool_result_to_content_blocks(content: list[ToolResultContent]) -> list[ContentBlock]:

@@ -77,7 +77,7 @@ describe('buildSummaryRequest', () => {
     const messages = [
       new Message({ role: 'user', content: [new TextBlock('u1')] }),
       new Message({ role: 'assistant', content: [new ReasoningBlock({ text: 'plan', signature: 'sig' })] }),
-      new Message({ role: 'assistant', content: [new TextBlock('a1'), new CachePointBlock({ type: 'default' })] }),
+      new Message({ role: 'assistant', content: [new TextBlock('a1'), new CachePointBlock({ cacheType: 'default' })] }),
       new Message({ role: 'assistant', content: [new TextBlock('a2')] }),
     ]
 
