@@ -526,6 +526,63 @@ def test_format_request_does_not_duplicate_configured_encrypted_reasoning_includ
     assert request["include"] == ["reasoning.encrypted_content"]
 
 
+def test_format_request_messages_mantle_replays_reasoning_but_not_message_items():
+    """Bedrock Mantle rejects replayed ``message`` items; keep reasoning/function_call items and send the text."""
+    reasoning = {"id": "rs_1", "type": "reasoning", "summary": [], "content": [{"type": "reasoning_text", "text": "t"}]}
+    message = {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "text": "4", "annotations": []}],
+    }
+    messages = [
+        {
+            "role": "assistant",
+            "content": [{"text": "4"}],
+            "additionalModelResponseFields": {"openaiResponsesOutput": [reasoning, message]},
+        }
+    ]
+
+    result = OpenAIResponsesModel._format_request_messages(messages, replay_message_items=False)
+
+    assert result == [reasoning, {"role": "assistant", "content": "4"}]
+
+
+def test_format_request_messages_mantle_message_only_items_fall_back_to_legacy_history():
+    message = {"id": "msg_1", "type": "message", "role": "assistant", "status": "completed", "content": []}
+    messages = [
+        {
+            "role": "assistant",
+            "content": [{"text": "answer"}],
+            "additionalModelResponseFields": {"openaiResponsesOutput": [message]},
+        }
+    ]
+
+    result = OpenAIResponsesModel._format_request_messages(messages, replay_message_items=False)
+
+    assert result == [{"role": "assistant", "content": "answer"}]
+
+
+def test_format_request_with_mantle_config_does_not_replay_message_items(model_id, messages):
+    reasoning = {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "enc"}
+    message = {"id": "msg_1", "type": "message", "role": "assistant", "status": "completed", "content": []}
+    history = [
+        *messages,
+        {
+            "role": "assistant",
+            "content": [{"text": "answer"}],
+            "additionalModelResponseFields": {"openaiResponsesOutput": [reasoning, message]},
+        },
+    ]
+    with unittest.mock.patch("strands.models.openai_responses.resolve_bedrock_client_args") as resolve:
+        resolve.return_value = {"api_key": "k", "base_url": "https://bedrock-mantle.us-east-1.api.aws/v1"}
+        model = OpenAIResponsesModel(model_id=model_id, bedrock_mantle_config={"region": "us-east-1"})
+        request = model._format_request(history, None, None)
+
+    assert request["input"][-2:] == [reasoning, {"role": "assistant", "content": "answer"}]
+
+
 def test_format_request_messages_replays_items_without_text_fallback():
     """A replayed turn with no message item and no text content adds nothing beyond the items."""
     reasoning = {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "enc"}
