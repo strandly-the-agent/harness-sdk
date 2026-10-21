@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Literal
 
 from ....event_loop.streaming import process_stream
 from ....types.content import ContentBlock, Message
-from ....types.event_loop import Usage
 from ....types.exceptions import ContextWindowOverflowException
 
 if TYPE_CHECKING:
@@ -185,16 +184,12 @@ async def generate_summary(
     )
 
     result_message: Message | None = None
-    result_usage: Usage | None = None
-    async for event in process_stream(chunks):
+    async for event in process_stream(chunks, invocation_context=invocation_context):
         if "stop" in event:
-            _, result_message, result_usage, _ = event["stop"]
+            _, result_message, _, _ = event["stop"]
 
     if result_message is None:
         raise RuntimeError("Failed to generate summary: no response from model")
-
-    if invocation_context is not None and result_usage is not None:
-        invocation_context._record_usage(result_usage)
 
     return as_user_summary(result_message)
 

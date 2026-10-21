@@ -14,7 +14,6 @@ from typing_extensions import TypedDict
 
 from ...event_loop.streaming import process_stream
 from ...types.content import ContentBlock, Message, Messages
-from ...types.event_loop import Usage
 from ...types.tools import ToolResultContent
 from ..types import is_text_block
 
@@ -140,13 +139,9 @@ async def _call_summarizer(
         chunks = model.stream(messages, tool_specs=None, system_prompt=system_prompt)
 
         result_message: Message | None = None
-        result_usage: Usage | None = None
-        async for event in process_stream(chunks):
+        async for event in process_stream(chunks, invocation_context=invocation_context):
             if "stop" in event:
-                _, result_message, result_usage, _ = event["stop"]
-
-        if invocation_context is not None and result_usage is not None:
-            invocation_context._record_usage(result_usage)
+                _, result_message, _, _ = event["stop"]
 
         if result_message is None:
             logger.warning("result=<empty> | summarization produced no response")

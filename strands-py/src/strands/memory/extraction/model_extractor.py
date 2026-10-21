@@ -89,7 +89,13 @@ class ModelExtractor:
         stop: Any = None
         try:
             with trace_api.use_span(span, end_on_exit=False):
-                async for event in stream_messages(model, self._system_prompt, [prompt], tool_specs=[]):
+                async for event in stream_messages(
+                    model,
+                    self._system_prompt,
+                    [prompt],
+                    tool_specs=[],
+                    invocation_context=context.invocation_context if context is not None else None,
+                ):
                     # The terminal ``ModelStopReason`` event carries
                     # ``{"stop": (stop_reason, message, usage, metrics)}``.
                     candidate = event.get("stop")
@@ -106,8 +112,6 @@ class ModelExtractor:
             raise no_response_error
 
         stop_reason, message, usage, metrics = stop
-        if context is not None and context.invocation_context is not None:
-            context.invocation_context._record_usage(usage)
         tracer.end_model_invoke_span(span, message, usage, metrics, stop_reason)
 
         text = "".join(block.get("text", "") for block in final_message["content"]).strip()

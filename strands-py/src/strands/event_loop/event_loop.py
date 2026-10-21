@@ -777,11 +777,11 @@ def _make_invoke_model_terminal(
                     cancel_signal=agent._cancel_signal,
                     agent_metadata=agent._metadata,
                     structured_output_model=structured_output_model,
+                    invocation_context=invocation_context,
                 ):
                     yield event
 
                 stop_reason, message, usage, metrics = event["stop"]
-                invocation_context._record_usage(usage)
                 tracer.end_model_invoke_span(model_invoke_span, message, usage, metrics, stop_reason)
             except Exception as e:
                 tracer.end_span_with_error(model_invoke_span, str(e), e)
