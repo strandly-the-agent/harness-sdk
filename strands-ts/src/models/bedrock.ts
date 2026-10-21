@@ -60,6 +60,7 @@ import {
   resolveConfigMetadata,
 } from '../models/model.js'
 import type { ModelInfoPatch } from '../models/model-info.js'
+import { declaredModelInfo } from '../models/model-data.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import type { ContentBlock, Message, ReasoningBlock, StopReason, ToolUseBlock } from '../types/messages.js'
 import type { AudioSource, ImageSource, VideoSource, DocumentSource } from '../types/media.js'
@@ -89,13 +90,6 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
  * @see https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolResultBlock.html
  */
 const MODELS_INCLUDE_STATUS = ['anthropic.claude']
-
-/**
- * Models that support the Anthropic-style prompt caching strategy.
- * Used to auto-detect when `cacheConfig.strategy` is `'auto'`.
- * @see https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html
- */
-const MODELS_SUPPORTING_ANTHROPIC_CACHING = ['anthropic', 'claude']
 
 /**
  * Models that reject any reasoning text block replayed in history
@@ -518,16 +512,12 @@ export class BedrockModel extends Model<BedrockModelConfig> {
   }
 
   /**
-   * Declares what Bedrock knows about the configured model: Claude models take cache points.
+   * Declares what the shared model data knows about the configured model (Claude models take cache points).
    *
    * @returns The declared capabilities for the configured model id
    */
   protected override declareInfo(): ModelInfoPatch {
-    const modelId = this._config.modelId ?? ''
-    if (MODELS_SUPPORTING_ANTHROPIC_CACHING.some((pattern) => modelId.includes(pattern))) {
-      return { capabilities: { promptCaching: 'cachePoints' } }
-    }
-    return {}
+    return declaredModelInfo(this._config.modelId ?? '')
   }
 
   /**

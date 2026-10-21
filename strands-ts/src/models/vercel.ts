@@ -40,6 +40,7 @@ import {
   type StreamOptions,
 } from './model.js'
 import type { ModelInfo, ModelInfoPatch } from './model-info.js'
+import { declaredModelInfo } from './model-data.js'
 import { resolveOpenAICache, warnUnsupportedRetention } from './openai/cache.js'
 import {
   ModelContentBlockDeltaEvent,
@@ -167,9 +168,7 @@ export class VercelModel extends Model<VercelModelConfig> {
       case 'openai':
         return { capabilities: { promptCaching: 'automatic' } }
       case 'amazon-bedrock':
-        return BEDROCK_MODELS_SUPPORTING_CACHING.some((pattern) => this._provider.modelId.includes(pattern))
-          ? { capabilities: { promptCaching: 'cachePoints' } }
-          : {}
+        return declaredModelInfo(this._provider.modelId)
       default:
         return {}
     }
@@ -346,10 +345,6 @@ function applyAnthropicCache(
     })
   }
 }
-
-// Bedrock models that take cache points, mirroring `BedrockModel`'s list. Declared through
-// `VercelModel.declareInfo()` so the cache gate reads `info` like every other provider.
-const BEDROCK_MODELS_SUPPORTING_CACHING = ['anthropic', 'claude']
 
 /**
  * Injects Bedrock `cachePoint` breakpoints on system and the last user message.
