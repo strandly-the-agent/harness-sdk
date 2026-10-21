@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import OpenAI, { APIUserAbortError } from 'openai'
 import { isNode } from '../../../__fixtures__/environment.js'
 import { OpenAIModel } from '../index.js'
+import { formatResponsesRequest } from '../responses-adapter.js'
 import { ContextWindowOverflowError, ModelThrottledError } from '../../../errors.js'
 import { collectIterator } from '../../../__fixtures__/model-test-helpers.js'
 import { Message, TextBlock, ToolUseBlock, ToolResultBlock } from '../../../types/messages.js'
@@ -625,6 +626,42 @@ describe("OpenAIModel (api: 'responses')", () => {
 
       const req = await runOnce({}, messages)
       expect(req.input).toEqual([{ role: 'assistant', content: 'answer' }])
+    })
+
+    it('replays reasoning but not message items when replayMessageItems is false (Mantle)', () => {
+      const reasoning = { id: 'rs_1', type: 'reasoning', summary: [], content: [{ type: 'reasoning_text', text: 't' }] }
+      const message = {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: '4', annotations: [] }],
+      }
+      const messages = [
+        new Message({
+          role: 'assistant',
+          content: [new TextBlock('4')],
+          additionalModelResponseFields: { openaiResponsesOutput: [reasoning, message] },
+        }),
+      ]
+
+      const req = formatResponsesRequest({ modelId: 'm' }, messages, undefined, false, { replayMessageItems: false })
+      expect(req.input).toEqual([reasoning, { role: 'assistant', content: '4' }])
+
+      const legacy = formatResponsesRequest(
+        { modelId: 'm' },
+        [
+          new Message({
+            role: 'assistant',
+            content: [new TextBlock('answer')],
+            additionalModelResponseFields: { openaiResponsesOutput: [message] },
+          }),
+        ],
+        undefined,
+        false,
+        { replayMessageItems: false }
+      )
+      expect(legacy.input).toEqual([{ role: 'assistant', content: 'answer' }])
     })
 
     it('replays function_call output items without an id', async () => {

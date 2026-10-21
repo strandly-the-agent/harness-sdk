@@ -90,9 +90,10 @@ export function formatResponsesRequest(
   config: OpenAIResponsesConfig,
   messages: Message[],
   options: StreamOptions | undefined,
-  stateful: boolean
+  stateful: boolean,
+  replay: { replayMessageItems: boolean } = { replayMessageItems: true }
 ): ResponseCreateParamsStreaming {
-  const input = formatResponsesMessages(messages, !stateful)
+  const input = formatResponsesMessages(messages, !stateful, replay.replayMessageItems)
 
   // User `params` are spread first so provider-managed fields (asserted
   // required by `ResponseCreateParamsStreaming` below) always win. The
@@ -179,13 +180,23 @@ export function formatResponsesRequest(
  * - Tool calls → separate `{ type: 'function_call', ... }` items
  * - Tool results → separate `{ type: 'function_call_output', ... }` items
  */
-function formatResponsesMessages(messages: Message[], replayOutputItems: boolean): ResponseInputItem[] {
+/**
+ * `replayMessageItems=false` drops `message` output items and sends the string-form
+ * assistant text instead: Bedrock Mantle rejects replayed message items (it strips
+ * their id/status in flight) but accepts reasoning and function_call items.
+ */
+function formatResponsesMessages(
+  messages: Message[],
+  replayOutputItems: boolean,
+  replayMessageItems = true
+): ResponseInputItem[] {
   const input: ResponseInputItem[] = []
 
   for (const message of messages) {
     const role = message.role === 'assistant' ? 'assistant' : 'user'
-    const outputItems = getResponsesOutputItems(message)
-    if (replayOutputItems && role === 'assistant' && outputItems) {
+    const captured = getResponsesOutputItems(message)
+    const outputItems = replayMessageItems ? captured : captured?.filter((item) => item.type !== 'message')
+    if (replayOutputItems && role === 'assistant' && outputItems && (outputItems.length > 0 || hasText(message))) {
       input.push(...outputItems)
       // Max-token recovery may retain only safe reasoning items after removing an
       // incomplete tool call. Preserve the recovered visible text in that case.
@@ -359,11 +370,19 @@ function isReasoningSummaryPart(value: JSONValue): boolean {
   return part.type === 'summary_text' && typeof part.text === 'string'
 }
 
-function appendAssistantTextFallback(input: ResponseInputItem[], message: Message): void {
-  const text = message.content
+function assistantText(message: Message): string {
+  return message.content
     .filter((block) => block.type === 'textBlock')
     .map((block) => block.text)
     .join('\n')
+}
+
+function hasText(message: Message): boolean {
+  return assistantText(message).length > 0
+}
+
+function appendAssistantTextFallback(input: ResponseInputItem[], message: Message): void {
+  const text = assistantText(message)
   if (text) input.push({ role: 'assistant', content: text })
 }
 

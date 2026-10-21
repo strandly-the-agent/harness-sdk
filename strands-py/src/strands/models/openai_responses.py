@@ -589,7 +589,11 @@ class OpenAIResponsesModel(Model):
             TypeError: If a message contains a content block type that cannot be converted to an OpenAI-compatible
                 format.
         """
-        input_items = self._format_request_messages(messages, replay_output_items=not self.stateful)
+        input_items = self._format_request_messages(
+            messages,
+            replay_output_items=not self.stateful,
+            replay_message_items=self._bedrock_mantle_config is None,
+        )
         request: dict[str, Any] = {
             "model": self.config["model_id"],
             "input": input_items,
@@ -659,12 +663,16 @@ class OpenAIResponsesModel(Model):
                 return {"tool_choice": "auto"}
 
     @classmethod
-    def _format_request_messages(cls, messages: Messages, *, replay_output_items: bool = True) -> list[dict[str, Any]]:
+    def _format_request_messages(
+        cls, messages: Messages, *, replay_output_items: bool = True, replay_message_items: bool = True
+    ) -> list[dict[str, Any]]:
         """Format an OpenAI compatible messages array.
 
         Args:
             messages: List of message objects to be processed by the model.
             replay_output_items: Whether to replay preserved Responses output items.
+            replay_message_items: Whether ``message`` output items are replayed verbatim. Bedrock Mantle
+                rejects them, so it gets the string-form assistant text alongside the other items.
 
         Returns:
             An OpenAI compatible messages array.
@@ -677,8 +685,10 @@ class OpenAIResponsesModel(Model):
             contents = message["content"]
             output_items = cls._get_responses_output_items(message) if replay_output_items else None
             if role == "assistant" and output_items:
-                formatted_messages.extend(cls._replay_output_items(output_items, contents))
-                continue
+                replayed = cls._replay_output_items(output_items, contents, replay_message_items=replay_message_items)
+                if replayed:
+                    formatted_messages.extend(replayed)
+                    continue
 
             filtered_contents = []
             for content in contents:
@@ -748,11 +758,15 @@ class OpenAIResponsesModel(Model):
         return formatted_messages
 
     @staticmethod
-    def _replay_output_items(output_items: list[dict[str, Any]], contents: list[ContentBlock]) -> list[dict[str, Any]]:
+    def _replay_output_items(
+        output_items: list[dict[str, Any]], contents: list[ContentBlock], *, replay_message_items: bool = True
+    ) -> list[dict[str, Any]]:
         """Replay captured output items, keeping recovered visible text when no message item survived.
 
         Max-token recovery may retain only safe reasoning items after removing an incomplete tool call.
         """
+        if not replay_message_items:
+            output_items = [item for item in output_items if item.get("type") != "message"]
         if any(item.get("type") == "message" for item in output_items):
             return output_items
         text = "\n".join(content["text"] for content in contents if "text" in content)
