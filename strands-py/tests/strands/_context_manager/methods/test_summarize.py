@@ -6,11 +6,8 @@ import pytest
 
 from strands._context_manager.methods.summarize import (
     SUMMARIZE_CONVERSATION_INSTRUCTION,
-    _flatten_messages_to_content,
-    _frame_conversation,
-    _merge_same_role,
     _summarize_content,
-    _summarize_messages,
+    _summarize_conversation,
     _tool_result_to_content_blocks,
 )
 from strands.types.content import ContentBlock, Message
@@ -60,64 +57,6 @@ class TestToolResultToContentBlocks:
         assert len(tru_result) == 3
         assert tru_result[0] == ContentBlock(text="first")
         assert tru_result[2] == ContentBlock(text="second")
-
-
-class TestFlattenMessagesToContent:
-    """Tests for flattening messages to content blocks."""
-
-    def test_adds_role_markers(self):
-        messages = [
-            Message(role="user", content=[ContentBlock(text="hello")]),
-            Message(role="assistant", content=[ContentBlock(text="hi")]),
-        ]
-        tru_result = _flatten_messages_to_content(messages)
-        assert tru_result[0] == ContentBlock(text="\n---\n[user]")
-        assert tru_result[1] == ContentBlock(text="hello")
-        assert tru_result[2] == ContentBlock(text="\n---\n[assistant]")
-        assert tru_result[3] == ContentBlock(text="hi")
-
-    def test_extracts_tool_result_content(self):
-        messages = [
-            Message(
-                role="user",
-                content=[
-                    ContentBlock(
-                        toolResult={
-                            "toolUseId": "t1",
-                            "status": "success",
-                            "content": [{"text": "result data"}],
-                        }
-                    )
-                ],
-            ),
-        ]
-        tru_result = _flatten_messages_to_content(messages)
-        assert tru_result[0] == ContentBlock(text="\n---\n[user]")
-        assert tru_result[1] == ContentBlock(text="result data")
-
-    def test_excludes_reasoning(self):
-        messages = [
-            Message(
-                role="assistant",
-                content=[
-                    ContentBlock(reasoningContent={"reasoningText": {"text": "plan", "signature": "sig"}}),
-                    ContentBlock(text="hi"),
-                ],
-            ),
-        ]
-        tru_result = _flatten_messages_to_content(messages)
-        assert tru_result == [ContentBlock(text="\n---\n[assistant]"), ContentBlock(text="hi")]
-
-    def test_skips_marker_for_reasoning_only_message(self):
-        messages = [
-            Message(
-                role="assistant",
-                content=[ContentBlock(reasoningContent={"reasoningText": {"text": "plan", "signature": "sig"}})],
-            ),
-            Message(role="user", content=[ContentBlock(text="next")]),
-        ]
-        tru_result = _flatten_messages_to_content(messages)
-        assert tru_result == [ContentBlock(text="\n---\n[user]"), ContentBlock(text="next")]
 
 
 class TestSummarizeContent:
@@ -241,175 +180,97 @@ class TestToolResultToContentBlocksJson:
         assert tru_result[1]["text"] == '{\n  "nested": true\n}'
 
 
-class TestMergeSameRole:
-    """Tests for preparing a slice for the as-is request."""
+@pytest.fixture
+def mock_agent():
+    agent = unittest.mock.MagicMock()
+    agent.system_prompt = "You are the agent."
+    agent._system_prompt_content = None
+    agent.tool_registry.get_all_tool_specs.return_value = [{"name": "calc", "description": "d", "inputSchema": {}}]
+    return agent
 
-    def test_drops_reasoning_and_cache_points_and_merges_same_role(self):
-        messages = [
-            Message(role="user", content=[ContentBlock(text="u1")]),
-            Message(role="assistant", content=[ContentBlock(reasoningContent={"reasoningText": {"text": "hmm"}})]),
-            Message(role="assistant", content=[ContentBlock(text="a1"), ContentBlock(cachePoint={"type": "default"})]),
-            Message(role="assistant", content=[ContentBlock(text="a2")]),
+
+class TestSummarizeConversation:
+    """Tests for replaying the agent's request with a trailing summarize instruction."""
+
+    @pytest.mark.asyncio
+    async def test_replays_agent_request_plus_instruction(self, mock_model, mock_agent):
+        seen: list = []
+
+        def stream(messages, tool_specs, system_prompt, **kwargs):
+            seen.append((messages, tool_specs, system_prompt, kwargs))
+            return _make_stream_events("summary")()
+
+        mock_model.stream = stream
+        history = [
+            Message(role="user", content=[ContentBlock(text="task")]),
+            Message(role="assistant", content=[ContentBlock(text="working")]),
         ]
-        tru_merged = _merge_same_role(messages)
-        exp_merged = [
-            Message(role="user", content=[ContentBlock(text="u1")]),
-            Message(role="assistant", content=[ContentBlock(text="a1"), ContentBlock(text="a2")]),
-        ]
-        assert tru_merged == exp_merged
-        assert messages[2]["content"][1] == ContentBlock(cachePoint={"type": "default"})
-
-    def test_returns_empty_when_nothing_summarizable(self):
-        messages = [
-            Message(role="assistant", content=[ContentBlock(reasoningContent={"reasoningText": {"text": "x"}})])
-        ]
-        assert _merge_same_role(messages) == []
-
-
-class TestFrameConversation:
-    """Tests for wrapping an alternating slice in delimiters plus the instruction."""
-
-    def test_opens_in_first_user_message_and_closes_with_instruction(self):
-        merged = [
-            Message(role="user", content=[ContentBlock(text="question")]),
-            Message(role="assistant", content=[ContentBlock(text="answer")]),
-        ]
-        tru_request = _frame_conversation(merged)
-        exp_request = [
-            Message(role="user", content=[ContentBlock(text="<conversation>"), ContentBlock(text="question")]),
-            Message(role="assistant", content=[ContentBlock(text="answer")]),
+        tru_result = await _summarize_conversation(history, mock_agent, mock_model, {})
+        assert tru_result == "summary"
+        messages, tool_specs, system_prompt, kwargs = seen[0]
+        assert messages == [
+            *history,
             Message(role="user", content=[ContentBlock(text=SUMMARIZE_CONVERSATION_INSTRUCTION)]),
         ]
-        assert tru_request == exp_request
-        assert merged[0]["content"] == [ContentBlock(text="question")]
+        assert tool_specs == mock_agent.tool_registry.get_all_tool_specs.return_value
+        assert system_prompt == "You are the agent."
+        assert kwargs["system_prompt_content"] == [{"text": "You are the agent."}]
+        assert history[-1]["content"] == [ContentBlock(text="working")]
 
-    def test_prepends_user_message_when_slice_starts_with_assistant(self):
-        tool_use = ContentBlock(toolUse={"toolUseId": "t1", "name": "calc", "input": {}})
+    @pytest.mark.asyncio
+    async def test_appends_instruction_to_trailing_user_message(self, mock_model, mock_agent):
+        seen: list = []
+
+        def stream(messages, *args, **kwargs):
+            seen.append(messages)
+            return _make_stream_events("summary")()
+
+        mock_model.stream = stream
         tool_result = ContentBlock(toolResult={"toolUseId": "t1", "status": "success", "content": [{"text": "42"}]})
-        merged = [
-            Message(role="assistant", content=[tool_use]),
+        history = [
+            Message(role="user", content=[ContentBlock(text="task")]),
+            Message(role="assistant", content=[ContentBlock(toolUse={"toolUseId": "t1", "name": "calc", "input": {}})]),
             Message(role="user", content=[tool_result]),
         ]
-        tru_request = _frame_conversation(merged)
-        exp_request = [
-            Message(role="user", content=[ContentBlock(text="<conversation>")]),
-            Message(role="assistant", content=[tool_use]),
-            Message(role="user", content=[tool_result, ContentBlock(text=SUMMARIZE_CONVERSATION_INSTRUCTION)]),
-        ]
-        assert tru_request == exp_request
-
-
-class TestSummarizeMessages:
-    """Tests for summarizing a conversation slice as-is."""
+        await _summarize_conversation(history, mock_agent, mock_model, {})
+        assert seen[0][-1] == Message(
+            role="user", content=[tool_result, ContentBlock(text=SUMMARIZE_CONVERSATION_INSTRUCTION)]
+        )
+        assert len(seen[0]) == 3
+        assert history[-1]["content"] == [tool_result]
 
     @pytest.mark.asyncio
-    async def test_sends_slice_as_is_with_instruction(self, mock_model):
+    async def test_uses_agent_system_prompt_content_blocks_when_present(self, mock_model, mock_agent):
         seen: list = []
 
-        def stream(messages, *args, **kwargs):
-            seen.append((messages, kwargs))
-            return _make_stream_events("summary")(messages, *args, **kwargs)
+        def stream(messages, tool_specs, system_prompt, **kwargs):
+            seen.append((system_prompt, kwargs["system_prompt_content"]))
+            return _make_stream_events("summary")()
 
         mock_model.stream = stream
-        messages = [
-            Message(role="user", content=[ContentBlock(text="question")]),
-            Message(role="assistant", content=[ContentBlock(text="answer")]),
-        ]
-        tru_result = await _summarize_messages(messages, mock_model, {})
-        assert tru_result == "summary"
-        assert len(seen) == 1
-        assert seen[0][0] == _frame_conversation(_merge_same_role(messages))
-        assert seen[0][1]["tool_specs"] is None
+        mock_agent._system_prompt_content = [{"text": "Blocks."}, {"cachePoint": {"type": "default"}}]
+        history = [Message(role="user", content=[ContentBlock(text="task")])]
+        await _summarize_conversation(history, mock_agent, mock_model, {})
+        assert seen[0] == ("Blocks.", mock_agent._system_prompt_content)
 
     @pytest.mark.asyncio
-    async def test_passes_noop_tool_spec_when_slice_has_tool_blocks(self, mock_model):
+    async def test_custom_system_prompt_replaces_agent_prompt(self, mock_model, mock_agent):
         seen: list = []
 
-        def stream(messages, *args, **kwargs):
-            seen.append(kwargs)
-            return _make_stream_events("summary")(messages, *args, **kwargs)
+        def stream(messages, tool_specs, system_prompt, **kwargs):
+            seen.append((system_prompt, kwargs["system_prompt_content"]))
+            return _make_stream_events("summary")()
 
         mock_model.stream = stream
-        messages = [
-            Message(role="assistant", content=[ContentBlock(toolUse={"toolUseId": "t1", "name": "calc", "input": {}})]),
-            Message(
-                role="user",
-                content=[
-                    ContentBlock(toolResult={"toolUseId": "t1", "status": "success", "content": [{"text": "42"}]})
-                ],
-            ),
-        ]
-        assert await _summarize_messages(messages, mock_model, {}) == "summary"
-        assert [spec["name"] for spec in seen[0]["tool_specs"]] == ["noop"]
+        history = [Message(role="user", content=[ContentBlock(text="task")])]
+        await _summarize_conversation(history, mock_agent, mock_model, {"system_prompt": "Be brief."})
+        assert seen[0] == ("Be brief.", None)
 
     @pytest.mark.asyncio
-    async def test_single_role_slice_uses_flattened_content(self, mock_model):
-        seen: list = []
-
-        def stream(messages, *args, **kwargs):
-            seen.append(messages)
-            return _make_stream_events("summary")(messages, *args, **kwargs)
+    async def test_returns_none_on_model_error(self, mock_model, mock_agent):
+        def stream(*args, **kwargs):
+            raise RuntimeError("boom")
 
         mock_model.stream = stream
-        messages = [
-            Message(role="user", content=[ContentBlock(text="u1")]),
-            Message(role="user", content=[ContentBlock(text="u2")]),
-        ]
-        assert await _summarize_messages(messages, mock_model, {}) == "summary"
-        assert len(seen) == 1
-        assert seen[0] == [
-            Message(
-                role="user",
-                content=[
-                    ContentBlock(text="<content>"),
-                    *_flatten_messages_to_content(messages),
-                    ContentBlock(text="</content>"),
-                ],
-            )
-        ]
-
-    @pytest.mark.asyncio
-    async def test_falls_back_to_flattened_content_on_provider_error(self, mock_model):
-        seen: list = []
-
-        def stream(messages, *args, **kwargs):
-            seen.append(messages)
-            if len(seen) == 1:
-                raise RuntimeError("tools must be defined")
-            return _make_stream_events("flattened summary")(messages, *args, **kwargs)
-
-        mock_model.stream = stream
-        messages = [
-            Message(role="user", content=[ContentBlock(text="question")]),
-            Message(role="assistant", content=[ContentBlock(text="answer")]),
-        ]
-        tru_result = await _summarize_messages(messages, mock_model, {})
-        assert tru_result == "flattened summary"
-        assert len(seen) == 2
-        assert seen[1][0]["content"][0] == ContentBlock(text="<content>")
-        assert seen[1][0]["content"][-1] == ContentBlock(text="</content>")
-
-    @pytest.mark.asyncio
-    async def test_empty_response_does_not_fall_back(self, mock_model):
-        calls = 0
-
-        def stream(messages, *args, **kwargs):
-            nonlocal calls
-            calls += 1
-            return _make_stream_events("")(messages, *args, **kwargs)
-
-        mock_model.stream = stream
-        messages = [
-            Message(role="user", content=[ContentBlock(text="q")]),
-            Message(role="assistant", content=[ContentBlock(text="a")]),
-        ]
-        assert await _summarize_messages(messages, mock_model, {}) is None
-        assert calls == 1
-
-    @pytest.mark.asyncio
-    async def test_nothing_summarizable_skips_model(self, mock_model):
-        messages = [
-            Message(role="assistant", content=[ContentBlock(reasoningContent={"reasoningText": {"text": "x"}})])
-        ]
-        assert await _summarize_messages(messages, mock_model, {}) is None
-        mock_model.stream.assert_not_called()
+        history = [Message(role="user", content=[ContentBlock(text="task")])]
+        assert await _summarize_conversation(history, mock_agent, mock_model, {}) is None

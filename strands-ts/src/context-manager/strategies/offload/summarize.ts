@@ -14,7 +14,7 @@ import type { ContextStrategy, ContextState } from '../../types.js'
 import {
   formatSummarized,
   summarizeContent,
-  summarizeMessages,
+  summarizeConversation,
   toolResultToContentBlocks,
   type SummarizeConfig,
 } from '../../methods/summarize.js'
@@ -73,7 +73,14 @@ export class SummarizeStrategy extends BaseOffloadStrategy {
     const safe = messages.filter((message) => safeSet.has(message))
     if (safe.length === 0) return false
 
-    const summary = await summarizeMessages(safe, model, this._config, context.invocationContext)
+    const historyEnd = Math.max(...safe.map((message) => messages.indexOf(message))) + 1
+    const summary = await summarizeConversation(
+      messages.slice(0, historyEnd),
+      context.agent,
+      model,
+      this._config,
+      context.invocationContext
+    )
     if (!summary) return false
 
     const totalTokens = await model.countTokens(safe)

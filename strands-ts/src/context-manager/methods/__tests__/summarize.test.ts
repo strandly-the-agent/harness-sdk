@@ -1,185 +1,71 @@
 import { describe, it, expect, vi } from 'vitest'
-import {
-  SUMMARIZE_CONVERSATION_INSTRUCTION,
-  flattenMessagesToContent,
-  frameConversation,
-  mergeSameRole,
-  summarizeMessages,
-} from '../summarize.js'
+import { SUMMARIZE_CONVERSATION_INSTRUCTION, summarizeConversation } from '../summarize.js'
+import { createMockAgent } from '../../../__fixtures__/agent-helpers.js'
+import { createMockTool } from '../../../__fixtures__/tool-helpers.js'
 import { MockMessageModel } from '../../../__fixtures__/mock-message-model.js'
-import {
-  CachePointBlock,
-  Message,
-  ReasoningBlock,
-  TextBlock,
-  ToolResultBlock,
-  ToolUseBlock,
-} from '../../../types/messages.js'
+import { ToolRegistry } from '../../../registry/tool-registry.js'
+import { Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../../types/messages.js'
 
-describe('flattenMessagesToContent', () => {
-  it('excludes reasoning blocks', () => {
-    const messages = [
-      new Message({
-        role: 'assistant',
-        content: [new ReasoningBlock({ text: 'plan', signature: 'sig' }), new TextBlock('hi')],
-      }),
-    ]
+function makeAgent() {
+  const toolRegistry = new ToolRegistry()
+  toolRegistry.add(createMockTool('calc', () => '42'))
+  return createMockAgent({ toolRegistry, extra: { systemPrompt: 'You are the agent.' } })
+}
 
-    expect(flattenMessagesToContent(messages)).toEqual([new TextBlock('\n---\n[assistant]'), new TextBlock('hi')])
-  })
-  it('skips the role marker for a message with only reasoning', () => {
-    const messages = [
-      new Message({ role: 'assistant', content: [new ReasoningBlock({ text: 'plan', signature: 'sig' })] }),
-      new Message({ role: 'user', content: [new TextBlock('next')] }),
-    ]
-
-    expect(flattenMessagesToContent(messages)).toEqual([new TextBlock('\n---\n[user]'), new TextBlock('next')])
-  })
-})
-
-describe('mergeSameRole', () => {
-  it('drops reasoning and cache points and merges consecutive same-role messages', () => {
-    const messages = [
-      new Message({ role: 'user', content: [new TextBlock('u1')] }),
-      new Message({ role: 'assistant', content: [new ReasoningBlock({ text: 'plan', signature: 'sig' })] }),
-      new Message({ role: 'assistant', content: [new TextBlock('a1'), new CachePointBlock({ cacheType: 'default' })] }),
-      new Message({ role: 'assistant', content: [new TextBlock('a2')] }),
-    ]
-
-    const merged = mergeSameRole(messages)
-
-    expect(merged.map((message) => message.role)).toEqual(['user', 'assistant'])
-    expect(merged[1]!.content).toEqual([new TextBlock('a1'), new TextBlock('a2')])
-    expect(messages[2]!.content).toHaveLength(2)
-  })
-
-  it('returns an empty list when nothing is summarizable', () => {
-    const messages = [
-      new Message({ role: 'assistant', content: [new ReasoningBlock({ text: 'plan', signature: 'sig' })] }),
-    ]
-
-    expect(mergeSameRole(messages)).toEqual([])
-  })
-})
-
-describe('frameConversation', () => {
-  it('opens in the first user message and closes with the instruction', () => {
-    const merged = [
-      new Message({ role: 'user', content: [new TextBlock('question')] }),
-      new Message({ role: 'assistant', content: [new TextBlock('answer')] }),
-    ]
-
-    const request = frameConversation(merged)
-
-    expect(request.map((message) => message.role)).toEqual(['user', 'assistant', 'user'])
-    expect(request[0]!.content).toEqual([new TextBlock('<conversation>'), new TextBlock('question')])
-    expect(request[2]!.content).toEqual([new TextBlock(SUMMARIZE_CONVERSATION_INSTRUCTION)])
-    expect(merged[0]!.content).toEqual([new TextBlock('question')])
-  })
-
-  it('prepends a user message when the slice starts with the assistant and keeps tool pairs adjacent', () => {
-    const toolUse = new ToolUseBlock({ toolUseId: 't1', name: 'calc', input: {} })
-    const toolResult = new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('42')] })
-    const merged = [
-      new Message({ role: 'assistant', content: [toolUse] }),
-      new Message({ role: 'user', content: [toolResult] }),
-    ]
-
-    const request = frameConversation(merged)
-
-    expect(request.map((message) => message.role)).toEqual(['user', 'assistant', 'user'])
-    expect(request[0]!.content).toEqual([new TextBlock('<conversation>')])
-    expect(request[1]!.content).toEqual([toolUse])
-    expect(request[2]!.content).toEqual([toolResult, new TextBlock(SUMMARIZE_CONVERSATION_INSTRUCTION)])
-  })
-})
-
-describe('summarizeMessages', () => {
-  it('sends the slice as-is with the instruction and no tool specs for text-only slices', async () => {
+describe('summarizeConversation', () => {
+  it('replays the agent request with its system prompt and tools plus the instruction', async () => {
     const model = new MockMessageModel().addTurn(new TextBlock('summary'))
     const streamSpy = vi.spyOn(model, 'stream')
-    const messages = [
-      new Message({ role: 'user', content: [new TextBlock('question')] }),
-      new Message({ role: 'assistant', content: [new TextBlock('answer')] }),
+    const history = [
+      new Message({ role: 'user', content: [new TextBlock('task')] }),
+      new Message({ role: 'assistant', content: [new TextBlock('working')] }),
     ]
 
-    const result = await summarizeMessages(messages, model)
+    const result = await summarizeConversation(history, makeAgent(), model)
 
     expect(result).toBe('summary')
     expect(streamSpy).toHaveBeenCalledTimes(1)
     const [request, options] = streamSpy.mock.calls[0]!
-    expect(request.map((message) => message.role)).toEqual(['user', 'assistant', 'user'])
+    expect(request.slice(0, 2)).toEqual(history)
+    expect(request[2]!.role).toBe('user')
     expect(request[2]!.content).toEqual([new TextBlock(SUMMARIZE_CONVERSATION_INSTRUCTION)])
-    expect(options?.toolSpecs).toBeUndefined()
+    expect(options?.systemPrompt).toBe('You are the agent.')
+    expect(options?.toolSpecs?.map((spec) => spec.name)).toEqual(['calc'])
+    expect(history[1]!.content).toEqual([new TextBlock('working')])
   })
 
-  it('passes the noop tool spec when the slice has tool blocks', async () => {
+  it('appends the instruction to a trailing user message so alternation holds', async () => {
     const model = new MockMessageModel().addTurn(new TextBlock('summary'))
     const streamSpy = vi.spyOn(model, 'stream')
-    const messages = [
+    const toolResult = new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('42')] })
+    const history = [
+      new Message({ role: 'user', content: [new TextBlock('task')] }),
       new Message({ role: 'assistant', content: [new ToolUseBlock({ toolUseId: 't1', name: 'calc', input: {} })] }),
-      new Message({
-        role: 'user',
-        content: [new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('42')] })],
-      }),
+      new Message({ role: 'user', content: [toolResult] }),
     ]
 
-    await summarizeMessages(messages, model)
+    await summarizeConversation(history, makeAgent(), model)
 
-    expect(streamSpy.mock.calls[0]![1]?.toolSpecs?.map((spec) => spec.name)).toEqual(['noop'])
+    const request = streamSpy.mock.calls[0]![0]
+    expect(request).toHaveLength(3)
+    expect(request[2]!.content).toEqual([toolResult, new TextBlock(SUMMARIZE_CONVERSATION_INSTRUCTION)])
+    expect(history[2]!.content).toEqual([toolResult])
   })
 
-  it('uses the flattened form directly for a single-role slice', async () => {
+  it('uses a custom system prompt instead of the agent prompt when configured', async () => {
     const model = new MockMessageModel().addTurn(new TextBlock('summary'))
     const streamSpy = vi.spyOn(model, 'stream')
-    const messages = [
-      new Message({ role: 'user', content: [new TextBlock('u1')] }),
-      new Message({ role: 'user', content: [new TextBlock('u2')] }),
-    ]
+    const history = [new Message({ role: 'user', content: [new TextBlock('task')] })]
 
-    expect(await summarizeMessages(messages, model)).toBe('summary')
-    expect(streamSpy).toHaveBeenCalledTimes(1)
-    const content = streamSpy.mock.calls[0]![0][0]!.content
-    expect(content[0]).toEqual(new TextBlock('<content>'))
-    expect(content[content.length - 1]).toEqual(new TextBlock('</content>'))
+    await summarizeConversation(history, makeAgent(), model, { systemPrompt: 'Be brief.' })
+
+    expect(streamSpy.mock.calls[0]![1]?.systemPrompt).toBe('Be brief.')
   })
 
-  it('falls back to flattened content when the provider rejects the slice', async () => {
-    const model = new MockMessageModel().addTurn(new Error('tools must be defined')).addTurn(new TextBlock('flattened'))
-    const streamSpy = vi.spyOn(model, 'stream')
-    const messages = [
-      new Message({ role: 'user', content: [new TextBlock('question')] }),
-      new Message({ role: 'assistant', content: [new TextBlock('answer')] }),
-    ]
+  it('returns null when the model call fails', async () => {
+    const model = new MockMessageModel().addTurn(new Error('boom'))
+    const history = [new Message({ role: 'user', content: [new TextBlock('task')] })]
 
-    const result = await summarizeMessages(messages, model)
-
-    expect(result).toBe('flattened')
-    expect(streamSpy).toHaveBeenCalledTimes(2)
-    const fallbackContent = streamSpy.mock.calls[1]![0][0]!.content
-    expect(fallbackContent[0]).toEqual(new TextBlock('<content>'))
-    expect(fallbackContent[fallbackContent.length - 1]).toEqual(new TextBlock('</content>'))
-  })
-
-  it('does not fall back when the model answers with no text', async () => {
-    const model = new MockMessageModel().addTurn(new TextBlock(''))
-    const streamSpy = vi.spyOn(model, 'stream')
-    const messages = [
-      new Message({ role: 'user', content: [new TextBlock('q')] }),
-      new Message({ role: 'assistant', content: [new TextBlock('a')] }),
-    ]
-
-    expect(await summarizeMessages(messages, model)).toBeNull()
-    expect(streamSpy).toHaveBeenCalledTimes(1)
-  })
-
-  it('skips the model when nothing is summarizable', async () => {
-    const model = new MockMessageModel().addTurn(new TextBlock('summary'))
-    const messages = [
-      new Message({ role: 'assistant', content: [new ReasoningBlock({ text: 'plan', signature: 'sig' })] }),
-    ]
-
-    expect(await summarizeMessages(messages, model)).toBeNull()
-    expect(model.callCount).toBe(0)
+    expect(await summarizeConversation(history, makeAgent(), model)).toBeNull()
   })
 })

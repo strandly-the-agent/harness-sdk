@@ -48,6 +48,9 @@ def mock_agent():
     agent.model.stream = _make_stream_events("Summary of content.")
     agent.aux_model = agent.model
     agent.messages = []
+    agent.system_prompt = "You are the agent."
+    agent._system_prompt_content = None
+    agent.tool_registry.get_all_tool_specs.return_value = [{"name": "calc", "description": "d", "inputSchema": {}}]
     return agent
 
 
@@ -190,12 +193,12 @@ class TestSummarizeStrategyMessageLevel:
         assert "[Summarized:" in all_text
 
     @pytest.mark.asyncio
-    async def test_sends_batch_as_conversation_with_instruction(self, mock_agent):
+    async def test_replays_history_prefix_with_agent_prompt_and_tools(self, mock_agent):
         seen: list = []
 
-        def stream(messages, *args, **kwargs):
-            seen.append(messages)
-            return _make_stream_events("Summary of content.")(messages, *args, **kwargs)
+        def stream(messages, tool_specs, system_prompt, **kwargs):
+            seen.append((messages, tool_specs, system_prompt))
+            return _make_stream_events("Summary of content.")()
 
         mock_agent.model.stream = stream
         strategy = Offload.summarize("*").when(utilization=0.8)
@@ -208,16 +211,18 @@ class TestSummarizeStrategyMessageLevel:
             Message(role="assistant", content=[ContentBlock(text="old")]),
             Message(role="user", content=[ContentBlock(text="recent")]),
         ]
+        history = [Message(role=m["role"], content=list(m["content"])) for m in messages[:4]]
         mock_agent.messages = messages
         context = ContextState(messages=messages, agent=mock_agent, utilization=0.9)
         assert await strategy.apply(context) is True
 
-        request = seen[0]
-        assert [msg["role"] for msg in request] == ["user", "assistant", "user", "assistant", "user"]
-        assert request[0]["content"] == [ContentBlock(text="<conversation>")]
-        assert request[1]["content"] == [tool_use]
-        assert request[2]["content"] == [tool_result]
-        assert request[-1]["content"] == [ContentBlock(text=SUMMARIZE_CONVERSATION_INSTRUCTION)]
+        request, tool_specs, system_prompt = seen[0]
+        assert request == [
+            *history,
+            Message(role="user", content=[ContentBlock(text=SUMMARIZE_CONVERSATION_INSTRUCTION)]),
+        ]
+        assert tool_specs == mock_agent.tool_registry.get_all_tool_specs.return_value
+        assert system_prompt == "You are the agent."
 
     @pytest.mark.asyncio
     async def test_inserts_summary_and_removes_originals(self, mock_agent):

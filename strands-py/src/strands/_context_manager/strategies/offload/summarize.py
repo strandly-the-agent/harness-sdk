@@ -11,7 +11,7 @@ from ...methods.summarize import (
     SummarizeConfig,
     _format_summarized,
     _summarize_content,
-    _summarize_messages,
+    _summarize_conversation,
     _tool_result_to_content_blocks,
 )
 from ...stash import _format_stash_refs
@@ -98,7 +98,8 @@ class SummarizeStrategy(BaseOffloadStrategy):
         if not safe:
             return False
 
-        summary = await _summarize_messages(safe, model, self._config)
+        history_end = max(identity_map[id(message)] for message in safe) + 1
+        summary = await _summarize_conversation(messages[:history_end], context.agent, model, self._config)
         if not summary:
             return False
 
