@@ -7,7 +7,7 @@
  * unknown leaves the SDK's existing default for that feature in place.
  *
  * `model-info.json` is a generated copy of `model-info/models.json` at the repository root, which is
- * the source of truth for every SDK. Edit the root file and run `npm run model-info:generate`.
+ * the source of truth for every SDK. Edit the root file and copy it here; a test asserts the copies match.
  *
  * This is the first slice of the shape proposed in the model metadata design (PR #5305). Fields are
  * added when something outside the provider reads them.
@@ -65,17 +65,10 @@ export function mergeModelInfo(...parts: (ModelInfo | undefined)[]): ModelInfo {
   return Object.freeze(merged)
 }
 
-/** A model entry: a {@link ModelInfo}, optionally naming its family explicitly. */
-type ModelInfoEntry = ModelInfo & { readonly family?: string }
-
-/** A family entry: a {@link ModelInfo} shared by every model whose id contains one of `match`. */
-type ModelInfoFamily = ModelInfo & { readonly match: readonly string[] }
-
 interface ModelInfoData {
   readonly version: number
   readonly idPrefixes: readonly string[]
-  readonly families: Readonly<Record<string, ModelInfoFamily>>
-  readonly models: Readonly<Record<string, ModelInfoEntry>>
+  readonly models: Readonly<Record<string, ModelInfo>>
 }
 
 const SUPPORTED_VERSION = 1
@@ -113,7 +106,7 @@ export function stripRegionPrefix(modelId: string): string {
  * @param modelId - The model id to look up
  * @returns The entry, or undefined when the id is not in the data
  */
-export function lookupModel(modelId: string): ModelInfoEntry | undefined {
+export function lookupModel(modelId: string): ModelInfo | undefined {
   let candidate = modelId
   for (;;) {
     const entry = data.models[candidate] ?? data.models[candidate.replace(VERSION_SUFFIX, '')]
@@ -125,26 +118,13 @@ export function lookupModel(modelId: string): ModelInfoEntry | undefined {
 }
 
 /**
- * Finds the family a model id belongs to, by its entry's `family` or by the families' `match` substrings.
- *
- * @param modelId - The model id to classify
- * @returns The family entry, or undefined when no family matches
- */
-export function lookupFamily(modelId: string): ModelInfoFamily | undefined {
-  const entry = lookupModel(modelId)
-  if (entry?.family !== undefined) return data.families[entry.family]
-  const lowered = modelId.toLowerCase()
-  return Object.values(data.families).find((family) => family.match.some((pattern) => lowered.includes(pattern)))
-}
-
-/**
- * What the shared model info data knows about a model: its family's facts, overridden by the model's own.
+ * What the shared model info data knows about a model.
  *
  * @param modelId - The model id to describe
  * @returns What the data knows about the model; empty when it knows nothing
  */
 export function lookupModelInfo(modelId: string): ModelInfo {
-  return mergeModelInfo(lookupFamily(modelId), lookupModel(modelId))
+  return mergeModelInfo(lookupModel(modelId))
 }
 
 /**

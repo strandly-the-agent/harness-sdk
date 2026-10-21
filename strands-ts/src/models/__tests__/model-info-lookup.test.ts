@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { lookupModelInfo, getContextWindowLimit, lookupFamily, lookupModel, stripRegionPrefix } from '../model-info.js'
+import { lookupModelInfo, getContextWindowLimit, lookupModel, stripRegionPrefix } from '../model-info.js'
 
 describe('shared model info data', () => {
   it('strips one known region prefix', () => {
@@ -26,18 +26,13 @@ describe('shared model info data', () => {
     expect(lookupModel('')).toBeUndefined()
   })
 
-  it('resolves the family from the id when the model has no entry', () => {
-    expect(lookupFamily('us.anthropic.claude-future-9')?.match).toContain('anthropic')
-    expect(lookupFamily('amazon.nova-pro-v1:0')).toBeUndefined()
-  })
-
-  it('declares family facts for Claude, model facts on top, and nothing for unknown ids', () => {
+  it('returns the entry facts and nothing for unknown ids', () => {
     expect(lookupModelInfo('eu.anthropic.claude-sonnet-4-6')).toEqual({
       capabilities: { promptCaching: 'cachePoints' },
       limits: { contextWindow: 1_000_000 },
     })
-    expect(lookupModelInfo('claude-future-9')).toEqual({ capabilities: { promptCaching: 'cachePoints' } })
     expect(lookupModelInfo('amazon.nova-pro-v1:0')).toEqual({ limits: { contextWindow: 300_000 } })
+    expect(lookupModelInfo('claude-future-9')).toEqual({})
     expect(lookupModelInfo('')).toEqual({})
   })
 

@@ -435,6 +435,16 @@ describe('BedrockModel', () => {
       expect(provider.info.capabilities?.promptCaching).toBeUndefined()
     })
 
+    it('does not auto-cache a Claude id the shared model info does not list', async () => {
+      const provider = new BedrockModel({ modelId: 'anthropic.claude-future-9', cacheConfig: { strategy: 'auto' } })
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
+
+      collectIterator(provider.stream(messages, { systemPrompt: 'Be helpful' }))
+
+      expect(provider.info.capabilities?.promptCaching).toBeUndefined()
+      expect(vi.mocked(ConverseStreamCommand).mock.lastCall?.[0].system).toEqual([{ text: 'Be helpful' }])
+    })
+
     it('injects auto cache points on a model the info override says takes them', async () => {
       const provider = new BedrockModel({
         modelId: 'amazon.nova-pro-v1:0',
@@ -538,7 +548,7 @@ describe('BedrockModel', () => {
     it('formats the request to bedrock properly', async () => {
       const provider = new BedrockModel({
         region: 'us-west-2',
-        modelId: 'anthropic.claude-test-model',
+        modelId: 'anthropic.claude-sonnet-4-6',
         maxTokens: 1024,
         temperature: 0.7,
         topP: 0.9,
@@ -573,7 +583,7 @@ describe('BedrockModel', () => {
         MyExtraArg: 'ExtraArg',
         additionalModelRequestFields: ['World!'],
         additionalModelResponseFieldPaths: ['Hello!'],
-        modelId: 'anthropic.claude-test-model',
+        modelId: 'anthropic.claude-sonnet-4-6',
         messages: [
           {
             role: 'user',
