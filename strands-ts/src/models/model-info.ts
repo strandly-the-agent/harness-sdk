@@ -6,8 +6,8 @@
  * config override, and the resolved {@link Model.info}. A known `'unsupported'` disables a feature;
  * unknown leaves the SDK's existing default for that feature in place.
  *
- * `model-info.json` is a generated copy of `model-info/models.json` at the repository root, which is
- * the source of truth for every SDK. Edit the root file and copy it here; a test asserts the copies match.
+ * `model-info.json` is copied from `model-info/models.json` at the repository root (the source of truth for
+ * every SDK) by `scripts/copy-model-info.mjs` on install and before build; it is not committed.
  *
  * This is the first slice of the shape proposed in the model metadata design (PR #5305). Fields are
  * added when something outside the provider reads them.

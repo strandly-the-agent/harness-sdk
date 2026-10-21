@@ -80,3 +80,6 @@ bin/
 .superpowers/
 site/docs/superpowers/
 .agent
+
+# Generated from model-info/models.json by strands-ts/scripts/copy-model-info.mjs
+strands-ts/src/models/model-info.json

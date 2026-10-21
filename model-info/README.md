@@ -2,13 +2,12 @@
 
 `models.json` is the source of truth for what the SDKs know about models: context windows, which models take cache points, and the id rules that map a provider's model id to the entry that describes it. Each entry is a `ModelInfo`, the same type the SDK exposes; every field is optional and a missing field means unknown. Each SDK ships a copy of this file; the harness and CLI read it through the SDK.
 
-Edit `models.json`, then copy it into each SDK:
+Edit `models.json`; each SDK copies it into its own package when it installs and builds, and does not commit the copy:
 
-```sh
-cp model-info/models.json strands-ts/src/models/model-info.json
-```
+- `strands-ts`: `scripts/copy-model-info.mjs` runs on `prepare` (any `npm ci` / `npm install`) and `prebuild`, writing `strands-ts/src/models/model-info.json` (git-ignored). Run `npm run prepare -w strands-ts` after editing this file to refresh it.
+- `strands-py`: a hatch build hook does the same for the Python package (comes with the Python PR).
 
-Each SDK's unit tests assert that its copy is identical to this file, so a stale copy fails that SDK's test run.
+Each SDK's unit tests assert that the copy it was built with is identical to this file.
 
 ## Format
 

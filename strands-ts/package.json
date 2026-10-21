@@ -210,6 +210,8 @@
     }
   },
   "scripts": {
+    "prepare": "node scripts/copy-model-info.mjs",
+    "prebuild": "node scripts/copy-model-info.mjs",
     "build": "tsc --project src/tsconfig.json",
     "prepack": "npm run build",
     "check": "npm run lint && npm run format && npm run type-check && npm run check:browser-bundle && npm run test:coverage && npm run test:package",
