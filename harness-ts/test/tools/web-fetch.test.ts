@@ -205,11 +205,14 @@ describe('web_fetch', () => {
     expect(command.split("'https://example.com/it''s'")).toHaveLength(2)
     expect(command).toContain('$([guid]::NewGuid())')
     expect(command).toContain('strands-web-fetch-')
-    expect(command).toContain(`[Math]::Min($in.Length, ${5 * 1024 * 1024})`)
+    expect(command).toContain(`.ReadBytes([Math]::Min($in.Length, ${5 * 1024 * 1024}))`)
     expect(command.endsWith('exit $s')).toBe(true)
-    // Failures reach stderr through the console handle rather than PowerShell's CLIXML-wrapped error stream.
-    expect(command).toContain('[Console]::Error.Write')
-    expect(command).toContain('-LiteralPath')
+    // Failures reach stderr through the console handle rather than PowerShell's CLIXML-wrapped error stream, and a
+    // curl.exe that cannot run is exit 127.
+    expect(command).toContain('\n$s = 127\ntry {\n')
+    expect(command).toContain('} catch { if ($s -eq 0) { $s = 1 }; [Console]::Error.Write($_.Exception.Message) }')
+    // Both the stderr check and the cleanup take the temp path literally (%TEMP% may contain wildcards).
+    expect(command.split('-LiteralPath')).toHaveLength(3)
     expect(command).not.toContain('mktemp')
     expect(command).not.toContain('&&')
   })

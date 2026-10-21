@@ -102,8 +102,10 @@ function powershellCurlCommand(url: string): string {
       `-A '${USER_AGENT}' -o $f --stderr "$f.err" -w '%{content_type}\\n%{url_effective}\\n' ${quoted}`,
     '  $s = $LASTEXITCODE',
     '  if ($s -eq 0) {',
-    `    $in = [IO.File]::OpenRead($f); $b = New-Object byte[] ([Math]::Min($in.Length, ${MAX_BYTES}))`,
-    '    $n = $in.Read($b, 0, $b.Length); $in.Dispose(); [Convert]::ToBase64String($b, 0, $n)',
+    '    $in = [IO.File]::OpenRead($f)',
+    `    try { $b = (New-Object IO.BinaryReader $in).ReadBytes([Math]::Min($in.Length, ${MAX_BYTES})) }` +
+      ' finally { $in.Dispose() }',
+    '    [Convert]::ToBase64String($b)',
     '  } elseif (Test-Path -LiteralPath "$f.err") { [Console]::Error.Write([IO.File]::ReadAllText("$f.err")) }',
     '} catch { if ($s -eq 0) { $s = 1 }; [Console]::Error.Write($_.Exception.Message) }',
     'Remove-Item -Force -LiteralPath $f, "$f.err" -ErrorAction SilentlyContinue',

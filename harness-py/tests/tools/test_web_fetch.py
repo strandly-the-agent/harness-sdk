@@ -271,11 +271,14 @@ async def test_fetch_text_runs_curl_exe_through_powershell_and_reads_crlf_output
     # The URL is a single-quoted PowerShell literal (no expansion), with its own quotes doubled.
     assert command.count("'https://example.com/it''s'") == 1
     assert "$([guid]::NewGuid())" in command and "strands-web-fetch-" in command
-    assert f"[Math]::Min($in.Length, {web_fetch_module._MAX_BYTES})" in command
+    assert f".ReadBytes([Math]::Min($in.Length, {web_fetch_module._MAX_BYTES}))" in command
     assert command.endswith("exit $s")
-    # Failures reach stderr through the console handle rather than PowerShell's CLIXML-wrapped error stream.
-    assert "[Console]::Error.Write" in command
-    assert "-LiteralPath" in command
+    # Failures reach stderr through the console handle rather than PowerShell's CLIXML-wrapped error stream, and a
+    # curl.exe that cannot run is exit 127.
+    assert "\n$s = 127\ntry {\n" in command
+    assert "} catch { if ($s -eq 0) { $s = 1 }; [Console]::Error.Write($_.Exception.Message) }" in command
+    # Both the stderr check and the cleanup take the temp path literally (%TEMP% may contain wildcards).
+    assert command.count("-LiteralPath") == 2
     assert "mktemp" not in command and "&&" not in command
 
 
