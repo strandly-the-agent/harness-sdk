@@ -19,6 +19,7 @@ export const RETRIEVAL_TOOL_NAME = 'retrieve_context'
 
 const DEFAULT_MAX_RESULT_TOKENS = 10_000
 const CHARS_PER_TOKEN = 4
+const SHELL_RESULT_KEYS = ['output', 'error', 'exit_code']
 
 const retrievalInputSchema = z.object({
   reference: z.string().describe('The reference key from the offload placeholder.'),
@@ -72,12 +73,13 @@ export function createRetrievalTool(stash: Stash, maxResultTokens?: number): Too
           const media = restoreMedia(result.data as Record<string, unknown>)
           if (media) return media as unknown as JSONValue
         }
-        const serialized = JSON.stringify(result.data)
-        if (serialized.length <= maxChars) return result.data as JSONValue
+        const shellText = renderShellResult(result.data)
+        const serialized = shellText ?? JSON.stringify(result.data)
+        if (serialized.length <= maxChars) return shellText ?? (result.data as JSONValue)
         return `${serialized.slice(0, maxChars)}\n\n[truncated]`
       }
 
-      const text = extractText(result.data)
+      const text = renderShellResult(result.data) ?? extractText(result.data)
       if (!text || !isSearchableContent('text/plain')) {
         return `Error: cannot search non-text content. Omit pattern/line_range to retrieve full content.`
       }
@@ -113,6 +115,33 @@ function restoreMedia(data: Record<string, unknown>): ImageBlock | DocumentBlock
   if ('document' in data) return DocumentBlock.fromJSON(data as Parameters<typeof DocumentBlock.fromJSON>[0])
   if ('video' in data) return VideoBlock.fromJSON(data as Parameters<typeof VideoBlock.fromJSON>[0])
   return null
+}
+
+/**
+ * Renders a stashed shell-style `{ output, error, exit_code }` result as text, or null for any other shape.
+ * stdout comes first with its real line breaks, so `pattern`/`line_range` line numbers index stdout lines.
+ */
+function renderShellResult(data: unknown): string | null {
+  if (data && typeof data === 'object' && ('text' in data || 'json' in data)) {
+    data = 'text' in data ? data.text : data.json
+  }
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data)
+    } catch {
+      return null
+    }
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const record = data as Record<string, unknown>
+  const keys = Object.keys(record)
+  if (keys.length !== SHELL_RESULT_KEYS.length || !SHELL_RESULT_KEYS.every((key) => key in record)) return null
+  const { output, error, exit_code } = record
+  if (typeof output !== 'string' || typeof error !== 'string' || !Number.isInteger(exit_code)) return null
+  const parts = [output]
+  if (error) parts.push(`[stderr]\n${error}`)
+  parts.push(`[exit_code: ${exit_code}]`)
+  return parts.join('\n')
 }
 
 function extractText(data: unknown): string | null {

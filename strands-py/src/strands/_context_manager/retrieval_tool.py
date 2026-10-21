@@ -27,6 +27,7 @@ _DEFAULT_MAX_RESULT_TOKENS = 10_000
 
 
 _MEDIA_KEYS = frozenset({"image", "document"})
+_SHELL_RESULT_KEYS = frozenset({"output", "error", "exit_code"})
 
 
 def _restore_media(data: dict[str, Any]) -> ToolResultContent | None:
@@ -41,8 +42,35 @@ def _restore_media(data: dict[str, Any]) -> ToolResultContent | None:
     return None
 
 
+def _render_shell_result(data: object) -> str | None:
+    """Render a stashed shell-style ``{output, error, exit_code}`` result as text, or None for any other shape.
+
+    stdout comes first with its real line breaks, so ``pattern``/``line_range`` line numbers index stdout lines.
+    """
+    if isinstance(data, dict) and ("text" in data or "json" in data):
+        data = data.get("text", data.get("json"))
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except ValueError:
+            return None
+    if not isinstance(data, dict) or set(data) != _SHELL_RESULT_KEYS:
+        return None
+    output, error, exit_code = data["output"], data["error"], data["exit_code"]
+    if not isinstance(output, str) or not isinstance(error, str) or not isinstance(exit_code, int):
+        return None
+    parts = [output]
+    if error:
+        parts.append(f"[stderr]\n{error}")
+    parts.append(f"[exit_code: {exit_code}]")
+    return "\n".join(parts)
+
+
 def _extract_text(data: object) -> str | None:
     """Extract searchable text from decoded stash data."""
+    shell_text = _render_shell_result(data)
+    if shell_text is not None:
+        return shell_text
     if isinstance(data, str):
         return data
     if isinstance(data, dict):
@@ -77,7 +105,8 @@ def _create_retrieval_tool(stash: Stash, max_result_tokens: int | None = None) -
                 media = _restore_media(result)
                 if media is not None:
                     return ToolResult(toolUseId=tool_use_id, status="success", content=[media])
-            full_text = json.dumps(result)
+            shell_text = _render_shell_result(result)
+            full_text = shell_text if shell_text is not None else json.dumps(result)
             if len(full_text) > max_chars:
                 full_text = full_text[:max_chars] + "\n\n[truncated]"
             content: list[ToolResultContent] = [ToolResultContent(text=full_text)]

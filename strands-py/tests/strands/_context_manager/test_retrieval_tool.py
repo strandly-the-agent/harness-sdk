@@ -122,6 +122,85 @@ class TestExtractText:
         assert _extract_text(42) is None
 
 
+class TestShellResultRetrieval:
+    """Shell-style ``{output, error, exit_code}`` results are rendered as text, stdout first (#4741)."""
+
+    @staticmethod
+    async def _store_shell(stash, output, error="", exit_code=0):
+        # The @tool wrapper serializes a dict return into a single-line JSON text block.
+        shell_json = json.dumps({"output": output, "error": error, "exit_code": exit_code})
+        return await stash.store("shell-1", 0, json.dumps({"text": shell_json}).encode("utf-8"))
+
+    @pytest.mark.asyncio
+    async def test_pattern_matches_stdout_line_by_number(self, stash):
+        output = "\n".join("Call me Ishmael." if i == 861 else f"line {i}" for i in range(1, 2001))
+        ref = await self._store_shell(stash, output)
+        tool = _create_retrieval_tool(stash)
+        result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref, "pattern": "Ishmael"}})
+        assert result["status"] == "success"
+        text = result["content"][0]["text"]
+        assert "[1 match" in text
+        assert "> 861| Call me Ishmael." in text
+        assert "\\n" not in text
+
+    @pytest.mark.asyncio
+    async def test_line_range_indexes_stdout_lines(self, stash):
+        output = "\n".join(f"line {i}" for i in range(1, 2001)) + "\n"
+        ref = await self._store_shell(stash, output)
+        tool = _create_retrieval_tool(stash)
+        result = await tool._tool_func(
+            {"toolUseId": "t1", "input": {"reference": ref, "line_range": {"start": 861, "end": 865}}}
+        )
+        assert result["status"] == "success"
+        text = result["content"][0]["text"]
+        assert "861| line 861" in text
+        assert "865| line 865" in text
+        assert "line 866" not in text
+
+    @pytest.mark.asyncio
+    async def test_full_retrieval_returns_stdout_then_stderr_and_exit_code(self, stash):
+        ref = await self._store_shell(stash, "out 1\nout 2\n", error="boom\nmore", exit_code=2)
+        tool = _create_retrieval_tool(stash)
+        result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref}})
+        assert result["status"] == "success"
+        assert result["content"][0]["text"] == "out 1\nout 2\n\n[stderr]\nboom\nmore\n[exit_code: 2]"
+
+    @pytest.mark.asyncio
+    async def test_stderr_is_searchable_when_stdout_is_empty(self, stash):
+        ref = await self._store_shell(stash, "", error="\n".join(f"err {i}" for i in range(1, 51)), exit_code=1)
+        tool = _create_retrieval_tool(stash)
+        result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref, "pattern": "err 42"}})
+        assert result["status"] == "success"
+        text = result["content"][0]["text"]
+        assert "[1 match" in text
+        assert "> 44| err 42\n" in text  # line 1 is the empty stdout, line 2 the [stderr] header
+
+    @pytest.mark.asyncio
+    async def test_omits_stderr_section_when_empty(self, stash):
+        ref = await self._store_shell(stash, "ok")
+        tool = _create_retrieval_tool(stash)
+        result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref}})
+        assert result["content"][0]["text"] == "ok\n[exit_code: 0]"
+
+    def test_renders_json_block_form(self):
+        rendered = _extract_text({"json": {"output": "a\nb", "error": "", "exit_code": 0}})
+        assert rendered == "a\nb\n[exit_code: 0]"
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {"text": json.dumps({"output": "a", "error": "", "exit_code": 0, "host": "db-1"})},
+            {"text": json.dumps({"output": "a", "error": ""})},
+            {"text": json.dumps({"output": "a", "error": "", "exit_code": "0"})},
+            {"text": json.dumps({"output": ["a"], "error": "", "exit_code": 0})},
+            {"text": "not json at all {"},
+            {"text": "[1, 2, 3]"},
+        ],
+    )
+    def test_other_shapes_keep_generic_text(self, data):
+        assert _extract_text(data) == data["text"]
+
+
 class TestFullTextTruncation:
     """Tests for full-content retrieval truncation."""
 
