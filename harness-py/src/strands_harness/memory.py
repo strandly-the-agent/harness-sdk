@@ -83,8 +83,7 @@ def resolve_memory(
         managed = [store if writable else _to_read_only(store) for store in supplied]
     else:
         managed = [_build_default_store(model, memory_dir, web_fetch_model, writable)]
-    # Injection keeps the SDK's `userTurn` trigger: memory is folded in on a fresh user ask, not on every
-    # tool-result step of a multi-step loop; `search_memory` covers mid-task recall.
+    # No injection override: the SDK's ``userTurn`` default is the harness policy.
     return MemoryManager(stores=managed)
 
 
@@ -111,7 +110,7 @@ class _ReadOnlyStore:
     """A recall-only view of a store: the same backend, still searchable, but with every write path
     (``add``/``add_messages``) and its extraction config dropped so the delegate's manager can neither
     extract nor write. ``get_tools`` is omitted too, since a store-native tool is an unbounded surface
-    we can't guarantee is read-only; the delegate still recalls through ``search_memory`` and injection.
+    we can't guarantee is read-only; the delegate still recalls through ``search_memory``.
     """
 
     def __init__(self, store: MemoryStore) -> None:

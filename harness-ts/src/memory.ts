@@ -70,8 +70,7 @@ export async function resolveMemory(options: ResolveMemoryOptions = {}): Promise
     supplied.length > 0
       ? supplied.map((store) => (writable ? store : toReadOnly(store)))
       : [await buildDefaultStore(model, dir, webFetch?.model, writable)]
-  // Injection keeps the SDK's `userTurn` trigger: memory is folded in on a fresh user ask, not on every
-  // tool-result step of a multi-step loop; `search_memory` covers mid-task recall.
+  // No injection override: the SDK's `userTurn` default is the harness policy.
   return new MemoryManager({ stores: list })
 }
 
@@ -97,7 +96,7 @@ async function buildDefaultStore(
  * A recall-only view of a store: the same backend, still searchable, but with every write path
  * (`add`/`addMessages`) and its extraction config dropped so the delegate's manager can neither
  * extract nor write. `getTools` is omitted too, since a store-native tool is an unbounded surface
- * we can't guarantee is read-only; the delegate still recalls through `search_memory` and injection.
+ * we can't guarantee is read-only; the delegate still recalls through `search_memory`.
  */
 function toReadOnly(store: MemoryStore): MemoryStore {
   return {
