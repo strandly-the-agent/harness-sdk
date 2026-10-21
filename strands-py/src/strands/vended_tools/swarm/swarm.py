@@ -242,7 +242,9 @@ async def _stream_swarm(
     child_state = {k: v for k, v in tool_context.invocation_state.items() if k != "request_state"}
     result: SwarmResult | None = None
     try:
-        async for event in sdk_swarm.stream_async(swarm_input, invocation_state=child_state):
+        async for event in sdk_swarm.stream_async(
+            swarm_input, invocation_state=child_state, invocation_context=tool_context.invocation_context
+        ):
             # Hold back the result event: the decorator treats the tool's last yield as its result.
             if event.get("type") == "multiagent_result":
                 result = event["result"]

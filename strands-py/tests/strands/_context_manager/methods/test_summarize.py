@@ -9,7 +9,10 @@ from strands._context_manager.methods.summarize import (
     _summarize_content,
     _tool_result_to_content_blocks,
 )
-from strands.agent.invocation_context import InvocationContext, _create_auxiliary_invocation_context
+from strands.agent.invocation_context import (
+    _create_auxiliary_invocation_context,
+    _create_invocation_context,
+)
 from strands.types.content import ContentBlock, Message
 
 
@@ -246,12 +249,12 @@ class TestSummarizeContentRequestUsage:
         self, mock_model
     ):
         mock_model.stream = _make_stream_events("A summary.")
-        request = InvocationContext({"turns": 1})
-        request._turns_taken = 1
+        request = _create_invocation_context({"turns": 1})
+        request._usage["turns_taken"] = 1
 
         tru_result = await _summarize_content(
             [ContentBlock(text="content")], mock_model, {}, _create_auxiliary_invocation_context(request)
         )
 
         assert tru_result == "A summary."
-        assert (request.turns_taken, request.usage) == (1, {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15})
+        assert request.usage == {"turns_taken": 1, "inputTokens": 10, "outputTokens": 5, "totalTokens": 15}

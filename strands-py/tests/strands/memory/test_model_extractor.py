@@ -19,7 +19,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from strands.agent.invocation_context import InvocationContext, _create_auxiliary_invocation_context
+from strands.agent.invocation_context import (
+    _create_auxiliary_invocation_context,
+    _create_invocation_context,
+)
 from strands.memory.extraction.model_extractor import ModelExtractor
 from strands.memory.extraction.types import ExtractionResult, ExtractorContext
 from strands.types.content import Message
@@ -210,12 +213,12 @@ async def test_adds_the_extraction_usage_to_the_request_total_even_when_the_requ
         usages=[{"inputTokens": 4, "outputTokens": 5, "totalTokens": 9}],
     )
     extractor = ModelExtractor(model=model)
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 1
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 1
 
     entries = await extractor.extract(
         [_user_turn("x")], ExtractorContext(invocation_context=_create_auxiliary_invocation_context(request))
     )
 
     assert entries == [ExtractionResult(content="fact")]
-    assert (request.turns_taken, request.usage) == (1, {"inputTokens": 4, "outputTokens": 5, "totalTokens": 9})
+    assert request.usage == {"turns_taken": 1, "inputTokens": 4, "outputTokens": 5, "totalTokens": 9}

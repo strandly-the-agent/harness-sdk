@@ -3,8 +3,12 @@
 import pytest
 
 from strands import Agent, tool
-from strands.agent.invocation_context import InvocationContext, _create_auxiliary_invocation_context
-from strands.hooks import AfterInvocationEvent, BeforeInvocationEvent, BeforeModelCallEvent
+from strands.agent.invocation_context import (
+    InvocationContext,
+    _create_auxiliary_invocation_context,
+    _create_invocation_context,
+)
+from strands.hooks import AfterInvocationEvent, BeforeInvocationEvent, BeforeModelCallEvent, MessageAddedEvent
 from strands.types.tools import ToolContext
 from tests.fixtures.mocked_model_provider import MockedModelProvider
 
@@ -67,8 +71,8 @@ async def test_invoke_async_produces_well_formed_result_when_inherited_limit_exh
         ],
         callback_handler=None,
     )
-    inherited = InvocationContext({"turns": 1})
-    inherited._turns_taken = 5
+    inherited = _create_invocation_context({"turns": 1})
+    inherited._usage["turns_taken"] = 5
 
     result = await agent.invoke_async("go", invocation_context=inherited)
 
@@ -108,10 +112,12 @@ async def test_invoke_async_reports_whole_request_usage_on_result_while_metrics_
 
     result = await outer.invoke_async("go")
 
-    assert (result.invocation_context.turns_taken, result.invocation_context.usage) == (
-        3,
-        {"inputTokens": 7, "outputTokens": 10, "totalTokens": 17},
-    )
+    assert result.invocation_context.usage == {
+        "turns_taken": 3,
+        "inputTokens": 7,
+        "outputTokens": 10,
+        "totalTokens": 17,
+    }
     assert result.metrics.accumulated_usage == {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}
 
 
@@ -128,73 +134,66 @@ async def test_invoke_async_continues_previous_call_limits_and_usage_when_passed
 
     assert [first.stop_reason, second.stop_reason, third.stop_reason] == ["end_turn", "end_turn", "limit_turns"]
     assert second.invocation_context is first.invocation_context
-    assert (third.invocation_context.turns_taken, third.invocation_context.usage) == (
-        2,
-        {"inputTokens": 2, "outputTokens": 2, "totalTokens": 4},
-    )
+    assert third.invocation_context.usage == {"turns_taken": 2, "inputTokens": 2, "outputTokens": 2, "totalTokens": 4}
     assert model.index == 2
 
 
 @pytest.mark.asyncio
 async def test_invoke_async_counts_only_nested_invoke_own_tokens_against_its_own_token_limits():
     agent = Agent(model=MockedModelProvider([_text("done")], [_usage(10, 10)]), callback_handler=None)
-    enclosing = InvocationContext()
+    enclosing = _create_invocation_context()
     enclosing._record_usage(_usage(4000, 4000))
 
     result = await agent.invoke_async("go", invocation_context=enclosing, limits={"total_tokens": 5000})
 
     assert result.stop_reason == "end_turn"
-    assert (result.invocation_context.turns_taken, result.invocation_context.usage) == (
-        1,
-        {"inputTokens": 10, "outputTokens": 10, "totalTokens": 20},
-    )
-    assert (enclosing.turns_taken, enclosing.usage) == (
-        1,
-        {"inputTokens": 4010, "outputTokens": 4010, "totalTokens": 8020},
-    )
+    assert result.invocation_context.usage == {
+        "turns_taken": 1,
+        "inputTokens": 10,
+        "outputTokens": 10,
+        "totalTokens": 20,
+    }
+    assert enclosing.usage == {"turns_taken": 1, "inputTokens": 4010, "outputTokens": 4010, "totalTokens": 8020}
 
 
 @pytest.mark.asyncio
 async def test_invoke_async_stops_nested_invoke_on_request_limit_even_when_its_own_limit_is_looser():
     model = MockedModelProvider([_tool_use("loop", "tu-1"), _tool_use("loop", "tu-2")])
     agent = Agent(model=model, tools=[loop], callback_handler=None)
-    request = InvocationContext({"turns": 2})
-    request._turns_taken = 1
+    request = _create_invocation_context({"turns": 2})
+    request._usage["turns_taken"] = 1
 
     result = await agent.invoke_async("go", invocation_context=request, limits={"turns": 5})
 
     assert result.stop_reason == "limit_turns"
     assert model.index == 1
-    assert request.turns_taken == 2
+    assert request.usage["turns_taken"] == 2
 
 
 @pytest.mark.asyncio
 async def test_invoke_async_stops_nested_invoke_on_its_own_tighter_limit_and_counts_turns_toward_request():
     model = MockedModelProvider([_tool_use("loop", "tu-1"), _text("never reached")], [_usage(1, 2), _usage(0, 0)])
     agent = Agent(model=model, tools=[loop], callback_handler=None)
-    enclosing = InvocationContext({"turns": 10})
+    enclosing = _create_invocation_context({"turns": 10})
 
     result = await agent.invoke_async("go", invocation_context=enclosing, limits={"turns": 1})
 
     assert result.stop_reason == "limit_turns"
     assert model.index == 1
-    assert (enclosing.turns_taken, enclosing.usage) == (1, {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
+    assert enclosing.usage == {"turns_taken": 1, "inputTokens": 1, "outputTokens": 2, "totalTokens": 3}
 
 
 @pytest.mark.asyncio
 async def test_invoke_async_folds_auxiliary_call_into_request_total_without_limiting_it():
-    parent_context = InvocationContext({"turns": 1})
+    parent_context = _create_invocation_context({"turns": 1})
     parent_context._record_usage(_usage(1, 2))
-    parent_context._turns_taken = 5
+    parent_context._usage["turns_taken"] = 5
     aux = Agent(model=MockedModelProvider([_text("aux done")], [_usage(4, 5)]), callback_handler=None)
 
     result = await aux.invoke_async("go", invocation_context=_create_auxiliary_invocation_context(parent_context))
 
     assert result.stop_reason == "end_turn"
-    assert (parent_context.turns_taken, parent_context.usage) == (
-        5,
-        {"inputTokens": 5, "outputTokens": 7, "totalTokens": 12},
-    )
+    assert parent_context.usage == {"turns_taken": 5, "inputTokens": 5, "outputTokens": 7, "totalTokens": 12}
 
 
 @pytest.mark.asyncio
@@ -230,7 +229,9 @@ async def test_invoke_async_attaches_one_request_handle_to_events_and_tool_conte
         model=MockedModelProvider([_tool_use("probe", "tu-1"), _text("done")]), tools=[probe], callback_handler=None
     )
     model_call_events = []
+    message_added_events = []
     agent.hooks.add_callback(BeforeModelCallEvent, model_call_events.append)
+    agent.hooks.add_callback(MessageAddedEvent, message_added_events.append)
 
     result = await agent.invoke_async("go")
 
@@ -238,6 +239,7 @@ async def test_invoke_async_attaches_one_request_handle_to_events_and_tool_conte
     assert isinstance(invocation_context, InvocationContext)
     assert model_call_events[1].invocation_context is invocation_context
     assert probe_contexts[0].invocation_context is invocation_context
+    assert [event.invocation_context for event in message_added_events] == [invocation_context] * 4
     assert result.invocation_context is invocation_context
 
 
@@ -261,7 +263,7 @@ async def test_invoke_async_starts_fresh_request_state_on_each_root_invoke_of_re
     first, second = (event.invocation_context for event in model_call_events)
     assert second is not None
     assert second is not first
-    assert second.turns_taken == 1
+    assert second.usage["turns_taken"] == 1
 
 
 @pytest.mark.asyncio
@@ -304,7 +306,7 @@ async def test_invoke_async_records_nothing_when_model_call_raises():
         await agent.invoke_async("go", limits={"total_tokens": 100})
 
     context = before_invocation[0].invocation_context
-    assert (context.turns_taken, context.usage) == (1, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0})
+    assert context.usage == {"turns_taken": 1, "inputTokens": 0, "outputTokens": 0, "totalTokens": 0}
 
 
 @pytest.mark.asyncio

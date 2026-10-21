@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from strands import Agent
-from strands.agent.invocation_context import InvocationContext
+from strands.agent.invocation_context import _create_invocation_context
 from strands.models import ClassifierStrategy, ModelRouter, RoutingAttempt, RoutingCandidate
 from strands.models.routing.classifier_strategy import (
     _CLASSIFICATION_OMISSION_MARKER,
@@ -493,10 +493,10 @@ async def test_adds_the_classifier_usage_to_the_request_total_even_when_the_requ
     classifier = _ClassifierModel(selected_index=1, usage={"inputTokens": 4, "outputTokens": 5, "totalTokens": 9})
     strategy = ClassifierStrategy(classifier)
     router = ModelRouter(models=[_candidate("first"), _candidate("second")], strategy=strategy)
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 5
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 5
 
     selected = await strategy.select(replace(_context(router), invocation_context=request))
 
     assert selected is router.candidates[1]
-    assert (request.turns_taken, request.usage) == (5, {"inputTokens": 4, "outputTokens": 5, "totalTokens": 9})
+    assert request.usage == {"turns_taken": 5, "inputTokens": 4, "outputTokens": 5, "totalTokens": 9}

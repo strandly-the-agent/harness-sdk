@@ -8,7 +8,10 @@ from strands.agent.conversation_manager.summarizing_conversation_manager import 
     DEFAULT_SUMMARIZATION_PROMPT,
     SummarizingConversationManager,
 )
-from strands.agent.invocation_context import InvocationContext, _create_auxiliary_invocation_context
+from strands.agent.invocation_context import (
+    _create_auxiliary_invocation_context,
+    _create_invocation_context,
+)
 from strands.hooks.events import BeforeModelCallEvent
 from strands.hooks.registry import HookRegistry
 from strands.models.model import Model
@@ -972,8 +975,8 @@ def test_summarization_usage_joins_the_request_total_even_when_the_request_limit
         )
     )
     agent.aux_model = agent.model
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 5
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 5
 
     manager.reduce_context(
         agent,
@@ -982,7 +985,7 @@ def test_summarization_usage_joins_the_request_total_even_when_the_request_limit
     )
 
     assert agent.messages[0]["content"] == [{"text": "Summary of conversation"}]
-    assert (request.turns_taken, request.usage) == (5, {"inputTokens": 4, "outputTokens": 5, "totalTokens": 9})
+    assert request.usage == {"turns_taken": 5, "inputTokens": 4, "outputTokens": 5, "totalTokens": 9}
 
 
 def test_summarization_agent_path_joins_the_request():
@@ -1000,8 +1003,8 @@ def test_summarization_agent_path_joins_the_request():
         else {"role": "assistant", "content": [{"text": f"Response {i}"}]}
         for i in range(20)
     ]
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 5
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 5
     handed = _create_auxiliary_invocation_context(request)
 
     manager.reduce_context(agent, e=ContextWindowOverflowException("overflow"), invocation_context=handed)

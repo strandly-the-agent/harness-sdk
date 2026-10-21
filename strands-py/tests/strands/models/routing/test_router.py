@@ -8,7 +8,7 @@ import types
 import pytest
 
 from strands import Agent, Plugin
-from strands.agent.invocation_context import InvocationContext, _reached_limit
+from strands.agent.invocation_context import _create_invocation_context, _reached_limit
 from strands.event_loop._retry import ModelRetryStrategy
 from strands.models import BedrockModel
 from strands.models.routing import (
@@ -1346,15 +1346,15 @@ async def test_strategy_gets_a_handle_that_joins_the_request_usage_without_its_l
 
     model = _model()
     router = ModelRouter(models=[model], strategy=_Capturing())
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 1
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 1
 
     await router._selection_middleware()(_invoke_context({}, model=model, invocation_context=request))
 
     handed = captured[0].invocation_context
     handed._record_usage({"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
     assert _reached_limit(handed) is None
-    assert (request.turns_taken, request.usage) == (1, {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
+    assert request.usage == {"turns_taken": 1, "inputTokens": 1, "outputTokens": 2, "totalTokens": 3}
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ import logging
 import pytest
 
 from strands import Agent
+from strands.agent.invocation_context import _create_invocation_context
 from strands.tools import tool
 from strands.vended_interventions.hitl import HumanInTheLoop
 from tests.fixtures.mocked_model_provider import MockedModelProvider
@@ -1132,7 +1133,7 @@ class TestBuiltInClassifier:
     async def test_classifier_joins_the_request_the_tool_call_belongs_to(self):
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from strands.agent.invocation_context import InvocationContext, _reached_limit
+        from strands.agent.invocation_context import _reached_limit
         from strands.vended_interventions.hitl.classifier import _create_llm_risk_classifier, _RiskDecision
 
         classifier = _create_llm_risk_classifier()
@@ -1140,8 +1141,8 @@ class TestBuiltInClassifier:
         mock_result = MagicMock()
         mock_result.structured_output = _RiskDecision(requires_approval=False, reason="safe")
 
-        request = InvocationContext({"turns": 1})
-        request._turns_taken = 1
+        request = _create_invocation_context({"turns": 1})
+        request._usage["turns_taken"] = 1
         event = MagicMock()
         event.invocation_context = request
         event.tool_use = {"name": "read", "input": {}}
@@ -1157,7 +1158,7 @@ class TestBuiltInClassifier:
         handed = mock_agent.invoke_async.call_args.kwargs["invocation_context"]
         handed._record_usage({"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
         assert _reached_limit(handed) is None
-        assert (request.turns_taken, request.usage) == (1, {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
+        assert request.usage == {"turns_taken": 1, "inputTokens": 1, "outputTokens": 2, "totalTokens": 3}
 
     @pytest.mark.asyncio
     async def test_uses_custom_system_prompt(self):

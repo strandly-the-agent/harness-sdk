@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from strands.agent.invocation_context import InvocationContext
+from strands.agent.invocation_context import _create_invocation_context
 from strands.hooks.events import AfterInvocationEvent, BeforeInvocationEvent, BeforeModelCallEvent
 from strands.types._snapshot import Snapshot
 from strands.vended_plugins.goal import GoalAttempt, GoalLoop, GoalResult, JudgeConfig, ValidationOutcome
@@ -748,7 +748,7 @@ class TestRequestLimits:
         validator = MagicMock(return_value={"passed": False, "feedback": "try again"})
         plugin = GoalLoop(goal=lambda response, host: validator(), max_attempts=3)
         hooks = _setup_plugin_with_hooks(plugin, agent)
-        request = InvocationContext({"turns": 1})
+        request = _create_invocation_context({"turns": 1})
 
         hooks["before"][0](BeforeInvocationEvent(agent=agent))
         agent.messages.append({"role": "assistant", "content": [{"text": "first answer"}]})
@@ -768,7 +768,7 @@ class TestRequestLimits:
         judge_model = MockedModelProvider([{"role": "assistant", "content": [{"text": "never judged"}]}])
         plugin = GoalLoop(goal="be concise", max_attempts=3, judge=JudgeConfig(model=judge_model))
         hooks = _setup_plugin_with_hooks(plugin, agent)
-        spent_request = InvocationContext({"turns": 1})
+        spent_request = _create_invocation_context({"turns": 1})
         spent_request._record_turn()
 
         hooks["before"][0](BeforeInvocationEvent(agent=agent))
@@ -784,7 +784,7 @@ class TestRequestLimits:
         validator = MagicMock(return_value=True)
         plugin = GoalLoop(goal=lambda response, host: validator(), max_attempts=3)
         hooks = _setup_plugin_with_hooks(plugin, agent)
-        spent_request = InvocationContext({"turns": 1})
+        spent_request = _create_invocation_context({"turns": 1})
         spent_request._record_turn()
 
         hooks["before"][0](BeforeInvocationEvent(agent=agent))
@@ -802,9 +802,9 @@ class TestRequestLimits:
         )
         plugin = GoalLoop(goal="be concise", max_attempts=1, judge=JudgeConfig(model=judge_model))
         hooks = _setup_plugin_with_hooks(plugin, agent)
-        request = InvocationContext({"turns": 5})
+        request = _create_invocation_context({"turns": 5})
 
         hooks["before"][0](BeforeInvocationEvent(agent=agent))
         await hooks["after"][0](AfterInvocationEvent(agent=agent, invocation_context=request))
 
-        assert (request.turns_taken, request.usage) == (0, {"inputTokens": 40, "outputTokens": 5, "totalTokens": 45})
+        assert request.usage == {"turns_taken": 0, "inputTokens": 40, "outputTokens": 5, "totalTokens": 45}

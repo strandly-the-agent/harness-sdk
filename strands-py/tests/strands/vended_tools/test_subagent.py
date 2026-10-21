@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from strands import Agent
-from strands.agent.invocation_context import InvocationContext
+from strands.agent.invocation_context import _create_invocation_context
 from strands.agent.state import AgentState
 from strands.multiagent.spec import Choice, Fixed, Inherit, Option, Preset
 from strands.types.event_loop import _limit_stop_message
@@ -550,7 +550,7 @@ async def test_render_context_last_n():
 @pytest.mark.asyncio
 async def test_run_joins_the_request_of_the_tool_call():
     child = _FakeChild(_FakeResult("done"))
-    invocation_context = InvocationContext()
+    invocation_context = _create_invocation_context()
     tool_context = SimpleNamespace(cancel_signal=None, invocation_context=invocation_context)
 
     await _events(make_subagent(builder=lambda spec: child), {"task": "x"}, _tool_context=tool_context)
@@ -567,7 +567,7 @@ async def test_run_adds_child_model_usage_to_the_request_usage():
         ),
         callback_handler=None,
     )
-    invocation_context = InvocationContext({"turns": 5})
+    invocation_context = _create_invocation_context({"turns": 5})
     tool_context = SimpleNamespace(cancel_signal=None, invocation_context=invocation_context)
 
     result = _result(
@@ -575,10 +575,7 @@ async def test_run_adds_child_model_usage_to_the_request_usage():
     )
 
     assert result["content"][0]["text"].strip() == "child done"
-    assert (invocation_context.turns_taken, invocation_context.usage) == (
-        1,
-        {"inputTokens": 3, "outputTokens": 4, "totalTokens": 7},
-    )
+    assert invocation_context.usage == {"turns_taken": 1, "inputTokens": 3, "outputTokens": 4, "totalTokens": 7}
 
 
 @pytest.mark.asyncio

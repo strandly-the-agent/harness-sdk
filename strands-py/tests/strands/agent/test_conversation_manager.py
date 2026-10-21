@@ -7,7 +7,7 @@ from strands.agent.agent import Agent
 from strands.agent.conversation_manager.conversation_manager import ConversationManager
 from strands.agent.conversation_manager.null_conversation_manager import NullConversationManager
 from strands.agent.conversation_manager.sliding_window_conversation_manager import SlidingWindowConversationManager
-from strands.agent.invocation_context import InvocationContext, _reached_limit
+from strands.agent.invocation_context import _create_invocation_context, _reached_limit
 from strands.hooks.events import BeforeModelCallEvent
 from strands.hooks.registry import HookProvider, HookRegistry
 from strands.models.model import Model
@@ -1142,8 +1142,8 @@ def test_proactive_compression_hands_reduce_context_a_handle_that_joins_the_requ
     mock_agent = MagicMock()
     mock_agent.messages = []
     mock_agent.model.estimate_utilization = MagicMock(return_value=0.9)
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 1
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 1
 
     registry.invoke_callbacks(
         BeforeModelCallEvent(
@@ -1157,7 +1157,7 @@ def test_proactive_compression_hands_reduce_context_a_handle_that_joins_the_requ
     handed = captured[0]
     handed._record_usage({"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
     assert _reached_limit(handed) is None
-    assert (request.turns_taken, request.usage) == (1, {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
+    assert request.usage == {"turns_taken": 1, "inputTokens": 1, "outputTokens": 2, "totalTokens": 3}
 
 
 def test_agent_hands_the_conversation_manager_a_handle_that_joins_the_request_usage():

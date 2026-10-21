@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from strands.agent.invocation_context import InvocationContext, _reached_limit
+from strands.agent.invocation_context import _create_invocation_context, _reached_limit
 from strands.vended_plugins.steering.core.action import Guide, Interrupt, Proceed
 from strands.vended_plugins.steering.handlers.llm.llm_handler import LLMSteeringHandler, _LLMSteering
 from strands.vended_plugins.steering.handlers.llm.mappers import DefaultPromptMapper
@@ -214,8 +214,8 @@ async def test_steering_call_joins_the_request_the_tool_call_belongs_to(mock_age
     mock_result.structured_output = _LLMSteering(decision="proceed", reason="safe")
     mock_steering_agent.return_value = mock_result
 
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 1
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 1
 
     await handler.steer_before_tool(
         agent=Mock(), tool_use={"name": "test_tool", "input": {}}, invocation_context=request
@@ -224,4 +224,4 @@ async def test_steering_call_joins_the_request_the_tool_call_belongs_to(mock_age
     handed = mock_steering_agent.call_args.kwargs["invocation_context"]
     handed._record_usage({"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
     assert _reached_limit(handed) is None
-    assert (request.turns_taken, request.usage) == (1, {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
+    assert request.usage == {"turns_taken": 1, "inputTokens": 1, "outputTokens": 2, "totalTokens": 3}

@@ -3,7 +3,7 @@
 import pytest
 
 from strands import Agent
-from strands.agent.invocation_context import InvocationContext
+from strands.agent.invocation_context import _create_invocation_context
 from strands.hooks import AfterInvocationEvent
 from strands.multiagent.base import Status
 from strands.multiagent.graph import GraphBuilder
@@ -38,7 +38,7 @@ async def test_graph_folds_every_node_usage_and_turn_into_one_shared_request_tot
 
     result = await graph.invoke_async("hello")
 
-    assert (shared[0].turns_taken, shared[0].usage) == (2, {"inputTokens": 30, "outputTokens": 60, "totalTokens": 90})
+    assert shared[0].usage == {"turns_taken": 2, "inputTokens": 30, "outputTokens": 60, "totalTokens": 90}
     assert result.invocation_context is shared[0]
 
 
@@ -47,15 +47,15 @@ async def test_graph_adds_its_usage_to_the_request_when_it_runs_inside_a_nested_
     builder = GraphBuilder()
     builder.add_node(_text_agent("analyst", "done", _usage(2, 3)), "analyst")
     graph = builder.build()
-    request = InvocationContext()
+    request = _create_invocation_context()
     request._record_usage(_usage(100, 100))
-    nested = InvocationContext({"turns": 5}, request)
+    nested = _create_invocation_context({"turns": 5}, request)
 
     result = await graph.invoke_async("analyze", invocation_context=nested)
 
     assert result.invocation_context is nested
-    assert (nested.turns_taken, nested.usage) == (1, {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5})
-    assert (request.turns_taken, request.usage) == (1, {"inputTokens": 102, "outputTokens": 103, "totalTokens": 205})
+    assert nested.usage == {"turns_taken": 1, "inputTokens": 2, "outputTokens": 3, "totalTokens": 5}
+    assert request.usage == {"turns_taken": 1, "inputTokens": 102, "outputTokens": 103, "totalTokens": 205}
 
 
 @pytest.mark.asyncio
@@ -63,8 +63,8 @@ async def test_graph_fails_a_node_whose_agent_stops_on_the_forwarded_request_lim
     builder = GraphBuilder()
     builder.add_node(_text_agent("analyst", "never reached", _usage(0, 0)), "analyst")
     graph = builder.build()
-    spent_request = InvocationContext({"turns": 1})
-    spent_request._turns_taken = 1
+    spent_request = _create_invocation_context({"turns": 1})
+    spent_request._usage["turns_taken"] = 1
 
     result = await graph.invoke_async("analyze", invocation_context=spent_request)
 
@@ -111,18 +111,28 @@ async def test_swarm_folds_every_node_usage_into_one_shared_request_total():
 
     result = await swarm.invoke_async("hello")
 
-    assert (shared[0].turns_taken, shared[0].usage) == (3, {"inputTokens": 30, "outputTokens": 60, "totalTokens": 90})
+    assert shared[0].usage == {"turns_taken": 3, "inputTokens": 30, "outputTokens": 60, "totalTokens": 90}
     assert result.invocation_context is shared[0]
 
 
 @pytest.mark.asyncio
 async def test_swarm_fails_a_node_whose_agent_stops_on_the_forwarded_request_limit():
     swarm = Swarm([_text_agent("analyst", "never reached", _usage(0, 0))])
-    spent_request = InvocationContext({"turns": 1})
-    spent_request._turns_taken = 1
+    spent_request = _create_invocation_context({"turns": 1})
+    spent_request._usage["turns_taken"] = 1
 
     result = await swarm.invoke_async("analyze", invocation_context=spent_request)
 
     node_result = result.results["analyst"]
     assert node_result.status == Status.FAILED
     assert str(node_result.result) == _limit_stop_message("analyst", "limit_turns")
+    assert result.status == Status.FAILED
+
+
+@pytest.mark.asyncio
+async def test_swarm_stops_without_handing_off_when_a_node_stops_on_the_request_limit():
+    swarm = Swarm([_handoff_agent("a", "b", _usage(10, 25)), _handoff_agent("b", None, _usage(20, 35))])
+
+    result = await swarm.invoke_async("hello", invocation_context=_create_invocation_context({"turns": 1}))
+
+    assert (result.status, result.results["a"].status, "b" in result.results) == (Status.FAILED, Status.FAILED, False)

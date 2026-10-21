@@ -903,3 +903,29 @@ async def test_runs_queued_work_under_the_request_that_submitted_it_even_after_i
 
     assert submitting_contexts[0] is not None
     assert probe_contexts == [submitting_contexts[0]]
+
+
+@pytest.mark.asyncio
+async def test_hands_after_tool_call_hooks_the_request_that_submitted_the_task() -> None:
+    @tool(name="work")
+    def work(value: str) -> str:
+        """Perform work."""
+        return f"done:{value}"
+
+    model = MockedModelProvider(
+        [
+            _assistant_tool_use("work", "work-use", {"value": "background", "_background_execution": True}),
+            _assistant_text("Task admitted."),
+            _assistant_text("Result received."),
+        ]
+    )
+    agent = Agent(model=model, tools=[work], background_tasks={"agentic": [work]}, callback_handler=None)
+    submitting_contexts: list[Any] = []
+    after_tool_contexts: list[Any] = []
+    agent.hooks.add_callback(BeforeModelCallEvent, lambda event: submitting_contexts.append(event.invocation_context))
+    agent.hooks.add_callback(AfterToolCallEvent, lambda event: after_tool_contexts.append(event.invocation_context))
+
+    await agent.invoke_async("Run work.")
+
+    assert submitting_contexts[0] is not None
+    assert after_tool_contexts == [submitting_contexts[0]]

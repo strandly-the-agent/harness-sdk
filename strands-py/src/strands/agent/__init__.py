@@ -20,7 +20,7 @@ from .conversation_manager import (
     SlidingWindowConversationManager,
     SummarizingConversationManager,
 )
-from .invocation_context import InvocationContext
+from .invocation_context import InvocationContext, InvocationContextUsage
 
 __all__ = [
     "Agent",
@@ -28,6 +28,7 @@ __all__ = [
     "AgentMetadata",
     "AgentResult",
     "InvocationContext",
+    "InvocationContextUsage",
     "ConversationManager",
     "NullConversationManager",
     "SlidingWindowConversationManager",

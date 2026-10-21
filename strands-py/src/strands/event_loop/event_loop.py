@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, cast
 from opentelemetry import trace as trace_api
 
 from ..agent import _continuation
-from ..agent.invocation_context import InvocationContext, _reached_limit
+from ..agent.invocation_context import InvocationContext, _create_invocation_context, _reached_limit
 from ..experimental.checkpoint import Checkpoint, CheckpointPosition
 from ..hooks import AfterModelCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolsEvent
 from ..interrupt import InterruptException, PendingToolExecution
@@ -200,7 +200,7 @@ async def event_loop_cycle(
     """
     structured_output_context = structured_output_context or StructuredOutputContext()
     if invocation_context is None:
-        invocation_context = InvocationContext()
+        invocation_context = _create_invocation_context()
 
     # Limits are positive and use >= semantics, so reaching one implies at least one prior
     # cycle ran — meaning agent.messages[-1] exists.
@@ -365,7 +365,8 @@ async def event_loop_cycle(
                 structured_output_context.set_forced_mode({"tool": {"name": tool_spec["name"]}} if tool_spec else None)
                 logger.debug("Forcing structured output tool")
                 await agent._append_messages(
-                    {"role": "user", "content": [{"text": structured_output_context.structured_output_prompt}]}
+                    {"role": "user", "content": [{"text": structured_output_context.structured_output_prompt}]},
+                    invocation_context=invocation_context,
                 )
 
                 tracer.end_event_loop_cycle_span(cycle_span, message)
@@ -556,7 +557,9 @@ async def _handle_model_execution(
                 break
 
             if model_continuation is not None:
-                await agent._append_continuation_messages(model_continuation, before_model_call_event)
+                await agent._append_continuation_messages(
+                    model_continuation, before_model_call_event, invocation_context
+                )
                 try:
                     projected_input_tokens = await _estimate_input_tokens(agent)
                 except Exception as error:
@@ -702,7 +705,7 @@ async def _handle_model_execution(
         stream_trace.end()
 
         # Add the response message to the conversation
-        await agent._append_messages(message)
+        await agent._append_messages(message, invocation_context=invocation_context)
 
         # Update metrics
         agent.event_loop_metrics.update_usage(usage)
@@ -999,7 +1002,7 @@ async def _handle_tool_execution(
     elif cancel_message is None:
         agent._interrupt_state.set_pending_tool_results(tool_results)
 
-    await agent._append_messages(tool_result_message)
+    await agent._append_messages(tool_result_message, invocation_context=invocation_context)
 
     yield ToolResultMessageEvent(message=tool_result_message)
 
@@ -1015,7 +1018,7 @@ async def _handle_tool_execution(
         else:
             end_turn_content = [{"text": "Turn ended early by hook after tool execution"}]
         end_turn_message: Message = {"role": "assistant", "content": end_turn_content}
-        await agent._append_messages(end_turn_message)
+        await agent._append_messages(end_turn_message, invocation_context=invocation_context)
         if cycle_span:
             tracer.end_event_loop_cycle_span(
                 span=cycle_span, message=end_turn_message, tool_result_message=tool_result_message
@@ -1033,7 +1036,7 @@ async def _handle_tool_execution(
     if agent._deferred_cancel or agent._observe_cancellation():
         if agent._cancel_message is not None:
             message = {"role": "assistant", "content": [{"text": agent._cancel_message}]}
-            await agent._append_messages(message)
+            await agent._append_messages(message, invocation_context=invocation_context)
         if cycle_span:
             tracer.end_event_loop_cycle_span(span=cycle_span, message=message, tool_result_message=tool_result_message)
         yield EventLoopStopEvent(

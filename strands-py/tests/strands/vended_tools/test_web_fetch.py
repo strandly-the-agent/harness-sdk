@@ -11,7 +11,7 @@ import pytest
 from bs4 import BeautifulSoup
 
 import strands.agent.agent as agent_module
-from strands.agent.invocation_context import InvocationContext, _reached_limit
+from strands.agent.invocation_context import _create_invocation_context, _reached_limit
 from strands.types.tools import ToolContext, ToolUse
 from strands.vended_tools.web_fetch import (
     WebFetchError,
@@ -479,8 +479,8 @@ class TestWebFetchRequestUsage:
 
         monkeypatch.setattr(agent_module, "Agent", _FakeAgent)
         tool = make_web_fetch(client=self._page_client(), model=SimpleNamespace(), mode="agentic")
-        request = InvocationContext({"turns": 1})
-        request._turns_taken = 1
+        request = _create_invocation_context({"turns": 1})
+        request._usage["turns_taken"] = 1
         tool_use = {"toolUseId": "1", "name": "web_fetch", "input": {}}
         ctx = ToolContext(tool_use=tool_use, agent=SimpleNamespace(), invocation_state={}, invocation_context=request)
 
@@ -489,4 +489,4 @@ class TestWebFetchRequestUsage:
         handed = received_kwargs[0]["invocation_context"]
         handed._record_usage({"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
         assert _reached_limit(handed) is None
-        assert (request.turns_taken, request.usage) == (1, {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
+        assert request.usage == {"turns_taken": 1, "inputTokens": 1, "outputTokens": 2, "totalTokens": 3}

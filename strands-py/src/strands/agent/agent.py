@@ -124,6 +124,7 @@ from .conversation_manager import (
 from .invocation_context import (
     InvocationContext,
     _create_auxiliary_invocation_context,
+    _create_invocation_context,
     _reached_limit,
     _unwrap_invocation_context,
     _validate_limits,
@@ -1656,7 +1657,7 @@ class Agent(AgentBase, LocalAgent):
         current_messages: Messages | None = messages
         continuation_event: AfterInvocationEvent | None = None
         if invocation_context is None:
-            invocation_context = InvocationContext()
+            invocation_context = _create_invocation_context()
 
         while current_messages is not None:
             try:
@@ -1682,7 +1683,7 @@ class Agent(AgentBase, LocalAgent):
                     else "invocation denied by hook"
                 )
                 cancel_message: Message = {"role": "assistant", "content": [{"text": cancel_text}]}
-                await self._append_messages(cancel_message)
+                await self._append_messages(cancel_message, invocation_context=invocation_context)
                 yield EventLoopStopEvent(
                     "end_turn", cancel_message, self.event_loop_metrics, invocation_state.get("request_state", {})
                 )
@@ -1900,15 +1901,15 @@ class Agent(AgentBase, LocalAgent):
                     limit_stop_reason,
                     {"role": "assistant", "content": []},
                     self.event_loop_metrics,
-                    ctx.invocation_state.setdefault("request_state", {}),
+                    ctx.invocation_state.get("request_state", {}),
                 )
                 return
 
             if continuation_event is None:
-                await self._append_messages(*ctx.messages)
+                await self._append_messages(*ctx.messages, invocation_context=invocation_context)
             else:
                 messages = _continuation.combine(continuation_event, ctx.messages)
-                await self._append_continuation_messages(messages, continuation_event)
+                await self._append_continuation_messages(messages, continuation_event, invocation_context)
 
             # Execute the event loop cycle with retry logic for context limits
             events = self._execute_event_loop_cycle(ctx.invocation_state, structured_output_context, invocation_context)
@@ -1957,7 +1958,7 @@ class Agent(AgentBase, LocalAgent):
         # Add `Agent` to invocation_state to keep backwards-compatibility
         invocation_state["agent"] = self
         if invocation_context is None:
-            invocation_context = InvocationContext()
+            invocation_context = _create_invocation_context()
 
         if structured_output_context:
             structured_output_context.register_tool(self.tool_registry)
@@ -2131,8 +2132,8 @@ class Agent(AgentBase, LocalAgent):
         """
         inherited = _unwrap_invocation_context(invocation_context)
         if inherited is None:
-            return InvocationContext(limits)
-        return inherited if limits is None else InvocationContext(limits, inherited)
+            return _create_invocation_context(limits)
+        return inherited if limits is None else _create_invocation_context(limits, inherited)
 
     @staticmethod
     def _should_resume(event: AfterInvocationEvent, invocation_context: InvocationContext) -> bool:
@@ -2154,7 +2155,7 @@ class Agent(AgentBase, LocalAgent):
         """Validate ``limits`` before any hook runs; see ``invocation_context._validate_limits``."""
         _validate_limits(limits)
 
-    async def _append_messages(self, *messages: Message) -> None:
+    async def _append_messages(self, *messages: Message, invocation_context: InvocationContext | None = None) -> None:
         """Appends messages to history and invoke the callbacks for the MessageAddedEvent.
 
         Assigns a durable tracking id to any message that does not already have one.
@@ -2162,12 +2163,15 @@ class Agent(AgentBase, LocalAgent):
         for message in messages:
             _ensure_tracking_id(message)
             self.messages.append(message)
-            await self.hooks.invoke_callbacks_async(MessageAddedEvent(agent=self, message=message))
+            await self.hooks.invoke_callbacks_async(
+                MessageAddedEvent(agent=self, message=message, invocation_context=invocation_context)
+            )
 
     async def _append_continuation_messages(
         self,
         messages: Messages,
         continuation_event: AfterInvocationEvent | BeforeModelCallEvent,
+        invocation_context: InvocationContext | None = None,
     ) -> None:
         added_messages: Messages = []
         for message in messages:
@@ -2190,7 +2194,9 @@ class Agent(AgentBase, LocalAgent):
 
         await _continuation.mark_appended(continuation_event)
         for message in added_messages:
-            await self.hooks.invoke_callbacks_async(MessageAddedEvent(agent=self, message=message))
+            await self.hooks.invoke_callbacks_async(
+                MessageAddedEvent(agent=self, message=message, invocation_context=invocation_context)
+            )
 
     def take_snapshot(
         self,

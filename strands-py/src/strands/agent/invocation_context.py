@@ -2,8 +2,29 @@
 
 from __future__ import annotations
 
+import threading
+
+from typing_extensions import Required
+
 from ..types.agent import _LIMITS_KEYS, Limits
 from ..types.event_loop import StopReason, Usage
+
+
+class InvocationContextUsage(Usage):
+    """What the work in an :class:`InvocationContext` has used.
+
+    Its turns and the token usage of every model call, including nested and auxiliary calls. The token keys
+    keep the provider casing of :class:`~strands.types.event_loop.Usage`.
+
+    Attributes:
+        turns_taken: Turns taken in the context, including its nested calls.
+    """
+
+    turns_taken: Required[int]
+
+
+# Contexts are shared across threads: sync tools, and the agents they call, run on worker threads.
+_usage_lock = threading.Lock()
 
 
 class InvocationContext:
@@ -21,47 +42,30 @@ class InvocationContext:
     apply to an auxiliary call.
 
     Note:
-        Instances are created by the SDK; pass ``limits=`` to a top-level call instead of
-        building one. Treat ``usage`` and ``turns_taken`` as read-only: mutating them is unsupported.
+        Only the SDK creates instances; pass ``limits=`` to a top-level call to start a limited
+        request. Treat ``usage`` as read-only: mutating it is unsupported.
     """
 
-    def __init__(
-        self,
-        limits: Limits | None = None,
-        parent: InvocationContext | None = None,
-        *,
-        auxiliary: bool = False,
-    ) -> None:
-        """Initialize the context.
+    _limits: Limits | None
+    _parent: InvocationContext | None
+    _auxiliary: bool
+    _usage: InvocationContextUsage
 
-        Args:
-            limits: Limits checked against this instance's usage; ``None`` for none.
-            parent: The parent instance, which also receives this one's usage, if any.
-            auxiliary: Whether this is an auxiliary call: the parent's limits don't apply and
-                its turns don't count toward the parent.
+    def __init__(self) -> None:
+        """Reject direct construction.
 
         Raises:
-            TypeError: If ``limits`` contains an unrecognized key or a value that is not a positive int.
+            TypeError: Always; the SDK creates every instance.
         """
-        _validate_limits(limits)
-        self._limits = limits
-        self._parent = parent
-        self._auxiliary = auxiliary
-        self._turns_taken = 0
-        self._usage = Usage(inputTokens=0, outputTokens=0, totalTokens=0)
+        raise TypeError("InvocationContext is created by the SDK; pass limits= to a top-level call instead")
 
     @property
-    def usage(self) -> Usage:
-        """Token usage of every model call in this context, including nested and auxiliary calls.
+    def usage(self) -> InvocationContextUsage:
+        """What the work in this context has used so far.
 
         It keeps growing while that work runs, including background tasks the request started.
         """
         return self._usage
-
-    @property
-    def turns_taken(self) -> int:
-        """Turns taken in this context, including its nested calls."""
-        return self._turns_taken
 
     @property
     def _limiting_parent(self) -> InvocationContext | None:
@@ -70,20 +74,55 @@ class InvocationContext:
 
     def _record_usage(self, usage: Usage) -> None:
         """Add one model call's usage to this instance and every parent."""
-        self._usage["inputTokens"] += usage["inputTokens"]
-        self._usage["outputTokens"] += usage["outputTokens"]
-        self._usage["totalTokens"] += usage["totalTokens"]
-        for key in ("cacheReadInputTokens", "cacheWriteInputTokens"):
-            if key in usage:
-                self._usage[key] = self._usage.get(key, 0) + usage[key]
-        if self._parent is not None:
-            self._parent._record_usage(usage)
+        with _usage_lock:
+            context: InvocationContext | None = self
+            while context is not None:
+                _add_usage(context._usage, usage)
+                context = context._parent
 
     def _record_turn(self) -> None:
         """Count one turn here and in every parent whose limits apply to this instance."""
-        self._turns_taken += 1
-        if self._limiting_parent is not None:
-            self._limiting_parent._record_turn()
+        with _usage_lock:
+            context: InvocationContext | None = self
+            while context is not None:
+                context._usage["turns_taken"] += 1
+                context = context._limiting_parent
+
+
+def _create_invocation_context(
+    limits: Limits | None = None,
+    parent: InvocationContext | None = None,
+    *,
+    auxiliary: bool = False,
+) -> InvocationContext:
+    """Create an :class:`InvocationContext`; the SDK's only way to build one.
+
+    Args:
+        limits: Limits checked against the instance's usage; ``None`` for none.
+        parent: The parent instance, which also receives this one's usage, if any.
+        auxiliary: Whether this is an auxiliary call: the parent's limits don't apply and its
+            turns don't count toward the parent.
+
+    Raises:
+        TypeError: If ``limits`` contains an unrecognized key or a value that is not a positive int.
+    """
+    _validate_limits(limits)
+    context = object.__new__(InvocationContext)
+    context._limits = limits
+    context._parent = parent
+    context._auxiliary = auxiliary
+    context._usage = InvocationContextUsage(turns_taken=0, inputTokens=0, outputTokens=0, totalTokens=0)
+    return context
+
+
+def _add_usage(total: InvocationContextUsage, usage: Usage) -> None:
+    """Add one model call's usage to a context's running total."""
+    total["inputTokens"] += usage["inputTokens"]
+    total["outputTokens"] += usage["outputTokens"]
+    total["totalTokens"] += usage["totalTokens"]
+    for key in ("cacheReadInputTokens", "cacheWriteInputTokens"):
+        if key in usage:
+            total[key] = total.get(key, 0) + usage[key]
 
 
 def _validate_limits(limits: Limits | None) -> None:
@@ -135,7 +174,7 @@ def _create_auxiliary_invocation_context(parent: InvocationContext | None) -> In
     the call runs standalone.
     """
     parent_context = _unwrap_invocation_context(parent)
-    return None if parent_context is None else InvocationContext(None, parent_context, auxiliary=True)
+    return None if parent_context is None else _create_invocation_context(None, parent_context, auxiliary=True)
 
 
 def _reached_limit(invocation_context: InvocationContext) -> StopReason | None:
@@ -156,9 +195,9 @@ def _reached_own_limit(invocation_context: InvocationContext) -> StopReason | No
     if not limits:
         return None
     turns = limits.get("turns")
-    if turns is not None and invocation_context.turns_taken >= turns:
-        return "limit_turns"
     usage = invocation_context.usage
+    if turns is not None and usage["turns_taken"] >= turns:
+        return "limit_turns"
     total_tokens = limits.get("total_tokens")
     if total_tokens is not None and usage["totalTokens"] >= total_tokens:
         return "limit_total_tokens"

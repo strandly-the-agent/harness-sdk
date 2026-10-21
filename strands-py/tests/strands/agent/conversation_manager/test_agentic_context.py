@@ -10,7 +10,7 @@ from strands._context_manager.modes.agentic.agentic_context import (
     truncate_context,
 )
 from strands.agent.conversation_manager.compression.pin_message import pin_message
-from strands.agent.invocation_context import InvocationContext
+from strands.agent.invocation_context import _create_invocation_context
 from strands.types.content import Message
 from strands.types.tools import ToolContext
 
@@ -431,8 +431,8 @@ async def test_summarize_context_adds_its_usage_to_the_request_total(alist):
         )
     )
     agent = make_agent(messages, model)
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 1
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 1
     tool_use = {"toolUseId": "test-id", "name": summarize_context.tool_name, "input": {"keep_recent": 10}}
     tool_context = ToolContext(
         tool_use=tool_use, agent=agent, invocation_state={"agent": agent}, invocation_context=request
@@ -443,4 +443,4 @@ async def test_summarize_context_adds_its_usage_to_the_request_total(alist):
     )
 
     assert "Summarized" in events[-1].tool_result["content"][0]["text"]
-    assert (request.turns_taken, request.usage) == (1, {"inputTokens": 4, "outputTokens": 5, "totalTokens": 9})
+    assert request.usage == {"turns_taken": 1, "inputTokens": 4, "outputTokens": 5, "totalTokens": 9}

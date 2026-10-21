@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from strands.agent.invocation_context import InvocationContext, _reached_limit
+from strands.agent.invocation_context import _create_invocation_context, _reached_limit
 from strands.memory.extraction.coordinator import (
     BACKOFF_PROBE_INTERVAL,
     SAVE_FAILURES_BEFORE_BACKOFF,
@@ -742,8 +742,8 @@ async def test_extractor_gets_a_handle_that_joins_the_request_usage_without_its_
     store = _make_store("s", ExtractionConfig(trigger=_trigger(), extractor=extractor), sink="add")
     coordinator = _coordinator(store)
     coordinator.record(_user_msg("I prefer dark mode"))
-    request = InvocationContext({"turns": 1})
-    request._turns_taken = 1
+    request = _create_invocation_context({"turns": 1})
+    request._usage["turns_taken"] = 1
 
     task = coordinator.process(store, None, request)
     await task
@@ -751,7 +751,7 @@ async def test_extractor_gets_a_handle_that_joins_the_request_usage_without_its_
     handed = extractor.extract.call_args.args[1].invocation_context
     handed._record_usage({"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
     assert _reached_limit(handed) is None
-    assert (request.turns_taken, request.usage) == (1, {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3})
+    assert request.usage == {"turns_taken": 1, "inputTokens": 1, "outputTokens": 2, "totalTokens": 3}
 
 
 @pytest.mark.asyncio

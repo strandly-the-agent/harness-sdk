@@ -27,7 +27,7 @@ from opentelemetry import trace as trace_api
 
 from .._async import run_async
 from ..agent import Agent, AgentResult
-from ..agent.invocation_context import InvocationContext, _unwrap_invocation_context
+from ..agent.invocation_context import InvocationContext, _create_invocation_context, _unwrap_invocation_context
 from ..agent.state import AgentState
 from ..hooks.events import (
     AfterMultiAgentInvocationEvent,
@@ -322,7 +322,7 @@ class Swarm(MultiAgentBase):
             completion_status=Status.PENDING,
         )
         self._interrupt_state = _InterruptState()
-        self._current_invocation_context = InvocationContext()
+        self._current_invocation_context = _create_invocation_context()
 
         self.tracer = get_tracer()
         self.trace_attributes: dict[str, AttributeValue] = self._parse_trace_attributes(trace_attributes)
@@ -444,7 +444,9 @@ class Swarm(MultiAgentBase):
         if invocation_state is None:
             invocation_state = {}
 
-        self._current_invocation_context = _unwrap_invocation_context(invocation_context) or InvocationContext()
+        self._current_invocation_context = (
+            _unwrap_invocation_context(invocation_context) or _create_invocation_context()
+        )
 
         await self.hooks.invoke_callbacks_async(
             BeforeMultiAgentInvocationEvent(self, invocation_state, invocation_context=self._current_invocation_context)
@@ -898,6 +900,11 @@ class Swarm(MultiAgentBase):
                         interrupt_event = self._activate_interrupt(current_node, node_result.interrupts)
                         self._turn.outcome = "committed"
                         yield interrupt_event
+                        break
+                    if node_result.status == Status.FAILED:
+                        # A limit stop fails the node without raising; the request has no budget left to hand off.
+                        self._rollback_uncommitted_turn()
+                        self.state.completion_status = Status.FAILED
                         break
 
                 except (asyncio.CancelledError, GeneratorExit):

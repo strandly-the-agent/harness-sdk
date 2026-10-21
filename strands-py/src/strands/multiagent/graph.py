@@ -29,7 +29,7 @@ from opentelemetry import trace as trace_api
 from .._async import run_async
 from ..agent import Agent, AgentResult
 from ..agent.base import AgentBase
-from ..agent.invocation_context import InvocationContext, _unwrap_invocation_context
+from ..agent.invocation_context import InvocationContext, _create_invocation_context, _unwrap_invocation_context
 from ..agent.state import AgentState
 from ..hooks.events import (
     AfterMultiAgentInvocationEvent,
@@ -569,7 +569,7 @@ class Graph(MultiAgentBase):
         self._resume_next_nodes: list[GraphNode] = []
         self._resume_from_session = False
         self._current_invocation_state: dict[str, Any] = {}
-        self._current_invocation_context = InvocationContext()
+        self._current_invocation_context = _create_invocation_context()
         self.id = id
 
         run_async(lambda: self.hooks.invoke_callbacks_async(MultiAgentInitializedEvent(self)))
@@ -671,7 +671,9 @@ class Graph(MultiAgentBase):
             invocation_state = {}
 
         self._current_invocation_state = invocation_state
-        self._current_invocation_context = _unwrap_invocation_context(invocation_context) or InvocationContext()
+        self._current_invocation_context = (
+            _unwrap_invocation_context(invocation_context) or _create_invocation_context()
+        )
 
         await self.hooks.invoke_callbacks_async(
             BeforeMultiAgentInvocationEvent(self, invocation_state, invocation_context=self._current_invocation_context)

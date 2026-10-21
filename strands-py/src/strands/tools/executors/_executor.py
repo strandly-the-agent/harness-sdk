@@ -144,6 +144,7 @@ class ToolExecutor(abc.ABC):
                     result=result_event.tool_result,
                     exception=result_event.exception,
                     duration=time.monotonic() - tool_start_time,
+                    invocation_context=context.invocation_context,
                 )
             )
             if after_event.retry and not context.cancel_signal.is_set():
