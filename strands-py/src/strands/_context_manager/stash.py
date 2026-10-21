@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from ..storage.storage import _NAMESPACED, _NamespacedStorage
 from ..types.content import ContentBlock
+from .methods.truncate import CHARS_PER_TOKEN, DEFAULT_PREVIEW_TOKENS
+from .split import is_field_ref, split_large_strings
 
 if TYPE_CHECKING:
     from ..storage.storage import Storage
@@ -21,6 +23,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 STASH_PREFIX = "context"
+# Strings at least this long are stashed as their own raw-text entry; shorter ones fit in a preview anyway.
+SPLIT_THRESHOLD_CHARS = DEFAULT_PREVIEW_TOKENS * CHARS_PER_TOKEN
 
 
 class _BytesEncoder(json.JSONEncoder):
@@ -131,10 +135,12 @@ class Stash:
                     )
 
     async def retrieve(self, reference: str) -> object | None:
-        """Retrieve a stashed block by reference. Returns None if not found."""
+        """Retrieve a stashed block by reference, or the raw text of a split-out field. Returns None if not found."""
         data = await self._storage.read(reference)
         if data is None:
             return None
+        if is_field_ref(reference):
+            return data.decode("utf-8")
         return _decode(data)
 
     async def list(self) -> list[str]:
@@ -157,7 +163,7 @@ class Stash:
         for key in keys:
             data = await self._storage.read(key)
             if data is not None:
-                entries[key] = _decode(data)
+                entries[key] = data.decode("utf-8") if is_field_ref(key) else _decode(data)
         return entries
 
     async def load_snapshot(self, entries: dict[str, Any]) -> None:
@@ -167,7 +173,7 @@ class Stash:
             entries: Map of reference keys to their JSON values (from :meth:`take_snapshot`).
         """
         for key, data in entries.items():
-            await self._storage.write(key, _encode(data))
+            await self._storage.write(key, data.encode("utf-8") if is_field_ref(key) else _encode(data))
 
     async def clear(self) -> None:
         """Delete all entries in this agent's stash namespace."""
@@ -192,11 +198,16 @@ class Stash:
             await self._base_storage.delete(key)
 
     async def _store_tool_result(self, block: ContentBlock, *, keep_existing: bool = False) -> None:
-        """Store each sub-block of a tool result individually."""
+        """Store each sub-block of a tool result individually, with large strings split out as raw text."""
         tool_result = block["toolResult"]
         for block_index, item in enumerate(tool_result["content"]):
             try:
-                await self.store(tool_result["toolUseId"], block_index, _encode(item), keep_existing=keep_existing)
+                parent_ref = f"{tool_result['toolUseId']}_{block_index}"
+                parent, fields = split_large_strings(item, parent_ref, SPLIT_THRESHOLD_CHARS)
+                for ref, text in fields.items():
+                    if not (keep_existing and await self._storage.read(ref) is not None):
+                        await self._storage.write(ref, text.encode("utf-8"))
+                await self.store(tool_result["toolUseId"], block_index, _encode(parent), keep_existing=keep_existing)
             except Exception:
                 logger.warning(
                     "tool_use_id=<%s>, block_index=<%s> | failed to stash sub-block",

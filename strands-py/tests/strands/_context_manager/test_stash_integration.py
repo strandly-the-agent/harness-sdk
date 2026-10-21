@@ -339,12 +339,15 @@ class TestStashRefRoundTrip:
         await strategy.apply(context)
 
         result_text = messages[2]["content"][0]["toolResult"]["content"][0]["text"]
-        ref_match = re.search(r"ref: ([^\s\]]+)", result_text)
-        assert ref_match is not None
-        ref = ref_match.group(1)
+        refs = re.findall(r"ref: ([^\s\]]+)", result_text)
+        # The large text was split out: the preview names its field ref first, then the block ref.
+        assert refs == ["fields/tu-1_0/text", "tu-1_0"]
 
         tool = _create_retrieval_tool(stash, max_result_tokens=100_000)
-        retrieval_result = await tool._tool_func({"toolUseId": "t-ret", "input": {"reference": ref}})
-        assert retrieval_result["status"] == "success"
-        parsed = json.loads(retrieval_result["content"][0]["text"])
-        assert parsed["text"] == original_text
+        field_result = await tool._tool_func({"toolUseId": "t-ret", "input": {"reference": refs[0]}})
+        assert field_result["status"] == "success"
+        assert field_result["content"][0]["text"] == original_text
+        block_result = await tool._tool_func({"toolUseId": "t-ret", "input": {"reference": refs[1]}})
+        assert json.loads(block_result["content"][0]["text"]) == {
+            "text": "[ref: fields/tu-1_0/text (1 lines, 50,000 chars)]"
+        }

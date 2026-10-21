@@ -13,6 +13,7 @@ from typing_extensions import TypedDict
 
 from ...types.content import ContentBlock
 from ...types.tools import ToolResult, ToolResultContent
+from ..split import split_large_strings
 
 DEFAULT_PREVIEW_TOKENS = 1000
 CHARS_PER_TOKEN = 4
@@ -30,16 +31,20 @@ class TruncateConfig(TypedDict, total=False):
     preview: Literal["head", "tail", "head_tail"]
 
 
-def _build_preview(full_text: str, block_count: int, config: TruncateConfig | None = None) -> str:
-    """Build a head/tail preview of the text, or return the original if within budget."""
-    config = config or {}
-    raw_preview_tokens = config.get("preview_tokens", DEFAULT_PREVIEW_TOKENS)
+def _preview_chars(config: TruncateConfig | None) -> int:
+    raw_preview_tokens = (config or {}).get("preview_tokens", DEFAULT_PREVIEW_TOKENS)
     preview_tokens = (
         max(0, int(raw_preview_tokens))
         if isinstance(raw_preview_tokens, (int, float)) and math.isfinite(raw_preview_tokens)
         else DEFAULT_PREVIEW_TOKENS
     )
-    preview_chars = preview_tokens * CHARS_PER_TOKEN
+    return preview_tokens * CHARS_PER_TOKEN
+
+
+def _build_preview(full_text: str, block_count: int, config: TruncateConfig | None = None) -> str:
+    """Build a head/tail preview of the text, or return the original if within budget."""
+    config = config or {}
+    preview_chars = _preview_chars(config)
     preview_mode = config.get("preview", "head_tail")
     total_chars = len(full_text)
 
@@ -65,23 +70,33 @@ def _build_preview(full_text: str, block_count: int, config: TruncateConfig | No
     return result
 
 
-def _truncate_tool_result(block: ToolResult, config: TruncateConfig | None = None) -> ToolResult:
-    """Truncate textual content in a ToolResult, preserving opaque blocks."""
+def _truncate_tool_result(
+    block: ToolResult, config: TruncateConfig | None = None, *, split: bool = False
+) -> ToolResult:
+    """Truncate textual content in a ToolResult, preserving opaque blocks.
+
+    With ``split``, large strings are previewed after the blocks, under the field refs the stash stores them at.
+    """
     textual: list[str] = []
+    bodies: list[str] = []
     opaque: list[ToolResultContent] = []
 
-    for content in block["content"]:
+    for index, content in enumerate(block["content"]):
+        fields: dict[str, str] = {}
+        if split:
+            content, fields = split_large_strings(content, f"{block['toolUseId']}_{index}", _preview_chars(config))
         if "text" in content:
             textual.append(content["text"])
         elif "json" in content:
             textual.append(json.dumps(content["json"]))
         else:
             opaque.append(content)
+        bodies.extend(f"[{ref}]\n{text}" for ref, text in fields.items())
 
     if not textual:
         return block
 
-    full_text = "\n".join(textual)
+    full_text = "\n".join(textual + bodies)
     preview = _build_preview(full_text, len(textual), config)
 
     if preview == full_text:
