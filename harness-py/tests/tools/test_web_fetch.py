@@ -267,14 +267,15 @@ async def test_fetch_text_runs_curl_exe_through_powershell_and_reads_crlf_output
     resolved, text = await web_fetch_module._fetch_text(sandbox, "https://example.com/it's", "curl")
     assert (resolved, text) == ("https://example.com/final", "Hello wörld")
     command = sandbox.curl
-    assert "\ncurl.exe -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time " in command
+    assert "\n  curl.exe -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time " in command
     # The URL is a single-quoted PowerShell literal (no expansion), with its own quotes doubled.
     assert command.count("'https://example.com/it''s'") == 1
     assert "$([guid]::NewGuid())" in command and "strands-web-fetch-" in command
     assert f"[Math]::Min($in.Length, {web_fetch_module._MAX_BYTES})" in command
     assert command.endswith("exit $s")
-    # Everything the model would see of a failure arrives on stderr via the console handle (no CLIXML wrapping).
+    # Failures reach stderr through the console handle rather than PowerShell's CLIXML-wrapped error stream.
     assert "[Console]::Error.Write" in command
+    assert "-LiteralPath" in command
     assert "mktemp" not in command and "&&" not in command
 
 

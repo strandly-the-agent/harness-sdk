@@ -23,7 +23,7 @@ vi.mock('@strands-agents/sdk', async (importActual) => {
   return { ...actual, Agent: FakeAgent }
 })
 
-const { makeWebFetch, SHELL_PROBE } = await import('../../src/tools/web-fetch.js')
+const { makeWebFetch, SHELL_PROBE, shellOf } = await import('../../src/tools/web-fetch.js')
 // The mock above swaps Agent for a fake; the end-to-end test needs a real agent's host sandbox.
 const { Agent: RealAgent } = await vi.importActual<typeof import('@strands-agents/sdk')>('@strands-agents/sdk')
 
@@ -45,16 +45,12 @@ class FakeSandbox {
     if (command === SHELL_PROBE) return Promise.resolve(this.probeAnswer())
     const exitCode = this.response.exitCode ?? 0
     const body = this.response.body ?? ''
-    // What the shell pipeline prints: the two trailer lines, then base64(1) output (wrapped at 76 columns).
     const encoded = Buffer.from(typeof body === 'string' ? Buffer.from(body) : body).toString('base64')
-    const wrapped = encoded.match(/.{1,76}/g)?.join('\n') ?? ''
+    const trailer = [this.response.contentType ?? 'text/html', this.response.url ?? 'https://example.com/final']
     return Promise.resolve({
       type: 'executionResult',
       exitCode,
-      stdout:
-        exitCode === 0
-          ? `${this.response.contentType ?? 'text/html'}\n${this.response.url ?? 'https://example.com/final'}\n${wrapped}\n`
-          : '',
+      stdout: exitCode === 0 ? this.render(trailer, encoded) : '',
       stderr: this.response.stderr ?? '',
       outputFiles: [],
     })
@@ -62,19 +58,24 @@ class FakeSandbox {
   protected probeAnswer(): ExecutionResult {
     return { type: 'executionResult', exitCode: 0, stdout: '\n', stderr: '', outputFiles: [] }
   }
+  /** What the shell pipeline prints: the two trailer lines, then base64(1) output (wrapped at 76 columns). */
+  protected render(trailer: string[], encoded: string): string {
+    const wrapped = encoded.match(/.{1,76}/g)?.join('\n') ?? ''
+    return `${trailer.join('\n')}\n${wrapped}\n`
+  }
   get curl(): string {
     return this.commands.find((c) => c.startsWith('f=$(mktemp') && c.includes('curl '))!
   }
 }
 
-/** Fake sandbox whose shell is Windows PowerShell: the probe reports the edition and output lines end in CRLF. */
+/** Fake sandbox whose shell is Windows PowerShell: the probe reports the edition, lines end in CRLF, and the base64
+ * body is one unwrapped line. */
 class FakePowerShellSandbox extends FakeSandbox {
   protected override probeAnswer(): ExecutionResult {
     return { type: 'executionResult', exitCode: 0, stdout: 'Desktop\r\n', stderr: '', outputFiles: [] }
   }
-  override async execute(command: string): Promise<ExecutionResult> {
-    const result = await super.execute(command)
-    return { ...result, stdout: result.stdout.replace(/\n/g, '\r\n') }
+  protected override render(trailer: string[], encoded: string): string {
+    return `${trailer.join('\r\n')}\r\n${encoded}\r\n`
   }
   override get curl(): string {
     return this.commands.find((c) => c.includes('curl.exe '))!
@@ -197,15 +198,18 @@ describe('web_fetch', () => {
     const tool = makeWebFetch({ model })
     expect(await invoke(tool, { url: "https://example.com/it's" }, sandbox)).toBe('Hello wörld')
     const command = sandbox.curl
-    expect(command).toContain("\ncurl.exe -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time ")
+    expect(command).toContain(
+      "\n  curl.exe -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time "
+    )
     // The URL is a single-quoted PowerShell literal (no expansion), with its own quotes doubled.
     expect(command.split("'https://example.com/it''s'")).toHaveLength(2)
     expect(command).toContain('$([guid]::NewGuid())')
     expect(command).toContain('strands-web-fetch-')
     expect(command).toContain(`[Math]::Min($in.Length, ${5 * 1024 * 1024})`)
     expect(command.endsWith('exit $s')).toBe(true)
-    // Everything the model would see of a failure arrives on stderr via the console handle (no CLIXML wrapping).
+    // Failures reach stderr through the console handle rather than PowerShell's CLIXML-wrapped error stream.
     expect(command).toContain('[Console]::Error.Write')
+    expect(command).toContain('-LiteralPath')
     expect(command).not.toContain('mktemp')
     expect(command).not.toContain('&&')
   })
@@ -354,10 +358,10 @@ describe('web_fetch', () => {
       expect(await invoke(tool, { url: `${base}/huge` }, sandbox)).toBe('x'.repeat(50_000))
       expect(await invoke(tool, { url: `${base}/notype` }, sandbox)).toBe('a < b')
       // Same scratch directory the tool derives, asked in the shell the local environment actually runs.
-      const powershell = (await sandbox.execute(SHELL_PROBE)).stdout.trim() !== ''
-      const leftovers = powershell
-        ? "(Get-ChildItem ([IO.Path]::GetTempPath()) -Filter 'strands-web-fetch*' | Measure-Object).Count"
-        : 'ls "${TMPDIR:-/tmp}" | grep -c strands-web-fetch'
+      const leftovers =
+        (await shellOf(sandbox)) === 'powershell'
+          ? "(Get-ChildItem ([IO.Path]::GetTempPath()) -Filter 'strands-web-fetch*' | Measure-Object).Count"
+          : 'ls "${TMPDIR:-/tmp}" | grep -c strands-web-fetch'
       expect((await sandbox.execute(leftovers)).stdout.trim()).toBe('0')
       expect(await invoke(tool, { url: `${base}/missing` }, sandbox)).toContain('404')
     } finally {

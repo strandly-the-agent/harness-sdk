@@ -90,19 +90,23 @@ function curlCommand(url: string): string {
 function powershellCurlCommand(url: string): string {
   // The same contract for a sandbox whose shell is PowerShell (the local environment on Windows). `curl.exe`
   // because plain `curl` is an Invoke-WebRequest alias there; the body is truncated and base64-encoded in
-  // .NET; curl's stderr goes through a file and the console handle because PowerShell wraps anything written
-  // to its own error stream in CLIXML. A missing curl.exe leaves `$LASTEXITCODE` unset, hence the 127.
+  // .NET. Errors are written through the console handle, not PowerShell's own error stream, which is
+  // CLIXML-wrapped when stderr is a pipe; the `try` also turns a missing curl.exe into a plain exit 127.
+  // `-LiteralPath` because `%TEMP%` may contain wildcard characters.
   const quoted = `'${url.replace(/'/g, "''")}'`
   return [
     '$f = Join-Path ([IO.Path]::GetTempPath()) "strands-web-fetch-$([guid]::NewGuid())"',
-    `curl.exe -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time ${TIMEOUT_SECONDS} ` +
+    '$s = 127',
+    'try {',
+    `  curl.exe -sSL -g --fail --proto '=http,https' --proto-redir '=http,https' --max-time ${TIMEOUT_SECONDS} ` +
       `-A '${USER_AGENT}' -o $f --stderr "$f.err" -w '%{content_type}\\n%{url_effective}\\n' ${quoted}`,
-    '$s = if ($null -eq $LASTEXITCODE) { 127 } else { $LASTEXITCODE }',
-    'if ($s -eq 0) {',
-    `  $in = [IO.File]::OpenRead($f); $b = New-Object byte[] ([Math]::Min($in.Length, ${MAX_BYTES}))`,
-    '  [void]$in.Read($b, 0, $b.Length); $in.Dispose(); [Convert]::ToBase64String($b)',
-    '} elseif (Test-Path "$f.err") { [Console]::Error.Write([IO.File]::ReadAllText("$f.err")) }',
-    'Remove-Item -Force $f, "$f.err" -ErrorAction SilentlyContinue',
+    '  $s = $LASTEXITCODE',
+    '  if ($s -eq 0) {',
+    `    $in = [IO.File]::OpenRead($f); $b = New-Object byte[] ([Math]::Min($in.Length, ${MAX_BYTES}))`,
+    '    $n = $in.Read($b, 0, $b.Length); $in.Dispose(); [Convert]::ToBase64String($b, 0, $n)',
+    '  } elseif (Test-Path -LiteralPath "$f.err") { [Console]::Error.Write([IO.File]::ReadAllText("$f.err")) }',
+    '} catch { if ($s -eq 0) { $s = 1 }; [Console]::Error.Write($_.Exception.Message) }',
+    'Remove-Item -Force -LiteralPath $f, "$f.err" -ErrorAction SilentlyContinue',
     'exit $s',
   ].join('\n')
 }
@@ -113,7 +117,8 @@ function powershellCurlCommand(url: string): string {
 export const SHELL_PROBE = 'echo "${PSEdition}"'
 const shells = new WeakMap<Sandbox, 'sh' | 'powershell'>()
 
-async function shellOf(sandbox: Sandbox): Promise<'sh' | 'powershell'> {
+/** @internal Exported for tests. */
+export async function shellOf(sandbox: Sandbox): Promise<'sh' | 'powershell'> {
   let shell = shells.get(sandbox)
   if (!shell) {
     const result = await sandbox.execute(SHELL_PROBE, { timeout: 10 })
