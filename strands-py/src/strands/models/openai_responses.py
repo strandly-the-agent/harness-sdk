@@ -79,7 +79,6 @@ _MAX_MEDIA_SIZE_LABEL = "20MB"
 _DEFAULT_MIME_TYPE = "application/octet-stream"
 _CONTEXT_WINDOW_OVERFLOW_MSG = "OpenAI Responses API threw context window overflow error"
 _RATE_LIMIT_MSG = "OpenAI Responses API threw rate limit error"
-_ENCRYPTED_REASONING_INCLUDE = "reasoning.encrypted_content"
 _OPENAI_RESPONSES_OUTPUT_FIELD = "openaiResponsesOutput"
 _RESPONSE_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItem] = TypeAdapter(ResponseInputItem)
 
@@ -601,11 +600,6 @@ class OpenAIResponsesModel(Model):
             **cast(dict[str, Any], self.config.get("params", {})),
             "store": self.stateful,
         }
-
-        if not self.stateful:
-            configured_include = request.get("include") or []
-            if _ENCRYPTED_REASONING_INCLUDE not in configured_include:
-                request["include"] = [*configured_include, _ENCRYPTED_REASONING_INCLUDE]
 
         response_id = model_state.get("response_id") if model_state else None
         if response_id and self.stateful:

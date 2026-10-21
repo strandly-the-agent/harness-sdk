@@ -223,7 +223,7 @@ describe("OpenAIModel (api: 'responses')", () => {
       expect(req.model).toBe('gpt-5.4')
       expect(req.stream).toBe(true)
       expect(req.store).toBe(false)
-      expect(req.include).toEqual(['reasoning.encrypted_content'])
+      expect(req.include).toBeUndefined()
       expect(Array.isArray(req.input)).toBe(true)
     })
 

@@ -509,21 +509,13 @@ def test_format_request_does_not_replay_output_items_in_stateful_mode(model_id):
     assert "include" not in request
 
 
-def test_format_request_merges_encrypted_reasoning_include(model, messages):
+def test_format_request_passes_configured_include_through_unchanged(model, messages):
+    """The adapter adds nothing to ``include``: stateless Responses already return encrypted reasoning."""
     model.config["params"] = {"include": ["web_search_call.results"]}
 
     request = model._format_request(messages, None, None)
 
-    assert request["include"] == ["web_search_call.results", "reasoning.encrypted_content"]
-    assert model.config["params"]["include"] == ["web_search_call.results"]
-
-
-def test_format_request_does_not_duplicate_configured_encrypted_reasoning_include(model, messages):
-    model.config["params"] = {"include": ["reasoning.encrypted_content"]}
-
-    request = model._format_request(messages, None, None)
-
-    assert request["include"] == ["reasoning.encrypted_content"]
+    assert request["include"] == ["web_search_call.results"]
 
 
 def test_format_request_messages_mantle_replays_reasoning_but_not_message_items():
@@ -827,7 +819,6 @@ def test_format_request(model, messages, tool_specs, system_prompt):
         ],
         "stream": True,
         "store": False,
-        "include": ["reasoning.encrypted_content"],
         "instructions": system_prompt,
         "tools": [
             {
@@ -1210,7 +1201,6 @@ async def test_stream(openai_client, model_id, model, agenerator, alist):
         "input": [{"role": "user", "content": [{"type": "input_text", "text": "test"}]}],
         "stream": True,
         "store": False,
-        "include": ["reasoning.encrypted_content"],
         "max_output_tokens": 100,
     }
     openai_client.responses.create.assert_called_once_with(**expected_request)

@@ -22,7 +22,6 @@ import type {
   ResponseCreateParamsStreaming,
   ResponseUsage,
   ResponseOutputItem,
-  ResponseIncludable,
 } from 'openai/resources/responses/responses'
 import type { Message, StopReason, ToolResultBlock } from '../../types/messages.js'
 import type { JSONValue } from '../../types/json.js'
@@ -41,7 +40,6 @@ import type { OpenAIResponsesConfig } from './types.js'
 export const DEFAULT_RESPONSES_MODEL_ID = MODEL_DEFAULTS.openai.modelId
 
 const MANAGED_PARAMS: ReadonlySet<string> = new Set(['model', 'input', 'stream', 'store'])
-const ENCRYPTED_REASONING_INCLUDE: ResponseIncludable = 'reasoning.encrypted_content'
 const OPENAI_RESPONSES_OUTPUT_FIELD = 'openaiResponsesOutput'
 const RESPONSE_OUTPUT_ITEM_TYPES = new Set([
   'message',
@@ -105,13 +103,6 @@ export function formatResponsesRequest(
     stream: true as const,
     store: stateful,
   } as ResponseCreateParamsStreaming
-
-  if (!stateful) {
-    const configuredInclude = request.include ?? []
-    request.include = configuredInclude.includes(ENCRYPTED_REASONING_INCLUDE)
-      ? configuredInclude
-      : [...configuredInclude, ENCRYPTED_REASONING_INCLUDE]
-  }
 
   if (stateful) {
     const responseId = options?.modelState?.get('responseId') as string | undefined
