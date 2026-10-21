@@ -155,6 +155,20 @@ describe('retrieval tool', () => {
       expect(await invoke(retrievalTool, { reference: ref })).toBe('ok\n[exit_code: 0]')
     })
 
+    it('keeps the exit code when full retrieval is truncated', async () => {
+      const stash = new Stash(new InMemoryStorage(), 'test-session', 'test-agent')
+      const ref = await stash.store(
+        'shell-1',
+        0,
+        encodeJSON({ json: { output: 'x'.repeat(500), error: 'boom', exit_code: 1 } })
+      )
+
+      const result = (await invoke(createRetrievalTool(stash, 100), { reference: ref })) as string
+      expect(result.startsWith('x'.repeat(400) + '\n\n[truncated]')).toBe(true)
+      expect(result.endsWith('\n[exit_code: 1]')).toBe(true)
+      expect(result).not.toContain('boom')
+    })
+
     it('also renders the Python text-block form', async () => {
       const stash = new Stash(new InMemoryStorage(), 'test-session', 'test-agent')
       const text = JSON.stringify({ output: 'a\nb', error: '', exit_code: 0 })
@@ -167,6 +181,7 @@ describe('retrieval tool', () => {
       { output: 'a', error: '', exit_code: 0, host: 'db-1' },
       { output: 'a', error: '' },
       { output: 'a', error: '', exit_code: '0' },
+      { output: 'a', error: '', exit_code: true },
       { output: ['a'], error: '', exit_code: 0 },
     ])('keeps generic JSON retrieval for other shapes: %j', async (json) => {
       const stash = new Stash(new InMemoryStorage(), 'test-session', 'test-agent')

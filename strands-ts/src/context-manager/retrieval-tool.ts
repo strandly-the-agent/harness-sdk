@@ -73,9 +73,10 @@ export function createRetrievalTool(stash: Stash, maxResultTokens?: number): Too
           const media = restoreMedia(result.data as Record<string, unknown>)
           if (media) return media as unknown as JSONValue
         }
-        const shellText = renderShellResult(result.data)
-        const serialized = shellText ?? JSON.stringify(result.data)
-        if (serialized.length <= maxChars) return shellText ?? (result.data as JSONValue)
+        const shellText = renderShellResult(result.data, maxChars)
+        if (shellText !== null) return shellText
+        const serialized = JSON.stringify(result.data)
+        if (serialized.length <= maxChars) return result.data as JSONValue
         return `${serialized.slice(0, maxChars)}\n\n[truncated]`
       }
 
@@ -118,10 +119,11 @@ function restoreMedia(data: Record<string, unknown>): ImageBlock | DocumentBlock
 }
 
 /**
- * Renders a stashed shell-style `{ output, error, exit_code }` result as text, or null for any other shape.
- * stdout comes first with its real line breaks, so `pattern`/`line_range` line numbers index stdout lines.
+ * Renders a stashed shell-style `{ output, error, exit_code }` result (shell, python_repl) as text, or null for
+ * any other shape. stdout comes first with its real line breaks, so `pattern`/`line_range` line numbers index
+ * stdout lines. `maxChars` truncates stdout/stderr but keeps the exit code.
  */
-function renderShellResult(data: unknown): string | null {
+function renderShellResult(data: unknown, maxChars?: number): string | null {
   if (data && typeof data === 'object' && ('text' in data || 'json' in data)) {
     data = 'text' in data ? data.text : data.json
   }
@@ -138,10 +140,9 @@ function renderShellResult(data: unknown): string | null {
   if (keys.length !== SHELL_RESULT_KEYS.length || !SHELL_RESULT_KEYS.every((key) => key in record)) return null
   const { output, error, exit_code } = record
   if (typeof output !== 'string' || typeof error !== 'string' || !Number.isInteger(exit_code)) return null
-  const parts = [output]
-  if (error) parts.push(`[stderr]\n${error}`)
-  parts.push(`[exit_code: ${exit_code}]`)
-  return parts.join('\n')
+  let body = error ? `${output}\n[stderr]\n${error}` : output
+  if (maxChars !== undefined && body.length > maxChars) body = `${body.slice(0, maxChars)}\n\n[truncated]`
+  return `${body}\n[exit_code: ${exit_code}]`
 }
 
 function extractText(data: unknown): string | null {

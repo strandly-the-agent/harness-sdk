@@ -8,6 +8,7 @@ from strands._context_manager.retrieval_tool import (
     RETRIEVAL_TOOL_NAME,
     _create_retrieval_tool,
     _extract_text,
+    _render_shell_result,
     _track_retrieval_tool_use_ids,
 )
 from strands._context_manager.stash import Stash
@@ -182,8 +183,18 @@ class TestShellResultRetrieval:
         result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref}})
         assert result["content"][0]["text"] == "ok\n[exit_code: 0]"
 
+    @pytest.mark.asyncio
+    async def test_full_retrieval_truncation_keeps_exit_code(self, stash):
+        ref = await self._store_shell(stash, "x" * 50_000, error="boom", exit_code=1)
+        tool = _create_retrieval_tool(stash)
+        result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref}})
+        text = result["content"][0]["text"]
+        assert text.startswith("x" * 40_000 + "\n\n[truncated]")
+        assert text.endswith("\n[exit_code: 1]")
+        assert "boom" not in text
+
     def test_renders_json_block_form(self):
-        rendered = _extract_text({"json": {"output": "a\nb", "error": "", "exit_code": 0}})
+        rendered = _render_shell_result({"json": {"output": "a\nb", "error": "", "exit_code": 0}})
         assert rendered == "a\nb\n[exit_code: 0]"
 
     @pytest.mark.parametrize(
@@ -192,13 +203,14 @@ class TestShellResultRetrieval:
             {"text": json.dumps({"output": "a", "error": "", "exit_code": 0, "host": "db-1"})},
             {"text": json.dumps({"output": "a", "error": ""})},
             {"text": json.dumps({"output": "a", "error": "", "exit_code": "0"})},
+            {"text": json.dumps({"output": "a", "error": "", "exit_code": True})},
             {"text": json.dumps({"output": ["a"], "error": "", "exit_code": 0})},
             {"text": "not json at all {"},
             {"text": "[1, 2, 3]"},
         ],
     )
-    def test_other_shapes_keep_generic_text(self, data):
-        assert _extract_text(data) == data["text"]
+    def test_other_shapes_are_not_rendered(self, data):
+        assert _render_shell_result(data) is None
 
 
 class TestFullTextTruncation:
