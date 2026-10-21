@@ -73,10 +73,11 @@ class SummarizeStrategy(BaseOffloadStrategy):
         return await super().apply(context)
 
     async def _apply_per_message(self, context: ContextState) -> bool:
-        """Summarize oldest eligible messages into a single summary message."""
-        model = self._resolve_model(context.agent)
-        if not model:
-            return False
+        """Summarize oldest eligible messages into a single summary message.
+
+        Uses the agent's main model unless one is configured, so the replayed request shares its prompt cache.
+        """
+        model = self._config.get("model") or context.agent.model
 
         messages = context.messages
         if len(messages) <= 1:

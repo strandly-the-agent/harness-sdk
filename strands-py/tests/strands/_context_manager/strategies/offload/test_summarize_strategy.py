@@ -225,6 +225,26 @@ class TestSummarizeStrategyMessageLevel:
         assert system_prompt == "You are the agent."
 
     @pytest.mark.asyncio
+    async def test_batch_uses_agent_model_not_aux_model(self, mock_agent):
+        aux_model = unittest.mock.AsyncMock()
+        aux_model.stream = _make_stream_events("aux summary")
+        mock_agent.aux_model = aux_model
+        strategy = Offload.summarize("*").when(utilization=0.8)
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="pin")]),
+            Message(role="assistant", content=[ContentBlock(text="old1")]),
+            Message(role="user", content=[ContentBlock(text="old2")]),
+            Message(role="assistant", content=[ContentBlock(text="old3")]),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+        ]
+        mock_agent.messages = messages
+        context = ContextState(messages=messages, agent=mock_agent, utilization=0.9)
+        assert await strategy.apply(context) is True
+        all_text = " ".join(block.get("text", "") for msg in messages for block in msg["content"])
+        assert "Summary of content." in all_text
+        assert "aux summary" not in all_text
+
+    @pytest.mark.asyncio
     async def test_inserts_summary_and_removes_originals(self, mock_agent):
         strategy = Offload.summarize("*").when(utilization=0.8)
         messages: Messages = [

@@ -63,8 +63,9 @@ class SummarizeConfig(TypedDict, total=False):
     """Configuration for the summarize method.
 
     Attributes:
-        model: Model used for summarization. Resolution order: this ``model`` > ``agent.aux_model``
-            > ``agent.model``.
+        model: Model used for summarization. Per-block summarization resolves this ``model`` > ``agent.aux_model``
+            > ``agent.model``; batch summarization resolves this ``model`` > ``agent.model`` to keep the agent's
+            prompt cache.
         system_prompt: Custom system prompt for the summarization model. Batch summarization otherwise reuses
             the agent's own system prompt and tools so the request shares the agent's prompt-cache prefix.
     """

@@ -6,6 +6,7 @@ import { Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../../type
 import { createMockAgent } from '../../../__fixtures__/agent-helpers.js'
 import { MockMessageModel } from '../../../__fixtures__/mock-message-model.js'
 import type { Agent } from '../../../agent/agent.js'
+import type { Model } from '../../../models/model.js'
 import type { ContextState } from '../../types.js'
 
 vi.mock('../../methods/summarize.js', async (importOriginal) => {
@@ -213,6 +214,30 @@ describe('Offload.summarize', () => {
       const [prefix, agent] = summarizeConversationMock.mock.calls[0]!
       expect(prefix).toEqual(history)
       expect(agent).toBe(context.agent)
+    })
+
+    it('summarizes the batch with the agent model even when an auxModel is set', async () => {
+      summarizeConversationMock.mockClear()
+      const messages = [
+        new Message({ role: 'user', content: [new TextBlock('pin')] }),
+        new Message({ role: 'assistant', content: [new TextBlock('old1')] }),
+        new Message({ role: 'user', content: [new TextBlock('old2')] }),
+        new Message({ role: 'assistant', content: [new TextBlock('old3')] }),
+        new Message({ role: 'user', content: [new TextBlock('recent')] }),
+      ]
+      const mainModel = { stream: vi.fn(), countTokens: vi.fn(async () => 5000) }
+      const auxModel = { stream: vi.fn(), countTokens: vi.fn(async () => 5000) }
+      const context = makeContext(messages, 0.9, mainModel)
+      context.agent = createMockAgent({
+        messages,
+        extra: { model: context.agent.model, auxModel: auxModel as unknown as Model },
+      })
+      const strategy = Offload.summarize('*').when({ utilization: 0.8 })
+
+      expect(await strategy.apply(context)).toBe(true)
+
+      expect(summarizeConversationMock.mock.calls[0]![2]).toBe(context.agent.model)
+      expect(summarizeConversationMock.mock.calls[0]![2]).not.toBe(auxModel)
     })
 
     it('returns false on empty messages', async () => {

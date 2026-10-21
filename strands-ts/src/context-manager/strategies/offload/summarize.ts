@@ -52,8 +52,8 @@ export class SummarizeStrategy extends BaseOffloadStrategy {
   }
 
   protected override async _applyPerMessage(context: ContextState): Promise<boolean> {
-    const model = this._resolveModel(context.agent)
-    if (!model) return false
+    // The agent's main model unless one is configured, so the replayed request shares its prompt cache.
+    const model = this._config.model ?? context.agent.model
 
     const { messages } = context
     if (messages.length <= 1) return false

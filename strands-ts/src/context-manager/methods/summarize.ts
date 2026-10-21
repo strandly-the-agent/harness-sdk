@@ -58,7 +58,10 @@ export const SUMMARIZE_CONVERSATION_INSTRUCTION = [
  * @experimental
  */
 export interface SummarizeConfig {
-  /** Model used for summarization. Resolution order: `this model > agent.auxModel > agent.model`. */
+  /**
+   * Model used for summarization. Per-block summarization resolves `this model > agent.auxModel > agent.model`;
+   * batch summarization resolves `this model > agent.model` to keep the agent's prompt cache.
+   */
   model?: Model
 
   /**
