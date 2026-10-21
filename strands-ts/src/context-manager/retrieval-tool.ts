@@ -118,10 +118,16 @@ function restoreMedia(data: Record<string, unknown>): ImageBlock | DocumentBlock
   return null
 }
 
+function clip(text: string, limit: number, stream: string): string {
+  if (text.length <= limit) return text
+  return `${text.slice(0, limit)}\n\n[... ${(text.length - limit).toLocaleString('en-US')} chars of ${stream} truncated]`
+}
+
 /**
  * Renders a stashed shell-style `{ output, error, exit_code }` result (shell, python_repl) as text, or null for
  * any other shape. stdout comes first with its real line breaks, so `pattern`/`line_range` line numbers index
- * stdout lines. `maxChars` truncates stdout/stderr but keeps the exit code.
+ * stdout lines. `maxChars` clips stdout and stderr separately (stderr keeps up to a quarter) and never drops the
+ * exit code.
  */
 function renderShellResult(data: unknown, maxChars?: number): string | null {
   if (data && typeof data === 'object' && ('text' in data || 'json' in data)) {
@@ -140,9 +146,16 @@ function renderShellResult(data: unknown, maxChars?: number): string | null {
   if (keys.length !== SHELL_RESULT_KEYS.length || !SHELL_RESULT_KEYS.every((key) => key in record)) return null
   const { output, error, exit_code } = record
   if (typeof output !== 'string' || typeof error !== 'string' || !Number.isInteger(exit_code)) return null
-  let body = error ? `${output}\n[stderr]\n${error}` : output
-  if (maxChars !== undefined && body.length > maxChars) body = `${body.slice(0, maxChars)}\n\n[truncated]`
-  return `${body}\n[exit_code: ${exit_code}]`
+  let stdoutLimit = output.length
+  let stderrLimit = error.length
+  if (maxChars !== undefined) {
+    stderrLimit = Math.min(error.length, Math.floor(maxChars / 4))
+    stdoutLimit = maxChars - stderrLimit
+  }
+  const parts = [clip(output, stdoutLimit, 'stdout')]
+  if (error) parts.push(`[stderr]\n${clip(error, stderrLimit, 'stderr')}`)
+  parts.push(`[exit_code: ${exit_code}]`)
+  return parts.join('\n')
 }
 
 function extractText(data: unknown): string | null {

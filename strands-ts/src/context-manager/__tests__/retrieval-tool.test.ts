@@ -155,18 +155,26 @@ describe('retrieval tool', () => {
       expect(await invoke(retrievalTool, { reference: ref })).toBe('ok\n[exit_code: 0]')
     })
 
-    it('keeps the exit code when full retrieval is truncated', async () => {
+    it('clips stdout on full retrieval but keeps stderr and the exit code', async () => {
       const stash = new Stash(new InMemoryStorage(), 'test-session', 'test-agent')
-      const ref = await stash.store(
-        'shell-1',
-        0,
-        encodeJSON({ json: { output: 'x'.repeat(500), error: 'boom', exit_code: 1 } })
-      )
+      const json = { output: 'x'.repeat(5000), error: 'boom', exit_code: 1 }
+      const ref = await stash.store('shell-1', 0, encodeJSON({ json }))
 
-      const result = (await invoke(createRetrievalTool(stash, 100), { reference: ref })) as string
-      expect(result.startsWith('x'.repeat(400) + '\n\n[truncated]')).toBe(true)
-      expect(result.endsWith('\n[exit_code: 1]')).toBe(true)
-      expect(result).not.toContain('boom')
+      const result = await invoke(createRetrievalTool(stash, 1000), { reference: ref })
+      expect(result).toBe(
+        'x'.repeat(3996) + '\n\n[... 1,004 chars of stdout truncated]\n[stderr]\nboom\n[exit_code: 1]'
+      )
+    })
+
+    it('clips stderr to a quarter of the budget', async () => {
+      const stash = new Stash(new InMemoryStorage(), 'test-session', 'test-agent')
+      const json = { output: 'ok', error: 'e'.repeat(5000), exit_code: 1 }
+      const ref = await stash.store('shell-1', 0, encodeJSON({ json }))
+
+      const result = await invoke(createRetrievalTool(stash, 1000), { reference: ref })
+      expect(result).toBe(
+        'ok\n[stderr]\n' + 'e'.repeat(1000) + '\n\n[... 4,000 chars of stderr truncated]\n[exit_code: 1]'
+      )
     })
 
     it('also renders the Python text-block form', async () => {

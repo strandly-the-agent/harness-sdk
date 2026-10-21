@@ -42,11 +42,18 @@ def _restore_media(data: dict[str, Any]) -> ToolResultContent | None:
     return None
 
 
+def _clip(text: str, limit: int, stream: str) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}\n\n[... {len(text) - limit:,} chars of {stream} truncated]"
+
+
 def _render_shell_result(data: object, max_chars: int | None = None) -> str | None:
     """Render a stashed shell-style ``{output, error, exit_code}`` result (shell, python_repl) as text.
 
     stdout comes first with its real line breaks, so ``pattern``/``line_range`` line numbers index stdout lines.
-    ``max_chars`` truncates stdout/stderr but keeps the exit code. Returns None for any other shape.
+    ``max_chars`` clips stdout and stderr separately (stderr keeps up to a quarter) and never drops the exit code.
+    Returns None for any other shape.
     """
     if isinstance(data, dict) and ("text" in data or "json" in data):
         data = data.get("text", data.get("json"))
@@ -62,10 +69,15 @@ def _render_shell_result(data: object, max_chars: int | None = None) -> str | No
         return None
     if not isinstance(exit_code, int) or isinstance(exit_code, bool):
         return None
-    body = f"{output}\n[stderr]\n{error}" if error else output
-    if max_chars is not None and len(body) > max_chars:
-        body = f"{body[:max_chars]}\n\n[truncated]"
-    return f"{body}\n[exit_code: {exit_code}]"
+    stdout_limit, stderr_limit = len(output), len(error)
+    if max_chars is not None:
+        stderr_limit = min(len(error), max_chars // 4)
+        stdout_limit = max_chars - stderr_limit
+    parts = [_clip(output, stdout_limit, "stdout")]
+    if error:
+        parts.append(f"[stderr]\n{_clip(error, stderr_limit, 'stderr')}")
+    parts.append(f"[exit_code: {exit_code}]")
+    return "\n".join(parts)
 
 
 def _extract_text(data: object) -> str | None:

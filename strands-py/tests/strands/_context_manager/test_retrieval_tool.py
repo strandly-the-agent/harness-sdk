@@ -184,14 +184,20 @@ class TestShellResultRetrieval:
         assert result["content"][0]["text"] == "ok\n[exit_code: 0]"
 
     @pytest.mark.asyncio
-    async def test_full_retrieval_truncation_keeps_exit_code(self, stash):
+    async def test_full_retrieval_clips_stdout_but_keeps_stderr_and_exit_code(self, stash):
         ref = await self._store_shell(stash, "x" * 50_000, error="boom", exit_code=1)
         tool = _create_retrieval_tool(stash)
         result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref}})
         text = result["content"][0]["text"]
-        assert text.startswith("x" * 40_000 + "\n\n[truncated]")
-        assert text.endswith("\n[exit_code: 1]")
-        assert "boom" not in text
+        assert text == "x" * 39_996 + "\n\n[... 10,004 chars of stdout truncated]\n[stderr]\nboom\n[exit_code: 1]"
+
+    @pytest.mark.asyncio
+    async def test_full_retrieval_clips_stderr_to_a_quarter_of_the_budget(self, stash):
+        ref = await self._store_shell(stash, "ok", error="e" * 50_000, exit_code=1)
+        tool = _create_retrieval_tool(stash)
+        result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref}})
+        text = result["content"][0]["text"]
+        assert text == "ok\n[stderr]\n" + "e" * 10_000 + "\n\n[... 40,000 chars of stderr truncated]\n[exit_code: 1]"
 
     def test_renders_json_block_form(self):
         rendered = _render_shell_result({"json": {"output": "a\nb", "error": "", "exit_code": 0}})
