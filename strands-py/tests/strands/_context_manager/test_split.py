@@ -38,10 +38,10 @@ class TestSplitLargeStrings:
         assert list(fields) == ["fields/tu_0/stdout", "fields/tu_0/stderr"]
         assert parent["json"]["code"] == 1
 
-    def test_keeps_non_ascii_text_unescaped_in_parent(self):
+    def test_parent_text_is_compact_json_with_non_ascii_unescaped(self):
         item = ToolResultContent(text=json.dumps({"output": BIG, "note": "héllo"}, ensure_ascii=False))
         parent, _ = split_large_strings(item, "tu_0", 1000)
-        assert "héllo" in parent["text"]
+        assert parent["text"] == '{"output":"[ref: fields/tu_0/output (500 lines, 4,391 chars)]","note":"héllo"}'
 
     @pytest.mark.parametrize(
         "item",
@@ -76,3 +76,4 @@ class TestSplitLargeStrings:
         assert field_ref("tu_0", "output") == "fields/tu_0/output"
         assert is_field_ref("fields/tu_0/output")
         assert not is_field_ref("tu_0")
+        assert not is_field_ref("fields/x_0")  # a block key whose toolUseId merely starts with "fields/"

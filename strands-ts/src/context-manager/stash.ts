@@ -13,13 +13,11 @@ import { Message, ToolResultBlock, ToolUseBlock, CachePointBlock, ReasoningBlock
 import type { ContentBlock } from '../types/messages.js'
 import type { JSONValue } from '../types/json.js'
 import { logger } from '../logging/logger.js'
-import { CHARS_PER_TOKEN, DEFAULT_PREVIEW_TOKENS } from './methods/truncate.js'
+import { SPLIT_THRESHOLD_CHARS } from './methods/truncate.js'
 import { isFieldRef, splitLargeStrings } from './split.js'
 
 /** @internal */
 export const STASH_PREFIX = 'context'
-/** Strings at least this long are stashed as their own raw-text entry; shorter ones fit in a preview anyway. */
-export const SPLIT_THRESHOLD_CHARS = DEFAULT_PREVIEW_TOKENS * CHARS_PER_TOKEN
 
 function encode(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value))
@@ -104,7 +102,14 @@ export class Stash {
    */
   refsFor(block: ContentBlock, message: Message, blockIndex: number): string[] {
     if (block instanceof ToolResultBlock) {
-      return Array.from({ length: block.content.length }, (_, index) => `${block.toolUseId}_${index}`)
+      const refs: string[] = []
+      const fieldRefs: string[] = []
+      block.content.forEach((item, index) => {
+        const key = `${block.toolUseId}_${index}`
+        refs.push(key)
+        fieldRefs.push(...Object.keys(splitLargeStrings(item, key, SPLIT_THRESHOLD_CHARS).fields))
+      })
+      return [...refs, ...fieldRefs]
     }
     return [`${message.trackingId}_${blockIndex}`]
   }
@@ -233,9 +238,15 @@ export class Stash {
     for (let blockIndex = 0; blockIndex < block.content.length; blockIndex++) {
       const item = block.content[blockIndex]!
       try {
-        const { parent, fields } = splitLargeStrings(item, `${block.toolUseId}_${blockIndex}`, SPLIT_THRESHOLD_CHARS)
-        for (const [ref, text] of Object.entries(fields)) {
-          await this._storage.write(ref, new TextEncoder().encode(text))
+        const key = `${block.toolUseId}_${blockIndex}`
+        let { parent, fields } = splitLargeStrings(item, key, SPLIT_THRESHOLD_CHARS)
+        try {
+          for (const [ref, text] of Object.entries(fields)) {
+            await this._storage.write(ref, new TextEncoder().encode(text))
+          }
+        } catch (error) {
+          logger.warn(`key=<${key}>, error=<${error}> | failed to stash split field, storing block unsplit`)
+          parent = item
         }
         await this.store(block.toolUseId, blockIndex, encode(parent.toJSON()))
       } catch (error) {

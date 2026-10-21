@@ -12,6 +12,11 @@ export const TRUNCATED_PREFIX = '[Truncated:'
 
 export const DEFAULT_PREVIEW_TOKENS = 1000
 export const CHARS_PER_TOKEN = 4
+/**
+ * Strings at least this long are stashed as their own raw-text entry; shorter ones fit in a default preview anyway.
+ * The preview splits at the same constant so every field ref it shows exists in the stash.
+ */
+export const SPLIT_THRESHOLD_CHARS = DEFAULT_PREVIEW_TOKENS * CHARS_PER_TOKEN
 
 /**
  * Configuration for the truncate method.
@@ -87,11 +92,7 @@ export function truncateToolResultBlock(
     let content = block.content[index]!
     let fields: Record<string, string> = {}
     if (split) {
-      ;({ parent: content, fields } = splitLargeStrings(
-        content,
-        `${block.toolUseId}_${index}`,
-        previewCharsFor(config)
-      ))
+      ;({ parent: content, fields } = splitLargeStrings(content, `${block.toolUseId}_${index}`, SPLIT_THRESHOLD_CHARS))
     }
     if (content instanceof TextBlock) {
       textual.push(content.text)

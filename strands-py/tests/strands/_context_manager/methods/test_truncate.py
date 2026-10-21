@@ -128,8 +128,8 @@ class TestTruncateToolResultSplit:
         tool_result = ToolResult(toolUseId="tu", status="success", content=[{"text": shell_json}])
         preview = _truncate_tool_result(tool_result, {"preview_tokens": 100}, split=True)["content"][0]["text"]
         assert preview.startswith(
-            "[Truncated: 1 block, ~4,753 tokens]\n\n"
-            '{"output": "[ref: fields/tu_0/output (2,000 lines, 18,892 chars)]", "error": "", "exit_code": 0}\n'
+            "[Truncated: 1 block, ~4,752 tokens]\n\n"
+            '{"output":"[ref: fields/tu_0/output (2,000 lines, 18,892 chars)]","error":"","exit_code":0}\n'
             "[fields/tu_0/output]\nline 1\nline 2\n"
         )
         assert preview.endswith("\nline 1999\nline 2000")

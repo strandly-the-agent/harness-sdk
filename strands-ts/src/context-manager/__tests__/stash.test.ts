@@ -159,6 +159,27 @@ describe('Stash', () => {
       })
     })
 
+    it('refsFor lists field refs after block refs', () => {
+      const stash = new Stash(new InMemoryStorage(), 'test-session', 'test-agent')
+      const message = toolResultMessage([
+        new TextBlock('small'),
+        new JsonBlock({ json: { output: BIG, exit_code: 0 } }),
+      ])
+      expect(stash.refsFor(message.content[0]!, message, 0)).toEqual(['tu_0', 'tu_1', 'fields/tu_1/output'])
+    })
+
+    it('stores the block unsplit when a field write fails', async () => {
+      const storage = new InMemoryStorage()
+      const originalWrite = storage.write.bind(storage)
+      storage.write = async (key: string, data: Uint8Array) => {
+        if (key.endsWith('/text')) throw new Error('quota')
+        await originalWrite(key, data)
+      }
+      const stash = new Stash(storage, 'test-session', 'test-agent')
+      await stash.storeMessage(toolResultMessage([new TextBlock(BIG)]))
+      expect((await stash.retrieve('tu_0'))!.data).toEqual({ text: BIG })
+    })
+
     it('stores small results as before', async () => {
       const stash = new Stash(new InMemoryStorage(), 'test-session', 'test-agent')
       await stash.storeMessage(toolResultMessage([new JsonBlock({ json: { output: 'ok', exit_code: 0 } })]))

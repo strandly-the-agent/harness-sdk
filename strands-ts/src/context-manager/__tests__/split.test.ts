@@ -61,9 +61,17 @@ describe('splitLargeStrings (#4741)', () => {
     expect(fields).toEqual({})
   })
 
+  it('measures length in code points like Python', () => {
+    const emoji = '😀'.repeat(600) // 600 code points, 1,200 UTF-16 units
+    expect(splitLargeStrings(new TextBlock(emoji), 'tu_0', 1000).fields).toEqual({})
+    const { parent } = splitLargeStrings(new TextBlock('😀'.repeat(1000)), 'tu_0', 1000)
+    expect((parent as TextBlock).text).toBe('[ref: fields/tu_0/text (1 lines, 1,000 chars)]')
+  })
+
   it('field ref helpers', () => {
     expect(fieldRef('tu_0', 'output')).toBe('fields/tu_0/output')
     expect(isFieldRef('fields/tu_0/output')).toBe(true)
     expect(isFieldRef('tu_0')).toBe(false)
+    expect(isFieldRef('fields/x_0')).toBe(false) // a block key whose toolUseId merely starts with "fields/"
   })
 })

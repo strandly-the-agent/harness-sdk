@@ -7,6 +7,9 @@
  * reference marker. The same split shapes the truncation preview, so the model sees the parent's structure and the
  * references it can page through.
  *
+ * Only fields named `[A-Za-z0-9_-]+` are split, which keeps the stash keys path-safe; a JSON text block with a split
+ * field is re-serialized compactly (`{"a":1}`), matching the Python SDK. Lengths count code points, as Python does.
+ *
  * @internal
  */
 
@@ -17,6 +20,7 @@ import type { JSONValue } from '../types/json.js'
 export const FIELD_REF_PREFIX = 'fields/'
 
 const FIELD_NAME = /^[A-Za-z0-9_-]+$/
+const FIELD_REF = new RegExp(`^${FIELD_REF_PREFIX}.+_\\d+/[A-Za-z0-9_-]+$`)
 
 /** Stash key of a string field split out of the block stored under `parentRef`. */
 export function fieldRef(parentRef: string, field: string): string {
@@ -25,12 +29,19 @@ export function fieldRef(parentRef: string, field: string): string {
 
 /** Whether `reference` names a split-out string field (stored as raw text) rather than a JSON block. */
 export function isFieldRef(reference: string): boolean {
-  return reference.startsWith(FIELD_REF_PREFIX)
+  return FIELD_REF.test(reference)
+}
+
+/** Code-point length, so the split decision and marker match Python's `len()`; `.length` counts UTF-16 units. */
+function codePointLength(text: string): number {
+  let count = 0
+  for (const _ of text) count++
+  return count
 }
 
 function marker(ref: string, text: string): string {
   const lines = text.split('\n').length.toLocaleString('en-US')
-  return `[ref: ${ref} (${lines} lines, ${text.length.toLocaleString('en-US')} chars)]`
+  return `[ref: ${ref} (${lines} lines, ${codePointLength(text).toLocaleString('en-US')} chars)]`
 }
 
 /**
@@ -48,7 +59,7 @@ export function splitLargeStrings(
   if (item instanceof JsonBlock) {
     payload = item.json
   } else if (item instanceof TextBlock) {
-    if (item.text.length < threshold) return { parent: item, fields: {} }
+    if (codePointLength(item.text) < threshold) return { parent: item, fields: {} }
     payload = parseJsonObject(item.text)
     if (payload === null) {
       const ref = fieldRef(parentRef, 'text')
@@ -62,7 +73,7 @@ export function splitLargeStrings(
   const fields: Record<string, string> = {}
   const replaced: Record<string, JSONValue> = { ...(payload as Record<string, JSONValue>) }
   for (const [key, value] of Object.entries(payload as Record<string, JSONValue>)) {
-    if (typeof value === 'string' && value.length >= threshold && FIELD_NAME.test(key)) {
+    if (typeof value === 'string' && codePointLength(value) >= threshold && FIELD_NAME.test(key)) {
       const ref = fieldRef(parentRef, key)
       fields[ref] = value
       replaced[key] = marker(ref, value)

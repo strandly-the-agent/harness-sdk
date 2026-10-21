@@ -17,6 +17,7 @@ from ..types.tools import ToolResultContent
 FIELD_REF_PREFIX = "fields/"
 
 _FIELD_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
+_FIELD_REF = re.compile(rf"^{FIELD_REF_PREFIX}.+_\d+/[A-Za-z0-9_-]+$")
 
 
 def field_ref(parent_ref: str, field: str) -> str:
@@ -26,7 +27,7 @@ def field_ref(parent_ref: str, field: str) -> str:
 
 def is_field_ref(reference: str) -> bool:
     """Whether ``reference`` names a split-out string field (stored as raw text) rather than a JSON block."""
-    return reference.startswith(FIELD_REF_PREFIX)
+    return _FIELD_REF.match(reference) is not None
 
 
 def _marker(ref: str, text: str) -> str:
@@ -67,7 +68,7 @@ def split_large_strings(
         return item, {}
     if "json" in item:
         return ToolResultContent(json=replaced), fields
-    return ToolResultContent(text=json.dumps(replaced, ensure_ascii=False)), fields
+    return ToolResultContent(text=json.dumps(replaced, ensure_ascii=False, separators=(",", ":"))), fields
 
 
 def _parse_json_object(text: str) -> dict[str, object] | None:

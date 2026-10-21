@@ -17,6 +17,9 @@ from ..split import split_large_strings
 
 DEFAULT_PREVIEW_TOKENS = 1000
 CHARS_PER_TOKEN = 4
+# Strings at least this long are stashed as their own raw-text entry; shorter ones fit in a default preview anyway.
+# The preview splits at the same constant so every field ref it shows exists in the stash.
+SPLIT_THRESHOLD_CHARS = DEFAULT_PREVIEW_TOKENS * CHARS_PER_TOKEN
 
 
 class TruncateConfig(TypedDict, total=False):
@@ -84,7 +87,7 @@ def _truncate_tool_result(
     for index, content in enumerate(block["content"]):
         fields: dict[str, str] = {}
         if split:
-            content, fields = split_large_strings(content, f"{block['toolUseId']}_{index}", _preview_chars(config))
+            content, fields = split_large_strings(content, f"{block['toolUseId']}_{index}", SPLIT_THRESHOLD_CHARS)
         if "text" in content:
             textual.append(content["text"])
         elif "json" in content:
