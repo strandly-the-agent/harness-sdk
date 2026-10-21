@@ -752,7 +752,7 @@ class TestRequestLimits:
 
         hooks["before"][0](BeforeInvocationEvent(agent=agent))
         agent.messages.append({"role": "assistant", "content": [{"text": "first answer"}]})
-        request._record_turn()
+        request._take_turn()
         await hooks["after"][0](AfterInvocationEvent(agent=agent, invocation_context=request))
 
         assert plugin.last_result(agent) == GoalResult(
@@ -769,7 +769,7 @@ class TestRequestLimits:
         plugin = GoalLoop(goal="be concise", max_attempts=3, judge=JudgeConfig(model=judge_model))
         hooks = _setup_plugin_with_hooks(plugin, agent)
         spent_request = _create_invocation_context({"turns": 1})
-        spent_request._record_turn()
+        spent_request._take_turn()
 
         hooks["before"][0](BeforeInvocationEvent(agent=agent))
         await hooks["after"][0](AfterInvocationEvent(agent=agent, invocation_context=spent_request))
@@ -785,7 +785,7 @@ class TestRequestLimits:
         plugin = GoalLoop(goal=lambda response, host: validator(), max_attempts=3)
         hooks = _setup_plugin_with_hooks(plugin, agent)
         spent_request = _create_invocation_context({"turns": 1})
-        spent_request._record_turn()
+        spent_request._take_turn()
 
         hooks["before"][0](BeforeInvocationEvent(agent=agent))
         await hooks["after"][0](AfterInvocationEvent(agent=agent, invocation_context=spent_request))

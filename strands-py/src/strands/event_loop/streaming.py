@@ -442,8 +442,8 @@ async def process_stream(
         chunks: The chunks of the response stream from the model.
         start_time: Time when the model request is initiated
         cancel_signal: Optional threading.Event to check for cancellation during streaming.
-        invocation_context: The request the call's usage adds to once the stream ends; a stream that raises adds
-            nothing.
+        invocation_context: The request the call's usage adds to once the stream ends. A cancelled stream adds the
+            usage reported before it stopped; a stream that raises adds nothing.
 
     Yields:
         The reason for stopping, the constructed message, and the usage metrics.

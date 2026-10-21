@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, cast
 from opentelemetry import trace as trace_api
 
 from ..agent import _continuation
-from ..agent.invocation_context import InvocationContext, _create_invocation_context, _reached_limit
+from ..agent.invocation_context import InvocationContext, _create_invocation_context
 from ..experimental.checkpoint import Checkpoint, CheckpointPosition
 from ..hooks import AfterModelCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolsEvent
 from ..interrupt import InterruptException, PendingToolExecution
@@ -203,8 +203,9 @@ async def event_loop_cycle(
         invocation_context = _create_invocation_context()
 
     # Limits are positive and use >= semantics, so reaching one implies at least one prior
-    # cycle ran — meaning agent.messages[-1] exists.
-    limit_stop_reason = _reached_limit(invocation_context)
+    # cycle ran — meaning agent.messages[-1] exists. The turn is counted here, before it runs,
+    # so nested calls started by its tools see it already counted.
+    limit_stop_reason = invocation_context._take_turn()
     if limit_stop_reason is not None:
         if "request_state" not in invocation_state:
             invocation_state["request_state"] = {}
@@ -233,9 +234,6 @@ async def event_loop_cycle(
         )
         agent._checkpoint_cycle_index = next_cycle
         agent._checkpoint_resume_position = resume_context.position
-
-    # Count this turn before it runs, so nested calls started by its tools see it already counted.
-    invocation_context._record_turn()
 
     attributes = {"event_loop_cycle_id": str(invocation_state.get("event_loop_cycle_id"))}
     cycle_start_time, cycle_trace = agent.event_loop_metrics.start_cycle(attributes=attributes)

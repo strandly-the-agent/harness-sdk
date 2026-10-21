@@ -80,13 +80,23 @@ class InvocationContext:
                 _add_usage(context._usage, usage)
                 context = context._parent
 
-    def _record_turn(self) -> None:
-        """Count one turn here and in every parent whose limits apply to this instance."""
+    def _take_turn(self) -> StopReason | None:
+        """Count one turn here and in every parent whose limits apply, unless a limit is already reached.
+
+        Checking and counting happen as one step, so concurrent nested calls can't both take the last turn.
+
+        Returns:
+            The stop reason for the first limit reached, or ``None`` once the turn is counted.
+        """
         with _usage_lock:
+            limit_stop_reason = _reached_limit(self)
+            if limit_stop_reason is not None:
+                return limit_stop_reason
             context: InvocationContext | None = self
             while context is not None:
                 context._usage["turns_taken"] += 1
                 context = context._limiting_parent
+            return None
 
 
 def _create_invocation_context(
