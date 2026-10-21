@@ -5497,3 +5497,111 @@ sdk has powershell branch: True
 [2m   Duration [22m 5.22s[2m (transform 1.19s, setup 41ms, import 1.76s, tests 3.22s, environment 0ms)[22m
 
 harness-ts (local sdk) exit=0
+### harness-py ### 2026-10-21T20:33:13.4062338+00:00
+powershell.exe: 5.1.26100.33648 curl.exe: C:\Windows\system32\curl.exe
+[notice] A new release of pip is available: 26.2.1 -> 26.2.2
+[notice] To update, run: python.exe -m pip install --upgrade pip
+strands-agents Version: 1.62.0
+platform win32 -- Python 3.13.16, pytest-8.4.2, pluggy-1.7.0 -- C:\hostedtoolcache\windows\Python\3.13.16\x64\python.exe
+rootdir: D:\a\harness-sdk\harness-sdk\src\harness-py
+configfile: pyproject.toml
+plugins: anyio-4.15.1, asyncio-0.26.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 53 items
+
+tests/tools/test_web_fetch.py::test_html_to_text_strips_tags_and_scripts PASSED [  1%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_non_http_scheme PASSED [  3%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[https://example.com/a b] PASSED [  5%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[https://example.com/x`id`] PASSED [  7%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[https://example.com/"x"] PASSED [  9%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[https://example.com/x\nrm -rf /] PASSED [ 11%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[https://example.com/{a,b}] PASSED [ 13%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[https://example.com/\u65e5\u672c] PASSED [ 15%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[https:///no-host] PASSED [ 16%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[javascript:alert(1)] PASSED [ 18%]
+tests/tools/test_web_fetch.py::test_fetch_text_rejects_malformed_urls_before_touching_the_sandbox[] PASSED [ 20%]
+tests/tools/test_web_fetch.py::test_validate_url_accepts_rfc3986_urls_and_strips_whitespace PASSED [ 22%]
+tests/tools/test_web_fetch.py::test_fetch_text_direct_transport_skips_the_sandbox PASSED [ 24%]
+tests/tools/test_web_fetch.py::test_fetch_text_direct_transport_pins_redirects_to_http_and_bounds_the_download PASSED [ 26%]
+tests/tools/test_web_fetch.py::test_make_web_fetch_rejects_an_unknown_transport PASSED [ 28%]
+tests/tools/test_web_fetch.py::test_fetch_text_runs_curl_in_the_sandbox_and_reads_the_final_hop PASSED [ 30%]
+tests/tools/test_web_fetch.py::test_fetch_text_handles_a_missing_content_type PASSED [ 32%]
+tests/tools/test_web_fetch.py::test_fetch_text_truncates_the_body_in_the_sandbox PASSED [ 33%]
+tests/tools/test_web_fetch.py::test_fetch_text_keeps_non_html_verbatim PASSED [ 35%]
+tests/tools/test_web_fetch.py::test_fetch_text_honours_the_response_charset PASSED [ 37%]
+tests/tools/test_web_fetch.py::test_fetch_text_falls_back_to_utf8_for_an_unknown_charset PASSED [ 39%]
+tests/tools/test_web_fetch.py::test_fetch_text_surfaces_curl_errors_and_still_cleans_up PASSED [ 41%]
+tests/tools/test_web_fetch.py::test_fetch_text_probes_the_shell_once_per_sandbox PASSED [ 43%]
+tests/tools/test_web_fetch.py::test_fetch_text_runs_curl_exe_through_powershell_and_reads_crlf_output PASSED [ 45%]
+tests/tools/test_web_fetch.py::test_fetch_text_surfaces_powershell_curl_errors PASSED [ 47%]
+tests/tools/test_web_fetch.py::test_fetch_text_end_to_end_through_the_local_environment PASSED [ 49%]
+tests/tools/test_web_fetch.py::test_web_fetch_returns_summarizer_answer PASSED [ 50%]
+tests/tools/test_web_fetch.py::test_web_fetch_uses_the_agents_sandbox PASSED [ 52%]
+tests/tools/test_web_fetch.py::test_web_fetch_returns_raw_content_without_prompt PASSED [ 54%]
+tests/tools/test_web_fetch.py::test_web_fetch_reports_fetch_failure[error0] PASSED [ 56%]
+tests/tools/test_web_fetch.py::test_web_fetch_reports_fetch_failure[error1] PASSED [ 58%]
+tests/tools/test_web_fetch.py::test_web_fetch_reports_fetch_failure[error2] PASSED [ 60%]
+tests/tools/test_web_fetch.py::test_web_fetch_caches_within_ttl PASSED   [ 62%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_defaults_to_provider_small_model PASSED [ 64%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_uses_openai_small_model_for_openai_on_bedrock PASSED [ 66%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_keeps_cross_region_prefix_for_openai_on_bedrock PASSED [ 67%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_keeps_global_prefix_for_openai_on_bedrock PASSED [ 69%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_keeps_haiku_for_anthropic_on_bedrock PASSED [ 71%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_reuses_main_model_for_unknown_bedrock_family PASSED [ 73%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_no_warning_with_explicit_override_for_unknown_bedrock PASSED [ 75%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_reuses_main_model_instance PASSED [ 77%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_uses_router_default PASSED [ 79%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_uses_explicit_router_default PASSED [ 81%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_uses_explicit_override PASSED [ 83%]
+tests/tools/test_web_fetch.py::test_resolve_web_fetch_model_has_a_default_for_bedrock_mantle PASSED [ 84%]
+tests/tools/test_web_fetch.py::test_web_fetch_transport_is_curl_by_default_and_configurable PASSED [ 86%]
+tests/tools/test_web_fetch.py::test_web_fetch_rejects_an_unknown_transport_setting PASSED [ 88%]
+tests/tools/test_web_fetch.py::test_web_fetch_enabled_by_default PASSED  [ 90%]
+tests/tools/test_web_fetch.py::test_web_fetch_absent_when_not_selected PASSED [ 92%]
+tests/tools/test_web_fetch.py::test_summarizer_reuses_the_main_model_on_a_repointed_anthropic_endpoint PASSED [ 94%]
+tests/tools/test_web_fetch.py::test_summarizer_reuses_the_main_model_on_a_repointed_openai_endpoint PASSED [ 96%]
+tests/tools/test_web_fetch.py::test_summarizer_still_uses_the_small_model_on_the_first_party_endpoint PASSED [ 98%]
+tests/tools/test_web_fetch.py::test_a_repointed_endpoint_does_not_affect_bedrock PASSED [100%]
+
+============================== warnings summary ===============================
+tests/tools/test_web_fetch.py::test_fetch_text_end_to_end_through_the_local_environment
+  C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\asyncio\base_events.py:751: RuntimeWarning: coroutine method 'aclose' of '_stream_process' was never awaited
+    self._ready.clear()
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 53 passed, 1 warning in 11.08s ========================
+harness-py web_fetch tests exit=0
+### harness-ts (published SDK) ###
+added 367 packages in 26s
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/harness-ts[39m
+
+ [32m✓[39m test/tools/web-fetch.test.ts [2m([22m[2m27 tests[22m[2m)[22m[33m 1163[2mms[22m[39m
+     [33m[2m✓[22m[39m fetches end to end through the local environment sandbox [33m 1121[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m27 passed[39m[22m[90m (27)[39m
+[2m   Start at [22m 20:35:25
+[2m   Duration [22m 2.06s[2m (transform 141ms, setup 29ms, import 659ms, tests 1.16s, environment 0ms)[22m
+
+harness-ts (published) exit=0
+### harness-ts (local strands-ts build) ###
+added 419 packages in 18s
+> tsc --project src/tsconfig.json
+
+removed 6 packages, and changed 1 package in 1s
+sdk has powershell branch: True
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mD:/a/harness-sdk/harness-sdk/src/harness-ts[39m
+
+ [32m✓[39m test/tools/web-fetch.test.ts [2m([22m[2m27 tests[22m[2m)[22m[33m 2872[2mms[22m[39m
+     [33m[2m✓[22m[39m fetches end to end through the local environment sandbox [33m 2823[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m27 passed[39m[22m[90m (27)[39m
+[2m   Start at [22m 20:36:08
+[2m   Duration [22m 4.97s[2m (transform 1.25s, setup 29ms, import 1.86s, tests 2.87s, environment 0ms)[22m
+
+harness-ts (local sdk) exit=0
