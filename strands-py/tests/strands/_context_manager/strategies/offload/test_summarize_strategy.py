@@ -4,6 +4,7 @@ import unittest.mock
 
 import pytest
 
+from strands._context_manager.methods.summarize import SUMMARIZE_CONVERSATION_INSTRUCTION
 from strands._context_manager.strategies.offload import Offload
 from strands._context_manager.types import ContextState
 from strands.types.content import ContentBlock, Message, Messages
@@ -187,6 +188,35 @@ class TestSummarizeStrategyMessageLevel:
         assert await strategy.apply(context) is True
         all_text = " ".join(block.get("text", "") for msg in messages for block in msg["content"])
         assert "[Summarized:" in all_text
+
+    @pytest.mark.asyncio
+    async def test_sends_batch_as_conversation_with_instruction(self, mock_agent):
+        seen: list = []
+
+        def stream(messages, *args, **kwargs):
+            seen.append(messages)
+            return _make_stream_events("Summary of content.")(messages, *args, **kwargs)
+
+        mock_agent.model.stream = stream
+        strategy = Offload.summarize("*").when(utilization=0.8)
+        tool_use = ContentBlock(toolUse=ToolUse(toolUseId="t1", name="calc", input={}))
+        tool_result = ContentBlock(toolResult=ToolResult(toolUseId="t1", status="success", content=[{"text": "42"}]))
+        messages: Messages = [
+            Message(role="user", content=[ContentBlock(text="pin")]),
+            Message(role="assistant", content=[tool_use]),
+            Message(role="user", content=[tool_result]),
+            Message(role="assistant", content=[ContentBlock(text="old")]),
+            Message(role="user", content=[ContentBlock(text="recent")]),
+        ]
+        mock_agent.messages = messages
+        context = ContextState(messages=messages, agent=mock_agent, utilization=0.9)
+        assert await strategy.apply(context) is True
+
+        request = seen[0]
+        assert [msg["role"] for msg in request] == ["user", "assistant", "user", "assistant", "user"]
+        assert request[1]["content"] == [tool_use]
+        assert request[2]["content"] == [tool_result]
+        assert request[-1]["content"] == [ContentBlock(text=SUMMARIZE_CONVERSATION_INSTRUCTION)]
 
     @pytest.mark.asyncio
     async def test_inserts_summary_and_removes_originals(self, mock_agent):

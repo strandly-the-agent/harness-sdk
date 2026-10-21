@@ -12,9 +12,9 @@ import type { InvocationContext } from '../../../agent/invocation-context.js'
 import type { LocalAgent } from '../../../types/agent.js'
 import type { ContextStrategy, ContextState } from '../../types.js'
 import {
-  flattenMessagesToContent,
   formatSummarized,
   summarizeContent,
+  summarizeMessages,
   toolResultToContentBlocks,
   type SummarizeConfig,
 } from '../../methods/summarize.js'
@@ -73,8 +73,7 @@ export class SummarizeStrategy extends BaseOffloadStrategy {
     const safe = messages.filter((message) => safeSet.has(message))
     if (safe.length === 0) return false
 
-    const contentBlocks = flattenMessagesToContent(safe)
-    const summary = await summarizeContent(contentBlocks, model, this._config, context.invocationContext)
+    const summary = await summarizeMessages(safe, model, this._config, context.invocationContext)
     if (!summary) return false
 
     const totalTokens = await model.countTokens(safe)

@@ -9,9 +9,9 @@ from ....types.content import ContentBlock, Message
 from ....types.tools import ToolResult, ToolResultContent
 from ...methods.summarize import (
     SummarizeConfig,
-    _flatten_messages_to_content,
     _format_summarized,
     _summarize_content,
+    _summarize_messages,
     _tool_result_to_content_blocks,
 )
 from ...stash import _format_stash_refs
@@ -98,8 +98,7 @@ class SummarizeStrategy(BaseOffloadStrategy):
         if not safe:
             return False
 
-        content_blocks = _flatten_messages_to_content(safe)
-        summary = await _summarize_content(content_blocks, model, self._config)
+        summary = await _summarize_messages(safe, model, self._config)
         if not summary:
             return False
 
