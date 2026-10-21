@@ -48,8 +48,8 @@ def mock_agent():
     agent.model.stream = _make_stream_events("Summary of content.")
     agent.aux_model = agent.model
     agent.messages = []
-    agent.system_prompt = "You are the agent."
-    agent._system_prompt_content = None
+    agent.system_prompt_content = [{"text": "You are the agent."}]
+    agent._cancel_signal = None
     agent.tool_registry.get_all_tool_specs.return_value = [{"name": "calc", "description": "d", "inputSchema": {}}]
     return agent
 

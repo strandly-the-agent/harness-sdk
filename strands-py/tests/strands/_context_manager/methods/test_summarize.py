@@ -183,8 +183,8 @@ class TestToolResultToContentBlocksJson:
 @pytest.fixture
 def mock_agent():
     agent = unittest.mock.MagicMock()
-    agent.system_prompt = "You are the agent."
-    agent._system_prompt_content = None
+    agent.system_prompt_content = [{"text": "You are the agent."}]
+    agent._cancel_signal = None
     agent.tool_registry.get_all_tool_specs.return_value = [{"name": "calc", "description": "d", "inputSchema": {}}]
     return agent
 
@@ -248,10 +248,10 @@ class TestSummarizeConversation:
             return _make_stream_events("summary")()
 
         mock_model.stream = stream
-        mock_agent._system_prompt_content = [{"text": "Blocks."}, {"cachePoint": {"type": "default"}}]
+        mock_agent.system_prompt_content = [{"text": "Blocks."}, {"cachePoint": {"type": "default"}}]
         history = [Message(role="user", content=[ContentBlock(text="task")])]
         await _summarize_conversation(history, mock_agent, mock_model, {})
-        assert seen[0] == ("Blocks.", mock_agent._system_prompt_content)
+        assert seen[0] == ("Blocks.", mock_agent.system_prompt_content)
 
     @pytest.mark.asyncio
     async def test_custom_system_prompt_replaces_agent_prompt(self, mock_model, mock_agent):
@@ -267,10 +267,61 @@ class TestSummarizeConversation:
         assert seen[0] == ("Be brief.", None)
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_model_error(self, mock_model, mock_agent):
+    async def test_forwards_agent_metadata_and_cancel_signal(self, mock_model, mock_agent):
+        seen: list = []
+
+        def stream(messages, tool_specs, system_prompt, **kwargs):
+            seen.append(kwargs)
+            return _make_stream_events("summary")()
+
+        mock_model.stream = stream
+        history = [Message(role="user", content=[ContentBlock(text="task")])]
+        await _summarize_conversation(history, mock_agent, mock_model, {})
+        assert seen[0]["agent_metadata"] is mock_agent._metadata
+        assert seen[0]["cancel_signal"] is mock_agent._cancel_signal
+
+    @pytest.mark.asyncio
+    async def test_tool_use_reply_falls_back_to_self_contained_request(self, mock_model, mock_agent):
+        seen: list = []
+
+        async def tool_use_reply(*args, **kwargs):
+            yield {"messageStart": {"role": "assistant"}}
+            yield {"contentBlockStart": {"start": {"toolUse": {"toolUseId": "t9", "name": "calc"}}}}
+            yield {"contentBlockDelta": {"delta": {"toolUse": {"input": "{}"}}}}
+            yield {"contentBlockStop": {}}
+            yield {"messageStop": {"stopReason": "tool_use"}}
+            yield {"metadata": {"usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}}
+
+        def stream(messages, tool_specs, system_prompt, **kwargs):
+            seen.append((messages, tool_specs, system_prompt))
+            if len(seen) == 1:
+                return tool_use_reply()
+            return _make_stream_events("fallback summary")()
+
+        mock_model.stream = stream
+        history = [
+            Message(role="user", content=[ContentBlock(text="task")]),
+            Message(role="assistant", content=[ContentBlock(text="done")]),
+            Message(role="user", content=[ContentBlock(text="now look up ORD-2")]),
+        ]
+        assert await _summarize_conversation(history, mock_agent, mock_model, {}) == "fallback summary"
+        messages, tool_specs, system_prompt = seen[1]
+        assert tool_specs is None
+        assert system_prompt.startswith("You are a summarization assistant")
+        assert messages[0]["content"][0] == ContentBlock(text="<content>")
+        assert messages[0]["content"][-1] == ContentBlock(text="</content>")
+        assert ContentBlock(text="now look up ORD-2") in messages[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_both_requests_fail(self, mock_model, mock_agent):
+        calls = 0
+
         def stream(*args, **kwargs):
+            nonlocal calls
+            calls += 1
             raise RuntimeError("boom")
 
         mock_model.stream = stream
         history = [Message(role="user", content=[ContentBlock(text="task")])]
         assert await _summarize_conversation(history, mock_agent, mock_model, {}) is None
+        assert calls == 2

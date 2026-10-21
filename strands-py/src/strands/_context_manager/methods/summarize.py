@@ -108,7 +108,8 @@ async def _summarize_conversation(
     """Summarize a history prefix by replaying the agent's own request plus one trailing instruction.
 
     The system prompt, tools and messages are sent exactly as the agent sends them, so the call shares the
-    agent's prompt-cache prefix; only the summarize instruction is new.
+    agent's prompt-cache prefix; only the summarize instruction is new. A reply without text (the model acted
+    on the pending turn instead of summarizing) falls back to a self-contained ``<content>`` request.
     """
     request = list(history)
     instruction = ContentBlock(text=SUMMARIZE_CONVERSATION_INSTRUCTION)
@@ -120,13 +121,15 @@ async def _summarize_conversation(
     system_prompt: str | None = (config or {}).get("system_prompt")
     system_prompt_content: list[SystemContentBlock] | None = None
     if system_prompt is None:
-        system_prompt, system_prompt_content = split_system_prompt(
-            agent._system_prompt_content if agent._system_prompt_content is not None else agent.system_prompt
-        )
+        system_prompt, system_prompt_content = split_system_prompt(agent.system_prompt_content)
     tool_specs = agent.tool_registry.get_all_tool_specs()
 
-    result, _ = await _call_summarizer(request, model, system_prompt, tool_specs, system_prompt_content)
-    return result
+    result, _ = await _call_summarizer(request, model, system_prompt, tool_specs, system_prompt_content, agent)
+    if result is not None:
+        return result
+
+    logger.warning("messages=<%d> | replayed summarization returned no text, retrying self-contained", len(history))
+    return await _summarize_content(_flatten_messages_to_content(history), model, config)
 
 
 def _tool_result_to_content_blocks(content: list[ToolResultContent]) -> list[ContentBlock]:
@@ -142,18 +145,51 @@ def _tool_result_to_content_blocks(content: list[ToolResultContent]) -> list[Con
     return blocks
 
 
+def _message_to_content_blocks(message: Message) -> list[ContentBlock]:
+    """Convert a message's content to ContentBlocks for the summarizer, leaving out reasoning."""
+    blocks: list[ContentBlock] = []
+    for block in message["content"]:
+        if "toolResult" in block:
+            blocks.extend(_tool_result_to_content_blocks(block["toolResult"]["content"]))
+        elif "reasoningContent" not in block:
+            blocks.append(block)
+    return blocks
+
+
+def _flatten_messages_to_content(messages: Messages) -> list[ContentBlock]:
+    """Flatten messages into a single ContentBlock list with role markers.
+
+    Reasoning blocks are left out: they are assistant-only content, and their signatures are bound to the
+    conversation that produced them. Messages with nothing left get no role marker.
+    """
+    blocks: list[ContentBlock] = []
+    for message in messages:
+        content = _message_to_content_blocks(message)
+        if content:
+            blocks.append(ContentBlock(text=f"\n---\n[{message['role']}]"))
+            blocks.extend(content)
+    return blocks
+
+
 async def _call_summarizer(
     messages: Messages,
     model: Model,
     system_prompt: str | None,
     tool_specs: list[ToolSpec] | None = None,
     system_prompt_content: list[SystemContentBlock] | None = None,
+    agent: Agent | None = None,
 ) -> tuple[str | None, bool]:
     """Call the model to generate a summary. Returns (text, succeeded)."""
     try:
         result_message: Message | None = None
         async for event in stream_messages(
-            model, system_prompt, messages, tool_specs or [], system_prompt_content=system_prompt_content
+            model,
+            system_prompt,
+            messages,
+            tool_specs or [],
+            system_prompt_content=system_prompt_content,
+            cancel_signal=agent._cancel_signal if agent else None,
+            agent_metadata=agent._metadata if agent else None,
         ):
             if "stop" in event:
                 _, result_message, _, _ = event["stop"]

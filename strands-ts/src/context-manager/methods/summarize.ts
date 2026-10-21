@@ -10,7 +10,7 @@ import type { Model, StreamOptions } from '../../models/model.js'
 import { ModelProxy } from '../../models/model-proxy.js'
 import type { InvocationContext } from '../../agent/invocation-context.js'
 import type { LocalAgent } from '../../types/agent.js'
-import { JsonBlock, Message, TextBlock } from '../../types/messages.js'
+import { JsonBlock, Message, ReasoningBlock, TextBlock, ToolResultBlock } from '../../types/messages.js'
 import type { ContentBlock, ToolResultContent } from '../../types/messages.js'
 import { logger } from '../../logging/logger.js'
 
@@ -105,7 +105,8 @@ function wrapContent(content: ContentBlock[]): Message[] {
 /**
  * Summarizes a history prefix by replaying the agent's own request plus one trailing instruction.
  * The system prompt, tools and messages are sent exactly as the agent sends them, so the call shares
- * the agent's prompt-cache prefix; only the summarize instruction is new.
+ * the agent's prompt-cache prefix; only the summarize instruction is new. A reply without text (the model
+ * acted on the pending turn instead of summarizing) falls back to a self-contained `<content>` request.
  *
  * @returns The summarized text, or null if summarization failed.
  * @internal
@@ -130,9 +131,13 @@ export async function summarizeConversation(
   const options: StreamOptions = {
     toolSpecs: agent.toolRegistry.list().map((tool) => tool.toolSpec),
     ...(systemPrompt !== undefined && { systemPrompt }),
+    ...(agent.cancelSignal !== undefined && { cancelSignal: agent.cancelSignal }),
   }
   const result = await callSummarizer(request, model, options, invocationContext)
-  return result ?? null
+  if (result) return result
+
+  logger.warn(`messages=<${history.length}> | replayed summarization returned no text, retrying self-contained`)
+  return summarizeContent(flattenMessagesToContent(history), model, config, invocationContext)
 }
 
 /**
@@ -146,6 +151,37 @@ export function toolResultToContentBlocks(content: ToolResultContent[]): Content
     }
     return block as ContentBlock
   })
+}
+
+/**
+ * Converts a message's content to ContentBlocks for the summarizer, leaving out reasoning.
+ */
+function messageToContentBlocks(message: Message): ContentBlock[] {
+  const blocks: ContentBlock[] = []
+  for (const block of message.content) {
+    if (block instanceof ToolResultBlock) {
+      blocks.push(...toolResultToContentBlocks(block.content))
+    } else if (!(block instanceof ReasoningBlock)) {
+      blocks.push(block)
+    }
+  }
+  return blocks
+}
+
+/**
+ * Flattens a range of messages into a single ContentBlock array for multimodal summarization.
+ * Inserts role markers and separators so the summarizer understands message boundaries.
+ * Reasoning blocks are left out: they are assistant-only content, and their signatures are bound to the
+ * conversation that produced them. Messages with nothing left get no role marker.
+ */
+export function flattenMessagesToContent(messages: Message[]): ContentBlock[] {
+  const blocks: ContentBlock[] = []
+  for (const message of messages) {
+    const content = messageToContentBlocks(message)
+    if (content.length === 0) continue
+    blocks.push(new TextBlock(`\n---\n[${message.role}]`), ...content)
+  }
+  return blocks
 }
 
 async function callSummarizer(

@@ -62,10 +62,32 @@ describe('summarizeConversation', () => {
     expect(streamSpy.mock.calls[0]![1]?.systemPrompt).toBe('Be brief.')
   })
 
-  it('returns null when the model call fails', async () => {
-    const model = new MockMessageModel().addTurn(new Error('boom'))
+  it('falls back to a self-contained request when the replay returns no text', async () => {
+    const model = new MockMessageModel()
+      .addTurn(new ToolUseBlock({ toolUseId: 't9', name: 'calc', input: {} }), { stopReason: 'toolUse' })
+      .addTurn(new TextBlock('fallback summary'))
+    const streamSpy = vi.spyOn(model, 'stream')
+    const history = [
+      new Message({ role: 'user', content: [new TextBlock('task')] }),
+      new Message({ role: 'assistant', content: [new TextBlock('done')] }),
+      new Message({ role: 'user', content: [new TextBlock('now look up ORD-2')] }),
+    ]
+
+    expect(await summarizeConversation(history, makeAgent(), model)).toBe('fallback summary')
+
+    expect(streamSpy).toHaveBeenCalledTimes(2)
+    const [request, options] = streamSpy.mock.calls[1]!
+    expect(options?.toolSpecs).toBeUndefined()
+    expect(options?.systemPrompt).not.toBe('You are the agent.')
+    expect(request[0]!.content[0]).toEqual(new TextBlock('<content>'))
+    expect(request[0]!.content).toContainEqual(new TextBlock('now look up ORD-2'))
+  })
+
+  it('returns null when both requests fail', async () => {
+    const model = new MockMessageModel().addTurn(new Error('boom')).addTurn(new Error('boom again'))
     const history = [new Message({ role: 'user', content: [new TextBlock('task')] })]
 
     expect(await summarizeConversation(history, makeAgent(), model)).toBeNull()
+    expect(model.callCount).toBe(2)
   })
 })
