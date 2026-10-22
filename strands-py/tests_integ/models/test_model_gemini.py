@@ -335,3 +335,26 @@ class TestGemini38Flash:
         text = str(result).lower()
         assert "12:00" in text
         assert "sunny" in text
+
+
+class TestGemini4Argon:
+    """Smoke coverage for gemini-4-argon: the context window resolves and a tool-using turn completes."""
+
+    @pytest.fixture
+    def model(self):
+        return GeminiModel(
+            client_args={"api_key": os.getenv("GOOGLE_API_KEY")},
+            model_id="gemini-4-argon",
+        )
+
+    def test_context_window_limit_resolves(self, model):
+        assert model.get_config()["context_window_limit"] == 1_048_576
+
+    def test_tool_use_turn(self, model, tools, system_prompt):
+        agent = Agent(model=model, tools=tools, system_prompt=system_prompt)
+
+        result = agent("What is the current time and weather in New York?")
+
+        text = str(result).lower()
+        assert "12:00" in text
+        assert "sunny" in text

@@ -212,4 +212,25 @@ describe.skipIf(gemini.skip)('GoogleModel Integration Tests', () => {
       expect(text?.text.toLowerCase()).toContain('sunny')
     })
   })
+
+  describe('gemini-4-argon', () => {
+    it.concurrent('resolves the context window and completes a tool-using turn', async () => {
+      const model = gemini.createModel({ modelId: 'gemini-4-argon' })
+      expect(model.getConfig().contextWindowLimit).toBe(1_048_576)
+
+      const weather = tool({
+        name: 'tool_weather',
+        description: 'Get the weather for a city',
+        inputSchema: z.object({ city: z.string() }),
+        callback: async () => 'sunny',
+      })
+      const agent = new Agent({ model, tools: [weather], printer: false })
+
+      const result = await agent.invoke('What is the weather in New York?')
+
+      const text = result.lastMessage.content.find((block) => block.type === 'textBlock')
+      expect(text).toBeDefined()
+      expect(text?.text.toLowerCase()).toContain('sunny')
+    })
+  })
 })

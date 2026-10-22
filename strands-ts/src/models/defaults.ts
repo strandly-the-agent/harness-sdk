@@ -179,6 +179,7 @@ const CONTEXT_WINDOW_LIMITS: Record<string, number> = {
   'gpt-oss-20b': 131_072,
 
   // Google Gemini
+  'gemini-4-argon': 1_048_576,
   'gemini-3.8-flash': 1_048_576,
   'gemini-3.7-flash': 1_048_576, // deprecated alias of gemini-3.8-flash
   'gemini-2.5-flash': 1_048_576,
