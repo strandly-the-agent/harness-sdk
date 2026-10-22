@@ -6,11 +6,12 @@ from urllib.parse import quote
 import pytest
 
 import strands
-from strands.agent._agent_as_tool import _INTERRUPTED_TURNS_KEY, _AgentAsTool
+from strands.agent._agent_as_tool import _AgentAsTool
 from strands.agent.agent import Agent
 from strands.agent.agent_result import AgentResult
 from strands.hooks import AfterToolCallEvent, BeforeModelCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 from strands.interrupt import Interrupt, _InterruptState
+from strands.multiagent._agent_tool_streamer import _INTERRUPTED_TURNS_KEY
 from strands.session.file_session_manager import FileSessionManager
 from strands.telemetry.metrics import EventLoopMetrics
 from strands.types._events import AgentAsToolStreamEvent, ToolInterruptEvent, ToolResultEvent, ToolStreamEvent
