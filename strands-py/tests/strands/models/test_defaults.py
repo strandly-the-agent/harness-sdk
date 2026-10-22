@@ -106,8 +106,8 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("gemini-2.5-pro") == 1_048_576
 
     def test_known_mistral(self):
-        assert get_context_window_limit("codestral-2508") == 131_072
-        assert get_context_window_limit("codestral-latest") == 131_072
+        assert get_context_window_limit("codestral-2508") == 256_000
+        assert get_context_window_limit("codestral-latest") == 256_000
         assert get_context_window_limit("mistral-large-4-0") == 1_048_576
         assert get_context_window_limit("mistral-large-4") == 1_048_576
         assert get_context_window_limit("mistral-medium-3-5") == 262_144

@@ -248,7 +248,7 @@ class TestCodestral:
         )
 
     def test_context_window_limit_resolves(self, model):
-        assert model.get_config()["context_window_limit"] == 131_072
+        assert model.get_config()["context_window_limit"] == 256_000
 
     def test_tool_use_turn(self, model, tools, system_prompt):
         agent = Agent(model=model, tools=tools, system_prompt=system_prompt)
