@@ -117,6 +117,10 @@ _CONTEXT_WINDOW_LIMITS: dict[str, int] = {
     "mistral.pixtral-large-2502-v1:0": 128_000,
     "mistral.mistral-small-2402-v1:0": 32_000,
     "mistral.mistral-large-2402-v1:0": 32_000,
+    # Bedrock Google Gemma
+    "google.gemma-4-31b": 256_000,
+    "google.gemma-4-26b-a4b": 256_000,
+    "google.gemma-4-e2b": 128_000,
     # OpenAI
     "chat-latest": 272_000,  # rolling alias for the current ChatGPT model: input budget (400k - 128k out); may change
     "gpt-6-astra": 1_050_000,

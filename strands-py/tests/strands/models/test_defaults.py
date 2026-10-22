@@ -70,6 +70,12 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("us.mistral.mistral-large-3-675b-instruct") == 256_000
         assert get_context_window_limit("global.mistral.mistral-large-3-675b-instruct") == 256_000
 
+    def test_known_bedrock_gemma(self):
+        assert get_context_window_limit("google.gemma-4-31b") == 256_000
+        assert get_context_window_limit("google.gemma-4-26b-a4b") == 256_000
+        assert get_context_window_limit("google.gemma-4-e2b") == 128_000
+        assert get_context_window_limit("us.google.gemma-4-31b") == 256_000
+
     def test_known_openai(self):
         assert get_context_window_limit("chat-latest") == 272_000
         assert get_context_window_limit("gpt-6-astra") == 1_050_000
