@@ -76,6 +76,13 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("google.gemma-4-e2b") == 128_000
         assert get_context_window_limit("us.google.gemma-4-31b") == 256_000
 
+    def test_known_bedrock_xai(self):
+        assert get_context_window_limit("xai.grok-4.7") == 524_288
+        assert get_context_window_limit("xai.grok-4.6") == 500_000
+        assert get_context_window_limit("xai.grok-4.3") == 1_000_000
+        assert get_context_window_limit("us.xai.grok-4.7") == 524_288
+        assert get_context_window_limit("global.xai.grok-4.7") == 524_288
+
     def test_known_openai(self):
         assert get_context_window_limit("chat-latest") == 272_000
         assert get_context_window_limit("gpt-6-astra") == 1_050_000

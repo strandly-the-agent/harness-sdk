@@ -36,6 +36,13 @@ describe('getContextWindowLimit', () => {
     expect(getContextWindowLimit('google.gemma-4-26b-a4b')).toBe(256_000)
     expect(getContextWindowLimit('google.gemma-4-e2b')).toBe(128_000)
     expect(getContextWindowLimit('us.google.gemma-4-31b')).toBe(256_000)
+
+    // Bedrock xAI
+    expect(getContextWindowLimit('xai.grok-4.7')).toBe(524_288)
+    expect(getContextWindowLimit('xai.grok-4.6')).toBe(500_000)
+    expect(getContextWindowLimit('xai.grok-4.3')).toBe(1_000_000)
+    expect(getContextWindowLimit('us.xai.grok-4.7')).toBe(524_288)
+    expect(getContextWindowLimit('global.xai.grok-4.7')).toBe(524_288)
     // OpenAI
     expect(getContextWindowLimit('chat-latest')).toBe(272_000)
     expect(getContextWindowLimit('gpt-6-astra')).toBe(1_050_000)

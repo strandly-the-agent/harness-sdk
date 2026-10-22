@@ -939,3 +939,22 @@ class TestMistralLarge3:
 
         assert result.stop_reason == "end_turn"
         assert any(block.get("toolUse") for message in agent.messages for block in message["content"])
+
+
+class TestGrok47:
+    """Smoke coverage for us.xai.grok-4.7: the context window resolves and a tool-using turn completes."""
+
+    @pytest.fixture
+    def model(self):
+        return BedrockModel(model_id="us.xai.grok-4.7", region_name="us-east-1")
+
+    def test_context_window_limit_resolves(self, model):
+        assert model.get_config()["context_window_limit"] == 524_288
+
+    def test_tool_use_turn(self, model, system_prompt):
+        agent = Agent(model=model, tools=[echo], system_prompt=system_prompt, load_tools_from_directory=False)
+
+        result = agent("Use the echo tool to echo the value 'pineapple'.")
+
+        assert result.stop_reason == "end_turn"
+        assert any(block.get("toolUse") for message in agent.messages for block in message["content"])
