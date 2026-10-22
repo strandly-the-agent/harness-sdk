@@ -20,7 +20,7 @@ export class InvocationTrigger extends ExtractionTrigger {
   attach(context: ExtractionTriggerContext): void {
     // Run after the SDK's own after-invocation hooks (e.g. session persistence) so extraction sees
     // the fully settled turn.
-    context.agent.addHook(AfterInvocationEvent, (event) => context.fire(event.invocation), {
+    context.agent.addHook(AfterInvocationEvent, (event) => context.fire(event.invocationContext), {
       order: HookOrder.SDK_LAST,
     })
   }
@@ -66,7 +66,7 @@ export class IntervalTrigger extends ExtractionTrigger {
         count++
         // `fire` is fire-and-forget (returns void); it dispatches extraction in the background.
         if (count % this._turns === 0) {
-          context.fire(event.invocation)
+          context.fire(event.invocationContext)
         }
       },
       { order: HookOrder.SDK_LAST }

@@ -3,7 +3,7 @@
  * Validates the agent's response after each invocation; if it doesn't
  * satisfy the goal, feeds validator feedback back as a user message and re-enters the
  * agent loop via `AfterInvocationEvent.resume`. Loops until validation passes,
- * `maxAttempts` is reached, `timeout` elapses, or the request hits one of its `limits`.
+ * `maxAttempts` is reached, `timeout` elapses, or one of the request's `limits` is reached.
  *
  * @example
  * ```ts
@@ -61,7 +61,12 @@
  */
 
 import { Agent } from '../../agent/agent.js'
-import { createAuxiliaryInvocation, reachedLimit, toInternal, type Invocation } from '../../agent/invocation.js'
+import {
+  createAuxiliaryInvocationContext,
+  reachedLimit,
+  unwrapInvocationContext,
+  type InvocationContext,
+} from '../../agent/invocation-context.js'
 import { AfterInvocationEvent, BeforeInvocationEvent, BeforeModelCallEvent } from '../../hooks/events.js'
 import { logger } from '../../logging/logger.js'
 import { warnOnce } from '../../logging/warn-once.js'
@@ -93,7 +98,7 @@ export type Validator = (
   agent: LocalAgent
 ) => boolean | ValidationOutcome | Promise<boolean | ValidationOutcome>
 
-/** Why a goal run ended. `'limit'` means the request hit one of its `limits`, so no further attempt could run. */
+/** Why a goal run ended. `'limit'` means one of the request's `limits` was reached, so no further attempt could run. */
 export type GoalStopReason = 'satisfied' | 'maxAttempts' | 'timeout' | 'limit'
 
 /** Single attempt summary preserved on `GoalResult`. */
@@ -353,9 +358,9 @@ export class GoalLoop implements Plugin {
       }
 
       const response = lastAssistantMessage(agent.messages)
-      const invocation = toInternal(event.invocation)
+      const invocationContext = unwrapInvocationContext(event.invocationContext)
       // The request's limit stopped this pass before it produced a new answer, so there is nothing to grade.
-      if (response === run.answerBeforePass && invocation && reachedLimit(invocation)) {
+      if (response === run.answerBeforePass && invocationContext && reachedLimit(invocationContext)) {
         finishRun(run, 'limit')
         return
       }
@@ -366,7 +371,7 @@ export class GoalLoop implements Plugin {
 
       let outcome: ValidationOutcome
       try {
-        outcome = await validator(response, event.invocation)
+        outcome = await validator(response, event.invocationContext)
       } catch (validatorError) {
         // Surface validator throws so a buggy validator (e.g. a TypeError that
         // fails identically on every attempt) is visible in logs rather than
@@ -389,8 +394,7 @@ export class GoalLoop implements Plugin {
         finishRun(run, 'maxAttempts')
         return
       }
-      // A retry would stop at once on the request's limit, so keep this attempt instead of rolling it back.
-      if (invocation && reachedLimit(invocation)) {
+      if (invocationContext && reachedLimit(invocationContext)) {
         finishRun(run, 'limit')
         return
       }
@@ -412,7 +416,7 @@ export class GoalLoop implements Plugin {
    */
   private _buildValidator(
     hostAgent: LocalAgent
-  ): (response: Message, invocation?: Invocation) => Promise<ValidationOutcome> {
+  ): (response: Message, invocationContext?: InvocationContext) => Promise<ValidationOutcome> {
     const validator = this._validator
     if (validator) {
       return async (response) => {
@@ -426,18 +430,16 @@ export class GoalLoop implements Plugin {
     // The NL judge intentionally ignores the `response` argument — its prompt
     // includes the full host transcript (via `buildJudgePrompt`) so the judge
     // can evaluate against context, not just the last assistant turn.
-    return async (_response, invocation) => {
+    return async (_response, invocationContext) => {
       const judge = new Agent({
         model: this._judgeModel ?? hostAgent.auxModel,
         printer: false,
         systemPrompt: this._judgeSystemPrompt,
       })
-      // Fold the judge's tokens into the request total without limiting this
-      // auxiliary call by the request's limits.
-      const auxiliaryInvocation = createAuxiliaryInvocation(invocation)
+      const auxiliaryInvocationContext = createAuxiliaryInvocationContext(invocationContext)
       const invokeOptions: InvokeOptions = {
         structuredOutputSchema: JUDGE_OUTCOME_SCHEMA,
-        ...(auxiliaryInvocation && { invocation: auxiliaryInvocation }),
+        ...(auxiliaryInvocationContext && { invocationContext: auxiliaryInvocationContext }),
       }
       const judgeResult = await judge.invoke(buildJudgePrompt(goalDescription, hostAgent.messages), invokeOptions)
       return (

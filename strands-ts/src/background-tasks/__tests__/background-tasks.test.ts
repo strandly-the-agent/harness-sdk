@@ -3,7 +3,7 @@ import { z } from 'zod'
 
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { Agent } from '../../agent/agent.js'
-import type { Invocation } from '../../agent/invocation.js'
+import type { InvocationContext } from '../../agent/invocation-context.js'
 import { AfterToolCallEvent, BeforeModelCallEvent, BeforeToolCallEvent, InitializedEvent } from '../../hooks/events.js'
 import { Interrupt } from '../../interrupt.js'
 import { ExecuteToolStage, InvokeModelStage } from '../../middleware/index.js'
@@ -218,14 +218,14 @@ describe('BackgroundTasks', () => {
       },
     })
     let probeRan = false
-    let probeInvocation: Invocation | undefined
+    let probeInvocationContext: InvocationContext | undefined
     const probe = tool({
       name: 'probe',
       description: 'Record the request it runs under.',
       inputSchema: z.object({}),
       callback: (_input, context) => {
         probeRan = true
-        probeInvocation = context?.invocation
+        probeInvocationContext = context?.invocationContext
         return 'probed'
       },
     })
@@ -241,9 +241,9 @@ describe('BackgroundTasks', () => {
       backgroundTasks: { waitForCompletion: false, maxConcurrency: 1 },
       printer: false,
     })
-    let submittingInvocation: Invocation | undefined
+    let submittingInvocationContext: InvocationContext | undefined
     agent.addHook(BeforeModelCallEvent, (event) => {
-      submittingInvocation ??= event?.invocation
+      submittingInvocationContext ??= event?.invocationContext
     })
 
     await agent.invoke('Run both.')
@@ -251,8 +251,8 @@ describe('BackgroundTasks', () => {
 
     release()
     await expect.poll(() => probeRan).toBe(true)
-    expect(submittingInvocation).toBeDefined()
-    expect(probeInvocation).toBe(submittingInvocation)
+    expect(submittingInvocationContext).toBeDefined()
+    expect(probeInvocationContext).toBe(submittingInvocationContext)
   })
 
   it('delivers work that finishes between invocations', async () => {

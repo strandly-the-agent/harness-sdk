@@ -194,7 +194,7 @@ export class AgentAsTool extends Tool {
   }
 
   async *stream(toolContext: ToolContext): ToolStreamGenerator {
-    const { toolUse, invocationState, cancelSignal, invocation } = toolContext
+    const { toolUse, invocationState, cancelSignal, invocationContext } = toolContext
     const toolUseId = toolUse.toolUseId
 
     // Concurrency guard: loadSnapshot + agent.stream() must not overlap.
@@ -226,12 +226,11 @@ export class AgentAsTool extends Tool {
 
       // Stream the sub-agent, forwarding the outer invocation's state so
       // mutations in the inner agent's hooks/tools are visible to the outer
-      // agent's downstream callbacks and final AgentResult. The request state is
-      // passed explicitly so the child's model calls join the same request.
+      // agent's downstream callbacks and final AgentResult.
       const invokeOptions: InvokeOptions = {
         invocationState,
         cancelSignal,
-        ...(invocation && { invocation }),
+        ...(invocationContext && { invocationContext }),
       }
       const gen = this._agent.stream(input, invokeOptions)
       let next = await gen.next()
@@ -266,8 +265,6 @@ export class AgentAsTool extends Tool {
         return createErrorResult(`Agent '${this.name}' cancelled`, toolUseId)
       }
 
-      // Child stopped on one of the request's shared limits; surface it as an
-      // error so the model doesn't treat the truncated answer as complete.
       if (LIMIT_STOP_REASONS.has(result.stopReason)) {
         return createErrorResult(limitStopMessage(this.name, result.stopReason), toolUseId)
       }

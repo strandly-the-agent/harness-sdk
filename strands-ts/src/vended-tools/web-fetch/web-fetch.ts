@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { Agent } from '../../agent/agent.js'
-import { createAuxiliaryInvocation } from '../../agent/invocation.js'
+import { createAuxiliaryInvocationContext } from '../../agent/invocation-context.js'
 import type { InvokeOptions } from '../../types/agent.js'
 import { tool } from '../../tools/tool-factory.js'
 import { htmlToMarkdown } from './extract.js'
@@ -93,12 +93,10 @@ export function makeWebFetch(options: MakeWebFetchOptions = {}): ReturnType<type
       }
 
       const signal = context?.cancelSignal ?? null
-      // Fold the analyst's tokens into the request total without limiting this
-      // auxiliary call by the request's limits.
-      const auxiliaryInvocation = createAuxiliaryInvocation(context?.invocation)
+      const auxiliaryInvocationContext = createAuxiliaryInvocationContext(context?.invocationContext)
       const invokeOptions: InvokeOptions = {
         ...(context?.cancelSignal && { cancelSignal: context.cancelSignal }),
-        ...(auxiliaryInvocation && { invocation: auxiliaryInvocation }),
+        ...(auxiliaryInvocationContext && { invocationContext: auxiliaryInvocationContext }),
       }
       const [contentType, raw] = await fetchOnce(url, maxBytes, signal)
 

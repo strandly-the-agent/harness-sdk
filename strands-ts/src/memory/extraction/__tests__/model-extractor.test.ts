@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ModelExtractor } from '../model-extractor.js'
 import { MockMessageModel } from '../../../__fixtures__/mock-message-model.js'
-import { createInvocation } from '../../../agent/invocation.js'
+import { InvocationContextImpl } from '../../../agent/invocation-context.js'
 import { Tracer } from '../../../telemetry/tracer.js'
 import type { Model } from '../../../models/model.js'
 import type { MessageData } from '../../../types/messages.js'
@@ -77,6 +77,36 @@ describe('ModelExtractor', () => {
     expect(model.callCount).toBe(0)
   })
 
+  it('appends the output format to the default system prompt', async () => {
+    const model = new MockMessageModel()
+    model.addTurn({ type: 'textBlock', text: '[]' })
+    const streamSpy = vi.spyOn(model, 'streamAggregated')
+
+    await new ModelExtractor({ model: model as unknown as Model }).extract([userTurn('x')])
+
+    const systemPrompt = streamSpy.mock.calls[0]![1]!.systemPrompt as string
+    expect(systemPrompt.startsWith('You extract durable facts')).toBe(true)
+    expect(systemPrompt).toContain('Return ONLY a JSON array of objects, each: {"content": string}.')
+  })
+
+  it('keeps the output format when a custom systemPrompt replaces the default', async () => {
+    const model = new MockMessageModel()
+    model.addTurn({ type: 'textBlock', text: '[{"content": "Prefers aisle seats"}]' })
+    const streamSpy = vi.spyOn(model, 'streamAggregated')
+
+    const extractor = new ModelExtractor({
+      model: model as unknown as Model,
+      systemPrompt: 'Extract user preferences.',
+    })
+    const entries = await extractor.extract([userTurn('I like aisle seats')])
+
+    const systemPrompt = streamSpy.mock.calls[0]![1]!.systemPrompt as string
+    expect(systemPrompt.startsWith('Extract user preferences.\n\n')).toBe(true)
+    expect(systemPrompt).not.toContain('You extract durable facts')
+    expect(systemPrompt).toContain('Return ONLY a JSON array of objects, each: {"content": string}.')
+    expect(entries).toEqual([{ content: 'Prefers aisle seats' }])
+  })
+
   it('falls back to the default model from context when none configured', async () => {
     const model = new MockMessageModel()
     model.addTurn({ type: 'textBlock', text: '[{"content": "fact"}]' })
@@ -145,14 +175,13 @@ describe('ModelExtractor', () => {
         { usage: { inputTokens: 4, outputTokens: 5, totalTokens: 9 } }
       )
       const extractor = new ModelExtractor({ model: model as unknown as Model })
-      const invocation = createInvocation({ turns: 1 })
-      invocation.turns = 5
+      const invocationContext = new InvocationContextImpl({ turns: 1 })
+      invocationContext.usage.turnsTaken = 5
 
-      const entries = await extractor.extract([userTurn('x')], { invocation })
+      const entries = await extractor.extract([userTurn('x')], { invocationContext })
 
       expect(entries).toEqual([{ content: 'fact' }])
-      expect(invocation.usage).toEqual({ inputTokens: 4, outputTokens: 5, totalTokens: 9 })
-      expect(invocation.turns).toBe(5)
+      expect(invocationContext.usage).toEqual({ turnsTaken: 5, inputTokens: 4, outputTokens: 5, totalTokens: 9 })
     })
   })
 })

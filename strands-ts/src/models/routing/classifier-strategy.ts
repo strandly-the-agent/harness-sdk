@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { normalizeError } from '../../errors.js'
 import { logger } from '../../logging/logger.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME, StructuredOutputTool } from '../../tools/structured-output-tool.js'
-import type { Invocation } from '../../agent/invocation.js'
+import type { InvocationContext } from '../../agent/invocation-context.js'
 import { ModelProxy } from '../model-proxy.js'
 import { Model } from '../model.js'
 import { Message, TextBlock } from '../../types/messages.js'
@@ -199,7 +199,7 @@ export class ClassifierStrategy implements RoutingStrategy {
       latestRequestText(context.messages, this._maxMessageChars),
       buildClassifierSystemPrompt(profiles, context.systemPrompt, this._systemPrompt, this._maxAgentInstructionsChars),
       cancelSignal,
-      context.invocation
+      context.invocationContext
     )
     if (selection.selectedCandidateIndex >= context.candidates.length) {
       throw new Error('classifier selected an unknown candidate')
@@ -227,10 +227,9 @@ async function invokeClassifier(
   request: string,
   systemPrompt: string,
   cancelSignal: AbortSignal,
-  invocation?: Invocation
+  invocationContext?: InvocationContext
 ): Promise<ClassifierSelection> {
   const structuredOutputTool = new StructuredOutputTool(CLASSIFIER_SELECTION)
-  // Fold the classifier's usage into the enclosing request's total.
   const proxy = new ModelProxy(model)
   const stream = proxy.streamAggregated(
     [new Message({ role: 'user', content: [new TextBlock(request)] })],
@@ -240,7 +239,7 @@ async function invokeClassifier(
       toolChoice: { tool: { name: structuredOutputTool.name } },
       cancelSignal,
     },
-    invocation
+    invocationContext
   )
 
   let iteration = await stream.next()

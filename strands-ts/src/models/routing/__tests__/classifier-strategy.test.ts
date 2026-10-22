@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { MockMessageModel } from '../../../__fixtures__/mock-message-model.js'
 import { Agent } from '../../../agent/agent.js'
-import { createInvocation } from '../../../agent/invocation.js'
+import { InvocationContextImpl } from '../../../agent/invocation-context.js'
 import { logger } from '../../../logging/logger.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME } from '../../../tools/structured-output-tool.js'
 import { DocumentBlock, ImageBlock, VideoBlock } from '../../../types/media.js'
@@ -558,14 +558,13 @@ describe('ClassifierStrategy', () => {
       ) as ClassifierModel
       const strategy = new ClassifierStrategy(classifier)
       const router = new ModelRouter([candidate('first'), candidate('second')], { strategy })
-      const invocation = createInvocation({ turns: 1 })
-      invocation.turns = 5
+      const invocationContext = new InvocationContextImpl({ turns: 1 })
+      invocationContext.usage.turnsTaken = 5
 
-      const selected = await strategy.select({ ...routingContext(router), invocation })
+      const selected = await strategy.select({ ...routingContext(router), invocationContext })
 
       expect(selected).toBe(router.candidates[1])
-      expect(invocation.usage).toEqual({ inputTokens: 4, outputTokens: 5, totalTokens: 9 })
-      expect(invocation.turns).toBe(5)
+      expect(invocationContext.usage).toEqual({ turnsTaken: 5, inputTokens: 4, outputTokens: 5, totalTokens: 9 })
     })
   })
 

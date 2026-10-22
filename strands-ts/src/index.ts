@@ -20,7 +20,7 @@ export type { BackgroundTasksConfig } from './background-tasks/types.js'
 export type { AgentAsToolOptions } from './agent/agent-as-tool.js'
 export type { ToolCaller, ToolCallerProxy, ToolHandle, DirectToolCallOptions } from './agent/tool-caller.js'
 export type { InvocationState, InvokeArgs, InvokeLimits, InvokeOptions, LocalAgent } from './types/agent.js'
-export type { Invocation } from './agent/invocation.js'
+export type { InvocationContext, InvocationContextUsage } from './agent/invocation-context.js'
 export type { LifecycleObserver } from './types/lifecycle-observer.js'
 
 // Snapshot types
@@ -199,7 +199,14 @@ export { Model } from './models/model.js'
 
 // Decision models
 export { DecisionModel, defineQuestions, LLMDecisionModel, Uncertain } from './decisions/index.js'
-export type { AnswerOf, DecisionInput, DecisionResult, LLMDecisionModelOptions, Question } from './decisions/index.js'
+export type {
+  AnswerOf,
+  AskOptions,
+  DecisionInput,
+  DecisionResult,
+  LLMDecisionModelOptions,
+  Question,
+} from './decisions/index.js'
 
 // Model routing
 export { ClassifierStrategy, FallbackStrategy, ModelRouter, RoutingCandidate } from './models/routing/index.js'

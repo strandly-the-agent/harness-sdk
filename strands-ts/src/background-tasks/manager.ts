@@ -1,4 +1,4 @@
-import type { Invocation } from '../agent/invocation.js'
+import type { InvocationContext } from '../agent/invocation-context.js'
 import type { ToolUseData } from '../hooks/events.js'
 import type { Tool } from '../tools/tool.js'
 import type { InvocationState } from '../types/agent.js'
@@ -18,7 +18,7 @@ export interface BackgroundTaskManager {
     invocationState: InvocationState,
     passId: string,
     tool: Tool,
-    invocation?: Invocation
+    invocationContext?: InvocationContext
   ): Promise<BackgroundTask>
   /** Gets one task by its stable identifier. */
   get(taskId: string): Promise<BackgroundTask | undefined>

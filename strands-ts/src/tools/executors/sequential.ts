@@ -58,7 +58,7 @@ export class SequentialToolExecutor extends ToolExecutor {
         resultsByToolUseId.set(toolUseBlock.toolUseId, cancelBlock)
         yield new ToolResultEvent({
           agent: options.agent,
-          invocation: options.invocation,
+          invocationContext: options.invocationContext,
           result: cancelBlock,
           invocationState,
         })
@@ -71,7 +71,7 @@ export class SequentialToolExecutor extends ToolExecutor {
         resultsByToolUseId.set(toolUseBlock.toolUseId, toolResultBlock)
         yield new ToolResultEvent({
           agent: options.agent,
-          invocation: options.invocation,
+          invocationContext: options.invocationContext,
           result: toolResultBlock,
           invocationState,
         })

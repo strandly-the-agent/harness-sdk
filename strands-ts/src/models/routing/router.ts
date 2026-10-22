@@ -26,7 +26,7 @@ import { InvokeModelStage } from '../../middleware/stages.js'
 import { Model } from '../model.js'
 import { cloneSystemPrompt, type Message, type SystemPrompt } from '../../types/messages.js'
 import { deepCopy, deepCopyWithValidation, type JSONValue } from '../../types/json.js'
-import { createAuxiliaryInvocation, type Invocation } from '../../agent/invocation.js'
+import { createAuxiliaryInvocationContext, type InvocationContext } from '../../agent/invocation-context.js'
 import type { InvokeModelContext } from '../../middleware/stages.js'
 import type { Plugin } from '../../plugins/plugin.js'
 import type { ToolSpec } from '../../tools/types.js'
@@ -227,7 +227,7 @@ export class ModelRouter implements Plugin {
         context.systemPrompt,
         [...context.toolSpecs],
         context.invocationState,
-        context.invocation
+        context.invocationContext
       )
       state = await this._openAndCache(context.agent, context.invocationState, routingContext)
     }
@@ -301,7 +301,7 @@ export class ModelRouter implements Plugin {
         context.systemPrompt,
         context.toolSpecs,
         context.invocationState,
-        context.invocation,
+        context.invocationContext,
         []
       )
     )
@@ -358,7 +358,7 @@ export class ModelRouter implements Plugin {
         event.agent.systemPrompt,
         event.agent.toolRegistry.list().map((tool) => tool.toolSpec),
         event.invocationState,
-        event.invocation,
+        event.invocationContext,
         state.attempts
       )
 
@@ -419,10 +419,10 @@ export class ModelRouter implements Plugin {
     systemPrompt: SystemPrompt | undefined,
     toolSpecs: readonly ToolSpec[],
     invocationState: InvocationState,
-    invocation: Invocation | undefined,
+    invocationContext: InvocationContext | undefined,
     attempts: readonly RoutingAttempt[] = []
   ): RoutingContext {
-    const auxiliaryInvocation = createAuxiliaryInvocation(invocation)
+    const auxiliaryInvocationContext = createAuxiliaryInvocationContext(invocationContext)
     const context: RoutingContext = {
       messages: messages.map((message) => message.clone()),
       ...(systemPrompt !== undefined && { systemPrompt: cloneSystemPrompt(systemPrompt) }),
@@ -430,7 +430,7 @@ export class ModelRouter implements Plugin {
       candidates: this._candidates,
       invocationState,
       attempts: Object.freeze([...attempts]),
-      ...(auxiliaryInvocation && { invocation: auxiliaryInvocation }),
+      ...(auxiliaryInvocationContext && { invocationContext: auxiliaryInvocationContext }),
     }
     return Object.freeze(context)
   }

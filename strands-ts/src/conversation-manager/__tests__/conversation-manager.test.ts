@@ -9,7 +9,7 @@ import { Agent } from '../../agent/agent.js'
 import { Message, TextBlock } from '../../index.js'
 import { AfterModelCallEvent, BeforeModelCallEvent } from '../../hooks/events.js'
 import { ContextWindowOverflowError } from '../../errors.js'
-import { createInvocation, toInternal } from '../../agent/invocation.js'
+import { InvocationContextImpl, unwrapInvocationContext } from '../../agent/invocation-context.js'
 import { createMockAgent, invokeTrackedHook } from '../../__fixtures__/agent-helpers.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import type { BaseModelConfig } from '../../models/model.js'
@@ -172,8 +172,8 @@ describe('ConversationManager', () => {
       const manager = new CapturingManager()
       const mockAgent = createMockAgent()
       manager.initAgent(mockAgent)
-      const request = createInvocation({ turns: 1 })
-      request.turns = 1
+      const request = new InvocationContextImpl({ turns: 1 })
+      request.usage.turnsTaken = 1
 
       await invokeTrackedHook(
         mockAgent,
@@ -183,15 +183,15 @@ describe('ConversationManager', () => {
           attemptCount: 1,
           error: new ContextWindowOverflowError('overflow'),
           invocationState: {},
-          invocation: request,
+          invocationContext: request,
         })
       )
 
-      const handed = toInternal(receivedArgs[0]!.invocation)!
+      const handed = unwrapInvocationContext(receivedArgs[0]!.invocationContext)!
       handed.recordUsage({ inputTokens: 1, outputTokens: 2, totalTokens: 3 })
       expect({ limits: handed.limits, requestUsage: request.usage }).toEqual({
         limits: undefined,
-        requestUsage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+        requestUsage: { turnsTaken: 1, inputTokens: 1, outputTokens: 2, totalTokens: 3 },
       })
     })
   })

@@ -3,7 +3,7 @@ import type { ModelRouter, RoutingCandidate } from './router.js'
 import type { InvocationState } from '../../types/agent.js'
 import type { Message, SystemPrompt } from '../../types/messages.js'
 import type { ToolSpec } from '../../tools/types.js'
-import type { Invocation } from '../../agent/invocation.js'
+import type { InvocationContext } from '../../agent/invocation-context.js'
 
 /** A candidate used during an invocation and the outcome of that attempt. */
 export interface RoutingAttempt {
@@ -27,8 +27,8 @@ export interface RoutingContext {
   readonly invocationState: Readonly<InvocationState>
   /** Chronological attempts made during this invocation. */
   readonly attempts: readonly RoutingAttempt[]
-  /** The request this routing decision runs for, if any; work forwarded with it counts toward that request's usage but not its limits. */
-  readonly invocation?: Invocation
+  /** The request this routing decision runs for, if any; a nested call that joins it adds to the request's usage, but the request's limits don't apply. */
+  readonly invocationContext?: InvocationContext
 }
 
 /** Chooses a configured routing candidate. */

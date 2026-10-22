@@ -1,7 +1,7 @@
 import { Message, TextBlock } from '../../types/messages.js'
 import type { Model } from '../../models/model.js'
 import { ModelProxy } from '../../models/model-proxy.js'
-import type { Invocation } from '../../agent/invocation.js'
+import type { InvocationContext } from '../../agent/invocation-context.js'
 
 export const DEFAULT_SUMMARIZATION_PROMPT = `You are a conversation summarizer. Provide a concise summary of the conversation \
 history.
@@ -124,7 +124,7 @@ export function findValidTrimPoint(messages: Message[], startIndex: number): num
  * @param messagesToSummarize - The conversation slice to compress
  * @param model - Model used to produce the summary
  * @param systemPrompt - Optional override for the summarization system prompt
- * @param invocation - Shared state the summary call's usage folds into
+ * @param invocationContext - The request the summary call's usage adds to
  * @returns A user-role message containing the model-generated summary
  * @throws If the model fails to produce a response, or its reply carries no text
  */
@@ -132,7 +132,7 @@ export async function generateSummary(
   messagesToSummarize: Message[],
   model: Model,
   systemPrompt?: string,
-  invocation?: Invocation
+  invocationContext?: InvocationContext
 ): Promise<Message> {
   const summarizationMessages = [
     ...messagesToSummarize,
@@ -145,7 +145,7 @@ export async function generateSummary(
   const stream = new ModelProxy(model).streamAggregated(
     summarizationMessages,
     { systemPrompt: systemPrompt ?? DEFAULT_SUMMARIZATION_PROMPT },
-    invocation
+    invocationContext
   )
 
   let result: Awaited<ReturnType<typeof stream.next>> | undefined

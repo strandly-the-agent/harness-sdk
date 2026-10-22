@@ -1,5 +1,5 @@
 import type { Agent } from '../../agent/agent.js'
-import type { Invocation } from '../../agent/invocation.js'
+import type { InvocationContext } from '../../agent/invocation-context.js'
 import type { ToolUseData } from '../../hooks/events.js'
 import { InterruptError, InterruptState } from '../../interrupt.js'
 import { createMiddlewareInterrupt } from '../../middleware/interrupt.js'
@@ -24,8 +24,8 @@ interface LiveToolExecution {
   readonly toolUse: ToolUseData
   readonly invocationState: InvocationState
   readonly tool: Tool
-  /** The request that submitted the task, captured at submission so a late run never joins a later request. */
-  readonly invocation: Invocation | undefined
+  /** The request that submitted the task; a task that starts after that request returned still counts toward it. */
+  readonly invocationContext: InvocationContext | undefined
 }
 
 /** Configures in-process background task execution. @internal */
@@ -79,7 +79,7 @@ export class InProcessTaskManager implements BackgroundTaskManager {
     invocationState: InvocationState,
     passId: string,
     tool: Tool,
-    invocation?: Invocation
+    invocationContext?: InvocationContext
   ): Promise<BackgroundTask> {
     const submissionKey = JSON.stringify([passId, toolUse.toolUseId])
     const existingTaskId = this._taskIdBySubmission.get(submissionKey)
@@ -90,7 +90,7 @@ export class InProcessTaskManager implements BackgroundTaskManager {
       toolUse: globalThis.structuredClone(toolUse),
       invocationState,
       tool,
-      invocation,
+      invocationContext,
     })
     const record = this._engine.submit({
       toolName: toolUse.name,
@@ -200,7 +200,7 @@ export class InProcessTaskManager implements BackgroundTaskManager {
       toolUse: execution.toolUse,
       interrupt: <T = JSONValue>(params: InterruptParams): T =>
         interruptTool<T>(interruptState, context.taskId, params),
-      ...(execution.invocation && { invocation: execution.invocation }),
+      ...(execution.invocationContext && { invocationContext: execution.invocationContext }),
     }
     try {
       return toolTaskOutcome(

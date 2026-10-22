@@ -3,7 +3,7 @@ import { GoalLoop } from '../plugin.js'
 import type { GoalAttempt, GoalResult, ValidationOutcome } from '../plugin.js'
 import { buildJudgePrompt, JUDGE_OUTCOME_SCHEMA } from '../judge.js'
 import { Agent } from '../../../agent/agent.js'
-import { createInvocation } from '../../../agent/invocation.js'
+import { InvocationContextImpl } from '../../../agent/invocation-context.js'
 import { AfterInvocationEvent } from '../../../hooks/events.js'
 import { MockMessageModel } from '../../../__fixtures__/mock-message-model.js'
 import { JsonBlock, Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../../types/messages.js'
@@ -893,10 +893,10 @@ describe('GoalLoop natural-language judge', () => {
         plugins: [plugin],
         printer: false,
       })
-      const spentRequest = createInvocation({ turns: 1 })
-      spentRequest.turns = 1
+      const spentRequest = new InvocationContextImpl({ turns: 1 })
+      spentRequest.usage.turnsTaken = 1
 
-      const result = await agent.invoke('go', { invocation: spentRequest })
+      const result = await agent.invoke('go', { invocationContext: spentRequest })
 
       expect({ stopReason: result.stopReason, text: result.toString() }).toEqual({ stopReason: 'limitTurns', text: '' })
       expect(plugin.lastResult(agent)).toEqual({ passed: false, stopReason: 'limit', attempts: [] })
@@ -907,10 +907,10 @@ describe('GoalLoop natural-language judge', () => {
       const validator = vi.fn(() => true)
       const goal = new GoalLoop({ goal: validator })
       const agent = new Agent({ model: new MockMessageModel(), plugins: [goal], printer: false })
-      const spentRequest = createInvocation({ turns: 1 })
-      spentRequest.turns = 1
+      const spentRequest = new InvocationContextImpl({ turns: 1 })
+      spentRequest.usage.turnsTaken = 1
 
-      await agent.invoke('go', { invocation: spentRequest })
+      await agent.invoke('go', { invocationContext: spentRequest })
 
       expect(goal.lastResult(agent)).toEqual({ passed: false, stopReason: 'limit', attempts: [] })
       expect(validator).not.toHaveBeenCalled()
@@ -938,7 +938,12 @@ describe('GoalLoop natural-language judge', () => {
         stopReason: 'satisfied',
         attempts: [{ attempt: 1, passed: true }],
       })
-      expect(result.requestUsage).toEqual({ inputTokens: 41, outputTokens: 6, totalTokens: 47 })
+      expect(result.invocationContext?.usage).toEqual({
+        turnsTaken: 1,
+        inputTokens: 41,
+        outputTokens: 6,
+        totalTokens: 47,
+      })
     })
   })
 })

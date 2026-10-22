@@ -3,7 +3,7 @@ import { HumanInTheLoop } from '../hitl.js'
 import { Agent } from '../../../agent/agent.js'
 import { MockMessageModel } from '../../../__fixtures__/mock-message-model.js'
 import { createMockTool } from '../../../__fixtures__/tool-helpers.js'
-import { createInvocation } from '../../../agent/invocation.js'
+import { InvocationContextImpl } from '../../../agent/invocation-context.js'
 import { BeforeToolCallEvent } from '../../../hooks/events.js'
 
 describe('HumanInTheLoop', () => {
@@ -634,21 +634,25 @@ describe('HumanInTheLoop', () => {
         )
         const humanInTheLoop = new HumanInTheLoop({ classifier: { model: classifierModel } })
         const agent = new Agent({ model: new MockMessageModel(), printer: false })
-        const parentInvocation = createInvocation({ turns: 1 })
-        parentInvocation.turns = 5
+        const parentInvocationContext = new InvocationContextImpl({ turns: 1 })
+        parentInvocationContext.usage.turnsTaken = 5
         const event = new BeforeToolCallEvent({
           agent,
           toolUse: { name: 'readFile', toolUseId: 'tool-1', input: { path: '/tmp/x' } },
           tool: undefined,
           invocationState: {},
-          invocation: parentInvocation,
+          invocationContext: parentInvocationContext,
         })
 
         const action = await humanInTheLoop.beforeToolCall(event)
 
         expect(action).toEqual({ type: 'proceed' })
-        expect(parentInvocation.usage).toEqual({ inputTokens: 12, outputTokens: 3, totalTokens: 15 })
-        expect(parentInvocation.turns).toBe(5)
+        expect(parentInvocationContext.usage).toEqual({
+          turnsTaken: 5,
+          inputTokens: 12,
+          outputTokens: 3,
+          totalTokens: 15,
+        })
       })
     })
   })

@@ -14,7 +14,7 @@ import type { ToolUseData } from '../hooks/events.js'
 import type { Tool } from '../tools/tool.js'
 import type { InterruptParams } from '../types/interrupt.js'
 import type { JSONValue } from '../types/json.js'
-import type { Invocation } from '../agent/invocation.js'
+import type { InvocationContext } from '../agent/invocation-context.js'
 
 /**
  * Result returned by `interrupt()` in middleware contexts.
@@ -100,8 +100,8 @@ export interface InvokeModelContext {
    */
   readonly dynamicTrailingBlocks?: number
 
-  /** The request this model call belongs to, if any. See {@link InvokeOptions.invocation}. */
-  readonly invocation?: Invocation
+  /** The request this model call belongs to, if any. See {@link InvokeOptions.invocationContext}. */
+  readonly invocationContext?: InvocationContext
 }
 
 /**

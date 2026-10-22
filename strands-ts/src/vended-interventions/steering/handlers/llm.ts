@@ -10,7 +10,7 @@ import type { ContentBlock, SystemPrompt } from '../../../types/messages.js'
 import { CachePointBlock, TextBlock } from '../../../types/messages.js'
 import type { ToolUse } from '../../../tools/types.js'
 import type { BeforeToolCallEvent } from '../../../hooks/events.js'
-import { createAuxiliaryInvocation, type Invocation } from '../../../agent/invocation.js'
+import { createAuxiliaryInvocationContext, type InvocationContext } from '../../../agent/invocation-context.js'
 import type { InvokeOptions } from '../../../types/agent.js'
 import type { SteeringContextData, SteeringContextProvider } from '../providers/context-provider.js'
 import { ToolLedgerProvider } from '../providers/tool-ledger.js'
@@ -206,7 +206,7 @@ export class LLMSteeringHandler extends SteeringHandler {
   override async beforeToolCall(event: BeforeToolCallEvent): Promise<Proceed | Guide | Confirm> {
     const context = this.getSteeringContext()
     const prompt = this._promptBuilder(context, event.toolUse)
-    const decision = await this._invoke(prompt, this._configuredModel ?? event.agent.auxModel, event.invocation)
+    const decision = await this._invoke(prompt, this._configuredModel ?? event.agent.auxModel, event.invocationContext)
 
     switch (decision.type) {
       case 'proceed':
@@ -224,7 +224,7 @@ export class LLMSteeringHandler extends SteeringHandler {
   private async _invoke(
     prompt: string | ContentBlock[],
     model: Model,
-    invocation?: Invocation
+    invocationContext?: InvocationContext
   ): Promise<SteeringDecision> {
     const inner = new Agent({
       model,
@@ -232,11 +232,9 @@ export class LLMSteeringHandler extends SteeringHandler {
       structuredOutputSchema: STEERING_DECISION,
       printer: false,
     })
-    // Fold the steering call's tokens into the request total without limiting this
-    // auxiliary call by the request's limits.
-    const auxiliaryInvocation = createAuxiliaryInvocation(invocation)
+    const auxiliaryInvocationContext = createAuxiliaryInvocationContext(invocationContext)
     const invokeOptions: InvokeOptions = {
-      ...(auxiliaryInvocation && { invocation: auxiliaryInvocation }),
+      ...(auxiliaryInvocationContext && { invocationContext: auxiliaryInvocationContext }),
     }
     const result = await inner.invoke(prompt, invokeOptions)
     return STEERING_DECISION.parse(result.structuredOutput)

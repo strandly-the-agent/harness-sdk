@@ -11,16 +11,17 @@ The event loop allows agents to:
 import copy
 import logging
 import uuid
+import warnings
 from collections.abc import AsyncGenerator, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from opentelemetry import trace as trace_api
 
-from .._middleware.stages import InvokeModelContext, InvokeModelStage
 from ..agent import _continuation
 from ..experimental.checkpoint import Checkpoint, CheckpointPosition
 from ..hooks import AfterModelCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolsEvent
 from ..interrupt import InterruptException, PendingToolExecution
+from ..middleware.stages import InvokeModelContext, InvokeModelStage
 from ..telemetry.metrics import Trace, _total_prompt_tokens
 from ..telemetry.tracer import Tracer, get_tracer
 from ..tools._validator import validate_and_prepare_tools
@@ -48,7 +49,7 @@ from ..types.exceptions import (
     StructuredOutputException,
 )
 from ..types.streaming import StopReason
-from ..types.tools import ToolResult, ToolUse
+from ..types.tools import ToolChoiceToolDict, ToolResult, ToolSpec, ToolUse
 from ._recover_message_on_max_tokens_reached import recover_message_on_max_tokens_reached
 from ._retry import ModelRetryStrategy
 from .streaming import stream_messages
@@ -299,11 +300,15 @@ async def event_loop_cycle(
                 model_events = _handle_model_execution(
                     agent, cycle_span, cycle_trace, invocation_state, tracer, structured_output_context
                 )
+                # Always bound: _handle_model_execution raises when the chain yields no ModelStopReason.
+                stop_event: ModelStopReason
                 async for model_event in model_events:
-                    if not isinstance(model_event, ModelStopReason):
+                    if isinstance(model_event, ModelStopReason):
+                        stop_event = model_event
+                    else:
                         yield model_event
 
-                stop_reason, message, *_ = model_event["stop"]
+                stop_reason, message = stop_event.stop_reason, stop_event.message
                 yield ModelMessageEvent(message=message)
         except Exception as e:
             tracer.end_span_with_error(cycle_span, str(e), e)
@@ -365,12 +370,22 @@ async def event_loop_cycle(
             # End the cycle and return results
             agent.event_loop_metrics.end_cycle(cycle_start_time, cycle_trace, attributes)
 
+            # The forced retry may end in JSON text when the provider could not force the tool
+            if structured_output_context.force_attempted and stop_reason == "end_turn":
+                structured_output = structured_output_context.result_from_text(message)
+                yield StructuredOutputEvent(structured_output=structured_output)
+                tracer.end_event_loop_cycle_span(cycle_span, message)
+                yield EventLoopStopEvent(
+                    stop_reason,
+                    message,
+                    agent.event_loop_metrics,
+                    invocation_state["request_state"],
+                    structured_output=structured_output,
+                )
+                return
+
             # Force structured output tool call if LLM didn't use it automatically
             if structured_output_context.is_enabled and stop_reason == "end_turn":
-                if structured_output_context.force_attempted:
-                    raise StructuredOutputException(
-                        "The model failed to invoke the structured output tool even after it was forced."
-                    )
                 tool_spec = structured_output_context.get_tool_spec()
                 structured_output_context.set_forced_mode({"tool": {"name": tool_spec["name"]}} if tool_spec else None)
                 logger.debug("Forcing structured output tool")
@@ -572,11 +587,7 @@ async def _handle_model_execution(
                         error,
                     )
 
-            if structured_output_context.forced_mode:
-                tool_spec = structured_output_context.get_tool_spec()
-                tool_specs = [tool_spec] if tool_spec else []
-            else:
-                tool_specs = agent.tool_registry.get_all_tool_specs()
+            tool_specs = agent.tool_registry.get_all_tool_specs()
 
             # Build middleware context with defensive copies to prevent accidental mutation.
             # invocation_state is intentionally shared by reference (hooks/tools write to it).
@@ -595,6 +606,9 @@ async def _handle_model_execution(
                 invocation_state=invocation_state,
                 model=agent.model,
                 projected_input_tokens=projected_input_tokens,
+                structured_output_model=(
+                    structured_output_context.structured_output_model if structured_output_context.forced_mode else None
+                ),
             )
 
             # Snapshot model state before the chain so middleware mutations to
@@ -603,28 +617,29 @@ async def _handle_model_execution(
             # chain completes (success only). model_state is intentionally NOT on the context.
             model_state_snapshot = copy.deepcopy(agent._model_state)
 
-            # Run through middleware chain. The last yielded event is ModelStopReason
-            # which serves as both the streaming result event and the middleware result.
-            last_event = None
+            # Run through the middleware chain. The ModelStopReason is the stage result; middleware
+            # may yield other events around it, so it is selected by type and the last one wins.
+            stop_event: ModelStopReason | None = None
             async for event in agent._middleware_registry.invoke(
                 InvokeModelStage,
                 middleware_context,
                 _make_invoke_model_terminal(agent, cycle_span, tracer, model_state_snapshot),
             ):
-                last_event = event
+                if isinstance(event, ModelStopReason):
+                    stop_event = event
                 yield event
 
-            if last_event is None:
+            if stop_event is None:
                 raise RuntimeError(
-                    "Middleware chain did not yield a result event. Ensure middleware forwards events from next()."
+                    "InvokeModelStage middleware chain did not yield a ModelStopReason. A Wrap handler must "
+                    "forward the events from next_fn(context), or yield its own ModelStopReason to short-circuit."
                 )
 
             # Write the post-stream model state back to the agent. Skipped on error
             # (exception propagates and we never reach here), matching TS semantics.
             agent._model_state = model_state_snapshot
 
-            # The last event from the chain is ModelStopReason (the authoritative result)
-            stop_reason, message, usage, metrics = last_event["stop"]
+            stop_reason, message, usage, metrics = stop_event["stop"]
 
             invocation_state.setdefault("request_state", {})
 
@@ -645,6 +660,15 @@ async def _handle_model_execution(
             )
 
             await agent.hooks.invoke_callbacks_async(after_model_call_event)
+
+            # Applied after hooks so AfterModelCallEvent observers see the real model output.
+            # Build a new Message rather than mutating in place so hooks that captured the
+            # pre-cancel object see unmodified content; rewrite the yielded stop_event so
+            # downstream readers of ``.message`` and ``event["stop"]`` see the cancel text.
+            if stop_reason == "cancelled" and agent._cancel_message is not None:
+                message = Message(role=message["role"], content=[{"text": agent._cancel_message}])
+                stop_event._message = message
+                stop_event["stop"] = (stop_reason, message, usage, metrics)
 
             # Check if hooks want to retry the model call
             if after_model_call_event.retry:
@@ -709,6 +733,20 @@ async def _handle_model_execution(
         raise EventLoopException(e, invocation_state["request_state"]) from e
 
 
+def _structured_output_request(ctx: InvokeModelContext) -> "tuple[list[ToolSpec], type[BaseModel] | None]":
+    """The tool specs and structured output model to send to the model serving this call.
+
+    On the structured output retry, a provider that enforces structured output itself receives the full tool list.
+    Any other provider receives only the forced tool, since it may ignore ``tool_choice``.
+    """
+    if ctx.structured_output_model is None or getattr(ctx.model, "_supports_structured_output", False) is True:
+        return ctx.tool_specs, ctx.structured_output_model
+    if not ctx.tool_choice or "tool" not in ctx.tool_choice:
+        return ctx.tool_specs, None
+    forced_tool = cast(ToolChoiceToolDict, ctx.tool_choice)["tool"]["name"]
+    return [tool_spec for tool_spec in ctx.tool_specs if tool_spec["name"] == forced_tool], None
+
+
 def _make_invoke_model_terminal(
     agent: "Agent", cycle_span: Any, tracer: Tracer, model_state: dict[str, Any]
 ) -> "Callable[[InvokeModelContext], AsyncGenerator[Any, None]]":
@@ -725,6 +763,7 @@ def _make_invoke_model_terminal(
         agent._observe_cancellation()
 
         system_prompt_str, system_prompt_content = split_system_prompt(ctx.system_prompt)
+        tool_specs, structured_output_model = _structured_output_request(ctx)
 
         model_id = ctx.model.config.get("model_id") if hasattr(ctx.model, "config") else None
         model_invoke_span = tracer.start_model_invoke_span(
@@ -741,7 +780,7 @@ def _make_invoke_model_terminal(
                     ctx.model,
                     system_prompt_str,
                     ctx.messages,
-                    ctx.tool_specs,
+                    tool_specs,
                     system_prompt_content=system_prompt_content,
                     tool_choice=ctx.tool_choice,
                     invocation_state=ctx.invocation_state,
@@ -749,6 +788,7 @@ def _make_invoke_model_terminal(
                     dynamic_trailing_blocks=ctx.dynamic_trailing_blocks,
                     cancel_signal=agent._cancel_signal,
                     agent_metadata=agent._metadata,
+                    structured_output_model=structured_output_model,
                 ):
                     yield event
 
@@ -961,10 +1001,6 @@ async def _handle_tool_execution(
 
     yield ToolResultMessageEvent(message=tool_result_message)
 
-    # End the cycle span before yielding the recursive cycle.
-    if cycle_span:
-        tracer.end_event_loop_cycle_span(span=cycle_span, message=message, tool_result_message=tool_result_message)
-
     agent.event_loop_metrics.end_cycle(cycle_start_time, cycle_trace)
 
     # Hook requested halt: exit without calling the model again.
@@ -978,6 +1014,10 @@ async def _handle_tool_execution(
             end_turn_content = [{"text": "Turn ended early by hook after tool execution"}]
         end_turn_message: Message = {"role": "assistant", "content": end_turn_content}
         await agent._append_messages(end_turn_message)
+        if cycle_span:
+            tracer.end_event_loop_cycle_span(
+                span=cycle_span, message=end_turn_message, tool_result_message=tool_result_message
+            )
         yield EventLoopStopEvent(
             "end_turn",
             end_turn_message,
@@ -987,7 +1027,33 @@ async def _handle_tool_execution(
         )
         return
 
-    if invocation_state["request_state"].get("stop_event_loop", False) or structured_output_context.stop_loop:
+    # Explicit cancel wins over structured-output stop so its terminal message is honored.
+    if agent._deferred_cancel or agent._observe_cancellation():
+        if agent._cancel_message is not None:
+            message = {"role": "assistant", "content": [{"text": agent._cancel_message}]}
+            await agent._append_messages(message)
+        if cycle_span:
+            tracer.end_event_loop_cycle_span(span=cycle_span, message=message, tool_result_message=tool_result_message)
+        yield EventLoopStopEvent(
+            "cancelled",
+            message,
+            agent.event_loop_metrics,
+            invocation_state["request_state"],
+            structured_output=structured_output_result,
+        )
+        return
+
+    # Deprecated path: the pre-0019 stop tool wrote this flag into user-owned
+    # invocation_state. Honor it with a warning so existing callers keep working
+    # until they migrate to agent.cancel(after_current_tools=True).
+    if invocation_state["request_state"].get("stop_event_loop", False):
+        warnings.warn(
+            "request_state['stop_event_loop'] is deprecated; call agent.cancel(after_current_tools=True) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if cycle_span:
+            tracer.end_event_loop_cycle_span(span=cycle_span, message=message, tool_result_message=tool_result_message)
         yield EventLoopStopEvent(
             stop_reason,
             message,
@@ -997,14 +1063,21 @@ async def _handle_tool_execution(
         )
         return
 
-    if agent._observe_cancellation():
+    if structured_output_context.stop_loop:
+        if cycle_span:
+            tracer.end_event_loop_cycle_span(span=cycle_span, message=message, tool_result_message=tool_result_message)
         yield EventLoopStopEvent(
-            "cancelled",
+            stop_reason,
             message,
             agent.event_loop_metrics,
             invocation_state["request_state"],
+            structured_output=structured_output_result,
         )
         return
+
+    # End the cycle span before the checkpoint pause or the recursive cycle.
+    if cycle_span:
+        tracer.end_event_loop_cycle_span(span=cycle_span, message=message, tool_result_message=tool_result_message)
 
     # Emit after_tools checkpoint. Only fires on tool_use cycles: a model that
     # returns end_turn first never reaches this branch.

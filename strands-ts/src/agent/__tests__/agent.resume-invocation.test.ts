@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Agent } from '../agent.js'
-import { toInternal, type InternalInvocation } from '../invocation.js'
+import { unwrapInvocationContext, type InvocationContextImpl } from '../invocation-context.js'
 import { BeforeInvocationEvent } from '../../hooks/events.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { createMockTool } from '../../__fixtures__/tool-helpers.js'
@@ -21,9 +21,9 @@ function interruptingAgent(extraTurns: string[] = []) {
     .addTurn({ type: 'textBlock', text: 'done' })
   for (const text of extraTurns) model.addTurn({ type: 'textBlock', text })
   const agent = new Agent({ model, tools: [confirmTool()], printer: false })
-  const invocations: InternalInvocation[] = []
+  const invocations: InvocationContextImpl[] = []
   agent.addHook(BeforeInvocationEvent, (event) => {
-    invocations.push(toInternal(event.invocation)!)
+    invocations.push(unwrapInvocationContext(event.invocationContext)!)
   })
   return { agent, invocations }
 }
@@ -44,7 +44,7 @@ describe('interrupt resume and the request invocation', () => {
     expect(invocations).toHaveLength(2)
     expect(invocations[1]).toBe(invocations[0])
     // One turn before the interrupt, then the resume's pending-tool cycle and its model call.
-    expect(invocations[0]!.turns).toBe(3)
+    expect(invocations[0]!.usage.turnsTaken).toBe(3)
   })
 
   it('a rejected call while interrupted does not change which invocation the resume joins', async () => {
@@ -77,7 +77,7 @@ describe('interrupt resume and the request invocation', () => {
 
     expect(invocations).toHaveLength(3)
     expect(invocations[2]).not.toBe(invocations[0])
-    expect(invocations[2]!.turns).toBe(1)
+    expect(invocations[2]!.usage.turnsTaken).toBe(1)
   })
 
   it('a restored interrupt belongs to no prior invocation of the restoring agent', async () => {
@@ -92,9 +92,9 @@ describe('interrupt resume and the request invocation', () => {
       tools: [confirmTool()],
       printer: false,
     })
-    const targetInvocations: InternalInvocation[] = []
+    const targetInvocations: InvocationContextImpl[] = []
     target.addHook(BeforeInvocationEvent, (event) => {
-      targetInvocations.push(toInternal(event.invocation)!)
+      targetInvocations.push(unwrapInvocationContext(event.invocationContext)!)
     })
     await target.invoke('warm up')
     target.loadSnapshot(snapshot)
@@ -105,6 +105,6 @@ describe('interrupt resume and the request invocation', () => {
     expect(targetInvocations).toHaveLength(2)
     expect(targetInvocations[1]).not.toBe(targetInvocations[0])
     // The resume's own two cycles only; the warm-up turn is not carried over.
-    expect(targetInvocations[1]!.turns).toBe(2)
+    expect(targetInvocations[1]!.usage.turnsTaken).toBe(2)
   })
 })

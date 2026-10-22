@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { ModelProxy } from '../model-proxy.js'
 import type { StreamAggregatedResult } from '../model.js'
 import { type ModelStreamEvent } from '../streaming.js'
-import { createInvocation } from '../../agent/invocation.js'
+import { InvocationContextImpl } from '../../agent/invocation-context.js'
+import { anyTrackingId } from '../../__fixtures__/message-helpers.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { Message, TextBlock, type ContentBlock } from '../../types/messages.js'
 
@@ -25,20 +26,20 @@ async function drain(
 
 describe('ModelProxy', () => {
   describe('usage recording', () => {
-    it('accumulates a clean call usage into the invocation total', async () => {
+    it('accumulates a clean call usage into the invocation context total', async () => {
       const model = new MockMessageModel().addTurn(
         { type: 'textBlock', text: 'hi' },
         { usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
       )
-      const invocation = createInvocation()
+      const invocationContext = new InvocationContextImpl()
 
-      await drain(new ModelProxy(model).streamAggregated([userMessage('go')], undefined, invocation))
+      await drain(new ModelProxy(model).streamAggregated([userMessage('go')], undefined, invocationContext))
 
-      expect(invocation.usage).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15 })
+      expect(invocationContext.usage).toEqual({ turnsTaken: 0, inputTokens: 10, outputTokens: 5, totalTokens: 15 })
     })
 
-    it('accumulates across calls that share one invocation', async () => {
-      const invocation = createInvocation()
+    it('accumulates across calls that share one invocation context', async () => {
+      const invocationContext = new InvocationContextImpl()
       const first = new MockMessageModel().addTurn(
         { type: 'textBlock', text: 'one' },
         { usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
@@ -48,33 +49,33 @@ describe('ModelProxy', () => {
         { usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 } }
       )
 
-      await drain(new ModelProxy(first).streamAggregated([userMessage('go')], undefined, invocation))
-      await drain(new ModelProxy(second).streamAggregated([userMessage('again')], undefined, invocation))
+      await drain(new ModelProxy(first).streamAggregated([userMessage('go')], undefined, invocationContext))
+      await drain(new ModelProxy(second).streamAggregated([userMessage('again')], undefined, invocationContext))
 
-      expect(invocation.usage).toEqual({ inputTokens: 30, outputTokens: 15, totalTokens: 45 })
+      expect(invocationContext.usage).toEqual({ turnsTaken: 0, inputTokens: 30, outputTokens: 15, totalTokens: 45 })
     })
 
     it('records nothing when the model call throws', async () => {
       const model = new MockMessageModel().addTurn(new Error('boom'))
-      const invocation = createInvocation()
+      const invocationContext = new InvocationContextImpl()
 
       await expect(
-        drain(new ModelProxy(model).streamAggregated([userMessage('go')], undefined, invocation))
+        drain(new ModelProxy(model).streamAggregated([userMessage('go')], undefined, invocationContext))
       ).rejects.toThrow('boom')
 
-      expect(invocation.usage).toEqual(createInvocation().usage)
+      expect(invocationContext.usage).toEqual(new InvocationContextImpl().usage)
     })
 
     it('records nothing when the model reports no usage', async () => {
       const model = new MockMessageModel().addTurn({ type: 'textBlock', text: 'hi' })
-      const invocation = createInvocation()
+      const invocationContext = new InvocationContextImpl()
 
-      await drain(new ModelProxy(model).streamAggregated([userMessage('go')], undefined, invocation))
+      await drain(new ModelProxy(model).streamAggregated([userMessage('go')], undefined, invocationContext))
 
-      expect(invocation.usage).toEqual(createInvocation().usage)
+      expect(invocationContext.usage).toEqual(new InvocationContextImpl().usage)
     })
 
-    it('is a no-op when called without an invocation', async () => {
+    it('is a no-op when called without an invocation context', async () => {
       const model = new MockMessageModel().addTurn(
         { type: 'textBlock', text: 'hi' },
         { usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
@@ -96,14 +97,14 @@ describe('ModelProxy', () => {
 
       const direct = await drain(build().streamAggregated([userMessage('go')]))
       const proxied = await drain(
-        new ModelProxy(build()).streamAggregated([userMessage('go')], undefined, createInvocation())
+        new ModelProxy(build()).streamAggregated([userMessage('go')], undefined, new InvocationContextImpl())
       )
 
       expect(proxied.events).toEqual(direct.events)
-      // trackingId is freshly generated per message, so compare the meaningful result fields.
-      expect(proxied.result.message.content).toEqual(direct.result.message.content)
-      expect(proxied.result.stopReason).toEqual(direct.result.stopReason)
-      expect(proxied.result.metadata?.usage).toEqual(direct.result.metadata?.usage)
+      expect(proxied.result).toEqual({
+        ...direct.result,
+        message: { ...direct.result.message, trackingId: anyTrackingId },
+      })
     })
   })
 })

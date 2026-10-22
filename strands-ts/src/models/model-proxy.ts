@@ -1,17 +1,15 @@
-import { toInternal, type Invocation } from '../agent/invocation.js'
+import { unwrapInvocationContext, type InvocationContext } from '../agent/invocation-context.js'
 import type { ContentBlock, Message } from '../types/messages.js'
 import type { Model, StreamAggregatedResult, StreamOptions } from './model.js'
 import type { ModelStreamEvent } from './streaming.js'
 
 /**
- * SDK-internal wrapper that ties a model call to the request's
- * {@link Invocation}: the agent loop and the SDK's auxiliary calls
- * (summarization, routing, extraction, steering, HITL, goal judging, web-fetch)
- * all route through it, so each call's token usage is added to the request
- * total. The {@link Invocation} is passed per call rather than carried on
- * {@link StreamOptions}, so the provider layer stays free of request-scoped
- * state. Recording is on a clean return only, and only when the provider
- * reported usage — a throw propagates untouched and contributes no tokens.
+ * SDK-internal wrapper that adds a model call's token usage to its request. The
+ * agent loop and every auxiliary call route their model calls through it. The
+ * {@link InvocationContext} is passed per call rather than on {@link StreamOptions},
+ * so providers never see request state. Usage is added only when the call
+ * returns normally and the provider reported it; a thrown error passes through
+ * and adds nothing.
  *
  * @internal
  */
@@ -24,30 +22,29 @@ export class ModelProxy {
 
   /**
    * Delegates to the wrapped model's `streamAggregated`, passing every event
-   * through unchanged, then folds the call's usage into the invocation's
-   * request total.
+   * through unchanged, then adds the call's usage to the request.
    *
    * @param messages - The conversation history to send to the model
    * @param options - Optional streaming configuration
-   * @param invocation - Request-scoped state to record into, or `undefined` to run unrecorded
+   * @param invocationContext - The request to add the usage to, or `undefined` to add it nowhere
    * @returns Async generator mirroring {@link Model.streamAggregated}
    */
   async *streamAggregated(
     messages: Message[],
     options?: StreamOptions,
-    invocation?: Invocation
+    invocationContext?: InvocationContext
   ): AsyncGenerator<ModelStreamEvent | ContentBlock, StreamAggregatedResult, undefined> {
     const result = yield* this._model.streamAggregated(messages, options)
-    this._record(result, invocation)
+    this._record(result, invocationContext)
     return result
   }
 
-  /** Adds a completed call's reported usage to the invocation and every enclosing one. */
-  private _record(result: StreamAggregatedResult, invocation?: Invocation): void {
+  /** Adds a completed call's reported usage to the request. */
+  private _record(result: StreamAggregatedResult, invocationContext?: InvocationContext): void {
     const usage = result?.metadata?.usage
-    const internal = toInternal(invocation)
-    if (usage !== undefined && internal !== undefined) {
-      internal.recordUsage(usage)
+    const context = unwrapInvocationContext(invocationContext)
+    if (usage !== undefined && context !== undefined) {
+      context.recordUsage(usage)
     }
   }
 }

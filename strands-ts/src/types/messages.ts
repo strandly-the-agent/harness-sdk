@@ -728,14 +728,14 @@ export type StopReason =
   | (string & {}) // Allow any string while preserving autocomplete for known values
 
 /**
- * Stop reasons signalling a request hit one of its {@link InvokeOptions.limits}.
+ * Stop reasons for a call that stopped because a limit ({@link InvokeOptions.limits}) was reached.
  *
  * @internal
  */
 export const LIMIT_STOP_REASONS = new Set<StopReason>(['limitTurns', 'limitTotalTokens', 'limitOutputTokens'])
 
 /**
- * Explains that a nested agent stopped on a limit (its own or the request's), so its answer is incomplete.
+ * Explains that a nested call stopped because a limit (its own or the request's) was reached, so its answer is incomplete.
  *
  * @param agentName - Name of the agent that stopped
  * @param stopReason - The limit stop reason it returned

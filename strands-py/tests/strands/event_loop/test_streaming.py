@@ -2,6 +2,7 @@ import threading
 import unittest.mock
 from typing import cast
 
+import pydantic
 import pytest
 
 import strands
@@ -621,6 +622,78 @@ def test_handle_content_block_delta(event: ContentBlockDeltaEvent, event_type, s
             },
             {
                 "content": [],
+                "current_tool_use": {},
+                "text": "",
+                "reasoningText": "",
+                "citationsContent": [],
+                "redactedContent": b"",
+            },
+        ),
+        # Regression: text and a pending tool use both land in content (#4004).
+        (
+            {
+                "content": [],
+                "current_tool_use": {"toolUseId": "t1", "name": "read_file", "input": "{}"},
+                "text": "Let me check that for you.",
+                "reasoningText": "",
+                "citationsContent": [],
+                "redactedContent": b"",
+            },
+            {
+                "content": [
+                    {"toolUse": {"toolUseId": "t1", "name": "read_file", "input": {}}},
+                    {"text": "Let me check that for you."},
+                ],
+                "current_tool_use": {},
+                "text": "",
+                "reasoningText": "",
+                "citationsContent": [],
+                "redactedContent": b"",
+            },
+        ),
+        # Regression: reasoning text + pending tool use — both must land (issue #4004)
+        (
+            {
+                "content": [],
+                "current_tool_use": {"toolUseId": "t1", "name": "lookup", "input": '{"k": "v"}'},
+                "text": "",
+                "reasoningText": "thinking...",
+                "signature": "sig-123",
+                "citationsContent": [],
+                "redactedContent": b"",
+            },
+            {
+                "content": [
+                    {"toolUse": {"toolUseId": "t1", "name": "lookup", "input": {"k": "v"}}},
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {"text": "thinking...", "signature": "sig-123"},
+                        },
+                    },
+                ],
+                "current_tool_use": {},
+                "text": "",
+                "reasoningText": "",
+                "citationsContent": [],
+                "redactedContent": b"",
+            },
+        ),
+        # Regression: text + reasoning + pending tool use — all three blocks land (issue #4004)
+        (
+            {
+                "content": [],
+                "current_tool_use": {"toolUseId": "t1", "name": "multi", "input": "{}"},
+                "text": "ok",
+                "reasoningText": "hmm",
+                "citationsContent": [],
+                "redactedContent": b"",
+            },
+            {
+                "content": [
+                    {"toolUse": {"toolUseId": "t1", "name": "multi", "input": {}}},
+                    {"text": "ok"},
+                    {"reasoningContent": {"reasoningText": {"text": "hmm"}}},
+                ],
                 "current_tool_use": {},
                 "text": "",
                 "reasoningText": "",
@@ -1818,3 +1891,24 @@ async def test_stream_messages_forwards_cancel_signal_to_model(agenerator, alist
     await alist(stream)
 
     assert mock_model.stream.call_args.kwargs["cancel_signal"] is cancel_signal
+
+
+@pytest.mark.asyncio
+async def test_stream_messages_forwards_structured_output_model_to_model(agenerator, alist):
+    class Answer(pydantic.BaseModel):
+        value: str
+
+    mock_model = unittest.mock.MagicMock()
+    mock_model.stream.return_value = agenerator([{"contentBlockStop": {}}])
+
+    stream = strands.event_loop.streaming.stream_messages(
+        mock_model,
+        system_prompt=None,
+        messages=[{"role": "user", "content": [{"text": "Hello"}]}],
+        tool_specs=None,
+        structured_output_model=Answer,
+    )
+
+    await alist(stream)
+
+    assert mock_model.stream.call_args.kwargs["structured_output_model"] is Answer

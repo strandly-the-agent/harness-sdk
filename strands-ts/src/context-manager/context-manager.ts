@@ -6,7 +6,7 @@
 
 import type { Plugin } from '../plugins/plugin.js'
 import type { Tool } from '../tools/tool.js'
-import { createAuxiliaryInvocation, type Invocation } from '../agent/invocation.js'
+import { createAuxiliaryInvocationContext, type InvocationContext } from '../agent/invocation-context.js'
 import type { LocalAgent } from '../types/agent.js'
 import { AfterModelCallEvent, BeforeModelCallEvent, MessageAddedEvent } from '../hooks/events.js'
 import { ContextWindowOverflowError } from '../errors.js'
@@ -154,7 +154,7 @@ export class ContextManager implements Plugin {
     }
 
     agent.addHook(BeforeModelCallEvent, async (event) => {
-      await this._runStrategies(event.agent, event.projectedInputTokens, undefined, event.invocation)
+      await this._runStrategies(event.agent, event.projectedInputTokens, undefined, event.invocationContext)
     })
 
     // Assumes sequential invocations on this agent (no concurrent calls)
@@ -171,7 +171,7 @@ export class ContextManager implements Plugin {
         return
       }
 
-      const acted = await this._runStrategies(event.agent, undefined, true, event.invocation)
+      const acted = await this._runStrategies(event.agent, undefined, true, event.invocationContext)
       if (!acted) {
         logger.warn(`agentId=<${event.agent.id}> | no strategy made progress, skipping retry`)
         return
@@ -205,11 +205,11 @@ export class ContextManager implements Plugin {
     agent: LocalAgent,
     precomputedInputTokens?: number,
     overflow?: boolean,
-    invocation?: Invocation
+    invocationContext?: InvocationContext
   ): Promise<boolean> {
     const messages = agent.messages
     const inputTokens = precomputedInputTokens ?? (await agent.model.countTokens(messages))
-    const auxiliaryInvocation = createAuxiliaryInvocation(invocation)
+    const auxiliaryInvocationContext = createAuxiliaryInvocationContext(invocationContext)
 
     const strategyContext: ContextState = {
       messages,
@@ -217,7 +217,7 @@ export class ContextManager implements Plugin {
       utilization: agent.model.estimateUtilization(inputTokens),
       ...(overflow ? { overflow: true } : {}),
       ...(this._stash ? { stash: this._stash } : {}),
-      ...(auxiliaryInvocation && { invocation: auxiliaryInvocation }),
+      ...(auxiliaryInvocationContext && { invocationContext: auxiliaryInvocationContext }),
     }
 
     let anyActed = false

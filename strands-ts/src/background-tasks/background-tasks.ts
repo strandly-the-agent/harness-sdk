@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { continuations } from '../agent/continuation.js'
 import { AgentAsTool } from '../agent/agent-as-tool.js'
-import type { Invocation } from '../agent/invocation.js'
+import type { InvocationContext } from '../agent/invocation-context.js'
 import { AfterInvocationEvent, BeforeModelCallEvent, InitializedEvent } from '../hooks/events.js'
 import { HookOrder } from '../hooks/types.js'
 import { InterruptError } from '../interrupt.js'
@@ -58,7 +58,7 @@ export class BackgroundTasks implements Plugin {
    * Dispatching invocation by task id, used to mark results delivered in a later
    * invocation with `startedBy`. Recovered tasks have no entry and count as earlier.
    */
-  private readonly _taskDispatchInvocation = new Map<string, Invocation | undefined>()
+  private readonly _taskDispatchInvocation = new Map<string, InvocationContext | undefined>()
   private _agent!: Agent
   private _manager!: BackgroundTaskManager
 
@@ -195,13 +195,13 @@ export class BackgroundTasks implements Plugin {
     invocationState: InvocationState,
     passId: string,
     tool: Tool,
-    invocation?: Invocation
+    invocationContext?: InvocationContext
   ): Promise<ToolResultBlock> {
     if (this._agent.cancelSignal.aborted) return toolError(toolUse.toolUseId, 'Tool execution cancelled')
 
     try {
-      const task = await this._manager.submit(toolUse, invocationState, passId, tool, invocation)
-      this._taskDispatchInvocation.set(task.taskId, invocation)
+      const task = await this._manager.submit(toolUse, invocationState, passId, tool, invocationContext)
+      this._taskDispatchInvocation.set(task.taskId, invocationContext)
       return new ToolResultBlock({
         toolUseId: toolUse.toolUseId,
         status: 'success',
@@ -330,7 +330,7 @@ export class BackgroundTasks implements Plugin {
       args: terminalTasks.flatMap((task) => {
         // Results delivered in a later invocation carry provenance, so the model does
         // not fold them into its answer to the current caller.
-        const dispatchedHere = this._taskDispatchInvocation.get(task.taskId) === event.invocation
+        const dispatchedHere = this._taskDispatchInvocation.get(task.taskId) === event.invocationContext
         return [
           new Message({
             role: 'assistant',
