@@ -1,6 +1,8 @@
 import type { Agent } from '@strands-agents/sdk'
 import { BedrockModel } from '@strands-agents/sdk/models/bedrock'
 import { AnthropicModel } from '@strands-agents/sdk/models/anthropic'
+import { GoogleModel } from '@strands-agents/sdk/models/google'
+import { OpenAIModel } from '@strands-agents/sdk/models/openai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AgentModelRuntime } from '../src/tui/model/runtime.js'
@@ -22,6 +24,49 @@ describe('context window limits', () => {
     ['zai.glm-4.7', 203_000],
   ])('uses the documented Bedrock context window for %s', (modelId, limit) => {
     expect(contextWindowLimit(new BedrockModel({ modelId }))).toBe(limit)
+  })
+
+  // https://github.com/strands-agents/harness-sdk/issues/5414
+  it.each([
+    ['gemini-4-argon', 1_048_576],
+    ['gemini-3.8-flash', 1_048_576],
+    ['gemini-3.7-flash', 1_048_576],
+    ['chat-latest', 272_000],
+    ['gpt-oss-120b', 131_072],
+    ['gpt-oss-20b', 131_072],
+    ['openai.gpt-oss-120b', 128_000],
+    ['openai.gpt-oss-120b-1:0', 128_000],
+    ['openai.gpt-oss-20b', 128_000],
+    ['openai.gpt-oss-20b-1:0', 128_000],
+    ['openai.gpt-oss-safeguard-120b', 128_000],
+    ['openai.gpt-oss-safeguard-20b', 128_000],
+    ['mistral.mistral-large-3-675b-instruct', 256_000],
+    ['mistral.ministral-3-14b-instruct', 128_000],
+    ['mistral.ministral-3-8b-instruct', 128_000],
+    ['mistral.ministral-3-3b-instruct', 128_000],
+    ['mistral.magistral-small-2509', 128_000],
+    ['mistral.pixtral-large-2502-v1:0', 128_000],
+    ['mistral.mistral-small-2402-v1:0', 32_000],
+    ['mistral.mistral-large-2402-v1:0', 32_000],
+    ['global.openai.gpt-oss-120b', 128_000],
+    ['us-gov.mistral.mistral-large-3-675b-instruct', 256_000],
+    ['arn:aws:bedrock:us-west-2:123456789012:inference-profile/us.openai.gpt-oss-20b-1:0', 128_000],
+  ])('fills missing SDK metadata for %s', (modelId, limit) => {
+    const model = modelId.startsWith('gemini-')
+      ? new GoogleModel({ modelId, apiKey: 'test-key' })
+      : modelId === 'chat-latest' || modelId.startsWith('gpt-oss-')
+        ? new OpenAIModel({ modelId, apiKey: 'test-key' })
+        : new BedrockModel({ modelId })
+    vi.spyOn(model, 'getConfig').mockReturnValue({ modelId })
+
+    expect(contextWindowLimit(model)).toBe(limit)
+  })
+
+  it('prefers SDK metadata over the fallback for newer models', () => {
+    const model = new BedrockModel({ modelId: 'openai.gpt-oss-120b' })
+    vi.spyOn(model, 'getConfig').mockReturnValue({ contextWindowLimit: 100_000 })
+
+    expect(contextWindowLimit(model)).toBe(100_000)
   })
 
   it('honors a configured context cap and leaves unknown models unknown', () => {
