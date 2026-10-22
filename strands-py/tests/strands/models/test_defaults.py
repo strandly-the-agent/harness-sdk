@@ -59,6 +59,8 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("o4-mini") == 200_000
 
     def test_known_gemini(self):
+        assert get_context_window_limit("gemini-3.8-flash") == 1_048_576
+        assert get_context_window_limit("gemini-3.7-flash") == 1_048_576
         assert get_context_window_limit("gemini-2.5-flash") == 1_048_576
         assert get_context_window_limit("gemini-2.5-pro") == 1_048_576
 

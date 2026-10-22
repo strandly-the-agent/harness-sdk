@@ -30,6 +30,8 @@ describe('getContextWindowLimit', () => {
     expect(getContextWindowLimit('o3')).toBe(200_000)
     expect(getContextWindowLimit('o4-mini')).toBe(200_000)
     // Gemini
+    expect(getContextWindowLimit('gemini-3.8-flash')).toBe(1_048_576)
+    expect(getContextWindowLimit('gemini-3.7-flash')).toBe(1_048_576)
     expect(getContextWindowLimit('gemini-2.5-flash')).toBe(1_048_576)
     expect(getContextWindowLimit('gemini-2.5-pro')).toBe(1_048_576)
   })
