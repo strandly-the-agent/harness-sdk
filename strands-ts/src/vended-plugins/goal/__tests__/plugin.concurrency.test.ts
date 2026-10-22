@@ -5,6 +5,8 @@ import { AfterInvocationEvent } from '../../../hooks/events.js'
 import { MockMessageModel } from '../../../__fixtures__/mock-message-model.js'
 import { tool } from '../../../tools/tool-factory.js'
 import { Message, TextBlock } from '../../../types/messages.js'
+import { z } from 'zod'
+import { InterruptResponseContent } from '../../../types/interrupt.js'
 
 function createGate() {
   let signalStarted!: () => void
@@ -139,5 +141,66 @@ describe('GoalLoop with concurrent invocations', () => {
       agentStopReason: 'cancelled',
       attempts: [],
     })
+  })
+
+  it('still grades a structured-output agent, whose passes end with toolUse', async () => {
+    const graded: string[] = []
+    const goal = new GoalLoop({
+      maxAttempts: 2,
+      goal: (message) => {
+        graded.push(message.content[0]?.type ?? '')
+        return { passed: graded.length === 2, feedback: 'again' }
+      },
+    })
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'strands_structured_output', toolUseId: 't1', input: { answer: 'a' } })
+      .addTurn({ type: 'toolUseBlock', name: 'strands_structured_output', toolUseId: 't2', input: { answer: 'b' } })
+    const agent = new Agent({
+      model,
+      structuredOutputSchema: z.object({ answer: z.string() }),
+      plugins: [goal],
+      printer: false,
+    })
+
+    const result = await agent.invoke('go')
+
+    expect(result.stopReason).toBe('toolUse')
+    expect(graded).toHaveLength(2)
+    expect(goal.lastResult(agent)).toMatchObject({ passed: true, stopReason: 'satisfied' })
+  })
+
+  it('keeps the run alive across a human-input interrupt instead of counting it as an attempt', async () => {
+    const graded: string[] = []
+    const goal = new GoalLoop({
+      maxAttempts: 2,
+      goal: (message) => {
+        graded.push(text(message))
+        return { passed: text(message) === 'GOOD', feedback: 'again' }
+      },
+    })
+    const confirm = tool({
+      name: 'confirm',
+      description: 'Asks for confirmation',
+      callback: (_input, context) => `confirmed: ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+    })
+    const model = new MockMessageModel()
+      .addTurn({ type: 'textBlock', text: 'first-try' })
+      .addTurn({ type: 'toolUseBlock', name: 'confirm', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'GOOD' })
+    const agent = new Agent({ model, tools: [confirm], plugins: [goal], printer: false })
+
+    // Attempt 1 fails; the retry pass interrupts for human input.
+    const interrupted = await agent.invoke('go')
+    expect(interrupted.stopReason).toBe('interrupt')
+    expect(goal.lastResult(agent)).toBeUndefined()
+
+    const resumed = await agent.invoke([
+      new InterruptResponseContent({ interruptId: interrupted.interrupts![0]!.id, response: 'yes' }),
+    ])
+
+    expect(text(resumed.lastMessage)).toBe('GOOD')
+    // The interrupt was not graded, and the resume completed the same run as attempt 2.
+    expect(graded).toEqual(['first-try', 'GOOD'])
+    expect(goal.lastResult(agent)?.attempts.map((attempt) => attempt.attempt)).toEqual([1, 2])
   })
 })

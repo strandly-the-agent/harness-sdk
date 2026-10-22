@@ -73,7 +73,7 @@ import { warnOnce } from '../../logging/warn-once.js'
 import type { Model } from '../../models/model.js'
 import type { Plugin } from '../../plugins/plugin.js'
 import type { InvokeOptions, LocalAgent } from '../../types/agent.js'
-import type { ContentBlock, Message, StopReason } from '../../types/messages.js'
+import { LIMIT_STOP_REASONS, type ContentBlock, type Message, type StopReason } from '../../types/messages.js'
 import type { Snapshot } from '../../types/snapshot.js'
 import { JUDGE_OUTCOME_SCHEMA, JUDGE_SYSTEM_PROMPT, buildJudgePrompt } from './judge.js'
 
@@ -100,9 +100,8 @@ export type Validator = (
 
 /**
  * Why a goal run ended. `'limit'` means one of the request's `limits` was reached, so no
- * further attempt could run; `'stopped'` means the pass ended without an answer to grade
- * (cancelled, superseded by another invocation, interrupted, …) — see
- * {@link GoalResult.agentStopReason}.
+ * further attempt could run; `'stopped'` means the pass was cancelled or superseded by
+ * another invocation, so there was no answer to grade — see {@link GoalResult.agentStopReason}.
  */
 export type GoalStopReason = 'satisfied' | 'maxAttempts' | 'timeout' | 'limit' | 'stopped'
 
@@ -364,19 +363,27 @@ export class GoalLoop implements Plugin {
         return
       }
 
-      // The pass ended without a new answer: cancelled, superseded by another invocation,
-      // interrupted, or stopped on a limit. Nothing to grade, and resuming would continue a
-      // run the caller already gave up on.
+      // A pass that stopped on a limit, or was cancelled / superseded by another caller,
+      // produced no answer to grade, and resuming it would continue a run the caller gave up on.
       const agentStopReason = event.result?.stopReason
-      if (agentStopReason !== undefined && agentStopReason !== 'endTurn' && agentStopReason !== 'stopSequence') {
-        if (agentStopReason.startsWith('limit')) finishRun(run, 'limit')
-        else finishRun(run, 'stopped', agentStopReason)
+      if (agentStopReason !== undefined && LIMIT_STOP_REASONS.has(agentStopReason)) {
+        finishRun(run, 'limit')
+        return
+      }
+      if (agentStopReason !== undefined && ENDED_WITHOUT_ANSWER.has(agentStopReason)) {
+        finishRun(run, 'stopped', agentStopReason)
+        return
+      }
+      // A pause for human input (or a checkpoint) is not an attempt: keep the run alive so
+      // the resume continues it with the same attempt and time budget.
+      if (agentStopReason !== undefined && PAUSED.has(agentStopReason)) {
+        run.resumed = true
         return
       }
 
       const response = lastAssistantMessage(agent.messages)
       const invocationContext = unwrapInvocationContext(event.invocationContext)
-      // The request's limit stopped this pass before it produced a new answer, so there is nothing to grade.
+      // The pass threw before producing a new answer (so `result` is unset) and the limit is spent.
       if (response === run.answerBeforePass && invocationContext && reachedLimit(invocationContext)) {
         finishRun(run, 'limit')
         return
@@ -468,6 +475,9 @@ export class GoalLoop implements Plugin {
     }
   }
 }
+
+const ENDED_WITHOUT_ANSWER = new Set<StopReason>(['cancelled', 'superseded'])
+const PAUSED = new Set<StopReason>(['interrupt', 'checkpoint'])
 
 function finishRun(run: RunState, stopReason: GoalStopReason, agentStopReason?: StopReason): void {
   run.result = {
