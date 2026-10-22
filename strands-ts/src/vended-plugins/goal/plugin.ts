@@ -217,6 +217,8 @@ interface RunState {
   attempts: GoalAttempt[]
   result?: GoalResult
   resumed?: boolean
+  /** When the run paused for human input; the pause is not charged to `timeout`. */
+  pausedAt?: number
   /** The latest assistant message when the current pass started, to tell whether the pass produced a new answer. */
   answerBeforePass: Message | undefined
   /**
@@ -318,6 +320,10 @@ export class GoalLoop implements Plugin {
       if (existing?.resumed) {
         existing.resumed = false
         existing.answerBeforePass = lastAssistantMessage(agent.messages)
+        if (existing.pausedAt !== undefined) {
+          existing.startTime += Date.now() - existing.pausedAt
+          delete existing.pausedAt
+        }
         return
       }
       this._runs.set(agent, {
@@ -374,10 +380,12 @@ export class GoalLoop implements Plugin {
         finishRun(run, 'stopped', agentStopReason)
         return
       }
-      // A pause for human input (or a checkpoint) is not an attempt: keep the run alive so
-      // the resume continues it with the same attempt and time budget.
-      if (agentStopReason !== undefined && PAUSED.has(agentStopReason)) {
+      // A pause for human input is not an attempt: keep the run alive so the resume continues
+      // it with the same attempt and time budget. Safe because the agent accepts nothing but
+      // the interrupt response until then, so no other caller can be spliced into the run.
+      if (agentStopReason === 'interrupt') {
         run.resumed = true
+        run.pausedAt = Date.now()
         return
       }
 
@@ -477,7 +485,6 @@ export class GoalLoop implements Plugin {
 }
 
 const ENDED_WITHOUT_ANSWER = new Set<StopReason>(['cancelled', 'superseded'])
-const PAUSED = new Set<StopReason>(['interrupt', 'checkpoint'])
 
 function finishRun(run: RunState, stopReason: GoalStopReason, agentStopReason?: StopReason): void {
   run.result = {

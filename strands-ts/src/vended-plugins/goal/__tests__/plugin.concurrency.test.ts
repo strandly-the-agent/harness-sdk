@@ -165,7 +165,7 @@ describe('GoalLoop with concurrent invocations', () => {
     const result = await agent.invoke('go')
 
     expect(result.stopReason).toBe('toolUse')
-    expect(graded).toHaveLength(2)
+    expect(graded).toEqual(['toolUseBlock', 'toolUseBlock'])
     expect(goal.lastResult(agent)).toMatchObject({ passed: true, stopReason: 'satisfied' })
   })
 
@@ -202,5 +202,32 @@ describe('GoalLoop with concurrent invocations', () => {
     // The interrupt was not graded, and the resume completed the same run as attempt 2.
     expect(graded).toEqual(['first-try', 'GOOD'])
     expect(goal.lastResult(agent)?.attempts.map((attempt) => attempt.attempt)).toEqual([1, 2])
+  })
+
+  it('does not charge the time spent waiting for human input to the timeout', async () => {
+    const goal = new GoalLoop({
+      maxAttempts: 2,
+      timeout: 60,
+      goal: (message) => ({ passed: text(message) === 'GOOD', feedback: 'again' }),
+    })
+    const confirm = tool({
+      name: 'confirm',
+      description: 'Asks for confirmation',
+      callback: (_input, context) => `confirmed: ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+    })
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'confirm', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'GOOD' })
+    const agent = new Agent({ model, tools: [confirm], plugins: [goal], printer: false })
+
+    const interrupted = await agent.invoke('go')
+    expect(interrupted.stopReason).toBe('interrupt')
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    const resumed = await agent.invoke([
+      new InterruptResponseContent({ interruptId: interrupted.interrupts![0]!.id, response: 'yes' }),
+    ])
+
+    expect(text(resumed.lastMessage)).toBe('GOOD')
+    expect(goal.lastResult(agent)).toMatchObject({ passed: true, stopReason: 'satisfied' })
   })
 })
