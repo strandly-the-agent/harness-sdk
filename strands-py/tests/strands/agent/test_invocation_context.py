@@ -8,7 +8,7 @@ import pytest
 
 from strands import InvocationContext
 from strands.agent import invocation_context as invocation_context_module
-from strands.agent.invocation_context import _create_invocation_context
+from strands.agent.invocation_context import _create_invocation_context, _invocation_context_kwargs
 
 
 def test_rejects_direct_construction():
@@ -74,3 +74,31 @@ def test_lets_concurrent_threads_take_no_more_turns_than_the_limit(monkeypatch):
         thread.join()
 
     assert (sum(turns_taken_per_thread), request.usage["turns_taken"]) == (200, 200)
+
+
+class _Overrides:
+    def with_keyword_arguments(self, agent, **kwargs):
+        pass
+
+    def with_invocation_context(self, agent, invocation_context=None):
+        pass
+
+    def without_invocation_context(self, agent):
+        pass
+
+
+@pytest.mark.parametrize(
+    ("method_name", "exp_kwargs_keys"),
+    [
+        ("with_keyword_arguments", ["invocation_context"]),
+        ("with_invocation_context", ["invocation_context"]),
+        ("without_invocation_context", []),
+    ],
+)
+def test_passes_invocation_context_only_to_overrides_that_accept_it(method_name, exp_kwargs_keys):
+    request = _create_invocation_context()
+
+    tru_kwargs = _invocation_context_kwargs(getattr(_Overrides(), method_name), request)
+
+    assert list(tru_kwargs) == exp_kwargs_keys
+    assert all(value is request for value in tru_kwargs.values())

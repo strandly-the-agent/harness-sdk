@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Literal
 from typing_extensions import TypedDict
 
 from ....agent.conversation_manager.compression.pin_message import _has_pinned_flag, is_pinned
+from ....agent.invocation_context import _invocation_context_kwargs
 from ....types.content import ContentBlock, Message, Messages
 from ....types.tools import ToolUse
 from ...retrieval_tool import RETRIEVAL_TOOL_NAME
@@ -451,7 +452,12 @@ class BaseOffloadStrategy(ABC):
 
             stash_refs = self._stash.refs_for(block, message, block_index) if self._stash else []
             replacement = await self._replace_block(
-                block, tokens, message, agent, stash_refs, invocation_context=invocation_context
+                block,
+                tokens,
+                message,
+                agent,
+                stash_refs,
+                **_invocation_context_kwargs(self._replace_block, invocation_context),
             )
             if replacement is not None and replacement is not block:
                 content[block_index] = replacement

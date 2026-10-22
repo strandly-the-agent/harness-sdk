@@ -3,12 +3,14 @@
 import pytest
 
 from strands import Agent, tool
+from strands.agent.conversation_manager import NullConversationManager
 from strands.agent.invocation_context import (
     InvocationContext,
     _create_auxiliary_invocation_context,
     _create_invocation_context,
 )
 from strands.hooks import AfterInvocationEvent, BeforeInvocationEvent, BeforeModelCallEvent, MessageAddedEvent
+from strands.tools.executors import SequentialToolExecutor
 from strands.types.tools import ToolContext
 from tests.fixtures.mocked_model_provider import MockedModelProvider
 
@@ -320,4 +322,41 @@ async def test_hook_event_equality_ignores_invocation_context():
     assert events[0].invocation_context is not None
     assert events[0] == BeforeInvocationEvent(
         agent=agent, invocation_state=events[0].invocation_state, messages=events[0].messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_invoke_async_runs_overrides_that_take_no_invocation_context():
+    class LegacyConversationManager(NullConversationManager):
+        def __init__(self):
+            super().__init__()
+            self.managed = 0
+
+        def apply_management(self, agent):
+            self.managed += 1
+
+    class LegacyToolExecutor(SequentialToolExecutor):
+        async def _execute(
+            self, agent, tool_uses, tool_results, cycle_trace, cycle_span, invocation_state, structured_output_context
+        ):
+            async for event in super()._execute(
+                agent, tool_uses, tool_results, cycle_trace, cycle_span, invocation_state, structured_output_context
+            ):
+                yield event
+
+    conversation_manager = LegacyConversationManager()
+    agent = Agent(
+        model=MockedModelProvider([_tool_use("loop", "tu-1"), _text("done")]),
+        tools=[loop],
+        conversation_manager=conversation_manager,
+        tool_executor=LegacyToolExecutor(),
+        callback_handler=None,
+    )
+
+    result = await agent.invoke_async("go", limits={"turns": 5})
+
+    assert (result.stop_reason, result.invocation_context.usage["turns_taken"], conversation_manager.managed) == (
+        "end_turn",
+        2,
+        1,
     )

@@ -125,9 +125,9 @@ from .invocation_context import (
     InvocationContext,
     _create_auxiliary_invocation_context,
     _create_invocation_context,
+    _invocation_context_kwargs,
     _reached_limit,
     _unwrap_invocation_context,
-    _validate_limits,
 )
 from .state import AgentState
 
@@ -1488,7 +1488,6 @@ class Agent(AgentBase, LocalAgent):
                     yield event["data"]
             ```
         """
-        self._validate_limits(limits)
         resolved_invocation_context = self._resolve_invocation_context(limits, invocation_context)
 
         begin = self._concurrency.begin(idempotency_token)
@@ -1807,7 +1806,11 @@ class Agent(AgentBase, LocalAgent):
                     self._interrupt_state.end_interrupt_cycle()
 
                 self.conversation_manager.apply_management(
-                    self, invocation_context=_create_auxiliary_invocation_context(invocation_context)
+                    self,
+                    **_invocation_context_kwargs(
+                        self.conversation_manager.apply_management,
+                        _create_auxiliary_invocation_context(invocation_context),
+                    ),
                 )
                 await _continuation.abandon(
                     continuation_event, RuntimeError("Continuation was not incorporated into agent history")
@@ -1976,7 +1979,12 @@ class Agent(AgentBase, LocalAgent):
         except ContextWindowOverflowException as e:
             # Try reducing the context size and retrying
             self.conversation_manager.reduce_context(
-                self, e=e, invocation_context=_create_auxiliary_invocation_context(invocation_context)
+                self,
+                e=e,
+                **_invocation_context_kwargs(
+                    self.conversation_manager.reduce_context,
+                    _create_auxiliary_invocation_context(invocation_context),
+                ),
             )
 
             # Sync agent after reduce_context to keep conversation_manager_state up to date in the session
@@ -2128,7 +2136,7 @@ class Agent(AgentBase, LocalAgent):
         and the request's.
 
         Raises:
-            TypeError: If ``invocation_context`` was not created by the SDK.
+            TypeError: If ``invocation_context`` was not created by the SDK, or ``limits`` is invalid.
         """
         inherited = _unwrap_invocation_context(invocation_context)
         if inherited is None:
@@ -2149,11 +2157,6 @@ class Agent(AgentBase, LocalAgent):
             return True
         logger.debug("limit=<%s> | ignoring resume because the request reached its limit", limit_stop_reason)
         return False
-
-    @staticmethod
-    def _validate_limits(limits: Limits | None) -> None:
-        """Validate ``limits`` before any hook runs; see ``invocation_context._validate_limits``."""
-        _validate_limits(limits)
 
     async def _append_messages(self, *messages: Message, invocation_context: InvocationContext | None = None) -> None:
         """Appends messages to history and invoke the callbacks for the MessageAddedEvent.

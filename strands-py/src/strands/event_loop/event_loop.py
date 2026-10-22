@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, cast
 from opentelemetry import trace as trace_api
 
 from ..agent import _continuation
-from ..agent.invocation_context import InvocationContext, _create_invocation_context
+from ..agent.invocation_context import InvocationContext, _create_invocation_context, _invocation_context_kwargs
 from ..experimental.checkpoint import Checkpoint, CheckpointPosition
 from ..hooks import AfterModelCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolsEvent
 from ..interrupt import InterruptException, PendingToolExecution
@@ -40,6 +40,7 @@ from ..types._events import (
     ToolResultMessageEvent,
     TypedEvent,
 )
+from ..types.agent import Limits
 from ..types.content import Message, Messages, split_system_prompt
 from ..types.event_loop import Metrics, Usage
 from ..types.exceptions import (
@@ -155,6 +156,8 @@ async def event_loop_cycle(
     agent: "Agent",
     invocation_state: dict[str, Any],
     structured_output_context: StructuredOutputContext | None = None,
+    limits: Limits | None = None,
+    *,
     invocation_context: InvocationContext | None = None,
 ) -> AsyncGenerator[TypedEvent, None]:
     """Execute a single cycle of the event loop.
@@ -178,6 +181,8 @@ async def event_loop_cycle(
             - event_loop_cycle_id: Unique ID for this cycle
             - event_loop_cycle_span: Current tracing Span for this cycle
         structured_output_context: Optional context for structured output management.
+        limits: Deprecated; pass ``invocation_context`` instead. Limits for this cycle, applied on top of
+            ``invocation_context``'s.
         invocation_context: The request this cycle runs in; a fresh one when omitted. Its limits
             are checked at the top of this cycle (after tools from the previous cycle have run to
             completion). See :class:`~strands.types.agent.Limits`.
@@ -199,8 +204,7 @@ async def event_loop_cycle(
         ContextWindowOverflowException: If the input is too large for the model
     """
     structured_output_context = structured_output_context or StructuredOutputContext()
-    if invocation_context is None:
-        invocation_context = _create_invocation_context()
+    invocation_context = _resolve_cycle_invocation_context(invocation_context, limits)
 
     # Limits are positive and use >= semantics, so reaching one implies at least one prior
     # cycle ran — meaning agent.messages[-1] exists. The turn is counted here, before it runs,
@@ -399,10 +403,26 @@ async def event_loop_cycle(
             raise EventLoopException(e, invocation_state["request_state"]) from e
 
 
+def _resolve_cycle_invocation_context(
+    invocation_context: InvocationContext | None, limits: Limits | None
+) -> InvocationContext:
+    """Return the request a cycle runs in: a fresh one when omitted, bound by the deprecated ``limits`` if given."""
+    if limits is None:
+        return invocation_context or _create_invocation_context()
+    warnings.warn(
+        "limits= is deprecated, pass invocation_context= instead",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return _create_invocation_context(limits, invocation_context)
+
+
 async def recurse_event_loop(
     agent: "Agent",
     invocation_state: dict[str, Any],
     structured_output_context: StructuredOutputContext | None = None,
+    limits: Limits | None = None,
+    *,
     invocation_context: InvocationContext | None = None,
 ) -> AsyncGenerator[TypedEvent, None]:
     """Make a recursive call to event_loop_cycle with the current state.
@@ -413,6 +433,8 @@ async def recurse_event_loop(
         agent: Agent for which the recursive call is being made.
         invocation_state: Arguments to pass through event_loop_cycle
         structured_output_context: Optional context for structured output management.
+        limits: Deprecated; pass ``invocation_context`` instead. Limits for the cycle, applied on top of
+            ``invocation_context``'s.
         invocation_context: The request this cycle runs in.
 
     Yields:
@@ -435,6 +457,7 @@ async def recurse_event_loop(
         agent=agent,
         invocation_state=invocation_state,
         structured_output_context=structured_output_context,
+        limits=limits,
         invocation_context=invocation_context,
     )
     async for event in events:
@@ -939,7 +962,7 @@ async def _handle_tool_execution(
                 cycle_span,
                 invocation_state,
                 structured_output_context,
-                invocation_context=invocation_context,
+                **_invocation_context_kwargs(agent.tool_executor._execute, invocation_context),
             )
             async for tool_event in tool_events:
                 if isinstance(tool_event, ToolInterruptEvent):

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, Union
 from ...hooks.events import BeforeModelCallEvent
 from ...hooks.registry import HookProvider, HookRegistry
 from ...types.content import Message
-from ..invocation_context import _create_auxiliary_invocation_context
+from ..invocation_context import _create_auxiliary_invocation_context, _invocation_context_kwargs
 
 if TYPE_CHECKING:
     from ...agent.agent import Agent
@@ -142,7 +142,9 @@ class ConversationManager(ABC, HookProvider):
             try:
                 self.reduce_context(
                     agent=event.agent,
-                    invocation_context=_create_auxiliary_invocation_context(event.invocation_context),
+                    **_invocation_context_kwargs(
+                        self.reduce_context, _create_auxiliary_invocation_context(event.invocation_context)
+                    ),
                 )
             except Exception:
                 logger.debug("proactive compression failed, will proceed with model call", exc_info=True)

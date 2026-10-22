@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
 import threading
+from collections.abc import Callable
+from typing import Any
 
 from typing_extensions import Required
 
@@ -172,6 +175,23 @@ def _unwrap_invocation_context(invocation_context: object | None) -> InvocationC
             f"got {type(invocation_context).__name__}"
         )
     return invocation_context
+
+
+def _invocation_context_kwargs(
+    method: Callable[..., Any], invocation_context: InvocationContext | None
+) -> dict[str, Any]:
+    """Return the keyword arguments that pass ``invocation_context`` to a user-overridable method.
+
+    An override that neither declares ``invocation_context`` nor takes ``**kwargs`` is called without it.
+    """
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return {}
+    accepts_context = "invocation_context" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
+    return {"invocation_context": invocation_context} if accepts_context else {}
 
 
 def _create_auxiliary_invocation_context(parent: InvocationContext | None) -> InvocationContext | None:
