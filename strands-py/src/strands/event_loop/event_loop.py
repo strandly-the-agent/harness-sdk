@@ -207,7 +207,8 @@ async def event_loop_cycle(
     invocation_context = _resolve_cycle_invocation_context(invocation_context, limits)
 
     # The turn is counted here, before it runs, so nested calls started by its tools see it
-    # already counted. History is empty only if the request was already spent on entry.
+    # already counted. History is empty only when the cycle is driven directly: Agent appends
+    # this pass's input first and short-circuits a spent request before that.
     limit_stop_reason = invocation_context._take_turn()
     if limit_stop_reason is not None:
         if "request_state" not in invocation_state:

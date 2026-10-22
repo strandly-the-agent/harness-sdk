@@ -374,6 +374,7 @@ async def test_invoke_async_with_invocation_context_and_limits_runs_as_a_child_o
 
     assert second.stop_reason == "end_turn"
     assert second.invocation_context is not first.invocation_context
+    assert second.invocation_context._limits == {"turns": 1}
     assert seen[1] is second.invocation_context
     assert second.invocation_context.usage == {"turns_taken": 1, "inputTokens": 2, "outputTokens": 2, "totalTokens": 4}
     assert first.invocation_context.usage == {"turns_taken": 2, "inputTokens": 3, "outputTokens": 3, "totalTokens": 6}
