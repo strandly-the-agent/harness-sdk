@@ -56,6 +56,20 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("us.openai.gpt-oss-120b-1:0") == 128_000
         assert get_context_window_limit("global.openai.gpt-oss-120b") == 128_000
 
+    def test_known_bedrock_mistral(self):
+        # The Bedrock ids need their own rows: the prefix strip turns
+        # mistral.mistral-large-3-675b-instruct into a key that is not the direct-API mistral-large-3 row.
+        assert get_context_window_limit("mistral.mistral-large-3-675b-instruct") == 256_000
+        assert get_context_window_limit("mistral.ministral-3-14b-instruct") == 128_000
+        assert get_context_window_limit("mistral.ministral-3-8b-instruct") == 128_000
+        assert get_context_window_limit("mistral.ministral-3-3b-instruct") == 128_000
+        assert get_context_window_limit("mistral.magistral-small-2509") == 128_000
+        assert get_context_window_limit("mistral.pixtral-large-2502-v1:0") == 128_000
+        assert get_context_window_limit("mistral.mistral-small-2402-v1:0") == 32_000
+        assert get_context_window_limit("mistral.mistral-large-2402-v1:0") == 32_000
+        assert get_context_window_limit("us.mistral.mistral-large-3-675b-instruct") == 256_000
+        assert get_context_window_limit("global.mistral.mistral-large-3-675b-instruct") == 256_000
+
     def test_known_openai(self):
         assert get_context_window_limit("gpt-6-astra") == 1_050_000
         assert get_context_window_limit("gpt-6.1-sol") == 1_050_000

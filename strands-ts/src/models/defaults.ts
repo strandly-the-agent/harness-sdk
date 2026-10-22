@@ -141,6 +141,15 @@ const CONTEXT_WINDOW_LIMITS: Record<string, number> = {
   'openai.gpt-oss-20b-1:0': 128_000,
   'openai.gpt-oss-safeguard-120b': 128_000,
   'openai.gpt-oss-safeguard-20b': 128_000,
+  // Bedrock Mistral
+  'mistral.mistral-large-3-675b-instruct': 256_000,
+  'mistral.ministral-3-14b-instruct': 128_000,
+  'mistral.ministral-3-8b-instruct': 128_000,
+  'mistral.ministral-3-3b-instruct': 128_000,
+  'mistral.magistral-small-2509': 128_000,
+  'mistral.pixtral-large-2502-v1:0': 128_000,
+  'mistral.mistral-small-2402-v1:0': 32_000,
+  'mistral.mistral-large-2402-v1:0': 32_000,
 
   // OpenAI
   'gpt-6-astra': 1_050_000,
