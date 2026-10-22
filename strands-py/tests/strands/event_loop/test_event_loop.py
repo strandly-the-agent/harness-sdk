@@ -192,6 +192,23 @@ def mock_tracer():
 
 
 @pytest.mark.asyncio
+async def test_event_loop_cycle_limit_stop_with_empty_history_yields_empty_assistant_message(agent, model, alist):
+    agent.messages.clear()
+    invocation_context = _create_invocation_context({"turns": 1})
+    invocation_context._usage["turns_taken"] = 1
+
+    stream = strands.event_loop.event_loop.event_loop_cycle(
+        agent=agent, invocation_state={}, invocation_context=invocation_context
+    )
+    events = await alist(stream)
+
+    stop_reason, message, _, _, _, _, _ = events[-1]["stop"]
+    assert stop_reason == "limit_turns"
+    assert message == {"role": "assistant", "content": []}
+    model.stream.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_event_loop_cycle_text_response(
     agent,
     model,

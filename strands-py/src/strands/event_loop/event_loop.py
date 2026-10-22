@@ -206,16 +206,15 @@ async def event_loop_cycle(
     structured_output_context = structured_output_context or StructuredOutputContext()
     invocation_context = _resolve_cycle_invocation_context(invocation_context, limits)
 
-    # Limits are positive and use >= semantics, so reaching one implies at least one prior
-    # cycle ran — meaning agent.messages[-1] exists. The turn is counted here, before it runs,
-    # so nested calls started by its tools see it already counted.
+    # The turn is counted here, before it runs, so nested calls started by its tools see it
+    # already counted. History is empty only if the request was already spent on entry.
     limit_stop_reason = invocation_context._take_turn()
     if limit_stop_reason is not None:
         if "request_state" not in invocation_state:
             invocation_state["request_state"] = {}
         yield EventLoopStopEvent(
             limit_stop_reason,
-            agent.messages[-1],
+            agent.messages[-1] if agent.messages else {"role": "assistant", "content": []},
             agent.event_loop_metrics,
             invocation_state["request_state"],
         )

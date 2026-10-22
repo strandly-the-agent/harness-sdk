@@ -136,3 +136,23 @@ async def test_swarm_stops_without_handing_off_when_a_node_stops_on_the_request_
     result = await swarm.invoke_async("hello", invocation_context=_create_invocation_context({"turns": 1}))
 
     assert (result.status, result.results["a"].status, "b" in result.results) == (Status.FAILED, Status.FAILED, False)
+
+
+@pytest.mark.asyncio
+async def test_graph_fails_the_middle_node_that_trips_the_request_limit_and_skips_the_rest():
+    builder = GraphBuilder()
+    builder.add_node(_text_agent("a", "A done", _usage(1, 1)), "a")
+    builder.add_node(_text_agent("b", "never reached", _usage(0, 0)), "b")
+    builder.add_node(_text_agent("c", "never reached", _usage(0, 0)), "c")
+    builder.add_edge("a", "b")
+    builder.add_edge("b", "c")
+    graph = builder.build()
+
+    result = await graph.invoke_async("go", invocation_context=_create_invocation_context({"turns": 1}))
+
+    assert result.status == Status.FAILED
+    assert result.results["a"].status == Status.COMPLETED
+    assert result.results["b"].status == Status.FAILED
+    assert str(result.results["b"].result) == _limit_stop_message("b", "limit_turns")
+    assert "c" not in result.results
+    assert result.invocation_context.usage == {"turns_taken": 1, "inputTokens": 1, "outputTokens": 1, "totalTokens": 2}

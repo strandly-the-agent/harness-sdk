@@ -360,3 +360,20 @@ async def test_invoke_async_runs_overrides_that_take_no_invocation_context():
         2,
         1,
     )
+
+
+@pytest.mark.asyncio
+async def test_invoke_async_with_invocation_context_and_limits_runs_as_a_child_of_that_request():
+    model = MockedModelProvider([_text("first"), _text("second")], [_usage(1, 1), _usage(2, 2)])
+    agent = Agent(model=model, callback_handler=None)
+    seen = []
+    agent.hooks.add_callback(BeforeModelCallEvent, lambda event: seen.append(event.invocation_context))
+
+    first = await agent.invoke_async("one", limits={"turns": 10})
+    second = await agent.invoke_async("two", invocation_context=first.invocation_context, limits={"turns": 1})
+
+    assert second.stop_reason == "end_turn"
+    assert second.invocation_context is not first.invocation_context
+    assert seen[1] is second.invocation_context
+    assert second.invocation_context.usage == {"turns_taken": 1, "inputTokens": 2, "outputTokens": 2, "totalTokens": 4}
+    assert first.invocation_context.usage == {"turns_taken": 2, "inputTokens": 3, "outputTokens": 3, "totalTokens": 6}
