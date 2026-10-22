@@ -135,6 +135,7 @@ const CONTEXT_WINDOW_LIMITS: Record<string, number> = {
   'zai.glm-5.3': 1_000_000,
 
   // OpenAI
+  'chat-latest': 400_000, // rolling alias for the current ChatGPT model; window may change with it
   'gpt-6-astra': 1_050_000,
   'gpt-6.1-sol': 1_050_000,
   'gpt-6-sol': 1_050_000,

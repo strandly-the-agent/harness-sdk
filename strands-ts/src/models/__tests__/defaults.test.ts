@@ -21,6 +21,7 @@ describe('getContextWindowLimit', () => {
     expect(getContextWindowLimit('us.zai.glm-5.3')).toBe(1_000_000)
     expect(getContextWindowLimit('global.zai.glm-5.3')).toBe(1_000_000)
     // OpenAI
+    expect(getContextWindowLimit('chat-latest')).toBe(400_000)
     expect(getContextWindowLimit('gpt-6-astra')).toBe(1_050_000)
     expect(getContextWindowLimit('gpt-6.1-sol')).toBe(1_050_000)
     expect(getContextWindowLimit('gpt-6-sol')).toBe(1_050_000)
