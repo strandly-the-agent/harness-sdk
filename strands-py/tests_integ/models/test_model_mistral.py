@@ -127,10 +127,11 @@ async def test_agent_structured_output_async(non_streaming_agent, weather):
     assert tru_weather == exp_weather
 
 
-# (model_id, expected context_window_limit) for the 2026-10 model batch.
+LARGE_4 = "mistral-large-4-0"
+
 SMOKE_MODELS = [
     ("mistral-medium-3-5", 262_144),
-    ("mistral-large-4-0", 1_048_576),
+    (LARGE_4, 1_048_576),
     ("ministral-14b-2512", 262_144),
     ("mistral-small-2603", 262_144),
     ("codestral-2508", 256_000),
@@ -154,11 +155,11 @@ def test_smoke_context_window_limit_resolves(smoke_model, expected_window):
     assert smoke_model.get_config()["context_window_limit"] == expected_window
 
 
-# The xfail is attached here rather than on SMOKE_MODELS so the Large 4 window assertion above still runs and passes.
+# Only Large 4's tool-use turn is expected to fail; its window assertion passes.
 @pytest.mark.parametrize(
     "model_id",
     [
-        pytest.param(model_id, marks=LARGE_4_TOOL_USE_XFAIL if model_id == "mistral-large-4-0" else [], id=model_id)
+        pytest.param(model_id, marks=LARGE_4_TOOL_USE_XFAIL if model_id == LARGE_4 else [])
         for model_id in SMOKE_MODEL_IDS
     ],
 )
