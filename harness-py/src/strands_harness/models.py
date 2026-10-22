@@ -97,7 +97,11 @@ _BEDROCK_GPT_OSS_LEVELS = ("low", "medium", "high")
 _BEDROCK_QWEN_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 _BEDROCK_XAI_LEVELS = ("low", "medium", "high", "xhigh")
 _BEDROCK_NOVA_LEVELS = ("low", "medium", "high")
-_GOOGLE_LEVELS = ("minimal", "low", "medium", "high")
+_GOOGLE_LEVELS = ("low", "medium", "high")
+_GOOGLE_MINIMAL_LEVELS = ("minimal", "low", "medium", "high")
+# Gemini models (id prefixes) whose model page lists ``thinking_level: minimal``; the others error on
+# it. Per https://ai.google.dev/gemini-api/docs/thinking#controlling-thinking.
+_GOOGLE_MINIMAL_MODELS = ("gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview", "gemini-robotics-er-2")
 
 _ADAPTIVE_THINKING_SINCE = {"opus": (4, 6), "sonnet": (4, 6), "haiku": (5, 5)}
 _EXTENDED_THINKING_SINCE = {"opus": (4, 5), "sonnet": (4, 5), "haiku": (4, 5)}
@@ -245,6 +249,10 @@ def _bedrock_mantle(model_id: str, effort: str | None, web_search: bool, caching
     return OpenAIResponsesModel(
         model_id=model_id, bedrock_mantle_config=BedrockMantleConfig(), **({"params": params} if params else {})
     )
+
+
+def _google_levels(model_id: str) -> tuple[str, ...]:
+    return _GOOGLE_MINIMAL_LEVELS if model_id.startswith(_GOOGLE_MINIMAL_MODELS) else _GOOGLE_LEVELS
 
 
 def _gemini(model_id: str, effort: str | None, web_search: bool, caching: bool) -> Model:
@@ -484,6 +492,8 @@ def resolve_model(
     subject = "this provider"
     if provider_name == "anthropic" and _claude_thinking_mode(name) is None:
         levels, recommended, subject = (), None, f"model {name}"
+    if provider_name == "google":
+        levels, subject = _google_levels(name), f"model {name}"
     level = (
         _bedrock_effort(name, effort) if provider_name == "bedrock" else _effort(effort, recommended, levels, subject)
     )

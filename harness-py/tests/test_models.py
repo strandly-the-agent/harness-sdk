@@ -313,7 +313,7 @@ def test_unknown_bedrock_family_rejects_explicit_effort():
 
 
 def test_level_rejected_when_provider_does_not_support_it():
-    with pytest.raises(ValueError, match="not supported by this provider"):
+    with pytest.raises(ValueError, match="not supported by model gemini-3.5-flash"):
         resolve("google/gemini-3.5-flash", effort="xhigh")
     with pytest.raises(ValueError, match="not supported by this provider"):
         resolve("openai/gpt-5.6-sol", effort="max")
@@ -343,6 +343,19 @@ def test_google_auto_maps_to_high_thinking_level():
     model = resolve("google/gemini-3.5-flash")
     assert isinstance(model, Model)
     assert model.config["params"]["thinking_config"]["thinking_level"] == "high"
+
+
+@pytest.mark.parametrize("model_id", ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash"])
+def test_google_minimal_rejected_where_the_model_page_lists_no_minimal(model_id):
+    with pytest.raises(ValueError, match=f"not supported by model {model_id}. Supported levels: low, medium, high "):
+        resolve(f"google/{model_id}", effort="minimal")
+    assert resolve(f"google/{model_id}", effort="low").config["params"]["thinking_config"]["thinking_level"] == "low"
+
+
+@pytest.mark.parametrize("model_id", ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash"])
+def test_google_minimal_accepted_where_the_model_page_lists_it(model_id):
+    model = resolve(f"google/{model_id}", effort="minimal")
+    assert model.config["params"]["thinking_config"]["thinking_level"] == "minimal"
 
 
 def test_google_uses_model_id_directly():

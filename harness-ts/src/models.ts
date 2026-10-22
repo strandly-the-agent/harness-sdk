@@ -92,7 +92,11 @@ const BEDROCK_GPT_LEVELS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as 
 const BEDROCK_GPT_OSS_LEVELS = ['low', 'medium', 'high'] as const
 const BEDROCK_QWEN_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const BEDROCK_XAI_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const
-const GOOGLE_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
+const GOOGLE_LEVELS = ['low', 'medium', 'high'] as const
+const GOOGLE_MINIMAL_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
+// Gemini models (id prefixes) whose model page lists `thinking_level: minimal`; the others error on
+// it. Per https://ai.google.dev/gemini-api/docs/thinking#controlling-thinking.
+const GOOGLE_MINIMAL_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-robotics-er-2']
 const NO_THINKING_LEVELS: readonly string[] = []
 
 const ADAPTIVE_THINKING_SINCE: Record<string, [number, number]> = { opus: [4, 6], sonnet: [4, 6], haiku: [5, 5] }
@@ -270,6 +274,10 @@ async function bedrockMantle(
     bedrockMantleConfig: {},
     ...(Object.keys(params).length === 0 ? {} : { params }),
   })
+}
+
+function googleLevels(modelId: string): readonly string[] {
+  return GOOGLE_MINIMAL_MODELS.some((prefix) => modelId.startsWith(prefix)) ? GOOGLE_MINIMAL_LEVELS : GOOGLE_LEVELS
 }
 
 // `_caching` is unused: Gemini caches implicitly server-side (models 2.5 and newer).
@@ -467,17 +475,20 @@ export async function resolveModel(
     )
   }
 
-  const claudeDirectWithoutAdaptive = providerName === 'anthropic' && claudeThinkingMode(name) === null
+  let { levels, recommended } = provider
+  let subject = 'this provider'
+  if (providerName === 'anthropic' && claudeThinkingMode(name) === null) {
+    levels = NO_THINKING_LEVELS
+    recommended = null
+    subject = `model ${name}`
+  }
+  if (providerName === 'google') {
+    levels = googleLevels(name)
+    subject = `model ${name}`
+  }
   return provider.build(
     name,
-    providerName === 'bedrock'
-      ? bedrockEffort(name, effort)
-      : resolveEffort(
-          effort,
-          claudeDirectWithoutAdaptive ? null : provider.recommended,
-          claudeDirectWithoutAdaptive ? NO_THINKING_LEVELS : provider.levels,
-          claudeDirectWithoutAdaptive ? `model ${name}` : 'this provider'
-        ),
+    providerName === 'bedrock' ? bedrockEffort(name, effort) : resolveEffort(effort, recommended, levels, subject),
     nativeSearch,
     caching && provider.caching && !unsupportedCaching
   )
