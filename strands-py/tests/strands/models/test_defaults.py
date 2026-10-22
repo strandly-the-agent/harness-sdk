@@ -110,6 +110,8 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("ministral-8b-latest") == 262_144
         assert get_context_window_limit("ministral-3b-2512") == 131_072
         assert get_context_window_limit("ministral-3b-latest") == 131_072
+        assert get_context_window_limit("mistral-small-2603") == 262_144
+        assert get_context_window_limit("mistral-small-latest") == 262_144
 
     def test_strips_bedrock_cross_region_prefix(self):
         assert get_context_window_limit("us.anthropic.claude-sonnet-4-6") == 1_000_000

@@ -190,7 +190,8 @@ _CONTEXT_WINDOW_LIMITS: dict[str, int] = {
     "mistral-large-3": 262_144,
     "mistral-medium-latest": 262_144,
     "mistral-medium-2505": 131_072,
-    "mistral-small-latest": 131_072,
+    "mistral-small-latest": 262_144,
+    "mistral-small-2603": 262_144,
     "mistral-small-3-2-2506": 131_072,
 }
 
