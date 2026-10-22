@@ -154,7 +154,7 @@ class TestMistralMedium35:
 
 
 class TestMistralLarge4:
-    """Smoke coverage for mistral-large-4-0: the context window resolves and a tool-using turn completes."""
+    """Smoke coverage for mistral-large-4-0: the context window resolves; the tool-using turn is blocked on #5032."""
 
     @pytest.fixture()
     def model(self):
@@ -172,6 +172,7 @@ class TestMistralLarge4:
 
     @pytest.mark.xfail(
         strict=True,
+        raises=TypeError,
         reason="Large 4 returns list content (ThinkChunk/TextChunk) that MistralModel passes through as text: #5032",
     )
     def test_tool_use_turn(self, model, tools, system_prompt):
