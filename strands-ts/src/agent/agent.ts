@@ -359,7 +359,8 @@ export type AgentConfig = {
    *   running invocation's first model call ends it with nothing appended, like a cancel.
    * - `'queue'`: wait FIFO; the call runs as its own invocation when the current one
    *   finishes. The queue is unbounded; a queued call leaves it when its `cancelSignal`
-   *   aborts (rejecting with {@link PendingInvocationCancelledError}).
+   *   aborts (rejecting with {@link PendingInvocationCancelledError}). Hosts that need a
+   *   bound count their own submissions and pass `ifBusy: 'throw'` past it.
    *
    * Callers can override per call via {@link InvokeOptions.ifBusy}. Under any mode
    * other than `'throw'`, a tool or hook of the running invocation must not `await`
