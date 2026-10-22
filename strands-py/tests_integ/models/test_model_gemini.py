@@ -322,7 +322,6 @@ class TestGemini38Flash:
         return GeminiModel(
             client_args={"api_key": os.getenv("GOOGLE_API_KEY")},
             model_id="gemini-3.8-flash",
-            params={"temperature": 0.15},
         )
 
     def test_context_window_limit_resolves(self, model):
@@ -331,7 +330,7 @@ class TestGemini38Flash:
     def test_tool_use_turn(self, model, tools, system_prompt):
         agent = Agent(model=model, tools=tools, system_prompt=system_prompt)
 
-        result = agent("What is the time and weather in New York?")
+        result = agent("What is the current time and weather in New York?")
 
         text = str(result).lower()
         assert "12:00" in text

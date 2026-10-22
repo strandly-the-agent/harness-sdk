@@ -194,7 +194,7 @@ describe.skipIf(gemini.skip)('GoogleModel Integration Tests', () => {
 
   describe('gemini-3.8-flash', () => {
     it.concurrent('resolves the context window and completes a tool-using turn', async () => {
-      const model = gemini.createModel({ modelId: 'gemini-3.8-flash', params: { temperature: 0.15 } })
+      const model = gemini.createModel({ modelId: 'gemini-3.8-flash' })
       expect(model.getConfig().contextWindowLimit).toBe(1_048_576)
 
       const weather = tool({
@@ -208,6 +208,7 @@ describe.skipIf(gemini.skip)('GoogleModel Integration Tests', () => {
       const result = await agent.invoke('What is the weather in New York?')
 
       const text = result.lastMessage.content.find((block) => block.type === 'textBlock')
+      expect(text).toBeDefined()
       expect(text?.text.toLowerCase()).toContain('sunny')
     })
   })
