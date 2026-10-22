@@ -5,7 +5,9 @@
  */
 
 import { logger } from '../../../logging/logger.js'
+import { normalizeError } from '../../../errors.js'
 import { Message, TextBlock, ToolResultBlock } from '../../../types/messages.js'
+import { DocumentBlock, ImageBlock } from '../../../types/media.js'
 import type { ContentBlock } from '../../../types/messages.js'
 import type { Model } from '../../../models/model.js'
 import type { InvocationContext } from '../../../agent/invocation-context.js'
@@ -98,10 +100,10 @@ export class SummarizeStrategy extends BaseOffloadStrategy {
     if (!model) return null
 
     if (block instanceof ToolResultBlock) {
-      const summary = await summarizeContent(
+      const summary = await this._trySummarize(
         toolResultToContentBlocks(block.content),
         model,
-        this._config,
+        message,
         invocationContext
       )
       if (!summary) return null
@@ -115,21 +117,40 @@ export class SummarizeStrategy extends BaseOffloadStrategy {
     }
 
     if (block instanceof TextBlock) {
-      const summary = await summarizeContent([new TextBlock(block.text)], model, this._config, invocationContext)
+      const summary = await this._trySummarize([new TextBlock(block.text)], model, message, invocationContext)
       if (!summary) return null
 
       logger.debug(`trackingId=<${message.trackingId}>, tokens=<${tokens}> | summarized text block`)
       return new TextBlock(`${formatSummarized('text block', tokens, summary)}${formatStashRefs(stashRefs)}`)
     }
 
-    const summary = await summarizeContent([block], model, this._config, invocationContext)
-    if (summary) {
-      logger.debug(`trackingId=<${message.trackingId}>, tokens=<${tokens}> | summarized media block`)
-      return new TextBlock(`${formatSummarized('media block', tokens, summary)}${formatStashRefs(stashRefs)}`)
+    if (block instanceof ImageBlock || block instanceof DocumentBlock) {
+      const summary = await this._trySummarize([block], model, message, invocationContext)
+      if (summary) {
+        logger.debug(`trackingId=<${message.trackingId}>, tokens=<${tokens}> | summarized media block`)
+        return new TextBlock(`${formatSummarized('media block', tokens, summary)}${formatStashRefs(stashRefs)}`)
+      }
     }
 
     logger.debug(`trackingId=<${message.trackingId}>, tokens=<${tokens}> | offloaded media block`)
     return new TextBlock(`[Offloaded: ~${tokens} tokens]${formatStashRefs(stashRefs)}`)
+  }
+
+  /** Summarizes one block; a failure is logged and leaves the block unsummarized so the pass continues. */
+  private async _trySummarize(
+    content: ContentBlock[],
+    model: Model,
+    message: Message,
+    invocationContext?: InvocationContext
+  ): Promise<string | null> {
+    try {
+      return await summarizeContent(content, model, this._config, invocationContext)
+    } catch (error) {
+      logger.warn(
+        `trackingId=<${message.trackingId}>, error=<${normalizeError(error).message}> | block summarization failed`
+      )
+      return null
+    }
   }
 
   private _resolveModel(agent: LocalAgent): Model | undefined {

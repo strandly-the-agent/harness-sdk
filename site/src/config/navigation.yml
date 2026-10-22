@@ -392,6 +392,7 @@ sidebar:
             addedDate: 2026-06-17
             items:
               - docs/user-guide/sdk/memory/test-memory-store
+              - docs/user-guide/sdk/memory/file-memory-store
               - docs/user-guide/sdk/memory/bedrock-knowledge-base
           - label: Plugins
             items:
@@ -444,7 +445,8 @@ sidebar:
                     slug: docs/user-guide/sdk/bidi/models
                   - docs/user-guide/sdk/bidi/models/bedrock
                   - docs/user-guide/sdk/bidi/models/google
-                  - docs/user-guide/sdk/bidi/models/openai
+                  - docs/user-guide/sdk/bidi/models/openai/realtime
+                  - docs/user-guide/sdk/bidi/models/openai/live
               - docs/user-guide/sdk/bidi/tools
               - docs/user-guide/sdk/bidi/io
               - docs/user-guide/sdk/bidi/content
