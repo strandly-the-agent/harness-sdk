@@ -441,7 +441,7 @@ class TestChatLatest:
         )
 
     def test_context_window_limit_resolves(self, model):
-        assert model.get_config()["context_window_limit"] == 400_000
+        assert model.get_config()["context_window_limit"] == 272_000
 
     def test_tool_use_turn(self, model, tools):
         agent = Agent(model=model, tools=tools)

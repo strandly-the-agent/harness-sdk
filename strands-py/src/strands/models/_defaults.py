@@ -102,7 +102,7 @@ _CONTEXT_WINDOW_LIMITS: dict[str, int] = {
     "zai.glm-5": 200_000,
     "zai.glm-5.3": 1_000_000,
     # OpenAI
-    "chat-latest": 400_000,  # rolling alias for the current ChatGPT model; window may change with it
+    "chat-latest": 272_000,  # rolling alias for the current ChatGPT model: input budget (400k - 128k out); may change
     "gpt-6-astra": 1_050_000,
     "gpt-6.1-sol": 1_050_000,
     "gpt-6-sol": 1_050_000,

@@ -213,7 +213,7 @@ describe.skipIf(openai.skip)('OpenAIModel Integration Tests', () => {
   describe('chat-latest', () => {
     it.concurrent('resolves the context window and completes a tool-using turn', async () => {
       const provider = openai.createModel({ modelId: 'chat-latest' })
-      expect(provider.getConfig().contextWindowLimit).toBe(400_000)
+      expect(provider.getConfig().contextWindowLimit).toBe(272_000)
 
       const weatherTool: ToolSpec = {
         name: 'tool_weather',

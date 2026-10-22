@@ -47,7 +47,7 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("global.zai.glm-5.3") == 1_000_000
 
     def test_known_openai(self):
-        assert get_context_window_limit("chat-latest") == 400_000
+        assert get_context_window_limit("chat-latest") == 272_000
         assert get_context_window_limit("gpt-6-astra") == 1_050_000
         assert get_context_window_limit("gpt-6.1-sol") == 1_050_000
         assert get_context_window_limit("gpt-6-sol") == 1_050_000
