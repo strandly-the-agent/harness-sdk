@@ -79,8 +79,7 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     const first = agent.invoke('a')
     await gate.started
     const second = agent.invoke('b')
-    await until(() => agent.pendingInvocations.length === 1, 'second queued')
-    expect(agent.pendingInvocations[0]).toMatchObject({ mode: 'stopPrevious' })
+    await until(() => agent._pendingInvocationCount === 1, 'second queued')
 
     // The running invocation is not cancelled: its tool keeps running until released.
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -247,7 +246,7 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     await gate.started
     const controller = new AbortController()
     const second = agent.invoke('b', { cancelSignal: controller.signal })
-    await until(() => agent.pendingInvocations.length === 1, 'second queued')
+    await until(() => agent._pendingInvocationCount === 1, 'second queued')
     controller.abort()
     await expect(second).rejects.toThrow(PendingInvocationCancelledError)
 
@@ -270,7 +269,7 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
       afterPasses++
       second ??= agent.invoke('b')
       // Mirrors a plugin that resumes while its condition holds — here, while a caller waits.
-      if (agent.pendingInvocations.length > 0) event.resume = []
+      if (agent._pendingInvocationCount > 0) event.resume = []
     })
 
     const firstResult = await agent.invoke('a')
@@ -304,7 +303,7 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     const first = agent.invoke('a')
     await modelStarted
     const second = agent.invoke('b')
-    await until(() => agent.pendingInvocations.length === 1, 'second queued')
+    await until(() => agent._pendingInvocationCount === 1, 'second queued')
     releaseModel()
 
     expect((await first).stopReason).toBe('superseded')

@@ -28,17 +28,8 @@ export type ConcurrentInvocationMode = (typeof CONCURRENT_INVOCATION_MODES)[numb
 /** Concurrency modes under which a busy-time call waits in the queue. */
 export type PendingInvocationMode = Exclude<ConcurrentInvocationMode, 'throw'>
 
-/** A queued invocation, as surfaced by `agent.pendingInvocations`. */
-export interface PendingInvocation {
-  /** Queue-unique identifier, usable with `agent.cancelPending(id)`. */
-  readonly id: string
-  /** When the call entered the queue. */
-  readonly submittedAt: Date
-  /** The mode the call was submitted under. */
+interface QueueEntry {
   readonly mode: PendingInvocationMode
-}
-
-interface QueueEntry extends PendingInvocation {
   args: InvokeArgs
   signal?: AbortSignal
   resolve: () => void
@@ -74,16 +65,10 @@ function isLatestWins(mode: PendingInvocationMode): boolean {
  */
 export class InvocationQueue {
   private readonly _entries: QueueEntry[] = []
-  private _nextSequence = 1
   private readonly _enqueueListeners = new Set<() => void>()
 
   get size(): number {
     return this._entries.length
-  }
-
-  /** Immutable view of the queued entries, in run order. */
-  list(): readonly PendingInvocation[] {
-    return this._entries.map(({ id, submittedAt, mode }) => Object.freeze({ id, submittedAt, mode }))
   }
 
   /**
@@ -109,11 +94,8 @@ export class InvocationQueue {
    *   and rejects with {@link PendingInvocationCancelledError}
    */
   wait(args: InvokeArgs, options: { mode: PendingInvocationMode; cancelSignal?: AbortSignal }): Promise<void> {
-    const id = `pending-${this._nextSequence++}`
     return new Promise<void>((resolve, reject) => {
       const entry: QueueEntry = {
-        id,
-        submittedAt: new Date(),
         mode: options.mode,
         args,
         resolve,
@@ -122,7 +104,7 @@ export class InvocationQueue {
       }
 
       if (options.cancelSignal?.aborted) {
-        reject(new PendingInvocationCancelledError(id))
+        reject(new PendingInvocationCancelledError())
         return
       }
       if (options.cancelSignal) {
@@ -169,24 +151,11 @@ export class InvocationQueue {
     entry.cleanup = (): void => signal.removeEventListener('abort', onAbort)
   }
 
-  /**
-   * Removes a queued entry by id, rejecting its caller with
-   * {@link PendingInvocationCancelledError}.
-   *
-   * @returns `true` when the entry was found and removed
-   */
-  cancel(id: string): boolean {
-    const entry = this._entries.find((queued) => queued.id === id)
-    if (!entry) return false
-    this._remove(entry)
-    return true
-  }
-
   private _remove(entry: QueueEntry): void {
     const index = this._entries.indexOf(entry)
     if (index === -1) return
     this._entries.splice(index, 1)
     entry.cleanup()
-    entry.reject(new PendingInvocationCancelledError(entry.id))
+    entry.reject(new PendingInvocationCancelledError())
   }
 }

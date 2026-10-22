@@ -3,17 +3,16 @@ import { InvocationQueue } from '../invocation-queue.js'
 import { PendingInvocationCancelledError } from '../../errors.js'
 
 describe('InvocationQueue', () => {
-  it('lists entries in run order with id, submittedAt, and mode', () => {
+  it('counts queued entries and reports a stop request while a stopPrevious entry waits', () => {
     const queue = new InvocationQueue()
     void queue.wait('first', { mode: 'queue' }).catch(() => {})
+    expect(queue.hasStopRequest()).toBe(false)
     void queue.wait('second', { mode: 'stopPrevious' }).catch(() => {})
 
-    const listed = queue.list()
-    expect(listed.map((entry) => entry.id)).toEqual(['pending-2', 'pending-1'])
-    expect(listed.map((entry) => entry.mode)).toEqual(['stopPrevious', 'queue'])
-    expect(listed[0]!.submittedAt).toBeInstanceOf(Date)
-    expect(Object.isFrozen(listed[0])).toBe(true)
     expect(queue.size).toBe(2)
+    expect(queue.hasStopRequest()).toBe(true)
+    queue.handoff()
+    expect(queue.hasStopRequest()).toBe(false)
   })
 
   it('resolves waiters FIFO on handoff', async () => {
@@ -54,23 +53,11 @@ describe('InvocationQueue', () => {
     const newer = queue.wait('newer-urgent', { mode: 'cancelPrevious' })
 
     await expect(older).rejects.toThrow(PendingInvocationCancelledError)
-    expect(queue.list().map((entry) => entry.id)).toEqual(['pending-3', 'pending-1'])
+    expect(queue.size).toBe(2)
     queue.handoff()
     await newer
     queue.handoff()
     await plain
-  })
-
-  it('cancel removes the entry and rejects its waiter with the entry id', async () => {
-    const queue = new InvocationQueue()
-    const waiting = queue.wait('doomed', { mode: 'queue' })
-    expect(queue.cancel('pending-1')).toBe(true)
-    await expect(waiting).rejects.toMatchObject({ pendingInvocationId: 'pending-1' })
-    expect(queue.size).toBe(0)
-  })
-
-  it('cancel returns false for an unknown id', () => {
-    expect(new InvocationQueue().cancel('pending-99')).toBe(false)
   })
 
   it('rejects immediately when the cancelSignal is already aborted', async () => {
@@ -140,7 +127,8 @@ describe('InvocationQueue', () => {
 
     await expect(olderCancel).rejects.toThrow(PendingInvocationCancelledError)
     await expect(olderStop).rejects.toThrow(PendingInvocationCancelledError)
-    expect(queue.list().map((entry) => entry.mode)).toEqual(['stopPrevious', 'queue'])
+    expect(queue.size).toBe(2)
+    expect(queue.hasStopRequest()).toBe(true)
     queue.handoff()
     await newest
     queue.handoff()

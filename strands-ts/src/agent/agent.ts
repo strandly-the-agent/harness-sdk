@@ -49,12 +49,7 @@ import { PluginRegistry } from '../plugins/registry.js'
 import { SlidingWindowConversationManager } from '../conversation-manager/sliding-window-conversation-manager.js'
 import { NullConversationManager } from '../conversation-manager/null-conversation-manager.js'
 import { ConversationManager } from '../conversation-manager/conversation-manager.js'
-import {
-  InvocationQueue,
-  validateConcurrentInvocationMode,
-  type ConcurrentInvocationMode,
-  type PendingInvocation,
-} from './invocation-queue.js'
+import { InvocationQueue, validateConcurrentInvocationMode, type ConcurrentInvocationMode } from './invocation-queue.js'
 import { AgentDelegation } from './agent-delegation.js'
 import type { Storage } from '../storage/storage.js'
 import { HookRegistryImplementation } from '../hooks/registry.js'
@@ -363,8 +358,8 @@ export type AgentConfig = {
    *   next, so it waits for the slowest in-flight tool. A stop that lands before the
    *   running invocation's first model call ends it with nothing appended, like a cancel.
    * - `'queue'`: wait FIFO; the call runs as its own invocation when the current one
-   *   finishes. The queue is unbounded — bound it host-side by checking
-   *   `pendingInvocations.length` before submitting.
+   *   finishes. The queue is unbounded; a queued call leaves it when its `cancelSignal`
+   *   aborts (rejecting with {@link PendingInvocationCancelledError}).
    *
    * Callers can override per call via {@link InvokeOptions.ifBusy}. Under any mode
    * other than `'throw'`, a tool or hook of the running invocation must not `await`
@@ -1159,20 +1154,13 @@ export class Agent implements LocalAgent, InvokableAgent {
     return this._concurrentInvocationMode
   }
 
-  /** Point-in-time snapshot of invocations waiting in the agent's queue, in run order. */
-  get pendingInvocations(): readonly PendingInvocation[] {
-    return this._invocationQueue.list()
-  }
-
   /**
-   * Removes a queued invocation before it runs; its caller rejects with
-   * {@link PendingInvocationCancelledError}. Use {@link cancel} for the running invocation.
+   * Number of invocations waiting for the turn.
    *
-   * @param id - The queue id from {@link pendingInvocations}
-   * @returns `true` when the entry was found and removed
+   * @internal
    */
-  public cancelPending(id: string): boolean {
-    return this._invocationQueue.cancel(id)
+  get _pendingInvocationCount(): number {
+    return this._invocationQueue.size
   }
 
   /**
@@ -1226,8 +1214,8 @@ export class Agent implements LocalAgent, InvokableAgent {
    * invocation was only awaiting end-of-invocation work (e.g. background-task
    * settlement). If the agent is not currently invoking, this is a no-op.
    *
-   * Only the *running* invocation is cancelled; use {@link cancelPending} to remove a
-   * queued invocation.
+   * Only the *running* invocation is cancelled; a queued invocation is removed by
+   * aborting the `cancelSignal` its caller passed.
    *
    * @example
    * ```typescript
@@ -1704,8 +1692,7 @@ export class Agent implements LocalAgent, InvokableAgent {
    *
    * Use snapshots to checkpoint agent state for later restoration, enabling
    * use cases like undo/redo, branching conversations, and session persistence.
-   * Queued invocations ({@link pendingInvocations}) are not captured — they belong
-   * to the live process.
+   * Queued invocations are not captured — they belong to the live process.
    *
    * Fields are selected via a preset/include/exclude model:
    * 1. Start with preset fields (e.g. `'session'` captures all fields)

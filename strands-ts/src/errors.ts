@@ -117,13 +117,9 @@ export class ConcurrentInvocationError extends Error {
  * agent's invocation queue before running.
  */
 export class PendingInvocationCancelledError extends Error {
-  /** The queue id of the cancelled invocation. */
-  readonly pendingInvocationId: string
-
-  constructor(pendingInvocationId: string) {
-    super(`Queued invocation ${pendingInvocationId} was cancelled before it ran`)
+  constructor() {
+    super('Queued invocation was cancelled before it ran')
     this.name = 'PendingInvocationCancelledError'
-    this.pendingInvocationId = pendingInvocationId
   }
 }
 
