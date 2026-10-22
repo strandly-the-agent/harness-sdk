@@ -23,7 +23,7 @@ import { createMockTool } from '../../__fixtures__/tool-helpers.js'
 import { expectAgentResult } from '../../__fixtures__/agent-helpers.js'
 import { Message, TextBlock, ToolResultBlock } from '../../types/messages.js'
 import type { Plugin } from '../../plugins/plugin.js'
-import type { LocalAgent } from '../../types/agent.js'
+import { AgentResult, type LocalAgent } from '../../types/agent.js'
 import type { Tool } from '../../tools/tool.js'
 import { anyTrackingId } from '../../__fixtures__/message-helpers.js'
 
@@ -92,7 +92,9 @@ describe('Agent Hooks Integration', () => {
           invocationState: {},
         })
       )
-      expect(lifecyclePlugin.invocations[6]).toEqual(new AfterInvocationEvent({ agent, invocationState: {} }))
+      expect(lifecyclePlugin.invocations[6]).toEqual(
+        new AfterInvocationEvent({ agent, invocationState: {}, result: expect.any(AgentResult) as AgentResult })
+      )
     })
 
     it('fires hooks during stream', async () => {
@@ -152,7 +154,9 @@ describe('Agent Hooks Integration', () => {
           invocationState: {},
         })
       )
-      expect(lifecyclePlugin.invocations[6]).toEqual(new AfterInvocationEvent({ agent, invocationState: {} }))
+      expect(lifecyclePlugin.invocations[6]).toEqual(
+        new AfterInvocationEvent({ agent, invocationState: {}, result: expect.any(AgentResult) as AgentResult })
+      )
     })
   })
 
@@ -174,7 +178,9 @@ describe('Agent Hooks Integration', () => {
 
       expect(invocations).toHaveLength(2)
       expect(invocations[0]).toEqual(new BeforeInvocationEvent({ agent, invocationState: {} }))
-      expect(invocations[1]).toEqual(new AfterInvocationEvent({ agent, invocationState: {} }))
+      expect(invocations[1]).toEqual(
+        new AfterInvocationEvent({ agent, invocationState: {}, result: expect.any(AgentResult) as AgentResult })
+      )
     })
   })
 

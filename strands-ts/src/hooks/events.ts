@@ -212,9 +212,7 @@ export class AfterInvocationEvent extends HookableEvent {
    */
   resume: InvokeArgs | undefined = undefined
 
-  constructor(
-    data: { agent: LocalAgent; invocationState: InvocationState; result?: AgentResult } & HookableEventData
-  ) {
+  constructor(data: { agent: LocalAgent; invocationState: InvocationState; result?: AgentResult } & HookableEventData) {
     super(data)
     this.agent = data.agent
     this.invocationState = data.invocationState
