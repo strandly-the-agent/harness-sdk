@@ -29,6 +29,8 @@ describe('getContextWindowLimit', () => {
     expect(getContextWindowLimit('gpt-4o')).toBe(128_000)
     expect(getContextWindowLimit('o3')).toBe(200_000)
     expect(getContextWindowLimit('o4-mini')).toBe(200_000)
+    expect(getContextWindowLimit('gpt-oss-120b')).toBe(131_072)
+    expect(getContextWindowLimit('gpt-oss-20b')).toBe(131_072)
     // Gemini
     expect(getContextWindowLimit('gemini-2.5-flash')).toBe(1_048_576)
     expect(getContextWindowLimit('gemini-2.5-pro')).toBe(1_048_576)
@@ -50,6 +52,17 @@ describe('getContextWindowLimit', () => {
     expect(getContextWindowLimit('anthropic.claude-haiku-5-5')).toBe(1_000_000)
     expect(getContextWindowLimit('eu.anthropic.claude-haiku-5-5')).toBe(1_000_000)
     expect(getContextWindowLimit('global.anthropic.claude-haiku-5-5')).toBe(1_000_000)
+  })
+
+  it('returns the Bedrock window for gpt-oss, not the OpenAI-hosted one', () => {
+    expect(getContextWindowLimit('openai.gpt-oss-120b')).toBe(128_000)
+    expect(getContextWindowLimit('openai.gpt-oss-120b-1:0')).toBe(128_000)
+    expect(getContextWindowLimit('openai.gpt-oss-20b')).toBe(128_000)
+    expect(getContextWindowLimit('openai.gpt-oss-20b-1:0')).toBe(128_000)
+    expect(getContextWindowLimit('openai.gpt-oss-safeguard-120b')).toBe(128_000)
+    expect(getContextWindowLimit('openai.gpt-oss-safeguard-20b')).toBe(128_000)
+    expect(getContextWindowLimit('us.openai.gpt-oss-120b-1:0')).toBe(128_000)
+    expect(getContextWindowLimit('global.openai.gpt-oss-120b')).toBe(128_000)
   })
 
   it('strips Bedrock cross-region prefix before lookup', () => {

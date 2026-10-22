@@ -46,6 +46,16 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("us.zai.glm-5.3") == 1_000_000
         assert get_context_window_limit("global.zai.glm-5.3") == 1_000_000
 
+    def test_known_bedrock_openai_gpt_oss(self):
+        assert get_context_window_limit("openai.gpt-oss-120b") == 128_000
+        assert get_context_window_limit("openai.gpt-oss-120b-1:0") == 128_000
+        assert get_context_window_limit("openai.gpt-oss-20b") == 128_000
+        assert get_context_window_limit("openai.gpt-oss-20b-1:0") == 128_000
+        assert get_context_window_limit("openai.gpt-oss-safeguard-120b") == 128_000
+        assert get_context_window_limit("openai.gpt-oss-safeguard-20b") == 128_000
+        assert get_context_window_limit("us.openai.gpt-oss-120b-1:0") == 128_000
+        assert get_context_window_limit("global.openai.gpt-oss-120b") == 128_000
+
     def test_known_openai(self):
         assert get_context_window_limit("gpt-6-astra") == 1_050_000
         assert get_context_window_limit("gpt-6.1-sol") == 1_050_000
@@ -57,6 +67,8 @@ class TestGetContextWindowLimit:
         assert get_context_window_limit("gpt-4o") == 128_000
         assert get_context_window_limit("o3") == 200_000
         assert get_context_window_limit("o4-mini") == 200_000
+        assert get_context_window_limit("gpt-oss-120b") == 131_072
+        assert get_context_window_limit("gpt-oss-20b") == 131_072
 
     def test_known_gemini(self):
         assert get_context_window_limit("gemini-2.5-flash") == 1_048_576

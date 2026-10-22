@@ -134,6 +134,14 @@ const CONTEXT_WINDOW_LIMITS: Record<string, number> = {
   'zai.glm-5': 200_000,
   'zai.glm-5.3': 1_000_000,
 
+  // Bedrock OpenAI (Bedrock cards publish 128K for gpt-oss; OpenAI publishes 131,072)
+  'openai.gpt-oss-120b': 128_000,
+  'openai.gpt-oss-120b-1:0': 128_000,
+  'openai.gpt-oss-20b': 128_000,
+  'openai.gpt-oss-20b-1:0': 128_000,
+  'openai.gpt-oss-safeguard-120b': 128_000,
+  'openai.gpt-oss-safeguard-20b': 128_000,
+
   // OpenAI
   'gpt-6-astra': 1_050_000,
   'gpt-6.1-sol': 1_050_000,
@@ -167,6 +175,8 @@ const CONTEXT_WINDOW_LIMITS: Record<string, number> = {
   'o3-pro': 200_000,
   'o4-mini': 200_000,
   o1: 200_000,
+  'gpt-oss-120b': 131_072,
+  'gpt-oss-20b': 131_072,
 
   // Google Gemini
   'gemini-2.5-flash': 1_048_576,
