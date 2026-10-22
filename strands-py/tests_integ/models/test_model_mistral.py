@@ -231,3 +231,29 @@ class TestMistralSmall4:
         text = str(result).lower()
         assert "12:00" in text
         assert "sunny" in text
+
+
+class TestCodestral:
+    """Smoke coverage for codestral-2508: the context window resolves and a tool-using turn completes."""
+
+    @pytest.fixture()
+    def model(self):
+        return MistralModel(
+            model_id="codestral-2508",
+            api_key=os.getenv("MISTRAL_API_KEY"),
+            stream=True,
+            temperature=0.7,
+            max_tokens=1000,
+            top_p=0.9,
+        )
+
+    def test_context_window_limit_resolves(self, model):
+        assert model.get_config()["context_window_limit"] == 131_072
+
+    def test_tool_use_turn(self, model, tools, system_prompt):
+        agent = Agent(model=model, tools=tools, system_prompt=system_prompt)
+
+        result = agent("What is the time and weather in New York?")
+
+        text = result.message["content"][0]["text"].lower()
+        assert all(string in text for string in ["12:00", "sunny"])
