@@ -19,15 +19,18 @@ class ModelNotServed(Exception):
 
 
 def _anthropic(model_id: str) -> int | None:
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     try:
-        return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY")).models.retrieve(model_id).max_input_tokens
+        return client.models.retrieve(model_id).max_input_tokens
     except anthropic.NotFoundError as e:
         raise ModelNotServed(model_id) from e
 
 
 def _gemini(model_id: str) -> int | None:
+    # Held in a local: an inline `genai.Client(...).models.get(...)` can be collected (and closed) mid-request.
+    client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
     try:
-        return genai.Client(api_key=os.getenv("GOOGLE_API_KEY")).models.get(model=model_id).input_token_limit
+        return client.models.get(model=model_id).input_token_limit
     except genai_errors.ClientError as e:
         if e.code == 404:
             raise ModelNotServed(model_id) from e
@@ -35,8 +38,9 @@ def _gemini(model_id: str) -> int | None:
 
 
 def _mistral(model_id: str) -> int | None:
+    client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
     try:
-        return Mistral(api_key=os.getenv("MISTRAL_API_KEY")).models.retrieve(model_id=model_id).max_context_length
+        return client.models.retrieve(model_id=model_id).max_context_length
     except MistralSDKError as e:
         if e.status_code == 404:
             raise ModelNotServed(model_id) from e

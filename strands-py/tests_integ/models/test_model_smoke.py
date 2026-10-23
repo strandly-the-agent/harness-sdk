@@ -24,6 +24,7 @@ SMOKE_MODELS = [
         (providers.bedrock, "openai.gpt-oss-120b-1:0", 128_000),
         (providers.mantle, "google.gemma-4-31b", 256_000),
         (providers.mantle, "openai.gpt-oss-120b", 128_000),
+        (providers.mantle_responses, "google.gemma-4-31b", 256_000),
         (providers.mantle_responses, "openai.gpt-oss-120b", 128_000),
         (providers.openai, "chat-latest", 272_000),
         (providers.mistral, "mistral-medium-3-5", 262_144),
