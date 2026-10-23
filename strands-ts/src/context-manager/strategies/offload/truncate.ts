@@ -8,8 +8,14 @@ import { logger } from '../../../logging/logger.js'
 import { Message, TextBlock, ToolResultBlock } from '../../../types/messages.js'
 import type { ContentBlock } from '../../../types/messages.js'
 import type { LocalAgent } from '../../../types/agent.js'
+import type { InvocationContext } from '../../../agent/invocation-context.js'
 import type { ContextStrategy } from '../../types.js'
-import { truncateToolResultBlock, truncateTextBlock, type TruncateConfig } from '../../methods/truncate.js'
+import {
+  TRUNCATED_PREFIX,
+  truncateToolResultBlock,
+  truncateTextBlock,
+  type TruncateConfig,
+} from '../../methods/truncate.js'
 import { formatStashRefs } from '../../stash.js'
 import { BaseOffloadStrategy, type OffloadConditions, type OffloadTarget } from './base.js'
 
@@ -45,16 +51,28 @@ export class TruncateStrategy extends BaseOffloadStrategy {
     return `[... ${count} ${count === 1 ? 'message' : 'messages'} elided ...]`
   }
 
+  /** Skips blocks that already hold a preview so repeated passes never shave the preview further. */
+  protected override _blockMatchesTarget(
+    block: ContentBlock,
+    message: Message,
+    toolNameMap: Map<string, string>
+  ): boolean {
+    return !isTruncated(block) && super._blockMatchesTarget(block, message, toolNameMap)
+  }
+
   protected async _replaceBlock(
     block: ContentBlock,
     tokens: number,
     message: Message,
     _agent: LocalAgent,
-    stashRefs: string[]
+    stashRefs: string[],
+    _invocationContext?: InvocationContext,
+    limit?: number
   ): Promise<ContentBlock | null> {
     if (block instanceof ToolResultBlock) {
-      logger.debug(`toolUseId=<${block.toolUseId}>, tokens=<${tokens}> | truncated tool result`)
-      const truncated = truncateToolResultBlock(block, this._truncateConfig)
+      logger.debug(`toolUseId=<${block.toolUseId}>, tokens=<${tokens}>, limit=<${limit}> | truncated tool result`)
+      const config = limit === undefined ? this._truncateConfig : { ...this._truncateConfig, previewTokens: limit }
+      const truncated = truncateToolResultBlock(block, config)
       if (truncated !== block) {
         return appendStashRefs(truncated, stashRefs)
       }
@@ -69,6 +87,11 @@ export class TruncateStrategy extends BaseOffloadStrategy {
     logger.debug(`trackingId=<${message.trackingId}>, tokens=<${tokens}> | offloaded media block`)
     return new TextBlock(`[Offloaded: ~${tokens} tokens]${formatStashRefs(stashRefs)}`)
   }
+}
+
+function isTruncated(block: ContentBlock): boolean {
+  const text = block instanceof ToolResultBlock ? block.content[0] : block
+  return text instanceof TextBlock && text.text.startsWith(TRUNCATED_PREFIX)
 }
 
 function appendStashRefs(block: ToolResultBlock, stashRefs: string[]): ToolResultBlock {

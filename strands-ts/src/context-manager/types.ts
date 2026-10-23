@@ -129,4 +129,14 @@ export interface ContextManagerConfig {
    * - `false` → stash disabled (no persistence, no retrieval tool)
    */
   stash?: StashConfig | boolean
+
+  /**
+   * Let the model choose, per tool call, how many tokens of that call's result stay in context.
+   *
+   * Adds an optional `_max_result_tokens` integer to every tool's input schema. When the model
+   * sets it, per-block offload strategies use that value instead of their configured `threshold`
+   * (and, for truncation, `previewTokens`) for that one result; calls without it keep the
+   * configured defaults. The property is stripped before the tool runs. Defaults to `false`.
+   */
+  agenticResultLimits?: boolean
 }
