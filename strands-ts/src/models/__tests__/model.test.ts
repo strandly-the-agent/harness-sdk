@@ -1281,17 +1281,17 @@ describe('info', () => {
   it('applies what the provider declares', () => {
     class DeclaringProvider extends TestModelProvider {
       protected override declareInfo() {
-        return { capabilities: { promptCaching: 'automatic' as const } }
+        return { capabilities: { promptCaching: 'auto' as const } }
       }
     }
 
-    expect(new DeclaringProvider().info.capabilities?.promptCaching).toBe('automatic')
+    expect(new DeclaringProvider().info.capabilities?.promptCaching).toBe('auto')
   })
 
   it('lets the info config override win over the declaration', () => {
     class DeclaringProvider extends TestModelProvider {
       protected override declareInfo() {
-        return { capabilities: { promptCaching: 'automatic' as const }, limits: { contextWindow: 8_000 } }
+        return { capabilities: { promptCaching: 'auto' as const }, limits: { contextWindow: 8_000 } }
       }
     }
     const provider = new DeclaringProvider()

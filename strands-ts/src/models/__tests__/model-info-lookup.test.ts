@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { lookupModelInfo, getContextWindowLimit, lookupModel } from '../model-info.js'
+import { DEFAULT_CONTEXT_WINDOW_LIMIT, lookupModelInfo, getContextWindowLimit, lookupModel } from '../model-info.js'
+import modelInfoData from '../model-info.json' with { type: 'json' }
 
 describe('shared model info data', () => {
   it('resolves every spelling of a model to its one entry', () => {
@@ -52,5 +53,33 @@ describe('shared model info data', () => {
   it('keeps getContextWindowLimit working for ids the Python table already knew', () => {
     expect(getContextWindowLimit('mistral-large-latest')).toBe(262_144)
     expect(getContextWindowLimit('o3')).toBe(200_000)
+  })
+
+  it('exposes the context window default from the data', () => {
+    expect(DEFAULT_CONTEXT_WINDOW_LIMIT).toBe(200_000)
+  })
+
+  it('has only the fields ModelInfo defines, with the right types, in every entry', () => {
+    const data = modelInfoData as Record<string, unknown>
+    expect(Object.keys(data).sort()).toEqual(['$comment', 'defaults', 'models'])
+    expect(data.defaults).toEqual({ limits: { contextWindow: expect.any(Number) } })
+
+    for (const [id, entry] of Object.entries(data.models as Record<string, Record<string, Record<string, unknown>>>)) {
+      expect(id, id).toMatch(/^[a-z0-9][a-z0-9.:@-]*$/)
+      expect(
+        Object.keys(entry).every((key) => ['limits', 'capabilities'].includes(key)),
+        id
+      ).toBe(true)
+      for (const [key, value] of Object.entries(entry.limits ?? {})) {
+        expect(['contextWindow', 'maxOutputTokens'], `${id}.limits.${key}`).toContain(key)
+        expect(Number.isInteger(value) && (value as number) > 0, `${id}.limits.${key}`).toBe(true)
+      }
+      for (const [key, value] of Object.entries(entry.capabilities ?? {})) {
+        if (key === 'promptCaching') expect(['unsupported', 'auto', 'cachePoints'], `${id}.${key}`).toContain(value)
+        else if (key === 'forcedToolChoice' || key === 'nativeStructuredOutput')
+          expect(typeof value, `${id}.${key}`).toBe('boolean')
+        else throw new Error(`${id}.capabilities.${key} is not a ModelCapabilities field`)
+      }
+    }
   })
 })

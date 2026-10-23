@@ -142,7 +142,7 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
    * @returns The declared capabilities
    */
   protected override declareInfo(): ModelInfo {
-    return { capabilities: { promptCaching: 'automatic' } }
+    return { capabilities: { promptCaching: 'auto' } }
   }
 
   /**

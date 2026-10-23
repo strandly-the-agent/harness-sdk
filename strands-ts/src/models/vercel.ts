@@ -165,7 +165,7 @@ export class VercelModel extends Model<VercelModelConfig> {
       case 'anthropic':
         return { capabilities: { promptCaching: 'cachePoints' } }
       case 'openai':
-        return { capabilities: { promptCaching: 'automatic' } }
+        return { capabilities: { promptCaching: 'auto' } }
       default:
         return {}
     }

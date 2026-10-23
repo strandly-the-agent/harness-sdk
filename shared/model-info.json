@@ -1,6 +1,10 @@
 {
   "$comment": "Shared model info: what the SDKs know about models, as ModelInfo records. Edit here; each SDK copies it on install and build (see shared/README.md), and its tests check the copy matches.",
-  "formatVersion": 1,
+  "defaults": {
+    "limits": {
+      "contextWindow": 200000
+    }
+  },
   "models": {
     "claude-sonnet-4-6": {
       "limits": {

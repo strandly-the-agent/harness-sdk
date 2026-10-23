@@ -42,7 +42,4 @@ export function defaultMaxTokensWarningMessage(defaultMaxTokens: number): string
   return `max_tokens=<${defaultMaxTokens}> | using default maxTokens, which is subject to change | set maxTokens explicitly to pin the value`
 }
 
-/** Default context window limit (in tokens) when the model does not report one. */
-export const DEFAULT_CONTEXT_WINDOW_LIMIT = 200_000
-
-export { getContextWindowLimit } from './model-info.js'
+export { DEFAULT_CONTEXT_WINDOW_LIMIT, getContextWindowLimit } from './model-info.js'

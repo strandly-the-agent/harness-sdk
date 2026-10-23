@@ -1565,7 +1565,7 @@ describe('VercelModel', () => {
         ).toBe('cachePoints')
         expect(
           setupCaptureTest(minimalParts, undefined, 'openai', 'gpt-5').model.info.capabilities?.promptCaching
-        ).toBe('automatic')
+        ).toBe('auto')
       })
 
       it('caches on an unsupported model when the anthropic strategy is explicit', async () => {

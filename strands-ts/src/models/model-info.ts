@@ -15,7 +15,7 @@
 
 import modelInfoData from './model-info.json' with { type: 'json' }
 /** How a model supports prompt caching. */
-export type PromptCaching = 'unsupported' | 'automatic' | 'cachePoints'
+export type PromptCaching = 'unsupported' | 'auto' | 'cachePoints'
 
 /**
  * What the model can do. A yes/no fact is a `boolean`; a fact with more than two states is a string
@@ -76,22 +76,19 @@ export function mergeModelInfo(...parts: (ModelInfo | undefined)[]): ModelInfo {
 }
 
 interface ModelInfoData {
-  readonly formatVersion: number
+  readonly defaults: { readonly limits: { readonly contextWindow: number } }
   readonly models: Readonly<Record<string, ModelInfo>>
 }
 
-const SUPPORTED_FORMAT_VERSION = 1
 // Bedrock appends a version to some ids (`claude-3-5-haiku-20241022-v1:0`); the base id carries the facts.
 const VERSION_SUFFIX = /-(?:v\d+(?::\d+)?|\d+:\d+)$/
 // Dated snapshots (`claude-opus-5-5-20260401`, `claude-haiku-4-5@20251001`) share the undated model's facts.
 const DATE_SUFFIX = /[-@]\d{8}$/
 
 const data = modelInfoData as ModelInfoData
-if (data.formatVersion !== SUPPORTED_FORMAT_VERSION) {
-  throw new Error(
-    `model-info format version ${data.formatVersion} is not supported by this SDK (expected ${SUPPORTED_FORMAT_VERSION})`
-  )
-}
+
+/** Context window limit (in tokens) assumed for a model whose window is unknown. */
+export const DEFAULT_CONTEXT_WINDOW_LIMIT = data.defaults.limits.contextWindow
 
 /**
  * Finds the entry for a model id. Tries the id as given, then without a trailing Bedrock version
