@@ -609,4 +609,50 @@ describe("concurrentInvocationMode 'stopPrevious' × backgroundTasks", () => {
     expect(persistedTasks(agent)).toBeUndefined()
     expect(agent.pendingInvocations).toHaveLength(0)
   })
+
+  it('a stopPrevious caller parked behind a background-task interrupt lets the resume consume the answer first', async () => {
+    const approval = tool({
+      name: 'approval',
+      description: 'Wait for approval.',
+      inputSchema: z.object({}),
+      callback: () => 'approved',
+    })
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'approval', toolUseId: 'approval-use', input: {} })
+      .addTurn({ type: 'textBlock', text: 'resumed' })
+      .addTurn({ type: 'textBlock', text: 'second done' })
+    const agent = new Agent({
+      model,
+      tools: [approval],
+      backgroundTasks: { always: [approval] },
+      concurrentInvocationMode: 'stopPrevious',
+      printer: false,
+    })
+    agent.addMiddleware(ExecuteToolStage, async function* (context, next) {
+      if (context.toolUse.name === 'approval') {
+        context.interrupt<string>({ name: 'approve', reason: 'Approve work?' })
+      }
+      return yield* next(context)
+    })
+
+    // The approval task interrupts from BeforeModelCall: no pending tool batch, the resume's
+    // step is the next model-call pass that hands the answer to the task.
+    const first = await agent.invoke('first')
+    expect(first.stopReason).toBe('interrupt')
+    const second = agent.invoke('second')
+    await until(() => agent.pendingInvocations.length === 1, 'second parked')
+
+    const resumed = await agent.invoke([
+      new InterruptResponseContent({ interruptId: first.interrupts![0]!.id, response: 'yes' }),
+    ])
+
+    // The human's answer reached the task before the parked caller took over.
+    expect(resumed.stopReason).toBe('endTurn')
+    expect(resultText(resumed)).toBe('resumed')
+    expect(persistedTasks(agent)?.map((task) => task.status)).not.toContain('input_required')
+    const secondResult = await second
+    expect(secondResult.stopReason).toBe('endTurn')
+    expect(resultText(secondResult)).toBe('second done')
+    expect(agent.pendingInvocations).toHaveLength(0)
+  })
 })

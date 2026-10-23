@@ -368,9 +368,10 @@ export type AgentConfig = {
    *
    * An agent awaiting an interrupt response counts as busy: under any mode other than
    * `'throw'`, a non-resume call parks in the queue and runs once the resume completes
-   * (the resume yields to a parked `'stopPrevious'` / `'cancelPrevious'` caller after its
-   * pending tool batch; an interrupt with no pending batch yields at once, so that resume
-   * ends `'superseded'` with nothing appended). Abandoning the interrupt with
+   * (the resume yields to a parked `'stopPrevious'` / `'cancelPrevious'` caller once its
+   * interrupt is settled: after the pending tool batch for a tool interrupt, or after the
+   * model-call pass that consumes the response for a hook-raised one; a custom hook
+   * interrupt that nothing settles runs its pass to the end). Abandoning the interrupt with
    * {@link Agent.loadSnapshot} releases the parked callers. A resume cancelled before its
    * pending tool batch leaves the interrupt in place, so parked callers wait for a later
    * resume or `loadSnapshot`; `cancel()` does not release them, each caller's own
@@ -1851,9 +1852,10 @@ export class Agent implements LocalAgent, InvokableAgent {
       while (true) {
         this._throwIfCancelled()
 
-        // A resume's pending tool batch is this invocation's in-flight step: let it run
-        // (and append its messages) before honouring a stop request.
-        if (this._invocationQueue.hasStopRequest() && !this._interruptState.pendingToolExecution) {
+        // A resume's in-flight step is whatever consumes its interrupt responses — the pending
+        // tool batch, or the next model-call pass for a hook-raised interrupt — and it ends with
+        // `deactivate()`. Honour a stop request only once that step has run.
+        if (this._invocationQueue.hasStopRequest() && !this._interruptState.activated) {
           const stopMessage = new Message({
             role: 'assistant',
             content: [new TextBlock('Superseded by a new request')],
