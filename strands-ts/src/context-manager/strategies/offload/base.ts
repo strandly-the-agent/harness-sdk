@@ -401,7 +401,7 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
       const index = messages.indexOf(event.message)
       if (index >= 0 && isPinned(messages, index)) return
       const toolNameMap = buildToolNameMap(messages)
-      const resultLimits = this._modelLimits && buildResultLimitMap(messages, this._modelLimits.max)
+      const resultLimits = this._modelLimits ? buildResultLimitMap(messages, this._modelLimits.max) : undefined
       await this._transformBlocks(event.message, messages, toolNameMap, event.agent, undefined, resultLimits)
     })
   }
@@ -421,7 +421,7 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
     const { messages, agent } = context
     const invocationContext = context.invocationContext
     const toolNameMap = buildToolNameMap(messages)
-    const resultLimits = this._modelLimits && buildResultLimitMap(messages, this._modelLimits.max)
+    const resultLimits = this._modelLimits ? buildResultLimitMap(messages, this._modelLimits.max) : undefined
     const eligible =
       this._preserveRecent > 0
         ? getOldestMatches(
@@ -498,14 +498,14 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
     toolNameMap: Map<string, string>,
     agent: LocalAgent,
     invocationContext?: InvocationContext,
-    resultLimits?: ReadonlyMap<string, number> | false
+    resultLimits?: ReadonlyMap<string, number>
   ): Promise<boolean> {
     let acted = false
     for (let blockIndex = 0; blockIndex < message.content.length; blockIndex++) {
       const block = message.content[blockIndex]!
       if (!this._blockMatchesTarget(block, message, toolNameMap)) continue
 
-      const limit = resultLimits && block instanceof ToolResultBlock ? resultLimits.get(block.toolUseId) : undefined
+      const limit = block instanceof ToolResultBlock ? resultLimits?.get(block.toolUseId) : undefined
       const tokens = await agent.model.countTokens([new Message({ role: message.role, content: [block] })])
       if (tokens <= (limit ?? this._threshold ?? 0)) continue
 

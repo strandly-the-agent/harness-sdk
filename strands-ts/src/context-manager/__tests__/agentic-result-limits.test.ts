@@ -10,7 +10,7 @@ import { tool } from '../../tools/tool-factory.js'
 import type { ToolSpec } from '../../tools/types.js'
 import { Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../types/messages.js'
 import type { JSONValue } from '../../types/json.js'
-import { TRUNCATED_PREFIX } from '../methods/truncate.js'
+import { buildPreview, isTruncatedText, TRUNCATED_PREFIX } from '../methods/truncate.js'
 import { Offload } from '../strategies/offload/index.js'
 import { buildResultLimitMap } from '../strategies/offload/base.js'
 import type { OffloadTarget } from '../strategies/offload/base.js'
@@ -70,6 +70,15 @@ function resultText(messages: Message[], toolUseId: string): string {
   }
   throw new Error(`no tool result for ${toolUseId}`)
 }
+
+describe('isTruncatedText', () => {
+  it('recognises previews produced by buildPreview and nothing else', () => {
+    expect(isTruncatedText(buildPreview('x'.repeat(10_000), 1, { previewTokens: 100 }))).toBe(true)
+    expect(isTruncatedText(buildPreview('x'.repeat(10_000), 3, { previewTokens: 100 }))).toBe(true)
+    expect(isTruncatedText('[Truncated: by someone else]')).toBe(false)
+    expect(isTruncatedText('plain text')).toBe(false)
+  })
+})
 
 describe('buildResultLimitMap', () => {
   it('reads valid limits from tool-use inputs and skips invalid ones', () => {

@@ -13,6 +13,7 @@ import { HookOrder } from '../hooks/types.js'
 import { InvokeModelStage } from '../middleware/index.js'
 import { addInputProperty } from '../tools/input-schema.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME } from '../tools/structured-output-tool.js'
+import { MANAGE_TOOL_NAME } from '../background-tasks/types.js'
 import { ContextWindowOverflowError } from '../errors.js'
 import { InMemoryStorage } from '../storage/in-memory-storage.js'
 import { EPHEMERAL } from '../storage/storage.js'
@@ -26,6 +27,7 @@ import { TruncateStrategy } from './strategies/offload/truncate.js'
 import { resolveStrategies } from './presets.js'
 import { Stash } from './stash.js'
 import { createRetrievalTool, trackRetrievalToolUseIds, RETRIEVAL_TOOL_NAME } from './retrieval-tool.js'
+import { pinContextTool, summarizeContextTool, truncateContextTool } from './modes/agentic/agentic-context.js'
 
 const AUTO_TRUNCATE_THRESHOLD = 1_500
 const AGENTIC_TRUNCATE_THRESHOLD = 8_000
@@ -35,10 +37,10 @@ const AUTO_SUMMARIZE_UTILIZATION = 0.85
 const RESULT_LIMIT_EXEMPT_TOOLS = new Set([
   RETRIEVAL_TOOL_NAME,
   STRUCTURED_OUTPUT_TOOL_NAME,
-  'strands_manage_background_task',
-  'summarize_context',
-  'truncate_context',
-  'pin_context',
+  MANAGE_TOOL_NAME,
+  summarizeContextTool.name,
+  truncateContextTool.name,
+  pinContextTool.name,
 ])
 
 /** @internal */

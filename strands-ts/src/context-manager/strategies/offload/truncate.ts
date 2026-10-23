@@ -11,7 +11,7 @@ import type { LocalAgent } from '../../../types/agent.js'
 import type { InvocationContext } from '../../../agent/invocation-context.js'
 import type { ContextStrategy } from '../../types.js'
 import {
-  TRUNCATED_PREFIX,
+  isTruncatedText,
   truncateToolResultBlock,
   truncateTextBlock,
   type TruncateConfig,
@@ -103,11 +103,9 @@ export class TruncateStrategy extends BaseOffloadStrategy {
   }
 }
 
-const TRUNCATED_HEADER = new RegExp(`^\\${TRUNCATED_PREFIX} \\d+ blocks?, ~[\\d,]+ tokens\\]\\n\\n`)
-
 function isTruncated(block: ToolResultBlock): boolean {
   const text = block.content[0]
-  return text instanceof TextBlock && TRUNCATED_HEADER.test(text.text)
+  return text instanceof TextBlock && isTruncatedText(text.text)
 }
 
 function appendStashRefs(block: ToolResultBlock, stashRefs: string[]): ToolResultBlock {

@@ -9,6 +9,24 @@ import type { ToolResultContent } from '../../types/messages.js'
 
 export const TRUNCATED_PREFIX = '[Truncated:'
 
+/** Matches the header `formatTruncatedHeader` produces. */
+const TRUNCATED_HEADER = /^\[Truncated: \d+ blocks?, ~[\d,]+ tokens\]\n\n/
+
+function formatTruncatedHeader(blockCount: number, totalChars: number): string {
+  const tokens = Math.ceil(totalChars / CHARS_PER_TOKEN).toLocaleString('en-US')
+  return `${TRUNCATED_PREFIX} ${blockCount} ${blockCount === 1 ? 'block' : 'blocks'}, ~${tokens} tokens]\n\n`
+}
+
+/**
+ * Whether `text` is a preview produced by `buildPreview`.
+ *
+ * @param text - Text to inspect
+ * @returns true when the text starts with a truncation header
+ */
+export function isTruncatedText(text: string): boolean {
+  return TRUNCATED_HEADER.test(text)
+}
+
 const DEFAULT_PREVIEW_TOKENS = 1000
 const CHARS_PER_TOKEN = 4
 
@@ -61,9 +79,7 @@ export function buildPreview(fullText: string, blockCount: number, config?: Trun
   const marker = `[... ${elided.toLocaleString('en-US')} chars elided ...]`
   const preview = [head, marker, tail].filter(Boolean).join('\n\n')
 
-  const result =
-    `${TRUNCATED_PREFIX} ${blockCount} ${blockCount === 1 ? 'block' : 'blocks'}, ~${Math.ceil(totalChars / CHARS_PER_TOKEN).toLocaleString('en-US')} tokens]\n\n` +
-    preview
+  const result = formatTruncatedHeader(blockCount, totalChars) + preview
 
   if (result.length >= totalChars) {
     return fullText

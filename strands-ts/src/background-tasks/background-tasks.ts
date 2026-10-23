@@ -32,11 +32,10 @@ import type { Agent } from '../agent/agent.js'
 import type { ToolUseData } from '../hooks/events.js'
 import type { InvocationState, LocalAgent } from '../types/agent.js'
 import type { BackgroundTaskManager } from './manager.js'
-import { isTaskStatusTerminal, type BackgroundTask, type BackgroundTasksConfig } from './types.js'
+import { isTaskStatusTerminal, MANAGE_TOOL_NAME, type BackgroundTask, type BackgroundTasksConfig } from './types.js'
 
 const BACKGROUND_TASKS_STATE_KEY = 'strands.backgroundTasks'
 const BACKGROUND_PROPERTY = '_background_execution'
-const MANAGE_TOOL_NAME = 'strands_manage_background_task'
 const FOREGROUND_TOOL_NAMES = new Set([
   MANAGE_TOOL_NAME,
   STRUCTURED_OUTPUT_TOOL_NAME,
