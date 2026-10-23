@@ -17,21 +17,18 @@ import modelInfoData from './model-info.json' with { type: 'json' }
 /** How a model supports prompt caching. */
 export type PromptCaching = 'unsupported' | 'automatic' | 'cachePoints'
 
-/** Whether a model accepts a `toolChoice` that forces a tool call (`any` or a named tool). */
-export type ForcedToolChoice = 'supported' | 'unsupported'
-
 /**
  * What the model can do. A yes/no fact is a `boolean`; a fact with more than two states is a string
- * union, like {@link PromptCaching} (which mechanism) or {@link ForcedToolChoice} (which gains
- * `'unsupportedWithReasoning'` with its first reader). `undefined` is unknown either way.
+ * union, like {@link PromptCaching} (which mechanism). A fact about two features together gets its
+ * own field named after the pair. `undefined` is unknown either way.
  */
 export interface ModelCapabilities {
   /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}; the provider owns it, so the shared data and the `info` override cannot set it. */
   readonly stateful?: boolean | undefined
   /** Whether and how the model caches prompts. */
   readonly promptCaching?: PromptCaching | undefined
-  /** Whether the model can be forced to call a tool. */
-  readonly forcedToolChoice?: ForcedToolChoice | undefined
+  /** Whether the model accepts a `toolChoice` that forces a tool call (`any` or a named tool). */
+  readonly forcedToolChoice?: boolean | undefined
   /** Whether the provider can make the model's text output conform to a JSON schema. */
   readonly nativeStructuredOutput?: boolean | undefined
 }

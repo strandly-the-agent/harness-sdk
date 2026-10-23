@@ -28,7 +28,7 @@
       },
       "capabilities": {
         "promptCaching": "cachePoints",
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": true
       }
     },
@@ -57,7 +57,7 @@
       },
       "capabilities": {
         "promptCaching": "cachePoints",
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": false
       }
     },
@@ -68,7 +68,7 @@
       },
       "capabilities": {
         "promptCaching": "cachePoints",
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": true
       }
     },
@@ -79,7 +79,7 @@
       },
       "capabilities": {
         "promptCaching": "cachePoints",
-        "forcedToolChoice": "unsupported",
+        "forcedToolChoice": false,
         "nativeStructuredOutput": true
       }
     },
@@ -99,7 +99,7 @@
       },
       "capabilities": {
         "promptCaching": "cachePoints",
-        "forcedToolChoice": "unsupported"
+        "forcedToolChoice": false
       }
     },
     "claude-sonnet-5": {
@@ -109,7 +109,7 @@
       },
       "capabilities": {
         "promptCaching": "cachePoints",
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": false
       }
     },
@@ -120,7 +120,7 @@
       },
       "capabilities": {
         "promptCaching": "cachePoints",
-        "forcedToolChoice": "unsupported",
+        "forcedToolChoice": false,
         "nativeStructuredOutput": true
       }
     },
@@ -131,7 +131,7 @@
       },
       "capabilities": {
         "promptCaching": "cachePoints",
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": true
       }
     },
@@ -247,7 +247,7 @@
         "contextWindow": 300000
       },
       "capabilities": {
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": false
       }
     },
@@ -256,7 +256,7 @@
         "contextWindow": 300000
       },
       "capabilities": {
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": false
       }
     },
@@ -265,7 +265,7 @@
         "contextWindow": 128000
       },
       "capabilities": {
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": false
       }
     },
@@ -274,7 +274,7 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": false
       }
     },
@@ -283,7 +283,7 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": false
       }
     },
@@ -292,7 +292,7 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "forcedToolChoice": "supported",
+        "forcedToolChoice": true,
         "nativeStructuredOutput": false
       }
     },

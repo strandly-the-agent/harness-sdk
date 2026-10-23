@@ -44,11 +44,11 @@ describe('shared model info data', () => {
     })
     expect(lookupModelInfo('anthropic.claude-opus-5-5').capabilities).toEqual({
       promptCaching: 'cachePoints',
-      forcedToolChoice: 'unsupported',
+      forcedToolChoice: false,
       nativeStructuredOutput: true,
     })
     expect(lookupModelInfo('amazon.nova-pro-v1:0')).toEqual({
-      capabilities: { forcedToolChoice: 'supported', nativeStructuredOutput: false },
+      capabilities: { forcedToolChoice: true, nativeStructuredOutput: false },
       limits: { contextWindow: 300_000 },
     })
     expect(lookupModelInfo('claude-future-9')).toEqual({})

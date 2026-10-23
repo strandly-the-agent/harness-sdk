@@ -62,7 +62,7 @@ describe('native-output', () => {
 
     it('skips mechanisms the model info says are unsupported, without a request', () => {
       expect(
-        structuredOutputMechanisms('p', 'm', FORCED, Person, { capabilities: { forcedToolChoice: 'unsupported' } })
+        structuredOutputMechanisms('p', 'm', FORCED, Person, { capabilities: { forcedToolChoice: false } })
       ).toStrictEqual(['native', 'auto'])
       expect(
         structuredOutputMechanisms('p', 'm', FORCED, Person, {
@@ -71,7 +71,7 @@ describe('native-output', () => {
       ).toStrictEqual(['forced', 'auto'])
       expect(
         structuredOutputMechanisms('p', 'm', FORCED, Person, {
-          capabilities: { forcedToolChoice: 'supported', nativeStructuredOutput: true },
+          capabilities: { forcedToolChoice: true, nativeStructuredOutput: true },
         })
       ).toStrictEqual(['forced', 'native', 'auto'])
     })

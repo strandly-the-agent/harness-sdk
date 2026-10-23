@@ -105,7 +105,7 @@ export function structuredOutputMechanisms(
   info: ModelInfo = {}
 ): StructuredOutputMechanism[] {
   const unsupported = new Set(unsupportedMechanisms(provider, modelId, schema))
-  if (info.capabilities?.forcedToolChoice === 'unsupported') unsupported.add('forced')
+  if (info.capabilities?.forcedToolChoice === false) unsupported.add('forced')
   if (info.capabilities?.nativeStructuredOutput === false) unsupported.add('native')
   const forcesTool = toolChoice !== undefined && ('any' in toolChoice || 'tool' in toolChoice)
   const feature = unsupported.has('native')
