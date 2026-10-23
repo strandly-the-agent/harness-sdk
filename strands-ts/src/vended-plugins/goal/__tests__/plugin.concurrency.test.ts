@@ -204,6 +204,41 @@ describe('GoalLoop with concurrent invocations', () => {
     expect(goal.lastResult(agent)?.attempts.map((attempt) => attempt.attempt)).toEqual([1, 2])
   })
 
+  it('starts a fresh run when the host abandons the interrupt by restoring a snapshot', async () => {
+    const graded: string[] = []
+    const goal = new GoalLoop({
+      maxAttempts: 3,
+      goal: (message) => {
+        graded.push(text(message))
+        return { passed: text(message) === 'GOOD', feedback: 'again' }
+      },
+    })
+    const confirm = tool({
+      name: 'confirm',
+      description: 'Asks for confirmation',
+      callback: (_input, context) => `confirmed: ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+    })
+    const model = new MockMessageModel()
+      .addTurn({ type: 'textBlock', text: 'first-try' })
+      .addTurn({ type: 'toolUseBlock', name: 'confirm', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'GOOD' })
+    const agent = new Agent({ model, tools: [confirm], plugins: [goal], printer: false })
+
+    const clean = agent.takeSnapshot({ preset: 'session' })
+    const interrupted = await agent.invoke('go')
+    expect(interrupted.stopReason).toBe('interrupt')
+    agent.loadSnapshot(clean)
+
+    const other = await agent.invoke('unrelated question')
+
+    // The unrelated call was graded as attempt 1 of its own run, not attempt 2 of 'go'.
+    expect(text(other.lastMessage)).toBe('GOOD')
+    expect(graded).toEqual(['first-try', 'GOOD'])
+    expect(goal.lastResult(agent)).toMatchObject({ passed: true, stopReason: 'satisfied' })
+    expect(goal.lastResult(agent)?.attempts.map((attempt) => attempt.attempt)).toEqual([1])
+    expect(history(agent)).toEqual(['user: unrelated question', 'assistant: GOOD'])
+  })
+
   it('does not charge the time spent waiting for human input to the timeout', async () => {
     const goal = new GoalLoop({
       maxAttempts: 2,

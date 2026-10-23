@@ -4,7 +4,6 @@
  */
 
 import { PendingInvocationCancelledError } from '../errors.js'
-import type { InvokeArgs } from '../types/agent.js'
 
 /** Supported values for the `concurrentInvocationMode` parameter. */
 export const CONCURRENT_INVOCATION_MODES = ['throw', 'cancelPrevious', 'stopPrevious', 'queue'] as const
@@ -30,7 +29,6 @@ export type PendingInvocationMode = Exclude<ConcurrentInvocationMode, 'throw'>
 
 interface QueueEntry {
   readonly mode: PendingInvocationMode
-  args: InvokeArgs
   signal?: AbortSignal
   resolve: () => void
   reject: (error: Error) => void
@@ -87,17 +85,15 @@ export class InvocationQueue {
    * Adds a waiter. The promise resolves when the invocation lock is handed to it (via
    * {@link handoff}), or rejects when the entry is removed first.
    *
-   * @param args - The invocation arguments
    * @param options - `mode` selects the queue behavior: `'cancelPrevious'` and
    *   `'stopPrevious'` insert at the front and displace queued entries of either mode
    *   (they reject as cancelled); aborting `cancelSignal` while queued removes the entry
    *   and rejects with {@link PendingInvocationCancelledError}
    */
-  wait(args: InvokeArgs, options: { mode: PendingInvocationMode; cancelSignal?: AbortSignal }): Promise<void> {
+  wait(options: { mode: PendingInvocationMode; cancelSignal?: AbortSignal }): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const entry: QueueEntry = {
         mode: options.mode,
-        args,
         resolve,
         reject,
         cleanup: () => {},

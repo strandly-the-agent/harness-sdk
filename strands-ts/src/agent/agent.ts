@@ -960,7 +960,7 @@ export class Agent implements LocalAgent, InvokableAgent {
         "Agent is already processing an invocation. Wait for the current invoke() or stream() call to complete, or set concurrentInvocationMode / ifBusy to 'queue', 'stopPrevious', or 'cancelPrevious'."
       )
     }
-    const turn = this._invocationQueue.wait(args, {
+    const turn = this._invocationQueue.wait({
       mode: strategy,
       ...(options?.cancelSignal !== undefined && { cancelSignal: options.cancelSignal }),
     })
@@ -1486,16 +1486,18 @@ export class Agent implements LocalAgent, InvokableAgent {
           )) !== undefined
         continuationEvent = hasContinuation ? afterInvocationEvent : undefined
 
-        // Don't let a continuation swallow a cancel or stop request that arrived during
-        // AfterInvocation: return the completed result instead; abandoned inputs re-deliver
-        // in a later invocation. 'superseded' is terminal so a resume loop can't starve the
-        // caller waiting for the turn.
-        const endedAfterFinalPass =
-          hasContinuation && (this._abortSignal.aborted || this._invocationQueue.hasStopRequest())
+        // Don't let a continuation or a hook's `resume` swallow a cancel or stop request that
+        // arrived during AfterInvocation: return the completed result instead; abandoned
+        // inputs re-deliver in a later invocation. A hook's `resume` is still honoured after a
+        // cancel (BackgroundTasks surfaces `input_required` interrupts that way), but never
+        // while a 'stopPrevious' caller waits, and never after 'superseded'.
+        const stopRequested = this._invocationQueue.hasStopRequest()
+        const endedAfterFinalPass = hasContinuation && (this._abortSignal.aborted || stopRequested)
 
         if (
           stopReason !== 'superseded' &&
-          ((hasContinuation && !endedAfterFinalPass) || this._shouldResume(afterInvocationEvent, invocationContext))
+          ((hasContinuation && !endedAfterFinalPass) ||
+            (!stopRequested && this._shouldResume(afterInvocationEvent, invocationContext)))
         ) {
           currentArgs = afterInvocationEvent.resume ?? []
           continue

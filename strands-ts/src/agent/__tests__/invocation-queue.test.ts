@@ -5,9 +5,9 @@ import { PendingInvocationCancelledError } from '../../errors.js'
 describe('InvocationQueue', () => {
   it('counts queued entries and reports a stop request while a stopPrevious entry waits', () => {
     const queue = new InvocationQueue()
-    void queue.wait('first', { mode: 'queue' }).catch(() => {})
+    void queue.wait({ mode: 'queue' }).catch(() => {})
     expect(queue.hasStopRequest()).toBe(false)
-    void queue.wait('second', { mode: 'stopPrevious' }).catch(() => {})
+    void queue.wait({ mode: 'stopPrevious' }).catch(() => {})
 
     expect(queue.size).toBe(2)
     expect(queue.hasStopRequest()).toBe(true)
@@ -18,8 +18,8 @@ describe('InvocationQueue', () => {
   it('resolves waiters FIFO on handoff', async () => {
     const queue = new InvocationQueue()
     const order: string[] = []
-    const first = queue.wait('a', { mode: 'queue' }).then(() => order.push('a'))
-    const second = queue.wait('b', { mode: 'queue' }).then(() => order.push('b'))
+    const first = queue.wait({ mode: 'queue' }).then(() => order.push('a'))
+    const second = queue.wait({ mode: 'queue' }).then(() => order.push('b'))
 
     expect(queue.handoff()).toBe(true)
     await first
@@ -36,8 +36,8 @@ describe('InvocationQueue', () => {
   it('inserts cancelPrevious entries ahead of waiting ones', async () => {
     const queue = new InvocationQueue()
     const order: string[] = []
-    const normal = queue.wait('normal', { mode: 'queue' }).then(() => order.push('normal'))
-    const urgent = queue.wait('urgent', { mode: 'cancelPrevious' }).then(() => order.push('urgent'))
+    const normal = queue.wait({ mode: 'queue' }).then(() => order.push('normal'))
+    const urgent = queue.wait({ mode: 'cancelPrevious' }).then(() => order.push('urgent'))
 
     queue.handoff()
     await urgent
@@ -48,9 +48,9 @@ describe('InvocationQueue', () => {
 
   it('a cancelPrevious entry displaces queued cancelPrevious predecessors but not plain ones', async () => {
     const queue = new InvocationQueue()
-    const plain = queue.wait('plain', { mode: 'queue' })
-    const older = queue.wait('older-urgent', { mode: 'cancelPrevious' })
-    const newer = queue.wait('newer-urgent', { mode: 'cancelPrevious' })
+    const plain = queue.wait({ mode: 'queue' })
+    const older = queue.wait({ mode: 'cancelPrevious' })
+    const newer = queue.wait({ mode: 'cancelPrevious' })
 
     await expect(older).rejects.toThrow(PendingInvocationCancelledError)
     expect(queue.size).toBe(2)
@@ -64,7 +64,7 @@ describe('InvocationQueue', () => {
     const queue = new InvocationQueue()
     const controller = new AbortController()
     controller.abort()
-    await expect(queue.wait('late', { mode: 'queue', cancelSignal: controller.signal })).rejects.toThrow(
+    await expect(queue.wait({ mode: 'queue', cancelSignal: controller.signal })).rejects.toThrow(
       PendingInvocationCancelledError
     )
     expect(queue.size).toBe(0)
@@ -73,7 +73,7 @@ describe('InvocationQueue', () => {
   it('removes the entry and rejects when the cancelSignal aborts while queued', async () => {
     const queue = new InvocationQueue()
     const controller = new AbortController()
-    const waiting = queue.wait('abandoned', { mode: 'queue', cancelSignal: controller.signal })
+    const waiting = queue.wait({ mode: 'queue', cancelSignal: controller.signal })
     controller.abort()
     await expect(waiting).rejects.toThrow(PendingInvocationCancelledError)
     expect(queue.size).toBe(0)
@@ -82,7 +82,7 @@ describe('InvocationQueue', () => {
   it('detaches the abort listener on handoff (a later abort does not reject)', async () => {
     const queue = new InvocationQueue()
     const controller = new AbortController()
-    const waiting = queue.wait('handed-off', { mode: 'queue', cancelSignal: controller.signal })
+    const waiting = queue.wait({ mode: 'queue', cancelSignal: controller.signal })
     queue.handoff()
     await expect(waiting).resolves.toBeUndefined()
     controller.abort()
@@ -92,9 +92,9 @@ describe('InvocationQueue', () => {
     const queue = new InvocationQueue()
     let notified = 0
     queue.onEnqueue(() => notified++)
-    void queue.wait('first', { mode: 'queue' }).catch(() => {})
+    void queue.wait({ mode: 'queue' }).catch(() => {})
     expect(notified).toBe(1)
-    void queue.wait('urgent', { mode: 'cancelPrevious' }).catch(() => {})
+    void queue.wait({ mode: 'cancelPrevious' }).catch(() => {})
     expect(notified).toBe(2)
   })
 
@@ -104,7 +104,7 @@ describe('InvocationQueue', () => {
     queue.onEnqueue(() => notified++)
     const aborted = new AbortController()
     aborted.abort()
-    void queue.wait('never queued', { mode: 'queue', cancelSignal: aborted.signal }).catch(() => {})
+    void queue.wait({ mode: 'queue', cancelSignal: aborted.signal }).catch(() => {})
     expect(notified).toBe(0)
   })
 
@@ -112,18 +112,18 @@ describe('InvocationQueue', () => {
     const queue = new InvocationQueue()
     let notified = 0
     const detach = queue.onEnqueue(() => notified++)
-    void queue.wait('first', { mode: 'queue' }).catch(() => {})
+    void queue.wait({ mode: 'queue' }).catch(() => {})
     detach()
-    void queue.wait('second', { mode: 'queue' }).catch(() => {})
+    void queue.wait({ mode: 'queue' }).catch(() => {})
     expect(notified).toBe(1)
   })
 
   it('stopPrevious entries insert at the front and displace queued latest-wins predecessors of either mode', async () => {
     const queue = new InvocationQueue()
-    const plain = queue.wait('plain', { mode: 'queue' })
-    const olderCancel = queue.wait('older-cancel', { mode: 'cancelPrevious' })
-    const olderStop = queue.wait('older-stop', { mode: 'stopPrevious' })
-    const newest = queue.wait('newest-stop', { mode: 'stopPrevious' })
+    const plain = queue.wait({ mode: 'queue' })
+    const olderCancel = queue.wait({ mode: 'cancelPrevious' })
+    const olderStop = queue.wait({ mode: 'stopPrevious' })
+    const newest = queue.wait({ mode: 'stopPrevious' })
 
     await expect(olderCancel).rejects.toThrow(PendingInvocationCancelledError)
     await expect(olderStop).rejects.toThrow(PendingInvocationCancelledError)
@@ -137,8 +137,8 @@ describe('InvocationQueue', () => {
 
   it('a cancelPrevious entry displaces a queued stopPrevious entry', async () => {
     const queue = new InvocationQueue()
-    const stop = queue.wait('stop', { mode: 'stopPrevious' })
-    const cancel = queue.wait('cancel', { mode: 'cancelPrevious' })
+    const stop = queue.wait({ mode: 'stopPrevious' })
+    const cancel = queue.wait({ mode: 'cancelPrevious' })
 
     await expect(stop).rejects.toThrow(PendingInvocationCancelledError)
     expect(queue.size).toBe(1)

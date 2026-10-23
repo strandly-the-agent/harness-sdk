@@ -182,6 +182,34 @@ describe('Agent Hooks Integration', () => {
         new AfterInvocationEvent({ agent, invocationState: {}, result: expect.any(AgentResult) as AgentResult })
       )
     })
+
+    it('AfterInvocationEvent.result is the result the invocation returns', async () => {
+      const model = new MockMessageModel().addTurn({ type: 'textBlock', text: 'Hello' })
+      const agent = new Agent({ model })
+      let seen: AfterInvocationEvent | undefined
+      agent.addHook(AfterInvocationEvent, (e) => {
+        seen = e
+      })
+
+      const result = await agent.invoke('Hi')
+
+      expect(seen?.result).toBe(result)
+      expect(seen?.result?.stopReason).toBe('endTurn')
+    })
+
+    it('AfterInvocationEvent.result is undefined when the invocation throws', async () => {
+      const model = new MockMessageModel().addTurn(new Error('model down'))
+      const agent = new Agent({ model })
+      let seen: AfterInvocationEvent | undefined
+      agent.addHook(AfterInvocationEvent, (e) => {
+        seen = e
+      })
+
+      await expect(agent.invoke('Hi')).rejects.toThrow('model down')
+
+      expect(seen).toBeDefined()
+      expect(seen?.result).toBeUndefined()
+    })
   })
 
   describe('multi-turn conversations', () => {

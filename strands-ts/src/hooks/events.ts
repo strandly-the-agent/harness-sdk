@@ -206,7 +206,9 @@ export class AfterInvocationEvent extends HookableEvent {
    * {@link BeforeInvocationEvent}/{@link AfterInvocationEvent} pair fires for the
    * resumed run. Ignored if the invocation ended with an error, one of the
    * request's limits is reached (a resumed run would stop again at once), or
-   * `stopReason: 'superseded'` (a queued caller is taking the turn).
+   * another caller is waiting under `'stopPrevious'` (including after `'superseded'`).
+   * It is honoured after `'cancelled'`, so a hook that resumes without checking
+   * {@link result} defeats `'cancelPrevious'`; check `result.stopReason` first.
    *
    * If multiple callbacks set `resume`, the last callback to run wins.
    */
