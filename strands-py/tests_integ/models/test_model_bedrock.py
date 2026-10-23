@@ -3,6 +3,7 @@ import uuid
 
 import pydantic
 import pytest
+from botocore.exceptions import ClientError
 
 import strands
 from strands import Agent, tool
@@ -237,6 +238,9 @@ def test_invoke_multi_modal_input(streaming_agent, yellow_img):
     assert "yellow" in text
 
 
+_AUDIO_UNSUPPORTED_MESSAGE = "Model does not support audio modality"
+
+
 def test_invoke_audio_input(pineapple_audio):
     model = BedrockModel(
         model_id="mistral.voxtral-small-24b-2507",
@@ -250,7 +254,13 @@ def test_invoke_audio_input(pineapple_audio):
         {"audio": {"format": "mp3", "source": {"bytes": pineapple_audio}}},
     ]
 
-    result = agent(content)
+    try:
+        result = agent(content)
+    except ClientError as error:
+        # A service-side Bedrock rejection, not an SDK defect; the test resumes once Bedrock serves audio again.
+        if _AUDIO_UNSUPPORTED_MESSAGE in str(error):
+            pytest.skip(f"Bedrock rejected audio input: {error}")
+        raise
     text = result.message["content"][0]["text"].lower()
 
     assert "pineapple" in text
@@ -883,3 +893,68 @@ def test_a_cache_point_after_a_document_is_accepted(quiet_strands_logging, lette
     result = agent([{"text": _durable_prefix()}, document, {"cachePoint": {"type": "default"}}, {"text": "Reply OK."}])
 
     assert result.stop_reason == "end_turn"
+
+
+class TestGptOss120bConverse:
+    """gpt-oss-120b over the Bedrock runtime Converse pathway."""
+
+    @pytest.fixture
+    def model(self):
+        return BedrockModel(model_id="openai.gpt-oss-120b-1:0", region_name="us-east-1")
+
+    def test_context_window_limit_resolves(self, model):
+        assert model.context_window_limit == 128_000
+
+    def test_tool_use(self, model):
+        tool_was_called = False
+
+        @strands.tool
+        def calculator(expression: str) -> str:
+            """Calculate the result of a mathematical expression."""
+            nonlocal tool_was_called
+            tool_was_called = True
+            return "579"
+
+        agent = Agent(model=model, tools=[calculator], load_tools_from_directory=False, callback_handler=None)
+        result = agent("What is 123 + 456? Use the calculator tool.")
+
+        assert tool_was_called
+        assert "579" in str(result)
+
+
+class TestMistralLarge3:
+    """Smoke coverage for mistral.mistral-large-3-675b-instruct: the window resolves and a tool-using turn completes."""
+
+    @pytest.fixture
+    def model(self):
+        return BedrockModel(model_id="mistral.mistral-large-3-675b-instruct", region_name="us-east-1")
+
+    def test_context_window_limit_resolves(self, model):
+        assert model.get_config()["context_window_limit"] == 256_000
+
+    def test_tool_use_turn(self, model, system_prompt):
+        agent = Agent(model=model, tools=[echo], system_prompt=system_prompt, load_tools_from_directory=False)
+
+        result = agent("Use the echo tool to echo the value 'pineapple'.")
+
+        assert result.stop_reason == "end_turn"
+        assert any(block.get("toolUse") for message in agent.messages for block in message["content"])
+
+
+class TestGrok47:
+    """Smoke coverage for us.xai.grok-4.7: the context window resolves and a tool-using turn completes."""
+
+    @pytest.fixture
+    def model(self):
+        return BedrockModel(model_id="us.xai.grok-4.7", region_name="us-east-1")
+
+    def test_context_window_limit_resolves(self, model):
+        assert model.get_config()["context_window_limit"] == 524_288
+
+    def test_tool_use_turn(self, model, system_prompt):
+        agent = Agent(model=model, tools=[echo], system_prompt=system_prompt, load_tools_from_directory=False)
+
+        result = agent("Use the echo tool to echo the value 'pineapple'.")
+
+        assert result.stop_reason == "end_turn"
+        assert any(block.get("toolUse") for message in agent.messages for block in message["content"])

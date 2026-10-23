@@ -73,7 +73,7 @@ interface ModelInfoData {
 
 const SUPPORTED_VERSION = 1
 // Bedrock appends a version to some ids (`claude-3-5-haiku-20241022-v1:0`); the base id carries the facts.
-const VERSION_SUFFIX = /-v\d+(?::\d+)?$/
+const VERSION_SUFFIX = /-(?:v\d+(?::\d+)?|\d+:\d+)$/
 
 const data = modelInfoData as ModelInfoData
 if (data.version !== SUPPORTED_VERSION) {

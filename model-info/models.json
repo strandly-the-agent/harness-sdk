@@ -327,6 +327,11 @@
         "contextWindow": 1050000
       }
     },
+    "openai.gpt-6.1-sol": {
+      "limits": {
+        "contextWindow": 1000000
+      }
+    },
     "gpt-6-sol": {
       "limits": {
         "contextWindow": 1050000
@@ -559,7 +564,7 @@
     },
     "mistral-medium-latest": {
       "limits": {
-        "contextWindow": 131072
+        "contextWindow": 262144
       }
     },
     "mistral-medium-2505": {
@@ -569,12 +574,197 @@
     },
     "mistral-small-latest": {
       "limits": {
-        "contextWindow": 131072
+        "contextWindow": 262144
       }
     },
     "mistral-small-3-2-2506": {
       "limits": {
         "contextWindow": 131072
+      }
+    },
+    "openai.gpt-oss-120b": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "openai.gpt-oss-20b": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "openai.gpt-oss-safeguard-120b": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "openai.gpt-oss-safeguard-20b": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "mistral.mistral-large-3-675b-instruct": {
+      "limits": {
+        "contextWindow": 256000
+      }
+    },
+    "mistral.ministral-3-14b-instruct": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "mistral.ministral-3-8b-instruct": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "mistral.ministral-3-3b-instruct": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "mistral.magistral-small-2509": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "mistral.pixtral-large-2502": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "mistral.mistral-small-2402": {
+      "limits": {
+        "contextWindow": 32000
+      }
+    },
+    "mistral.mistral-large-2402": {
+      "limits": {
+        "contextWindow": 32000
+      }
+    },
+    "google.gemma-4-31b": {
+      "limits": {
+        "contextWindow": 256000
+      }
+    },
+    "google.gemma-4-26b-a4b": {
+      "limits": {
+        "contextWindow": 256000
+      }
+    },
+    "google.gemma-4-e2b": {
+      "limits": {
+        "contextWindow": 128000
+      }
+    },
+    "xai.grok-4.7": {
+      "limits": {
+        "contextWindow": 524288
+      }
+    },
+    "xai.grok-4.6": {
+      "limits": {
+        "contextWindow": 500000
+      }
+    },
+    "xai.grok-4.3": {
+      "limits": {
+        "contextWindow": 1000000
+      }
+    },
+    "chat-latest": {
+      "limits": {
+        "contextWindow": 272000
+      }
+    },
+    "gpt-oss-120b": {
+      "limits": {
+        "contextWindow": 131072
+      }
+    },
+    "gpt-oss-20b": {
+      "limits": {
+        "contextWindow": 131072
+      }
+    },
+    "gemini-4-argon": {
+      "limits": {
+        "contextWindow": 1048576
+      }
+    },
+    "gemini-3.8-flash": {
+      "limits": {
+        "contextWindow": 1048576
+      }
+    },
+    "gemini-3.7-flash": {
+      "limits": {
+        "contextWindow": 1048576
+      }
+    },
+    "codestral-2508": {
+      "limits": {
+        "contextWindow": 256000
+      }
+    },
+    "codestral-latest": {
+      "limits": {
+        "contextWindow": 256000
+      }
+    },
+    "mistral-large-4-0": {
+      "limits": {
+        "contextWindow": 1048576
+      }
+    },
+    "mistral-large-4": {
+      "limits": {
+        "contextWindow": 1048576
+      }
+    },
+    "mistral-medium-3-5": {
+      "limits": {
+        "contextWindow": 262144
+      }
+    },
+    "mistral-medium-3": {
+      "limits": {
+        "contextWindow": 262144
+      }
+    },
+    "ministral-14b-2512": {
+      "limits": {
+        "contextWindow": 262144
+      }
+    },
+    "ministral-14b-latest": {
+      "limits": {
+        "contextWindow": 262144
+      }
+    },
+    "ministral-8b-2512": {
+      "limits": {
+        "contextWindow": 262144
+      }
+    },
+    "ministral-8b-latest": {
+      "limits": {
+        "contextWindow": 262144
+      }
+    },
+    "ministral-3b-2512": {
+      "limits": {
+        "contextWindow": 131072
+      }
+    },
+    "ministral-3b-latest": {
+      "limits": {
+        "contextWindow": 131072
+      }
+    },
+    "mistral-small-2603": {
+      "limits": {
+        "contextWindow": 262144
       }
     }
   }

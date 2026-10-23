@@ -143,16 +143,18 @@ export interface InvokeOptions {
   /**
    * Limits for the whole request this `invoke()` / `stream()` call starts. They
    * apply to this agent's loop and to every nested call: agents passed as tools,
-   * and any Graph or Swarm you pass the request's `invocationContext` to (Graph and
-   * Swarm have no `limits` option of their own). An agent run by a hand-written
+   * and any Graph or Swarm you pass the request's `invocationContext` to. A Graph
+   * or Swarm can also start a limited request itself through
+   * {@link MultiAgentInvokeOptions.limits}. An agent run by a hand-written
    * tool joins only when the tool forwards {@link ToolContext.invocationContext} as
    * {@link InvokeOptions.invocationContext}; otherwise it runs standalone under its
    * own limits. A nested call can also set its own `limits`: it stops at
    * whichever limit is reached first, its own or the request's.
    *
    * Auxiliary calls (summarization, routing, memory extraction, steering, HITL,
-   * goal judging, web-fetch) add their tokens to the request's usage, but no
-   * limits apply to them. The same holds for an agent that an extension point (a
+   * goal judging, web-fetch, and decision models asked with the request's
+   * `invocationContext`) add their tokens to the request's usage, but no limits
+   * apply to them. The same holds for an agent that an extension point (a
    * conversation manager, context or routing strategy, or memory extractor) runs
    * with the `invocationContext` it receives, unless the extension point also passes
    * `limits`. Usage starts from zero on each top-level call; pass
