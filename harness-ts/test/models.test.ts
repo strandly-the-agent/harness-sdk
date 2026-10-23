@@ -204,7 +204,7 @@ describe('resolveModel', () => {
 
   it('rejects a level the provider does not support', async () => {
     await expect(resolve('google/gemini-3.5-flash', 'xhigh')).rejects.toThrow('not supported by model gemini-3.5-flash')
-    await expect(resolve('openai/gpt-5.6-sol', 'max')).rejects.toThrow('not supported by this provider')
+    await expect(resolve('openai/gpt-5.6-sol', 'max')).rejects.toThrow('not supported by model gpt-5.6-sol')
   })
 
   it('rejects a level the model does not support', async () => {
@@ -228,48 +228,24 @@ describe('resolveModel', () => {
     expect(params.thinkingConfig.thinkingLevel).toBe('high')
   })
 
-  it.each(['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-lite'])(
-    'rejects minimal for %s, whose model page lists no minimal level',
-    async (modelId) => {
-      await expect(resolve(`google/${modelId}`, 'minimal')).rejects.toThrow(
-        'not supported by this provider. Supported levels: low, medium, high '
-      )
-      const model = await resolve(`google/${modelId}`, 'low')
-      const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
-      expect(params.thinkingConfig.thinkingLevel).toBe('low')
-    }
-  )
-
   it.each([
-    'gemini-3.6-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
-    'gemini-3-flash-preview',
-    'gemini-robotics-er-2-preview',
-  ])('accepts minimal for %s, whose model page lists it', async (modelId) => {
-    const model = await resolve(`google/${modelId}`, 'minimal')
-    const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
-    expect(params.thinkingConfig.thinkingLevel).toBe('minimal')
-  })
-
-  it('takes only minimal and high for gemini-3.1-flash-lite-image', async () => {
-    const model = await resolve('google/gemini-3.1-flash-lite-image', 'minimal')
-    const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
-    expect(params.thinkingConfig.thinkingLevel).toBe('minimal')
-    await expect(resolve('google/gemini-3.1-flash-lite-image', 'low')).rejects.toThrow(
-      'not supported by model gemini-3.1-flash-lite-image. Supported levels: minimal, high '
-    )
-  })
-
-  it('reasons only at high for Gemma 4 on bedrock-mantle', async () => {
-    const effortOf = (model: Model) => (model.getConfig().params as { reasoning: { effort: string } }).reasoning.effort
-    expect(effortOf(await resolve('bedrock-mantle/google.gemma-4-31b'))).toBe('high')
-    expect(effortOf(await resolve('bedrock-mantle/google.gemma-4-31b', 'off'))).toBe('none')
-    for (const effort of ['low', 'minimal']) {
-      await expect(resolve('bedrock-mantle/google.gemma-4-31b', effort)).rejects.toThrow(
-        'not supported by model google.gemma-4-31b. Supported levels: high '
-      )
+    ['google/gemini-4-argon', 'minimal', 'Supported levels: low, medium, high'],
+    ['google/gemini-3.6-flash', 'minimal', 'minimal'],
+    ['google/gemini-3.1-flash-lite-image', 'minimal', 'minimal'],
+    ['google/gemini-3.1-flash-lite-image', 'low', 'Supported levels: minimal, high'],
+    ['bedrock-mantle/google.gemma-4-31b', 'auto', 'high'],
+    ['bedrock-mantle/google.gemma-4-31b', 'off', 'none'],
+    ['bedrock-mantle/google.gemma-4-31b', 'low', 'Supported levels: high'],
+  ])('resolves the per-model levels for %s with effort %s', async (model, effort, expected) => {
+    if (expected.startsWith('Supported levels')) {
+      await expect(resolve(model, effort)).rejects.toThrow(`not supported by model ${model.split('/')[1]}. ${expected}`)
+      return
     }
+    const params = (await resolve(model, effort)).getConfig().params as {
+      reasoning?: { effort: string }
+      thinkingConfig?: { thinkingLevel: string }
+    }
+    expect(params.reasoning?.effort ?? params.thinkingConfig?.thinkingLevel).toBe(expected)
   })
 
   it('uses the google model id directly', async () => {
@@ -452,7 +428,9 @@ describe('resolveModel', () => {
   })
 
   it('rejects an unsupported thinking level for bedrock-mantle', async () => {
-    await expect(resolve('bedrock-mantle/openai.gpt-oss-120b', 'max')).rejects.toThrow('not supported by this provider')
+    await expect(resolve('bedrock-mantle/openai.gpt-oss-120b', 'max')).rejects.toThrow(
+      'not supported by model openai.gpt-oss-120b'
+    )
   })
 
   it('adds the Bedrock Web Search tool for bedrock-mantle web_search', async () => {

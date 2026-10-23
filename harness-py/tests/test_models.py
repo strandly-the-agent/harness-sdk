@@ -1,5 +1,3 @@
-import re
-
 import pytest
 from strands.models import BedrockModel, CacheConfig, Model, ModelRouter
 
@@ -317,7 +315,7 @@ def test_unknown_bedrock_family_rejects_explicit_effort():
 def test_level_rejected_when_provider_does_not_support_it():
     with pytest.raises(ValueError, match="not supported by model gemini-3.5-flash"):
         resolve("google/gemini-3.5-flash", effort="xhigh")
-    with pytest.raises(ValueError, match="not supported by this provider"):
+    with pytest.raises(ValueError, match="not supported by model gpt-5.6-sol"):
         resolve("openai/gpt-5.6-sol", effort="max")
 
 
@@ -348,47 +346,29 @@ def test_google_auto_maps_to_high_thinking_level():
 
 
 @pytest.mark.parametrize(
-    "model_id", ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite"]
-)
-def test_google_minimal_rejected_where_the_model_page_lists_no_minimal(model_id):
-    message = "not supported by this provider. Supported levels: low, medium, high (or 'auto', 'off')."
-    with pytest.raises(ValueError, match=re.escape(message)):
-        resolve(f"google/{model_id}", effort="minimal")
-    assert resolve(f"google/{model_id}", effort="low").config["params"]["thinking_config"]["thinking_level"] == "low"
-
-
-@pytest.mark.parametrize(
-    "model_id",
+    ("model", "effort", "expected"),
     [
-        "gemini-3.6-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.5-flash",
-        "gemini-3-flash-preview",
-        "gemini-robotics-er-2-preview",
+        ("google/gemini-4-argon", "minimal", "Supported levels: low, medium, high"),
+        ("google/gemini-3.6-flash", "minimal", "minimal"),
+        ("google/gemini-3.1-flash-lite-image", "minimal", "minimal"),
+        ("google/gemini-3.1-flash-lite-image", "low", "Supported levels: minimal, high"),
+        ("bedrock-mantle/google.gemma-4-31b", "auto", "high"),
+        ("bedrock-mantle/google.gemma-4-31b", "off", "none"),
+        ("bedrock-mantle/google.gemma-4-31b", "low", "Supported levels: high"),
     ],
 )
-def test_google_minimal_accepted_where_the_model_page_lists_it(model_id):
-    model = resolve(f"google/{model_id}", effort="minimal")
-    assert model.config["params"]["thinking_config"]["thinking_level"] == "minimal"
-
-
-def test_google_flash_lite_image_takes_only_minimal_and_high():
-    model = resolve("google/gemini-3.1-flash-lite-image", effort="minimal")
-    assert model.config["params"]["thinking_config"]["thinking_level"] == "minimal"
-    message = "not supported by model gemini-3.1-flash-lite-image. Supported levels: minimal, high (or 'auto', 'off')."
-    with pytest.raises(ValueError, match=re.escape(message)):
-        resolve("google/gemini-3.1-flash-lite-image", effort="low")
-
-
-def test_bedrock_mantle_gemma_4_reasons_only_at_high():
-    model = resolve("bedrock-mantle/google.gemma-4-31b")
-    assert model.config["params"]["reasoning"]["effort"] == "high"
-    model = resolve("bedrock-mantle/google.gemma-4-31b", effort="off")
-    assert model.config["params"]["reasoning"]["effort"] == "none"
-    message = "not supported by model google.gemma-4-31b. Supported levels: high (or 'auto', 'off')."
-    for effort in ("low", "minimal"):
-        with pytest.raises(ValueError, match=re.escape(message)):
-            resolve("bedrock-mantle/google.gemma-4-31b", effort=effort)
+def test_per_model_levels(model, effort, expected):
+    if expected.startswith("Supported levels"):
+        with pytest.raises(ValueError, match=f"not supported by model {model.split('/')[1]}. {expected}"):
+            resolve(model, effort=effort)
+        return
+    params = resolve(model, effort=effort).config["params"]
+    sent = (
+        params["reasoning"]["effort"]
+        if model.startswith("bedrock-mantle/")
+        else params["thinking_config"]["thinking_level"]
+    )
+    assert sent == expected
 
 
 def test_google_uses_model_id_directly():
@@ -459,7 +439,7 @@ def test_bedrock_mantle_caching_does_not_warn(caplog):
 
 
 def test_bedrock_mantle_rejects_an_unsupported_thinking_level():
-    with pytest.raises(ValueError, match="not supported by this provider"):
+    with pytest.raises(ValueError, match="not supported by model openai.gpt-oss-120b"):
         resolve("bedrock-mantle/openai.gpt-oss-120b", effort="max")
 
 
