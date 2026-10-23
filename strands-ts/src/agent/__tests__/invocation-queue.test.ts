@@ -37,7 +37,9 @@ describe('InvocationQueue', () => {
     const queue = new InvocationQueue()
     const order: string[] = []
     const normal = queue.wait({ mode: 'queue', messages: [], resumesInterrupt: false }).then(() => order.push('normal'))
-    const urgent = queue.wait({ mode: 'cancelPrevious', messages: [], resumesInterrupt: false }).then(() => order.push('urgent'))
+    const urgent = queue
+      .wait({ mode: 'cancelPrevious', messages: [], resumesInterrupt: false })
+      .then(() => order.push('urgent'))
 
     queue.handoff()
     await urgent
@@ -64,16 +66,21 @@ describe('InvocationQueue', () => {
     const queue = new InvocationQueue()
     const controller = new AbortController()
     controller.abort()
-    await expect(queue.wait({ mode: 'queue', messages: [], resumesInterrupt: false, cancelSignal: controller.signal })).rejects.toThrow(
-      PendingInvocationCancelledError
-    )
+    await expect(
+      queue.wait({ mode: 'queue', messages: [], resumesInterrupt: false, cancelSignal: controller.signal })
+    ).rejects.toThrow(PendingInvocationCancelledError)
     expect(queue.size).toBe(0)
   })
 
   it('removes the entry and rejects when the cancelSignal aborts while queued', async () => {
     const queue = new InvocationQueue()
     const controller = new AbortController()
-    const waiting = queue.wait({ mode: 'queue', messages: [], resumesInterrupt: false, cancelSignal: controller.signal })
+    const waiting = queue.wait({
+      mode: 'queue',
+      messages: [],
+      resumesInterrupt: false,
+      cancelSignal: controller.signal,
+    })
     controller.abort()
     await expect(waiting).rejects.toThrow(PendingInvocationCancelledError)
     expect(queue.size).toBe(0)
@@ -82,7 +89,12 @@ describe('InvocationQueue', () => {
   it('detaches the abort listener on handoff (a later abort does not reject)', async () => {
     const queue = new InvocationQueue()
     const controller = new AbortController()
-    const waiting = queue.wait({ mode: 'queue', messages: [], resumesInterrupt: false, cancelSignal: controller.signal })
+    const waiting = queue.wait({
+      mode: 'queue',
+      messages: [],
+      resumesInterrupt: false,
+      cancelSignal: controller.signal,
+    })
     queue.handoff()
     await expect(waiting).resolves.toBeUndefined()
     controller.abort()
@@ -104,7 +116,9 @@ describe('InvocationQueue', () => {
     queue.onEnqueue(() => notified++)
     const aborted = new AbortController()
     aborted.abort()
-    void queue.wait({ mode: 'queue', messages: [], resumesInterrupt: false, cancelSignal: aborted.signal }).catch(() => {})
+    void queue
+      .wait({ mode: 'queue', messages: [], resumesInterrupt: false, cancelSignal: aborted.signal })
+      .catch(() => {})
     expect(notified).toBe(0)
   })
 
