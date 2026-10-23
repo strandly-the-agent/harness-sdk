@@ -12,17 +12,6 @@ afterEach(() => {
 })
 
 describe('context window limits', () => {
-  it.each([
-    ['openai.gpt-6-astra', 1_050_000],
-    ['global.openai.gpt-6-astra', 1_050_000],
-    ['us.openai.gpt-6-astra', 1_050_000],
-    ['us.openai.gpt-6-sol', 1_050_000],
-    ['global.openai.gpt-6-luna', 1_050_000],
-    ['us.openai.gpt-6.1-sol', 1_050_000],
-  ])('uses the Bedrock model-card context window for %s', (modelId, limit) => {
-    expect(contextWindowLimit(new BedrockModel({ modelId }))).toBe(limit)
-  })
-
   // https://github.com/strands-agents/harness-sdk/issues/5414
   it.each([
     ['claude-opus-5-5', 1_000_000],
@@ -43,6 +32,15 @@ describe('context window limits', () => {
     ['openai.gpt-oss-20b-1:0', 128_000],
     ['openai.gpt-oss-safeguard-120b', 128_000],
     ['openai.gpt-oss-safeguard-20b', 128_000],
+    ['openai.gpt-6-astra', 1_050_000],
+    ['openai.gpt-6.1-sol', 1_000_000],
+    ['openai.gpt-6-sol', 1_050_000],
+    ['openai.gpt-6-luna', 1_050_000],
+    ['openai.gpt-5.6-sol', 1_050_000],
+    ['openai.gpt-5.6-terra', 1_050_000],
+    ['openai.gpt-5.6-luna', 1_050_000],
+    ['openai.gpt-5.5', 1_050_000],
+    ['openai.gpt-5.4', 1_050_000],
     ['mistral.mistral-large-3-675b-instruct', 256_000],
     ['mistral.ministral-3-14b-instruct', 128_000],
     ['mistral.ministral-3-8b-instruct', 128_000],
@@ -66,6 +64,10 @@ describe('context window limits', () => {
     ['gemini-4-argon', 1_048_576],
     ['gemini-3.8-flash', 1_048_576],
     ['gemini-3.7-flash', 1_048_576],
+    ['global.openai.gpt-6-astra', 1_050_000],
+    ['us.openai.gpt-6-sol', 1_050_000],
+    ['us.openai.gpt-6.1-sol', 1_000_000],
+    ['in.openai.gpt-5.6-luna', 1_050_000],
     ['global.openai.gpt-oss-120b', 128_000],
     ['us-gov.mistral.mistral-large-3-675b-instruct', 256_000],
     ['ap.anthropic.claude-sonnet-5-5', 1_000_000],

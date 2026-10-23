@@ -21,6 +21,15 @@ const FALLBACK_CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
   ['openai.gpt-oss-20b-1:0', 128_000],
   ['openai.gpt-oss-safeguard-120b', 128_000],
   ['openai.gpt-oss-safeguard-20b', 128_000],
+  ['openai.gpt-6-astra', 1_050_000],
+  ['openai.gpt-6.1-sol', 1_000_000],
+  ['openai.gpt-6-sol', 1_050_000],
+  ['openai.gpt-6-luna', 1_050_000],
+  ['openai.gpt-5.6-sol', 1_050_000],
+  ['openai.gpt-5.6-terra', 1_050_000],
+  ['openai.gpt-5.6-luna', 1_050_000],
+  ['openai.gpt-5.5', 1_050_000],
+  ['openai.gpt-5.4', 1_050_000],
   ['mistral.mistral-large-3-675b-instruct', 256_000],
   ['mistral.ministral-3-14b-instruct', 128_000],
   ['mistral.ministral-3-8b-instruct', 128_000],
@@ -44,15 +53,6 @@ const FALLBACK_CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
   ['gemini-4-argon', 1_048_576],
   ['gemini-3.8-flash', 1_048_576],
   ['gemini-3.7-flash', 1_048_576],
-  // Bedrock GPT-6 ids that defaults.ts does not list yet. Values from the Bedrock model cards:
-  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-astra.html
-  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-sol.html
-  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-luna.html
-  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-1-sol.html
-  ['openai.gpt-6-astra', 1_050_000],
-  ['openai.gpt-6-sol', 1_050_000],
-  ['openai.gpt-6-luna', 1_050_000],
-  ['openai.gpt-6.1-sol', 1_050_000],
 ])
 
 export function contextWindowLimit(model: Model): number | undefined {
