@@ -4,7 +4,7 @@ import { AfterInvocationEvent, BeforeInvocationEvent, InterruptEvent } from '../
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { tool } from '../../tools/tool-factory.js'
 import { CheckpointError, ConcurrentInvocationError, PendingInvocationCancelledError } from '../../errors.js'
-import { Message, TextBlock } from '../../types/messages.js'
+import { Message, TextBlock, type MessageData } from '../../types/messages.js'
 import { InterruptResponseContent } from '../../types/interrupt.js'
 import type { InvokeArgs } from '../../types/agent.js'
 
@@ -370,7 +370,7 @@ describe('concurrentInvocationMode', () => {
 
       const first = agent.invoke('a')
       await gate.started
-      const second = agent.invoke([{ role: 'user', content: [{ type: 'textBlock', text: 'b' }] }] as InvokeArgs)
+      const second = agent.invoke([{ role: 'user', content: [{ text: 'b' }] }] satisfies MessageData[])
       // A queued checkpoint resume normalizes to no messages for display, but still reaches
       // the checkpoint validation when it runs (checkpointing is off here, so it rejects).
       const resume = agent.invoke({ checkpointResume: { checkpoint: {} } } as unknown as InvokeArgs)
@@ -432,7 +432,8 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b')
-      const third = agent.invoke([{ role: 'user', content: [{ type: 'textBlock', text: 'c' }] }] as InvokeArgs)
+      const messageData: MessageData[] = [{ role: 'user', content: [{ text: 'c' }] }]
+      const third = agent.invoke(messageData)
       await until(() => agent.pendingInvocations.length === 2, 'both queued')
       const queuedIds = agent.pendingInvocations.map((pending) => pending.messages[0]!.trackingId)
 
@@ -441,7 +442,7 @@ describe('concurrentInvocationMode', () => {
 
       // The queued bubble can transition into the transcript entry: same trackingId.
       const appendedIds = agent.messages
-        .filter((message) => message.role === 'user' && ['b', 'c'].includes((message.content[0] as TextBlock).text))
+        .filter((message) => message.content[0] instanceof TextBlock && ['b', 'c'].includes(message.content[0].text))
         .map((message) => message.trackingId)
       expect(appendedIds).toEqual(queuedIds)
     })

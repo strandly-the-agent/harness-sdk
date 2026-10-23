@@ -584,6 +584,8 @@ export class Agent implements LocalAgent, InvokableAgent {
   private _interruptedInvocationContext: InvocationContextImpl | undefined
   private readonly _concurrentInvocationMode: ConcurrentInvocationMode
   private readonly _invocationQueue: InvocationQueue
+  /** TrackingIds minted when the current call was queued, reused for its input messages when it runs. */
+  private _queuedInputTrackingIds: readonly string[] | undefined
   private _abortController = new AbortController()
   private _abortSignal: AbortSignal = this._abortController.signal
   private _printer?: Printer
@@ -962,7 +964,7 @@ export class Agent implements LocalAgent, InvokableAgent {
    * agent's `concurrentInvocationMode`) when the agent is busy. Callers must release
    * via try/finally with {@link _releaseTurn}.
    */
-  private async _acquireTurn(args: InvokeArgs, options?: InvokeOptions): Promise<InvokeArgs> {
+  private async _acquireTurn(args: InvokeArgs, options?: InvokeOptions): Promise<void> {
     if (options?.ifBusy !== undefined) validateConcurrentInvocationMode(options.ifBusy, 'ifBusy')
     const strategy = options?.ifBusy ?? this._concurrentInvocationMode
     // An agent awaiting an interrupt response counts as busy for every caller but the resume
@@ -975,7 +977,8 @@ export class Agent implements LocalAgent, InvokableAgent {
     if (!this._isInvoking && !awaitingResume) {
       this._isInvoking = true
       this._installTurnController()
-      return args
+      this._queuedInputTrackingIds = undefined
+      return
     }
     if (strategy === 'throw') {
       throw new ConcurrentInvocationError(
@@ -986,9 +989,9 @@ export class Agent implements LocalAgent, InvokableAgent {
     // 'cancelPrevious' caller parks like 'stopPrevious': the resume yields to it after its
     // pending tool batch.
     // Normalized up front so the queue can show the waiting input and a blank prompt is
-    // rejected now rather than when its turn comes. The call then runs on these very
-    // messages, so what the queue showed (trackingIds included) is what gets appended;
-    // input that normalizes to nothing (interrupt responses, a checkpoint resume) runs raw.
+    // rejected now rather than when its turn comes. The call still runs on its raw args
+    // (middleware sees the same shape as for a direct call); only the trackingIds the queue
+    // showed are carried over, so a queued message keeps its id in the transcript.
     const messages = this._normalizeInput(args)
     const turn = this._invocationQueue.wait({
       mode: awaitingResume && strategy === 'cancelPrevious' ? 'stopPrevious' : strategy,
@@ -1003,7 +1006,7 @@ export class Agent implements LocalAgent, InvokableAgent {
       this.cancel()
     }
     await turn
-    return messages.length > 0 ? messages : args
+    this._queuedInputTrackingIds = messages.map((message) => message.trackingId)
   }
 
   /**
@@ -1034,6 +1037,27 @@ export class Agent implements LocalAgent, InvokableAgent {
     // Install the successor's controller synchronously so a cancel() arriving before
     // its first loop pass targets the successor, not the predecessor's stale controller.
     this._installTurnController()
+  }
+
+  /**
+   * Gives a queued call's input messages the trackingIds `pendingInvocations` showed for them,
+   * so a queued message keeps its identity when it lands in the transcript. Consumed once; a
+   * middleware that changed the number of messages gets fresh ids instead.
+   */
+  private _withQueuedTrackingIds(messages: Message[]): Message[] {
+    const queuedIds = this._queuedInputTrackingIds
+    this._queuedInputTrackingIds = undefined
+    if (!queuedIds || queuedIds.length !== messages.length) return messages
+    return messages.map((message, index) =>
+      message.trackingId === queuedIds[index]
+        ? message
+        : new Message({
+            role: message.role,
+            content: message.content,
+            trackingId: queuedIds[index]!,
+            ...(message.metadata !== undefined && { metadata: message.metadata }),
+          })
+    )
   }
 
   /** Installs a fresh AbortController for the invocation that now owns the turn. */
@@ -1150,8 +1174,10 @@ export class Agent implements LocalAgent, InvokableAgent {
 
   /**
    * Calls waiting for the agent's turn, in run order (a point-in-time snapshot with each
-   * call's input messages, e.g. to render a queue). Empty under `'throw'`. A waiting call is
-   * removed by aborting the `cancelSignal` its caller passed. The queue lives in memory only:
+   * call's input messages, e.g. to render a queue). A queued message keeps its `trackingId`
+   * when it lands in the transcript, so a rendered bubble can become the transcript entry.
+   * Empty under `'throw'`. A waiting call is removed by aborting the `cancelSignal` its caller
+   * passed. The queue lives in memory only:
    * it is not part of {@link takeSnapshot}, so after a restart the host re-submits what it
    * still shows as pending.
    */
@@ -1358,7 +1384,7 @@ export class Agent implements LocalAgent, InvokableAgent {
     args: InvokeArgs,
     options?: InvokeOptions
   ): AsyncGenerator<AgentStreamEvent, AgentResult, undefined> {
-    const inputArgs = await this._acquireTurn(args, options)
+    await this._acquireTurn(args, options)
     let continuationEvent: AfterInvocationEvent | undefined
     try {
       await this.initialize()
@@ -1379,12 +1405,12 @@ export class Agent implements LocalAgent, InvokableAgent {
 
       // Reject invalid input before any hook fires, so a rejected call is never observed as
       // an invocation (a plugin would otherwise see a Before/After pair with no result).
-      if (this._interruptState.activated && this._extractInterruptResponses(inputArgs).length === 0) {
+      if (this._interruptState.activated && this._extractInterruptResponses(args).length === 0) {
         throw new TypeError(INTERRUPTED_STATE_MESSAGE)
       }
-      this._normalizeInput(inputArgs)
+      this._normalizeInput(args)
 
-      let currentArgs: InvokeArgs = inputArgs
+      let currentArgs: InvokeArgs = args
       let firstPass = true
 
       while (true) {
@@ -1930,7 +1956,7 @@ export class Agent implements LocalAgent, InvokableAgent {
         try {
           // Normalize input and append user messages on first invocation only
           if (currentArgs !== undefined) {
-            const messagesToAppend = this._normalizeInput(currentArgs)
+            const messagesToAppend = this._withQueuedTrackingIds(this._normalizeInput(currentArgs))
             if (continuationEvent) {
               yield* await this._appendContinuationMessages(
                 messagesToAppend,
