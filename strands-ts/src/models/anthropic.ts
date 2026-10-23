@@ -213,12 +213,8 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
     const { apiKey, client, clientConfig, ...modelConfig } = options || {}
     this._clientBetas = headerBetas(clientConfig?.defaultHeaders)
 
-    const modelId = modelConfig.modelId ?? MODEL_DEFAULTS.anthropic.modelId
-    // Default to the model's output ceiling when the shared model info knows it.
-    const defaultMaxTokens = lookupModelInfo(modelId).limits?.maxOutputTokens ?? MODEL_DEFAULTS.anthropic.maxTokens
     this._config = {
-      modelId,
-      maxTokens: defaultMaxTokens,
+      modelId: MODEL_DEFAULTS.anthropic.modelId,
       ...modelConfig,
     }
 
@@ -229,7 +225,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
     }
 
     if (modelConfig.maxTokens === undefined) {
-      warnOnce(logger, defaultMaxTokensWarningMessage(defaultMaxTokens))
+      warnOnce(logger, defaultMaxTokensWarningMessage(this._resolvedMaxTokens()))
     }
 
     if (client) {
@@ -258,7 +254,23 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
   }
 
   getConfig(): AnthropicModelConfig {
-    return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId)
+    const config = resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId)
+    return config.maxTokens === undefined ? { ...config, maxTokens: this._resolvedMaxTokens() } : config
+  }
+
+  /**
+   * The `maxTokens` to send: the user's value, else the model's output ceiling from the `info`
+   * override or the shared model info, else the fixed default. Resolved on each read so it follows
+   * `updateConfig({ modelId })`. Reads the layers directly because `info` itself reads `getConfig()`.
+   */
+  private _resolvedMaxTokens(): number {
+    const modelId = this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId
+    return (
+      this._config.maxTokens ??
+      this._config.info?.limits?.maxOutputTokens ??
+      lookupModelInfo(modelId).limits?.maxOutputTokens ??
+      MODEL_DEFAULTS.anthropic.maxTokens
+    )
   }
 
   /**
@@ -691,7 +703,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
 
     const request: Anthropic.MessageStreamParams = {
       model: this._config.modelId,
-      max_tokens: this._config.maxTokens ?? MODEL_DEFAULTS.anthropic.maxTokens,
+      max_tokens: this._resolvedMaxTokens(),
       messages: this._formatMessages(messages, messagesCache, cacheTargetMessage, options?.dynamicTrailingBlocks ?? 0),
       stream: true,
     }
