@@ -32,7 +32,7 @@ class ProviderInfo:
     def __init__(
         self,
         id: str,
-        factory: Callable[[], Model],
+        factory: Callable[..., Model],
         environment_variable: str | None = None,
     ) -> None:
         self.id = id
@@ -42,8 +42,9 @@ class ProviderInfo:
             reason=f"{environment_variable} environment variable missing",
         )
 
-    def create_model(self) -> Model:
-        return self.model_factory()
+    def create_model(self, **overrides) -> Model:
+        """Build the provider's model; keyword overrides (e.g. ``model_id``) are forwarded to the factory."""
+        return self.model_factory(**overrides)
 
 
 class OllamaProviderInfo(ProviderInfo):
@@ -77,7 +78,7 @@ anthropic = ProviderInfo(
         max_tokens=512,
     ),
 )
-bedrock = ProviderInfo(id="bedrock", factory=lambda: BedrockModel())
+bedrock = ProviderInfo(id="bedrock", factory=lambda **kwargs: BedrockModel(**kwargs))
 cohere = ProviderInfo(
     id="cohere",
     environment_variable="COHERE_API_KEY",
@@ -106,23 +107,32 @@ llama = ProviderInfo(
 mistral = ProviderInfo(
     id="mistral",
     environment_variable="MISTRAL_API_KEY",
-    factory=lambda: MistralModel(
-        model_id="mistral-medium-latest",
+    factory=lambda model_id="mistral-medium-latest", **kwargs: MistralModel(
+        model_id=model_id,
         api_key=os.getenv("MISTRAL_API_KEY"),
         stream=True,
         temperature=0.7,
         max_tokens=1000,
         top_p=0.9,
+        **kwargs,
     ),
 )
 openai = ProviderInfo(
     id="openai",
     environment_variable="OPENAI_API_KEY",
-    factory=lambda: OpenAIModel(
-        model_id="gpt-4o",
+    factory=lambda model_id="gpt-4o", **kwargs: OpenAIModel(
+        model_id=model_id,
         client_args={
             "api_key": os.getenv("OPENAI_API_KEY"),
         },
+        **kwargs,
+    ),
+)
+# Bedrock Mantle (OpenAI-compatible endpoint) authenticates with the ambient AWS credential chain, like bedrock.
+mantle = ProviderInfo(
+    id="mantle",
+    factory=lambda model_id="openai.gpt-oss-120b", **kwargs: OpenAIModel(
+        model_id=model_id, bedrock_mantle_config={"region": "us-east-1"}, **kwargs
     ),
 )
 if _openai_responses_available:
@@ -136,8 +146,15 @@ if _openai_responses_available:
             },
         ),
     )
+    mantle_responses = ProviderInfo(
+        id="mantle_responses",
+        factory=lambda model_id="openai.gpt-oss-120b", **kwargs: OpenAIResponsesModel(
+            model_id=model_id, bedrock_mantle_config={"region": "us-east-1"}, **kwargs
+        ),
+    )
 else:
     openai_responses = None
+    mantle_responses = None
 writer = ProviderInfo(
     id="writer",
     environment_variable="WRITER_API_KEY",
@@ -150,10 +167,11 @@ writer = ProviderInfo(
 gemini = ProviderInfo(
     id="gemini",
     environment_variable="GOOGLE_API_KEY",
-    factory=lambda: GeminiModel(
+    factory=lambda model_id="gemini-2.5-flash", **kwargs: GeminiModel(
         client_args={"api_key": os.getenv("GOOGLE_API_KEY")},
-        model_id="gemini-2.5-flash",
+        model_id=model_id,
         params={"temperature": 0.7},
+        **kwargs,
     ),
 )
 
