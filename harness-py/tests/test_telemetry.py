@@ -7,6 +7,9 @@ get wired, and how often), not the SDK's exporter wiring.
 from unittest.mock import MagicMock
 
 import pytest
+from opentelemetry import propagate
+from opentelemetry import trace as trace_api
+from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 
 from strands_harness import telemetry
 
@@ -88,3 +91,23 @@ def test_setup_runs_once_per_process(strands_telemetry, monkeypatch):
     telemetry.setup_telemetry()
     factory.assert_called_once()
     instance.setup_otlp_exporter.assert_called_once()
+
+
+def test_an_installed_tracer_provider_is_left_alone(strands_telemetry, monkeypatch):
+    factory, _ = strands_telemetry
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
+    monkeypatch.setattr(telemetry.trace_api, "get_tracer_provider", lambda: SDKTracerProvider())
+    telemetry.setup_telemetry()
+    factory.assert_not_called()
+
+
+def test_an_installed_tracer_provider_keeps_its_propagator(monkeypatch):
+    """The owner's global textmap (e.g. ADOT's X-Ray composite) survives setup, with the real SDK in the loop."""
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "console")
+    monkeypatch.setattr(telemetry.trace_api, "get_tracer_provider", lambda: SDKTracerProvider())
+    set_tracer_provider = MagicMock()
+    monkeypatch.setattr(trace_api, "set_tracer_provider", set_tracer_provider)
+    textmap = propagate.get_global_textmap()
+    telemetry.setup_telemetry()
+    assert propagate.get_global_textmap() is textmap
+    set_tracer_provider.assert_not_called()
