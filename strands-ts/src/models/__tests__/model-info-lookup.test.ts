@@ -16,6 +16,17 @@ describe('shared model info data', () => {
     expect(lookupModel('arn:aws:bedrock:us-west-2:123:inference-profile/global.anthropic.claude-opus-5-5')).toBe(entry)
   })
 
+  it('resolves a dated snapshot to the undated model', () => {
+    expect(lookupModel('anthropic.claude-opus-5-5-20260401-v1:0')).toBe(lookupModel('claude-opus-5-5'))
+    expect(lookupModel('claude-haiku-4-5@20251001')).toBe(lookupModel('claude-haiku-4-5'))
+    expect(lookupModel('claude-3-5-haiku-20241022')?.limits?.contextWindow).toBe(200_000)
+  })
+
+  it('does not read inherited object keys', () => {
+    expect(lookupModel('toString')).toBeUndefined()
+    expect(lookupModel('x.constructor')).toBeUndefined()
+  })
+
   it('ignores a trailing Bedrock version suffix', () => {
     expect(lookupModel('anthropic.claude-3-5-haiku-20241022-v1:0')).toBe(lookupModel('claude-3-5-haiku-20241022'))
     expect(lookupModel('us.anthropic.claude-3-5-sonnet-20241022-v2:0')?.limits?.contextWindow).toBe(200_000)
@@ -34,10 +45,10 @@ describe('shared model info data', () => {
     expect(lookupModelInfo('anthropic.claude-opus-5-5').capabilities).toEqual({
       promptCaching: 'cachePoints',
       forcedToolChoice: 'unsupported',
-      nativeStructuredOutput: true,
+      nativeStructuredOutput: 'supported',
     })
     expect(lookupModelInfo('amazon.nova-pro-v1:0')).toEqual({
-      capabilities: { forcedToolChoice: 'supported', nativeStructuredOutput: false },
+      capabilities: { forcedToolChoice: 'supported', nativeStructuredOutput: 'unsupported' },
       limits: { contextWindow: 300_000 },
     })
     expect(lookupModelInfo('claude-future-9')).toEqual({})

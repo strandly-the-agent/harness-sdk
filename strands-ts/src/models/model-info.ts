@@ -20,16 +20,22 @@ export type PromptCaching = 'unsupported' | 'automatic' | 'cachePoints'
 /** Whether a model accepts a `toolChoice` that forces a tool call (`any` or a named tool). */
 export type ForcedToolChoice = 'supported' | 'unsupported'
 
-/** What the model can do. */
+/** Whether the provider can make the model's text output conform to a JSON schema. */
+export type NativeStructuredOutput = 'supported' | 'unsupported'
+
+/**
+ * What the model can do. Yes/no facts about a feature are `'supported' | 'unsupported'`; facts with a
+ * mode add the mode as further values, like {@link PromptCaching}.
+ */
 export interface ModelCapabilities {
-  /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}. */
+  /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}; the provider owns it, so the shared data and the `info` override cannot set it. */
   readonly stateful?: boolean | undefined
   /** Whether and how the model caches prompts. */
   readonly promptCaching?: PromptCaching | undefined
   /** Whether the model can be forced to call a tool. */
   readonly forcedToolChoice?: ForcedToolChoice | undefined
   /** Whether the provider can make the model's text output conform to a JSON schema. */
-  readonly nativeStructuredOutput?: boolean | undefined
+  readonly nativeStructuredOutput?: NativeStructuredOutput | undefined
 }
 
 /** Size limits of the model. */
@@ -81,6 +87,8 @@ interface ModelInfoData {
 const SUPPORTED_VERSION = 1
 // Bedrock appends a version to some ids (`claude-3-5-haiku-20241022-v1:0`); the base id carries the facts.
 const VERSION_SUFFIX = /-(?:v\d+(?::\d+)?|\d+:\d+)$/
+// Dated snapshots (`claude-opus-5-5-20260401`, `claude-haiku-4-5@20251001`) share the undated model's facts.
+const DATE_SUFFIX = /[-@]\d{8}$/
 
 const data = modelInfoData as ModelInfoData
 if (data.version !== SUPPORTED_VERSION) {
@@ -93,6 +101,7 @@ const idPrefixes = new Set(data.idPrefixes)
 /**
  * Strips one Bedrock cross-region prefix (`us.`, `global.`, …) from a model id.
  *
+ * @internal
  * @param modelId - The model id as configured
  * @returns The id without its region prefix, or unchanged when it has none
  */
@@ -106,18 +115,22 @@ export function stripRegionPrefix(modelId: string): string {
 
 /**
  * Finds the entry for a model id. Tries the id as given, then without a trailing Bedrock version
- * suffix, then with each leading dot-separated segment removed in turn (`us.anthropic.claude-x` →
- * `anthropic.claude-x` → `claude-x`), the same rule the Python SDK applies. One entry therefore
- * serves a model across providers: `claude-opus-5-5` answers for `anthropic.claude-opus-5-5` too.
+ * suffix, then without a trailing date, then with each leading dot-separated segment removed in
+ * turn (`us.anthropic.claude-x` → `anthropic.claude-x` → `claude-x`), the same rule the Python SDK
+ * applies. One entry therefore serves a model across providers and snapshots: `claude-opus-5-5`
+ * answers for `anthropic.claude-opus-5-5-20260401-v1:0` too.
  *
+ * @internal
  * @param modelId - The model id to look up
  * @returns The entry, or undefined when the id is not in the data
  */
 export function lookupModel(modelId: string): ModelInfo | undefined {
   let candidate = modelId
   for (;;) {
-    const entry = data.models[candidate] ?? data.models[candidate.replace(VERSION_SUFFIX, '')]
-    if (entry !== undefined) return entry
+    const unversioned = candidate.replace(VERSION_SUFFIX, '')
+    for (const key of [candidate, unversioned, unversioned.replace(DATE_SUFFIX, '')]) {
+      if (Object.hasOwn(data.models, key)) return data.models[key]
+    }
     const dotIndex = candidate.indexOf('.')
     if (dotIndex === -1) return undefined
     candidate = candidate.substring(dotIndex + 1)
@@ -127,6 +140,7 @@ export function lookupModel(modelId: string): ModelInfo | undefined {
 /**
  * What the shared model info data knows about a model.
  *
+ * @internal
  * @param modelId - The model id to describe
  * @returns What the data knows about the model; empty when it knows nothing
  */
@@ -137,6 +151,7 @@ export function lookupModelInfo(modelId: string): ModelInfo {
 /**
  * Looks up the context window limit for a model id.
  *
+ * @internal
  * @param modelId - The model id to look up
  * @returns The context window limit in tokens, or undefined if not known
  */

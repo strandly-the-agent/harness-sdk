@@ -212,7 +212,8 @@ export interface BaseModelConfig {
    * Maximum context window size in tokens for the model.
    *
    * The same fact as `info.limits.contextWindow`; setting it here is shorthand for setting it
-   * through `info`, and it wins over the shared model info and the provider's declaration.
+   * through `info`, and it wins over the shared model info and the provider's declaration. When
+   * both are set, `info` wins.
    * When not provided, vended providers still populate it from the shared model info for
    * callers that read `getConfig()`; `info` is the resolved view to read.
    */
@@ -220,8 +221,9 @@ export interface BaseModelConfig {
 
   /**
    * Overrides for what the SDK knows about the model. Fields set here win over the shared model
-   * info and what the provider declares. `updateConfig({ info })` replaces the previous override
-   * entirely, it does not merge into it.
+   * info and what the provider declares; `capabilities.stateful` is the exception, it always
+   * mirrors the provider. `updateConfig({ info })` replaces the previous override entirely, it
+   * does not merge into it.
    */
   info?: ModelInfo
 }
@@ -380,17 +382,18 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
    * Everything the SDK knows about the configured model, resolved on each read. Layers, later
    * ones winning: the shared model info for `modelId`, what this provider declares through
    * {@link declareInfo}, the `contextWindowLimit` config value, and the `info` config override.
-   * Each read returns a new frozen record, so do not compare reads by reference.
+   * `capabilities.stateful` always mirrors {@link stateful}. Each read returns a new frozen record,
+   * so do not compare reads by reference.
    */
   get info(): ModelInfo {
     const config = this.getConfig()
-    return mergeModelInfo(
-      lookupModelInfo(config.modelId ?? ''),
-      { capabilities: { stateful: this.stateful } },
-      this.declareInfo(),
-      { limits: { contextWindow: config.contextWindowLimit } },
-      config.info
-    )
+    const shared = lookupModelInfo(config.modelId ?? '')
+    // Vended providers copy the shared context window into getConfig(); only a value the user set is an override.
+    const userContextWindow =
+      config.contextWindowLimit === shared.limits?.contextWindow ? undefined : config.contextWindowLimit
+    return mergeModelInfo(shared, this.declareInfo(), { limits: { contextWindow: userContextWindow } }, config.info, {
+      capabilities: { stateful: this.stateful },
+    })
   }
 
   /**

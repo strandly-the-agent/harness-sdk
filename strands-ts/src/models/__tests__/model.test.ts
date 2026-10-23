@@ -1234,6 +1234,26 @@ describe('info', () => {
     expect(provider.info.limits?.contextWindow).toBe(8_000)
   })
 
+  it('lets the provider declaration win when getConfig() carries the shared value, not a user one', () => {
+    class DeclaringProvider extends TestModelProvider {
+      protected override declareInfo() {
+        return { limits: { contextWindow: 8_000 } }
+      }
+    }
+    const provider = new DeclaringProvider()
+    provider.updateConfig({ modelId: 'claude-sonnet-4-6', contextWindowLimit: 1_000_000 }) // what resolveConfigMetadata writes
+
+    expect(provider.info.limits?.contextWindow).toBe(8_000)
+  })
+
+  it('never lets the info override change stateful', () => {
+    const provider = new TestModelProvider()
+    provider.updateConfig({ info: { capabilities: { stateful: true } } })
+
+    expect(provider.info.capabilities?.stateful).toBe(false)
+    expect(provider.stateful).toBe(false)
+  })
+
   it('lets the info override win over contextWindowLimit', () => {
     const provider = new TestModelProvider()
     provider.updateConfig({ contextWindowLimit: 50_000, info: { limits: { contextWindow: 10_000 } } })

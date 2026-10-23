@@ -26,7 +26,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": true
+        "nativeStructuredOutput": "supported"
       }
     },
     "claude-sonnet-4-5-20250929": {
@@ -45,23 +45,7 @@
         "promptCaching": "cachePoints"
       }
     },
-    "claude-opus-4-6-20260205": {
-      "limits": {
-        "contextWindow": 1000000
-      },
-      "capabilities": {
-        "promptCaching": "cachePoints"
-      }
-    },
     "claude-opus-4-7": {
-      "limits": {
-        "contextWindow": 1000000
-      },
-      "capabilities": {
-        "promptCaching": "cachePoints"
-      }
-    },
-    "claude-opus-4-7-20260416": {
       "limits": {
         "contextWindow": 1000000
       },
@@ -76,7 +60,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": false
+        "nativeStructuredOutput": "unsupported"
       }
     },
     "claude-opus-5": {
@@ -86,7 +70,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": true
+        "nativeStructuredOutput": "supported"
       }
     },
     "claude-opus-5-5": {
@@ -96,7 +80,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "unsupported",
-        "nativeStructuredOutput": true
+        "nativeStructuredOutput": "supported"
       }
     },
     "claude-fable-5": {
@@ -123,7 +107,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": false
+        "nativeStructuredOutput": "unsupported"
       }
     },
     "claude-sonnet-5-5": {
@@ -133,7 +117,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "unsupported",
-        "nativeStructuredOutput": true
+        "nativeStructuredOutput": "supported"
       }
     },
     "claude-haiku-5-5": {
@@ -143,18 +127,10 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": true
+        "nativeStructuredOutput": "supported"
       }
     },
     "claude-opus-4-5": {
-      "limits": {
-        "contextWindow": 200000
-      },
-      "capabilities": {
-        "promptCaching": "cachePoints"
-      }
-    },
-    "claude-opus-4-5-20251101": {
       "limits": {
         "contextWindow": 200000
       },
@@ -178,23 +154,7 @@
         "promptCaching": "cachePoints"
       }
     },
-    "claude-opus-4-1-20250805": {
-      "limits": {
-        "contextWindow": 200000
-      },
-      "capabilities": {
-        "promptCaching": "cachePoints"
-      }
-    },
     "claude-haiku-4-5": {
-      "limits": {
-        "contextWindow": 200000
-      },
-      "capabilities": {
-        "promptCaching": "cachePoints"
-      }
-    },
-    "claude-haiku-4-5-20251001": {
       "limits": {
         "contextWindow": 200000
       },
@@ -250,14 +210,6 @@
         "promptCaching": "cachePoints"
       }
     },
-    "claude-haiku-4-5@20251001": {
-      "limits": {
-        "contextWindow": 200000
-      },
-      "capabilities": {
-        "promptCaching": "cachePoints"
-      }
-    },
     "claude-3-7-sonnet-20240620": {
       "limits": {
         "contextWindow": 200000
@@ -288,7 +240,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": false
+        "nativeStructuredOutput": "unsupported"
       }
     },
     "amazon.nova-lite-v1:0": {
@@ -297,7 +249,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": false
+        "nativeStructuredOutput": "unsupported"
       }
     },
     "amazon.nova-micro-v1:0": {
@@ -306,7 +258,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": false
+        "nativeStructuredOutput": "unsupported"
       }
     },
     "amazon.nova-premier-v1:0": {
@@ -315,7 +267,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": false
+        "nativeStructuredOutput": "unsupported"
       }
     },
     "amazon.nova-2-lite-v1:0": {
@@ -324,7 +276,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": false
+        "nativeStructuredOutput": "unsupported"
       }
     },
     "amazon.nova-2-pro-preview-20251202-v1:0": {
@@ -333,7 +285,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": false
+        "nativeStructuredOutput": "unsupported"
       }
     },
     "zai.glm-4.7": {

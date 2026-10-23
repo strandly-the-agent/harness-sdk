@@ -1653,7 +1653,7 @@ describe('BedrockModel', () => {
         mockRejections(forcedRejection)
         const provider = new BedrockModel({
           modelId: 'm1',
-          info: { capabilities: { nativeStructuredOutput: false } },
+          info: { capabilities: { nativeStructuredOutput: 'unsupported' } },
         })
 
         await collectIterator(provider.stream(messages, structuredOutputOptions))
