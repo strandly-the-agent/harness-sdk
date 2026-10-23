@@ -27,6 +27,13 @@ export class TruncateStrategy extends BaseOffloadStrategy {
   constructor(target?: OffloadTarget, config?: TruncateConfig, conditions?: OffloadConditions) {
     super(target, conditions)
     this._truncateConfig = config ?? {}
+    const agenticLimit = this._truncateConfig.agenticLimit
+    if (agenticLimit !== undefined) {
+      if (!(Number.isFinite(agenticLimit) && agenticLimit > 0)) {
+        throw new Error(`agenticLimit must be a positive number, got ${agenticLimit}`)
+      }
+      this._modelLimits = { max: agenticLimit }
+    }
 
     const previewTokens =
       typeof this._truncateConfig.previewTokens === 'number' && Number.isFinite(this._truncateConfig.previewTokens)
@@ -47,14 +54,17 @@ export class TruncateStrategy extends BaseOffloadStrategy {
     return new TruncateStrategy(this._target, this._truncateConfig, conditions)
   }
 
-  /**
-   * Honour the model-selected `_max_result_tokens` of a tool call as both threshold and preview
-   * size for that result, instead of this strategy's configured values.
-   *
-   * @param max - Upper bound the model may pick; larger values are clamped
-   */
-  enableModelLimits(max?: number): void {
-    this._modelLimits = max === undefined ? {} : { max }
+  /** The cap on model-selected result limits, or undefined when the model may not pick one. */
+  get agenticLimit(): number | undefined {
+    return this._modelLimits?.max
+  }
+
+  /** Whether results of the named tool fall under this strategy's target. */
+  targetsTool(toolName: string): boolean {
+    if (this._target === 'assistantText' || this._target === 'userText') return false
+    if (this._excludeFilter) return !this._excludeFilter.has(toolName)
+    if (this._includeFilter) return this._includeFilter.has(toolName)
+    return true
   }
 
   protected override _makeRemovalMarker(count: number): string {

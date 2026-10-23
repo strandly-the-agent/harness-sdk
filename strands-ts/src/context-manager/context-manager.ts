@@ -19,7 +19,7 @@ import { EPHEMERAL } from '../storage/storage.js'
 import type { Storage } from '../storage/storage.js'
 import type { JSONSchema } from '../types/json.js'
 import { logger } from '../logging/logger.js'
-import type { AgenticResultLimitsConfig, ContextManagerConfig, ContextStrategy, ContextState } from './types.js'
+import type { ContextManagerConfig, ContextStrategy, ContextState } from './types.js'
 import { EmergencyTruncateStrategy, Offload } from './strategies/offload/index.js'
 import { readResultLimit, RESULT_LIMIT_PROPERTY } from './strategies/offload/base.js'
 import { TruncateStrategy } from './strategies/offload/truncate.js'
@@ -79,7 +79,6 @@ export class ContextManager implements Plugin {
   private readonly _strategies: ContextStrategy[]
   private readonly _stashStorage: Storage | false | undefined
   private readonly _enableRetrievalTool: boolean
-  private readonly _agenticResultLimits: AgenticResultLimitsConfig | undefined
   private readonly _retrievalToolUseIds = new Set<string>()
   private _stash: Stash | undefined
   private _stashIsDurable = false
@@ -99,13 +98,6 @@ export class ContextManager implements Plugin {
     const stashObj = typeof stashConfig === 'object' ? stashConfig : undefined
     this._stashStorage = stashConfig === false ? false : stashObj?.storage
     this._enableRetrievalTool = stashConfig !== false && stashObj?.retrievalTool !== false
-    const limits = config?.agenticResultLimits
-    this._agenticResultLimits = limits === true ? {} : limits || undefined
-    if (this._agenticResultLimits?.maxTokens !== undefined && !(this._agenticResultLimits.maxTokens >= 0)) {
-      throw new Error(
-        `agenticResultLimits.maxTokens must be a non-negative number, got ${this._agenticResultLimits.maxTokens}`
-      )
-    }
   }
 
   /**
@@ -174,12 +166,14 @@ export class ContextManager implements Plugin {
     }
 
     for (const strategy of this._strategies) {
-      if (this._agenticResultLimits && strategy instanceof TruncateStrategy) {
-        strategy.enableModelLimits(this._agenticResultLimits.maxTokens)
-      }
       strategy.init?.(agent, this._stash)
     }
-    if (this._agenticResultLimits) this._registerResultLimitSelection(agent, this._agenticResultLimits)
+
+    const agenticTruncates = this._strategies.filter(
+      (strategy): strategy is TruncateStrategy =>
+        strategy instanceof TruncateStrategy && strategy.agenticLimit !== undefined
+    )
+    if (agenticTruncates.length > 0) this._registerResultLimitSelection(agent, agenticTruncates)
 
     agent.addHook(BeforeModelCallEvent, async (event) => {
       await this._runStrategies(event.agent, event.projectedInputTokens, undefined, event.invocationContext)
@@ -229,28 +223,35 @@ export class ContextManager implements Plugin {
     return this._stashIsDurable
   }
 
-  /** Advertises `_max_result_tokens` on tool specs and strips it from tool input before execution. */
-  private _registerResultLimitSelection(agent: LocalAgent, limits: AgenticResultLimitsConfig): void {
+  /**
+   * Advertises `_max_result_tokens` on the specs of tools targeted by an agentic truncate strategy
+   * and strips it from tool input before execution.
+   */
+  private _registerResultLimitSelection(agent: LocalAgent, strategies: TruncateStrategy[]): void {
     const retrievable = this._stash !== undefined && this._enableRetrievalTool
-    const schema: JSONSchema = {
-      type: 'integer',
-      minimum: 0,
-      ...(limits.maxTokens !== undefined && { maximum: limits.maxTokens }),
-      description:
-        'Maximum tokens of this result to keep in context. Larger results are truncated to a preview of this size' +
-        (retrievable ? ' and the full content is stashed for retrieval' : '') +
-        '. Omit to use the default.',
+    const schemaFor = (toolName: string): JSONSchema | undefined => {
+      const caps = strategies.filter((s) => s.targetsTool(toolName)).map((s) => s.agenticLimit!)
+      if (caps.length === 0) return undefined
+      return {
+        type: 'integer',
+        minimum: 0,
+        maximum: Math.max(...caps),
+        description:
+          'Maximum tokens of this result to keep in context. Larger results are truncated to a preview of this size' +
+          (retrievable ? ' and the full content is stashed for retrieval' : '') +
+          '. Omit to use the default.',
+      }
     }
     const declaresProperty = (name: string): boolean =>
       agent.toolRegistry.get(name)?.toolSpec.inputSchema?.properties?.[RESULT_LIMIT_PROPERTY] !== undefined
 
     agent.addMiddleware(InvokeModelStage.Input, async (context) => ({
       ...context,
-      toolSpecs: context.toolSpecs.map((spec) =>
-        RESULT_LIMIT_EXEMPT_TOOLS.has(spec.name)
-          ? spec
-          : (addInputProperty(spec, RESULT_LIMIT_PROPERTY, schema) ?? spec)
-      ),
+      toolSpecs: context.toolSpecs.map((spec) => {
+        if (RESULT_LIMIT_EXEMPT_TOOLS.has(spec.name)) return spec
+        const schema = schemaFor(spec.name)
+        return schema ? (addInputProperty(spec, RESULT_LIMIT_PROPERTY, schema) ?? spec) : spec
+      }),
     }))
     agent.addHook(
       BeforeToolCallEvent,

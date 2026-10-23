@@ -125,14 +125,14 @@ export function readResultLimit(input: unknown): number | undefined {
  * @returns Limits keyed by toolUseId; calls without a valid limit are absent
  * @internal
  */
-export function buildResultLimitMap(messages: Message[], maxTokens?: number): Map<string, number> {
+export function buildResultLimitMap(messages: Message[], maxTokens: number): Map<string, number> {
   const map = new Map<string, number>()
   for (const message of messages) {
     if (message.role !== 'assistant') continue
     for (const block of message.content) {
       if (!(block instanceof ToolUseBlock)) continue
       const limit = readResultLimit(block.input)
-      if (limit !== undefined) map.set(block.toolUseId, maxTokens === undefined ? limit : Math.min(limit, maxTokens))
+      if (limit !== undefined) map.set(block.toolUseId, Math.min(limit, maxTokens))
     }
   }
   return map
@@ -370,7 +370,7 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
   protected readonly _excludeFilter: Set<string> | undefined
   protected _stash: Stash | undefined
   /** Set by subclasses that honour model-selected result limits; `max` caps what the model may pick. */
-  protected _modelLimits: { max?: number } | undefined
+  protected _modelLimits: { max: number } | undefined
 
   constructor(target?: OffloadTarget, conditions?: OffloadConditions) {
     if (Array.isArray(target) && target.length === 0) {

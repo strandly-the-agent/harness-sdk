@@ -23,6 +23,15 @@ export interface TruncateConfig {
 
   /** Which portion of the text to keep as preview. Defaults to 'headTail'. */
   preview?: 'head' | 'tail' | 'headTail'
+
+  /**
+   * Let the model choose, per tool call, how many tokens of that call's result stay in context,
+   * up to this cap. Adds an optional `_max_result_tokens` integer to the input schema of the tools
+   * this strategy targets; when the model sets it, that result is kept whole up to the value and
+   * otherwise truncated to a preview of that size, in place of `threshold` and `previewTokens`.
+   * Calls without it keep the configured defaults. Must be a positive number. Off when omitted.
+   */
+  agenticLimit?: number
 }
 
 /**
