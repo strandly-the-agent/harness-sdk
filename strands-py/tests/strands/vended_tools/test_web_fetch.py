@@ -105,7 +105,42 @@ class TestWebFetchToolCall:
         tool = make_web_fetch(client=_client(handler), mode="markdown", max_content_chars=50)
         tru_result = await tool(url="https://example.com/")
         assert tru_result.startswith("x" * 50)
-        assert "[content truncated]" in tru_result
+        assert tru_result.endswith(
+            "[content truncated: showing characters 0-50 of 200; call again with offset=50 to continue]"
+        )
+
+    @pytest.mark.asyncio
+    async def test_markdown_offset_returns_next_window(self):
+        body = "a" * 50 + "b" * 50 + "c" * 20
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, headers={"content-type": "text/plain"}, text=body)
+
+        tool = make_web_fetch(client=_client(handler), mode="markdown", max_content_chars=50)
+        middle = await tool(url="https://example.com/", offset=50)
+        assert middle.startswith("b" * 50)
+        assert "showing characters 50-100 of 120; call again with offset=100" in middle
+
+        last = await tool(url="https://example.com/", offset=100)
+        assert last == "c" * 20 + "\n\n[content truncated: showing characters 100-120 of 120]"
+
+    @pytest.mark.asyncio
+    async def test_markdown_no_marker_when_content_fits(self):
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, headers={"content-type": "text/plain"}, text="short")
+
+        tool = make_web_fetch(client=_client(handler), mode="markdown", max_content_chars=50)
+        assert await tool(url="https://example.com/") == "short"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("offset", [-1, 5, 50])
+    async def test_offset_out_of_range_raises(self, offset):
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, headers={"content-type": "text/plain"}, text="short")
+
+        tool = make_web_fetch(client=_client(handler), mode="markdown", max_content_chars=50)
+        with pytest.raises(WebFetchError, match="offset"):
+            await tool(url="https://example.com/", offset=offset)
 
     @pytest.mark.asyncio
     async def test_rejects_non_http_scheme(self):
@@ -255,10 +290,42 @@ class TestAnalyst:
             mode="agentic",
             max_content_chars=50,
         )
-        await tool(url="https://example.com/", prompt="Summarize")
+        tru_result = await tool(url="https://example.com/", prompt="Summarize")
         assert "x" * 50 in received_prompt[0]
         assert "x" * 51 not in received_prompt[0]
-        assert "[content truncated]" in received_prompt[0]
+        marker = "[content truncated: showing characters 0-50 of 200; call again with offset=50 to continue]"
+        assert marker in received_prompt[0]
+        assert tru_result == f"answer\n\n{marker}"
+
+    @pytest.mark.asyncio
+    async def test_agentic_offset_selects_window(self, monkeypatch):
+        body = "a" * 50 + "b" * 50
+
+        def page_handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, headers={"content-type": "text/plain"}, text=body)
+
+        received_prompt: list[str] = []
+
+        class _FakeAgent:
+            def __init__(self, **kwargs):
+                pass
+
+            async def invoke_async(self, prompt: str, **kwargs):
+                received_prompt.append(prompt)
+                return "answer"
+
+        monkeypatch.setattr(agent_module, "Agent", _FakeAgent)
+        tool = make_web_fetch(
+            client=_client(page_handler),
+            model=SimpleNamespace(),
+            mode="agentic",
+            max_content_chars=50,
+        )
+        tru_result = await tool(url="https://example.com/", prompt="Summarize", offset=50)
+        assert received_prompt[0].endswith(
+            "--- Content ---\n" + "b" * 50 + "\n\n[content truncated: showing characters 50-100 of 100]"
+        )
+        assert tru_result == "answer\n\n[content truncated: showing characters 50-100 of 100]"
 
     @pytest.mark.asyncio
     async def test_prompt_without_model_and_no_agent_raises(self):

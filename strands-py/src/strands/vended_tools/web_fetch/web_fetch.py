@@ -74,8 +74,9 @@ def make_web_fetch(
             this are rejected without buffering the entire body. Defaults to
             5 MiB.
         max_content_chars: Maximum characters of extracted content delivered to
-            the model or analyst. Content exceeding this is truncated with a
-            visible marker. Defaults to 50,000.
+            the model or analyst per call. Longer content is truncated with a
+            marker that reports the total length and the ``offset`` to pass to
+            read the next window. Defaults to 50,000.
         client: Optional ``httpx.AsyncClient`` to use for requests. When
             provided, the tool uses it directly and will not close it.
             When ``None``, a new client is created per request with
@@ -109,6 +110,7 @@ def make_web_fetch(
     @tool(name=name, description=resolved_description, context=True)
     async def web_fetch_tool_markdown(
         url: str,
+        offset: int = 0,
         tool_context: ToolContext | None = None,
     ) -> str:
         """Fetches an HTTP(S) URL and returns clean markdown.
@@ -117,6 +119,9 @@ def make_web_fetch(
 
         Args:
             url: The URL to fetch. Must be ``http://`` or ``https://``.
+            offset: Character offset into the extracted content to start from.
+                Use the value given in a previous result's truncation marker to
+                read the next part of a long page. Defaults to 0.
             tool_context: Framework-injected. Not model-visible. Carries the
                 agent so the tool can read its cancel signal.
         """
@@ -128,16 +133,15 @@ def make_web_fetch(
             cancel_signal=cancel_signal,
         )
 
-        is_markup = "html" in content_type.lower() or "xml" in content_type.lower()
-        content = html_to_markdown(raw) if is_markup else raw
-        if len(content) > max_content_chars:
-            content = content[:max_content_chars] + "\n\n[content truncated]"
-        return content
+        content = _extract_content(content_type, raw)
+        window, marker = _select_window(content, offset, max_content_chars)
+        return window if marker is None else f"{window}\n\n{marker}"
 
     @tool(name=name, description=resolved_description, context=True)
     async def web_fetch_tool_agentic(
         url: str,
         prompt: str,
+        offset: int = 0,
         tool_context: ToolContext | None = None,
     ) -> str:
         """Fetches an HTTP(S) URL and returns an analyst's answer about it.
@@ -147,6 +151,9 @@ def make_web_fetch(
         Args:
             url: The URL to fetch. Must be ``http://`` or ``https://``.
             prompt: The question or instruction about the page content.
+            offset: Character offset into the extracted content to start from.
+                Use the value given in a previous result's truncation marker to
+                ask about the next part of a long page. Defaults to 0.
             tool_context: Framework-injected. Not model-visible. Carries the
                 agent so the tool can read its cancel signal.
         """
@@ -179,11 +186,11 @@ def make_web_fetch(
             system_prompt=_ANALYST_PROMPT,
             callback_handler=None,
         )
-        is_markup = "html" in content_type.lower() or "xml" in content_type.lower()
-        content = html_to_markdown(raw) if is_markup else raw
-        if len(content) > max_content_chars:
-            content = content[:max_content_chars] + "\n\n[content truncated]"
-        invoke_prompt = f"URL: {url}\n\nRequest: {prompt}\n\n--- Content ---\n{content}"
+        content = _extract_content(content_type, raw)
+        window, marker = _select_window(content, offset, max_content_chars)
+        if marker is not None:
+            window = f"{window}\n\n{marker}"
+        invoke_prompt = f"URL: {url}\n\nRequest: {prompt}\n\n--- Content ---\n{window}"
         try:
             result = await analyst.invoke_async(
                 invoke_prompt,
@@ -194,7 +201,7 @@ def make_web_fetch(
             )
         except Exception as exc:
             raise WebFetchError(f"Web fetch analyst failed for {url}: {exc}") from exc
-        return str(result)
+        return str(result) if marker is None else f"{result}\n\n{marker}"
 
     return web_fetch_tool_markdown if mode == "markdown" else web_fetch_tool_agentic
 
@@ -204,6 +211,36 @@ web_fetch = make_web_fetch()
 
 
 # ---- Internals ----
+
+
+def _extract_content(content_type: str, raw: str) -> str:
+    """Convert markup bodies to markdown; return other content types as-is."""
+    is_markup = "html" in content_type.lower() or "xml" in content_type.lower()
+    return html_to_markdown(raw) if is_markup else raw
+
+
+def _select_window(content: str, offset: int, max_content_chars: int) -> tuple[str, str | None]:
+    """Return ``content[offset:offset + max_content_chars]`` and a truncation marker.
+
+    The marker is ``None`` when the window is the whole content. Otherwise it
+    reports the window bounds, the total length, and the ``offset`` to continue
+    from if more content remains.
+
+    Raises:
+        WebFetchError: When ``offset`` is negative or past the end of the content.
+    """
+    total = len(content)
+    if offset < 0:
+        raise WebFetchError(f"offset must be non-negative, got {offset}")
+    if offset and offset >= total:
+        raise WebFetchError(f"offset {offset} is past the end of the content ({total} characters)")
+    end = min(offset + max_content_chars, total)
+    if offset == 0 and end == total:
+        return content, None
+    marker = f"[content truncated: showing characters {offset}-{end} of {total}"
+    if end < total:
+        marker += f"; call again with offset={end} to continue"
+    return content[offset:end], marker + "]"
 
 
 async def _fetch_once(
