@@ -32,7 +32,7 @@ class ProviderInfo:
     def __init__(
         self,
         id: str,
-        factory: Callable[..., Model],
+        factory: Callable[[], Model],
         environment_variable: str | None = None,
     ) -> None:
         self.id = id
@@ -42,9 +42,8 @@ class ProviderInfo:
             reason=f"{environment_variable} environment variable missing",
         )
 
-    def create_model(self, **overrides) -> Model:
-        """Build the provider's model; keyword overrides (e.g. ``model_id``) are forwarded to the factory."""
-        return self.model_factory(**overrides)
+    def create_model(self) -> Model:
+        return self.model_factory()
 
 
 class OllamaProviderInfo(ProviderInfo):
@@ -52,10 +51,7 @@ class OllamaProviderInfo(ProviderInfo):
 
     def __init__(self):
         super().__init__(
-            id="ollama",
-            factory=lambda model_id="llama3.3:70b", **kwargs: OllamaModel(
-                host="http://localhost:11434", model_id=model_id, **kwargs
-            ),
+            id="ollama", factory=lambda: OllamaModel(host="http://localhost:11434", model_id="llama3.3:70b")
         )
 
         is_server_available = False
@@ -73,94 +69,83 @@ class OllamaProviderInfo(ProviderInfo):
 anthropic = ProviderInfo(
     id="anthropic",
     environment_variable="ANTHROPIC_API_KEY",
-    factory=lambda model_id="claude-sonnet-4-6", **kwargs: AnthropicModel(
+    factory=lambda: AnthropicModel(
         client_args={
             "api_key": os.getenv("ANTHROPIC_API_KEY"),
         },
-        model_id=model_id,
+        model_id="claude-sonnet-4-6",
         max_tokens=512,
-        **kwargs,
     ),
 )
-bedrock = ProviderInfo(id="bedrock", factory=lambda **kwargs: BedrockModel(**kwargs))
+bedrock = ProviderInfo(id="bedrock", factory=lambda: BedrockModel())
 cohere = ProviderInfo(
     id="cohere",
     environment_variable="COHERE_API_KEY",
-    factory=lambda model_id="command-a-03-2025", **kwargs: OpenAIModel(
+    factory=lambda: OpenAIModel(
         client_args={
             "base_url": "https://api.cohere.com/compatibility/v1",
             "api_key": os.getenv("COHERE_API_KEY"),
         },
-        model_id=model_id,
+        model_id="command-a-03-2025",
         params={"stream_options": None},
-        **kwargs,
     ),
 )
 litellm = ProviderInfo(
-    id="litellm",
-    factory=lambda model_id="bedrock/global.anthropic.claude-sonnet-4-6", **kwargs: LiteLLMModel(
-        model_id=model_id, **kwargs
-    ),
+    id="litellm", factory=lambda: LiteLLMModel(model_id="bedrock/global.anthropic.claude-sonnet-4-6")
 )
 llama = ProviderInfo(
     id="llama",
     environment_variable="LLAMA_API_KEY",
-    factory=lambda model_id="Llama-4-Maverick-17B-128E-Instruct-FP8", **kwargs: LlamaAPIModel(
-        model_id=model_id,
+    factory=lambda: LlamaAPIModel(
+        model_id="Llama-4-Maverick-17B-128E-Instruct-FP8",
         client_args={
             "api_key": os.getenv("LLAMA_API_KEY"),
         },
-        **kwargs,
     ),
 )
 mistral = ProviderInfo(
     id="mistral",
     environment_variable="MISTRAL_API_KEY",
-    factory=lambda model_id="mistral-medium-latest", **kwargs: MistralModel(
-        model_id=model_id,
+    factory=lambda: MistralModel(
+        model_id="mistral-medium-latest",
         api_key=os.getenv("MISTRAL_API_KEY"),
         stream=True,
         temperature=0.7,
         max_tokens=1000,
         top_p=0.9,
-        **kwargs,
     ),
 )
 openai = ProviderInfo(
     id="openai",
     environment_variable="OPENAI_API_KEY",
-    factory=lambda model_id="gpt-4o", **kwargs: OpenAIModel(
-        model_id=model_id,
+    factory=lambda: OpenAIModel(
+        model_id="gpt-4o",
         client_args={
             "api_key": os.getenv("OPENAI_API_KEY"),
         },
-        **kwargs,
     ),
 )
 # Bedrock Mantle (OpenAI-compatible endpoint) authenticates with the ambient AWS credential chain, like bedrock.
 # Used by the model smoke table only; deliberately not part of all_providers.
 mantle = ProviderInfo(
     id="mantle",
-    factory=lambda model_id="openai.gpt-oss-120b", **kwargs: OpenAIModel(
-        model_id=model_id, bedrock_mantle_config={"region": "us-east-1"}, **kwargs
-    ),
+    factory=lambda: OpenAIModel(model_id="openai.gpt-oss-120b", bedrock_mantle_config={"region": "us-east-1"}),
 )
 if _openai_responses_available:
     openai_responses = ProviderInfo(
         id="openai_responses",
         environment_variable="OPENAI_API_KEY",
-        factory=lambda model_id="gpt-4o", **kwargs: OpenAIResponsesModel(
-            model_id=model_id,
+        factory=lambda: OpenAIResponsesModel(
+            model_id="gpt-4o",
             client_args={
                 "api_key": os.getenv("OPENAI_API_KEY"),
             },
-            **kwargs,
         ),
     )
     mantle_responses = ProviderInfo(
         id="mantle_responses",
-        factory=lambda model_id="openai.gpt-oss-120b", **kwargs: OpenAIResponsesModel(
-            model_id=model_id, bedrock_mantle_config={"region": "us-east-1"}, **kwargs
+        factory=lambda: OpenAIResponsesModel(
+            model_id="openai.gpt-oss-120b", bedrock_mantle_config={"region": "us-east-1"}
         ),
     )
 else:
@@ -169,21 +154,19 @@ else:
 writer = ProviderInfo(
     id="writer",
     environment_variable="WRITER_API_KEY",
-    factory=lambda model_id="palmyra-x4", **kwargs: WriterModel(
-        model_id=model_id,
+    factory=lambda: WriterModel(
+        model_id="palmyra-x4",
         client_args={"api_key": os.getenv("WRITER_API_KEY", "")},
         stream_options={"include_usage": True},
-        **kwargs,
     ),
 )
 gemini = ProviderInfo(
     id="gemini",
     environment_variable="GOOGLE_API_KEY",
-    factory=lambda model_id="gemini-2.5-flash", **kwargs: GeminiModel(
+    factory=lambda: GeminiModel(
         client_args={"api_key": os.getenv("GOOGLE_API_KEY")},
-        model_id=model_id,
+        model_id="gemini-2.5-flash",
         params={"temperature": 0.7},
-        **kwargs,
     ),
 )
 
