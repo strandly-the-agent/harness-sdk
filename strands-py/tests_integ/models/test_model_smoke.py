@@ -3,6 +3,8 @@
 One row per model; each row carries its provider's skip mark, so a missing key skips only that provider's rows.
 """
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any, NamedTuple
 
 import pytest
@@ -16,8 +18,8 @@ class SmokeModel(NamedTuple):
     provider: providers.ProviderInfo
     model_id: str
     expected_window: int
-    model_kwargs: dict[str, Any] = {}
-    tool_use_marks: list[pytest.MarkDecorator] = []
+    model_kwargs: Mapping[str, Any] = MappingProxyType({})
+    tool_use_marks: tuple[pytest.MarkDecorator, ...] = ()
 
 
 LARGE_4_TOOL_USE_XFAIL = pytest.mark.xfail(
@@ -39,7 +41,7 @@ SMOKE_MODELS = [
     SmokeModel(providers.mantle_responses, "openai.gpt-oss-120b", 128_000),
     SmokeModel(providers.openai, "chat-latest", 272_000),
     SmokeModel(providers.mistral, "mistral-medium-3-5", 262_144),
-    SmokeModel(providers.mistral, "mistral-large-4-0", 1_048_576, tool_use_marks=[LARGE_4_TOOL_USE_XFAIL]),
+    SmokeModel(providers.mistral, "mistral-large-4-0", 1_048_576, tool_use_marks=(LARGE_4_TOOL_USE_XFAIL,)),
     SmokeModel(providers.mistral, "ministral-14b-2512", 262_144),
     SmokeModel(providers.mistral, "mistral-small-2603", 262_144),
     SmokeModel(providers.mistral, "codestral-2508", 256_000),

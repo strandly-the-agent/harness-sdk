@@ -52,7 +52,10 @@ class OllamaProviderInfo(ProviderInfo):
 
     def __init__(self):
         super().__init__(
-            id="ollama", factory=lambda: OllamaModel(host="http://localhost:11434", model_id="llama3.3:70b")
+            id="ollama",
+            factory=lambda model_id="llama3.3:70b", **kwargs: OllamaModel(
+                host="http://localhost:11434", model_id=model_id, **kwargs
+            ),
         )
 
         is_server_available = False
@@ -70,38 +73,44 @@ class OllamaProviderInfo(ProviderInfo):
 anthropic = ProviderInfo(
     id="anthropic",
     environment_variable="ANTHROPIC_API_KEY",
-    factory=lambda: AnthropicModel(
+    factory=lambda model_id="claude-sonnet-4-6", **kwargs: AnthropicModel(
         client_args={
             "api_key": os.getenv("ANTHROPIC_API_KEY"),
         },
-        model_id="claude-sonnet-4-6",
+        model_id=model_id,
         max_tokens=512,
+        **kwargs,
     ),
 )
 bedrock = ProviderInfo(id="bedrock", factory=lambda **kwargs: BedrockModel(**kwargs))
 cohere = ProviderInfo(
     id="cohere",
     environment_variable="COHERE_API_KEY",
-    factory=lambda: OpenAIModel(
+    factory=lambda model_id="command-a-03-2025", **kwargs: OpenAIModel(
         client_args={
             "base_url": "https://api.cohere.com/compatibility/v1",
             "api_key": os.getenv("COHERE_API_KEY"),
         },
-        model_id="command-a-03-2025",
+        model_id=model_id,
         params={"stream_options": None},
+        **kwargs,
     ),
 )
 litellm = ProviderInfo(
-    id="litellm", factory=lambda: LiteLLMModel(model_id="bedrock/global.anthropic.claude-sonnet-4-6")
+    id="litellm",
+    factory=lambda model_id="bedrock/global.anthropic.claude-sonnet-4-6", **kwargs: LiteLLMModel(
+        model_id=model_id, **kwargs
+    ),
 )
 llama = ProviderInfo(
     id="llama",
     environment_variable="LLAMA_API_KEY",
-    factory=lambda: LlamaAPIModel(
-        model_id="Llama-4-Maverick-17B-128E-Instruct-FP8",
+    factory=lambda model_id="Llama-4-Maverick-17B-128E-Instruct-FP8", **kwargs: LlamaAPIModel(
+        model_id=model_id,
         client_args={
             "api_key": os.getenv("LLAMA_API_KEY"),
         },
+        **kwargs,
     ),
 )
 mistral = ProviderInfo(
@@ -129,6 +138,7 @@ openai = ProviderInfo(
     ),
 )
 # Bedrock Mantle (OpenAI-compatible endpoint) authenticates with the ambient AWS credential chain, like bedrock.
+# Used by the model smoke table only; deliberately not part of all_providers.
 mantle = ProviderInfo(
     id="mantle",
     factory=lambda model_id="openai.gpt-oss-120b", **kwargs: OpenAIModel(
@@ -139,11 +149,12 @@ if _openai_responses_available:
     openai_responses = ProviderInfo(
         id="openai_responses",
         environment_variable="OPENAI_API_KEY",
-        factory=lambda: OpenAIResponsesModel(
-            model_id="gpt-4o",
+        factory=lambda model_id="gpt-4o", **kwargs: OpenAIResponsesModel(
+            model_id=model_id,
             client_args={
                 "api_key": os.getenv("OPENAI_API_KEY"),
             },
+            **kwargs,
         ),
     )
     mantle_responses = ProviderInfo(
@@ -158,10 +169,11 @@ else:
 writer = ProviderInfo(
     id="writer",
     environment_variable="WRITER_API_KEY",
-    factory=lambda: WriterModel(
-        model_id="palmyra-x4",
+    factory=lambda model_id="palmyra-x4", **kwargs: WriterModel(
+        model_id=model_id,
         client_args={"api_key": os.getenv("WRITER_API_KEY", "")},
         stream_options={"include_usage": True},
+        **kwargs,
     ),
 )
 gemini = ProviderInfo(
