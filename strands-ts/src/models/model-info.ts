@@ -17,12 +17,19 @@ import modelInfoData from './model-info.json' with { type: 'json' }
 /** How a model supports prompt caching. */
 export type PromptCaching = 'unsupported' | 'automatic' | 'cachePoints'
 
+/** Whether a model accepts a `toolChoice` that forces a tool call (`any` or a named tool). */
+export type ForcedToolChoice = 'supported' | 'unsupported'
+
 /** What the model can do. */
 export interface ModelCapabilities {
   /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}. */
   readonly stateful?: boolean | undefined
   /** Whether and how the model caches prompts. */
   readonly promptCaching?: PromptCaching | undefined
+  /** Whether the model can be forced to call a tool. */
+  readonly forcedToolChoice?: ForcedToolChoice | undefined
+  /** Whether the provider can make the model's text output conform to a JSON schema. */
+  readonly nativeStructuredOutput?: boolean | undefined
 }
 
 /** Size limits of the model. */

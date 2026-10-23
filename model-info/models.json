@@ -24,7 +24,9 @@
         "contextWindow": 200000
       },
       "capabilities": {
-        "promptCaching": "cachePoints"
+        "promptCaching": "cachePoints",
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": true
       }
     },
     "claude-sonnet-4-5-20250929": {
@@ -72,7 +74,9 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "promptCaching": "cachePoints"
+        "promptCaching": "cachePoints",
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": false
       }
     },
     "claude-opus-5": {
@@ -80,7 +84,9 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "promptCaching": "cachePoints"
+        "promptCaching": "cachePoints",
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": true
       }
     },
     "claude-opus-5-5": {
@@ -88,7 +94,9 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "promptCaching": "cachePoints"
+        "promptCaching": "cachePoints",
+        "forcedToolChoice": "unsupported",
+        "nativeStructuredOutput": true
       }
     },
     "claude-fable-5": {
@@ -104,7 +112,8 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "promptCaching": "cachePoints"
+        "promptCaching": "cachePoints",
+        "forcedToolChoice": "unsupported"
       }
     },
     "claude-sonnet-5": {
@@ -112,7 +121,9 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "promptCaching": "cachePoints"
+        "promptCaching": "cachePoints",
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": false
       }
     },
     "claude-sonnet-5-5": {
@@ -120,7 +131,9 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "promptCaching": "cachePoints"
+        "promptCaching": "cachePoints",
+        "forcedToolChoice": "unsupported",
+        "nativeStructuredOutput": true
       }
     },
     "claude-haiku-5-5": {
@@ -128,7 +141,9 @@
         "contextWindow": 1000000
       },
       "capabilities": {
-        "promptCaching": "cachePoints"
+        "promptCaching": "cachePoints",
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": true
       }
     },
     "claude-opus-4-5": {
@@ -270,31 +285,55 @@
     "amazon.nova-pro-v1:0": {
       "limits": {
         "contextWindow": 300000
+      },
+      "capabilities": {
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-lite-v1:0": {
       "limits": {
         "contextWindow": 300000
+      },
+      "capabilities": {
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-micro-v1:0": {
       "limits": {
         "contextWindow": 128000
+      },
+      "capabilities": {
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-premier-v1:0": {
       "limits": {
         "contextWindow": 1000000
+      },
+      "capabilities": {
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-2-lite-v1:0": {
       "limits": {
         "contextWindow": 1000000
+      },
+      "capabilities": {
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-2-pro-preview-20251202-v1:0": {
       "limits": {
         "contextWindow": 1000000
+      },
+      "capabilities": {
+        "forcedToolChoice": "supported",
+        "nativeStructuredOutput": false
       }
     },
     "zai.glm-4.7": {

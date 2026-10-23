@@ -1639,6 +1639,28 @@ describe('BedrockModel', () => {
         expect(sentRequests().map(mechanismOf)).toStrictEqual(['forced', 'auto'])
       })
 
+      it('starts at native output for a model the shared model info says cannot be forced', async () => {
+        const mockSend = mockRejections()
+        const provider = new BedrockModel({ modelId: 'us.anthropic.claude-opus-5-5' })
+
+        await collectIterator(provider.stream(messages, structuredOutputOptions))
+
+        expect(mockSend).toHaveBeenCalledTimes(1)
+        expect(sentRequests().map(mechanismOf)).toStrictEqual(['native'])
+      })
+
+      it('skips native output when the info override says the model lacks it', async () => {
+        mockRejections(forcedRejection)
+        const provider = new BedrockModel({
+          modelId: 'm1',
+          info: { capabilities: { nativeStructuredOutput: false } },
+        })
+
+        await collectIterator(provider.stream(messages, structuredOutputOptions))
+
+        expect(sentRequests().map(mechanismOf)).toStrictEqual(['forced', 'auto'])
+      })
+
       it('surfaces an unrelated validation error without retrying', async () => {
         const mockSend = mockRejections(new ValidationException({ message: 'Malformed input request', $metadata: {} }))
         const provider = new BedrockModel({ modelId: 'm1' })

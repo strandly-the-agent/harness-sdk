@@ -823,7 +823,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
       return this._send(this._formatRequest(messages, options), send)
     }
 
-    const mechanisms = structuredOutputMechanisms('bedrock', modelId, options.toolChoice, schema)
+    const mechanisms = structuredOutputMechanisms('bedrock', modelId, options.toolChoice, schema, this.info)
     for (const mechanism of mechanisms.slice(0, -1)) {
       try {
         return await this._send(this._structuredOutputRequest(messages, options, mechanism, schema), send)

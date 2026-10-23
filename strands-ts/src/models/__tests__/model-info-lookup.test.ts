@@ -31,7 +31,15 @@ describe('shared model info data', () => {
       capabilities: { promptCaching: 'cachePoints' },
       limits: { contextWindow: 1_000_000 },
     })
-    expect(lookupModelInfo('amazon.nova-pro-v1:0')).toEqual({ limits: { contextWindow: 300_000 } })
+    expect(lookupModelInfo('anthropic.claude-opus-5-5').capabilities).toEqual({
+      promptCaching: 'cachePoints',
+      forcedToolChoice: 'unsupported',
+      nativeStructuredOutput: true,
+    })
+    expect(lookupModelInfo('amazon.nova-pro-v1:0')).toEqual({
+      capabilities: { forcedToolChoice: 'supported', nativeStructuredOutput: false },
+      limits: { contextWindow: 300_000 },
+    })
     expect(lookupModelInfo('claude-future-9')).toEqual({})
     expect(lookupModelInfo('')).toEqual({})
   })

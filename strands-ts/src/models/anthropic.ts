@@ -543,7 +543,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
   private _structuredOutputMechanism(options: StreamOptions | undefined): StructuredOutputMechanism | undefined {
     const schema = options?.structuredOutputSchema
     if (!schema || !this._config.modelId) return undefined
-    return structuredOutputMechanisms('anthropic', this._config.modelId, options.toolChoice, schema)[0]
+    return structuredOutputMechanisms('anthropic', this._config.modelId, options.toolChoice, schema, this.info)[0]
   }
 
   /**
