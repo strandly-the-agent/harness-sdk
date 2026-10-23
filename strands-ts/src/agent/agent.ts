@@ -1027,6 +1027,7 @@ export class Agent implements LocalAgent, InvokableAgent {
     // While an interrupt awaits its response, queued callers stay parked: only a resume can
     // run (one may already be queued), and the rest are handed the turn once it completes
     // (or the interrupt is abandoned).
+    this._queuedInputTrackingIds = undefined
     const handedOff = this._interruptState.activated
       ? this._invocationQueue.handoffResume()
       : this._invocationQueue.handoff()

@@ -37,7 +37,8 @@ export interface PendingInvocation {
   /** When the call entered the queue. */
   readonly submittedAt: Date
   /**
-   * The call's input, normalized to the messages it will append when it runs (empty for
+   * The call's input, normalized for display. Each message keeps its `trackingId` when it
+   * lands in the transcript, though middleware may still rewrite the content (empty for
    * interrupt-response and checkpoint-resume input).
    */
   readonly messages: readonly Message[]
