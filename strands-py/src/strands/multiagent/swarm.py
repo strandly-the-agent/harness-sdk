@@ -194,7 +194,8 @@ class SwarmState:
     execution_time: int = 0  # Total execution time in milliseconds
     handoff_node: SwarmNode | None = None  # The agent to execute next
     handoff_message: str | None = None  # Message passed during agent handoff
-    # The request the current run belongs to (None before a run starts). Not persisted.
+    # The request the current run belongs to (None before a run starts). Read-only: the SDK rebinds it
+    # on every run. Not persisted.
     invocation_context: InvocationContext | None = field(default=None, repr=False, compare=False)
 
     def should_continue(
@@ -382,8 +383,13 @@ class Swarm(MultiAgentBase):
                 Defaults to None to avoid mutable default argument issues.
             invocation_context: Runs the swarm as a nested call in the request this handle belongs to,
                 so every node shares its limits and usage.
-            limits: Limits for the request this swarm starts, shared by every node; see ``stream_async``.
+            limits: Limits for the request this swarm starts, shared by every node; a node whose agent
+                reaches one fails and the result is ``FAILED``. See ``stream_async``.
             **kwargs: Keyword arguments allowing backward compatible future changes.
+
+        Raises:
+            TypeError: If ``limits`` contains an unrecognized key or a value that is not a positive
+                integer, or ``invocation_context`` was not created by the SDK.
         """
         if invocation_state is None:
             invocation_state = {}
@@ -411,8 +417,13 @@ class Swarm(MultiAgentBase):
                 Defaults to None to avoid mutable default argument issues.
             invocation_context: Runs the swarm as a nested call in the request this handle belongs to,
                 so every node shares its limits and usage.
-            limits: Limits for the request this swarm starts, shared by every node; see ``stream_async``.
+            limits: Limits for the request this swarm starts, shared by every node; a node whose agent
+                reaches one fails and the result is ``FAILED``. See ``stream_async``.
             **kwargs: Keyword arguments allowing backward compatible future changes.
+
+        Raises:
+            TypeError: If ``limits`` contains an unrecognized key or a value that is not a positive
+                integer, or ``invocation_context`` was not created by the SDK.
         """
         events = self.stream_async(
             task, invocation_state, invocation_context=invocation_context, limits=limits, **kwargs

@@ -186,6 +186,7 @@ def _resolve_invocation_context(limits: Limits | None, invocation_context: objec
     Raises:
         TypeError: If ``invocation_context`` was not created by the SDK, or ``limits`` is invalid.
     """
+    _validate_limits(limits)
     inherited = _unwrap_invocation_context(invocation_context)
     if inherited is None:
         return _create_invocation_context(limits)

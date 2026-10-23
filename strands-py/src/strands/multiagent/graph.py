@@ -133,7 +133,7 @@ class GraphState:
         execution_time: Execution time of current invocation in milliseconds.
             Excludes time spent waiting for interrupt responses.
         invocation_context: The request the current run belongs to (``None`` before a run starts), so
-            edge conditions can read its usage. Not persisted.
+            edge conditions can read its usage. Read-only: the SDK rebinds it on every run. Not persisted.
     """
 
     # Task (with default empty string)
@@ -610,8 +610,13 @@ class Graph(MultiAgentBase):
                 Defaults to None to avoid mutable default argument issues.
             invocation_context: Runs the graph as a nested call in the request this handle belongs to,
                 so every node shares its limits and usage.
-            limits: Limits for the request this graph starts, shared by every node; see ``stream_async``.
+            limits: Limits for the request this graph starts, shared by every node; a node whose agent
+                reaches one fails and the result is ``FAILED``. See ``stream_async``.
             **kwargs: Keyword arguments allowing backward compatible future changes.
+
+        Raises:
+            TypeError: If ``limits`` contains an unrecognized key or a value that is not a positive
+                integer, or ``invocation_context`` was not created by the SDK.
         """
         if invocation_state is None:
             invocation_state = {}
@@ -640,8 +645,13 @@ class Graph(MultiAgentBase):
                 Defaults to None to avoid mutable default argument issues.
             invocation_context: Runs the graph as a nested call in the request this handle belongs to,
                 so every node shares its limits and usage.
-            limits: Limits for the request this graph starts, shared by every node; see ``stream_async``.
+            limits: Limits for the request this graph starts, shared by every node; a node whose agent
+                reaches one fails and the result is ``FAILED``. See ``stream_async``.
             **kwargs: Keyword arguments allowing backward compatible future changes.
+
+        Raises:
+            TypeError: If ``limits`` contains an unrecognized key or a value that is not a positive
+                integer, or ``invocation_context`` was not created by the SDK.
         """
         events = self.stream_async(
             task, invocation_state, invocation_context=invocation_context, limits=limits, **kwargs
