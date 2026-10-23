@@ -16,12 +16,13 @@ from strands_harness import telemetry
 
 @pytest.fixture
 def installed_provider(monkeypatch):
-    """Simulate a host (e.g. ADOT) that already owns the OTel globals, without touching the real set-once latch."""
-    monkeypatch.setattr(trace_api, "_TRACER_PROVIDER", SDKTracerProvider())
-    monkeypatch.setattr(propagate, "_HTTP_TEXT_FORMAT", propagate.get_global_textmap())
+    """Simulate a host (e.g. ADOT) that already owns the OTel globals, without tripping the real set-once latch."""
+    monkeypatch.setattr(trace_api, "get_tracer_provider", lambda: SDKTracerProvider())
     set_tracer_provider = MagicMock()
     monkeypatch.setattr(trace_api, "set_tracer_provider", set_tracer_provider)
-    return set_tracer_provider
+    textmap = propagate.get_global_textmap()
+    yield set_tracer_provider
+    propagate.set_global_textmap(textmap)
 
 
 @pytest.fixture

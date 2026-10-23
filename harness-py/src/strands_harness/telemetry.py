@@ -61,9 +61,8 @@ def setup_telemetry() -> None:
     exporters = _resolve_exporters()
     if not exporters:
         return
-    # Read the global directly: the public getter installs OTEL_PYTHON_TRACER_PROVIDER as a side effect.
-    provider = trace_api._TRACER_PROVIDER
-    if provider is not None:
+    provider = trace_api.get_tracer_provider()
+    if not isinstance(provider, trace_api.ProxyTracerProvider):
         logger.info(
             "provider=<%s> | tracer provider already installed, leaving telemetry to its owner", type(provider).__name__
         )
