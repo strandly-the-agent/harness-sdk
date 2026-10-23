@@ -1535,7 +1535,7 @@ class TestDynamicLoadingSourceKinds:
             action="load", source=str(tmp_path / "nope"), tool_context=_mock_tool_context(agent)
         )
         assert result == (
-            f"No skills found at '{(tmp_path / 'nope').as_posix()}'. Expected a skill directory (containing SKILL.md), "
+            f"No skills found at '{tmp_path / 'nope'}'. Expected a skill directory (containing SKILL.md), "
             "a parent directory of skill directories or a SKILL.md path in your sandbox."
         )
 
