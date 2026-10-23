@@ -133,10 +133,22 @@ export interface ContextManagerConfig {
   /**
    * Let the model choose, per tool call, how many tokens of that call's result stay in context.
    *
-   * Adds an optional `_max_result_tokens` integer to every tool's input schema. When the model
-   * sets it, per-block offload strategies use that value instead of their configured `threshold`
-   * (and, for truncation, `previewTokens`) for that one result; calls without it keep the
-   * configured defaults. The property is stripped before the tool runs. Defaults to `false`.
+   * Adds an optional `_max_result_tokens` integer to every tool's input schema. When the model sets
+   * it, truncate strategies keep that result whole up to the value and otherwise truncate it to a
+   * preview of that size, in place of their configured `threshold` and `previewTokens`; calls
+   * without it keep the configured defaults. The model may pick a value larger than the configured
+   * threshold, so set `maxTokens` to bound it (default: unbounded). The property is stripped before
+   * the tool runs and is not applied to results delivered by background tasks. Defaults to `false`.
    */
-  agenticResultLimits?: boolean
+  agenticResultLimits?: boolean | AgenticResultLimitsConfig
+}
+
+/**
+ * Options for model-selected result limits.
+ *
+ * @experimental
+ */
+export interface AgenticResultLimitsConfig {
+  /** Largest limit the model may pick; larger values are clamped to this. */
+  maxTokens?: number
 }

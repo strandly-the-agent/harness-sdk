@@ -47,17 +47,18 @@ export class TruncateStrategy extends BaseOffloadStrategy {
     return new TruncateStrategy(this._target, this._truncateConfig, conditions)
   }
 
-  protected override _makeRemovalMarker(count: number): string {
-    return `[... ${count} ${count === 1 ? 'message' : 'messages'} elided ...]`
+  /**
+   * Honour the model-selected `_max_result_tokens` of a tool call as both threshold and preview
+   * size for that result, instead of this strategy's configured values.
+   *
+   * @param max - Upper bound the model may pick; larger values are clamped
+   */
+  enableModelLimits(max?: number): void {
+    this._modelLimits = max === undefined ? {} : { max }
   }
 
-  /** Skips blocks that already hold a preview so repeated passes never shave the preview further. */
-  protected override _blockMatchesTarget(
-    block: ContentBlock,
-    message: Message,
-    toolNameMap: Map<string, string>
-  ): boolean {
-    return !isTruncated(block) && super._blockMatchesTarget(block, message, toolNameMap)
+  protected override _makeRemovalMarker(count: number): string {
+    return `[... ${count} ${count === 1 ? 'message' : 'messages'} elided ...]`
   }
 
   protected async _replaceBlock(
@@ -70,6 +71,9 @@ export class TruncateStrategy extends BaseOffloadStrategy {
     limit?: number
   ): Promise<ContentBlock | null> {
     if (block instanceof ToolResultBlock) {
+      // With a model limit, threshold == preview, so an existing preview (plus its header) can sit just
+      // above the limit; leave it alone rather than shaving it on every pass.
+      if (limit !== undefined && isTruncated(block)) return block
       logger.debug(`toolUseId=<${block.toolUseId}>, tokens=<${tokens}>, limit=<${limit}> | truncated tool result`)
       const config = limit === undefined ? this._truncateConfig : { ...this._truncateConfig, previewTokens: limit }
       const truncated = truncateToolResultBlock(block, config)
@@ -89,9 +93,11 @@ export class TruncateStrategy extends BaseOffloadStrategy {
   }
 }
 
-function isTruncated(block: ContentBlock): boolean {
-  const text = block instanceof ToolResultBlock ? block.content[0] : block
-  return text instanceof TextBlock && text.text.startsWith(TRUNCATED_PREFIX)
+const TRUNCATED_HEADER = new RegExp(`^\\${TRUNCATED_PREFIX} \\d+ blocks?, ~[\\d,]+ tokens\\]\\n\\n`)
+
+function isTruncated(block: ToolResultBlock): boolean {
+  const text = block.content[0]
+  return text instanceof TextBlock && TRUNCATED_HEADER.test(text.text)
 }
 
 function appendStashRefs(block: ToolResultBlock, stashRefs: string[]): ToolResultBlock {

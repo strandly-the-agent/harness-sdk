@@ -4,10 +4,13 @@ import type { ToolSpec } from './types.js'
 const COMPOSITE_SCHEMA_KEYS = ['$ref', 'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else'] as const
 
 /**
- * Returns a copy of `toolSpec` with an optional `name` property added to its input schema,
- * or `undefined` when the schema cannot safely take one (composite or non-object schema,
- * or the property already exists).
+ * Adds an optional property to a tool spec's input schema.
  *
+ * @param toolSpec - The spec to extend; not mutated
+ * @param name - Property name to add
+ * @param property - JSON Schema for the property
+ * @returns A copy of `toolSpec` with the property added, or `undefined` when the schema cannot
+ *   safely take one (composite or non-object schema, or the property already exists)
  * @internal
  */
 export function addInputProperty(toolSpec: ToolSpec, name: string, property: JSONSchema): ToolSpec | undefined {

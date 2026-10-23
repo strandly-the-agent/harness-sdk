@@ -10,10 +10,12 @@ import { tool } from '../../tools/tool-factory.js'
 import type { ToolSpec } from '../../tools/types.js'
 import { Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../types/messages.js'
 import type { JSONValue } from '../../types/json.js'
+import { ContextManager } from '../context-manager.js'
 import { TRUNCATED_PREFIX } from '../methods/truncate.js'
 import { Offload } from '../strategies/offload/index.js'
-import { BaseOffloadStrategy, buildResultLimitMap } from '../strategies/offload/base.js'
-import type { ContextState } from '../types.js'
+import { buildResultLimitMap } from '../strategies/offload/base.js'
+import { TruncateStrategy } from '../strategies/offload/truncate.js'
+import type { ContextManagerConfig, ContextState } from '../types.js'
 
 const CHARS_PER_TOKEN = 4
 
@@ -90,7 +92,24 @@ describe('buildResultLimitMap', () => {
       new Map([
         ['a', 2000],
         ['b', 12],
-        ['d', 0],
+      ])
+    )
+  })
+
+  it('clamps limits to maxTokens', () => {
+    const messages = [
+      new Message({
+        role: 'assistant',
+        content: [
+          new ToolUseBlock({ toolUseId: 'a', name: 't', input: { _max_result_tokens: 2000 } }),
+          new ToolUseBlock({ toolUseId: 'b', name: 't', input: { _max_result_tokens: 50 } }),
+        ],
+      }),
+    ]
+    expect(buildResultLimitMap(messages, 500)).toEqual(
+      new Map([
+        ['a', 500],
+        ['b', 50],
       ])
     )
   })
@@ -100,9 +119,9 @@ describe('model-selected result limits (strategy level)', () => {
   const threshold = 1000
   const previewTokens = 500
 
-  function truncate(enabled: boolean) {
-    const strategy = Offload.truncate('toolResults', { previewTokens }).when({ threshold })
-    if (enabled) (strategy as BaseOffloadStrategy).enableModelLimits()
+  function truncate(enabled: boolean, max?: number) {
+    const strategy = Offload.truncate('toolResults', { previewTokens }).when({ threshold }) as TruncateStrategy
+    if (enabled) strategy.enableModelLimits(max)
     return strategy
   }
 
@@ -158,26 +177,41 @@ describe('model-selected result limits (strategy level)', () => {
     expect(resultText(messages, 'tu-1')).toBe(afterFirst)
   })
 
-  it('also raises the drop threshold for that call', async () => {
-    const messages = [...makeToolCall('tu-1', 2000), ...makeToolCall('tu-2', 2000, { _max_result_tokens: 5000 })]
-    const strategy = Offload.drop('toolResults').when({ threshold })
-    ;(strategy as BaseOffloadStrategy).enableModelLimits()
+  it('clamps the model limit to the configured maximum', async () => {
+    const messages = makeToolCall('tu-1', 2000, { _max_result_tokens: 100_000 })
 
-    expect(await strategy.apply(makeContext(messages))).toBe(true)
-    expect(resultText(messages, 'tu-1').startsWith('[Dropped')).toBe(true)
-    expect(resultText(messages, 'tu-2')).toBe('x'.repeat(2000 * CHARS_PER_TOKEN))
+    expect(await truncate(true, 300).apply(makeContext(messages))).toBe(true)
+    const text = resultText(messages, 'tu-1')
+    expect(text.startsWith(TRUNCATED_PREFIX)).toBe(true)
+    expect(text.length).toBeLessThan(400 * CHARS_PER_TOKEN)
+  })
+
+  it('still lets a later, smaller strategy shrink an existing preview when no model limit applies', async () => {
+    const messages = makeToolCall('tu-1', 4000)
+    const first = Offload.truncate('toolResults', { previewTokens: 750 }).when({ threshold: 1500 })
+    const second = Offload.truncate('toolResults', { previewTokens: 100 }).when({ threshold: 300 })
+    for (const strategy of [first, second]) (strategy as TruncateStrategy).enableModelLimits()
+
+    expect(await first.apply(makeContext(messages))).toBe(true)
+    const afterFirst = resultText(messages, 'tu-1').length
+    expect(await second.apply(makeContext(messages))).toBe(true)
+    expect(resultText(messages, 'tu-1').length).toBeLessThan(afterFirst)
   })
 })
 
 describe('ContextManager agenticResultLimits (agent level)', () => {
   const RESULT_TOKENS = 3000
 
-  function makeAgent(limit: number | undefined, agenticResultLimits: boolean) {
+  function makeAgent(
+    limit: number | undefined,
+    config: ContextManagerConfig,
+    inputSchema: z.ZodObject<z.ZodRawShape> = z.object({ query: z.string() })
+  ) {
     const inputs: unknown[] = []
     const search = tool({
       name: 'search',
       description: 'Search.',
-      inputSchema: z.object({ query: z.string() }),
+      inputSchema,
       callback: (input) => {
         inputs.push(input)
         return 'x'.repeat(RESULT_TOKENS * CHARS_PER_TOKEN)
@@ -194,7 +228,7 @@ describe('ContextManager agenticResultLimits (agent level)', () => {
     const agent = new Agent({
       model,
       tools: [search],
-      contextManager: agenticResultLimits ? { agenticResultLimits: true } : {},
+      contextManager: config,
       printer: false,
     })
     const toolSpecs: ToolSpec[][] = []
@@ -206,19 +240,74 @@ describe('ContextManager agenticResultLimits (agent level)', () => {
   }
 
   it('advertises _max_result_tokens on tools but not on retrieve_context', async () => {
-    const { agent, toolSpecs } = makeAgent(undefined, true)
+    const { agent, toolSpecs } = makeAgent(undefined, { agenticResultLimits: true })
     await agent.invoke('go')
 
     const specs = toolSpecs[0]!
     const search = specs.find((spec) => spec.name === 'search')!
-    expect(search.inputSchema?.properties?.['_max_result_tokens']).toMatchObject({ type: 'integer', minimum: 0 })
+    const property = search.inputSchema?.properties?.['_max_result_tokens'] as { description: string; maximum?: number }
+    expect(property).toMatchObject({ type: 'integer', minimum: 0 })
+    expect(property.maximum).toBeUndefined()
+    expect(property.description).toContain('stashed for retrieval')
     expect(search.inputSchema?.properties?.['query']).toBeDefined()
     const retrieve = specs.find((spec) => spec.name === 'retrieve_context')!
     expect(retrieve.inputSchema?.properties?.['_max_result_tokens']).toBeUndefined()
   })
 
+  it('advertises maxTokens as the schema maximum and clamps the model value to it', async () => {
+    const { agent, toolSpecs } = makeAgent(100_000, { agenticResultLimits: { maxTokens: 200 } })
+    await agent.invoke('go')
+
+    const property = toolSpecs[0]!.find((spec) => spec.name === 'search')!.inputSchema?.properties?.[
+      '_max_result_tokens'
+    ]
+    expect(property).toMatchObject({ maximum: 200 })
+    const text = resultText(agent.messages, 'search-1')
+    expect(text.startsWith(TRUNCATED_PREFIX)).toBe(true)
+    expect(text.length).toBeLessThan(300 * CHARS_PER_TOKEN)
+  })
+
+  it('rejects a negative maxTokens', () => {
+    expect(() => new ContextManager({ agenticResultLimits: { maxTokens: -1 } })).toThrow(/maxTokens/)
+  })
+
+  it('does not promise retrieval when the stash is disabled', async () => {
+    const { agent, toolSpecs } = makeAgent(undefined, { agenticResultLimits: true, stash: false })
+    await agent.invoke('go')
+
+    const property = toolSpecs[0]!.find((spec) => spec.name === 'search')!.inputSchema?.properties?.[
+      '_max_result_tokens'
+    ] as { description: string }
+    expect(property.description).not.toContain('stashed')
+  })
+
+  it('leaves a tool that declares _max_result_tokens itself untouched', async () => {
+    const { agent, inputs, toolSpecs } = makeAgent(
+      42,
+      { agenticResultLimits: true },
+      z.object({ query: z.string(), _max_result_tokens: z.number() })
+    )
+    await agent.invoke('go')
+
+    const property = toolSpecs[0]!.find((spec) => spec.name === 'search')!.inputSchema?.properties?.[
+      '_max_result_tokens'
+    ]
+    expect(property).toMatchObject({ type: 'number' })
+    expect(inputs).toEqual([{ query: 'q', _max_result_tokens: 42 }])
+  })
+
+  it('does not apply the model limit to drop strategies', async () => {
+    const { agent } = makeAgent(RESULT_TOKENS + 500, {
+      agenticResultLimits: true,
+      strategies: [Offload.drop('toolResults').when({ threshold: 1000 })],
+    })
+    await agent.invoke('go')
+
+    expect(resultText(agent.messages, 'search-1').startsWith('[Dropped')).toBe(true)
+  })
+
   it('does not advertise the property when the flag is off', async () => {
-    const { agent, toolSpecs } = makeAgent(undefined, false)
+    const { agent, toolSpecs } = makeAgent(undefined, {})
     await agent.invoke('go')
 
     const search = toolSpecs[0]!.find((spec) => spec.name === 'search')!
@@ -226,7 +315,7 @@ describe('ContextManager agenticResultLimits (agent level)', () => {
   })
 
   it('strips the property from tool input and keeps the result whole up to the model limit', async () => {
-    const { agent, inputs } = makeAgent(RESULT_TOKENS + 500, true)
+    const { agent, inputs } = makeAgent(RESULT_TOKENS + 500, { agenticResultLimits: true })
     await agent.invoke('go')
 
     expect(inputs).toEqual([{ query: 'q' }])
@@ -236,7 +325,7 @@ describe('ContextManager agenticResultLimits (agent level)', () => {
   })
 
   it('truncates to the model limit when it is below the default', async () => {
-    const { agent } = makeAgent(100, true)
+    const { agent } = makeAgent(100, { agenticResultLimits: true })
     await agent.invoke('go')
 
     const text = resultText(agent.messages, 'search-1')
@@ -245,7 +334,7 @@ describe('ContextManager agenticResultLimits (agent level)', () => {
   })
 
   it('falls back to the default truncation when the model sets no limit', async () => {
-    const { agent, inputs } = makeAgent(undefined, true)
+    const { agent, inputs } = makeAgent(undefined, { agenticResultLimits: true })
     await agent.invoke('go')
 
     expect(inputs).toEqual([{ query: 'q' }])

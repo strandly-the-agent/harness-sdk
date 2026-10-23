@@ -19,9 +19,10 @@ import { EPHEMERAL } from '../storage/storage.js'
 import type { Storage } from '../storage/storage.js'
 import type { JSONSchema } from '../types/json.js'
 import { logger } from '../logging/logger.js'
-import type { ContextManagerConfig, ContextStrategy, ContextState } from './types.js'
+import type { AgenticResultLimitsConfig, ContextManagerConfig, ContextStrategy, ContextState } from './types.js'
 import { EmergencyTruncateStrategy, Offload } from './strategies/offload/index.js'
-import { BaseOffloadStrategy, RESULT_LIMIT_PROPERTY } from './strategies/offload/base.js'
+import { readResultLimit, RESULT_LIMIT_PROPERTY } from './strategies/offload/base.js'
+import { TruncateStrategy } from './strategies/offload/truncate.js'
 import { resolveStrategies } from './presets.js'
 import { Stash } from './stash.js'
 import { createRetrievalTool, trackRetrievalToolUseIds, RETRIEVAL_TOOL_NAME } from './retrieval-tool.js'
@@ -30,12 +31,15 @@ const AUTO_TRUNCATE_THRESHOLD = 1_500
 const AGENTIC_TRUNCATE_THRESHOLD = 8_000
 const TRUNCATE_PREVIEW_TOKENS = 750
 const AUTO_SUMMARIZE_UTILIZATION = 0.85
-const RESULT_LIMIT_SCHEMA: JSONSchema = {
-  type: 'integer',
-  minimum: 0,
-  description:
-    'Maximum tokens of this result to keep in context. Larger results are truncated to a preview of this size and the full content is stashed for retrieval. Omit to use the default.',
-}
+// Tools whose results are never truncated, or are not produced by a model-issued call.
+const RESULT_LIMIT_EXEMPT_TOOLS = new Set([
+  RETRIEVAL_TOOL_NAME,
+  STRUCTURED_OUTPUT_TOOL_NAME,
+  'strands_manage_background_task',
+  'summarize_context',
+  'truncate_context',
+  'pin_context',
+])
 
 /** @internal */
 export const CONTEXT_MANAGER_PRESETS = ['auto', 'agentic'] as const
@@ -75,7 +79,7 @@ export class ContextManager implements Plugin {
   private readonly _strategies: ContextStrategy[]
   private readonly _stashStorage: Storage | false | undefined
   private readonly _enableRetrievalTool: boolean
-  private readonly _agenticResultLimits: boolean
+  private readonly _agenticResultLimits: AgenticResultLimitsConfig | undefined
   private readonly _retrievalToolUseIds = new Set<string>()
   private _stash: Stash | undefined
   private _stashIsDurable = false
@@ -95,7 +99,13 @@ export class ContextManager implements Plugin {
     const stashObj = typeof stashConfig === 'object' ? stashConfig : undefined
     this._stashStorage = stashConfig === false ? false : stashObj?.storage
     this._enableRetrievalTool = stashConfig !== false && stashObj?.retrievalTool !== false
-    this._agenticResultLimits = config?.agenticResultLimits ?? false
+    const limits = config?.agenticResultLimits
+    this._agenticResultLimits = limits === true ? {} : limits || undefined
+    if (this._agenticResultLimits?.maxTokens !== undefined && !(this._agenticResultLimits.maxTokens >= 0)) {
+      throw new Error(
+        `agenticResultLimits.maxTokens must be a non-negative number, got ${this._agenticResultLimits.maxTokens}`
+      )
+    }
   }
 
   /**
@@ -164,10 +174,12 @@ export class ContextManager implements Plugin {
     }
 
     for (const strategy of this._strategies) {
-      if (this._agenticResultLimits && strategy instanceof BaseOffloadStrategy) strategy.enableModelLimits()
+      if (this._agenticResultLimits && strategy instanceof TruncateStrategy) {
+        strategy.enableModelLimits(this._agenticResultLimits.maxTokens)
+      }
       strategy.init?.(agent, this._stash)
     }
-    if (this._agenticResultLimits) this._registerResultLimitSelection(agent)
+    if (this._agenticResultLimits) this._registerResultLimitSelection(agent, this._agenticResultLimits)
 
     agent.addHook(BeforeModelCallEvent, async (event) => {
       await this._runStrategies(event.agent, event.projectedInputTokens, undefined, event.invocationContext)
@@ -218,13 +230,26 @@ export class ContextManager implements Plugin {
   }
 
   /** Advertises `_max_result_tokens` on tool specs and strips it from tool input before execution. */
-  private _registerResultLimitSelection(agent: LocalAgent): void {
+  private _registerResultLimitSelection(agent: LocalAgent, limits: AgenticResultLimitsConfig): void {
+    const retrievable = this._stash !== undefined && this._enableRetrievalTool
+    const schema: JSONSchema = {
+      type: 'integer',
+      minimum: 0,
+      ...(limits.maxTokens !== undefined && { maximum: limits.maxTokens }),
+      description:
+        'Maximum tokens of this result to keep in context. Larger results are truncated to a preview of this size' +
+        (retrievable ? ' and the full content is stashed for retrieval' : '') +
+        '. Omit to use the default.',
+    }
+    const declaresProperty = (name: string): boolean =>
+      agent.toolRegistry.get(name)?.toolSpec.inputSchema?.properties?.[RESULT_LIMIT_PROPERTY] !== undefined
+
     agent.addMiddleware(InvokeModelStage.Input, async (context) => ({
       ...context,
       toolSpecs: context.toolSpecs.map((spec) =>
-        spec.name === RETRIEVAL_TOOL_NAME || spec.name === STRUCTURED_OUTPUT_TOOL_NAME
+        RESULT_LIMIT_EXEMPT_TOOLS.has(spec.name)
           ? spec
-          : (addInputProperty(spec, RESULT_LIMIT_PROPERTY, RESULT_LIMIT_SCHEMA) ?? spec)
+          : (addInputProperty(spec, RESULT_LIMIT_PROPERTY, schema) ?? spec)
       ),
     }))
     agent.addHook(
@@ -234,7 +259,14 @@ export class ContextManager implements Plugin {
         if (input === null || typeof input !== 'object' || Array.isArray(input) || !(RESULT_LIMIT_PROPERTY in input)) {
           return
         }
-        const { [RESULT_LIMIT_PROPERTY]: _limit, ...rest } = input
+        // A tool that declares the property itself owns it; leave its input alone.
+        if (declaresProperty(event.toolUse.name)) return
+        const { [RESULT_LIMIT_PROPERTY]: value, ...rest } = input
+        if (readResultLimit(input) === undefined) {
+          logger.debug(
+            `toolUseId=<${event.toolUse.toolUseId}>, value=<${JSON.stringify(value)}> | ignoring invalid ${RESULT_LIMIT_PROPERTY}`
+          )
+        }
         event.toolUse = { ...event.toolUse, input: rest }
       },
       { order: HookOrder.SDK_FIRST }
