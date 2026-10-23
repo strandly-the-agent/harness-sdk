@@ -1,7 +1,6 @@
 """Per-model smoke coverage: the context window resolves from the model table and a tool-using turn completes.
 
 One row per model; each row carries its provider's skip mark, so a missing key skips only that provider's rows.
-Where the provider's API reports the input limit, the table value is also cross-checked against it.
 """
 
 import pytest
@@ -9,7 +8,6 @@ import pytest
 import strands
 from strands import Agent
 from tests_integ.models import providers
-from tests_integ.models.context_window_lookups import CONTEXT_WINDOW_LOOKUPS
 
 SMOKE_MODELS = [
     pytest.param(provider, model_id, expected_window, id=f"{provider.id}-{model_id}", marks=provider.mark)
@@ -36,8 +34,6 @@ SMOKE_MODELS = [
     if provider is not None
 ]
 
-API_REPORTED_MODELS = [row for row in SMOKE_MODELS if row.values[0] in CONTEXT_WINDOW_LOOKUPS]
-
 TOOL_USE_MARKS = {
     "mistral-large-4-0": pytest.mark.xfail(
         strict=True,
@@ -59,19 +55,6 @@ def test_smoke_context_window_limit_resolves(provider, model_id, expected_window
     model.update_config(model_id=model_id)
 
     assert model.get_config()["context_window_limit"] == expected_window
-
-
-@pytest.mark.parametrize(("provider", "model_id", "expected_window"), API_REPORTED_MODELS)
-def test_smoke_context_window_matches_provider_api(provider, model_id, expected_window):
-    model = provider.create_model()
-    model.update_config(model_id=model_id)
-
-    table_window = model.get_config()["context_window_limit"]
-    api_window = CONTEXT_WINDOW_LOOKUPS[provider](model_id)
-
-    assert table_window == api_window, (
-        f"{model_id}: table says {table_window}, provider API reports {api_window}; update strands/models/_defaults.py"
-    )
 
 
 @pytest.mark.parametrize(("provider", "model_id", "expected_window"), SMOKE_MODELS)

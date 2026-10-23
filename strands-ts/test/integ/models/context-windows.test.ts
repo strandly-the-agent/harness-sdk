@@ -1,12 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, inject, it } from 'vitest'
+import Anthropic from '@anthropic-ai/sdk'
+import { ApiError, GoogleGenAI } from '@google/genai'
 import { CONTEXT_WINDOW_LIMITS } from '$/sdk/models/defaults.js'
 
 import { anthropic, gemini } from '../__fixtures__/model-providers.js'
-import {
-  anthropicApiContextWindow,
-  geminiApiContextWindow,
-  ModelNotServedError,
-} from '../__fixtures__/context-window-lookups.js'
 
 /**
  * Table-wide drift check: every direct-API key in CONTEXT_WINDOW_LIMITS matches the provider's reported limit.
@@ -14,25 +11,38 @@ import {
  * Metadata calls only; no model turns. Bedrock-style `vendor.` keys match neither prefix.
  */
 
-const directApiProviders = [
+const anthropicApiContextWindow = async (modelId: string): Promise<number | null> => {
+  const client = new Anthropic({ apiKey: inject('provider-anthropic').apiKey, dangerouslyAllowBrowser: true })
+  try {
+    return (await client.models.retrieve(modelId)).max_input_tokens
+  } catch (error) {
+    if (error instanceof Anthropic.NotFoundError) return null
+    throw error
+  }
+}
+
+const geminiApiContextWindow = async (modelId: string): Promise<number | null> => {
+  const client = new GoogleGenAI({ apiKey: inject('provider-gemini').apiKey ?? '' })
+  try {
+    return (await client.models.get({ model: modelId })).inputTokenLimit ?? null
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null
+    throw error
+  }
+}
+
+const lookups = [
   { prefix: 'claude-', name: 'Anthropic', skip: anthropic.skip, apiContextWindow: anthropicApiContextWindow },
   { prefix: 'gemini-', name: 'Gemini', skip: gemini.skip, apiContextWindow: geminiApiContextWindow },
 ]
 
-describe.each(directApiProviders)('$name context-window table', ({ prefix, name, skip, apiContextWindow }) => {
-  const rows = Object.entries(CONTEXT_WINDOW_LIMITS)
-    .filter(([modelId]) => modelId.startsWith(prefix))
-    .map(([modelId, tableWindow]) => ({ modelId, tableWindow }))
+describe.each(lookups)('$name context-window table', ({ prefix, name, skip, apiContextWindow }) => {
+  const rows = Object.entries(CONTEXT_WINDOW_LIMITS).filter(([modelId]) => modelId.startsWith(prefix))
 
-  describe.each(rows)('$modelId', ({ modelId, tableWindow }) => {
+  describe.each(rows)('%s', (modelId, tableWindow) => {
     it.skipIf(skip)('matches the provider API', async (ctx) => {
-      let apiWindow: number | null | undefined
-      try {
-        apiWindow = await apiContextWindow(modelId)
-      } catch (error) {
-        if (error instanceof ModelNotServedError) return ctx.skip(`${modelId}: not served by ${name} API: retired?`)
-        throw error
-      }
+      const apiWindow = await apiContextWindow(modelId)
+      if (apiWindow === null) return ctx.skip(`${modelId}: not served by ${name} API: retired?`)
 
       expect(
         tableWindow,
