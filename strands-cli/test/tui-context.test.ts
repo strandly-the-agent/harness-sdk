@@ -1,8 +1,6 @@
 import type { Agent } from '@strands-agents/sdk'
 import { BedrockModel } from '@strands-agents/sdk/models/bedrock'
 import { AnthropicModel } from '@strands-agents/sdk/models/anthropic'
-import { GoogleModel } from '@strands-agents/sdk/models/google'
-import { OpenAIModel } from '@strands-agents/sdk/models/openai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AgentModelRuntime } from '../src/tui/model/runtime.js'
@@ -21,19 +19,24 @@ describe('context window limits', () => {
     ['us.openai.gpt-6-sol', 1_050_000],
     ['global.openai.gpt-6-luna', 1_050_000],
     ['us.openai.gpt-6.1-sol', 1_050_000],
-    ['zai.glm-4.7', 203_000],
-  ])('uses the documented Bedrock context window for %s', (modelId, limit) => {
+  ])('uses the Bedrock model-card context window for %s', (modelId, limit) => {
     expect(contextWindowLimit(new BedrockModel({ modelId }))).toBe(limit)
   })
 
   // https://github.com/strands-agents/harness-sdk/issues/5414
   it.each([
-    ['gemini-4-argon', 1_048_576],
-    ['gemini-3.8-flash', 1_048_576],
-    ['gemini-3.7-flash', 1_048_576],
-    ['chat-latest', 272_000],
-    ['gpt-oss-120b', 131_072],
-    ['gpt-oss-20b', 131_072],
+    ['claude-opus-5-5', 1_000_000],
+    ['claude-fable-5-1', 1_000_000],
+    ['claude-sonnet-5-5', 1_000_000],
+    ['claude-haiku-5-5', 1_000_000],
+    ['anthropic.claude-opus-5-5', 1_000_000],
+    ['anthropic.claude-fable-5-1', 1_000_000],
+    ['anthropic.claude-sonnet-5-5', 1_000_000],
+    ['anthropic.claude-haiku-5-5', 1_000_000],
+    ['zai.glm-4.7', 203_000],
+    ['zai.glm-4.7-flash', 203_000],
+    ['zai.glm-5', 200_000],
+    ['zai.glm-5.3', 1_000_000],
     ['openai.gpt-oss-120b', 128_000],
     ['openai.gpt-oss-120b-1:0', 128_000],
     ['openai.gpt-oss-20b', 128_000],
@@ -48,18 +51,28 @@ describe('context window limits', () => {
     ['mistral.pixtral-large-2502-v1:0', 128_000],
     ['mistral.mistral-small-2402-v1:0', 32_000],
     ['mistral.mistral-large-2402-v1:0', 32_000],
+    ['google.gemma-4-31b', 256_000],
+    ['google.gemma-4-26b-a4b', 256_000],
+    ['google.gemma-4-e2b', 128_000],
+    ['xai.grok-4.7', 524_288],
+    ['xai.grok-4.6', 500_000],
+    ['xai.grok-4.3', 1_000_000],
+    ['chat-latest', 272_000],
+    ['gpt-6.1-sol', 1_050_000],
+    ['gpt-6-sol', 1_050_000],
+    ['gpt-6-luna', 1_050_000],
+    ['gpt-oss-120b', 131_072],
+    ['gpt-oss-20b', 131_072],
+    ['gemini-4-argon', 1_048_576],
+    ['gemini-3.8-flash', 1_048_576],
+    ['gemini-3.7-flash', 1_048_576],
     ['global.openai.gpt-oss-120b', 128_000],
     ['us-gov.mistral.mistral-large-3-675b-instruct', 256_000],
+    ['ap.anthropic.claude-sonnet-5-5', 1_000_000],
+    ['in.xai.grok-4.7', 524_288],
     ['arn:aws:bedrock:us-west-2:123456789012:inference-profile/us.openai.gpt-oss-20b-1:0', 128_000],
   ])('fills missing SDK metadata for %s', (modelId, limit) => {
-    const model = modelId.startsWith('gemini-')
-      ? new GoogleModel({ modelId, apiKey: 'test-key' })
-      : modelId === 'chat-latest' || modelId.startsWith('gpt-oss-')
-        ? new OpenAIModel({ modelId, apiKey: 'test-key' })
-        : new BedrockModel({ modelId })
-    vi.spyOn(model, 'getConfig').mockReturnValue({ modelId })
-
-    expect(contextWindowLimit(model)).toBe(limit)
+    expect(contextWindowLimit(new BedrockModel({ modelId }))).toBe(limit)
   })
 
   it('prefers SDK metadata over the fallback for newer models', () => {
