@@ -420,6 +420,32 @@ describe('concurrentInvocationMode', () => {
       expect(agent.pendingInvocations).toHaveLength(0)
     })
 
+    it('a queued message keeps its trackingId when it lands in the transcript', async () => {
+      const gate = createGate()
+      const model = new MockMessageModel()
+        .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
+        .addTurn({ type: 'textBlock', text: 'A' })
+        .addTurn({ type: 'textBlock', text: 'B' })
+        .addTurn({ type: 'textBlock', text: 'C' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
+
+      const first = agent.invoke('a')
+      await gate.started
+      const second = agent.invoke('b')
+      const third = agent.invoke([{ role: 'user', content: [{ type: 'textBlock', text: 'c' }] }] as InvokeArgs)
+      await until(() => agent.pendingInvocations.length === 2, 'both queued')
+      const queuedIds = agent.pendingInvocations.map((pending) => pending.messages[0]!.trackingId)
+
+      gate.release()
+      await Promise.all([first, second, third])
+
+      // The queued bubble can transition into the transcript entry: same trackingId.
+      const appendedIds = agent.messages
+        .filter((message) => message.role === 'user' && ['b', 'c'].includes((message.content[0] as TextBlock).text))
+        .map((message) => message.trackingId)
+      expect(appendedIds).toEqual(queuedIds)
+    })
+
     it('rejects a blank prompt at enqueue time without disturbing the running invocation', async () => {
       const gate = createGate()
       const model = new MockMessageModel()

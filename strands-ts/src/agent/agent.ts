@@ -962,7 +962,7 @@ export class Agent implements LocalAgent, InvokableAgent {
    * agent's `concurrentInvocationMode`) when the agent is busy. Callers must release
    * via try/finally with {@link _releaseTurn}.
    */
-  private async _acquireTurn(args: InvokeArgs, options?: InvokeOptions): Promise<void> {
+  private async _acquireTurn(args: InvokeArgs, options?: InvokeOptions): Promise<InvokeArgs> {
     if (options?.ifBusy !== undefined) validateConcurrentInvocationMode(options.ifBusy, 'ifBusy')
     const strategy = options?.ifBusy ?? this._concurrentInvocationMode
     // An agent awaiting an interrupt response counts as busy for every caller but the resume
@@ -975,7 +975,7 @@ export class Agent implements LocalAgent, InvokableAgent {
     if (!this._isInvoking && !awaitingResume) {
       this._isInvoking = true
       this._installTurnController()
-      return
+      return args
     }
     if (strategy === 'throw') {
       throw new ConcurrentInvocationError(
@@ -986,8 +986,9 @@ export class Agent implements LocalAgent, InvokableAgent {
     // 'cancelPrevious' caller parks like 'stopPrevious': the resume yields to it after its
     // pending tool batch.
     // Normalized up front so the queue can show the waiting input and a blank prompt is
-    // rejected now rather than when its turn comes. The invocation still runs on the raw
-    // args: normalization drops interrupt responses and checkpoint resumes.
+    // rejected now rather than when its turn comes. The call then runs on these very
+    // messages, so what the queue showed (trackingIds included) is what gets appended;
+    // input that normalizes to nothing (interrupt responses, a checkpoint resume) runs raw.
     const messages = this._normalizeInput(args)
     const turn = this._invocationQueue.wait({
       mode: awaitingResume && strategy === 'cancelPrevious' ? 'stopPrevious' : strategy,
@@ -1001,7 +1002,8 @@ export class Agent implements LocalAgent, InvokableAgent {
     if (strategy === 'cancelPrevious' && !awaitingResume && options?.cancelSignal?.aborted !== true) {
       this.cancel()
     }
-    return turn
+    await turn
+    return messages.length > 0 ? messages : args
   }
 
   /**
@@ -1356,7 +1358,7 @@ export class Agent implements LocalAgent, InvokableAgent {
     args: InvokeArgs,
     options?: InvokeOptions
   ): AsyncGenerator<AgentStreamEvent, AgentResult, undefined> {
-    await this._acquireTurn(args, options)
+    const inputArgs = await this._acquireTurn(args, options)
     let continuationEvent: AfterInvocationEvent | undefined
     try {
       await this.initialize()
@@ -1377,12 +1379,12 @@ export class Agent implements LocalAgent, InvokableAgent {
 
       // Reject invalid input before any hook fires, so a rejected call is never observed as
       // an invocation (a plugin would otherwise see a Before/After pair with no result).
-      if (this._interruptState.activated && this._extractInterruptResponses(args).length === 0) {
+      if (this._interruptState.activated && this._extractInterruptResponses(inputArgs).length === 0) {
         throw new TypeError(INTERRUPTED_STATE_MESSAGE)
       }
-      this._normalizeInput(args)
+      this._normalizeInput(inputArgs)
 
-      let currentArgs: InvokeArgs = args
+      let currentArgs: InvokeArgs = inputArgs
       let firstPass = true
 
       while (true) {
