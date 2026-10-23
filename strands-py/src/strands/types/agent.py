@@ -151,8 +151,9 @@ class Limits(TypedDict, total=False):
     """Limits for the request a top-level ``invoke_async`` / ``stream_async`` call starts.
 
     They apply to this agent's loop and to every nested call: agents passed as tools, and
-    any Graph or Swarm you pass the request's ``invocation_context`` to (Graph and Swarm have
-    no ``limits`` option of their own). An agent run by a hand-written tool joins only when
+    any Graph or Swarm you pass the request's ``invocation_context`` to. A Graph or Swarm can
+    also start a limited request itself through its own ``limits``. An agent run by a
+    hand-written tool joins only when
     the tool forwards ``tool_context.invocation_context`` as ``invocation_context``; otherwise
     it runs standalone under its own limits. A nested call can also set its own ``limits``:
     it stops at whichever limit is reached first, its own or the request's.
