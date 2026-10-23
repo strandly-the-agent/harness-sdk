@@ -1,8 +1,7 @@
-import { describe, expect, inject, it } from 'vitest'
-import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenAI } from '@google/genai'
+import { describe, expect, it } from 'vitest'
 import { Agent } from '@strands-agents/sdk'
 
+import { anthropicApiContextWindow, geminiApiContextWindow } from '../__fixtures__/context-window-lookups.js'
 import { anthropic, bedrock, gemini, mantle, openai } from '../__fixtures__/model-providers.js'
 import { echoTool, isInBrowser } from '../__fixtures__/test-helpers.js'
 
@@ -15,16 +14,6 @@ import { echoTool, isInBrowser } from '../__fixtures__/test-helpers.js'
 
 // The TS Bedrock fixture sets no region, and the 2026-10 catalog models are served from us-east-1.
 const bedrockUsEast1 = (modelId: string) => bedrock.createModel({ modelId, region: 'us-east-1' })
-
-const anthropicApiContextWindow = async (modelId: string) => {
-  const client = new Anthropic({ apiKey: inject('provider-anthropic').apiKey, dangerouslyAllowBrowser: true })
-  return (await client.models.retrieve(modelId)).max_input_tokens
-}
-
-const geminiApiContextWindow = async (modelId: string) => {
-  const client = new GoogleGenAI({ apiKey: inject('provider-gemini').apiKey ?? '' })
-  return (await client.models.get({ model: modelId })).inputTokenLimit
-}
 
 const rows = [
   {

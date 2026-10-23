@@ -4,16 +4,12 @@ One row per model; each row carries its provider's skip mark, so a missing key s
 Where the provider's API reports the input limit, the table value is also cross-checked against it.
 """
 
-import os
-
 import pytest
-from anthropic import Anthropic
-from google import genai
-from mistralai.client import Mistral
 
 import strands
 from strands import Agent
 from tests_integ.models import providers
+from tests_integ.models.context_window_lookups import CONTEXT_WINDOW_LOOKUPS
 
 SMOKE_MODELS = [
     pytest.param(provider, model_id, expected_window, id=f"{provider.id}-{model_id}", marks=provider.mark)
@@ -39,18 +35,6 @@ SMOKE_MODELS = [
     if provider is not None
 ]
 
-# Providers whose API reports the input limit (same env key the provider itself uses).
-CONTEXT_WINDOW_LOOKUPS = {
-    providers.anthropic: lambda model_id: (
-        Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY")).models.retrieve(model_id).max_input_tokens
-    ),
-    providers.gemini: lambda model_id: (
-        genai.Client(api_key=os.getenv("GOOGLE_API_KEY")).models.get(model=model_id).input_token_limit
-    ),
-    providers.mistral: lambda model_id: (
-        Mistral(api_key=os.getenv("MISTRAL_API_KEY")).models.retrieve(model_id=model_id).max_context_length
-    ),
-}
 API_REPORTED_MODELS = [row for row in SMOKE_MODELS if row.values[0] in CONTEXT_WINDOW_LOOKUPS]
 
 TOOL_USE_MARKS = {
