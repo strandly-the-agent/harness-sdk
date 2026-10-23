@@ -325,6 +325,8 @@ describe('web_fetch', () => {
     expect(invokeCalls).toHaveLength(2)
   })
 
+  // Real curl runs through the local environment: on Windows every command is a PowerShell spawn (~1s each),
+  // and this test issues seven of them, so vitest's 5s default is not enough.
   it('fetches end to end through the local environment sandbox', async () => {
     const server = createServer((req, res) => {
       if (req.url === '/redirect') {
@@ -370,5 +372,5 @@ describe('web_fetch', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
-  })
+  }, 60_000)
 })
