@@ -76,38 +76,21 @@ export function mergeModelInfo(...parts: (ModelInfo | undefined)[]): ModelInfo {
 }
 
 interface ModelInfoData {
-  readonly version: number
-  readonly idPrefixes: readonly string[]
+  readonly formatVersion: number
   readonly models: Readonly<Record<string, ModelInfo>>
 }
 
-const SUPPORTED_VERSION = 1
+const SUPPORTED_FORMAT_VERSION = 1
 // Bedrock appends a version to some ids (`claude-3-5-haiku-20241022-v1:0`); the base id carries the facts.
 const VERSION_SUFFIX = /-(?:v\d+(?::\d+)?|\d+:\d+)$/
 // Dated snapshots (`claude-opus-5-5-20260401`, `claude-haiku-4-5@20251001`) share the undated model's facts.
 const DATE_SUFFIX = /[-@]\d{8}$/
 
 const data = modelInfoData as ModelInfoData
-if (data.version !== SUPPORTED_VERSION) {
+if (data.formatVersion !== SUPPORTED_FORMAT_VERSION) {
   throw new Error(
-    `model-info data version ${data.version} is not supported by this SDK (expected ${SUPPORTED_VERSION})`
+    `model-info format version ${data.formatVersion} is not supported by this SDK (expected ${SUPPORTED_FORMAT_VERSION})`
   )
-}
-const idPrefixes = new Set(data.idPrefixes)
-
-/**
- * Strips one Bedrock cross-region prefix (`us.`, `global.`, …) from a model id.
- *
- * @internal
- * @param modelId - The model id as configured
- * @returns The id without its region prefix, or unchanged when it has none
- */
-export function stripRegionPrefix(modelId: string): string {
-  const dotIndex = modelId.indexOf('.')
-  if (dotIndex !== -1 && idPrefixes.has(modelId.substring(0, dotIndex))) {
-    return modelId.substring(dotIndex + 1)
-  }
-  return modelId
 }
 
 /**

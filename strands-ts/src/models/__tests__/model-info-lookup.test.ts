@@ -1,13 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { lookupModelInfo, getContextWindowLimit, lookupModel, stripRegionPrefix } from '../model-info.js'
+import { lookupModelInfo, getContextWindowLimit, lookupModel } from '../model-info.js'
 
 describe('shared model info data', () => {
-  it('strips one known region prefix', () => {
-    expect(stripRegionPrefix('us.anthropic.claude-sonnet-4-6')).toBe('anthropic.claude-sonnet-4-6')
-    expect(stripRegionPrefix('us-gov.anthropic.claude-sonnet-4-6')).toBe('anthropic.claude-sonnet-4-6')
-    expect(stripRegionPrefix('anthropic.claude-sonnet-4-6')).toBe('anthropic.claude-sonnet-4-6')
-  })
-
   it('resolves every spelling of a model to its one entry', () => {
     const entry = lookupModel('claude-opus-5-5')
     expect(entry?.limits?.contextWindow).toBe(1_000_000)
