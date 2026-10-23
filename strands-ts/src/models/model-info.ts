@@ -6,7 +6,7 @@
  * config override, and the resolved {@link Model.info}. A known `'unsupported'` disables a feature;
  * unknown leaves the SDK's existing default for that feature in place.
  *
- * `model-info.json` is copied from `model-info/models.json` at the repository root (the source of truth for
+ * `model-info.json` is copied from `shared/model-info.json` at the repository root (the source of truth for
  * every SDK) on install (`prepare`) and before build (`prebuild`); it is not committed.
  *
  * This is the first slice of the shape proposed in the model metadata design (PR #5305). Fields are

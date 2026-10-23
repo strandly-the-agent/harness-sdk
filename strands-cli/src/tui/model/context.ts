@@ -1,6 +1,6 @@
 import type { Model } from '@strands-agents/sdk'
 
-// Mirrors entries in model-info/models.json that published @strands-agents/sdk releases lack.
+// Mirrors entries in shared/model-info.json that published @strands-agents/sdk releases lack.
 // Remove once the CLI's minimum SDK version includes them. Values from the Bedrock model cards:
 // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-astra.html
 // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-sol.html

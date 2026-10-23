@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared model info: what the SDKs know about models, as ModelInfo records. Edit here, then copy to each SDK (see model-info/README.md); the SDK test suites check the copies match.",
+  "$comment": "Shared model info: what the SDKs know about models, as ModelInfo records. Edit here; each SDK copies it on install and build (see shared/README.md), and its tests check the copy matches.",
   "version": 1,
   "idPrefixes": ["us", "eu", "ap", "apac", "au", "jp", "us-gov", "global"],
   "models": {
