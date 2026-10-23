@@ -9,7 +9,7 @@ import {
   type CacheConfig,
   type ResolvedCacheSection,
 } from '../models/model.js'
-import type { ModelInfo } from '../models/model-info.js'
+import { lookupModelInfo, type ModelInfo } from '../models/model-info.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import {
   handleRejectedMechanism,
@@ -213,9 +213,12 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
     const { apiKey, client, clientConfig, ...modelConfig } = options || {}
     this._clientBetas = headerBetas(clientConfig?.defaultHeaders)
 
+    const modelId = modelConfig.modelId ?? MODEL_DEFAULTS.anthropic.modelId
+    // Default to the model's output ceiling when the shared model info knows it.
+    const defaultMaxTokens = lookupModelInfo(modelId).limits?.maxOutputTokens ?? MODEL_DEFAULTS.anthropic.maxTokens
     this._config = {
-      modelId: MODEL_DEFAULTS.anthropic.modelId,
-      maxTokens: MODEL_DEFAULTS.anthropic.maxTokens,
+      modelId,
+      maxTokens: defaultMaxTokens,
       ...modelConfig,
     }
 
@@ -226,7 +229,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
     }
 
     if (modelConfig.maxTokens === undefined) {
-      warnOnce(logger, defaultMaxTokensWarningMessage(MODEL_DEFAULTS.anthropic.maxTokens))
+      warnOnce(logger, defaultMaxTokensWarningMessage(defaultMaxTokens))
     }
 
     if (client) {

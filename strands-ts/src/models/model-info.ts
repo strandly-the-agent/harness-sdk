@@ -7,7 +7,7 @@
  * unknown leaves the SDK's existing default for that feature in place.
  *
  * `model-info.json` is copied from `model-info/models.json` at the repository root (the source of truth for
- * every SDK) by `scripts/copy-model-info.mjs` on install and before build; it is not committed.
+ * every SDK) on install (`prepare`) and before build (`prebuild`); it is not committed.
  *
  * This is the first slice of the shape proposed in the model metadata design (PR #5305). Fields are
  * added when something outside the provider reads them.
@@ -42,6 +42,8 @@ export interface ModelCapabilities {
 export interface ModelLimits {
   /** Context window size in tokens. */
   readonly contextWindow?: number | undefined
+  /** Largest `maxTokens` the model accepts. Providers that need a default `maxTokens` use it. */
+  readonly maxOutputTokens?: number | undefined
 }
 
 /** Everything the SDK knows about a model. Read it from {@link Model.info}. */

@@ -5,7 +5,8 @@
   "models": {
     "claude-sonnet-4-6": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -13,7 +14,8 @@
     },
     "claude-sonnet-4-20250514": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 65536
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -21,7 +23,8 @@
     },
     "claude-sonnet-4-5": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000
       },
       "capabilities": {
         "promptCaching": "cachePoints",
@@ -29,17 +32,10 @@
         "nativeStructuredOutput": "supported"
       }
     },
-    "claude-sonnet-4-5-20250929": {
-      "limits": {
-        "contextWindow": 200000
-      },
-      "capabilities": {
-        "promptCaching": "cachePoints"
-      }
-    },
     "claude-opus-4-6": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -47,7 +43,8 @@
     },
     "claude-opus-4-7": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -55,7 +52,8 @@
     },
     "claude-opus-4-8": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints",
@@ -65,7 +63,8 @@
     },
     "claude-opus-5": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints",
@@ -75,7 +74,8 @@
     },
     "claude-opus-5-5": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints",
@@ -85,7 +85,8 @@
     },
     "claude-fable-5": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -93,7 +94,8 @@
     },
     "claude-fable-5-1": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints",
@@ -102,7 +104,8 @@
     },
     "claude-sonnet-5": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints",
@@ -112,7 +115,8 @@
     },
     "claude-sonnet-5-5": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints",
@@ -122,7 +126,8 @@
     },
     "claude-haiku-5-5": {
       "limits": {
-        "contextWindow": 1000000
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000
       },
       "capabilities": {
         "promptCaching": "cachePoints",
@@ -132,7 +137,8 @@
     },
     "claude-opus-4-5": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -148,7 +154,8 @@
     },
     "claude-opus-4-1": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -156,7 +163,8 @@
     },
     "claude-haiku-4-5": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000
       },
       "capabilities": {
         "promptCaching": "cachePoints"

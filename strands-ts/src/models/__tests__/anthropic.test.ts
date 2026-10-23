@@ -73,7 +73,7 @@ describe('AnthropicModel', () => {
       const provider = new AnthropicModel({ apiKey: 'sk-ant-test' })
       const config = provider.getConfig()
       expect(config.modelId).toBe('claude-sonnet-4-6')
-      expect(config.maxTokens).toBe(64_000)
+      expect(config.maxTokens).toBe(128_000) // claude-sonnet-4-6 output ceiling from the shared model info
     })
 
     it('uses provided model ID', () => {
@@ -148,7 +148,7 @@ describe('AnthropicModel', () => {
       const provider = new AnthropicModel({ apiKey: 'sk-test', modelId: 'claude-sonnet-4-6' })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'claude-sonnet-4-6',
-        maxTokens: 64_000,
+        maxTokens: 128_000,
         contextWindowLimit: 1_000_000,
       })
     })
@@ -157,7 +157,7 @@ describe('AnthropicModel', () => {
       const provider = new AnthropicModel({ apiKey: 'sk-test' })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'claude-sonnet-4-6',
-        maxTokens: 64_000,
+        maxTokens: 128_000,
         contextWindowLimit: 1_000_000,
       })
     })
@@ -170,7 +170,7 @@ describe('AnthropicModel', () => {
       })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'claude-sonnet-4-6',
-        maxTokens: 64_000,
+        maxTokens: 128_000,
         contextWindowLimit: 100_000,
       })
     })
@@ -189,6 +189,19 @@ describe('AnthropicModel', () => {
       const model = new AnthropicModel({ apiKey: 'sk-ant-test', modelId: 'claude-sonnet-4-6' })
 
       expect(model.info.capabilities?.promptCaching).toBe('cachePoints')
+    })
+
+    it('defaults maxTokens to the model output ceiling from the shared model info', () => {
+      expect(
+        new AnthropicModel({ apiKey: 'sk-ant-test', modelId: 'claude-opus-4-1-20250805' }).getConfig().maxTokens
+      ).toBe(32_000)
+      expect(new AnthropicModel({ apiKey: 'sk-ant-test', modelId: 'claude-unknown-9' }).getConfig().maxTokens).toBe(
+        64_000
+      )
+      expect(
+        new AnthropicModel({ apiKey: 'sk-ant-test', modelId: 'claude-opus-5-5', maxTokens: 4_096 }).getConfig()
+          .maxTokens
+      ).toBe(4_096)
     })
   })
 

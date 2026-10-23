@@ -40,7 +40,7 @@ describe('shared model info data', () => {
   it('returns the entry facts and nothing for unknown ids', () => {
     expect(lookupModelInfo('eu.anthropic.claude-sonnet-4-6')).toEqual({
       capabilities: { promptCaching: 'cachePoints' },
-      limits: { contextWindow: 1_000_000 },
+      limits: { contextWindow: 1_000_000, maxOutputTokens: 128_000 },
     })
     expect(lookupModelInfo('anthropic.claude-opus-5-5').capabilities).toEqual({
       promptCaching: 'cachePoints',
