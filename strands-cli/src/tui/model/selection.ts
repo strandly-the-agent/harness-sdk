@@ -10,7 +10,13 @@ const OPENAI_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as 
 const GOOGLE_EFFORTS = ['low', 'medium', 'high'] as const
 const GOOGLE_MINIMAL_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const
 // Gemini models (id prefixes) that take `minimal`; mirrors GOOGLE_MINIMAL_MODELS in harness-ts models.ts.
-const GOOGLE_MINIMAL_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-robotics-er-2']
+const GOOGLE_MINIMAL_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite-image',
+  'gemini-3-flash-preview',
+  'gemini-robotics-er-2-preview',
+] as const
 const BEDROCK_GPT_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const BEDROCK_GPT_OSS_EFFORTS = ['low', 'medium', 'high'] as const
 const BEDROCK_QWEN_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const

@@ -96,7 +96,13 @@ const GOOGLE_LEVELS = ['low', 'medium', 'high'] as const
 const GOOGLE_MINIMAL_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
 // Gemini models (id prefixes) whose model page lists `thinking_level: minimal`; the others error on
 // it. Per https://ai.google.dev/gemini-api/docs/thinking#controlling-thinking.
-const GOOGLE_MINIMAL_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-robotics-er-2']
+const GOOGLE_MINIMAL_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite-image',
+  'gemini-3-flash-preview',
+  'gemini-robotics-er-2-preview',
+] as const
 const NO_THINKING_LEVELS: readonly string[] = []
 
 const ADAPTIVE_THINKING_SINCE: Record<string, [number, number]> = { opus: [4, 6], sonnet: [4, 6], haiku: [5, 5] }

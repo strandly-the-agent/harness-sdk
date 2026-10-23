@@ -240,14 +240,18 @@ describe('resolveModel', () => {
     }
   )
 
-  it.each(['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.5-flash'])(
-    'accepts minimal for %s, whose model page lists it',
-    async (modelId) => {
-      const model = await resolve(`google/${modelId}`, 'minimal')
-      const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
-      expect(params.thinkingConfig.thinkingLevel).toBe('minimal')
-    }
-  )
+  it.each([
+    'gemini-3.6-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite-image',
+    'gemini-3-flash-preview',
+    'gemini-robotics-er-2-preview',
+  ])('accepts minimal for %s, whose model page lists it', async (modelId) => {
+    const model = await resolve(`google/${modelId}`, 'minimal')
+    const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
+    expect(params.thinkingConfig.thinkingLevel).toBe('minimal')
+  })
 
   it('uses the google model id directly', async () => {
     const model = await resolve('google/gemini-3.5-flash', 'off')

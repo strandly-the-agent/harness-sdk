@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from strands.models import BedrockModel, CacheConfig, Model, ModelRouter
 
@@ -347,12 +349,23 @@ def test_google_auto_maps_to_high_thinking_level():
 
 @pytest.mark.parametrize("model_id", ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash"])
 def test_google_minimal_rejected_where_the_model_page_lists_no_minimal(model_id):
-    with pytest.raises(ValueError, match=f"not supported by model {model_id}. Supported levels: low, medium, high "):
+    message = f"not supported by model {model_id}. Supported levels: low, medium, high (or 'auto', 'off')."
+    with pytest.raises(ValueError, match=re.escape(message)):
         resolve(f"google/{model_id}", effort="minimal")
     assert resolve(f"google/{model_id}", effort="low").config["params"]["thinking_config"]["thinking_level"] == "low"
 
 
-@pytest.mark.parametrize("model_id", ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash"])
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite-image",
+        "gemini-3-flash-preview",
+        "gemini-robotics-er-2-preview",
+    ],
+)
 def test_google_minimal_accepted_where_the_model_page_lists_it(model_id):
     model = resolve(f"google/{model_id}", effort="minimal")
     assert model.config["params"]["thinking_config"]["thinking_level"] == "minimal"

@@ -101,7 +101,13 @@ _GOOGLE_LEVELS = ("low", "medium", "high")
 _GOOGLE_MINIMAL_LEVELS = ("minimal", "low", "medium", "high")
 # Gemini models (id prefixes) whose model page lists ``thinking_level: minimal``; the others error on
 # it. Per https://ai.google.dev/gemini-api/docs/thinking#controlling-thinking.
-_GOOGLE_MINIMAL_MODELS = ("gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview", "gemini-robotics-er-2")
+_GOOGLE_MINIMAL_MODELS = (
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite-image",
+    "gemini-3-flash-preview",
+    "gemini-robotics-er-2-preview",
+)
 
 _ADAPTIVE_THINKING_SINCE = {"opus": (4, 6), "sonnet": (4, 6), "haiku": (5, 5)}
 _EXTENDED_THINKING_SINCE = {"opus": (4, 5), "sonnet": (4, 5), "haiku": (4, 5)}
