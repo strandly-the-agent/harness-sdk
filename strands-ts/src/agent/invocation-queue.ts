@@ -78,7 +78,7 @@ export class InvocationQueue {
 
   /** Point-in-time view of the queued calls, in run order. */
   list(): readonly PendingInvocation[] {
-    return this._entries.map(({ mode, submittedAt }) => Object.freeze({ mode, submittedAt }))
+    return this._entries.map(({ mode, submittedAt }) => Object.freeze({ mode, submittedAt: new Date(submittedAt) }))
   }
 
   /**

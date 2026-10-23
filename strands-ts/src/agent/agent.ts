@@ -369,8 +369,12 @@ export type AgentConfig = {
    * An agent awaiting an interrupt response counts as busy: under any mode other than
    * `'throw'`, a non-resume call parks in the queue and runs once the resume completes
    * (the resume yields to a parked `'stopPrevious'` / `'cancelPrevious'` caller after its
-   * pending tool batch). Abandoning the interrupt with {@link Agent.loadSnapshot} releases
-   * the parked callers. Under `'throw'` such a call rejects at once.
+   * pending tool batch; an interrupt with no pending batch yields at once, so that resume
+   * ends `'superseded'` with nothing appended). Abandoning the interrupt with
+   * {@link Agent.loadSnapshot} releases the parked callers. A resume cancelled before its
+   * pending tool batch leaves the interrupt in place, so parked callers wait for a later
+   * resume or `loadSnapshot`; `cancel()` does not release them, each caller's own
+   * `cancelSignal` does. Under `'throw'` such a call rejects at once.
    *
    * Callers can override per call via {@link InvokeOptions.ifBusy}. Under any mode
    * other than `'throw'`, a tool or hook of the running invocation must not `await`
