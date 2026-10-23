@@ -239,6 +239,37 @@ describe('GoalLoop with concurrent invocations', () => {
     expect(history(agent)).toEqual(['user: unrelated question', 'assistant: GOOD'])
   })
 
+  it('continues the paused run when the host restores the at-interrupt snapshot before resuming', async () => {
+    const graded: string[] = []
+    const goal = new GoalLoop({
+      maxAttempts: 3,
+      goal: (message) => {
+        graded.push(text(message))
+        return { passed: text(message) === 'GOOD', feedback: 'again' }
+      },
+    })
+    const confirm = tool({
+      name: 'confirm',
+      description: 'Asks for confirmation',
+      callback: (_input, context) => `confirmed: ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+    })
+    const model = new MockMessageModel()
+      .addTurn({ type: 'textBlock', text: 'first-try' })
+      .addTurn({ type: 'toolUseBlock', name: 'confirm', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'GOOD' })
+    const agent = new Agent({ model, tools: [confirm], plugins: [goal], printer: false })
+
+    const interrupted = await agent.invoke('go')
+    agent.loadSnapshot(agent.takeSnapshot({ preset: 'session' }))
+    const resumed = await agent.invoke([
+      new InterruptResponseContent({ interruptId: interrupted.interrupts![0]!.id, response: 'yes' }),
+    ])
+
+    expect(text(resumed.lastMessage)).toBe('GOOD')
+    expect(graded).toEqual(['first-try', 'GOOD'])
+    expect(goal.lastResult(agent)?.attempts.map((attempt) => attempt.attempt)).toEqual([1, 2])
+  })
+
   it('does not charge the time spent waiting for human input to the timeout', async () => {
     const goal = new GoalLoop({
       maxAttempts: 2,

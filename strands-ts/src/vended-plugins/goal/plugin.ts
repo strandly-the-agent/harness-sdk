@@ -219,8 +219,8 @@ interface RunState {
   resumed?: boolean
   /** When the run paused for human input; the pause is not charged to `timeout`. */
   pausedAt?: number
-  /** The conversation at the pause, to detect a host that abandoned the interrupt by restoring a snapshot. */
-  pausedConversation?: { readonly length: number; readonly lastAnswer: Message | undefined }
+  /** The interrupts the run paused on; the run continues only while the agent still holds them. */
+  pausedInterruptIds?: readonly string[]
   /** The latest assistant message when the current pass started, to tell whether the pass produced a new answer. */
   answerBeforePass: Message | undefined
   /**
@@ -319,19 +319,18 @@ export class GoalLoop implements Plugin {
     // attach to it without each having to lazy-create.
     agent.addHook(BeforeInvocationEvent, () => {
       const existing = this._runs.get(agent)
-      // A paused run continues only if the conversation is as it was at the pause. A host
-      // that abandoned the interrupt by restoring a snapshot gets a fresh run instead.
-      const rewound =
-        existing?.pausedConversation !== undefined &&
-        (existing.pausedConversation.length !== agent.messages.length ||
-          existing.pausedConversation.lastAnswer !== lastAssistantMessage(agent.messages))
-      if (existing?.resumed && !rewound) {
+      // A paused run continues only if the agent still holds the interrupts it paused on. A
+      // host that abandoned them (e.g. restored a pre-interrupt snapshot) gets a fresh run.
+      const heldInterrupts = (agent as Agent)._interruptState.interrupts
+      const abandoned =
+        existing?.pausedInterruptIds !== undefined && !existing.pausedInterruptIds.every((id) => id in heldInterrupts)
+      if (existing?.resumed && !abandoned) {
         existing.resumed = false
         existing.answerBeforePass = lastAssistantMessage(agent.messages)
         if (existing.pausedAt !== undefined) {
           existing.startTime += Date.now() - existing.pausedAt
           delete existing.pausedAt
-          delete existing.pausedConversation
+          delete existing.pausedInterruptIds
         }
         return
       }
@@ -391,12 +390,12 @@ export class GoalLoop implements Plugin {
       }
       // A pause for human input is not an attempt: keep the run alive so the resume continues
       // it with the same attempt and time budget. The agent accepts nothing but the interrupt
-      // response until then; the BeforeInvocation hook drops the run if the host rewound the
-      // conversation instead (e.g. restored a snapshot to abandon the interrupt).
+      // response until then; the BeforeInvocation hook drops the run if the host abandoned the
+      // interrupt instead (e.g. restored a pre-interrupt snapshot).
       if (agentStopReason === 'interrupt') {
         run.resumed = true
         run.pausedAt = Date.now()
-        run.pausedConversation = { length: agent.messages.length, lastAnswer: lastAssistantMessage(agent.messages) }
+        run.pausedInterruptIds = (event.result?.interrupts ?? []).map((interrupt) => interrupt.id)
         return
       }
 
