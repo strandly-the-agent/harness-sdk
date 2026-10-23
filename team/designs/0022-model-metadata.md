@@ -172,35 +172,30 @@ The per-model knowledge layer (source 2 above) is data, not code, and today it i
 
 We propose one source of truth for this data in the repo, shared by `strands-py`, `strands-ts`, `harness-py`, `harness-ts` and `strands-cli`, kept current by an automated job.
 
-**The file.** `model-data/models.json` at the repo root. Keyed by the vendor-prefixed base id (`anthropic.claude-sonnet-4-6`), one entry per model, fields named after the record in this design so the file *is* the declared layer:
+**The file.** `shared/model-info.json` at the repo root, in a `shared/` folder for everything both SDKs must agree on. One entry per model, keyed by the shortest id that names it (`claude-opus-5-5`, `gpt-5.4`, `amazon.nova-pro-v1:0`); each entry is a `ModelInfo`, the same type the SDK exposes, so the file *is* the declared layer:
 
 ```json
 {
   "version": 1,
-  "id_prefixes": ["us", "eu", "ap", "apac", "au", "jp", "us-gov", "global"],
+  "idPrefixes": ["us", "eu", "ap", "apac", "au", "jp", "us-gov", "global"],
   "models": {
-    "anthropic.claude-sonnet-4-6": {
-      "family": "claude",
-      "aliases": ["claude-sonnet-4-6"],
-      "limits": { "context_window": 1000000, "max_output_tokens": 64000 },
-      "capabilities": {
-        "prompt_caching": "cache_points",
-        "reasoning": { "supported": true, "effort_levels": { "off": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true } }
-      }
+    "claude-opus-5-5": {
+      "limits": { "contextWindow": 1000000, "maxOutputTokens": 128000 },
+      "capabilities": { "promptCaching": "cachePoints", "forcedToolChoice": "unsupported", "nativeStructuredOutput": "supported" }
     }
   }
 }
 ```
 
-Two things live in the file besides per-model facts, because they are the parts that diverge today: the **id normalization rules** (`id_prefixes`, plus ARN and inference-profile handling as a documented procedure both loaders implement identically) and the **family assignment** (`family`). Model families stay internal code, but which family an id belongs to is data, and every package currently guesses it with its own prefix list or regex. Runtime-learned facts (the `(provider, model_id)` caches) do not go in the file; they are per process.
+A lookup tries the id as given, then without a trailing Bedrock version suffix (`-v1:0`), then without a trailing dated snapshot (`-20260401`), then with leading dot-separated segments removed one at a time, the rule `_defaults.py` already uses. So `us.anthropic.claude-opus-5-5-20260401-v1:0`, an ARN and `claude-opus-5-5` all resolve to the one entry, and a model gets a second entry only when it differs between providers (`openai.gpt-6.1-sol` on Bedrock). There is no family or substring discovery: a model the file does not list is unknown, and the SDK uses its defaults for it. Keys and multi-word values are camelCase; the Python loader re-cases them on read. Runtime-learned facts (the `(provider, model_id)` caches) do not go in the file; they are per process.
 
 **Packaging.** The constraints were verified by building, not assumed. Hatch can `force-include` a file from outside `strands-py/`, but `python -m build` (what CI runs) builds the wheel from the sdist, which cannot carry a path above its root, and fails. `tsc` copies a JSON imported from inside `rootDir` into `dist` and silently does not for one outside it. Both harness packages and the CLI depend on *published* SDK versions, not the workspace. That rules out the naive "import the root file" and leaves three options:
 
-- **(a) Root file is the source; each SDK carries a generated copy.** A script writes `strands-py/src/strands/models/_data/models.json` and `strands-ts/src/models/data/models.json` from the root file; the copies are committed so sdist builds and `tsc` work unchanged, and a CI check fails when a copy differs from the source. The harnesses and CLI read the data through the SDK (`Model.info` and a lookup helper), which means their tables can be deleted once their SDK version floor includes it.
+- **(a) Root file is the source; each SDK copies it into its package at install and build time.** `strands-ts` copies it to `src/models/model-info.json` in `prepare` and `prebuild` (git-ignored); `strands-py` does the same from a hatch build hook. Each SDK's unit tests assert its copy equals the source. The harnesses and CLI read the data through the SDK (`Model.info` and a lookup helper), which means their tables can be deleted once their SDK version floor includes it.
 - **(b) Publish the data as its own Python and npm package.** Clean for the harnesses, which could depend on it directly, but it adds two release pipelines to the six we have, for a file that changes with the SDK anyway.
 - **(c) Keep per-package copies and only add the parity check.** No packaging change, but it leaves five hand-edited tables and three id-normalization variants in place; the check would be red today.
 
-We recommend **(a)**. It is the only option where a human or the bot edits exactly one file, the build is unchanged, and the harness duplication goes away through the SDK rather than through a new dependency. The generated copies are build artifacts that happen to be committed; the parity check is what keeps that honest.
+We recommend **(a)**. It is the only option where a human or the bot edits exactly one file, the build is unchanged, and the harness duplication goes away through the SDK rather than through a new dependency. The copies are build artifacts; the parity tests are what keep that honest.
 
 **Keeping it current.** A scheduled workflow modeled on `catalog-stats.yml` (weekly cron, regenerate, open a PR with `create-pull-request`), owned by `strandly-the-agent`: pull what provider APIs publish (Anthropic `GET /v1/models` for limits, effort levels and capabilities; Bedrock `ListFoundationModels` for new ids, modalities and lifecycle; models.dev as a cross-check), diff against the file, and open one PR per week with the changes and their sources. Facts the APIs do not expose (which Bedrock models reject replayed reasoning, which hallucinate on JSON tool results) stay hand-maintained in the same file and are the ones the bot flags when a new id appears without them.
 
