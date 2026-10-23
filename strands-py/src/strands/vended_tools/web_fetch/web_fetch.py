@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import httpx
@@ -115,7 +116,8 @@ def make_web_fetch(
     ) -> str:
         """Fetches an HTTP(S) URL and returns clean markdown.
 
-        Raises ``WebFetchError`` if the request fails or the client's timeout is exceeded.
+        Raises ``WebFetchError`` if the request fails, the client's timeout is exceeded,
+        or ``offset`` is out of range.
 
         Args:
             url: The URL to fetch. Must be ``http://`` or ``https://``.
@@ -133,9 +135,8 @@ def make_web_fetch(
             cancel_signal=cancel_signal,
         )
 
-        content = _extract_content(content_type, raw)
-        window, marker = _select_window(content, offset, max_content_chars)
-        return window if marker is None else f"{window}\n\n{marker}"
+        window = _select_window(_extract_content(content_type, raw), offset, max_content_chars)
+        return window.append_marker(window.text, with_hint=True)
 
     @tool(name=name, description=resolved_description, context=True)
     async def web_fetch_tool_agentic(
@@ -146,7 +147,8 @@ def make_web_fetch(
     ) -> str:
         """Fetches an HTTP(S) URL and returns an analyst's answer about it.
 
-        Raises ``WebFetchError`` if the request fails or the client's timeout is exceeded.
+        Raises ``WebFetchError`` if the request fails, the client's timeout is exceeded,
+        or ``offset`` is out of range.
 
         Args:
             url: The URL to fetch. Must be ``http://`` or ``https://``.
@@ -186,11 +188,9 @@ def make_web_fetch(
             system_prompt=_ANALYST_PROMPT,
             callback_handler=None,
         )
-        content = _extract_content(content_type, raw)
-        window, marker = _select_window(content, offset, max_content_chars)
-        if marker is not None:
-            window = f"{window}\n\n{marker}"
-        invoke_prompt = f"URL: {url}\n\nRequest: {prompt}\n\n--- Content ---\n{window}"
+        window = _select_window(_extract_content(content_type, raw), offset, max_content_chars)
+        analyst_content = window.append_marker(window.text, with_hint=False)
+        invoke_prompt = f"URL: {url}\n\nRequest: {prompt}\n\n--- Content ---\n{analyst_content}"
         try:
             result = await analyst.invoke_async(
                 invoke_prompt,
@@ -201,7 +201,7 @@ def make_web_fetch(
             )
         except Exception as exc:
             raise WebFetchError(f"Web fetch analyst failed for {url}: {exc}") from exc
-        return str(result) if marker is None else f"{result}\n\n{marker}"
+        return window.append_marker(str(result), with_hint=True)
 
     return web_fetch_tool_markdown if mode == "markdown" else web_fetch_tool_agentic
 
@@ -219,12 +219,32 @@ def _extract_content(content_type: str, raw: str) -> str:
     return html_to_markdown(raw) if is_markup else raw
 
 
-def _select_window(content: str, offset: int, max_content_chars: int) -> tuple[str, str | None]:
-    """Return ``content[offset:offset + max_content_chars]`` and a truncation marker.
+@dataclass
+class _ContentWindow:
+    """The slice of extracted content delivered for one call, with its bounds."""
 
-    The marker is ``None`` when the window is the whole content. Otherwise it
-    reports the window bounds, the total length, and the ``offset`` to continue
-    from if more content remains.
+    text: str
+    offset: int
+    end: int
+    total: int
+
+    def append_marker(self, text: str, *, with_hint: bool) -> str:
+        """Append a truncation marker to ``text`` unless the window is the whole content.
+
+        The marker reports the window bounds and total length. With ``with_hint``
+        it also tells the caller how to read the next window, or that this is the end.
+        """
+        if self.offset == 0 and self.end == self.total:
+            return text
+        marker = f"[content truncated: showing characters {self.offset}-{self.end} of {self.total}"
+        if with_hint:
+            hint = f"pass offset={self.end} to read the next window" if self.end < self.total else "end of content"
+            marker += f"; {hint}"
+        return f"{text}\n\n{marker}]"
+
+
+def _select_window(content: str, offset: int, max_content_chars: int) -> _ContentWindow:
+    """Return ``content[offset:offset + max_content_chars]`` with its bounds.
 
     Raises:
         WebFetchError: When ``offset`` is negative or past the end of the content.
@@ -232,15 +252,13 @@ def _select_window(content: str, offset: int, max_content_chars: int) -> tuple[s
     total = len(content)
     if offset < 0:
         raise WebFetchError(f"offset must be non-negative, got {offset}")
-    if offset and offset >= total:
-        raise WebFetchError(f"offset {offset} is past the end of the content ({total} characters)")
+    if offset > 0 and offset >= total:
+        raise WebFetchError(
+            f"offset {offset} is past the end of the content ({total} characters); "
+            f"omit offset or pass a value below {total}"
+        )
     end = min(offset + max_content_chars, total)
-    if offset == 0 and end == total:
-        return content, None
-    marker = f"[content truncated: showing characters {offset}-{end} of {total}"
-    if end < total:
-        marker += f"; call again with offset={end} to continue"
-    return content[offset:end], marker + "]"
+    return _ContentWindow(text=content[offset:end], offset=offset, end=end, total=total)
 
 
 async def _fetch_once(
