@@ -4,6 +4,7 @@
  */
 
 import { PendingInvocationCancelledError } from '../errors.js'
+import type { Message } from '../types/messages.js'
 
 /** Supported values for the `concurrentInvocationMode` parameter. */
 export const CONCURRENT_INVOCATION_MODES = ['throw', 'cancelPrevious', 'stopPrevious', 'queue'] as const
@@ -29,10 +30,14 @@ export type PendingInvocationMode = Exclude<ConcurrentInvocationMode, 'throw'>
 
 /** A call waiting for the agent's turn, as listed by `agent.pendingInvocations`. Read-only. */
 export interface PendingInvocation {
+  /** Stable identifier for the waiting call (a render key; there is no API that takes it). */
+  readonly id: string
   /** The mode the call waits under. */
   readonly mode: PendingInvocationMode
   /** When the call entered the queue. */
   readonly submittedAt: Date
+  /** The call's input, normalized to the messages it will append when it runs. */
+  readonly messages: readonly Message[]
 }
 
 interface QueueEntry extends PendingInvocation {
@@ -70,6 +75,7 @@ function isLatestWins(mode: PendingInvocationMode): boolean {
  */
 export class InvocationQueue {
   private readonly _entries: QueueEntry[] = []
+  private _nextSequence = 1
   private readonly _enqueueListeners = new Set<() => void>()
 
   get size(): number {
@@ -78,7 +84,9 @@ export class InvocationQueue {
 
   /** Point-in-time view of the queued calls, in run order. */
   list(): readonly PendingInvocation[] {
-    return this._entries.map(({ mode, submittedAt }) => Object.freeze({ mode, submittedAt: new Date(submittedAt) }))
+    return this._entries.map(({ id, mode, submittedAt, messages }) =>
+      Object.freeze({ id, mode, submittedAt: new Date(submittedAt), messages })
+    )
   }
 
   /**
@@ -102,11 +110,17 @@ export class InvocationQueue {
    *   (they reject as cancelled); aborting `cancelSignal` while queued removes the entry
    *   and rejects with {@link PendingInvocationCancelledError}
    */
-  wait(options: { mode: PendingInvocationMode; cancelSignal?: AbortSignal }): Promise<void> {
+  wait(options: {
+    mode: PendingInvocationMode
+    messages: readonly Message[]
+    cancelSignal?: AbortSignal
+  }): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const entry: QueueEntry = {
+        id: `pending-${this._nextSequence++}`,
         mode: options.mode,
         submittedAt: new Date(),
+        messages: options.messages,
         resolve,
         reject,
         cleanup: () => {},

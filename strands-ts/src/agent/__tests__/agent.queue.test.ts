@@ -4,7 +4,7 @@ import { AfterInvocationEvent, BeforeInvocationEvent } from '../../hooks/index.j
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { tool } from '../../tools/tool-factory.js'
 import { ConcurrentInvocationError, PendingInvocationCancelledError } from '../../errors.js'
-import { TextBlock } from '../../types/messages.js'
+import { Message, TextBlock } from '../../types/messages.js'
 
 /**
  * A tool whose callback suspends until `release()` is called, so tests can hold an
@@ -325,6 +325,55 @@ describe('concurrentInvocationMode', () => {
 
       gate.release()
       await first
+    })
+
+    it('lists each waiting call with a stable id, its mode, and its normalized input messages', async () => {
+      const gate = createGate()
+      const model = new MockMessageModel()
+        .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
+        .addTurn({ type: 'textBlock', text: 'A' })
+        .addTurn({ type: 'textBlock', text: 'B' })
+        .addTurn({ type: 'textBlock', text: 'C' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
+
+      const first = agent.invoke('a')
+      await gate.started
+      const second = agent.invoke('b')
+      const third = agent.invoke([new Message({ role: 'user', content: [new TextBlock('c')] })], {
+        ifBusy: 'cancelPrevious',
+      })
+      await until(() => agent.pendingInvocations.length === 2, 'both queued')
+
+      const [urgent, plain] = agent.pendingInvocations
+      expect(urgent).toMatchObject({ mode: 'cancelPrevious' })
+      expect(plain).toMatchObject({ mode: 'queue' })
+      expect(urgent!.id).not.toBe(plain!.id)
+      expect(plain!.submittedAt).toBeInstanceOf(Date)
+      expect(urgent!.messages.map((message) => (message.content[0] as TextBlock).text)).toEqual(['c'])
+      expect(plain!.messages.map((message) => (message.content[0] as TextBlock).text)).toEqual(['b'])
+      // The listing is a snapshot: the same entry keeps its id across reads.
+      expect(agent.pendingInvocations[1]!.id).toBe(plain!.id)
+
+      await Promise.all([first, second, third])
+      expect(agent.pendingInvocations).toHaveLength(0)
+    })
+
+    it('rejects a blank prompt at enqueue time without disturbing the running invocation', async () => {
+      const gate = createGate()
+      const model = new MockMessageModel()
+        .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
+        .addTurn({ type: 'textBlock', text: 'A' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'cancelPrevious' })
+
+      const first = agent.invoke('a')
+      await gate.started
+      await expect(agent.invoke('   ')).rejects.toThrow(/blank/)
+      expect(agent.pendingInvocations).toHaveLength(0)
+
+      gate.release()
+      const firstResult = await first
+      expect(firstResult.stopReason).toBe('endTurn')
+      expect(resultText(firstResult)).toBe('A')
     })
 
     it("a queued caller's cancelSignal abort removes it from the queue", async () => {

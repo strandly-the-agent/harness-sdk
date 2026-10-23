@@ -962,7 +962,7 @@ export class Agent implements LocalAgent, InvokableAgent {
    * agent's `concurrentInvocationMode`) when the agent is busy. Callers must release
    * via try/finally with {@link _releaseTurn}.
    */
-  private async _acquireTurn(args: InvokeArgs, options?: InvokeOptions): Promise<void> {
+  private async _acquireTurn(args: InvokeArgs, options?: InvokeOptions): Promise<InvokeArgs> {
     if (options?.ifBusy !== undefined) validateConcurrentInvocationMode(options.ifBusy, 'ifBusy')
     const strategy = options?.ifBusy ?? this._concurrentInvocationMode
     // An agent awaiting an interrupt response counts as busy for every caller but the resume
@@ -975,7 +975,7 @@ export class Agent implements LocalAgent, InvokableAgent {
     if (!this._isInvoking && !awaitingResume) {
       this._isInvoking = true
       this._installTurnController()
-      return
+      return args
     }
     if (strategy === 'throw') {
       throw new ConcurrentInvocationError(
@@ -985,8 +985,12 @@ export class Agent implements LocalAgent, InvokableAgent {
     // Nothing is running to cancel while an interrupt awaits its response, so a
     // 'cancelPrevious' caller parks like 'stopPrevious': the resume yields to it after its
     // pending tool batch.
+    // Normalized up front so the queue can show the waiting input and a blank prompt is
+    // rejected now rather than when its turn comes.
+    const messages = this._normalizeInput(args)
     const turn = this._invocationQueue.wait({
       mode: awaitingResume && strategy === 'cancelPrevious' ? 'stopPrevious' : strategy,
+      messages,
       ...(options?.cancelSignal !== undefined && { cancelSignal: options.cancelSignal }),
     })
     // An already-aborted caller never enters the queue; don't cancel the running
@@ -995,7 +999,8 @@ export class Agent implements LocalAgent, InvokableAgent {
     if (strategy === 'cancelPrevious' && !awaitingResume && options?.cancelSignal?.aborted !== true) {
       this.cancel()
     }
-    return turn
+    await turn
+    return messages
   }
 
   /**
@@ -1137,8 +1142,11 @@ export class Agent implements LocalAgent, InvokableAgent {
   }
 
   /**
-   * Calls waiting for the agent's turn, in run order (a point-in-time snapshot). Empty under
-   * `'throw'`. A waiting call is removed by aborting the `cancelSignal` its caller passed.
+   * Calls waiting for the agent's turn, in run order (a point-in-time snapshot with each
+   * call's input messages, e.g. to render a queue). Empty under `'throw'`. A waiting call is
+   * removed by aborting the `cancelSignal` its caller passed. The queue lives in memory only:
+   * it is not part of {@link takeSnapshot}, so after a restart the host re-submits what it
+   * still shows as pending.
    */
   get pendingInvocations(): readonly PendingInvocation[] {
     return this._invocationQueue.list()
@@ -1343,7 +1351,7 @@ export class Agent implements LocalAgent, InvokableAgent {
     args: InvokeArgs,
     options?: InvokeOptions
   ): AsyncGenerator<AgentStreamEvent, AgentResult, undefined> {
-    await this._acquireTurn(args, options)
+    const inputArgs = await this._acquireTurn(args, options)
     let continuationEvent: AfterInvocationEvent | undefined
     try {
       await this.initialize()
@@ -1364,11 +1372,11 @@ export class Agent implements LocalAgent, InvokableAgent {
 
       // Reject non-interrupt input before any hook fires, so a rejected call is never
       // observed as an invocation (a plugin would otherwise see a Before/After pair with no result).
-      if (this._interruptState.activated && this._extractInterruptResponses(args).length === 0) {
+      if (this._interruptState.activated && this._extractInterruptResponses(inputArgs).length === 0) {
         throw new TypeError(INTERRUPTED_STATE_MESSAGE)
       }
 
-      let currentArgs: InvokeArgs = args
+      let currentArgs: InvokeArgs = inputArgs
       let firstPass = true
 
       while (true) {
@@ -1688,7 +1696,8 @@ export class Agent implements LocalAgent, InvokableAgent {
    *
    * Use snapshots to checkpoint agent state for later restoration, enabling
    * use cases like undo/redo, branching conversations, and session persistence.
-   * Queued invocations are not captured — they belong to the live process.
+   * Queued invocations ({@link pendingInvocations}) are not captured — they belong to the
+   * live process; after a restart the host re-submits what it still shows as pending.
    *
    * Fields are selected via a preset/include/exclude model:
    * 1. Start with preset fields (e.g. `'session'` captures all fields)
