@@ -259,15 +259,15 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
   }
 
   /**
-   * The `maxTokens` to send: the user's value, else the model's output ceiling from the `info`
+   * The `maxTokens` to send: the user's value, else the model's output ceiling from the `modelInfo`
    * override or the shared model info, else the fixed default. Resolved on each read so it follows
-   * `updateConfig({ modelId })`. Reads the layers directly because `info` itself reads `getConfig()`.
+   * `updateConfig({ modelId })`. Reads the layers directly because `modelInfo` itself reads `getConfig()`.
    */
   private _resolvedMaxTokens(): number {
     const modelId = this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId
     return (
       this._config.maxTokens ??
-      this._config.info?.limits?.maxOutputTokens ??
+      this._config.modelInfo?.limits?.maxOutputTokens ??
       lookupModelInfo(modelId).limits?.maxOutputTokens ??
       MODEL_DEFAULTS.anthropic.maxTokens
     )
@@ -278,7 +278,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
    *
    * @returns The declared capabilities
    */
-  protected override declareInfo(): ModelInfo {
+  protected override declareModelInfo(): ModelInfo {
     return { capabilities: { promptCaching: 'cachePoints' } }
   }
 
@@ -558,7 +558,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
   private _structuredOutputMechanism(options: StreamOptions | undefined): StructuredOutputMechanism | undefined {
     const schema = options?.structuredOutputSchema
     if (!schema || !this._config.modelId) return undefined
-    return structuredOutputMechanisms('anthropic', this._config.modelId, options.toolChoice, schema, this.info)[0]
+    return structuredOutputMechanisms('anthropic', this._config.modelId, options.toolChoice, schema, this.modelInfo)[0]
   }
 
   /**

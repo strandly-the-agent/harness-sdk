@@ -92,7 +92,7 @@ export const NATIVE_OUTPUT_REJECTED_MESSAGES = [
  * @param modelId - The model the request is sent to
  * @param toolChoice - The requested tool choice; forcing is only tried when it forces a tool
  * @param schema - The schema the response must produce
- * @param info - What the SDK knows about the model; a known-unsupported mechanism is skipped without a request
+ * @param modelInfo - What the SDK knows about the model; a known-unsupported mechanism is skipped without a request
  * @returns The mechanisms to try in order; never empty, since auto is always available
  *
  * @internal
@@ -102,11 +102,11 @@ export function structuredOutputMechanisms(
   modelId: string,
   toolChoice: ToolChoice | undefined,
   schema: z.ZodType,
-  info: ModelInfo = {}
+  modelInfo: ModelInfo = {}
 ): StructuredOutputMechanism[] {
   const unsupported = new Set(unsupportedMechanisms(provider, modelId, schema))
-  if (info.capabilities?.forcedToolChoice === false) unsupported.add('forced')
-  if (info.capabilities?.nativeStructuredOutput === false) unsupported.add('native')
+  if (modelInfo.capabilities?.forcedToolChoice === false) unsupported.add('forced')
+  if (modelInfo.capabilities?.nativeStructuredOutput === false) unsupported.add('native')
   const forcesTool = toolChoice !== undefined && ('any' in toolChoice || 'tool' in toolChoice)
   const feature = unsupported.has('native')
     ? undefined

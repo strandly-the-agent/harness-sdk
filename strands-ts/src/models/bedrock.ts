@@ -516,7 +516,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    * @returns Cache strategy name or null
    */
   private _getCacheStrategy(): 'anthropic' | null {
-    return this.info.capabilities?.promptCaching === 'cachePoints' ? 'anthropic' : null
+    return this.modelInfo.capabilities?.promptCaching === 'cachePoints' ? 'anthropic' : null
   }
 
   /**
@@ -823,7 +823,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
       return this._send(this._formatRequest(messages, options), send)
     }
 
-    const mechanisms = structuredOutputMechanisms('bedrock', modelId, options.toolChoice, schema, this.info)
+    const mechanisms = structuredOutputMechanisms('bedrock', modelId, options.toolChoice, schema, this.modelInfo)
     for (const mechanism of mechanisms.slice(0, -1)) {
       try {
         return await this._send(this._structuredOutputRequest(messages, options, mechanism, schema), send)

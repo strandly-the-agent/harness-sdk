@@ -1542,8 +1542,8 @@ describe('VercelModel', () => {
         )
       })
 
-      it('under the default auto strategy, caches a model the info override says takes cache points', async () => {
-        const config = { cacheConfig: {}, info: { capabilities: { promptCaching: 'cachePoints' as const } } }
+      it('under the default auto strategy, caches a model the modelInfo override says takes cache points', async () => {
+        const config = { cacheConfig: {}, modelInfo: { capabilities: { promptCaching: 'cachePoints' as const } } }
         const { collect, callArgs } = setupCaptureTest(minimalParts, config, 'amazon-bedrock', UNSUPPORTED_MODEL_ID)
         await collect(userMessages, { systemPrompt: 'be helpful' })
 
@@ -1552,19 +1552,19 @@ describe('VercelModel', () => {
 
       it('declares cache points for Claude on Bedrock and Anthropic, automatic caching for OpenAI', () => {
         expect(
-          setupCaptureTest(minimalParts, undefined, 'amazon-bedrock', CACHING_MODEL_ID).model.info.capabilities
+          setupCaptureTest(minimalParts, undefined, 'amazon-bedrock', CACHING_MODEL_ID).model.modelInfo.capabilities
             ?.promptCaching
         ).toBe('cachePoints')
         expect(
-          setupCaptureTest(minimalParts, undefined, 'amazon-bedrock', UNSUPPORTED_MODEL_ID).model.info.capabilities
+          setupCaptureTest(minimalParts, undefined, 'amazon-bedrock', UNSUPPORTED_MODEL_ID).model.modelInfo.capabilities
             ?.promptCaching
         ).toBeUndefined()
         expect(
-          setupCaptureTest(minimalParts, undefined, 'anthropic', 'claude-sonnet-4-6').model.info.capabilities
+          setupCaptureTest(minimalParts, undefined, 'anthropic', 'claude-sonnet-4-6').model.modelInfo.capabilities
             ?.promptCaching
         ).toBe('cachePoints')
         expect(
-          setupCaptureTest(minimalParts, undefined, 'openai', 'gpt-5').model.info.capabilities?.promptCaching
+          setupCaptureTest(minimalParts, undefined, 'openai', 'gpt-5').model.modelInfo.capabilities?.promptCaching
         ).toBe('auto')
       })
 

@@ -36,8 +36,8 @@ import { warnOnce } from '../logging/warn-once.js'
  * Resolves model metadata fields on a config object from the shared model info
  * when not explicitly set. Explicit values pass through unchanged.
  *
- * Kept so `getConfig().contextWindowLimit` keeps its documented value; `Model.info` resolves
- * the same fact without it, and this will go once callers read `info`.
+ * Kept so `getConfig().contextWindowLimit` keeps its documented value; `Model.modelInfo` resolves
+ * the same fact without it, and this will go once callers read `modelInfo`.
  *
  * @internal
  * @param config - The stored model config
@@ -211,9 +211,9 @@ export interface BaseModelConfig {
   /**
    * Maximum context window size in tokens for the model.
    *
-   * The same fact as `info.limits.contextWindow`; setting it here is shorthand for setting it
-   * through `info`, and it wins over the shared model info and the provider's declaration. When
-   * both are set, `info` wins.
+   * The same fact as `modelInfo.limits.contextWindow`; setting it here is shorthand for setting it
+   * through `modelInfo`, and it wins over the shared model info and the provider's declaration. When
+   * both are set, `modelInfo` wins.
    * When not provided, vended providers still populate it from the shared model info for
    * callers that read `getConfig()`; `info` is the resolved view to read.
    */
@@ -225,7 +225,7 @@ export interface BaseModelConfig {
    * mirrors the provider. `updateConfig({ info })` replaces the previous override entirely, it
    * does not merge into it.
    */
-  info?: ModelInfo
+  modelInfo?: ModelInfo
 }
 
 /**
@@ -359,7 +359,7 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
    * the agent's local message history is cleared automatically.
    *
    * Model providers that support server-side state management should override this
-   * to return `true`. `info.capabilities.stateful` mirrors it.
+   * to return `true`. `modelInfo.capabilities.stateful` mirrors it.
    *
    * @returns `false` by default
    */
@@ -370,30 +370,36 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   /**
    * What this provider knows about the configured model beyond the shared model info: facts that
    * depend on how the provider talks to it, derived from its config and wire API. Leave out
-   * anything unknown. Users override the result through the `info` config key.
+   * anything unknown. Users override the result through the `modelInfo` config key.
    *
    * @returns What the provider knows, empty by default
    */
-  protected declareInfo(): ModelInfo {
+  protected declareModelInfo(): ModelInfo {
     return {}
   }
 
   /**
    * Everything the SDK knows about the configured model, resolved on each read. Layers, later
    * ones winning: the shared model info for `modelId`, what this provider declares through
-   * {@link declareInfo}, the `contextWindowLimit` config value, and the `info` config override.
+   * {@link declareModelInfo}, the `contextWindowLimit` config value, and the `modelInfo` config override.
    * `capabilities.stateful` always mirrors {@link stateful}. Each read returns a new frozen record,
    * so do not compare reads by reference.
    */
-  get info(): ModelInfo {
+  get modelInfo(): ModelInfo {
     const config = this.getConfig()
     const shared = lookupModelInfo(config.modelId ?? '')
     // Vended providers copy the shared context window into getConfig(); only a value the user set is an override.
     const userContextWindow =
       config.contextWindowLimit === shared.limits?.contextWindow ? undefined : config.contextWindowLimit
-    return mergeModelInfo(shared, this.declareInfo(), { limits: { contextWindow: userContextWindow } }, config.info, {
-      capabilities: { stateful: this.stateful },
-    })
+    return mergeModelInfo(
+      shared,
+      this.declareModelInfo(),
+      { limits: { contextWindow: userContextWindow } },
+      config.modelInfo,
+      {
+        capabilities: { stateful: this.stateful },
+      }
+    )
   }
 
   /**
@@ -434,7 +440,7 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
    * @returns Token usage ratio (0–1+; above 1.0 means overflow)
    */
   estimateUtilization(inputTokens: number): number {
-    let contextWindowLimit = this.info.limits?.contextWindow
+    let contextWindowLimit = this.modelInfo.limits?.contextWindow
     if (!contextWindowLimit) {
       contextWindowLimit = DEFAULT_CONTEXT_WINDOW_LIMIT
       warnOnce(

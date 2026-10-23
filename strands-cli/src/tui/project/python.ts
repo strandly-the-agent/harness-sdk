@@ -368,7 +368,7 @@ export class PythonBackend implements ChatBackend {
     await this._request({
       type: 'conversation',
       snapshot: conversation.snapshot,
-      preserveReasoning: conversation.model === this.info().model,
+      preserveReasoning: conversation.model === this.modelInfo().model,
     })
   }
 

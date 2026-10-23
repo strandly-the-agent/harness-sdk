@@ -2,8 +2,8 @@
  * What the SDK knows about models: the {@link ModelInfo} type, and the shared model info data.
  *
  * Every {@link ModelInfo} field is optional, and a missing or undefined field means unknown. The same
- * shape is used everywhere: the shared data file, a provider's {@link Model.declareInfo}, the `info`
- * config override, and the resolved {@link Model.info}. A known `'unsupported'` disables a feature;
+ * shape is used everywhere: the shared data file, a provider's {@link Model.declareModelInfo}, the `modelInfo`
+ * config override, and the resolved {@link Model.modelInfo}. A known `'unsupported'` disables a feature;
  * unknown leaves the SDK's existing default for that feature in place.
  *
  * `model-info.json` is copied from `shared/model-info.json` at the repository root (the source of truth for
@@ -23,7 +23,7 @@ export type PromptCaching = 'unsupported' | 'auto' | 'cachePoints'
  * own field named after the pair. `undefined` is unknown either way.
  */
 export interface ModelCapabilities {
-  /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}; the provider owns it, so the shared data and the `info` override cannot set it. */
+  /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}; the provider owns it, so the shared data and the `modelInfo` override cannot set it. */
   readonly stateful?: boolean | undefined
   /** Whether and how the model caches prompts. */
   readonly promptCaching?: PromptCaching | undefined
@@ -41,7 +41,7 @@ export interface ModelLimits {
   readonly maxOutputTokens?: number | undefined
 }
 
-/** Everything the SDK knows about a model. Read it from {@link Model.info}. */
+/** Everything the SDK knows about a model. Read it from {@link Model.modelInfo}. */
 export interface ModelInfo {
   readonly capabilities?: ModelCapabilities
   readonly limits?: ModelLimits

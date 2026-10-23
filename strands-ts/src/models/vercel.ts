@@ -160,7 +160,7 @@ export class VercelModel extends Model<VercelModelConfig> {
    *
    * @returns The declared capabilities for the wrapped provider
    */
-  protected override declareInfo(): ModelInfo {
+  protected override declareModelInfo(): ModelInfo {
     switch (this._provider.provider.split('.')[0]) {
       case 'anthropic':
         return { capabilities: { promptCaching: 'cachePoints' } }
@@ -180,7 +180,7 @@ export class VercelModel extends Model<VercelModelConfig> {
     const tools = options?.toolSpecs ? formatTools(options.toolSpecs) : undefined
     const toolChoice = options?.toolChoice ? formatToolChoice(options.toolChoice) : undefined
 
-    const { modelId: _, maxTokens, cacheConfig, info: _info, ...callSettings } = this._config
+    const { modelId: _, maxTokens, cacheConfig, modelInfo: _modelInfo, ...callSettings } = this._config
 
     const callOptions: LanguageModelV3CallOptions = {
       prompt,
@@ -190,7 +190,7 @@ export class VercelModel extends Model<VercelModelConfig> {
       ...callSettings,
     }
 
-    applyVercelCacheConfig(callOptions, this._provider, cacheConfig, this.info, options?.dynamicTrailingBlocks)
+    applyVercelCacheConfig(callOptions, this._provider, cacheConfig, this.modelInfo, options?.dynamicTrailingBlocks)
 
     let result
     try {
@@ -256,7 +256,7 @@ export class VercelModel extends Model<VercelModelConfig> {
  * Applies a `CacheConfig` to a Vercel call by the underlying provider. See
  * {@link VercelModelConfig.cacheConfig} for the per-provider routing.
  *
- * @param info - What the SDK knows about the wrapped model; decides the default `'auto'` strategy
+ * @param modelInfo - What the SDK knows about the wrapped model; decides the default `'auto'` strategy
  * @param dynamicTrailingBlocks - Trailing content parts of the last user message a context injector
  * rebuilds every call; the conversation breakpoint stays ahead of them so the cached prefix is stable.
  * @internal
@@ -265,7 +265,7 @@ function applyVercelCacheConfig(
   callOptions: LanguageModelV3CallOptions,
   model: LanguageModelV3,
   cacheConfig: CacheConfig | undefined,
-  info: ModelInfo,
+  modelInfo: ModelInfo,
   dynamicTrailingBlocks = 0
 ): void {
   if (!cacheConfig) return
@@ -276,7 +276,7 @@ function applyVercelCacheConfig(
       applyAnthropicCache(callOptions, cacheConfig, dynamicTrailingBlocks)
       break
     case 'amazon-bedrock':
-      applyBedrockCache(callOptions, cacheConfig, dynamicTrailingBlocks, model.modelId, info)
+      applyBedrockCache(callOptions, cacheConfig, dynamicTrailingBlocks, model.modelId, modelInfo)
       break
     case 'openai':
       applyOpenAICache(callOptions, cacheConfig)
@@ -347,7 +347,7 @@ function applyAnthropicCache(
  * Injects Bedrock `cachePoint` breakpoints on system and the last user message.
  *
  * @param modelId - The wrapped Bedrock model id, used in the skip warning
- * @param info - What the SDK knows about the wrapped model; the default `'auto'` strategy caches only
+ * @param modelInfo - What the SDK knows about the wrapped model; the default `'auto'` strategy caches only
  * when `promptCaching` is `'cachePoints'`, matching `BedrockModel`
  * @internal
  */
@@ -356,10 +356,10 @@ function applyBedrockCache(
   cacheConfig: CacheConfig,
   dynamicTrailingBlocks: number,
   modelId: string,
-  info: ModelInfo
+  modelInfo: ModelInfo
 ): void {
   if (!isCacheStrategySupported(cacheConfig)) return
-  if (!bedrockModelSupportsCaching(cacheConfig, modelId, info)) return
+  if (!bedrockModelSupportsCaching(cacheConfig, modelId, modelInfo)) return
 
   // The amazon-bedrock ai-sdk adapter accepts no tool-level cache point, so toolsTTL does nothing here.
   // Tool definitions are cached only as part of the system/messages prefix.
@@ -398,13 +398,13 @@ function applyBedrockCache(
  *
  * @param cacheConfig - The caller's cache configuration
  * @param modelId - The wrapped Bedrock model id, used in the skip warning
- * @param info - What the SDK knows about the wrapped model
+ * @param modelInfo - What the SDK knows about the wrapped model
  * @internal
  */
-function bedrockModelSupportsCaching(cacheConfig: CacheConfig, modelId: string, info: ModelInfo): boolean {
+function bedrockModelSupportsCaching(cacheConfig: CacheConfig, modelId: string, modelInfo: ModelInfo): boolean {
   if ((cacheConfig.strategy ?? 'auto') !== 'auto') return true
 
-  const supported = info.capabilities?.promptCaching === 'cachePoints'
+  const supported = modelInfo.capabilities?.promptCaching === 'cachePoints'
   if (!supported) {
     warnOnce(
       logger,

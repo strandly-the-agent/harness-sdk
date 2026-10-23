@@ -430,13 +430,13 @@ describe('BedrockModel', () => {
     it('declares cache points for Claude model ids', () => {
       const provider = new BedrockModel({ modelId: 'us.anthropic.claude-sonnet-4-6' })
 
-      expect(provider.info.capabilities?.promptCaching).toBe('cachePoints')
+      expect(provider.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
     })
 
     it('leaves caching unknown for other model ids', () => {
       const provider = new BedrockModel({ modelId: 'amazon.nova-pro-v1:0' })
 
-      expect(provider.info.capabilities?.promptCaching).toBeUndefined()
+      expect(provider.modelInfo.capabilities?.promptCaching).toBeUndefined()
     })
 
     it('does not auto-cache a Claude id the shared model info does not list', async () => {
@@ -445,7 +445,7 @@ describe('BedrockModel', () => {
 
       collectIterator(provider.stream(messages, { systemPrompt: 'Be helpful' }))
 
-      expect(provider.info.capabilities?.promptCaching).toBeUndefined()
+      expect(provider.modelInfo.capabilities?.promptCaching).toBeUndefined()
       expect(vi.mocked(ConverseStreamCommand).mock.lastCall?.[0].system).toEqual([{ text: 'Be helpful' }])
     })
 
@@ -453,7 +453,7 @@ describe('BedrockModel', () => {
       const provider = new BedrockModel({
         modelId: 'amazon.nova-pro-v1:0',
         cacheConfig: { strategy: 'auto' },
-        info: { capabilities: { promptCaching: 'cachePoints' } },
+        modelInfo: { capabilities: { promptCaching: 'cachePoints' } },
       })
       const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
 
@@ -469,7 +469,7 @@ describe('BedrockModel', () => {
       const provider = new BedrockModel({
         modelId: 'us.anthropic.claude-sonnet-4-6',
         cacheConfig: { strategy: 'auto' },
-        info: { capabilities: { promptCaching: 'unsupported' } },
+        modelInfo: { capabilities: { promptCaching: 'unsupported' } },
       })
       const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
 
@@ -1653,7 +1653,7 @@ describe('BedrockModel', () => {
         mockRejections(forcedRejection)
         const provider = new BedrockModel({
           modelId: 'm1',
-          info: { capabilities: { nativeStructuredOutput: false } },
+          modelInfo: { capabilities: { nativeStructuredOutput: false } },
         })
 
         await collectIterator(provider.stream(messages, structuredOutputOptions))

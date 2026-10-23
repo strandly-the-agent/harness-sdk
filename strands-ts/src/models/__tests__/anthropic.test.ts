@@ -188,7 +188,7 @@ describe('AnthropicModel', () => {
     it('declares cache points', () => {
       const model = new AnthropicModel({ apiKey: 'sk-ant-test', modelId: 'claude-sonnet-4-6' })
 
-      expect(model.info.capabilities?.promptCaching).toBe('cachePoints')
+      expect(model.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
     })
 
     it('re-resolves the default maxTokens when modelId changes', () => {
@@ -198,18 +198,18 @@ describe('AnthropicModel', () => {
       model.updateConfig({ modelId: 'claude-opus-4-1' })
 
       expect(model.getConfig().maxTokens).toBe(32_000)
-      expect(model.info.limits?.maxOutputTokens).toBe(32_000)
+      expect(model.modelInfo.limits?.maxOutputTokens).toBe(32_000)
     })
 
     it('defaults maxTokens to an info override of the output ceiling', () => {
       const model = new AnthropicModel({
         apiKey: 'sk-ant-test',
         modelId: 'claude-sonnet-4-6',
-        info: { limits: { maxOutputTokens: 8_000 } },
+        modelInfo: { limits: { maxOutputTokens: 8_000 } },
       })
 
       expect(model.getConfig().maxTokens).toBe(8_000)
-      expect(model.info.limits?.maxOutputTokens).toBe(8_000)
+      expect(model.modelInfo.limits?.maxOutputTokens).toBe(8_000)
     })
 
     it('defaults maxTokens to the model output ceiling from the shared model info', () => {
