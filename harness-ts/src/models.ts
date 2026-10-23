@@ -93,9 +93,15 @@ const BEDROCK_GPT_OSS_LEVELS = ['low', 'medium', 'high'] as const
 const BEDROCK_QWEN_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const BEDROCK_XAI_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const
 const GOOGLE_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
-// Gemini 4 Argon and 3.8 Flash (and the deprecated 3.7 Flash alias, routed to 3.8) document
-// `thinking_level` low/medium/high only; `minimal` is a request error there.
-const GOOGLE_NO_MINIMAL_FAMILIES = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash']
+// Gemini 4 Argon, 3.8 Flash (and the deprecated 3.7 Flash alias, routed to 3.8), 3.1 Pro preview
+// and the 2.5 family document `thinking_level` low/medium/high only; `minimal` is a request error there.
+const GOOGLE_NO_MINIMAL_FAMILIES = [
+  'gemini-4-argon',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.1-pro-preview',
+  'gemini-2.5-',
+] as const
 const GOOGLE_NO_MINIMAL_LEVELS = ['low', 'medium', 'high'] as const
 const NO_THINKING_LEVELS: readonly string[] = []
 

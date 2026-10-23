@@ -207,17 +207,21 @@ describe('resolveModel', () => {
     await expect(resolve('openai/gpt-5.6-sol', 'max')).rejects.toThrow('not supported by this provider')
   })
 
-  it.each(['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash', 'models/gemini-4-argon'])(
-    'rejects google minimal where the model lacks it: %s',
-    async (modelId) => {
-      await expect(resolve(`google/${modelId}`, 'minimal')).rejects.toThrow(
-        `not supported by model ${modelId}. Supported levels: low, medium, high `
-      )
-      const model = await resolve(`google/${modelId}`, 'low')
-      const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
-      expect(params.thinkingConfig.thinkingLevel).toBe('low')
-    }
-  )
+  it.each([
+    'gemini-4-argon',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.1-pro-preview',
+    'gemini-2.5-pro',
+    'models/gemini-4-argon',
+  ])('rejects google minimal where the model lacks it: %s', async (modelId) => {
+    await expect(resolve(`google/${modelId}`, 'minimal')).rejects.toThrow(
+      `not supported by model ${modelId}. Supported levels: low, medium, high `
+    )
+    const model = await resolve(`google/${modelId}`, 'low')
+    const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
+    expect(params.thinkingConfig.thinkingLevel).toBe('low')
+  })
 
   it.each(['gemini-3.6-flash', 'gemini-3.5-flash-lite'])(
     'accepts google minimal where the model documents it: %s',

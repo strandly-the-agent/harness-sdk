@@ -226,6 +226,8 @@ describe('AgentModelRuntime thinking controls', () => {
     ['google/gemini-4-argon', ['low', 'medium', 'high']],
     ['google/gemini-3.8-flash', ['low', 'medium', 'high']],
     ['google/gemini-3.7-flash', ['low', 'medium', 'high']],
+    ['google/gemini-3.1-pro-preview', ['low', 'medium', 'high']],
+    ['google/gemini-2.5-flash', ['low', 'medium', 'high']],
     ['google/models/gemini-4-argon', ['low', 'medium', 'high']],
     ['google/gemini-3.6-flash', ['minimal', 'low', 'medium', 'high']],
     ['google/gemini-3.5-flash-lite', ['minimal', 'low', 'medium', 'high']],

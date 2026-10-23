@@ -8,8 +8,14 @@ import { providerModelExists, type ProviderModelDiscovery } from '../provider/di
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 const OPENAI_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
 const GOOGLE_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const
-// Gemini 4 Argon and 3.8 Flash (and the deprecated 3.7 Flash alias) take no `minimal`; mirrors the harness.
-const GOOGLE_NO_MINIMAL_FAMILIES = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash']
+// Gemini families that take no `minimal` thinking level; mirrors the harness's list.
+const GOOGLE_NO_MINIMAL_FAMILIES = [
+  'gemini-4-argon',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.1-pro-preview',
+  'gemini-2.5-',
+] as const
 const GOOGLE_NO_MINIMAL_EFFORTS = ['low', 'medium', 'high'] as const
 const BEDROCK_GPT_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const BEDROCK_GPT_OSS_EFFORTS = ['low', 'medium', 'high'] as const

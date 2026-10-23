@@ -320,7 +320,15 @@ def test_level_rejected_when_provider_does_not_support_it():
 
 
 @pytest.mark.parametrize(
-    "model_id", ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash", "models/gemini-4-argon"]
+    "model_id",
+    [
+        "gemini-4-argon",
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.1-pro-preview",
+        "gemini-2.5-pro",
+        "models/gemini-4-argon",
+    ],
 )
 def test_google_minimal_rejected_where_the_model_lacks_it(model_id):
     with pytest.raises(ValueError, match=f"not supported by model {model_id}. Supported levels: low, medium, high "):

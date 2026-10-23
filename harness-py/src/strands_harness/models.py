@@ -98,9 +98,15 @@ _BEDROCK_QWEN_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "ma
 _BEDROCK_XAI_LEVELS = ("low", "medium", "high", "xhigh")
 _BEDROCK_NOVA_LEVELS = ("low", "medium", "high")
 _GOOGLE_LEVELS = ("minimal", "low", "medium", "high")
-# Gemini 4 Argon and 3.8 Flash (and the deprecated 3.7 Flash alias, routed to 3.8) document
-# ``thinking_level`` low/medium/high only; ``minimal`` is a request error there.
-_GOOGLE_NO_MINIMAL_FAMILIES = ("gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash")
+# Gemini 4 Argon, 3.8 Flash (and the deprecated 3.7 Flash alias, routed to 3.8), 3.1 Pro preview
+# and the 2.5 family document ``thinking_level`` low/medium/high only; ``minimal`` is a request error there.
+_GOOGLE_NO_MINIMAL_FAMILIES = (
+    "gemini-4-argon",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-2.5-",
+)
 _GOOGLE_NO_MINIMAL_LEVELS = ("low", "medium", "high")
 
 _ADAPTIVE_THINKING_SINCE = {"opus": (4, 6), "sonnet": (4, 6), "haiku": (5, 5)}
