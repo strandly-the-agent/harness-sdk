@@ -51,6 +51,19 @@ SkillSources: TypeAlias = SkillSource | list[SkillSource]
 """One or more skill sources."""
 
 
+_KIND_LABELS = {"sandbox": "sandbox paths", "url": "https:// URLs"}
+
+
+def _source_kind(source: str) -> str:
+    """Classify a runtime skill source as ``"url"`` or ``"sandbox"``."""
+    return "url" if source.startswith("https://") else "sandbox"
+
+
+def _source_key(source: str) -> str:
+    """Canonical form of a runtime source so ``skills``, ``./skills`` and ``./skills/`` share one entry."""
+    return source if not source or _source_kind(source) == "url" else os.path.normpath(source)
+
+
 def _normalize_sources(sources: SkillSources) -> list[SkillSource]:
     """Normalize a single source or list of sources into a list."""
     if isinstance(sources, list):
@@ -109,8 +122,9 @@ class AgentSkills(Plugin):
         skill = Skill(name="my-skill", description="A custom skill", instructions="Do the thing")
         plugin = AgentSkills(skills=[skill])
 
-        # Or let the agent load and unload skills itself at runtime
-        plugin = AgentSkills(skills=["./skills/"], dynamic_loading=True)
+        # Or let the agent load and unload skills itself at runtime, from sandbox paths
+        # and https:// URLs (True) or only one of the two ("sandbox" / "url")
+        plugin = AgentSkills(skills=["./skills/"], dynamic_loading="sandbox")
 
         agent = Agent(plugins=[plugin])
         ```
@@ -125,7 +139,7 @@ class AgentSkills(Plugin):
         max_resource_files: int = _DEFAULT_MAX_RESOURCE_FILES,
         strict: bool = False,
         *,
-        dynamic_loading: bool = False,
+        dynamic_loading: bool | Literal["sandbox", "url"] = False,
     ) -> None:
         """Initialize the AgentSkills plugin.
 
@@ -139,18 +153,26 @@ class AgentSkills(Plugin):
             state_key: Key used to store plugin state in ``agent.state``.
             max_resource_files: Maximum number of resource files to list in skill responses.
             strict: If True, raise on skill validation issues. If False (default), warn and load anyway.
-            dynamic_loading: If True, the ``skills`` tool becomes action-based (``activate`` /
-                ``load`` / ``unload``) so the agent can add skills at runtime from a path in its
-                sandbox or an ``https://`` URL, and remove them again.
-                Loaded sources are recorded in ``agent.state`` and restored on the next run over the
-                same session. Skills configured here take precedence over loaded ones with the same
-                name. Only enable this when the sandbox contents and reachable URLs are trusted:
-                loaded SKILL.md content reaches the system prompt.
+            dynamic_loading: Lets the agent add and remove skills at runtime: the ``skills`` tool
+                becomes action-based (``activate`` / ``load`` / ``unload``). ``True`` allows loading
+                from both paths in the agent's sandbox and ``https://`` URLs; ``"sandbox"`` or
+                ``"url"`` allows only that kind of source. Loaded sources are recorded in
+                ``agent.state`` and restored on the next run over the same session (only kinds still
+                allowed). Skills configured here take precedence over loaded ones with the same name.
+                Only allow a kind whose content is trusted: loaded SKILL.md content reaches the
+                system prompt.
         """
         self._strict = strict
         self._state_key = state_key
         self._max_resource_files = max_resource_files
-        self._dynamic_loading = dynamic_loading
+        if dynamic_loading is True:
+            self._source_kinds = frozenset({"sandbox", "url"})
+        elif dynamic_loading is False:
+            self._source_kinds = frozenset[str]()
+        elif dynamic_loading in ("sandbox", "url"):
+            self._source_kinds = frozenset({dynamic_loading})
+        else:
+            raise ValueError(f"dynamic_loading must be a bool, 'sandbox' or 'url', got {dynamic_loading!r}")
         # Skill instances and URLs resolve now (both sandbox-independent and synchronous in
         # Python). Filesystem paths are deferred to init_agent, where the agent's sandbox is
         # available, so a path may resolve differently per agent (host vs. container).
@@ -164,11 +186,10 @@ class AgentSkills(Plugin):
         self._dynamic_skills: weakref.WeakKeyDictionary[Agent, dict[str, dict[str, Skill]]] = (
             weakref.WeakKeyDictionary()
         )
-        self._dynamic_locks: weakref.WeakKeyDictionary[Agent, asyncio.Lock] = weakref.WeakKeyDictionary()
         super().__init__()
         # Both variants publish the tool name ``skills``; keep the one matching the mode. ``__name__``
         # is the defining method's name (functools.update_wrapper copies it onto the decorated tool).
-        unwanted_method = "skills" if dynamic_loading else "manage_skills"
+        unwanted_method = "skills" if self._source_kinds else "manage_skills"
         self._tools = [
             registered for registered in self._tools if getattr(registered, "__name__", None) != unwanted_method
         ]
@@ -234,7 +255,8 @@ class AgentSkills(Plugin):
         available_skills section of your system prompt. Use "load" to add skills from a
         source you discovered, for example a skills/ folder inside a repository you cloned;
         they then appear in available_skills and are activated the same way. Loading the same
-        source again refreshes it. Use "unload" with the same source to remove them.
+        source again refreshes it. Use "unload" with the same source to remove them from
+        available_skills; instructions you already activated stay in the conversation.
 
         Args:
             action: "activate" to get a skill's instructions, "load" to add skills from source,
@@ -242,23 +264,29 @@ class AgentSkills(Plugin):
             skill_name: Name of the skill to activate (required for "activate").
             source: Required for "load" and "unload". A path in your sandbox to a skill directory
                 (containing SKILL.md), a parent directory of skill directories, or a SKILL.md file;
-                or an https:// URL to raw SKILL.md content.
+                or an https:// URL to raw SKILL.md content. Only the kinds enabled for this agent
+                are accepted.
             tool_context: Injected by the framework. Not user-facing.
         """
         agent = tool_context.agent
         if action == "activate":
             return await self._activate_skill(agent, skill_name)
 
-        source = source.strip()
+        source = _source_key(source.strip())
         if not source:
             return f"Error: action '{action}' requires a source (a sandbox path or an https:// URL)."
 
         if action == "unload":
             removed = await self._unload_dynamic_source(agent, source)
             if not removed:
-                loaded_sources = ", ".join(self._dynamic_sources(agent)) or "none"
+                loaded_sources = ", ".join(self._dynamic_skills.get(agent, {})) or "none"
                 return f"No skills are loaded from '{source}'. Currently loaded sources: {loaded_sources}."
             return f"Unloaded {len(removed)} skill(s) from '{source}': {', '.join(skill.name for skill in removed)}."
+
+        kind = _source_kind(source)
+        if kind not in self._source_kinds:
+            allowed = " and ".join(_KIND_LABELS[k] for k in sorted(self._source_kinds))
+            return f"Error: loading skills from {_KIND_LABELS[kind]} is not enabled for this agent; only {allowed}."
 
         previous = {skill.name for skill in self._dynamic_skills.get(agent, {}).get(source, {}).values()}
         loaded = await self._load_dynamic_source(agent, source)
@@ -286,44 +314,45 @@ class AgentSkills(Plugin):
 
         Loading a source again replaces what it contributed before (a source that no longer
         loads anything is dropped). The source list is recorded in ``agent.state``.
+
+        The shared per-agent map is only touched between awaits, so concurrent calls (several
+        tool calls in one turn, or across event loops) interleave safely without a lock.
         """
-        async with self._dynamic_lock(agent):
-            await self._restore_dynamic_sources(agent)
-            loaded = await self._load_source(agent, source)
-            dynamic = self._dynamic_skills[agent]
-            previous = dynamic.pop(source, None)
-            if loaded:
-                dynamic[source] = loaded
-            if loaded or previous:
-                self._persist_dynamic_sources(agent)
-                self._inject_skills(agent)
+        source = _source_key(source)
+        await self._restore_dynamic_sources(agent)
+        loaded = await self._load_source(agent, source)
+        dynamic = self._dynamic_skills[agent]
+        previous = dynamic.pop(source, None)
+        if loaded:
+            dynamic[source] = loaded
+        if loaded or previous:
+            self._set_state_field(agent, "dynamic_sources", list(dynamic))
+            self._inject_skills(agent)
         return list(loaded.values())
 
     async def _unload_dynamic_source(self, agent: Agent, source: str) -> list[Skill]:
-        """Remove the skills previously loaded from a source; a no-op for an unknown source."""
-        async with self._dynamic_lock(agent):
-            await self._restore_dynamic_sources(agent)
-            removed = self._dynamic_skills[agent].pop(source, None)
-            if not removed:
-                return []
-            self._persist_dynamic_sources(agent)
-            self._inject_skills(agent)
+        """Remove the skills previously loaded from a source; a no-op for an unknown source.
+
+        Only the available skill set changes: skills the agent already activated keep their
+        place in the conversation and in the ``activated_skills`` state record.
+        """
+        source = _source_key(source)
+        await self._restore_dynamic_sources(agent)
+        dynamic = self._dynamic_skills[agent]
+        removed = dynamic.pop(source, None)
+        if not removed:
+            return []
+        self._set_state_field(agent, "dynamic_sources", list(dynamic))
+        self._inject_skills(agent)
         return list(removed.values())
-
-    def _dynamic_lock(self, agent: Agent) -> asyncio.Lock:
-        """Return the per-agent lock serializing runtime load/unload/restore."""
-        lock = self._dynamic_locks.get(agent)
-        if lock is None:
-            lock = self._dynamic_locks[agent] = asyncio.Lock()
-        return lock
-
-    def _dynamic_sources(self, agent: Agent) -> list[str]:
-        """Return the sources the agent has loaded skills from, in load order."""
-        return list(self._dynamic_skills.get(agent, {}))
 
     async def _load_source(self, agent: Agent, source: str) -> dict[str, Skill]:
         """Load skills from an ``https://`` URL or a sandbox path; failures are logged and yield nothing."""
-        if not source.startswith("https://"):
+        kind = _source_kind(source)
+        if kind not in self._source_kinds:
+            logger.warning("source=<%s> | loading skills from %s is not enabled", source, _KIND_LABELS[kind])
+            return {}
+        if kind == "sandbox":
             return await self._load_skills_from_path(agent.sandbox, source)
         try:
             # Skill.from_url blocks on urllib; keep the event loop free while it fetches.
@@ -333,32 +362,29 @@ class AgentSkills(Plugin):
             return {}
         return {skill.name: skill}
 
-    def _persist_dynamic_sources(self, agent: Agent) -> None:
-        """Record the agent's loaded sources in agent state."""
-        self._set_state_field(agent, "dynamic_sources", self._dynamic_sources(agent))
-
     async def _restore_dynamic_sources(self, agent: Agent) -> None:
         """Re-load the dynamic sources recorded in agent state, once per agent.
 
         Runs on first use (hook or programmatic call) rather than in ``init_agent`` because
-        session managers replace ``agent.state`` after plugins are initialized. Only restores when
-        ``dynamic_loading`` is enabled, so turning the flag off also stops previously loaded
-        content from coming back. A source that no longer loads (for example a path missing from
-        a fresh sandbox) is skipped with a warning.
+        session managers replace ``agent.state`` after plugins are initialized. Only restores
+        source kinds that ``dynamic_loading`` still allows, so turning a kind off also stops
+        previously loaded content from coming back. A source that no longer loads (for example a
+        path missing from a fresh sandbox) is skipped with a warning.
         """
         if agent in self._dynamic_skills:
             return
-        self._dynamic_skills[agent] = {}
-        if not self._dynamic_loading:
-            return
-        state_data = agent.state.get(self._state_key)
-        sources = state_data.get("dynamic_sources", []) if isinstance(state_data, dict) else []
-        for source in sources if isinstance(sources, list) else []:
-            loaded = await self._load_source(agent, str(source))
-            if loaded:
-                self._dynamic_skills[agent][str(source)] = loaded
-            else:
-                logger.warning("source=<%s> | recorded dynamic skill source could not be restored", source)
+        restored: dict[str, dict[str, Skill]] = {}
+        if self._source_kinds:
+            state_data = agent.state.get(self._state_key)
+            sources = state_data.get("dynamic_sources", []) if isinstance(state_data, dict) else []
+            for source in sources if isinstance(sources, list) else []:
+                loaded = await self._load_source(agent, str(source))
+                if loaded:
+                    restored[str(source)] = loaded
+                else:
+                    logger.warning("source=<%s> | recorded dynamic skill source could not be restored", source)
+        # Concurrent first calls may each restore; the first to finish publishes, the rest discard theirs.
+        self._dynamic_skills.setdefault(agent, restored)
 
     @hook
     async def _on_before_invocation(self, event: BeforeInvocationEvent) -> None:
@@ -385,8 +411,7 @@ class AgentSkills(Plugin):
         # after set_available_skills, which clears the per-agent cache.
         if agent not in self._agent_skills:
             await self._load_skill_paths(agent)
-        async with self._dynamic_lock(agent):
-            await self._restore_dynamic_sources(agent)
+        await self._restore_dynamic_sources(agent)
         self._inject_skills(agent)
 
     def _inject_skills(self, agent: Agent) -> None:
