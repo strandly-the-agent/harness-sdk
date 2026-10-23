@@ -990,13 +990,10 @@ export class Agent implements LocalAgent, InvokableAgent {
     // (middleware sees the same shape as for a direct call); only the trackingIds the queue
     // showed are carried over, so a queued message keeps its id in the transcript.
     const messages = this._normalizeInput(args)
-    // An interrupt response continues the interrupted request rather than starting a newer
-    // one, so it never displaces, stops, or cancels anything: it waits as a plain entry and
-    // is handed the turn as soon as the interrupt is the only thing in the way.
+    // A resume continues the interrupted request, so it never displaces, stops, or cancels
+    // anything; and with nothing running to cancel while an interrupt awaits its response, a
+    // 'cancelPrevious' caller parks like 'stopPrevious'.
     const resumesInterrupt = this._extractInterruptResponses(args).length > 0
-    // Nothing is running to cancel while an interrupt awaits its response, so a
-    // 'cancelPrevious' caller parks like 'stopPrevious': the resume yields to it once its
-    // interrupt is settled.
     const mode = resumesInterrupt
       ? 'queue'
       : awaitingResume && strategy === 'cancelPrevious'

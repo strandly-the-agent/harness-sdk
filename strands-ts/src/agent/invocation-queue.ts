@@ -22,6 +22,9 @@ export const CONCURRENT_INVOCATION_MODES = ['throw', 'cancelPrevious', 'stopPrev
  *   displaced and this call runs next.
  * - `'queue'`: wait FIFO; the call runs as its own invocation when the current one
  *   finishes.
+ *
+ * An interrupt response is never a latest-wins caller: it continues the interrupted request,
+ * so it waits as `'queue'` whatever the mode and is handed the turn while the interrupt is open.
  */
 export type ConcurrentInvocationMode = (typeof CONCURRENT_INVOCATION_MODES)[number]
 
@@ -32,7 +35,7 @@ export type PendingInvocationMode = Exclude<ConcurrentInvocationMode, 'throw'>
 export interface PendingInvocation {
   /** Stable identifier for the waiting call, unique per agent (a render key; no API takes it). */
   readonly id: string
-  /** The mode the call waits under. */
+  /** The mode the call waits under. A call carrying interrupt responses always waits as `'queue'`. */
   readonly mode: PendingInvocationMode
   /** When the call entered the queue. */
   readonly submittedAt: Date
