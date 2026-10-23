@@ -47,11 +47,13 @@ describe('interrupt resume and the request invocation', () => {
     expect(invocations[0]!.usage.turnsTaken).toBe(3)
   })
 
-  it('a rejected call while interrupted does not change which invocation the resume joins', async () => {
+  it('a rejected call while interrupted fires no invocation hooks and does not change which invocation the resume joins', async () => {
     const { agent, invocations } = interruptingAgent()
     const interrupted = await agent.invoke('go')
+    const hooksBefore = invocations.length
 
     await expect(agent.invoke('not a resume', { limits: { turns: 5 } })).rejects.toThrow(/interrupted state/)
+    expect(invocations).toHaveLength(hooksBefore)
     await agent.invoke([responseFor(interrupted)])
 
     expect(invocations.at(-1)).toBe(invocations[0])

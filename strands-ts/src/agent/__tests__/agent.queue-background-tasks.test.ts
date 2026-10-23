@@ -111,7 +111,7 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
     await work.started
     // Queue the second caller while the first invocation is still running.
     const second = agent.invoke('second')
-    await until(() => agent._pendingInvocationCount === 1, 'second invocation queued')
+    await until(() => agent.pendingInvocations.length === 1, 'second invocation queued')
 
     // The first invocation resolves WITHOUT the task settling: with a caller queued,
     // AfterInvocation skips both the settlement wait and the delivery continuation.
@@ -127,7 +127,7 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
     work.release()
     const secondResult = await second
     expect(resultText(secondResult)).toBe('delivered')
-    expect(agent._pendingInvocationCount).toBe(0)
+    expect(agent.pendingInvocations).toHaveLength(0)
 
     // Durable history: the queued caller's input precedes the delivery.
     const deliveryIndex = messageIndex(agent, hasBackgroundDelivery)
@@ -198,7 +198,7 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
     const first = agent.invoke('first')
     await firstGate.started
     const second = agent.invoke('second')
-    expect(agent._pendingInvocationCount).toBe(1)
+    expect(agent.pendingInvocations).toHaveLength(1)
 
     // First invocation ends with the background task still working (waitForCompletion: false).
     firstGate.release()
@@ -250,7 +250,7 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
     expect(deliveryInput(agent)).toEqual({ toolName: 'work' })
   })
 
-  it('rejects a queued caller loudly when a background task interrupt ends the running invocation', async () => {
+  it('parks a queued caller behind a background-task interrupt and runs it after the resume', async () => {
     const approval = tool({
       name: 'approval',
       description: 'Wait for approval.',
@@ -284,17 +284,19 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
     const first = agent.invoke('first')
     await holdGate.started
     const second = agent.invoke('second')
-    expect(agent._pendingInvocationCount).toBe(1)
+    expect(agent.pendingInvocations).toHaveLength(1)
     holdGate.release()
 
     const firstResult = await first
     expect(firstResult.stopReason).toBe('interrupt')
 
-    // The queued caller cannot answer someone else's interrupt: it fails loudly rather
-    // than silently absorbing or corrupting the interrupted state.
-    await expect(second).rejects.toThrow(/interrupted state/)
+    // The queued caller cannot answer someone else's interrupt, so it waits for the human:
+    // the agent is idle but the turn is not handed over.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(agent.isInvoking).toBe(false)
+    expect(agent.pendingInvocations).toHaveLength(1)
 
-    // The interrupt remains resumable after the queued caller's rejection.
+    // The resume takes the turn directly; once it completes, the parked caller runs.
     const resumed = await agent.invoke([
       new InterruptResponseContent({
         interruptId: firstResult.interrupts![0]!.id,
@@ -302,6 +304,8 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
       }),
     ])
     expect(resumed.stopReason).toBe('endTurn')
+    expect(resultText(resumed)).toBe('resumed')
+    expect(resultText(await second)).toBe('delivered')
     expect(messageIndex(agent, hasBackgroundDelivery)).toBeGreaterThan(-1)
     expect(persistedTasks(agent)).toBeUndefined()
   })
@@ -345,7 +349,7 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
     // The interrupter runs next; the abandoned fast-task delivery lands inside
     // ITS model pass instead of a resurrected pass of the cancelled invocation.
     await until(() => model.callCount === 3, 'urgent model pass')
-    expect(agent._pendingInvocationCount).toBe(0)
+    expect(agent.pendingInvocations).toHaveLength(0)
     const deliveryIndex = messageIndex(agent, hasBackgroundDelivery)
     const urgentInputIndex = messageIndex(agent, (content) => hasText(content, 'urgent'))
     expect(deliveryIndex).toBeGreaterThan(urgentInputIndex)
@@ -436,7 +440,7 @@ describe('concurrentInvocationMode queue × backgroundTasks', () => {
     const first = agent.invoke('first', sharedOptions)
     await firstGate.started
     const second = agent.invoke('second', sharedOptions)
-    expect(agent._pendingInvocationCount).toBe(1)
+    expect(agent.pendingInvocations).toHaveLength(1)
 
     firstGate.release()
     const firstResult = await first
@@ -603,6 +607,6 @@ describe("concurrentInvocationMode 'stopPrevious' × backgroundTasks", () => {
     expect(resultText(await second)).toBe('delivered')
     expect(deliveryInput(agent)).toEqual({ toolName: 'work', startedBy: 'an earlier request in this conversation' })
     expect(persistedTasks(agent)).toBeUndefined()
-    expect(agent._pendingInvocationCount).toBe(0)
+    expect(agent.pendingInvocations).toHaveLength(0)
   })
 })

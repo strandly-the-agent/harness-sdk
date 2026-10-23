@@ -73,7 +73,7 @@ describe('concurrentInvocationMode', () => {
       await gate.started
       // A typo'd ifBusy must fail loudly, not silently override 'throw' with enqueue semantics.
       await expect(agent.invoke('b', { ifBusy: 'enque' as never })).rejects.toThrow(/Unsupported ifBusy/)
-      expect(agent._pendingInvocationCount).toBe(0)
+      expect(agent.pendingInvocations).toHaveLength(0)
 
       gate.release()
       await first
@@ -126,7 +126,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b', { ifBusy: 'queue' })
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
 
       gate.release()
       // The first invocation was NOT cancelled; both run to completion in order.
@@ -154,7 +154,7 @@ describe('concurrentInvocationMode', () => {
       expect(resultD.stopReason).toBe('endTurn')
       expect(resultText(resultD)).toBe('D')
       // Exactly two invocations ran model passes: the cancelled first and the newest.
-      expect(agent._pendingInvocationCount).toBe(0)
+      expect(agent.pendingInvocations).toHaveLength(0)
     })
 
     it("displacement spares callers queued with ifBusy: 'queue'", async () => {
@@ -168,7 +168,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const waiter = agent.invoke('b', { ifBusy: 'queue' })
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
       const urgent = agent.invoke('c')
 
       expect((await first).stopReason).toBe('cancelled')
@@ -204,7 +204,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b', { ifBusy: 'queue' })
-      await until(() => agent._pendingInvocationCount === 1, 'b to enter the queue')
+      await until(() => agent.pendingInvocations.length === 1, 'b to enter the queue')
 
       gate.release()
       expect(resultText(await first)).toBe('A')
@@ -224,7 +224,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('review the PR')
       await gate.started
       const second = agent.invoke('also check the docs')
-      await until(() => agent._pendingInvocationCount === 1, 'second call to enter the queue')
+      await until(() => agent.pendingInvocations.length === 1, 'second call to enter the queue')
 
       gate.release()
       const [resultA, resultB] = await Promise.all([first, second])
@@ -232,7 +232,7 @@ describe('concurrentInvocationMode', () => {
       expect(resultB.stopReason).toBe('endTurn')
       expect(resultText(resultA)).toBe('A')
       expect(resultText(resultB)).toBe('B')
-      expect(agent._pendingInvocationCount).toBe(0)
+      expect(agent.pendingInvocations).toHaveLength(0)
       expect(agent.isInvoking).toBe(false)
     })
 
@@ -248,9 +248,9 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b')
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
       const third = agent.invoke('c')
-      await until(() => agent._pendingInvocationCount === 2, 'c queued')
+      await until(() => agent.pendingInvocations.length === 2, 'c queued')
 
       gate.release()
       expect(resultText(await second)).toBe('B')
@@ -283,7 +283,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b')
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
 
       gate.release()
       await Promise.all([first, second])
@@ -301,7 +301,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b')
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
 
       gate.release()
       await first
@@ -338,11 +338,11 @@ describe('concurrentInvocationMode', () => {
       await gate.started
       const controller = new AbortController()
       const second = agent.invoke('b', { cancelSignal: controller.signal })
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
 
       controller.abort()
       await expect(second).rejects.toThrow(PendingInvocationCancelledError)
-      expect(agent._pendingInvocationCount).toBe(0)
+      expect(agent.pendingInvocations).toHaveLength(0)
 
       gate.release()
       expect((await first).stopReason).toBe('endTurn')
@@ -365,7 +365,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b')
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
 
       gate.release()
       await expect(first).rejects.toThrow('model exploded')
@@ -391,7 +391,7 @@ describe('concurrentInvocationMode', () => {
         await Promise.race([stream.next(), gate.started])
       }
       const second = agent.invoke('b')
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
 
       // Abandon the stream; the queued return() completes once the tool unblocks.
       const abandoned = stream.return(undefined as never)
@@ -412,7 +412,7 @@ describe('concurrentInvocationMode', () => {
       await gate.started
       void agent.stream('never consumed')
       await until(() => true, 'noop')
-      expect(agent._pendingInvocationCount).toBe(0)
+      expect(agent.pendingInvocations).toHaveLength(0)
 
       gate.release()
       await first
@@ -444,7 +444,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b')
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
 
       agent.cancel()
       const resultA = await first
@@ -487,9 +487,9 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b')
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
       const interrupter = agent.invoke('c', { ifBusy: 'cancelPrevious' })
-      await until(() => agent._pendingInvocationCount === 2, 'c queued at front')
+      await until(() => agent.pendingInvocations.length === 2, 'c queued at front')
 
       expect((await first).stopReason).toBe('cancelled')
       expect(resultText(await interrupter)).toBe('C')
@@ -516,7 +516,7 @@ describe('concurrentInvocationMode', () => {
       const first = agent.invoke('a')
       await gate.started
       const second = agent.invoke('b')
-      await until(() => agent._pendingInvocationCount === 1, 'b queued')
+      await until(() => agent.pendingInvocations.length === 1, 'b queued')
       gate.release()
 
       // Submitting from the predecessor's .then() lands in the handoff window: b owns

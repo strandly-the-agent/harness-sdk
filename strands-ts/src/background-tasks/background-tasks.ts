@@ -272,7 +272,7 @@ export class BackgroundTasks implements Plugin {
     while (
       this._config.waitForCompletion !== false &&
       !agent.cancelSignal.aborted &&
-      agent._pendingInvocationCount === 0 &&
+      agent.pendingInvocations.length === 0 &&
       !tasks.some((task) => task.status === 'input_required') &&
       tasks.some((task) => !isTaskStatusTerminal(task.status))
     ) {
@@ -285,7 +285,7 @@ export class BackgroundTasks implements Plugin {
     }
     // A pending caller takes priority over settlement and delivery: it takes the turn,
     // and task results stay persisted to be delivered in a later invocation's passes.
-    if (agent._pendingInvocationCount > 0) return
+    if (agent.pendingInvocations.length > 0) return
     this._deliverReady(event, tasks)
   }
 
@@ -303,7 +303,7 @@ export class BackgroundTasks implements Plugin {
     })
     let detachEnqueued = (): void => {}
     const enqueued = new Promise<void>((resolve) => {
-      if (agent._pendingInvocationCount > 0) {
+      if (agent.pendingInvocations.length > 0) {
         resolve()
       } else {
         detachEnqueued = agent._onInvocationEnqueued(resolve)

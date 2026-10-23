@@ -79,7 +79,7 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     const first = agent.invoke('a')
     await gate.started
     const second = agent.invoke('b')
-    await until(() => agent._pendingInvocationCount === 1, 'second queued')
+    await until(() => agent.pendingInvocations.length === 1, 'second queued')
 
     // The running invocation is not cancelled: its tool keeps running until released.
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -246,7 +246,7 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     await gate.started
     const controller = new AbortController()
     const second = agent.invoke('b', { cancelSignal: controller.signal })
-    await until(() => agent._pendingInvocationCount === 1, 'second queued')
+    await until(() => agent.pendingInvocations.length === 1, 'second queued')
     controller.abort()
     await expect(second).rejects.toThrow(PendingInvocationCancelledError)
 
@@ -269,7 +269,7 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
       afterPasses++
       second ??= agent.invoke('b')
       // Mirrors a plugin that resumes while its condition holds — here, while a caller waits.
-      if (agent._pendingInvocationCount > 0) event.resume = []
+      if (agent.pendingInvocations.length > 0) event.resume = []
     })
 
     const firstResult = await agent.invoke('a')
@@ -306,7 +306,7 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
     const first = agent.invoke('a')
     await modelStarted
     const second = agent.invoke('b')
-    await until(() => agent._pendingInvocationCount === 1, 'second queued')
+    await until(() => agent.pendingInvocations.length === 1, 'second queued')
     releaseModel()
 
     expect((await first).stopReason).toBe('superseded')
@@ -390,5 +390,62 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
       'user: b',
       'assistant: B',
     ])
+  })
+
+  it('a stopPrevious caller parked behind an interrupt runs after the resume, which stops once its pending tool ran', async () => {
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'confirm', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'B' })
+    const confirm = tool({
+      name: 'confirm',
+      description: 'Asks for confirmation',
+      callback: (_input, context) => `got ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+    })
+    const agent = new Agent({ model, tools: [confirm], printer: false, concurrentInvocationMode: 'stopPrevious' })
+
+    const interrupted = await agent.invoke('a')
+    expect(interrupted.stopReason).toBe('interrupt')
+    const second = agent.invoke('b')
+    await until(() => agent.pendingInvocations.length === 1, 'second parked')
+    // The parked caller is not handed the turn while the interrupt awaits its answer.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(agent.isInvoking).toBe(false)
+
+    const resumed = await agent.invoke([
+      new InterruptResponseContent({ interruptId: interrupted.interrupts![0]!.id, response: 'yes' }),
+    ])
+
+    expect(resumed.stopReason).toBe('superseded')
+    expect(resultText(await second)).toBe('B')
+    expect(historyShape(agent)).toEqual([
+      'user: a',
+      'assistant: <toolUseBlock>',
+      'user: <toolResult>',
+      'assistant: Superseded by a new request',
+      'user: b',
+      'assistant: B',
+    ])
+  })
+
+  it('abandoning an interrupt via loadSnapshot releases the parked callers', async () => {
+    const model = new MockMessageModel()
+      .addTurn({ type: 'toolUseBlock', name: 'confirm', toolUseId: 't1', input: {} })
+      .addTurn({ type: 'textBlock', text: 'B' })
+    const confirm = tool({
+      name: 'confirm',
+      description: 'Asks for confirmation',
+      callback: (_input, context) => `got ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+    })
+    const agent = new Agent({ model, tools: [confirm], printer: false, concurrentInvocationMode: 'queue' })
+
+    const clean = agent.takeSnapshot({ preset: 'session' })
+    await agent.invoke('a')
+    const second = agent.invoke('b')
+    await until(() => agent.pendingInvocations.length === 1, 'second parked')
+
+    agent.loadSnapshot(clean)
+
+    expect(resultText(await second)).toBe('B')
+    expect(historyShape(agent)).toEqual(['user: b', 'assistant: B'])
   })
 })

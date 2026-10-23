@@ -27,8 +27,15 @@ export type ConcurrentInvocationMode = (typeof CONCURRENT_INVOCATION_MODES)[numb
 /** Concurrency modes under which a busy-time call waits in the queue. */
 export type PendingInvocationMode = Exclude<ConcurrentInvocationMode, 'throw'>
 
-interface QueueEntry {
+/** A call waiting for the agent's turn, as listed by `agent.pendingInvocations`. Read-only. */
+export interface PendingInvocation {
+  /** The mode the call waits under. */
   readonly mode: PendingInvocationMode
+  /** When the call entered the queue. */
+  readonly submittedAt: Date
+}
+
+interface QueueEntry extends PendingInvocation {
   signal?: AbortSignal
   resolve: () => void
   reject: (error: Error) => void
@@ -69,6 +76,11 @@ export class InvocationQueue {
     return this._entries.length
   }
 
+  /** Point-in-time view of the queued calls, in run order. */
+  list(): readonly PendingInvocation[] {
+    return this._entries.map(({ mode, submittedAt }) => Object.freeze({ mode, submittedAt }))
+  }
+
   /**
    * Registers a listener invoked whenever an invocation enters the queue.
    *
@@ -94,6 +106,7 @@ export class InvocationQueue {
     return new Promise<void>((resolve, reject) => {
       const entry: QueueEntry = {
         mode: options.mode,
+        submittedAt: new Date(),
         resolve,
         reject,
         cleanup: () => {},

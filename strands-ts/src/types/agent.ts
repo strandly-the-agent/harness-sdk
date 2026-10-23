@@ -9,7 +9,7 @@ import type { Checkpoint, CheckpointResumeContent } from '../experimental/checkp
 import type { AgentTrace } from '../telemetry/tracer.js'
 import type { Snapshot } from './snapshot.js'
 import type { TakeSnapshotOptions } from '../agent/snapshot.js'
-import type { ConcurrentInvocationMode } from '../agent/invocation-queue.js'
+import type { ConcurrentInvocationMode, PendingInvocation } from '../agent/invocation-queue.js'
 import type {
   BeforeInvocationEvent,
   AfterInvocationEvent,
@@ -347,6 +347,9 @@ export interface LocalAgent {
    * The system prompt to pass to the model provider.
    */
   systemPrompt?: SystemPrompt
+
+  /** Calls waiting for the agent's turn, in run order. Read-only; see `Agent.pendingInvocations`. */
+  readonly pendingInvocations: readonly PendingInvocation[]
 
   /**
    * The cancellation signal for the current invocation.
