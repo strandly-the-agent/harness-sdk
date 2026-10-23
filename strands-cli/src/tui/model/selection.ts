@@ -8,6 +8,9 @@ import { providerModelExists, type ProviderModelDiscovery } from '../provider/di
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 const OPENAI_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
 const GOOGLE_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const
+// Gemini 4 Argon and 3.8 Flash (and the deprecated 3.7 Flash alias) take no `minimal`; mirrors the harness.
+const GOOGLE_NO_MINIMAL_FAMILIES = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash']
+const GOOGLE_NO_MINIMAL_EFFORTS = ['low', 'medium', 'high'] as const
 const BEDROCK_GPT_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const BEDROCK_GPT_OSS_EFFORTS = ['low', 'medium', 'high'] as const
 const BEDROCK_QWEN_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
@@ -131,7 +134,10 @@ function effortLevels(modelId: string): readonly string[] {
     return OPENAI_EFFORTS
   }
   if (target.provider === 'google') {
-    return GOOGLE_EFFORTS
+    const family = target.modelId.replace(/^models\//u, '')
+    return GOOGLE_NO_MINIMAL_FAMILIES.some((prefix) => family.startsWith(prefix))
+      ? GOOGLE_NO_MINIMAL_EFFORTS
+      : GOOGLE_EFFORTS
   }
   const family = target.modelId.replace(/^(?:global|apac|us-gov|us|eu|au|jp)\./, '')
   if (family.startsWith('anthropic.')) {

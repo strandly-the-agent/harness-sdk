@@ -93,6 +93,10 @@ const BEDROCK_GPT_OSS_LEVELS = ['low', 'medium', 'high'] as const
 const BEDROCK_QWEN_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const BEDROCK_XAI_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const
 const GOOGLE_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
+// Gemini 4 Argon and 3.8 Flash (and the deprecated 3.7 Flash alias, routed to 3.8) document
+// `thinking_level` low/medium/high only; `minimal` is a request error there.
+const GOOGLE_NO_MINIMAL_FAMILIES = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash']
+const GOOGLE_NO_MINIMAL_LEVELS = ['low', 'medium', 'high'] as const
 const NO_THINKING_LEVELS: readonly string[] = []
 
 const ADAPTIVE_THINKING_SINCE: Record<string, [number, number]> = { opus: [4, 6], sonnet: [4, 6], haiku: [5, 5] }
@@ -154,6 +158,13 @@ function claudeThinkingBlock(modelId: string, effort: string, maxTokens: number)
 function bedrockFamily(modelId: string): string {
   const unprefixed = BEDROCK_REGION_PREFIXES.find((prefix) => modelId.startsWith(prefix))
   return unprefixed ? modelId.slice(unprefixed.length) : modelId
+}
+
+function googleLevels(modelId: string): readonly string[] {
+  const family = modelId.replace(/^models\//u, '')
+  return GOOGLE_NO_MINIMAL_FAMILIES.some((prefix) => family.startsWith(prefix))
+    ? GOOGLE_NO_MINIMAL_LEVELS
+    : GOOGLE_LEVELS
 }
 
 function bedrockLevels(modelId: string): readonly string[] {
@@ -467,17 +478,20 @@ export async function resolveModel(
     )
   }
 
-  const claudeDirectWithoutAdaptive = providerName === 'anthropic' && claudeThinkingMode(name) === null
+  let levels = provider.levels
+  let recommended = provider.recommended
+  let subject = 'this provider'
+  if (providerName === 'anthropic' && claudeThinkingMode(name) === null) {
+    levels = NO_THINKING_LEVELS
+    recommended = null
+    subject = `model ${name}`
+  } else if (providerName === 'google') {
+    levels = googleLevels(name)
+    subject = `model ${name}`
+  }
   return provider.build(
     name,
-    providerName === 'bedrock'
-      ? bedrockEffort(name, effort)
-      : resolveEffort(
-          effort,
-          claudeDirectWithoutAdaptive ? null : provider.recommended,
-          claudeDirectWithoutAdaptive ? NO_THINKING_LEVELS : provider.levels,
-          claudeDirectWithoutAdaptive ? `model ${name}` : 'this provider'
-        ),
+    providerName === 'bedrock' ? bedrockEffort(name, effort) : resolveEffort(effort, recommended, levels, subject),
     nativeSearch,
     caching && provider.caching && !unsupportedCaching
   )

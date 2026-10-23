@@ -98,6 +98,10 @@ _BEDROCK_QWEN_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "ma
 _BEDROCK_XAI_LEVELS = ("low", "medium", "high", "xhigh")
 _BEDROCK_NOVA_LEVELS = ("low", "medium", "high")
 _GOOGLE_LEVELS = ("minimal", "low", "medium", "high")
+# Gemini 4 Argon and 3.8 Flash (and the deprecated 3.7 Flash alias, routed to 3.8) document
+# ``thinking_level`` low/medium/high only; ``minimal`` is a request error there.
+_GOOGLE_NO_MINIMAL_FAMILIES = ("gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash")
+_GOOGLE_NO_MINIMAL_LEVELS = ("low", "medium", "high")
 
 _ADAPTIVE_THINKING_SINCE = {"opus": (4, 6), "sonnet": (4, 6), "haiku": (5, 5)}
 _EXTENDED_THINKING_SINCE = {"opus": (4, 5), "sonnet": (4, 5), "haiku": (4, 5)}
@@ -139,6 +143,12 @@ def _claude_thinking_block(model_id: str, effort: str, max_tokens: int) -> dict:
     if _claude_thinking_mode(model_id) == "extended":
         return _claude_extended_thinking(effort, max_tokens)
     return _claude_thinking(effort)
+
+
+def _google_levels(model_id: str) -> tuple[str, ...]:
+    if model_id.removeprefix("models/").startswith(_GOOGLE_NO_MINIMAL_FAMILIES):
+        return _GOOGLE_NO_MINIMAL_LEVELS
+    return _GOOGLE_LEVELS
 
 
 def _bedrock_family(model_id: str) -> str:
@@ -484,6 +494,8 @@ def resolve_model(
     subject = "this provider"
     if provider_name == "anthropic" and _claude_thinking_mode(name) is None:
         levels, recommended, subject = (), None, f"model {name}"
+    elif provider_name == "google":
+        levels, subject = _google_levels(name), f"model {name}"
     level = (
         _bedrock_effort(name, effort) if provider_name == "bedrock" else _effort(effort, recommended, levels, subject)
     )

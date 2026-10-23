@@ -11,6 +11,7 @@ import {
   profileEffort,
   resolveModelTarget,
   effortDisplayLabel,
+  effortOptions,
   validateModelSelection,
   type EffortInput,
 } from '../src/tui/model/selection.js'
@@ -219,6 +220,17 @@ describe('AgentModelRuntime thinking controls', () => {
 
     expect(offered.length).toBeGreaterThan(0)
     expect(rejected).toEqual([])
+  })
+
+  it.each([
+    ['google/gemini-4-argon', ['low', 'medium', 'high']],
+    ['google/gemini-3.8-flash', ['low', 'medium', 'high']],
+    ['google/gemini-3.7-flash', ['low', 'medium', 'high']],
+    ['google/models/gemini-4-argon', ['low', 'medium', 'high']],
+    ['google/gemini-3.6-flash', ['minimal', 'low', 'medium', 'high']],
+    ['google/gemini-3.5-flash-lite', ['minimal', 'low', 'medium', 'high']],
+  ])('offers the Gemini effort levels the harness accepts for %s', (modelId, expected) => {
+    expect(effortOptions(modelId, 'auto').map((option) => option.id)).toEqual(expected)
   })
 
   it('offers Astra effort levels with High selected by default', () => {
