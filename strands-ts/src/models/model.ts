@@ -28,12 +28,15 @@ import { MaxTokensError, ModelError, normalizeError } from '../errors.js'
 import type { Redaction } from '../hooks/events.js'
 import { logger } from '../logging/logger.js'
 import { DEFAULT_CONTEXT_WINDOW_LIMIT, getContextWindowLimit } from './defaults.js'
-import { mergeModelInfo, type ModelInfo } from './model-info.js'
+import { lookupModelInfo, mergeModelInfo, type ModelInfo } from './model-info.js'
 import { warnOnce } from '../logging/warn-once.js'
 
 /**
- * Resolves model metadata fields on a config object from built-in lookup tables
+ * Resolves model metadata fields on a config object from the shared model info
  * when not explicitly set. Explicit values pass through unchanged.
+ *
+ * Kept so `getConfig().contextWindowLimit` keeps its documented value; `Model.info` resolves
+ * the same fact without it, and this will go once callers read `info`.
  *
  * @internal
  * @param config - The stored model config
@@ -207,19 +210,17 @@ export interface BaseModelConfig {
   /**
    * Maximum context window size in tokens for the model.
    *
-   * This value represents the total token capacity shared between input and output.
-   * When not provided, it is automatically resolved from a built-in lookup table
-   * based on the configured model ID. An explicit value always takes precedence.
-   *
-   * When `modelId` is changed via `updateConfig()`, this value is automatically
-   * re-resolved if it was initially auto-populated. Explicitly set values are preserved.
+   * The same fact as `info.limits.contextWindow`; setting it here is shorthand for setting it
+   * through `info`, and it wins over the shared model info and the provider's declaration.
+   * When not provided, vended providers still populate it from the shared model info for
+   * callers that read `getConfig()`; `info` is the resolved view to read.
    */
   contextWindowLimit?: number
 
   /**
-   * Overrides for what the SDK knows about the model. Fields set here win over what the
-   * provider declares. `updateConfig({ info })` replaces the previous override entirely, it does
-   * not merge into it.
+   * Overrides for what the SDK knows about the model. Fields set here win over the shared model
+   * info and what the provider declares. `updateConfig({ info })` replaces the previous override
+   * entirely, it does not merge into it.
    */
   info?: ModelInfo
 }
@@ -357,8 +358,9 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   }
 
   /**
-   * What this provider knows about the configured model. Override to declare capabilities and
-   * limits; leave out anything unknown. Users override the result through the `info` config key.
+   * What this provider knows about the configured model beyond the shared model info: facts that
+   * depend on how the provider talks to it, derived from its config and wire API. Leave out
+   * anything unknown. Users override the result through the `info` config key.
    *
    * @returns What the provider knows, empty by default
    */
@@ -367,14 +369,15 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   }
 
   /**
-   * Everything the SDK knows about the configured model, resolved on each read from
-   * {@link declareInfo}, then the `contextWindowLimit` config value, then the `info` config
-   * override, in that order of precedence. Each read returns a new frozen record, so do not
-   * compare reads by reference.
+   * Everything the SDK knows about the configured model, resolved on each read. Layers, later
+   * ones winning: the shared model info for `modelId`, what this provider declares through
+   * {@link declareInfo}, the `contextWindowLimit` config value, and the `info` config override.
+   * Each read returns a new frozen record, so do not compare reads by reference.
    */
   get info(): ModelInfo {
     const config = this.getConfig()
     return mergeModelInfo(
+      lookupModelInfo(config.modelId ?? ''),
       { capabilities: { stateful: this.stateful } },
       this.declareInfo(),
       { limits: { contextWindow: config.contextWindowLimit } },

@@ -39,7 +39,7 @@ import {
   type CacheTTL,
   type StreamOptions,
 } from './model.js'
-import { lookupModelInfo, type ModelInfo } from './model-info.js'
+import type { ModelInfo } from './model-info.js'
 import { resolveOpenAICache, warnUnsupportedRetention } from './openai/cache.js'
 import {
   ModelContentBlockDeltaEvent,
@@ -155,10 +155,10 @@ export class VercelModel extends Model<VercelModelConfig> {
   }
 
   /**
-   * Declares what this provider knows about the wrapped model: Anthropic and Claude on Bedrock take
-   * cache points, OpenAI caches automatically.
+   * Declares what depends on the wrapped ai-sdk provider: Anthropic takes cache points and OpenAI
+   * caches automatically. Model facts come from the shared model info by `modelId`.
    *
-   * @returns The declared capabilities for the wrapped model
+   * @returns The declared capabilities for the wrapped provider
    */
   protected override declareInfo(): ModelInfo {
     switch (this._provider.provider.split('.')[0]) {
@@ -166,8 +166,6 @@ export class VercelModel extends Model<VercelModelConfig> {
         return { capabilities: { promptCaching: 'cachePoints' } }
       case 'openai':
         return { capabilities: { promptCaching: 'automatic' } }
-      case 'amazon-bedrock':
-        return lookupModelInfo(this._provider.modelId)
       default:
         return {}
     }

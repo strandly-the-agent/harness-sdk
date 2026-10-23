@@ -59,7 +59,6 @@ import {
   resolveCacheSection,
   resolveConfigMetadata,
 } from '../models/model.js'
-import { lookupModelInfo, type ModelInfo } from '../models/model-info.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import type { ContentBlock, Message, ReasoningBlock, StopReason, ToolUseBlock } from '../types/messages.js'
 import type { AudioSource, ImageSource, VideoSource, DocumentSource } from '../types/media.js'
@@ -508,15 +507,6 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    */
   private _getCacheStrategy(): 'anthropic' | null {
     return this.info.capabilities?.promptCaching === 'cachePoints' ? 'anthropic' : null
-  }
-
-  /**
-   * Declares what the shared model data knows about the configured model (Claude models take cache points).
-   *
-   * @returns The declared capabilities for the configured model id
-   */
-  protected override declareInfo(): ModelInfo {
-    return lookupModelInfo(this._config.modelId ?? '')
   }
 
   /**

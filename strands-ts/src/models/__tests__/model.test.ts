@@ -1172,6 +1172,33 @@ describe('info', () => {
     expect(provider.info).toEqual({ capabilities: { stateful: false } })
   })
 
+  it('resolves facts from the shared model info for any provider by modelId', () => {
+    const provider = new TestModelProvider()
+    provider.updateConfig({ modelId: 'us.anthropic.claude-sonnet-4-6' })
+
+    expect(provider.info.limits?.contextWindow).toBe(1_000_000)
+    expect(provider.info.capabilities?.promptCaching).toBe('cachePoints')
+  })
+
+  it('lets the provider declaration win over the shared model info', () => {
+    class DeclaringProvider extends TestModelProvider {
+      protected override declareInfo() {
+        return { limits: { contextWindow: 8_000 } }
+      }
+    }
+    const provider = new DeclaringProvider()
+    provider.updateConfig({ modelId: 'claude-sonnet-4-6' })
+
+    expect(provider.info.limits?.contextWindow).toBe(8_000)
+  })
+
+  it('lets the info override win over contextWindowLimit', () => {
+    const provider = new TestModelProvider()
+    provider.updateConfig({ contextWindowLimit: 50_000, info: { limits: { contextWindow: 10_000 } } })
+
+    expect(provider.info.limits?.contextWindow).toBe(10_000)
+  })
+
   it('takes the context window from the config', () => {
     const provider = new TestModelProvider()
     provider.updateConfig({ contextWindowLimit: 50_000 })
