@@ -36,7 +36,10 @@ export interface PendingInvocation {
   readonly mode: PendingInvocationMode
   /** When the call entered the queue. */
   readonly submittedAt: Date
-  /** The call's input, normalized to the messages it will append when it runs. */
+  /**
+   * The call's input, normalized to the messages it will append when it runs (empty for
+   * interrupt-response and checkpoint-resume input). Ids are unique per agent, not globally.
+   */
   readonly messages: readonly Message[]
 }
 
@@ -85,7 +88,7 @@ export class InvocationQueue {
   /** Point-in-time view of the queued calls, in run order. */
   list(): readonly PendingInvocation[] {
     return this._entries.map(({ id, mode, submittedAt, messages }) =>
-      Object.freeze({ id, mode, submittedAt: new Date(submittedAt), messages })
+      Object.freeze({ id, mode, submittedAt: new Date(submittedAt), messages: Object.freeze([...messages]) })
     )
   }
 

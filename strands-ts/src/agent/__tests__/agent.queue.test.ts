@@ -3,8 +3,9 @@ import { Agent } from '../agent.js'
 import { AfterInvocationEvent, BeforeInvocationEvent } from '../../hooks/index.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { tool } from '../../tools/tool-factory.js'
-import { ConcurrentInvocationError, PendingInvocationCancelledError } from '../../errors.js'
+import { CheckpointError, ConcurrentInvocationError, PendingInvocationCancelledError } from '../../errors.js'
 import { Message, TextBlock } from '../../types/messages.js'
+import type { InvokeArgs } from '../../types/agent.js'
 
 /**
  * A tool whose callback suspends until `release()` is called, so tests can hold an
@@ -356,6 +357,33 @@ describe('concurrentInvocationMode', () => {
 
       await Promise.all([first, second, third])
       expect(agent.pendingInvocations).toHaveLength(0)
+    })
+
+    it('runs a queued call on its raw input: MessageData is appended as given and a checkpoint resume is still recognized', async () => {
+      const gate = createGate()
+      const model = new MockMessageModel()
+        .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
+        .addTurn({ type: 'textBlock', text: 'A' })
+        .addTurn({ type: 'textBlock', text: 'B' })
+      const agent = new Agent({ model, tools: [gate.tool], printer: false, concurrentInvocationMode: 'queue' })
+
+      const first = agent.invoke('a')
+      await gate.started
+      const second = agent.invoke([{ role: 'user', content: [{ type: 'textBlock', text: 'b' }] }] as InvokeArgs)
+      // A queued checkpoint resume normalizes to no messages for display, but still reaches
+      // the checkpoint validation when it runs (checkpointing is off here, so it rejects).
+      const resume = agent.invoke({ checkpointResume: { checkpoint: {} } } as unknown as InvokeArgs)
+      await until(() => agent.pendingInvocations.length === 2, 'both queued')
+      expect(agent.pendingInvocations[0]!.messages.map((message) => (message.content[0] as TextBlock).text)).toEqual([
+        'b',
+      ])
+      expect(agent.pendingInvocations[1]!.messages).toEqual([])
+
+      gate.release()
+      await first
+      expect(resultText(await second)).toBe('B')
+      await expect(resume).rejects.toThrow(CheckpointError)
+      expect(agent.messages.some((message) => (message.content[0] as TextBlock).text === 'b')).toBe(true)
     })
 
     it('rejects a blank prompt at enqueue time without disturbing the running invocation', async () => {
