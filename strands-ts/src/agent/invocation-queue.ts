@@ -30,7 +30,7 @@ export type PendingInvocationMode = Exclude<ConcurrentInvocationMode, 'throw'>
 
 /** A call waiting for the agent's turn, as listed by `agent.pendingInvocations`. Read-only. */
 export interface PendingInvocation {
-  /** Stable identifier for the waiting call (a render key; there is no API that takes it). */
+  /** Stable identifier for the waiting call, unique per agent (a render key; no API takes it). */
   readonly id: string
   /** The mode the call waits under. */
   readonly mode: PendingInvocationMode
@@ -38,12 +38,14 @@ export interface PendingInvocation {
   readonly submittedAt: Date
   /**
    * The call's input, normalized to the messages it will append when it runs (empty for
-   * interrupt-response and checkpoint-resume input). Ids are unique per agent, not globally.
+   * interrupt-response and checkpoint-resume input).
    */
   readonly messages: readonly Message[]
 }
 
 interface QueueEntry extends PendingInvocation {
+  /** Whether the call carries interrupt responses, so it may run while an interrupt awaits one. */
+  readonly resumesInterrupt: boolean
   signal?: AbortSignal
   resolve: () => void
   reject: (error: Error) => void
@@ -116,6 +118,7 @@ export class InvocationQueue {
   wait(options: {
     mode: PendingInvocationMode
     messages: readonly Message[]
+    resumesInterrupt: boolean
     cancelSignal?: AbortSignal
   }): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -124,6 +127,7 @@ export class InvocationQueue {
         mode: options.mode,
         submittedAt: new Date(),
         messages: options.messages,
+        resumesInterrupt: options.resumesInterrupt,
         resolve,
         reject,
         cleanup: () => {},
@@ -158,6 +162,21 @@ export class InvocationQueue {
     if (!next) return false
     next.cleanup()
     next.resolve()
+    return true
+  }
+
+  /**
+   * Hands the invocation lock to the first queued call that carries interrupt responses,
+   * if any — the only kind of call that may run while an interrupt awaits its answer.
+   *
+   * @returns `true` when such a waiter took ownership
+   */
+  handoffResume(): boolean {
+    const index = this._entries.findIndex((queued) => queued.resumesInterrupt)
+    if (index === -1) return false
+    const [next] = this._entries.splice(index, 1)
+    next!.cleanup()
+    next!.resolve()
     return true
   }
 

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { Agent } from '../agent.js'
-import { AfterInvocationEvent, BeforeInvocationEvent } from '../../hooks/index.js'
+import { AfterInvocationEvent, BeforeInvocationEvent, InterruptEvent } from '../../hooks/index.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { tool } from '../../tools/tool-factory.js'
 import { CheckpointError, ConcurrentInvocationError, PendingInvocationCancelledError } from '../../errors.js'
 import { Message, TextBlock } from '../../types/messages.js'
+import { InterruptResponseContent } from '../../types/interrupt.js'
 import type { InvokeArgs } from '../../types/agent.js'
 
 /**
@@ -359,7 +360,7 @@ describe('concurrentInvocationMode', () => {
       expect(agent.pendingInvocations).toHaveLength(0)
     })
 
-    it('runs a queued call on its raw input: MessageData is appended as given and a checkpoint resume is still recognized', async () => {
+    it('runs a queued call on its raw input: a queued checkpoint resume is still recognized', async () => {
       const gate = createGate()
       const model = new MockMessageModel()
         .addTurn({ type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} })
@@ -384,6 +385,39 @@ describe('concurrentInvocationMode', () => {
       expect(resultText(await second)).toBe('B')
       await expect(resume).rejects.toThrow(CheckpointError)
       expect(agent.messages.some((message) => (message.content[0] as TextBlock).text === 'b')).toBe(true)
+    })
+
+    it('a queued interrupt response still resumes the interrupt it was submitted for', async () => {
+      const gate = createGate()
+      const confirm = tool({
+        name: 'confirm',
+        description: 'Asks for confirmation',
+        callback: (_input, context) => `got ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+      })
+      const model = new MockMessageModel()
+        .addTurn([
+          { type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} },
+          { type: 'toolUseBlock', name: 'confirm', toolUseId: 't2', input: {} },
+        ])
+        .addTurn({ type: 'textBlock', text: 'resumed' })
+      const agent = new Agent({ model, tools: [gate.tool, confirm], printer: false, concurrentInvocationMode: 'queue' })
+      // The host answers from the InterruptEvent, i.e. while the first invocation still holds
+      // the turn, so the answer is queued before the interrupt result is even returned.
+      let answer: Promise<unknown> | undefined
+      agent.addHook(InterruptEvent, (event) => {
+        answer ??= agent.invoke([new InterruptResponseContent({ interruptId: event.interrupt.id, response: 'yes' })])
+      })
+
+      const first = agent.invoke('a')
+      await gate.started
+      gate.release()
+
+      expect((await first).stopReason).toBe('interrupt')
+      // A queued resume is not parked behind the interrupt it answers: it runs and resolves it.
+      const resumed = (await answer) as { stopReason: string; lastMessage: { content: readonly unknown[] } }
+      expect(resumed.stopReason).toBe('endTurn')
+      expect(resultText(resumed)).toBe('resumed')
+      expect(agent.pendingInvocations).toHaveLength(0)
     })
 
     it('rejects a blank prompt at enqueue time without disturbing the running invocation', async () => {

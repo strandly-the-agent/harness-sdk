@@ -992,6 +992,7 @@ export class Agent implements LocalAgent, InvokableAgent {
     const turn = this._invocationQueue.wait({
       mode: awaitingResume && strategy === 'cancelPrevious' ? 'stopPrevious' : strategy,
       messages,
+      resumesInterrupt: this._extractInterruptResponses(args).length > 0,
       ...(options?.cancelSignal !== undefined && { cancelSignal: options.cancelSignal }),
     })
     // An already-aborted caller never enters the queue; don't cancel the running
@@ -1018,9 +1019,13 @@ export class Agent implements LocalAgent, InvokableAgent {
    * clears the busy flag when the queue is empty.
    */
   private _releaseTurn(): void {
-    // While an interrupt awaits its response, queued callers stay parked: only the resume can
-    // run, and they are handed the turn once it completes (or the interrupt is abandoned).
-    if (this._interruptState.activated || !this._invocationQueue.handoff()) {
+    // While an interrupt awaits its response, queued callers stay parked: only a resume can
+    // run (one may already be queued), and the rest are handed the turn once it completes
+    // (or the interrupt is abandoned).
+    const handedOff = this._interruptState.activated
+      ? this._invocationQueue.handoffResume()
+      : this._invocationQueue.handoff()
+    if (!handedOff) {
       this._isInvoking = false
       return
     }
@@ -1370,11 +1375,12 @@ export class Agent implements LocalAgent, InvokableAgent {
         resumedContext ? { ...options, invocationContext: resumedContext } : options
       )
 
-      // Reject non-interrupt input before any hook fires, so a rejected call is never
-      // observed as an invocation (a plugin would otherwise see a Before/After pair with no result).
+      // Reject invalid input before any hook fires, so a rejected call is never observed as
+      // an invocation (a plugin would otherwise see a Before/After pair with no result).
       if (this._interruptState.activated && this._extractInterruptResponses(args).length === 0) {
         throw new TypeError(INTERRUPTED_STATE_MESSAGE)
       }
+      this._normalizeInput(args)
 
       let currentArgs: InvokeArgs = args
       let firstPass = true
