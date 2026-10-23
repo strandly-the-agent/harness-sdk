@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { Agent } from '../agent.js'
-import { AfterInvocationEvent, AgentResultEvent, BeforeInvocationEvent, MessageAddedEvent } from '../../hooks/index.js'
+import {
+  AfterInvocationEvent,
+  AgentResultEvent,
+  BeforeInvocationEvent,
+  InterruptEvent,
+  MessageAddedEvent,
+} from '../../hooks/index.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
 import { tool } from '../../tools/tool-factory.js'
 import { PendingInvocationCancelledError } from '../../errors.js'
@@ -425,6 +431,52 @@ describe("concurrentInvocationMode 'stopPrevious'", () => {
       'user: b',
       'assistant: B',
     ])
+  })
+
+  it('a queued interrupt response is not a latest-wins caller: it neither displaces nor stops the newer user message', async () => {
+    const gate = createGate()
+    const confirm = tool({
+      name: 'confirm',
+      description: 'Asks for confirmation',
+      callback: (_input, context) => `got ${String(context!.interrupt({ name: 'confirm', reason: 'ok?' }))}`,
+    })
+    const model = new MockMessageModel()
+      .addTurn([
+        { type: 'toolUseBlock', name: 'gate', toolUseId: 't1', input: {} },
+        { type: 'toolUseBlock', name: 'confirm', toolUseId: 't2', input: {} },
+      ])
+      .addTurn({ type: 'textBlock', text: 'B' })
+    const agent = new Agent({
+      model,
+      tools: [gate.tool, confirm],
+      printer: false,
+      concurrentInvocationMode: 'stopPrevious',
+    })
+    // The host auto-approves from the InterruptEvent, i.e. while A still holds the turn and
+    // after the user's 'b' is already queued.
+    let answer: Promise<unknown> | undefined
+    agent.addHook(InterruptEvent, (event) => {
+      answer ??= agent.invoke([new InterruptResponseContent({ interruptId: event.interrupt.id, response: 'yes' })])
+    })
+
+    const first = agent.invoke('a')
+    await gate.started
+    const second = agent.invoke('b')
+    await until(() => agent.pendingInvocations.length === 1, 'b queued')
+    gate.release()
+
+    expect((await first).stopReason).toBe('interrupt')
+    // The resume was handed the turn at once; 'b' is still waiting, not displaced.
+    expect(agent.pendingInvocations.map((pending) => pending.mode)).toEqual(['stopPrevious'])
+    // The resume runs first (it is the only call that may run while the interrupt is open),
+    // settles the interrupt by running the pending tool batch, then yields to the newer 'b'
+    // instead of evicting it — without a model call of its own.
+    const resumed = (await answer) as { stopReason: string; lastMessage: { content: readonly unknown[] } }
+    expect(resumed.stopReason).toBe('superseded')
+    expect(resultText(await second)).toBe('B')
+    expect(model.callCount).toBe(2)
+    expect(historyShape(agent).slice(-2)).toEqual(['user: b', 'assistant: B'])
+    expect(historyShape(agent)).toContain('user: <toolResult> | <toolResult>')
   })
 
   it('abandoning an interrupt via loadSnapshot releases the parked callers', async () => {

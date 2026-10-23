@@ -985,24 +985,33 @@ export class Agent implements LocalAgent, InvokableAgent {
         "Agent is already processing an invocation. Wait for the current invoke() or stream() call to complete, or set concurrentInvocationMode / ifBusy to 'queue', 'stopPrevious', or 'cancelPrevious'."
       )
     }
-    // Nothing is running to cancel while an interrupt awaits its response, so a
-    // 'cancelPrevious' caller parks like 'stopPrevious': the resume yields to it after its
-    // pending tool batch.
     // Normalized up front so the queue can show the waiting input and a blank prompt is
     // rejected now rather than when its turn comes. The call still runs on its raw args
     // (middleware sees the same shape as for a direct call); only the trackingIds the queue
     // showed are carried over, so a queued message keeps its id in the transcript.
     const messages = this._normalizeInput(args)
+    // An interrupt response continues the interrupted request rather than starting a newer
+    // one, so it never displaces, stops, or cancels anything: it waits as a plain entry and
+    // is handed the turn as soon as the interrupt is the only thing in the way.
+    const resumesInterrupt = this._extractInterruptResponses(args).length > 0
+    // Nothing is running to cancel while an interrupt awaits its response, so a
+    // 'cancelPrevious' caller parks like 'stopPrevious': the resume yields to it once its
+    // interrupt is settled.
+    const mode = resumesInterrupt
+      ? 'queue'
+      : awaitingResume && strategy === 'cancelPrevious'
+        ? 'stopPrevious'
+        : strategy
     const turn = this._invocationQueue.wait({
-      mode: awaitingResume && strategy === 'cancelPrevious' ? 'stopPrevious' : strategy,
+      mode,
       messages,
-      resumesInterrupt: this._extractInterruptResponses(args).length > 0,
+      resumesInterrupt,
       ...(options?.cancelSignal !== undefined && { cancelSignal: options.cancelSignal }),
     })
     // An already-aborted caller never enters the queue; don't cancel the running
     // invocation on its behalf. A 'stopPrevious' entry's presence in the queue is itself
     // the stop request, so a caller that withdraws takes its request with it.
-    if (strategy === 'cancelPrevious' && !awaitingResume && options?.cancelSignal?.aborted !== true) {
+    if (mode === 'cancelPrevious' && options?.cancelSignal?.aborted !== true) {
       this.cancel()
     }
     await turn
