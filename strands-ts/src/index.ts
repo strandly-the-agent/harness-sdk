@@ -192,14 +192,7 @@ export {
 
 // Model provider types
 export type { BaseModelConfig, CountTokensOptions, StreamOptions, CacheConfig } from './models/model.js'
-export type {
-  ModelInfo,
-  ModelCapabilities,
-  ModelLimits,
-  PromptCaching,
-  ForcedToolChoice,
-  NativeStructuredOutput,
-} from './models/model-info.js'
+export type { ModelInfo, ModelCapabilities, ModelLimits, PromptCaching, ForcedToolChoice } from './models/model-info.js'
 
 export { Model } from './models/model.js'
 

@@ -29,7 +29,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "supported"
+        "nativeStructuredOutput": true
       }
     },
     "claude-opus-4-6": {
@@ -58,7 +58,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "unsupported"
+        "nativeStructuredOutput": false
       }
     },
     "claude-opus-5": {
@@ -69,7 +69,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "supported"
+        "nativeStructuredOutput": true
       }
     },
     "claude-opus-5-5": {
@@ -80,7 +80,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "unsupported",
-        "nativeStructuredOutput": "supported"
+        "nativeStructuredOutput": true
       }
     },
     "claude-fable-5": {
@@ -110,7 +110,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "unsupported"
+        "nativeStructuredOutput": false
       }
     },
     "claude-sonnet-5-5": {
@@ -121,7 +121,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "unsupported",
-        "nativeStructuredOutput": "supported"
+        "nativeStructuredOutput": true
       }
     },
     "claude-haiku-5-5": {
@@ -132,7 +132,7 @@
       "capabilities": {
         "promptCaching": "cachePoints",
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "supported"
+        "nativeStructuredOutput": true
       }
     },
     "claude-opus-4-5": {
@@ -248,7 +248,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "unsupported"
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-lite-v1:0": {
@@ -257,7 +257,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "unsupported"
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-micro-v1:0": {
@@ -266,7 +266,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "unsupported"
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-premier-v1:0": {
@@ -275,7 +275,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "unsupported"
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-2-lite-v1:0": {
@@ -284,7 +284,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "unsupported"
+        "nativeStructuredOutput": false
       }
     },
     "amazon.nova-2-pro-preview-20251202-v1:0": {
@@ -293,7 +293,7 @@
       },
       "capabilities": {
         "forcedToolChoice": "supported",
-        "nativeStructuredOutput": "unsupported"
+        "nativeStructuredOutput": false
       }
     },
     "zai.glm-4.7": {

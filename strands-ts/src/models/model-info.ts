@@ -20,12 +20,10 @@ export type PromptCaching = 'unsupported' | 'automatic' | 'cachePoints'
 /** Whether a model accepts a `toolChoice` that forces a tool call (`any` or a named tool). */
 export type ForcedToolChoice = 'supported' | 'unsupported'
 
-/** Whether the provider can make the model's text output conform to a JSON schema. */
-export type NativeStructuredOutput = 'supported' | 'unsupported'
-
 /**
- * What the model can do. Yes/no facts about a feature are `'supported' | 'unsupported'`; facts with a
- * mode add the mode as further values, like {@link PromptCaching}.
+ * What the model can do. A yes/no fact is a `boolean`; a fact with more than two states is a string
+ * union, like {@link PromptCaching} (which mechanism) or {@link ForcedToolChoice} (which gains
+ * `'unsupportedWithReasoning'` with its first reader). `undefined` is unknown either way.
  */
 export interface ModelCapabilities {
   /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}; the provider owns it, so the shared data and the `info` override cannot set it. */
@@ -35,7 +33,7 @@ export interface ModelCapabilities {
   /** Whether the model can be forced to call a tool. */
   readonly forcedToolChoice?: ForcedToolChoice | undefined
   /** Whether the provider can make the model's text output conform to a JSON schema. */
-  readonly nativeStructuredOutput?: NativeStructuredOutput | undefined
+  readonly nativeStructuredOutput?: boolean | undefined
 }
 
 /** Size limits of the model. */
