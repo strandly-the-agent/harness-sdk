@@ -258,17 +258,22 @@ describe('AgentModelRuntime thinking controls', () => {
     ).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
   })
 
-  it.each(['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash'])('offers no minimal effort for %s', (modelId) => {
-    expect(effortOptions(`google/${modelId}`, 'auto').map((option) => option.id)).toEqual(['low', 'medium', 'high'])
-  })
+  it.each(['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-lite'])(
+    'offers no minimal effort for %s',
+    (modelId) => {
+      expect(effortOptions(`google/${modelId}`, 'auto').map((option) => option.id)).toEqual(['low', 'medium', 'high'])
+    }
+  )
 
-  it('offers minimal effort for a Gemini model that documents it', () => {
-    expect(effortOptions('google/gemini-3.6-flash', 'auto').map((option) => option.id)).toEqual([
-      'minimal',
-      'low',
-      'medium',
-      'high',
-    ])
+  it.each([
+    ['google/gemini-3.1-flash-lite-image', ['minimal', 'high']],
+    ['google/gemini-3.6-flash', ['minimal', 'low', 'medium', 'high']],
+    ['google/gemini-3.5-flash-lite', ['minimal', 'low', 'medium', 'high']],
+    ['google/gemini-3-flash-preview', ['minimal', 'low', 'medium', 'high']],
+    ['google/gemini-robotics-er-2-preview', ['minimal', 'low', 'medium', 'high']],
+    ['bedrock-mantle/google.gemma-4-31b', ['none', 'high']],
+  ])('offers the per-model effort levels the harness accepts for %s', (modelId, expected) => {
+    expect(effortOptions(modelId, 'auto').map((option) => option.id)).toEqual(expected)
   })
 
   it('offers the xAI Grok effort levels accepted by the Bedrock resolver', () => {

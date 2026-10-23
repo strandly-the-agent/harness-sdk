@@ -347,9 +347,11 @@ def test_google_auto_maps_to_high_thinking_level():
     assert model.config["params"]["thinking_config"]["thinking_level"] == "high"
 
 
-@pytest.mark.parametrize("model_id", ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash"])
+@pytest.mark.parametrize(
+    "model_id", ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite"]
+)
 def test_google_minimal_rejected_where_the_model_page_lists_no_minimal(model_id):
-    message = f"not supported by model {model_id}. Supported levels: low, medium, high (or 'auto', 'off')."
+    message = "not supported by this provider. Supported levels: low, medium, high (or 'auto', 'off')."
     with pytest.raises(ValueError, match=re.escape(message)):
         resolve(f"google/{model_id}", effort="minimal")
     assert resolve(f"google/{model_id}", effort="low").config["params"]["thinking_config"]["thinking_level"] == "low"
@@ -361,7 +363,6 @@ def test_google_minimal_rejected_where_the_model_page_lists_no_minimal(model_id)
         "gemini-3.6-flash",
         "gemini-3.5-flash-lite",
         "gemini-3.5-flash",
-        "gemini-3.1-flash-lite-image",
         "gemini-3-flash-preview",
         "gemini-robotics-er-2-preview",
     ],
@@ -369,6 +370,25 @@ def test_google_minimal_rejected_where_the_model_page_lists_no_minimal(model_id)
 def test_google_minimal_accepted_where_the_model_page_lists_it(model_id):
     model = resolve(f"google/{model_id}", effort="minimal")
     assert model.config["params"]["thinking_config"]["thinking_level"] == "minimal"
+
+
+def test_google_flash_lite_image_takes_only_minimal_and_high():
+    model = resolve("google/gemini-3.1-flash-lite-image", effort="minimal")
+    assert model.config["params"]["thinking_config"]["thinking_level"] == "minimal"
+    message = "not supported by model gemini-3.1-flash-lite-image. Supported levels: minimal, high (or 'auto', 'off')."
+    with pytest.raises(ValueError, match=re.escape(message)):
+        resolve("google/gemini-3.1-flash-lite-image", effort="low")
+
+
+def test_bedrock_mantle_gemma_4_reasons_only_at_high():
+    model = resolve("bedrock-mantle/google.gemma-4-31b")
+    assert model.config["params"]["reasoning"]["effort"] == "high"
+    model = resolve("bedrock-mantle/google.gemma-4-31b", effort="off")
+    assert model.config["params"]["reasoning"]["effort"] == "none"
+    message = "not supported by model google.gemma-4-31b. Supported levels: high (or 'auto', 'off')."
+    for effort in ("low", "minimal"):
+        with pytest.raises(ValueError, match=re.escape(message)):
+            resolve("bedrock-mantle/google.gemma-4-31b", effort=effort)
 
 
 def test_google_uses_model_id_directly():

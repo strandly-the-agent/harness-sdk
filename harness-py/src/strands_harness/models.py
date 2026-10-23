@@ -98,16 +98,20 @@ _BEDROCK_QWEN_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "ma
 _BEDROCK_XAI_LEVELS = ("low", "medium", "high", "xhigh")
 _BEDROCK_NOVA_LEVELS = ("low", "medium", "high")
 _GOOGLE_LEVELS = ("low", "medium", "high")
-_GOOGLE_MINIMAL_LEVELS = ("minimal", "low", "medium", "high")
-# Gemini models (id prefixes) whose model page lists ``thinking_level: minimal``; the others error on
-# it. Per https://ai.google.dev/gemini-api/docs/thinking#controlling-thinking.
-_GOOGLE_MINIMAL_MODELS = (
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite-image",
-    "gemini-3-flash-preview",
-    "gemini-robotics-er-2-preview",
-)
+_GEMINI_MINIMAL_LEVELS = ("minimal", "low", "medium", "high")
+# Models whose accepted levels differ from their provider's, as ``(model id prefix, levels)`` rows per
+# harness provider name. Gemini per https://ai.google.dev/gemini-api/docs/thinking#controlling-thinking;
+# Gemma 4 on Mantle only reasons at ``high``, so the levels Mantle accepts but ignores are rejected here.
+_MODEL_LEVELS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
+    "google": (
+        ("gemini-3.1-flash-lite-image", ("minimal", "high")),
+        ("gemini-3.6-flash", _GEMINI_MINIMAL_LEVELS),
+        ("gemini-3.5-flash", _GEMINI_MINIMAL_LEVELS),
+        ("gemini-3-flash-preview", _GEMINI_MINIMAL_LEVELS),
+        ("gemini-robotics-er-2-preview", _GEMINI_MINIMAL_LEVELS),
+    ),
+    "bedrock-mantle": (("google.gemma-4-", ("none", "high")),),
+}
 
 _ADAPTIVE_THINKING_SINCE = {"opus": (4, 6), "sonnet": (4, 6), "haiku": (5, 5)}
 _EXTENDED_THINKING_SINCE = {"opus": (4, 5), "sonnet": (4, 5), "haiku": (4, 5)}
@@ -257,10 +261,6 @@ def _bedrock_mantle(model_id: str, effort: str | None, web_search: bool, caching
     )
 
 
-def _google_levels(model_id: str) -> tuple[str, ...]:
-    return _GOOGLE_MINIMAL_LEVELS if model_id.startswith(_GOOGLE_MINIMAL_MODELS) else _GOOGLE_LEVELS
-
-
 def _gemini(model_id: str, effort: str | None, web_search: bool, caching: bool) -> Model:
     # ``caching`` is unused: Gemini caches implicitly server-side (models 2.5 and newer).
     from google.genai import types as genai_types
@@ -340,6 +340,12 @@ def _check_effort(effort: object) -> None:
     if effort in EFFORT_LEVELS:
         return
     raise ValueError(f"Unknown effort {effort!r}. Choose one of: {', '.join(EFFORT_LEVELS)}.")
+
+
+def _model_levels(provider_name: str, model_id: str) -> tuple[str, ...] | None:
+    """The ``_MODEL_LEVELS`` row for ``model_id``, or ``None`` when the provider's levels apply."""
+    rows = _MODEL_LEVELS.get(provider_name, ())
+    return next((levels for prefix, levels in rows if model_id.startswith(prefix)), None)
 
 
 def _effort(
@@ -498,8 +504,8 @@ def resolve_model(
     subject = "this provider"
     if provider_name == "anthropic" and _claude_thinking_mode(name) is None:
         levels, recommended, subject = (), None, f"model {name}"
-    if provider_name == "google":
-        levels, subject = _google_levels(name), f"model {name}"
+    elif (model_levels := _model_levels(provider_name, name)) is not None:
+        levels, subject = model_levels, f"model {name}"
     level = (
         _bedrock_effort(name, effort) if provider_name == "bedrock" else _effort(effort, recommended, levels, subject)
     )

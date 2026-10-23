@@ -93,16 +93,20 @@ const BEDROCK_GPT_OSS_LEVELS = ['low', 'medium', 'high'] as const
 const BEDROCK_QWEN_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const BEDROCK_XAI_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const
 const GOOGLE_LEVELS = ['low', 'medium', 'high'] as const
-const GOOGLE_MINIMAL_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
-// Gemini models (id prefixes) whose model page lists `thinking_level: minimal`; the others error on
-// it. Per https://ai.google.dev/gemini-api/docs/thinking#controlling-thinking.
-const GOOGLE_MINIMAL_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.1-flash-lite-image',
-  'gemini-3-flash-preview',
-  'gemini-robotics-er-2-preview',
-] as const
+const GEMINI_MINIMAL_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
+// Models whose accepted levels differ from their provider's, as `[model id prefix, levels]` rows per
+// harness provider name. Gemini per https://ai.google.dev/gemini-api/docs/thinking#controlling-thinking;
+// Gemma 4 on Mantle only reasons at `high`, so the levels Mantle accepts but ignores are rejected here.
+const MODEL_LEVELS: Readonly<Record<string, readonly (readonly [string, readonly string[]])[]>> = {
+  google: [
+    ['gemini-3.1-flash-lite-image', ['minimal', 'high']],
+    ['gemini-3.6-flash', GEMINI_MINIMAL_LEVELS],
+    ['gemini-3.5-flash', GEMINI_MINIMAL_LEVELS],
+    ['gemini-3-flash-preview', GEMINI_MINIMAL_LEVELS],
+    ['gemini-robotics-er-2-preview', GEMINI_MINIMAL_LEVELS],
+  ],
+  'bedrock-mantle': [['google.gemma-4-', ['none', 'high']]],
+}
 const NO_THINKING_LEVELS: readonly string[] = []
 
 const ADAPTIVE_THINKING_SINCE: Record<string, [number, number]> = { opus: [4, 6], sonnet: [4, 6], haiku: [5, 5] }
@@ -282,8 +286,9 @@ async function bedrockMantle(
   })
 }
 
-function googleLevels(modelId: string): readonly string[] {
-  return GOOGLE_MINIMAL_MODELS.some((prefix) => modelId.startsWith(prefix)) ? GOOGLE_MINIMAL_LEVELS : GOOGLE_LEVELS
+// The `MODEL_LEVELS` row for `modelId`, or `undefined` when the provider's levels apply.
+function modelLevels(providerName: string, modelId: string): readonly string[] | undefined {
+  return MODEL_LEVELS[providerName]?.find(([prefix]) => modelId.startsWith(prefix))?.[1]
 }
 
 // `_caching` is unused: Gemini caches implicitly server-side (models 2.5 and newer).
@@ -481,17 +486,11 @@ export async function resolveModel(
     )
   }
 
-  let { levels, recommended } = provider
-  let subject = 'this provider'
-  if (providerName === 'anthropic' && claudeThinkingMode(name) === null) {
-    levels = NO_THINKING_LEVELS
-    recommended = null
-    subject = `model ${name}`
-  }
-  if (providerName === 'google') {
-    levels = googleLevels(name)
-    subject = `model ${name}`
-  }
+  const noThinking = providerName === 'anthropic' && claudeThinkingMode(name) === null
+  const overrides = noThinking ? undefined : modelLevels(providerName, name)
+  const levels = noThinking ? NO_THINKING_LEVELS : (overrides ?? provider.levels)
+  const recommended = noThinking ? null : provider.recommended
+  const subject = noThinking || overrides !== undefined ? `model ${name}` : 'this provider'
   return provider.build(
     name,
     providerName === 'bedrock' ? bedrockEffort(name, effort) : resolveEffort(effort, recommended, levels, subject),

@@ -228,11 +228,11 @@ describe('resolveModel', () => {
     expect(params.thinkingConfig.thinkingLevel).toBe('high')
   })
 
-  it.each(['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash'])(
+  it.each(['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-lite'])(
     'rejects minimal for %s, whose model page lists no minimal level',
     async (modelId) => {
       await expect(resolve(`google/${modelId}`, 'minimal')).rejects.toThrow(
-        `not supported by model ${modelId}. Supported levels: low, medium, high `
+        'not supported by this provider. Supported levels: low, medium, high '
       )
       const model = await resolve(`google/${modelId}`, 'low')
       const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
@@ -244,13 +244,32 @@ describe('resolveModel', () => {
     'gemini-3.6-flash',
     'gemini-3.5-flash-lite',
     'gemini-3.5-flash',
-    'gemini-3.1-flash-lite-image',
     'gemini-3-flash-preview',
     'gemini-robotics-er-2-preview',
   ])('accepts minimal for %s, whose model page lists it', async (modelId) => {
     const model = await resolve(`google/${modelId}`, 'minimal')
     const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
     expect(params.thinkingConfig.thinkingLevel).toBe('minimal')
+  })
+
+  it('takes only minimal and high for gemini-3.1-flash-lite-image', async () => {
+    const model = await resolve('google/gemini-3.1-flash-lite-image', 'minimal')
+    const params = model.getConfig().params as { thinkingConfig: { thinkingLevel: string } }
+    expect(params.thinkingConfig.thinkingLevel).toBe('minimal')
+    await expect(resolve('google/gemini-3.1-flash-lite-image', 'low')).rejects.toThrow(
+      'not supported by model gemini-3.1-flash-lite-image. Supported levels: minimal, high '
+    )
+  })
+
+  it('reasons only at high for Gemma 4 on bedrock-mantle', async () => {
+    const effortOf = (model: Model) => (model.getConfig().params as { reasoning: { effort: string } }).reasoning.effort
+    expect(effortOf(await resolve('bedrock-mantle/google.gemma-4-31b'))).toBe('high')
+    expect(effortOf(await resolve('bedrock-mantle/google.gemma-4-31b', 'off'))).toBe('none')
+    for (const effort of ['low', 'minimal']) {
+      await expect(resolve('bedrock-mantle/google.gemma-4-31b', effort)).rejects.toThrow(
+        'not supported by model google.gemma-4-31b. Supported levels: high '
+      )
+    }
   })
 
   it('uses the google model id directly', async () => {
