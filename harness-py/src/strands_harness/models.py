@@ -165,7 +165,7 @@ def _bedrock_levels(model_id: str) -> tuple[str, ...]:
         return _ANTHROPIC_LEVELS if _claude_thinking_mode(family) is not None else ()
     if family.startswith("amazon.nova-2"):
         return _BEDROCK_NOVA_LEVELS
-    if family.startswith(("openai.gpt-5.", "openai.gpt-6-", "openai.gpt-6.")):
+    if family.startswith(("openai.gpt-5.", "openai.gpt-daybreak-", "openai.gpt-6-", "openai.gpt-6.")):
         return _BEDROCK_GPT_LEVELS
     if family.startswith("openai.gpt-oss-"):
         return _BEDROCK_GPT_OSS_LEVELS
@@ -194,7 +194,7 @@ def _bedrock_thinking(model_id: str, effort: str | None) -> dict | None:
         return _claude_thinking_block(family, effort, _claude_max_tokens(model_id) or _ANTHROPIC_MAX_TOKENS)
     if family.startswith("amazon.nova-2"):
         return {"reasoningConfig": {"type": "enabled", "maxReasoningEffort": effort}}
-    if family.startswith(("openai.gpt-5.", "openai.gpt-6-", "openai.gpt-6.")):
+    if family.startswith(("openai.gpt-5.", "openai.gpt-daybreak-", "openai.gpt-6-", "openai.gpt-6.")):
         return {"reasoning": {"effort": effort}}
     if family.startswith("openai.gpt-oss-"):
         return {"reasoning_effort": effort}
@@ -390,7 +390,9 @@ def _has_web_search(provider_name: str, name: str) -> bool:
     if provider is None or not provider.web_search:
         return False
     # Bedrock Web Search is only served for Mantle's GPT-5/GPT-6 models; other families reject the tool (HTTP 400).
-    return provider_name != "bedrock-mantle" or name.startswith(("openai.gpt-5.", "openai.gpt-6-", "openai.gpt-6."))
+    return provider_name != "bedrock-mantle" or name.startswith(
+        ("openai.gpt-5.", "openai.gpt-daybreak-", "openai.gpt-6-", "openai.gpt-6.")
+    )
 
 
 def supports_web_search(model: Model | ModelRouter | str | None) -> bool:

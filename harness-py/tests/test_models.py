@@ -255,7 +255,16 @@ def test_astra_on_bedrock_resolves_effort(model_id):
 
 @pytest.mark.parametrize(
     "model_id",
-    ["openai.gpt-5.4", "us.openai.gpt-5.4", "openai.gpt-5.5", "us.openai.gpt-5.5", "global.openai.gpt-5.5"],
+    [
+        "openai.gpt-5.4",
+        "us.openai.gpt-5.4",
+        "openai.gpt-5.5",
+        "us.openai.gpt-5.5",
+        "global.openai.gpt-5.5",
+        "openai.gpt-5.6-cyber",
+        "openai.gpt-daybreak-blue-5.6-sol",
+        "us.openai.gpt-daybreak-blue-5.6-sol",
+    ],
 )
 def test_gpt_5_line_on_bedrock_resolves_effort(model_id):
     # https://github.com/strands-agents/harness-sdk/issues/5191 — Converse accepts
@@ -479,6 +488,11 @@ def test_bedrock_mantle_web_search_with_effort_off():
 
 def test_bedrock_mantle_web_search_on_gpt_6():
     model = resolve("bedrock-mantle/openai.gpt-6-astra", effort="off", web_search=True)
+    assert model.config["params"]["tools"] == [{"type": "web_search", "external_web_access": True}]
+
+
+def test_bedrock_mantle_web_search_on_daybreak_blue():
+    model = resolve("bedrock-mantle/openai.gpt-daybreak-blue-5.6-sol", effort="off", web_search=True)
     assert model.config["params"]["tools"] == [{"type": "web_search", "external_web_access": True}]
 
 
