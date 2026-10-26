@@ -58,8 +58,11 @@ export const DEFAULT_CONTEXT_WINDOW_LIMIT = 200_000
  *
  * For Bedrock models with cross-region prefixes (e.g. `us.`, `eu.`, `global.`),
  * {@link getContextWindowLimit} strips the prefix before lookup so only the base model ID is needed here.
+ *
+ * Exported for the integ drift test only; not part of the public barrel.
+ * @internal
  */
-const CONTEXT_WINDOW_LIMITS: Record<string, number> = {
+export const CONTEXT_WINDOW_LIMITS: Record<string, number> = {
   // Anthropic (direct API)
   'claude-sonnet-4-6': 1_000_000,
   'claude-sonnet-4-20250514': 1_000_000,
