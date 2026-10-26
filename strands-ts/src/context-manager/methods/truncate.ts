@@ -32,7 +32,9 @@ export interface TruncateConfig {
    * up to this cap. Adds an optional `_max_result_tokens` integer to the input schema of the tools
    * this strategy targets; when the model sets it, that result is kept whole up to the value and
    * otherwise truncated to a preview of that size, in place of `threshold` and `previewTokens`.
-   * Calls without it keep the configured defaults. Must be a positive number. Off when omitted.
+   * Calls without it keep the configured defaults. When several strategies with `agenticLimit`
+   * target the same tool, the first in the pipeline sets the advertised cap; each still clamps to
+   * its own. Must be a positive number. Off when omitted.
    */
   agenticLimit?: number
 }

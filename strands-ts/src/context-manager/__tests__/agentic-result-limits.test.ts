@@ -324,6 +324,26 @@ describe('agenticLimit through ContextManager (agent level)', () => {
     expect(specs.find((spec) => spec.name === 'other')!.inputSchema?.properties?.['_max_result_tokens']).toBeUndefined()
   })
 
+  it("advertises the first pipeline strategy's cap when two agentic strategies target the same tool", async () => {
+    const { agent, toolSpecs } = makeAgent(undefined, {
+      strategies: [
+        Offload.truncate(['tool::search'], { previewTokens: 100, agenticLimit: 20_000 }).when({ threshold: 1500 }),
+        Offload.truncate('toolResults', { previewTokens: 100, agenticLimit: 2_000 }).when({ threshold: 1500 }),
+      ],
+    })
+    await agent.invoke('go')
+
+    const specs = toolSpecs[0]!
+    expect(specs.find((spec) => spec.name === 'search')!.inputSchema?.properties?.['_max_result_tokens']).toMatchObject(
+      {
+        maximum: 20_000,
+      }
+    )
+    expect(specs.find((spec) => spec.name === 'other')!.inputSchema?.properties?.['_max_result_tokens']).toMatchObject({
+      maximum: 2_000,
+    })
+  })
+
   it('does not advertise the property without an agentic truncate strategy', async () => {
     const { agent, toolSpecs } = makeAgent(undefined, {})
     await agent.invoke('go')
