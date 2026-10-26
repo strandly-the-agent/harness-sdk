@@ -9,11 +9,11 @@ URLs and remove them again.
 
 Filesystem skill sources are loaded through the agent's sandbox (host or
 container) at ``init_agent`` time, not at construction, so each agent sees the
-skills present on its own filesystem. Skill instances and ``https://`` URLs are
-sandbox-independent and resolve eagerly at construction.
-
-:meth:`Skill.from_url` is synchronous, so URLs resolve at construction and no
-readiness barrier is needed. The observable effect is benign: URL skills are
+skills present on its own filesystem. Configured Skill instances and
+``https://`` URLs are sandbox-independent and resolve eagerly at construction
+(:meth:`Skill.from_url` is synchronous). Sources the agent loads at runtime go
+through its sandbox in both cases: paths are read from it and URLs are fetched
+with ``curl`` inside it.
 """
 
 from __future__ import annotations
@@ -88,20 +88,28 @@ async def _fetch_url_in_sandbox(sandbox: Sandbox, url: str) -> str:
     if not url.startswith("https://"):
         raise ValueError(f"only https:// URLs are supported, got {url!r}")
     output = f"/tmp/strands-skill-{uuid.uuid4().hex}"
-    # --proto/--proto-redir keep every hop on https; --fail turns HTTP errors into a non-zero exit;
-    # the body goes to a file because stdout is decoded per chunk and would split multi-byte characters.
+    out, part = shlex.quote(output), shlex.quote(output + ".part")
+    # --proto/--proto-redir keep every hop on https; --fail turns HTTP errors into a non-zero exit.
+    # The body goes to a file (stdout is decoded per chunk and would split multi-byte characters) and
+    # is capped in the sandbox before it is read back: --max-filesize only sees a Content-Length, so
+    # chunked responses need the head -c; one extra byte lets the caller tell "capped" from "exact".
     command = (
         f"curl -sSL -g --fail --proto '=https' --proto-redir '=https' --max-time {_URL_FETCH_TIMEOUT} "
-        f"--max-filesize {_URL_MAX_BYTES} -o {shlex.quote(output)} -- {shlex.quote(url)}"
+        f"--max-filesize {_URL_MAX_BYTES} -o {out} -- {shlex.quote(url)} "
+        f"&& head -c {_URL_MAX_BYTES + 1} {out} > {part} && mv -f {part} {out}"
     )
     try:
         result = await sandbox.execute(command, timeout=_URL_FETCH_TIMEOUT + 5)
         if result.exit_code != 0:
             raise RuntimeError(result.stderr.strip() or f"curl exited with code {result.exit_code}")
-        return (await sandbox.read_file(output)).decode("utf-8", errors="replace")
+        data = await sandbox.read_file(output)
+        if len(data) > _URL_MAX_BYTES:
+            raise RuntimeError(f"SKILL.md is larger than {_URL_MAX_BYTES} bytes")
+        return data.decode("utf-8", errors="replace")
     finally:
-        with contextlib.suppress(Exception):
-            await sandbox.remove_file(output)
+        for path in (output, output + ".part"):
+            with contextlib.suppress(Exception):
+                await sandbox.remove_file(path)
 
 
 def _normalize_sources(sources: SkillSources) -> list[SkillSource]:

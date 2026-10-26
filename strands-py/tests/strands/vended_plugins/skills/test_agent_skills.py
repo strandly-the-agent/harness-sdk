@@ -1058,20 +1058,23 @@ _URL_SKILL_CONTENT = "---\nname: url-skill\ndescription: A URL skill\n---\n# Ins
 class _CurlSandbox(NotASandboxLocalEnvironment):
     """Local sandbox whose ``curl`` is faked: serves ``pages`` by URL, or fails with ``error``.
 
-    Records every executed command and the output files curl was asked to write, so tests can
-    check that runtime URL loads go through the sandbox and clean up after themselves.
+    ``partial`` makes curl write the body and then fail (like ``--max-time``). The ``head -c`` cap
+    in the command is honoured. Records every executed command and the output files curl was asked
+    to write, so tests can check that runtime URL loads go through the sandbox and clean up.
     """
 
-    def __init__(self, pages: dict[str, str] | None = None, error: str | None = None):
+    def __init__(self, pages: dict[str, str] | None = None, error: str | None = None, partial: bool = False):
         super().__init__()
         self.pages = pages or {}
         self.error = error
+        self.partial = partial
         self.commands: list[str] = []
         self.outputs: list[Path] = []
 
     async def execute(self, command, **kwargs):
         self.commands.append(command)
-        argv = shlex.split(command)
+        curl, *rest = command.split(" && ")
+        argv = shlex.split(curl)
         assert argv[0] == "curl", command
         output, url = Path(argv[argv.index("-o") + 1]), argv[-1]
         self.outputs.append(output)
@@ -1079,7 +1082,12 @@ class _CurlSandbox(NotASandboxLocalEnvironment):
             return ExecutionResult(exit_code=127, stdout="", stderr=self.error)
         if url not in self.pages:
             return ExecutionResult(exit_code=22, stdout="", stderr="curl: (22) The requested URL returned error: 404")
-        output.write_text(self.pages[url])
+        output.write_bytes(self.pages[url].encode())
+        if self.partial:
+            return ExecutionResult(exit_code=28, stdout="", stderr="curl: (28) Operation timed out")
+        cap = int(shlex.split(rest[0])[2]) if rest and rest[0].startswith("head -c") else None
+        if cap is not None:
+            output.write_bytes(output.read_bytes()[:cap])
         return ExecutionResult(exit_code=0, stdout="", stderr="")
 
 
@@ -1185,7 +1193,9 @@ class TestDynamicLoading:
 
         urlopen.assert_not_called()
         assert len(sandbox.commands) == 1
-        assert "--proto '=https'" in sandbox.commands[0] and sandbox.commands[0].endswith(f"-- {url}")
+        curl = sandbox.commands[0].split(" && ")[0]
+        assert "--proto '=https' --proto-redir '=https' --max-time 30 --max-filesize 1000000" in curl
+        assert curl.endswith(f"-- {url}")
         assert not sandbox.outputs[0].exists(), "temporary download should be removed from the sandbox"
         assert result.startswith(f"Loaded 1 skill(s) from '{url}': url-skill.")
         assert [skill.name for skill in plugin.get_available_skills(agent)] == ["url-skill"]
@@ -1193,22 +1203,26 @@ class TestDynamicLoading:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("sandbox", "reason"),
+        ("sandbox_kwargs", "reason"),
         [
-            (_CurlSandbox(error="sh: 1: curl: not found"), "sh: 1: curl: not found"),
-            (_CurlSandbox(), "curl: (22) The requested URL returned error: 404"),
+            ({"error": "sh: 1: curl: not found"}, "sh: 1: curl: not found"),
+            ({}, "curl: (22) The requested URL returned error: 404"),
+            ({"pages": {"https://example.com/SKILL.md": "---\n"}, "partial": True}, "curl: (28) Operation timed out"),
+            ({"pages": {"https://example.com/SKILL.md": "x" * 1_000_001}}, "SKILL.md is larger than 1000000 bytes"),
         ],
     )
-    async def test_failing_url_fetch_is_a_clear_tool_error(self, sandbox, reason):
-        # curl missing from the sandbox, or the fetch failing, is reported verbatim; nothing is loaded.
+    async def test_failing_url_fetch_is_a_clear_tool_error(self, sandbox_kwargs, reason):
+        # curl missing, the fetch failing (also after a partial write), or an oversized body is reported
+        # verbatim; nothing is loaded and the temporary file is gone.
         url = "https://example.com/SKILL.md"
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        agent.sandbox = sandbox
+        agent.sandbox = sandbox = _CurlSandbox(**sandbox_kwargs)
         result = await plugin.manage_skills(action="load", source=url, tool_context=_mock_tool_context(agent))
         assert result == f"Error: could not load skills from '{url}': {reason}"
         assert _loaded_sources(plugin, agent) == []
         assert "dynamic_sources" not in agent.state.get("agent_skills")
+        assert not sandbox.outputs[0].exists()
 
     @pytest.mark.asyncio
     async def test_restore_survives_failing_url(self, tmp_path, caplog):
