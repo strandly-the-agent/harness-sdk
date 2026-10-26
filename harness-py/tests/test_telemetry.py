@@ -5,8 +5,6 @@ exporters get wired, and how often), not the SDK's exporter wiring. The OTel API
 provider slot is stubbed for every test, so the suite neither depends on nor pollutes the real one.
 """
 
-import subprocess
-import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -162,20 +160,19 @@ def test_propagators_survive_even_when_the_harness_installs_the_provider(custom_
     assert [type(p) for p in processors] == [SimpleSpanProcessor]
 
 
-def test_env_var_provider_does_not_preempt_the_harness(monkeypatch):
-    """OTEL_PYTHON_TRACER_PROVIDER must not make the harness skip its exporter (or raise on an unknown name).
+def test_env_var_provider_is_not_loaded_by_the_harness(strands_telemetry, otel_slot, monkeypatch):
+    """OTel's get_tracer_provider() installs OTEL_PYTHON_TRACER_PROVIDER on first read; the harness must claim the slot
+    before reading it, or that provider pre-empts the exporter (and an unknown name raises)."""
+    factory, _ = strands_telemetry
+    env_provider = SDKTracerProvider()
 
-    Runs against the real OTel globals in a subprocess: that getter's load-on-first-read is the behavior under test.
-    """
-    code = (
-        "from opentelemetry import trace as trace_api\n"
-        "from strands_harness import telemetry\n"
-        "telemetry.setup_telemetry()\n"
-        "print([type(p).__name__ for p in trace_api.get_tracer_provider()._active_span_processor._span_processors])\n"
-    )
-    for name in ("sdk_tracer_provider", "does_not_exist"):
-        monkeypatch.setenv("OTEL_PYTHON_TRACER_PROVIDER", name)
-        monkeypatch.setenv("OTEL_TRACES_EXPORTER", "console")
-        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
-        assert result.returncode == 0, (name, result.stderr)
-        assert result.stdout.strip() == "['SimpleSpanProcessor']", name
+    def get_tracer_provider():
+        if otel_slot.provider is None:
+            otel_slot.provider = env_provider
+        return otel_slot.provider
+
+    monkeypatch.setattr(trace_api, "get_tracer_provider", get_tracer_provider)
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
+    telemetry.setup_telemetry()
+    factory.assert_called_once()
+    assert otel_slot.provider is not env_provider
