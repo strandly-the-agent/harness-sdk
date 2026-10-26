@@ -407,6 +407,26 @@ describe('BedrockModel', () => {
       })
     })
 
+    it('auto-populates contextWindowLimit from the modelInfo override over the shared value', () => {
+      const provider = new BedrockModel({
+        modelId: 'anthropic.claude-sonnet-4-6',
+        modelInfo: { limits: { contextWindow: 500_000 } },
+      })
+      expect(provider.getConfig().contextWindowLimit).toBe(500_000)
+      expect(provider.modelInfo.limits?.contextWindow).toBe(500_000)
+    })
+
+    it('auto-populates contextWindowLimit from a provider declaration over the shared value', () => {
+      class DeclaringBedrock extends BedrockModel {
+        protected override declareModelInfo() {
+          return { limits: { contextWindow: 8_000 } }
+        }
+      }
+      const provider = new DeclaringBedrock({ modelId: 'anthropic.claude-sonnet-4-6' })
+      expect(provider.getConfig().contextWindowLimit).toBe(8_000)
+      expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
+    })
+
     it('does not override explicit contextWindowLimit', () => {
       const provider = new BedrockModel({
         modelId: 'anthropic.claude-sonnet-4-6',

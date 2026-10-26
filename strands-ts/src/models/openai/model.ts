@@ -174,7 +174,11 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
   }
 
   getConfig(): OpenAIModelConfig {
-    return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.openai.modelId)
+    return resolveConfigMetadata(
+      this._config,
+      this._config.modelId ?? MODEL_DEFAULTS.openai.modelId,
+      this.declareModelInfo()
+    )
   }
 
   async *stream(messages: Message[], options?: StreamOptions): AsyncIterable<ModelStreamEvent> {

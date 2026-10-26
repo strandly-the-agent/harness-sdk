@@ -254,7 +254,8 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
   }
 
   getConfig(): AnthropicModelConfig {
-    const config = resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId)
+    const modelId = this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId
+    const config = resolveConfigMetadata(this._config, modelId, this.declareModelInfo())
     return config.maxTokens === undefined ? { ...config, maxTokens: this._resolvedMaxTokens() } : config
   }
 

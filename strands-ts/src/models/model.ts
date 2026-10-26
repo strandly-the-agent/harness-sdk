@@ -28,27 +28,29 @@ import {
 import { MaxTokensError, ModelError, normalizeError } from '../errors.js'
 import type { Redaction } from '../hooks/events.js'
 import { logger } from '../logging/logger.js'
-import { DEFAULT_CONTEXT_WINDOW_LIMIT, getContextWindowLimit } from './defaults.js'
+import { DEFAULT_CONTEXT_WINDOW_LIMIT } from './defaults.js'
 import { lookupModelInfo, mergeModelInfo, type ModelInfo } from './model-info.js'
 import { warnOnce } from '../logging/warn-once.js'
 
 /**
- * Resolves model metadata fields on a config object from the shared model info
- * when not explicitly set. Explicit values pass through unchanged.
+ * Fills `contextWindowLimit` on a config object when not explicitly set. Explicit values pass
+ * through unchanged.
  *
- * Kept so `getConfig().contextWindowLimit` keeps its documented value; `Model.modelInfo` resolves
- * the same fact without it, and this will go once callers read `modelInfo`.
+ * Kept so `getConfig().contextWindowLimit` keeps its documented value. The filled value is resolved
+ * through every layer below the user's (shared model info, the provider's declaration, the
+ * `modelInfo` override), so `Model.modelInfo` can take it at face value.
  *
  * @internal
  * @param config - The stored model config
  * @param modelId - The model ID to look up
- * @returns A new config with resolved metadata, or the original config if nothing to resolve
+ * @param declared - What the provider declares through `declareModelInfo()`
+ * @returns A new config with the limit filled in, or the original config if nothing to fill
  */
-export function resolveConfigMetadata<T extends BaseModelConfig>(config: T, modelId: string): T {
+export function resolveConfigMetadata<T extends BaseModelConfig>(config: T, modelId: string, declared?: ModelInfo): T {
   if (config.contextWindowLimit !== undefined) return config
-  const limit = getContextWindowLimit(modelId)
-  if (limit === undefined) return config
-  return { ...config, contextWindowLimit: limit }
+  const contextWindow = mergeModelInfo(lookupModelInfo(modelId), declared, config.modelInfo).limits?.contextWindow
+  if (contextWindow === undefined) return config
+  return { ...config, contextWindowLimit: contextWindow }
 }
 
 class CitationAccumulator {
@@ -370,7 +372,8 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   /**
    * What this provider knows about the configured model beyond the shared model info: facts that
    * depend on how the provider talks to it, derived from its config and wire API. Leave out
-   * anything unknown. Users override the result through the `modelInfo` config key.
+   * anything unknown. Users override the result through the `modelInfo` config key. Read the
+   * stored config here rather than `getConfig()`, which may call this to fill in defaults.
    *
    * @returns What the provider knows, empty by default
    */
@@ -387,14 +390,10 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
    */
   get modelInfo(): ModelInfo {
     const config = this.getConfig()
-    const shared = lookupModelInfo(config.modelId ?? '')
-    // Vended providers copy the shared context window into getConfig(); only a value the user set is an override.
-    const userContextWindow =
-      config.contextWindowLimit === shared.limits?.contextWindow ? undefined : config.contextWindowLimit
     return mergeModelInfo(
-      shared,
+      lookupModelInfo(config.modelId ?? ''),
       this.declareModelInfo(),
-      { limits: { contextWindow: userContextWindow } },
+      { limits: { contextWindow: config.contextWindowLimit } },
       config.modelInfo,
       {
         capabilities: { stateful: this.stateful },
