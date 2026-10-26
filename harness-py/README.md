@@ -445,9 +445,9 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318  # where your collector
 Set headers, protocol, and the rest through the other `OTEL_EXPORTER_OTLP_*` variables. With
 `OTEL_TRACES_EXPORTER` unset, the harness touches telemetry not at all: no exporter, no cost. If your
 process already installed a tracer provider (for example ADOT auto-instrumentation on AgentCore Runtime),
-the harness leaves it alone — `OTEL_TRACES_EXPORTER` is then that owner's to honor (OpenTelemetry logs a one-time
-`Overriding of current TracerProvider is not allowed` warning when that happens; it is expected). The harness
-never changes propagators either way; pick them with the standard `OTEL_PROPAGATORS`.
+or you named one in `OTEL_PYTHON_TRACER_PROVIDER`, the harness leaves it alone — `OTEL_TRACES_EXPORTER` is then
+that owner's to honor. The harness never changes propagators either way; pick them with the standard
+`OTEL_PROPAGATORS`.
 Disable with `OTEL_SDK_DISABLED=true`.
 
 ## Requiring approval for tool calls

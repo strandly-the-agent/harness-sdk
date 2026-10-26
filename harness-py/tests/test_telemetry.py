@@ -21,9 +21,10 @@ from strands_harness import telemetry
 @pytest.fixture(autouse=True)
 def otel_slot(monkeypatch):
     """Stand-in for the OTel API's global provider slot: first set wins, get returns the proxy while empty."""
-    slot = SimpleNamespace(provider=None)
+    slot = SimpleNamespace(provider=None, set_attempts=0)
 
     def set_tracer_provider(provider):
+        slot.set_attempts += 1
         if slot.provider is None:
             slot.provider = provider
 
@@ -142,6 +143,7 @@ def test_an_installed_tracer_provider_is_left_alone(strands_telemetry, installed
     telemetry.setup_telemetry()
     factory.assert_not_called()
     assert otel_slot.provider is installed_provider
+    assert otel_slot.set_attempts == 0
 
 
 def test_an_installed_tracer_provider_keeps_its_propagator(installed_provider, custom_textmap, monkeypatch):
@@ -160,9 +162,9 @@ def test_propagators_survive_even_when_the_harness_installs_the_provider(custom_
     assert [type(p) for p in processors] == [SimpleSpanProcessor]
 
 
-def test_env_var_provider_is_not_loaded_by_the_harness(strands_telemetry, otel_slot, monkeypatch):
-    """OTel's get_tracer_provider() installs OTEL_PYTHON_TRACER_PROVIDER on first read; the harness must claim the slot
-    before reading it, or that provider pre-empts the exporter (and an unknown name raises)."""
+def test_a_provider_named_in_the_env_is_left_alone(strands_telemetry, otel_slot, monkeypatch):
+    """OTel's get_tracer_provider() installs OTEL_PYTHON_TRACER_PROVIDER on first read; that provider is the user's
+    explicit choice and owns tracing like a host-installed one."""
     factory, _ = strands_telemetry
     env_provider = SDKTracerProvider()
 
@@ -174,5 +176,6 @@ def test_env_var_provider_is_not_loaded_by_the_harness(strands_telemetry, otel_s
     monkeypatch.setattr(trace_api, "get_tracer_provider", get_tracer_provider)
     monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
     telemetry.setup_telemetry()
-    factory.assert_called_once()
-    assert otel_slot.provider is not env_provider
+    factory.assert_not_called()
+    assert otel_slot.provider is env_provider
+    assert otel_slot.set_attempts == 0
