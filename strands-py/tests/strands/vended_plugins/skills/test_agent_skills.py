@@ -1043,6 +1043,14 @@ def _loaded_sources(plugin: AgentSkills, agent: MagicMock) -> list[str]:
     return list(plugin._dynamic_skills.get(agent, {}))
 
 
+async def _load(plugin: AgentSkills, agent: MagicMock, source: str) -> str:
+    return await plugin.manage_skills(action="load", source=source, tool_context=_mock_tool_context(agent))
+
+
+async def _unload(plugin: AgentSkills, agent: MagicMock, source: str) -> str:
+    return await plugin.manage_skills(action="unload", source=source, tool_context=_mock_tool_context(agent))
+
+
 class _YieldingSandbox(NotASandboxLocalEnvironment):
     """Real sandboxes do IO; yield so concurrent loads actually interleave."""
 
@@ -1176,9 +1184,9 @@ class TestDynamicLoading:
         skill_dir = _make_skill_dir(tmp_path, "alpha")
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        loaded = await plugin._load_dynamic_source(agent, str(skill_dir / "SKILL.md"))
-        assert [skill.name for skill in loaded] == ["alpha"]
-        assert loaded[0].path == skill_dir
+        result = await _load(plugin, agent, str(skill_dir / "SKILL.md"))
+        assert result.startswith(f"Loaded 1 skill(s) from '{skill_dir / 'SKILL.md'}': alpha.")
+        assert [skill.path for skill in plugin.get_available_skills(agent)] == [skill_dir]
 
     @pytest.mark.asyncio
     async def test_load_from_https_url_goes_through_the_sandbox(self):
@@ -1260,7 +1268,7 @@ class TestDynamicLoading:
         _make_skill_dir(tmp_path, "alpha")
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        await plugin._load_dynamic_source(agent, str(tmp_path))
+        await _load(plugin, agent, str(tmp_path))
 
         result = await plugin.manage_skills(
             action="unload", source=str(tmp_path), tool_context=_mock_tool_context(agent)
@@ -1276,7 +1284,7 @@ class TestDynamicLoading:
         _make_skill_dir(tmp_path, "alpha")
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        await plugin._load_dynamic_source(agent, str(tmp_path))
+        await _load(plugin, agent, str(tmp_path))
         result = await plugin.manage_skills(
             action="unload", source="/elsewhere", tool_context=_mock_tool_context(agent)
         )
@@ -1300,11 +1308,15 @@ class TestDynamicLoading:
             "alpha": "Configured alpha",
             "beta": "A test skill",
         }
-        await plugin._unload_dynamic_source(agent, str(tmp_path))
-        loaded = await plugin._load_dynamic_source(agent, str(tmp_path / "alpha"))
-        assert [skill.description for skill in loaded] == ["Dynamic alpha"]
+        await _unload(plugin, agent, str(tmp_path))
+        result = await _load(plugin, agent, str(tmp_path / "alpha"))
+        assert result == (
+            f"Loaded 0 skill(s) from '{tmp_path / 'alpha'}': none. "
+            "Skipped (name already taken by a configured skill): alpha."
+        )
+        assert plugin._dynamic_skills[agent][str(tmp_path / "alpha")]["alpha"].description == "Dynamic alpha"
         assert [skill.description for skill in plugin.get_available_skills(agent)] == ["Configured alpha"]
-        await plugin._unload_dynamic_source(agent, str(tmp_path))
+        await _unload(plugin, agent, str(tmp_path))
         assert [skill.description for skill in plugin.get_available_skills(agent)] == ["Configured alpha"]
 
     @pytest.mark.asyncio
@@ -1313,8 +1325,8 @@ class TestDynamicLoading:
         _make_skill_dir(tmp_path / "b", "alpha", description="From B")
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        await plugin._load_dynamic_source(agent, str(tmp_path / "a"))
-        await plugin._load_dynamic_source(agent, str(tmp_path / "b"))
+        await _load(plugin, agent, str(tmp_path / "a"))
+        await _load(plugin, agent, str(tmp_path / "b"))
 
         # Stable across invocations: no flip-flopping between sources.
         seen = []
@@ -1323,7 +1335,7 @@ class TestDynamicLoading:
             seen.append(plugin.get_available_skills(agent)[0].description)
         assert seen == ["From B", "From B", "From B"]
 
-        await plugin._unload_dynamic_source(agent, str(tmp_path / "b"))
+        await _unload(plugin, agent, str(tmp_path / "b"))
         assert [skill.description for skill in plugin.get_available_skills(agent)] == ["From A"]
 
     @pytest.mark.asyncio
@@ -1332,12 +1344,12 @@ class TestDynamicLoading:
         _make_skill_dir(tmp_path, "beta")
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        await plugin._load_dynamic_source(agent, str(tmp_path))
+        await _load(plugin, agent, str(tmp_path))
 
         _rewrite_skill(alpha, "v2")
         (tmp_path / "beta" / "SKILL.md").unlink()
         (tmp_path / "beta").rmdir()
-        await plugin._load_dynamic_source(agent, str(tmp_path))
+        await _load(plugin, agent, str(tmp_path))
 
         skills = {skill.name: skill.description for skill in plugin.get_available_skills(agent)}
         assert skills == {"alpha": "v2"}
@@ -1349,7 +1361,7 @@ class TestDynamicLoading:
         _make_skill_dir(source, "alpha")
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        await plugin._load_dynamic_source(agent, str(source))
+        await _load(plugin, agent, str(source))
         (source / "alpha" / "SKILL.md").unlink()
         (source / "alpha").rmdir()
         source.rmdir()
@@ -1367,7 +1379,7 @@ class TestDynamicLoading:
         _make_skill_dir(tmp_path, "alpha")
         plugin = AgentSkills(skills=[_make_skill(name="configured")], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        await plugin._load_dynamic_source(agent, str(tmp_path))
+        await _load(plugin, agent, str(tmp_path))
 
         plugin.set_available_skills([_make_skill(name="replacement")])
         await plugin._on_before_invocation(BeforeInvocationEvent(agent=agent))
@@ -1417,8 +1429,8 @@ class TestDynamicLoading:
         # Two skills calls in one turn (ConcurrentToolExecutor) must not lose the restore.
         # The first call's load yields nothing (so it never persists); the second must still see the restore.
         await asyncio.gather(
-            plugin._load_dynamic_source(agent, str(tmp_path / "missing")),
-            plugin._load_dynamic_source(agent, str(tmp_path / "new")),
+            _load(plugin, agent, str(tmp_path / "missing")),
+            _load(plugin, agent, str(tmp_path / "new")),
         )
 
         assert _loaded_sources(plugin, agent) == [str(tmp_path / "restored"), str(tmp_path / "new")]
@@ -1435,8 +1447,8 @@ class TestDynamicLoading:
 
         async def load_both():
             await asyncio.gather(
-                plugin._load_dynamic_source(agent, str(tmp_path / "a")),
-                plugin._load_dynamic_source(agent, str(tmp_path / "b")),
+                _load(plugin, agent, str(tmp_path / "a")),
+                _load(plugin, agent, str(tmp_path / "b")),
             )
 
         asyncio.run(load_both())
@@ -1450,8 +1462,8 @@ class TestDynamicLoading:
         base = tmp_path.as_posix()
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        await plugin._load_dynamic_source(agent, f"{base}/")
-        await plugin._load_dynamic_source(agent, f"{base}/./alpha/..")
+        await _load(plugin, agent, f"{base}/")
+        await _load(plugin, agent, f"{base}/./alpha/..")
         assert _loaded_sources(plugin, agent) == [base]
 
         result = await plugin.manage_skills(
@@ -1470,7 +1482,7 @@ class TestDynamicLoading:
         agent.state.set("agent_skills", {"dynamic_sources": [f"{base}/./"]})
         await plugin._on_before_invocation(BeforeInvocationEvent(agent=agent))
         assert _loaded_sources(plugin, agent) == [base]
-        assert await plugin._unload_dynamic_source(agent, base) != []
+        assert (await _unload(plugin, agent, base)).startswith("Unloaded 1 skill(s)")
 
     @pytest.mark.asyncio
     async def test_reload_of_vanished_restored_source_reports_removal(self, tmp_path):
@@ -1505,8 +1517,8 @@ class TestDynamicLoading:
         await plugin._on_before_invocation(BeforeInvocationEvent(agent=agent))
         assert _loaded_sources(plugin, agent) == []
 
-        await plugin._load_dynamic_source(agent, str(tmp_path))
-        await plugin._unload_dynamic_source(agent, str(tmp_path))
+        await _load(plugin, agent, str(tmp_path))
+        await _unload(plugin, agent, str(tmp_path))
         agent.state.set("agent_skills", {"dynamic_sources": [str(tmp_path)]})
         await plugin._on_before_invocation(BeforeInvocationEvent(agent=agent))
         # Already restored for this agent: state written later is not re-applied.
@@ -1518,7 +1530,7 @@ class TestDynamicLoading:
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         first = await self._ready_agent(plugin)
         second = await self._ready_agent(plugin)
-        await plugin._load_dynamic_source(first, str(tmp_path))
+        await _load(plugin, first, str(tmp_path))
         assert [skill.name for skill in plugin.get_available_skills(first)] == ["alpha"]
         assert plugin.get_available_skills(second) == []
         assert _loaded_sources(plugin, second) == []
@@ -1553,7 +1565,7 @@ class TestDynamicLoadingSourceKinds:
         assert result == "Error: runtime skill loading is not enabled for this agent."
 
     @pytest.mark.asyncio
-    async def test_sandbox_only_rejects_urls(self, tmp_path, caplog):
+    async def test_sandbox_only_rejects_urls(self, tmp_path):
         _make_skill_dir(tmp_path, "alpha")
         plugin = AgentSkills(skills=[], dynamic_loading="sandbox")
         agent = await self._ready_agent(plugin)
@@ -1578,11 +1590,6 @@ class TestDynamicLoadingSourceKinds:
             f"No skills found at '{tmp_path / 'nope'}'. Expected a skill directory (containing SKILL.md), "
             "a parent directory of skill directories or a SKILL.md path in your sandbox."
         )
-
-        # The programmatic path is gated too, so a disallowed kind never reaches the sandbox or network.
-        with caplog.at_level(logging.WARNING):
-            assert await plugin._load_dynamic_source(agent, self._URL) == []
-        assert "loading skills from https:// URLs is not enabled" in caplog.text
 
     @pytest.mark.asyncio
     async def test_url_only_rejects_sandbox_paths(self, tmp_path):
