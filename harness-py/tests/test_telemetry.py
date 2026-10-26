@@ -1,28 +1,44 @@
 """Tests for the env-gated OTEL setup.
 
 The SDK's ``StrandsTelemetry`` is patched out in most of these: they pin the harness's gating decision (which
-exporters get wired, and how often), not the SDK's exporter wiring.
+exporters get wired, and how often), not the SDK's exporter wiring. The OTel API's process-global, set-once
+provider slot is stubbed for every test, so the suite neither depends on nor pollutes the real one.
 """
 
+import subprocess
+import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 from opentelemetry import propagate
 from opentelemetry import trace as trace_api
+from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
 from strands_harness import telemetry
 
 
-@pytest.fixture
-def installed_provider(monkeypatch):
-    """Simulate a host (e.g. ADOT) that already owns the OTel globals, without tripping the real set-once latch."""
-    monkeypatch.setattr(trace_api, "get_tracer_provider", lambda: SDKTracerProvider())
-    set_tracer_provider = MagicMock()
+@pytest.fixture(autouse=True)
+def otel_slot(monkeypatch):
+    """Stand-in for the OTel API's global provider slot: first set wins, get returns the proxy while empty."""
+    slot = SimpleNamespace(provider=None)
+
+    def set_tracer_provider(provider):
+        if slot.provider is None:
+            slot.provider = provider
+
     monkeypatch.setattr(trace_api, "set_tracer_provider", set_tracer_provider)
-    textmap = propagate.get_global_textmap()
-    yield set_tracer_provider
-    propagate.set_global_textmap(textmap)
+    monkeypatch.setattr(trace_api, "get_tracer_provider", lambda: slot.provider or trace_api.ProxyTracerProvider())
+    return slot
+
+
+@pytest.fixture
+def installed_provider(otel_slot):
+    """A host (e.g. ADOT) already owns the provider slot."""
+    otel_slot.provider = SDKTracerProvider()
+    return otel_slot.provider
 
 
 @pytest.fixture
@@ -31,6 +47,16 @@ def strands_telemetry(monkeypatch):
     factory = MagicMock(return_value=instance)
     monkeypatch.setattr(telemetry, "StrandsTelemetry", factory)
     return factory, instance
+
+
+@pytest.fixture
+def custom_textmap():
+    """A host-configured global textmap (what OTEL_PROPAGATORS=...,xray produces), restored afterwards."""
+    original = propagate.get_global_textmap()
+    textmap = CompositePropagator([])
+    propagate.set_global_textmap(textmap)
+    yield textmap
+    propagate.set_global_textmap(original)
 
 
 def test_no_selector_configures_nothing(strands_telemetry):
@@ -104,17 +130,52 @@ def test_setup_runs_once_per_process(strands_telemetry, monkeypatch):
     instance.setup_otlp_exporter.assert_called_once()
 
 
-def test_an_installed_tracer_provider_is_left_alone(strands_telemetry, installed_provider, monkeypatch):
+def test_exporters_land_on_the_provider_the_harness_installed(strands_telemetry, otel_slot, monkeypatch):
+    factory, _ = strands_telemetry
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
+    telemetry.setup_telemetry()
+    assert isinstance(otel_slot.provider, SDKTracerProvider)
+    assert factory.call_args.kwargs["tracer_provider"] is otel_slot.provider
+
+
+def test_an_installed_tracer_provider_is_left_alone(strands_telemetry, installed_provider, otel_slot, monkeypatch):
     factory, _ = strands_telemetry
     monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
     telemetry.setup_telemetry()
     factory.assert_not_called()
+    assert otel_slot.provider is installed_provider
 
 
-def test_an_installed_tracer_provider_keeps_its_propagator(installed_provider, monkeypatch):
+def test_an_installed_tracer_provider_keeps_its_propagator(installed_provider, custom_textmap, monkeypatch):
     """The owner's global textmap (e.g. ADOT's X-Ray composite) survives setup, with the real SDK in the loop."""
     monkeypatch.setenv("OTEL_TRACES_EXPORTER", "console")
-    textmap = propagate.get_global_textmap()
     telemetry.setup_telemetry()
-    assert propagate.get_global_textmap() is textmap
-    installed_provider.assert_not_called()
+    assert propagate.get_global_textmap() is custom_textmap
+
+
+def test_propagators_survive_even_when_the_harness_installs_the_provider(custom_textmap, otel_slot, monkeypatch):
+    """OTEL_PROPAGATORS-configured propagators are not replaced just because no provider was installed yet."""
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "console")
+    telemetry.setup_telemetry()
+    assert propagate.get_global_textmap() is custom_textmap
+    processors = otel_slot.provider._active_span_processor._span_processors
+    assert [type(p) for p in processors] == [SimpleSpanProcessor]
+
+
+def test_env_var_provider_does_not_preempt_the_harness(monkeypatch):
+    """OTEL_PYTHON_TRACER_PROVIDER must not make the harness skip its exporter (or raise on an unknown name).
+
+    Runs against the real OTel globals in a subprocess: that getter's load-on-first-read is the behavior under test.
+    """
+    code = (
+        "from opentelemetry import trace as trace_api\n"
+        "from strands_harness import telemetry\n"
+        "telemetry.setup_telemetry()\n"
+        "print([type(p).__name__ for p in trace_api.get_tracer_provider()._active_span_processor._span_processors])\n"
+    )
+    for name in ("sdk_tracer_provider", "does_not_exist"):
+        monkeypatch.setenv("OTEL_PYTHON_TRACER_PROVIDER", name)
+        monkeypatch.setenv("OTEL_TRACES_EXPORTER", "console")
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        assert result.returncode == 0, (name, result.stderr)
+        assert result.stdout.strip() == "['SimpleSpanProcessor']", name

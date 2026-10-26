@@ -10,9 +10,13 @@ configured through the usual ``OTEL_EXPORTER_OTLP_*`` variables, which the expor
 
 Tracing is process-global (the provider lives on the OpenTelemetry global API, not on an ``Agent``),
 so setup runs at most once per process: building several agents — or a ``generalist``, which builds
-another agent per call — cannot stack duplicate exporters onto the same trace. A tracer provider that is
-already installed (ADOT auto-instrumentation on AgentCore Runtime, or the host application's own setup)
-owns tracing outright: the harness leaves it, its exporters, and its propagators untouched.
+another agent per call — cannot stack duplicate exporters onto the same trace. The harness installs its
+own provider only if the global slot is still free; a provider that is already installed (ADOT
+auto-instrumentation on AgentCore Runtime, or the host application's own setup) owns tracing outright,
+and the harness leaves it and its exporters untouched (the OTel API logs its "Overriding of current
+TracerProvider is not allowed" warning for the refused set; that is the expected outcome, not a fault).
+Propagators are never the harness's business: the global textmap stays whatever OTEL's ``OTEL_PROPAGATORS``
+(or the host) made it.
 """
 
 from __future__ import annotations
@@ -21,7 +25,9 @@ import logging
 import os
 
 from opentelemetry import trace as trace_api
+from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 from strands.telemetry import StrandsTelemetry
+from strands.telemetry.config import get_otel_resource
 
 logger = logging.getLogger(__name__)
 
@@ -61,19 +67,23 @@ def setup_telemetry() -> None:
     exporters = _resolve_exporters()
     if not exporters:
         return
-    provider = trace_api.get_tracer_provider()
-    if not isinstance(provider, trace_api.ProxyTracerProvider):
+    _configured = True
+    # Claim the global slot before reading it: get_tracer_provider() is not a pure read (it loads and
+    # installs OTEL_PYTHON_TRACER_PROVIDER on first call), and the OTel API only honors the first set.
+    provider = SDKTracerProvider(resource=get_otel_resource())
+    trace_api.set_tracer_provider(provider)
+    installed = trace_api.get_tracer_provider()
+    if installed is not provider:
         logger.info(
-            "provider=<%s> | tracer provider already installed, leaving telemetry to its owner", type(provider).__name__
+            "provider=<%s> | tracer provider already installed, leaving telemetry to its owner",
+            type(installed).__name__,
         )
-        _configured = True
         return
-    telemetry = StrandsTelemetry()
+    telemetry = StrandsTelemetry(tracer_provider=provider)
     if "otlp" in exporters:
         telemetry.setup_otlp_exporter()
     if "console" in exporters:
         telemetry.setup_console_exporter()
-    _configured = True
 
 
 def _reset() -> None:
