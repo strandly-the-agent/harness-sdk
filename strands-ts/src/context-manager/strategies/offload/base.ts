@@ -19,6 +19,10 @@ import type { ContextStrategy, ContextState } from '../../types.js'
 import type { Stash } from '../../stash.js'
 import { RETRIEVAL_TOOL_NAME } from '../../retrieval-tool.js'
 import { isPinned } from '../../../conversation-manager/compression/pin-message.js'
+import { DEFAULT_CONTEXT_WINDOW_LIMIT } from '../../../models/defaults.js'
+
+/** Share of the context window a `dynamicLimit: true` strategy lets a single result occupy. */
+const DYNAMIC_LIMIT_WINDOW_SHARE = 0.5
 
 /**
  * Target for offload operations. This union is intentionally extensible — new
@@ -369,8 +373,8 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
   protected readonly _includeFilter: Set<string> | undefined
   protected readonly _excludeFilter: Set<string> | undefined
   protected _stash: Stash | undefined
-  /** Set by subclasses that honour model-selected result limits; `max` caps what the model may pick. */
-  protected _modelLimits: { max: number } | undefined
+  /** Set by subclasses that honour model-selected result limits; see `TruncateConfig.dynamicLimit`. */
+  protected _dynamicLimit: true | number | undefined
 
   constructor(target?: OffloadTarget, conditions?: OffloadConditions) {
     if (Array.isArray(target) && target.length === 0) {
@@ -387,6 +391,13 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
     this._excludeFilter = resolved.exclude
   }
 
+  /** The largest result limit the model may pick; reads the window the same way `estimateUtilization` does. */
+  protected _dynamicLimitCap(agent: LocalAgent): number {
+    if (typeof this._dynamicLimit === 'number') return this._dynamicLimit
+    const window = agent.model.getConfig().contextWindowLimit || DEFAULT_CONTEXT_WINDOW_LIMIT
+    return Math.floor(window * DYNAMIC_LIMIT_WINDOW_SHARE)
+  }
+
   /** Whether this strategy operates at message-level (batch) vs per-block. */
   protected get _isMessageLevel(): boolean {
     return this._utilizationThreshold !== undefined
@@ -401,7 +412,9 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
       const index = messages.indexOf(event.message)
       if (index >= 0 && isPinned(messages, index)) return
       const toolNameMap = buildToolNameMap(messages)
-      const resultLimits = this._modelLimits ? buildResultLimitMap(messages, this._modelLimits.max) : undefined
+      const resultLimits = this._dynamicLimit
+        ? buildResultLimitMap(messages, this._dynamicLimitCap(event.agent))
+        : undefined
       await this._transformBlocks(event.message, messages, toolNameMap, event.agent, undefined, resultLimits)
     })
   }
@@ -421,7 +434,7 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
     const { messages, agent } = context
     const invocationContext = context.invocationContext
     const toolNameMap = buildToolNameMap(messages)
-    const resultLimits = this._modelLimits ? buildResultLimitMap(messages, this._modelLimits.max) : undefined
+    const resultLimits = this._dynamicLimit ? buildResultLimitMap(messages, this._dynamicLimitCap(agent)) : undefined
     const eligible =
       this._preserveRecent > 0
         ? getOldestMatches(

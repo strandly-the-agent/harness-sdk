@@ -10,7 +10,8 @@ import { tool } from '../../tools/tool-factory.js'
 import type { ToolSpec } from '../../tools/types.js'
 import { Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../types/messages.js'
 import type { JSONValue } from '../../types/json.js'
-import { buildPreview, TRUNCATED_HEADER, TRUNCATED_PREFIX } from '../methods/truncate.js'
+import { buildPreview, TRUNCATED_HEADER, TRUNCATED_PREFIX, type TruncateConfig } from '../methods/truncate.js'
+import type { ContextManagerStrategy } from '../context-manager.js'
 import { Offload } from '../strategies/offload/index.js'
 import { buildResultLimitMap } from '../strategies/offload/base.js'
 import type { OffloadTarget } from '../strategies/offload/base.js'
@@ -127,8 +128,8 @@ describe('model-selected result limits (strategy level)', () => {
   const threshold = 1000
   const previewTokens = 500
 
-  function truncate(enabled: boolean, agenticLimit = 1_000_000) {
-    const config = enabled ? { previewTokens, agenticLimit } : { previewTokens }
+  function truncate(enabled: boolean, dynamicLimit = 1_000_000) {
+    const config = enabled ? { previewTokens, dynamicLimit } : { previewTokens }
     return Offload.truncate('toolResults', config).when({ threshold })
   }
 
@@ -167,12 +168,13 @@ describe('model-selected result limits (strategy level)', () => {
     expect(resultText(messages, 'tu-2').startsWith(TRUNCATED_PREFIX)).toBe(false)
   })
 
-  it('rejects a non-positive agenticLimit', () => {
-    expect(() => Offload.truncate('toolResults', { agenticLimit: 0 })).toThrow(/agenticLimit/)
-    expect(() => Offload.truncate('toolResults', { agenticLimit: -5 })).toThrow(/agenticLimit/)
+  it('rejects a non-positive dynamicLimit', () => {
+    expect(() => Offload.truncate('toolResults', { dynamicLimit: 0 })).toThrow(/dynamicLimit/)
+    expect(() => Offload.truncate('toolResults', { dynamicLimit: -5 })).toThrow(/dynamicLimit/)
+    expect(() => Offload.truncate('toolResults', { dynamicLimit: true })).not.toThrow()
   })
 
-  it('ignores the property unless agenticLimit is set', async () => {
+  it('ignores the property unless dynamicLimit is set', async () => {
     const messages = makeToolCall('tu-1', 2000, { _max_result_tokens: 5000 })
 
     expect(await truncate(false).apply(makeContext(messages))).toBe(true)
@@ -200,10 +202,10 @@ describe('model-selected result limits (strategy level)', () => {
 
   it('still lets a later, smaller strategy shrink an existing preview when no model limit applies', async () => {
     const messages = makeToolCall('tu-1', 4000)
-    const first = Offload.truncate('toolResults', { previewTokens: 750, agenticLimit: 1_000_000 }).when({
+    const first = Offload.truncate('toolResults', { previewTokens: 750, dynamicLimit: 1_000_000 }).when({
       threshold: 1500,
     })
-    const second = Offload.truncate('toolResults', { previewTokens: 100, agenticLimit: 1_000_000 }).when({
+    const second = Offload.truncate('toolResults', { previewTokens: 100, dynamicLimit: 1_000_000 }).when({
       threshold: 300,
     })
 
@@ -214,11 +216,15 @@ describe('model-selected result limits (strategy level)', () => {
   })
 })
 
-describe('agenticLimit through ContextManager (agent level)', () => {
+describe('dynamicLimit through ContextManager (agent level)', () => {
   const RESULT_TOKENS = 3000
-  const AGENTIC = { previewTokens: 750, agenticLimit: 1_000_000 }
+  const AGENTIC = { previewTokens: 750, dynamicLimit: 1_000_000 }
 
-  function agentic(config: ContextManagerConfig = {}, truncateConfig = AGENTIC, target: OffloadTarget = 'toolResults') {
+  function agentic(
+    config: ContextManagerConfig = {},
+    truncateConfig: TruncateConfig = AGENTIC,
+    target: OffloadTarget = 'toolResults'
+  ) {
     return {
       ...config,
       strategies: [Offload.truncate(target, truncateConfig).when({ threshold: 1500 })],
@@ -227,8 +233,9 @@ describe('agenticLimit through ContextManager (agent level)', () => {
 
   function makeAgent(
     limit: number | undefined,
-    config: ContextManagerConfig,
-    inputSchema: z.ZodObject<z.ZodRawShape> = z.object({ query: z.string() })
+    config: ContextManagerStrategy,
+    inputSchema: z.ZodObject<z.ZodRawShape> = z.object({ query: z.string() }),
+    contextWindowLimit?: number
   ) {
     const inputs: unknown[] = []
     const search = tool({
@@ -249,6 +256,7 @@ describe('agenticLimit through ContextManager (agent level)', () => {
         input: { query: 'q', ...(limit !== undefined && { _max_result_tokens: limit }) },
       })
       .addTurn({ type: 'textBlock', text: 'done' })
+    if (contextWindowLimit !== undefined) model.updateConfig({ contextWindowLimit })
     const agent = new Agent({
       model,
       tools: [search, other],
@@ -277,8 +285,8 @@ describe('agenticLimit through ContextManager (agent level)', () => {
     expect(retrieve.inputSchema?.properties?.['_max_result_tokens']).toBeUndefined()
   })
 
-  it('advertises agenticLimit as the schema maximum and clamps the model value to it', async () => {
-    const { agent, toolSpecs } = makeAgent(100_000, agentic({}, { previewTokens: 100, agenticLimit: 200 }))
+  it('advertises dynamicLimit as the schema maximum and clamps the model value to it', async () => {
+    const { agent, toolSpecs } = makeAgent(100_000, agentic({}, { previewTokens: 100, dynamicLimit: 200 }))
     await agent.invoke('go')
 
     const property = toolSpecs[0]!.find((spec) => spec.name === 'search')!.inputSchema?.properties?.[
@@ -327,8 +335,8 @@ describe('agenticLimit through ContextManager (agent level)', () => {
   it("advertises the first pipeline strategy's cap when two agentic strategies target the same tool", async () => {
     const { agent, toolSpecs } = makeAgent(undefined, {
       strategies: [
-        Offload.truncate(['tool::search'], { previewTokens: 100, agenticLimit: 20_000 }).when({ threshold: 1500 }),
-        Offload.truncate('toolResults', { previewTokens: 100, agenticLimit: 2_000 }).when({ threshold: 1500 }),
+        Offload.truncate(['tool::search'], { previewTokens: 100, dynamicLimit: 20_000 }).when({ threshold: 1500 }),
+        Offload.truncate('toolResults', { previewTokens: 100, dynamicLimit: 2_000 }).when({ threshold: 1500 }),
       ],
     })
     await agent.invoke('go')
@@ -344,7 +352,42 @@ describe('agenticLimit through ContextManager (agent level)', () => {
     })
   })
 
-  it('does not advertise the property without an agentic truncate strategy', async () => {
+  it('caps at half the context window for dynamicLimit: true', async () => {
+    const { agent, toolSpecs } = makeAgent(
+      100_000,
+      agentic({}, { previewTokens: 100, dynamicLimit: true }),
+      undefined,
+      4 * RESULT_TOKENS
+    )
+    await agent.invoke('go')
+
+    const property = toolSpecs[0]!.find((spec) => spec.name === 'search')!.inputSchema?.properties?.[
+      '_max_result_tokens'
+    ]
+    expect(property).toMatchObject({ maximum: 2 * RESULT_TOKENS })
+    expect(resultText(agent.messages, 'search-1')).toBe('x'.repeat(RESULT_TOKENS * CHARS_PER_TOKEN))
+  })
+
+  it('falls back to the default context window when the model has none configured', async () => {
+    const { agent, toolSpecs } = makeAgent(undefined, agentic({}, { previewTokens: 100, dynamicLimit: true }))
+    await agent.invoke('go')
+
+    const property = toolSpecs[0]!.find((spec) => spec.name === 'search')!.inputSchema?.properties?.[
+      '_max_result_tokens'
+    ]
+    expect(property).toMatchObject({ maximum: 100_000 })
+  })
+
+  it("is on by default in the 'agentic' preset", async () => {
+    const { agent, toolSpecs } = makeAgent(undefined, 'agentic')
+    await agent.invoke('go')
+
+    expect(
+      toolSpecs[0]!.find((spec) => spec.name === 'search')!.inputSchema?.properties?.['_max_result_tokens']
+    ).toBeDefined()
+  })
+
+  it('does not advertise the property without a dynamic truncate strategy', async () => {
     const { agent, toolSpecs } = makeAgent(undefined, {})
     await agent.invoke('go')
 

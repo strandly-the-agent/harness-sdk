@@ -53,13 +53,11 @@ export class TruncateStrategy extends BaseOffloadStrategy {
   constructor(target?: OffloadTarget, config?: TruncateConfig, conditions?: OffloadConditions) {
     super(target, conditions)
     this._truncateConfig = config ?? {}
-    const agenticLimit = this._truncateConfig.agenticLimit
-    if (agenticLimit !== undefined) {
-      if (!(Number.isFinite(agenticLimit) && agenticLimit > 0)) {
-        throw new Error(`agenticLimit must be a positive number, got ${agenticLimit}`)
-      }
-      this._modelLimits = { max: agenticLimit }
+    const dynamicLimit = this._truncateConfig.dynamicLimit
+    if (dynamicLimit !== undefined && dynamicLimit !== true && !(Number.isFinite(dynamicLimit) && dynamicLimit > 0)) {
+      throw new Error(`dynamicLimit must be true or a positive number, got ${dynamicLimit}`)
     }
+    this._dynamicLimit = dynamicLimit
 
     const previewTokens =
       typeof this._truncateConfig.previewTokens === 'number' && Number.isFinite(this._truncateConfig.previewTokens)
@@ -82,17 +80,17 @@ export class TruncateStrategy extends BaseOffloadStrategy {
 
   override init(agent: LocalAgent, stash?: Stash): void {
     super.init(agent, stash)
-    if (this._modelLimits) this._registerResultLimitSelection(agent, this._modelLimits.max)
+    if (this._dynamicLimit) this._registerResultLimitSelection(agent)
   }
 
   /** Advertises `_max_result_tokens` on the tools this strategy targets and strips it before the tool runs. */
-  private _registerResultLimitSelection(agent: LocalAgent, max: number): void {
+  private _registerResultLimitSelection(agent: LocalAgent): void {
     agent.addMiddleware(InvokeModelStage.Input, async (context) => {
       const retrievable = context.toolSpecs.some((spec) => spec.name === RETRIEVAL_TOOL_NAME)
       const schema: JSONSchema = {
         type: 'integer',
         minimum: 0,
-        maximum: max,
+        maximum: this._dynamicLimitCap(agent),
         description:
           'Maximum tokens of this result to keep in context. Larger results are truncated to a preview of this size' +
           (retrievable ? ' and the full content is stashed for retrieval' : '') +

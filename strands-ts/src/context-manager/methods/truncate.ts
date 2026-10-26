@@ -28,15 +28,18 @@ export interface TruncateConfig {
   preview?: 'head' | 'tail' | 'headTail'
 
   /**
-   * Let the model choose, per tool call, how many tokens of that call's result stay in context,
-   * up to this cap. Adds an optional `_max_result_tokens` integer to the input schema of the tools
-   * this strategy targets; when the model sets it, that result is kept whole up to the value and
-   * otherwise truncated to a preview of that size, in place of `threshold` and `previewTokens`.
-   * Calls without it keep the configured defaults. When several strategies with `agenticLimit`
-   * target the same tool, the first in the pipeline sets the advertised cap; each still clamps to
-   * its own. Must be a positive number. Off when omitted.
+   * Let the model choose, per tool call, how many tokens of that call's result stay in context.
+   * Adds an optional `_max_result_tokens` integer to the input schema of the tools this strategy
+   * targets; when the model sets it, that result is kept whole up to the value and otherwise
+   * truncated to a preview of that size, in place of `threshold` and `previewTokens`. Calls
+   * without it keep the configured defaults.
+   *
+   * The value caps what the model may pick: `true` caps at half the model's context window, a
+   * number caps at that many tokens. When several strategies with `dynamicLimit` target the same
+   * tool, the first in the pipeline sets the advertised cap; each still clamps to its own. Off
+   * when omitted.
    */
-  agenticLimit?: number
+  dynamicLimit?: true | number
 }
 
 /**
