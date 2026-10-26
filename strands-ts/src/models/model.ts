@@ -29,7 +29,7 @@ import { MaxTokensError, ModelError, normalizeError } from '../errors.js'
 import type { Redaction } from '../hooks/events.js'
 import { logger } from '../logging/logger.js'
 import { DEFAULT_CONTEXT_WINDOW_LIMIT } from './defaults.js'
-import { lookupModelInfo, mergeModelInfo, type ModelInfo } from './model-info.js'
+import { lookupModelInfo, mergeModelInfo, type ModelInfo, type ModelInfoOverride } from './model-info.js'
 import { warnOnce } from '../logging/warn-once.js'
 
 /**
@@ -43,10 +43,10 @@ import { warnOnce } from '../logging/warn-once.js'
  * @internal
  * @param config - The stored model config
  * @param modelId - The model ID to look up
- * @param declared - What the provider declares through `declareModelInfo()`
+ * @param declared - What the provider declares through `declareModelInfo(config)`
  * @returns A new config with the limit filled in, or the original config if nothing to fill
  */
-export function resolveConfigMetadata<T extends BaseModelConfig>(config: T, modelId: string, declared?: ModelInfo): T {
+export function resolveConfigMetadata<T extends BaseModelConfig>(config: T, modelId: string, declared: ModelInfo): T {
   if (config.contextWindowLimit !== undefined) return config
   const contextWindow = mergeModelInfo(lookupModelInfo(modelId), declared, config.modelInfo).limits?.contextWindow
   if (contextWindow === undefined) return config
@@ -217,17 +217,17 @@ export interface BaseModelConfig {
    * through `modelInfo`, and it wins over the shared model info and the provider's declaration. When
    * both are set, `modelInfo` wins.
    * When not provided, vended providers still populate it from the shared model info for
-   * callers that read `getConfig()`; `info` is the resolved view to read.
+   * callers that read `getConfig()`; `modelInfo` is the resolved view to read.
    */
   contextWindowLimit?: number
 
   /**
    * Overrides for what the SDK knows about the model. Fields set here win over the shared model
-   * info and what the provider declares; `capabilities.stateful` is the exception, it always
-   * mirrors the provider. `updateConfig({ info })` replaces the previous override entirely, it
-   * does not merge into it.
+   * info and what the provider declares; `capabilities.stateful` is not accepted, it always
+   * mirrors the provider. `updateConfig({ modelInfo })` replaces the previous override entirely,
+   * it does not merge into it.
    */
-  modelInfo?: ModelInfo
+  modelInfo?: ModelInfoOverride
 }
 
 /**
@@ -372,12 +372,14 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   /**
    * What this provider knows about the configured model beyond the shared model info: facts that
    * depend on how the provider talks to it, derived from its config and wire API. Leave out
-   * anything unknown. Users override the result through the `modelInfo` config key. Read the
-   * stored config here rather than `getConfig()`, which may call this to fill in defaults.
+   * anything unknown. Users override the result through the `modelInfo` config key. Read
+   * `config` rather than `getConfig()`, `modelId` or `modelInfo`: `getConfig()` calls this to fill
+   * in defaults, so those recurse.
    *
+   * @param _config - The model config to describe
    * @returns What the provider knows, empty by default
    */
-  protected declareModelInfo(): ModelInfo {
+  protected declareModelInfo(_config: T): ModelInfo {
     return {}
   }
 
@@ -391,8 +393,8 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   get modelInfo(): ModelInfo {
     const config = this.getConfig()
     return mergeModelInfo(
-      lookupModelInfo(config.modelId ?? ''),
-      this.declareModelInfo(),
+      lookupModelInfo(this.modelId ?? ''),
+      this.declareModelInfo(config),
       { limits: { contextWindow: config.contextWindowLimit } },
       config.modelInfo,
       {

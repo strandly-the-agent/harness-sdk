@@ -9,7 +9,7 @@ import {
 } from '@aws-sdk/client-bedrock-runtime'
 import { isNode } from '../../__fixtures__/environment.js'
 import { BedrockModel } from '../bedrock.js'
-import type { BedrockModelOptions } from '../bedrock.js'
+import type { BedrockModelConfig, BedrockModelOptions } from '../bedrock.js'
 import { ContextWindowOverflowError, ModelThrottledError } from '../../errors.js'
 import { Message, ReasoningBlock, ToolUseBlock, ToolResultBlock, JsonBlock } from '../../types/messages.js'
 import type { SystemContentBlock } from '../../types/messages.js'
@@ -414,6 +414,17 @@ describe('BedrockModel', () => {
       })
       expect(provider.getConfig().contextWindowLimit).toBe(500_000)
       expect(provider.modelInfo.limits?.contextWindow).toBe(500_000)
+    })
+
+    it('lets a subclass declaration read the model id from the config without recursing', () => {
+      class Gateway extends BedrockModel {
+        protected override declareModelInfo(config: BedrockModelConfig) {
+          return config.modelId?.startsWith('us.') ? { limits: { contextWindow: 8_000 } } : {}
+        }
+      }
+      const provider = new Gateway({ modelId: 'us.anthropic.claude-sonnet-4-6' })
+      expect(provider.getConfig().contextWindowLimit).toBe(8_000)
+      expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
     })
 
     it('auto-populates contextWindowLimit from a provider declaration over the shared value', () => {
@@ -3032,6 +3043,18 @@ describe('BedrockModel', () => {
         expect(cachePoints()).toStrictEqual([undefined, undefined])
       })
 
+      it('warns through warnOnce when auto finds no caching support', async () => {
+        const provider = new BedrockModel({ modelId: 'meta.llama3-70b-instruct-v1:0', cacheConfig: {} })
+
+        await collectIterator(provider.stream(messages, { toolSpecs }))
+
+        expect(cachePoints()).toStrictEqual([undefined, undefined])
+        expect(warnOnce).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.stringContaining('does not support automatic caching')
+        )
+      })
+
       it('applies the shared ttl to both sections', async () => {
         // Bedrock requires checkpoint TTLs to be non-increasing across toolConfig then messages, which
         // equal values satisfy.
@@ -3525,7 +3548,6 @@ describe('BedrockModel', () => {
     })
 
     it('logs warning and disables caching for non-caching models', async () => {
-      const warnSpy = vi.spyOn(console, 'warn')
       const provider = new BedrockModel({
         modelId: 'amazon.titan-text-express-v1',
         cacheConfig: { strategy: 'auto' },
@@ -3538,7 +3560,10 @@ describe('BedrockModel', () => {
       collectIterator(provider.stream(messages, options))
 
       // Verify warning was logged
-      expect(warnSpy).toHaveBeenCalled()
+      expect(warnOnce).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining('does not support automatic caching')
+      )
 
       // Verify no cache points were added
       expect(mockConverseStreamCommand).toHaveBeenLastCalledWith({
@@ -3551,8 +3576,6 @@ describe('BedrockModel', () => {
         ],
         system: [{ text: 'You are a helpful assistant' }],
       })
-
-      warnSpy.mockRestore()
     })
 
     it('enables caching with anthropic strategy for application inference profiles', async () => {

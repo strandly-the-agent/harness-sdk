@@ -1248,10 +1248,25 @@ describe('info', () => {
 
   it('never lets the info override change stateful', () => {
     const provider = new TestModelProvider()
+    // @ts-expect-error stateful is not part of the override type
     provider.updateConfig({ modelInfo: { capabilities: { stateful: true } } })
 
     expect(provider.modelInfo.capabilities?.stateful).toBe(false)
     expect(provider.stateful).toBe(false)
+  })
+
+  it('passes the config to the declaration', () => {
+    class DeclaringProvider extends TestModelProvider {
+      protected override declareModelInfo(config: BaseModelConfig) {
+        return { limits: { maxOutputTokens: config.modelId === 'small' ? 1_000 : 2_000 } }
+      }
+    }
+    const provider = new DeclaringProvider()
+    provider.updateConfig({ modelId: 'small' })
+    expect(provider.modelInfo.limits?.maxOutputTokens).toBe(1_000)
+
+    provider.updateConfig({ modelId: 'large' })
+    expect(provider.modelInfo.limits?.maxOutputTokens).toBe(2_000)
   })
 
   it('lets the info override win over contextWindowLimit', () => {

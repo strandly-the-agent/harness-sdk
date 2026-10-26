@@ -141,7 +141,7 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
    *
    * @returns The declared capabilities
    */
-  protected override declareModelInfo(): ModelInfo {
+  protected override declareModelInfo(_config: OpenAIModelConfig): ModelInfo {
     return { capabilities: { promptCaching: 'auto' } }
   }
 
@@ -177,8 +177,13 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
     return resolveConfigMetadata(
       this._config,
       this._config.modelId ?? MODEL_DEFAULTS.openai.modelId,
-      this.declareModelInfo()
+      this.declareModelInfo(this._config)
     )
+  }
+
+  /** The configured model ID, else the default one that gets sent. */
+  override get modelId(): string {
+    return this._config.modelId ?? MODEL_DEFAULTS.openai.modelId
   }
 
   async *stream(messages: Message[], options?: StreamOptions): AsyncIterable<ModelStreamEvent> {

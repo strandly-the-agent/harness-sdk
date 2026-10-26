@@ -18,7 +18,7 @@
     "claude-sonnet-4-20250514": {
       "limits": {
         "contextWindow": 1000000,
-        "maxOutputTokens": 65536
+        "maxOutputTokens": 64000
       },
       "capabilities": {
         "promptCaching": "cachePoints"

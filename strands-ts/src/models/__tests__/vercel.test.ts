@@ -1575,6 +1575,44 @@ describe('VercelModel', () => {
 
         expect(bedrockMessageCachePoint(callArgs())).toEqual({ type: 'default', ttl: '1h' })
       })
+
+      it('describes the configured model id over the wrapped one, for gateways and inference profiles', async () => {
+        const arn = 'arn:aws:bedrock:us-west-2:123:application-inference-profile/abc123'
+        const config = { modelId: CACHING_MODEL_ID, cacheConfig: { messagesTTL: '1h' as const } }
+        const { model, collect, callArgs } = setupCaptureTest(minimalParts, config, 'amazon-bedrock', arn)
+
+        expect(model.modelId).toBe(CACHING_MODEL_ID)
+        expect(model.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
+        await collect(userMessages)
+        expect(bedrockMessageCachePoint(callArgs())).toEqual({ type: 'default', ttl: '1h' })
+      })
+    })
+
+    describe('modelInfo override says unsupported', () => {
+      const unsupported = { modelInfo: { capabilities: { promptCaching: 'unsupported' as const } } }
+
+      it.each(['anthropic', 'openai'])('under auto, adds no markers for %s', async (provider) => {
+        const config = { cacheConfig: { ttl: '1h' as const, cacheKey: 'k' }, ...unsupported }
+        const { collect, callArgs } = setupCaptureTest(minimalParts, config, provider, 'claude-sonnet-4-6')
+        await collect(userMessages, { toolSpecs })
+
+        const args = callArgs()
+        expect(toolCacheControl(args)).toBeUndefined()
+        expect(messageCacheControl(args)).toBeUndefined()
+        expect(args.providerOptions?.openai).toBeUndefined()
+        expect(warnOnce).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.stringContaining('does not support prompt caching')
+        )
+      })
+
+      it('still caches when the strategy is explicit', async () => {
+        const config = { cacheConfig: { strategy: 'anthropic' as const, messagesTTL: '1h' as const }, ...unsupported }
+        const { collect, callArgs } = setupCaptureTest(minimalParts, config, 'anthropic', 'claude-sonnet-4-6')
+        await collect(userMessages)
+
+        expect(messageCacheControl(callArgs())).toEqual({ type: 'ephemeral', ttl: '1h' })
+      })
     })
 
     describe('unsupported underlying provider', () => {

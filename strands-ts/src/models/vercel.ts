@@ -155,12 +155,20 @@ export class VercelModel extends Model<VercelModelConfig> {
   }
 
   /**
+   * The model the model info describes: the configured `modelId`, else the wrapped provider's. Set it
+   * when the provider's id does not name the model, like a gateway or a Bedrock inference profile ARN.
+   */
+  override get modelId(): string {
+    return this._config.modelId ?? this._provider.modelId
+  }
+
+  /**
    * Declares what depends on the wrapped ai-sdk provider: Anthropic takes cache points and OpenAI
    * caches automatically. Model facts come from the shared model info by `modelId`.
    *
    * @returns The declared capabilities for the wrapped provider
    */
-  protected override declareModelInfo(): ModelInfo {
+  protected override declareModelInfo(_config: VercelModelConfig): ModelInfo {
     switch (this._provider.provider.split('.')[0]) {
       case 'anthropic':
         return { capabilities: { promptCaching: 'cachePoints' } }
@@ -273,17 +281,41 @@ function applyVercelCacheConfig(
   // The segment before the first '.' is the provider namespace in the ai-sdk
   switch (model.provider.split('.')[0]) {
     case 'anthropic':
-      applyAnthropicCache(callOptions, cacheConfig, dynamicTrailingBlocks)
+      if (!infoForbidsAutoCaching(cacheConfig, modelInfo, model.modelId)) {
+        applyAnthropicCache(callOptions, cacheConfig, dynamicTrailingBlocks)
+      }
       break
     case 'amazon-bedrock':
       applyBedrockCache(callOptions, cacheConfig, dynamicTrailingBlocks, model.modelId, modelInfo)
       break
     case 'openai':
-      applyOpenAICache(callOptions, cacheConfig)
+      if (!infoForbidsAutoCaching(cacheConfig, modelInfo, model.modelId)) {
+        applyOpenAICache(callOptions, cacheConfig)
+      }
       break
     default:
       warnOnce(logger, `provider=<${model.provider}> | cacheConfig is not supported for this vercel provider, ignoring`)
   }
+}
+
+/**
+ * Reports whether the default `'auto'` strategy is turned off by a `promptCaching: 'unsupported'` override,
+ * warning once when it is. An explicit strategy is never turned off.
+ *
+ * @param cacheConfig - The caller's cache configuration
+ * @param modelInfo - What the SDK knows about the model
+ * @param modelId - The model id, used in the warning
+ * @returns True when caching must be skipped
+ * @internal
+ */
+function infoForbidsAutoCaching(cacheConfig: CacheConfig, modelInfo: ModelInfo, modelId: string): boolean {
+  const auto = (cacheConfig.strategy ?? 'auto') === 'auto'
+  if (!auto || modelInfo.capabilities?.promptCaching !== 'unsupported') return false
+  warnOnce(
+    logger,
+    `model_id=<${modelId}> | cacheConfig is enabled but the model info says this model does not support prompt caching, ignoring`
+  )
+  return true
 }
 
 /**
@@ -393,7 +425,7 @@ function applyBedrockCache(
 
 /**
  * Reports whether the wrapped Bedrock model takes cache points. An explicit `'anthropic'` strategy
- * opts in regardless; the default `'auto'` caches only when `info` says `'cachePoints'`, warning once
+ * opts in regardless; the default `'auto'` caches only when `modelInfo` says `'cachePoints'`, warning once
  * and skipping otherwise (mirroring `BedrockModel`).
  *
  * @param cacheConfig - The caller's cache configuration

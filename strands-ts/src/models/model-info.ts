@@ -47,6 +47,12 @@ export interface ModelInfo {
   readonly limits?: ModelLimits
 }
 
+/** What the `modelInfo` config key accepts: {@link ModelInfo} minus `capabilities.stateful`, which the provider owns. */
+export interface ModelInfoOverride {
+  readonly capabilities?: Omit<ModelCapabilities, 'stateful'>
+  readonly limits?: ModelLimits
+}
+
 function defined<T extends object>(section: T): T | undefined {
   const entries = Object.entries(section).filter(([, value]) => value !== undefined)
   return entries.length === 0 ? undefined : (Object.freeze(Object.fromEntries(entries)) as T)
@@ -77,7 +83,7 @@ export function mergeModelInfo(...parts: (ModelInfo | undefined)[]): ModelInfo {
 
 interface ModelInfoData {
   readonly defaults: { readonly limits: { readonly contextWindow: number } }
-  readonly models: Readonly<Record<string, ModelInfo>>
+  readonly models: Readonly<Record<string, ModelInfoOverride>>
 }
 
 // Bedrock appends a version to some ids (`claude-3-5-haiku-20241022-v1:0`); the base id carries the facts.

@@ -538,7 +538,8 @@ export class BedrockModel extends Model<BedrockModelConfig> {
     if (strategy === 'auto') {
       const detectedStrategy = this._getCacheStrategy()
       if (!detectedStrategy) {
-        logger.warn(
+        warnOnce(
+          logger,
           `model_id=<${this._config.modelId}> | cache_config is enabled but this model does not support automatic caching`
         )
         return false
@@ -632,7 +633,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    */
   getConfig(): BedrockModelConfig {
     const modelId = this._config.modelId ?? MODEL_DEFAULTS.bedrock.modelId
-    return resolveConfigMetadata(this._config, modelId, this.declareModelInfo())
+    return resolveConfigMetadata(this._config, modelId, this.declareModelInfo(this._config))
   }
 
   /**

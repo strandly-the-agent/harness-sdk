@@ -151,7 +151,7 @@ export interface AnthropicModelConfig extends BaseModelConfig {
   /**
    * Maximum number of tokens the model can generate in a response.
    *
-   * @defaultValue 64000 — subject to change between versions.
+   * @defaultValue the model's `maxOutputTokens` from the model info, else 64000 — subject to change between versions.
    * Set this explicitly to avoid unexpected changes.
    */
   maxTokens?: number
@@ -255,20 +255,22 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
 
   getConfig(): AnthropicModelConfig {
     const modelId = this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId
-    const config = resolveConfigMetadata(this._config, modelId, this.declareModelInfo())
+    const config = resolveConfigMetadata(this._config, modelId, this.declareModelInfo(this._config))
     return config.maxTokens === undefined ? { ...config, maxTokens: this._resolvedMaxTokens() } : config
   }
 
   /**
    * The `maxTokens` to send: the user's value, else the model's output ceiling from the `modelInfo`
-   * override or the shared model info, else the fixed default. Resolved on each read so it follows
-   * `updateConfig({ modelId })`. Reads the layers directly because `modelInfo` itself reads `getConfig()`.
+   * override, the declaration or the shared model info, else the fixed default. Resolved on each
+   * read so it follows `updateConfig({ modelId })`. Reads the layers directly because `modelInfo`
+   * itself reads `getConfig()`.
    */
   private _resolvedMaxTokens(): number {
     const modelId = this._config.modelId ?? MODEL_DEFAULTS.anthropic.modelId
     return (
       this._config.maxTokens ??
       this._config.modelInfo?.limits?.maxOutputTokens ??
+      this.declareModelInfo(this._config).limits?.maxOutputTokens ??
       lookupModelInfo(modelId).limits?.maxOutputTokens ??
       MODEL_DEFAULTS.anthropic.maxTokens
     )
@@ -279,7 +281,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
    *
    * @returns The declared capabilities
    */
-  protected override declareModelInfo(): ModelInfo {
+  protected override declareModelInfo(_config: AnthropicModelConfig): ModelInfo {
     return { capabilities: { promptCaching: 'cachePoints' } }
   }
 
@@ -604,6 +606,13 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
     const strategy = cacheConfig.strategy ?? 'auto'
     if (strategy !== 'auto' && strategy !== 'anthropic') {
       logger.warn(`strategy=<${strategy}> | unknown cache strategy, prompt caching disabled`)
+      return { enabled: false }
+    }
+    if (strategy === 'auto' && this.modelInfo.capabilities?.promptCaching === 'unsupported') {
+      warnOnce(
+        logger,
+        `model_id=<${this._config.modelId}> | cacheConfig is enabled but the model info says this model does not support prompt caching, ignoring`
+      )
       return { enabled: false }
     }
 

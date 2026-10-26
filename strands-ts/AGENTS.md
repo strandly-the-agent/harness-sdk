@@ -173,7 +173,7 @@ The model provider is the most-repeated pattern in the SDK; `models/anthropic.ts
 
 - **`export class XModel extends Model<XModelConfig>`** with `private _config` and `private _client`.
 - **Two interfaces**: `interface XModelConfig extends BaseModelConfig` (the model knobs) and a superset `interface XModelOptions extends XModelConfig` adding client/credential fields (`apiKey`, `client`, `clientConfig`). The constructor takes `XModelOptions`, destructures the client fields, and spreads the rest into `_config`.
-- **Implement the base contract** from `models/model.ts`: `updateConfig(modelConfig)` (spread-merge into `_config`), `getConfig()` (return `resolveConfigMetadata(this._config, this._config.modelId ?? <default>)`), and `async *stream(...)`. Override `protected declareModelInfo(): ModelInfo` only for facts that depend on how the provider talks to the model (e.g. the provider caches automatically); facts about a model itself belong in `shared/model-info.json`, which `Model.info` reads for every provider. `structuredOutput` is **not** part of the TS provider contract — TS does structured output via a tool + agent config (`tools/structured-output-tool.ts`, `AgentConfig.structuredOutputSchema`), not a provider method.
+- **Implement the base contract** from `models/model.ts`: `updateConfig(modelConfig)` (spread-merge into `_config`), `getConfig()` (return `resolveConfigMetadata(this._config, this._config.modelId ?? <default>, this.declareModelInfo(this._config))`), and `async *stream(...)`. Override `protected declareModelInfo(config): ModelInfo` only for facts that depend on how the provider talks to the model (e.g. the provider caches automatically); read the `config` argument there, not `getConfig()`/`modelId`/`modelInfo` (they recurse). Facts about a model itself belong in `shared/model-info.json`, which `Model.modelInfo` reads for every provider by `this.modelId` — so either store the default model id in `_config` or override `get modelId()` to return it, or an unconfigured model gets no shared facts. `structuredOutput` is **not** part of the TS provider contract — TS does structured output via a tool + agent config (`tools/structured-output-tool.ts`, `AgentConfig.structuredOutputSchema`), not a provider method.
 - **Keep conversion private** (`_formatRequest`, `_formatMessages`, `_formatContentBlock`). Default to a **flat `models/<name>.ts`**; only reach for a `models/<name>/` subdirectory with standalone adapter modules + `types.ts`/`errors.ts` when the provider spans **multiple API surfaces** (the reason `openai/` exists — chat vs responses).
 
 ```typescript
@@ -194,7 +194,7 @@ export class XModel extends Model<XModelConfig> {
   }
 
   getConfig(): XModelConfig {
-    return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.x.modelId)
+    return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.x.modelId, this.declareModelInfo(this._config))
   }
 
   async *stream(messages: Message[], options?: StreamOptions): AsyncIterable<ModelStreamEvent> {

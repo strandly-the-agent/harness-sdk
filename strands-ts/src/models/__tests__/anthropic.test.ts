@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Anthropic from '@anthropic-ai/sdk'
 import { isNode } from '../../__fixtures__/environment.js'
-import { AnthropicModel } from '../anthropic.js'
+import { AnthropicModel, type AnthropicModelConfig } from '../anthropic.js'
 import { ContextWindowOverflowError, ModelError, ModelThrottledError } from '../../errors.js'
 import { collectGenerator, collectIterator } from '../../__fixtures__/model-test-helpers.js'
 import {
@@ -210,6 +210,18 @@ describe('AnthropicModel', () => {
 
       expect(model.getConfig().maxTokens).toBe(8_000)
       expect(model.modelInfo.limits?.maxOutputTokens).toBe(8_000)
+    })
+
+    it('defaults maxTokens to a declared output ceiling over the shared model info', () => {
+      class Declaring extends AnthropicModel {
+        protected override declareModelInfo(config: AnthropicModelConfig) {
+          return { ...super.declareModelInfo(config), limits: { maxOutputTokens: 4_000 } }
+        }
+      }
+      const model = new Declaring({ apiKey: 'sk-ant-test', modelId: 'claude-sonnet-4-6' })
+
+      expect(model.getConfig().maxTokens).toBe(4_000)
+      expect(model.modelInfo.limits?.maxOutputTokens).toBe(4_000)
     })
 
     it('defaults maxTokens to the model output ceiling from the shared model info', () => {
@@ -1556,6 +1568,32 @@ describe('AnthropicModel', () => {
       await collectIterator(provider.stream([userMessage('Hi')], { toolSpecs }))
 
       expect(breakpoints(captured.request)).toEqual([])
+    })
+
+    it('is off under auto when the modelInfo override says caching is unsupported', async () => {
+      const { captured, mockClient } = setupCapture()
+      const provider = new AnthropicModel({
+        client: mockClient,
+        cacheConfig: { ttl: '1h' },
+        modelInfo: { capabilities: { promptCaching: 'unsupported' } },
+      })
+
+      await collectIterator(provider.stream([userMessage('Hi')], { toolSpecs }))
+
+      expect(breakpoints(captured.request)).toEqual([])
+    })
+
+    it('caches regardless of the override when the anthropic strategy is explicit', async () => {
+      const { captured, mockClient } = setupCapture()
+      const provider = new AnthropicModel({
+        client: mockClient,
+        cacheConfig: { strategy: 'anthropic', ttl: '1h' },
+        modelInfo: { capabilities: { promptCaching: 'unsupported' } },
+      })
+
+      await collectIterator(provider.stream([userMessage('Hi')], { toolSpecs }))
+
+      expect(breakpoints(captured.request)).not.toEqual([])
     })
 
     it('adds a breakpoint to the last user message', async () => {
