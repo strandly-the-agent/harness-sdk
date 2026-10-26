@@ -18,10 +18,12 @@ readiness barrier is needed. The observable effect is benign: URL skills are
 
 from __future__ import annotations
 
-import asyncio
+import contextlib
 import logging
 import os
 import posixpath
+import shlex
+import uuid
 import weakref
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
@@ -44,6 +46,8 @@ _DEFAULT_STATE_KEY = "agent_skills"
 _RESOURCE_DIRS = ("scripts", "references", "assets")
 _DEFAULT_MAX_RESOURCE_FILES = 20
 _MAX_RESOURCE_DEPTH = 3
+_URL_FETCH_TIMEOUT = 30
+_URL_MAX_BYTES = 1_000_000
 
 SkillSource: TypeAlias = str | Path | Skill
 """A single skill source: path string, Path object, or Skill instance."""
@@ -72,6 +76,32 @@ def _source_key(source: str) -> str:
     ``posixpath`` is used rather than ``os.path``.
     """
     return source if not source or _source_kind(source) == "url" else posixpath.normpath(source)
+
+
+async def _fetch_url_in_sandbox(sandbox: Sandbox, url: str) -> str:
+    """Fetch ``url`` with ``curl`` inside the sandbox and return the body as text.
+
+    Runtime URL loads go through the sandbox, like path loads, so the sandbox stays the agent's
+    network boundary. Raises ``ValueError`` for a non-``https://`` URL and ``RuntimeError`` when
+    curl fails or is not installed in the sandbox.
+    """
+    if not url.startswith("https://"):
+        raise ValueError(f"only https:// URLs are supported, got {url!r}")
+    output = f"/tmp/strands-skill-{uuid.uuid4().hex}"
+    # --proto/--proto-redir keep every hop on https; --fail turns HTTP errors into a non-zero exit;
+    # the body goes to a file because stdout is decoded per chunk and would split multi-byte characters.
+    command = (
+        f"curl -sSL -g --fail --proto '=https' --proto-redir '=https' --max-time {_URL_FETCH_TIMEOUT} "
+        f"--max-filesize {_URL_MAX_BYTES} -o {shlex.quote(output)} -- {shlex.quote(url)}"
+    )
+    try:
+        result = await sandbox.execute(command, timeout=_URL_FETCH_TIMEOUT + 5)
+        if result.exit_code != 0:
+            raise RuntimeError(result.stderr.strip() or f"curl exited with code {result.exit_code}")
+        return (await sandbox.read_file(output)).decode("utf-8", errors="replace")
+    finally:
+        with contextlib.suppress(Exception):
+            await sandbox.remove_file(output)
 
 
 def _normalize_sources(sources: SkillSources) -> list[SkillSource]:
@@ -169,9 +199,11 @@ class AgentSkills(Plugin):
                 ``"sandbox"`` / ``"url"``: only that kind; the other is refused by the tool and skipped
                 when recorded sources are restored. ``False`` (default): the plain ``skills(skill_name)``
                 tool. Loaded sources persist in ``agent.state`` and are restored on first use in a later
-                run; configured skills win over loaded ones with the same name. Loaded SKILL.md content
-                reaches the system prompt, so enable only kinds you trust. This governs what the
-                ``skills`` tool loads, not what other tools (e.g. a shell) can fetch into the sandbox.
+                run; configured skills win over loaded ones with the same name. Both kinds go through
+                ``agent.sandbox``: paths are read from it and URLs are fetched with ``curl`` inside it
+                (so ``curl`` must be available there), keeping the sandbox the agent's network boundary.
+                Loaded SKILL.md content reaches the system prompt, so enable only kinds you trust. This
+                governs what the ``skills`` tool loads, not what other tools (e.g. a shell) can fetch.
         """
         self._strict = strict
         self._state_key = state_key
@@ -312,7 +344,10 @@ class AgentSkills(Plugin):
 
         await self._restore_dynamic_sources(agent)
         previous = {skill.name for skill in self._dynamic_skills[agent].get(source, {}).values()}
-        loaded = await self._load_dynamic_source(agent, source)
+        try:
+            loaded = await self._load_dynamic_source(agent, source)
+        except Exception as error:
+            return f"Error: could not load skills from '{source}': {error}"
         if not loaded:
             expected = "; or ".join(_KIND_EXPECTED[k] for k in sorted(self._source_kinds))
             result = f"No skills found at '{source}'. Expected {expected}."
@@ -334,7 +369,8 @@ class AgentSkills(Plugin):
         """Load skills from a sandbox path or ``https://`` URL into the agent's dynamic set.
 
         Loading a source again replaces what it contributed before (a source that no longer
-        loads anything is dropped). The source list is recorded in ``agent.state``.
+        loads anything is dropped). The source list is recorded in ``agent.state``. A URL fetch
+        that fails raises (see :func:`_fetch_url_in_sandbox`) and leaves the loaded set untouched.
 
         Every mutation of the shared per-agent map happens in one synchronous block after the last
         await, so concurrent calls in one event loop (several tool calls in a turn) and calls from
@@ -369,19 +405,17 @@ class AgentSkills(Plugin):
         return list(removed.values())
 
     async def _load_source(self, agent: Agent, source: str) -> dict[str, Skill]:
-        """Load skills from an ``https://`` URL or a sandbox path; failures are logged and yield nothing."""
+        """Load skills from a sandbox path or an ``https://`` URL, both through ``agent.sandbox``.
+
+        Path problems are logged and yield nothing; a URL that cannot be fetched or parsed raises.
+        """
         kind = _source_kind(source)
         if kind not in self._source_kinds:
             logger.warning("source=<%s> | loading skills from %s is not enabled", source, _KIND_LABELS[kind])
             return {}
         if kind == "sandbox":
             return await self._load_skills_from_path(agent.sandbox, source)
-        try:
-            # Skill.from_url blocks on urllib; keep the event loop free while it fetches.
-            skill = await asyncio.to_thread(Skill.from_url, source, strict=self._strict)
-        except Exception as error:
-            logger.warning("url=<%s> | failed to load skill from URL: %s", source, error)
-            return {}
+        skill = Skill.from_content(await _fetch_url_in_sandbox(agent.sandbox, source), strict=self._strict)
         return {skill.name: skill}
 
     async def _restore_dynamic_sources(self, agent: Agent) -> None:
@@ -405,7 +439,13 @@ class AgentSkills(Plugin):
                 if kind not in self._source_kinds:
                     logger.warning("source=<%s> | skipped: loading from %s is not enabled", source, _KIND_LABELS[kind])
                     continue
-                loaded = await self._load_source(agent, source)
+                try:
+                    loaded = await self._load_source(agent, source)
+                except Exception as error:
+                    logger.warning(
+                        "source=<%s> | recorded dynamic skill source could not be restored: %s", source, error
+                    )
+                    continue
                 if loaded:
                     restored[source] = loaded
                 else:

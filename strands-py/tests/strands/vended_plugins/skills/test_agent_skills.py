@@ -11,6 +11,7 @@ via ``get_available_skills()`` with no agent.
 
 import asyncio
 import logging
+import shlex
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -20,6 +21,7 @@ from strands.hooks.events import BeforeInvocationEvent
 from strands.hooks.registry import HookRegistry
 from strands.plugins.registry import _PluginRegistry
 from strands.sandbox.not_a_sandbox_local_environment import NotASandboxLocalEnvironment
+from strands.sandbox.types import ExecutionResult
 from strands.tools.decorator import tool
 from strands.types.tools import ToolContext
 from strands.vended_plugins.skills.agent_skills import AgentSkills
@@ -1053,13 +1055,32 @@ _URLOPEN = "strands.vended_plugins.skills.skill.urllib.request.urlopen"
 _URL_SKILL_CONTENT = "---\nname: url-skill\ndescription: A URL skill\n---\n# Instructions\n"
 
 
-def _patch_urlopen(content: str = _URL_SKILL_CONTENT):
-    """Patch ``urlopen`` to serve ``content`` for any URL."""
-    mock_response = MagicMock()
-    mock_response.read.return_value = content.encode("utf-8")
-    mock_response.__enter__ = MagicMock(return_value=mock_response)
-    mock_response.__exit__ = MagicMock(return_value=False)
-    return patch(_URLOPEN, return_value=mock_response)
+class _CurlSandbox(NotASandboxLocalEnvironment):
+    """Local sandbox whose ``curl`` is faked: serves ``pages`` by URL, or fails with ``error``.
+
+    Records every executed command and the output files curl was asked to write, so tests can
+    check that runtime URL loads go through the sandbox and clean up after themselves.
+    """
+
+    def __init__(self, pages: dict[str, str] | None = None, error: str | None = None):
+        super().__init__()
+        self.pages = pages or {}
+        self.error = error
+        self.commands: list[str] = []
+        self.outputs: list[Path] = []
+
+    async def execute(self, command, **kwargs):
+        self.commands.append(command)
+        argv = shlex.split(command)
+        assert argv[0] == "curl", command
+        output, url = Path(argv[argv.index("-o") + 1]), argv[-1]
+        self.outputs.append(output)
+        if self.error is not None:
+            return ExecutionResult(exit_code=127, stdout="", stderr=self.error)
+        if url not in self.pages:
+            return ExecutionResult(exit_code=22, stdout="", stderr="curl: (22) The requested URL returned error: 404")
+        output.write_text(self.pages[url])
+        return ExecutionResult(exit_code=0, stdout="", stderr="")
 
 
 class TestDynamicLoading:
@@ -1152,51 +1173,55 @@ class TestDynamicLoading:
         assert loaded[0].path == skill_dir
 
     @pytest.mark.asyncio
-    async def test_load_from_https_url(self):
+    async def test_load_from_https_url_goes_through_the_sandbox(self):
+        # Runtime URL loads are fetched with curl inside agent.sandbox, never from the host process.
+        url = "https://example.com/SKILL.md"
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        mock_response = MagicMock()
-        mock_response.read.return_value = self._URL_CONTENT.encode("utf-8")
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
+        agent.sandbox = sandbox = _CurlSandbox(pages={url: self._URL_CONTENT})
 
-        with patch(f"{self._SKILL_MODULE}.urllib.request.urlopen", return_value=mock_response) as urlopen:
-            result = await plugin.manage_skills(
-                action="load", source="https://example.com/SKILL.md", tool_context=_mock_tool_context(agent)
-            )
+        with patch(_URLOPEN) as urlopen:
+            result = await plugin.manage_skills(action="load", source=url, tool_context=_mock_tool_context(agent))
 
-        assert urlopen.call_args[0][0].full_url == "https://example.com/SKILL.md"
-        assert result.startswith("Loaded 1 skill(s) from 'https://example.com/SKILL.md': url-skill.")
+        urlopen.assert_not_called()
+        assert len(sandbox.commands) == 1
+        assert "--proto '=https'" in sandbox.commands[0] and sandbox.commands[0].endswith(f"-- {url}")
+        assert not sandbox.outputs[0].exists(), "temporary download should be removed from the sandbox"
+        assert result.startswith(f"Loaded 1 skill(s) from '{url}': url-skill.")
         assert [skill.name for skill in plugin.get_available_skills(agent)] == ["url-skill"]
-        assert _loaded_sources(plugin, agent) == ["https://example.com/SKILL.md"]
+        assert _loaded_sources(plugin, agent) == [url]
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("error", [RuntimeError("HTTP 404"), TimeoutError("timed out")])
-    async def test_load_from_failing_url_reports_nothing_loaded(self, error, caplog):
-        # Any fetch failure (urllib-wrapped or not, e.g. a socket timeout) is logged, never raised.
+    @pytest.mark.parametrize(
+        ("sandbox", "reason"),
+        [
+            (_CurlSandbox(error="sh: 1: curl: not found"), "sh: 1: curl: not found"),
+            (_CurlSandbox(), "curl: (22) The requested URL returned error: 404"),
+        ],
+    )
+    async def test_failing_url_fetch_is_a_clear_tool_error(self, sandbox, reason):
+        # curl missing from the sandbox, or the fetch failing, is reported verbatim; nothing is loaded.
+        url = "https://example.com/SKILL.md"
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = await self._ready_agent(plugin)
-        with (
-            patch(f"{self._SKILL_MODULE}.urllib.request.urlopen", side_effect=error),
-            caplog.at_level(logging.WARNING),
-        ):
-            result = await plugin.manage_skills(
-                action="load", source="https://example.com/SKILL.md", tool_context=_mock_tool_context(agent)
-            )
-        assert result.startswith("No skills found at 'https://example.com/SKILL.md'.")
-        assert "failed to load skill from URL" in caplog.text
+        agent.sandbox = sandbox
+        result = await plugin.manage_skills(action="load", source=url, tool_context=_mock_tool_context(agent))
+        assert result == f"Error: could not load skills from '{url}': {reason}"
         assert _loaded_sources(plugin, agent) == []
+        assert "dynamic_sources" not in agent.state.get("agent_skills")
 
     @pytest.mark.asyncio
-    async def test_restore_survives_failing_url(self, tmp_path):
+    async def test_restore_survives_failing_url(self, tmp_path, caplog):
         _make_skill_dir(tmp_path, "alpha")
         plugin = AgentSkills(skills=[], dynamic_loading=True)
         agent = _mock_agent()
+        agent.sandbox = _CurlSandbox(error="sh: 1: curl: not found")
         await plugin.init_agent(agent)
         agent.state.set("agent_skills", {"dynamic_sources": ["https://example.com/SKILL.md", str(tmp_path)]})
-        with patch(f"{self._SKILL_MODULE}.urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+        with caplog.at_level(logging.WARNING):
             await plugin._on_before_invocation(BeforeInvocationEvent(agent=agent))
         assert _loaded_sources(plugin, agent) == [str(tmp_path)]
+        assert "could not be restored: sh: 1: curl: not found" in caplog.text
 
     @pytest.mark.asyncio
     async def test_load_missing_path_reports_nothing_loaded(self, tmp_path):
@@ -1519,9 +1544,10 @@ class TestDynamicLoadingSourceKinds:
         plugin = AgentSkills(skills=[], dynamic_loading="sandbox")
         agent = await self._ready_agent(plugin)
 
-        with patch(_URLOPEN) as urlopen:
-            result = await plugin.manage_skills(action="load", source=self._URL, tool_context=_mock_tool_context(agent))
-        urlopen.assert_not_called()
+        # The kind check comes first: a refused URL never reaches the sandbox (or the network).
+        agent.sandbox = sandbox = _CurlSandbox(pages={self._URL: _URL_SKILL_CONTENT})
+        result = await plugin.manage_skills(action="load", source=self._URL, tool_context=_mock_tool_context(agent))
+        assert sandbox.commands == []
         assert result == "Error: loading skills from https:// URLs is not enabled for this agent; only sandbox paths."
         assert _loaded_sources(plugin, agent) == []
         # Unloading a kind that cannot be loaded simply reports nothing loaded.
@@ -1554,17 +1580,19 @@ class TestDynamicLoadingSourceKinds:
         assert result == "Error: loading skills from sandbox paths is not enabled for this agent; only https:// URLs."
         assert plugin.get_available_skills(agent) == []
 
-        with _patch_urlopen():
-            result = await plugin.manage_skills(action="load", source=self._URL, tool_context=_mock_tool_context(agent))
+        agent.sandbox = sandbox = _CurlSandbox(pages={self._URL: _URL_SKILL_CONTENT})
+        result = await plugin.manage_skills(action="load", source=self._URL, tool_context=_mock_tool_context(agent))
         assert result.startswith(f"Loaded 1 skill(s) from '{self._URL}': url-skill.")
 
-        # A non-https URL is still treated as a URL (not mangled into a path) and rejected by Skill.from_url.
-        with patch(_URLOPEN) as urlopen:
-            result = await plugin.manage_skills(
-                action="load", source="http://example.com/SKILL.md", tool_context=_mock_tool_context(agent)
-            )
-        urlopen.assert_not_called()
-        assert result == "No skills found at 'http://example.com/SKILL.md'. Expected an https:// URL to raw SKILL.md."
+        # A non-https URL is still treated as a URL (not mangled into a path) and refused before any fetch.
+        result = await plugin.manage_skills(
+            action="load", source="http://example.com/SKILL.md", tool_context=_mock_tool_context(agent)
+        )
+        assert len(sandbox.commands) == 1
+        assert result == (
+            "Error: could not load skills from 'http://example.com/SKILL.md': "
+            "only https:// URLs are supported, got 'http://example.com/SKILL.md'"
+        )
 
     @pytest.mark.asyncio
     async def test_restore_skips_kinds_no_longer_allowed(self, tmp_path, caplog):
@@ -1574,10 +1602,11 @@ class TestDynamicLoadingSourceKinds:
         await plugin.init_agent(agent)
         agent.state.set("agent_skills", {"dynamic_sources": [self._URL, str(tmp_path)]})
 
-        with patch(_URLOPEN) as urlopen, caplog.at_level(logging.WARNING):
+        agent.sandbox = sandbox = _CurlSandbox(pages={self._URL: _URL_SKILL_CONTENT})
+        with caplog.at_level(logging.WARNING):
             await plugin._on_before_invocation(BeforeInvocationEvent(agent=agent))
 
-        urlopen.assert_not_called()
+        assert sandbox.commands == []
         assert _loaded_sources(plugin, agent) == [str(tmp_path)]
         assert "skipped: loading from https:// URLs is not enabled" in caplog.text
         assert "could not be restored" not in caplog.text
