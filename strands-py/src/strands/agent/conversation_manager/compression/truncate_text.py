@@ -1,54 +1,54 @@
 """Last-resort text truncation for when summarization cannot reduce the context."""
 
+import re
 from collections.abc import Iterator
 
 from ....types.content import ContentBlock, Message, Messages
 from ....types.tools import ToolResultContent
 from .pin_message import is_pinned
 
-_TRUNCATION_MARKER = "... [truncated:"
+_TRUNCATION_MARKER = re.compile(r"\.\.\. \[truncated: \d+ chars removed\] \.\.\.")
 _PRESERVE_CHARS = 2_000
 
 
 def _text_blocks(message: Message) -> Iterator[ContentBlock | ToolResultContent]:
     """Yield every dict carrying a ``text`` key: content blocks and items inside toolResult content."""
     for content in message.get("content", []):
+        if not isinstance(content, dict):
+            continue  # type: ignore[unreachable]
         if "text" in content:
             yield content
         for item in content.get("toolResult", {}).get("content", []):
-            if "text" in item:
+            if isinstance(item, dict) and "text" in item:
                 yield item
 
 
-def truncate_largest_text_block(messages: Messages, preserve_chars: int = _PRESERVE_CHARS) -> bool:
-    """Replace the largest untruncated text block in a non-pinned message with a head+tail preview.
+def truncate_oversized_text_blocks(messages: Messages, preserve_chars: int = _PRESERVE_CHARS) -> bool:
+    """Replace every oversized, untruncated text block in non-pinned messages with a head+tail preview.
 
-    Each call strictly shrinks the history and never touches an already truncated block, so a caller that
-    retries until this returns False is bounded.
+    A block qualifies when truncating it saves more than ``preserve_chars`` characters, so each call
+    either shrinks the history by a meaningful amount or reports that nothing is left to truncate.
 
     Args:
         messages: The conversation history, modified in place.
-        preserve_chars: Characters kept at each end of the truncated text.
+        preserve_chars: Characters kept at each end of a truncated text.
 
     Returns:
-        True if a block was truncated, False if nothing is left to truncate.
+        True if at least one block was truncated.
     """
-    candidates = [
-        block
-        for index, message in enumerate(messages)
-        if not is_pinned(messages, index)
-        for block in _text_blocks(message)
-        if _TRUNCATION_MARKER not in block["text"]
-    ]
-    if not candidates:
+    if preserve_chars <= 0:
         return False
 
-    largest = max(candidates, key=lambda block: len(block["text"]))
-    text = largest["text"]
-    removed = len(text) - 2 * preserve_chars
-    marker = f"...\n\n{_TRUNCATION_MARKER} {removed} chars removed] ...\n\n..."
-    if removed <= len(marker):
-        return False
-
-    largest["text"] = f"{text[:preserve_chars]}{marker}{text[-preserve_chars:]}"
-    return True
+    truncated = False
+    for index, message in enumerate(messages):
+        if is_pinned(messages, index):
+            continue
+        for block in _text_blocks(message):
+            text = block["text"]
+            removed = len(text) - 2 * preserve_chars
+            if removed <= preserve_chars or _TRUNCATION_MARKER.search(text):
+                continue
+            marker = f"...\n\n... [truncated: {removed} chars removed] ...\n\n..."
+            block["text"] = f"{text[:preserve_chars]}{marker}{text[-preserve_chars:]}"
+            truncated = True
+    return truncated

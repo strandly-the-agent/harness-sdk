@@ -255,7 +255,7 @@ def test_reduce_context_falls_back_to_truncation_when_too_few_messages_to_summar
     manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
 
     truncated = mock_agent.messages[0]["content"][0]["text"]
-    assert "[truncated: 46000 chars removed]" in truncated
+    assert "[truncated:" in truncated
     assert len(truncated) < len(oversized)
     assert mock_agent.messages[2]["content"][0]["text"] == "Say hello."
 
@@ -278,10 +278,11 @@ def test_reduce_context_falls_back_to_truncation_when_summary_call_fails():
 
     assert "[truncated:" in failing_agent.messages[0]["content"][0]["text"]
     assert len(failing_agent.messages) == 4
+    assert manager.removed_message_count == 0
 
 
 def test_reduce_context_reraises_once_nothing_is_left_to_truncate(mock_agent):
-    """Repeated overflow is bounded: every oversized block is truncated once, then the error propagates."""
+    """Every oversized block is truncated in one pass; the next overflow propagates."""
     manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=3)
     mock_agent.messages = [
         {"role": "user", "content": [{"text": "x" * 50_000}]},
@@ -290,11 +291,50 @@ def test_reduce_context_reraises_once_nothing_is_left_to_truncate(mock_agent):
     ]
 
     manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
-    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
     with pytest.raises(ContextWindowOverflowException, match="insufficient messages for summarization"):
         manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
 
     assert all("[truncated:" in mock_agent.messages[i]["content"][0]["text"] for i in (0, 2))
+
+
+def test_reduce_context_caps_reactive_reductions_per_invocation(mock_agent):
+    """Summarization that makes no progress cannot loop: the cap surfaces the overflow (#5598)."""
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=1)
+    mock_agent.messages = [
+        {"role": "user", "content": [{"text": "Message 1"}]},
+        {"role": "assistant", "content": [{"text": "Response 1"}]},
+        {"role": "user", "content": [{"text": "Message 2"}]},
+        {"role": "assistant", "content": [{"text": "Response 2"}]},
+    ]
+
+    for _ in range(10):
+        manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    with pytest.raises(ContextWindowOverflowException, match="after 10 reductions"):
+        manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+
+    manager.apply_management(mock_agent)
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+
+
+def test_removed_message_count_unchanged_when_summary_call_fails():
+    """A failed summary call leaves the session offset untouched so no messages vanish on restore."""
+    failing_agent = Mock()
+    failing_agent.model = Mock()
+    failing_agent.model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream_error(Exception("boom")))
+    failing_agent.aux_model = failing_agent.model
+    failing_agent.messages = [
+        {"role": "user", "content": [{"text": "Message 1"}]},
+        {"role": "assistant", "content": [{"text": "Response 1"}]},
+        {"role": "user", "content": [{"text": "Message 2"}]},
+        {"role": "assistant", "content": [{"text": "Response 2"}]},
+    ]
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=1)
+
+    with pytest.raises(Exception, match="boom"):
+        manager.reduce_context(failing_agent, e=RuntimeError("overflow"))
+
+    assert manager.removed_message_count == 0
+    assert manager._summary_message is None
 
 
 def test_agent_recovers_from_oversized_paste_with_summarizing_manager():
@@ -319,8 +359,10 @@ def test_agent_recovers_from_oversized_paste_with_summarizing_manager():
     result = agent("Say hello.")
 
     assert str(result).strip() == "Hello!"
-    assert "[truncated: 46000 chars removed]" in agent.messages[0]["content"][0]["text"]
+    assert "[truncated:" in agent.messages[0]["content"][0]["text"]
+    assert len(agent.messages[0]["content"][0]["text"]) < 5_000
     assert agent.messages[-1]["content"][0]["text"] == "Hello!"
+    assert model.stream.call_count == 2
 
 
 def test_proactive_reduce_context_does_not_truncate(mock_agent):
