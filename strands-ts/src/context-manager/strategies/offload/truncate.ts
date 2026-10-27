@@ -20,6 +20,7 @@ import { DEFAULT_CONTEXT_WINDOW_LIMIT } from '../../../models/defaults.js'
 import type { ContextStrategy } from '../../types.js'
 import type { Stash } from '../../stash.js'
 import {
+  DEFAULT_PREVIEW_TOKENS,
   TRUNCATED_HEADER,
   truncateToolResultBlock,
   truncateTextBlock,
@@ -107,10 +108,10 @@ export class TruncateStrategy extends BaseOffloadStrategy {
     this._previewTokens =
       typeof this._truncateConfig.previewTokens === 'number' && Number.isFinite(this._truncateConfig.previewTokens)
         ? this._truncateConfig.previewTokens
-        : 1000
+        : DEFAULT_PREVIEW_TOKENS
     if (this._threshold !== undefined && this._threshold <= this._previewTokens) {
       throw new Error(
-        `threshold (${this._threshold}) must be greater than previewTokens (${this._previewTokens}) to ensure truncation converges`
+        `threshold (${conditions?.threshold}) must be greater than previewTokens (${this._previewTokens}) to ensure truncation converges`
       )
     }
   }
@@ -197,7 +198,7 @@ export class TruncateStrategy extends BaseOffloadStrategy {
     block: ContentBlock,
     tokens: number,
     message: Message,
-    _agent: LocalAgent,
+    agent: LocalAgent,
     stashRefs: string[],
     _invocationContext?: InvocationContext,
     limit?: number
@@ -206,14 +207,20 @@ export class TruncateStrategy extends BaseOffloadStrategy {
       // With a model limit, threshold == preview, so an existing preview (plus its header) can sit just
       // above the limit; leave it alone rather than shaving it on every pass.
       const first = block.content[0]
-      if (limit !== undefined && first instanceof TextBlock && TRUNCATED_HEADER.test(first.text)) return block
+      const alreadyTruncated = first instanceof TextBlock && TRUNCATED_HEADER.test(first.text)
+      if (limit !== undefined && alreadyTruncated) return block
       logger.debug(`toolUseId=<${block.toolUseId}>, tokens=<${tokens}>, limit=<${limit}> | truncated tool result`)
       const config = limit === undefined ? this._truncateConfig : { ...this._truncateConfig, previewTokens: limit }
       const truncated = truncateToolResultBlock(block, config)
-      if (truncated !== block) {
-        return appendStashRefs(truncated, stashRefs)
+      if (truncated === block) return truncated
+      const refs = formatStashRefs(stashRefs)
+      const notes = [refs && `[Stashed]${refs}`]
+      // Wording is load-bearing: "…: N … keep this result whole" read as status and halved uptake in evals.
+      if (this._dynamicLimit && limit === undefined && !alreadyTruncated) {
+        const suggested = Math.min(Math.ceil(tokens / 1000) * 1000, this._dynamicLimitCap(agent))
+        notes.push(`[Set ${RESULT_LIMIT_PROPERTY} on the call (e.g. ${suggested}) to keep more of this result]`)
       }
-      return truncated
+      return appendNotes(truncated, notes.filter(Boolean).join('\n'))
     }
     if (block instanceof TextBlock) {
       logger.debug(`trackingId=<${message.trackingId}>, tokens=<${tokens}> | truncated text block`)
@@ -226,15 +233,14 @@ export class TruncateStrategy extends BaseOffloadStrategy {
   }
 }
 
-function appendStashRefs(block: ToolResultBlock, stashRefs: string[]): ToolResultBlock {
-  const refs = formatStashRefs(stashRefs)
-  if (!refs) return block
+function appendNotes(block: ToolResultBlock, notes: string): ToolResultBlock {
+  if (!notes) return block
 
   const content = [...block.content]
   for (let index = 0; index < content.length; index++) {
     const item = content[index]!
     if (item instanceof TextBlock) {
-      content[index] = new TextBlock(`${item.text}\n\n[Stashed]${refs}`)
+      content[index] = new TextBlock(`${item.text}\n\n${notes}`)
       return new ToolResultBlock({
         toolUseId: block.toolUseId,
         status: block.status,

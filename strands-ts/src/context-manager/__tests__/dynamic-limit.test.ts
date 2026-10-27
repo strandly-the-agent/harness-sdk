@@ -149,6 +149,7 @@ describe('model-selected result limits (strategy level)', () => {
     expect(text.startsWith(TRUNCATED_PREFIX)).toBe(true)
     // Preview is ~100 tokens, far below the configured 500-token preview.
     expect(text.length).toBeLessThan(200 * CHARS_PER_TOKEN)
+    expect(text).not.toContain('[Set _max_result_tokens')
   })
 
   it('applies the model limit even below the configured threshold', async () => {
@@ -165,7 +166,17 @@ describe('model-selected result limits (strategy level)', () => {
     const defaultText = resultText(messages, 'tu-1')
     expect(defaultText.startsWith(TRUNCATED_PREFIX)).toBe(true)
     expect(defaultText.length).toBeGreaterThan(previewTokens * CHARS_PER_TOKEN)
+    expect(defaultText.endsWith('[Set _max_result_tokens on the call (e.g. 2000) to keep more of this result]')).toBe(
+      true
+    )
     expect(resultText(messages, 'tu-2').startsWith(TRUNCATED_PREFIX)).toBe(false)
+  })
+
+  it('clamps the suggested limit to the cap', async () => {
+    const messages = makeToolCall('tu-1', 2000)
+
+    expect(await truncate(true, 1500).apply(makeContext(messages))).toBe(true)
+    expect(resultText(messages, 'tu-1')).toContain('(e.g. 1500)')
   })
 
   it('rejects a non-positive dynamicLimit', () => {
@@ -178,7 +189,9 @@ describe('model-selected result limits (strategy level)', () => {
     const messages = makeToolCall('tu-1', 2000, { _max_result_tokens: 5000 })
 
     expect(await truncate(false).apply(makeContext(messages))).toBe(true)
-    expect(resultText(messages, 'tu-1').startsWith(TRUNCATED_PREFIX)).toBe(true)
+    const text = resultText(messages, 'tu-1')
+    expect(text.startsWith(TRUNCATED_PREFIX)).toBe(true)
+    expect(text).not.toContain('[Set _max_result_tokens')
   })
 
   it('is idempotent across repeated passes', async () => {
@@ -212,7 +225,11 @@ describe('model-selected result limits (strategy level)', () => {
     expect(await first.apply(makeContext(messages))).toBe(true)
     const afterFirst = resultText(messages, 'tu-1').length
     expect(await second.apply(makeContext(messages))).toBe(true)
-    expect(resultText(messages, 'tu-1').length).toBeLessThan(afterFirst)
+    const text = resultText(messages, 'tu-1')
+    expect(text.length).toBeLessThan(afterFirst)
+    // The hint is sized from the original result and not re-issued from the preview.
+    expect(text.match(/\[Set _max_result_tokens/g)).toHaveLength(1)
+    expect(text).toContain('(e.g. 4000)')
   })
 })
 

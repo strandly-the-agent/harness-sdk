@@ -12,7 +12,7 @@ export const TRUNCATED_PREFIX = '[Truncated:'
 /** Matches the header `buildPreview` puts in front of a preview. */
 export const TRUNCATED_HEADER = /^\[Truncated: \d+ blocks?, ~[\d,]+ tokens\]\n\n/
 
-const DEFAULT_PREVIEW_TOKENS = 1000
+export const DEFAULT_PREVIEW_TOKENS = 1000
 const CHARS_PER_TOKEN = 4
 
 /**
@@ -38,6 +38,8 @@ export interface TruncateConfig {
    * number caps at that many tokens. When several strategies with `dynamicLimit` target the same
    * tool, the first in the pipeline sets the advertised cap; each still clamps to its own. Off
    * when omitted.
+   *
+   * Each result truncated without a model-set limit carries a one-line hint naming the property.
    */
   dynamicLimit?: true | number
 }
