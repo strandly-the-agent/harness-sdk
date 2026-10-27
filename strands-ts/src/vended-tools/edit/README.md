@@ -4,7 +4,7 @@ Replaces an exact, unique string in a text file. `old_str` must appear in the fi
 
 All I/O routes through a [Sandbox](../../sandbox/base.ts): either one bound at creation (as the Docker/SSH sandboxes do in `getTools()`) or the agent's configured sandbox read from `context.agent.sandbox` at call time.
 
-Pairs with the companion `read` and `write` vended tools and supersedes the deprecated [`fileEditor`](../file-editor/README.md).
+Supersedes the deprecated [`fileEditor`](../file-editor/README.md); companion `read` and `write` vended tools follow.
 
 ## ⚠️ Security Warning
 

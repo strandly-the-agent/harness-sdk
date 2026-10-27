@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { edit, makeEdit } from '../index.js'
+import { edit, makeEdit, DEFAULT_EDIT_DESCRIPTION } from '../index.js'
 import type { ToolContext } from '../../../index.js'
 import { createMockAgent } from '../../../__fixtures__/agent-helpers.js'
+import type { Sandbox } from '../../../sandbox/base.js'
 import { NotASandboxLocalEnvironment } from '../../../sandbox/not-a-sandbox-local-environment.js'
 import { promises as fs } from 'fs'
 import { tmpdir } from 'os'
@@ -105,6 +106,25 @@ describe('edit tool', () => {
     })
   })
 
+  describe('options', () => {
+    it('defaults to the edit name and description', () => {
+      expect(edit.name).toBe('edit')
+      expect(edit.description).toBe(DEFAULT_EDIT_DESCRIPTION)
+    })
+
+    it('applies name and description overrides without a sandbox', () => {
+      const custom = makeEdit({ name: 'my_edit', description: 'Custom edit.' })
+      expect(custom.name).toBe('my_edit')
+      expect(custom.description).toBe('Custom edit.')
+    })
+
+    it('applies overrides when a sandbox is bound', () => {
+      const custom = makeEdit(new NotASandboxLocalEnvironment(), { name: 'sandbox_edit' })
+      expect(custom.name).toBe('sandbox_edit')
+      expect(custom.description).toBe(DEFAULT_EDIT_DESCRIPTION)
+    })
+  })
+
   describe.skipIf(!POSIX_ONLY)('sandbox binding', () => {
     it('uses the bound sandbox over the agent sandbox', async () => {
       const boundTool = makeEdit(new NotASandboxLocalEnvironment())
@@ -116,7 +136,7 @@ describe('edit tool', () => {
           throw new Error('agent sandbox used despite bound sandbox')
         },
       }
-      const agent = createMockAgent({ extra: { sandbox: explodingSandbox as unknown as NotASandboxLocalEnvironment } })
+      const agent = createMockAgent({ extra: { sandbox: explodingSandbox as unknown as Sandbox } })
 
       const filePath = await writeFile('x')
       await boundTool.invoke({ path: filePath, old_str: 'x', new_str: 'y' }, createContext(agent))
