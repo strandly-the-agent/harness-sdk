@@ -13,7 +13,7 @@ import { InterruptError, type InterruptState } from '../interrupt.js'
 import { logger } from '../logging/logger.js'
 import { AgentToolStreamer, ChildAgentAdapter } from '../multiagent/agent-tool-streamer.js'
 import type { JSONValue } from '../types/json.js'
-import { JsonBlock, TextBlock, ToolResultBlock } from '../types/messages.js'
+import { JsonBlock, TextBlock, ToolResultBlock, type ToolResultContent } from '../types/messages.js'
 import { createErrorResult, Tool, ToolStreamEvent } from '../tools/tool.js'
 import type { ToolContext, ToolStreamGenerator } from '../tools/tool.js'
 import type { ToolSpec } from '../tools/types.js'
@@ -269,16 +269,18 @@ export class AgentAsTool extends Tool {
       return new ToolResultBlock({
         toolUseId,
         status: 'success',
-        content: [new TextBlock(streamer.result.toString())],
+        content: this._renderSuccess(streamer.result),
       })
     }
     if (streamer.error !== undefined) {
       return createErrorResult(streamer.error, toolUseId)
     }
-    return streamer.terminalResult((result) =>
-      result.structuredOutput !== undefined
-        ? [new JsonBlock({ json: result.structuredOutput as JSONValue })]
-        : [new TextBlock(result.toString())]
-    )
+    return streamer.terminalResult((result) => this._renderSuccess(result))
+  }
+
+  private _renderSuccess(result: AgentResult): ToolResultContent[] {
+    return result.structuredOutput !== undefined
+      ? [new JsonBlock({ json: result.structuredOutput as JSONValue })]
+      : [new TextBlock(result.toString())]
   }
 }
