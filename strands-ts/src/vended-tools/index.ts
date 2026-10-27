@@ -15,6 +15,7 @@
  *   subagent,
  *   swarm,
  *   webFetch,
+ *   write,
  * } from '@strands-agents/sdk/vended-tools'
  * ```
  *
@@ -37,3 +38,4 @@ export * from './sleep/index.js'
 export * from './subagent/index.js'
 export * from './swarm/index.js'
 export * from './web-fetch/index.js'
+export * from './write/index.js'

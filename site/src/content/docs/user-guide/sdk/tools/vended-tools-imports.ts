@@ -19,6 +19,11 @@ import { Agent } from '@strands-agents/sdk'
 import { fileEditor } from '@strands-agents/sdk/vended-tools/file-editor'
 // --8<-- [end:file_editor_import]
 
+// --8<-- [start:write_import]
+import { Agent } from '@strands-agents/sdk'
+import { write } from '@strands-agents/sdk/vended-tools/write'
+// --8<-- [end:write_import]
+
 // --8<-- [start:handoff_to_user_import]
 import { Agent, InterruptResponseContent } from '@strands-agents/sdk'
 import {

@@ -16,6 +16,7 @@ import {
   HANDOFF_INTERRUPT_NAME,
 } from '@strands-agents/sdk/vended-tools/handoff-to-user'
 import { sleep, makeSleep } from '@strands-agents/sdk/vended-tools/sleep'
+import { write } from '@strands-agents/sdk/vended-tools/write'
 import { stop } from '@strands-agents/sdk/experimental/vended-tools/stop'
 import { pythonRepl, makePythonRepl } from '@strands-agents/sdk/vended-tools/python-repl'
 import { DockerSandbox } from '@strands-agents/sdk/sandbox/docker'
@@ -97,6 +98,14 @@ async function fileEditorExample() {
   await agent.invoke('Replace "debug": false with "debug": true in /tmp/config.json')
   await agent.invoke('View lines 1-10 of /tmp/config.json')
   // --8<-- [end:file_editor_example]
+}
+
+// Write tool example
+async function writeExample() {
+  // --8<-- [start:write_example]
+  const agent = new Agent({ tools: [write] })
+  await agent.invoke("Create /tmp/hello.txt containing 'Hello, Strands!'")
+  // --8<-- [end:write_example]
 }
 
 // HTTP request example
