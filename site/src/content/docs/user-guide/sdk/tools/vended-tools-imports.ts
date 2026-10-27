@@ -9,6 +9,11 @@ import { Agent } from '@strands-agents/sdk'
 import { bash } from '@strands-agents/sdk/vended-tools/bash'
 // --8<-- [end:bash_import]
 
+// --8<-- [start:edit_import]
+import { Agent } from '@strands-agents/sdk'
+import { edit } from '@strands-agents/sdk/vended-tools/edit'
+// --8<-- [end:edit_import]
+
 // --8<-- [start:file_editor_import]
 import { Agent } from '@strands-agents/sdk'
 import { fileEditor } from '@strands-agents/sdk/vended-tools/file-editor'

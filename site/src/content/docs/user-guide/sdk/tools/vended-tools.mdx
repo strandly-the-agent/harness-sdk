@@ -8,6 +8,7 @@ sourceLinks:
   - path: strands-ts/src/vended-tools/file-editor/file-editor.ts
   - path: strands-py/src/strands/vended_tools/edit/edit.py
   - path: strands-py/src/strands/vended_tools/write/write.py
+  - path: strands-ts/src/vended-tools/edit/edit.ts
   - path: strands-ts/src/vended-tools/handoff-to-user/handoff-to-user.ts
   - path: strands-ts/src/vended-tools/bash/bash.ts
   - path: strands-ts/src/vended-tools/http-request/http-request.ts
@@ -54,7 +55,7 @@ Each tool is imported from its own subpath under `@strands-agents/sdk/vended-too
 
 | Tool | Description | Supported in |
 |------|-------------|--------------|
-| [Edit](#edit) | Make in-place changes to a text file | Python |
+| [Edit](#edit) | Make in-place changes to a text file | Python, TypeScript (Node.js, browsers) |
 | [File Editor](#file-editor) *(deprecated)* | View, create, and edit files | Python, TypeScript (Node.js) |
 | [Read](#read) | Read a file as numbered text or a media block | Python |
 | [Write](#write) | Create or overwrite a text file with the full provided content | Python |
@@ -76,7 +77,7 @@ Each tool is imported from its own subpath under `@strands-agents/sdk/vended-too
 
 Lets your agent make surgical, in-place changes to a text file by replacing an exact, unique string (`old_str` must appear in the file exactly once).
 
-The `edit` tool pairs with the `read` and `write` vended tools and supersedes `file_editor`. Available in Python today.
+The `edit` tool pairs with the `read` and `write` vended tools and supersedes `file_editor`.
 
 :::caution[Security Warning]
 This tool writes files at arbitrary absolute paths with the full permissions of the process. Only use with trusted input and consider running in a [sandboxed environment](../sandbox/index.mdx) for production.
@@ -85,6 +86,15 @@ This tool writes files at arbitrary absolute paths with the full permissions of 
 **Example:**
 
 <Tabs>
+<Tab label="TypeScript">
+
+```typescript
+--8<-- "user-guide/sdk/tools/vended-tools-imports.ts:edit_import"
+
+--8<-- "user-guide/sdk/tools/vended-tools.ts:edit_example"
+```
+
+</Tab>
 <Tab label="Python">
 
 ```python
@@ -103,7 +113,7 @@ agent("In /tmp/hello.txt, replace 'world' with 'Strands'.")
 ### File editor
 
 :::caution[Deprecated]
-`file_editor` is deprecated in favor of the focused `edit`, `read`, and `write` tools. It will be removed in a future release. Calling `make_file_editor` emits a `DeprecationWarning`. Docker and SSH sandboxes still vend `file_editor` as `sandbox_file_editor` for continuity.
+`file_editor` / `fileEditor` is deprecated in favor of the focused `edit`, `read`, and `write` tools. It will be removed in a future release. Calling `make_file_editor` emits a `DeprecationWarning` in Python; `makeFileEditor` and `fileEditor` are marked `@deprecated` in TypeScript. Docker and SSH sandboxes still vend `file_editor` as `sandbox_file_editor` for continuity.
 :::
 
 Lets your agent read and modify files on disk: useful for coding agents, config management, or any workflow where the agent inspects output and makes targeted edits.

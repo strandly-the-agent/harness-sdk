@@ -63,6 +63,10 @@ export interface MakeFileEditorOptions {
  * Create a file editor tool. If a sandbox is passed, it's bound at creation time.
  * Otherwise, the tool reads from `context.agent.sandbox` at call time.
  * Used by sandbox implementations in `getTools()` and by users who want a customized file editor.
+ *
+ * @deprecated fileEditor is deprecated and will be removed in a future release. Use the focused
+ * `edit` vended tool instead (`@strands-agents/sdk/vended-tools/edit`), paired with the `read` and
+ * `write` tools.
  */
 export function makeFileEditor(options?: MakeFileEditorOptions): ReturnType<typeof tool>
 export function makeFileEditor(sandbox: Sandbox | undefined, options?: MakeFileEditorOptions): ReturnType<typeof tool>
@@ -100,6 +104,10 @@ export function makeFileEditor(
 
 /**
  * Default file editor tool. Reads the sandbox from the agent's context at call time.
+ *
+ * @deprecated fileEditor is deprecated and will be removed in a future release. Use the focused
+ * `edit` vended tool instead (`@strands-agents/sdk/vended-tools/edit`), paired with the `read` and
+ * `write` tools.
  */
 export const fileEditor = makeFileEditor()
 

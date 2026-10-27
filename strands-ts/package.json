@@ -60,6 +60,10 @@
       "types": "./dist/src/vended-tools/notebook/index.d.ts",
       "default": "./dist/src/vended-tools/notebook/index.js"
     },
+    "./vended-tools/edit": {
+      "types": "./dist/src/vended-tools/edit/index.d.ts",
+      "default": "./dist/src/vended-tools/edit/index.js"
+    },
     "./vended-tools/file-editor": {
       "types": "./dist/src/vended-tools/file-editor/index.d.ts",
       "default": "./dist/src/vended-tools/file-editor/index.js"
