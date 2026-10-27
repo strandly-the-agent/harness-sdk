@@ -253,13 +253,18 @@ export declare const localAgentSymbol: unique symbol
 export interface CancelOptions {
   /**
    * Final assistant message for the cancelled invocation. When set, the agent
-   * appends it to history and returns it as `AgentResult.lastMessage`.
+   * appends it to history and returns it as `AgentResult.lastMessage`. Last
+   * write wins when several callers set one; `cancel()` without a message
+   * leaves a previously stored one intact.
    */
   message?: string
 
   /**
    * Defer cancellation until the running tool batch finishes, letting sibling
-   * tools complete normally instead of receiving cancellation errors.
+   * tools complete normally instead of receiving cancellation errors. A
+   * deferred cancel that never gets to apply — the model answers with plain
+   * text and no tools in the same turn — is a no-op, and the invocation
+   * returns its natural `stopReason`.
    */
   afterCurrentTools?: boolean
 }

@@ -13,7 +13,7 @@ import { InterruptError, type InterruptState } from '../interrupt.js'
 import { logger } from '../logging/logger.js'
 import { AgentToolStreamer, ChildAgentAdapter } from '../multiagent/agent-tool-streamer.js'
 import type { JSONValue } from '../types/json.js'
-import { JsonBlock, TextBlock, ToolResultBlock, type ToolResultContent } from '../types/messages.js'
+import { JsonBlock, TextBlock, type ToolResultBlock, type ToolResultContent } from '../types/messages.js'
 import { createErrorResult, Tool, ToolStreamEvent } from '../tools/tool.js'
 import type { ToolContext, ToolStreamGenerator } from '../tools/tool.js'
 import type { ToolSpec } from '../tools/types.js'
@@ -207,7 +207,7 @@ export class AgentAsTool extends Tool {
           'ask them to respond again.'
         const resumed = await streamer.resume(adapter, this._agent, unavailableMessage)
         if (resumed === undefined) {
-          return this._terminalResult(streamer, toolUseId, false)
+          return this._renderTerminal(streamer, toolUseId)
         }
         input = resumed
         logger.debug(`tool_name=<${this.name}>, tool_use_id=<${toolUseId}> | resuming sub-agent from interrupt`)
@@ -227,12 +227,7 @@ export class AgentAsTool extends Tool {
         cancelSignal,
         ...(invocationContext && { invocationContext }),
       }
-      // Read on the result event, before stream()'s finally resets the signal.
-      let subCancelSignalAborted = false
       for await (const event of streamer.stream(adapter, this._agent, this._agent.stream(input, invokeOptions))) {
-        if (event.type === 'agentResultEvent') {
-          subCancelSignalAborted = this._agent.cancelSignal.aborted
-        }
         if (event.type == 'toolStreamUpdateEvent') {
           yield event.event
         } else {
@@ -246,7 +241,7 @@ export class AgentAsTool extends Tool {
             'and no session manager, so its interrupt cannot be resumed after a restart'
         )
       }
-      return this._terminalResult(streamer, toolUseId, subCancelSignalAborted)
+      return this._renderTerminal(streamer, toolUseId)
     } catch (error) {
       if (error instanceof InterruptError) {
         throw error
@@ -257,21 +252,8 @@ export class AgentAsTool extends Tool {
     }
   }
 
-  /** Renders the sub-agent's terminal state as this tool's result. */
-  private _terminalResult(
-    streamer: AgentToolStreamer<AgentResult>,
-    toolUseId: string,
-    subCancelSignalAborted: boolean
-  ): ToolResultBlock {
-    // Immediate cancel (signal aborted) is an abort → error; the stop tool's deferred
-    // cancel never aborts the signal and falls through to the success path.
-    if (streamer.result?.stopReason === 'cancelled' && !subCancelSignalAborted) {
-      return new ToolResultBlock({
-        toolUseId,
-        status: 'success',
-        content: this._renderSuccess(streamer.result),
-      })
-    }
+  /** Error path uses `createErrorResult` for the `Error: …` prefix convention; success renders via {@link _renderSuccess}. */
+  private _renderTerminal(streamer: AgentToolStreamer<AgentResult>, toolUseId: string): ToolResultBlock {
     if (streamer.error !== undefined) {
       return createErrorResult(streamer.error, toolUseId)
     }

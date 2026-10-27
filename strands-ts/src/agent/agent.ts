@@ -1059,19 +1059,10 @@ export class Agent implements LocalAgent, InvokableAgent {
    * already executing runs to completion unless it checks `context.cancelSignal`.
    * Hook callbacks can read `event.agent.cancelSignal.aborted` for the same.
    *
-   * Pass `afterCurrentTools` to defer until the running tool batch finishes, so
-   * siblings complete normally; this is the cooperative stop the `stop` vended
-   * tool uses. A deferred cancel that never gets to apply (plain-text turn, no
-   * tools) is a no-op and the invocation returns its natural stopReason.
-   *
-   * Pass `message` to set the final assistant message; last write wins when
-   * several callers set one. A `cancel()` without a message leaves a previously
-   * stored message intact.
-   *
    * For cancellation driven from outside the agent, prefer the `cancelSignal`
    * option on `invoke` / `stream`.
    *
-   * @param options - Final message and deferral behavior
+   * @param options - See {@link CancelOptions} for `message` and `afterCurrentTools`.
    *
    * @example
    * ```typescript
