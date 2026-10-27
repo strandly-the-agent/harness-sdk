@@ -279,7 +279,10 @@ describe('dynamicLimit through ContextManager (agent level)', () => {
     const search = specs.find((spec) => spec.name === 'search')!
     const property = search.inputSchema?.properties?.['_max_result_tokens'] as { description: string }
     expect(property).toMatchObject({ type: 'integer', minimum: 0, maximum: 1_000_000 })
+    // The default threshold/preview and when to raise the value are what get models to set it.
+    expect(property.description).toContain('results over 1500 tokens are cut to a ~750-token preview')
     expect(property.description).toContain('stashed for retrieval')
+    expect(property.description).toContain('Set a higher value when you need the complete output')
     expect(search.inputSchema?.properties?.['query']).toBeDefined()
     const retrieve = specs.find((spec) => spec.name === 'retrieve_context')!
     expect(retrieve.inputSchema?.properties?.['_max_result_tokens']).toBeUndefined()

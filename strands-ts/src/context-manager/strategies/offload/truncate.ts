@@ -93,6 +93,7 @@ export class TruncateStrategy extends BaseOffloadStrategy {
 
   private readonly _truncateConfig: TruncateConfig
   private readonly _dynamicLimit: true | number | undefined
+  private readonly _previewTokens: number
 
   constructor(target?: OffloadTarget, config?: TruncateConfig, conditions?: OffloadConditions) {
     super(target, conditions)
@@ -103,17 +104,13 @@ export class TruncateStrategy extends BaseOffloadStrategy {
     }
     this._dynamicLimit = dynamicLimit
 
-    const previewTokens =
+    this._previewTokens =
       typeof this._truncateConfig.previewTokens === 'number' && Number.isFinite(this._truncateConfig.previewTokens)
         ? this._truncateConfig.previewTokens
         : 1000
-    if (
-      conditions?.threshold !== undefined &&
-      Number.isFinite(conditions.threshold) &&
-      conditions.threshold <= previewTokens
-    ) {
+    if (this._threshold !== undefined && this._threshold <= this._previewTokens) {
       throw new Error(
-        `threshold (${conditions.threshold}) must be greater than previewTokens (${previewTokens}) to ensure truncation converges`
+        `threshold (${this._threshold}) must be greater than previewTokens (${this._previewTokens}) to ensure truncation converges`
       )
     }
   }
@@ -142,14 +139,17 @@ export class TruncateStrategy extends BaseOffloadStrategy {
   private _registerResultLimitSelection(agent: LocalAgent): void {
     agent.addMiddleware(InvokeModelStage.Input, async (context) => {
       const retrievable = context.toolSpecs.some((spec) => spec.name === RETRIEVAL_TOOL_NAME)
+      // Models rarely set this on description alone; stating the default and when to raise it is what moves uptake.
       const schema: JSONSchema = {
         type: 'integer',
         minimum: 0,
         maximum: this._dynamicLimitCap(agent),
         description:
-          'Maximum tokens of this result to keep in context. Larger results are truncated to a preview of this size' +
+          `Token budget for this call's result. By default, results over ${this._threshold ?? this._previewTokens} tokens ` +
+          `are cut to a ~${this._previewTokens}-token preview` +
           (retrievable ? ' and the full content is stashed for retrieval' : '') +
-          '. Omit to use the default.',
+          '. Set a higher value when you need the complete output in one call (e.g. a whole file, every match), ' +
+          'or a lower one when a glance is enough.',
       }
       return {
         ...context,
