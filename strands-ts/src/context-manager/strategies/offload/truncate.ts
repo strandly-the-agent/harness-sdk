@@ -5,7 +5,7 @@
  */
 
 import { logger } from '../../../logging/logger.js'
-import { Message, TextBlock, ToolResultBlock } from '../../../types/messages.js'
+import { Message, TextBlock, ToolResultBlock, ToolUseBlock } from '../../../types/messages.js'
 import type { ContentBlock } from '../../../types/messages.js'
 import type { LocalAgent } from '../../../types/agent.js'
 import type { InvocationContext } from '../../../agent/invocation-context.js'
@@ -16,6 +16,7 @@ import { InvokeModelStage } from '../../../middleware/index.js'
 import { addInputProperty } from '../../../tools/input-schema.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME } from '../../../tools/structured-output-tool.js'
 import { MANAGE_TOOL_NAME } from '../../../background-tasks/types.js'
+import { DEFAULT_CONTEXT_WINDOW_LIMIT } from '../../../models/defaults.js'
 import type { ContextStrategy } from '../../types.js'
 import type { Stash } from '../../stash.js'
 import {
@@ -27,13 +28,55 @@ import {
 import { formatStashRefs } from '../../stash.js'
 import { RETRIEVAL_TOOL_NAME } from '../../retrieval-tool.js'
 import { pinContextTool, summarizeContextTool, truncateContextTool } from '../../modes/agentic/agentic-context.js'
-import {
-  BaseOffloadStrategy,
-  readResultLimit,
-  RESULT_LIMIT_PROPERTY,
-  type OffloadConditions,
-  type OffloadTarget,
-} from './base.js'
+import { BaseOffloadStrategy, type OffloadConditions, type OffloadTarget } from './base.js'
+
+/**
+ * Backstop for `dynamicLimit: true`: large enough to rarely bind, but no single result can fill
+ * the window. Not tuned against benchmarks.
+ */
+const DYNAMIC_LIMIT_WINDOW_SHARE = 0.5
+
+/**
+ * Tool input property through which the model picks a per-call result token limit.
+ *
+ * @internal
+ */
+export const RESULT_LIMIT_PROPERTY = '_max_result_tokens'
+
+/**
+ * Reads the model-selected result token limit from a tool-use input.
+ *
+ * @param input - The tool-use input as emitted by the model
+ * @returns The non-negative integer limit, or undefined when absent or invalid
+ * @internal
+ */
+export function readResultLimit(input: unknown): number | undefined {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const value = (input as Record<string, unknown>)[RESULT_LIMIT_PROPERTY]
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : undefined
+}
+
+/**
+ * Builds a toolUseId → model-selected result token limit map from the tool-use inputs in
+ * assistant messages.
+ *
+ * @param messages - The conversation to scan
+ * @param maxTokens - Upper bound the model may not exceed; larger values are clamped to it
+ * @returns Limits keyed by toolUseId; calls without a valid limit are absent
+ * @internal
+ */
+export function buildResultLimitMap(messages: Message[], maxTokens: number): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue
+    for (const block of message.content) {
+      if (!(block instanceof ToolUseBlock)) continue
+      const limit = readResultLimit(block.input)
+      if (limit !== undefined) map.set(block.toolUseId, Math.min(limit, maxTokens))
+    }
+  }
+  return map
+}
 
 // Tools whose results are never truncated, or are not produced by a model-issued call.
 const RESULT_LIMIT_EXEMPT_TOOLS = new Set([
@@ -49,6 +92,7 @@ export class TruncateStrategy extends BaseOffloadStrategy {
   readonly name = 'offload:truncate'
 
   private readonly _truncateConfig: TruncateConfig
+  private readonly _dynamicLimit: true | number | undefined
 
   constructor(target?: OffloadTarget, config?: TruncateConfig, conditions?: OffloadConditions) {
     super(target, conditions)
@@ -81,6 +125,17 @@ export class TruncateStrategy extends BaseOffloadStrategy {
   override init(agent: LocalAgent, stash?: Stash): void {
     super.init(agent, stash)
     if (this._dynamicLimit) this._registerResultLimitSelection(agent)
+  }
+
+  protected override _resultLimits(messages: Message[], agent: LocalAgent): ReadonlyMap<string, number> | undefined {
+    return this._dynamicLimit ? buildResultLimitMap(messages, this._dynamicLimitCap(agent)) : undefined
+  }
+
+  /** The largest result limit the model may pick. A falsy window falls back to the default, like `estimateUtilization`. */
+  private _dynamicLimitCap(agent: LocalAgent): number {
+    if (typeof this._dynamicLimit === 'number') return this._dynamicLimit
+    const window = agent.model.getConfig().contextWindowLimit || DEFAULT_CONTEXT_WINDOW_LIMIT
+    return Math.floor(window * DYNAMIC_LIMIT_WINDOW_SHARE)
   }
 
   /** Advertises `_max_result_tokens` on the tools this strategy targets and strips it before the tool runs. */

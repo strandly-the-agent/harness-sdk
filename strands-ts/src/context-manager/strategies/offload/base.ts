@@ -19,10 +19,6 @@ import type { ContextStrategy, ContextState } from '../../types.js'
 import type { Stash } from '../../stash.js'
 import { RETRIEVAL_TOOL_NAME } from '../../retrieval-tool.js'
 import { isPinned } from '../../../conversation-manager/compression/pin-message.js'
-import { DEFAULT_CONTEXT_WINDOW_LIMIT } from '../../../models/defaults.js'
-
-/** Share of the context window a `dynamicLimit: true` strategy lets a single result occupy. */
-const DYNAMIC_LIMIT_WINDOW_SHARE = 0.5
 
 /**
  * Target for offload operations. This union is intentionally extensible — new
@@ -95,48 +91,6 @@ export function buildToolNameMap(messages: Message[]): Map<string, string> {
       if (block instanceof ToolUseBlock) {
         map.set(block.toolUseId, block.name)
       }
-    }
-  }
-  return map
-}
-
-/**
- * Tool input property through which the model picks a per-call result token limit.
- *
- * @internal
- */
-export const RESULT_LIMIT_PROPERTY = '_max_result_tokens'
-
-/**
- * Reads the model-selected result token limit from a tool-use input.
- *
- * @param input - The tool-use input as emitted by the model
- * @returns The non-negative integer limit, or undefined when absent or invalid
- * @internal
- */
-export function readResultLimit(input: unknown): number | undefined {
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) return undefined
-  const value = (input as Record<string, unknown>)[RESULT_LIMIT_PROPERTY]
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : undefined
-}
-
-/**
- * Builds a toolUseId → model-selected result token limit map from the tool-use inputs in
- * assistant messages.
- *
- * @param messages - The conversation to scan
- * @param maxTokens - Upper bound the model may not exceed; larger values are clamped to it
- * @returns Limits keyed by toolUseId; calls without a valid limit are absent
- * @internal
- */
-export function buildResultLimitMap(messages: Message[], maxTokens: number): Map<string, number> {
-  const map = new Map<string, number>()
-  for (const message of messages) {
-    if (message.role !== 'assistant') continue
-    for (const block of message.content) {
-      if (!(block instanceof ToolUseBlock)) continue
-      const limit = readResultLimit(block.input)
-      if (limit !== undefined) map.set(block.toolUseId, Math.min(limit, maxTokens))
     }
   }
   return map
@@ -373,8 +327,6 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
   protected readonly _includeFilter: Set<string> | undefined
   protected readonly _excludeFilter: Set<string> | undefined
   protected _stash: Stash | undefined
-  /** Set by subclasses that honour model-selected result limits; see `TruncateConfig.dynamicLimit`. */
-  protected _dynamicLimit: true | number | undefined
 
   constructor(target?: OffloadTarget, conditions?: OffloadConditions) {
     if (Array.isArray(target) && target.length === 0) {
@@ -391,11 +343,12 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
     this._excludeFilter = resolved.exclude
   }
 
-  /** The largest result limit the model may pick; reads the window the same way `estimateUtilization` does. */
-  protected _dynamicLimitCap(agent: LocalAgent): number {
-    if (typeof this._dynamicLimit === 'number') return this._dynamicLimit
-    const window = agent.model.getConfig().contextWindowLimit || DEFAULT_CONTEXT_WINDOW_LIMIT
-    return Math.floor(window * DYNAMIC_LIMIT_WINDOW_SHARE)
+  /**
+   * Per-tool-use token limits that replace `threshold` for the matching tool results.
+   * Subclasses that let something other than the configuration pick the limit override this.
+   */
+  protected _resultLimits(_messages: Message[], _agent: LocalAgent): ReadonlyMap<string, number> | undefined {
+    return undefined
   }
 
   /** Whether this strategy operates at message-level (batch) vs per-block. */
@@ -412,9 +365,7 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
       const index = messages.indexOf(event.message)
       if (index >= 0 && isPinned(messages, index)) return
       const toolNameMap = buildToolNameMap(messages)
-      const resultLimits = this._dynamicLimit
-        ? buildResultLimitMap(messages, this._dynamicLimitCap(event.agent))
-        : undefined
+      const resultLimits = this._resultLimits(messages, event.agent)
       await this._transformBlocks(event.message, messages, toolNameMap, event.agent, undefined, resultLimits)
     })
   }
@@ -434,7 +385,7 @@ export abstract class BaseOffloadStrategy implements ContextStrategy {
     const { messages, agent } = context
     const invocationContext = context.invocationContext
     const toolNameMap = buildToolNameMap(messages)
-    const resultLimits = this._dynamicLimit ? buildResultLimitMap(messages, this._dynamicLimitCap(agent)) : undefined
+    const resultLimits = this._resultLimits(messages, agent)
     const eligible =
       this._preserveRecent > 0
         ? getOldestMatches(

@@ -13,7 +13,7 @@ import type { JSONValue } from '../../types/json.js'
 import { buildPreview, TRUNCATED_HEADER, TRUNCATED_PREFIX, type TruncateConfig } from '../methods/truncate.js'
 import type { ContextManagerStrategy } from '../context-manager.js'
 import { Offload } from '../strategies/offload/index.js'
-import { buildResultLimitMap } from '../strategies/offload/base.js'
+import { buildResultLimitMap } from '../strategies/offload/truncate.js'
 import type { OffloadTarget } from '../strategies/offload/base.js'
 import type { ContextManagerConfig, ContextState } from '../types.js'
 
