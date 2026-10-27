@@ -37,6 +37,7 @@ export interface MakeWriteOptions {
 
 /**
  * Create a sandbox-routed write tool that reads the sandbox from `context.agent.sandbox` at call time.
+ * The returned tool throws at call time when `path` is not absolute or contains `..` segments.
  *
  * @param options - Tool name and description overrides.
  * @returns A tool that creates or overwrites a file through the sandbox.
@@ -44,7 +45,8 @@ export interface MakeWriteOptions {
 export function makeWrite(options?: MakeWriteOptions): ReturnType<typeof tool>
 /**
  * Create a write tool bound to a sandbox at creation time. Used by sandbox implementations in
- * `getTools()` and by users who want a customized write tool.
+ * `getTools()` and by users who want a customized write tool. The returned tool throws at call time when
+ * `path` is not absolute or contains `..` segments.
  *
  * @param sandbox - Sandbox to bind. When `undefined`, the agent's sandbox is used at call time.
  * @param options - Tool name and description overrides.
@@ -77,11 +79,5 @@ export function makeWrite(
 
 /**
  * Default write tool. Reads the sandbox from the agent's context at call time.
- *
- * @example
- * ```typescript
- * const agent = new Agent({ tools: [write] })
- * await agent.invoke("Create /tmp/hello.txt containing 'Hello, Strands!'")
- * ```
  */
 export const write = makeWrite()

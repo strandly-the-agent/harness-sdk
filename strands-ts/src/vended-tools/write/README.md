@@ -2,7 +2,9 @@
 
 A sandbox-routed tool that creates or overwrites a text file with the full provided content.
 
-The tool writes through a [Sandbox](../../sandbox/base.ts), so behaviour is identical on the host and in Docker/SSH containers. It is part of the focused file-tool set (`read`, `edit`, `write`) that supersedes the deprecated `fileEditor`.
+The tool writes through a [Sandbox](../../sandbox/base.ts), so behaviour is identical on the host and in Docker/SSH containers. Paths must be absolute and must not contain `..` segments.
+
+Supersedes the deprecated [`fileEditor`](../file-editor/README.md) together with the companion `edit` and `read` vended tools.
 
 ## Usage
 
@@ -34,10 +36,10 @@ The default tool, produced by `makeWrite()`.
 
 ### `makeWrite(options?)` / `makeWrite(sandbox, options?)`
 
-| Option        | Type     | Default    | Description                     |
-| ------------- | -------- | ---------- | ------------------------------- |
-| `name`        | `string` | `write`    | Tool name.                      |
-| `description` | `string` | (built-in) | Description shown to the model. |
+| Option        | Type     | Default                     | Description                     |
+| ------------- | -------- | --------------------------- | ------------------------------- |
+| `name`        | `string` | `write`                     | Tool name.                      |
+| `description` | `string` | `DEFAULT_WRITE_DESCRIPTION` | Description shown to the model. |
 
 ### Input
 
@@ -50,7 +52,7 @@ The default tool, produced by `makeWrite()`.
 
 ### Return Value
 
-A confirmation string of the form `Wrote <N> lines to <path>.`, where `N` is the number of `\n`-separated entries in the content. Content ending in a newline reports one more entry than text lines; empty content reports `0 lines`.
+A confirmation string of the form `Wrote <N> line(s) to <path>.`, where `N` is the number of `\n`-separated entries in the content. Content ending in a newline reports one more entry than text lines; empty content reports `0 lines`.
 
 ### Error Handling
 
