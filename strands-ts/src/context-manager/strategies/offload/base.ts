@@ -19,6 +19,7 @@ import type { ContextStrategy, ContextState } from '../../types.js'
 import type { Stash } from '../../stash.js'
 import { RETRIEVAL_TOOL_NAME } from '../../retrieval-tool.js'
 import { isPinned } from '../../../conversation-manager/compression/pin-message.js'
+import { hasMessageSummary } from '../../methods/summarize.js'
 
 /**
  * Target for offload operations. This union is intentionally extensible — new
@@ -560,12 +561,24 @@ export class EmergencyTruncateStrategy extends BaseOffloadStrategy {
     return this._applyPerMessage(context)
   }
 
-  /** Drop the oldest 20% of non-head messages each pass. */
+  /**
+   * Drop the oldest 20% of non-head messages each pass.
+   *
+   * Summaries stand in for history that is already gone, so they and their tool-pair partners
+   * are kept while anything else remains.
+   */
   protected override async _applyPerMessage(context: ContextState): Promise<boolean> {
     const { messages } = context
     if (messages.length <= 3) return false
 
-    const removable = messages.filter((_, index) => index > 0)
+    const protectedMessages = new Set<Message>()
+    messages.forEach((message, index) => {
+      if (index > 0 && hasMessageSummary(message)) {
+        for (const kept of [message, ...collectRemovableWithPair(messages, index)]) protectedMessages.add(kept)
+      }
+    })
+    let removable = messages.filter((message, index) => index > 0 && !protectedMessages.has(message))
+    if (removable.length < 2) removable = messages.filter((_, index) => index > 0)
     let removeCount = Math.max(1, Math.floor(removable.length * EMERGENCY_REMOVAL_RATIO))
     // Cut just before an assistant message, which holds no tool result to orphan and never merges into message 0.
     if (removable[removeCount]?.role !== 'assistant') removeCount += 1

@@ -4,6 +4,7 @@ import unittest.mock
 
 import pytest
 
+from strands._context_manager.methods.summarize import _format_summarized
 from strands._context_manager.strategies.offload import Offload
 from strands._context_manager.strategies.offload.base import (
     _build_tool_name_map,
@@ -685,6 +686,59 @@ class TestEmergencyTruncateStrategy:
         ]
         context = ContextState(messages=messages, agent=mock_agent, utilization=1.1)
         assert await strategy.apply(context) is False
+
+    @pytest.mark.asyncio
+    async def test_keeps_message_summary(self, mock_agent):
+        summary = _format_summarized("12 messages", 40000, "facts")
+        messages: Messages = [
+            _text("user", "pin"),
+            _text("assistant", summary),
+            _text("user", "u2"),
+            _text("assistant", "a3"),
+            _text("user", "u4"),
+            _text("assistant", "a5"),
+            _text("user", "u6"),
+        ]
+        context = ContextState(messages=messages, agent=mock_agent, utilization=1.1, overflow=True)
+        assert await EmergencyTruncateStrategy().apply(context) is True
+        assert [(m["role"], [b["text"] for b in m["content"]]) for m in messages] == [
+            ("user", ["pin"]),
+            ("assistant", [summary, "[... 1 message elided ...]", "a3"]),
+            ("user", ["u4"]),
+            ("assistant", ["a5"]),
+            ("user", ["u6"]),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_keeps_tool_pair_of_summary_carrier(self, mock_agent):
+        tool_use, tool_result = _make_tool_pair(tool_use_id="tu-1")
+        carrier = Message(
+            role="assistant",
+            content=[*tool_use["content"], ContentBlock(text=_format_summarized("12 messages", 40000, "facts"))],
+        )
+        messages: Messages = [_text("user", "pin"), carrier, tool_result]
+        for index in range(4):
+            messages.extend(_make_tool_pair(tool_use_id=f"tu-{index + 2}"))
+        messages.append(_text("user", "last"))
+        context = ContextState(messages=messages, agent=mock_agent, utilization=1.1, overflow=True)
+        assert await EmergencyTruncateStrategy().apply(context) is True
+        assert messages[1] is carrier
+        assert messages[2] is tool_result
+        assert len(messages) < 12
+
+    @pytest.mark.asyncio
+    async def test_drops_summary_when_nothing_else_removable(self, mock_agent):
+        summary = _format_summarized("12 messages", 40000, "facts")
+        messages: Messages = [
+            _text("user", "pin"),
+            _text("assistant", summary),
+            _text("user", "u2"),
+            _text("assistant", summary),
+            _text("user", "u4"),
+        ]
+        context = ContextState(messages=messages, agent=mock_agent, utilization=1.1, overflow=True)
+        assert await EmergencyTruncateStrategy().apply(context) is True
+        assert len(messages) < 5
 
 
 class TestEagerHookRegistration:

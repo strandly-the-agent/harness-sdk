@@ -13,6 +13,7 @@ import { createMockAgent } from '../../../__fixtures__/agent-helpers.js'
 import type { Agent } from '../../../agent/agent.js'
 import type { ContextState } from '../../types.js'
 import { withDefaultLocale } from '../../../__fixtures__/locale-helpers.js'
+import { formatSummarized } from '../../methods/summarize.js'
 
 function makeToolResultMessage(text: string, toolUseId = 'tool-123'): Message {
   return new Message({
@@ -874,6 +875,68 @@ describe('EmergencyTruncateStrategy', () => {
       ['assistant', ['a2', '[... 2 messages elided ...]']],
       ['user', ['u3']],
     ])
+  })
+
+  it('keeps a message-level summary', async () => {
+    const summary = formatSummarized('12 messages', 40000, 'facts')
+    const messages = [
+      text('user', 'pin'),
+      text('assistant', summary),
+      text('user', 'u2'),
+      text('assistant', 'a3'),
+      text('user', 'u4'),
+      text('assistant', 'a5'),
+      text('user', 'u6'),
+    ]
+    expect(await new EmergencyTruncateStrategy().apply(makeContext(messages, 1.1, true))).toBe(true)
+    expect(
+      messages.map((message) => [message.role, message.content.map((block) => (block as TextBlock).text)])
+    ).toEqual([
+      ['user', ['pin']],
+      ['assistant', [summary, '[... 1 message elided ...]', 'a3']],
+      ['user', ['u4']],
+      ['assistant', ['a5']],
+      ['user', ['u6']],
+    ])
+  })
+
+  it('keeps the tool-result partner of a summary carrier', async () => {
+    const carrier = new Message({
+      role: 'assistant',
+      content: [
+        new ToolUseBlock({ toolUseId: 'tu-1', name: 'read', input: {} }),
+        new TextBlock(formatSummarized('12 messages', 40000, 'facts')),
+      ],
+    })
+    const toolResult = makeToolResultMessage('x', 'tu-1')
+    const messages = [text('user', 'pin'), carrier, toolResult]
+    for (let index = 2; index < 6; index++) {
+      messages.push(
+        new Message({
+          role: 'assistant',
+          content: [new ToolUseBlock({ toolUseId: `tu-${index}`, name: 'read', input: {} })],
+        }),
+        makeToolResultMessage('x', `tu-${index}`)
+      )
+    }
+    messages.push(text('user', 'last'))
+    expect(await new EmergencyTruncateStrategy().apply(makeContext(messages, 1.1, true))).toBe(true)
+    expect(messages[1]).toBe(carrier)
+    expect(messages[2]).toBe(toolResult)
+    expect(messages.length).toBeLessThan(12)
+  })
+
+  it('drops a summary when nothing else is removable', async () => {
+    const summary = formatSummarized('12 messages', 40000, 'facts')
+    const messages = [
+      text('user', 'pin'),
+      text('assistant', summary),
+      text('user', 'u2'),
+      text('assistant', summary),
+      text('user', 'u4'),
+    ]
+    expect(await new EmergencyTruncateStrategy().apply(makeContext(messages, 1.1, true))).toBe(true)
+    expect(messages.length).toBeLessThan(5)
   })
 })
 
