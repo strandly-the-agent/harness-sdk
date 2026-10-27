@@ -7,13 +7,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from strands import Agent, tool
 from strands.hooks.events import AfterToolCallEvent, BeforeModelCallEvent
+from strands.hooks.registry import HookOrder
 from strands.types.tools import ToolContext, ToolUse
 from strands.vended_plugins.context_offloader import (
     ContextOffloader,
     FileStorage,
     InMemoryStorage,
 )
+from tests.fixtures.mocked_model_provider import MockedModelProvider
 from tests.fixtures.sandbox import TestSandbox
 
 
@@ -90,10 +93,46 @@ class TestContextOffloader:
         assert plugin.name == "context_offloader"
 
     def test_hooks_auto_discovered(self, plugin):
-        assert len(plugin.hooks) == 2
         hook_names = {h.__name__ for h in plugin.hooks}
-        assert "_handle_tool_result" in hook_names
-        assert "_on_before_model_call" in hook_names
+        assert hook_names == {"_on_before_model_call"}
+
+    def test_init_agent_registers_tool_result_hook_last(self, plugin, mock_agent):
+        plugin.init_agent(mock_agent)
+
+        mock_agent.add_hook.assert_called_once_with(
+            plugin._handle_tool_result, AfterToolCallEvent, order=HookOrder.SDK_LAST
+        )
+
+    def test_user_after_tool_call_hooks_see_full_result_before_rewrite(self, storage):
+        """Hooks passed via ``hooks=`` run before the offloader rewrites ``event.result`` (#5596)."""
+        large_text = "x" * 2_000
+
+        @tool
+        def big_tool() -> str:
+            return large_text
+
+        seen: list[str] = []
+
+        def audit(event: AfterToolCallEvent) -> None:
+            seen.append(event.result["content"][0]["text"])
+
+        model = MockedModelProvider(
+            [
+                {"role": "assistant", "content": [{"toolUse": {"name": "big_tool", "toolUseId": "t1", "input": {}}}]},
+                {"role": "assistant", "content": [{"text": "done"}]},
+            ]
+        )
+        agent = Agent(
+            model=model,
+            tools=[big_tool],
+            hooks=[audit],
+            plugins=[ContextOffloader(storage=storage, max_result_tokens=25, preview_tokens=10)],
+        )
+        agent("go")
+
+        assert seen == [large_text]
+        stored = agent.messages[2]["content"][0]["toolResult"]["content"][0]["text"]
+        assert stored.startswith("[Offloaded:")
 
     def test_raises_on_non_positive_max_result_tokens(self):
         with pytest.raises(ValueError, match="max_result_tokens must be positive"):
