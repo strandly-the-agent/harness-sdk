@@ -207,7 +207,7 @@ export class AgentAsTool extends Tool {
           'ask them to respond again.'
         const resumed = await streamer.resume(adapter, this._agent, unavailableMessage)
         if (resumed === undefined) {
-          return this._terminalResult(streamer, toolUseId)
+          return this._terminalResult(streamer, toolUseId, false)
         }
         input = resumed
         logger.debug(`tool_name=<${this.name}>, tool_use_id=<${toolUseId}> | resuming sub-agent from interrupt`)
