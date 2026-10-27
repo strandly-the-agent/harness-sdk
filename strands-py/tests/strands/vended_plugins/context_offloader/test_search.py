@@ -176,6 +176,13 @@ class TestSearchContentTruncation:
         assert "> 3| needle xxxx" in result
         assert "output truncated, narrow your search" in result
 
+    def test_match_beyond_budget_still_cuts_at_line_boundary(self):
+        # Context lines alone exhaust the budget: no partial line is kept and the match is simply not shown.
+        text = "\n".join(["c" * 300, "c" * 300, "needle", "c" * 300])
+        result = _search_content(text, pattern="needle", context_lines=2, max_chars=500)
+        assert "needle" not in result.split("\n\n", 1)[1]
+        assert result.split("\n\n[output truncated")[0].endswith("c" * 300)
+
     def test_single_long_line_range_result_keeps_body(self):
         # Same guarantee on the line-range path: a single long line survives truncation.
         long_json = '{"key":"' + "x" * 5_000 + '"}'

@@ -89,14 +89,14 @@ def _search_content(
 def _truncate(output: str, max_chars: int, message: str) -> str:
     """Cut output at the last newline before max_chars and append a truncation message.
 
-    When the first matched line (``>`` prefix) starts after that newline, it is hard-cut rather than
-    dropped, so the body never reports a match it does not show.
+    When the first matched line (``>`` prefix) within the budget begins after that newline, cut at
+    ``max_chars`` instead so the matched line stays visible.
     """
     if len(output) <= max_chars:
         return output
 
     cut = output.rfind("\n", 0, max_chars)
-    first_match = _MATCH_LINE.search(output)
+    first_match = _MATCH_LINE.search(output, 0, max_chars)
     drops_first_match = first_match is not None and first_match.start() > cut
     slice_end = cut if cut > 0 and not drops_first_match else max_chars
 

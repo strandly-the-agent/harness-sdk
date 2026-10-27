@@ -151,6 +151,10 @@ class TestContextOffloader:
         preview = plugin._slice_preview("h" * 100 + "t" * 100)
         assert preview == "h" * 24 + "\n\n[... 160 chars elided ...]\n\n" + "t" * 16
 
+    def test_slice_preview_never_longer_than_text(self, storage):
+        plugin = ContextOffloader(storage=storage, max_result_tokens=10, preview_tokens=9)
+        assert plugin._slice_preview("a" * 50) == "a" * 50
+
     def test_slice_preview_zero_budget_is_empty(self, storage):
         plugin = ContextOffloader(storage=storage, max_result_tokens=25, preview_tokens=0)
         assert plugin._slice_preview("a" * 100) == ""
