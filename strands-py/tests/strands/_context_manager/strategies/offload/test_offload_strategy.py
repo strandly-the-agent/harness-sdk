@@ -41,6 +41,18 @@ def _text(role, text):
     return Message(role=role, content=[ContentBlock(text=text)])
 
 
+def _tool_ids(message):
+    """Project a message onto its tool use ids and texts for whole-list assertions."""
+    return [
+        block["toolUse"]["toolUseId"]
+        if "toolUse" in block
+        else block["toolResult"]["toolUseId"]
+        if "toolResult" in block
+        else block["text"]
+        for block in message["content"]
+    ]
+
+
 def _make_tool_pair(tool_name="my_tool", tool_use_id="tu-1"):
     """Create an assistant tool-use message + user tool-result message pair."""
     assistant_msg = Message(
@@ -719,26 +731,38 @@ class TestEmergencyTruncateStrategy:
         messages: Messages = [_text("user", "pin"), carrier, tool_result]
         for index in range(4):
             messages.extend(_make_tool_pair(tool_use_id=f"tu-{index + 2}"))
-        messages.append(_text("user", "last"))
         context = ContextState(messages=messages, agent=mock_agent, utilization=1.1, overflow=True)
         assert await EmergencyTruncateStrategy().apply(context) is True
         assert messages[1] is carrier
         assert messages[2] is tool_result
-        assert len(messages) < 12
+        assert [_tool_ids(message) for message in messages] == [
+            ["pin"],
+            ["tu-1", "[Summarized: 12 messages, ~40,000 tokens]\n\nfacts"],
+            ["tu-1"],
+            ["tu-3", "[... 2 messages elided ...]"],
+            ["tu-3"],
+            ["tu-4"],
+            ["tu-4"],
+            ["tu-5"],
+            ["tu-5"],
+        ]
 
     @pytest.mark.asyncio
-    async def test_drops_summary_when_nothing_else_removable(self, mock_agent):
-        summary = _format_summarized("12 messages", 40000, "facts")
-        messages: Messages = [
-            _text("user", "pin"),
-            _text("assistant", summary),
-            _text("user", "u2"),
-            _text("assistant", summary),
-            _text("user", "u4"),
-        ]
+    async def test_drops_summary_when_nothing_else_can_be_removed(self, mock_agent):
+        """Only the final tool pair is unprotected, and the last message is never removed."""
+        tool_use, tool_result = _make_tool_pair(tool_use_id="tu-1")
+        carrier = Message(
+            role="assistant",
+            content=[*tool_use["content"], ContentBlock(text=_format_summarized("12 messages", 40000, "facts"))],
+        )
+        messages: Messages = [_text("user", "pin"), carrier, tool_result, *_make_tool_pair(tool_use_id="tu-2")]
         context = ContextState(messages=messages, agent=mock_agent, utilization=1.1, overflow=True)
         assert await EmergencyTruncateStrategy().apply(context) is True
-        assert len(messages) < 5
+        assert [_tool_ids(message) for message in messages] == [
+            ["pin"],
+            ["tu-2", "[... 2 messages elided ...]"],
+            ["tu-2"],
+        ]
 
 
 class TestEagerHookRegistration:

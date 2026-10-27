@@ -858,6 +858,15 @@ describe('insertMarker', () => {
   })
 })
 
+/** Project a message onto its tool use ids and texts for whole-list assertions. */
+function toolIds(message: Message): string[] {
+  return message.content.map((block) => {
+    if (block instanceof ToolUseBlock) return block.toolUseId
+    if (block instanceof ToolResultBlock) return block.toolUseId
+    return (block as TextBlock).text
+  })
+}
+
 describe('EmergencyTruncateStrategy', () => {
   it('leaves a marker on the assistant message after the cut', async () => {
     const messages = [
@@ -919,24 +928,39 @@ describe('EmergencyTruncateStrategy', () => {
         makeToolResultMessage('x', `tu-${index}`)
       )
     }
-    messages.push(text('user', 'last'))
     expect(await new EmergencyTruncateStrategy().apply(makeContext(messages, 1.1, true))).toBe(true)
     expect(messages[1]).toBe(carrier)
     expect(messages[2]).toBe(toolResult)
-    expect(messages.length).toBeLessThan(12)
+    expect(messages.map(toolIds)).toEqual([
+      ['pin'],
+      ['tu-1', '[Summarized: 12 messages, ~40,000 tokens]\n\nfacts'],
+      ['tu-1'],
+      ['tu-3', '[... 2 messages elided ...]'],
+      ['tu-3'],
+      ['tu-4'],
+      ['tu-4'],
+      ['tu-5'],
+      ['tu-5'],
+    ])
   })
 
-  it('drops a summary when nothing else is removable', async () => {
-    const summary = formatSummarized('12 messages', 40000, 'facts')
+  it('drops a summary when nothing else can be removed', async () => {
+    // Only the final tool pair is unprotected, and the last message is never removed.
     const messages = [
       text('user', 'pin'),
-      text('assistant', summary),
-      text('user', 'u2'),
-      text('assistant', summary),
-      text('user', 'u4'),
+      new Message({
+        role: 'assistant',
+        content: [
+          new ToolUseBlock({ toolUseId: 'tu-1', name: 'read', input: {} }),
+          new TextBlock(formatSummarized('12 messages', 40000, 'facts')),
+        ],
+      }),
+      makeToolResultMessage('x', 'tu-1'),
+      new Message({ role: 'assistant', content: [new ToolUseBlock({ toolUseId: 'tu-2', name: 'read', input: {} })] }),
+      makeToolResultMessage('x', 'tu-2'),
     ]
     expect(await new EmergencyTruncateStrategy().apply(makeContext(messages, 1.1, true))).toBe(true)
-    expect(messages.length).toBeLessThan(5)
+    expect(messages.map(toolIds)).toEqual([['pin'], ['tu-2', '[... 2 messages elided ...]'], ['tu-2']])
   })
 })
 
