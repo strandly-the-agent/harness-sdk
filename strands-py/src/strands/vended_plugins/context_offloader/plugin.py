@@ -471,7 +471,7 @@ class ContextOffloader(Plugin):
     async def _handle_tool_result(self, event: AfterToolCallEvent) -> None:
         """Intercept oversized tool results, offload per-block, and replace with preview.
 
-        Registered in ``init_agent`` at ``HookOrder.SDK_LAST`` rather than via ``@hook``.
+        Registered in ``init_agent`` at ``HookOrder.SDK_LAST``.
         """
         if event.cancel_message is not None:
             return
