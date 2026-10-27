@@ -145,9 +145,11 @@ _DEFAULT_MAX_RESULT_TOKENS = 2_500
 """Default token threshold above which tool results are offloaded."""
 
 _DEFAULT_PREVIEW_TOKENS = 1_000
-"""Default number of tokens to keep as a preview in context."""
+"""Default number of tokens to keep ass proactively at tool execution time via ``AfterToolCallE a preview in context."""
 
 _CHARS_PER_TOKEN = 4
+# Head/tail split of the preview budget, matching the ContextManager truncate method.
+_PREVIEW_HEAD_SHARE = 0.6
 """Approximate characters per token, fallback for preview slicing without tiktoken."""
 
 
@@ -186,7 +188,7 @@ class ContextOffloader(Plugin):
       with a placeholder showing format, name, and size
     - **Unknown types**: passed through unchanged
 
-    This operates proactively at tool execution time via ``AfterToolCallEvent``,
+    This operatevent``,
     before the result enters the conversation — unlike ``SlidingWindowConversationManager``
     which truncates reactively after context overflow.
 
@@ -662,12 +664,23 @@ class ContextOffloader(Plugin):
         logger.debug("reference=<%s>, cycle=<%d> | retrieve refreshed eviction cycle", reference, cycle)
 
     def _slice_preview(self, text: str) -> str:
-        """Slice text to approximately preview_tokens using character-based estimation.
+        """Build a head+tail preview of approximately preview_tokens using character-based estimation.
 
         Args:
             text: The full text to slice.
 
         Returns:
-            The preview text.
+            The preview text: the full text when it fits, otherwise the leading 60% and trailing 40% of the
+            budget around an elision marker so trailing notices (e.g. pagination hints) stay visible.
         """
-        return text[: self._preview_tokens * _CHARS_PER_TOKEN]
+        preview_chars = self._preview_tokens * _CHARS_PER_TOKEN
+        if len(text) <= preview_chars:
+            return text
+        if preview_chars == 0:
+            return ""
+        head_chars = int(preview_chars * _PREVIEW_HEAD_SHARE)
+        tail_chars = preview_chars - head_chars
+        head = text[:head_chars]
+        tail = text[-tail_chars:] if tail_chars > 0 else ""
+        marker = f"[... {len(text) - head_chars - tail_chars:,} chars elided ...]"
+        return "\n\n".join(part for part in (head, marker, tail) if part)

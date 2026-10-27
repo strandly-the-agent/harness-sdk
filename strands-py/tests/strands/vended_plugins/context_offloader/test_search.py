@@ -168,6 +168,14 @@ class TestSearchContentTruncation:
         assert '> 1| {"key":"xxxx' in result
         assert "output truncated, narrow your search" in result
 
+    def test_long_matched_line_after_context_is_kept(self):
+        """A matched line longer than the remaining budget is hard-cut, not dropped (#5597)."""
+        text = "\n".join(["ctx 1", "ctx 2", "needle " + "x" * 5_000, "ctx 3"])
+        result = _search_content(text, pattern="needle", context_lines=2, max_chars=500)
+        assert "[1 match for /needle/]" in result
+        assert "> 3| needle xxxx" in result
+        assert "output truncated, narrow your search" in result
+
     def test_single_long_line_range_result_keeps_body(self):
         # Same guarantee on the line-range path: a single long line survives truncation.
         long_json = '{"key":"' + "x" * 5_000 + '"}'

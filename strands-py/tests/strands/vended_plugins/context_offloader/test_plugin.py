@@ -131,6 +131,31 @@ class TestContextOffloader:
         assert content_type == "text/plain"
 
     @pytest.mark.asyncio
+    async def test_preview_keeps_head_and_tail(self, storage, mock_agent):
+        """The preview keeps the tail so trailing notices such as pagination hints stay visible (#5597)."""
+        plugin = ContextOffloader(storage=storage, max_result_tokens=300, preview_tokens=100)
+        body = "\n".join(f"line {i}" for i in range(1, 201))
+        notice = "[Showing lines 1-200 of 5000. Use offset/limit to read more.]"
+        event = _make_event(mock_agent, f"{body}\n{notice}")
+
+        await plugin._handle_tool_result(event)
+
+        preview = event.result["content"][0]["text"]
+        assert preview.index("line 1\n") < preview.index("chars elided") < preview.index(notice)
+        assert "line 100" not in preview
+
+    def test_slice_preview_returns_text_within_budget(self, plugin):
+        assert plugin._slice_preview("a" * 40) == "a" * 40
+
+    def test_slice_preview_splits_budget_60_40(self, plugin):
+        preview = plugin._slice_preview("h" * 100 + "t" * 100)
+        assert preview == "h" * 24 + "\n\n[... 160 chars elided ...]\n\n" + "t" * 16
+
+    def test_slice_preview_zero_budget_is_empty(self, storage):
+        plugin = ContextOffloader(storage=storage, max_result_tokens=25, preview_tokens=0)
+        assert plugin._slice_preview("a" * 100) == ""
+
+    @pytest.mark.asyncio
     async def test_preserves_status_and_tool_use_id(self, plugin, mock_agent):
         event = _make_event(mock_agent, "x" * 200, status="error", tool_use_id="my_tool_456")
 
