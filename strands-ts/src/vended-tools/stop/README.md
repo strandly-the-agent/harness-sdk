@@ -34,12 +34,7 @@ const agent = new Agent({
 
 const result = await agent.invoke('Summarize the changes in ./CHANGELOG.md')
 console.log(result.stopReason) // 'cancelled'
-// lastMessage is a Message; pull the text out of its content blocks:
-const stopText = result.lastMessage.content
-  .filter((block) => block.type === 'text')
-  .map((block) => block.text)
-  .join('')
-console.log(stopText) // The model's summary passed to stop()
+console.log(result.toString()) // The model's summary passed to stop()
 ```
 
 The previous import path, `@strands-agents/sdk/experimental/vended-tools/stop`, still works but is deprecated.
