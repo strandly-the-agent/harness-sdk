@@ -1550,7 +1550,7 @@ describe('VercelModel', () => {
         expect(bedrockSystemCachePoint(callArgs())).toBeDefined()
       })
 
-      it('declares cache points for Claude on Bedrock and Anthropic, automatic caching for OpenAI', () => {
+      it('reads cache points for Claude from the shared model info, whatever the wrapping provider', () => {
         expect(
           setupCaptureTest(minimalParts, undefined, 'amazon-bedrock', CACHING_MODEL_ID).model.modelInfo.capabilities
             ?.promptCaching
@@ -1563,9 +1563,6 @@ describe('VercelModel', () => {
           setupCaptureTest(minimalParts, undefined, 'anthropic', 'claude-sonnet-4-6').model.modelInfo.capabilities
             ?.promptCaching
         ).toBe('cachePoints')
-        expect(
-          setupCaptureTest(minimalParts, undefined, 'openai', 'gpt-5').model.modelInfo.capabilities?.promptCaching
-        ).toBe('auto')
       })
 
       it('caches on an unsupported model when the anthropic strategy is explicit', async () => {

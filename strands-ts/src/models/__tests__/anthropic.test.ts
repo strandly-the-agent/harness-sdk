@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Anthropic from '@anthropic-ai/sdk'
 import { isNode } from '../../__fixtures__/environment.js'
-import { AnthropicModel, type AnthropicModelConfig } from '../anthropic.js'
+import { AnthropicModel } from '../anthropic.js'
 import { ContextWindowOverflowError, ModelError, ModelThrottledError } from '../../errors.js'
 import { collectGenerator, collectIterator } from '../../__fixtures__/model-test-helpers.js'
 import {
@@ -185,7 +185,7 @@ describe('AnthropicModel', () => {
   })
 
   describe('info', () => {
-    it('declares cache points', () => {
+    it('reads cache points from the shared model info', () => {
       const model = new AnthropicModel({ apiKey: 'sk-ant-test', modelId: 'claude-sonnet-4-6' })
 
       expect(model.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
@@ -210,18 +210,6 @@ describe('AnthropicModel', () => {
 
       expect(model.getConfig().maxTokens).toBe(8_000)
       expect(model.modelInfo.limits?.maxOutputTokens).toBe(8_000)
-    })
-
-    it('defaults maxTokens to a declared output ceiling over the shared model info', () => {
-      class Declaring extends AnthropicModel {
-        protected override declareModelInfo(config: AnthropicModelConfig) {
-          return { ...super.declareModelInfo(config), limits: { maxOutputTokens: 4_000 } }
-        }
-      }
-      const model = new Declaring({ apiKey: 'sk-ant-test', modelId: 'claude-sonnet-4-6' })
-
-      expect(model.getConfig().maxTokens).toBe(4_000)
-      expect(model.modelInfo.limits?.maxOutputTokens).toBe(4_000)
     })
 
     it('defaults maxTokens to the model output ceiling from the shared model info', () => {

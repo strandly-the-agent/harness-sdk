@@ -144,11 +144,7 @@ export class GoogleModel extends Model<GoogleModelConfig> {
    * ```
    */
   getConfig(): GoogleModelConfig {
-    return resolveConfigMetadata(
-      this._config,
-      this._config.modelId ?? MODEL_DEFAULTS.gemini.modelId,
-      this.declareModelInfo(this._config)
-    )
+    return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.gemini.modelId)
   }
 
   /** The configured model ID, else the default one that gets sent. */

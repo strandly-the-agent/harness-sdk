@@ -11,6 +11,7 @@ import { CitationsBlock } from '../../types/citations.js'
 import { TestModelProvider, collectGenerator } from '../../__fixtures__/model-test-helpers.js'
 import { MaxTokensError, ModelError } from '../../errors.js'
 import { Model } from '../model.js'
+import type { ModelInfo } from '../model-info.js'
 import type { BaseModelConfig, StreamOptions } from '../model.js'
 import { isModelStreamEvent, type ModelStreamEvent } from '../streaming.js'
 import { anyTrackingId } from '../../__fixtures__/message-helpers.js'
@@ -1208,7 +1209,7 @@ describe('countTokens', () => {
 })
 
 describe('info', () => {
-  it('is all unknown except the mirrored stateful for a provider that declares nothing', () => {
+  it('is all unknown except the mirrored stateful for a provider with no model id', () => {
     const provider = new TestModelProvider()
 
     expect(provider.modelInfo).toEqual({ capabilities: { stateful: false } })
@@ -1222,28 +1223,21 @@ describe('info', () => {
     expect(provider.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
   })
 
-  it('lets the provider declaration win over the shared model info', () => {
-    class DeclaringProvider extends TestModelProvider {
-      protected override declareModelInfo() {
-        return { limits: { contextWindow: 8_000 } }
+  it('lets a provider fill in facts under what the getter resolved', () => {
+    class GatewayProvider extends TestModelProvider {
+      override get modelInfo(): ModelInfo {
+        const info = super.modelInfo
+        return { ...info, capabilities: { promptCaching: 'unsupported', ...info.capabilities } }
       }
     }
-    const provider = new DeclaringProvider()
-    provider.updateConfig({ modelId: 'claude-sonnet-4-6' })
-
+    const provider = new GatewayProvider()
+    provider.updateConfig({ contextWindowLimit: 8_000 })
+    expect(provider.modelInfo.capabilities?.promptCaching).toBe('unsupported')
     expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
-  })
+    expect(provider.modelInfo.capabilities?.stateful).toBe(false)
 
-  it('lets an explicit contextWindowLimit equal to the shared value win over the declaration', () => {
-    class DeclaringProvider extends TestModelProvider {
-      protected override declareModelInfo() {
-        return { limits: { contextWindow: 8_000 } }
-      }
-    }
-    const provider = new DeclaringProvider()
-    provider.updateConfig({ modelId: 'claude-sonnet-4-6', contextWindowLimit: 1_000_000 })
-
-    expect(provider.modelInfo.limits?.contextWindow).toBe(1_000_000)
+    provider.updateConfig({ modelInfo: { capabilities: { promptCaching: 'cachePoints' } } })
+    expect(provider.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
   })
 
   it('never lets the info override change stateful', () => {
@@ -1253,20 +1247,6 @@ describe('info', () => {
 
     expect(provider.modelInfo.capabilities?.stateful).toBe(false)
     expect(provider.stateful).toBe(false)
-  })
-
-  it('passes the config to the declaration', () => {
-    class DeclaringProvider extends TestModelProvider {
-      protected override declareModelInfo(config: BaseModelConfig) {
-        return { limits: { maxOutputTokens: config.modelId === 'small' ? 1_000 : 2_000 } }
-      }
-    }
-    const provider = new DeclaringProvider()
-    provider.updateConfig({ modelId: 'small' })
-    expect(provider.modelInfo.limits?.maxOutputTokens).toBe(1_000)
-
-    provider.updateConfig({ modelId: 'large' })
-    expect(provider.modelInfo.limits?.maxOutputTokens).toBe(2_000)
   })
 
   it('lets the info override win over contextWindowLimit', () => {
@@ -1291,43 +1271,6 @@ describe('info', () => {
     }
 
     expect(new StatefulProvider().modelInfo.capabilities?.stateful).toBe(true)
-  })
-
-  it('applies what the provider declares', () => {
-    class DeclaringProvider extends TestModelProvider {
-      protected override declareModelInfo() {
-        return { capabilities: { promptCaching: 'auto' as const } }
-      }
-    }
-
-    expect(new DeclaringProvider().modelInfo.capabilities?.promptCaching).toBe('auto')
-  })
-
-  it('lets the info config override win over the declaration', () => {
-    class DeclaringProvider extends TestModelProvider {
-      protected override declareModelInfo() {
-        return { capabilities: { promptCaching: 'auto' as const }, limits: { contextWindow: 8_000 } }
-      }
-    }
-    const provider = new DeclaringProvider()
-    provider.updateConfig({ modelInfo: { capabilities: { promptCaching: 'unsupported' } } })
-
-    expect(provider.modelInfo.capabilities?.promptCaching).toBe('unsupported')
-    expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
-  })
-
-  it('lets an explicit contextWindowLimit win over the declaration', () => {
-    class DeclaringProvider extends TestModelProvider {
-      protected override declareModelInfo() {
-        return { limits: { contextWindow: 8_000 } }
-      }
-    }
-    const provider = new DeclaringProvider()
-    expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
-
-    provider.updateConfig({ contextWindowLimit: 500_000 })
-
-    expect(provider.modelInfo.limits?.contextWindow).toBe(500_000)
   })
 
   it('reflects config changes on the next read', () => {

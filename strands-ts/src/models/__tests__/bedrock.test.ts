@@ -9,7 +9,7 @@ import {
 } from '@aws-sdk/client-bedrock-runtime'
 import { isNode } from '../../__fixtures__/environment.js'
 import { BedrockModel } from '../bedrock.js'
-import type { BedrockModelConfig, BedrockModelOptions } from '../bedrock.js'
+import type { BedrockModelOptions } from '../bedrock.js'
 import { ContextWindowOverflowError, ModelThrottledError } from '../../errors.js'
 import { Message, ReasoningBlock, ToolUseBlock, ToolResultBlock, JsonBlock } from '../../types/messages.js'
 import type { SystemContentBlock } from '../../types/messages.js'
@@ -416,28 +416,6 @@ describe('BedrockModel', () => {
       expect(provider.modelInfo.limits?.contextWindow).toBe(500_000)
     })
 
-    it('lets a subclass declaration read the model id from the config without recursing', () => {
-      class Gateway extends BedrockModel {
-        protected override declareModelInfo(config: BedrockModelConfig) {
-          return config.modelId?.startsWith('us.') ? { limits: { contextWindow: 8_000 } } : {}
-        }
-      }
-      const provider = new Gateway({ modelId: 'us.anthropic.claude-sonnet-4-6' })
-      expect(provider.getConfig().contextWindowLimit).toBe(8_000)
-      expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
-    })
-
-    it('auto-populates contextWindowLimit from a provider declaration over the shared value', () => {
-      class DeclaringBedrock extends BedrockModel {
-        protected override declareModelInfo() {
-          return { limits: { contextWindow: 8_000 } }
-        }
-      }
-      const provider = new DeclaringBedrock({ modelId: 'anthropic.claude-sonnet-4-6' })
-      expect(provider.getConfig().contextWindowLimit).toBe(8_000)
-      expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
-    })
-
     it('does not override explicit contextWindowLimit', () => {
       const provider = new BedrockModel({
         modelId: 'anthropic.claude-sonnet-4-6',
@@ -458,7 +436,7 @@ describe('BedrockModel', () => {
   })
 
   describe('info', () => {
-    it('declares cache points for Claude model ids', () => {
+    it('reads cache points for Claude model ids from the shared model info', () => {
       const provider = new BedrockModel({ modelId: 'us.anthropic.claude-sonnet-4-6' })
 
       expect(provider.modelInfo.capabilities?.promptCaching).toBe('cachePoints')

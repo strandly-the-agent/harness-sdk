@@ -632,8 +632,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    * ```
    */
   getConfig(): BedrockModelConfig {
-    const modelId = this._config.modelId ?? MODEL_DEFAULTS.bedrock.modelId
-    return resolveConfigMetadata(this._config, modelId, this.declareModelInfo(this._config))
+    return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.bedrock.modelId)
   }
 
   /**

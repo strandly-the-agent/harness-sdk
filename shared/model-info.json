@@ -149,7 +149,8 @@
     },
     "claude-opus-4-20250514": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -175,7 +176,8 @@
     },
     "claude-3-7-sonnet-20250219": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -183,7 +185,8 @@
     },
     "claude-3-5-sonnet-20241022": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 8192
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -191,7 +194,8 @@
     },
     "claude-3-5-sonnet-20240620": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 8192
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -199,7 +203,8 @@
     },
     "claude-3-5-haiku-20241022": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 8192
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -207,7 +212,8 @@
     },
     "claude-3-opus-20240229": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 4096
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -215,7 +221,8 @@
     },
     "claude-3-haiku-20240307": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 4096
       },
       "capabilities": {
         "promptCaching": "cachePoints"
@@ -231,7 +238,8 @@
     },
     "claude-3-sonnet-20240229": {
       "limits": {
-        "contextWindow": 200000
+        "contextWindow": 200000,
+        "maxOutputTokens": 4096
       },
       "capabilities": {
         "promptCaching": "cachePoints"

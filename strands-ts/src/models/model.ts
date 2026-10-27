@@ -37,18 +37,17 @@ import { warnOnce } from '../logging/warn-once.js'
  * through unchanged.
  *
  * Kept so `getConfig().contextWindowLimit` keeps its documented value. The filled value is resolved
- * through every layer below the user's (shared model info, the provider's declaration, the
- * `modelInfo` override), so `Model.modelInfo` can take it at face value.
+ * through every layer below the user's (shared model info, then the `modelInfo` override), so
+ * `Model.modelInfo` can take it at face value.
  *
  * @internal
  * @param config - The stored model config
  * @param modelId - The model ID to look up
- * @param declared - What the provider declares through `declareModelInfo(config)`
  * @returns A new config with the limit filled in, or the original config if nothing to fill
  */
-export function resolveConfigMetadata<T extends BaseModelConfig>(config: T, modelId: string, declared: ModelInfo): T {
+export function resolveConfigMetadata<T extends BaseModelConfig>(config: T, modelId: string): T {
   if (config.contextWindowLimit !== undefined) return config
-  const contextWindow = mergeModelInfo(lookupModelInfo(modelId), declared, config.modelInfo).limits?.contextWindow
+  const contextWindow = mergeModelInfo(lookupModelInfo(modelId), config.modelInfo).limits?.contextWindow
   if (contextWindow === undefined) return config
   return { ...config, contextWindowLimit: contextWindow }
 }
@@ -214,8 +213,7 @@ export interface BaseModelConfig {
    * Maximum context window size in tokens for the model.
    *
    * The same fact as `modelInfo.limits.contextWindow`; setting it here is shorthand for setting it
-   * through `modelInfo`, and it wins over the shared model info and the provider's declaration. When
-   * both are set, `modelInfo` wins.
+   * through `modelInfo`, and it wins over the shared model info. When both are set, `modelInfo` wins.
    * When not provided, vended providers still populate it from the shared model info for
    * callers that read `getConfig()`; `modelInfo` is the resolved view to read.
    */
@@ -223,7 +221,7 @@ export interface BaseModelConfig {
 
   /**
    * Overrides for what the SDK knows about the model. Fields set here win over the shared model
-   * info and what the provider declares; `capabilities.stateful` is not accepted, it always
+   * info; `capabilities.stateful` is not accepted, it always
    * mirrors the provider. `updateConfig({ modelInfo })` replaces the previous override entirely,
    * it does not merge into it.
    */
@@ -370,31 +368,19 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   }
 
   /**
-   * What this provider knows about the configured model beyond the shared model info: facts that
-   * depend on how the provider talks to it, derived from its config and wire API. Leave out
-   * anything unknown. Users override the result through the `modelInfo` config key. Read
-   * `config` rather than `getConfig()`, `modelId` or `modelInfo`: `getConfig()` calls this to fill
-   * in defaults, so those recurse.
-   *
-   * @param _config - The model config to describe
-   * @returns What the provider knows, empty by default
-   */
-  protected declareModelInfo(_config: T): ModelInfo {
-    return {}
-  }
-
-  /**
    * Everything the SDK knows about the configured model, resolved on each read. Layers, later
-   * ones winning: the shared model info for `modelId`, what this provider declares through
-   * {@link declareModelInfo}, the `contextWindowLimit` config value, and the `modelInfo` config override.
-   * `capabilities.stateful` always mirrors {@link stateful}. Each read returns a new frozen record,
-   * so do not compare reads by reference.
+   * ones winning: the shared model info for `modelId`, the `contextWindowLimit` config value, and
+   * the `modelInfo` config override. `capabilities.stateful` always mirrors {@link stateful}. Each
+   * read returns a new frozen record, so do not compare reads by reference.
+   *
+   * A provider that knows facts the shared model info lacks overrides this getter and fills them in
+   * under what `super.modelInfo` resolved, so the user's override still wins:
+   * `{ ...info, capabilities: { promptCaching: 'auto', ...info.capabilities } }`.
    */
   get modelInfo(): ModelInfo {
     const config = this.getConfig()
     return mergeModelInfo(
       lookupModelInfo(this.modelId ?? ''),
-      this.declareModelInfo(config),
       { limits: { contextWindow: config.contextWindowLimit } },
       config.modelInfo,
       {

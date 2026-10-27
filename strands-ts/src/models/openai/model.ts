@@ -12,7 +12,6 @@ import OpenAI, { APIUserAbortError } from 'openai'
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses'
 import { Model, resolveConfigMetadata } from '../model.js'
 import type { StreamOptions } from '../model.js'
-import type { ModelInfo } from '../model-info.js'
 import type { Message } from '../../types/messages.js'
 import type { ModelStreamEvent, Usage } from '../streaming.js'
 import { ContextWindowOverflowError, ModelThrottledError } from '../../errors.js'
@@ -137,15 +136,6 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
   }
 
   /**
-   * Declares what this provider knows about the configured model: OpenAI caches prompts automatically.
-   *
-   * @returns The declared capabilities
-   */
-  protected override declareModelInfo(_config: OpenAIModelConfig): ModelInfo {
-    return { capabilities: { promptCaching: 'auto' } }
-  }
-
-  /**
    * Updates the model configuration.
    *
    * `api` and `stateful` are construction-only — if present in `modelConfig`,
@@ -174,11 +164,7 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
   }
 
   getConfig(): OpenAIModelConfig {
-    return resolveConfigMetadata(
-      this._config,
-      this._config.modelId ?? MODEL_DEFAULTS.openai.modelId,
-      this.declareModelInfo(this._config)
-    )
+    return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.openai.modelId)
   }
 
   /** The configured model ID, else the default one that gets sent. */

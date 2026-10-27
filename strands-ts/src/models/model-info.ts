@@ -2,7 +2,7 @@
  * What the SDK knows about models: the {@link ModelInfo} type, and the shared model info data.
  *
  * Every {@link ModelInfo} field is optional, and a missing or undefined field means unknown. The same
- * shape is used everywhere: the shared data file, a provider's {@link Model.declareModelInfo}, the `modelInfo`
+ * shape is used everywhere: the shared data file, the `modelInfo`
  * config override, and the resolved {@link Model.modelInfo}. A known `'unsupported'` disables a feature;
  * unknown leaves the SDK's existing default for that feature in place.
  *

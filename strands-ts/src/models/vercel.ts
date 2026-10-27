@@ -162,23 +162,6 @@ export class VercelModel extends Model<VercelModelConfig> {
     return this._config.modelId ?? this._provider.modelId
   }
 
-  /**
-   * Declares what depends on the wrapped ai-sdk provider: Anthropic takes cache points and OpenAI
-   * caches automatically. Model facts come from the shared model info by `modelId`.
-   *
-   * @returns The declared capabilities for the wrapped provider
-   */
-  protected override declareModelInfo(_config: VercelModelConfig): ModelInfo {
-    switch (this._provider.provider.split('.')[0]) {
-      case 'anthropic':
-        return { capabilities: { promptCaching: 'cachePoints' } }
-      case 'openai':
-        return { capabilities: { promptCaching: 'auto' } }
-      default:
-        return {}
-    }
-  }
-
   updateConfig(config: VercelModelConfig): void {
     this._config = { ...this._config, ...config }
   }
