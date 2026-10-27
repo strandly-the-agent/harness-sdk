@@ -591,6 +591,20 @@ describe("OpenAIModel (api: 'responses')", () => {
   })
 
   describe('stream event mapping', () => {
+    it('resolves stateful once per stream, not once per event', async () => {
+      const client = createMockClient(async function* () {
+        yield { type: 'response.created', response: { id: 'resp_abc' } }
+        for (let i = 0; i < 50; i++) yield { type: 'response.output_text.delta', delta: 'x' }
+        yield { type: 'response.completed', response: {} }
+      })
+      const model = new OpenAIModel({ api: 'responses', client, stateful: true })
+      const getConfig = vi.spyOn(model, 'getConfig')
+
+      await collectIterator(model.stream([new Message({ role: 'user', content: [new TextBlock('hi')] })]))
+
+      expect(getConfig.mock.calls.length).toBeLessThan(10)
+    })
+
     it('captures responseId on response.created when stateful', async () => {
       const modelState = new StateStore()
       const client = createMockClient(async function* () {

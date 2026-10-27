@@ -12,7 +12,7 @@ import OpenAI, { APIUserAbortError } from 'openai'
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses'
 import { Model, resolveConfigMetadata } from '../model.js'
 import type { StreamOptions } from '../model.js'
-import type { ModelInfo } from '../model-info.js'
+import { mergeModelInfo, type ModelInfo } from '../model-info.js'
 import type { Message } from '../../types/messages.js'
 import type { ModelStreamEvent, Usage } from '../streaming.js'
 import { ContextWindowOverflowError, ModelThrottledError } from '../../errors.js'
@@ -132,9 +132,8 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
    * Responses defaults to stateless.
    */
   override get modelInfo(): ModelInfo {
-    const info = super.modelInfo
     const stateful = this._api === 'responses' && this._config.stateful === true
-    return { ...info, capabilities: { stateful, ...info.capabilities } }
+    return mergeModelInfo(super.modelInfo, { capabilities: { stateful } }, this._config.modelInfo)
   }
 
   /**
@@ -256,13 +255,14 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
 
   private async *_streamResponses(messages: Message[], options?: StreamOptions): AsyncIterable<ModelStreamEvent> {
     try {
-      const request = formatResponsesRequest(this._config as OpenAIResponsesConfig, messages, options, this.stateful)
+      const stateful = this.stateful
+      const request = formatResponsesRequest(this._config as OpenAIResponsesConfig, messages, options, stateful)
       const stream = await this._client.responses.create(request, { signal: options?.cancelSignal })
 
       const state = createResponsesStreamState()
 
       for await (const event of stream as AsyncIterable<ResponseStreamEvent>) {
-        for (const sdkEvent of mapResponsesEventToSDK(event, state, this.stateful, options?.modelState)) {
+        for (const sdkEvent of mapResponsesEventToSDK(event, state, stateful, options?.modelState)) {
           yield sdkEvent
         }
       }

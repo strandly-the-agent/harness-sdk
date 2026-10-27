@@ -11,7 +11,7 @@ import { CitationsBlock } from '../../types/citations.js'
 import { TestModelProvider, collectGenerator } from '../../__fixtures__/model-test-helpers.js'
 import { MaxTokensError, ModelError } from '../../errors.js'
 import { Model } from '../model.js'
-import type { ModelInfo } from '../model-info.js'
+import { mergeModelInfo, type ModelInfo } from '../model-info.js'
 import type { BaseModelConfig, StreamOptions } from '../model.js'
 import { isModelStreamEvent, type ModelStreamEvent } from '../streaming.js'
 import { anyTrackingId } from '../../__fixtures__/message-helpers.js'
@@ -1224,17 +1224,21 @@ describe('info', () => {
     expect(provider.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
   })
 
-  it('lets a provider fill in facts under what the getter resolved', () => {
+  it('lets a provider put its facts over the shared model info, with the user override over both', () => {
     class GatewayProvider extends TestModelProvider {
       override get modelInfo(): ModelInfo {
-        const info = super.modelInfo
-        return { ...info, capabilities: { promptCaching: 'unsupported', ...info.capabilities } }
+        return mergeModelInfo(
+          super.modelInfo,
+          { capabilities: { promptCaching: 'unsupported' } },
+          this.getConfig().modelInfo
+        )
       }
     }
     const provider = new GatewayProvider()
-    provider.updateConfig({ contextWindowLimit: 8_000 })
-    expect(provider.modelInfo.capabilities?.promptCaching).toBe('unsupported')
+    provider.updateConfig({ modelId: 'claude-sonnet-4-6', contextWindowLimit: 8_000 })
+    expect(provider.modelInfo.capabilities?.promptCaching).toBe('unsupported') // shared file says cachePoints
     expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
+    expect(Object.isFrozen(provider.modelInfo)).toBe(true)
 
     provider.updateConfig({ modelInfo: { capabilities: { promptCaching: 'cachePoints' } } })
     expect(provider.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
@@ -1267,8 +1271,7 @@ describe('info', () => {
   it('reads stateful from what a provider puts in the record', () => {
     class StatefulProvider extends TestModelProvider {
       override get modelInfo(): ModelInfo {
-        const info = super.modelInfo
-        return { ...info, capabilities: { stateful: true, ...info.capabilities } }
+        return mergeModelInfo(super.modelInfo, { capabilities: { stateful: true } }, this.getConfig().modelInfo)
       }
     }
     const provider = new StatefulProvider()

@@ -221,8 +221,9 @@ export interface BaseModelConfig {
 
   /**
    * Overrides for what the SDK knows about the model. Fields set here win over the shared model
-   * info and the provider. `updateConfig({ modelInfo })` replaces the previous override entirely,
-   * it does not merge into it.
+   * info and the provider; `capabilities.stateful` changes how the agent loop sends history, so set
+   * it only for a provider that keeps state server-side. `updateConfig({ modelInfo })` replaces the
+   * previous override entirely, it does not merge into it.
    */
   modelInfo?: ModelInfo
 }
@@ -369,12 +370,13 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
   /**
    * Everything the SDK knows about the configured model, resolved on each read. Layers, later
    * ones winning: the shared model info for `modelId`, the `contextWindowLimit` config value, and
-   * the `modelInfo` config override. Each read returns a new frozen record, so do not compare reads
-   * by reference.
+   * the `modelInfo` config override. Each read returns a new record, so do not compare reads by
+   * reference.
    *
-   * A provider that knows facts the shared model info lacks overrides this getter and fills them in
-   * under what `super.modelInfo` resolved, so the user's override still wins:
-   * `{ ...info, capabilities: { promptCaching: 'auto', ...info.capabilities } }`.
+   * A provider that knows better than the shared model info overrides this getter: put its facts over
+   * `super.modelInfo`, then the user's `getConfig().modelInfo` over those so the override still wins:
+   * `{ ...info, capabilities: { ...info.capabilities, promptCaching: 'auto', ...config.modelInfo?.capabilities } }`.
+   * Do not read {@link stateful} inside the override; it reads this getter.
    */
   get modelInfo(): ModelInfo {
     const config = this.getConfig()
