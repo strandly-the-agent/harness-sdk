@@ -242,6 +242,98 @@ def test_reduce_context_raises_on_summarization_failure():
         mock_logger.error.assert_called_once()
 
 
+def test_reduce_context_falls_back_to_truncation_when_too_few_messages_to_summarize(mock_agent):
+    """A single oversized message is truncated instead of failing the turn (#5598)."""
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=3)
+    oversized = "x" * 50_000
+    mock_agent.messages = [
+        {"role": "user", "content": [{"text": oversized}]},
+        {"role": "assistant", "content": [{"text": "Response 1"}]},
+        {"role": "user", "content": [{"text": "Say hello."}]},
+    ]
+
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+
+    truncated = mock_agent.messages[0]["content"][0]["text"]
+    assert "[truncated: 46000 chars removed]" in truncated
+    assert len(truncated) < len(oversized)
+    assert mock_agent.messages[2]["content"][0]["text"] == "Say hello."
+
+
+def test_reduce_context_falls_back_to_truncation_when_summary_call_fails():
+    """A summary call that itself fails (e.g. one message larger than the window) falls back to truncation."""
+    failing_agent = Mock()
+    failing_agent.model = Mock()
+    failing_agent.model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream_error(Exception("too large")))
+    failing_agent.aux_model = failing_agent.model
+    failing_agent.messages = [
+        {"role": "user", "content": [{"text": "y" * 50_000}]},
+        {"role": "assistant", "content": [{"text": "Response 1"}]},
+        {"role": "user", "content": [{"text": "Message 2"}]},
+        {"role": "assistant", "content": [{"text": "Response 2"}]},
+    ]
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=1)
+
+    manager.reduce_context(failing_agent, e=RuntimeError("overflow"))
+
+    assert "[truncated:" in failing_agent.messages[0]["content"][0]["text"]
+    assert len(failing_agent.messages) == 4
+
+
+def test_reduce_context_reraises_once_nothing_is_left_to_truncate(mock_agent):
+    """Repeated overflow is bounded: every oversized block is truncated once, then the error propagates."""
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=3)
+    mock_agent.messages = [
+        {"role": "user", "content": [{"text": "x" * 50_000}]},
+        {"role": "assistant", "content": [{"text": "Response 1"}]},
+        {"role": "user", "content": [{"text": "z" * 50_000}]},
+    ]
+
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    with pytest.raises(ContextWindowOverflowException, match="insufficient messages for summarization"):
+        manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+
+    assert all("[truncated:" in mock_agent.messages[i]["content"][0]["text"] for i in (0, 2))
+
+
+def test_agent_recovers_from_oversized_paste_with_summarizing_manager():
+    """End to end: a paste larger than the window no longer kills every later turn (#5598)."""
+    window_chars = 10_000
+
+    def stream(messages, *args, **kwargs):
+        total = sum(len(block.get("text", "")) for message in messages for block in message["content"])
+        if total > window_chars:
+            return _mock_model_stream_error(ContextWindowOverflowException("Input is too long"))
+        return _mock_model_stream("Hello!")
+
+    model = Mock(spec=Model)
+    model.stream = Mock(side_effect=stream)
+    model.stateful = False
+    agent = Agent(model=model, conversation_manager=SummarizingConversationManager())
+    agent.messages = [
+        {"role": "user", "content": [{"text": "p" * 50_000}]},
+        {"role": "assistant", "content": [{"text": "Noted."}]},
+    ]
+
+    result = agent("Say hello.")
+
+    assert str(result).strip() == "Hello!"
+    assert "[truncated: 46000 chars removed]" in agent.messages[0]["content"][0]["text"]
+    assert agent.messages[-1]["content"][0]["text"] == "Hello!"
+
+
+def test_proactive_reduce_context_does_not_truncate(mock_agent):
+    """Proactive compression (e is None) stays best-effort and never rewrites content."""
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=3)
+    oversized = "x" * 50_000
+    mock_agent.messages = [{"role": "user", "content": [{"text": oversized}]}]
+
+    manager.reduce_context(mock_agent)
+
+    assert mock_agent.messages[0]["content"][0]["text"] == oversized
+
+
 def test_generate_summary(summarizing_manager, mock_agent):
     """Test the _generate_summary method."""
     test_messages: Messages = [
