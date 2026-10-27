@@ -29,7 +29,7 @@ import { MaxTokensError, ModelError, normalizeError } from '../errors.js'
 import type { Redaction } from '../hooks/events.js'
 import { logger } from '../logging/logger.js'
 import { DEFAULT_CONTEXT_WINDOW_LIMIT } from './defaults.js'
-import { lookupModelInfo, mergeModelInfo, type ModelInfo, type ModelInfoOverride } from './model-info.js'
+import { lookupModelInfo, mergeModelInfo, type ModelInfo } from './model-info.js'
 import { warnOnce } from '../logging/warn-once.js'
 
 /**
@@ -221,11 +221,10 @@ export interface BaseModelConfig {
 
   /**
    * Overrides for what the SDK knows about the model. Fields set here win over the shared model
-   * info; `capabilities.stateful` is not accepted, it always
-   * mirrors the provider. `updateConfig({ modelInfo })` replaces the previous override entirely,
-   * it does not merge into it.
+   * info; `capabilities.stateful` is the exception, it is ignored and always mirrors the provider.
+   * `updateConfig({ modelInfo })` replaces the previous override entirely, it does not merge into it.
    */
-  modelInfo?: ModelInfoOverride
+  modelInfo?: ModelInfo
 }
 
 /**

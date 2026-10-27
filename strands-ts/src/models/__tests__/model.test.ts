@@ -1242,7 +1242,6 @@ describe('info', () => {
 
   it('never lets the info override change stateful', () => {
     const provider = new TestModelProvider()
-    // @ts-expect-error stateful is not part of the override type
     provider.updateConfig({ modelInfo: { capabilities: { stateful: true } } })
 
     expect(provider.modelInfo.capabilities?.stateful).toBe(false)
