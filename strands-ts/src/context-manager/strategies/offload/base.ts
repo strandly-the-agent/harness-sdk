@@ -588,12 +588,11 @@ export class EmergencyTruncateStrategy extends BaseOffloadStrategy {
     })
     const removable = messages.filter((message, index) => index > 0 && !protectedMessages.has(message))
 
-    let { removed, lowestIndex } = dropOldest(messages, removable)
-    if (removed === 0 && protectedMessages.size > 0)
-      ({ removed, lowestIndex } = dropOldest(messages, messages.slice(1)))
-    if (removed === 0) return false
+    let result = dropOldest(messages, removable)
+    if (result.removed === 0 && protectedMessages.size > 0) result = dropOldest(messages, messages.slice(1))
+    if (result.removed === 0) return false
 
-    insertMarker(messages, lowestIndex, this._makeRemovalMarker(removed))
+    insertMarker(messages, result.lowestIndex, this._makeRemovalMarker(result.removed))
     repairAlternation(messages)
     return true
   }
