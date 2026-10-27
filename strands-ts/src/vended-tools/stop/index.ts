@@ -1,5 +1,13 @@
 /**
- * Stop tool for gracefully ending the agent loop.
+ * Tool for gracefully ending the agent loop.
+ *
+ * Provides {@link makeStop} (a factory for customized stop tools) and {@link stop}
+ * (the default instance). The tool calls
+ * `agent.cancel({ message, afterCurrentTools: true })`: any sibling tools in the
+ * same batch run to completion, then the loop exits with
+ * `stopReason: 'cancelled'` and the message as the final assistant message.
+ * The same message is returned as the tool result the model sees for its stop
+ * request.
  */
 
 export { stop, makeStop } from './stop.js'

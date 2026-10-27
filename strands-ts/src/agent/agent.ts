@@ -922,7 +922,7 @@ export class Agent implements LocalAgent, InvokableAgent {
    * Called at cancellation checkpoints within the agent loop.
    */
   private _throwIfCancelled(): void {
-    if (this.isCancelled) {
+    if (this.isAborted) {
       throw new CancelledError()
     }
   }
@@ -1052,6 +1052,10 @@ export class Agent implements LocalAgent, InvokableAgent {
   /**
    * Cancels the current agent invocation cooperatively.
    *
+   * Safe to call from any async context — a timeout callback, a route handler,
+   * a background task — and safe to call more than once; repeated calls are
+   * idempotent.
+   *
    * The agent will stop at the next cancellation-safe point:
    * - During model response streaming
    * - Before tool execution
@@ -1066,6 +1070,10 @@ export class Agent implements LocalAgent, InvokableAgent {
    *
    * The stream/invoke call will return an AgentResult with `stopReason: 'cancelled'`.
    * If the agent is not currently invoking, this is a no-op.
+   *
+   * For cancellation driven from outside the agent (a client disconnect, a request
+   * lifecycle, a timeout), pass a `cancelSignal` to `invoke` / `stream` instead.
+   * The agent observes both, so either cancels independently.
    *
    * Pass `afterCurrentTools` to defer cancellation until the running tool batch
    * finishes, so sibling tools complete normally instead of receiving
@@ -1111,10 +1119,13 @@ export class Agent implements LocalAgent, InvokableAgent {
   }
 
   /**
-   * Whether the current invocation has been cancelled.
-   * Returns `false` when the agent is idle.
+   * Whether the invocation's abort signal has fired. A deferred cancel
+   * (`afterCurrentTools: true`) does not flip this until it escalates to an
+   * immediate cancel; use together with `_deferredCancel` when the question is
+   * "has cancellation been requested in any form". Returns `false` when the
+   * agent is idle.
    */
-  private get isCancelled(): boolean {
+  private get isAborted(): boolean {
     return this._abortSignal.aborted
   }
 
@@ -1818,7 +1829,7 @@ export class Agent implements LocalAgent, InvokableAgent {
             }
 
             // Cancel before tool execution: create error results for all pending tools
-            if (this.isCancelled) {
+            if (this.isAborted) {
               const toolUseBlocks = modelResult.message.content.filter(
                 (block): block is ToolUseBlock => block.type === 'toolUseBlock'
               )
@@ -1857,7 +1868,7 @@ export class Agent implements LocalAgent, InvokableAgent {
             // yet. Skipped when resuming from an afterModel checkpoint: the
             // assistant tool-use message was not persisted (deferred append), so
             // this cycle re-invoked the model to regenerate it — now fall through
-            // to run the tools. Cancel wins — the isCancelled branch above returns
+            // to run the tools. Cancel wins — the isAborted branch above returns
             // before we reach here.
             if (this._checkpointing) {
               const priorResumePosition = resumePosition
@@ -1900,7 +1911,7 @@ export class Agent implements LocalAgent, InvokableAgent {
 
           // Tools were skipped (not executed) — preserve pending state so the next resume
           // can run them.
-          if (this.isCancelled && toolsResult.toolsSkipped && this._interruptState.pendingToolExecution) {
+          if (this.isAborted && toolsResult.toolsSkipped && this._interruptState.pendingToolExecution) {
             continue
           }
 
@@ -1956,7 +1967,7 @@ export class Agent implements LocalAgent, InvokableAgent {
           // Cancel observed after the batch: siblings have finished, so stop here
           // instead of calling the model again. Wins over a structured-output stop
           // so the cancel's terminal message is honored.
-          if (this._deferredCancel || this.isCancelled) {
+          if (this._deferredCancel || this.isAborted) {
             const cancelResultMessage = this.cancelResultMessage
             if (cancelResultMessage) {
               yield this._appendMessage(cancelResultMessage, invocationState, invocationContext)
@@ -2051,7 +2062,7 @@ export class Agent implements LocalAgent, InvokableAgent {
       // If cancelled but the catch block was bypassed (generator terminated
       // via .return() when the consumer breaks out of for-await), close an
       // existing user turn so the agent can be reinvoked.
-      if (!caughtError && !result && this.isCancelled) {
+      if (!caughtError && !result && this.isAborted) {
         const cancelMessage =
           this.cancelResultMessage ?? new Message({ role: 'assistant', content: [new TextBlock('Cancelled by user')] })
         if (this._hasOpenUserTurn()) {
@@ -2688,7 +2699,7 @@ export class Agent implements LocalAgent, InvokableAgent {
         ? typeof beforeToolsEvent.cancel === 'string'
           ? beforeToolsEvent.cancel
           : 'Tool cancelled by hook'
-        : this.isCancelled
+        : this.isAborted
           ? 'Tool execution cancelled'
           : undefined
 

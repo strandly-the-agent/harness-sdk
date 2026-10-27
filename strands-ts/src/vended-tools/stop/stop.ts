@@ -40,6 +40,8 @@ export interface MakeStopOptions {
  *
  * const agent = new Agent({ model, tools: [stop] })
  * ```
+ *
+ * @throws Error if `maxMessageLength` is not a positive integer.
  */
 export function makeStop(options?: MakeStopOptions): ReturnType<typeof tool> {
   const maxMessageLength = options?.maxMessageLength ?? DEFAULT_MAX_STOP_MESSAGE_LENGTH

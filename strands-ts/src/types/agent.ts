@@ -393,9 +393,21 @@ export interface LocalAgent {
   readonly cancelSignal: AbortSignal
 
   /**
-   * Cancels the current agent invocation, optionally after the running tool batch.
+   * Cancels the current agent invocation.
    *
-   * @param options - Final message and deferral behavior
+   * Resolves the pending `invoke` / `stream` with an `AgentResult` whose
+   * `stopReason` is `'cancelled'`. No-op when the agent is not invoking;
+   * safe to call repeatedly.
+   *
+   * Pass `afterCurrentTools: true` to defer until the running tool batch
+   * finishes (the cooperative stop the `stop` vended tool uses). Pass `message`
+   * to set the final assistant message.
+   *
+   * For cancellation driven from outside the agent, prefer the `cancelSignal`
+   * option on `invoke` / `stream`.
+   *
+   * @param options - Final message and deferral behavior.
+   * @see Agent.cancel for the full contract.
    */
   cancel(options?: CancelOptions): void
 
