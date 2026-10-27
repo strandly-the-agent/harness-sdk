@@ -221,8 +221,8 @@ export interface BaseModelConfig {
 
   /**
    * Overrides for what the SDK knows about the model. Fields set here win over the shared model
-   * info; `capabilities.stateful` is the exception, it is ignored and always mirrors the provider.
-   * `updateConfig({ modelInfo })` replaces the previous override entirely, it does not merge into it.
+   * info and the provider. `updateConfig({ modelInfo })` replaces the previous override entirely,
+   * it does not merge into it.
    */
   modelInfo?: ModelInfo
 }
@@ -357,20 +357,20 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
    * sends only the latest message instead of the full history. After each invocation,
    * the agent's local message history is cleared automatically.
    *
-   * Model providers that support server-side state management should override this
-   * to return `true`. `modelInfo.capabilities.stateful` mirrors it.
+   * Reads `modelInfo.capabilities.stateful`, so a provider that keeps state server-side sets it there
+   * (see {@link modelInfo}) and a `modelInfo` config override can change it.
    *
-   * @returns `false` by default
+   * @returns `false` when unknown
    */
   get stateful(): boolean {
-    return false
+    return this.modelInfo.capabilities?.stateful ?? false
   }
 
   /**
    * Everything the SDK knows about the configured model, resolved on each read. Layers, later
    * ones winning: the shared model info for `modelId`, the `contextWindowLimit` config value, and
-   * the `modelInfo` config override. `capabilities.stateful` always mirrors {@link stateful}. Each
-   * read returns a new frozen record, so do not compare reads by reference.
+   * the `modelInfo` config override. Each read returns a new frozen record, so do not compare reads
+   * by reference.
    *
    * A provider that knows facts the shared model info lacks overrides this getter and fills them in
    * under what `super.modelInfo` resolved, so the user's override still wins:
@@ -381,10 +381,7 @@ export abstract class Model<T extends BaseModelConfig = BaseModelConfig> {
     return mergeModelInfo(
       lookupModelInfo(this.modelId ?? ''),
       { limits: { contextWindow: config.contextWindowLimit } },
-      config.modelInfo,
-      {
-        capabilities: { stateful: this.stateful },
-      }
+      config.modelInfo
     )
   }
 

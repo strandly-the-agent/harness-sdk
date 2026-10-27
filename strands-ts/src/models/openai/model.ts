@@ -12,6 +12,7 @@ import OpenAI, { APIUserAbortError } from 'openai'
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses'
 import { Model, resolveConfigMetadata } from '../model.js'
 import type { StreamOptions } from '../model.js'
+import type { ModelInfo } from '../model-info.js'
 import type { Message } from '../../types/messages.js'
 import type { ModelStreamEvent, Usage } from '../streaming.js'
 import { ContextWindowOverflowError, ModelThrottledError } from '../../errors.js'
@@ -126,13 +127,14 @@ export class OpenAIModel extends Model<OpenAIModelConfig> {
   }
 
   /**
-   * Whether this model manages conversation state server-side.
-   *
-   * `true` only for `api: 'responses'` with `stateful === true`. Chat Completions
-   * is always stateless, and Responses defaults to stateless.
+   * Adds whether this model manages conversation state server-side: `true` only for
+   * `api: 'responses'` with `stateful === true`. Chat Completions is always stateless, and
+   * Responses defaults to stateless.
    */
-  override get stateful(): boolean {
-    return this._api === 'responses' && this._config.stateful === true
+  override get modelInfo(): ModelInfo {
+    const info = super.modelInfo
+    const stateful = this._api === 'responses' && this._config.stateful === true
+    return { ...info, capabilities: { stateful, ...info.capabilities } }
   }
 
   /**

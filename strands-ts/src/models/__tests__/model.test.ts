@@ -1209,10 +1209,11 @@ describe('countTokens', () => {
 })
 
 describe('info', () => {
-  it('is all unknown except the mirrored stateful for a provider with no model id', () => {
+  it('is all unknown for a provider with no model id, and unknown stateful reads as false', () => {
     const provider = new TestModelProvider()
 
-    expect(provider.modelInfo).toEqual({ capabilities: { stateful: false } })
+    expect(provider.modelInfo).toEqual({})
+    expect(provider.stateful).toBe(false)
   })
 
   it('resolves facts from the shared model info for any provider by modelId', () => {
@@ -1234,18 +1235,19 @@ describe('info', () => {
     provider.updateConfig({ contextWindowLimit: 8_000 })
     expect(provider.modelInfo.capabilities?.promptCaching).toBe('unsupported')
     expect(provider.modelInfo.limits?.contextWindow).toBe(8_000)
-    expect(provider.modelInfo.capabilities?.stateful).toBe(false)
 
     provider.updateConfig({ modelInfo: { capabilities: { promptCaching: 'cachePoints' } } })
     expect(provider.modelInfo.capabilities?.promptCaching).toBe('cachePoints')
   })
 
-  it('never lets the info override change stateful', () => {
+  it('lets the info override set stateful, and the stateful getter reads it', () => {
     const provider = new TestModelProvider()
+    expect(provider.stateful).toBe(false)
+
     provider.updateConfig({ modelInfo: { capabilities: { stateful: true } } })
 
-    expect(provider.modelInfo.capabilities?.stateful).toBe(false)
-    expect(provider.stateful).toBe(false)
+    expect(provider.modelInfo.capabilities?.stateful).toBe(true)
+    expect(provider.stateful).toBe(true)
   })
 
   it('lets the info override win over contextWindowLimit', () => {
@@ -1262,14 +1264,18 @@ describe('info', () => {
     expect(provider.modelInfo.limits?.contextWindow).toBe(50_000)
   })
 
-  it('mirrors a stateful getter override into the record', () => {
+  it('reads stateful from what a provider puts in the record', () => {
     class StatefulProvider extends TestModelProvider {
-      override get stateful() {
-        return true
+      override get modelInfo(): ModelInfo {
+        const info = super.modelInfo
+        return { ...info, capabilities: { stateful: true, ...info.capabilities } }
       }
     }
+    const provider = new StatefulProvider()
+    expect(provider.stateful).toBe(true)
 
-    expect(new StatefulProvider().modelInfo.capabilities?.stateful).toBe(true)
+    provider.updateConfig({ modelInfo: { capabilities: { stateful: false } } })
+    expect(provider.stateful).toBe(false)
   })
 
   it('reflects config changes on the next read', () => {

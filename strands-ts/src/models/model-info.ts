@@ -23,7 +23,7 @@ export type PromptCaching = 'unsupported' | 'auto' | 'cachePoints'
  * own field named after the pair. `undefined` is unknown either way.
  */
 export interface ModelCapabilities {
-  /** Whether the model keeps conversation state server-side. Mirrors {@link Model.stateful}; the provider owns it, so the shared data and the `modelInfo` override cannot set it. */
+  /** Whether the model keeps conversation state server-side; {@link Model.stateful} reads it. */
   readonly stateful?: boolean | undefined
   /** Whether and how the model caches prompts. */
   readonly promptCaching?: PromptCaching | undefined
