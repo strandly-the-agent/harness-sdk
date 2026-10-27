@@ -5,8 +5,6 @@
  * [Sandbox](../../sandbox/base.ts): either one bound at creation (as the
  * built-in Docker/SSH sandboxes do when vending tools) or the agent's
  * configured sandbox read from `context.agent.sandbox` at call time.
- *
- * Supersedes the deprecated `fileEditor`; companion `read` and `write` vended tools follow.
  */
 
 import { tool } from '../../tools/tool-factory.js'
