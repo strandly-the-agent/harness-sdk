@@ -110,6 +110,7 @@ _CONTEXT_WINDOW_LIMITS: dict[str, int] = {
     "openai.gpt-oss-safeguard-20b": 128_000,
     "openai.gpt-6-astra": 1_050_000,
     "openai.gpt-6.1-sol": 1_000_000,  # Bedrock card: 1M shared window, 131,072 max output
+    "openai.gpt-6.1-terra": 1_050_000,
     "openai.gpt-6-sol": 1_050_000,
     "openai.gpt-6-luna": 1_050_000,
     "openai.gpt-5.6-sol": 1_050_000,
@@ -138,6 +139,7 @@ _CONTEXT_WINDOW_LIMITS: dict[str, int] = {
     "chat-latest": 272_000,  # rolling alias for the current ChatGPT model: input budget (400k - 128k out); may change
     "gpt-6-astra": 1_050_000,
     "gpt-6.1-sol": 1_050_000,
+    "gpt-6.1-terra": 1_050_000,
     "gpt-6-sol": 1_050_000,
     "gpt-6-luna": 1_050_000,
     "gpt-5.6": 1_050_000,
