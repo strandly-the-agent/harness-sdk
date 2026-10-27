@@ -1050,49 +1050,31 @@ export class Agent implements LocalAgent, InvokableAgent {
   }
 
   /**
-   * Cancels the current agent invocation cooperatively.
+   * Cancels the current agent invocation cooperatively. Idempotent; no-op when
+   * the agent is not invoking. The pending `invoke`/`stream` resolves with
+   * `stopReason: 'cancelled'`.
    *
-   * Safe to call from any async context — a timeout callback, a route handler,
-   * a background task — and safe to call more than once; repeated calls are
-   * idempotent.
+   * The agent stops at the next cancellation-safe point (model streaming, before
+   * tools, between sequential tool calls, or the top of a loop cycle). A tool
+   * already executing runs to completion unless it checks `context.cancelSignal`.
+   * Hook callbacks can read `event.agent.cancelSignal.aborted` for the same.
    *
-   * The agent will stop at the next cancellation-safe point:
-   * - During model response streaming
-   * - Before tool execution
-   * - Between sequential tool executions
-   * - At the top of each agent loop cycle
+   * Pass `afterCurrentTools` to defer until the running tool batch finishes, so
+   * siblings complete normally; this is the cooperative stop the `stop` vended
+   * tool uses. A deferred cancel that never gets to apply (plain-text turn, no
+   * tools) is a no-op and the invocation returns its natural stopReason.
    *
-   * If a tool is already executing, it will run to completion unless
-   * the tool checks `context.cancelSignal` internally.
+   * Pass `message` to set the final assistant message; last write wins when
+   * several callers set one. A `cancel()` without a message leaves a previously
+   * stored message intact.
    *
-   * Hook callbacks can check `event.agent.cancelSignal.aborted` to detect
-   * cancellation and adjust their behavior accordingly.
-   *
-   * The stream/invoke call will return an AgentResult with `stopReason: 'cancelled'`.
-   * If the agent is not currently invoking, this is a no-op.
-   *
-   * For cancellation driven from outside the agent (a client disconnect, a request
-   * lifecycle, a timeout), pass a `cancelSignal` to `invoke` / `stream` instead.
-   * The agent observes both, so either cancels independently.
-   *
-   * Pass `afterCurrentTools` to defer cancellation until the running tool batch
-   * finishes, so sibling tools complete normally instead of receiving
-   * cancellation errors. This is the cooperative stop a tool uses to end the
-   * loop from inside the agent; see the `stop` vended tool. A deferred cancel
-   * that never gets to apply — the model answers with plain text and no tools in
-   * the same turn — is a no-op and the invocation returns its natural stopReason.
-   *
-   * Pass `message` to set the final assistant message of the cancelled
-   * invocation; otherwise the result carries the model's last message. When
-   * several callers set a message, the last write wins.
+   * For cancellation driven from outside the agent, prefer the `cancelSignal`
+   * option on `invoke` / `stream`.
    *
    * @param options - Final message and deferral behavior
    *
    * @example
    * ```typescript
-   * const agent = new Agent({ model, tools })
-   *
-   * // Cancel after 5 seconds
    * setTimeout(() => agent.cancel(), 5000)
    * const result = await agent.invoke('Do something')
    * console.log(result.stopReason) // 'cancelled'

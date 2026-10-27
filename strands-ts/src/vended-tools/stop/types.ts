@@ -28,12 +28,9 @@ export const DEFAULT_MAX_STOP_MESSAGE_LENGTH = 4096
 
 /**
  * Build the Zod schema for the stop tool input at a configured message-length
- * cap. Single source of truth for the input shape; {@link StopInput} is derived
- * from the default-capped schema.
- *
- * `message` is optional and length-capped to keep a runaway model from
- * flooding the conversation with an unbounded final string. It also accepts
- * `null` for providers that serialize omitted fields as JSON null.
+ * cap. `message` is optional, length-capped so a runaway model can't flood the
+ * conversation, and nullable for providers that serialize omitted fields as
+ * JSON null.
  */
 export function buildStopInputSchema(maxMessageLength: number): z.ZodObject<{
   message: z.ZodOptional<z.ZodNullable<z.ZodString>>

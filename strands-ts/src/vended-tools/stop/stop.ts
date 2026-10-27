@@ -19,8 +19,7 @@ export interface MakeStopOptions {
    */
   description?: string
   /**
-   * Maximum accepted length for the model-supplied `message` argument, in
-   * characters. Must be a positive integer. Defaults to
+   * Maximum accepted `message` length, in characters. Defaults to
    * {@link DEFAULT_MAX_STOP_MESSAGE_LENGTH} (4096).
    */
   maxMessageLength?: number
