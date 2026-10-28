@@ -127,6 +127,12 @@ Documentation = "https://strandsagents.com"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/strands"]
+# The copy the build hook writes is git-ignored, so it is named here to ship in the wheel anyway.
+artifacts = ["src/strands/models/model_info.json"]
+
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
 
 
 [tool.hatch.version]
