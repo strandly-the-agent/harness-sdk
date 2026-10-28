@@ -19,7 +19,7 @@ from .compression.context_compression import (
     generate_summary,
 )
 from .compression.pin_message import apply_pin_first, partition_pinned
-from .compression.truncate_text import truncate_oversized_text_blocks
+from .compression.truncate_text import _truncate_oversized_text_blocks
 from .conversation_manager import ConversationManager, ProactiveCompressionConfig
 
 if TYPE_CHECKING:
@@ -27,9 +27,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-_MAX_REACTIVE_REDUCTIONS = 10
-"""Reactive reductions allowed per invocation before the overflow is surfaced to the caller."""
 
 # ``DEFAULT_SUMMARIZATION_PROMPT`` is re-exported here for backward compatibility; the
 # canonical definition now lives in ``compression.context_compression``.
@@ -86,7 +83,6 @@ class SummarizingConversationManager(ConversationManager):
         self.pin_first = max(0, pin_first) if pin_first is not None else None
         self._pin_first_applied = False
         self._summary_message: Message | None = None
-        self._reactive_reductions = 0
 
     @override
     def restore_from_session(self, state: dict[str, Any]) -> list[Message] | None:
@@ -118,7 +114,7 @@ class SummarizingConversationManager(ConversationManager):
             **kwargs: Additional keyword arguments for future extensibility.
         """
         # No proactive management - summarization only happens on context overflow
-        self._reactive_reductions = 0
+        pass
 
     def reduce_context(self, agent: "Agent", e: Exception | None = None, **kwargs: Any) -> None:
         """Reduce context using summarization.
@@ -127,8 +123,7 @@ class SummarizingConversationManager(ConversationManager):
         to summarize, or the summary call itself overflows — oversized text blocks in non-pinned
         messages are truncated to head+tail previews instead; the failure is re-raised only when
         nothing is left to truncate. Truncation edits ``agent.messages`` only; a session store keeps
-        the original content. At most ``_MAX_REACTIVE_REDUCTIONS`` reactive reductions run per
-        invocation so overflow cannot loop.
+        the original content.
 
         When ``e`` is None (proactive compression), summarization failure is logged and
         returns silently — the model call proceeds regardless.
@@ -143,16 +138,9 @@ class SummarizingConversationManager(ConversationManager):
                 ``invocation_context`` the summary call's usage adds to.
 
         Raises:
-            ContextWindowOverflowException: If the reactive reduction cap for this invocation is exhausted.
             Exception: If summarization fails during reactive overflow recovery (e is set) and no
                 text block is left to truncate.
         """
-        if e is not None:
-            self._reactive_reductions += 1
-            if self._reactive_reductions > _MAX_REACTIVE_REDUCTIONS:
-                raise ContextWindowOverflowException(
-                    f"Context still overflows after {_MAX_REACTIVE_REDUCTIONS} reductions in one invocation"
-                ) from e
         try:
             self._summarize_oldest(agent, kwargs.get("invocation_context"))
         except Exception as summarization_error:
@@ -160,7 +148,7 @@ class SummarizingConversationManager(ConversationManager):
                 # Proactive: best-effort, swallow errors so the model call can still proceed.
                 logger.warning("Proactive summarization failed, continuing: %s", summarization_error)
                 return
-            if truncate_oversized_text_blocks(agent.messages):
+            if _truncate_oversized_text_blocks(agent.messages):
                 logger.warning(
                     "error=<%s> | summarization could not reduce context, truncated oversized text blocks instead",
                     summarization_error,
@@ -178,7 +166,9 @@ class SummarizingConversationManager(ConversationManager):
             invocation_context: The request the summary call's usage adds to.
 
         Raises:
-            ContextWindowOverflowException: If there are insufficient messages for summarization.
+            ContextWindowOverflowException: If there are insufficient messages for summarization, or the
+                only message old enough to summarize is the previous summary (re-summarizing it would
+                not shrink the history, so the overflow would recur forever).
         """
         # Calculate how many messages to summarize
         messages_to_summarize_count = max(1, int(len(agent.messages) * self.summary_ratio))
@@ -209,6 +199,8 @@ class SummarizingConversationManager(ConversationManager):
 
         if not to_summarize:
             raise ContextWindowOverflowException("Cannot summarize: all messages in summarize range are pinned")
+        if to_summarize == [self._summary_message]:
+            raise ContextWindowOverflowException("Cannot summarize: only the previous summary is old enough")
 
         remaining_messages = agent.messages[messages_to_summarize_count:]
 

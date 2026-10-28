@@ -297,8 +297,8 @@ def test_reduce_context_reraises_once_nothing_is_left_to_truncate(mock_agent):
     assert all("[truncated:" in mock_agent.messages[i]["content"][0]["text"] for i in (0, 2))
 
 
-def test_reduce_context_caps_reactive_reductions_per_invocation(mock_agent):
-    """Summarization that makes no progress cannot loop: the cap surfaces the overflow (#5598)."""
+def test_reduce_context_does_not_resummarize_only_the_previous_summary(mock_agent):
+    """Re-summarizing just the summary makes no progress, so the overflow is surfaced instead of looping (#5598)."""
     manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=1)
     mock_agent.messages = [
         {"role": "user", "content": [{"text": "Message 1"}]},
@@ -307,13 +307,34 @@ def test_reduce_context_caps_reactive_reductions_per_invocation(mock_agent):
         {"role": "assistant", "content": [{"text": "Response 2"}]},
     ]
 
-    for _ in range(10):
-        manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
-    with pytest.raises(ContextWindowOverflowException, match="after 10 reductions"):
-        manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
-
-    manager.apply_management(mock_agent)
     manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert mock_agent.messages[0] is manager._summary_message
+    assert len(mock_agent.messages) == 3
+
+    # Only the summary is old enough to summarize now: raise rather than call the model again.
+    with pytest.raises(ContextWindowOverflowException, match="only the previous summary"):
+        manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert mock_agent.model.stream.call_count == 1
+    assert len(mock_agent.messages) == 3
+
+
+def test_summarize_oldest_includes_previous_summary_with_older_messages(mock_agent):
+    """The previous summary is still folded into the next summary when real messages accompany it."""
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=1)
+    manager._summary_message = {"role": "user", "content": [{"text": "Earlier summary"}]}
+    mock_agent.messages = [
+        manager._summary_message,
+        {"role": "assistant", "content": [{"text": "Response 1"}]},
+        {"role": "user", "content": [{"text": "Message 2"}]},
+        {"role": "assistant", "content": [{"text": "Response 2"}]},
+    ]
+
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+
+    assert len(mock_agent.messages) == 3
+    assert mock_agent.messages[0] is manager._summary_message
+    assert mock_agent.messages[0]["content"][0]["text"] == "This is a summary of the conversation."
+    assert manager.removed_message_count == 1
 
 
 def test_removed_message_count_unchanged_when_summary_call_fails():

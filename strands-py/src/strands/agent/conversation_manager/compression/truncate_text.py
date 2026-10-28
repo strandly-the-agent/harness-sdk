@@ -23,7 +23,7 @@ def _text_blocks(message: Message) -> Iterator[ContentBlock | ToolResultContent]
                 yield item
 
 
-def truncate_oversized_text_blocks(messages: Messages, preserve_chars: int = _PRESERVE_CHARS) -> bool:
+def _truncate_oversized_text_blocks(messages: Messages, preserve_chars: int = _PRESERVE_CHARS) -> bool:
     """Replace every oversized, untruncated text block in non-pinned messages with a head+tail preview.
 
     A block qualifies when truncating it saves more than ``preserve_chars`` characters, so each call
