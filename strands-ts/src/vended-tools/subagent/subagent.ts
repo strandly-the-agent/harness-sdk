@@ -232,6 +232,7 @@ class SubagentTool extends Tool {
   private readonly _context: Fixed | Choice
   private readonly _builder: AgentBuilder | undefined
   private readonly _maxDepth: number
+  private readonly _adapter: ChildAgentAdapter
 
   constructor(config: SubagentToolConfig) {
     super()
@@ -239,14 +240,10 @@ class SubagentTool extends Tool {
     this.toolSpec = config.toolSpec
     this.description = config.toolSpec.description
     this._resolve = config.resolve
+    this._context = config.context
     this._builder = config.builder
     this._maxDepth = config.maxDepth
-    this._context = config.context
-  }
-
-  /** Adapter is stateful per invocation (observes the child's cancel signal), so build fresh each call. */
-  private _newAdapter(): ChildAgentAdapter {
-    return new ChildAgentAdapter({ label: 'Subagent', name: this.name })
+    this._adapter = new ChildAgentAdapter({ label: 'Subagent', name: config.name })
   }
 
   async *stream(toolContext: ToolContext): ToolStreamGenerator {
@@ -263,10 +260,9 @@ class SubagentTool extends Tool {
       toolUseId,
       namespace: 'subagent',
     })
-    const adapter = this._newAdapter()
 
     try {
-      const prepared = await this._prepareChild(toolUseId, raw, parent, streamer, adapter)
+      const prepared = await this._prepareChild(toolUseId, raw, parent, streamer)
       if (typeof prepared === 'string') {
         return this._errorResult(toolUseId, prepared)
       }
@@ -280,7 +276,7 @@ class SubagentTool extends Tool {
         cancelSignal,
         ...(invocationContext && { invocationContext }),
       })
-      for await (const event of streamer.stream(adapter, child, gen)) {
+      for await (const event of streamer.stream(this._adapter, child, gen)) {
         if (event.type === 'toolStreamUpdateEvent') {
           yield event.event
         } else {
@@ -311,11 +307,10 @@ class SubagentTool extends Tool {
     toolUseId: string,
     raw: Record<string, unknown>,
     parent: Agent | undefined,
-    streamer: AgentToolStreamer<AgentResult>,
-    adapter: ChildAgentAdapter
+    streamer: AgentToolStreamer<AgentResult>
   ): Promise<{ child: Agent; prompt: InvokeArgs } | string | ToolResultBlock> {
     if (streamer.isResuming()) {
-      return this._prepareResume(toolUseId, raw, parent, streamer, adapter)
+      return this._prepareResume(toolUseId, raw, parent, streamer)
     }
 
     const storedDepth = parent?.appState.get(DEPTH_STATE_KEY)
@@ -372,8 +367,7 @@ class SubagentTool extends Tool {
     toolUseId: string,
     raw: Record<string, unknown>,
     parent: Agent | undefined,
-    streamer: AgentToolStreamer<AgentResult>,
-    adapter: ChildAgentAdapter
+    streamer: AgentToolStreamer<AgentResult>
   ): Promise<{ child: Agent; prompt: InvokeArgs } | ToolResultBlock> {
     const spec = this._resolve(raw)
     const build = this._builder ?? _defaultBuilder(parent as Agent)
@@ -386,7 +380,7 @@ class SubagentTool extends Tool {
         `tool_name=<${this.name}>, tool_use_id=<${toolUseId}>, error=<${message}> | failed to rebuild interrupted subagent`
       )
     }
-    const resumed = await streamer.resume(adapter, child, UNAVAILABLE_MESSAGE)
+    const resumed = await streamer.resume(this._adapter, child, UNAVAILABLE_MESSAGE)
     if (resumed === undefined) {
       return streamer.terminalResult()
     }

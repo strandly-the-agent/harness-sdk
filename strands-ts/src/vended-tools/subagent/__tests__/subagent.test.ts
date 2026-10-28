@@ -69,13 +69,14 @@ class FakeChild {
   async *stream(
     prompt: InvokeArgs,
     options: { invocationState: InvocationState; cancelSignal: AbortSignal; invocationContext?: InvocationContext }
-  ): AsyncGenerator<{ type: string }, AgentResult | undefined, undefined> {
+  ): AsyncGenerator<{ type: string; result?: AgentResult }, AgentResult | undefined, undefined> {
     this.prompts.push(prompt)
     this.calls.push(options)
+    const result = this._results.shift()
     yield { type: 'modelStreamUpdateEvent' }
-    yield { type: 'agentResultEvent' }
+    yield result !== undefined ? { type: 'agentResultEvent', result } : { type: 'agentResultEvent' }
     this.cancelSignal = new AbortController().signal // mirrors stream()'s finally
-    return this._results.shift()
+    return result
   }
 
   asAgent(): Agent {
@@ -311,7 +312,10 @@ describe('subagent tool', () => {
       )
       expect(specs[0]!.name).toBe('subagent')
       expect(specs[0]!.instructions).toBe(GENERALIST.instructions)
-      expect(items.map((item) => item.data)).toEqual([{ type: 'modelStreamUpdateEvent' }, { type: 'agentResultEvent' }])
+      expect(items.map((item) => item.data)).toEqual([
+        { type: 'modelStreamUpdateEvent' },
+        { type: 'agentResultEvent', result: expect.anything() },
+      ])
     })
 
     it('passes a copy of the invocation state and the tool cancel signal to the child', async () => {

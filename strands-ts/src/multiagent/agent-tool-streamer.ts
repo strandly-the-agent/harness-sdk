@@ -35,14 +35,14 @@ export interface ChildAdapter<TChild, TResult> {
   /** Model-facing name of the child, used in terminal error messages. */
   readonly label: string
 
+  /** Discriminant of the stream event that carries the child's final `TResult`, so the streamer can classify mid-stream — before `stream()`'s finally resets transient state like the cancel signal. */
+  readonly resultEventType: string
+
   /** Capture the snapshot needed to resume the child invocation. */
   takeSnapshot(child: TChild): Snapshot
 
   /** Restore the snapshot and report whether the child awaits interrupt responses. */
   restore(child: TChild, snapshot: Snapshot | undefined): Promise<boolean>
-
-  /** Called for each streamed event before yield. The adapter may use this to track transient state (e.g. a cancel-signal flag) that stream()'s finally would otherwise reset before {@link classify} runs. */
-  observeEvent?(child: TChild, event: unknown): void
 
   /** Return interrupts, a failure message, or `undefined` for a successful result. */
   classify(child: TChild, result: TResult): Interrupt[] | string | undefined
@@ -62,9 +62,8 @@ export interface ChildAdapter<TChild, TResult> {
  */
 export class ChildAgentAdapter implements ChildAdapter<Agent, AgentResult> {
   readonly label: string
+  readonly resultEventType = 'agentResultEvent'
   private readonly _name: string
-  /** Captured on `agentResultEvent` before `stream()`'s finally resets the signal. A deferred cancel (stop tool) never flips it, so it tells immediate-cancel apart from a deferred one. */
-  private _cancelSignalAborted = false
 
   /**
    * @param config - `label` names the child in error messages; `name` names it in limit-stop messages.
@@ -88,19 +87,14 @@ export class ChildAgentAdapter implements ChildAdapter<Agent, AgentResult> {
     return child._interruptState.activated
   }
 
-  observeEvent(child: Agent, event: unknown): void {
-    if ((event as { type?: string }).type === 'agentResultEvent') {
-      this._cancelSignalAborted = child.cancelSignal.aborted
-    }
-  }
-
-  classify(_child: Agent, result: AgentResult): Interrupt[] | string | undefined {
+  classify(child: Agent, result: AgentResult): Interrupt[] | string | undefined {
     if (result.stopReason === 'interrupt') {
       return result.interrupts?.length ? [...result.interrupts] : `${this.label} interrupted without any interrupts`
     }
     if (result.stopReason === 'cancelled') {
-      // Deferred cancel (stop tool) is a cooperative success; immediate cancel is an abort.
-      return this._cancelSignalAborted ? `${this.label} cancelled` : undefined
+      // Called mid-stream on `agentResultEvent`, so the signal is still live:
+      // deferred cancel (stop tool) never flips it → success; immediate cancel is an abort.
+      return child.cancelSignal.aborted ? `${this.label} cancelled` : undefined
     }
     if (LIMIT_STOP_REASONS.has(result.stopReason)) {
       return limitStopMessage(this._name, result.stopReason)
@@ -121,6 +115,7 @@ export class ChildAgentAdapter implements ChildAdapter<Agent, AgentResult> {
  */
 export class ChildMultiAgentAdapter implements ChildAdapter<Swarm | Graph, MultiAgentResult> {
   readonly label: string
+  readonly resultEventType = 'multiAgentResultEvent'
   private readonly _render: (result: MultiAgentResult) => string
 
   /**
@@ -232,14 +227,24 @@ export class AgentToolStreamer<TResult = unknown> {
     events: AsyncGenerator<TEvent, TResult | undefined, undefined>
   ): AsyncGenerator<TEvent, void, undefined> {
     let next = await events.next()
+    // Classify on the result event (while transient state like the child's cancel signal is still
+    // live), falling back to a post-stream classify if that event never arrived.
+    let outcome: Interrupt[] | string | undefined
+    let classified = false
     while (!next.done) {
-      adapter.observeEvent?.(child, next.value)
+      const event = next.value as { type?: string; result?: TResult }
+      if (!classified && event.type === adapter.resultEventType && event.result !== undefined) {
+        outcome = adapter.classify(child, event.result)
+        classified = true
+      }
       yield next.value
       next = await events.next()
     }
 
     this.result = next.value
-    const outcome = this.result === undefined ? undefined : adapter.classify(child, this.result)
+    if (!classified && this.result !== undefined) {
+      outcome = adapter.classify(child, this.result)
+    }
     const state = this._interruptState
     if (this.result === undefined) {
       this.error = `${adapter.label} did not produce a result.`
