@@ -4187,6 +4187,16 @@ def test_model_info_leaves_caching_unknown_for_other_model_ids(bedrock_client):
     assert model.model_info.capabilities.prompt_caching is None
 
 
+def test_model_info_treats_a_non_string_model_id_as_unknown(bedrock_client):
+    _ = bedrock_client
+
+    model = BedrockModel(model_id=None)
+
+    assert "context_window_limit" not in model.get_config()
+    assert model.model_info == ModelInfo()
+    assert model.stateful is False
+
+
 def test_cache_strategy_auto_does_not_cache_a_claude_id_the_shared_model_info_does_not_list(bedrock_client):
     _ = bedrock_client
 

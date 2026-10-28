@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from strands.hooks.events import AfterInvocationEvent
 from strands.models import CacheConfig, ModelCapabilities, ModelInfo, ModelLimits
 from strands.models import Model as SAModel
+from strands.models._model_info import lookup_model_info
 from strands.models.model import _ModelPlugin
 
 
@@ -254,6 +255,10 @@ class TestModelInfo:
         assert provider.model_info == ModelInfo()
         assert provider.stateful is False
 
+    def test_lookup_treats_a_non_string_model_id_as_unknown(self):
+        assert lookup_model_info(None) == ModelInfo()
+        assert lookup_model_info(1234) == ModelInfo()
+
     def test_lets_a_provider_put_its_facts_over_the_shared_model_info_with_the_user_override_over_both(self):
         class GatewayModel(ConfigurableModel):
             @property
@@ -267,7 +272,7 @@ class TestModelInfo:
         provider = GatewayModel()
         provider.update_config(model_id="claude-sonnet-4-6", context_window_limit=8_000)
 
-        # The shared model info says cache_points for this id.
+        # The shared model info resolves to cache_points for this id.
         assert provider.model_info.capabilities.prompt_caching == "unsupported"
         assert provider.model_info.limits.context_window == 8_000
 

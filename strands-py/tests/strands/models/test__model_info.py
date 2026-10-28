@@ -160,6 +160,12 @@ def test_loader_returns_an_empty_section_when_its_only_facts_are_unknown_to_this
     assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) == ModelCapabilities()
 
 
+def test_loader_treats_a_prompt_caching_value_this_version_does_not_know_as_unknown():
+    entry = {"capabilities": {"promptCaching": "explicit", "stateful": False}}
+
+    assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) == ModelCapabilities(stateful=False)
+
+
 def test_load_data_says_how_to_restore_the_package_copy_when_it_is_missing():
     """The copy is only written on install, so an environment installed without it needs the fix named."""
     with unittest.mock.patch("strands.models._model_info.resources") as mock_resources:

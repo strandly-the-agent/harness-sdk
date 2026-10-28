@@ -116,7 +116,11 @@ _CAPABILITY_FIELDS = {
 }
 _LIMIT_FIELDS = {"contextWindow": "context_window", "maxOutputTokens": "max_output_tokens"}
 # Shared-data values are camelCase; the Python literals are snake_case.
-_PROMPT_CACHING_VALUES = {"unsupported": "unsupported", "auto": "auto", "cachePoints": "cache_points"}
+_PROMPT_CACHING_VALUES: dict[str, PromptCaching] = {
+    "unsupported": "unsupported",
+    "auto": "auto",
+    "cachePoints": "cache_points",
+}
 
 # Bedrock appends a version to some ids (`claude-3-5-haiku-20241022-v1:0`); the base id carries the facts.
 _VERSION_SUFFIX = re.compile(r"-(?:v\d+(?::\d+)?|\d+:\d+)$")
@@ -125,14 +129,14 @@ _DATE_SUFFIX = re.compile(r"[-@]\d{8}$")
 
 
 def _section(entry: dict[str, Any], name: str, field_names: dict[str, str], section: type[_SectionT]) -> _SectionT:
-    """Build one section of an entry, re-casing its camelCase keys and ignoring keys this version does not know.
+    """Build one section of an entry, re-casing its camelCase keys and ignoring facts this version does not know.
 
-    Unknown keys are skipped rather than rejected: the data file is shared with the TypeScript SDK, so it can
+    Unknown keys and values are skipped rather than rejected: the data file is shared with the TypeScript SDK, so it can
     carry a fact this version has no field for yet. ``test__model_info.py`` validates the file strictly instead.
     """
     known = {field_names[key]: value for key, value in entry.get(name, {}).items() if key in field_names}
     if "prompt_caching" in known:
-        known["prompt_caching"] = _PROMPT_CACHING_VALUES[known["prompt_caching"]]
+        known["prompt_caching"] = _PROMPT_CACHING_VALUES.get(known["prompt_caching"])
     return section(**known)
 
 
@@ -196,16 +200,16 @@ def lookup_model(model_id: str) -> ModelInfo | None:
         candidate = candidate[dot_index + 1 :]
 
 
-def lookup_model_info(model_id: str) -> ModelInfo:
+def lookup_model_info(model_id: object) -> ModelInfo:
     """Report what the shared model info data knows about a model.
 
     Args:
-        model_id: The model id to describe.
+        model_id: The model id to describe; anything but a string is unknown.
 
     Returns:
         What the data knows about the model; empty when it knows nothing.
     """
-    return ModelInfo.merge(lookup_model(model_id))
+    return ModelInfo.merge(lookup_model(model_id) if isinstance(model_id, str) else None)
 
 
 def get_context_window_limit(model_id: str) -> int | None:
