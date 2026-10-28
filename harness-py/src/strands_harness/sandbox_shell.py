@@ -22,5 +22,8 @@ async def shell_of(sandbox: Sandbox) -> SandboxShell:
     """Return ``"powershell"`` or ``"sh"`` for ``sandbox``, probing it the first time."""
     if sandbox not in _shells:
         result = await sandbox.execute(SHELL_PROBE, timeout=10)
+        # A failed probe is inconclusive: answer ``sh`` for this call but probe again next time.
+        if result.exit_code != 0:
+            return "sh"
         _shells[sandbox] = "powershell" if result.stdout.strip() in ("Desktop", "Core") else "sh"
     return _shells[sandbox]
