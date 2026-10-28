@@ -16,7 +16,7 @@ from strands.hooks.events import BeforeModelCallEvent
 from strands.hooks.registry import HookRegistry
 from strands.models.model import Model
 from strands.types.content import Messages
-from strands.types.exceptions import ContextWindowOverflowException
+from strands.types.exceptions import ContextWindowOverflowException, ModelThrottledException
 from tests.fixtures.mocked_model_provider import MockedModelProvider
 
 
@@ -264,7 +264,9 @@ def test_reduce_context_falls_back_to_truncation_when_summary_call_fails():
     """A summary call that itself fails (e.g. one message larger than the window) falls back to truncation."""
     failing_agent = Mock()
     failing_agent.model = Mock()
-    failing_agent.model.stream = Mock(side_effect=lambda *a, **kw: _mock_model_stream_error(Exception("too large")))
+    failing_agent.model.stream = Mock(
+        side_effect=lambda *a, **kw: _mock_model_stream_error(ContextWindowOverflowException("too large"))
+    )
     failing_agent.aux_model = failing_agent.model
     failing_agent.messages = [
         {"role": "user", "content": [{"text": "y" * 50_000}]},
@@ -279,6 +281,29 @@ def test_reduce_context_falls_back_to_truncation_when_summary_call_fails():
     assert "[truncated:" in failing_agent.messages[0]["content"][0]["text"]
     assert len(failing_agent.messages) == 4
     assert manager.removed_message_count == 0
+
+
+def test_reduce_context_does_not_truncate_when_summary_call_fails_for_other_reasons():
+    """A throttled summary call is re-raised untouched: truncation is lossy and a retry may still succeed."""
+    failing_agent = Mock()
+    failing_agent.model = Mock()
+    failing_agent.model.stream = Mock(
+        side_effect=lambda *a, **kw: _mock_model_stream_error(ModelThrottledException("slow down"))
+    )
+    failing_agent.aux_model = failing_agent.model
+    oversized = "y" * 50_000
+    failing_agent.messages = [
+        {"role": "user", "content": [{"text": oversized}]},
+        {"role": "assistant", "content": [{"text": "Response 1"}]},
+        {"role": "user", "content": [{"text": "Message 2"}]},
+        {"role": "assistant", "content": [{"text": "Response 2"}]},
+    ]
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=1)
+
+    with pytest.raises(ModelThrottledException, match="slow down"):
+        manager.reduce_context(failing_agent, e=RuntimeError("overflow"))
+
+    assert failing_agent.messages[0]["content"][0]["text"] == oversized
 
 
 def test_reduce_context_reraises_once_nothing_is_left_to_truncate(mock_agent):

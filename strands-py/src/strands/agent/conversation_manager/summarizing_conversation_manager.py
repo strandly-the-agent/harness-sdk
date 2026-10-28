@@ -119,11 +119,12 @@ class SummarizingConversationManager(ConversationManager):
     def reduce_context(self, agent: "Agent", e: Exception | None = None, **kwargs: Any) -> None:
         """Reduce context using summarization.
 
-        When ``e`` is set (reactive overflow recovery) and summarization fails — too few messages
-        to summarize, or the summary call itself overflows — oversized text blocks in non-pinned
-        messages are truncated to head+tail previews instead; the failure is re-raised only when
-        nothing is left to truncate. Truncation edits ``agent.messages`` only; a session store keeps
-        the original content.
+        When ``e`` is set (reactive overflow recovery) and summarization fails with a
+        ``ContextWindowOverflowException`` — too few messages to summarize, or the summary call itself
+        overflows — oversized text blocks in non-pinned messages are truncated to head+tail previews
+        instead; the failure is re-raised when nothing is left to truncate. Any other summarization
+        error (throttling, network) is re-raised untouched, since a retry may still succeed.
+        Truncation edits ``agent.messages`` only; a session store keeps the original content.
 
         When ``e`` is None (proactive compression), summarization failure is logged and
         returns silently — the model call proceeds regardless.
@@ -138,8 +139,8 @@ class SummarizingConversationManager(ConversationManager):
                 ``invocation_context`` the summary call's usage adds to.
 
         Raises:
-            Exception: If summarization fails during reactive overflow recovery (e is set) and no
-                text block is left to truncate.
+            Exception: If summarization fails during reactive overflow recovery (e is set) for a
+                reason other than overflow, or no text block is left to truncate.
         """
         try:
             self._summarize_oldest(agent, kwargs.get("invocation_context"))
@@ -148,7 +149,10 @@ class SummarizingConversationManager(ConversationManager):
                 # Proactive: best-effort, swallow errors so the model call can still proceed.
                 logger.warning("Proactive summarization failed, continuing: %s", summarization_error)
                 return
-            if _truncate_oversized_text_blocks(agent.messages):
+            # Only an overflow proves summarization cannot shrink the context; anything else may pass on retry.
+            if isinstance(summarization_error, ContextWindowOverflowException) and _truncate_oversized_text_blocks(
+                agent.messages
+            ):
                 logger.warning(
                     "error=<%s> | summarization could not reduce context, truncated oversized text blocks instead",
                     summarization_error,
