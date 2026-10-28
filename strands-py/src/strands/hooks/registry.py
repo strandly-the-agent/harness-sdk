@@ -38,6 +38,7 @@ class HookOrder:
     INTERVENTION_OUTPUT: int = -90
     DEFAULT: int = 0
     MODEL_ROUTING: int = 50
+    CONTEXT_OFFLOAD: int = 70
     INTERVENTION_INPUT: int = 90
     SDK_LAST: int = 100
 

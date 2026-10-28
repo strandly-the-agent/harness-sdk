@@ -100,7 +100,7 @@ class TestContextOffloader:
         plugin.init_agent(mock_agent)
 
         mock_agent.add_hook.assert_called_once_with(
-            plugin._handle_tool_result, AfterToolCallEvent, order=HookOrder.SDK_LAST
+            plugin._handle_tool_result, AfterToolCallEvent, order=HookOrder.CONTEXT_OFFLOAD
         )
 
     def test_user_after_tool_call_hooks_see_full_result_before_rewrite(self, storage):
