@@ -34,7 +34,6 @@ __all__ = [
     "Model",
     "ModelCapabilities",
     "ModelInfo",
-    "merge_model_info",
     "ModelLimits",
     "ModelRouter",
     "PromptCaching",
@@ -42,6 +41,7 @@ __all__ = [
     "RoutingCandidate",
     "RoutingContext",
     "RoutingStrategy",
+    "merge_model_info",
 ]
 
 

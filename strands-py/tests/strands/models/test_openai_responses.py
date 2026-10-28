@@ -1856,9 +1856,11 @@ async def test_stream_resolves_stateful_once_per_stream_not_once_per_event(opena
     with unittest.mock.patch.object(
         OpenAIResponsesModel, "get_config", side_effect=model.config.copy
     ) as mock_get_config:
-        await alist(model.stream([{"role": "user", "content": [{"text": "hi"}]}]))
+        await alist(
+            model.stream([{"role": "user", "content": [{"text": "hi"}]}], model_state={"response_id": "resp_0"})
+        )
 
-    assert mock_get_config.call_count < 10
+    assert mock_get_config.call_count == 1
 
 
 @pytest.mark.asyncio
