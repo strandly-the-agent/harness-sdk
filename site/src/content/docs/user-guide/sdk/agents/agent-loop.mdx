@@ -217,7 +217,7 @@ The `agent.cancel()` method provides a way to stop the loop from outside, such a
   </Tab>
   <Tab label="TypeScript">
 
-  The agent checks for cancellation at four checkpoints:
+  The agent checks for cancellation at five checkpoints:
 
   | Checkpoint | Behavior | Note |
   |---|---|---|
@@ -225,6 +225,7 @@ The `agent.cancel()` method provides a way to stop the loop from outside, such a
   | During model response streaming | Partial output is discarded | Usage metrics may be inaccurate since the stream is closed before the model sends its final metadata event |
   | Before tool execution | All pending tool calls are skipped with error results | |
   | Between sequential tool executions | Remaining tool calls are skipped with error results | |
+  | After tool execution | The agent stops before the next model call | Sibling tools in the current batch finish before cancellation is observed; this is the checkpoint the `stop` vended tool uses via `cancel({ afterCurrentTools: true })` |
 
   The agent returns a result with `stopReason: 'cancelled'`. `cancel()` is idempotent: calling it multiple times is safe.
 
