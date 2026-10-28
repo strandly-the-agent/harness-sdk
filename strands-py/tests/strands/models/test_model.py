@@ -308,7 +308,7 @@ class TestModelInfo:
         assert provider.stateful is False
 
     def test_reflects_config_changes_on_the_next_read(self, provider):
-        assert provider.model_info.limits is None
+        assert provider.model_info.limits == ModelLimits()
 
         provider.update_config(context_window_limit=4_096)
 

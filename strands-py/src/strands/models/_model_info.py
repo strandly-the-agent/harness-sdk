@@ -1,9 +1,9 @@
 """What the SDK knows about models: the :class:`ModelInfo` type, and the shared model info data.
 
-Every :class:`ModelInfo` field is optional, and a missing or ``None`` field means unknown. The same
-shape is used everywhere: the shared data file, the ``model_info`` config override, and the resolved
-:attr:`strands.models.Model.model_info`. A known ``"unsupported"`` disables a feature; unknown leaves
-the SDK's existing default for that feature in place.
+Every fact is optional: the sections are always present, and a fact that is missing or ``None`` means
+unknown. The same shape is used everywhere: the shared data file, the ``model_info`` config override,
+and the resolved :attr:`strands.models.Model.model_info`. A known ``"unsupported"`` disables a
+feature; unknown leaves the SDK's existing default for that feature in place.
 
 ``model_info.json`` is copied from ``shared/model-info.json`` at the repository root (the source of
 truth for every SDK) by the build hook in ``hatch_build.py``; it is not committed.
@@ -13,13 +13,13 @@ import json
 import re
 from dataclasses import dataclass, fields, replace
 from importlib import resources
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeAlias, TypeVar
 
-PromptCaching = Literal["unsupported", "auto", "cachePoints"]
+PromptCaching: TypeAlias = Literal["unsupported", "auto", "cachePoints"]
 """How a model supports prompt caching."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ModelCapabilities:
     """What the model can do.
 
@@ -43,7 +43,7 @@ class ModelCapabilities:
     native_structured_output: bool | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ModelLimits:
     """Size limits of the model.
 
@@ -57,36 +57,36 @@ class ModelLimits:
     max_output_tokens: int | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ModelInfo:
     """Everything the SDK knows about a model.
 
     Read it from :attr:`strands.models.Model.model_info`.
 
+    Both sections are always present; when nothing is known about one, every field in it is None.
+
     Attributes:
-        capabilities: What the model can do, or None when nothing is known.
-        limits: Size limits of the model, or None when nothing is known.
+        capabilities: What the model can do.
+        limits: Size limits of the model.
     """
 
-    capabilities: ModelCapabilities | None = None
-    limits: ModelLimits | None = None
+    capabilities: ModelCapabilities = ModelCapabilities()
+    limits: ModelLimits = ModelLimits()
 
 
 _SectionT = TypeVar("_SectionT", ModelCapabilities, ModelLimits)
 
 
-def _merge_section(parts: list[_SectionT | None], empty: _SectionT) -> _SectionT | None:
-    """Merge one section of the records, later defined fields winning, or None when nothing is known."""
+def _merge_section(parts: list[_SectionT], empty: _SectionT) -> _SectionT:
+    """Merge one section of the records, later defined fields winning; the empty section when nothing is known."""
     merged = empty
     for part in parts:
-        if part is None:
-            continue
         known = {
             field.name: getattr(part, field.name) for field in fields(part) if getattr(part, field.name) is not None
         }
         if known:
             merged = replace(merged, **known)
-    return merged if merged != empty else None
+    return merged
 
 
 def merge_model_info(*parts: ModelInfo | None) -> ModelInfo:
@@ -96,7 +96,7 @@ def merge_model_info(*parts: ModelInfo | None) -> ModelInfo:
         *parts: Partial records, in order of increasing precedence.
 
     Returns:
-        A new record containing only the fields that are known.
+        A new record whose unknown fields are None.
     """
     return ModelInfo(
         capabilities=_merge_section([part.capabilities for part in parts if part], ModelCapabilities()),
@@ -118,21 +118,29 @@ _VERSION_SUFFIX = re.compile(r"-(?:v\d+(?::\d+)?|\d+:\d+)$")
 _DATE_SUFFIX = re.compile(r"[-@]\d{8}$")
 
 
-def _section(
-    entry: dict[str, Any], name: str, field_names: dict[str, str], section: type[_SectionT]
-) -> _SectionT | None:
+def _section(entry: dict[str, Any], name: str, field_names: dict[str, str], section: type[_SectionT]) -> _SectionT:
     """Build one section of an entry, re-casing its camelCase keys and ignoring keys this version does not know.
 
     Unknown keys are skipped rather than rejected: the data file is shared with the TypeScript SDK, so it can
     carry a fact this version has no field for yet. ``test__model_info.py`` validates the file strictly instead.
     """
     known = {field_names[key]: value for key, value in entry.get(name, {}).items() if key in field_names}
-    return section(**known) if known else None
+    return section(**known)
 
 
 def _load_data() -> tuple[int, dict[str, ModelInfo]]:
     """Read the shared model info data, re-casing its camelCase keys onto the record fields."""
-    data = json.loads(resources.files("strands.models").joinpath("model_info.json").read_text(encoding="utf-8"))
+    package_copy = resources.files("strands.models").joinpath("model_info.json")
+    try:
+        raw = package_copy.read_text(encoding="utf-8")
+    except FileNotFoundError as error:
+        raise FileNotFoundError(
+            f"The model info data is missing from the installed package: {package_copy}. "
+            "hatch_build.py copies it from shared/model-info.json when the package is installed or "
+            "built, so an environment installed before the copy existed does not have it. Re-install "
+            "the package (`pip install -e .`, or `hatch env prune` to rebuild hatch environments)."
+        ) from error
+    data = json.loads(raw)
     models = {
         model_id: ModelInfo(
             capabilities=_section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities),
@@ -195,5 +203,4 @@ def get_context_window_limit(model_id: str) -> int | None:
     Returns:
         The context window limit in tokens, or None if not known.
     """
-    limits = lookup_model_info(model_id).limits
-    return limits.context_window if limits else None
+    return lookup_model_info(model_id).limits.context_window

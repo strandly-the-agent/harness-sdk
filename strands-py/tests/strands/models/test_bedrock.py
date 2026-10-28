@@ -4192,7 +4192,7 @@ def test_cache_strategy_auto_does_not_cache_a_claude_id_the_shared_model_info_do
 
     model = BedrockModel(model_id="anthropic.claude-future-9", cache_config=CacheConfig(strategy="auto"))
 
-    assert model.model_info.capabilities is None
+    assert model.model_info.capabilities == ModelCapabilities()
     assert model._cache_strategy is None
 
 

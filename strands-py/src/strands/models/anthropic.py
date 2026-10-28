@@ -436,8 +436,7 @@ class AnthropicModel(Model):
         if cache_config is None or cache_config.strategy != "auto":
             return False
 
-        capabilities = self.model_info.capabilities
-        if capabilities is None or capabilities.prompt_caching != "unsupported":
+        if self.model_info.capabilities.prompt_caching != "unsupported":
             return False
 
         # Caller depth varies, so stacklevel=1 pins dedup to this line (once per process).

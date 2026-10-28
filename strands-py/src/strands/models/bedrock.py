@@ -379,8 +379,7 @@ class BedrockModel(Model):
             return None
         if cache_config.strategy != "auto":
             return cache_config.strategy
-        capabilities = self.model_info.capabilities
-        if capabilities and capabilities.prompt_caching == "cachePoints":
+        if self.model_info.capabilities.prompt_caching == "cachePoints":
             return "anthropic"
         return None
 

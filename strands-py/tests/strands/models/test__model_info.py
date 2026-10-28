@@ -3,6 +3,7 @@
 import json
 import pathlib
 import re
+import unittest.mock
 
 import pytest
 
@@ -13,6 +14,7 @@ from strands.models._model_info import (
     ModelCapabilities,
     ModelInfo,
     ModelLimits,
+    _load_data,
     _section,
     get_context_window_limit,
     lookup_model,
@@ -63,8 +65,12 @@ def test_merge_model_info_lets_a_later_record_win_over_an_earlier_one():
     assert tru_merged.limits.context_window == 2
 
 
-def test_merge_model_info_leaves_out_sections_with_nothing_known():
-    assert merge_model_info(ModelInfo(), None, ModelInfo(limits=ModelLimits(context_window=None))) == ModelInfo()
+def test_merge_model_info_returns_empty_sections_when_nothing_is_known():
+    tru_merged = merge_model_info(ModelInfo(), None, ModelInfo(limits=ModelLimits(context_window=None)))
+
+    assert tru_merged == ModelInfo()
+    assert tru_merged.capabilities == ModelCapabilities()
+    assert tru_merged.limits == ModelLimits()
 
 
 def test_merge_model_info_returns_a_frozen_record():
@@ -143,10 +149,27 @@ def test_loader_ignores_facts_this_version_has_no_field_for():
     assert _section(entry, "limits", _LIMIT_FIELDS, ModelLimits) == ModelLimits(context_window=1_000)
 
 
-def test_loader_leaves_out_a_section_whose_only_facts_are_unknown_to_this_version():
+def test_loader_returns_an_empty_section_when_its_only_facts_are_unknown_to_this_version():
     entry = {"capabilities": {"reasoning": True}}
 
-    assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) is None
+    assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) == ModelCapabilities()
+
+
+def test_load_data_says_how_to_restore_the_package_copy_when_it_is_missing():
+    """The copy is only written on install, so an environment installed without it needs the fix named."""
+    with unittest.mock.patch("strands.models._model_info.resources") as mock_resources:
+        mock_resources.files.return_value.joinpath.return_value.read_text.side_effect = FileNotFoundError(
+            2, "No such file or directory"
+        )
+
+        with pytest.raises(FileNotFoundError) as err:
+            _load_data()
+
+    message = str(err.value)
+    assert "shared/model-info.json" in message
+    assert "hatch_build.py" in message
+    assert "pip install -e ." in message
+    assert isinstance(err.value.__cause__, FileNotFoundError)
 
 
 def test_package_copy_matches_the_shared_data():

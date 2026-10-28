@@ -101,11 +101,11 @@ def structured_output_mechanisms(
     Returns:
         The mechanisms to try in order; never empty, since auto is always available.
     """
-    capabilities = model_info.capabilities if model_info else None
+    capabilities = (model_info or ModelInfo()).capabilities
     skipped = set(unsupported)
-    if capabilities and capabilities.forced_tool_choice is False:
+    if capabilities.forced_tool_choice is False:
         skipped.add("forced")
-    if capabilities and capabilities.native_structured_output is False:
+    if capabilities.native_structured_output is False:
         skipped.add("native")
     forces_tool = tool_choice is not None and ("any" in tool_choice or "tool" in tool_choice)
     native_known_unsupported = "native" in skipped

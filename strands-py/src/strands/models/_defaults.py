@@ -40,8 +40,8 @@ def resolve_config_metadata(config: _C, model_id: str) -> _C:
         return config
 
     override = cast(ModelInfo | None, config.get("model_info"))
-    limits = merge_model_info(lookup_model_info(model_id), override).limits
-    if limits is None or limits.context_window is None:
+    context_window = merge_model_info(lookup_model_info(model_id), override).limits.context_window
+    if context_window is None:
         return config
 
-    return {**config, "context_window_limit": limits.context_window}  # type: ignore[return-value]
+    return {**config, "context_window_limit": context_window}  # type: ignore[return-value]

@@ -216,8 +216,7 @@ class Model(abc.ABC):
         Returns:
             False when unknown.
         """
-        capabilities = self.model_info.capabilities
-        return bool(capabilities.stateful) if capabilities else False
+        return bool(self.model_info.capabilities.stateful)
 
     @property
     def model_info(self) -> ModelInfo:
@@ -228,13 +227,15 @@ class Model(abc.ABC):
         returns a new record, so do not compare reads by identity.
 
         A provider that knows better than the shared model info overrides this property: put its
-        facts over ``super().model_info``, then the user's ``get_config()["model_info"]`` over those
-        so the override still wins::
+        facts over ``super().model_info``, then the user's ``self.get_config().get("model_info")``
+        over those so the override still wins::
+
+            from strands.models import ModelCapabilities, ModelInfo, merge_model_info
 
             merge_model_info(
                 super().model_info,
                 ModelInfo(capabilities=ModelCapabilities(prompt_caching="auto")),
-                self.config.get("model_info"),
+                self.get_config().get("model_info"),
             )
 
         Do not read :attr:`stateful` inside the override; it reads this property.
@@ -261,8 +262,7 @@ class Model(abc.ABC):
     @property
     def context_window_limit(self) -> int | None:
         """Maximum context window size in tokens, or None if not known."""
-        limits = self.model_info.limits
-        return limits.context_window if limits else None
+        return self.model_info.limits.context_window
 
     @abc.abstractmethod
     # pragma: no cover
