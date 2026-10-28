@@ -1,5 +1,5 @@
 name: win-web-fetch-probe
-on: { push: { branches: [strandly/win-ci-probe] } }
+on: { push: { branches: [strandly/win-ci-probe-disabled] } }
 permissions: { contents: write }
 jobs:
   probe:
