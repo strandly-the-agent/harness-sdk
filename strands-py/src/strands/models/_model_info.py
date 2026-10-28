@@ -83,6 +83,9 @@ class ModelInfo:
         Returns:
             A new record whose unknown fields are None.
         """
+        for part in parts:
+            if part is not None and not isinstance(part, ModelInfo):
+                raise TypeError(f"model_info must be a ModelInfo, not {type(part).__name__}")
         known = [part for part in parts if part]
         return cls(
             capabilities=_merge_section([part.capabilities for part in known], ModelCapabilities()),

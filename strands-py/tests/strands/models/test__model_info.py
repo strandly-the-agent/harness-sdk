@@ -72,6 +72,12 @@ def test_model_info_merge_returns_empty_sections_when_nothing_is_known():
     assert tru_merged.limits == ModelLimits()
 
 
+def test_model_info_merge_rejects_a_plain_dict_with_the_expected_type_named():
+    """A dict loaded from YAML/JSON fails at the merge, not later with an AttributeError."""
+    with pytest.raises(TypeError, match="ModelInfo, not dict"):
+        ModelInfo.merge(ModelInfo(), {"limits": {"context_window": 10}})  # type: ignore[arg-type]
+
+
 def test_model_info_merge_returns_a_frozen_record():
     tru_merged = ModelInfo.merge(BASE)
 

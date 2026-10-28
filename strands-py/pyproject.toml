@@ -125,10 +125,12 @@ Homepage = "https://github.com/strands-agents/harness-sdk"
 Documentation = "https://strandsagents.com"
 
 
+[tool.hatch.build]
+# The copy the build hook writes is git-ignored, so it is named here to ship in the wheel *and* sdist anyway.
+artifacts = ["src/strands/models/model_info.json"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/strands"]
-# The copy the build hook writes is git-ignored, so it is named here to ship in the wheel anyway.
-artifacts = ["src/strands/models/model_info.json"]
 
 
 [tool.hatch.build.hooks.custom]
