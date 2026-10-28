@@ -309,16 +309,14 @@ describe.skipIf(process.platform === 'win32')('read tool', () => {
       const filePath = join(tmpPath, 'f.txt')
       writeFileSync(filePath, 'one\n')
       await expect(reader.invoke({ path: filePath, offset }, ctx)).rejects.toThrow(
-        `offset must be a positive 1-indexed line number, got ${offset}.`
+        'offset must be a positive 1-indexed line number'
       )
     })
 
     it.each([0, -1, -100])('rejects non-positive limit %i', async (limit) => {
       const filePath = join(tmpPath, 'f.txt')
       writeFileSync(filePath, 'one\n')
-      await expect(reader.invoke({ path: filePath, limit }, ctx)).rejects.toThrow(
-        `limit must be a positive line count, got ${limit}.`
-      )
+      await expect(reader.invoke({ path: filePath, limit }, ctx)).rejects.toThrow('limit must be a positive line count')
     })
   })
 

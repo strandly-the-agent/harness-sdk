@@ -4,7 +4,7 @@ A sandbox-routed tool that reads a file. Text files return `cat -n` style number
 
 The tool reads through a [Sandbox](../../sandbox/base.ts), so behaviour is identical on the host and in Docker/SSH containers. Paths must be absolute and must not contain `..` segments.
 
-Supersedes the [`fileEditor`](../file-editor/README.md) `view` command. Pairs with the companion `edit` and `write` vended tools (Python today; TypeScript ports in progress).
+Supersedes the [`fileEditor`](../file-editor/README.md) `view` command. Pairs with the companion `edit` and `write` vended tools.
 
 ## Usage
 

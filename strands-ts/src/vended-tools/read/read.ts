@@ -65,9 +65,15 @@ const readInputSchema = z.object({
   offset: z
     .number()
     .int()
+    .min(1, 'offset must be a positive 1-indexed line number')
     .optional()
     .describe('1-indexed line to start from. Defaults to the first line. Text files only.'),
-  limit: z.number().int().optional().describe('Maximum number of lines to return. Defaults to 2000. Text files only.'),
+  limit: z
+    .number()
+    .int()
+    .min(1, 'limit must be a positive line count')
+    .optional()
+    .describe('Maximum number of lines to return. Defaults to 2000. Text files only.'),
 })
 
 /**
@@ -130,12 +136,6 @@ export function makeRead(sandboxOrOptions?: Sandbox | MakeReadOptions, maybeOpti
     inputSchema: readInputSchema,
     callback: async (input, context): Promise<string | ImageBlock | DocumentBlock> => {
       validateAbsolutePath(input.path)
-      if (input.offset !== undefined && input.offset < 1) {
-        throw new Error(`offset must be a positive 1-indexed line number, got ${input.offset}.`)
-      }
-      if (input.limit !== undefined && input.limit < 1) {
-        throw new Error(`limit must be a positive line count, got ${input.limit}.`)
-      }
       if (!boundSandbox && !context) throw new Error('Tool context is required for read operations')
       const sandbox = boundSandbox ?? context!.agent.sandbox
       const ext = extension(input.path)
