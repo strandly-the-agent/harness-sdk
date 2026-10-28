@@ -1,5 +1,5 @@
 name: win-ci-probe
-on: { push: { branches: [strandly/win-ci-probe-disabled] } }
+on: { push: { branches: [strandly/win-ci-probe] } }
 permissions: { contents: write }
 jobs:
   probe:
@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-        with: { ref: strandly/windows-file-tools, path: src }
+        with: { ref: strandly/env-plugin-platform, path: src }
       - uses: actions/checkout@v4
         with: { ref: strandly/win-ci-probe, path: probe }
       - uses: actions/setup-node@v4
