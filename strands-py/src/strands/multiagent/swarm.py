@@ -501,6 +501,7 @@ class Swarm(MultiAgentBase):
             finally:
                 # On stream close this finally runs before _execute_swarm's teardown, so roll back here too.
                 self._rollback_uncommitted_turn()
+                # Before AfterMultiAgentInvocationEvent, so session managers persist the cleared state.
                 if self.state.completion_status == Status.FAILED:
                     self._clear_interrupts()
                 self.state.execution_time = self._commit_active_interval(self.state.execution_time)

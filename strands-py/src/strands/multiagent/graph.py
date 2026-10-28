@@ -733,6 +733,7 @@ class Graph(MultiAgentBase):
                 self.state.status = Status.FAILED
                 raise
             finally:
+                # Before AfterMultiAgentInvocationEvent, so session managers persist the cleared state.
                 if self.state.status == Status.FAILED:
                     self._clear_interrupts()
                 self.state.execution_time = self._commit_active_interval(self.state.execution_time)
@@ -748,8 +749,8 @@ class Graph(MultiAgentBase):
             yield MultiAgentResultEvent(result=result).as_dict()
 
     def _clear_interrupts(self) -> None:
-        """Drop pending interrupts of this graph and of every node interrupted in the failed invocation."""
-        for node in self.state.interrupted_nodes:
+        """Drop pending interrupts of this graph and of its node executors."""
+        for node in self.nodes.values():
             if isinstance(node.executor, MultiAgentBase):
                 node.executor._clear_interrupts()
             elif hasattr(node.executor, "_interrupt_state"):
