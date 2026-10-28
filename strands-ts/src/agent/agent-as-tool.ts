@@ -13,7 +13,7 @@ import { InterruptError, type InterruptState } from '../interrupt.js'
 import { logger } from '../logging/logger.js'
 import { AgentToolStreamer, ChildAgentAdapter } from '../multiagent/agent-tool-streamer.js'
 import type { JSONValue } from '../types/json.js'
-import { JsonBlock, TextBlock, type ToolResultBlock, type ToolResultContent } from '../types/messages.js'
+import { JsonBlock, TextBlock, type ToolResultContent } from '../types/messages.js'
 import { createErrorResult, Tool, ToolStreamEvent } from '../tools/tool.js'
 import type { ToolContext, ToolStreamGenerator } from '../tools/tool.js'
 import type { ToolSpec } from '../tools/types.js'
@@ -207,7 +207,10 @@ export class AgentAsTool extends Tool {
           'ask them to respond again.'
         const resumed = await streamer.resume(adapter, this._agent, unavailableMessage)
         if (resumed === undefined) {
-          return this._renderTerminal(streamer, toolUseId)
+          if (streamer.error !== undefined) {
+            return createErrorResult(streamer.error, toolUseId)
+          }
+          return streamer.terminalResult((result) => this._renderSuccess(result))
         }
         input = resumed
         logger.debug(`tool_name=<${this.name}>, tool_use_id=<${toolUseId}> | resuming sub-agent from interrupt`)
@@ -241,7 +244,10 @@ export class AgentAsTool extends Tool {
             'and no session manager, so its interrupt cannot be resumed after a restart'
         )
       }
-      return this._renderTerminal(streamer, toolUseId)
+      if (streamer.error !== undefined) {
+        return createErrorResult(streamer.error, toolUseId)
+      }
+      return streamer.terminalResult((result) => this._renderSuccess(result))
     } catch (error) {
       if (error instanceof InterruptError) {
         throw error
@@ -250,14 +256,6 @@ export class AgentAsTool extends Tool {
     } finally {
       this._busy = false
     }
-  }
-
-  /** Error path uses `createErrorResult` for the `Error: …` prefix convention; success renders via {@link _renderSuccess}. */
-  private _renderTerminal(streamer: AgentToolStreamer<AgentResult>, toolUseId: string): ToolResultBlock {
-    if (streamer.error !== undefined) {
-      return createErrorResult(streamer.error, toolUseId)
-    }
-    return streamer.terminalResult((result) => this._renderSuccess(result))
   }
 
   private _renderSuccess(result: AgentResult): ToolResultContent[] {
