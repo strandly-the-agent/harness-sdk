@@ -28,4 +28,6 @@ class ModelInfoBuildHook(BuildHookInterface):  # type: ignore[type-arg]
             build_data: Mutable build metadata.
         """
         root = Path(self.root)
+        if not (root / _SOURCE).exists() and (root / _TARGET).exists():
+            return  # building from an sdist, which already carries the copy
         shutil.copyfile(root / _SOURCE, root / _TARGET)

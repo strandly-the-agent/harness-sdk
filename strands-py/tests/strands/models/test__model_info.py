@@ -172,6 +172,18 @@ def test_load_data_says_how_to_restore_the_package_copy_when_it_is_missing():
     assert isinstance(err.value.__cause__, FileNotFoundError)
 
 
+def test_load_data_names_the_copy_when_it_is_malformed():
+    """A truncated or hand-edited copy fails import with the cause named, not a bare JSON error."""
+    with unittest.mock.patch("strands.models._model_info.resources") as mock_resources:
+        mock_resources.files.return_value.joinpath.return_value.read_text.return_value = '{"models": {}}'
+
+        with pytest.raises(ValueError) as err:
+            _load_data()
+
+    assert "shared/model-info.json" in str(err.value)
+    assert isinstance(err.value.__cause__, KeyError)
+
+
 def test_package_copy_matches_the_shared_data():
     """The build hook copies ``shared/model-info.json``; run ``hatch build`` to refresh the copy."""
     assert _PACKAGE_COPY.read_text(encoding="utf-8") == _SHARED_DATA.read_text(encoding="utf-8")

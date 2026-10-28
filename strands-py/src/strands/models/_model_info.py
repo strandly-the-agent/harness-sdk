@@ -140,15 +140,21 @@ def _load_data() -> tuple[int, dict[str, ModelInfo]]:
             "built, so an environment installed before the copy existed does not have it. Re-install "
             "the package (`pip install -e .`, or `hatch env prune` to rebuild hatch environments)."
         ) from error
-    data = json.loads(raw)
-    models = {
-        model_id: ModelInfo(
-            capabilities=_section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities),
-            limits=_section(entry, "limits", _LIMIT_FIELDS, ModelLimits),
-        )
-        for model_id, entry in data["models"].items()
-    }
-    return data["defaults"]["limits"]["contextWindow"], models
+    try:
+        data = json.loads(raw)
+        models = {
+            model_id: ModelInfo(
+                capabilities=_section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities),
+                limits=_section(entry, "limits", _LIMIT_FIELDS, ModelLimits),
+            )
+            for model_id, entry in data["models"].items()
+        }
+        return data["defaults"]["limits"]["contextWindow"], models
+    except (ValueError, KeyError, TypeError) as error:
+        raise ValueError(
+            f"The model info data in the installed package is malformed: {package_copy}. "
+            "It is a copy of shared/model-info.json; fix the source and re-install the package."
+        ) from error
 
 
 # Context window limit (in tokens) assumed for a model whose window is unknown, and the known models.

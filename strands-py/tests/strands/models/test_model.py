@@ -733,6 +733,13 @@ class TestEstimateUtilization:
 
         assert model.estimate_utilization(100_000) == 100_000 / 200_000
 
+    def test_uses_the_context_window_from_model_info_including_an_override(self):
+        """Reads the window from model_info, where a model_info override beats context_window_limit."""
+        model = ConfigurableModel(context_window_limit=100_000)
+        model.update_config(model_info=ModelInfo(limits=ModelLimits(context_window=10_000)))
+
+        assert model.estimate_utilization(5_000) == 0.5
+
     def test_returns_above_one_on_overflow(self):
         """Returns > 1.0 when tokens exceed the limit."""
         model = ConfigurableModel(context_window_limit=1000)
