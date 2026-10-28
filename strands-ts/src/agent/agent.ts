@@ -1889,6 +1889,11 @@ export class Agent implements LocalAgent, InvokableAgent {
             continue
           }
 
+          // Message-added hooks may offload the JSON block needed for structured output.
+          const structuredOutput = structuredOutputTool
+            ? this._extractStructuredOutput(assistantMessage, toolResultMessage)
+            : undefined
+
           /**
            * Deferred append: both messages are added AFTER tool execution completes.
            * This keeps agent.messages in a valid, reinvokable state at all times.
@@ -1933,10 +1938,6 @@ export class Agent implements LocalAgent, InvokableAgent {
             })
             return result
           }
-
-          const structuredOutput = structuredOutputTool
-            ? this._extractStructuredOutput(assistantMessage, toolResultMessage)
-            : undefined
 
           // Cancel observed after the batch: siblings have finished, so stop here
           // instead of calling the model again. Wins over a structured-output stop
@@ -2022,6 +2023,8 @@ export class Agent implements LocalAgent, InvokableAgent {
         for (const interrupt of error.interrupts) {
           this._interruptState.registerInterrupt(interrupt)
         }
+        // Activate before yielding so a consumer that stops at an InterruptEvent can still resume.
+        this._interruptState.activate()
         // Fan out one event per interrupt. Each event exposes `interrupt.source` so
         // consumers can filter by origin (tool callback vs hook callback) without
         // subscribing to separate event types.
@@ -2112,7 +2115,6 @@ export class Agent implements LocalAgent, InvokableAgent {
     invocationState: InvocationState,
     invocationContext: InvocationContextImpl
   ): AgentResult {
-    this._interruptState.activate()
     return new AgentResult({
       invocationContext,
       stopReason: 'interrupt',
