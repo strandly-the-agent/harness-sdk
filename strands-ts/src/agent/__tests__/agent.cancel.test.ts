@@ -83,8 +83,8 @@ describe('Agent Cancellation', () => {
       expect(result.stopReason).toBe('cancelled')
       expect(toolExecuted).toBe(false)
 
-      // Messages: user, assistant(toolUse), user(cancelled toolResult)
-      expect(agent.messages).toHaveLength(3)
+      // Messages: user, assistant(toolUse), user(cancelled toolResult), assistant(fallback)
+      expect(agent.messages).toHaveLength(4)
       const toolResultMsg = agent.messages[2]!
       expect(toolResultMsg.content[0]).toEqual(
         new ToolResultBlock({
@@ -93,6 +93,8 @@ describe('Agent Cancellation', () => {
           content: [new TextBlock('Tool execution cancelled')],
         })
       )
+      expect(agent.messages[3]!.content[0]).toEqual(new TextBlock('Cancelled by user'))
+      expect(result.lastMessage).toBe(agent.messages[3])
     })
 
     it('creates error results for multiple pending tools', async () => {
@@ -158,10 +160,8 @@ describe('Agent Cancellation', () => {
       expect(result.stopReason).toBe('cancelled')
       expect(executedTools).toEqual(['firstTool'])
 
-      // First tool succeeded, second was cancelled. The post-batch cancellation
-      // check ends the loop, so the model's tool-use message is the last message.
-      // messages: user, assistant(toolUse), user(toolResults)
-      expect(agent.messages).toHaveLength(3)
+      // messages: user, assistant(toolUse), user(toolResults), assistant(fallback)
+      expect(agent.messages).toHaveLength(4)
       const toolResultMsg = agent.messages[2]!
       expect(toolResultMsg.content[0]).toEqual(
         new ToolResultBlock({ toolUseId: 't1', status: 'success', content: [new TextBlock('Done')] })
@@ -169,6 +169,8 @@ describe('Agent Cancellation', () => {
       expect(toolResultMsg.content[1]).toEqual(
         new ToolResultBlock({ toolUseId: 't2', status: 'error', content: [new TextBlock('Tool execution cancelled')] })
       )
+      expect(agent.messages[3]!.content[0]).toEqual(new TextBlock('Cancelled by user'))
+      expect(result.lastMessage).toBe(agent.messages[3])
     })
   })
 
@@ -196,9 +198,10 @@ describe('Agent Cancellation', () => {
 
       expect(result.stopReason).toBe('cancelled')
       expect(executedTools).toEqual(['cancelTool'])
-      // messages: user, assistant(toolUse), user(toolResult)
-      expect(agent.messages).toHaveLength(3)
-      expect(result.lastMessage).toBe(agent.messages[1])
+      // messages: user, assistant(toolUse), user(toolResult), assistant(fallback)
+      expect(agent.messages).toHaveLength(4)
+      expect(agent.messages[3]!.content[0]).toEqual(new TextBlock('Cancelled by user'))
+      expect(result.lastMessage).toBe(agent.messages[3])
     })
 
     it('lets sibling tools finish, then stops with the deferred message', async () => {
@@ -242,7 +245,7 @@ describe('Agent Cancellation', () => {
       )
     })
 
-    it('keeps the model message as lastMessage when the deferred cancel carries no message', async () => {
+    it('falls back to a default assistant message when the deferred cancel carries none', async () => {
       let agent: Agent
       const tool = createMockTool('quietStop', () => {
         agent.cancel({ afterCurrentTools: true })
@@ -257,9 +260,11 @@ describe('Agent Cancellation', () => {
       const result = await agent.invoke('Go')
 
       expect(result.stopReason).toBe('cancelled')
-      // messages: user, assistant(toolUse), user(toolResult)
-      expect(agent.messages).toHaveLength(3)
-      expect(result.lastMessage).toBe(agent.messages[1])
+      // messages: user, assistant(toolUse), user(toolResult), assistant(fallback)
+      // History must end on an assistant message so the next invoke doesn't produce two user turns in a row.
+      expect(agent.messages).toHaveLength(4)
+      expect(agent.messages[3]!.content[0]).toEqual(new TextBlock('Cancelled by user'))
+      expect(result.lastMessage).toBe(agent.messages[3])
     })
 
     it('keeps the last message written when two tools defer in the same batch', async () => {

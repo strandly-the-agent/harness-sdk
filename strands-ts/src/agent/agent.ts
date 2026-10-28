@@ -1821,15 +1821,16 @@ export class Agent implements LocalAgent, InvokableAgent {
 
               closeCycle()
 
-              const cancelResultMessage = this.cancelResultMessage
-              if (cancelResultMessage) {
-                yield this._appendMessage(cancelResultMessage, invocationState, invocationContext)
-              }
+              // Always close with an assistant message so history stays reinvokable (no two user turns in a row).
+              const cancelMessage =
+                this.cancelResultMessage ??
+                new Message({ role: 'assistant', content: [new TextBlock('Cancelled by user')] })
+              yield this._appendMessage(cancelMessage, invocationState, invocationContext)
 
               result = new AgentResult({
                 invocationContext,
                 stopReason: 'cancelled',
-                lastMessage: cancelResultMessage ?? modelResult.message,
+                lastMessage: cancelMessage,
                 traces: this._tracer.localTraces,
                 metrics: this._meter.metrics,
                 invocationState,
@@ -1941,15 +1942,16 @@ export class Agent implements LocalAgent, InvokableAgent {
           // instead of calling the model again. Wins over a structured-output stop
           // so the cancel's terminal message is honored.
           if (this._deferredCancel || this.isAborted) {
-            const cancelResultMessage = this.cancelResultMessage
-            if (cancelResultMessage) {
-              yield this._appendMessage(cancelResultMessage, invocationState, invocationContext)
-            }
+            // Always close with an assistant message so history stays reinvokable (no two user turns in a row).
+            const cancelMessage =
+              this.cancelResultMessage ??
+              new Message({ role: 'assistant', content: [new TextBlock('Cancelled by user')] })
+            yield this._appendMessage(cancelMessage, invocationState, invocationContext)
 
             result = new AgentResult({
               invocationContext,
               stopReason: 'cancelled',
-              lastMessage: cancelResultMessage ?? assistantMessage,
+              lastMessage: cancelMessage,
               traces: this._tracer.localTraces,
               structuredOutput,
               metrics: this._meter.metrics,
