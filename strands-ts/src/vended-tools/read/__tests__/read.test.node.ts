@@ -337,6 +337,19 @@ describe.skipIf(process.platform === 'win32')('read tool', () => {
       const out = await read.invoke({ path: filePath }, toolContext())
       expect(out).toBe('     1\thello\n     2\t')
     })
+
+    it('bound sandbox does not require context', async () => {
+      const filePath = join(tmpPath, 'f.txt')
+      writeFileSync(filePath, 'hello\n')
+      const out = await reader.invoke({ path: filePath })
+      expect(out).toBe('     1\thello\n     2\t')
+    })
+
+    it('unbound sandbox requires context', async () => {
+      const filePath = join(tmpPath, 'f.txt')
+      writeFileSync(filePath, 'hello\n')
+      await expect(read.invoke({ path: filePath })).rejects.toThrow('Tool context is required for read operations')
+    })
   })
 })
 

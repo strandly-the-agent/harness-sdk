@@ -129,7 +129,6 @@ export function makeRead(sandboxOrOptions?: Sandbox | MakeReadOptions, maybeOpti
     description: options.description ?? DEFAULT_READ_DESCRIPTION + (media ? MEDIA_DESCRIPTION_SUFFIX : ''),
     inputSchema: readInputSchema,
     callback: async (input, context): Promise<string | ImageBlock | DocumentBlock> => {
-      if (!context) throw new Error('Tool context is required for read operations')
       validateAbsolutePath(input.path)
       if (input.offset !== undefined && input.offset < 1) {
         throw new Error(`offset must be a positive 1-indexed line number, got ${input.offset}.`)
@@ -137,7 +136,8 @@ export function makeRead(sandboxOrOptions?: Sandbox | MakeReadOptions, maybeOpti
       if (input.limit !== undefined && input.limit < 1) {
         throw new Error(`limit must be a positive line count, got ${input.limit}.`)
       }
-      const sandbox = boundSandbox ?? context.agent.sandbox
+      if (!boundSandbox && !context) throw new Error('Tool context is required for read operations')
+      const sandbox = boundSandbox ?? context!.agent.sandbox
       const ext = extension(input.path)
 
       if (IMAGE_EXTENSIONS.includes(ext)) {
