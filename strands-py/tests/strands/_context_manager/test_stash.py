@@ -241,12 +241,12 @@ class TestIsOffloadMarker:
         [
             "[Truncated: 1 block, ~7,500 tokens]\n\nhead\n\n[... 100 chars elided ...]\n\n[Stashed] [ref: tu-1_0]",
             "[Dropped] [refs: tu-1_0, tu-1_1]",
-            "[Offloaded: ~500 tokens] [ref: track-1_2]",
-            "[Summarized: ~900 tokens]\n\nsummary [ref: tooluse_abc_0]\n",
+            "[Offloaded: ~500 tokens] [ref: tu-1_0]",
+            "[Summarized: ~900 tokens]\n\nsummary [ref: tu-1_0]\n",
         ],
     )
-    def test_matches_offload_replacements(self, text):
-        assert _is_offload_marker(text)
+    def test_matches_offload_replacements_for_their_own_ref(self, text):
+        assert _is_offload_marker(text, ["tu-1_0"])
 
     @pytest.mark.parametrize(
         "text",
@@ -254,11 +254,16 @@ class TestIsOffloadMarker:
             "plain result",
             "see [ref: RFC-2119] for details",
             "[ref: tu-1_0] appears at the start, not the end",
+            "an original that happens to cite another entry [ref: tu-9_0]",
             "",
         ],
     )
     def test_ignores_originals(self, text):
-        assert not _is_offload_marker(text)
+        assert not _is_offload_marker(text, ["tu-1_0"])
+
+    def test_bounded_on_large_bracket_heavy_text(self):
+        text = "[" * 200_000 + " [ref: tu-1_0]"
+        assert _is_offload_marker(text, ["tu-1_0"])
 
 
 class TestStoreMessageSkipsOffloadMarkers:
@@ -282,6 +287,14 @@ class TestStoreMessageSkipsOffloadMarkers:
         assert await stash.retrieve("tu-1_0") is None
         assert await stash.retrieve("track-1_1") is None
         assert await stash.retrieve("track-1_2") == {"text": "an ordinary block"}
+
+    @pytest.mark.asyncio
+    async def test_keep_existing_stores_originals_that_cite_other_refs(self, stash):
+        block = ContentBlock(
+            toolResult=ToolResult(toolUseId="tu-2", status="success", content=[{"text": "cites [ref: tu-1_0]"}])
+        )
+        await stash.store_message(Message(role="user", content=[block]), keep_existing=True)
+        assert await stash.retrieve("tu-2_0") == {"text": "cites [ref: tu-1_0]"}
 
     @pytest.mark.asyncio
     async def test_live_path_still_stores_marker_lookalikes(self, stash):

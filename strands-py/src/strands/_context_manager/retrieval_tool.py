@@ -74,7 +74,7 @@ def _create_retrieval_tool(stash: Stash, max_result_tokens: int | None = None) -
             return ToolResult(toolUseId=tool_use_id, status="error", content=[ToolResultContent(text=text)])
 
         stashed_text = _extract_text(result)
-        if stashed_text is not None and _is_offload_marker(stashed_text):
+        if stashed_text is not None and _is_offload_marker(stashed_text, [reference]):
             text = (
                 f"Error: original content for {reference} is no longer available; only its offloaded preview remains."
             )

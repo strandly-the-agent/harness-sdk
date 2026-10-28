@@ -83,6 +83,13 @@ class TestRetrievalTool:
             assert "no longer available" in result["content"][0]["text"]
 
     @pytest.mark.asyncio
+    async def test_serves_an_original_that_cites_another_reference(self, stash):
+        ref = await _store_text(stash, "see the earlier output [ref: tool-9_0]")
+        tool = _create_retrieval_tool(stash)
+        result = await tool._tool_func({"toolUseId": "t1", "input": {"reference": ref}})
+        assert result["status"] == "success"
+
+    @pytest.mark.asyncio
     async def test_retrieves_json_content(self, stash):
         data = json.dumps({"json": {"key": "value"}}).encode("utf-8")
         ref = await stash.store("tool-1", 0, data)

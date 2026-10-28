@@ -10,6 +10,7 @@ import base64
 import json
 import logging
 import re
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 from ..storage.storage import _NAMESPACED, _NamespacedStorage
@@ -55,19 +56,22 @@ def _format_stash_refs(refs: list[str]) -> str:
     return f" [refs: {', '.join(refs)}]"
 
 
-_STASH_REFS_SUFFIX = re.compile(r"\[refs?: [^\]]*_\d+\]$")
+_STASH_REFS_SUFFIX = re.compile(r"\[refs?: ([^\[\]]*)\]$")
 
 
-def _is_offload_marker(text: str) -> bool:
-    """True when ``text`` is an offload replacement (preview, summary, drop marker) ending in a stash ref token."""
-    return _STASH_REFS_SUFFIX.search(text.rstrip()) is not None
+def _is_offload_marker(text: str, references: Iterable[str]) -> bool:
+    """True when ``text`` is an offload replacement (preview, summary, drop marker) for one of ``references``."""
+    match = _STASH_REFS_SUFFIX.search(text.rstrip())
+    return match is not None and not set(match.group(1).split(", ")).isdisjoint(references)
 
 
-def _block_is_offload_marker(block: ContentBlock) -> bool:
-    """True when a block carries a stash ref token, i.e. it stands in for an original rather than being one."""
+def _block_is_offload_marker(block: ContentBlock, references: list[str]) -> bool:
+    """True when a block stands in for one of ``references`` rather than being the original stored there."""
     if "toolResult" in block:
-        return any(_is_offload_marker(item["text"]) for item in block["toolResult"]["content"] if "text" in item)
-    return "text" in block and _is_offload_marker(block["text"])
+        texts = [item["text"] for item in block["toolResult"]["content"] if "text" in item]
+    else:
+        texts = [block["text"]] if "text" in block else []
+    return any(_is_offload_marker(text, references) for text in texts)
 
 
 def _resolve_stash_namespace(
@@ -124,11 +128,11 @@ class Stash:
         """Eagerly persist all stashable blocks from a message.
 
         With ``keep_existing`` (backfill of restored history), entries already stored under a block's key are
-        left untouched, and blocks that are themselves offload markers are skipped: they stand in for an
-        original and must not be stored under its key.
+        left untouched, and a block that is itself the offload marker for its own key is skipped: it stands in
+        for the original and must not be stored in its place.
         """
         for block_index, block in enumerate(message["content"]):
-            if keep_existing and _block_is_offload_marker(block):
+            if keep_existing and _block_is_offload_marker(block, self.refs_for(block, message, block_index)):
                 continue
             if "toolResult" in block:
                 tool_result = block["toolResult"]
