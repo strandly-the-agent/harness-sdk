@@ -414,6 +414,32 @@ class TestStashBackfill:
         assert await cm.stash.retrieve("seed_0") == {"text": "seed message"}
 
     @pytest.mark.asyncio
+    async def test_backfill_does_not_stash_previews_when_original_is_gone(self, mock_agent):
+        """Restored onto an empty stash, a truncated preview must not be stored under its original's key."""
+        mock_agent.session_id = "test-session"
+        mock_agent.storage = None
+        preview = "[Truncated: 1 block, ~7,500 tokens]\n\nrow-1\nrow-2\n\n[Stashed] [ref: pre-tu-1_0]"
+        mock_agent.messages = [
+            Message(role="user", content=[ContentBlock(text="seed message")], tracking_id="seed"),
+            Message(
+                role="user",
+                content=[
+                    ContentBlock(
+                        toolResult=ToolResult(toolUseId="pre-tu-1", status="success", content=[{"text": preview}])
+                    )
+                ],
+            ),
+        ]
+        cm = ContextManager(strategies=[], stash=True)
+        cm.init_agent(mock_agent)
+
+        event = BeforeModelCallEvent(agent=mock_agent, projected_input_tokens=100)
+        await mock_agent.hooks.invoke_callbacks_async(event)
+
+        assert await cm.stash.retrieve("pre-tu-1_0") is None
+        assert await cm.stash.retrieve("seed_0") == {"text": "seed message"}
+
+    @pytest.mark.asyncio
     async def test_backfill_runs_only_once(self):
         agent = unittest.mock.MagicMock()
         agent.agent_id = "test-agent"

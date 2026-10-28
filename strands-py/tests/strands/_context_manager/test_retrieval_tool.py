@@ -73,6 +73,16 @@ class TestRetrievalTool:
         assert "not found" in result["content"][0]["text"]
 
     @pytest.mark.asyncio
+    async def test_refuses_to_serve_a_stashed_preview_as_the_original(self, stash):
+        """A stash polluted with an offload preview (pre-fix backfill) must not pass it off as the original."""
+        ref = await _store_text(stash, "[Truncated: 1 block, ~7,500 tokens]\n\nrow-1\n\n[Stashed] [ref: tool-1_0]")
+        tool = _create_retrieval_tool(stash)
+        for inputs in ({"reference": ref}, {"reference": ref, "pattern": "row-4321"}):
+            result = await tool._tool_func({"toolUseId": "t1", "input": inputs})
+            assert result["status"] == "error"
+            assert "no longer available" in result["content"][0]["text"]
+
+    @pytest.mark.asyncio
     async def test_retrieves_json_content(self, stash):
         data = json.dumps({"json": {"key": "value"}}).encode("utf-8")
         ref = await stash.store("tool-1", 0, data)

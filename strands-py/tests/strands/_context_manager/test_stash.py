@@ -5,7 +5,7 @@ import unittest.mock
 
 import pytest
 
-from strands._context_manager.stash import Stash, _BytesEncoder, _format_stash_refs
+from strands._context_manager.stash import Stash, _BytesEncoder, _format_stash_refs, _is_offload_marker
 from strands.storage.in_memory_storage import InMemoryStorage
 from strands.types.content import ContentBlock, Message
 from strands.types.tools import ToolResult
@@ -231,6 +231,63 @@ class TestFormatStashRefs:
     def test_multiple_refs(self):
         result = _format_stash_refs(["tu-1_0", "tu-1_1"])
         assert result == " [refs: tu-1_0, tu-1_1]"
+
+
+class TestIsOffloadMarker:
+    """Tests for the _is_offload_marker helper."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[Truncated: 1 block, ~7,500 tokens]\n\nhead\n\n[... 100 chars elided ...]\n\n[Stashed] [ref: tu-1_0]",
+            "[Dropped] [refs: tu-1_0, tu-1_1]",
+            "[Offloaded: ~500 tokens] [ref: track-1_2]",
+            "[Summarized: ~900 tokens]\n\nsummary [ref: tooluse_abc_0]\n",
+        ],
+    )
+    def test_matches_offload_replacements(self, text):
+        assert _is_offload_marker(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "plain result",
+            "see [ref: RFC-2119] for details",
+            "[ref: tu-1_0] appears at the start, not the end",
+            "",
+        ],
+    )
+    def test_ignores_originals(self, text):
+        assert not _is_offload_marker(text)
+
+
+class TestStoreMessageSkipsOffloadMarkers:
+    """Backfill must never write a preview under the key of the original it replaced."""
+
+    def _preview_message(self):
+        preview = "[Truncated: 1 block, ~7,500 tokens]\n\nhead\n\n[Stashed] [ref: tu-1_0]"
+        return Message(
+            role="user",
+            content=[
+                ContentBlock(toolResult=ToolResult(toolUseId="tu-1", status="success", content=[{"text": preview}])),
+                ContentBlock(text="[Dropped] [ref: track-1_1]"),
+                ContentBlock(text="an ordinary block"),
+            ],
+            tracking_id="track-1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_keep_existing_skips_marker_blocks_on_empty_stash(self, stash):
+        await stash.store_message(self._preview_message(), keep_existing=True)
+        assert await stash.retrieve("tu-1_0") is None
+        assert await stash.retrieve("track-1_1") is None
+        assert await stash.retrieve("track-1_2") == {"text": "an ordinary block"}
+
+    @pytest.mark.asyncio
+    async def test_live_path_still_stores_marker_lookalikes(self, stash):
+        await stash.store_message(self._preview_message())
+        assert await stash.retrieve("tu-1_0") is not None
+        assert await stash.retrieve("track-1_1") == {"text": "[Dropped] [ref: track-1_1]"}
 
 
 class TestBytesEncoder:

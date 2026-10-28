@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from ..storage.storage import _NAMESPACED, _NamespacedStorage
@@ -52,6 +53,21 @@ def _format_stash_refs(refs: list[str]) -> str:
     if len(refs) == 1:
         return f" [ref: {refs[0]}]"
     return f" [refs: {', '.join(refs)}]"
+
+
+_STASH_REFS_SUFFIX = re.compile(r"\[refs?: [^\]]*_\d+\]$")
+
+
+def _is_offload_marker(text: str) -> bool:
+    """True when ``text`` is an offload replacement (preview, summary, drop marker) ending in a stash ref token."""
+    return _STASH_REFS_SUFFIX.search(text.rstrip()) is not None
+
+
+def _block_is_offload_marker(block: ContentBlock) -> bool:
+    """True when a block carries a stash ref token, i.e. it stands in for an original rather than being one."""
+    if "toolResult" in block:
+        return any(_is_offload_marker(item["text"]) for item in block["toolResult"]["content"] if "text" in item)
+    return "text" in block and _is_offload_marker(block["text"])
 
 
 def _resolve_stash_namespace(
@@ -107,9 +123,13 @@ class Stash:
     ) -> None:
         """Eagerly persist all stashable blocks from a message.
 
-        With ``keep_existing``, entries already stored under a block's key are left untouched.
+        With ``keep_existing`` (backfill of restored history), entries already stored under a block's key are
+        left untouched, and blocks that are themselves offload markers are skipped: they stand in for an
+        original and must not be stored under its key.
         """
         for block_index, block in enumerate(message["content"]):
+            if keep_existing and _block_is_offload_marker(block):
+                continue
             if "toolResult" in block:
                 tool_result = block["toolResult"]
                 if skip_tool_use_ids and tool_result["toolUseId"] in skip_tool_use_ids:
