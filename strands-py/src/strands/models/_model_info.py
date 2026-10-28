@@ -73,6 +73,22 @@ class ModelInfo:
     capabilities: ModelCapabilities = ModelCapabilities()
     limits: ModelLimits = ModelLimits()
 
+    @classmethod
+    def merge(cls, *parts: "ModelInfo | None") -> "ModelInfo":
+        """Merge partial records, later defined fields winning. None and missing fields inherit.
+
+        Args:
+            *parts: Partial records, in order of increasing precedence. None entries are skipped.
+
+        Returns:
+            A new record whose unknown fields are None.
+        """
+        known = [part for part in parts if part]
+        return cls(
+            capabilities=_merge_section([part.capabilities for part in known], ModelCapabilities()),
+            limits=_merge_section([part.limits for part in known], ModelLimits()),
+        )
+
 
 _SectionT = TypeVar("_SectionT", ModelCapabilities, ModelLimits)
 
@@ -87,21 +103,6 @@ def _merge_section(parts: list[_SectionT], empty: _SectionT) -> _SectionT:
         if known:
             merged = replace(merged, **known)
     return merged
-
-
-def merge_model_info(*parts: ModelInfo | None) -> ModelInfo:
-    """Merge partial records, later defined fields winning. None and missing fields inherit.
-
-    Args:
-        *parts: Partial records, in order of increasing precedence.
-
-    Returns:
-        A new record whose unknown fields are None.
-    """
-    return ModelInfo(
-        capabilities=_merge_section([part.capabilities for part in parts if part], ModelCapabilities()),
-        limits=_merge_section([part.limits for part in parts if part], ModelLimits()),
-    )
 
 
 _CAPABILITY_FIELDS = {
@@ -197,7 +198,7 @@ def lookup_model_info(model_id: str) -> ModelInfo:
     Returns:
         What the data knows about the model; empty when it knows nothing.
     """
-    return merge_model_info(lookup_model(model_id))
+    return ModelInfo.merge(lookup_model(model_id))
 
 
 def get_context_window_limit(model_id: str) -> int | None:

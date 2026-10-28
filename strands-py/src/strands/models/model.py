@@ -18,7 +18,7 @@ from ..types.content import ContentBlock, Messages, SystemContentBlock
 from ..types.streaming import StreamEvent
 from ..types.tools import ToolChoice, ToolSpec
 from ._defaults import DEFAULT_CONTEXT_WINDOW_LIMIT
-from ._model_info import ModelInfo, ModelLimits, lookup_model_info, merge_model_info
+from ._model_info import ModelInfo, ModelLimits, lookup_model_info
 
 if TYPE_CHECKING:
     from ..agent.agent import Agent
@@ -230,9 +230,9 @@ class Model(abc.ABC):
         facts over ``super().model_info``, then the user's ``self.get_config().get("model_info")``
         over those so the override still wins::
 
-            from strands.models import ModelCapabilities, ModelInfo, merge_model_info
+            from strands.models import ModelCapabilities, ModelInfo
 
-            merge_model_info(
+            ModelInfo.merge(
                 super().model_info,
                 ModelInfo(capabilities=ModelCapabilities(prompt_caching="auto")),
                 self.get_config().get("model_info"),
@@ -253,7 +253,7 @@ class Model(abc.ABC):
             context_window_limit = getattr(config, "context_window_limit", None)
             override = getattr(config, "model_info", None)
 
-        return merge_model_info(
+        return ModelInfo.merge(
             lookup_model_info(model_id),
             ModelInfo(limits=ModelLimits(context_window=context_window_limit)),
             override,

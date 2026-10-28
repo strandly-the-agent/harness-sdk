@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from strands.hooks.events import AfterInvocationEvent
 from strands.models import CacheConfig, ModelCapabilities, ModelInfo, ModelLimits
 from strands.models import Model as SAModel
-from strands.models._model_info import merge_model_info
 from strands.models.model import _ModelPlugin
 
 
@@ -253,7 +252,7 @@ class TestModelInfo:
         class GatewayModel(ConfigurableModel):
             @property
             def model_info(self):
-                return merge_model_info(
+                return ModelInfo.merge(
                     super().model_info,
                     ModelInfo(capabilities=ModelCapabilities(prompt_caching="unsupported")),
                     self.get_config().get("model_info"),
@@ -294,7 +293,7 @@ class TestModelInfo:
         class StatefulModel(ConfigurableModel):
             @property
             def model_info(self):
-                return merge_model_info(
+                return ModelInfo.merge(
                     super().model_info,
                     ModelInfo(capabilities=ModelCapabilities(stateful=True)),
                     self.get_config().get("model_info"),

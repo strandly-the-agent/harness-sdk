@@ -19,7 +19,6 @@ from strands.models._model_info import (
     get_context_window_limit,
     lookup_model,
     lookup_model_info,
-    merge_model_info,
 )
 
 BASE = ModelInfo(
@@ -35,12 +34,12 @@ _LIMIT_KEYS = ("contextWindow", "maxOutputTokens")
 _BOOLEAN_CAPABILITY_KEYS = ("stateful", "forcedToolChoice", "nativeStructuredOutput")
 
 
-def test_merge_model_info_returns_the_base_when_nothing_else_is_given():
-    assert merge_model_info(BASE) == BASE
+def test_model_info_merge_returns_the_base_when_nothing_else_is_given():
+    assert ModelInfo.merge(BASE) == BASE
 
 
-def test_merge_model_info_inherits_fields_a_later_record_leaves_out_or_sets_to_none():
-    tru_merged = merge_model_info(
+def test_model_info_merge_inherits_fields_a_later_record_leaves_out_or_sets_to_none():
+    tru_merged = ModelInfo.merge(
         BASE,
         ModelInfo(limits=ModelLimits(context_window=1_000_000)),
         ModelInfo(capabilities=ModelCapabilities(stateful=None)),
@@ -50,8 +49,8 @@ def test_merge_model_info_inherits_fields_a_later_record_leaves_out_or_sets_to_n
     assert tru_merged.limits.context_window == 1_000_000
 
 
-def test_merge_model_info_lets_a_later_record_win_over_an_earlier_one():
-    tru_merged = merge_model_info(
+def test_model_info_merge_lets_a_later_record_win_over_an_earlier_one():
+    tru_merged = ModelInfo.merge(
         BASE,
         ModelInfo(limits=ModelLimits(context_window=1)),
         None,
@@ -65,16 +64,16 @@ def test_merge_model_info_lets_a_later_record_win_over_an_earlier_one():
     assert tru_merged.limits.context_window == 2
 
 
-def test_merge_model_info_returns_empty_sections_when_nothing_is_known():
-    tru_merged = merge_model_info(ModelInfo(), None, ModelInfo(limits=ModelLimits(context_window=None)))
+def test_model_info_merge_returns_empty_sections_when_nothing_is_known():
+    tru_merged = ModelInfo.merge(ModelInfo(), None, ModelInfo(limits=ModelLimits(context_window=None)))
 
     assert tru_merged == ModelInfo()
     assert tru_merged.capabilities == ModelCapabilities()
     assert tru_merged.limits == ModelLimits()
 
 
-def test_merge_model_info_returns_a_frozen_record():
-    tru_merged = merge_model_info(BASE)
+def test_model_info_merge_returns_a_frozen_record():
+    tru_merged = ModelInfo.merge(BASE)
 
     for frozen in (tru_merged, tru_merged.capabilities, tru_merged.limits):
         with pytest.raises(AttributeError):

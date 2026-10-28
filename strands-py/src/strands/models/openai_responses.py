@@ -62,7 +62,7 @@ from ..types.exceptions import ContextWindowOverflowException, ModelThrottledExc
 from ..types.streaming import StreamEvent  # noqa: E402
 from ..types.tools import ToolChoice, ToolResult, ToolSpec, ToolUse  # noqa: E402
 from ._defaults import resolve_config_metadata  # noqa: E402
-from ._model_info import ModelCapabilities, ModelInfo, merge_model_info  # noqa: E402
+from ._model_info import ModelCapabilities, ModelInfo  # noqa: E402
 from ._openai_bedrock import BedrockMantleConfig, resolve_bedrock_client_args  # noqa: E402
 from ._openai_cache import apply_cache_config  # noqa: E402
 from ._openai_errors import classify_openai_error  # noqa: E402
@@ -219,7 +219,7 @@ class OpenAIResponsesModel(Model):
 
         Taken from the ``stateful`` configuration option, which a ``model_info`` override still wins over.
         """
-        return merge_model_info(
+        return ModelInfo.merge(
             super().model_info,
             ModelInfo(capabilities=ModelCapabilities(stateful=bool(self.config.get("stateful")))),
             cast(ModelInfo | None, self.config.get("model_info")),
