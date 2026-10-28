@@ -265,6 +265,8 @@ export interface BedrockModelConfig extends BaseModelConfig {
   /**
    * Maximum number of tokens to generate in the response.
    *
+   * @defaultValue the model's `maxOutputTokens` from the model info when known; otherwise `maxTokens` is not
+   * sent and Bedrock's per-model default applies.
    * @see https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_InferenceConfiguration.html
    */
   maxTokens?: number
@@ -981,7 +983,8 @@ export class BedrockModel extends Model<BedrockModelConfig> {
 
     // Add inference configuration
     const inferenceConfig: InferenceConfiguration = {}
-    if (this._config.maxTokens !== undefined) inferenceConfig.maxTokens = this._config.maxTokens
+    const maxTokens = this._config.maxTokens ?? this.modelInfo.limits?.maxOutputTokens
+    if (maxTokens !== undefined) inferenceConfig.maxTokens = maxTokens
     if (this._config.temperature !== undefined) inferenceConfig.temperature = this._config.temperature
     if (this._config.topP !== undefined) inferenceConfig.topP = this._config.topP
     if (this._config.stopSequences !== undefined) inferenceConfig.stopSequences = this._config.stopSequences

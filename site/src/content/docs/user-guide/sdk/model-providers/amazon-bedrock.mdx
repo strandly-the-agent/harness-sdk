@@ -278,7 +278,7 @@ Common configuration parameters include:
 
 - `modelId` - The Bedrock model identifier
 - `temperature` - Controls randomness (higher = more random)
-- `maxTokens` - Maximum number of tokens to generate
+- `maxTokens` - Maximum number of tokens to generate; defaults to the model's known output limit
 - `stream` - Enable/disable streaming mode
 - `cacheConfig` - Enable prompt caching with `{ strategy: 'auto' }`, or `{ messagesTTL: false }` to cache the tool definitions and system prompt only
 - `region` - AWS region to use
