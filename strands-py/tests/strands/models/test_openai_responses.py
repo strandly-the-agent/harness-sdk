@@ -1843,9 +1843,7 @@ def test_stateful_model_info_override_wins_over_the_config_option(model_id, stat
 
 
 @pytest.mark.asyncio
-async def test_stream_resolves_stateful_once_per_stream_not_once_per_event(
-    openai_client, model_id, agenerator, alist
-):
+async def test_stream_resolves_stateful_once_per_stream_not_once_per_event(openai_client, model_id, agenerator, alist):
     """Resolving the record walks the config, so the stream must not re-read it per event."""
     model = OpenAIResponsesModel(model_id=model_id, stateful=True)
     mock_events = [

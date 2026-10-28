@@ -222,7 +222,7 @@ class OpenAIResponsesModel(Model):
         return merge_model_info(
             super().model_info,
             ModelInfo(capabilities=ModelCapabilities(stateful=bool(self.config.get("stateful")))),
-            self.config.get("model_info"),
+            cast(ModelInfo | None, self.config.get("model_info")),
         )
 
     @override

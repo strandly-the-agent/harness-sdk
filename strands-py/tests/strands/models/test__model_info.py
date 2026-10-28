@@ -78,9 +78,7 @@ def test_lookup_model_resolves_every_spelling_of_a_model_to_its_one_entry():
     assert exp_entry.limits.context_window == 1_000_000
     assert lookup_model("anthropic.claude-opus-5-5") is exp_entry
     assert lookup_model("us.anthropic.claude-opus-5-5") is exp_entry
-    assert (
-        lookup_model("arn:aws:bedrock:us-west-2:123:inference-profile/global.anthropic.claude-opus-5-5") is exp_entry
-    )
+    assert lookup_model("arn:aws:bedrock:us-west-2:123:inference-profile/global.anthropic.claude-opus-5-5") is exp_entry
 
 
 def test_lookup_model_resolves_a_dated_snapshot_to_the_undated_model():

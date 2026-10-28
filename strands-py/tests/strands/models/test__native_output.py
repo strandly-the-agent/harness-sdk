@@ -91,9 +91,7 @@ def test_structured_output_mechanisms(unsupported, tool_choice, exp_mechanisms):
     ],
 )
 def test_structured_output_mechanisms_skips_what_the_model_info_says_is_unsupported(capabilities, exp_mechanisms):
-    tru_mechanisms = structured_output_mechanisms(
-        set(), FORCED, Person, ModelInfo(capabilities=capabilities)
-    )
+    tru_mechanisms = structured_output_mechanisms(set(), FORCED, Person, ModelInfo(capabilities=capabilities))
 
     assert tru_mechanisms == exp_mechanisms
 
