@@ -15,7 +15,7 @@ from dataclasses import dataclass, fields, replace
 from importlib import resources
 from typing import Any, Literal, TypeAlias, TypeVar
 
-PromptCaching: TypeAlias = Literal["unsupported", "auto", "cachePoints"]
+PromptCaching: TypeAlias = Literal["unsupported", "auto", "cache_points"]
 """How a model supports prompt caching."""
 
 
@@ -115,6 +115,8 @@ _CAPABILITY_FIELDS = {
     "nativeStructuredOutput": "native_structured_output",
 }
 _LIMIT_FIELDS = {"contextWindow": "context_window", "maxOutputTokens": "max_output_tokens"}
+# Shared-data values are camelCase; the Python literals are snake_case.
+_PROMPT_CACHING_VALUES = {"unsupported": "unsupported", "auto": "auto", "cachePoints": "cache_points"}
 
 # Bedrock appends a version to some ids (`claude-3-5-haiku-20241022-v1:0`); the base id carries the facts.
 _VERSION_SUFFIX = re.compile(r"-(?:v\d+(?::\d+)?|\d+:\d+)$")
@@ -129,6 +131,8 @@ def _section(entry: dict[str, Any], name: str, field_names: dict[str, str], sect
     carry a fact this version has no field for yet. ``test__model_info.py`` validates the file strictly instead.
     """
     known = {field_names[key]: value for key, value in entry.get(name, {}).items() if key in field_names}
+    if "prompt_caching" in known:
+        known["prompt_caching"] = _PROMPT_CACHING_VALUES[known["prompt_caching"]]
     return section(**known)
 
 

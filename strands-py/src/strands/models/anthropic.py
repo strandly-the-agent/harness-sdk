@@ -455,7 +455,7 @@ class AnthropicModel(Model):
         """
         cache_config = self.config.get("cache_config")
         if cache_config is None or cache_config.tools_ttl is None:
-            return self._resolve_deprecated_cache_tools()
+            return None if self._auto_caching_unsupported() else self._resolve_deprecated_cache_tools()
 
         if cache_config.tools_ttl is False or cache_config.strategy not in ("auto", "anthropic"):
             return None

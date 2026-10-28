@@ -245,16 +245,16 @@ class Model(abc.ABC):
         """
         config = self.get_config()
         if isinstance(config, dict):
-            model_id = config.get("model_id") or ""
+            model_id = config.get("model_id")
             context_window_limit = config.get("context_window_limit")
             override = config.get("model_info")
         else:
-            model_id = getattr(config, "model_id", None) or ""
+            model_id = getattr(config, "model_id", None)
             context_window_limit = getattr(config, "context_window_limit", None)
             override = getattr(config, "model_info", None)
 
         return ModelInfo.merge(
-            lookup_model_info(model_id),
+            lookup_model_info(model_id if isinstance(model_id, str) else ""),
             ModelInfo(limits=ModelLimits(context_window=context_window_limit)),
             override,
         )

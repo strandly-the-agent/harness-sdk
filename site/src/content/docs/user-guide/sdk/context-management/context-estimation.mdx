@@ -22,7 +22,7 @@ The threshold check requires the model's context window size. The SDK auto-popul
 <Tabs>
 <Tab label="Python">
 
-Override it manually for models not in the [lookup table](https://github.com/strands-agents/harness-sdk/blob/main/strands-py/src/strands/models/_defaults.py):
+Override it manually for models not in the [shared model info](https://github.com/strands-agents/harness-sdk/blob/main/shared/model-info.json):
 
 ```python
 model = BedrockModel(
@@ -33,7 +33,7 @@ model = BedrockModel(
 </Tab>
 <Tab label="TypeScript">
 
-Override it manually for models not in the [lookup table](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/models/defaults.ts):
+Override it manually for models not in the [shared model info](https://github.com/strands-agents/harness-sdk/blob/main/strands-ts/src/models/defaults.ts):
 
 ```typescript
 --8<-- "user-guide/sdk/context-management/context-estimation_imports.ts:context_window_limit_imports"

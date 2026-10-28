@@ -246,7 +246,13 @@ class TestModelInfo:
         provider.update_config(model_id="us.anthropic.claude-sonnet-4-6")
 
         assert provider.model_info.limits.context_window == 1_000_000
-        assert provider.model_info.capabilities.prompt_caching == "cachePoints"
+        assert provider.model_info.capabilities.prompt_caching == "cache_points"
+
+    def test_treats_a_non_string_model_id_as_unknown(self, provider):
+        provider.update_config(model_id=1234)
+
+        assert provider.model_info == ModelInfo()
+        assert provider.stateful is False
 
     def test_lets_a_provider_put_its_facts_over_the_shared_model_info_with_the_user_override_over_both(self):
         class GatewayModel(ConfigurableModel):
@@ -261,13 +267,13 @@ class TestModelInfo:
         provider = GatewayModel()
         provider.update_config(model_id="claude-sonnet-4-6", context_window_limit=8_000)
 
-        # The shared model info says cachePoints for this id.
+        # The shared model info says cache_points for this id.
         assert provider.model_info.capabilities.prompt_caching == "unsupported"
         assert provider.model_info.limits.context_window == 8_000
 
-        provider.update_config(model_info=ModelInfo(capabilities=ModelCapabilities(prompt_caching="cachePoints")))
+        provider.update_config(model_info=ModelInfo(capabilities=ModelCapabilities(prompt_caching="cache_points")))
 
-        assert provider.model_info.capabilities.prompt_caching == "cachePoints"
+        assert provider.model_info.capabilities.prompt_caching == "cache_points"
 
     def test_lets_the_override_set_stateful_and_the_stateful_property_reads_it(self, provider):
         assert provider.stateful is False

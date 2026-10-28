@@ -22,11 +22,11 @@ _C = TypeVar("_C", bound=Mapping[str, object])
 def resolve_config_metadata(config: _C, model_id: str) -> _C:
     """Fill ``context_window_limit`` on a config dict when it is not explicitly set.
 
-    Kept so ``get_config()["context_window_limit"]`` keeps its documented value. The filled value is
-    resolved through every layer below the user's (the shared model info, then the ``model_info``
-    override), so :attr:`strands.models.Model.model_info` can take it at face value. Returns a new
-    dict only when there is something to fill; otherwise returns the original config to avoid
-    unnecessary allocation.
+    ``get_config()["context_window_limit"]`` carries the resolved limit for callers that read the
+    config. The filled value is resolved through every layer below the user's (the shared model info,
+    then the ``model_info`` override), so :attr:`strands.models.Model.model_info` can take it at face
+    value. Returns a new dict only when there is something to fill; otherwise returns the original
+    config to avoid unnecessary allocation.
 
     Args:
         config: The stored model config dict.

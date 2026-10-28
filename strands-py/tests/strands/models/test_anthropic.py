@@ -1720,7 +1720,7 @@ def test_model_info_reads_cache_points_from_the_shared_model_info(anthropic_clie
 
     model = AnthropicModel(model_id="claude-sonnet-4-6", max_tokens=1)
 
-    assert model.model_info.capabilities.prompt_caching == "cachePoints"
+    assert model.model_info.capabilities.prompt_caching == "cache_points"
 
 
 def test_model_info_exposes_the_output_ceiling_from_the_shared_model_info(anthropic_client):
@@ -2327,6 +2327,22 @@ class TestPromptCaching:
         with pytest.warns(UserWarning, match="does not support prompt caching"):
             request = model.format_request(messages, tool_specs)
 
+        assert self._breakpoints(request) == []
+
+    def test_auto_is_off_for_the_deprecated_cache_tools_when_the_override_says_caching_is_unsupported(
+        self, model, messages, tool_specs
+    ):
+        with pytest.warns(DeprecationWarning):
+            model.update_config(
+                cache_tools="default",
+                cache_config=CacheConfig(strategy="auto"),
+                model_info=ModelInfo(capabilities=ModelCapabilities(prompt_caching="unsupported")),
+            )
+
+        with pytest.warns(UserWarning, match="does not support prompt caching"):
+            request = model.format_request(messages, tool_specs)
+
+        assert "cache_control" not in request["tools"][-1]
         assert self._breakpoints(request) == []
 
     def test_caches_regardless_of_the_override_when_the_anthropic_strategy_is_explicit(

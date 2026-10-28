@@ -22,7 +22,7 @@ from strands.models._model_info import (
 )
 
 BASE = ModelInfo(
-    capabilities=ModelCapabilities(stateful=False, prompt_caching="cachePoints"),
+    capabilities=ModelCapabilities(stateful=False, prompt_caching="cache_points"),
     limits=ModelLimits(context_window=200_000),
 )
 
@@ -118,11 +118,11 @@ def test_lookup_model_returns_none_for_unknown_ids():
 
 def test_lookup_model_info_returns_the_entry_facts_and_nothing_for_unknown_ids():
     assert lookup_model_info("eu.anthropic.claude-sonnet-4-6") == ModelInfo(
-        capabilities=ModelCapabilities(prompt_caching="cachePoints"),
+        capabilities=ModelCapabilities(prompt_caching="cache_points"),
         limits=ModelLimits(context_window=1_000_000, max_output_tokens=128_000),
     )
     assert lookup_model_info("anthropic.claude-opus-5-5").capabilities == ModelCapabilities(
-        prompt_caching="cachePoints", forced_tool_choice=False, native_structured_output=True
+        prompt_caching="cache_points", forced_tool_choice=False, native_structured_output=True
     )
     assert lookup_model_info("amazon.nova-pro-v1:0") == ModelInfo(
         capabilities=ModelCapabilities(forced_tool_choice=True, native_structured_output=False),
@@ -132,7 +132,7 @@ def test_lookup_model_info_returns_the_entry_facts_and_nothing_for_unknown_ids()
     assert lookup_model_info("") == ModelInfo()
 
 
-def test_get_context_window_limit_keeps_working_for_ids_the_table_already_knew():
+def test_get_context_window_limit_returns_the_window_from_the_shared_data():
     assert get_context_window_limit("mistral-large-latest") == 262_144
     assert get_context_window_limit("o3") == 200_000
 
@@ -149,7 +149,7 @@ def test_loader_ignores_facts_this_version_has_no_field_for():
     }
 
     assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) == ModelCapabilities(
-        prompt_caching="cachePoints"
+        prompt_caching="cache_points"
     )
     assert _section(entry, "limits", _LIMIT_FIELDS, ModelLimits) == ModelLimits(context_window=1_000)
 

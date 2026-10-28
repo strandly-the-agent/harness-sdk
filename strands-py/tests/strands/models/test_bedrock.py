@@ -4176,7 +4176,7 @@ def test_model_info_reads_cache_points_for_claude_from_the_shared_model_info(bed
 
     model = BedrockModel(model_id="us.anthropic.claude-sonnet-4-6")
 
-    assert model.model_info.capabilities.prompt_caching == "cachePoints"
+    assert model.model_info.capabilities.prompt_caching == "cache_points"
 
 
 def test_model_info_leaves_caching_unknown_for_other_model_ids(bedrock_client):
@@ -4202,7 +4202,7 @@ def test_cache_strategy_auto_maps_to_anthropic_when_the_model_info_override_says
     model = BedrockModel(
         model_id="amazon.nova-pro-v1:0",
         cache_config=CacheConfig(strategy="auto"),
-        model_info=ModelInfo(capabilities=ModelCapabilities(prompt_caching="cachePoints")),
+        model_info=ModelInfo(capabilities=ModelCapabilities(prompt_caching="cache_points")),
     )
 
     assert model._cache_strategy == "anthropic"
