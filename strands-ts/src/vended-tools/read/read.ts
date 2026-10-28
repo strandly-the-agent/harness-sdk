@@ -62,8 +62,12 @@ const MEDIA_DESCRIPTION_SUFFIX =
 
 const readInputSchema = z.object({
   path: z.string().describe('Absolute path to the file.'),
-  offset: z.number().optional().describe('1-indexed line to start from. Defaults to the first line. Text files only.'),
-  limit: z.number().optional().describe('Maximum number of lines to return. Defaults to 2000. Text files only.'),
+  offset: z
+    .number()
+    .int()
+    .optional()
+    .describe('1-indexed line to start from. Defaults to the first line. Text files only.'),
+  limit: z.number().int().optional().describe('Maximum number of lines to return. Defaults to 2000. Text files only.'),
 })
 
 /**
@@ -166,7 +170,8 @@ export function makeRead(sandboxOrOptions?: Sandbox | MakeReadOptions, maybeOpti
       const bytes = await sandbox.readFile(input.path)
       let content: string
       try {
-        content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+        // ignoreBOM keeps a leading U+FEFF in line 1, matching Python's bytes.decode('utf-8').
+        content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
       } catch (error) {
         throw new Error(`${input.path} is not UTF-8 text. If a shell tool is available, inspect it there.`, {
           cause: error,

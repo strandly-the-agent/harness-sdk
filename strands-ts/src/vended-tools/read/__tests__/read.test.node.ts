@@ -85,12 +85,15 @@ describe.skipIf(process.platform === 'win32')('read tool', () => {
       const { result } = await collectGenerator(
         reader.stream({ ...ctx, toolUse: { name: 'read', toolUseId: 'test-id', input: { path: filePath } } })
       )
-      expect(result).toStrictEqual(
+      expect(result).toEqual(
         new ToolResultBlock({
           toolUseId: 'test-id',
           status: 'success',
-          content: [new ImageBlock({ format: 'png', source: { bytes: Buffer.from(bytes) } })],
+          content: [new ImageBlock({ format: 'png', source: { bytes: expect.any(Uint8Array) } })],
         })
+      )
+      expect(Array.from(((result.content[0] as ImageBlock).source as { bytes: Uint8Array }).bytes)).toEqual(
+        Array.from(bytes)
       )
     })
 
@@ -151,14 +154,17 @@ describe.skipIf(process.platform === 'win32')('read tool', () => {
       const { result } = await collectGenerator(
         reader.stream({ ...ctx, toolUse: { name: 'read', toolUseId: 'test-id', input: { path: filePath } } })
       )
-      expect(result).toStrictEqual(
+      expect(result).toEqual(
         new ToolResultBlock({
           toolUseId: 'test-id',
           status: 'success',
           content: [
-            new DocumentBlock({ format: 'pdf', name: 'my report v2 pdf', source: { bytes: Buffer.from(bytes) } }),
+            new DocumentBlock({ format: 'pdf', name: 'my report v2 pdf', source: { bytes: expect.any(Uint8Array) } }),
           ],
         })
+      )
+      expect(Array.from(((result.content[0] as DocumentBlock).source as { bytes: Uint8Array }).bytes)).toEqual(
+        Array.from(bytes)
       )
     })
 
@@ -282,6 +288,13 @@ describe.skipIf(process.platform === 'win32')('read tool', () => {
   })
 
   describe('non-UTF-8', () => {
+    it('keeps a leading byte-order mark', async () => {
+      const filePath = join(tmpPath, 'bom.txt')
+      writeFileSync(filePath, concat(new Uint8Array([0xef, 0xbb, 0xbf]), text('hello\n')))
+      const out = await reader.invoke({ path: filePath }, ctx)
+      expect(out).toBe('     1\t\uFEFFhello\n     2\t')
+    })
+
     it('raises a clear error', async () => {
       const filePath = join(tmpPath, 'data.txt')
       writeFileSync(filePath, concat(text('valid\n'), new Uint8Array([0xe9, 0xff, 0xfe, 0x0a])))
@@ -306,6 +319,14 @@ describe.skipIf(process.platform === 'win32')('read tool', () => {
       await expect(reader.invoke({ path: filePath, limit }, ctx)).rejects.toThrow(
         `limit must be a positive line count, got ${limit}.`
       )
+    })
+  })
+
+  describe('offset/limit must be integers', () => {
+    it.each([{ offset: 1.5 }, { limit: 2.5 }])('rejects %o', async (window) => {
+      const filePath = join(tmpPath, 'f.txt')
+      writeFileSync(filePath, 'one\ntwo\n')
+      await expect(reader.invoke({ path: filePath, ...window }, ctx)).rejects.toThrow()
     })
   })
 

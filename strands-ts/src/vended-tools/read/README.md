@@ -4,7 +4,7 @@ A sandbox-routed tool that reads a file. Text files return `cat -n` style number
 
 The tool reads through a [Sandbox](../../sandbox/base.ts), so behaviour is identical on the host and in Docker/SSH containers. Paths must be absolute and must not contain `..` segments.
 
-Supersedes the deprecated [`fileEditor`](../file-editor/README.md) `view` command together with the companion `edit` and `write` vended tools.
+Supersedes the [`fileEditor`](../file-editor/README.md) `view` command. Pairs with the companion `edit` and `write` vended tools (Python today; TypeScript ports in progress).
 
 ## Usage
 
@@ -74,10 +74,10 @@ Which path a file takes is chosen by extension. Text-representable formats (csv,
 The tool throws when:
 
 - `path` is not absolute (POSIX `/`, a Windows drive letter, or a UNC share) or contains a `..` segment.
-- `offset` or `limit` is less than `1`.
+- `offset` or `limit` is not a positive integer.
 - A file with an image extension does not start with a png/jpeg/gif/webp signature, or a file with a document extension does not match its format's magic bytes (`%PDF-`, OLE2, ZIP). This guard runs even when `media` is `false`, so a mislabeled file never reaches history as a success media block.
 - The requested text window exceeds `maxBytes`, or an image/document exceeds `maxMediaBytes` (with `media: true`; with `media: false` the placeholder is returned instead).
-- A text file is not valid UTF-8.
+- A text file is not valid UTF-8. A leading byte-order mark is kept as `\uFEFF` in line 1 rather than stripped.
 
 ## Security
 
