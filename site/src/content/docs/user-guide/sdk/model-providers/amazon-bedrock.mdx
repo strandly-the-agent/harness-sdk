@@ -259,7 +259,7 @@ Common configuration parameters include:
 
 - `model_id` - The Bedrock model identifier
 - `temperature` - Controls randomness (higher = more random)
-- `max_tokens` - Maximum number of tokens to generate
+- `max_tokens` - Maximum number of tokens to generate; defaults to the model's known output limit, pass `None` to leave it unset
 - `streaming` - Enable/disable streaming mode
 - `guardrail_id` - ID of the guardrail to apply
 - `cache_prompt` - Cache point type for the system prompt (deprecated, use `cache_config`)

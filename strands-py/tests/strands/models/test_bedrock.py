@@ -555,6 +555,55 @@ def test_format_request_inference_config(model, messages, model_id, inference_co
     assert tru_request == exp_request
 
 
+def test_format_request_defaults_max_tokens_to_the_model_info_output_limit(bedrock_client, messages):
+    _ = bedrock_client
+    model = BedrockModel(model_id="anthropic.claude-sonnet-4-6")
+
+    assert model.format_request(messages)["inferenceConfig"] == {"maxTokens": 128_000}
+
+
+def test_format_request_defaults_max_tokens_for_a_cross_region_model_id(bedrock_client, messages):
+    _ = bedrock_client
+    model = BedrockModel(model_id="us.anthropic.claude-sonnet-4-6")
+
+    assert model.format_request(messages)["inferenceConfig"] == {"maxTokens": 128_000}
+
+
+def test_format_request_defaults_max_tokens_for_the_default_model(bedrock_client, messages):
+    _ = bedrock_client
+
+    assert BedrockModel().format_request(messages)["inferenceConfig"] == {"maxTokens": 128_000}
+
+
+def test_format_request_defaults_max_tokens_from_the_model_info_override(bedrock_client, messages):
+    _ = bedrock_client
+    model = BedrockModel(model_id="m1", model_info=ModelInfo(limits=ModelLimits(max_output_tokens=2_000)))
+
+    assert model.format_request(messages)["inferenceConfig"] == {"maxTokens": 2_000}
+
+
+def test_format_request_leaves_max_tokens_unset_for_an_unknown_model(bedrock_client, messages):
+    _ = bedrock_client
+    model = BedrockModel(model_id="unknown.model-v1:0")
+
+    assert model.model_info.limits.max_output_tokens is None
+    assert model.format_request(messages)["inferenceConfig"] == {}
+
+
+def test_format_request_explicit_max_tokens_wins_over_the_model_info_output_limit(bedrock_client, messages):
+    _ = bedrock_client
+    model = BedrockModel(model_id="anthropic.claude-sonnet-4-6", max_tokens=1)
+
+    assert model.format_request(messages)["inferenceConfig"] == {"maxTokens": 1}
+
+
+def test_format_request_explicit_none_max_tokens_opts_out_of_the_default(bedrock_client, messages):
+    _ = bedrock_client
+    model = BedrockModel(model_id="anthropic.claude-sonnet-4-6", max_tokens=None)
+
+    assert model.format_request(messages)["inferenceConfig"] == {}
+
+
 def test_format_request_system_prompt(model, messages, model_id, system_prompt):
     tru_request = model.format_request(messages, system_prompt_content=[{"text": system_prompt}])
     exp_request = {
