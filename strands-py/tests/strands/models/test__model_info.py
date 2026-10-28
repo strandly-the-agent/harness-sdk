@@ -1,0 +1,154 @@
+"""Tests for the ModelInfo record and the shared model info data."""
+
+import json
+import pathlib
+import re
+
+import pytest
+
+from strands.models._model_info import (
+    DEFAULT_CONTEXT_WINDOW_LIMIT,
+    ModelCapabilities,
+    ModelInfo,
+    ModelLimits,
+    get_context_window_limit,
+    lookup_model,
+    lookup_model_info,
+    merge_model_info,
+)
+
+BASE = ModelInfo(
+    capabilities=ModelCapabilities(stateful=False, prompt_caching="cachePoints"),
+    limits=ModelLimits(context_window=200_000),
+)
+
+_SHARED_DATA = pathlib.Path(__file__).parents[3] / ".." / "shared" / "model-info.json"
+_PACKAGE_COPY = pathlib.Path(__file__).parents[3] / "src" / "strands" / "models" / "model_info.json"
+
+_MODEL_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.:@-]*$")
+_LIMIT_KEYS = ("contextWindow", "maxOutputTokens")
+_BOOLEAN_CAPABILITY_KEYS = ("stateful", "forcedToolChoice", "nativeStructuredOutput")
+
+
+def test_merge_model_info_returns_the_base_when_nothing_else_is_given():
+    assert merge_model_info(BASE) == BASE
+
+
+def test_merge_model_info_inherits_fields_a_later_record_leaves_out_or_sets_to_none():
+    tru_merged = merge_model_info(
+        BASE,
+        ModelInfo(limits=ModelLimits(context_window=1_000_000)),
+        ModelInfo(capabilities=ModelCapabilities(stateful=None)),
+    )
+
+    assert tru_merged.capabilities == BASE.capabilities
+    assert tru_merged.limits.context_window == 1_000_000
+
+
+def test_merge_model_info_lets_a_later_record_win_over_an_earlier_one():
+    tru_merged = merge_model_info(
+        BASE,
+        ModelInfo(limits=ModelLimits(context_window=1)),
+        None,
+        ModelInfo(
+            capabilities=ModelCapabilities(prompt_caching="unsupported"),
+            limits=ModelLimits(context_window=2),
+        ),
+    )
+
+    assert tru_merged.capabilities == ModelCapabilities(stateful=False, prompt_caching="unsupported")
+    assert tru_merged.limits.context_window == 2
+
+
+def test_merge_model_info_leaves_out_sections_with_nothing_known():
+    assert merge_model_info(ModelInfo(), None, ModelInfo(limits=ModelLimits(context_window=None))) == ModelInfo()
+
+
+def test_merge_model_info_returns_a_frozen_record():
+    tru_merged = merge_model_info(BASE)
+
+    for frozen in (tru_merged, tru_merged.capabilities, tru_merged.limits):
+        with pytest.raises(AttributeError):
+            frozen.nope = True
+
+
+def test_lookup_model_resolves_every_spelling_of_a_model_to_its_one_entry():
+    exp_entry = lookup_model("claude-opus-5-5")
+
+    assert exp_entry.limits.context_window == 1_000_000
+    assert lookup_model("anthropic.claude-opus-5-5") is exp_entry
+    assert lookup_model("us.anthropic.claude-opus-5-5") is exp_entry
+    assert (
+        lookup_model("arn:aws:bedrock:us-west-2:123:inference-profile/global.anthropic.claude-opus-5-5") is exp_entry
+    )
+
+
+def test_lookup_model_resolves_a_dated_snapshot_to_the_undated_model():
+    assert lookup_model("anthropic.claude-opus-5-5-20260401-v1:0") is lookup_model("claude-opus-5-5")
+    assert lookup_model("claude-haiku-4-5@20251001") is lookup_model("claude-haiku-4-5")
+    assert lookup_model("claude-3-5-haiku-20241022").limits.context_window == 200_000
+
+
+def test_lookup_model_does_not_read_inherited_object_keys():
+    assert lookup_model("keys") is None
+    assert lookup_model("x.items") is None
+
+
+def test_lookup_model_ignores_a_trailing_bedrock_version_suffix():
+    assert lookup_model("anthropic.claude-3-5-haiku-20241022-v1:0") is lookup_model("claude-3-5-haiku-20241022")
+    assert lookup_model("us.anthropic.claude-3-5-sonnet-20241022-v2:0").limits.context_window == 200_000
+
+
+def test_lookup_model_returns_none_for_unknown_ids():
+    assert lookup_model("unknown-model") is None
+    assert lookup_model("") is None
+
+
+def test_lookup_model_info_returns_the_entry_facts_and_nothing_for_unknown_ids():
+    assert lookup_model_info("eu.anthropic.claude-sonnet-4-6") == ModelInfo(
+        capabilities=ModelCapabilities(prompt_caching="cachePoints"),
+        limits=ModelLimits(context_window=1_000_000, max_output_tokens=128_000),
+    )
+    assert lookup_model_info("anthropic.claude-opus-5-5").capabilities == ModelCapabilities(
+        prompt_caching="cachePoints", forced_tool_choice=False, native_structured_output=True
+    )
+    assert lookup_model_info("amazon.nova-pro-v1:0") == ModelInfo(
+        capabilities=ModelCapabilities(forced_tool_choice=True, native_structured_output=False),
+        limits=ModelLimits(context_window=300_000),
+    )
+    assert lookup_model_info("claude-future-9") == ModelInfo()
+    assert lookup_model_info("") == ModelInfo()
+
+
+def test_get_context_window_limit_keeps_working_for_ids_the_table_already_knew():
+    assert get_context_window_limit("mistral-large-latest") == 262_144
+    assert get_context_window_limit("o3") == 200_000
+
+
+def test_default_context_window_limit_comes_from_the_data():
+    assert DEFAULT_CONTEXT_WINDOW_LIMIT == 200_000
+
+
+def test_package_copy_matches_the_shared_data():
+    """The build hook copies ``shared/model-info.json``; run ``hatch build`` to refresh the copy."""
+    assert _PACKAGE_COPY.read_text(encoding="utf-8") == _SHARED_DATA.read_text(encoding="utf-8")
+
+
+def test_shared_data_has_only_the_fields_model_info_defines_with_the_right_types_in_every_entry():
+    data = json.loads(_SHARED_DATA.read_text(encoding="utf-8"))
+
+    assert sorted(data.keys()) == ["$comment", "defaults", "models"]
+    assert data["defaults"] == {"limits": {"contextWindow": DEFAULT_CONTEXT_WINDOW_LIMIT}}
+
+    for model_id, entry in data["models"].items():
+        assert _MODEL_ID_PATTERN.match(model_id), model_id
+        assert set(entry) <= {"limits", "capabilities"}, model_id
+        for key, value in entry.get("limits", {}).items():
+            assert key in _LIMIT_KEYS, f"{model_id}.limits.{key}"
+            assert isinstance(value, int) and value > 0, f"{model_id}.limits.{key}"
+        for key, value in entry.get("capabilities", {}).items():
+            if key == "promptCaching":
+                assert value in ("unsupported", "auto", "cachePoints"), f"{model_id}.{key}"
+            else:
+                assert key in _BOOLEAN_CAPABILITY_KEYS, f"{model_id}.capabilities.{key}"
+                assert isinstance(value, bool), f"{model_id}.{key}"

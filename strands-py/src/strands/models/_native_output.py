@@ -121,7 +121,7 @@ def structured_output_mechanisms(
     return [
         mechanism
         for mechanism in STRUCTURED_OUTPUT_MECHANISMS
-        if mechanism not in unsupported
+        if mechanism not in skipped
         and (mechanism != "forced" or forces_tool)
         and (mechanism != "native" or not feature)
     ]
