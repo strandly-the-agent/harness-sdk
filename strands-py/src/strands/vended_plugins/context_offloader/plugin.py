@@ -53,7 +53,6 @@ from typing_extensions import TypedDict
 
 from ...agent._agent_as_tool import _AgentAsTool
 from ...hooks.events import AfterToolCallEvent, BeforeModelCallEvent
-from ...hooks.registry import HookOrder
 from ...plugins import Plugin, hook
 from ...storage import Storage
 from ...storage.storage import _NAMESPACED, _NamespacedStorage
@@ -332,8 +331,8 @@ class ContextOffloader(Plugin):
         if not self._include_retrieval_tool:
             # Remove the auto-discovered retrieval tool
             self._tools = [t for t in self._tools if t.tool_name != "retrieve_offloaded_content"]
-        # After DEFAULT so hooks registered via ``hooks=`` (audit, DLP) observe the full result before the rewrite.
-        agent.add_hook(self._handle_tool_result, AfterToolCallEvent, order=HookOrder.CONTEXT_OFFLOAD)
+        # Between DEFAULT and SDK_LAST: hooks passed via ``hooks=`` (audit, DLP) see the full result first.
+        agent.add_hook(self._handle_tool_result, AfterToolCallEvent, order=70)
 
     @hook
     async def _on_before_model_call(self, event: BeforeModelCallEvent) -> None:
@@ -471,7 +470,7 @@ class ContextOffloader(Plugin):
     async def _handle_tool_result(self, event: AfterToolCallEvent) -> None:
         """Intercept oversized tool results, offload per-block, and replace with preview.
 
-        Registered in ``init_agent`` at ``HookOrder.CONTEXT_OFFLOAD``.
+        Registered in ``init_agent`` with an order after ``HookOrder.DEFAULT``.
         """
         if event.cancel_message is not None:
             return

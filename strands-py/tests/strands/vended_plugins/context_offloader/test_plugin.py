@@ -99,9 +99,10 @@ class TestContextOffloader:
     def test_init_agent_registers_tool_result_hook_last(self, plugin, mock_agent):
         plugin.init_agent(mock_agent)
 
-        mock_agent.add_hook.assert_called_once_with(
-            plugin._handle_tool_result, AfterToolCallEvent, order=HookOrder.CONTEXT_OFFLOAD
-        )
+        mock_agent.add_hook.assert_called_once()
+        args, kwargs = mock_agent.add_hook.call_args
+        assert args == (plugin._handle_tool_result, AfterToolCallEvent)
+        assert HookOrder.DEFAULT < kwargs["order"] < HookOrder.SDK_LAST
 
     def test_user_after_tool_call_hooks_see_full_result_before_rewrite(self, storage):
         """Hooks passed via ``hooks=`` run before the offloader rewrites ``event.result`` (#5596)."""
