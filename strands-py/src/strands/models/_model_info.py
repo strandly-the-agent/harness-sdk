@@ -13,7 +13,7 @@ import json
 import re
 from dataclasses import dataclass, fields, replace
 from importlib import resources
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 PromptCaching = Literal["unsupported", "auto", "cachePoints"]
 """How a model supports prompt caching."""
@@ -118,19 +118,25 @@ _VERSION_SUFFIX = re.compile(r"-(?:v\d+(?::\d+)?|\d+:\d+)$")
 _DATE_SUFFIX = re.compile(r"[-@]\d{8}$")
 
 
+def _section(
+    entry: dict[str, Any], name: str, field_names: dict[str, str], section: type[_SectionT]
+) -> _SectionT | None:
+    """Build one section of an entry, re-casing its camelCase keys and ignoring keys this version does not know.
+
+    Unknown keys are skipped rather than rejected: the data file is shared with the TypeScript SDK, so it can
+    carry a fact this version has no field for yet. ``test__model_info.py`` validates the file strictly instead.
+    """
+    known = {field_names[key]: value for key, value in entry.get(name, {}).items() if key in field_names}
+    return section(**known) if known else None
+
+
 def _load_data() -> tuple[int, dict[str, ModelInfo]]:
     """Read the shared model info data, re-casing its camelCase keys onto the record fields."""
     data = json.loads(resources.files("strands.models").joinpath("model_info.json").read_text(encoding="utf-8"))
     models = {
         model_id: ModelInfo(
-            capabilities=ModelCapabilities(
-                **{_CAPABILITY_FIELDS[key]: value for key, value in entry.get("capabilities", {}).items()}
-            )
-            if entry.get("capabilities")
-            else None,
-            limits=ModelLimits(**{_LIMIT_FIELDS[key]: value for key, value in entry.get("limits", {}).items()})
-            if entry.get("limits")
-            else None,
+            capabilities=_section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities),
+            limits=_section(entry, "limits", _LIMIT_FIELDS, ModelLimits),
         )
         for model_id, entry in data["models"].items()
     }

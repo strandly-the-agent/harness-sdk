@@ -7,10 +7,13 @@ import re
 import pytest
 
 from strands.models._model_info import (
+    _CAPABILITY_FIELDS,
+    _LIMIT_FIELDS,
     DEFAULT_CONTEXT_WINDOW_LIMIT,
     ModelCapabilities,
     ModelInfo,
     ModelLimits,
+    _section,
     get_context_window_limit,
     lookup_model,
     lookup_model_info,
@@ -125,6 +128,25 @@ def test_get_context_window_limit_keeps_working_for_ids_the_table_already_knew()
 
 def test_default_context_window_limit_comes_from_the_data():
     assert DEFAULT_CONTEXT_WINDOW_LIMIT == 200_000
+
+
+def test_loader_ignores_facts_this_version_has_no_field_for():
+    """The data file is shared with the TypeScript SDK, so a fact added there first must not break the import."""
+    entry = {
+        "capabilities": {"promptCaching": "cachePoints", "reasoning": True},
+        "limits": {"contextWindow": 1_000, "maxThinkingTokens": 4_096},
+    }
+
+    assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) == ModelCapabilities(
+        prompt_caching="cachePoints"
+    )
+    assert _section(entry, "limits", _LIMIT_FIELDS, ModelLimits) == ModelLimits(context_window=1_000)
+
+
+def test_loader_leaves_out_a_section_whose_only_facts_are_unknown_to_this_version():
+    entry = {"capabilities": {"reasoning": True}}
+
+    assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) is None
 
 
 def test_package_copy_matches_the_shared_data():
