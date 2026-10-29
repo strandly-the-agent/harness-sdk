@@ -1,10 +1,11 @@
 // --8<-- [start:basic_import]
 import { Agent } from '@strands-agents/sdk'
 import { bash } from '@strands-agents/sdk/vended-tools/bash'
-import { fileEditor } from '@strands-agents/sdk/vended-tools/file-editor'
+import { edit } from '@strands-agents/sdk/vended-tools/edit'
 import { httpRequest } from '@strands-agents/sdk/vended-tools/http-request'
 import { notebook, makeNotebook } from '@strands-agents/sdk/vended-tools/notebook'
 // --8<-- [end:basic_import]
+import { fileEditor } from '@strands-agents/sdk/vended-tools/file-editor'
 import {
   SessionManager,
   FileStorage,
@@ -41,7 +42,7 @@ import { Fixed, Inherit } from '@strands-agents/sdk/multiagent'
 async function agentWithVendedToolsExample() {
   // --8<-- [start:agent_with_vended_tools]
   const agent = new Agent({
-    tools: [bash, fileEditor, httpRequest, notebook],
+    tools: [bash, edit, httpRequest, notebook],
   })
   // --8<-- [end:agent_with_vended_tools]
 }
@@ -74,6 +75,17 @@ async function bashSessionPersistenceExample() {
   await agent.invoke('Restart the bash session')
   await agent.invoke('Run: echo $MY_VAR') // Variable will be empty
   // --8<-- [end:bash_session]
+}
+
+// Edit example
+async function editExample() {
+  // --8<-- [start:edit_example]
+  const agent = new Agent({
+    tools: [edit],
+  })
+
+  await agent.invoke("In /tmp/hello.txt, replace 'world' with 'Strands'.")
+  // --8<-- [end:edit_example]
 }
 
 // File editor example
