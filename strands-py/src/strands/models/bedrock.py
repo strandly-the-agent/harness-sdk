@@ -34,7 +34,7 @@ from ..types.exceptions import (
 )
 from ..types.streaming import CitationsDelta, StreamEvent
 from ..types.tools import ToolChoice, ToolChoiceAuto, ToolSpec
-from ._defaults import resolve_config_metadata
+from ._defaults import resolve_config_metadata, resolve_max_tokens
 from ._native_output import (
     StructuredOutputMechanism,
     handle_rejected_mechanism,
@@ -240,9 +240,10 @@ class BedrockModel(Model):
             guardrail_latest_message: Flag to send only the lastest user message to guardrails.
                 Defaults to False.
             max_tokens: Maximum number of tokens to generate in the response. Defaults to the model's
-                output limit from the model info (``model_info.limits.max_output_tokens``) when known;
-                otherwise ``maxTokens`` is not sent and Bedrock's per-model default applies. Pass ``None``
-                to opt out of the default and leave ``maxTokens`` unset.
+                output limit from the model info (``model_info.limits.max_output_tokens``), capped at a
+                quarter of its context window, when known; otherwise ``maxTokens`` is not sent and
+                Bedrock's per-model default applies. Pass ``None`` to opt out of the default and leave
+                ``maxTokens`` unset.
             model_id: The Bedrock model ID (e.g., "global.anthropic.claude-sonnet-4-6")
             include_tool_result_status: Flag to include status field in tool results.
                 True includes status, False removes status, "auto" determines based on model_id. Defaults to "auto".
@@ -387,17 +388,6 @@ class BedrockModel(Model):
             return "anthropic"
         return None
 
-    @property
-    def _max_tokens(self) -> int | None:
-        """The ``maxTokens`` to send: the configured value, else the model's output limit, else nothing.
-
-        An explicit ``max_tokens=None`` opts out of the default and leaves ``maxTokens`` unset, so
-        Bedrock's own per-model default applies.
-        """
-        if "max_tokens" in self.config:
-            return self.config["max_tokens"]
-        return self.model_info.limits.max_output_tokens
-
     @override
     def update_config(self, **model_config: Unpack[BedrockConfig]) -> None:  # type: ignore
         """Update the Bedrock Model configuration with the provided arguments.
@@ -417,7 +407,12 @@ class BedrockModel(Model):
         Returns:
             The Bedrock model configuration.
         """
-        return resolve_config_metadata(self.config, self.config.get("model_id", ""))
+        model_id = self.config.get("model_id", "")
+        config = resolve_config_metadata(self.config, model_id)
+        max_tokens = resolve_max_tokens(self.config, model_id)
+        if max_tokens is None or "max_tokens" in config:
+            return config
+        return {**config, "max_tokens": max_tokens}
 
     def format_request(
         self,
@@ -526,7 +521,7 @@ class BedrockModel(Model):
             "inferenceConfig": {
                 key: value
                 for key, value in [
-                    ("maxTokens", self._max_tokens),
+                    ("maxTokens", self.get_config().get("max_tokens")),
                     ("temperature", self.config.get("temperature")),
                     ("topP", self.config.get("top_p")),
                     ("stopSequences", self.config.get("stop_sequences")),
