@@ -59,6 +59,7 @@ import {
   type StreamOptions,
   resolveCacheSection,
   resolveConfigMetadata,
+  resolveMaxTokens,
 } from '../models/model.js'
 import { THINKING_BINDING_BETA, isThinkingBindingError, thinkingWithDropBlock } from './thinking-binding.js'
 import type { ContentBlock, Message, ReasoningBlock, StopReason, ToolUseBlock } from '../types/messages.js'
@@ -81,7 +82,7 @@ import {
 import { zodSchemaToJsonSchema } from '../tools/zod-utils.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME } from '../tools/structured-output-tool.js'
 import type { z } from 'zod'
-import { MODEL_DEFAULTS, defaultModelWarningMessage } from './defaults.js'
+import { MODEL_DEFAULTS, defaultMaxTokensWarningMessage, defaultModelWarningMessage } from './defaults.js'
 
 const DEFAULT_BEDROCK_REGION_SUPPORTS_FIP = false
 
@@ -490,6 +491,11 @@ export class BedrockModel extends Model<BedrockModelConfig> {
       warnOnce(logger, defaultModelWarningMessage(MODEL_DEFAULTS.bedrock.modelId))
     }
 
+    const maxTokens = this.getConfig().maxTokens
+    if (modelConfig.maxTokens === undefined && maxTokens !== undefined) {
+      warnOnce(logger, defaultMaxTokensWarningMessage(maxTokens))
+    }
+
     // Build user agent string (extend if provided, otherwise use SDK identifier)
     const customUserAgent = clientConfig?.customUserAgent
       ? `${clientConfig.customUserAgent} strands-agents-ts-sdk`
@@ -635,7 +641,10 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    * ```
    */
   getConfig(): BedrockModelConfig {
-    return resolveConfigMetadata(this._config, this._config.modelId ?? MODEL_DEFAULTS.bedrock.modelId)
+    const modelId = this._config.modelId ?? MODEL_DEFAULTS.bedrock.modelId
+    const config = resolveConfigMetadata(this._config, modelId)
+    const maxTokens = resolveMaxTokens(this._config, modelId)
+    return maxTokens === undefined || config.maxTokens !== undefined ? config : { ...config, maxTokens }
   }
 
   /**
@@ -983,7 +992,7 @@ export class BedrockModel extends Model<BedrockModelConfig> {
 
     // Add inference configuration
     const inferenceConfig: InferenceConfiguration = {}
-    const maxTokens = this._config.maxTokens ?? this.modelInfo.limits?.maxOutputTokens
+    const maxTokens = this.getConfig().maxTokens
     if (maxTokens !== undefined) inferenceConfig.maxTokens = maxTokens
     if (this._config.temperature !== undefined) inferenceConfig.temperature = this._config.temperature
     if (this._config.topP !== undefined) inferenceConfig.topP = this._config.topP

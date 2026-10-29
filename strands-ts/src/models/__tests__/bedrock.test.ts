@@ -213,6 +213,7 @@ describe('BedrockModel', () => {
       const provider = new BedrockModel({ modelId: customModelId })
       expect(provider.getConfig()).toStrictEqual({
         modelId: customModelId,
+        maxTokens: 8192,
         contextWindowLimit: 200_000,
       })
     })
@@ -368,6 +369,7 @@ describe('BedrockModel', () => {
       expect(config).toStrictEqual({
         modelId: 'global.anthropic.claude-sonnet-4-6',
         temperature: 0.5,
+        maxTokens: 128_000,
         contextWindowLimit: 1_000_000,
       })
     })
@@ -379,6 +381,7 @@ describe('BedrockModel', () => {
       })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'anthropic.claude-sonnet-4-6',
+        maxTokens: 50_000,
         contextWindowLimit: 200_000,
       })
     })
@@ -387,6 +390,7 @@ describe('BedrockModel', () => {
       const provider = new BedrockModel({ modelId: 'anthropic.claude-sonnet-4-6' })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'anthropic.claude-sonnet-4-6',
+        maxTokens: 128_000,
         contextWindowLimit: 1_000_000,
       })
     })
@@ -395,6 +399,7 @@ describe('BedrockModel', () => {
       const provider = new BedrockModel({ modelId: 'us.anthropic.claude-sonnet-4-6' })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'us.anthropic.claude-sonnet-4-6',
+        maxTokens: 128_000,
         contextWindowLimit: 1_000_000,
       })
     })
@@ -403,6 +408,7 @@ describe('BedrockModel', () => {
       const provider = new BedrockModel()
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'global.anthropic.claude-sonnet-4-6',
+        maxTokens: 128_000,
         contextWindowLimit: 1_000_000,
       })
     })
@@ -423,6 +429,7 @@ describe('BedrockModel', () => {
       })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'anthropic.claude-sonnet-4-6',
+        maxTokens: 25_000,
         contextWindowLimit: 100_000,
       })
     })
@@ -540,11 +547,50 @@ describe('BedrockModel', () => {
 
         collectIterator(provider.stream(messages))
 
-        expect(sentInferenceConfig()).toStrictEqual({ maxTokens: 64_000 })
+        expect(sentInferenceConfig()).toStrictEqual({ maxTokens: 50_000 })
       })
 
-      it('does not surface the default maxTokens in getConfig', () => {
-        expect(new BedrockModel({ modelId: 'anthropic.claude-sonnet-4-6' }).getConfig().maxTokens).toBeUndefined()
+      it.each([
+        ['a 200k-window model', { modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0' }, 50_000],
+        [
+          'a user-set contextWindowLimit',
+          { modelId: 'anthropic.claude-sonnet-4-6', contextWindowLimit: 100_000 },
+          25_000,
+        ],
+        [
+          'a modelInfo contextWindow override',
+          { modelId: 'anthropic.claude-sonnet-4-6', modelInfo: { limits: { contextWindow: 400_000 } } },
+          100_000,
+        ],
+      ])('caps the default maxTokens at a quarter of the context window for %s', (_, config, maxTokens) => {
+        const provider = new BedrockModel(config)
+
+        collectIterator(provider.stream(messages))
+
+        expect(sentInferenceConfig()).toStrictEqual({ maxTokens })
+      })
+
+      it('surfaces the default maxTokens in getConfig', () => {
+        expect(new BedrockModel({ modelId: 'anthropic.claude-sonnet-4-6' }).getConfig().maxTokens).toBe(128_000)
+      })
+
+      it('warns once when maxTokens is defaulted', () => {
+        new BedrockModel({ modelId: 'anthropic.claude-sonnet-4-6' })
+        expect(warnOnce).toHaveBeenCalledWith(
+          expect.objectContaining({ warn: expect.any(Function) }),
+          expect.stringContaining('max_tokens=<128000> | using default maxTokens')
+        )
+      })
+
+      it.each([
+        ['maxTokens is explicit', { modelId: 'anthropic.claude-sonnet-4-6', maxTokens: 1 }],
+        ['the model is unknown', { modelId: 'unknown.model-v1:0' }],
+      ])('does not warn about maxTokens when %s', (_, config) => {
+        new BedrockModel(config)
+        expect(warnOnce).not.toHaveBeenCalledWith(
+          expect.objectContaining({ warn: expect.any(Function) }),
+          expect.stringContaining('using default maxTokens')
+        )
       })
     })
   })
