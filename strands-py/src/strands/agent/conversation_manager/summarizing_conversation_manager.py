@@ -21,7 +21,7 @@ from .compression.context_compression import (
     generate_summary,
 )
 from .compression.pin_message import apply_pin_first, partition_pinned
-from .compression.truncate_text import _truncate_largest_text_blocks
+from .compression.truncate_text import _text_blocks, _truncate_largest_text_blocks
 from .conversation_manager import ConversationManager, ProactiveCompressionConfig
 
 if TYPE_CHECKING:
@@ -86,6 +86,7 @@ class SummarizingConversationManager(ConversationManager):
         self._pin_first_applied = False
         self._summary_message: Message | None = None
         self._truncation_budget = 1
+        self._overflowed_summary_range: tuple[int, int] | None = None
 
     @override
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
@@ -196,9 +197,10 @@ class SummarizingConversationManager(ConversationManager):
             invocation_context: The request the summary call's usage adds to.
 
         Raises:
-            ContextWindowOverflowException: If there are insufficient messages for summarization, or the
+            ContextWindowOverflowException: If there are insufficient messages for summarization, the
                 only message old enough to summarize is the previous summary (re-summarizing it would
-                not shrink the history, so the overflow would recur forever).
+                not shrink the history, so the overflow would recur forever), or the summary call already
+                overflowed on an identical range (retrying it would only cost another rejected call).
         """
         # Pin first N messages permanently (only on first reduction), before any early exit so the truncation
         # fallback in reduce_context sees them pinned too.
@@ -235,7 +237,16 @@ class SummarizingConversationManager(ConversationManager):
 
         remaining_messages = agent.messages[messages_to_summarize_count:]
 
-        summary_message = self._generate_summary(to_summarize, agent, invocation_context)
+        # Truncation elsewhere in the history leaves this range as it was, so the summary call would overflow again.
+        summary_range = (len(to_summarize), sum(len(block["text"]) for m in to_summarize for block in _text_blocks(m)))
+        if summary_range == self._overflowed_summary_range:
+            raise ContextWindowOverflowException("Cannot summarize: the summary call already overflowed on this range")
+        try:
+            summary_message = self._generate_summary(to_summarize, agent, invocation_context)
+        except ContextWindowOverflowException:
+            self._overflowed_summary_range = summary_range
+            raise
+        self._overflowed_summary_range = None
         # Assign tracking id to the summary message since it bypasses the append method.
         _ensure_tracking_id(summary_message)
 

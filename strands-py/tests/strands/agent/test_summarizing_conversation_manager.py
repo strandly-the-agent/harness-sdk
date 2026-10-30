@@ -353,6 +353,35 @@ def test_reduce_context_truncation_fallback_skips_pin_first_messages(mock_agent)
     assert mock_agent.messages[2]["content"][0]["text"] == _truncated("z" * 80_000)
 
 
+def test_summary_call_is_not_repeated_while_the_overflowed_range_is_unchanged(mock_agent):
+    """Truncation outside the summarize range leaves it as it was, so the summary call is skipped, not re-sent."""
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=2)
+    mock_agent.model.stream = Mock(
+        side_effect=lambda *a, **kw: _mock_model_stream_error(ContextWindowOverflowException("Input is too long"))
+    )
+    mock_agent.messages = [
+        {"role": "user", "content": [{"text": "a" * 20_000}]},
+        {"role": "assistant", "content": [{"text": "Noted."}]},
+        {"role": "user", "content": [{"text": "p" * 50_000}]},
+        {"role": "assistant", "content": [{"text": "Noted."}]},
+    ]
+
+    # Round 1: the summary call overflows on [a, Noted]; the largest block (the paste) is truncated instead.
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert mock_agent.model.stream.call_count == 1
+    assert mock_agent.messages[2]["content"][0]["text"] == _truncated("p" * 50_000)
+
+    # Round 2: the range is unchanged, so no summary call is made; truncation moves on to the block inside it.
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert mock_agent.model.stream.call_count == 1
+    assert mock_agent.messages[0]["content"][0]["text"] == _truncated("a" * 20_000)
+
+    # Round 3: the range changed, so summarization is attempted again.
+    with pytest.raises(ContextWindowOverflowException, match="Input is too long"):
+        manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert mock_agent.model.stream.call_count == 2
+
+
 def test_reduce_context_doubles_truncation_per_overflow_episode_and_resets_on_success(mock_agent):
     """Consecutive overflows truncate 1, 2, 4, …; any other model-call outcome starts the next episode at 1 again."""
     manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=30)
