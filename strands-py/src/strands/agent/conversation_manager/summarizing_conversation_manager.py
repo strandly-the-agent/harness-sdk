@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 from typing_extensions import override
 
 from ..._async import run_async
+from ...hooks.events import AfterModelCallEvent
+from ...hooks.registry import HookRegistry
 from ...tools._tool_helpers import noop_tool
 from ...tools.registry import ToolRegistry
 from ...types.content import Message, _ensure_tracking_id
@@ -83,6 +85,22 @@ class SummarizingConversationManager(ConversationManager):
         self.pin_first = max(0, pin_first) if pin_first is not None else None
         self._pin_first_applied = False
         self._summary_message: Message | None = None
+        self._truncation_budget = 1
+
+    @override
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
+        """Register hooks for agent lifecycle events.
+
+        Besides the base proactive-compression hook, resets the truncation budget once a model call ends
+        the run of consecutive overflows, so each overflow episode starts by truncating a single block again.
+        """
+        super().register_hooks(registry, **kwargs)
+        registry.add_callback(AfterModelCallEvent, self._on_after_model_call_reset_budget)
+
+    def _on_after_model_call_reset_budget(self, event: AfterModelCallEvent) -> None:
+        """End the overflow episode on any outcome other than a further overflow."""
+        if not isinstance(event.exception, ContextWindowOverflowException):
+            self._truncation_budget = 1
 
     @override
     def restore_from_session(self, state: dict[str, Any]) -> list[Message] | None:
@@ -107,26 +125,28 @@ class SummarizingConversationManager(ConversationManager):
 
         For the summarizing conversation manager, no proactive management is performed.
         Summarization only occurs when there's a context overflow that triggers reduce_context.
+        An overflow episode never spans invocations, so the truncation budget is reset here as well.
 
         Args:
             agent: The agent whose conversation history will be managed.
                 The agent's messages list is modified in-place.
             **kwargs: Additional keyword arguments for future extensibility.
         """
-        # No proactive management - summarization only happens on context overflow
-        pass
+        self._truncation_budget = 1
 
     def reduce_context(self, agent: "Agent", e: Exception | None = None, **kwargs: Any) -> None:
         """Reduce context using summarization.
 
         When ``e`` is set (reactive overflow recovery) and summarization fails with a
         ``ContextWindowOverflowException`` — too few messages to summarize, or the summary call itself
-        overflows — the largest text block in a non-pinned message is truncated to a head+tail preview
-        instead. ``Agent`` retries the model call and calls again on a further overflow, which truncates
-        the next largest block(s), so the first overflow costs one block and smaller blocks the model
-        accepts stay intact. The failure is re-raised when nothing is left to truncate. Any other
-        summarization error (throttling, network) is re-raised untouched, since a retry may still
-        succeed. Truncation edits ``agent.messages`` only; a session store keeps the original content.
+        overflows — the largest text blocks in non-pinned messages are truncated to head+tail previews
+        instead. The first overflow truncates one block; ``Agent`` retries the model call and calls again
+        on a further overflow, and each consecutive truncation doubles the number of blocks (1, 2, 4, …)
+        until a model call succeeds, so a single oversized paste costs exactly one block while a history
+        that needs many blocks gone converges in O(log n) rounds. The failure is re-raised when nothing is
+        left to truncate. Any other summarization error (throttling, network) is re-raised untouched,
+        since a retry may still succeed. Truncation edits ``agent.messages`` only; a session store keeps
+        the original content.
 
         When ``e`` is None (proactive compression), summarization failure is logged and
         returns silently — the model call proceeds regardless.
@@ -153,8 +173,9 @@ class SummarizingConversationManager(ConversationManager):
                 return
             # Only an overflow proves summarization cannot shrink the context; anything else may pass on retry.
             if isinstance(summarization_error, ContextWindowOverflowException):
-                truncated = _truncate_largest_text_blocks(agent.messages)
+                truncated = _truncate_largest_text_blocks(agent.messages, self._truncation_budget)
                 if truncated:
+                    self._truncation_budget *= 2
                     logger.warning(
                         "error=<%s>, truncated_blocks=<%d> | summarization could not reduce context, truncated the"
                         " largest text blocks instead",

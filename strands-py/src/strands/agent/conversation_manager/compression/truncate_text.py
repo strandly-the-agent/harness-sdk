@@ -23,17 +23,20 @@ def _text_blocks(message: Message) -> Iterator[ContentBlock | ToolResultContent]
                 yield item
 
 
-def _truncate_largest_text_blocks(messages: Messages, preserve_chars: int = _PRESERVE_CHARS) -> int:
+def _is_truncated(block: ContentBlock | ToolResultContent) -> bool:
+    return _TRUNCATION_MARKER.search(block["text"]) is not None
+
+
+def _truncate_largest_text_blocks(messages: Messages, budget: int = 1, preserve_chars: int = _PRESERVE_CHARS) -> int:
     """Replace the largest untruncated text blocks in non-pinned messages with head+tail previews.
 
-    Each call truncates as many blocks as the history already carries truncated, at least one, largest
-    first (ties go to the oldest). The first overflow therefore costs exactly one block, and the caller
-    retrying the model and calling again while it still overflows converges in O(log n) rounds instead
-    of one per block. A block qualifies when truncating it saves more than ``preserve_chars`` characters,
-    so each call either shrinks the history by a meaningful amount or reports that nothing is left.
+    Up to ``budget`` blocks are truncated, largest first (ties go to the oldest). A block qualifies when
+    truncating it saves more than ``preserve_chars`` characters, so each call either shrinks the history
+    by a meaningful amount or reports that nothing is left.
 
     Args:
         messages: The conversation history, modified in place.
+        budget: Maximum number of blocks to truncate.
         preserve_chars: Characters kept at each end of a truncated text.
 
     Returns:
@@ -42,30 +45,21 @@ def _truncate_largest_text_blocks(messages: Messages, preserve_chars: int = _PRE
     if preserve_chars <= 0:
         return 0
 
-    budget = max(1, sum(1 for message in messages for block in _text_blocks(message) if _is_truncated(block)))
-    return sum(_truncate_largest(messages, preserve_chars) for _ in range(budget))
-
-
-def _is_truncated(block: ContentBlock | ToolResultContent) -> bool:
-    return _TRUNCATION_MARKER.search(block["text"]) is not None
-
-
-def _truncate_largest(messages: Messages, preserve_chars: int) -> bool:
-    candidates = (
-        block
-        for index, message in enumerate(messages)
-        if not is_pinned(messages, index)
-        for block in _text_blocks(message)
-        if not _is_truncated(block)
+    candidates = sorted(
+        (
+            block
+            for index, message in enumerate(messages)
+            if not is_pinned(messages, index)
+            for block in _text_blocks(message)
+            if not _is_truncated(block)
+        ),
+        key=lambda block: len(block["text"]),
+        reverse=True,
     )
-    largest = max(candidates, key=lambda block: len(block["text"]), default=None)
-    if largest is None:
-        return False
-
-    text = largest["text"]
-    removed = len(text) - 2 * preserve_chars
-    if removed <= preserve_chars:
-        return False
-    marker = f"...\n\n... [truncated: {removed} chars removed] ...\n\n..."
-    largest["text"] = f"{text[:preserve_chars]}{marker}{text[-preserve_chars:]}"
-    return True
+    qualifying = [block for block in candidates[:budget] if len(block["text"]) > 3 * preserve_chars]
+    for block in qualifying:
+        text = block["text"]
+        removed = len(text) - 2 * preserve_chars
+        marker = f"...\n\n... [truncated: {removed} chars removed] ...\n\n..."
+        block["text"] = f"{text[:preserve_chars]}{marker}{text[-preserve_chars:]}"
+    return len(qualifying)
