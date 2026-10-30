@@ -517,7 +517,14 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    * @returns Cache strategy name or null
    */
   private _getCacheStrategy(): 'anthropic' | null {
-    return this.modelInfo.capabilities?.promptCaching === 'cachePoints' ? 'anthropic' : null
+    const promptCaching = this.modelInfo.capabilities?.promptCaching
+    if (promptCaching === undefined) {
+      // Unlisted ids (a Claude release newer than the data, a prompt-router or custom-model ARN)
+      // keep the historical name test so caching does not turn off until the data catches up.
+      const modelId = (this._config.modelId ?? MODEL_DEFAULTS.bedrock.modelId).toLowerCase()
+      return modelId.includes('claude') || modelId.includes('anthropic') ? 'anthropic' : null
+    }
+    return promptCaching === 'cachePoints' ? 'anthropic' : null
   }
 
   /**

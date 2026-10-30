@@ -4198,10 +4198,33 @@ def test_model_info_treats_a_non_string_model_id_as_unknown(bedrock_client):
     assert model.stateful is False
 
 
-def test_cache_strategy_auto_does_not_cache_a_claude_id_the_shared_model_info_does_not_list(bedrock_client):
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-future-9",
+        "arn:aws:bedrock:us-east-1:123456789012:default-prompt-router/anthropic.claude:1",
+        "arn:aws:bedrock:us-east-1:123456789012:custom-model/anthropic.claude-sonnet-4-6/abc",
+        "US.ANTHROPIC.CLAUDE-SONNET-4-6",
+    ],
+)
+def test_cache_strategy_auto_falls_back_to_the_claude_name_test_for_ids_the_model_info_does_not_list(
+    bedrock_client, model_id
+):
     _ = bedrock_client
 
-    model = BedrockModel(model_id="anthropic.claude-future-9", cache_config=CacheConfig(strategy="auto"))
+    model = BedrockModel(model_id=model_id, cache_config=CacheConfig(strategy="auto"))
+
+    assert model.model_info.capabilities == ModelCapabilities()
+    assert model._cache_strategy == "anthropic"
+
+
+def test_cache_strategy_auto_is_none_for_an_unlisted_id_that_is_not_claude(bedrock_client):
+    _ = bedrock_client
+
+    model = BedrockModel(
+        model_id="arn:aws:bedrock:us-east-1:123456789012:custom-model/acme.foo/abc",
+        cache_config=CacheConfig(strategy="auto"),
+    )
 
     assert model.model_info.capabilities == ModelCapabilities()
     assert model._cache_strategy is None
