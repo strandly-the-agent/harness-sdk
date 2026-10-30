@@ -134,9 +134,13 @@ def _section(entry: dict[str, Any], name: str, field_names: dict[str, str], sect
     Unknown keys and values are skipped rather than rejected: the data file is shared with the TypeScript SDK, so it can
     carry a fact this version has no field for yet. ``test__model_info.py`` validates the file strictly instead.
     """
-    known = {field_names[key]: value for key, value in entry.get(name, {}).items() if key in field_names}
+    raw = entry.get(name)
+    if not isinstance(raw, dict):
+        return section()
+    known = {field_names[key]: value for key, value in raw.items() if key in field_names}
     if "prompt_caching" in known:
-        known["prompt_caching"] = _PROMPT_CACHING_VALUES.get(known["prompt_caching"])
+        value = known["prompt_caching"]
+        known["prompt_caching"] = _PROMPT_CACHING_VALUES.get(value) if isinstance(value, str) else None
     return section(**known)
 
 

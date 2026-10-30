@@ -4,16 +4,19 @@ import json
 import pathlib
 import re
 import unittest.mock
+from typing import get_args
 
 import pytest
 
 from strands.models._model_info import (
     _CAPABILITY_FIELDS,
     _LIMIT_FIELDS,
+    _PROMPT_CACHING_VALUES,
     DEFAULT_CONTEXT_WINDOW_LIMIT,
     ModelCapabilities,
     ModelInfo,
     ModelLimits,
+    PromptCaching,
     _load_data,
     _section,
     get_context_window_limit,
@@ -160,10 +163,20 @@ def test_loader_returns_an_empty_section_when_its_only_facts_are_unknown_to_this
     assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) == ModelCapabilities()
 
 
-def test_loader_treats_a_prompt_caching_value_this_version_does_not_know_as_unknown():
-    entry = {"capabilities": {"promptCaching": "explicit", "stateful": False}}
+@pytest.mark.parametrize("value", ["explicit", {"default": "cachePoints"}, None])
+def test_loader_treats_a_prompt_caching_value_this_version_does_not_know_as_unknown(value):
+    entry = {"capabilities": {"promptCaching": value, "stateful": False}}
 
     assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) == ModelCapabilities(stateful=False)
+
+
+@pytest.mark.parametrize("entry", [{}, {"capabilities": None}, {"capabilities": "cachePoints"}])
+def test_loader_returns_an_empty_section_when_the_section_is_missing_or_not_an_object(entry):
+    assert _section(entry, "capabilities", _CAPABILITY_FIELDS, ModelCapabilities) == ModelCapabilities()
+
+
+def test_prompt_caching_value_map_covers_exactly_the_prompt_caching_type():
+    assert set(_PROMPT_CACHING_VALUES.values()) == set(get_args(PromptCaching))
 
 
 def test_load_data_says_how_to_restore_the_package_copy_when_it_is_missing():
@@ -214,7 +227,7 @@ def test_shared_data_has_only_the_fields_model_info_defines_with_the_right_types
             assert isinstance(value, int) and value > 0, f"{model_id}.limits.{key}"
         for key, value in entry.get("capabilities", {}).items():
             if key == "promptCaching":
-                assert value in ("unsupported", "auto", "cachePoints"), f"{model_id}.{key}"
+                assert value in _PROMPT_CACHING_VALUES, f"{model_id}.{key}"
             else:
                 assert key in _BOOLEAN_CAPABILITY_KEYS, f"{model_id}.capabilities.{key}"
                 assert isinstance(value, bool), f"{model_id}.{key}"
