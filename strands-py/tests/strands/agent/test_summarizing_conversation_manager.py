@@ -306,20 +306,24 @@ def test_reduce_context_does_not_truncate_when_summary_call_fails_for_other_reas
     assert failing_agent.messages[0]["content"][0]["text"] == oversized
 
 
-def test_reduce_context_reraises_once_nothing_is_left_to_truncate(mock_agent):
-    """Every oversized block is truncated in one pass; the next overflow propagates."""
+def test_reduce_context_truncates_largest_block_first_and_reraises_once_nothing_is_left(mock_agent):
+    """Each overflow truncates one block, largest first; the overflow propagates once none qualify."""
     manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=3)
     mock_agent.messages = [
         {"role": "user", "content": [{"text": "x" * 50_000}]},
         {"role": "assistant", "content": [{"text": "Response 1"}]},
-        {"role": "user", "content": [{"text": "z" * 50_000}]},
+        {"role": "user", "content": [{"text": "z" * 80_000}]},
     ]
 
     manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert mock_agent.messages[0]["content"][0]["text"] == "x" * 50_000
+    assert "[truncated: 76000 chars removed]" in mock_agent.messages[2]["content"][0]["text"]
+
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert "[truncated: 46000 chars removed]" in mock_agent.messages[0]["content"][0]["text"]
+
     with pytest.raises(ContextWindowOverflowException, match="insufficient messages for summarization"):
         manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
-
-    assert all("[truncated:" in mock_agent.messages[i]["content"][0]["text"] for i in (0, 2))
 
 
 def test_reduce_context_does_not_resummarize_only_the_previous_summary(mock_agent):
@@ -409,6 +413,44 @@ def test_agent_recovers_from_oversized_paste_with_summarizing_manager():
     assert len(agent.messages[0]["content"][0]["text"]) < 5_000
     assert agent.messages[-1]["content"][0]["text"] == "Hello!"
     assert model.stream.call_count == 2
+
+
+def test_agent_keeps_earlier_documents_intact_when_a_later_paste_overflows():
+    """Only the paste that overflowed is truncated; an earlier 12K document the model can still fit survives."""
+    window_chars = 100_000
+    fact = "The launch code is 7421."
+    document = "d" * 6_000 + fact + "d" * 6_000
+
+    def stream(messages, *args, **kwargs):
+        total = sum(len(block.get("text", "")) for message in messages for block in message["content"])
+        if total > window_chars:
+            return _mock_model_stream_error(ContextWindowOverflowException("Input is too long"))
+        return _mock_model_stream("Hello!")
+
+    model = Mock(spec=Model)
+    model.stream = Mock(side_effect=stream)
+    model.stateful = False
+    agent = Agent(model=model, conversation_manager=SummarizingConversationManager())
+    agent.messages = [
+        {"role": "user", "content": [{"text": document}]},
+        {"role": "assistant", "content": [{"text": "Noted."}]},
+        {"role": "user", "content": [{"text": "What is the launch code?"}]},
+        {"role": "assistant", "content": [{"text": fact}]},
+    ]
+
+    result = agent("p" * 500_000)
+
+    assert str(result).strip() == "Hello!"
+    assert agent.messages[0]["content"][0]["text"] == document
+    assert "[truncated: 496000 chars removed]" in agent.messages[4]["content"][0]["text"]
+    assert model.stream.call_count == 2
+
+    # A second overflow while one marker is in the history still truncates a single block.
+    agent("q" * 500_000)
+
+    assert agent.messages[0]["content"][0]["text"] == document
+    assert "[truncated: 496000 chars removed]" in agent.messages[6]["content"][0]["text"]
+    assert model.stream.call_count == 4
 
 
 def test_proactive_reduce_context_does_not_truncate(mock_agent):

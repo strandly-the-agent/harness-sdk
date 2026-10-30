@@ -19,7 +19,7 @@ from .compression.context_compression import (
     generate_summary,
 )
 from .compression.pin_message import apply_pin_first, partition_pinned
-from .compression.truncate_text import _truncate_oversized_text_blocks
+from .compression.truncate_text import _truncate_largest_text_blocks
 from .conversation_manager import ConversationManager, ProactiveCompressionConfig
 
 if TYPE_CHECKING:
@@ -121,10 +121,12 @@ class SummarizingConversationManager(ConversationManager):
 
         When ``e`` is set (reactive overflow recovery) and summarization fails with a
         ``ContextWindowOverflowException`` — too few messages to summarize, or the summary call itself
-        overflows — oversized text blocks in non-pinned messages are truncated to head+tail previews
-        instead; the failure is re-raised when nothing is left to truncate. Any other summarization
-        error (throttling, network) is re-raised untouched, since a retry may still succeed.
-        Truncation edits ``agent.messages`` only; a session store keeps the original content.
+        overflows — the largest text block in a non-pinned message is truncated to a head+tail preview
+        instead. ``Agent`` retries the model call and calls again on a further overflow, which truncates
+        the next largest block(s), so the first overflow costs one block and smaller blocks the model
+        accepts stay intact. The failure is re-raised when nothing is left to truncate. Any other
+        summarization error (throttling, network) is re-raised untouched, since a retry may still
+        succeed. Truncation edits ``agent.messages`` only; a session store keeps the original content.
 
         When ``e`` is None (proactive compression), summarization failure is logged and
         returns silently — the model call proceeds regardless.
@@ -150,14 +152,16 @@ class SummarizingConversationManager(ConversationManager):
                 logger.warning("Proactive summarization failed, continuing: %s", summarization_error)
                 return
             # Only an overflow proves summarization cannot shrink the context; anything else may pass on retry.
-            if isinstance(summarization_error, ContextWindowOverflowException) and _truncate_oversized_text_blocks(
-                agent.messages
-            ):
-                logger.warning(
-                    "error=<%s> | summarization could not reduce context, truncated oversized text blocks instead",
-                    summarization_error,
-                )
-                return
+            if isinstance(summarization_error, ContextWindowOverflowException):
+                truncated = _truncate_largest_text_blocks(agent.messages)
+                if truncated:
+                    logger.warning(
+                        "error=<%s>, truncated_blocks=<%d> | summarization could not reduce context, truncated the"
+                        " largest text blocks instead",
+                        summarization_error,
+                        truncated,
+                    )
+                    return
             # Reactive: rethrow so the ContextWindowOverflowException propagates
             logger.error("Summarization failed: %s", summarization_error)
             raise summarization_error from e
