@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from strands.agent.agent import Agent
+from strands.agent.conversation_manager.compression.pin_message import is_pinned
 from strands.agent.conversation_manager.summarizing_conversation_manager import (
     DEFAULT_SUMMARIZATION_PROMPT,
     SummarizingConversationManager,
@@ -351,6 +352,29 @@ def test_reduce_context_truncation_fallback_skips_pin_first_messages(mock_agent)
 
     assert mock_agent.messages[0]["content"][0]["text"] == "x" * 50_000
     assert mock_agent.messages[2]["content"][0]["text"] == _truncated("z" * 80_000)
+
+
+def test_pin_first_keeps_pinning_until_the_history_holds_that_many_messages(mock_agent):
+    """A reduction on a history shorter than ``pin_first`` pins what exists and the rest once they arrive."""
+    manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=3, pin_first=4)
+    mock_agent.messages = [
+        {"role": "user", "content": [{"text": "x" * 50_000}]},
+        {"role": "assistant", "content": [{"text": "Noted."}]},
+    ]
+
+    # Both messages get pinned, which leaves nothing to truncate.
+    with pytest.raises(ContextWindowOverflowException, match="insufficient messages for summarization"):
+        manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert [is_pinned(mock_agent.messages, i) for i in range(2)] == [True, True]
+
+    mock_agent.messages += [
+        {"role": "user", "content": [{"text": "y" * 50_000}]},
+        {"role": "assistant", "content": [{"text": "Noted."}]},
+        {"role": "user", "content": [{"text": "z" * 50_000}]},
+    ]
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    assert [is_pinned(mock_agent.messages, i) for i in range(5)] == [True, True, True, True, False]
+    assert mock_agent.messages[4]["content"][0]["text"] == _truncated("z" * 50_000)
 
 
 def test_summary_call_is_not_repeated_while_the_overflowed_range_is_unchanged(mock_agent):
