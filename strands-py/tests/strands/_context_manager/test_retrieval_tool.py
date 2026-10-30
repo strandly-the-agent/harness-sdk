@@ -63,6 +63,8 @@ class TestRetrievalTool:
         assert text.startswith("No matches found for pattern 'needle' (searched 21 lines).\n\n")
         assert "only a window of the original output" in text
 
+    @pytest.mark.asyncio
+    async def test_returns_line_range(self, stash):
         lines = "\n".join(f"line {i}" for i in range(1, 11))
         ref = await _store_text(stash, lines)
         tool = _create_retrieval_tool(stash)
