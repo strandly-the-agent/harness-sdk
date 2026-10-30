@@ -224,7 +224,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
       warnOnce(logger, defaultModelWarningMessage(MODEL_DEFAULTS.anthropic.modelId))
     }
 
-    if (modelConfig.maxTokens === undefined) {
+    if (modelConfig.maxTokens === undefined && modelConfig.modelInfo?.limits?.maxOutputTokens === undefined) {
       warnOnce(logger, defaultMaxTokensWarningMessage(this._resolvedMaxTokens()))
     }
 

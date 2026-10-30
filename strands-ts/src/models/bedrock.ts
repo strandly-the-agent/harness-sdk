@@ -491,8 +491,13 @@ export class BedrockModel extends Model<BedrockModelConfig> {
       warnOnce(logger, defaultModelWarningMessage(MODEL_DEFAULTS.bedrock.modelId))
     }
 
+    // Warn only when the value comes from the shared model info, not when the user pinned it through `modelInfo`.
     const maxTokens = this.getConfig().maxTokens
-    if (modelConfig.maxTokens === undefined && maxTokens !== undefined) {
+    if (
+      modelConfig.maxTokens === undefined &&
+      modelConfig.modelInfo?.limits?.maxOutputTokens === undefined &&
+      maxTokens !== undefined
+    ) {
       warnOnce(logger, defaultMaxTokensWarningMessage(maxTokens))
     }
 

@@ -578,6 +578,10 @@ describe('BedrockModel', () => {
 
       it.each([
         ['maxTokens is explicit', { modelId: 'anthropic.claude-sonnet-4-6', maxTokens: 1 }],
+        [
+          'it is pinned through modelInfo',
+          { modelId: 'anthropic.claude-sonnet-4-6', modelInfo: { limits: { maxOutputTokens: 2_000 } } },
+        ],
         ['the model is unknown', { modelId: 'unknown.model-v1:0' }],
       ])('does not warn about maxTokens when %s', (_, config) => {
         new BedrockModel(config)

@@ -328,6 +328,7 @@ class BedrockModel(Model):
         self._tool_result_turn_separation_model_id: str | None = None
         self._drop_stale_thinking_model_id: str | None = None
         self.update_config(**model_config)
+        self._warn_on_default_max_tokens(model_config)
 
         logger.debug("config=<%s> | initializing", self.config)
 
@@ -386,6 +387,19 @@ class BedrockModel(Model):
         if self.model_info.capabilities.prompt_caching == "cache_points":
             return "anthropic"
         return None
+
+    def _warn_on_default_max_tokens(self, model_config: BedrockConfig) -> None:
+        """Warn when ``max_tokens`` comes from the shared model info, not from the user or their ``model_info``."""
+        override = model_config.get("model_info")
+        if "max_tokens" in model_config or (override is not None and override.limits.max_output_tokens is not None):
+            return
+        max_tokens = self.get_config().get("max_tokens")
+        if max_tokens is not None:
+            warnings.warn(
+                f"You're using default max_tokens {max_tokens} for model '{self.config.get('model_id')}', which is "
+                "subject to change. Specify max_tokens explicitly to pin the value.",
+                stacklevel=3,
+            )
 
     @override
     def update_config(self, **model_config: Unpack[BedrockConfig]) -> None:  # type: ignore
