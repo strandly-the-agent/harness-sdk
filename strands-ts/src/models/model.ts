@@ -53,18 +53,9 @@ export function resolveConfigMetadata<T extends BaseModelConfig>(config: T, mode
 }
 
 /**
- * The share of the context window the default `maxTokens` may reserve. The API rejects a request
- * whose input plus `maxTokens` exceeds the window, so an uncapped default fails long inputs early.
- *
- * @internal
- */
-export const DEFAULT_MAX_TOKENS_WINDOW_FRACTION = 0.25
-
-/**
- * The `maxTokens` to send: the configured value, else the model's output ceiling from the shared
- * model info (through the `contextWindowLimit` and `modelInfo` layers, as `Model.modelInfo` resolves
- * it) capped at {@link DEFAULT_MAX_TOKENS_WINDOW_FRACTION} of the context window, else `undefined`.
- * Reads the layers directly rather than `Model.modelInfo` so `getConfig()` can call it.
+ * The `maxTokens` to send: the configured value, else the model's output ceiling from the shared model
+ * info with the `modelInfo` override applied, else `undefined`. Reads the layers directly rather than
+ * `Model.modelInfo` so `getConfig()` can call it.
  *
  * @internal
  * @param config - The stored model config
@@ -73,13 +64,7 @@ export const DEFAULT_MAX_TOKENS_WINDOW_FRACTION = 0.25
  */
 export function resolveMaxTokens(config: BaseModelConfig, modelId: string): number | undefined {
   if (config.maxTokens !== undefined) return config.maxTokens
-  const limits = mergeModelInfo(
-    lookupModelInfo(modelId),
-    { limits: { contextWindow: config.contextWindowLimit } },
-    config.modelInfo
-  ).limits
-  if (limits?.maxOutputTokens === undefined || limits.contextWindow === undefined) return limits?.maxOutputTokens
-  return Math.min(limits.maxOutputTokens, Math.floor(limits.contextWindow * DEFAULT_MAX_TOKENS_WINDOW_FRACTION))
+  return mergeModelInfo(lookupModelInfo(modelId), config.modelInfo).limits?.maxOutputTokens
 }
 
 class CitationAccumulator {

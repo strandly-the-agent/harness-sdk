@@ -605,27 +605,18 @@ def test_format_request_explicit_none_max_tokens_opts_out_of_the_default(bedrock
 
 
 @pytest.mark.parametrize(
-    ("config", "exp_max_tokens"),
+    "config",
     [
-        ({"model_id": "anthropic.claude-sonnet-4-5-20250929-v1:0"}, 50_000),
-        ({"model_id": "anthropic.claude-sonnet-4-6", "context_window_limit": 100_000}, 25_000),
-        (
-            {
-                "model_id": "anthropic.claude-sonnet-4-6",
-                "model_info": ModelInfo(limits=ModelLimits(context_window=400_000)),
-            },
-            100_000,
-        ),
+        {"model_id": "anthropic.claude-sonnet-4-5-20250929-v1:0"},
+        {"model_id": "anthropic.claude-sonnet-4-5-20250929-v1:0", "context_window_limit": 100_000},
     ],
-    ids=["200k-window model", "user-set context_window_limit", "model_info context_window override"],
+    ids=["200k-window model", "user-set context_window_limit"],
 )
-def test_format_request_caps_the_default_max_tokens_at_a_quarter_of_the_context_window(
-    bedrock_client, messages, config, exp_max_tokens
-):
+def test_format_request_does_not_cap_the_default_max_tokens_by_the_context_window(bedrock_client, messages, config):
     _ = bedrock_client
     model = BedrockModel(**config)
 
-    assert model.format_request(messages)["inferenceConfig"] == {"maxTokens": exp_max_tokens}
+    assert model.format_request(messages)["inferenceConfig"] == {"maxTokens": 64_000}
 
 
 def test_get_config_surfaces_the_default_max_tokens(bedrock_client):

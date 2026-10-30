@@ -170,7 +170,7 @@ describe('AnthropicModel', () => {
       })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'claude-sonnet-4-6',
-        maxTokens: 25_000,
+        maxTokens: 128_000,
         contextWindowLimit: 100_000,
       })
     })

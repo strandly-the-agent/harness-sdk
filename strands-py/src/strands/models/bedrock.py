@@ -240,10 +240,9 @@ class BedrockModel(Model):
             guardrail_latest_message: Flag to send only the lastest user message to guardrails.
                 Defaults to False.
             max_tokens: Maximum number of tokens to generate in the response. Defaults to the model's
-                output limit from the model info (``model_info.limits.max_output_tokens``), capped at a
-                quarter of its context window, when known; otherwise ``maxTokens`` is not sent and
-                Bedrock's per-model default applies. Pass ``None`` to opt out of the default and leave
-                ``maxTokens`` unset.
+                output limit from the model info (``model_info.limits.max_output_tokens``) when known;
+                otherwise ``maxTokens`` is not sent and Bedrock's per-model default applies. Pass ``None`` to
+                opt out of the default and leave ``maxTokens`` unset.
             model_id: The Bedrock model ID (e.g., "global.anthropic.claude-sonnet-4-6")
             include_tool_result_status: Flag to include status field in tool results.
                 True includes status, False removes status, "auto" determines based on model_id. Defaults to "auto".

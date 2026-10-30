@@ -10,24 +10,18 @@ from typing import TypeVar, cast
 from ._model_info import (
     DEFAULT_CONTEXT_WINDOW_LIMIT,
     ModelInfo,
-    ModelLimits,
     get_context_window_limit,
     lookup_model_info,
 )
 
 __all__ = [
     "DEFAULT_CONTEXT_WINDOW_LIMIT",
-    "DEFAULT_MAX_TOKENS_WINDOW_FRACTION",
     "get_context_window_limit",
     "resolve_config_metadata",
     "resolve_max_tokens",
 ]
 
 _C = TypeVar("_C", bound=Mapping[str, object])
-
-# The share of the context window the default max_tokens may reserve. The API rejects a request whose
-# input plus max_tokens exceeds the window, so an uncapped default fails long inputs early.
-DEFAULT_MAX_TOKENS_WINDOW_FRACTION = 0.25
 
 
 def resolve_config_metadata(config: _C, model_id: str) -> _C:
@@ -58,12 +52,11 @@ def resolve_config_metadata(config: _C, model_id: str) -> _C:
 
 
 def resolve_max_tokens(config: Mapping[str, object], model_id: str) -> int | None:
-    """The ``max_tokens`` to send: the configured value, else the model's capped output ceiling, else None.
+    """The ``max_tokens`` to send: the configured value, else the model info's output limit, else None.
 
     A ``max_tokens`` key in the config wins as is, so an explicit ``None`` opts out of the default. The
-    default is ``limits.max_output_tokens`` resolved through the same layers as
-    :attr:`strands.models.Model.model_info` (shared model info, ``context_window_limit``,
-    ``model_info`` override), capped at :data:`DEFAULT_MAX_TOKENS_WINDOW_FRACTION` of the context window.
+    default is ``limits.max_output_tokens`` from the shared model info, with the ``model_info`` override
+    applied on top; a model the data does not know gets None.
 
     Args:
         config: The stored model config dict.
@@ -76,10 +69,4 @@ def resolve_max_tokens(config: Mapping[str, object], model_id: str) -> int | Non
         return cast(int | None, config["max_tokens"])
 
     override = cast(ModelInfo | None, config.get("model_info"))
-    context_window_limit = cast(int | None, config.get("context_window_limit"))
-    limits = ModelInfo.merge(
-        lookup_model_info(model_id), ModelInfo(limits=ModelLimits(context_window=context_window_limit)), override
-    ).limits
-    if limits.max_output_tokens is None or limits.context_window is None:
-        return limits.max_output_tokens
-    return min(limits.max_output_tokens, int(limits.context_window * DEFAULT_MAX_TOKENS_WINDOW_FRACTION))
+    return ModelInfo.merge(lookup_model_info(model_id), override).limits.max_output_tokens

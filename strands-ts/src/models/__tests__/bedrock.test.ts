@@ -381,7 +381,7 @@ describe('BedrockModel', () => {
       })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'anthropic.claude-sonnet-4-6',
-        maxTokens: 50_000,
+        maxTokens: 128_000,
         contextWindowLimit: 200_000,
       })
     })
@@ -429,7 +429,7 @@ describe('BedrockModel', () => {
       })
       expect(provider.getConfig()).toStrictEqual({
         modelId: 'anthropic.claude-sonnet-4-6',
-        maxTokens: 25_000,
+        maxTokens: 128_000,
         contextWindowLimit: 100_000,
       })
     })
@@ -547,27 +547,21 @@ describe('BedrockModel', () => {
 
         collectIterator(provider.stream(messages))
 
-        expect(sentInferenceConfig()).toStrictEqual({ maxTokens: 50_000 })
+        expect(sentInferenceConfig()).toStrictEqual({ maxTokens: 64_000 })
       })
 
       it.each([
-        ['a 200k-window model', { modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0' }, 50_000],
+        ['a 200k-window model', { modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0' }],
         [
           'a user-set contextWindowLimit',
-          { modelId: 'anthropic.claude-sonnet-4-6', contextWindowLimit: 100_000 },
-          25_000,
+          { modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0', contextWindowLimit: 100_000 },
         ],
-        [
-          'a modelInfo contextWindow override',
-          { modelId: 'anthropic.claude-sonnet-4-6', modelInfo: { limits: { contextWindow: 400_000 } } },
-          100_000,
-        ],
-      ])('caps the default maxTokens at a quarter of the context window for %s', (_, config, maxTokens) => {
+      ])('does not cap the default maxTokens by the context window for %s', (_, config) => {
         const provider = new BedrockModel(config)
 
         collectIterator(provider.stream(messages))
 
-        expect(sentInferenceConfig()).toStrictEqual({ maxTokens })
+        expect(sentInferenceConfig()).toStrictEqual({ maxTokens: 64_000 })
       })
 
       it('surfaces the default maxTokens in getConfig', () => {

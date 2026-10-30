@@ -260,7 +260,7 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
   }
 
   /**
-   * The `maxTokens` to send: the user's value, else the model's capped output ceiling (see
+   * The `maxTokens` to send: the user's value, else the model's output ceiling (see
    * `resolveMaxTokens`), else the fixed default. Resolved on each read so it follows `updateConfig({ modelId })`.
    */
   private _resolvedMaxTokens(): number {
