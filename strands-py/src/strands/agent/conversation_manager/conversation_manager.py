@@ -45,7 +45,8 @@ class ConversationManager(ABC, HookProvider):
 
     The primary responsibility of a ConversationManager is overflow recovery: when the model encounters a context
     window overflow, :meth:`reduce_context` is called with ``e`` set and MUST make progress reducing the history
-    or re-raise; the agent retries the model call and calls it again while the overflow persists.
+    or re-raise; the agent retries the model call and calls it again while the overflow persists. Each retry
+    nests one level deeper, so each call should remove a substantial amount, not one small piece.
 
     Subclasses can enable proactive compression by passing ``proactive_compression`` in the constructor.
     When enabled, the base class registers a ``BeforeModelCallEvent`` hook that checks projected input tokens
@@ -193,7 +194,8 @@ class ConversationManager(ABC, HookProvider):
         Called in two scenarios:
         1. **Reactive** (e is set): A context window overflow occurred. The implementation
            MUST make progress reducing the history, or re-raise the error; the agent retries the
-           model call and calls again while the overflow persists.
+           model call and calls again while the overflow persists. Retries nest (one recursion level
+           per round), so each call should remove a substantial amount.
         2. **Proactive** (e is None): The compression threshold was exceeded. This is best-effort —
            returning without reduction or raising is acceptable; the model call proceeds regardless.
 

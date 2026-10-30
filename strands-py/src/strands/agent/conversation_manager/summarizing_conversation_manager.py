@@ -145,8 +145,9 @@ class SummarizingConversationManager(ConversationManager):
         until a model call succeeds, so a single oversized paste costs exactly one block while a history
         that needs many blocks gone converges in O(log n) rounds. The failure is re-raised when nothing is
         left to truncate. Any other summarization error (throttling, network) is re-raised untouched,
-        since a retry may still succeed. Truncation edits ``agent.messages`` only; a session store keeps
-        the original content.
+        since a retry may still succeed. Truncation edits ``agent.messages`` in place; whether the original
+        content survives depends on the session manager (repository-based managers persist messages as
+        they are appended and keep it, ``SnapshotSessionManager`` persists the truncated history).
 
         When ``e`` is None (proactive compression), summarization failure is logged and
         returns silently — the model call proceeds regardless.
