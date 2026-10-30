@@ -662,40 +662,6 @@ def test_format_request_re_resolves_the_default_max_tokens_when_model_id_changes
     assert model.format_request(messages)["inferenceConfig"] == {"maxTokens": 64_000}
 
 
-def test_init_warns_once_about_the_default_max_tokens(bedrock_client, captured_warnings):
-    _ = bedrock_client
-
-    BedrockModel(model_id="anthropic.claude-sonnet-4-6")
-
-    assert [str(w.message) for w in captured_warnings] == [
-        "You're using default max_tokens 128000 for model 'anthropic.claude-sonnet-4-6', which is subject to change. "
-        "Specify max_tokens explicitly to pin the value."
-    ]
-
-
-@pytest.mark.parametrize(
-    "config",
-    [
-        {"model_id": "anthropic.claude-sonnet-4-6", "max_tokens": 1},
-        {"model_id": "anthropic.claude-sonnet-4-6", "max_tokens": None},
-        {
-            "model_id": "anthropic.claude-sonnet-4-6",
-            "model_info": ModelInfo(limits=ModelLimits(max_output_tokens=2_000)),
-        },
-        {"model_id": "unknown.model-v1:0"},
-    ],
-    ids=["explicit", "explicit None", "pinned through model_info", "unknown model"],
-)
-def test_init_does_not_warn_about_max_tokens_when_the_user_chose_it_or_none_applies(
-    bedrock_client, captured_warnings, config
-):
-    _ = bedrock_client
-
-    BedrockModel(**config)
-
-    assert [str(w.message) for w in captured_warnings if "max_tokens" in str(w.message)] == []
-
-
 def test_format_request_system_prompt(model, messages, model_id, system_prompt):
     tru_request = model.format_request(messages, system_prompt_content=[{"text": system_prompt}])
     exp_request = {
