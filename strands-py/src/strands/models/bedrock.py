@@ -94,6 +94,7 @@ _MODELS_REJECT_REASONING_TEXT = [
     "nvidia.nemotron-super",
     "openai.gpt-5",
     "openai.gpt-6",
+    "openai.gpt-daybreak",
     "qwen.qwen3-235b",
     "qwen.qwen3-coder",
     "writer.palmyra",
@@ -371,16 +372,15 @@ class BedrockModel(Model):
         """The effective cache strategy for this request, or None when caching is off or unsupported.
 
         Resolves ``cache_config.strategy``: an explicit strategy is returned as written, while ``"auto"``
-        maps to ``"anthropic"`` for Claude/Anthropic model IDs and None for models without automatic
-        caching support.
+        maps to ``"anthropic"`` for models the model info says take cache points, and None for models
+        without automatic caching support.
         """
         cache_config = self.config.get("cache_config")
         if not cache_config:
             return None
         if cache_config.strategy != "auto":
             return cache_config.strategy
-        model_id = self.config.get("model_id", "").lower()
-        if "claude" in model_id or "anthropic" in model_id:
+        if self.model_info.capabilities.prompt_caching == "cache_points":
             return "anthropic"
         return None
 
@@ -1045,6 +1045,7 @@ class BedrockModel(Model):
             unsupported_mechanisms("bedrock", model_id, structured_output_model),
             request.get("toolConfig", {}).get("toolChoice"),
             structured_output_model,
+            self.model_info,
         )
         if "native" in mechanisms and not self._client_supports_native_output():
             warnings.warn(
