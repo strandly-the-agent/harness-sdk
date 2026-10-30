@@ -13,7 +13,7 @@ _MAX_PATTERN_LENGTH = 200
 _NESTED_QUANTIFIER = re.compile(r"[+*]\s*\)\s*[+*]")
 _MATCH_LINE = re.compile(r"^>", re.MULTILINE)
 # A window notice a tool appends after paged output, e.g. read's "[Showing lines 1-2000 of 4001. ...]".
-_WINDOW_NOTICE = re.compile(r"^\[([^\[\]]*\b\d+-\d+ of \d+\b[^\[\]]*)\]$")
+_WINDOW_NOTICE = re.compile(r"^\[([^\[\]]*[0-9]+-[0-9]+ of [0-9]+[^\[\]]*)\]$")
 
 _TEXT_APPLICATION_TYPES = frozenset(
     {
@@ -77,7 +77,9 @@ def _search_content(
         if start > end:
             raise ValueError(f"line_range.start ({start}) must be <= line_range.end ({end}).")
         if start > total_lines:
-            raise ValueError(f"line_range.start ({start}) is beyond content length ({total_lines} lines).")
+            message = f"line_range.start ({start}) is beyond content length ({total_lines} lines)."
+            note = _window_note(lines)
+            raise ValueError(f"{message}\n\n{note}" if note else message)
         scope_start = start - 1
         scope_end = min(end - 1, total_lines - 1)
 

@@ -6,7 +6,7 @@
  */
 
 /** A window notice a tool appends after paged output, e.g. read's "[Showing lines 1-2000 of 4001. ...]". */
-const WINDOW_NOTICE = /^\[([^[\]]*\b\d+-\d+ of \d+\b[^[\]]*)\]$/
+const WINDOW_NOTICE = /^\[([^[\]]*[0-9]+-[0-9]+ of [0-9]+[^[\]]*)\]$/
 
 /** Returns a note when the content ends with a window notice, so a search never hides that it is a partial page. */
 function windowNote(lines: string[]): string | undefined {
@@ -155,7 +155,9 @@ export function searchContent(
       return `Error: line_range.start (${input.line_range.start}) must be <= line_range.end (${input.line_range.end}).`
     }
     if (input.line_range.start > totalLines) {
-      return `Error: line_range.start (${input.line_range.start}) is beyond content length (${totalLines} lines).`
+      const message = `Error: line_range.start (${input.line_range.start}) is beyond content length (${totalLines} lines).`
+      const note = windowNote(lines)
+      return note ? `${message}\n\n${note}` : message
     }
     scopeStart = input.line_range.start - 1
     scopeEnd = Math.min(input.line_range.end - 1, totalLines - 1)

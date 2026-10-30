@@ -238,6 +238,12 @@ describe('searchContent', () => {
       expect(result).toContain('only a window of the original output ("content truncated: showing characters 0-50000')
     })
 
+    it('adds the note to an out-of-range line_range error', () => {
+      const result = searchContent(text, { line_range: { start: 2001, end: 4001 }, context_lines: 5 }, maxChars)
+      expect(result.startsWith('Error: line_range.start (2001) is beyond content length (21 lines).\n\n')).toBe(true)
+      expect(result.endsWith(note)).toBe(true)
+    })
+
     it('does not treat a plain last line as a notice', () => {
       const plain = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n')
       const result = searchContent(plain, { pattern: 'nonexistent', context_lines: 5 }, maxChars)

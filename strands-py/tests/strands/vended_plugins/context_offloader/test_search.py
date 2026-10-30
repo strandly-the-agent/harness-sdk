@@ -262,6 +262,10 @@ class TestSearchContentWindowNotice:
             'only a window of the original output ("content truncated: showing characters 0-50000 of 123456' in result
         )
 
+    def test_out_of_range_line_range_adds_note(self):
+        with pytest.raises(ValueError, match=r"beyond content length \(21 lines\)\.\n\n\[This reference holds only"):
+            _search_content(self.text, line_range=(2001, 4001), context_lines=5, max_chars=10_000)
+
     def test_plain_last_line_is_not_a_notice(self):
         text = "\n".join(f"line {i + 1}" for i in range(20))
         result = _search_content(text, pattern="nonexistent", context_lines=5, max_chars=10_000)
