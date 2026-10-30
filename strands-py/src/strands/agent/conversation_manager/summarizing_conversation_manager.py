@@ -199,6 +199,12 @@ class SummarizingConversationManager(ConversationManager):
                 only message old enough to summarize is the previous summary (re-summarizing it would
                 not shrink the history, so the overflow would recur forever).
         """
+        # Pin first N messages permanently (only on first reduction), before any early exit so the truncation
+        # fallback in reduce_context sees them pinned too.
+        if self.pin_first and not self._pin_first_applied:
+            apply_pin_first(agent.messages, self.pin_first)
+            self._pin_first_applied = True
+
         # Calculate how many messages to summarize
         messages_to_summarize_count = max(1, int(len(agent.messages) * self.summary_ratio))
 
@@ -217,11 +223,6 @@ class SummarizingConversationManager(ConversationManager):
 
         if messages_to_summarize_count <= 0:
             raise ContextWindowOverflowException("Cannot summarize: insufficient messages for summarization")
-
-        # Pin first N messages permanently (only on first reduction)
-        if self.pin_first and not self._pin_first_applied:
-            apply_pin_first(agent.messages, self.pin_first)
-            self._pin_first_applied = True
 
         # Partition [0, messages_to_summarize_count) into pinned (preserve) and non-pinned (summarize)
         protected_to_preserve, to_summarize = partition_pinned(agent.messages, 0, messages_to_summarize_count)
