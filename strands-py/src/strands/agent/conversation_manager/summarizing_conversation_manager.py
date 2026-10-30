@@ -65,7 +65,9 @@ class SummarizingConversationManager(ConversationManager):
             summarization_system_prompt: Optional system prompt override for summarization.
                 If None, uses the default summarization prompt.
             pin_first: Number of messages at the start of the conversation to permanently pin.
-                Pinned messages are protected from summarization and compacted to the front.
+                Pinned messages are protected from summarization and from the overflow truncation
+                fallback, and compacted to the front. A pinned message that alone exceeds the context
+                window is re-raised as an overflow rather than truncated.
             proactive_compression: Enable proactive context compression before the model call.
                 - ``True``: compress when 70% of the context window is used (default threshold).
                 - ``{"compression_threshold": float}``: compress at the specified ratio (0, 1].

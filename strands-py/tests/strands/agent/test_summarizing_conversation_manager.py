@@ -406,6 +406,32 @@ def test_summary_call_is_not_repeated_while_the_overflowed_range_is_unchanged(mo
     assert mock_agent.model.stream.call_count == 2
 
 
+def test_summary_call_is_retried_each_round_when_a_summarization_agent_overflows(mock_agent):
+    """A summarization agent with tools is not deterministic, so its overflow does not arm the range fingerprint."""
+    summarization_agent = Mock(side_effect=ContextWindowOverflowException("Input is too long"))
+    summarization_agent.system_prompt = None
+    summarization_agent.messages = []
+    summarization_agent.tool_registry = Mock()
+    summarization_agent.tool_names = []
+    summarization_agent._default_structured_output_model = None
+    manager = SummarizingConversationManager(
+        summary_ratio=0.5, preserve_recent_messages=2, summarization_agent=summarization_agent
+    )
+    mock_agent.messages = [
+        {"role": "user", "content": [{"text": "a" * 20_000}]},
+        {"role": "assistant", "content": [{"text": "Noted."}]},
+        {"role": "user", "content": [{"text": "p" * 50_000}]},
+        {"role": "assistant", "content": [{"text": "Noted."}]},
+    ]
+
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+    manager.reduce_context(mock_agent, e=RuntimeError("overflow"))
+
+    assert summarization_agent.call_count == 2
+    assert mock_agent.messages[0]["content"][0]["text"] == _truncated("a" * 20_000)
+    assert mock_agent.messages[2]["content"][0]["text"] == _truncated("p" * 50_000)
+
+
 def test_reduce_context_doubles_truncation_per_overflow_episode_and_resets_on_success(mock_agent):
     """Consecutive overflows truncate 1, 2, 4, …; any other model-call outcome starts the next episode at 1 again."""
     manager = SummarizingConversationManager(summary_ratio=0.5, preserve_recent_messages=30)
