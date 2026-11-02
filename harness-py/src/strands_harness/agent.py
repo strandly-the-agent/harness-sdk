@@ -21,6 +21,7 @@ from strands.vended_plugins.skills import AgentSkills, SkillSources
 from strands.vended_tools import make_shell
 
 from strands_harness import defaults
+from strands_harness.context import build_auto_context_manager
 from strands_harness.interventions import InterventionsOption, resolve_interventions
 from strands_harness.memory import resolve_memory
 from strands_harness.models import (
@@ -461,6 +462,8 @@ def create_harness(
     # The SDK's Agent rejects a bare config dict; build the instance from it here.
     if isinstance(context_manager, Mapping):
         agent_kwargs["context_manager"] = ContextManager(**context_manager)
+    elif context_manager == "auto":
+        agent_kwargs["context_manager"] = build_auto_context_manager()
     else:
         agent_kwargs["context_manager"] = context_manager if context_enabled else False
 
