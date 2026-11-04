@@ -372,7 +372,7 @@ def create_harness(
             run its shutdown on exit, or call ``agent.shutdown()`` (``await agent.shutdown_async()``
             from async code) at your shutdown boundary, to persist what's pending.
         builtin_plugins: Names of the built-in feature plugins to enable. Defaults to
-            ``["todos", "environment"]``: ``todos`` adds a ``todo_write`` tool that tracks
+            ``["environment"]``; ``todos`` (opt-in) adds a ``todo_write`` tool that tracks
             multi-step work and re-surfaces the list before each step; ``environment`` injects the
             platform, date, working directory, and the project's ``AGENTS.md`` (plus links to nearby
             ``AGENTS.md``/``README.md`` files) before each user turn. Pass ``[]`` to disable them.

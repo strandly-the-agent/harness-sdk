@@ -415,7 +415,7 @@ directories are skipped.
 
 ## Built-in plugins
 
-The harness ships two built-in feature plugins, both on by default:
+The harness ships two built-in feature plugins; `environment` is on by default, `todos` is opt-in:
 
 - **`todos`** lets the agent keep a structured task list and re-surfaces it before each step so it
   stays on plan through longer tasks. The list lives in agent state, never in durable history.
