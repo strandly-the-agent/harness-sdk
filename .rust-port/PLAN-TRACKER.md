@@ -11,9 +11,9 @@
 - [x] Phase review gate and fixes
 
 ## [ ] Phase 1: types, wire and errors
-- [ ] Messages, 14 content blocks, `JsonBlock`, media and citations
-- [ ] Tool types, `StopReason`, `Usage`, `Metrics`, snapshot and interrupt types
-- [ ] `strands::Error` and TS-mirrored error types with exact messages
+- [x] Messages, 14 content blocks, `JsonBlock`, media and citations
+- [x] Tool types, `StopReason`, `Usage`, `Metrics`, snapshot and interrupt types
+- [x] `strands::Error` and TS-mirrored error types with exact messages
 - [ ] Constructors for non-exhaustive wire structs
 - [ ] Fixture round-trips byte-identical
 - [ ] Phase review gate and fixes
