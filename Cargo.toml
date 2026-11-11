@@ -1,0 +1,132 @@
+[workspace]
+resolver = "3"
+members = ["strands-rs/strands", "strands-rs/strands-macros", "harness-rs/strands-harness"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+repository = "https://github.com/strands-agents/harness-sdk"
+homepage = "https://strandsagents.com"
+authors = ["AWS"]
+
+[workspace.dependencies]
+strands = { path = "strands-rs/strands", version = "=0.1.0", default-features = false }
+strands-macros = { path = "strands-rs/strands-macros", version = "=0.1.0" }
+strands-harness = { path = "harness-rs/strands-harness", version = "=0.1.0", default-features = false }
+
+# Async
+tokio = { version = "1.54", default-features = false }
+futures = "0.3.34"
+async-stream = "0.3.6"
+async-trait = "0.1.92"
+tokio-util = { version = "0.7.20", default-features = false }
+
+# Data
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+schemars = { version = "1.2.3", features = ["preserve_order"] }
+jsonschema = { version = "0.61.1", default-features = false }
+http = "1.5"
+uuid = { version = "1.29.2", features = ["v7"] }
+base64 = "0.23.1"
+jiff = "0.2.43"
+indexmap = "2.14.2"
+
+# Errors and builders
+thiserror = "2.0.21"
+bon = "3.10.3"
+
+# Bedrock and Mantle. Default features off so the legacy hyper 0.14 / rustls 0.21 stack is not pulled in.
+aws-config = { version = "1.13.2", default-features = false, features = [
+  "behavior-version-latest",
+  "credentials-process",
+  "default-https-client",
+  "rt-tokio",
+  "sso",
+] }
+aws-sdk-bedrockruntime = { version = "1.155.0", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+  "rt-tokio",
+] }
+aws-sigv4 = "1.6.5"
+
+# HTTP providers and tools
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls", "stream"] }
+eventsource-stream = "0.2.3"
+htmd = "0.5.6"
+
+# MCP
+rmcp = { version = "3.9.0", default-features = false, features = [
+  "auth",
+  "client",
+  "elicitation",
+  "reqwest",
+  "transport-child-process",
+  "transport-streamable-http-client-reqwest",
+] }
+
+# Telemetry. The opentelemetry* crates and tracing-opentelemetry move together so one OTel copy resolves.
+tracing = "0.1.44"
+opentelemetry = "0.33.1"
+opentelemetry_sdk = "0.33.1"
+tracing-opentelemetry = "0.34.0"
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = [
+  "http-proto",
+  "metrics",
+  "reqwest-client",
+  "trace",
+] }
+
+# Policy and scripting. cedar-policy pins its core crate exactly; pinning cedar-policy keeps one copy.
+cedar-policy = "=4.14.1"
+monty = "1.5"
+
+# Macros
+syn = { version = "3.0.10", features = ["full"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+darling = "0.24.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_invalid_type = "deny"
+needless_pass_by_value = "warn"
+redundant_clone = "warn"
+large_futures = "warn"
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_possible_wrap = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+manual_let_else = "warn"
+match_same_arms = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+unnested_or_patterns = "warn"
+redundant_closure_for_method_calls = "warn"
+must_use_candidate = "allow"
+missing_errors_doc = "warn"
+doc_markdown = "warn"
+
+# Dependencies build without debug info in dev and test builds; workspace crates keep the profile default.
+[profile.dev.package."*"]
+debug = false

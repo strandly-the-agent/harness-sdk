@@ -3,7 +3,7 @@
 
 ## [ ] Phase 0: setup and guardrails
 - [x] Branch `feat/rust-sdk` from `7296caba7`, `/tmp/ts-spec` export, toolchains and cargo tools, `.rust-port/` run folder
-- [ ] Workspace skeleton: root `Cargo.toml`, three crates, features, lints, `deny.toml`, rustfmt/clippy config
+- [x] Workspace skeleton: root `Cargo.toml`, three crates, features, lints, `deny.toml`, rustfmt/clippy config
 - [ ] AGENTS.md files (root layout, strands-rs, harness-rs), `docs/TESTING.md`, `docs/PARITY.md`
 - [ ] CI workflows and `ci.yml` path filters (test-lint, MSRV, deny, doctests)
 - [ ] Conformance fixture generator (tsx) and committed fixtures

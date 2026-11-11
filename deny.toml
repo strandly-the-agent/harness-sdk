@@ -1,0 +1,70 @@
+# cargo-deny configuration for the Rust workspace (strands-rs/, harness-rs/).
+
+[graph]
+all-features = true
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "aarch64-unknown-linux-musl",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+unused-allowed-license = "allow"
+# Licenses compatible with distributing an Apache-2.0 project.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "MIT-0",
+  "BlueOak-1.0.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "CDLA-Permissive-2.0",
+  "BSL-1.0",
+  "CC0-1.0",
+  "OpenSSL",
+]
+
+[bans]
+# Transitive duplicates (syn 2 and 3, rand, phf, ...) come from dependencies we don't control, so
+# duplicates are reported as warnings. Crates where two copies would split types or state across
+# the public API or runtime are denied outright.
+multiple-versions = "warn"
+deny = [
+  { crate = "reqwest", deny-multiple-versions = true },
+  { crate = "hyper", deny-multiple-versions = true },
+  { crate = "http", deny-multiple-versions = true },
+  { crate = "h2", deny-multiple-versions = true },
+  { crate = "rustls", deny-multiple-versions = true },
+  { crate = "tokio", deny-multiple-versions = true },
+  { crate = "serde_json", deny-multiple-versions = true },
+  { crate = "schemars", deny-multiple-versions = true },
+  { crate = "tracing", deny-multiple-versions = true },
+  { crate = "opentelemetry", deny-multiple-versions = true },
+  { crate = "opentelemetry_sdk", deny-multiple-versions = true },
+  { crate = "cedar-policy-core", deny-multiple-versions = true },
+  { crate = "aws-smithy-runtime", deny-multiple-versions = true },
+]
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
