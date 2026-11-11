@@ -1,0 +1,82 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 18f6f2027..9ebda1d6a 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -24,6 +24,8 @@ jobs:
+       mcp: ${{ steps.filter.outputs.mcp }}
+       harness-py: ${{ steps.filter.outputs.harness-py }}
+       harness-ts: ${{ steps.filter.outputs.harness-ts }}
++      strands-rs: ${{ steps.filter.outputs.strands-rs }}
++      harness-rs: ${{ steps.filter.outputs.harness-rs }}
+       strands-py-src: ${{ steps.filter.outputs.strands-py-src }}
+       strands-ts-src: ${{ steps.filter.outputs.strands-ts-src }}
+       strands-cli: ${{ steps.filter.outputs.strands-cli }}
+@@ -63,6 +65,27 @@ jobs:
+               - 'harness-ts/**/!(*.md)'
+               - '.github/workflows/harness-ts-*'
+               - '.github/workflows/ci.yml'
++            # One cargo workspace at the repo root holds both Rust areas, so root Cargo files trigger both.
++            strands-rs:
++              - 'strands-rs/**/!(*.md)'
++              - 'Cargo.toml'
++              - 'Cargo.lock'
++              - 'deny.toml'
++              - 'rustfmt.toml'
++              - 'clippy.toml'
++              - '.github/workflows/strands-rs-*'
++              - '.github/workflows/rust-security-audit.yml'
++              - '.github/workflows/ci.yml'
++            harness-rs:
++              - 'harness-rs/**/!(*.md)'
++              - 'Cargo.toml'
++              - 'Cargo.lock'
++              - 'deny.toml'
++              - 'rustfmt.toml'
++              - 'clippy.toml'
++              - '.github/workflows/harness-rs-*'
++              - '.github/workflows/rust-security-audit.yml'
++              - '.github/workflows/ci.yml'
+             # SDK runtime sources: changes here also run the harness suites against the local SDK.
+             strands-py-src:
+               - 'strands-py/src/**/!(*.md)'
+@@ -164,6 +187,24 @@ jobs:
+       ref: ${{ github.event.pull_request.head.sha || github.sha }}
+       local-strands-ts: ${{ needs.detect-changes.outputs.strands-ts-src == 'true' }}
+ 
++  rust:
++    name: Rust SDK
++    needs: detect-changes
++    # strands-ts sources also regenerate the conformance fixtures the Rust SDK round-trips.
++    if: needs.detect-changes.outputs.strands-rs == 'true' || needs.detect-changes.outputs.strands-ts-src == 'true'
++    uses: ./.github/workflows/strands-rs-pr-and-push.yml
++    permissions:
++      contents: read
++
++  harness-rust:
++    name: Harness Rust
++    needs: detect-changes
++    # harness-rs builds on the Rust SDK, so SDK changes run its suite too.
++    if: needs.detect-changes.outputs.harness-rs == 'true' || needs.detect-changes.outputs.strands-rs == 'true'
++    uses: ./.github/workflows/harness-rs-pr-and-push.yml
++    permissions:
++      contents: read
++
+   cli:
+     name: Strands CLI
+     needs: detect-changes
+@@ -248,6 +289,8 @@ jobs:
+         mcp,
+         harness-python,
+         harness-typescript,
++        rust,
++        harness-rust,
+         cli,
+         cli-tui-integration,
+         cli-package,
+@@ -259,5 +302,5 @@ jobs:
+     steps:
+       - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # release/v1
+         with:
+-          allowed-skips: dependency-review, python, typescript, docs, mcp, harness-python, harness-typescript, cli, cli-tui-integration, cli-package, pr-metrics, integ-metrics
++          allowed-skips: dependency-review, python, typescript, docs, mcp, harness-python, harness-typescript, rust, harness-rust, cli, cli-tui-integration, cli-package, pr-metrics, integ-metrics
+           jobs: ${{ toJSON(needs) }}

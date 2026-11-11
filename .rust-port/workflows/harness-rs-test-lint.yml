@@ -1,0 +1,57 @@
+name: "Harness Rust: Test and Lint"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  test-lint:
+    # `name` comes from the matrix so the Linux leg keeps a stable check name.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: strands-agents_ubuntu-latest_4-core, name: Test and Lint }
+          - { os: strands-agents_windows-latest_4-core, name: Test and Lint (Windows) }
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          components: clippy
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Clippy (all features)
+        run: cargo clippy -p strands-harness --all-targets --all-features --locked -- -D warnings
+
+      - name: Clippy (no default features)
+        run: cargo clippy -p strands-harness --all-targets --no-default-features --locked -- -D warnings
+
+      - name: Docs
+        run: cargo doc -p strands-harness --all-features --no-deps --locked
+
+      # `cargo test` runs unit, integration and doc tests.
+      - name: Test (all features, including doctests)
+        run: cargo test -p strands-harness --all-features --locked
+
+      - name: Test (no default features, including doctests)
+        run: cargo test -p strands-harness --no-default-features --locked

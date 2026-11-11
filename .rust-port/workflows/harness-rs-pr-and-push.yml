@@ -1,0 +1,30 @@
+name: "Harness Rust: Pull Request and Push"
+
+on:
+  workflow_call:
+  push:
+    branches: [ main ]
+    paths:
+      - 'harness-rs/**'
+      - 'strands-rs/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'deny.toml'
+      - '.github/workflows/harness-rs-*'
+      - '.github/workflows/rust-security-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  call-security-audit:
+    uses: ./.github/workflows/rust-security-audit.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  call-test-lint:
+    uses: ./.github/workflows/harness-rs-test-lint.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}

@@ -1,0 +1,28 @@
+name: "Rust: Security Audit"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+jobs:
+  cargo-deny:
+    name: Cargo Deny
+    permissions:
+      contents: read
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # Advisories, licenses, duplicate and wildcard bans, and sources, per deny.toml.
+      - name: Run cargo deny
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check advisories licenses bans sources
