@@ -7,7 +7,7 @@ use crate::agent::AgentMetadata;
 use crate::cancel::{CancelOptions, CancelSignal};
 use crate::error::Error;
 use crate::models::{Model, ModelStreamEvent, SummarizeOptions, SummarizeResult, Usage};
-use crate::test_support::{ScriptedModel, capture_logs, user_text};
+use crate::test_support::{TestModelProvider, capture_logs, scripted, user_text};
 use crate::tools::{ToolResultStatus, ToolSpec};
 use crate::types::{
     CachePointBlock, ContentBlock, Message, Role, SummaryBlock, SystemContentBlock, SystemPrompt, TextBlock,
@@ -45,7 +45,7 @@ fn event(value: Value) -> crate::Result<ModelStreamEvent> {
 }
 
 /// Replies with `reply` texts, then `usage`, then `stop_reason` (TS `RecordingModel`).
-fn recording(reply: &[&str], stop_reason: &str, usage: Option<Usage>) -> ScriptedModel {
+fn recording(reply: &[&str], stop_reason: &str, usage: Option<Usage>) -> TestModelProvider {
     let mut events = vec![json!({ "type": "modelMessageStartEvent", "role": "assistant" })];
     for text in reply {
         events.push(json!({ "type": "modelContentBlockStartEvent" }));
@@ -58,7 +58,7 @@ fn recording(reply: &[&str], stop_reason: &str, usage: Option<Usage>) -> Scripte
         events.push(json!({ "type": "modelMetadataEvent", "usage": usage }));
     }
     events.push(json!({ "type": "modelMessageStopEvent", "stopReason": stop_reason }));
-    ScriptedModel::new(events)
+    scripted(events)
 }
 
 fn turns(messages: &[Message]) -> Value {
@@ -99,7 +99,7 @@ async fn replays_the_request_with_the_instructions_closing_it() {
         result,
         SummarizeResult::new(summary("first\nsecond")).with_usage(Usage::default())
     );
-    let requests = model.requests.lock().unwrap();
+    let requests = model.requests();
     assert_eq!(requests.len(), 1);
     let mut expected = history();
     expected[2].content.push(guarded("Summarize briefly."));
@@ -118,7 +118,7 @@ async fn sends_the_agent_metadata() {
         ..Default::default()
     };
     model.summarize(history()[..2].to_vec(), options).await.unwrap();
-    let requests = model.requests.lock().unwrap();
+    let requests = model.requests();
     let mut expected = history()[..2].to_vec();
     expected.push(Message::new(
         Role::User,
@@ -139,10 +139,7 @@ async fn adds_a_user_turn_after_an_assistant_turn() {
     model.summarize(history()[..2].to_vec(), options).await.unwrap();
     let mut expected = history()[..2].to_vec();
     expected.push(Message::new(Role::User, vec![guarded("Summarize briefly.")]));
-    assert_eq!(
-        turns(&model.requests.lock().unwrap()[0].messages),
-        turns(&expected)
-    );
+    assert_eq!(turns(&model.requests()[0].messages), turns(&expected));
 }
 
 #[tokio::test]
@@ -154,7 +151,7 @@ async fn sends_no_system_prompt_and_the_default_instructions_for_instructions_in
             ..Default::default()
         };
         model.summarize(hi(), options).await.unwrap();
-        let requests = model.requests.lock().unwrap();
+        let requests = model.requests();
         assert!(requests[0].system_prompt.is_none());
         let last = requests[0].messages.last().unwrap().content.last().unwrap();
         assert_eq!(last, &guarded(DEFAULT_SUMMARIZE_INSTRUCTIONS));
@@ -176,7 +173,7 @@ fn returns_an_empty_summary_for_an_unfinished_reply_stop_reason() {
             "{logs:?}"
         );
         assert!(
-            logs.iter().any(|log| log.contains("model=<ScriptedModel>")),
+            logs.iter().any(|log| log.contains("model=<TestModelProvider>")),
             "{logs:?}"
         );
     }
@@ -192,7 +189,7 @@ fn cancel_options(signal: CancelSignal) -> SummarizeOptions {
 #[tokio::test]
 async fn returns_an_empty_summary_when_cancelled_mid_stream() {
     let (signal, handle) = CancelSignal::new();
-    let model = ScriptedModel::from_fn(move || {
+    let model = TestModelProvider::from_fn(move || {
         let events = vec![
             event(json!({ "type": "modelMessageStartEvent", "role": "assistant" })),
             event(json!({ "type": "modelContentBlockStartEvent" })),
@@ -216,13 +213,13 @@ async fn sends_no_request_when_cancelled_before_the_call() {
     let model = recording(&["the summary"], "endTurn", None);
     let result = model.summarize(hi(), cancel_options(signal)).await.unwrap();
     assert_eq!(result, empty(Usage::default()));
-    assert!(model.requests.lock().unwrap().is_empty());
+    assert!(model.requests().is_empty());
 }
 
 #[tokio::test]
 async fn returns_an_empty_summary_when_the_stream_throws_after_a_cancel() {
     let (signal, handle) = CancelSignal::new();
-    let model = ScriptedModel::from_fn(move || {
+    let model = TestModelProvider::from_fn(move || {
         handle.cancel(CancelOptions::default());
         vec![Err(std::io::Error::other("aborted").into())]
     });
@@ -275,19 +272,19 @@ async fn forwards_the_cancel_signal() {
     let model = recording(&["the summary"], "endTurn", None);
     let (signal, handle) = CancelSignal::new();
     model.summarize(hi(), cancel_options(signal)).await.unwrap();
-    let forwarded = model.requests.lock().unwrap()[0].cancel_signal.clone().unwrap();
+    let forwarded = model.requests()[0].cancel_signal.clone().unwrap();
     handle.cancel(CancelOptions::default());
     assert!(forwarded.is_cancelled());
 }
 
 #[tokio::test]
 async fn propagates_stream_errors() {
-    let model = ScriptedModel::from_fn(|| vec![Err(std::io::Error::other("images unsupported").into())]);
+    let model = TestModelProvider::from_fn(|| vec![Err(std::io::Error::other("images unsupported").into())]);
     let error = model
         .summarize(hi(), SummarizeOptions::default())
         .await
         .unwrap_err();
     assert!(matches!(error, Error::Model(_)));
     assert_eq!(error.to_string(), "images unsupported");
-    assert_eq!(model.requests.lock().unwrap().len(), 1);
+    assert_eq!(model.requests().len(), 1);
 }

@@ -7,10 +7,8 @@ use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id, Record};
 use tracing::{Event, Metadata, Subscriber};
 
-use crate::models::{
-    AggregatedEvent, BaseModelConfig, BoxStream, Model, ModelRequest, ModelStreamEvent,
-    StreamAggregatedResult,
-};
+use crate::models::{AggregatedEvent, BoxStream, ModelRequest, StreamAggregatedResult};
+pub(crate) use crate::testing::TestModelProvider;
 use crate::types::{ContentBlock, JsonValue, Message, Role, TextBlock};
 
 /// Runs `f` and returns the `message` of every event it logged, prefixed with the level.
@@ -60,52 +58,14 @@ impl Subscriber for Capture {
     fn exit(&self, _: &Id) {}
 }
 
-/// A model that replays a scripted event list on every call and records each request (TS
-/// `TestModelProvider`).
-pub(crate) struct ScriptedModel {
-    script: Box<dyn Fn() -> Vec<crate::Result<ModelStreamEvent>> + Send + Sync>,
-    config: Mutex<BaseModelConfig>,
-    pub(crate) requests: Mutex<Vec<ModelRequest>>,
-}
-
-impl ScriptedModel {
-    /// Replays `events`, each the TS JSON of a model stream event.
-    pub(crate) fn new(events: Vec<JsonValue>) -> Self {
-        let events: Vec<ModelStreamEvent> = events
+/// A model replaying `events`, each the TS JSON of a model stream event.
+pub(crate) fn scripted(events: Vec<JsonValue>) -> TestModelProvider {
+    TestModelProvider::new(
+        events
             .into_iter()
             .map(|event| serde_json::from_value(event).unwrap())
-            .collect();
-        Self::from_fn(move || events.iter().cloned().map(Ok).collect())
-    }
-
-    /// Replays what `script` returns on each call.
-    pub(crate) fn from_fn(
-        script: impl Fn() -> Vec<crate::Result<ModelStreamEvent>> + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            script: Box::new(script),
-            config: Mutex::new(BaseModelConfig {
-                model_id: Some("test-model".into()),
-                ..Default::default()
-            }),
-            requests: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl Model for ScriptedModel {
-    fn stream(&self, request: ModelRequest) -> BoxStream<'static, crate::Result<ModelStreamEvent>> {
-        self.requests.lock().unwrap().push(request);
-        Box::pin(futures::stream::iter((self.script)()))
-    }
-
-    fn get_config(&self) -> BaseModelConfig {
-        self.config.lock().unwrap().clone()
-    }
-
-    fn update_config(&self, config: BaseModelConfig) {
-        self.config.lock().unwrap().merge(config);
-    }
+            .collect(),
+    )
 }
 
 /// Drains `stream`, returning the items before the result as JSON and the result (TS

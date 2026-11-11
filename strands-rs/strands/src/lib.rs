@@ -42,6 +42,7 @@ pub mod models;
 pub mod retry;
 pub mod sandbox;
 pub mod state_store;
+pub mod testing;
 pub mod tools;
 pub mod types;
 

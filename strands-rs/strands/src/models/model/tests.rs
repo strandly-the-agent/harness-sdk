@@ -140,7 +140,7 @@ fn latest_user_index_finds_the_last_user_message() {
 
 use crate::models::model_info::{ModelCapabilities, PromptCaching};
 use crate::models::{BoxStream, ModelStreamEvent};
-use crate::test_support::{ScriptedModel, user_text};
+use crate::test_support::{TestModelProvider, scripted, user_text};
 use crate::tools::{ToolResultStatus, ToolSpec};
 use crate::types::{
     Citation, CitationGeneratedContent, CitationLocation, CitationsBlock, GuardContentBlock,
@@ -148,8 +148,8 @@ use crate::types::{
     TextBlock, ToolResultBlock, ToolResultContent, ToolUseBlock,
 };
 
-fn provider() -> ScriptedModel {
-    ScriptedModel::new(Vec::new())
+fn provider() -> TestModelProvider {
+    scripted(Vec::new())
 }
 
 fn message(role: Role, content: Vec<ContentBlock>) -> Message {
@@ -469,7 +469,7 @@ fn leaves_temporary_messages_off_for_a_model_the_shared_data_says_takes_them() {
 
 /// A provider that puts its own facts over the default model info, the user override over both.
 struct Overriding {
-    inner: ScriptedModel,
+    inner: TestModelProvider,
     facts: ModelInfo,
 }
 
@@ -499,7 +499,7 @@ impl Model for Overriding {
 #[test]
 fn lets_a_provider_put_its_facts_over_the_shared_model_info_with_the_user_override_over_both() {
     let provider = Overriding {
-        inner: ScriptedModel::new(Vec::new()),
+        inner: scripted(Vec::new()),
         facts: capabilities(ModelCapabilities {
             prompt_caching: Some(PromptCaching::Unsupported),
             ..Default::default()
@@ -575,7 +575,7 @@ fn takes_the_context_window_from_the_config() {
 #[test]
 fn reads_stateful_from_what_a_provider_puts_in_the_record() {
     let provider = Overriding {
-        inner: ScriptedModel::new(Vec::new()),
+        inner: scripted(Vec::new()),
         facts: capabilities(ModelCapabilities {
             stateful: Some(true),
             ..Default::default()

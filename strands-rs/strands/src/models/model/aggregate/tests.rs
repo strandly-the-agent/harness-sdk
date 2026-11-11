@@ -6,10 +6,10 @@ use serde_json::{Value, json};
 
 use crate::error::Error;
 use crate::models::Model;
-use crate::test_support::{ScriptedModel, collect_aggregated, hi_request};
+use crate::test_support::{TestModelProvider, collect_aggregated, hi_request, scripted};
 
 async fn run(events: Vec<Value>) -> (Vec<Value>, crate::Result<crate::models::StreamAggregatedResult>) {
-    collect_aggregated(ScriptedModel::new(events).stream_aggregated(hi_request())).await
+    collect_aggregated(scripted(events).stream_aggregated(hi_request())).await
 }
 
 fn start() -> Value {
@@ -545,7 +545,8 @@ async fn returns_result_with_undefined_metadata() {
 
 #[tokio::test]
 async fn wraps_non_model_error_errors_in_model_error_with_original_as_cause() {
-    let model = ScriptedModel::from_fn(|| vec![Err(std::io::Error::other("API connection failed").into())]);
+    let model =
+        TestModelProvider::from_fn(|| vec![Err(std::io::Error::other("API connection failed").into())]);
     let (_, result) = collect_aggregated(model.stream_aggregated(hi_request())).await;
     let Err(Error::Model(error)) = result else {
         panic!("expected ModelError");
@@ -558,7 +559,7 @@ async fn wraps_non_model_error_errors_in_model_error_with_original_as_cause() {
 #[tokio::test]
 async fn passes_model_errors_through_unwrapped() {
     let model =
-        ScriptedModel::from_fn(|| vec![Err(crate::error::ModelThrottledError::new("slow down").into())]);
+        TestModelProvider::from_fn(|| vec![Err(crate::error::ModelThrottledError::new("slow down").into())]);
     let (_, result) = collect_aggregated(model.stream_aggregated(hi_request())).await;
     assert!(matches!(result, Err(Error::ModelThrottled(_))));
 }

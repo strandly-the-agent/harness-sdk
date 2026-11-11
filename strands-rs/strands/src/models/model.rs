@@ -207,10 +207,6 @@ pub struct BaseModelConfig {
 
 impl BaseModelConfig {
     /// Overwrites each field `update` sets, keeping the rest (TS `{ ...config, ...update }`).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by model providers and the mock model")
-    )]
     pub(crate) fn merge(&mut self, update: BaseModelConfig) {
         let BaseModelConfig {
             model_id,

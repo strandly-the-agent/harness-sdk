@@ -22,7 +22,7 @@
 - [x] `ModelStreamEvent`, `ModelRequest`, `ModelState`, `BaseModelConfig`, `CacheConfig`
 - [x] `Model` trait with `stream_aggregated`, `summarize`, `count_tokens`, `estimate_utilization`, model info
 - [x] Retry strategy plugin, `DefaultModelRetryStrategy`, backoffs and jitter
-- [ ] `strands::testing` mock model, hook recorder, test agent
+- [x] `strands::testing` mock model (the hook recorder and test agent moved to Phase 3, section 12 Phase 2 detail 9)
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 3: agent loop, hooks and tools
@@ -35,6 +35,7 @@
 - [ ] Concurrent and sequential executors
 - [ ] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
 - [ ] Direct tool calls, `as_tool`, agents as tools, printer
+- [ ] `strands::testing` hook recorder and test agent
 - [ ] Phase review gate and fixes
 - [ ] `Agent`, `AgentConfig` (every TS key except `checkpointing`), the bon builder with a fallible `build()?`, and `Agent::new`. The lazy default Bedrock model (#45): `build()` stays sync and the model resolves on first use. Without the `bedrock` feature and with no model set, the first call fails with a clear `DefaultNotConfiguredError`-style message.
 - [ ] `invoke`, `invoke_with`, `stream`, `stream_with`, `AgentStream<'_>` (named, `Unpin`), the `InvokeArgs` conversions, and `InvokeOptions` (structured output schema via `structured_output_schema::<T>()`, cancel signal, invocation state, invocation context, limits, and every other TS invoke option).
