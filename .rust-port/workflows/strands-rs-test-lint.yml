@@ -150,6 +150,9 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
+      - name: Type-check the generator
+        run: npm run type-check --prefix strands-rs/conformance
+
       - name: Regenerate fixtures
         run: |
           npm run generate --prefix strands-rs/conformance
