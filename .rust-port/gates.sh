@@ -12,7 +12,7 @@ run test_all cargo test --workspace --all-features
 run test_nodef cargo test --workspace --no-default-features
 RUSTDOCFLAGS="-D warnings" run doc cargo doc --workspace --all-features --no-deps
 if [ "$1" = "full" ]; then
-  CARGO_TARGET_DIR=/tmp/msrv-target run msrv cargo +1.96.0 check --workspace --all-features --locked
+  RUSTFLAGS="-D warnings" CARGO_TARGET_DIR=/tmp/msrv-target run msrv cargo +1.96.0 check --workspace --all-features --locked
   rm -rf /tmp/msrv-target
   run deny cargo deny check
 fi

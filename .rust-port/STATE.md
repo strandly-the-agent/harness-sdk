@@ -1,7 +1,10 @@
 # State
 
-- Current phase: 1 (types, wire and errors). Current item: Phase 1 review gate and fixes (all other Phase 1 items ticked). Resume from the first unticked item in `PLAN-TRACKER.md`.
-- Phase 1 implementation: `502e6101b`..HEAD. `gates.sh full` green (262 all-features tests), each provider feature alone passes clippy. Fixtures not yet round-tripped (stream, hooks, manifests, stash, telemetry) are listed with their owning subsystem in `strands-rs/docs/PARITY.md`. Logged P-20..P-31.
+- Current phase: 2 (model abstraction, streaming and retry). Current item: `ModelStreamEvent`, `ModelRequest`, `ModelState`, `BaseModelConfig`, `CacheConfig` (the first Phase 2 item). Resume from the first unticked item in `PLAN-TRACKER.md`.
+- Phase 1 implementation: `502e6101b`..`db37c13cf`. Phase 1 closed: review gate fixed in `411b439a9`..`92b3ffe46` (12 findings: 10 fixed, A2 and A4 disputed with reasons), dispositions in `strands-rs/docs/reviews/phase-1.md` (`705c52190`). `gates.sh full` green (269 all-features tests, 11 doctests), each provider feature alone passes clippy for `strands` and `strands-harness` (the harness has no `mcp` feature; it always enables `strands/mcp`). Fixtures not yet round-tripped (stream, hooks, manifests, stash, telemetry) are listed with their owning subsystem in `strands-rs/docs/PARITY.md`. Logged P-20..P-31 (P-20, P-22, P-31 updated by the review fixes).
+- Phase 2 base commit: `705c52190` (the last code/docs commit of Phase 1; the commit after it only updates this run folder).
+- `gates.sh` MSRV step now runs with `RUSTFLAGS="-D warnings"`, matching the CI MSRV job (Rust 1.96 reported an unfulfilled `dead_code` expectation that stable does not; fixed in `92b3ffe46`). Crate-internal items unused until later phases keep the `#[cfg_attr(not(test), expect(dead_code, ..))]` pattern, but check it on 1.96 too.
+- `strands` sets `autotests = false` with a single `[[test]] name = "main"`; new integration modules go beside `tests/main.rs` and are declared there.
 - Phase 0 base commit: `7296caba7`. Phase 0 closed: review gate fixed in `13a6a3155`..`7f48a8bd7`, dispositions in `strands-rs/docs/reviews/phase-0.md`, `gates.sh full` and per-feature clippy green.
 - Phase 1 base commit: `7f48a8bd7` (the last code/docs commit of Phase 0; the commit after it only updates this run folder).
 - Credentials: aws=ok (Bedrock invoke), anthropic=missing, openai=missing. Anthropic and OpenAI live tests will record the missing-credential error in `live.md`.
