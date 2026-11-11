@@ -107,7 +107,13 @@ pub(crate) struct PendingExecution {
 /// The agent's interrupt bookkeeping, persisted in snapshots (TS `InterruptState`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop and snapshots"))]
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "used by the agent loop and snapshots; Rust 1.96 doesn't flag the struct, so `expect` would fail there"
+    )
+)]
 pub(crate) struct InterruptState {
     pub(crate) interrupts: IndexMap<String, Interrupt>,
     #[serde(skip_serializing_if = "Option::is_none")]
