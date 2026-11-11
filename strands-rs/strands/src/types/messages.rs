@@ -149,6 +149,18 @@ impl Message {
     ///
     /// Fails on malformed data and on content blocks of unknown types
     /// (`Unknown ContentBlockData type`, `Unknown ToolResultContentData type`).
+    ///
+    /// ```
+    /// use serde_json::json;
+    /// use strands::Message;
+    ///
+    /// let message = Message::from_message_data(json!({ "role": "user", "content": [{ "text": "Hi" }] }))?;
+    /// assert_eq!(message.content.len(), 1);
+    ///
+    /// let unknown = json!({ "role": "user", "content": [{ "newBlock": {} }] });
+    /// assert!(Message::from_message_data(unknown).is_err());
+    /// # Ok::<(), strands::Error>(())
+    /// ```
     pub fn from_message_data(data: JsonValue) -> Result<Self> {
         Ok(RawMessage::deserialize(data)?.into_message(OnUnknown::Reject)?)
     }
@@ -194,6 +206,23 @@ impl<'de> Deserialize<'de> for Message {
 ///
 /// Each block serializes as a single-key object (`{"toolUse": {..}}`), except text, which is a
 /// bare `{"text": ".."}`.
+///
+/// Deserializing is the saved-data path: a block of an unknown type loads as
+/// [`ContentBlock::Unknown`] and is written back unchanged. [`ContentBlock::from_data`] is the
+/// strict path and rejects it.
+///
+/// ```
+/// use serde_json::json;
+/// use strands::ContentBlock;
+///
+/// let block: ContentBlock = serde_json::from_value(json!({ "newBlock": {} }))?;
+/// assert!(matches!(block, ContentBlock::Unknown(_)));
+/// assert_eq!(serde_json::to_value(&block)?, json!({ "newBlock": {} }));
+///
+/// let err = ContentBlock::from_data(json!({ "newBlock": {} })).unwrap_err();
+/// assert_eq!(err.to_string(), "Unknown ContentBlockData type");
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ContentBlock {
@@ -396,6 +425,19 @@ impl ToolUseBlock {
 ///
 /// `error` keeps the original failure for hooks; it is never serialized, and `PartialEq` ignores
 /// it.
+///
+/// ```
+/// use serde_json::json;
+/// use strands::tools::ToolResultStatus;
+/// use strands::types::ToolResultBlock;
+///
+/// let result = ToolResultBlock::new("tooluse-1", ToolResultStatus::Success, vec!["sunny".into()]);
+/// assert_eq!(
+///     serde_json::to_value(&result)?,
+///     json!({ "toolUseId": "tooluse-1", "status": "success", "content": [{ "text": "sunny" }] })
+/// );
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]

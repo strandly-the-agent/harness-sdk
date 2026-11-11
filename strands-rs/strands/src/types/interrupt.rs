@@ -8,6 +8,20 @@ use crate::types::json::JsonValue;
 ///
 /// `response` answers the interrupt up front: when set, raising it returns the response instead
 /// of pausing the agent.
+///
+/// ```
+/// use serde_json::json;
+/// use strands::types::InterruptParams;
+///
+/// let params = InterruptParams::builder()
+///     .name("confirm_delete")
+///     .reason(json!("Delete report.pdf?"))
+///     .build();
+/// assert_eq!(params.name, "confirm_delete");
+///
+/// let by_name: InterruptParams = "confirm_delete".into();
+/// assert_eq!(by_name.reason, None);
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
 pub struct InterruptParams {
     /// Names the interrupt; the caller sees it and answers by id.
@@ -43,6 +57,18 @@ impl From<String> for InterruptParams {
 }
 
 /// A caller's answer to an interrupt (TS `InterruptResponse`).
+///
+/// ```
+/// use serde_json::json;
+/// use strands::InterruptResponse;
+///
+/// let response = InterruptResponse::new("tool:tooluse-1:confirm_delete", json!(true));
+/// assert_eq!(
+///     serde_json::to_value(&response)?,
+///     json!({ "interruptId": "tool:tooluse-1:confirm_delete", "response": true })
+/// );
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]

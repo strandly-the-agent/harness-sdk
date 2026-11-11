@@ -20,6 +20,18 @@ pub enum Scope {
 }
 
 /// A point-in-time capture of state (TS `Snapshot`).
+///
+/// ```
+/// use strands::types::{Scope, Snapshot};
+///
+/// let snapshot = Snapshot::new(Scope::Agent, serde_json::Map::new())
+///     .with_created_at("2026-11-11T12:00:00.000Z");
+/// let json = serde_json::to_value(&snapshot)?;
+/// assert_eq!(json["scope"], "agent");
+/// assert_eq!(json["schemaVersion"], "1.0");
+/// assert_eq!(json["createdAt"], "2026-11-11T12:00:00.000Z");
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]

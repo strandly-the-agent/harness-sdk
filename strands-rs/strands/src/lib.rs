@@ -6,6 +6,17 @@
 //! This crate is a developer preview that tracks the TypeScript SDK (`@strands-agents/sdk`).
 //! Names, concepts and wire formats match it, re-cased for Rust.
 //!
+//! ```
+//! use strands::{ContentBlock, Message};
+//! use strands::types::Role;
+//!
+//! let message = Message::new(Role::User, vec![ContentBlock::from("What's the weather?")]);
+//! let json = serde_json::to_value(&message)?;
+//! assert_eq!(json["role"], "user");
+//! assert_eq!(json["content"], serde_json::json!([{ "text": "What's the weather?" }]));
+//! # Ok::<(), serde_json::Error>(())
+//! ```
+//!
 //! # Cargo features
 //!
 //! | Feature | Enables |
