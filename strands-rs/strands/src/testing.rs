@@ -64,7 +64,7 @@ enum Turn {
 ///     }
 /// }
 /// assert_eq!(text, Some(serde_json::json!([{ "text": "Hello" }])));
-/// assert_eq!(model.call_count(), 1);
+/// assert_eq!(model.requests().len(), 1);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// # });
 /// # fn tokio_test_block_on<F: std::future::Future>(f: F) -> F::Output {

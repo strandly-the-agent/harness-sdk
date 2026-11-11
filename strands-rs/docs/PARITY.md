@@ -95,7 +95,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/models/__tests__/anthropic.test.ts` | | 0/186 |  |
 | `strands-ts/src/models/__tests__/bedrock.test.ts` | | 0/274 |  |
 | `strands-ts/src/models/__tests__/bedrock.transport.test.browser.ts` | | - | Not applicable: browser-only spec |
-| `strands-ts/src/models/__tests__/cache-portability.test.ts` | | 0/1 |  |
+| `strands-ts/src/models/__tests__/cache-portability.test.ts` | | 0/1 | Every case drives a provider's request builder (Bedrock, Anthropic, Vercel); arrives with the providers in Phase 5. The generic part, `resolve_cache_section`, is covered in `models::model::tests` |
 | `strands-ts/src/models/__tests__/defaults.test.ts` | `models::defaults::tests` | 7/7 |  |
 | `strands-ts/src/models/__tests__/google.test.ts` | | - | Out of scope: Google provider is out of v0.1 |
 | `strands-ts/src/models/__tests__/model-info-lookup.test.ts` | `models::model_info::tests` | 9/9 |  |
@@ -104,7 +104,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/models/__tests__/model-proxy.test.ts` | | 0/19 |  |
 | `strands-ts/src/models/__tests__/model.test.ts` | `models::model::tests`, `models::model::aggregate::tests`, `models::summarize::tests` | 68/68 |  |
 | `strands-ts/src/models/__tests__/native-output.test.ts` | `models::native_output::tests` | 10/11 | `matches the Anthropic SDK transform` (1): compares with `transformJSONSchema` from the Anthropic TS SDK, which Rust doesn't have; the conversion rules it exercises are covered by the hand-written schema cases. Zod schemas are written as the JSON `z.toJSONSchema` produces |
-| `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | | 0/1 |  |
+| `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | | 0/1 | Needs an agent with the `Offload` context strategy (Phases 3 and 6) and the providers (Phase 5); the trait part (client-side `summarize` default, `model_info` capability reads) is in `models::summarize::tests` and `models::model::tests` |
 | `strands-ts/src/models/__tests__/streaming.test.ts` | `models::streaming::tests` | 14/14 | `isModelStreamEvent` is ported as deserializing into `ModelStreamEvent` |
 | `strands-ts/src/models/__tests__/strict-schema.test.ts` | `models::strict_schema::tests` | 24/24 |  |
 | `strands-ts/src/models/__tests__/vercel.test.ts` | | - | Out of scope: Vercel provider is out of v0.1 |
