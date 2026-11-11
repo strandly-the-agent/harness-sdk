@@ -7,7 +7,7 @@
 - [x] AGENTS.md files (root layout, strands-rs, harness-rs), `docs/TESTING.md`, `docs/PARITY.md`
 - [x] CI workflows and `ci.yml` path filters (test-lint, MSRV, deny, doctests)
 - [x] Conformance fixture generator (tsx) and committed fixtures
-- [ ] Run logs and `DIVERGENCES.md` files created
+- [x] Run logs and `DIVERGENCES.md` files created
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 1: types, wire and errors
