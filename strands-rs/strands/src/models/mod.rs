@@ -4,7 +4,9 @@ pub(crate) mod defaults;
 pub(crate) mod model;
 pub(crate) mod model_info;
 pub(crate) mod model_proxy;
+pub(crate) mod native_output;
 pub(crate) mod streaming;
+pub(crate) mod strict_schema;
 pub(crate) mod summarize;
 
 pub use model::{
