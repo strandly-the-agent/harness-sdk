@@ -183,3 +183,9 @@ fn interrupted_snapshot_keeps_its_pending_tool_execution() {
         ["tooluse-first"]
     );
 }
+
+#[test]
+fn model_stream_event_fixture_round_trips_byte_identically() {
+    let events: Vec<crate::models::ModelStreamEvent> = assert_round_trip("stream/model-stream-events.json");
+    assert_eq!(events.len(), 14);
+}

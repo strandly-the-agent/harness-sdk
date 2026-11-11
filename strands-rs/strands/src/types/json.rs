@@ -1,8 +1,4 @@
 //! JSON value aliases and the JSON reading and writing rules shared with the TS SDK.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the persisted-data readers and writers use these")
-)]
 
 use std::borrow::Cow;
 use std::io;

@@ -10,7 +10,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/__tests__/interrupt.test.ts` | `interrupt::tests` | 24/26 | `InterruptError` (2): interrupts are not errors in Rust; an unanswered interrupt is returned as `Err(Interrupt)` and becomes a tool outcome |
 | `strands-ts/src/__tests__/mime.test.ts` | `mime::tests` | 6/6 |  |
 | `strands-ts/src/__tests__/queue.test.ts` | | 0/10 |  |
-| `strands-ts/src/__tests__/state-store.test.ts` | | 0/49 |  |
+| `strands-ts/src/__tests__/state-store.test.ts` | `state_store::tests` | 32/49 | Functions, symbols and `undefined` in values (11) and a `null` key (1): not representable in Rust's typed `Serialize` values and `&str` keys; `isStateSerializable` (5): TS symbol protocol, Rust snapshots call the store directly |
 | `strands-ts/src/a2a/__tests__/a2a-agent.test.ts` | | - | Out of scope: A2A is out of v0.1 |
 | `strands-ts/src/a2a/__tests__/adapters.test.ts` | | - | Out of scope: A2A is out of v0.1 |
 | `strands-ts/src/a2a/__tests__/async-lock.test.ts` | | - | Out of scope: A2A is out of v0.1 |
@@ -72,7 +72,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/interventions/__tests__/handler.test.ts` | | 0/2 |  |
 | `strands-ts/src/interventions/__tests__/registry.test.ts` | | 0/44 |  |
 | `strands-ts/src/logging/__tests__/logger.test.ts` | | 0/6 |  |
-| `strands-ts/src/logging/__tests__/warn-once.test.ts` | | 0/3 |  |
+| `strands-ts/src/logging/__tests__/warn-once.test.ts` | `logging::warn_once::tests` | 3/3 |  |
 | `strands-ts/src/mcp/__tests__/client-annotations.test.ts` | | 0/4 |  |
 | `strands-ts/src/mcp/__tests__/client-progress.test.ts` | | 0/2 |  |
 | `strands-ts/src/mcp/__tests__/client.test.ts` | | 0/126 |  |
@@ -96,16 +96,16 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/models/__tests__/bedrock.test.ts` | | 0/274 |  |
 | `strands-ts/src/models/__tests__/bedrock.transport.test.browser.ts` | | - | Not applicable: browser-only spec |
 | `strands-ts/src/models/__tests__/cache-portability.test.ts` | | 0/1 |  |
-| `strands-ts/src/models/__tests__/defaults.test.ts` | | 0/7 |  |
+| `strands-ts/src/models/__tests__/defaults.test.ts` | `models::defaults::tests` | 7/7 |  |
 | `strands-ts/src/models/__tests__/google.test.ts` | | - | Out of scope: Google provider is out of v0.1 |
-| `strands-ts/src/models/__tests__/model-info-lookup.test.ts` | | 0/9 |  |
-| `strands-ts/src/models/__tests__/model-info.test.node.ts` | | 0/1 |  |
-| `strands-ts/src/models/__tests__/model-info.test.ts` | | 0/5 |  |
+| `strands-ts/src/models/__tests__/model-info-lookup.test.ts` | `models::model_info::tests` | 9/9 |  |
+| `strands-ts/src/models/__tests__/model-info.test.node.ts` | `models::model_info::tests` | 1/1 |  |
+| `strands-ts/src/models/__tests__/model-info.test.ts` | `models::model_info::tests` | 4/5 | `returns a frozen record` (1): Rust values are immutable through shared references |
 | `strands-ts/src/models/__tests__/model-proxy.test.ts` | | 0/19 |  |
 | `strands-ts/src/models/__tests__/model.test.ts` | | 0/68 |  |
 | `strands-ts/src/models/__tests__/native-output.test.ts` | | 0/12 |  |
 | `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | | 0/1 |  |
-| `strands-ts/src/models/__tests__/streaming.test.ts` | `models::streaming::tests` | 5/14 | `isModelStreamEvent` (9): not yet ported, arrives with `ModelStreamEvent` |
+| `strands-ts/src/models/__tests__/streaming.test.ts` | `models::streaming::tests` | 14/14 | `isModelStreamEvent` is ported as deserializing into `ModelStreamEvent` |
 | `strands-ts/src/models/__tests__/strict-schema.test.ts` | | 0/24 |  |
 | `strands-ts/src/models/__tests__/vercel.test.ts` | | - | Out of scope: Vercel provider is out of v0.1 |
 | `strands-ts/src/models/openai/__tests__/chat.test.ts` | | 0/96 |  |
@@ -293,7 +293,7 @@ The integration specs under `strands-ts/test/integ/` run against real models and
 | `messages/text-edge-cases.json` | `text_edge_cases_round_trip_with_lone_surrogates_replaced` | byte-identical except lone surrogates, which become U+FFFD (see DIVERGENCES.md) |
 | `tools/*`, `interrupt/*`, `agent/messages-after-tool-loop.json` | `tool_fixtures_round_trip`, `interrupt_*`, `messages_after_tool_loop_round_trip` | byte-identical |
 | `agent/snapshot-*.json`, `storage/**/snapshot_*.json` | `snapshot_fixtures_round_trip`, `interrupted_snapshot_keeps_its_pending_tool_execution` | byte-identical, including the typed `messages`, `systemPrompt` and `interrupts` inside agent snapshots |
-| `stream/model-stream-events.json` | | not yet ported, arrives with `ModelStreamEvent` |
+| `stream/model-stream-events.json` | `model_stream_event_fixture_round_trips_byte_identically` | byte-identical, including index-keyed `redactedContent` and present `null`s |
 | `stream/agent-stream-events*.json`, `hooks/*` | | not yet ported, arrives with the stream and hook event records |
 | `storage/**/manifest.json` | | not yet ported, arrives with `SessionManager` |
 | `stash/*` | | not yet ported, arrives with the context manager stash |

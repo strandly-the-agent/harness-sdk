@@ -105,6 +105,29 @@ pub(crate) mod base64_bytes_opt {
     }
 }
 
+/// Optional byte fields of stream events: written as the index-keyed object `JSON.stringify`
+/// writes for a `Uint8Array` (`{"0":1,"1":2}`), read like [`base64_bytes_opt`].
+pub(crate) mod byte_index_opt {
+    use super::{SerializeMap, Serializer, base64_bytes_opt};
+
+    pub(crate) use base64_bytes_opt::deserialize;
+
+    #[expect(clippy::ref_option, reason = "serde `with` passes `&Option<T>`")]
+    pub(crate) fn serialize<S: Serializer>(
+        bytes: &Option<Vec<u8>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let Some(bytes) = bytes else {
+            return serializer.serialize_none();
+        };
+        let mut map = serializer.serialize_map(Some(bytes.len()))?;
+        for (index, byte) in bytes.iter().enumerate() {
+            map.serialize_entry(&index.to_string(), byte)?;
+        }
+        map.end()
+    }
+}
+
 struct BytesVisitor;
 
 impl<'de> Visitor<'de> for BytesVisitor {
