@@ -36,9 +36,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
-          components: clippy
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
 
       - name: Clippy (all features)
         run: cargo clippy -p strands-harness --all-targets --all-features --locked -- -D warnings
@@ -55,3 +59,51 @@ jobs:
 
       - name: Test (no default features, including doctests)
         run: cargo test -p strands-harness --no-default-features --locked
+
+  features:
+    name: Feature check (${{ matrix.features }})
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [bedrock, anthropic, openai, otel]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check
+        run: cargo check -p strands-harness --all-targets --no-default-features --features "${{ matrix.features }}" --locked
+
+  msrv:
+    name: MSRV (1.96.0)
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.96.0
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check
+        run: cargo check -p strands-harness --all-features --locked

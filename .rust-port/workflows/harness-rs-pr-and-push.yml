@@ -10,6 +10,8 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'deny.toml'
+      - 'rustfmt.toml'
+      - 'clippy.toml'
       - '.github/workflows/harness-rs-*'
       - '.github/workflows/rust-security-audit.yml'
   workflow_dispatch:
