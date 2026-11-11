@@ -203,76 +203,84 @@ mod tests {
         ("xml", "application/xml"),
     ];
 
-    #[test]
-    fn converts_format_to_mime_type() {
-        for (format, mime) in FORMATS {
-            assert_eq!(to_mime_type(format), Some(mime), "{format}");
+    mod to_mime_type {
+        use super::*;
+
+        #[test]
+        fn converts_s_to_s() {
+            for (format, mime) in FORMATS {
+                assert_eq!(to_mime_type(format), Some(mime), "{format}");
+            }
+        }
+
+        #[test]
+        fn is_case_insensitive() {
+            assert_eq!(to_mime_type("PNG"), Some("image/png"));
+            assert_eq!(to_mime_type("Mp4"), Some("video/mp4"));
+            assert_eq!(to_mime_type("PDF"), Some("application/pdf"));
+        }
+
+        #[test]
+        fn returns_undefined_for_unknown_formats() {
+            assert_eq!(to_mime_type("unknown"), None);
+            assert_eq!(to_mime_type("bmp"), None);
+            assert_eq!(to_mime_type(""), None);
         }
     }
 
-    #[test]
-    fn to_mime_type_is_case_insensitive() {
-        assert_eq!(to_mime_type("PNG"), Some("image/png"));
-        assert_eq!(to_mime_type("Mp4"), Some("video/mp4"));
-        assert_eq!(to_mime_type("PDF"), Some("application/pdf"));
-    }
+    mod to_media_format {
+        use super::*;
 
-    #[test]
-    fn returns_undefined_for_unknown_formats() {
-        assert_eq!(to_mime_type("unknown"), None);
-        assert_eq!(to_mime_type("bmp"), None);
-        assert_eq!(to_mime_type(""), None);
-    }
-
-    #[test]
-    fn converts_mime_type_to_format() {
-        let cases = [
-            ("image/png", "png"),
-            ("image/jpeg", "jpeg"),
-            ("image/gif", "gif"),
-            ("image/webp", "webp"),
-            ("video/x-matroska", "mkv"),
-            ("video/quicktime", "mov"),
-            ("video/mp4", "mp4"),
-            ("video/webm", "webm"),
-            ("video/x-flv", "flv"),
-            ("video/mpeg", "mpeg"),
-            ("video/x-ms-wmv", "wmv"),
-            ("video/3gpp", "3gp"),
-            ("application/pdf", "pdf"),
-            ("text/csv", "csv"),
-            ("application/msword", "doc"),
-            (
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "docx",
-            ),
-            ("application/vnd.ms-excel", "xls"),
-            (
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "xlsx",
-            ),
-            ("text/html", "html"),
-            ("text/plain", "txt"),
-            ("text/markdown", "md"),
-            ("application/json", "json"),
-            ("application/xml", "xml"),
-        ];
-        for (mime, format) in cases {
-            assert_eq!(to_media_format(mime), Some(format), "{mime}");
+        #[test]
+        fn converts_s_to_s() {
+            let cases = [
+                ("image/png", "png"),
+                ("image/jpeg", "jpeg"),
+                ("image/gif", "gif"),
+                ("image/webp", "webp"),
+                ("video/x-matroska", "mkv"),
+                ("video/quicktime", "mov"),
+                ("video/mp4", "mp4"),
+                ("video/webm", "webm"),
+                ("video/x-flv", "flv"),
+                ("video/mpeg", "mpeg"),
+                ("video/x-ms-wmv", "wmv"),
+                ("video/3gpp", "3gp"),
+                ("application/pdf", "pdf"),
+                ("text/csv", "csv"),
+                ("application/msword", "doc"),
+                (
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "docx",
+                ),
+                ("application/vnd.ms-excel", "xls"),
+                (
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "xlsx",
+                ),
+                ("text/html", "html"),
+                ("text/plain", "txt"),
+                ("text/markdown", "md"),
+                ("application/json", "json"),
+                ("application/xml", "xml"),
+            ];
+            for (mime, format) in cases {
+                assert_eq!(to_media_format(mime), Some(format), "{mime}");
+            }
         }
-    }
 
-    #[test]
-    fn to_media_format_is_case_insensitive() {
-        assert_eq!(to_media_format("IMAGE/PNG"), Some("png"));
-        assert_eq!(to_media_format("Video/Mp4"), Some("mp4"));
-        assert_eq!(to_media_format("Application/PDF"), Some("pdf"));
-    }
+        #[test]
+        fn is_case_insensitive() {
+            assert_eq!(to_media_format("IMAGE/PNG"), Some("png"));
+            assert_eq!(to_media_format("Video/Mp4"), Some("mp4"));
+            assert_eq!(to_media_format("Application/PDF"), Some("pdf"));
+        }
 
-    #[test]
-    fn returns_undefined_for_unknown_mime_types() {
-        assert_eq!(to_media_format("image/bmp"), None);
-        assert_eq!(to_media_format("application/octet-stream"), None);
-        assert_eq!(to_media_format(""), None);
+        #[test]
+        fn returns_undefined_for_unknown_mime_types() {
+            assert_eq!(to_media_format("image/bmp"), None);
+            assert_eq!(to_media_format("application/octet-stream"), None);
+            assert_eq!(to_media_format(""), None);
+        }
     }
 }
