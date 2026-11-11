@@ -139,6 +139,10 @@ impl<'de> Visitor<'de> for BytesVisitor {
             entries.push((index, byte));
         }
         entries.sort_unstable_by_key(|(index, _)| *index);
+        // `JSON.stringify(Uint8Array)` writes every index from 0 to n-1; anything else is corrupt.
+        if let Some((_, (index, _))) = entries.iter().enumerate().find(|(pos, (index, _))| pos != index) {
+            return Err(de::Error::custom(format!("invalid byte index `{index}`")));
+        }
         Ok(entries.into_iter().map(|(_, byte)| byte).collect())
     }
 }
@@ -474,5 +478,26 @@ mod base64_tests {
         assert_eq!(from_object.0, [1, 2, 255]);
         let from_array: Holder = serde_json::from_str("[1,2,255]").unwrap();
         assert_eq!(from_array.0, [1, 2, 255]);
+    }
+
+    #[test]
+    fn byte_objects_with_missing_or_repeated_indices_fail_to_load() {
+        #[derive(Deserialize)]
+        struct Holder(#[serde(with = "base64_bytes")] Vec<u8>);
+        for input in [
+            r#"{"0":1,"5":2}"#,
+            r#"{"1":1}"#,
+            r#"{"0":1,"0":2}"#,
+            r#"{"18446744073709551615":1}"#,
+        ] {
+            let err = match serde_json::from_str::<Holder>(input) {
+                Ok(Holder(bytes)) => panic!("{input} loaded as {bytes:?}"),
+                Err(err) => err,
+            };
+            assert!(
+                err.to_string().starts_with("invalid byte index"),
+                "{input}: {err}"
+            );
+        }
     }
 }
