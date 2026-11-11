@@ -72,6 +72,13 @@ mod interrupt {
             json!({ "id": "i", "name": "n", "response": null, "source": "hook" })
         );
     }
+
+    #[test]
+    fn reads_a_null_source_as_hook() {
+        let interrupt: Interrupt =
+            serde_json::from_value(json!({ "id": "i", "name": "n", "source": null })).unwrap();
+        assert_eq!(interrupt.source, InterruptSource::Hook);
+    }
 }
 
 mod get_or_create_interrupt {
@@ -336,11 +343,27 @@ mod serialization {
     }
 
     #[test]
-    fn throws_session_error_when_the_restored_pending_tool_execution_is_invalid() {
+    fn ignores_a_malformed_pending_tool_execution_when_the_interrupt_state_is_not_activated() {
+        for pending in [json!({}), json!(1), json!(null)] {
+            let data = json!({ "interrupts": {}, "activated": false, "pendingToolExecution": pending });
+            assert_eq!(
+                InterruptState::from_json(data).unwrap().pending_tool_execution,
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn throws_session_error_when_the_restored_pending_tool_execution_has_description() {
         let base = serde_json::to_value(pending_tool_execution()).unwrap();
         let with = |field: &str, value: JsonValue| {
             let mut pending = base.clone();
             pending[field] = value;
+            pending
+        };
+        let without = |field: &str| {
+            let mut pending = base.clone();
+            pending.as_object_mut().unwrap().remove(field);
             pending
         };
         let mut user_role = base.clone();
@@ -384,6 +407,16 @@ mod serialization {
                     json!({ "t-0": { "toolResult": { "toolUseId": "t-0" } } }),
                 ),
                 "field=<pendingToolExecution.completedToolResults>, tool_use_id=<t-0>",
+            ),
+            (
+                "no assistant message",
+                without("assistantMessageData"),
+                "field=<pendingToolExecution.assistantMessageData>",
+            ),
+            (
+                "no completed tool results",
+                without("completedToolResults"),
+                "field=<pendingToolExecution.completedToolResults>",
             ),
         ];
         for (description, pending, message) in cases {

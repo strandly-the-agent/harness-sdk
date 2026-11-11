@@ -44,6 +44,17 @@ pub(crate) fn present<'de, D: serde::Deserializer<'de>>(
     serde::Deserialize::deserialize(deserializer).map(Some)
 }
 
+/// Deserializes a field that TS reads with `?? default`: `null` and missing both give the default.
+///
+/// Use with `#[serde(default, deserialize_with = "null_as_default")]`.
+pub(crate) fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + Default,
+{
+    <Option<T> as serde::Deserialize>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
 struct JsFormatter;
 
 impl Formatter for JsFormatter {

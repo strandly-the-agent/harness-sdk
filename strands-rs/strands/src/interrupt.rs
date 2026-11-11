@@ -6,7 +6,7 @@ use serde_json::Map;
 
 use crate::error::{Result, SessionError};
 use crate::types::interrupt::{InterruptParams, InterruptResponseContent};
-use crate::types::json::{JsonValue, present};
+use crate::types::json::{JsonValue, null_as_default, present};
 use crate::types::messages::{ContentBlock, Message, Role, ToolResultBlock};
 use crate::types::open_enum::open_enum;
 
@@ -51,7 +51,7 @@ pub struct Interrupt {
     )]
     pub response: Option<JsonValue>,
     /// What raised it.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub source: InterruptSource,
 }
 
@@ -251,7 +251,7 @@ struct InterruptStateData {
     resume_responses: Option<Vec<InterruptResponseContent>>,
     activated: bool,
     #[serde(default)]
-    pending_tool_execution: Option<PendingToolExecution>,
+    pending_tool_execution: Option<JsonValue>,
     #[serde(default)]
     context: Option<Map<String, JsonValue>>,
 }
@@ -264,7 +264,9 @@ impl InterruptState {
     pub(crate) fn from_json(data: JsonValue) -> Result<Self> {
         let data = InterruptStateData::deserialize(data)?;
         let pending_tool_execution = match data.pending_tool_execution {
-            Some(pending) if data.activated => Some(validate_pending_tool_execution(pending)?),
+            Some(pending) if data.activated && is_truthy(&pending) => {
+                Some(validate_pending_tool_execution(pending_from_value(pending))?)
+            }
             _ => None,
         };
         Ok(Self {
@@ -274,6 +276,29 @@ impl InterruptState {
             pending_tool_execution,
             context: data.context.unwrap_or_default(),
         })
+    }
+}
+
+/// JavaScript truthiness, for TS's `if (data.pendingToolExecution)`.
+fn is_truthy(value: &JsonValue) -> bool {
+    match value {
+        JsonValue::Null => false,
+        JsonValue::Bool(b) => *b,
+        JsonValue::Number(n) => n.as_f64().is_some_and(|n| n != 0.0),
+        JsonValue::String(s) => !s.is_empty(),
+        JsonValue::Array(_) | JsonValue::Object(_) => true,
+    }
+}
+
+/// Reads the two pending fields, with `null` for a missing one so validation reports it with the TS text.
+fn pending_from_value(value: JsonValue) -> PendingToolExecution {
+    let mut fields = match value {
+        JsonValue::Object(map) => map,
+        _ => Map::new(),
+    };
+    PendingToolExecution {
+        assistant_message_data: fields.remove("assistantMessageData").unwrap_or_default(),
+        completed_tool_results: fields.remove("completedToolResults").unwrap_or_default(),
     }
 }
 
