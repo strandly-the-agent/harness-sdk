@@ -95,6 +95,7 @@ Rust and TS read and write each other's data. These rules keep that true:
 - Serde matches TS JSON: camelCase keys, `None` omitted, single-key block wrappers, text as a bare `{"text": ...}`, and key order (`serde_json` and `schemars` use `preserve_order`). Wire field names keep their wire format through serde renames (`inputSchema`, `toolUseId`).
 - Closed TS unions that accept any string at runtime (media formats, citation locations, stop reasons, tool result status) deserialize unknown values into an `Other` fallback instead of failing. `Other` is never constructible with a known value.
 - Base64 decoding is lenient like Node's `Buffer.from` (unpadded, URL-safe, whitespace); encoding uses the standard alphabet with padding.
+- Persisted data is read with `types::json::from_slice` (lone UTF-16 surrogate escapes become U+FFFD) and written with `types::json::to_vec` (JavaScript number formatting), so Rust writes the bytes TS writes.
 - JS numbers that are integers stay integers: counters use `u64`, never `f64`.
 - Where TS distinguishes `null` from a missing field (interrupt responses, `additionalModelResponseFields`, `trace`), a present `null` deserializes to `Some(JsonValue::Null)`.
 - Snapshot keys are `<sessionId>/scopes/<scope>/<scopeId>/snapshots/{snapshot_latest.json, manifest.json, immutable_history/snapshot_<uuidv7>.json}`; ids match `^[a-z0-9_-]+$`. `Snapshot.created_at` keeps TS's millisecond `toISOString()` format. Rust writes compact JSON where TS pretty-prints; both parse either. `LocalFileStorage` writes atomically.

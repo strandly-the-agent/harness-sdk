@@ -29,10 +29,10 @@ serde_json = { version = "1.0.154", features = ["preserve_order"] }
 schemars = { version = "1.2.3", features = ["preserve_order"] }
 jsonschema = { version = "0.61.1", default-features = false }
 http = "1.5"
-uuid = { version = "1.29.2", features = ["v7"] }
+uuid = { version = "1.29.2", features = ["v4", "v7"] }
 base64 = "0.23.1"
 jiff = "0.2.43"
-indexmap = "2.14.2"
+indexmap = { version = "2.14.2", features = ["serde"] }
 
 # Errors and builders
 thiserror = "2.0.21"

@@ -20,3 +20,17 @@
 //!
 //! A tool that panics becomes an error tool result and the agent loop continues. That relies on
 //! unwinding, so don't build binaries that use this crate with `panic = "abort"`.
+
+pub mod error;
+pub mod interrupt;
+pub(crate) mod mime;
+pub mod models;
+pub mod sandbox;
+pub mod tools;
+pub mod types;
+
+#[cfg(test)]
+mod test_support;
+
+pub use error::{Error, Result};
+pub use types::{ContentBlock, InterruptResponse, JsonValue, Message, StopReason};
