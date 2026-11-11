@@ -273,3 +273,6 @@ pub(crate) fn aggregate(
         yield aggregator.finish().map(|result| AggregatedEvent::Done(Box::new(result)));
     })
 }
+
+#[cfg(test)]
+mod tests;

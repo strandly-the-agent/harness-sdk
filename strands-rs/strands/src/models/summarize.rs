@@ -154,3 +154,6 @@ pub(crate) async fn summarize_with_stream<M: Model + ?Sized>(
     }
     Ok(SummarizeResult::new(vec![ContentBlock::Summary(SummaryBlock::new(text))]).with_usage(usage))
 }
+
+#[cfg(test)]
+mod tests;
