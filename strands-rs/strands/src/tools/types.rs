@@ -109,7 +109,8 @@ pub enum ToolChoice {
     Auto {},
     /// The model must call some tool.
     Any {},
-    /// The model must call the named tool.
+    /// The model must call the named tool; build it with [`ToolChoice::tool`].
+    #[non_exhaustive]
     Tool {
         /// The tool to call.
         name: String,

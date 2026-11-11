@@ -50,7 +50,8 @@ impl Usage {
     /// Adds `other` into `self`, saturating (TS `accumulateUsage`).
     ///
     /// A cache counter is set only once some accumulated usage reports it.
-    pub fn accumulate(&mut self, other: &Usage) {
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop and telemetry"))]
+    pub(crate) fn accumulate(&mut self, other: &Usage) {
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
         self.total_tokens = self.total_tokens.saturating_add(other.total_tokens);
@@ -69,7 +70,8 @@ impl Usage {
     /// Providers whose `input_tokens` already include cached tokens report
     /// `input + output == total`; for them `input_tokens` is the answer. Otherwise the cache
     /// counters are added.
-    pub fn total_prompt_tokens(&self) -> u64 {
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop and telemetry"))]
+    pub(crate) fn total_prompt_tokens(&self) -> u64 {
         if self.input_tokens.saturating_add(self.output_tokens) == self.total_tokens {
             return self.input_tokens;
         }

@@ -15,6 +15,7 @@ use crate::types::json::JsonValue;
 pub enum CitationLocation {
     /// A character range in a document.
     #[serde(rename_all = "camelCase")]
+    #[non_exhaustive]
     DocumentChar {
         /// Index of the document in the request.
         document_index: u64,
@@ -25,6 +26,7 @@ pub enum CitationLocation {
     },
     /// A page range in a document.
     #[serde(rename_all = "camelCase")]
+    #[non_exhaustive]
     DocumentPage {
         /// Index of the document in the request.
         document_index: u64,
@@ -35,6 +37,7 @@ pub enum CitationLocation {
     },
     /// A chunk range in a document.
     #[serde(rename_all = "camelCase")]
+    #[non_exhaustive]
     DocumentChunk {
         /// Index of the document in the request.
         document_index: u64,
@@ -45,6 +48,7 @@ pub enum CitationLocation {
     },
     /// A range in a search result.
     #[serde(rename_all = "camelCase")]
+    #[non_exhaustive]
     SearchResult {
         /// Index of the search result.
         search_result_index: u64,
@@ -54,6 +58,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A web page.
+    #[non_exhaustive]
     Web {
         /// The page URL.
         url: String,
@@ -64,6 +69,52 @@ pub enum CitationLocation {
     /// A location type this SDK version doesn't know, kept as written.
     #[serde(untagged)]
     Other(UnknownCitationLocation),
+}
+
+impl CitationLocation {
+    /// A character range `start..end` in document `document_index`.
+    pub fn document_char(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentChar {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A page range `start..end` in document `document_index`.
+    pub fn document_page(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentPage {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A chunk range `start..end` in document `document_index`.
+    pub fn document_chunk(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentChunk {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A range `start..end` in search result `search_result_index`.
+    pub fn search_result(search_result_index: u64, start: u64, end: u64) -> Self {
+        Self::SearchResult {
+            search_result_index,
+            start,
+            end,
+        }
+    }
+
+    /// A web page at `url`, with its domain when known.
+    pub fn web(url: impl Into<String>, domain: Option<String>) -> Self {
+        Self::Web {
+            url: url.into(),
+            domain,
+        }
+    }
 }
 
 /// A [`CitationLocation`] whose `type` matches no known variant.

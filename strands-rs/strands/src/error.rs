@@ -3,7 +3,7 @@
 //! Each TS error class is a struct with the same name and message; [`Error`] has one variant per
 //! class. Interrupts are not errors: they are tool outcomes and agent results.
 
-use crate::sandbox::errors::{
+use crate::sandbox::{
     SandboxAbortError, SandboxIsADirectoryError, SandboxPathNotFoundError, SandboxPermissionError,
     SandboxTimeoutError,
 };

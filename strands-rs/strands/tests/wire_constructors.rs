@@ -11,7 +11,7 @@ use strands::error::{
 };
 use strands::interrupt::{Interrupt, InterruptSource};
 use strands::models::{Metrics, Usage};
-use strands::sandbox::errors::{
+use strands::sandbox::{
     SandboxAbortError, SandboxIsADirectoryError, SandboxPathNotFoundError, SandboxPermissionError,
     SandboxTimeoutError,
 };
@@ -41,10 +41,7 @@ fn message_and_every_content_block_build_through_constructors() {
     );
     let citations = CitationsBlock::new(
         vec![Citation::new(
-            CitationLocation::Web {
-                url: "https://example.com".into(),
-                domain: None,
-            },
+            CitationLocation::web("https://example.com", None),
             "web",
             vec![CitationSourceContent::new("web")],
             "Web",
@@ -119,6 +116,28 @@ fn tool_interrupt_and_snapshot_types_build_through_constructors() {
         serde_json::to_value(ToolChoice::Any {}).unwrap(),
         json!({ "any": {} })
     );
+    assert_eq!(
+        serde_json::to_value(ToolChoice::tool("get_weather")).unwrap(),
+        json!({ "tool": { "name": "get_weather" } })
+    );
+    let locations = [
+        CitationLocation::document_char(0, 1, 2),
+        CitationLocation::document_page(0, 1, 2),
+        CitationLocation::document_chunk(0, 1, 2),
+        CitationLocation::search_result(0, 1, 2),
+        CitationLocation::web("https://example.com", Some("example.com".into())),
+    ];
+    assert_eq!(
+        serde_json::to_value(&locations).unwrap(),
+        json!([
+            { "type": "documentChar", "documentIndex": 0, "start": 1, "end": 2 },
+            { "type": "documentPage", "documentIndex": 0, "start": 1, "end": 2 },
+            { "type": "documentChunk", "documentIndex": 0, "start": 1, "end": 2 },
+            { "type": "searchResult", "searchResultIndex": 0, "start": 1, "end": 2 },
+            { "type": "web", "url": "https://example.com", "domain": "example.com" },
+        ])
+    );
+    assert!(matches!(&locations[4], CitationLocation::Web { domain: Some(d), .. } if d == "example.com"));
 
     let interrupt = Interrupt::new("tool:t-1:confirm", "confirm")
         .with_reason(json!("why"))
