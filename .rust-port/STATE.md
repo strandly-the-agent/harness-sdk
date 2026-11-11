@@ -1,6 +1,7 @@
 # State
 
-- Current phase: 1 (types, wire and errors). Current item: Messages, 14 content blocks, `JsonBlock`, media and citations (first Phase 1 item). Resume from the first unticked item in `PLAN-TRACKER.md`.
+- Current phase: 1 (types, wire and errors). Current item: Phase 1 review gate and fixes (all other Phase 1 items ticked). Resume from the first unticked item in `PLAN-TRACKER.md`.
+- Phase 1 implementation: `502e6101b`..HEAD. `gates.sh full` green (262 all-features tests), each provider feature alone passes clippy. Fixtures not yet round-tripped (stream, hooks, manifests, stash, telemetry) are listed with their owning subsystem in `strands-rs/docs/PARITY.md`. Logged P-20..P-31.
 - Phase 0 base commit: `7296caba7`. Phase 0 closed: review gate fixed in `13a6a3155`..`7f48a8bd7`, dispositions in `strands-rs/docs/reviews/phase-0.md`, `gates.sh full` and per-feature clippy green.
 - Phase 1 base commit: `7f48a8bd7` (the last code/docs commit of Phase 0; the commit after it only updates this run folder).
 - Credentials: aws=ok (Bedrock invoke), anthropic=missing, openai=missing. Anthropic and OpenAI live tests will record the missing-credential error in `live.md`.

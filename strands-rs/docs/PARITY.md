@@ -5,10 +5,10 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `strands-ts/src/__tests__/default-slot.test.ts` | | 0/4 |  |
-| `strands-ts/src/__tests__/errors.test.ts` | | 0/29 |  |
+| `strands-ts/src/__tests__/errors.test.ts` | `error::tests` | 20/29 | `isFetchNetworkError` (3) and `normalizeError` (6): TS-only mechanisms (JS `TypeError` messages from `fetch`, and wrapping thrown non-`Error` values); Rust errors are typed. Transport classification is ported with each provider |
 | `strands-ts/src/__tests__/index.test.ts` | | 0/9 |  |
-| `strands-ts/src/__tests__/interrupt.test.ts` | | 0/26 |  |
-| `strands-ts/src/__tests__/mime.test.ts` | | 0/6 |  |
+| `strands-ts/src/__tests__/interrupt.test.ts` | `interrupt::tests` | 24/26 | `InterruptError` (2): interrupts are not errors in Rust; an unanswered interrupt is returned as `Err(Interrupt)` and becomes a tool outcome |
+| `strands-ts/src/__tests__/mime.test.ts` | `mime::tests` | 6/6 |  |
 | `strands-ts/src/__tests__/queue.test.ts` | | 0/10 |  |
 | `strands-ts/src/__tests__/state-store.test.ts` | | 0/49 |  |
 | `strands-ts/src/a2a/__tests__/a2a-agent.test.ts` | | - | Out of scope: A2A is out of v0.1 |
@@ -105,7 +105,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/models/__tests__/model.test.ts` | | 0/68 |  |
 | `strands-ts/src/models/__tests__/native-output.test.ts` | | 0/12 |  |
 | `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | | 0/1 |  |
-| `strands-ts/src/models/__tests__/streaming.test.ts` | | 0/14 |  |
+| `strands-ts/src/models/__tests__/streaming.test.ts` | `models::streaming::tests` | 5/14 | `isModelStreamEvent` (9): not yet ported, arrives with `ModelStreamEvent` |
 | `strands-ts/src/models/__tests__/strict-schema.test.ts` | | 0/24 |  |
 | `strands-ts/src/models/__tests__/vercel.test.ts` | | - | Out of scope: Vercel provider is out of v0.1 |
 | `strands-ts/src/models/openai/__tests__/chat.test.ts` | | 0/96 |  |
@@ -141,7 +141,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/sandbox/__tests__/default.test.browser.ts` | | - | Not applicable: browser-only spec |
 | `strands-ts/src/sandbox/__tests__/default.test.node.ts` | | 0/4 |  |
 | `strands-ts/src/sandbox/__tests__/docker.test.node.ts` | | - | Out of scope: Docker sandbox is out of v0.1 |
-| `strands-ts/src/sandbox/__tests__/errors.test.node.ts` | | 0/9 |  |
+| `strands-ts/src/sandbox/__tests__/errors.test.node.ts` | `sandbox::errors::tests` | 9/9 |  |
 | `strands-ts/src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts` | | 0/27 |  |
 | `strands-ts/src/sandbox/__tests__/posix-shell.test.node.ts` | | 0/55 |  |
 | `strands-ts/src/sandbox/__tests__/read-file-errors.test.node.ts` | | 0/6 |  |
@@ -171,12 +171,12 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/tools/__tests__/tool.test.ts` | | 0/46 |  |
 | `strands-ts/src/tools/__tests__/zod-tool.test.ts` | | 0/32 |  |
 | `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | | 0/3 |  |
-| `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 |  |
-| `strands-ts/src/types/__tests__/citations.test.ts` | | 0/6 |  |
-| `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 |  |
-| `strands-ts/src/types/__tests__/media.test.ts` | | 0/51 |  |
-| `strands-ts/src/types/__tests__/messages.test.ts` | | 0/86 |  |
-| `strands-ts/src/types/__tests__/validation.test.ts` | | 0/5 |  |
+| `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | not yet ported, arrives with `AgentResult` and the agent loop |
+| `strands-ts/src/types/__tests__/citations.test.ts` | `types::tests::citations` | 6/6 |  |
+| `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | TS-only mechanism: `deepCopy` and `deepCopyWithValidation` reject JS values JSON can't hold (functions, symbols, `undefined`); a Rust `JsonValue` is always serializable and `Clone` is the deep copy. JSON reading and writing rules are tested in `types::json::tests` |
+| `strands-ts/src/types/__tests__/media.test.ts` | `types::tests::media` | 51/51 |  |
+| `strands-ts/src/types/__tests__/messages.test.ts` | `types::tests::messages` | 86/86 |  |
+| `strands-ts/src/types/__tests__/validation.test.ts` | `types::validation::tests` | 4/5 | `when value is null`: Rust `Option` has no null/undefined split; `None` reports `undefined` |
 | `strands-ts/src/vended-interventions/cedar/__tests__/cedar.test.node.ts` | | 0/39 |  |
 | `strands-ts/src/vended-interventions/hitl/__tests__/hitl.test.ts` | | 0/36 |  |
 | `strands-ts/src/vended-interventions/steering/__tests__/handler.test.ts` | | - | Out of scope: steering is out of v0.1 |
@@ -282,3 +282,19 @@ The integration specs under `strands-ts/test/integ/` run against real models and
 | `strands-ts/test/integ/tools/http-request.test.ts` | live | 0/1 |  |
 | `strands-ts/test/integ/tools/notebook.test.ts` | live | 0/3 |  |
 | `strands-ts/test/integ/vended-interventions/steering/steering.test.node.ts` | | - | Out of scope: steering is out of v0.1 |
+
+## Conformance fixtures
+
+`types::tests::conformance` parses each TS-written fixture with the persisted-data reader, writes it back with the persisted-data writer and compares bytes.
+
+| Fixtures | Rust test | Status |
+|---|---|---|
+| `messages/*` (every block, media formats, unknown blocks and formats, JSON numbers, legacy tracking id, non-canonical base64) | `message_fixtures_round_trip_byte_identically`, `non_canonical_base64_is_read_leniently_and_written_canonically` | byte-identical |
+| `messages/text-edge-cases.json` | `text_edge_cases_round_trip_with_lone_surrogates_replaced` | byte-identical except lone surrogates, which become U+FFFD (see DIVERGENCES.md) |
+| `tools/*`, `interrupt/*`, `agent/messages-after-tool-loop.json` | `tool_fixtures_round_trip`, `interrupt_*`, `messages_after_tool_loop_round_trip` | byte-identical |
+| `agent/snapshot-*.json`, `storage/**/snapshot_*.json` | `snapshot_fixtures_round_trip`, `interrupted_snapshot_keeps_its_pending_tool_execution` | byte-identical, including the typed `messages`, `systemPrompt` and `interrupts` inside agent snapshots |
+| `stream/model-stream-events.json` | | not yet ported, arrives with `ModelStreamEvent` |
+| `stream/agent-stream-events*.json`, `hooks/*` | | not yet ported, arrives with the stream and hook event records |
+| `storage/**/manifest.json` | | not yet ported, arrives with `SessionManager` |
+| `stash/*` | | not yet ported, arrives with the context manager stash |
+| `telemetry/*` | | not yet ported, arrives with telemetry |

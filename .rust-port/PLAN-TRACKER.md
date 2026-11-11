@@ -14,8 +14,8 @@
 - [x] Messages, 14 content blocks, `JsonBlock`, media and citations
 - [x] Tool types, `StopReason`, `Usage`, `Metrics`, snapshot and interrupt types
 - [x] `strands::Error` and TS-mirrored error types with exact messages
-- [ ] Constructors for non-exhaustive wire structs
-- [ ] Fixture round-trips byte-identical
+- [x] Constructors for non-exhaustive wire structs
+- [x] Fixture round-trips byte-identical
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 2: model abstraction, streaming and retry
