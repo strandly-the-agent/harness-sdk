@@ -7,7 +7,7 @@ The TS test suite (`strands-ts/src/**/__tests__`) is the behavioural spec. Every
 - Unit tests live beside the code in `#[cfg(test)] mod tests` (or `src/**/tests.rs`), mirroring `__tests__/` next to the TS module.
 - Each test is named with the snake_case form of the TS `it(...)` title. The test module's doc comment names its source spec, for example `//! Ported from strands-ts/src/agent/__tests__/agent.cancel.test.ts`.
 - Cross-module behaviour (agent loop with tools, hooks and plugins) goes in `strands/tests/`.
-- Each crate has one integration-test binary: `tests/main.rs` declares the modules under `tests/` (`mod agent_loop;`, `mod common;`, ...). Never add a second top-level file under `tests/`, since each one links the whole crate into its own binary.
+- Each crate has one integration-test binary: `tests/main.rs` declares the modules under `tests/` (`mod agent_loop;`, `mod common;`, ...). The crate manifest sets `autotests = false` and declares only `[[test]] name = "main"`, so the module files beside `tests/main.rs` are not built as binaries of their own (each would link the whole crate).
 - `tests/main.rs` starts with `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, reason = "test code")]`. The `clippy.toml` test allowances cover only `#[test]` functions and `#[cfg(test)]` modules, not shared helpers under `tests/`.
 - Tests carry no issue references.
 - Test files that need a cargo feature start with `#![cfg(feature = "...")]`, so `--no-default-features` runs stay green.

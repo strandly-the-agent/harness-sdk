@@ -12,6 +12,7 @@ readme = "../README.md"
 keywords = ["agents", "ai", "llm", "strands", "mcp"]
 categories = ["api-bindings", "asynchronous"]
 publish = false
+autotests = false
 
 [features]
 default = ["bedrock"]
@@ -52,6 +53,10 @@ opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
 
 [lints]
 workspace = true
