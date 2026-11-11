@@ -11,9 +11,11 @@ This file is shared by agents with different goals — writing code, opening PRs
 ```
 strands-agents/
 ├── harness-py/         # Python Strands harness (hatch) — see harness-py/AGENTS.md
+├── harness-rs/         # Rust Strands harness (cargo) — see harness-rs/AGENTS.md
 ├── harness-ts/         # TypeScript Strands harness (npm) — see harness-ts/AGENTS.md
 ├── strands-cli/        # strands CLI (npm) — see strands-cli/AGENTS.md
 ├── strands-py/         # Python SDK (hatch) — see strands-py/AGENTS.md
+├── strands-rs/         # Rust SDK (cargo workspace at the repo root) — see strands-rs/AGENTS.md
 ├── strands-ts/         # TypeScript SDK (npm workspace) — see strands-ts/AGENTS.md
 ├── strands-mcp/        # MCP server with Strands docs for coding agents (hatch)
 ├── site/               # Documentation site (Astro) — see site/AGENTS.md
@@ -21,6 +23,7 @@ strands-agents/
 ├── test-infra/         # CDK stack for integ tests that require provisioned AWS infra
 ├── .agents/            # Agent skills and references
 ├── package.json        # npm workspace root
+├── Cargo.toml          # Rust workspace root (strands-rs/ and harness-rs/ crates)
 └── .github/workflows/  # CI (ci.yml is the merge gate)
 ```
 
