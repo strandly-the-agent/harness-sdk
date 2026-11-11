@@ -30,6 +30,7 @@ The TS test suite (`strands-ts/src/**/__tests__`) is the behavioural spec. Every
 
 ```bash
 npm ci && npm run build
+npm run type-check --prefix strands-rs/conformance
 npm run generate --prefix strands-rs/conformance
 git diff --exit-code strands-rs/conformance/fixtures
 ```

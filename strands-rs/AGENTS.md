@@ -114,6 +114,7 @@ See [docs/TESTING.md](docs/TESTING.md). In short: the TS test suite is the behav
 
 ```bash
 npm ci && npm run build   # from the repository root
+npm run type-check --prefix strands-rs/conformance
 npm run generate --prefix strands-rs/conformance
 git diff --exit-code strands-rs/conformance/fixtures
 ```

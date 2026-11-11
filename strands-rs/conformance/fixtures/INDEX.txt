@@ -1,6 +1,7 @@
 agent/messages-after-tool-loop.json
 agent/snapshot-all-fields.json
 agent/snapshot-interrupted.json
+hooks/hook-events-interrupt.json
 hooks/hook-events.json
 interrupt/interrupt-response-null.json
 interrupt/interrupt-state.json
@@ -43,9 +44,11 @@ storage/session/fixture-session/scopes/agent/agent/snapshots/manifest.json
 storage/session/fixture-session/scopes/agent/agent/snapshots/snapshot_latest.json
 storage/session/fixture-session/scopes/multiAgent/fixture-graph/snapshots/manifest.json
 storage/session/fixture-session/scopes/multiAgent/fixture-graph/snapshots/snapshot_latest.json
+stream/agent-stream-events-interrupt.json
 stream/agent-stream-events.json
 stream/model-stream-events.json
 telemetry/metrics.json
+telemetry/spans-memory.json
 telemetry/spans.json
 tools/tool-choice.json
 tools/tool-spec.json
