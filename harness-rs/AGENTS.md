@@ -41,4 +41,4 @@ The SDK code rules, lints and `#[non_exhaustive]` policy apply unchanged. In add
 
 ## Testing
 
-Follow [strands-rs/docs/TESTING.md](../strands-rs/docs/TESTING.md). harness-ts tests that `process.chdir` into a temp dir are ported through a crate-internal base-directory seam; Rust tests never change the process working directory or env. [docs/PARITY.md](docs/PARITY.md) maps each harness-ts spec to its Rust tests; `harness-ts/test/integration/` is the live checklist.
+Follow [strands-rs/docs/TESTING.md](../strands-rs/docs/TESTING.md). harness-ts tests that `process.chdir` into a temp dir are ported through a crate-internal base-directory seam; Rust tests never change the process working directory or env. [docs/PARITY.md](docs/PARITY.md) maps each harness-ts spec to its Rust tests; `harness-ts/test/integration/` is the live checklist, and live results are recorded in [docs/reviews/live.md](docs/reviews/live.md).

@@ -1,6 +1,6 @@
 # Strands Agents SDK for Rust
 
-`strands` is the Rust SDK for [Strands Agents](https://strandsagents.com), a model-driven approach to building AI agents. It is a developer preview that tracks the TypeScript SDK in `strands-ts/`: the same concepts, names and wire formats, re-cased for Rust.
+`strands` is the Rust SDK for [Strands Agents](https://strandsagents.com), a model-driven approach to building AI agents. It is a developer preview that tracks the TypeScript SDK in `strands-ts/`: the same concepts, names and wire formats, re-cased for Rust. It tracks strands-ts and harness-ts at commit `7296caba7` on `main` (the spec commit); [docs/PARITY.md](docs/PARITY.md) and [docs/DIVERGENCES.md](docs/DIVERGENCES.md) refer to that commit.
 
 The workspace has two crates here:
 

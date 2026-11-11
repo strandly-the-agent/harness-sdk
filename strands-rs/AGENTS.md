@@ -56,7 +56,7 @@ Also check each provider feature on its own (`--no-default-features --features a
 - Library code has no `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `unreachable!` or `unsafe`. Library code doesn't index or slice with `[]` either (clippy denies `indexing_slicing`; use `get`, iterators or pattern matching). Tests may use `unwrap`, `expect`, `panic!` and indexing: `clippy.toml` allows them inside `#[test]` functions and `#[cfg(test)]` modules, and each integration-test crate root (`tests/main.rs`) starts with `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, reason = "test code")]` so shared helpers under `tests/` are covered too.
 - Every public item has rustdoc. Doc examples compile as doctests; use `no_run` when they need network or credentials, and `ignore` only when they genuinely can't compile.
 - The public API never requires `Any`, `TypeId` or downcasting.
-- `#[non_exhaustive]` policy: config and option structs (`AgentConfig`, `InvokeOptions`, provider configs, tool config structs) are exhaustive, with public fields, `Default` and a builder, so `..Default::default()` works from other crates. Enums, events, errors, results and wire structs are `#[non_exhaustive]`, and wire structs get constructors (`new(..)` plus `with_*`).
+- `#[non_exhaustive]` policy: config and option structs (`AgentConfig`, `InvokeOptions`, `ModelRequest`, provider configs, `CancelOptions`, `InterruptParams`, tool config structs) are exhaustive, with public fields, `Default` and a builder, so `..Default::default()` works from other crates. Enums, events, errors, results and wire structs are `#[non_exhaustive]`, and wire structs get constructors (`new(..)` plus `with_*`). Never put `#[non_exhaustive]` on a config or option struct: it breaks `..Default::default()` construction from other crates (E0639).
 - Where TS documents a default that differs from the type's zero value, implement `Default` by hand.
 - No lock held across `.await` (clippy denies `await_holding_lock`, `await_holding_refcell_ref` and `await_holding_invalid_type`). Use `std::sync` locks for short critical sections and `tokio::sync` only where a lock must be held across an await. No process-global mutable state other than warn-once sets.
 - No tokio types in public signatures. Every spawned future is instrumented (`.instrument(span)` or `.in_current_span()`).
@@ -66,7 +66,18 @@ Also check each provider feature on its own (`--no-default-features --features a
 - Never set `panic = "abort"`: a panicking tool becomes an error tool result, which needs unwinding.
 - Logging goes through `tracing` in the shared format `field=<value>, field=<value> | lowercase human-readable message`.
 - Comments state only what a reader can't infer. Imports go at the top of the file. Keep control flow flat.
-- Name constructs for what they do, never with a `Plugin` suffix. A name differs from TS only on a Rust prelude clash.
+- Name constructs for what they do, never with a `Plugin` suffix.
+
+### Naming and public surface
+
+- TS names are re-cased, not renamed: types keep `PascalCase`, functions, fields and parameters become `snake_case`, and TS string literals become enum variants (`'endTurn'` becomes `StopReason::EndTurn`). Wire field names keep their wire format through serde renames.
+- A name differs from TS only on a Rust prelude clash. Any other renamed or invented name is recorded in [docs/DIVERGENCES.md](docs/DIVERGENCES.md).
+- Acronyms follow TS where TS has the type (`OpenAIModel`, `McpClient`); Rust-only types follow Rust conventions (`JsonValue`).
+- The TS `experimental` entry point (`@strands-agents/sdk/experimental`) becomes the `strands::experimental` module.
+- The TS `index.ts` barrel becomes explicit crate-root re-exports (no glob re-exports). TS `@internal` items are `pub(crate)`, or `#[doc(hidden)]` where another workspace crate needs them.
+- Auxiliary model calls (summarization, memory extraction, classification, judging, web fetch) take an optional `model` and fall back to `agent.aux_model`, which defaults to the agent's model. Document the order as `this model > agent.aux_model > agent.model`.
+- `invocation_state` belongs to the caller. SDK code never stores, keys or forwards internal state through it.
+- No Rust-only behaviour: the SDK adds no features that TS lacks (small accessors such as `text_delta()` are fine). Where TS reaches into private agent internals, Rust exposes the narrowest public API that does the same job.
 
 ### Lints
 

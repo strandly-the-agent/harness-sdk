@@ -9,6 +9,7 @@ The TS test suite (`strands-ts/src/**/__tests__`) is the behavioural spec. Every
 - Cross-module behaviour (agent loop with tools, hooks and plugins) goes in `strands/tests/`.
 - Each crate has one integration-test binary: `tests/main.rs` declares the modules under `tests/` (`mod agent_loop;`, `mod common;`, ...). Never add a second top-level file under `tests/`, since each one links the whole crate into its own binary.
 - `tests/main.rs` starts with `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, reason = "test code")]`. The `clippy.toml` test allowances cover only `#[test]` functions and `#[cfg(test)]` modules, not shared helpers under `tests/`.
+- Tests carry no issue references.
 - Test files that need a cargo feature start with `#![cfg(feature = "...")]`, so `--no-default-features` runs stay green.
 - Live tests are `#[ignore = "live <provider>"]`, named `live_*`, and skip with a message when their credentials are missing.
 
@@ -44,7 +45,8 @@ CI runs the same commands and fails on a diff. When a TS wire change lands, comm
 - Unit tests make no network calls. Provider tests use constructed SDK types, a local HTTP test server, or a transport seam.
 - Never mutate process state: no `std::env::set_var`/`remove_var` (they are `unsafe` in edition 2024) and no `std::env::set_current_dir`. Code that reads env or the working directory has a crate-internal seam that tests use instead.
 - Compare paths after canonicalizing them (macOS `/var` is `/private/var`).
-- Public types and futures that must be `Send` get compile-time checks (`fn assert_send<T: Send>(_: &T)`).
+- Compile-time `Send` checks (`fn assert_send<T: Send>(_: &T)`) cover `Agent`, `AgentResult`, `ToolAgent`, `ToolContext`, `Error`, every event type and `AgentStream<'_>` (and `Sync` where they are shared), plus the futures returned by `agent.invoke(..)` and `create_harness(..)`.
+- Library code never calls `block_in_place` or `Handle::block_on`.
 
 ## Running
 
@@ -63,4 +65,4 @@ cargo test -p strands --all-features -- --ignored live_
 cargo test -p strands-harness --all-features -- --ignored live_
 ```
 
-Results are recorded in `docs/reviews/live.md`.
+Results are recorded in `strands-rs/docs/reviews/live.md` for the SDK and `harness-rs/docs/reviews/live.md` for the harness.
