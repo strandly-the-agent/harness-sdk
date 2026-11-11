@@ -6,7 +6,7 @@
 - [x] Workspace skeleton: root `Cargo.toml`, three crates, features, lints, `deny.toml`, rustfmt/clippy config
 - [x] AGENTS.md files (root layout, strands-rs, harness-rs), `docs/TESTING.md`, `docs/PARITY.md`
 - [x] CI workflows and `ci.yml` path filters (test-lint, MSRV, deny, doctests)
-- [ ] Conformance fixture generator (tsx) and committed fixtures
+- [x] Conformance fixture generator (tsx) and committed fixtures
 - [ ] Run logs and `DIVERGENCES.md` files created
 - [ ] Phase review gate and fixes
 

@@ -1,0 +1,1 @@
+{"name":"get_weather","description":"Get the weather for a city.","inputSchema":{"type":"object","properties":{"city":{"type":"string","description":"City name"},"days":{"type":"integer","minimum":1}},"required":["city"],"additionalProperties":false}}

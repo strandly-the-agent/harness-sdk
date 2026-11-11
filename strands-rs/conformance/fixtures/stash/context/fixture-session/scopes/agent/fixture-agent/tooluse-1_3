@@ -1,0 +1,1 @@
+{"video":{"format":"mp4","source":{"location":{"type":"s3","uri":"s3://bucket/video.mp4","bucketOwner":"123456789012"}}}}

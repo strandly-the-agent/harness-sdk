@@ -1,0 +1,1 @@
+{"audio":{"format":"mp3","source":{"location":{"type":"s3","uri":"s3://bucket/audio.mp3"}}}}

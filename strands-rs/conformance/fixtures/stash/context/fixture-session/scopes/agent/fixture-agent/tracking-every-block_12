@@ -1,0 +1,1 @@
+{"image":{"format":"webp","source":{"location":{"type":"s3","uri":"s3://bucket/image.webp"}}}}

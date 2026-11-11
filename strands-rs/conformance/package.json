@@ -1,0 +1,10 @@
+{
+  "name": "strands-rs-conformance",
+  "private": true,
+  "type": "module",
+  "description": "Generates TS-written JSON fixtures that the Rust SDK round-trips",
+  "scripts": {
+    "generate": "tsx generate.ts",
+    "type-check": "tsc --noEmit -p tsconfig.json"
+  }
+}

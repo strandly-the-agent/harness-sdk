@@ -1,0 +1,1 @@
+{"role":"user","content":[{"toolResult":{"toolUseId":"tooluse-numbers","status":"success","content":[{"json":{"zero":0,"int":42,"negative":-7,"maxSafe":9007199254740991,"fraction":1.5,"tenth":0.1,"small":0.000001}}]}}],"trackingId":"tracking-numbers","metadata":{"usage":{"inputTokens":0,"outputTokens":1000000,"totalTokens":1000000}}}

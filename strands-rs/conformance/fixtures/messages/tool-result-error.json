@@ -1,0 +1,1 @@
+{"role":"user","content":[{"toolResult":{"toolUseId":"tooluse-2","status":"error","content":[{"text":"Tool execution cancelled"}]}}],"trackingId":"tracking-tool-error"}
