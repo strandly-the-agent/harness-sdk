@@ -21,7 +21,7 @@
 ## [ ] Phase 2: model abstraction, streaming and retry
 - [x] `ModelStreamEvent`, `ModelRequest`, `ModelState`, `BaseModelConfig`, `CacheConfig`
 - [x] `Model` trait with `stream_aggregated`, `summarize`, `count_tokens`, `estimate_utilization`, model info
-- [ ] Retry strategy plugin, `DefaultModelRetryStrategy`, backoffs and jitter
+- [x] Retry strategy plugin, `DefaultModelRetryStrategy`, backoffs and jitter
 - [ ] `strands::testing` mock model, hook recorder, test agent
 - [ ] Phase review gate and fixes
 

@@ -19,6 +19,7 @@ strands-harness = { path = "harness-rs/strands-harness", version = "=0.1.0", def
 # Async
 tokio = { version = "1.54", default-features = false }
 futures = "0.3.34"
+fastrand = "2.5"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
 tokio-util = { version = "0.7.20", default-features = false }

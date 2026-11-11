@@ -136,8 +136,8 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/plugins/__tests__/plugin.test.ts` | | 0/7 |  |
 | `strands-ts/src/plugins/__tests__/registry.test.ts` | | 0/10 |  |
 | `strands-ts/src/registry/__tests__/tool-registry.test.ts` | | 0/33 |  |
-| `strands-ts/src/retry/__tests__/backoff-strategy.test.ts` | | 0/19 |  |
-| `strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts` | | 0/15 |  |
+| `strands-ts/src/retry/__tests__/backoff-strategy.test.ts` | `retry::backoff_strategy::tests` | 15/19 | `rejects attempts below 1` (3) and `rejects non-integer attempts` (1): `BackoffContext.attempt` is a `NonZeroU32`, so zero and fractional attempts can't be built |
+| `strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts` | `retry::default_model_retry_strategy::tests` | 12/15 | `registers an AfterModelCallEvent hook` (1): arrives with the hook registry in Phase 3; `rejects maxAttempts below 1` (1): `max_attempts` is a `NonZeroU32`; `lets subclasses expand the retryable set` (1): Rust has no subclassing, a custom set is a `ModelRetryStrategy` impl (the composition case is `short_circuits_without_retry_..`) |
 | `strands-ts/src/sandbox/__tests__/default.test.browser.ts` | | - | Not applicable: browser-only spec |
 | `strands-ts/src/sandbox/__tests__/default.test.node.ts` | | 0/4 |  |
 | `strands-ts/src/sandbox/__tests__/docker.test.node.ts` | | - | Out of scope: Docker sandbox is out of v0.1 |

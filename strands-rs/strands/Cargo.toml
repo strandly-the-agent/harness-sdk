@@ -26,6 +26,7 @@ otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry
 strands-macros.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 futures.workspace = true
+fastrand.workspace = true
 async-stream.workspace = true
 async-trait.workspace = true
 tokio-util.workspace = true
@@ -53,6 +54,9 @@ opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "test-util", "time"] }
 
 [[test]]
 name = "main"

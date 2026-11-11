@@ -39,6 +39,7 @@ pub mod interrupt;
 pub(crate) mod logging;
 pub(crate) mod mime;
 pub mod models;
+pub mod retry;
 pub mod sandbox;
 pub mod state_store;
 pub mod tools;
