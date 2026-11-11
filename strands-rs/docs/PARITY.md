@@ -171,7 +171,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/tools/__tests__/tool.test.ts` | | 0/46 |  |
 | `strands-ts/src/tools/__tests__/zod-tool.test.ts` | | 0/32 |  |
 | `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | | 0/3 |  |
-| `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | not yet ported, arrives with `AgentResult` and the agent loop |
+| `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | `checkpoint` (4): out of scope, checkpointing is out of v0.1; the other 26 arrive with `AgentResult` and the agent loop |
 | `strands-ts/src/types/__tests__/citations.test.ts` | `types::tests::citations` | 6/6 |  |
 | `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | TS-only mechanism: `deepCopy` and `deepCopyWithValidation` reject JS values JSON can't hold (functions, symbols, `undefined`); a Rust `JsonValue` is always serializable and `Clone` is the deep copy. JSON reading and writing rules are tested in `types::json::tests` |
 | `strands-ts/src/types/__tests__/media.test.ts` | `types::tests::media` | 51/51 |  |
