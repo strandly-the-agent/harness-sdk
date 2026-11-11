@@ -53,7 +53,7 @@ Also check each provider feature on its own (`--no-default-features --features a
 ## Code rules
 
 - Edition 2024, MSRV 1.96. The MSRV never drops below what a required dependency declares and only moves in minor releases.
-- Library code has no `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `unreachable!` or `unsafe`. Tests may use `unwrap` and `expect` (`clippy.toml` allows them in tests).
+- Library code has no `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `unreachable!` or `unsafe`. Library code doesn't index or slice with `[]` either (clippy denies `indexing_slicing`; use `get`, iterators or pattern matching). Tests may use `unwrap`, `expect`, `panic!` and indexing: `clippy.toml` allows them inside `#[test]` functions and `#[cfg(test)]` modules, and each integration-test crate root (`tests/main.rs`) starts with `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, reason = "test code")]` so shared helpers under `tests/` are covered too.
 - Every public item has rustdoc. Doc examples compile as doctests; use `no_run` when they need network or credentials, and `ignore` only when they genuinely can't compile.
 - The public API never requires `Any`, `TypeId` or downcasting.
 - `#[non_exhaustive]` policy: config and option structs (`AgentConfig`, `InvokeOptions`, provider configs, tool config structs) are exhaustive, with public fields, `Default` and a builder, so `..Default::default()` works from other crates. Enums, events, errors, results and wire structs are `#[non_exhaustive]`, and wire structs get constructors (`new(..)` plus `with_*`).
@@ -61,7 +61,7 @@ Also check each provider feature on its own (`--no-default-features --features a
 - No lock held across `.await` (clippy denies `await_holding_lock`, `await_holding_refcell_ref` and `await_holding_invalid_type`). Use `std::sync` locks for short critical sections and `tokio::sync` only where a lock must be held across an await. No process-global mutable state other than warn-once sets.
 - No tokio types in public signatures. Every spawned future is instrumented (`.instrument(span)` or `.in_current_span()`).
 - Errors are `thiserror` enums mirroring the TS error classes, with typed variants where callers branch and source chains. Interrupts are not errors.
-- Counters use integer types and saturating arithmetic.
+- Counters use integer types and saturating arithmetic. Plain integer arithmetic is not linted (`arithmetic_side_effects` would flag every `+`), so review counters, lengths and offsets for overflow by hand and use `saturating_*` or `checked_*` where a value comes from input or accumulates.
 - Prefer popular, maintained crates. If a dependency marks an API `#[deprecated]`, use a narrow `#[expect(deprecated, reason = "...")]`.
 - Never set `panic = "abort"`: a panicking tool becomes an error tool result, which needs unwinding.
 - Logging goes through `tracing` in the shared format `field=<value>, field=<value> | lowercase human-readable message`.
@@ -72,7 +72,7 @@ Also check each provider feature on its own (`--no-default-features --features a
 
 The workspace lint table in the root `Cargo.toml` applies to every crate (`[lints] workspace = true`). It forbids `unsafe_code`, warns on `missing_docs` and the `rust_2018_idioms` group (CI turns warnings into errors), enables `clippy::all`, and adds:
 
-- denied: `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable`, `dbg_macro`, `print_stdout`, `print_stderr`, `await_holding_lock`, `await_holding_refcell_ref`, `await_holding_invalid_type`;
+- denied: `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable`, `indexing_slicing`, `dbg_macro`, `print_stdout`, `print_stderr`, `await_holding_lock`, `await_holding_refcell_ref`, `await_holding_invalid_type`;
 - selected pedantic lints as warnings: `needless_pass_by_value`, `redundant_clone`, `large_futures`, the `cast_*` truncation and sign lints, `implicit_clone`, `inefficient_to_string`, `manual_let_else`, `match_same_arms`, `semicolon_if_nothing_returned`, `uninlined_format_args`, `unnested_or_patterns`, `redundant_closure_for_method_calls`, `missing_errors_doc`, `doc_markdown`.
 
 The printer and examples are the only places that write to stdout; they opt out with a scoped `#[expect(clippy::print_stdout, reason = "...")]`. If a lint is wrong for one spot, use a narrowly scoped `#[expect(clippy::..., reason = "...")]`; never weaken the workspace table.
