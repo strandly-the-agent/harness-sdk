@@ -30,7 +30,7 @@ async fn printed(
     let output = Arc::new(Mutex::new(String::new()));
     let sink = Arc::clone(&output);
     agent.printer = Some(Arc::new(Mutex::new(AgentPrinter::new(move |text| {
-        sink.lock().unwrap().push_str(text)
+        sink.lock().unwrap().push_str(text);
     }))));
     setup(&agent);
     agent.invoke("Test").await.unwrap();
