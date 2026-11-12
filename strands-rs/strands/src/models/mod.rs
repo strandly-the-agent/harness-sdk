@@ -8,6 +8,7 @@ pub(crate) mod native_output;
 pub(crate) mod streaming;
 pub(crate) mod strict_schema;
 pub(crate) mod summarize;
+pub(crate) mod unconfigured;
 
 pub use model::{
     AggregatedEvent, BaseModelConfig, BoxStream, CacheConfig, CacheKey, CacheSection, CacheStrategy,

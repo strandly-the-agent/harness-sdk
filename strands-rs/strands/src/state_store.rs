@@ -98,13 +98,11 @@ impl StateStore {
     }
 
     /// The state as a JSON object, for snapshots (TS `stateToJSONSymbol`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by snapshots and sessions"))]
     pub(crate) fn to_json(&self) -> JsonValue {
         JsonValue::Object(self.get_all())
     }
 
     /// Replaces the state with `json`; anything but an object clears it (TS `loadStateFromJSONSymbol`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by snapshots and sessions"))]
     pub(crate) fn load_json(&self, json: JsonValue) {
         *self.write() = match json {
             JsonValue::Object(map) => map,

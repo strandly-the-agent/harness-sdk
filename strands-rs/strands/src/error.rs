@@ -108,6 +108,38 @@ error_class!(
     DefaultNotConfiguredError
 );
 error_class!(
+    /// An argument has the wrong shape or value (TS `TypeError`).
+    TypeError
+);
+
+/// An agent operation failed for a reason TS reports with a plain `Error` (TS `Error`).
+///
+/// [`Error::name`] returns `Error` for it, as TS does.
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+#[non_exhaustive]
+pub struct AgentError {
+    message: String,
+}
+
+impl AgentError {
+    /// The TS `error.name`: `Error`.
+    pub const NAME: &'static str = "Error";
+
+    /// An error with `message`.
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// The error message.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+error_class!(
     /// A storage backend failed (TS `StorageError`).
     StorageError, source
 );
@@ -219,6 +251,12 @@ pub enum Error {
     /// See [`DefaultNotConfiguredError`].
     #[error(transparent)]
     DefaultNotConfigured(#[from] DefaultNotConfiguredError),
+    /// See [`TypeError`].
+    #[error(transparent)]
+    Type(#[from] TypeError),
+    /// See [`AgentError`].
+    #[error(transparent)]
+    Agent(#[from] AgentError),
     /// See [`StorageError`].
     #[error(transparent)]
     Storage(#[from] StorageError),
@@ -262,6 +300,8 @@ impl Error {
             Self::ToolNotFound(_) => ToolNotFoundError::NAME,
             Self::StructuredOutput(_) => StructuredOutputError::NAME,
             Self::DefaultNotConfigured(_) => DefaultNotConfiguredError::NAME,
+            Self::Type(_) => TypeError::NAME,
+            Self::Agent(_) => AgentError::NAME,
             Self::Storage(_) => StorageError::NAME,
             Self::Session(_) => SessionError::NAME,
             Self::SandboxTimeout(_) => SandboxTimeoutError::NAME,

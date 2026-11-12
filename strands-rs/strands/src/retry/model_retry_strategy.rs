@@ -55,10 +55,6 @@ pub trait ModelRetryStrategy: Send + Sync + 'static {
 /// The TS `retryModel` hook body: resets per-turn state on attempt 1, leaves a retry another hook
 /// requested alone, asks the strategy, and waits (cut short by `cancel_signal`). Returns whether
 /// the call is retried.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "wired into AfterModelCallEvent by the agent loop")
-)]
 pub(crate) async fn retry_model<S: ModelRetryStrategy + ?Sized>(
     strategy: &S,
     attempt_count: NonZeroU32,

@@ -90,7 +90,6 @@ impl CancelSignal {
     }
 
     /// Whether a cancel deferred until the current tools finish is pending.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop"))]
     pub(crate) fn is_deferred(&self) -> bool {
         self.state.deferred.load(Ordering::Acquire)
     }

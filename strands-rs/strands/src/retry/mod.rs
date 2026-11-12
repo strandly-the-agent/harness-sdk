@@ -11,4 +11,5 @@ pub use backoff_strategy::{
 };
 pub use default_model_retry_strategy::{DefaultModelRetryStrategy, DefaultModelRetryStrategyOptions};
 pub use model_retry_strategy::ModelRetryStrategy;
+pub(crate) use model_retry_strategy::retry_model;
 pub use retry_strategy::RetryDecision;

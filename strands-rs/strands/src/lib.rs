@@ -35,6 +35,7 @@
 pub mod agent;
 pub mod cancel;
 pub mod error;
+pub mod hooks;
 pub mod interrupt;
 pub(crate) mod logging;
 pub(crate) mod mime;
@@ -42,6 +43,7 @@ pub mod models;
 pub mod retry;
 pub mod sandbox;
 pub mod state_store;
+pub mod telemetry;
 pub mod testing;
 pub mod tools;
 pub mod types;
@@ -49,7 +51,27 @@ pub mod types;
 #[cfg(test)]
 mod test_support;
 
+#[allow(unused_extern_crates, reason = "lets `#[tool]` expand inside this crate")]
+extern crate self as strands;
+
+pub use agent::{
+    Agent, AgentConfig, AgentResult, AgentStream, AgentStreamEvent, InvocationState, InvokeArgs,
+    InvokeOptions,
+};
 pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use state_store::StateStore;
+pub use strands_macros::{tool, tools};
+pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};
 pub use types::{ContentBlock, InterruptResponse, JsonValue, Message, StopReason};
+
+#[doc(hidden)]
+pub mod __private {
+    pub use async_trait;
+    pub use futures;
+    pub use jsonschema;
+    pub use schemars;
+    pub use serde;
+    pub use serde_json;
+    pub use tokio;
+}

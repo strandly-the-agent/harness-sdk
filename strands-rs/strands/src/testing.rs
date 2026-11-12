@@ -6,18 +6,27 @@
 
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use crate::agent::{Agent, AgentConfig, ModelSource};
 use crate::error::{Error, ModelError, Result};
+use crate::hooks::{
+    AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent, AgentResultEvent,
+    BeforeInvocationEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, ContentBlockEvent,
+    HookRegistry, InitializedEvent, InterruptEvent, MessageAddedEvent, ModelMessageEvent,
+    ModelStreamUpdateEvent, ToolResultEvent, ToolStreamUpdateEvent,
+};
 use crate::models::{
     BaseModelConfig, BoxStream, CitationsDelta, ContentBlockDelta, Model, ModelContentBlockDeltaEvent,
     ModelContentBlockStartEvent, ModelContentBlockStopEvent, ModelMessageStartEvent, ModelMessageStopEvent,
     ModelMetadataEvent, ModelRequest, ModelStreamEvent, ReasoningContentDelta, TextDelta, ToolUseInputDelta,
     ToolUseStart, Usage,
 };
+use crate::tools::{Tool, ToolContext, ToolOutcome, ToolResultStatus, ToolSpec, ToolStream};
 use crate::types::json;
 use crate::types::{ContentBlock, Role, StopReason};
+use crate::types::{JsonValue, ToolResultBlock, ToolResultContent};
 
 type ErrorFactory = Box<dyn Fn() -> Error + Send + Sync>;
 
@@ -345,6 +354,158 @@ impl Model for TestModelProvider {
 
     fn update_config(&self, config: BaseModelConfig) {
         lock(&self.config).merge(config);
+    }
+}
+
+/// Records every hook event an agent fires, in order (the TS tests' hook recorders).
+///
+/// Each entry is the event's JSON record (TS `JSON.stringify(event)`), so the `type` tag names
+/// the event.
+///
+/// ```
+/// use strands::testing::{HookRecorder, MockModel, test_agent};
+///
+/// # tokio_test_block(async {
+/// let model = MockModel::new();
+/// model.add_turn(vec!["Hello".into()]);
+/// let mut agent = test_agent(model);
+/// let recorder = HookRecorder::attach(agent.hooks());
+/// agent.invoke("Hi").await?;
+/// assert_eq!(recorder.types().first().map(String::as_str), Some("initializedEvent"));
+/// # Ok::<(), strands::Error>(())
+/// # });
+/// # fn tokio_test_block<F: std::future::Future>(f: F) -> F::Output {
+/// #     tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(f)
+/// # }
+/// ```
+#[derive(Clone, Default)]
+pub struct HookRecorder {
+    events: Arc<Mutex<Vec<JsonValue>>>,
+}
+
+impl HookRecorder {
+    /// A recorder registered on every event of `hooks`.
+    pub fn attach(hooks: &HookRegistry) -> Self {
+        let recorder = Self::default();
+        macro_rules! record {
+            ($($event:ty),* $(,)?) => {$({
+                let events = Arc::clone(&recorder.events);
+                hooks.add_hook(move |event: &mut $event| {
+                    let json = serde_json::to_value(event.data()).unwrap_or(JsonValue::Null);
+                    lock(&events).push(json);
+                });
+            })*};
+        }
+        let events = Arc::clone(&recorder.events);
+        hooks.add_hook(move |_: &mut InitializedEvent<'_>| {
+            lock(&events).push(serde_json::json!({ "type": "initializedEvent" }));
+        });
+        let events = Arc::clone(&recorder.events);
+        hooks.add_hook(move |event: &mut AgentResultEvent<'_>| {
+            let json = serde_json::json!({ "type": "agentResultEvent", "result": event.result() });
+            lock(&events).push(json);
+        });
+        record!(
+            BeforeInvocationEvent<'_>,
+            AfterInvocationEvent<'_>,
+            MessageAddedEvent<'_>,
+            BeforeToolCallEvent,
+            AfterToolCallEvent,
+            BeforeModelCallEvent<'_>,
+            AfterModelCallEvent<'_>,
+            BeforeToolsEvent<'_>,
+            AfterToolsEvent<'_>,
+            ContentBlockEvent<'_>,
+            ModelMessageEvent<'_>,
+            ToolResultEvent,
+            ToolStreamUpdateEvent,
+            InterruptEvent<'_>,
+            ModelStreamUpdateEvent<'_>,
+        );
+        recorder
+    }
+
+    /// The recorded events as JSON.
+    pub fn events(&self) -> Vec<JsonValue> {
+        lock(&self.events).clone()
+    }
+
+    /// The `type` tags of the recorded events.
+    pub fn types(&self) -> Vec<String> {
+        lock(&self.events)
+            .iter()
+            .filter_map(|event| event.get("type").and_then(JsonValue::as_str).map(str::to_owned))
+            .collect()
+    }
+
+    /// Forgets the recorded events.
+    pub fn clear(&self) {
+        lock(&self.events).clear();
+    }
+}
+
+impl fmt::Debug for HookRecorder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HookRecorder")
+            .field("events", &lock(&self.events).len())
+            .finish()
+    }
+}
+
+/// An agent on `model` with the printer off and no tools, for tests.
+pub fn test_agent(model: impl Into<ModelSource>) -> Agent {
+    let config = AgentConfig {
+        model: Some(model.into()),
+        printer: Some(false),
+        ..Default::default()
+    };
+    Agent::assemble(config, crate::tools::ToolRegistry::new())
+}
+
+/// A tool named `name` that answers every call with `result(context)` (TS `createMockTool`).
+pub fn mock_tool(
+    name: &str,
+    result: impl Fn(&ToolContext) -> ToolOutcome + Send + Sync + 'static,
+) -> impl Tool {
+    MockTool {
+        spec: ToolSpec::new(name, format!("Mock tool {name}"))
+            .with_input_schema(serde_json::json!({ "type": "object", "properties": {} })),
+        result: Arc::new(result),
+    }
+}
+
+/// A success outcome with one text block, for [`mock_tool`].
+pub fn text_result(context: &ToolContext, text: &str) -> ToolOutcome {
+    ToolOutcome::Result(ToolResultBlock::new(
+        &context.tool_use().tool_use_id,
+        ToolResultStatus::Success,
+        vec![ToolResultContent::from(text)],
+    ))
+}
+
+type MockResult = Arc<dyn Fn(&ToolContext) -> ToolOutcome + Send + Sync>;
+
+struct MockTool {
+    spec: ToolSpec,
+    result: MockResult,
+}
+
+impl Tool for MockTool {
+    fn name(&self) -> &str {
+        &self.spec.name
+    }
+
+    fn description(&self) -> &str {
+        &self.spec.description
+    }
+
+    fn tool_spec(&self) -> ToolSpec {
+        self.spec.clone()
+    }
+
+    fn stream(&self, context: ToolContext) -> ToolStream {
+        let outcome = (self.result)(&context);
+        ToolStream::from_future(async move { outcome })
     }
 }
 

@@ -478,7 +478,8 @@ impl SummarizeResult {
 }
 
 /// Text that replaces the last user message after a guardrail redacted it (TS `Redaction`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Redaction {
     /// The replacement text.
