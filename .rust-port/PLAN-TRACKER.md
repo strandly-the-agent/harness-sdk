@@ -26,7 +26,7 @@
 - [x] Phase review gate and fixes
 
 ## [ ] Phase 3: agent loop, hooks and tools
-- [ ] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult`
+- [x] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult`
 - [x] Serializable stream event records (fixture-checked)
 - [x] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
 - [x] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles
@@ -37,9 +37,8 @@
 - [x] Direct tool calls, `as_tool`, agents as tools, printer
 - [ ] `strands::testing` hook recorder and test agent
 - [ ] Phase review gate and fixes
-- [ ] `Agent`, `AgentConfig` (every TS key except `checkpointing`), the bon builder with a fallible `build()?`, and `Agent::new`. The lazy default Bedrock model (#45): `build()` stays sync and the model resolves on first use. Without the `bedrock` feature and with no model set, the first call fails with a clear `DefaultNotConfiguredError`-style message.
-- [ ] `invoke`, `invoke_with`, `stream`, `stream_with`, `AgentStream<'_>` (named, `Unpin`), the `InvokeArgs` conversions, and `InvokeOptions` (structured output schema via `structured_output_schema::<T>()`, cancel signal, invocation state, invocation context, limits, and every other TS invoke option).
-- [ ] `AgentResult` with `Display`, `structured_output::<T>()`, `stop_reason`, `interrupts`, `AgentMetrics`, `AgentTrace`.
+- [x] `invoke`, `invoke_with`, `stream`, `stream_with`, `AgentStream<'_>` (named, `Unpin`), the `InvokeArgs` conversions, and `InvokeOptions` (structured output schema via `structured_output_schema::<T>()`, cancel signal, invocation state, invocation context, limits, and every other TS invoke option).
+- [x] `AgentResult` with `Display`, `structured_output::<T>()`, `stop_reason`, `interrupts`, `AgentMetrics`, `AgentTrace`.
 - [x] Stream items: the 16 owned records, checked against the fixtures.
 - [x] Hooks: the 17 events, getters, setters per 8.5, `HookOrder`, reverse order on `After*`, `HookCleanup`, `add_hook`, `add_async_hook::<E>`, `add_hook_impl`, interrupt collection, duplicate-name errors.
 - [x] Agent views and handles per 8.3 and 8.7.

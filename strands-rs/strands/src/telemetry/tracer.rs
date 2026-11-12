@@ -41,7 +41,7 @@ pub struct AgentTrace {
 }
 
 impl AgentTrace {
-    fn new(name: impl Into<String>, parent_id: Option<String>, start_time: u64) -> Self {
+    pub(crate) fn new(name: impl Into<String>, parent_id: Option<String>, start_time: u64) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),

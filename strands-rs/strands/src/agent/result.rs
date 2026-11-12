@@ -183,3 +183,6 @@ impl Serialize for AgentResult {
         .serialize(serializer)
     }
 }
+
+#[cfg(test)]
+mod tests;

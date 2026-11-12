@@ -260,6 +260,14 @@ mod configuration {
         assert_eq!(roles(&agent), [Role::User, Role::Assistant]);
     }
 
+    #[tokio::test]
+    async fn builds_without_a_model_and_fails_on_first_use() {
+        let mut agent = Agent::builder().printer(false).build().unwrap();
+        let error = agent.invoke("Hi").await.unwrap_err();
+        assert!(error.is_model_error(), "{error:?}");
+        assert!(error.to_string().contains("no model configured"), "{error}");
+    }
+
     #[test]
     fn defaults_to_printer_true_when_not_specified() {
         let agent = Agent::new(AgentConfig::default()).unwrap();
