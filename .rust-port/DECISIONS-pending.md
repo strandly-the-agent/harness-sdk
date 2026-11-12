@@ -86,3 +86,5 @@ Format: `**P-N. Title.** Context. Options. Choice. TS reference (file:line). Fil
 
 
 **P-42. Scan gates the commit mechanically.** The first commit (`2bf81844d`) was pushed although the inline section 9.5 scan printed `FOUND at diff lines: 706`, because the command chain did not stop on the scan. Line 706 was verified (by match against a fixed string, without printing it) to be the scan regex quoted inside `PROMPT.md`; no secret was pushed. Choice: `scan.sh` exits non-zero on a hit, and every commit goes through `.rust-port/commit.sh`, which unstages and refuses to commit or push on a hit. Files: `.rust-port/scan.sh`, `.rust-port/commit.sh`, `.rust-port/briefs/_common.md`.
+
+**P-43. MSRV check runs first in `gates.sh full`.** In Phase 2 the MSRV step failed with `No space left on device` because it started after the main target had grown to about 4 GB. Choice: `gates.sh full` runs MSRV and deny before the other gates, in `/tmp/msrv-target` (deleted right after), and deletes the main target first when under 2.5 GB is free. Files: `.rust-port/gates.sh`.
