@@ -116,7 +116,11 @@ impl Agent {
             let mut event =
                 AgentResultEvent::new(&mut self.local, state.clone(), Some(context.clone()), result);
             hooks.fire::<kinds::AgentResult>(&mut event).await;
-            return Ok(event.into_data());
+            let result = event.into_data();
+            if self.printer.is_some() {
+                emitter.print(&crate::AgentStreamEvent::AgentResult(result.clone()));
+            }
+            return Ok(result);
         }
     }
 
