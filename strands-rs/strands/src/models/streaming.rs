@@ -373,19 +373,19 @@ impl RedactInputContent {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct RedactOutputContent {
+    /// Text that replaces the assistant message.
+    pub replace_content: String,
     /// The output that was redacted, when the provider reports it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub redacted_content: Option<String>,
-    /// Text that replaces the assistant message.
-    pub replace_content: String,
 }
 
 impl RedactOutputContent {
     /// An output redaction replacing the assistant message with `replace_content`.
     pub fn new(replace_content: impl Into<String>) -> Self {
         Self {
-            redacted_content: None,
             replace_content: replace_content.into(),
+            redacted_content: None,
         }
     }
 
