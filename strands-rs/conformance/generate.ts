@@ -304,6 +304,10 @@ const modelEvents = [
     type: 'modelContentBlockStartEvent',
     start: { type: 'toolUseStart', name: 'get_weather', toolUseId: 'tooluse-1', reasoningSignature: 'sig' },
   }),
+  new sdk.ModelContentBlockStartEvent({
+    type: 'modelContentBlockStartEvent',
+    start: { type: 'toolUseStart', name: 'get_time', toolUseId: 'tooluse-2' },
+  }),
   new sdk.ModelContentBlockDeltaEvent({ type: 'modelContentBlockDeltaEvent', delta: { type: 'textDelta', text: 'Hello' } }),
   new sdk.ModelContentBlockDeltaEvent({ type: 'modelContentBlockDeltaEvent', delta: { type: 'toolUseInputDelta', input: '{"city":' } }),
   new sdk.ModelContentBlockDeltaEvent({ type: 'modelContentBlockDeltaEvent', delta: { type: 'reasoningContentDelta', text: 'think', signature: 'sig' } }),
@@ -317,7 +321,17 @@ const modelEvents = [
   new sdk.ModelMessageStopEvent({ type: 'modelMessageStopEvent', stopReason: 'endTurn', additionalModelResponseFields: providerNull }),
   new sdk.ModelMetadataEvent({ type: 'modelMetadataEvent', usage: { inputTokens: 5, outputTokens: 7, totalTokens: 12 }, metrics: { latencyMs: 30 } }),
   new sdk.ModelMetadataEvent({ type: 'modelMetadataEvent', usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, trace: providerNull }),
+  new sdk.ModelMetadataEvent({
+    type: 'modelMetadataEvent',
+    usage: { inputTokens: 3, outputTokens: 4, totalTokens: 17, cacheReadInputTokens: 6, cacheWriteInputTokens: 4 },
+    metrics: { latencyMs: 40, timeToFirstByteMs: 12 },
+  }),
   new sdk.ModelRedactionEvent({ type: 'modelRedactionEvent', inputRedaction: { replaceContent: '[redacted input]' } }),
+  new sdk.ModelRedactionEvent({
+    type: 'modelRedactionEvent',
+    outputRedaction: { replaceContent: '[redacted output]', redactedContent: 'the original output' },
+  }),
+  new sdk.ModelRedactionEvent({ type: 'modelRedactionEvent', outputRedaction: { replaceContent: '[redacted output]' } }),
 ]
 // `JSON.stringify` writes `Uint8Array` fields of stream events as index-keyed objects.
 fixture('stream/model-stream-events.json', modelEvents)
