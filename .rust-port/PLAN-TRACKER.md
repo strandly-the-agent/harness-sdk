@@ -29,10 +29,10 @@
 - [ ] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult`
 - [x] Serializable stream event records (fixture-checked)
 - [x] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
-- [ ] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles
-- [ ] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
+- [x] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles
+- [x] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
 - [ ] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
-- [ ] Concurrent and sequential executors
+- [x] Concurrent and sequential executors
 - [ ] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
 - [ ] Direct tool calls, `as_tool`, agents as tools, printer
 - [ ] `strands::testing` hook recorder and test agent
@@ -42,10 +42,10 @@
 - [ ] `AgentResult` with `Display`, `structured_output::<T>()`, `stop_reason`, `interrupts`, `AgentMetrics`, `AgentTrace`.
 - [x] Stream items: the 16 owned records, checked against the fixtures.
 - [x] Hooks: the 17 events, getters, setters per 8.5, `HookOrder`, reverse order on `After*`, `HookCleanup`, `add_hook`, `add_async_hook::<E>`, `add_hook_impl`, interrupt collection, duplicate-name errors.
-- [ ] Agent views and handles per 8.3 and 8.7.
-- [ ] Tools per 8.8, including `ToolRegistry` and `FunctionTool` (`FunctionTool::builder(..)` with a typed handler: schemars schema plus jsonschema validation).
+- [x] Agent views and handles per 8.3 and 8.7.
+- [x] Tools per 8.8, including `ToolRegistry` and `FunctionTool` (`FunctionTool::builder(..)` with a typed handler: schemars schema plus jsonschema validation).
 - [ ] `strands-macros`:
-- [ ] Executors per 8.8.
+- [x] Executors per 8.8.
 - [ ] Loop semantics: deferred append, limits in the TS check order, `InvocationContext` (nested limits and usage), structured output through `strands_structured_output` with retries, `end_turn` and `resume`, and `model-proxy.ts`.
 - [ ] Direct tool calls: `agent.tool("name").invoke(input).await` (TS `agent.tool.<name>.invoke()`), recorded into history as TS does (`agent/tool-caller.ts`).
 - [ ] `as_tool` with `preserve_context` and `delegate`; agents accepted in `.tools(..)`.

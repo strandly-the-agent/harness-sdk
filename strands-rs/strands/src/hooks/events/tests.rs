@@ -17,6 +17,10 @@ use crate::testing::{MockModel, mock_tool, test_agent, text_result};
 use crate::tools::{ToolResultStatus, ToolStreamEvent, ToolUse};
 use crate::types::{ContentBlock, Message, Role, StopReason, ToolResultBlock, ToolResultContent};
 
+fn reverse<M: HookEvent>() -> bool {
+    M::REVERSE
+}
+
 fn agent() -> Agent {
     test_agent(MockModel::new())
 }
@@ -53,7 +57,7 @@ mod initialized_event {
 
     #[test]
     fn returns_false_for_should_reverse_callbacks() {
-        assert!(!kinds::Initialized::REVERSE);
+        assert!(!reverse::<kinds::Initialized>());
     }
 }
 
@@ -72,7 +76,7 @@ mod before_invocation_event {
 
     #[test]
     fn returns_false_for_should_reverse_callbacks() {
-        assert!(!kinds::BeforeInvocation::REVERSE);
+        assert!(!reverse::<kinds::BeforeInvocation>());
     }
 
     #[test]
@@ -119,7 +123,7 @@ mod after_invocation_event {
 
     #[test]
     fn returns_true_for_should_reverse_callbacks() {
-        assert!(kinds::AfterInvocation::REVERSE);
+        assert!(reverse::<kinds::AfterInvocation>());
     }
 
     #[test]
@@ -143,7 +147,7 @@ mod message_added_event {
 
     #[test]
     fn returns_false_for_should_reverse_callbacks() {
-        assert!(!kinds::MessageAdded::REVERSE);
+        assert!(!reverse::<kinds::MessageAdded>());
     }
 }
 
@@ -176,7 +180,7 @@ mod before_tool_call_event {
 
     #[test]
     fn returns_false_for_should_reverse_callbacks() {
-        assert!(!BeforeToolCallEvent::REVERSE);
+        assert!(!reverse::<BeforeToolCallEvent>());
     }
 
     #[test]
@@ -262,7 +266,7 @@ mod after_tool_call_event {
 
     #[test]
     fn returns_true_for_should_reverse_callbacks() {
-        assert!(AfterToolCallEvent::REVERSE);
+        assert!(reverse::<AfterToolCallEvent>());
     }
 
     #[test]
@@ -315,7 +319,7 @@ mod before_model_call_event {
 
     #[test]
     fn returns_false_for_should_reverse_callbacks() {
-        assert!(!kinds::BeforeModelCall::REVERSE);
+        assert!(!reverse::<kinds::BeforeModelCall>());
     }
 
     #[test]
@@ -386,7 +390,7 @@ mod after_model_call_event {
 
     #[test]
     fn returns_true_for_should_reverse_callbacks() {
-        assert!(kinds::AfterModelCall::REVERSE);
+        assert!(reverse::<kinds::AfterModelCall>());
     }
 
     #[test]
@@ -501,7 +505,7 @@ mod before_tools_event {
 
     #[test]
     fn returns_false_for_should_reverse_callbacks() {
-        assert!(!kinds::BeforeTools::REVERSE);
+        assert!(!reverse::<kinds::BeforeTools>());
     }
 
     #[test]
@@ -543,7 +547,7 @@ mod after_tools_event {
 
     #[test]
     fn returns_true_for_should_reverse_callbacks() {
-        assert!(kinds::AfterTools::REVERSE);
+        assert!(reverse::<kinds::AfterTools>());
     }
 
     #[test]

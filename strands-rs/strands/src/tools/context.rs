@@ -71,6 +71,21 @@ impl ToolContext {
     }
 }
 
+#[cfg(test)]
+impl ToolContext {
+    /// A context for `tool_use` on a fresh test agent.
+    pub(crate) fn for_test(tool_use: ToolUse) -> Self {
+        let agent = crate::testing::test_agent(crate::testing::MockModel::new());
+        Self {
+            tool_use,
+            agent: agent.local.tool_agent(None),
+            invocation_state: InvocationState::new(),
+            cancel_signal: CancelSignal::new().0,
+            invocation_context: None,
+        }
+    }
+}
+
 impl fmt::Debug for ToolContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ToolContext")

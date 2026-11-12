@@ -135,7 +135,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/multiagent/__tests__/swarm.tracer.test.ts` | | - | Out of scope: Graph and Swarm are out of v0.1 |
 | `strands-ts/src/plugins/__tests__/plugin.test.ts` | | 0/7 |  |
 | `strands-ts/src/plugins/__tests__/registry.test.ts` | | 0/10 |  |
-| `strands-ts/src/registry/__tests__/tool-registry.test.ts` | | 0/33 |  |
+| `strands-ts/src/registry/__tests__/tool-registry.test.ts` | `tools::registry::tests` | 30/33 | Non-string name, non-string description, null description (3): not expressible with `Tool::name() -> &str` and a required description |
 | `strands-ts/src/retry/__tests__/backoff-strategy.test.ts` | `retry::backoff_strategy::tests` | 15/19 | `rejects attempts below 1` (3) and `rejects non-integer attempts` (1): `BackoffContext.attempt` is a `NonZeroU32`, so zero and fractional attempts can't be built |
 | `strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts` | `retry::default_model_retry_strategy::tests` | 12/15 | `registers an AfterModelCallEvent hook` (1): arrives with the hook registry in Phase 3; `rejects maxAttempts below 1` (1): `max_attempts` is a `NonZeroU32`; `lets subclasses expand the retryable set` (1): Rust has no subclassing, a custom set is a `ModelRetryStrategy` impl (the composition case is `short_circuits_without_retry_..`) |
 | `strands-ts/src/sandbox/__tests__/default.test.browser.ts` | | - | Not applicable: browser-only spec |
@@ -166,11 +166,11 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/telemetry/__tests__/local-trace.test.ts` | | 0/16 |  |
 | `strands-ts/src/telemetry/__tests__/meter.test.ts` | | 0/62 |  |
 | `strands-ts/src/telemetry/__tests__/tracer.test.node.ts` | | 0/100 |  |
-| `strands-ts/src/tools/__tests__/structured-output-tool.test.ts` | | 0/12 |  |
+| `strands-ts/src/tools/__tests__/structured-output-tool.test.ts` | `tools::structured_output::tests` | 11/12 | `returns error result for non-ZodError exceptions` (1): validation cannot throw anything but its own failures |
 | `strands-ts/src/tools/__tests__/tool-factory.test.ts` | | 0/8 |  |
-| `strands-ts/src/tools/__tests__/tool.test.ts` | | 0/46 |  |
-| `strands-ts/src/tools/__tests__/zod-tool.test.ts` | | 0/32 |  |
-| `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | | 0/3 |  |
+| `strands-ts/src/tools/__tests__/tool.test.ts` | `tools::tool::tests`, `tools::function_tool::tests` | 31/46 | TS-only (15): undefined returns, deep copies of returned objects, circular references, functions in values, non-Error throws, Error subclasses and stack traces, instanceof and interface-signature checks |
+| `strands-ts/src/tools/__tests__/zod-tool.test.ts` | `tools::function_tool::tests::typed`, `tools::schema::tests` | 7/32 | Zod-specific (25): Zod error text and Zod schema features map to `typed_callback` with schemars plus `jsonschema`; the covered cases are schema generation, typed input, invalid input and uncompilable schemas. The macro cases arrive with `#[tool]` |
+| `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | `tools::executors::tests` | 2/3 | `keeps middleware and tools on the supplied execution signal` (1): needs middleware (Phase 4) |
 | `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | `checkpoint` (4): out of scope, checkpointing is out of v0.1; the other 26 arrive with `AgentResult` and the agent loop |
 | `strands-ts/src/types/__tests__/citations.test.ts` | `types::tests::citations` | 6/6 |  |
 | `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | TS-only mechanism: `deepCopy` and `deepCopyWithValidation` reject JS values JSON can't hold (functions, symbols, `undefined`); a Rust `JsonValue` is always serializable and `Clone` is the deep copy. JSON reading and writing rules are tested in `types::json::tests` |
