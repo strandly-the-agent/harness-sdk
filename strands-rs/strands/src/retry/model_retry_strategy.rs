@@ -50,6 +50,17 @@ pub trait ModelRetryStrategy: Send + Sync + 'static {
 
     /// Called on the first model attempt of each turn, to reset per-turn state.
     fn on_first_model_attempt(&self) {}
+
+    /// Records the agent this instance serves; strategies with per-turn state reject a second
+    /// agent (TS `initAgent`).
+    ///
+    /// # Errors
+    ///
+    /// When the instance already serves another live agent.
+    #[doc(hidden)]
+    fn attach(&self, _agent: &std::sync::Arc<()>) -> crate::error::Result<()> {
+        Ok(())
+    }
 }
 
 /// The TS `retryModel` hook body: resets per-turn state on attempt 1, leaves a retry another hook

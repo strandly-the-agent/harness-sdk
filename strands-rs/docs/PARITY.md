@@ -30,15 +30,15 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/agent/__tests__/agent.continuation.test.ts` | | 0/6 |  |
 | `strands-ts/src/agent/__tests__/agent.hook.test.ts` | | 0/70 |  |
 | `strands-ts/src/agent/__tests__/agent.interrupt.test.ts` | | 0/32 |  |
-| `strands-ts/src/agent/__tests__/agent.invocation-context.test.ts` | | 0/16 |  |
-| `strands-ts/src/agent/__tests__/agent.invocation-state.test.ts` | | 0/11 |  |
-| `strands-ts/src/agent/__tests__/agent.model-retry.test.ts` | | 0/12 |  |
+| `strands-ts/src/agent/__tests__/agent.invocation-context.test.ts` | `agent::tests::invocation::agent_context` | 10/16 | Unknown-context and frozen-bag cases (2): not constructible in Rust. Hand-written tool forwarding, nested structured output and auxiliary-call cases (4): need agents as tools and auxiliary model calls, covered when those land |
+| `strands-ts/src/agent/__tests__/agent.invocation-state.test.ts` | `agent::tests::invocation::state` | 7/11 | Plain-object identity and recursive-cycle variants (3) collapse into the `ptr_eq` cases; AfterToolCallEvent retry identity (1) is covered by the shared `ToolRun` state |
+| `strands-ts/src/agent/__tests__/agent.model-retry.test.ts` | `agent::tests::retry` | 10/12 | `disables retries when retryStrategy is null` (1): Rust has one off form, the empty list (P-53). `accepts an array of distinct retry strategy types` (1): only one strategy type exists in v0.1 |
 | `strands-ts/src/agent/__tests__/agent.model-routing.test.ts` | | 0/10 |  |
 | `strands-ts/src/agent/__tests__/agent.stateful-model.test.ts` | | 0/12 |  |
 | `strands-ts/src/agent/__tests__/agent.storage.test.ts` | | 0/7 |  |
 | `strands-ts/src/agent/__tests__/agent.test.ts` | `agent::tests::agent`, `agent::tests::fixtures` | 58/147 | Hook errors (8): Rust hooks cannot fail (P-45). Concurrency guards (3): `&mut self` makes concurrent invocation a compile error. Stream abandonment, `shutdown` and async disposal (6): Phase 4. MCP tools-changed, session id and agent metadata (8): Phases 6 and 9. Checkpoints and history offloading in the structured-output attempt cases (5): out of scope or Phase 6. Bedrock model construction (8): Phase 5. The rest of the structured-output attempt-limit and redaction/estimation variants are not yet ported |
 | `strands-ts/src/agent/__tests__/agent.tracer.test.node.ts` | | 0/47 |  |
-| `strands-ts/src/agent/__tests__/invocation-context.test.ts` | | 0/2 |  |
+| `strands-ts/src/agent/__tests__/invocation-context.test.ts` | `agent::tests::invocation::context` | 2/2 |  |
 | `strands-ts/src/agent/__tests__/printer.test.ts` | | 0/9 |  |
 | `strands-ts/src/agent/__tests__/snapshot.test.ts` | | 0/32 |  |
 | `strands-ts/src/agent/__tests__/tool-caller.test.ts` | | 0/26 |  |

@@ -80,6 +80,7 @@ pub struct DefaultModelRetryStrategy {
     max_attempts: NonZeroU32,
     backoff: Arc<dyn BackoffStrategy>,
     state: Mutex<TurnState>,
+    attached: Mutex<std::sync::Weak<()>>,
 }
 
 impl DefaultModelRetryStrategy {
@@ -92,6 +93,7 @@ impl DefaultModelRetryStrategy {
             max_attempts: options.max_attempts,
             backoff: options.backoff,
             state: Mutex::new(TurnState::default()),
+            attached: Mutex::new(std::sync::Weak::new()),
         }
     }
 
@@ -152,6 +154,21 @@ impl ModelRetryStrategy for DefaultModelRetryStrategy {
 
     fn on_first_model_attempt(&self) {
         *self.state() = TurnState::default();
+    }
+
+    fn attach(&self, agent: &Arc<()>) -> crate::error::Result<()> {
+        let mut attached = self.attached.lock().unwrap_or_else(PoisonError::into_inner);
+        if attached
+            .upgrade()
+            .is_some_and(|current| !Arc::ptr_eq(&current, agent))
+        {
+            return Err(crate::error::AgentError::new(
+                "DefaultModelRetryStrategy: instance is already attached to another agent. Create a separate instance per agent.",
+            )
+            .into());
+        }
+        *attached = Arc::downgrade(agent);
+        Ok(())
     }
 }
 

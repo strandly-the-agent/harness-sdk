@@ -260,6 +260,7 @@ pub struct Agent {
     pub(crate) meter: Meter,
     pub(crate) tracer: LocalTracer,
     initialized: bool,
+    identity: Arc<()>,
 }
 
 impl Agent {
@@ -322,6 +323,7 @@ impl Agent {
             meter: Meter::default(),
             tracer: LocalTracer::default(),
             initialized: false,
+            identity: Arc::new(()),
         }
     }
 
@@ -330,10 +332,14 @@ impl Agent {
     ///
     /// # Errors
     ///
-    /// None at present; later subsystems (MCP, plugins) fail here.
+    /// [`AgentError`](crate::error::AgentError) when a retry strategy instance already serves
+    /// another agent.
     pub async fn initialize(&mut self) -> Result<()> {
         if self.initialized {
             return Ok(());
+        }
+        for strategy in &self.retry_strategies {
+            strategy.attach(&self.identity)?;
         }
         for strategy in &self.retry_strategies {
             register_retry_strategy(&self.local.hooks, Arc::clone(strategy));
