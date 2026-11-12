@@ -28,7 +28,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/agent/__tests__/agent.concurrent.test.ts` | | 0/22 |  |
 | `strands-ts/src/agent/__tests__/agent.context-manager.test.ts` | | 0/16 |  |
 | `strands-ts/src/agent/__tests__/agent.continuation.test.ts` | | 0/6 |  |
-| `strands-ts/src/agent/__tests__/agent.hook.test.ts` | | 0/70 |  |
+| `strands-ts/src/agent/__tests__/agent.hook.test.ts` | `agent::tests::hooks` | 63/70 | Plugin config and plugin init failure (3): Phase 4 plugins. Tool retry after agent cancellation (2): Phase 4 cancel semantics. Caller-owned message array and shallow-copied `endTurn` array (2): TS aliasing; Rust takes ownership |
 | `strands-ts/src/agent/__tests__/agent.interrupt.test.ts` | | 0/32 |  |
 | `strands-ts/src/agent/__tests__/agent.invocation-context.test.ts` | `agent::tests::invocation::agent_context` | 10/16 | Unknown-context and frozen-bag cases (2): not constructible in Rust. Hand-written tool forwarding, nested structured output and auxiliary-call cases (4): need agents as tools and auxiliary model calls, covered when those land |
 | `strands-ts/src/agent/__tests__/agent.invocation-state.test.ts` | `agent::tests::invocation::state` | 7/11 | Plain-object identity and recursive-cycle variants (3) collapse into the `ptr_eq` cases; AfterToolCallEvent retry identity (1) is covered by the shared `ToolRun` state |
