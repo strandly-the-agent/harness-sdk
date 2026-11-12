@@ -10,15 +10,55 @@ use serde_json::ser::Formatter;
 /// Any JSON value (TS `JSONValue`).
 pub type JsonValue = serde_json::Value;
 
-/// Serializes `value` as compact JSON with JavaScript number formatting.
+/// A JSON object (TS plain object).
+pub(crate) type JsonMap = serde_json::Map<String, JsonValue>;
+
+/// Serializes `value` as compact JSON with JavaScript number formatting and key order.
 ///
 /// `serde_json` writes floats in Rust's style (`1e20`, `1e-6`, `3.0`); `JSON.stringify` writes
-/// `100000000000000000000`, `0.000001` and `3`. Persisted data goes through this so both SDKs write
-/// the same bytes.
+/// `100000000000000000000`, `0.000001` and `3`. Object keys follow [`js_key_order`]. Persisted
+/// data goes through this so both SDKs write the same bytes.
 pub(crate) fn to_vec<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<Vec<u8>> {
+    let value = js_key_order(serde_json::to_value(value)?);
     let mut out = Vec::new();
     value.serialize(&mut serde_json::Serializer::with_formatter(&mut out, JsFormatter))?;
     Ok(out)
+}
+
+/// Reorders every object in `value` the way JS orders object keys: array-index keys (`"0"`,
+/// `"1"`, ...) first in ascending numeric order, then the other keys in insertion order.
+pub(crate) fn js_key_order(value: JsonValue) -> JsonValue {
+    match value {
+        JsonValue::Object(map) => JsonValue::Object(js_key_order_map(map)),
+        JsonValue::Array(items) => JsonValue::Array(items.into_iter().map(js_key_order).collect()),
+        other => other,
+    }
+}
+
+/// [`js_key_order`] for one object, applied to its values too.
+pub(crate) fn js_key_order_map(map: JsonMap) -> JsonMap {
+    let (mut indices, named): (Vec<_>, Vec<_>) = map
+        .into_iter()
+        .map(|(key, value)| (array_index(&key), key, js_key_order(value)))
+        .partition(|(index, _, _)| index.is_some());
+    indices.sort_by_key(|(index, _, _)| *index);
+    indices
+        .into_iter()
+        .chain(named)
+        .map(|(_, key, value)| (key, value))
+        .collect()
+}
+
+/// The ECMAScript array index a property key names: canonical decimal below `2^32 - 1`.
+pub(crate) fn array_index(key: &str) -> Option<u32> {
+    let index: u32 = key.parse().ok()?;
+    (index < u32::MAX && index.to_string() == key).then_some(index)
+}
+
+/// Trims the way JS `String.prototype.trim` does: like [`str::trim`], but U+FEFF is whitespace and
+/// U+0085 is not.
+pub(crate) fn js_trim(text: &str) -> &str {
+    text.trim_matches(|c: char| c == '\u{FEFF}' || (c.is_whitespace() && c != '\u{0085}'))
 }
 
 /// Parses JSON written by either SDK, replacing lone UTF-16 surrogate escapes with U+FFFD.
@@ -26,8 +66,17 @@ pub(crate) fn to_vec<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<Vec
 /// JS strings may hold lone surrogates and `JSON.stringify` escapes them (`"\ud83d"`); a Rust
 /// `String` can't hold one, and `serde_json` rejects the whole document. Replacing them keeps the
 /// rest of the data loadable.
+///
+/// Number literals beyond the `f64` range, which `JSON.parse` reads as `Infinity` and
+/// `JSON.stringify` writes as `null`, are read as `null`.
 pub(crate) fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> serde_json::Result<T> {
-    serde_json::from_slice(&replace_lone_surrogates(bytes))
+    let bytes = replace_lone_surrogates(bytes);
+    match serde_json::from_slice(&bytes) {
+        Err(error) if error.to_string().starts_with("number out of range") => {
+            serde_json::from_slice(&null_out_of_range_numbers(&bytes))
+        }
+        result => result,
+    }
 }
 
 /// Deserializes a field where TS tells a present `null` apart from a missing one.
@@ -141,6 +190,43 @@ fn replace_lone_surrogates(bytes: &[u8]) -> Cow<'_, [u8]> {
     }
 }
 
+/// Replaces number literals outside strings whose value overflows `f64` with `null`.
+fn null_out_of_range_numbers(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    let mut in_string = false;
+    while let Some(&byte) = bytes.get(i) {
+        if in_string || !(byte == b'-' || byte.is_ascii_digit()) {
+            match byte {
+                b'"' => in_string = !in_string,
+                b'\\' if in_string => {
+                    out.extend(bytes.get(i..(i + 2).min(bytes.len())).unwrap_or_default());
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+            out.push(byte);
+            i += 1;
+            continue;
+        }
+        let len = bytes
+            .get(i..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|b| b.is_ascii_digit() || matches!(b, b'-' | b'+' | b'.' | b'e' | b'E'))
+            .count();
+        let literal = bytes.get(i..i + len).unwrap_or_default();
+        let overflows = std::str::from_utf8(literal)
+            .ok()
+            .and_then(|text| text.parse::<f64>().ok())
+            .is_some_and(f64::is_infinite);
+        out.extend_from_slice(if overflows { b"null" } else { literal });
+        i += len;
+    }
+    out
+}
+
 /// The UTF-16 code unit of a `\uXXXX` escape starting at `at`, if there is one.
 fn escaped_unit(bytes: &[u8], at: usize) -> Option<u16> {
     let escape = bytes.get(at..at + 6)?;
@@ -182,6 +268,40 @@ mod tests {
                 "{value}"
             );
         }
+    }
+
+    #[test]
+    fn writes_objects_in_javascript_key_order() {
+        let mut inner = JsonMap::new();
+        inner.insert("z".into(), json!(1));
+        inner.insert("10".into(), json!(2));
+        inner.insert("2".into(), json!(3));
+        let mut outer = JsonMap::new();
+        outer.insert("b".into(), json!(1));
+        outer.insert("1".into(), JsonValue::Array(vec![JsonValue::Object(inner)]));
+        outer.insert("01".into(), json!(2));
+        outer.insert("4294967295".into(), json!(3));
+        outer.insert("0".into(), json!(4));
+        assert_eq!(
+            String::from_utf8(to_vec(&outer).unwrap()).unwrap(),
+            r#"{"0":4,"1":[{"2":3,"10":2,"z":1}],"b":1,"01":2,"4294967295":3}"#
+        );
+    }
+
+    #[test]
+    fn trims_like_javascript() {
+        assert_eq!(js_trim(" \u{FEFF}a\u{3000}\n"), "a");
+        assert_eq!(js_trim("\u{0085}"), "\u{0085}");
+    }
+
+    #[test]
+    fn reads_out_of_range_numbers_as_null() {
+        let value: JsonValue = from_slice(br#"{"a":1e400,"b":[-1E+999,1.5],"c":"1e400 \"2e999\""}"#).unwrap();
+        assert_eq!(
+            value,
+            json!({"a": null, "b": [null, 1.5], "c": "1e400 \"2e999\""})
+        );
+        assert!(from_slice::<JsonValue>(b"{\"a\":1e400,}").is_err());
     }
 
     #[test]

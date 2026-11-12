@@ -7,9 +7,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::{JsonValidationError, Result};
-use crate::types::json::JsonValue;
-
-type JsonMap = serde_json::Map<String, JsonValue>;
+use crate::types::json::{JsonMap, JsonValue, array_index, js_key_order_map};
 
 /// A key-value store of JSON values (TS `StateStore`).
 ///
@@ -80,14 +78,17 @@ impl StateStore {
         self.write().clear();
     }
 
-    /// A copy of the whole state.
+    /// A copy of the whole state, with objects in JS key order (see [`keys`](Self::keys)).
     pub fn get_all(&self) -> JsonMap {
-        self.read().clone()
+        js_key_order_map(self.read().clone())
     }
 
-    /// The keys, in insertion order.
+    /// The keys in JS object order: array-index keys (`"0"`, `"1"`, ...) ascending, then the
+    /// rest in insertion order.
     pub fn keys(&self) -> Vec<String> {
-        self.read().keys().cloned().collect()
+        let mut keys: Vec<String> = self.read().keys().cloned().collect();
+        keys.sort_by_key(|key| array_index(key).map_or((1, 0), |index| (0, index)));
+        keys
     }
 
     /// An independent store holding a copy of this one's state.

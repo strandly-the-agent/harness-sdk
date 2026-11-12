@@ -300,3 +300,14 @@ fn clones_share_state_and_snapshots_do_not() {
     assert_eq!(state.get_value("key"), Some(json!(1)));
     assert_eq!(snapshot.get_value("key"), None);
 }
+
+#[test]
+fn lists_array_index_keys_first_as_js_objects_do() {
+    let state = StateStore::new();
+    for key in ["b", "10", "1", "a", "01"] {
+        state.set(key, 0).unwrap();
+    }
+    assert_eq!(state.keys(), ["1", "10", "b", "a", "01"]);
+    let all: Vec<String> = state.get_all().keys().cloned().collect();
+    assert_eq!(all, state.keys());
+}

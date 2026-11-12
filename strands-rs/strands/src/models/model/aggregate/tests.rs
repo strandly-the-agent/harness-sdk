@@ -642,3 +642,38 @@ async fn does_not_include_redaction_when_no_redact_events_are_received() {
     .await;
     assert_eq!(result.unwrap().redaction, None);
 }
+
+#[tokio::test]
+async fn drops_text_blocks_that_javascript_trims_to_empty() {
+    let (_, result) = run(vec![
+        start(),
+        block_start(),
+        text("\u{FEFF} "),
+        block_stop(),
+        block_start(),
+        text("\u{0085}"),
+        block_stop(),
+        stop("endTurn"),
+    ])
+    .await;
+    assert_eq!(
+        result_json(&result.unwrap())["message"]["content"],
+        json!([{ "text": "\u{0085}" }])
+    );
+}
+
+#[tokio::test]
+async fn reads_out_of_range_tool_input_numbers_as_null() {
+    let (_, result) = run(vec![
+        start(),
+        tool_start("tool1", "calc"),
+        tool_input(r#"{"a": 1e400}"#),
+        block_stop(),
+        stop("toolUse"),
+    ])
+    .await;
+    assert_eq!(
+        result_json(&result.unwrap())["message"]["content"][0]["toolUse"]["input"],
+        json!({ "a": null })
+    );
+}

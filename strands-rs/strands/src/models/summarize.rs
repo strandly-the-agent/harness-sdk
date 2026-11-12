@@ -7,6 +7,7 @@ use crate::error::{Error, Result};
 use crate::models::model::{AggregatedEvent, Model, ModelRequest, SummarizeOptions, SummarizeResult};
 use crate::models::model_proxy;
 use crate::models::streaming::{ModelStreamEvent, Usage};
+use crate::types::json;
 use crate::types::{ContentBlock, Message, Role, StopReason, SummaryBlock, TextBlock};
 
 /// Opens every summary request, whatever the caller's instructions say, because the request can
@@ -148,7 +149,7 @@ pub(crate) async fn summarize_with_stream<M: Model + ?Sized>(
                 .join("\n")
         })
         .unwrap_or_default();
-    let text = text.trim();
+    let text = json::js_trim(&text);
     if text.is_empty() {
         return Ok(SummarizeResult::new(Vec::new()).with_usage(usage));
     }

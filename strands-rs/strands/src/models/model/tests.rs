@@ -1,9 +1,19 @@
-//! Config, cache and request helpers of `models/model.ts`.
+//! Ported from strands-ts/src/models/__tests__/model.test.ts (`Model.modelId`, `countTokens`,
+//! `info`, `estimateUtilization`), plus the config, cache and request helpers of
+//! `models/model.ts`.
 
 use serde_json::json;
 
 use super::*;
-use crate::models::model_info::ModelLimits;
+use crate::models::model_info::{ModelCapabilities, ModelLimits, PromptCaching};
+use crate::models::{BoxStream, ModelStreamEvent};
+use crate::test_support::{TestModelProvider, scripted, user_text};
+use crate::tools::{ToolResultStatus, ToolSpec};
+use crate::types::{
+    Citation, CitationGeneratedContent, CitationLocation, CitationsBlock, GuardContentBlock,
+    GuardContentText, GuardQualifier, InjectedBlock, ReasoningBlock, SummaryBlock, SystemContentBlock,
+    TextBlock, ToolResultBlock, ToolResultContent, ToolUseBlock,
+};
 
 #[test]
 fn merge_overwrites_only_the_fields_the_update_sets() {
@@ -134,19 +144,6 @@ fn latest_user_index_finds_the_last_user_message() {
         Some(2)
     );
 }
-
-// Ported from strands-ts/src/models/__tests__/model.test.ts (`Model.modelId`, `countTokens`,
-// `info`, `estimateUtilization`)
-
-use crate::models::model_info::{ModelCapabilities, PromptCaching};
-use crate::models::{BoxStream, ModelStreamEvent};
-use crate::test_support::{TestModelProvider, scripted, user_text};
-use crate::tools::{ToolResultStatus, ToolSpec};
-use crate::types::{
-    Citation, CitationGeneratedContent, CitationLocation, CitationsBlock, GuardContentBlock,
-    GuardContentText, GuardQualifier, InjectedBlock, ReasoningBlock, SummaryBlock, SystemContentBlock,
-    TextBlock, ToolResultBlock, ToolResultContent, ToolUseBlock,
-};
 
 fn provider() -> TestModelProvider {
     scripted(Vec::new())
@@ -465,6 +462,33 @@ fn leaves_temporary_messages_off_for_a_model_the_shared_data_says_takes_them() {
         provider.model_info().capabilities().temporary_messages,
         Some(false)
     );
+}
+
+/// A provider whose model id comes from an override, not from its config.
+struct RenamedId(TestModelProvider);
+
+impl Model for RenamedId {
+    fn stream(&self, request: ModelRequest) -> BoxStream<'static, Result<ModelStreamEvent>> {
+        self.0.stream(request)
+    }
+
+    fn get_config(&self) -> BaseModelConfig {
+        self.0.get_config()
+    }
+
+    fn update_config(&self, config: BaseModelConfig) {
+        self.0.update_config(config);
+    }
+
+    fn model_id(&self) -> Option<String> {
+        Some("claude-sonnet-4-5".into())
+    }
+}
+
+#[test]
+fn looks_up_model_info_by_the_model_id_method() {
+    let model = RenamedId(provider());
+    assert_eq!(model.model_info().context_window(), Some(200_000));
 }
 
 /// A provider that puts its own facts over the default model info, the user override over both.

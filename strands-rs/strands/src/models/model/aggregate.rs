@@ -91,7 +91,7 @@ impl Aggregator {
                 let content = self
                     .blocks
                     .iter()
-                    .filter(|block| !matches!(block, ContentBlock::Text(text) if text.text.trim().is_empty()))
+                    .filter(|block| !matches!(block, ContentBlock::Text(text) if json::js_trim(&text.text).is_empty()))
                     .cloned()
                     .collect();
                 self.stopped = Some(Message::new(self.role, content));

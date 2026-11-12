@@ -22,7 +22,7 @@ pub enum PromptCaching {
 }
 
 /// What a model can do (TS `ModelCapabilities`). `None` means unknown.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCapabilities {
     /// The provider keeps conversation state server-side, so the agent sends only new messages.
@@ -46,7 +46,7 @@ pub struct ModelCapabilities {
 }
 
 /// A model's size limits in tokens (TS `ModelLimits`). `None` means unknown.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelLimits {
     /// Context window size.
@@ -68,7 +68,7 @@ pub struct ModelLimits {
 /// };
 /// assert_eq!(info.context_window(), Some(128_000));
 /// ```
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 pub struct ModelInfo {
     /// Capabilities.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -81,17 +81,17 @@ pub struct ModelInfo {
 impl ModelInfo {
     /// The context window, if known.
     pub fn context_window(&self) -> Option<u64> {
-        self.limits.and_then(|limits| limits.context_window)
+        self.limits.as_ref().and_then(|limits| limits.context_window)
     }
 
     /// The maximum output tokens, if known.
     pub fn max_output_tokens(&self) -> Option<u64> {
-        self.limits.and_then(|limits| limits.max_output_tokens)
+        self.limits.as_ref().and_then(|limits| limits.max_output_tokens)
     }
 
     /// The capabilities, with every field unknown when none are set.
     pub fn capabilities(&self) -> ModelCapabilities {
-        self.capabilities.unwrap_or_default()
+        self.capabilities.clone().unwrap_or_default()
     }
 }
 
@@ -110,7 +110,7 @@ pub(crate) fn merge_model_info<'a>(parts: impl IntoIterator<Item = Option<&'a Mo
     let mut capabilities = ModelCapabilities::default();
     let mut limits = ModelLimits::default();
     for part in parts.into_iter().flatten() {
-        if let Some(c) = part.capabilities {
+        if let Some(c) = &part.capabilities {
             capabilities = ModelCapabilities {
                 stateful: or(capabilities.stateful, c.stateful),
                 prompt_caching: or(capabilities.prompt_caching, c.prompt_caching),
@@ -123,7 +123,7 @@ pub(crate) fn merge_model_info<'a>(parts: impl IntoIterator<Item = Option<&'a Mo
                 temporary_messages: or(capabilities.temporary_messages, c.temporary_messages),
             };
         }
-        if let Some(l) = part.limits {
+        if let Some(l) = &part.limits {
             limits = ModelLimits {
                 context_window: or(limits.context_window, l.context_window),
                 max_output_tokens: or(limits.max_output_tokens, l.max_output_tokens),

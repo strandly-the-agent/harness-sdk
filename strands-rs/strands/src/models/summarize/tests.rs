@@ -257,6 +257,20 @@ async fn returns_an_empty_summary_when_the_reply_holds_no_text() {
 }
 
 #[tokio::test]
+async fn trims_the_reply_as_javascript_does() {
+    let usage = Usage::new(10, 1, 11);
+    let model = recording(&["\u{FEFF}"], "endTurn", Some(usage));
+    let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
+    assert_eq!(result, empty(usage));
+    let model = recording(&["\u{0085}"], "endTurn", Some(usage));
+    let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
+    assert_eq!(
+        result,
+        SummarizeResult::new(summary("\u{0085}")).with_usage(usage)
+    );
+}
+
+#[tokio::test]
 async fn returns_its_usage() {
     let usage = Usage::new(10, 5, 15);
     let model = recording(&["the summary"], "endTurn", Some(usage));

@@ -68,9 +68,14 @@ pub type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
 ///
 ///     fn update_config(&self, config: BaseModelConfig) {
 ///         let mut current = self.config.lock().unwrap_or_else(PoisonError::into_inner);
-///         *current = BaseModelConfig { model_id: config.model_id.or(current.model_id.take()), ..config };
+///         current.merge(config);
 ///     }
 /// }
+///
+/// let model = Echo { config: Mutex::new(BaseModelConfig::builder().temperature(0.5).build()) };
+/// model.update_config(BaseModelConfig::builder().max_tokens(10).build());
+/// assert_eq!(model.get_config().temperature, Some(0.5));
+/// assert_eq!(model.get_config().max_tokens, Some(10));
 /// ```
 #[async_trait]
 pub trait Model: Send + Sync + 'static {
@@ -120,7 +125,7 @@ pub trait Model: Send + Sync + 'static {
             }),
         };
         merge_model_info([
-            Some(&lookup_model_info(config.model_id.as_deref().unwrap_or_default())),
+            Some(&lookup_model_info(self.model_id().as_deref().unwrap_or_default())),
             Some(&defaults),
             config.model_info.as_ref(),
         ])
@@ -207,7 +212,7 @@ pub struct BaseModelConfig {
 
 impl BaseModelConfig {
     /// Overwrites each field `update` sets, keeping the rest (TS `{ ...config, ...update }`).
-    pub(crate) fn merge(&mut self, update: BaseModelConfig) {
+    pub fn merge(&mut self, update: BaseModelConfig) {
         let BaseModelConfig {
             model_id,
             max_tokens,
@@ -221,7 +226,7 @@ impl BaseModelConfig {
         self.temperature = temperature.or(self.temperature);
         self.top_p = top_p.or(self.top_p);
         self.context_window_limit = context_window_limit.or(self.context_window_limit);
-        self.model_info = model_info.or(self.model_info);
+        self.model_info = model_info.or(self.model_info.take());
     }
 }
 
