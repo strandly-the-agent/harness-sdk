@@ -66,8 +66,8 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/decisions/__tests__/llm-decision-model.tracing.test.node.ts` | | - | Out of scope: decision models are out of v0.1 |
 | `strands-ts/src/decisions/__tests__/system-one-decision-models.test.node.ts` | | - | Out of scope: decision models are out of v0.1 |
 | `strands-ts/src/experimental/__tests__/checkpoint.test.ts` | | - | Out of scope: checkpointing is out of v0.1 |
-| `strands-ts/src/hooks/__tests__/events.test.ts` | | 0/71 |  |
-| `strands-ts/src/hooks/__tests__/registry.test.ts` | | 0/25 |  |
+| `strands-ts/src/hooks/__tests__/events.test.ts` | `hooks::events::tests` | 69/71 | The two serialization-completeness cases hold by construction: records are separate types without the agent |
+| `strands-ts/src/hooks/__tests__/registry.test.ts` | `hooks::registry::tests` | 22/25 | Callback errors (3): Rust hook callbacks return `()` and cannot fail (P-45) |
 | `strands-ts/src/injection/__tests__/message-injection.test.ts` | | 0/31 |  |
 | `strands-ts/src/interventions/__tests__/handler.test.ts` | | 0/2 |  |
 | `strands-ts/src/interventions/__tests__/registry.test.ts` | | 0/44 |  |

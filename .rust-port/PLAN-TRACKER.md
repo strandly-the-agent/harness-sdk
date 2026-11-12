@@ -28,7 +28,7 @@
 ## [ ] Phase 3: agent loop, hooks and tools
 - [ ] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult`
 - [x] Serializable stream event records (fixture-checked)
-- [ ] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
+- [x] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
 - [ ] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles
 - [ ] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
 - [ ] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
@@ -41,7 +41,7 @@
 - [ ] `invoke`, `invoke_with`, `stream`, `stream_with`, `AgentStream<'_>` (named, `Unpin`), the `InvokeArgs` conversions, and `InvokeOptions` (structured output schema via `structured_output_schema::<T>()`, cancel signal, invocation state, invocation context, limits, and every other TS invoke option).
 - [ ] `AgentResult` with `Display`, `structured_output::<T>()`, `stop_reason`, `interrupts`, `AgentMetrics`, `AgentTrace`.
 - [x] Stream items: the 16 owned records, checked against the fixtures.
-- [ ] Hooks: the 17 events, getters, setters per 8.5, `HookOrder`, reverse order on `After*`, `HookCleanup`, `add_hook`, `add_async_hook::<E>`, `add_hook_impl`, interrupt collection, duplicate-name errors.
+- [x] Hooks: the 17 events, getters, setters per 8.5, `HookOrder`, reverse order on `After*`, `HookCleanup`, `add_hook`, `add_async_hook::<E>`, `add_hook_impl`, interrupt collection, duplicate-name errors.
 - [ ] Agent views and handles per 8.3 and 8.7.
 - [ ] Tools per 8.8, including `ToolRegistry` and `FunctionTool` (`FunctionTool::builder(..)` with a typed handler: schemars schema plus jsonschema validation).
 - [ ] `strands-macros`:
