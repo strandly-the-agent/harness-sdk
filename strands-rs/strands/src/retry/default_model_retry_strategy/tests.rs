@@ -72,6 +72,9 @@ fn defaults_match_ts() {
     assert_eq!(options.max_attempts.get(), 6);
     let context = BackoffContext::new(attempt(10));
     assert!(options.backoff.next_delay(&context) <= Duration::from_secs(240));
+    let built = DefaultModelRetryStrategyOptions::builder().build();
+    assert_eq!(built.max_attempts, options.max_attempts);
+    assert!(built.backoff.next_delay(&context) <= Duration::from_secs(240));
 }
 
 #[tokio::test(start_paused = true)]

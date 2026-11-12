@@ -7,6 +7,7 @@ use std::time::Duration;
 
 /// What a [`BackoffStrategy`] sees when asked for the next delay (TS `BackoffContext`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BackoffContext {
     /// The attempt that just failed, starting at 1.
     pub attempt: NonZeroU32,
@@ -25,9 +26,42 @@ impl BackoffContext {
             last_delay: None,
         }
     }
+
+    /// Sets the time since the first failure.
+    #[must_use]
+    pub fn with_elapsed(mut self, elapsed: Duration) -> Self {
+        self.elapsed = elapsed;
+        self
+    }
+
+    /// Sets the delay returned for the previous attempt.
+    #[must_use]
+    pub fn with_last_delay(mut self, last_delay: Duration) -> Self {
+        self.last_delay = Some(last_delay);
+        self
+    }
 }
 
 /// Computes how long to wait before the next attempt (TS `BackoffStrategy`).
+///
+/// ```
+/// use std::num::NonZeroU32;
+/// use std::time::Duration;
+///
+/// use strands::retry::{BackoffContext, BackoffStrategy};
+///
+/// /// Waits one more second per attempt, without jitter.
+/// struct Stepped;
+///
+/// impl BackoffStrategy for Stepped {
+///     fn next_delay(&self, context: &BackoffContext) -> Duration {
+///         Duration::from_secs(context.attempt.get().into())
+///     }
+/// }
+///
+/// let context = BackoffContext::new(NonZeroU32::new(3).unwrap());
+/// assert_eq!(Stepped.next_delay(&context), Duration::from_secs(3));
+/// ```
 pub trait BackoffStrategy: Send + Sync + 'static {
     /// The delay before retrying after `context.attempt` failed.
     fn next_delay(&self, context: &BackoffContext) -> Duration;
@@ -74,6 +108,10 @@ impl fmt::Debug for Random {
     }
 }
 
+const DEFAULT_DELAY: Duration = Duration::from_secs(1);
+const DEFAULT_MAX: Duration = Duration::from_secs(30);
+const DEFAULT_MULTIPLIER: f64 = 2.0;
+
 fn millis(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1000.0
 }
@@ -105,21 +143,26 @@ fn jitter(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
 pub struct ConstantBackoffOptions {
     /// The delay between attempts. Defaults to 1 s.
+    #[builder(default = DEFAULT_DELAY)]
     pub delay: Duration,
 }
 
 impl Default for ConstantBackoffOptions {
     fn default() -> Self {
-        Self {
-            delay: Duration::from_secs(1),
-        }
+        Self { delay: DEFAULT_DELAY }
     }
 }
 
 /// The same delay before every retry (TS `ConstantBackoff`).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct ConstantBackoff {
     delay: Duration,
+}
+
+impl Default for ConstantBackoff {
+    fn default() -> Self {
+        Self::new(ConstantBackoffOptions::default())
+    }
 }
 
 impl ConstantBackoff {
@@ -139,18 +182,21 @@ impl BackoffStrategy for ConstantBackoff {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
 pub struct LinearBackoffOptions {
     /// Delay added per attempt. Defaults to 1 s.
+    #[builder(default = DEFAULT_DELAY)]
     pub base: Duration,
     /// Cap applied before jitter. Defaults to 30 s.
+    #[builder(default = DEFAULT_MAX)]
     pub max: Duration,
     /// Randomization. Defaults to [`JitterKind::Full`].
+    #[builder(default)]
     pub jitter: JitterKind,
 }
 
 impl Default for LinearBackoffOptions {
     fn default() -> Self {
         Self {
-            base: Duration::from_secs(1),
-            max: Duration::from_secs(30),
+            base: DEFAULT_DELAY,
+            max: DEFAULT_MAX,
             jitter: JitterKind::Full,
         }
     }
@@ -198,21 +244,25 @@ impl BackoffStrategy for LinearBackoff {
 #[derive(Debug, Clone, Copy, PartialEq, bon::Builder)]
 pub struct ExponentialBackoffOptions {
     /// Delay of the first retry. Defaults to 1 s.
+    #[builder(default = DEFAULT_DELAY)]
     pub base: Duration,
     /// Cap applied before jitter. Defaults to 30 s.
+    #[builder(default = DEFAULT_MAX)]
     pub max: Duration,
     /// Growth factor per attempt. Defaults to 2.
+    #[builder(default = DEFAULT_MULTIPLIER)]
     pub multiplier: f64,
     /// Randomization. Defaults to [`JitterKind::Full`].
+    #[builder(default)]
     pub jitter: JitterKind,
 }
 
 impl Default for ExponentialBackoffOptions {
     fn default() -> Self {
         Self {
-            base: Duration::from_secs(1),
-            max: Duration::from_secs(30),
-            multiplier: 2.0,
+            base: DEFAULT_DELAY,
+            max: DEFAULT_MAX,
+            multiplier: DEFAULT_MULTIPLIER,
             jitter: JitterKind::Full,
         }
     }

@@ -48,6 +48,23 @@ fn defaults_delay_ms_to_1000() {
         ConstantBackoff::new(ConstantBackoffOptions::default()).next_delay(&ctx(1)),
         ms(1000)
     );
+    assert_eq!(ConstantBackoff::default().next_delay(&ctx(1)), ms(1000));
+}
+
+#[test]
+fn builders_without_fields_match_the_defaults() {
+    assert_eq!(
+        ConstantBackoffOptions::builder().build(),
+        ConstantBackoffOptions::default()
+    );
+    assert_eq!(
+        LinearBackoffOptions::builder().build(),
+        LinearBackoffOptions::default()
+    );
+    assert_eq!(
+        ExponentialBackoffOptions::builder().build(),
+        ExponentialBackoffOptions::default()
+    );
 }
 
 #[test]
@@ -137,10 +154,7 @@ fn falls_back_to_full_jitter_for_decorrelated_when_last_delay_ms_missing() {
 }
 
 fn with_last(attempt: u32, last: u64) -> BackoffContext {
-    BackoffContext {
-        last_delay: Some(ms(last)),
-        ..ctx(attempt)
-    }
+    ctx(attempt).with_last_delay(ms(last))
 }
 
 #[test]

@@ -14,7 +14,7 @@ use crate::retry::{
     RetryDecision,
 };
 
-const DEFAULT_MAX_ATTEMPTS: u32 = 6;
+const DEFAULT_MAX_ATTEMPTS: NonZeroU32 = NonZeroU32::MIN.saturating_add(5);
 const DEFAULT_BACKOFF_BASE: Duration = Duration::from_secs(4);
 const DEFAULT_BACKOFF_MAX: Duration = Duration::from_secs(240);
 
@@ -22,23 +22,29 @@ const DEFAULT_BACKOFF_MAX: Duration = Duration::from_secs(240);
 #[derive(Clone, bon::Builder)]
 pub struct DefaultModelRetryStrategyOptions {
     /// Total attempts including the first. Defaults to 6.
+    #[builder(default = DEFAULT_MAX_ATTEMPTS)]
     pub max_attempts: NonZeroU32,
     /// Delay between attempts. Defaults to exponential backoff from 4 s, capped at 240 s, with
     /// full jitter.
+    #[builder(default = default_backoff())]
     pub backoff: Arc<dyn BackoffStrategy>,
 }
 
 impl Default for DefaultModelRetryStrategyOptions {
     fn default() -> Self {
         Self {
-            max_attempts: NonZeroU32::new(DEFAULT_MAX_ATTEMPTS).unwrap_or(NonZeroU32::MIN),
-            backoff: Arc::new(ExponentialBackoff::new(ExponentialBackoffOptions {
-                base: DEFAULT_BACKOFF_BASE,
-                max: DEFAULT_BACKOFF_MAX,
-                ..Default::default()
-            })),
+            max_attempts: DEFAULT_MAX_ATTEMPTS,
+            backoff: default_backoff(),
         }
     }
+}
+
+fn default_backoff() -> Arc<dyn BackoffStrategy> {
+    Arc::new(ExponentialBackoff::new(ExponentialBackoffOptions {
+        base: DEFAULT_BACKOFF_BASE,
+        max: DEFAULT_BACKOFF_MAX,
+        ..Default::default()
+    }))
 }
 
 impl fmt::Debug for DefaultModelRetryStrategyOptions {
@@ -131,11 +137,10 @@ impl ModelRetryStrategy for DefaultModelRetryStrategy {
         }
         let mut state = self.state();
         let first_failure_at = *state.first_failure_at.get_or_insert_with(Instant::now);
-        let context = BackoffContext {
-            attempt: attempt_count,
-            elapsed: first_failure_at.elapsed(),
-            last_delay: state.last_delay,
-        };
+        let mut context = BackoffContext::new(attempt_count).with_elapsed(first_failure_at.elapsed());
+        if let Some(last_delay) = state.last_delay {
+            context = context.with_last_delay(last_delay);
+        }
         let wait = self.backoff.next_delay(&context);
         tracing::debug!(
             "retry_delay_ms=<{}> attempt_count=<{attempt_count}> max_attempts=<{max_attempts}> | retryable model error, delaying before retry",

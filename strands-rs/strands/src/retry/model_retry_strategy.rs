@@ -13,6 +13,33 @@ use crate::retry::RetryDecision;
 /// The agent consults it after every model call that failed and, on [`RetryDecision::Retry`],
 /// waits and calls the model again. A strategy may keep per-turn state; it is reset through
 /// [`on_first_model_attempt`](ModelRetryStrategy::on_first_model_attempt).
+///
+/// Implementations need `#[async_trait::async_trait]` on the impl block:
+///
+/// ```
+/// use std::num::NonZeroU32;
+/// use std::time::Duration;
+///
+/// use strands::Error;
+/// use strands::retry::{ModelRetryStrategy, RetryDecision};
+///
+/// struct RetryTwice;
+///
+/// #[async_trait::async_trait]
+/// impl ModelRetryStrategy for RetryTwice {
+///     fn name(&self) -> &str {
+///         "app:retry-twice"
+///     }
+///
+///     async fn compute_retry_decision(&self, attempt_count: NonZeroU32, _error: &Error) -> RetryDecision {
+///         if attempt_count.get() < 3 {
+///             RetryDecision::Retry { wait: Duration::from_millis(500) }
+///         } else {
+///             RetryDecision::NoRetry
+///         }
+///     }
+/// }
+/// ```
 #[async_trait]
 pub trait ModelRetryStrategy: Send + Sync + 'static {
     /// The strategy's plugin name.
