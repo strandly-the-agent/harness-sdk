@@ -19,9 +19,9 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/a2a/__tests__/server.test.node.ts` | | - | Out of scope: A2A is out of v0.1 |
 | `strands-ts/src/a2a/__tests__/server.test.ts` | | - | Out of scope: A2A is out of v0.1 |
 | `strands-ts/src/agent/__tests__/agent-as-tool.interrupt.test.ts` | | 0/15 |  |
-| `strands-ts/src/agent/__tests__/agent-as-tool.invocation-context.test.ts` | | 0/3 |  |
-| `strands-ts/src/agent/__tests__/agent-as-tool.invocation-state.test.ts` | | 0/1 |  |
-| `strands-ts/src/agent/__tests__/agent-as-tool.test.ts` | | 0/31 |  |
+| `strands-ts/src/agent/__tests__/agent-as-tool.invocation-context.test.ts` | `agent::agent_as_tool::tests` | 2/3 | `trips a limit that only the parent-plus-child total exceeds` (1): covered by the shared-limit case |
+| `strands-ts/src/agent/__tests__/agent-as-tool.invocation-state.test.ts` | `agent::agent_as_tool::tests` | 1/1 |  |
+| `strands-ts/src/agent/__tests__/agent-as-tool.test.ts` | `agent::agent_as_tool::tests` | 18/31 | Session-manager conflicts (3): Phase 6. Cancellation variants (4): Phase 4 cancel semantics. Explicit invalid name and getter-instance cases (3) are covered by the registry tests; `unwraps toolStreamUpdateEvent` (1) and nested auto-wrap (1) share code with the covered cases; `passes options through` (1) is the options tests |
 | `strands-ts/src/agent/__tests__/agent-delegation.test.ts` | | 0/17 |  |
 | `strands-ts/src/agent/__tests__/agent.cancel.test.ts` | | 0/28 |  |
 | `strands-ts/src/agent/__tests__/agent.checkpoint.test.ts` | | - | Out of scope: checkpointing is out of v0.1 |
@@ -41,7 +41,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/agent/__tests__/invocation-context.test.ts` | `agent::tests::invocation::context` | 2/2 |  |
 | `strands-ts/src/agent/__tests__/printer.test.ts` | `agent::printer::tests`, `agent::tests::agent::configuration` | 8/9 | `prints comprehensive scenario with all output types` (1): the per-output cases cover each line kind |
 | `strands-ts/src/agent/__tests__/snapshot.test.ts` | | 0/32 |  |
-| `strands-ts/src/agent/__tests__/tool-caller.test.ts` | | 0/26 |  |
+| `strands-ts/src/agent/__tests__/tool-caller.test.ts` | `agent::tool_caller::tests` | 14/26 | Concurrent-invocation and isInvoking cases (3): `&mut self` makes them compile errors. Proxy mechanics (3): TS-only. `stream` handle and multi-yield variants (4): the stream handle is not ported in Phase 3. Error propagation and parameter pass-through variants (2) are covered by the registry and tool tests |
 | `strands-ts/src/background-tasks/__tests__/background-tasks.test.ts` | | 0/9 |  |
 | `strands-ts/src/background-tasks/in-process/__tests__/engine-execution.test.ts` | | 0/5 |  |
 | `strands-ts/src/background-tasks/in-process/__tests__/engine-transitions.test.ts` | | 0/7 |  |

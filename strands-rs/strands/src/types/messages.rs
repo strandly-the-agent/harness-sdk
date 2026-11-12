@@ -981,7 +981,6 @@ open_enum! {
 
 impl StopReason {
     /// Whether this stop reason means an invocation limit was hit (TS `LIMIT_STOP_REASONS`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop"))]
     pub(crate) fn is_limit(&self) -> bool {
         matches!(
             self,
@@ -994,7 +993,6 @@ impl StopReason {
 }
 
 /// The text for an answer cut short by a limit (TS `limitStopMessage`).
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop"))]
 pub(crate) fn limit_stop_message(agent_name: &str, stop_reason: &StopReason) -> String {
     format!(
         "Agent '{agent_name}' stopped early ({stop_reason}): a limit on this call was reached, so its answer is incomplete"

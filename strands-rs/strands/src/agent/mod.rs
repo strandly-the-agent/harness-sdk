@@ -11,6 +11,7 @@ pub(crate) mod printer;
 mod result;
 mod run;
 pub(crate) mod stream;
+mod tool_caller;
 mod views;
 
 pub use agent::{Agent, AgentBuilder, AgentConfig, ModelSource};
@@ -21,6 +22,7 @@ pub use invocation_state::InvocationState;
 pub use invoke::{InvokeArgs, InvokeOptions};
 pub use result::AgentResult;
 pub use stream::{AgentStream, AgentStreamEvent};
+pub use tool_caller::{DirectToolCallOptions, ToolHandle};
 pub use views::{LocalAgent, ToolAgent};
 
 #[cfg(test)]

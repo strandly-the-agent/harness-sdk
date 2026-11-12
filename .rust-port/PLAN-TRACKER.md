@@ -34,7 +34,7 @@
 - [x] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
 - [x] Concurrent and sequential executors
 - [ ] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
-- [ ] Direct tool calls, `as_tool`, agents as tools, printer
+- [x] Direct tool calls, `as_tool`, agents as tools, printer
 - [ ] `strands::testing` hook recorder and test agent
 - [ ] Phase review gate and fixes
 - [ ] `Agent`, `AgentConfig` (every TS key except `checkpointing`), the bon builder with a fallible `build()?`, and `Agent::new`. The lazy default Bedrock model (#45): `build()` stays sync and the model resolves on first use. Without the `bedrock` feature and with no model set, the first call fails with a clear `DefaultNotConfiguredError`-style message.
@@ -47,10 +47,10 @@
 - [x] `strands-macros`:
 - [x] Executors per 8.8.
 - [ ] Loop semantics: deferred append, limits in the TS check order, `InvocationContext` (nested limits and usage), structured output through `strands_structured_output` with retries, `end_turn` and `resume`, and `model-proxy.ts`.
-- [ ] Direct tool calls: `agent.tool("name").invoke(input).await` (TS `agent.tool.<name>.invoke()`), recorded into history as TS does (`agent/tool-caller.ts`).
-- [ ] `as_tool` with `preserve_context` and `delegate`; agents accepted in `.tools(..)`.
-- [ ] The stdout printer (#54): on by default, `.printer(false)` to turn it off, matching TS output (`agent/printer.ts`, `printer.test.ts`).
-- [ ] Wire the retry strategy into `AfterModelCallEvent` and port the remaining retry tests.
+- [x] Direct tool calls: `agent.tool("name").invoke(input).await` (TS `agent.tool.<name>.invoke()`), recorded into history as TS does (`agent/tool-caller.ts`).
+- [x] `as_tool` with `preserve_context` and `delegate`; agents accepted in `.tools(..)`.
+- [x] The stdout printer (#54): on by default, `.printer(false)` to turn it off, matching TS output (`agent/printer.ts`, `printer.test.ts`).
+- [x] Wire the retry strategy into `AfterModelCallEvent` and port the remaining retry tests.
 - [ ] TS specs: `agent/__tests__/{agent, agent.hook, agent.concurrent (adapt it: concurrent invocation is a compile error here, so document that gap), agent.invocation-context, agent.invocation-state, agent.model-retry, agent-as-tool, agent-as-tool.invocation-context, agent-as-tool.invocation-state, agent-delegation, agent.continuation, invocation-context, printer, tool-caller}.test.ts`, `hooks/__tests__/{events, registry}.test.ts`, `tools/__tests__/{tool, tool-factory, structured-output-tool, zod-tool (map it to the macro and FunctionTool)}.test.ts`, the parts of `tools/executors/__tests__/executor.cancel-signal.test.ts` that don't need Phase 4, `registry/__tests__/tool-registry.test.ts`, `types/__tests__/agent.test.ts`, `__tests__/{queue, default-slot, index}.test.ts` where they apply, and `models/__tests__/model-proxy.test.ts`.
 
 ## [ ] Phase 4: interrupts, cancellation, lifecycle, plugins and middleware

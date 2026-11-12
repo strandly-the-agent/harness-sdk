@@ -13,7 +13,8 @@ use crate::tools::tool::create_error_result;
 use crate::tools::{
     Tool, ToolContext, ToolOutcome, ToolResultStatus, ToolSpec, ToolStream, ToolStreamEvent, ToolStreamItem,
 };
-use crate::types::{JsonBlock, Message, ToolResultBlock, ToolResultContent};
+use crate::types::messages::limit_stop_message;
+use crate::types::{JsonBlock, Message, StopReason, ToolResultBlock, ToolResultContent};
 
 /// Appended to a delegating tool's description (TS `DELEGATION_DESCRIPTION_SUFFIX`).
 pub const DELEGATION_DESCRIPTION_SUFFIX: &str = " Calling this tool will return its response directly to the user as the final answer. It should be the only tool called in the turn.";
@@ -141,7 +142,19 @@ impl Tool for AgentAsTool {
                     }
                 }
             }
+            let label = format!("Agent '{name}'");
             let result = match outcome {
+                Some(Ok(result)) if result.stop_reason() == StopReason::Interrupt => {
+                    create_error_result(format!("{label} interrupted without any interrupts"), &tool_use_id)
+                }
+                Some(Ok(result))
+                    if result.stop_reason() == StopReason::Cancelled && agent.cancel_signal().is_cancelled() =>
+                {
+                    create_error_result(format!("{label} cancelled"), &tool_use_id)
+                }
+                Some(Ok(result)) if result.stop_reason().is_limit() => {
+                    create_error_result(limit_stop_message(&name, &result.stop_reason()), &tool_use_id)
+                }
                 Some(Ok(result)) => {
                     let content = match result.structured_output_value() {
                         Some(output) => ToolResultContent::Json(JsonBlock::new(output.clone())),
@@ -171,3 +184,6 @@ impl Agent {
         AgentAsTool::new(self, options)
     }
 }
+
+#[cfg(test)]
+mod tests;
