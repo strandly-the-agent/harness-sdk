@@ -242,6 +242,24 @@ impl fmt::Debug for InputValidator {
     }
 }
 
+/// The outcome for a `#[tool]` body's return value.
+#[doc(hidden)]
+pub fn to_outcome<T: serde::Serialize + ?Sized>(value: &T, tool_use_id: &str) -> ToolOutcome {
+    match serde_json::to_value(value) {
+        Ok(value) => ToolOutcome::Result(wrap_value(value, tool_use_id)),
+        Err(error) => ToolError::from(error).into_outcome(tool_use_id),
+    }
+}
+
+/// The outcome of a sync `#[tool]` body run on `spawn_blocking`; a panic becomes an error result.
+#[doc(hidden)]
+pub fn joined_outcome(joined: Result<ToolOutcome, tokio::task::JoinError>, tool_use_id: &str) -> ToolOutcome {
+    match joined {
+        Ok(outcome) => outcome,
+        Err(error) => ToolOutcome::Result(crate::tools::tool::error_result(tool_use_id, error.to_string())),
+    }
+}
+
 /// The result for a tool's return value (TS `FunctionTool._wrapInToolResult`).
 pub(crate) fn wrap_value(value: JsonValue, tool_use_id: &str) -> ToolResultBlock {
     let success = |content| ToolResultBlock::new(tool_use_id, ToolResultStatus::Success, content);

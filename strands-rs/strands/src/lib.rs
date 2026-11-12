@@ -38,6 +38,8 @@ pub mod error;
 pub mod hooks;
 pub mod interrupt;
 pub(crate) mod logging;
+#[doc(hidden)]
+pub mod macro_checks;
 pub(crate) mod mime;
 pub mod models;
 pub mod retry;
@@ -74,4 +76,6 @@ pub mod __private {
     pub use serde;
     pub use serde_json;
     pub use tokio;
+
+    pub use crate::tools::function_tool::{joined_outcome, to_outcome};
 }

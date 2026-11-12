@@ -31,7 +31,7 @@
 - [x] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
 - [x] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles
 - [x] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
-- [ ] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
+- [x] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
 - [x] Concurrent and sequential executors
 - [ ] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
 - [ ] Direct tool calls, `as_tool`, agents as tools, printer
@@ -44,7 +44,7 @@
 - [x] Hooks: the 17 events, getters, setters per 8.5, `HookOrder`, reverse order on `After*`, `HookCleanup`, `add_hook`, `add_async_hook::<E>`, `add_hook_impl`, interrupt collection, duplicate-name errors.
 - [x] Agent views and handles per 8.3 and 8.7.
 - [x] Tools per 8.8, including `ToolRegistry` and `FunctionTool` (`FunctionTool::builder(..)` with a typed handler: schemars schema plus jsonschema validation).
-- [ ] `strands-macros`:
+- [x] `strands-macros`:
 - [x] Executors per 8.8.
 - [ ] Loop semantics: deferred append, limits in the TS check order, `InvocationContext` (nested limits and usage), structured output through `strands_structured_output` with retries, `end_turn` and `resume`, and `model-proxy.ts`.
 - [ ] Direct tool calls: `agent.tool("name").invoke(input).await` (TS `agent.tool.<name>.invoke()`), recorded into history as TS does (`agent/tool-caller.ts`).

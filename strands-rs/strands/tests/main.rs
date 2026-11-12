@@ -7,4 +7,5 @@
     reason = "test code"
 )]
 
+mod macros;
 mod wire_constructors;

@@ -474,6 +474,19 @@ pub fn mock_tool(
     }
 }
 
+/// A context for calling a tool directly in tests: tool `name`, call `tool_use_id`, `input`,
+/// on a fresh agent.
+pub fn tool_context(name: &str, tool_use_id: &str, input: JsonValue) -> ToolContext {
+    let agent = test_agent(MockModel::new());
+    ToolContext {
+        tool_use: crate::tools::ToolUse::new(name, tool_use_id, input),
+        agent: agent.local.tool_agent(None),
+        invocation_state: crate::agent::InvocationState::new(),
+        cancel_signal: crate::cancel::CancelSignal::new().0,
+        invocation_context: None,
+    }
+}
+
 /// A success outcome with one text block, for [`mock_tool`].
 pub fn text_result(context: &ToolContext, text: &str) -> ToolOutcome {
     ToolOutcome::Result(ToolResultBlock::new(

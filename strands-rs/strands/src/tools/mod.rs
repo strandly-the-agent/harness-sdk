@@ -3,7 +3,7 @@
 mod context;
 mod error;
 pub(crate) mod executors;
-mod function_tool;
+pub(crate) mod function_tool;
 mod registry;
 pub(crate) mod schema;
 mod source;

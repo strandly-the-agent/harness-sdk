@@ -75,14 +75,7 @@ impl ToolContext {
 impl ToolContext {
     /// A context for `tool_use` on a fresh test agent.
     pub(crate) fn for_test(tool_use: ToolUse) -> Self {
-        let agent = crate::testing::test_agent(crate::testing::MockModel::new());
-        Self {
-            tool_use,
-            agent: agent.local.tool_agent(None),
-            invocation_state: InvocationState::new(),
-            cancel_signal: CancelSignal::new().0,
-            invocation_context: None,
-        }
+        crate::testing::tool_context(&tool_use.name, &tool_use.tool_use_id, tool_use.input)
     }
 }
 
