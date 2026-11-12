@@ -130,7 +130,10 @@ impl MockModel {
 
     /// Waits `delay` before streaming each turn. Tests use tokio's paused clock so no real time
     /// passes.
-    pub fn with_delay(&self, delay: Duration) -> &Self {
+    ///
+    /// The wait needs a tokio runtime with the time driver enabled (as `#[tokio::test]` has);
+    /// streamed outside any tokio runtime, the turn fails with a `ModelError` instead.
+    pub fn set_delay(&self, delay: Duration) -> &Self {
         *lock(&self.delay) = Some(delay);
         self
     }
@@ -186,6 +189,10 @@ impl Model for MockModel {
         let delay = *lock(&self.delay);
         Box::pin(async_stream::stream! {
             if let Some(delay) = delay {
+                if tokio::runtime::Handle::try_current().is_err() {
+                    yield Err(ModelError::new("MockModel delays need a tokio runtime").into());
+                    return;
+                }
                 tokio::time::sleep(delay).await;
             }
             match events {
@@ -261,6 +268,36 @@ fn block_events(block: &ContentBlock, events: &mut Vec<ModelStreamEvent>) {
 }
 
 /// A model that replays raw stream events on every call (TS `TestModelProvider`).
+///
+/// ```
+/// use futures::StreamExt;
+/// use strands::models::{
+///     AggregatedEvent, Model, ModelContentBlockDeltaEvent, ModelContentBlockStartEvent,
+///     ModelContentBlockStopEvent, ModelMessageStartEvent, ModelMessageStopEvent, ModelRequest, TextDelta,
+/// };
+/// use strands::testing::TestModelProvider;
+/// use strands::types::Role;
+/// use strands::StopReason;
+///
+/// let model = TestModelProvider::new(vec![
+///     ModelMessageStartEvent::new(Role::Assistant).into(),
+///     ModelContentBlockStartEvent::new().into(),
+///     ModelContentBlockDeltaEvent::new(TextDelta::new("Hello")).into(),
+///     ModelContentBlockStopEvent::new().into(),
+///     ModelMessageStopEvent::new(StopReason::EndTurn).into(),
+/// ]);
+/// futures::executor::block_on(async {
+///     let mut stream = model.stream_aggregated(ModelRequest::default());
+///     while let Some(item) = stream.next().await {
+///         if let AggregatedEvent::Done(result) = item? {
+///             assert_eq!(result.stop_reason, StopReason::EndTurn);
+///         }
+///     }
+///     Ok::<(), strands::Error>(())
+/// })?;
+/// assert_eq!(model.requests().len(), 1);
+/// # Ok::<(), strands::Error>(())
+/// ```
 pub struct TestModelProvider {
     script: Box<dyn Fn() -> Vec<Result<ModelStreamEvent>> + Send + Sync>,
     config: Mutex<BaseModelConfig>,

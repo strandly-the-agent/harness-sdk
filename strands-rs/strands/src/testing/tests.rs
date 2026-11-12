@@ -83,11 +83,26 @@ async fn waits_the_configured_delay_before_streaming() {
     let model = MockModel::new();
     model
         .add_turn(vec![text("late")])
-        .with_delay(Duration::from_secs(5));
+        .set_delay(Duration::from_secs(5));
     let start = tokio::time::Instant::now();
     let (_, result) = collect_aggregated(model.stream_aggregated(ModelRequest::default())).await;
     assert!(result.is_ok());
     assert_eq!(start.elapsed(), Duration::from_secs(5));
+}
+
+#[test]
+fn a_delay_outside_a_tokio_runtime_is_a_model_error() {
+    let model = MockModel::new();
+    model
+        .add_turn(vec![text("late")])
+        .set_delay(Duration::from_millis(1));
+    let (_, result) = futures::executor::block_on(collect_aggregated(
+        model.stream_aggregated(ModelRequest::default()),
+    ));
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "MockModel delays need a tokio runtime"
+    );
 }
 
 #[test]

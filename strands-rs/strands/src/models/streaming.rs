@@ -118,6 +118,21 @@ impl Metrics {
 /// Serializes with the TS `type` tag (`modelMessageStartEvent`, ...). The variants drop the
 /// `Model` prefix and `Event` suffix of the TS class names; the block events are `Block*` so
 /// they don't share a name with [`ContentBlockStart`] and [`ContentBlockDelta`].
+///
+/// ```
+/// use strands::models::{ModelContentBlockDeltaEvent, ModelStreamEvent, TextDelta};
+///
+/// let event: ModelStreamEvent = ModelContentBlockDeltaEvent::new(TextDelta::new("Hi")).into();
+/// assert_eq!(event.text_delta(), Some("Hi"));
+/// assert_eq!(
+///     serde_json::to_value(&event)?,
+///     serde_json::json!({
+///         "type": "modelContentBlockDeltaEvent",
+///         "delta": { "type": "textDelta", "text": "Hi" },
+///     })
+/// );
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[non_exhaustive]
