@@ -4,11 +4,37 @@
 //! unknown content get a placeholder, and injected blocks become text in the latest user message
 //! (and are dropped elsewhere) for models without temporary messages.
 
+use futures::StreamExt;
+
+use crate::agent::InvocationContext;
 use crate::error::Result;
 use crate::models::model::{AggregatedEvent, BoxStream, Model, ModelRequest, latest_user_index};
 use crate::types::{ContentBlock, Message, TextBlock, ToolResultContent};
 
 const UNSUPPORTED_CONTENT_PLACEHOLDER: &str = "[unsupported content omitted]";
+
+/// [`stream_aggregated`], adding the call's usage to `invocation_context` when it succeeds (TS
+/// `ModelProxy._record`).
+pub(crate) fn stream_aggregated_recorded<M: Model + ?Sized>(
+    model: &M,
+    request: ModelRequest,
+    invocation_context: Option<InvocationContext>,
+) -> BoxStream<'static, Result<AggregatedEvent>> {
+    let stream = stream_aggregated(model, request);
+    let Some(context) = invocation_context else {
+        return stream;
+    };
+    Box::pin(stream.inspect(move |item| {
+        if let Ok(AggregatedEvent::Done(result)) = item
+            && let Some(usage) = result
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.usage.as_ref())
+        {
+            context.record_usage(usage);
+        }
+    }))
+}
 
 /// `request` streamed through [`Model::stream_aggregated`] after rendering its messages.
 pub(crate) fn stream_aggregated<M: Model + ?Sized>(
@@ -135,3 +161,6 @@ fn render_injected_blocks(messages: &[Message]) -> (Vec<Message>, usize) {
         .collect();
     (rendered, dynamic_trailing_blocks)
 }
+
+#[cfg(test)]
+mod tests;

@@ -616,7 +616,8 @@ impl Agent {
             cancel_signal: Some(self.local.cancel_signal.clone()),
         };
         self.tracer.start_model();
-        let mut stream = model_proxy::stream_aggregated(model.as_ref(), request);
+        let mut stream =
+            model_proxy::stream_aggregated_recorded(model.as_ref(), request, Some(run.context.clone()));
         let hooks = self.local.hooks.clone();
         let mut result = None;
         while let Some(item) = stream.next().await {
@@ -662,13 +663,6 @@ impl Agent {
             ));
         };
         self.tracer.end_model(Some(&result.message));
-        if let Some(usage) = result
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.usage.as_ref())
-        {
-            run.context.record_usage(usage);
-        }
         self.local.model_state.load_json(model_state.to_json());
         Ok(*result)
     }

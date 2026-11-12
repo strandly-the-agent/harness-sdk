@@ -39,7 +39,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/agent/__tests__/agent.test.ts` | `agent::tests::agent`, `agent::tests::fixtures` | 58/147 | Hook errors (8): Rust hooks cannot fail (P-45). Concurrency guards (3): `&mut self` makes concurrent invocation a compile error. Stream abandonment, `shutdown` and async disposal (6): Phase 4. MCP tools-changed, session id and agent metadata (8): Phases 6 and 9. Checkpoints and history offloading in the structured-output attempt cases (5): out of scope or Phase 6. Bedrock model construction (8): Phase 5. The rest of the structured-output attempt-limit and redaction/estimation variants are not yet ported |
 | `strands-ts/src/agent/__tests__/agent.tracer.test.node.ts` | | 0/47 |  |
 | `strands-ts/src/agent/__tests__/invocation-context.test.ts` | `agent::tests::invocation::context` | 2/2 |  |
-| `strands-ts/src/agent/__tests__/printer.test.ts` | | 0/9 |  |
+| `strands-ts/src/agent/__tests__/printer.test.ts` | `agent::printer::tests`, `agent::tests::agent::configuration` | 8/9 | `prints comprehensive scenario with all output types` (1): the per-output cases cover each line kind |
 | `strands-ts/src/agent/__tests__/snapshot.test.ts` | | 0/32 |  |
 | `strands-ts/src/agent/__tests__/tool-caller.test.ts` | | 0/26 |  |
 | `strands-ts/src/background-tasks/__tests__/background-tasks.test.ts` | | 0/9 |  |
@@ -101,7 +101,7 @@ Every TS spec file under `strands-ts/src/` at the tracked spec commit (`7296caba
 | `strands-ts/src/models/__tests__/model-info-lookup.test.ts` | `models::model_info::tests` | 9/9 |  |
 | `strands-ts/src/models/__tests__/model-info.test.node.ts` | `models::model_info::tests` | 1/1 |  |
 | `strands-ts/src/models/__tests__/model-info.test.ts` | `models::model_info::tests` | 4/5 | `returns a frozen record` (1): Rust values are immutable through shared references |
-| `strands-ts/src/models/__tests__/model-proxy.test.ts` | | 0/19 |  |
+| `strands-ts/src/models/__tests__/model-proxy.test.ts` | `models::model_proxy::tests` | 16/17 | `sends text to a custom provider serving a model that takes temporary messages` (1): needs a provider that maps temporary messages (Phase 5) |
 | `strands-ts/src/models/__tests__/model.test.ts` | `models::model::tests`, `models::model::aggregate::tests`, `models::summarize::tests` | 68/68 |  |
 | `strands-ts/src/models/__tests__/native-output.test.ts` | `models::native_output::tests` | 14/15 | `matches the Anthropic SDK transform` (1): compares with `transformJSONSchema` from the Anthropic TS SDK, which Rust doesn't have; the conversion rules it exercises are covered by the hand-written schema cases. Zod schemas are written as the JSON `z.toJSONSchema` produces |
 | `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | | 0/1 | Needs an agent with the `Offload` context strategy (Phases 3 and 6) and the providers (Phase 5); the trait part (client-side `summarize` default, `model_info` capability reads) is in `models::summarize::tests` and `models::model::tests` |
