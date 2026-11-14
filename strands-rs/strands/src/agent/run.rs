@@ -281,7 +281,11 @@ impl Agent {
             self.tracer.end_cycle();
             match outcome? {
                 Cycle::Continue => {}
-                Cycle::Done(result) => return Ok(result),
+                Cycle::Done(result) => {
+                    return Ok(result
+                        .with_traces(self.tracer.traces())
+                        .with_metrics(self.meter.metrics()));
+                }
             }
         }
     }
