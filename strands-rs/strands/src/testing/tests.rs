@@ -125,3 +125,50 @@ fn models_are_send_and_sync_behind_dyn_model() {
     ];
     assert_eq!(models.len(), 2);
 }
+
+#[tokio::test]
+async fn hook_recorder_records_every_event_in_firing_order() {
+    let model = MockModel::new();
+    model.add_turn(vec![text("Hello")]);
+    let mut agent = test_agent(model);
+    let recorder = HookRecorder::attach(agent.hooks());
+
+    agent.invoke("Hi").await.unwrap();
+
+    let types = recorder.types();
+    assert_eq!(
+        types
+            .iter()
+            .map(String::as_str)
+            .filter(|kind| *kind != "modelStreamUpdateEvent")
+            .collect::<Vec<_>>(),
+        [
+            "initializedEvent",
+            "beforeInvocationEvent",
+            "messageAddedEvent",
+            "beforeModelCallEvent",
+            "contentBlockEvent",
+            "modelMessageEvent",
+            "afterModelCallEvent",
+            "messageAddedEvent",
+            "afterInvocationEvent",
+            "agentResultEvent",
+        ]
+    );
+    assert_eq!(recorder.events()[2]["message"]["role"], json!("user"));
+    recorder.clear();
+    assert!(recorder.events().is_empty());
+}
+
+#[tokio::test]
+async fn test_agent_uses_the_model_with_the_printer_off_and_no_tools() {
+    let model = std::sync::Arc::new(MockModel::new());
+    model.add_turn(vec![text("Hello")]);
+    let mut agent = test_agent(std::sync::Arc::clone(&model) as std::sync::Arc<dyn crate::models::Model>);
+
+    let result = agent.invoke("Hi").await.unwrap();
+
+    assert_eq!(result.to_string(), "Hello");
+    assert!(agent.tools().is_empty());
+    assert_eq!(model.requests().len(), 1);
+}
