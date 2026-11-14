@@ -1,6 +1,7 @@
 //! Agent loop tests.
 
 mod agent;
+mod configuration;
 mod fixtures;
 mod history;
 mod hooks;

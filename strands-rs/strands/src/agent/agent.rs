@@ -515,6 +515,11 @@ impl Agent {
         self.local.aux_model()
     }
 
+    /// Replaces the auxiliary model; `None` falls back to the model (TS `agent.auxModel = ..`).
+    pub fn set_aux_model(&mut self, model: Option<ModelSource>) {
+        self.local.aux_model = model.map(ModelSource::resolve);
+    }
+
     /// Application state (TS `appState`).
     pub fn app_state(&self) -> &StateStore {
         &self.local.app_state
