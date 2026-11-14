@@ -33,9 +33,9 @@
 - [x] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
 - [x] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
 - [x] Concurrent and sequential executors
-- [ ] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
+- [x] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
 - [x] Direct tool calls, `as_tool`, agents as tools, printer
-- [ ] `strands::testing` hook recorder and test agent
+- [x] `strands::testing` hook recorder and test agent
 - [ ] Phase review gate and fixes
 - [x] `invoke`, `invoke_with`, `stream`, `stream_with`, `AgentStream<'_>` (named, `Unpin`), the `InvokeArgs` conversions, and `InvokeOptions` (structured output schema via `structured_output_schema::<T>()`, cancel signal, invocation state, invocation context, limits, and every other TS invoke option).
 - [x] `AgentResult` with `Display`, `structured_output::<T>()`, `stop_reason`, `interrupts`, `AgentMetrics`, `AgentTrace`.
@@ -45,7 +45,7 @@
 - [x] Tools per 8.8, including `ToolRegistry` and `FunctionTool` (`FunctionTool::builder(..)` with a typed handler: schemars schema plus jsonschema validation).
 - [x] `strands-macros`:
 - [x] Executors per 8.8.
-- [ ] Loop semantics: deferred append, limits in the TS check order, `InvocationContext` (nested limits and usage), structured output through `strands_structured_output` with retries, `end_turn` and `resume`, and `model-proxy.ts`.
+- [x] Loop semantics: deferred append, limits in the TS check order, `InvocationContext` (nested limits and usage), structured output through `strands_structured_output` with retries, `end_turn` and `resume`, and `model-proxy.ts`.
 - [x] Direct tool calls: `agent.tool("name").invoke(input).await` (TS `agent.tool.<name>.invoke()`), recorded into history as TS does (`agent/tool-caller.ts`).
 - [x] `as_tool` with `preserve_context` and `delegate`; agents accepted in `.tools(..)`.
 - [x] The stdout printer (#54): on by default, `.printer(false)` to turn it off, matching TS output (`agent/printer.ts`, `printer.test.ts`).
