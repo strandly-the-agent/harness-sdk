@@ -720,7 +720,7 @@ impl Agent {
             .ok()
     }
 
-    fn redact_last_message(&mut self, redact_message: &str) {
+    pub(crate) fn redact_last_message(&mut self, redact_message: &str) {
         let Some(last) = self.local.messages.last_mut() else {
             return;
         };

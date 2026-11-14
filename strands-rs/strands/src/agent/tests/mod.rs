@@ -2,6 +2,7 @@
 
 mod agent;
 mod fixtures;
+mod history;
 mod hooks;
 mod invocation;
 mod retry;
