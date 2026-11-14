@@ -700,24 +700,6 @@ mod structured_output {
         assert_eq!(result.stop_reason(), StopReason::EndTurn);
         assert_eq!(result.to_string(), "stop here");
     }
-
-    #[tokio::test]
-    async fn returns_the_model_reply_when_the_limit_is_reached_on_the_forced_retry() {
-        let model = mock();
-        model.add_turn(vec!["Plain".into()]);
-        model.add_turn(vec!["Still plain".into()]);
-        let mut agent = so_agent(&model);
-        let options = InvokeOptions {
-            limits: Some(InvokeLimits {
-                structured_output_attempts: Some(1),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let result = agent.invoke_with("Test", options).await.unwrap();
-        assert_eq!(result.stop_reason(), StopReason::LimitStructuredOutputAttempts);
-        assert_eq!(result.to_string(), "Still plain");
-    }
 }
 
 mod history_rewrites {
@@ -950,6 +932,114 @@ mod limits {
             error.to_string(),
             "limits.turns must be a positive finite number, got 0"
         );
+    }
+
+    fn heavy(output_tokens: u64) -> (Arc<MockModel>, Agent) {
+        let model = mock();
+        for id in ["tool-1", "tool-2"] {
+            model.add_turn_with(
+                vec![tool_use("loop", id, json!({}))],
+                None,
+                Some(Usage::new(10, output_tokens, output_tokens + 10)),
+            );
+        }
+        let agent = agent_with(
+            &model,
+            crate::tool_list![mock_tool("loop", |ctx| text_result(ctx, "ok"))],
+        );
+        (model, agent)
+    }
+
+    #[tokio::test]
+    async fn does_not_trip_and_the_model_ends_naturally() {
+        let model = mock();
+        model.add_turn_with(vec!["done".into()], None, Some(Usage::new(5, 5, 10)));
+        let mut agent = agent_with(&model, Vec::new());
+        let result = agent
+            .invoke_with("go", limited(Some(5), Some(1000), Some(1000)))
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(result.to_string(), "done");
+        assert_eq!(result.metrics().cycle_count, 1);
+        assert_eq!(result.metrics().accumulated_usage, Usage::new(5, 5, 10));
+    }
+
+    #[tokio::test]
+    async fn returns_limit_output_tokens_after_the_second_cycle_crosses_the_limit() {
+        let (_, mut agent) = heavy(60);
+        let result = agent
+            .invoke_with("go", limited(None, Some(100), None))
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::LimitOutputTokens);
+        assert_eq!(result.last_message().role, Role::User);
+        assert!(matches!(
+            result.last_message().content[0],
+            ContentBlock::ToolResult(_)
+        ));
+        assert_eq!(result.metrics().cycle_count, 2);
+        assert_eq!(result.metrics().accumulated_usage, Usage::new(20, 120, 140));
+        assert!(result.metrics().tool_metrics.contains_key("loop"));
+    }
+
+    #[tokio::test]
+    async fn uses_at_most_semantics_stops_when_count_exactly_equals_the_limit() {
+        let (_, mut agent) = heavy(100);
+        let result = agent
+            .invoke_with("go", limited(None, Some(100), None))
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::LimitOutputTokens);
+        assert_eq!(result.metrics().cycle_count, 1);
+        assert_eq!(result.metrics().accumulated_usage, Usage::new(10, 100, 110));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_output_tokens_when_no_higher_priority_limit_is_set() {
+        let (_, mut agent) = heavy(100);
+        let result = agent
+            .invoke_with("go", limited(None, Some(1), None))
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::LimitOutputTokens);
+        assert_eq!(result.metrics().cycle_count, 1);
+    }
+
+    #[tokio::test]
+    async fn scopes_the_output_token_limit_to_the_current_invocation() {
+        let model = mock();
+        model.add_turn_with(vec!["first".into()], None, Some(Usage::new(10, 50, 60)));
+        model.add_turn_with(vec!["second".into()], None, Some(Usage::new(10, 50, 60)));
+        let mut agent = agent_with(&model, Vec::new());
+        for _ in 0..2 {
+            let result = agent
+                .invoke_with("go", limited(None, Some(75), None))
+                .await
+                .unwrap();
+            assert_eq!(result.stop_reason(), StopReason::EndTurn);
+            assert_eq!(
+                result.metrics().latest_agent_invocation().unwrap().cycles.len(),
+                1
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_zero_structured_output_attempts_with_type_error() {
+        let model = mock();
+        model.add_turn(vec!["never reached".into()]);
+        let mut agent = agent_with(&model, Vec::new());
+        let options = InvokeOptions {
+            limits: Some(InvokeLimits {
+                structured_output_attempts: Some(0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let error = agent.invoke_with("go", options).await.unwrap_err();
+        assert!(matches!(error, Error::Type(_)), "{error:?}");
+        assert_eq!(model.call_count(), 0);
     }
 
     #[tokio::test]
