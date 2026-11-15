@@ -1,5 +1,7 @@
 //! Model abstraction (TS `src/models/`).
 
+#[cfg(feature = "anthropic")]
+pub mod anthropic;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;
 pub(crate) mod defaults;
