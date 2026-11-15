@@ -31,6 +31,7 @@ mod macros;
 pub mod agent;
 pub mod cancel;
 pub mod error;
+pub mod hooks;
 pub mod interrupt;
 mod logging;
 pub mod mime;
