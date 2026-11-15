@@ -44,7 +44,7 @@ impl BackoffStrategy for RecordingBackoff {
 }
 
 async fn run(strategy: &dyn ModelRetryStrategy, error: &Error, attempt: u32, sleeper: &Sleeper) -> bool {
-    let context = ModelRetryContext::new(attempt).with_error(error);
+    let context = ModelRetryContext::new(NonZeroU32::new(attempt).unwrap()).with_error(error);
     retry_model(strategy, &context, false, None, sleeper).await
 }
 
@@ -80,7 +80,7 @@ async fn sets_retry_true_on_model_throttled_error_and_sleeps_for_the_configured_
 async fn waits_the_delay_on_the_tokio_timer_by_default() {
     let strategy = strategy(3, constant(500));
     let error = throttled("rate limited");
-    let context = ModelRetryContext::new(1).with_error(&error);
+    let context = ModelRetryContext::new(NonZeroU32::MIN).with_error(&error);
     let sleeper = crate::retry::model_retry_strategy::tokio_sleeper();
     let start = tokio::time::Instant::now();
     assert!(retry_model(&strategy, &context, false, None, &sleeper).await);
@@ -101,7 +101,7 @@ async fn does_not_schedule_a_backoff_timer_when_cancellation_was_already_request
     let (signal, handle) = CancelSignal::new();
     handle.cancel(CancelOptions::default());
     let error = throttled("rate limited");
-    let context = ModelRetryContext::new(1).with_error(&error);
+    let context = ModelRetryContext::new(NonZeroU32::MIN).with_error(&error);
     let retried = retry_model(
         &strategy(3, constant(500)),
         &context,
@@ -119,7 +119,7 @@ async fn a_cancel_during_the_delay_ends_the_wait_early() {
     let strategy = strategy(3, constant(60_000));
     let (signal, handle) = CancelSignal::new();
     let error = throttled("rate limited");
-    let context = ModelRetryContext::new(1).with_error(&error);
+    let context = ModelRetryContext::new(NonZeroU32::MIN).with_error(&error);
     let sleeper = crate::retry::model_retry_strategy::tokio_sleeper();
     let start = tokio::time::Instant::now();
     let canceller = tokio::spawn(async move {
@@ -142,7 +142,7 @@ async fn does_not_retry_non_retryable_errors() {
 #[tokio::test]
 async fn does_not_retry_a_successful_call() {
     let (sleeper, _) = recording_sleeper();
-    let context = ModelRetryContext::new(1);
+    let context = ModelRetryContext::new(NonZeroU32::MIN);
     assert!(!retry_model(&strategy(6, constant(10)), &context, false, None, &sleeper).await);
 }
 
@@ -160,7 +160,7 @@ async fn stops_retrying_once_max_attempts_is_reached() {
 async fn skips_work_if_another_hook_already_requested_retry() {
     let (sleeper, delays) = recording_sleeper();
     let error = throttled("x");
-    let context = ModelRetryContext::new(1).with_error(&error);
+    let context = ModelRetryContext::new(NonZeroU32::MIN).with_error(&error);
     assert!(retry_model(&strategy(5, constant(1000)), &context, true, None, &sleeper).await);
     assert!(delays.lock().unwrap().is_empty());
 }
@@ -219,7 +219,7 @@ async fn clears_per_turn_state_on_attempt_1_even_when_a_prior_hook_already_set_e
     let (strategy, backoff) = recording_strategy();
     let error = throttled("x");
     run(&strategy, &error, 1, &sleeper).await;
-    let context = ModelRetryContext::new(1).with_error(&error);
+    let context = ModelRetryContext::new(NonZeroU32::MIN).with_error(&error);
     assert!(retry_model(&strategy, &context, true, None, &sleeper).await);
     run(&strategy, &error, 2, &sleeper).await;
     let contexts = backoff.contexts.lock().unwrap();

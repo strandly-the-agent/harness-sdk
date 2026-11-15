@@ -151,19 +151,16 @@ impl ModelRetryStrategy for DefaultModelRetryStrategy {
             return RetryDecision::NoRetry;
         }
         let attempt_count = context.attempt_count();
-        let max_attempts = self.max_attempts.get();
+        let max_attempts = self.max_attempts;
         if attempt_count >= max_attempts {
             tracing::debug!(
                 "attempt_count=<{attempt_count}> max_attempts=<{max_attempts}> | max retry attempts reached"
             );
             return RetryDecision::NoRetry;
         }
-        let Some(attempt) = NonZeroU32::new(attempt_count) else {
-            return RetryDecision::NoRetry;
-        };
         let mut state = self.state();
         let first_failure_at = *state.first_failure_at.get_or_insert_with(Instant::now);
-        let mut backoff_context = BackoffContext::new(attempt).with_elapsed(first_failure_at.elapsed());
+        let mut backoff_context = BackoffContext::new(attempt_count).with_elapsed(first_failure_at.elapsed());
         backoff_context.last_delay = state.last_delay;
         let delay = self.backoff.next_delay(&backoff_context);
         state.last_delay = Some(delay);

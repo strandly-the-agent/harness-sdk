@@ -3,6 +3,7 @@
 //! The agent calls a strategy after each failed model call; the hook that does it lands with the
 //! agent loop.
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,13 +19,13 @@ use crate::retry::retry_strategy::RetryDecision;
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct ModelRetryContext<'a> {
-    attempt_count: u32,
+    attempt_count: NonZeroU32,
     error: Option<&'a Error>,
 }
 
 impl<'a> ModelRetryContext<'a> {
     /// The context of attempt `attempt_count` (1-based) of the current model call.
-    pub fn new(attempt_count: u32) -> Self {
+    pub fn new(attempt_count: NonZeroU32) -> Self {
         Self {
             attempt_count,
             error: None,
@@ -39,7 +40,7 @@ impl<'a> ModelRetryContext<'a> {
     }
 
     /// The 1-based attempt number; 1 is the first attempt of a model call.
-    pub fn attempt_count(&self) -> u32 {
+    pub fn attempt_count(&self) -> NonZeroU32 {
         self.attempt_count
     }
 
@@ -86,7 +87,7 @@ pub(crate) async fn retry_model(
     sleeper: &Sleeper,
 ) -> bool {
     // Reset per-call state before any short-circuit, including another hook's retry on attempt 1.
-    if context.attempt_count() == 1 {
+    if context.attempt_count() == NonZeroU32::MIN {
         strategy.on_first_model_attempt();
     }
     if retry_requested {
