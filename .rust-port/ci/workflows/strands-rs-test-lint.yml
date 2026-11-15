@@ -1,0 +1,131 @@
+name: "Rust: Test and Lint"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run clippy (all features)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run clippy (no default features)
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+
+      - name: Build docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --all-features --no-deps
+
+  unit-test:
+    name: Unit Tests
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      # `cargo test` also runs the doctests.
+      - name: Run tests (all features)
+        run: cargo test --workspace --all-features
+
+      - name: Run tests (no default features)
+        run: cargo test --workspace --no-default-features
+
+  msrv:
+    name: MSRV (1.96.0)
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: 1.96.0
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check with the minimum supported Rust version
+        run: cargo check --workspace --all-features --locked
+
+  conformance:
+    name: Conformance Fixtures
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build strands-ts
+        run: npm run build
+
+      - name: Regenerate fixtures
+        run: npx tsx strands-rs/conformance/generate.ts
+
+      # Intent-to-add makes newly generated, untracked fixtures show up in the diff too.
+      - name: Check fixtures are up to date
+        run: |
+          git add --intent-to-add strands-rs/conformance/fixtures
+          git diff --exit-code strands-rs/conformance/fixtures

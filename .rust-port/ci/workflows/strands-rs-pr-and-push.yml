@@ -1,0 +1,33 @@
+name: "Rust: Pull Request and Push"
+
+on:
+  workflow_call:
+  push:
+    branches: [ main ]
+    paths:
+      - 'strands-rs/**'
+      # The conformance fixtures are generated from the strands-ts wire format.
+      - 'strands-ts/src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'deny.toml'
+      - 'rustfmt.toml'
+      - 'clippy.toml'
+      - '.github/workflows/strands-rs-*'
+      - '.github/workflows/rust-security-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  call-security-audit:
+    uses: ./.github/workflows/rust-security-audit.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  call-test-lint:
+    uses: ./.github/workflows/strands-rs-test-lint.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}

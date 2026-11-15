@@ -1,0 +1,99 @@
+name: "Harness Rust: Test and Lint"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+# strands-harness builds against the sibling strands crate through the root Cargo workspace,
+# so every job here compiles the local SDK source.
+jobs:
+  lint:
+    name: Lint
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check formatting
+        run: cargo fmt -p strands-harness --check
+
+      - name: Run clippy (all features)
+        run: cargo clippy -p strands-harness --all-targets --all-features -- -D warnings
+
+      - name: Run clippy (no default features)
+        run: cargo clippy -p strands-harness --all-targets --no-default-features -- -D warnings
+
+      - name: Build docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc -p strands-harness --all-features --no-deps
+
+  unit-test:
+    name: Unit Tests
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      # `cargo test` also runs the doctests.
+      - name: Run tests (all features)
+        run: cargo test -p strands-harness --all-features
+
+      - name: Run tests (no default features)
+        run: cargo test -p strands-harness --no-default-features
+
+  msrv:
+    name: MSRV (1.96.0)
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: 1.96.0
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check with the minimum supported Rust version
+        run: cargo check -p strands-harness --all-features --locked

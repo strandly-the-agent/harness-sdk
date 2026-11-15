@@ -1,0 +1,42 @@
+name: "Rust: Security Audit"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+jobs:
+  security-audit:
+    name: cargo-deny
+    permissions:
+      contents: read
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # License, ban and source policy from deny.toml is enforced.
+      - name: Check licenses, bans and sources
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          rust-version: 1.96.0
+          command: check
+          command-arguments: bans licenses sources
+
+      # Mirror of typescript-security-audit.yml: informational, so unrelated PRs are
+      # not held by newly published advisories. PR-introduced vulns are gated by the
+      # repo-level Dependency Review job in ci.yml.
+      - name: Check advisories (informational)
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          rust-version: 1.96.0
+          command: check
+          command-arguments: advisories
