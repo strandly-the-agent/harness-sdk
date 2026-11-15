@@ -4,7 +4,7 @@
 
 - Status: in progress (fresh start on 2026-11-15)
 - Current phase: Phase 3
-- Current item: Phase 3 item 6 (loop semantics: limits, `InvocationContext`, structured output, `end_turn`/`resume`, model proxy, retry wiring). Items 1-5, the macros and the stream event records are committed. The loop lives in `strands/src/agent/run.rs` (P-69, P-72); `AgentConfig` keys not yet accepted are listed in P-67
+- Current item: Phase 3 item 7 (direct tool calls, `as_tool`, agents as tools, printer). Items 1-6, the macros and the stream event records are committed. The loop lives in `strands/src/agent/run.rs` (P-69, P-72, P-76..P-80); item-6 leftovers: the 8 cycle-duration and `_estimateInputTokens` cases of `agent.test.ts` (PARITY); continuations wait for background tasks (P-78)
 - Phase base commits: Phase 0 = 7296caba7; Phase 1 = d2cce53e2 (Phase 0 review diff 7296caba7..d2cce53e2; Phase 0 fixes landed in 95c800b0e..0e4b20905); Phase 2 = 0e4b20905 (Phase 1 review diff d2cce53e2..0e4b20905); Phase 3 = ef33e6992 (Phase 2 review diff 0e4b20905..ef33e6992)
 
 ## Credentials

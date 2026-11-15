@@ -38,7 +38,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
 - [x] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
 - [x] Concurrent and sequential executors
-- [ ] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
+- [x] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
 - [ ] Direct tool calls, `as_tool`, agents as tools, printer
 - [ ] Phase review gate and fixes
 
