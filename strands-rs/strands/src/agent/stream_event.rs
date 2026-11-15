@@ -8,8 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::hooks::ModelStopData;
 use crate::interrupt::Interrupt;
-use crate::models::model::Redaction;
 use crate::models::streaming::ModelStreamEvent;
 use crate::tools::ToolStreamEvent;
 use crate::types::agent::AgentResult;
@@ -293,39 +293,6 @@ impl AfterModelCallEventData {
             stop_data: None,
             error: Some(error),
         }
-    }
-}
-
-/// A model's response as an [`AfterModelCallEventData`] carries it (TS `ModelStopData`).
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelStopData {
-    /// The model's message.
-    pub message: Message,
-    /// Why the model stopped.
-    pub stop_reason: StopReason,
-    /// The input redaction a guardrail requested, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub redaction: Option<Redaction>,
-}
-
-impl ModelStopData {
-    /// Creates stop data without a redaction.
-    #[must_use]
-    pub fn new(message: Message, stop_reason: StopReason) -> Self {
-        Self {
-            message,
-            stop_reason,
-            redaction: None,
-        }
-    }
-
-    /// Sets the redaction.
-    #[must_use]
-    pub fn with_redaction(mut self, redaction: Redaction) -> Self {
-        self.redaction = Some(redaction);
-        self
     }
 }
 

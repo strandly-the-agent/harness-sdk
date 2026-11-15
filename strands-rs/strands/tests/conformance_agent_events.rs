@@ -11,10 +11,10 @@ use strands::agent::stream_event::{
     AfterInvocationEventData, AfterModelCallEventData, AfterToolCallEventData, AfterToolsEventData,
     BeforeInvocationEventData, BeforeModelCallEventData, BeforeToolCallEventData, BeforeToolsEventData,
     ContentBlockEventData, EventError, InterruptEventData, MessageAddedEventData, ModelMessageEventData,
-    ModelStopData, ModelStreamUpdateEventData, ToolResultEventData, ToolStreamUpdateEventData,
+    ModelStreamUpdateEventData, ToolResultEventData, ToolStreamUpdateEventData,
 };
+use strands::hooks::{ModelStopData, Redaction};
 use strands::interrupt::Interrupt;
-use strands::models::model::Redaction;
 use strands::models::streaming::{ModelStreamEvent, TextDelta};
 use strands::tools::ToolStreamEvent;
 use strands::types::agent::{AgentMetrics, AgentResult};
