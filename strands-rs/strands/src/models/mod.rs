@@ -9,6 +9,8 @@ pub mod model;
 pub mod model_info;
 pub(crate) mod model_proxy;
 pub(crate) mod native_output;
+#[cfg(feature = "openai")]
+pub mod openai;
 pub mod streaming;
 pub(crate) mod strict_schema;
 pub mod summarize;
