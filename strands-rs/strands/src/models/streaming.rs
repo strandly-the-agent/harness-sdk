@@ -840,4 +840,27 @@ mod tests {
             r#"{"latencyMs":1234,"timeToFirstByteMs":56}"#
         );
     }
+
+    #[test]
+    fn total_prompt_tokens_matches_the_conformance_fixture() {
+        let fixture: JsonValue = serde_json::from_str(include_str!(
+            "../../../conformance/fixtures/types/usage_metrics.json"
+        ))
+        .unwrap();
+        let consistent: Usage =
+            serde_json::from_value(json!({ "inputTokens": 5, "outputTokens": 2, "totalTokens": 7 })).unwrap();
+        let with_cache: Usage = serde_json::from_value(json!({
+            "inputTokens": 5, "outputTokens": 2, "totalTokens": 13,
+            "cacheReadInputTokens": 4, "cacheWriteInputTokens": 2
+        }))
+        .unwrap();
+        assert_eq!(
+            json!(consistent.total_prompt_tokens()),
+            fixture["totalPromptTokens"]["consistent"]
+        );
+        assert_eq!(
+            json!(with_cache.total_prompt_tokens()),
+            fixture["totalPromptTokens"]["withCache"]
+        );
+    }
 }

@@ -1022,3 +1022,17 @@ fn tool_result_block_keeps_the_error_and_compares_it_by_identity() {
             .is_none()
     );
 }
+
+#[test]
+fn limit_stop_reasons_match_the_conformance_fixture() {
+    let fixture: JsonValue = serde_json::from_str(include_str!(
+        "../../../../conformance/fixtures/types/stop_reasons.json"
+    ))
+    .unwrap();
+    let limit: Vec<StopReason> = serde_json::from_value(fixture["limit"].clone()).unwrap();
+    let all: Vec<StopReason> = serde_json::from_value(fixture["all"].clone()).unwrap();
+    for reason in &all {
+        assert_eq!(reason.is_limit(), limit.contains(reason), "{reason}");
+    }
+    assert_eq!(all.iter().filter(|reason| reason.is_limit()).count(), limit.len());
+}

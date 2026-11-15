@@ -417,4 +417,56 @@ mod tests {
         assert_eq!(InterruptParams::from("approve"), InterruptParams::new("approve"));
         assert_eq!(InterruptParams::from(String::from("approve")).name, "approve");
     }
+
+    fn assert_state_round_trips(state: &JsonValue, name: &str) -> InterruptStateData {
+        let parsed: InterruptStateData = serde_json::from_str(&state.to_string()).unwrap();
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), *state, "{name}");
+        parsed
+    }
+
+    #[test]
+    fn interrupt_state_matches_the_conformance_fixture() {
+        let fixture: JsonValue = serde_json::from_str(include_str!(
+            "../../conformance/fixtures/interrupts/interrupt_state.json"
+        ))
+        .unwrap();
+        let before = assert_state_round_trips(&fixture["beforeResume"], "beforeResume");
+        assert!(
+            before
+                .interrupts
+                .values()
+                .all(|interrupt| interrupt.response.is_none())
+        );
+        let after = assert_state_round_trips(&fixture["afterResume"], "afterResume");
+        assert_eq!(
+            after.interrupts["tool:tooluse_1:confirm"].response,
+            Some(JsonValue::Null)
+        );
+        assert_eq!(
+            after.resume_responses.unwrap()[0].interrupt_response.response,
+            JsonValue::Null
+        );
+        assert_eq!(
+            serde_json::to_value(Interrupt::new("x", "legacy")).unwrap(),
+            fixture["legacyWithoutSource"]
+        );
+    }
+
+    #[test]
+    fn snapshot_interrupt_state_matches_the_conformance_fixtures() {
+        let snapshots = [
+            include_str!("../../conformance/fixtures/interrupts/hook_interrupted.snapshot.json"),
+            include_str!("../../conformance/fixtures/interrupts/tool_interrupted.snapshot.json"),
+            include_str!("../../conformance/fixtures/interrupts/tool_resumed.snapshot.json"),
+            include_str!("../../conformance/fixtures/snapshots/take_snapshot_empty_agent.json"),
+        ];
+        for (index, text) in snapshots.iter().enumerate() {
+            let snapshot: JsonValue = serde_json::from_str(text).unwrap();
+            assert_state_round_trips(&snapshot["data"]["interrupts"], &index.to_string());
+        }
+        let interrupted: JsonValue = serde_json::from_str(snapshots[1]).unwrap();
+        let state = assert_state_round_trips(&interrupted["data"]["interrupts"], "tool_interrupted");
+        assert!(state.activated);
+        assert!(state.pending_tool_execution.is_some());
+    }
 }

@@ -259,4 +259,19 @@ mod tests {
         assert_eq!(VideoFormat::from("3gp"), VideoFormat::ThreeGp);
         assert_eq!(AudioFormat::from("x-aac").to_string(), "x-aac");
     }
+
+    #[test]
+    fn mime_maps_match_the_conformance_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../conformance/fixtures/types/mime.json")).unwrap();
+        let cases = [
+            ("toMimeType", to_mime_type as fn(&str) -> Option<&'static str>),
+            ("toMediaFormat", to_media_format),
+        ];
+        for (name, convert) in cases {
+            for (input, expected) in fixture[name].as_object().unwrap() {
+                assert_eq!(convert(input), expected.as_str(), "{name}({input})");
+            }
+        }
+    }
 }
