@@ -1,6 +1,5 @@
 //! Citation types (TS `types/citations.ts`).
 
-use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::json::{JsonObject, JsonValue};
@@ -56,9 +55,10 @@ pub enum CitationLocation {
     Other(UnknownCitationLocation),
 }
 
-/// A [`CitationLocation`] this SDK version doesn't know: the raw JSON object.
+/// A [`CitationLocation`] this SDK version can't read: the raw JSON object of an unknown `type`, or
+/// of a known `type` with missing or invalid fields.
 ///
-/// Built only by deserialization, so it never holds a known location type.
+/// Built only by deserialization, so it never holds a location that reads as a known variant.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnknownCitationLocation(JsonObject);
 
@@ -165,12 +165,16 @@ impl<'de> Deserialize<'de> for CitationLocation {
             .get("type")
             .and_then(JsonValue::as_str)
             .is_some_and(|t| KNOWN_LOCATION_TYPES.contains(&t));
-        if !is_known {
-            return Ok(Self::Other(UnknownCitationLocation(object)));
+        if is_known && let Ok(known) = serde_json::from_value(JsonValue::Object(object.clone())) {
+            return Ok(Self::from_known(known));
         }
-        let known: KnownLocation =
-            serde_json::from_value(JsonValue::Object(object)).map_err(D::Error::custom)?;
-        Ok(match known {
+        Ok(Self::Other(UnknownCitationLocation(object)))
+    }
+}
+
+impl CitationLocation {
+    fn from_known(known: KnownLocation) -> Self {
+        match known {
             KnownLocation::DocumentChar {
                 document_index,
                 start,
@@ -208,7 +212,7 @@ impl<'de> Deserialize<'de> for CitationLocation {
                 end,
             },
             KnownLocation::Web { url, domain } => Self::Web { url, domain },
-        })
+        }
     }
 }
 
@@ -471,10 +475,17 @@ mod tests {
     }
 
     #[test]
-    fn a_known_location_type_with_bad_fields_fails() {
-        assert!(
-            serde_json::from_value::<CitationLocation>(json!({"type": "documentChar", "start": "x"}))
-                .is_err()
-        );
+    fn a_known_location_type_with_missing_or_invalid_fields_stays_other() {
+        for raw in [
+            json!({"type": "documentChar", "start": 0, "end": 5}),
+            json!({"type": "documentChar", "documentIndex": 0, "start": "x", "end": 5}),
+        ] {
+            let location: CitationLocation = serde_json::from_value(raw.clone()).unwrap();
+            let CitationLocation::Other(other) = &location else {
+                panic!("expected Other, got {location:?}")
+            };
+            assert_eq!(other.location_type(), Some("documentChar"));
+            assert_eq!(serde_json::to_value(&location).unwrap(), raw);
+        }
     }
 }
