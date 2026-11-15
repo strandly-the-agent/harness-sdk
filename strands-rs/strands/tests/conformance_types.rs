@@ -80,6 +80,11 @@ fn media_formats_round_trip_and_every_listed_format_is_known() {
 }
 
 #[test]
+fn bedrock_citations_keep_the_key_order_the_adapter_built() {
+    assert_pretty_cases::<Message>("types/bedrock_citations.json");
+}
+
+#[test]
 fn saved_data_keeps_unknown_blocks_formats_locations_and_statuses() {
     let path = "types/saved_data_round_trip.json";
     for (name, case) in cases(path) {

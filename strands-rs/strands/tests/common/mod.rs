@@ -38,6 +38,7 @@ pub(crate) const COVERED: &[&str] = &[
     "snapshots/take_snapshot.json",
     "snapshots/take_snapshot_empty_agent.json",
     "types/base64_lenient.json",
+    "types/bedrock_citations.json",
     "types/compact_message.json",
     "types/content_blocks.json",
     "types/interrupt_response_content.json",

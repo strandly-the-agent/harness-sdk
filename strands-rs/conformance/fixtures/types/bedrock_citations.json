@@ -1,0 +1,200 @@
+{
+  "converseStream": {
+    "role": "assistant",
+    "content": [
+      {
+        "citations": {
+          "citations": [
+            {
+              "location": {
+                "type": "documentChar",
+                "documentIndex": 0,
+                "start": 150,
+                "end": 300
+              },
+              "sourceContent": [
+                {
+                  "text": "char source"
+                }
+              ],
+              "source": "doc-0",
+              "title": "Text Document"
+            },
+            {
+              "location": {
+                "type": "documentPage",
+                "documentIndex": 0,
+                "start": 2,
+                "end": 3
+              },
+              "sourceContent": [
+                {
+                  "text": "page source"
+                }
+              ],
+              "source": "doc-0",
+              "title": "PDF Document"
+            },
+            {
+              "location": {
+                "type": "documentChunk",
+                "documentIndex": 1,
+                "start": 5,
+                "end": 8
+              },
+              "sourceContent": [
+                {
+                  "text": "chunk source"
+                }
+              ],
+              "source": "doc-1",
+              "title": "Chunked Document"
+            },
+            {
+              "location": {
+                "type": "searchResult",
+                "searchResultIndex": 0,
+                "start": 25,
+                "end": 150
+              },
+              "sourceContent": [
+                {
+                  "text": "search source"
+                }
+              ],
+              "source": "search-0",
+              "title": "Search Result"
+            },
+            {
+              "location": {
+                "type": "web",
+                "url": "https://example.com/doc",
+                "domain": "example.com"
+              },
+              "sourceContent": [
+                {
+                  "text": "web source"
+                }
+              ],
+              "source": "web-0",
+              "title": "Web Page"
+            }
+          ],
+          "content": []
+        }
+      }
+    ],
+    "trackingId": "00000000-0000-4000-8000-000000000089",
+    "metadata": {
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      },
+      "metrics": {
+        "latencyMs": 100
+      }
+    }
+  },
+  "converse": {
+    "role": "assistant",
+    "content": [
+      {
+        "citations": {
+          "citations": [
+            {
+              "source": "doc-0",
+              "title": "Text Document",
+              "sourceContent": [
+                {
+                  "text": "char source"
+                }
+              ],
+              "location": {
+                "type": "documentChar",
+                "documentIndex": 0,
+                "start": 150,
+                "end": 300
+              }
+            },
+            {
+              "source": "doc-0",
+              "title": "PDF Document",
+              "sourceContent": [
+                {
+                  "text": "page source"
+                }
+              ],
+              "location": {
+                "type": "documentPage",
+                "documentIndex": 0,
+                "start": 2,
+                "end": 3
+              }
+            },
+            {
+              "source": "doc-1",
+              "title": "Chunked Document",
+              "sourceContent": [
+                {
+                  "text": "chunk source"
+                }
+              ],
+              "location": {
+                "type": "documentChunk",
+                "documentIndex": 1,
+                "start": 5,
+                "end": 8
+              }
+            },
+            {
+              "source": "search-0",
+              "title": "Search Result",
+              "sourceContent": [
+                {
+                  "text": "search source"
+                }
+              ],
+              "location": {
+                "type": "searchResult",
+                "searchResultIndex": 0,
+                "start": 25,
+                "end": 150
+              }
+            },
+            {
+              "source": "web-0",
+              "title": "Web Page",
+              "sourceContent": [
+                {
+                  "text": "web source"
+                }
+              ],
+              "location": {
+                "type": "web",
+                "url": "https://example.com/doc",
+                "domain": "example.com"
+              }
+            }
+          ],
+          "content": [
+            {
+              "text": "generated text"
+            }
+          ]
+        }
+      }
+    ],
+    "trackingId": "00000000-0000-4000-8000-00000000008b",
+    "metadata": {
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      },
+      "metrics": {
+        "latencyMs": 100
+      }
+    }
+  }
+}

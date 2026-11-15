@@ -51,6 +51,7 @@ type rather than produced by TS code, so they prove JSON shape only.
 | `telemetry/agent_run.latest_experimental.json` | pretty | Agent `Meter` and `Tracer` with `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` | Same run under the latest experimental GenAI semantic conventions |
 | `telemetry/memory_run.default.json` | pretty | `MemoryManager` search, add, injection and extraction spans (`telemetry/tracer.ts`) under recording OTel providers | Span names, kinds, parents, attributes and events for `memory.search`, `memory.add`, `memory.inject` and `memory.extract` |
 | `types/base64_lenient.json` | pretty | `decodeBase64`/`encodeBase64` (`types/media.ts`, Node `Buffer`) | Lenient base64 decode (unpadded, URL-safe, whitespace, garbage, inner padding) and canonical re-encode |
+| `types/bedrock_citations.json` | pretty | `BedrockModel.streamAggregated()` message `toJSON()` with a scripted client | Citation key order as the Bedrock adapter builds it: `location, sourceContent, source, title` when streaming, `source, title, sourceContent, location` from Converse |
 | `types/compact_message.json` | compact | `JSON.stringify(message)` | Compact byte form of a message, for byte-for-byte serializer comparison |
 | `types/content_blocks.json` | pretty | `ContentBlock.toJSON()` for every block class | Every content block type, every ToolResultContent, redacted reasoning, guard text and image |
 | `types/interrupt_response_content.json` | pretty | `InterruptResponseContent.toJSON()` | Interrupt response wire shape including a `null` response |
@@ -66,4 +67,4 @@ type rather than produced by TS code, so they prove JSON shape only.
 | `types/tool_choice.json` | pretty | `ToolChoice` (`tools/types.ts`) | Empty-object variants `{"auto":{}}` and `{"any":{}}`; the forced-tool form is also captured from a live run in `agent/structured_output.model_calls.json` (validity only) |
 | `types/usage_metrics.json` | pretty | `createEmptyUsage`, `accumulateUsage`, `totalPromptTokens` (`models/streaming.ts`), `AgentMetrics` | Usage and Metrics shapes; integer counters written without `.0` |
 
-59 fixtures.
+60 fixtures.

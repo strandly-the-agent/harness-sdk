@@ -1,6 +1,10 @@
 //! Citations content block (TS `types/citations.ts`).
 
-use serde::{Deserialize, Serialize};
+use std::fmt;
+
+use serde::de::{self, MapAccess, Visitor};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::types::json::JsonValue;
 
@@ -109,9 +113,12 @@ impl CitationGeneratedContent {
 }
 
 /// One citation (TS `Citation`).
+///
+/// A loaded citation is written back with its keys in the order they were read, because TS writes
+/// citations in the order its provider built them. A new citation writes `location`, `source`,
+/// `sourceContent`, `title`. Equality ignores that key order.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct Citation {
     /// Where the citation points.
     pub location: CitationLocation,
@@ -121,6 +128,7 @@ pub struct Citation {
     pub source_content: Vec<CitationSourceContent>,
     /// The source title.
     pub title: String,
+    key_order: [CitationKey; 4],
 }
 
 impl Citation {
@@ -137,7 +145,113 @@ impl Citation {
             source: source.into(),
             source_content,
             title: title.into(),
+            key_order: [
+                CitationKey::Location,
+                CitationKey::Source,
+                CitationKey::SourceContent,
+                CitationKey::Title,
+            ],
         }
+    }
+}
+
+impl PartialEq for Citation {
+    fn eq(&self, other: &Self) -> bool {
+        self.location == other.location
+            && self.source == other.source
+            && self.source_content == other.source_content
+            && self.title == other.title
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(field_identifier, rename_all = "camelCase")]
+enum CitationKey {
+    Location,
+    Source,
+    SourceContent,
+    Title,
+    #[serde(other)]
+    Ignored,
+}
+
+impl Serialize for Citation {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("Citation", 4)?;
+        for key in self.key_order {
+            match key {
+                CitationKey::Location => state.serialize_field("location", &self.location)?,
+                CitationKey::Source => state.serialize_field("source", &self.source)?,
+                CitationKey::SourceContent => {
+                    state.serialize_field("sourceContent", &self.source_content)?;
+                }
+                CitationKey::Title => state.serialize_field("title", &self.title)?,
+                CitationKey::Ignored => {}
+            }
+        }
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Citation {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_map(CitationVisitor)
+    }
+}
+
+struct CitationVisitor;
+
+impl<'de> Visitor<'de> for CitationVisitor {
+    type Value = Citation;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a citation object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Citation, A::Error> {
+        let mut location = None;
+        let mut source: Option<String> = None;
+        let mut source_content = None;
+        let mut title: Option<String> = None;
+        let mut keys = Vec::with_capacity(4);
+        while let Some(key) = map.next_key::<CitationKey>()? {
+            if keys.contains(&key) {
+                return Err(de::Error::duplicate_field(key_name(key)));
+            }
+            match key {
+                CitationKey::Location => location = Some(map.next_value()?),
+                CitationKey::Source => source = Some(map.next_value()?),
+                CitationKey::SourceContent => source_content = Some(map.next_value()?),
+                CitationKey::Title => title = Some(map.next_value()?),
+                CitationKey::Ignored => {
+                    map.next_value::<de::IgnoredAny>()?;
+                    continue;
+                }
+            }
+            keys.push(key);
+        }
+        let citation = Citation::new(
+            location.ok_or_else(|| de::Error::missing_field("location"))?,
+            source.ok_or_else(|| de::Error::missing_field("source"))?,
+            source_content.ok_or_else(|| de::Error::missing_field("sourceContent"))?,
+            title.ok_or_else(|| de::Error::missing_field("title"))?,
+        );
+        let key_order = <[CitationKey; 4]>::try_from(keys)
+            .map_err(|keys| de::Error::invalid_length(keys.len(), &"four citation fields"))?;
+        Ok(Citation {
+            key_order,
+            ..citation
+        })
+    }
+}
+
+fn key_name(key: CitationKey) -> &'static str {
+    match key {
+        CitationKey::Location => "location",
+        CitationKey::Source => "source",
+        CitationKey::SourceContent => "sourceContent",
+        CitationKey::Title => "title",
+        CitationKey::Ignored => "",
     }
 }
 
@@ -313,5 +427,71 @@ mod tests {
         };
         assert_eq!(unknown.as_json().get("x"), Some(&json!(1)));
         assert_eq!(serde_json::to_value(&parsed).unwrap(), location);
+    }
+
+    #[test]
+    fn a_loaded_citation_is_written_back_in_its_key_order() {
+        let citation = json!({
+            "source": "doc-0",
+            "title": "Text Document",
+            "sourceContent": [{ "text": "char source" }],
+            "location": { "type": "documentChar", "documentIndex": 0, "start": 1, "end": 2 }
+        });
+        let parsed: Citation = serde_json::from_str(&citation.to_string()).unwrap();
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), citation.to_string());
+    }
+
+    #[test]
+    fn a_new_citation_writes_location_source_source_content_title() {
+        let citation = Citation::new(
+            CitationLocation::Web {
+                url: "https://example.com".into(),
+                domain: None,
+            },
+            "web-0",
+            vec![],
+            "Web Page",
+        );
+        assert_eq!(
+            serde_json::to_string(&citation).unwrap(),
+            r#"{"location":{"type":"web","url":"https://example.com"},"source":"web-0","sourceContent":[],"title":"Web Page"}"#
+        );
+    }
+
+    #[test]
+    fn citation_equality_ignores_key_order() {
+        let loaded: Citation = serde_json::from_value(json!({
+            "title": "t", "source": "s", "sourceContent": [],
+            "location": { "type": "web", "url": "u" }
+        }))
+        .unwrap();
+        let built = Citation::new(
+            CitationLocation::Web {
+                url: "u".into(),
+                domain: None,
+            },
+            "s",
+            vec![],
+            "t",
+        );
+        assert_eq!(loaded, built);
+    }
+
+    #[test]
+    fn a_citation_with_a_duplicate_or_missing_key_fails_to_load() {
+        let duplicate = r#"{"source":"a","source":"b","title":"t","sourceContent":[],"location":{"type":"web","url":"u"}}"#;
+        assert!(
+            serde_json::from_str::<Citation>(duplicate)
+                .unwrap_err()
+                .to_string()
+                .starts_with("duplicate field `source`")
+        );
+        let missing = r#"{"source":"a","sourceContent":[],"location":{"type":"web","url":"u"}}"#;
+        assert!(
+            serde_json::from_str::<Citation>(missing)
+                .unwrap_err()
+                .to_string()
+                .starts_with("missing field `title`")
+        );
     }
 }
