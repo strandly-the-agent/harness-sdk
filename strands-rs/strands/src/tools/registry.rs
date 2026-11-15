@@ -162,7 +162,8 @@ impl ToolRegistry {
 
 fn validate_properties(tool: &dyn Tool) -> Result<()> {
     let name = tool.name();
-    let length = name.chars().count();
+    // TS `name.length` counts UTF-16 code units.
+    let length = name.encode_utf16().count();
     if !(1..=MAX_TOOL_NAME_LENGTH).contains(&length) {
         return Err(ToolValidationError::new(format!(
             "Tool name must be between 1 and {MAX_TOOL_NAME_LENGTH} characters"

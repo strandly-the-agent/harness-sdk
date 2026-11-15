@@ -1,0 +1,7 @@
+error[E0432]: unresolved import `strands::ToolExecutor`
+ --> tests/ui/fail/does_not_export_the_internal_tool_executor_base.rs:2:5
+  |
+2 | use strands::ToolExecutor;
+  |     ^^^^^^^^^------------
+  |              |
+  |              no `ToolExecutor` in the root

@@ -563,6 +563,46 @@ mod input {
     }
 
     #[tokio::test]
+    async fn supports_all_content_block_types() {
+        use crate::types::media::{
+            AudioBlock, AudioFormat, DocumentBlock, DocumentSource, ImageBlock, ImageFormat, ImageSource,
+            S3Location, VideoBlock, VideoFormat,
+        };
+        use crate::types::messages::{CachePointBlock, GuardContentBlock, GuardContentText, GuardQualifier};
+
+        let content: Vec<ContentBlock> = vec![
+            text("Text content"),
+            tool_use("tool1", "id-1", json!({"key": "value"})),
+            ToolResultBlock::new("id-1", ToolResultStatus::Success, vec!["Result".into()]).into(),
+            ReasoningBlock::new().with_text("My reasoning").into(),
+            CachePointBlock::new().into(),
+            GuardContentBlock::from(GuardContentText::new(
+                "Guard content",
+                vec![GuardQualifier::GroundingSource],
+            ))
+            .into(),
+            AudioBlock::new(AudioFormat::Mp3, vec![1, 2, 3]).into(),
+            ImageBlock::new(
+                ImageFormat::Png,
+                ImageSource::Url("https://example.com/image.png".into()),
+            )
+            .into(),
+            VideoBlock::new(VideoFormat::Mp4, S3Location::new("s3://bucket/video.mp4")).into(),
+            DocumentBlock::new("doc.pdf", "pdf", DocumentSource::Bytes(vec![1, 2, 3])).into(),
+        ];
+        let mut agent = test_agent(mock(vec![vec![text("Response")]]));
+
+        agent.invoke(content.clone()).await.unwrap();
+
+        assert_eq!(agent.messages().len(), 2);
+        assert_eq!(agent.messages()[0].role(), Role::User);
+        assert_eq!(
+            serde_json::to_value(agent.messages()[0].content()).unwrap(),
+            serde_json::to_value(&content).unwrap()
+        );
+    }
+
+    #[tokio::test]
     async fn blank_means_empty_after_js_trim() {
         let mut agent = test_agent(mock(vec![vec![text("ok")]]));
         let error = agent.invoke("\u{feff}").await.unwrap_err();
@@ -690,10 +730,305 @@ mod estimate_input_tokens {
                 .unwrap();
         assert_eq!(projected(&mut agent).await, Some(120 + delta));
     }
+
+    /// A mock whose `count_tokens` returns a fixed count, or fails (the TS `countTokens` spy).
+    struct FixedCount {
+        inner: Arc<MockMessageModel>,
+        count: Option<u64>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::models::model::Model for FixedCount {
+        fn stream(
+            &self,
+            request: crate::models::model::ModelRequest,
+        ) -> crate::models::model::BoxStream<
+            'static,
+            crate::error::Result<crate::models::streaming::ModelStreamEvent>,
+        > {
+            self.inner.stream(request)
+        }
+
+        fn get_config(&self) -> crate::models::model::BaseModelConfig {
+            self.inner.get_config()
+        }
+
+        fn update_config(&self, config: crate::models::model::BaseModelConfig) {
+            self.inner.update_config(config);
+        }
+
+        async fn count_tokens(
+            &self,
+            _messages: &[Message],
+            _options: crate::models::model::CountTokensOptions,
+        ) -> crate::error::Result<u64> {
+            self.count.ok_or_else(|| Error::other("API unavailable"))
+        }
+    }
+
+    fn fixed(model: &Arc<MockMessageModel>, count: Option<u64>) -> Arc<FixedCount> {
+        Arc::new(FixedCount {
+            inner: Arc::clone(model),
+            count,
+        })
+    }
+
+    async fn projections(
+        agent: &mut Agent,
+        args: impl Into<crate::types::agent::InvokeArgs>,
+    ) -> Vec<Option<u64>> {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&seen);
+        let cleanup = agent.add_hook(move |event: &mut BeforeModelCallEvent<'_>| {
+            record.lock().unwrap().push(event.projected_input_tokens());
+        });
+        agent.invoke(args).await.unwrap();
+        cleanup.remove();
+        let projections = seen.lock().unwrap();
+        projections.clone()
+    }
+
+    fn after_usage(usage: Usage) -> Vec<Message> {
+        vec![
+            Message::new(Role::User, vec![text("Hi")]),
+            Message::new(Role::Assistant, vec![text("Hello")])
+                .with_metadata(MessageMetadata::new().with_usage(usage)),
+        ]
+    }
+
+    #[tokio::test]
+    async fn uses_known_baseline_when_no_new_messages_after_last_assistant() {
+        let mut agent = Agent::builder()
+            .model(mock(vec![vec![text("Hello")]]))
+            .messages(after_usage(Usage::new(100, 20, 120)))
+            .printer(false)
+            .build()
+            .unwrap();
+        assert_eq!(
+            projections(&mut agent, Vec::<ContentBlock>::new()).await,
+            [Some(120)]
+        );
+    }
+
+    #[tokio::test]
+    async fn counts_disjoint_provider_cache_reads_in_the_known_baseline() {
+        let usage = Usage::new(10, 4, 5862).with_cache_read_input_tokens(5848);
+        let mut agent = Agent::builder()
+            .model(mock(vec![vec![text("Hello")]]))
+            .messages(after_usage(usage))
+            .printer(false)
+            .build()
+            .unwrap();
+        assert_eq!(
+            projections(&mut agent, Vec::<ContentBlock>::new()).await,
+            [Some(5862)]
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_undefined_projected_input_tokens_when_estimation_fails() {
+        let model = mock(vec![vec![text("Hello")]]);
+        let mut agent = test_agent(fixed(&model, None));
+        assert_eq!(projections(&mut agent, "Hi").await, [None]);
+    }
+
+    #[tokio::test]
+    async fn estimates_delta_for_new_messages_after_last_assistant() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn_with(
+            vec![tool_use("add", "id-1", json!({}))],
+            MockTurnOptions {
+                usage: Some(Usage::new(100, 30, 130)),
+                ..MockTurnOptions::default()
+            },
+        );
+        model.add_turn(vec![text("Done")]);
+        let mut agent = Agent::builder()
+            .model(fixed(&model, Some(50)))
+            .tools([add_tool()])
+            .printer(false)
+            .build()
+            .unwrap();
+        assert_eq!(
+            projections(&mut agent, "Use the tool").await,
+            [Some(50), Some(180)]
+        );
+    }
+
+    #[tokio::test]
+    async fn uses_baseline_from_prior_invocation_on_second_invoke() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn_with(
+            vec![text("First response")],
+            MockTurnOptions {
+                usage: Some(Usage::new(200, 50, 250)),
+                ..MockTurnOptions::default()
+            },
+        );
+        model.add_turn(vec![text("Second response")]);
+        let mut agent = test_agent(fixed(&model, Some(15)));
+        agent.invoke("First question").await.unwrap();
+        assert_eq!(projections(&mut agent, "Second question").await, [Some(265)]);
+    }
+}
+
+mod cycle_duration {
+    use super::*;
+    use std::time::Duration;
+
+    use crate::hooks::AfterToolsEvent;
+
+    fn assert_one_cycle_of(result: &AgentResult, duration: Duration) {
+        let metrics = result.metrics();
+        assert_eq!(metrics.cycle_count(), 1);
+        assert_eq!(metrics.total_duration(), duration);
+        assert_eq!(metrics.average_cycle_time(), duration);
+        let cycles = metrics.latest_agent_invocation().unwrap().cycles();
+        assert_eq!(cycles.len(), 1);
+        assert_eq!(cycles[0].duration(), duration);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn includes_the_completed_cycle_duration_in_the_returned_result_metrics() {
+        let slow = FunctionTool::new("slowTool", "Slow.", |_input: JsonValue, _ctx| async move {
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            Ok::<_, ToolError>("Done")
+        });
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn_with(
+            vec![tool_use("slowTool", "tool-1", json!({}))],
+            MockTurnOptions {
+                usage: Some(Usage::new(10, 5, 15)),
+                ..MockTurnOptions::default()
+            },
+        );
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([slow])
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.add_hook(|event: &mut AfterToolsEvent<'_>| {
+            event.set_end_turn(crate::hooks::EndTurn::Requested);
+        });
+
+        let result = agent.invoke("Test").await.unwrap();
+
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_one_cycle_of(&result, Duration::from_millis(60));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn includes_the_cycle_duration_when_the_model_ends_the_turn_without_tools() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn_with(
+            vec![text("Hello")],
+            MockTurnOptions {
+                delay: Some(Duration::from_millis(60)),
+                ..MockTurnOptions::default()
+            },
+        );
+        let mut agent = test_agent(model);
+
+        let result = agent.invoke("Test").await.unwrap();
+
+        assert_one_cycle_of(&result, Duration::from_millis(60));
+    }
 }
 
 mod hooks {
     use super::*;
+
+    #[tokio::test]
+    async fn allows_retry_after_cancel_on_before_tool_call_event() {
+        let calls = Arc::new(Mutex::new(0));
+        let tool_calls = Arc::clone(&calls);
+        let retry_tool = FunctionTool::new("retryTool", "Retry.", move |_input: JsonValue, _ctx| {
+            *tool_calls.lock().unwrap() += 1;
+            async move { Ok::<_, ToolError>("Success") }
+        });
+        let model = mock(vec![
+            vec![tool_use("retryTool", "tool-1", json!({}))],
+            vec![text("Done")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([retry_tool])
+            .printer(false)
+            .build()
+            .unwrap();
+        let before = Arc::new(Mutex::new(0));
+        let before_count = Arc::clone(&before);
+        agent.add_hook(move |event: &mut crate::hooks::BeforeToolCallEvent| {
+            let mut count = before_count.lock().unwrap();
+            *count += 1;
+            if *count == 1 {
+                event.set_cancel("Not yet");
+            }
+        });
+        let after_before = Arc::clone(&before);
+        agent.add_hook(move |event: &mut AfterToolCallEvent| {
+            if event.result().status() == &ToolResultStatus::Error && *after_before.lock().unwrap() == 1 {
+                event.set_retry(true);
+            }
+        });
+
+        let result = agent.invoke("Test").await.unwrap();
+
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(*before.lock().unwrap(), 2);
+        assert_eq!(*calls.lock().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn cancel_wins_over_selected_tool() {
+        let ran = Arc::new(Mutex::new(false));
+        let replacement_ran = Arc::clone(&ran);
+        let replacement: Arc<dyn crate::tools::Tool> = Arc::new(FunctionTool::new(
+            "replacementTool",
+            "Replacement.",
+            move |_input: JsonValue, _ctx| {
+                *replacement_ran.lock().unwrap() = true;
+                async move { Ok::<_, ToolError>("replacement") }
+            },
+        ));
+        let registry_tool = FunctionTool::new(
+            "registryTool",
+            "Registry.",
+            |_input: JsonValue, _ctx| async move { Ok::<_, ToolError>("registry") },
+        );
+        let model = mock(vec![
+            vec![tool_use("registryTool", "tool-1", json!({}))],
+            vec![text("Done")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([registry_tool])
+            .printer(false)
+            .build()
+            .unwrap();
+        let selected = Arc::clone(&replacement);
+        agent.add_hook(move |event: &mut crate::hooks::BeforeToolCallEvent| {
+            event.set_selected_tool(Arc::clone(&selected));
+            event.set_cancel("blocked");
+        });
+        let after_tools = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&after_tools);
+        agent.add_hook(move |event: &mut AfterToolCallEvent| {
+            seen.lock().unwrap().push(event.tool().cloned());
+        });
+
+        agent.invoke("Test").await.unwrap();
+
+        assert!(!*ran.lock().unwrap());
+        let after_tools = after_tools.lock().unwrap();
+        assert_eq!(after_tools.len(), 1);
+        assert!(
+            after_tools[0]
+                .as_ref()
+                .is_some_and(|tool| Arc::ptr_eq(tool, &replacement))
+        );
+    }
 
     #[tokio::test]
     async fn fire_in_ts_order_during_invoke_and_initialized_fires_once() {
@@ -930,6 +1265,114 @@ mod hooks {
         let mut agent = test_agent(mock(vec![vec![reasoning, text("answer")]]));
         let result = agent.invoke("Hi").await.unwrap();
         assert_eq!(result.to_string(), "💭 Reasoning:\n   think\nanswer");
+    }
+}
+
+/// Ported from strands-ts/src/agent/__tests__/agent.concurrent.test.ts (agent-level cases).
+mod concurrent {
+    use super::*;
+    use std::time::Duration;
+
+    use crate::hooks::BeforeToolCallEvent;
+    use crate::tools::ToolExecutor;
+
+    type Log = Arc<Mutex<Vec<String>>>;
+
+    /// A tool that logs its start and end, waiting on `barrier` (when set) in between.
+    fn gated(name: &'static str, log: &Log, barrier: Option<Arc<tokio::sync::Barrier>>) -> FunctionTool {
+        let log = Arc::clone(log);
+        FunctionTool::new(name, "Gated.", move |_input: JsonValue, _ctx| {
+            let log = Arc::clone(&log);
+            let barrier = barrier.clone();
+            async move {
+                log.lock().unwrap().push(format!("start {name}"));
+                if let Some(barrier) = barrier {
+                    barrier.wait().await;
+                }
+                tokio::task::yield_now().await;
+                log.lock().unwrap().push(format!("end {name}"));
+                Ok::<_, ToolError>(name)
+            }
+        })
+    }
+
+    fn two_tool_turn() -> Arc<MockMessageModel> {
+        mock(vec![
+            vec![
+                tool_use("toolA", "a1", json!({})),
+                tool_use("toolB", "b1", json!({})),
+            ],
+            vec![text("Done")],
+        ])
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn runs_tools_concurrently_by_default() {
+        let log = Log::default();
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let mut agent = Agent::builder()
+            .model(two_tool_turn())
+            .tools([
+                gated("toolA", &log, Some(Arc::clone(&barrier))),
+                gated("toolB", &log, Some(barrier)),
+            ])
+            .printer(false)
+            .build()
+            .unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(5), agent.invoke("Go")).await;
+
+        assert!(result.is_ok(), "both tools must run at once to pass the barrier");
+    }
+
+    #[tokio::test]
+    async fn uses_a_reassigned_tool_executor_for_subsequent_tool_calls() {
+        let log = Log::default();
+        let mut agent = Agent::builder()
+            .model(two_tool_turn())
+            .tools([gated("toolA", &log, None), gated("toolB", &log, None)])
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.set_tool_executor(SequentialToolExecutor::new());
+        assert!(matches!(agent.tool_executor(), ToolExecutor::Sequential(_)));
+
+        agent.invoke("Go").await.unwrap();
+
+        assert_eq!(
+            *log.lock().unwrap(),
+            ["start toolA", "end toolA", "start toolB", "end toolB"]
+        );
+    }
+
+    #[tokio::test]
+    async fn retries_one_tool_independently_from_the_other() {
+        let log = Log::default();
+        let mut agent = Agent::builder()
+            .model(two_tool_turn())
+            .tools([gated("toolA", &log, None), gated("toolB", &log, None)])
+            .printer(false)
+            .build()
+            .unwrap();
+        let before_calls = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&before_calls);
+        agent.add_hook(move |event: &mut BeforeToolCallEvent| {
+            seen.lock().unwrap().push(event.tool_use().name().to_owned());
+        });
+        let retried = Arc::new(Mutex::new(false));
+        agent.add_hook(move |event: &mut AfterToolCallEvent| {
+            let mut retried = retried.lock().unwrap();
+            if event.tool_use().name() == "toolA" && !*retried {
+                *retried = true;
+                event.set_retry(true);
+            }
+        });
+
+        agent.invoke("Go").await.unwrap();
+
+        let before_calls = before_calls.lock().unwrap();
+        assert_eq!(before_calls.iter().filter(|name| *name == "toolA").count(), 2);
+        assert_eq!(before_calls.iter().filter(|name| *name == "toolB").count(), 1);
     }
 }
 

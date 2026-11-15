@@ -41,6 +41,16 @@ fn model() -> Arc<dyn Model> {
     Arc::new(MockMessageModel::new())
 }
 
+fn test_tool(name: &str) -> Arc<dyn Tool> {
+    Arc::new(crate::tools::FunctionTool::new(
+        name,
+        "Test tool",
+        |_input: crate::types::json::JsonValue, _context| async move {
+            Ok::<_, crate::tools::ToolError>("result")
+        },
+    ))
+}
+
 mod initialized_event {
     use super::*;
 
@@ -175,6 +185,31 @@ mod before_tool_call_event {
     }
 
     #[test]
+    fn creates_instance_with_correct_properties_when_tool_is_found() {
+        let agent = local_agent();
+        let tool = test_tool("testTool");
+        let event = event(&agent, Some(Arc::clone(&tool)));
+        assert_eq!(event.tool_use(), &tool_use());
+        assert!(event.tool().is_some_and(|found| Arc::ptr_eq(found, &tool)));
+        assert!(event.selected_tool().is_none());
+        assert_eq!(event.cancel(), None);
+        assert_eq!(event.agent().id(), "agent");
+    }
+
+    #[test]
+    fn allows_selected_tool_to_be_set_to_a_replacement_tool() {
+        let mut event = event(&local_agent(), None);
+        assert!(event.selected_tool().is_none());
+        let replacement = test_tool("replacement");
+        event.set_selected_tool(Arc::clone(&replacement));
+        assert!(
+            event
+                .selected_tool()
+                .is_some_and(|tool| Arc::ptr_eq(tool, &replacement))
+        );
+    }
+
+    #[test]
     fn allows_cancel_to_be_set_to_true() {
         let mut event = event(&local_agent(), None);
         event.set_cancel(Cancel::Requested);
@@ -255,6 +290,17 @@ mod after_tool_call_event {
     #[test]
     fn returns_true_for_should_reverse_callbacks() {
         const { assert!(<AfterToolCallEvent as Sealed>::REVERSE) };
+    }
+
+    #[test]
+    fn allows_retry_to_be_set_when_error_is_present() {
+        let error: Arc<dyn std::error::Error + Send + Sync> = Arc::new(std::io::Error::other("Tool failed"));
+        let mut event = event(&local_agent()).with_error(Some(error));
+        assert!(!event.retry());
+        event.set_retry(true);
+        assert!(event.retry());
+        event.set_retry(false);
+        assert!(!event.retry());
     }
 
     #[test]

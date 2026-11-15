@@ -649,24 +649,29 @@ async fn a_before_hook_can_rename_or_replace_the_tool() {
         ));
     });
 
-    let (_, batch) = run(
-        SequentialToolExecutor::new(),
-        fixture.input(vec![tool_use("old", "r1"), tool_use("old", "s1")]),
-    )
-    .await;
+    for executor in [ToolExecutor::default(), SequentialToolExecutor::new().into()] {
+        tool_names.lock().unwrap().clear();
+        let (_, batch) = run(
+            executor,
+            fixture.input(vec![tool_use("old", "r1"), tool_use("old", "s1")]),
+        )
+        .await;
 
-    // The renamed call keeps its model-issued id.
-    assert_eq!(
-        batch.results,
-        [success("r1", "new ran"), success("s1", "selected ran")]
-    );
-    assert_eq!(
-        *tool_names.lock().unwrap(),
-        [
-            ("r1".to_owned(), Some("new".to_owned())),
-            ("s1".to_owned(), Some("other".to_owned()))
-        ]
-    );
+        // The renamed call keeps its model-issued id.
+        assert_eq!(
+            batch.results,
+            [success("r1", "new ran"), success("s1", "selected ran")]
+        );
+        let mut names = tool_names.lock().unwrap().clone();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                ("r1".to_owned(), Some("new".to_owned())),
+                ("s1".to_owned(), Some("other".to_owned()))
+            ]
+        );
+    }
 }
 
 #[tokio::test]

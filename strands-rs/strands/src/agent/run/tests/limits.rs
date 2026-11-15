@@ -225,7 +225,17 @@ mod stop_reasons {
 mod invocation_context {
     use super::*;
 
-    fn sub_agent_tool(sub: Agent, forward_context: bool) -> FunctionTool {
+    /// The sub-agent as a tool, named like the relay the parent's model calls.
+    fn as_relay(sub: Agent) -> crate::agent::AgentAsTool {
+        sub.as_tool(crate::agent::AgentAsToolOptions {
+            name: Some("relay".into()),
+            ..Default::default()
+        })
+    }
+
+    /// A hand-written tool that runs the sub-agent forwarding only the invocation state; `as_tool`
+    /// always forwards the invocation context too.
+    fn sub_agent_tool(sub: Agent) -> FunctionTool {
         let sub = Arc::new(tokio::sync::Mutex::new(sub));
         FunctionTool::new(
             "relay",
@@ -235,11 +245,6 @@ mod invocation_context {
                 async move {
                     let options = InvokeOptions {
                         invocation_state: ctx.invocation_state().clone(),
-                        invocation_context: if forward_context {
-                            ctx.invocation_context().cloned()
-                        } else {
-                            None
-                        },
                         ..InvokeOptions::default()
                     };
                     let result = sub.lock().await.invoke_with("go", options).await.unwrap();
@@ -259,7 +264,7 @@ mod invocation_context {
         let model = Arc::new(MockMessageModel::new());
         for index in 1..=count {
             model.add_turn_with(
-                vec![tool_use("relay", &format!("tu-{index}"), json!({}))],
+                vec![tool_use("relay", &format!("tu-{index}"), json!({"input": "go"}))],
                 usage(1, 1, 2),
             );
         }
@@ -271,7 +276,7 @@ mod invocation_context {
         let parent_model = relay_model(3);
         let mut parent = Agent::builder()
             .model(Arc::clone(&parent_model))
-            .tools([sub_agent_tool(sub_agent(), false)])
+            .tools([sub_agent_tool(sub_agent())])
             .build()
             .unwrap();
         let result = parent
@@ -287,7 +292,7 @@ mod invocation_context {
         let parent_model = relay_model(2);
         let mut parent = Agent::builder()
             .model(Arc::clone(&parent_model))
-            .tools([sub_agent_tool(sub_agent(), true)])
+            .tools([as_relay(sub_agent())])
             .build()
             .unwrap();
         let result = parent
@@ -308,11 +313,14 @@ mod invocation_context {
             test_agent(model)
         };
         let model = Arc::new(MockMessageModel::new());
-        model.add_turn_with(vec![tool_use("relay", "tu-1", json!({}))], usage(1, 2, 3));
+        model.add_turn_with(
+            vec![tool_use("relay", "tu-1", json!({"input": "go"}))],
+            usage(1, 2, 3),
+        );
         model.add_turn_with(vec![text("outer done")], usage(1, 1, 2));
         let mut outer = Agent::builder()
             .model(model)
-            .tools([sub_agent_tool(inner, true)])
+            .tools([as_relay(inner)])
             .build()
             .unwrap();
         let result = outer.invoke("go").await.unwrap();

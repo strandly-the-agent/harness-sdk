@@ -110,6 +110,17 @@ mod add {
     }
 
     #[test]
+    fn counts_utf16_code_units_for_the_tool_name_length() {
+        let error = ToolRegistry::new()
+            .add(tool(&"\u{1F600}".repeat(33)))
+            .unwrap_err();
+        assert_eq!(
+            validation_message(&error),
+            "Tool name must be between 1 and 64 characters"
+        );
+    }
+
+    #[test]
     fn throws_tool_validation_error_for_a_tool_name_that_is_too_short() {
         let error = ToolRegistry::new().add(tool("")).unwrap_err();
         assert_eq!(
