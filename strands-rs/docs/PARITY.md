@@ -108,8 +108,8 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/plugins/__tests__/plugin.test.ts` | | 0/7 | |
 | `strands-ts/src/plugins/__tests__/registry.test.ts` | | 0/10 | |
 | `strands-ts/src/registry/__tests__/tool-registry.test.ts` | | 0/33 | |
-| `strands-ts/src/retry/__tests__/backoff-strategy.test.ts` | | 0/19 | |
-| `strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts` | | 0/15 | |
+| `strands-ts/src/retry/__tests__/backoff-strategy.test.ts` | `strands::retry::backoff_strategy::tests` | 15/19 | the attempt checks (`rejects attempts below 1` x3, `rejects non-integer attempts`) are ruled out by `BackoffContext::attempt: NonZeroU32` |
+| `strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts` | `strands::retry::default_model_retry_strategy::tests` | 13/15 | `registers an AfterModelCallEvent hook` (1) needs the Phase 3 hook registry; `rejects maxAttempts below 1` (1) is ruled out by `max_attempts: NonZeroU32` |
 | `strands-ts/src/sandbox/__tests__/default.test.node.ts` | | 0/4 | |
 | `strands-ts/src/sandbox/__tests__/errors.test.node.ts` | `strands::error::tests` | 9/9 | |
 | `strands-ts/src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts` | | 0/27 | |

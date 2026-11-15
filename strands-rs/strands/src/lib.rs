@@ -57,6 +57,7 @@ pub mod interrupt;
 mod logging;
 mod mime;
 pub mod models;
+pub mod retry;
 pub mod state_store;
 pub mod testing;
 pub mod types;

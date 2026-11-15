@@ -22,6 +22,7 @@ futures = "0.3.34"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
 tokio-util = { version = "0.7.20", default-features = false }
+fastrand = "2.5"
 
 # Data
 serde = { version = "1.0.229", features = ["derive"] }

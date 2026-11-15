@@ -4172,6 +4172,7 @@ dependencies = [
  "bon",
  "cedar-policy",
  "eventsource-stream",
+ "fastrand",
  "futures",
  "htmd",
  "http",
