@@ -19,7 +19,12 @@ if [ "$1" = "full" ]; then
     run feat_$f cargo check --locked --workspace --all-targets --no-default-features --features $f
   done
   run deny cargo deny --locked check
-  run conformance bash -c '(cd strands-rs/conformance && npm run generate) && git add -N strands-rs/conformance/fixtures && git diff --exit-code -- strands-rs/conformance/fixtures'
+  if [ ! -x node_modules/.bin/tsx ] || [ ! -d strands-ts/dist ]; then
+    echo "conformance: missing node_modules/.bin/tsx or strands-ts/dist; run 'npm ci && npm run build' at the repo root" | tee "$out/gate_conformance.txt"
+    echo "conformance: 1"; fail=1
+  else
+    run conformance bash -c '(cd strands-rs/conformance && npm run generate) && git add -N strands-rs/conformance/fixtures && git diff --exit-code -- strands-rs/conformance/fixtures'
+  fi
 fi
 grep -hE '^test result:' "$out/gate_test_all.txt" | awk '{p+=$4; f+=$6; i+=$8} END {print "tests all-features: passed="p" failed="f" ignored="i}'
 exit $fail
