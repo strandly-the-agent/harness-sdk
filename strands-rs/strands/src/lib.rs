@@ -29,11 +29,13 @@ extern crate self as strands;
 mod macros;
 
 pub mod agent;
+pub mod error;
 pub mod interrupt;
 pub mod mime;
 pub mod models;
 pub mod types;
 
+pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};

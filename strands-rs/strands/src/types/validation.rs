@@ -1,34 +1,13 @@
 //! Validation helpers (TS `types/validation.ts`).
 
-use std::fmt;
-
-/// The error a strict wire-data parser or a validation helper reports, carrying the TS message.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DataError(String);
-
-impl DataError {
-    pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
-    }
-
-    #[cfg_attr(not(test), expect(dead_code, reason = "read when `strands::Error` wraps it"))]
-    pub(crate) fn message(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for DataError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for DataError {}
+use crate::error::{DataError, Result};
 
 /// Returns the value, or the TS `ensureDefined` error naming the missing field.
 #[cfg_attr(not(test), expect(dead_code, reason = "used by the Bedrock provider"))]
-pub(crate) fn ensure_defined<T>(value: Option<T>, field_name: &str) -> Result<T, DataError> {
-    value.ok_or_else(|| DataError::new(format!("Expected {field_name} to be defined, but got undefined")))
+pub(crate) fn ensure_defined<T>(value: Option<T>, field_name: &str) -> Result<T> {
+    value.ok_or_else(|| {
+        DataError::new(format!("Expected {field_name} to be defined, but got undefined")).into()
+    })
 }
 
 #[cfg(test)]
@@ -55,8 +34,9 @@ mod tests {
     #[test]
     fn when_value_is_undefined_throws_error_with_field_name() {
         let error = ensure_defined(None::<&str>, "testField").unwrap_err();
+        assert_eq!(error.name(), "Error");
         assert_eq!(
-            error.message(),
+            error.to_string(),
             "Expected testField to be defined, but got undefined"
         );
     }

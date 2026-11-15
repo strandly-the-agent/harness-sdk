@@ -16,11 +16,14 @@
 //! `toolResult`, `reasoning`, `cachePoint`, `guardContent`, `audio`, `image`, `video`, `document`,
 //! `citations`, `injected`, `summary`).
 
+use std::sync::Arc;
+
 use serde::de::{self, DeserializeOwned};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
+use crate::error::{DataError, Result};
 use crate::models::streaming::{Metrics, Usage};
 use crate::types::citations::CitationsBlock;
 use crate::types::json::JsonValue;
@@ -28,7 +31,6 @@ use crate::types::media::{
     AudioBlock, DocumentBlock, ImageBlock, VideoBlock, base64_bytes, base64_bytes_opt,
 };
 use crate::types::tools::ToolResultStatus;
-use crate::types::validation::DataError;
 
 /// The author of a message (TS `Role`).
 #[non_exhaustive]
@@ -156,8 +158,11 @@ impl Message {
 
     /// Parses message data strictly (TS `Message.fromMessageData`): an unknown content block is an
     /// error. A missing or empty tracking id is minted.
-    #[cfg_attr(not(test), expect(dead_code, reason = "made public with `strands::Error`"))]
-    pub(crate) fn from_message_data(data: JsonValue) -> Result<Self, DataError> {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Data`](crate::Error::Data) when the data isn't a message or holds an unknown block.
+    pub fn from_message_data(data: JsonValue) -> Result<Self> {
         let mut raw: MessageRaw<JsonValue> = from_json(data)?;
         let content = std::mem::take(&mut raw.content)
             .into_iter()
@@ -239,9 +244,13 @@ pub enum ContentBlock {
 impl ContentBlock {
     /// Parses a content block strictly (TS `contentBlockFromData`): an unknown block, or unknown
     /// content inside a tool result, is an error.
-    #[cfg_attr(not(test), expect(dead_code, reason = "made public with `strands::Error`"))]
-    pub(crate) fn from_data(data: JsonValue) -> Result<Self, DataError> {
-        parse_content_block(data, OnUnknown::Reject)
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Data`](crate::Error::Data) when the data isn't a content block or holds an unknown
+    /// block.
+    pub fn from_data(data: JsonValue) -> Result<Self> {
+        Ok(parse_content_block(data, OnUnknown::Reject)?)
     }
 }
 
@@ -521,9 +530,13 @@ pub enum ToolResultContent {
 impl ToolResultContent {
     /// Parses tool result content strictly (TS `toolResultContentFromData`): unknown content is an
     /// error.
-    #[cfg_attr(not(test), expect(dead_code, reason = "made public with `strands::Error`"))]
-    pub(crate) fn from_data(data: JsonValue) -> Result<Self, DataError> {
-        parse_tool_result_content(data, OnUnknown::Reject)
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Data`](crate::Error::Data) when the data isn't tool result content or is of an
+    /// unknown type.
+    pub fn from_data(data: JsonValue) -> Result<Self> {
+        Ok(parse_tool_result_content(data, OnUnknown::Reject)?)
     }
 }
 
@@ -577,6 +590,10 @@ impl From<DocumentBlock> for ToolResultContent {
 }
 
 /// The result of a tool call (TS `ToolResultBlock`), written as `{"toolResult":{..}}`.
+///
+/// The [`error`](Self::error) behind a failed call is kept for hooks and the agent loop to inspect
+/// but never serialized. Equality compares it by identity: clones of a block are equal, two blocks
+/// holding separately created errors are not.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolResultBlock {
@@ -586,6 +603,17 @@ pub struct ToolResultBlock {
     pub status: ToolResultStatus,
     /// The result content.
     pub content: Vec<ToolResultContent>,
+    error: Option<ToolResultError>,
+}
+
+/// The runtime-only error of a tool result, shared so the block stays cheap to clone.
+#[derive(Debug, Clone)]
+struct ToolResultError(Arc<dyn std::error::Error + Send + Sync>);
+
+impl PartialEq for ToolResultError {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 impl ToolResultBlock {
@@ -611,7 +639,21 @@ impl ToolResultBlock {
             tool_use_id: tool_use_id.into(),
             status,
             content,
+            error: None,
         }
+    }
+
+    /// Sets the error that made the call fail (TS `error`). It is never serialized.
+    #[must_use]
+    pub fn with_error(mut self, error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> Self {
+        self.error = Some(ToolResultError(Arc::from(error.into())));
+        self
+    }
+
+    /// The error that made the call fail, when one was recorded.
+    #[must_use]
+    pub fn error(&self) -> Option<&(dyn std::error::Error + Send + Sync + 'static)> {
+        self.error.as_ref().map(|error| &*error.0)
     }
 }
 

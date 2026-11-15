@@ -8,3 +8,5 @@ This file lists every user-visible behaviour difference between the Rust SDK (`s
 | JSON nesting | No nesting limit beyond the call stack | Parsing stops at 128 nested arrays or objects | `serde_json`'s recursion limit guards against stack overflow |
 | Counters | `Usage`, `Metrics` and citation positions are `number` | `u64`; a fractional value fails to load | Integer types keep integers free of a `.0` suffix; TS never writes fractions there |
 | MIME lookup | `toMimeType('constructor')` returns an object-prototype function | Returns `None` | TS looks up a plain object literal, so prototype keys match |
+| Concurrent invocation | A second `invoke` while one runs throws `ConcurrentInvocationError` | No such error; `invoke` borrows the agent mutably, so a concurrent call doesn't compile | The borrow checker rules the case out; callers who share an agent wrap it in `Arc<Mutex<Agent>>` |
+| Tool result errors | `ToolResultBlock.error` holds the thrown value, checked with `instanceof` | `error()` returns `&(dyn std::error::Error + Send + Sync)`; finding the concrete type takes a downcast | A tool can fail with any error type, not only `strands::Error` |

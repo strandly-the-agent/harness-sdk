@@ -8,6 +8,7 @@ use tracing::span::{Attributes, Id, Record};
 use tracing::{Event, Metadata, Subscriber};
 
 use super::*;
+use crate::error::ToolNotFoundError;
 use crate::types::citations::{Citation, CitationGeneratedContent, CitationLocation, CitationSourceContent};
 use crate::types::media::{
     AudioFormat, AudioSource, DocumentFormat, DocumentSource, ImageFormat, ImageSource,
@@ -546,7 +547,8 @@ fn throws_error_for_unknown_content_block_type() {
         json!({ "role": "user", "content": [{ "unknownType": { "data": "value" } }] }),
     )
     .unwrap_err();
-    assert_eq!(error.message(), "Unknown ContentBlockData type");
+    assert_eq!(error.to_string(), "Unknown ContentBlockData type");
+    assert_eq!(error.name(), "Error");
 }
 
 fn saved_data() -> JsonValue {
@@ -604,11 +606,11 @@ fn content_block_from_saved_data_keeps_unknown_content_inside_a_tool_result_and_
 fn content_block_from_data_still_throws_on_unknown_content_inside_a_tool_result() {
     let data = json!({ "toolResult": { "toolUseId": "tool-1", "status": "success", "content": [{ "toolReference": {} }] } });
     assert_eq!(
-        ContentBlock::from_data(data).unwrap_err().message(),
+        ContentBlock::from_data(data).unwrap_err().to_string(),
         "Unknown ToolResultContentData type"
     );
     let error = ToolResultContent::from_data(json!({ "toolReference": {} })).unwrap_err();
-    assert_eq!(error.message(), "Unknown ToolResultContentData type");
+    assert_eq!(error.to_string(), "Unknown ToolResultContentData type");
 }
 
 #[test]
@@ -955,7 +957,7 @@ fn guard_content_block_rejects_neither_or_both_parts() {
     );
     let strict = ContentBlock::from_data(json!({ "guardContent": {} })).unwrap_err();
     assert_eq!(
-        strict.message(),
+        strict.to_string(),
         "GuardContentBlock must have either text or image content"
     );
 }
@@ -992,5 +994,31 @@ fn limit_stop_message_matches_ts() {
     assert_eq!(
         limit_stop_message("agent", &StopReason::LimitTurns),
         "Agent 'agent' stopped early (limitTurns): a limit on this call was reached, so its answer is incomplete"
+    );
+}
+
+#[test]
+fn tool_result_block_does_not_serialize_error_field() {
+    let block = ToolResultBlock::new("123", ToolResultStatus::Error, vec!["Error".into()])
+        .with_error(std::io::Error::other("Test error"));
+    assert_eq!(
+        to_json(&block),
+        json!({ "toolResult": { "toolUseId": "123", "status": "error", "content": [{ "text": "Error" }] } })
+    );
+}
+
+#[test]
+fn tool_result_block_keeps_the_error_and_compares_it_by_identity() {
+    let block = ToolResultBlock::new("123", ToolResultStatus::Error, vec!["Error".into()])
+        .with_error(ToolNotFoundError::new("weather"));
+    assert_eq!(block.error().unwrap().to_string(), "Tool 'weather' not found");
+    assert_eq!(block.clone(), block);
+    let fresh = ToolResultBlock::new("123", ToolResultStatus::Error, vec!["Error".into()])
+        .with_error(ToolNotFoundError::new("weather"));
+    assert_ne!(fresh, block);
+    assert!(
+        ToolResultBlock::new("123", ToolResultStatus::Error, vec![])
+            .error()
+            .is_none()
     );
 }
