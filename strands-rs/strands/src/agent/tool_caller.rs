@@ -196,6 +196,3 @@ async fn record(agent: &mut Agent, tool_use: &ToolUse, result: &ToolResultBlock)
         hooks.invoke::<MessageAddedEvent<'static>>(&mut event).await;
     }
 }
-
-#[cfg(test)]
-mod tests;

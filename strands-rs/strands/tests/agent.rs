@@ -460,7 +460,7 @@ async fn cancels_through_the_invoke_cancel_signal() {
 
     assert_eq!(result.stop_reason(), StopReason::Cancelled);
     assert_eq!(texts(result.last_message()), ["Cancelled by user"]);
-    assert_eq!(model.call_count(), 0);
+    assert!(model.requests().is_empty());
 }
 
 #[test]

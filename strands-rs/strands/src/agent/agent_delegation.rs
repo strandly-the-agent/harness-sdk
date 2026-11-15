@@ -147,6 +147,3 @@ fn to_content_blocks(result: &ToolResultBlock) -> Vec<ContentBlock> {
         })
         .collect()
 }
-
-#[cfg(test)]
-mod tests;

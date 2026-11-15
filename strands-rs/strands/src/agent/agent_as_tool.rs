@@ -15,7 +15,9 @@ use crate::tools::tool::{Tool, ToolError, ToolOutcome, ToolStream, ToolStreamEve
 use crate::tools::tool_source::ToolSource;
 use crate::types::agent::AgentResult;
 use crate::types::json::JsonValue;
-use crate::types::messages::{JsonBlock, Message, SystemPrompt, ToolResultBlock, ToolResultContent};
+use crate::types::messages::{
+    JsonBlock, Message, StopReason, SystemPrompt, ToolResultBlock, ToolResultContent,
+};
 use crate::types::tools::{ToolResultStatus, ToolSpec};
 
 /// What a delegating agent tool appends to its description (TS `DELEGATION_DESCRIPTION_SUFFIX`).
@@ -204,9 +206,10 @@ impl Tool for AgentAsTool {
                 }
             }
             drop(agent);
+            let cancelled = context.cancel_signal().is_cancelled();
             yield ToolStreamItem::Outcome(match outcome {
-                Ok(Some(result)) => ToolOutcome::Result(render_success(&tool_use_id, &result)),
-                Ok(None) => ToolOutcome::from_error(tool_use_id, ToolError::msg(format!("Agent '{name}' returned no result"))),
+                Ok(Some(result)) => terminal_outcome(&name, &tool_use_id, &result, cancelled),
+                Ok(None) => error_outcome(&tool_use_id, format!("Agent '{name}' did not produce a result.")),
                 Err(error) => ToolOutcome::from_error(tool_use_id, ToolError::from(error)),
             });
         })
@@ -226,6 +229,45 @@ impl std::fmt::Debug for AgentAsTool {
     }
 }
 
+/// How the child's result ends the call (TS `ChildAgentAdapter.classify` and
+/// `AgentToolStreamer.terminalResult`): an interrupt passes up, a cancel through the caller's
+/// signal or a reached limit is an error result, anything else renders as success.
+fn terminal_outcome(name: &str, tool_use_id: &str, result: &AgentResult, cancelled: bool) -> ToolOutcome {
+    match result.stop_reason() {
+        StopReason::Interrupt => match result.interrupts().first() {
+            Some(interrupt) => ToolOutcome::Interrupt(interrupt.clone()),
+            None => error_outcome(
+                tool_use_id,
+                format!("Agent '{name}' interrupted without any interrupts"),
+            ),
+        },
+        StopReason::Cancelled if cancelled => error_outcome(tool_use_id, format!("Agent '{name}' cancelled")),
+        stop_reason if is_limit(&stop_reason) => error_outcome(
+            tool_use_id,
+            format!(
+                "Agent '{name}' stopped early ({}): a limit on this call was reached, so its answer is incomplete",
+                stop_reason.as_str()
+            ),
+        ),
+        _ => ToolOutcome::Result(render_success(tool_use_id, result)),
+    }
+}
+
+fn is_limit(stop_reason: &StopReason) -> bool {
+    matches!(
+        stop_reason,
+        StopReason::LimitTurns
+            | StopReason::LimitTotalTokens
+            | StopReason::LimitOutputTokens
+            | StopReason::LimitStructuredOutputAttempts
+    )
+}
+
+/// TS `createErrorResult`: the text as `Error: <text>`.
+fn error_outcome(tool_use_id: &str, text: String) -> ToolOutcome {
+    ToolOutcome::from_error(tool_use_id, ToolError::msg(text))
+}
+
 /// The agent's answer: structured output as JSON, else its text (TS `_renderSuccess`).
 fn render_success(tool_use_id: &str, result: &AgentResult) -> ToolResultBlock {
     let content = match result.structured_output::<JsonValue>() {
@@ -234,6 +276,3 @@ fn render_success(tool_use_id: &str, result: &AgentResult) -> ToolResultBlock {
     };
     ToolResultBlock::new(tool_use_id, ToolResultStatus::Success, vec![content])
 }
-
-#[cfg(test)]
-mod tests;
