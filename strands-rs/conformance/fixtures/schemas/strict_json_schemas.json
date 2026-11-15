@@ -1,0 +1,115 @@
+{
+  "refToDefsTarget": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/Obj",
+          "description": "d"
+        }
+      },
+      "$defs": {
+        "Obj": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "strict": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "d"
+        }
+      },
+      "$defs": {
+        "Obj": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "recursiveRefFromProperty": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/Node",
+          "description": "r"
+        }
+      },
+      "$defs": {
+        "Node": {
+          "type": "object",
+          "properties": {
+            "child": {
+              "$ref": "#/$defs/Node",
+              "description": "c"
+            }
+          }
+        }
+      }
+    },
+    "strict": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "object",
+          "properties": {
+            "child": {
+              "type": "object",
+              "properties": {
+                "child": {
+                  "$ref": "#/$defs/Node",
+                  "description": "c"
+                }
+              },
+              "additionalProperties": false,
+              "description": "c"
+            }
+          },
+          "additionalProperties": false,
+          "description": "r"
+        }
+      },
+      "$defs": {
+        "Node": {
+          "type": "object",
+          "properties": {
+            "child": {
+              "type": "object",
+              "properties": {
+                "child": {
+                  "$ref": "#/$defs/Node",
+                  "description": "c"
+                }
+              },
+              "additionalProperties": false,
+              "description": "c"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

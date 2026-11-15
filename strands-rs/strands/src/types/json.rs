@@ -92,6 +92,24 @@ fn escape_unit(bytes: &[u8], at: usize) -> Option<u32> {
     u32::from_str_radix(hex, 16).ok()
 }
 
+/// `keys` in JavaScript `Object.keys` order: array-index keys ascending, then the rest in their
+/// given order.
+pub(crate) fn js_key_order<'a>(keys: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut keys: Vec<&str> = keys.into_iter().collect();
+    keys.sort_by_key(|key| array_index(key).map_or((1, 0), |index| (0, index)));
+    keys
+}
+
+/// The index JavaScript reads from `key` when it is an array index: the canonical decimal form of an
+/// integer from 0 to 4294967294.
+fn array_index(key: &str) -> Option<u32> {
+    let canonical = key == "0" || !key.starts_with('0');
+    if !canonical || !key.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    key.parse::<u32>().ok().filter(|index| *index < u32::MAX)
+}
+
 /// Serializes `value` to the bytes JavaScript `JSON.stringify(value)` writes for the same JSON.
 ///
 /// `serde_json` already escapes strings as JavaScript does; this also writes non-integer numbers

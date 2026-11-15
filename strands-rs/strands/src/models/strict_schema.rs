@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use serde_json::Map;
 
 use crate::logging::warn_once;
-use crate::types::json::JsonValue;
+use crate::types::json::{JsonValue, js_key_order};
 
 const SCHEMA_MAP_KEYWORDS: [&str; 3] = ["$defs", "definitions", "properties"];
 const SCHEMA_LIST_KEYWORDS: [&str; 3] = ["anyOf", "allOf", "oneOf"];
@@ -45,23 +45,54 @@ pub(crate) fn child_schemas(schema: &Map<String, JsonValue>) -> Vec<&Map<String,
         .collect()
 }
 
-fn child_schemas_mut(schema: &mut Map<String, JsonValue>) -> Vec<&mut Map<String, JsonValue>> {
-    let mut children = Vec::new();
-    for (key, value) in schema.iter_mut() {
-        let key = key.as_str();
-        if SCHEMA_MAP_KEYWORDS.contains(&key) {
-            if let Some(map) = value.as_object_mut() {
-                children.extend(map.values_mut().filter_map(JsonValue::as_object_mut));
-            }
-        } else if SCHEMA_LIST_KEYWORDS.contains(&key) {
-            if let Some(list) = value.as_array_mut() {
-                children.extend(list.iter_mut().filter_map(JsonValue::as_object_mut));
-            }
-        } else if SCHEMA_VALUE_KEYWORDS.contains(&key) {
-            children.extend(value.as_object_mut());
+/// A step from a schema to one of its subschemas.
+enum Step {
+    Key(String),
+    Index(usize),
+}
+
+/// The steps from `schema` to each of its subschemas, in TS `childSchemas` order.
+fn child_steps(schema: &Map<String, JsonValue>) -> Vec<Vec<Step>> {
+    let key = |keyword: &str| Step::Key(keyword.to_owned());
+    let mut steps = Vec::new();
+    for keyword in SCHEMA_MAP_KEYWORDS {
+        if let Some(JsonValue::Object(map)) = schema.get(keyword) {
+            let children = js_key_order(map.keys().map(String::as_str));
+            steps.extend(
+                children
+                    .into_iter()
+                    .filter(|child| map.get(*child).is_some_and(JsonValue::is_object))
+                    .map(|child| vec![key(keyword), key(child)]),
+            );
         }
     }
-    children
+    for keyword in SCHEMA_LIST_KEYWORDS {
+        if let Some(JsonValue::Array(list)) = schema.get(keyword) {
+            steps.extend(
+                (0..list.len())
+                    .filter(|index| list[*index].is_object())
+                    .map(|index| vec![key(keyword), Step::Index(index)]),
+            );
+        }
+    }
+    steps.extend(
+        SCHEMA_VALUE_KEYWORDS
+            .into_iter()
+            .filter(|keyword| schema.get(*keyword).is_some_and(JsonValue::is_object))
+            .map(|keyword| vec![key(keyword)]),
+    );
+    steps
+}
+
+fn node_mut<'a>(root: &'a mut JsonValue, path: &[Step]) -> Option<&'a mut Map<String, JsonValue>> {
+    let mut current = root;
+    for step in path {
+        current = match step {
+            Step::Key(key) => current.as_object_mut()?.get_mut(key)?,
+            Step::Index(index) => current.as_array_mut()?.get_mut(*index)?,
+        };
+    }
+    current.as_object_mut()
 }
 
 fn is_object_type(schema: &Map<String, JsonValue>) -> bool {
@@ -77,22 +108,31 @@ fn is_object_type(schema: &Map<String, JsonValue>) -> bool {
 /// recursive `$ref` is left unresolved with a one-time warning.
 pub(crate) fn ensure_strict_json_schema(schema: &JsonValue) -> JsonValue {
     let mut copy = schema.clone();
-    if let JsonValue::Object(map) = &mut copy {
-        apply_strict(map, schema, &[]);
+    if copy.is_object() {
+        apply_strict(&mut copy, &mut Vec::new(), &[]);
     }
     copy
 }
 
-/// Refs resolve against the caller's original schema; every inlined copy is made strict again,
-/// so the result matches TS resolving against the schema while it is being rewritten.
-fn apply_strict(schema: &mut Map<String, JsonValue>, root: &JsonValue, inlining: &[String]) {
+/// Makes the subschema at `path` strict. Refs resolve against `root` as rewritten so far, so a
+/// target visited earlier is inlined in its strict form, as in TS.
+fn apply_strict(root: &mut JsonValue, path: &mut Vec<Step>, inlining: &[String]) {
+    let Some(schema) = node_mut(root, path) else {
+        return;
+    };
     if is_object_type(schema) && !schema.contains_key("additionalProperties") && !schema.contains_key("$ref")
     {
         schema.insert("additionalProperties".to_owned(), JsonValue::Bool(false));
     }
-    for child in child_schemas_mut(schema) {
-        apply_strict(child, root, inlining);
+    for steps in child_steps(schema) {
+        let depth = path.len();
+        path.extend(steps);
+        apply_strict(root, path, inlining);
+        path.truncate(depth);
     }
+    let Some(schema) = node_mut(root, path) else {
+        return;
+    };
     let Some(JsonValue::String(reference)) = schema.get("$ref") else {
         return;
     };
@@ -106,10 +146,12 @@ fn apply_strict(schema: &mut Map<String, JsonValue>, root: &JsonValue, inlining:
         ));
         return;
     }
-    let Some(resolved) = resolve_ref(root, &reference) else {
+    let Some(mut merged) = resolve_ref(root, &reference).cloned() else {
         return;
     };
-    let mut merged = resolved.clone();
+    let Some(schema) = node_mut(root, path) else {
+        return;
+    };
     for (key, value) in std::mem::take(schema) {
         merged.insert(key, value);
     }
@@ -117,7 +159,7 @@ fn apply_strict(schema: &mut Map<String, JsonValue>, root: &JsonValue, inlining:
     *schema = merged;
     let mut inlining = inlining.to_vec();
     inlining.push(reference);
-    apply_strict(schema, root, &inlining);
+    apply_strict(root, path, &inlining);
 }
 
 fn resolve_ref<'a>(root: &'a JsonValue, reference: &str) -> Option<&'a Map<String, JsonValue>> {

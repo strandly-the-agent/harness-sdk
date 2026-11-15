@@ -1,9 +1,12 @@
-//! Ported from strands-ts/src/models/__tests__/strict-schema.test.ts
+//! Ported from strands-ts/src/models/__tests__/strict-schema.test.ts. The `*_as_ts_writes_it` cases
+//! compare bytes with `JSON.stringify(ensureStrictJsonSchema(input))` from the pinned
+//! `strands-ts/dist/src/models/strict-schema.js`, run with `npx tsx` from the repo root; the
+//! conformance fixture `schemas/strict_json_schemas.json` pins the same cases.
 
 use serde_json::json;
 
 use super::{ensure_strict_json_schema, find_unsupported_strict_keywords};
-use crate::types::json::JsonValue;
+use crate::types::json::{JsonValue, to_string};
 
 #[test]
 fn adds_additional_properties_false_to_a_basic_object_and_does_not_mutate_the_original() {
@@ -383,4 +386,48 @@ fn does_not_treat_property_names_as_keywords() {
         "additionalProperties": false,
     }));
     assert!(keywords.is_empty());
+}
+
+#[test]
+fn inlines_a_ref_to_the_strict_form_of_its_target_as_ts_writes_it() {
+    let result = ensure_strict_json_schema(&json!({
+        "type": "object",
+        "properties": { "a": { "$ref": "#/$defs/Obj", "description": "d" } },
+        "$defs": { "Obj": { "type": "object", "properties": { "n": { "type": "string" } } } },
+    }));
+    assert_eq!(
+        to_string(&result).unwrap(),
+        r##"{"type":"object","properties":{"a":{"type":"object","properties":{"n":{"type":"string"}},"additionalProperties":false,"description":"d"}},"$defs":{"Obj":{"type":"object","properties":{"n":{"type":"string"}},"additionalProperties":false}},"additionalProperties":false}"##
+    );
+}
+
+#[test]
+fn inlines_a_recursive_ref_one_level_into_its_referrer_as_ts_writes_it() {
+    let result = ensure_strict_json_schema(&json!({
+        "type": "object",
+        "properties": { "root": { "$ref": "#/$defs/Node", "description": "r" } },
+        "$defs": {
+            "Node": { "type": "object", "properties": { "child": { "$ref": "#/$defs/Node", "description": "c" } } },
+        },
+    }));
+    assert_eq!(
+        to_string(&result).unwrap(),
+        r##"{"type":"object","properties":{"root":{"type":"object","properties":{"child":{"type":"object","properties":{"child":{"$ref":"#/$defs/Node","description":"c"}},"additionalProperties":false,"description":"c"}},"additionalProperties":false,"description":"r"}},"$defs":{"Node":{"type":"object","properties":{"child":{"type":"object","properties":{"child":{"$ref":"#/$defs/Node","description":"c"}},"additionalProperties":false,"description":"c"}},"additionalProperties":false}},"additionalProperties":false}"##
+    );
+}
+
+#[test]
+fn matches_the_strict_json_schemas_conformance_fixture() {
+    let fixture: JsonValue = serde_json::from_str(include_str!(
+        "../../../../conformance/fixtures/schemas/strict_json_schemas.json"
+    ))
+    .unwrap();
+    for (name, case) in fixture.as_object().unwrap() {
+        let strict = ensure_strict_json_schema(&case["input"]);
+        assert_eq!(
+            to_string(&strict).unwrap(),
+            to_string(&case["strict"]).unwrap(),
+            "{name}"
+        );
+    }
 }

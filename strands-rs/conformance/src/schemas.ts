@@ -3,6 +3,7 @@ import { pretty } from './out.js'
 const dist = '../../../strands-ts/dist/src'
 const sdk = await import(`${dist}/index.node.js`)
 const { zodSchemaToJsonSchema } = await import(`${dist}/tools/zod-utils.js`)
+const { ensureStrictJsonSchema } = await import(`${dist}/models/strict-schema.js`)
 const { z } = await import('zod')
 
 interface TreeNode {
@@ -97,5 +98,28 @@ pretty(
   {
     api: '`tool({ inputSchema: zod })`, `new FunctionTool(...)` `toolSpec`',
     note: '`ToolSpec` wire shape for Zod, JSON schema and schema-less tools',
+  }
+)
+
+const strictInputs: Record<string, object> = {
+  refToDefsTarget: {
+    type: 'object',
+    properties: { a: { $ref: '#/$defs/Obj', description: 'd' } },
+    $defs: { Obj: { type: 'object', properties: { n: { type: 'string' } } } },
+  },
+  recursiveRefFromProperty: {
+    type: 'object',
+    properties: { root: { $ref: '#/$defs/Node', description: 'r' } },
+    $defs: { Node: { type: 'object', properties: { child: { $ref: '#/$defs/Node', description: 'c' } } } },
+  },
+}
+pretty(
+  'schemas/strict_json_schemas.json',
+  Object.fromEntries(
+    Object.entries(strictInputs).map(([name, input]) => [name, { input, strict: ensureStrictJsonSchema(input) }])
+  ),
+  {
+    api: '`ensureStrictJsonSchema` (`models/strict-schema.ts`)',
+    note: 'Strict schemas whose `$ref` inlining depends on the keyword visit order and on resolving against the rewritten copy',
   }
 )

@@ -35,6 +35,7 @@ pub(crate) const COVERED: &[&str] = &[
     "persisted/stash_local_file/context/stash-session/scopes/agent/stash-agent/00000000-0000-4000-8000-000000000061_0",
     "persisted/stash_local_file/context/stash-session/scopes/agent/stash-agent/00000000-0000-4000-8000-000000000065_0",
     "persisted/stash_local_file/session/stash-session/scopes/agent/stash-agent/snapshots/snapshot_latest.json",
+    "schemas/strict_json_schemas.json",
     "schemas/tool_specs.json",
     "snapshots/take_snapshot.json",
     "snapshots/take_snapshot_empty_agent.json",

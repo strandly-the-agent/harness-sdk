@@ -39,6 +39,7 @@ type rather than produced by TS code, so they prove JSON shape only.
 | `persisted/stash_local_file/context/stash-session/scopes/agent/stash-agent/00000000-0000-4000-8000-000000000061_0` | compact | `ContextManager` stash and `SessionManager` over `LocalFileStorage` | Stash records (`context/<sessionId>/scopes/agent/<agentId>/<trackingId>_<index>`) and `data.stash` in the snapshot |
 | `persisted/stash_local_file/context/stash-session/scopes/agent/stash-agent/00000000-0000-4000-8000-000000000065_0` | compact | `ContextManager` stash and `SessionManager` over `LocalFileStorage` | Stash records (`context/<sessionId>/scopes/agent/<agentId>/<trackingId>_<index>`) and `data.stash` in the snapshot |
 | `persisted/stash_local_file/session/stash-session/scopes/agent/stash-agent/snapshots/snapshot_latest.json` | compact | `ContextManager` stash and `SessionManager` over `LocalFileStorage` | Stash records (`context/<sessionId>/scopes/agent/<agentId>/<trackingId>_<index>`) and `data.stash` in the snapshot |
+| `schemas/strict_json_schemas.json` | pretty | `ensureStrictJsonSchema` (`models/strict-schema.ts`) | Strict schemas whose `$ref` inlining depends on the keyword visit order and on resolving against the rewritten copy |
 | `schemas/tool_input_schemas.json` | pretty | `zodSchemaToJsonSchema` (`tools/zod-utils.ts`) | The tool input schema TS sends: Zod output with only `$schema` stripped |
 | `schemas/tool_specs.json` | pretty | `tool({ inputSchema: zod })`, `new FunctionTool(...)` `toolSpec` | `ToolSpec` wire shape for Zod, JSON schema and schema-less tools |
 | `schemas/zod_to_json_schema.json` | pretty | `z.toJSONSchema` (zod 4, root `node_modules`) | Raw Zod JSON Schema output, including `$schema`, for schema-normalization tests |
@@ -67,4 +68,4 @@ type rather than produced by TS code, so they prove JSON shape only.
 | `types/tool_choice.json` | pretty | `ToolChoice` (`tools/types.ts`) | Empty-object variants `{"auto":{}}` and `{"any":{}}`; the forced-tool form is also captured from a live run in `agent/structured_output.model_calls.json` (validity only) |
 | `types/usage_metrics.json` | pretty | `createEmptyUsage`, `accumulateUsage`, `totalPromptTokens` (`models/streaming.ts`), `AgentMetrics` | Usage and Metrics shapes; integer counters written without `.0` |
 
-60 fixtures.
+61 fixtures.
