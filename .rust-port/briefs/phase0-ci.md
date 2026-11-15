@@ -1,0 +1,18 @@
+You are implementing the Phase 0 item "CI workflows and ci.yml path filters (test-lint, MSRV, deny, doctests)" of the Strands Rust SDK. Work autonomously; the owner is unavailable.
+
+Read first: `.rust-port/PROMPT.md` section 3 (hard constraints), section 8.1 (workspace layout and workflow names), section 9.3 (gates script `.rust-port/gates.sh` — CI should run the same checks), section 11 item 27, and the Phase 0 "CI" bullets in section 12.
+
+Repo: `/mnt/workspace/harness-sdk`, branch `feat/rust-sdk` (checked out; never switch). Root `Cargo.toml` (virtual workspace, members `strands-rs/strands`, `strands-rs/strands-macros`, `harness-rs/strands-harness`), `deny.toml`, `rustfmt.toml`, `clippy.toml` already exist. MSRV toolchain is `1.96.0`.
+
+Deliverables (only these paths):
+- `.github/workflows/strands-rs-pr-and-push.yml` (calls test-lint and the security audit as reusable workflows),
+- `.github/workflows/strands-rs-test-lint.yml` (`workflow_call`: fmt check; clippy `--workspace --all-targets --all-features -D warnings` and with `--no-default-features`; tests both ways; `cargo doc --workspace --all-features --no-deps` with `RUSTDOCFLAGS=-D warnings`; doctests are part of cargo test; each provider feature alone compiles (`--no-default-features --features anthropic`, `openai`, `bedrock`, `mcp`, `otel`); an MSRV job `cargo +1.96.0 check --workspace --all-features --locked`; a conformance job that sets up Node from `.node-version`, runs `npm ci`, `npm run build`, then `cd strands-rs/conformance && npm run generate` and `git diff --exit-code -- strands-rs/conformance/fixtures`),
+- `.github/workflows/harness-rs-pr-and-push.yml` and `.github/workflows/harness-rs-test-lint.yml` (same shape scoped with `-p strands-harness`),
+- `.github/workflows/rust-security-audit.yml` (`workflow_call`, `cargo deny check` via `EmbarkStudios/cargo-deny-action` or installing cargo-deny),
+- edits to `.github/workflows/ci.yml`: add `strands-rs` and `harness-rs` areas exactly like the existing areas (dorny/paths-filter output + filter, a job calling the reusable workflow, `needs` of `ci-gate`, and the `re-actors/alls-green` `allowed-skips` list). Filters: strands-rs = `strands-rs/**/!(*.md)`, its own workflow files, `.github/workflows/ci.yml`, root `Cargo.toml`, `Cargo.lock`, `deny.toml`, `rustfmt.toml`, `clippy.toml`, and `strands-ts/src/**` (so TS wire changes rerun the conformance diff); harness-rs = `harness-rs/**/!(*.md)`, its workflow files, the same root files, and `strands-rs/**` (it depends on the SDK).
+
+Mirror the existing workflows exactly: read `ci.yml`, `harness-py-pr-and-push.yml`, `harness-py-test-lint.yml`, `harness-ts-pr-and-push.yml`, `harness-ts-test-lint.yml`, `typescript-security-audit.yml` (permissions blocks, concurrency, runner label, triggers, naming style). Use `dtolnay/rust-toolchain` and `Swatinem/rust-cache`, SHA-pinned (with a version comment) like the newer workflows pin actions; look up real commit SHAs for the action tags with `git ls-remote https://github.com/<owner>/<repo> refs/tags/<tag>` (dereference annotated tags with `^{}`). Don't invent SHAs.
+
+Validate: YAML parses (`python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" f` — `pip install pyyaml` if needed), and download and run `actionlint` (a release binary from github.com/rhysd/actionlint into /tmp) on every new/changed workflow; fix what it reports in your files. Don't change unrelated workflows. Don't commit (the lead commits). Never print env vars or secrets.
+
+Report back (concise): files created/changed, the job list per workflow, the action SHAs used with their tags, validation results (yaml + actionlint output summary), anything you couldn't mirror and why.

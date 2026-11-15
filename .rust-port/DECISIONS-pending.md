@@ -24,4 +24,6 @@ Format: **P-N. Title.** Context. Options. Choice. TS reference (file:line). File
 
 **P-11. `extern crate self as strands` lands with the macros.** A placeholder `lib.rs` with it trips `unused_extern_crates` under `-D warnings`. It is added in Phase 3 with `#[tool]`, when vended tools use the macro inside the crate. Files: `strands-rs/strands/src/lib.rs`.
 
+**P-12. No Rust complexity adapter for `pr-metrics` in v0.1.** Rust isn't scored by `.github/scripts/pr-metrics` at the pin. A `rust-code-analysis-cli` adapter would fit its "parse, never execute" rule, but it adds a new CI binary that can't be validated here. Choice: skip it; listed in follow-ups. Files: none.
+
 **P-13. CI workflow files staged in `.rust-port/ci-workflows/`.** The token that persists this branch (P-9) is refused by GitHub for any commit touching `.github/workflows/` (no `workflow` scope). Options: drop the workflows, or keep them on the branch outside `.github/`. Choice: the five new workflows and the updated `ci.yml` live in `.rust-port/ci-workflows/`, validated with PyYAML and actionlint 1.7.12 but never run; moving them into `.github/workflows/` is a follow-up for someone with that scope. Files: `.rust-port/ci-workflows/*`.
