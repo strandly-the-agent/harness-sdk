@@ -33,6 +33,7 @@ pub mod error;
 pub mod interrupt;
 pub mod mime;
 pub mod models;
+pub mod retry;
 pub mod types;
 
 pub use error::{Error, Result};
