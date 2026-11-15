@@ -548,7 +548,6 @@ impl ToolAgent {
         Ok(self.inner.sandbox.get()?)
     }
 
-    #[expect(dead_code, reason = "read by the bash tool")]
     pub(crate) fn agent_sandbox(&self) -> &AgentSandbox {
         &self.inner.sandbox
     }

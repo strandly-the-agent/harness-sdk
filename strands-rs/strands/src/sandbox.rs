@@ -64,7 +64,6 @@ impl std::fmt::Debug for SandboxSource {
 pub(crate) struct AgentSandbox {
     sandbox: Option<Arc<dyn Sandbox>>,
     configured: bool,
-    #[expect(dead_code, reason = "read by the bash tool")]
     owner: Arc<()>,
 }
 
@@ -98,7 +97,6 @@ impl AgentSandbox {
     }
 
     /// Identifies the agent; shared by every view of one agent.
-    #[expect(dead_code, reason = "read by the bash tool")]
     pub(crate) fn owner(&self) -> &Arc<()> {
         &self.owner
     }

@@ -121,6 +121,7 @@ pub mod telemetry;
 pub mod testing;
 pub mod tools;
 pub mod types;
+pub mod vended_tools;
 
 #[doc(hidden)]
 pub mod __private {
