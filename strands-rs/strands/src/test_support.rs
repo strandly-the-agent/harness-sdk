@@ -1,24 +1,34 @@
 //! Test doubles shared by unit tests.
 
+use std::cell::RefCell;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::Once;
 
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id, Record};
 use tracing::{Event, Level, Metadata, Subscriber};
 
-/// Records the messages of `warn!` events emitted on the current thread.
-#[derive(Clone, Default)]
-pub(crate) struct WarnRecorder {
-    messages: Arc<Mutex<Vec<String>>>,
+thread_local! {
+    static CAPTURED: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
 }
 
+/// Records the messages of `warn!` events emitted on the current thread.
+///
+/// A single global subscriber, not a scoped one per test: a callsite first hit on another thread
+/// while no scoped subscriber was alive could cache `Interest::never` and drop the capture.
+pub(crate) struct WarnRecorder;
+
 impl WarnRecorder {
-    /// Runs `f` and returns its result with the warnings it logged.
+    /// Runs `f` and returns its result with the warnings it logged on this thread.
     pub(crate) fn capture<R>(f: impl FnOnce() -> R) -> (R, Vec<String>) {
-        let recorder = Self::default();
-        let result = tracing::subscriber::with_default(recorder.clone(), f);
-        let messages = recorder.messages.lock().unwrap().clone();
+        static INSTALL: Once = Once::new();
+        INSTALL.call_once(|| {
+            tracing::subscriber::set_global_default(WarnRecorder)
+                .expect("no other global subscriber in unit tests");
+        });
+        CAPTURED.with(|captured| *captured.borrow_mut() = Some(Vec::new()));
+        let result = f();
+        let messages = CAPTURED.with(|captured| captured.borrow_mut().take().unwrap_or_default());
         (result, messages)
     }
 }
@@ -53,7 +63,11 @@ impl Subscriber for WarnRecorder {
         let mut visitor = MessageVisitor(None);
         event.record(&mut visitor);
         if let Some(message) = visitor.0 {
-            self.messages.lock().unwrap().push(message);
+            CAPTURED.with(|captured| {
+                if let Some(messages) = captured.borrow_mut().as_mut() {
+                    messages.push(message);
+                }
+            });
         }
     }
 
