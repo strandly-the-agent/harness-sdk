@@ -68,7 +68,10 @@ pub(crate) struct EngineOptions {
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
     pub(crate) task_id: String,
-    pub(crate) tool_use_id: String,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "TS context field; the manager reads its record")
+    )]
     pub(crate) tool_name: String,
     pub(crate) invocation_state_id: String,
     /// The interrupt state of a task resumed after it required input.
@@ -78,6 +81,7 @@ pub(crate) struct ExecutionContext {
 
 /// How one execution ended (TS `InProcessTaskExecutionOutcome`).
 #[derive(Debug, Clone, PartialEq)]
+#[expect(clippy::large_enum_variant, reason = "one outcome per execution")]
 pub(crate) enum Outcome {
     Cancelled,
     Completed(ToolResultBlock),
@@ -248,6 +252,7 @@ impl Engine {
     /// # Errors
     ///
     /// `cancel` fired; the error carries its reason.
+    #[cfg(test)]
     pub(crate) async fn wait_for_idle(&self, cancel: Option<&CancelSignal>) -> Result<()> {
         loop {
             let notified = self.inner.idle.notified();
@@ -351,15 +356,12 @@ impl Engine {
     }
 
     fn start(&self, task_id: String, cancel_signal: CancelSignal) {
-        let working = match self.update(&task_id, |record| {
+        let Ok(Some(working)) = self.update(&task_id, |record| {
             record.status = TaskStatus::Working;
             true
-        }) {
-            Ok(Some(working)) => working,
-            _ => {
-                self.after_execution(&task_id);
-                return;
-            }
+        }) else {
+            self.after_execution(&task_id);
+            return;
         };
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             let failure = Failure::new(
@@ -392,7 +394,6 @@ impl Engine {
         }
         let context = ExecutionContext {
             task_id: task_id.clone(),
-            tool_use_id: working.tool_use_id,
             tool_name: working.tool_name,
             invocation_state_id: working.invocation_state_id,
             state: working.state,

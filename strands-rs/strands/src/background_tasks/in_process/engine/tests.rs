@@ -109,7 +109,7 @@ async fn prevents_task_update_callbacks_from_mutating_engine_owned_state() {
     let done = engine.get(&admitted.task_id).unwrap();
     assert_eq!(done.status, TaskStatus::Completed);
     assert_eq!(done.result, Some(result("HELLO")));
-    assert_eq!(engine.list(), [done.clone()]);
+    assert_eq!(engine.list(), std::slice::from_ref(&done));
     assert_eq!(
         *statuses.lock().unwrap(),
         [TaskStatus::Queued, TaskStatus::Working, TaskStatus::Completed]
@@ -220,7 +220,7 @@ async fn does_not_release_capacity_until_a_timed_out_execution_settles() {
     let engine = engine(
         move |context| {
             if context.tool_name == "hang" {
-                *slot.lock().unwrap() = Some(context.cancel_signal.clone());
+                *slot.lock().unwrap() = Some(context.cancel_signal);
                 return gate.wait();
             }
             Box::pin(async { Ok(completed("next")) })
@@ -318,7 +318,7 @@ async fn cancels_running_work_and_removes_it_before_execution_settles() {
     let (gate, slot) = (Arc::clone(&finish), Arc::clone(&seen));
     let engine = engine(
         move |context| {
-            *slot.lock().unwrap() = Some(context.cancel_signal.clone());
+            *slot.lock().unwrap() = Some(context.cancel_signal);
             gate.wait()
         },
         2,
@@ -422,7 +422,7 @@ async fn cancels_queued_work_without_executing_it() {
     let (gate, log) = (Arc::clone(&finish), Arc::clone(&executions));
     let engine = engine(
         move |context| {
-            log.lock().unwrap().push(context.tool_name.clone());
+            log.lock().unwrap().push(context.tool_name);
             gate.wait()
         },
         1,

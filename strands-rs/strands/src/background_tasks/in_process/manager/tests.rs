@@ -106,7 +106,7 @@ async fn executes_the_selected_tool_with_transient_invocation_state() {
         [json!({"text": "HELLO"})]
     );
     assert_eq!(manager.list(), [completed]);
-    manager.remove(&[admitted.task_id.clone()]).unwrap();
+    manager.remove(std::slice::from_ref(&admitted.task_id)).unwrap();
     assert_eq!(manager.get(&admitted.task_id), None);
 }
 

@@ -10,7 +10,9 @@ use indexmap::IndexMap;
 use tokio::sync::Notify;
 
 use super::super::types::{BackgroundTask, Failure, FailureType, TaskResult, TaskStatus, not_found};
-use super::engine::{Clock, Engine, EngineOptions, ExecutionContext, Outcome, TaskRecord, check_timer_delay};
+#[cfg(test)]
+use super::engine::check_timer_delay;
+use super::engine::{Clock, Engine, EngineOptions, ExecutionContext, Outcome, TaskRecord};
 use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
 use crate::interrupt::state::InterruptStateData;
@@ -154,6 +156,7 @@ impl Manager {
         to_background_task(&record)
     }
 
+    #[cfg(test)]
     pub(crate) fn get(&self, task_id: &str) -> Option<BackgroundTask> {
         self.engine.get(task_id).as_ref().map(to_background_task)
     }
@@ -181,6 +184,7 @@ impl Manager {
     /// # Errors
     ///
     /// The task doesn't exist.
+    #[cfg(test)]
     pub(crate) async fn wait(&self, task_id: &str) -> Result<BackgroundTask> {
         loop {
             let notified = self.shared.settled.notified();
@@ -194,11 +198,6 @@ impl Manager {
         }
     }
 
-    /// Waits until any task requires input or reaches a terminal status.
-    pub(crate) async fn settled(&self) {
-        self.shared.settled.notified().await;
-    }
-
     pub(crate) fn settled_notify(&self) -> &Notify {
         &self.shared.settled
     }
@@ -208,6 +207,7 @@ impl Manager {
     /// # Errors
     ///
     /// The timeout is invalid, or it elapsed (TS `BackgroundTaskTimeoutError`).
+    #[cfg(test)]
     pub(crate) async fn wait_for_idle(&self, timeout: Option<Duration>) -> Result<()> {
         let Some(timeout) = timeout else {
             return self.engine.wait_for_idle(None).await;
@@ -349,7 +349,7 @@ pub(crate) fn to_background_task(record: &TaskRecord) -> BackgroundTask {
         result: record.result.as_ref().map(|result| TaskResult {
             content: serde_json::to_value(ContentBlock::ToolResult(result.clone()))
                 .ok()
-                .and_then(|value| value["toolResult"]["content"].as_array().cloned())
+                .and_then(|value| value.get("toolResult")?.get("content")?.as_array().cloned())
                 .unwrap_or_default(),
         }),
         error: record.failure.clone(),

@@ -75,3 +75,8 @@ Every user-visible behaviour difference from the TypeScript SDK, with the reason
 | `AgentStreamStage` `next` run twice at once | Two interleaved runs of the loop | The second run fails with `the agent stream is already running; a middleware ran \`next\` twice at once` | The pass borrows the agent mutably; sequential reruns work |
 | A stage stream that ends without a result | A generator always returns (possibly `undefined`) | `the <stage> middleware chain ended without a result` | Streams have no return value |
 | An `ExecuteToolStage` handler that panics | A throwing handler fails the invocation | A panic becomes an error tool result, like a panicking tool; a returned error fails the invocation as in TS | Matches the tool panic contract (section 10) |
+| Background task cancel detection | A tool error named `AbortError` makes the task `cancelled` | A failed result after the task's own cancel signal fired makes it `cancelled`; any other failed result is `failed` | Rust errors carry no name |
+| Background tool view | Tools see the live agent | Tools see the `ToolAgent` view of the batch that submitted them, with the task's cancel signal and interrupt state | The live agent is borrowed by the running loop |
+| Background tool metrics | Recorded on the agent's meter | Recorded on the run's own telemetry, not in `AgentResult` metrics | Local traces and metrics share one handle in Rust |
+| Background task ids | `crypto.randomUUID()` (v4) | UUID v7 | Same as message tracking ids |
+| `BackgroundTasksConfig` tool selectors | A `Tool` or a registered name | A registered name (`"*"` for all) | TS reads `tool.name` anyway |

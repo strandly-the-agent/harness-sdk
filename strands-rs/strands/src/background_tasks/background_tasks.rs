@@ -17,7 +17,7 @@ use crate::hooks::{
     AfterInvocationEvent, BeforeModelCallEvent, HookCallbackOptions, HookOrder, HookRegistry,
     InitializedEvent,
 };
-use crate::interrupt::InterruptResponse;
+use crate::interrupt::{Interrupt, InterruptResponse};
 use crate::middleware::{InvokeModelStage, MiddlewareStage};
 use crate::plugins::Plugin;
 use crate::state_store::StateStore;
@@ -471,12 +471,7 @@ impl BackgroundTaskScheduler {
                 })
                 .collect();
             for task in &input_tasks {
-                let ids: Vec<&str> = task
-                    .interrupts
-                    .iter()
-                    .flatten()
-                    .map(|interrupt| interrupt.id())
-                    .collect();
+                let ids: Vec<&str> = task.interrupts.iter().flatten().map(Interrupt::id).collect();
                 let answers: Vec<InterruptResponse> = responses
                     .iter()
                     .map(|content| content.interrupt_response().clone())
@@ -520,7 +515,7 @@ impl BackgroundTaskScheduler {
             return;
         }
         let cancel = event.agent().cancel_signal().clone();
-        let mut tasks = self.tasks();
+        let mut tasks;
         loop {
             let notified = attached.manager.settled_notify().notified();
             tokio::pin!(notified);

@@ -12,6 +12,6 @@ mod background_tasks;
 pub(crate) mod in_process;
 mod types;
 
-pub(crate) use background_tasks::{BACKGROUND_TASKS_NAME, BackgroundTaskScheduler, Route};
+pub(crate) use background_tasks::{BackgroundTaskScheduler, Route};
 
 pub use types::{BackgroundTasks, BackgroundTasksConfig};
