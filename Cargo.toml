@@ -25,7 +25,7 @@ tokio-util = { version = "0.7.20", default-features = false }
 
 # Data
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = { version = "1.0.154", features = ["preserve_order"] }
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
 schemars = { version = "1.2.3", features = ["preserve_order"] }
 jsonschema = { version = "0.61.2", default-features = false }
 http = "1.5"
@@ -104,8 +104,6 @@ semicolon_if_nothing_returned = "warn"
 explicit_iter_loop = "warn"
 manual_let_else = "warn"
 match_same_arms = "warn"
-must_use_candidate = "allow"
-module_name_repetitions = "allow"
 cast_possible_truncation = "warn"
 cast_sign_loss = "warn"
 cast_lossless = "warn"
@@ -115,3 +113,10 @@ uninlined_format_args = "warn"
 doc_markdown = "warn"
 missing_errors_doc = "warn"
 large_futures = "warn"
+string_slice = "deny"
+indexing_slicing = "warn"
+cast_possible_wrap = "warn"
+cast_precision_loss = "warn"
+disallowed_types = "deny"
+exhaustive_enums = "deny"
+exhaustive_structs = "deny"

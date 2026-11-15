@@ -14,7 +14,7 @@ homepage.workspace = true
 authors.workspace = true
 
 [features]
-default = ["bedrock", "anthropic", "openai", "mcp"]
+default = ["bedrock", "anthropic", "openai", "mcp", "otel"]
 bedrock = ["strands/bedrock"]
 anthropic = ["strands/anthropic"]
 openai = ["strands/openai"]
@@ -42,6 +42,7 @@ tempfile.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true

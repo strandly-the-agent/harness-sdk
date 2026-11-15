@@ -1,6 +1,11 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
 allow-dbg-in-tests = true
 allow-print-in-tests = true
 doc-valid-idents = ["OpenAI", "OpenTelemetry", "TypeScript", "JavaScript", "GitHub", "SageMaker", "LiteLLM", "DynamoDB", ".."]
+disallowed-types = [
+  { path = "std::any::Any", reason = "the public API never requires Any or downcasting; use a typed trait or enum" },
+  { path = "std::any::TypeId", reason = "the public API never requires TypeId or downcasting; use a typed trait or enum" },
+]
