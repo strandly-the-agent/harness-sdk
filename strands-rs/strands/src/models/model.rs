@@ -317,7 +317,7 @@ pub trait Model: Send + Sync + 'static {
     }
 
     /// Everything the SDK knows about the configured model, resolved on each call. Layers, later
-    /// ones winning: the shared model info for the model id, temporary messages off (a provider
+    /// ones winning: the shared model info for [`Model::model_id`], temporary messages off (a provider
     /// that supports them turns them back on), the `context_window_limit` config value, and the
     /// `model_info` config override.
     ///
@@ -325,7 +325,9 @@ pub trait Model: Send + Sync + 'static {
     /// the user's `get_config().model_info` over those. Don't call [`Model::stateful`] from the
     /// override; it calls this.
     fn model_info(&self) -> ModelInfo {
-        base_model_info(&self.get_config())
+        let mut config = self.get_config();
+        config.model_id = self.model_id();
+        base_model_info(&config)
     }
 
     /// Whether the model keeps conversation state server-side, so the agent sends only the latest
@@ -380,7 +382,8 @@ pub trait Model: Send + Sync + 'static {
 }
 
 /// The default [`Model::model_info`] for `config`: the shared model info for its model id,
-/// temporary messages off, its `context_window_limit`, then its `model_info` override.
+/// temporary messages off, its `context_window_limit`, then its `model_info` override. The default
+/// [`Model::model_info`] sets that model id to [`Model::model_id`] first.
 #[must_use]
 pub fn base_model_info(config: &BaseModelConfig) -> ModelInfo {
     let layer = ModelInfo {

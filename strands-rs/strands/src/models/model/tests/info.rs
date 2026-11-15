@@ -71,6 +71,39 @@ impl Model for LayeredProvider {
     }
 }
 
+/// A provider whose model id comes from somewhere other than its config.
+struct RenamedProvider(TestModelProvider);
+
+impl Model for RenamedProvider {
+    fn stream(&self, request: ModelRequest) -> BoxStream<'static, crate::Result<ModelStreamEvent>> {
+        self.0.stream(request)
+    }
+
+    fn get_config(&self) -> BaseModelConfig {
+        self.0.get_config()
+    }
+
+    fn update_config(&self, config: BaseModelConfig) {
+        self.0.update_config(config);
+    }
+
+    fn model_id(&self) -> Option<String> {
+        Some("us.anthropic.claude-sonnet-4-6".to_owned())
+    }
+}
+
+#[test]
+fn resolves_the_shared_model_info_by_an_overridden_model_id() {
+    let model = RenamedProvider(test_provider());
+    assert_eq!(model.get_config().model_id.as_deref(), Some("test-model"));
+    let info = model.model_info();
+    assert_eq!(info.limits.unwrap().context_window, Some(1_000_000));
+    assert_eq!(
+        info.capabilities.unwrap().prompt_caching,
+        Some(PromptCaching::CachePoints)
+    );
+}
+
 #[test]
 fn returns_model_id_from_model_config() {
     let model = test_provider();
