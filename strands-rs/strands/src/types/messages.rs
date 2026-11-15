@@ -321,7 +321,7 @@ impl OnUnknown {
                     "block_keys=<{keys}> | unrecognized content block type | keeping it in history and leaving it \
                      out of model requests | if a newer sdk version saved it, upgrade to use it"
                 );
-                Ok(UnknownBlock::new(map))
+                Ok(UnknownBlock { data: map })
             }
         }
     }
@@ -1038,15 +1038,25 @@ wrapped_serde!(InjectedBlock, InjectedBlockDef, "injected");
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct UnknownBlock {
-    /// The block object as written.
-    pub data: serde_json::Map<String, JsonValue>,
+    data: serde_json::Map<String, JsonValue>,
 }
 
 impl UnknownBlock {
-    /// Wraps a raw block object.
+    /// Wraps a raw block object, or returns `None` when it holds a key of a known content block or
+    /// tool result content (such as `text` or `json`), which would load back as that type.
     #[must_use]
-    pub fn new(data: serde_json::Map<String, JsonValue>) -> Self {
-        Self { data }
+    pub fn new(data: serde_json::Map<String, JsonValue>) -> Option<Self> {
+        let known = CONTENT_BLOCK_KEYS
+            .iter()
+            .chain(&TOOL_RESULT_CONTENT_KEYS)
+            .any(|key| data.contains_key(*key));
+        (!known).then_some(Self { data })
+    }
+
+    /// Returns the block object as written.
+    #[must_use]
+    pub fn data(&self) -> &serde_json::Map<String, JsonValue> {
+        &self.data
     }
 }
 

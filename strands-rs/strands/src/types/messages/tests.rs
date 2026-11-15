@@ -363,7 +363,21 @@ fn creates_unknown_block_holding_the_raw_data() {
         .as_object()
         .unwrap()
         .clone();
-    assert_eq!(UnknownBlock::new(data.clone()).data, data);
+    assert_eq!(UnknownBlock::new(data.clone()).unwrap().data(), &data);
+}
+
+#[test]
+fn unknown_block_rejects_data_with_a_known_block_or_tool_result_content_key() {
+    for data in [
+        json!({ "text": "hello" }),
+        json!({ "toolUse": {}, "futureBlock": 1 }),
+        json!({ "json": { "a": 1 } }),
+    ] {
+        let JsonValue::Object(map) = data else {
+            panic!("expected an object")
+        };
+        assert_eq!(UnknownBlock::new(map), None);
+    }
 }
 
 #[test]
@@ -563,7 +577,7 @@ fn unknown(value: JsonValue) -> UnknownBlock {
     let JsonValue::Object(map) = value else {
         panic!("expected an object")
     };
-    UnknownBlock::new(map)
+    UnknownBlock::new(map).unwrap()
 }
 
 #[test]

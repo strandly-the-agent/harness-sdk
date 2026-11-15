@@ -92,7 +92,7 @@ fn message_and_content_blocks() {
             .with_provider("p")
             .with_signature("s")
             .into(),
-        UnknownBlock::new(unknown).into(),
+        UnknownBlock::new(unknown).unwrap().into(),
     ];
     let metadata = MessageMetadata::new()
         .with_usage(
