@@ -1,18 +1,20 @@
 //! Ported from strands-ts/src/models/__tests__/model.test.ts (the `summarize` cases).
 
 use serde_json::json;
+use tracing::Level;
 
-use super::{DEFAULT_SUMMARIZE_INSTRUCTIONS, SUMMARIZE_GUARD, SummarizeResult, unfinished_reply_warning};
+use super::{DEFAULT_SUMMARIZE_INSTRUCTIONS, SUMMARIZE_GUARD, SummarizeResult};
 use crate::agent::agent_metadata::AgentMetadata;
 use crate::cancel::{CancelOptions, CancelSignal};
 use crate::error::{Error, ModelError, Result};
+use crate::logging::capture::LogRecorder;
 use crate::models::model::{Model, SummarizeOptions};
 use crate::models::streaming::{ModelStreamEvent, Usage};
 use crate::testing::TestModelProvider;
 use crate::types::json::JsonValue;
 use crate::types::messages::{
-    CachePointBlock, ContentBlock, Message, Role, StopReason, SummaryBlock, SystemContentBlock, SystemPrompt,
-    TextBlock, ToolResultBlock, ToolUseBlock,
+    CachePointBlock, ContentBlock, Message, Role, SummaryBlock, SystemContentBlock, SystemPrompt, TextBlock,
+    ToolResultBlock, ToolUseBlock,
 };
 use crate::types::tools::{ToolResultStatus, ToolSpec};
 
@@ -178,14 +180,16 @@ async fn sends_no_system_prompt_and_the_default_instructions_for_instructions_in
 async fn returns_an_empty_summary_for_an_unfinished_reply_stop_reason() {
     for stop_reason in ["toolUse", "guardrailIntervened", "contentFiltered"] {
         let model = recording_model(&["canned"], stop_reason, None, Some(usage(10, 1)));
+        let recorder = LogRecorder::default();
+        let guard = recorder.set_default();
         let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
+        drop(guard);
         assert_eq!(result, empty(usage(10, 1)), "{stop_reason}");
-        let warning = unfinished_reply_warning("test-model", Some(&StopReason::from(stop_reason)));
         assert_eq!(
-            warning,
-            format!(
+            recorder.messages(Level::WARN),
+            [format!(
                 "model=<test-model>, stop_reason=<{stop_reason}> | summary reply did not finish | ignoring the reply"
-            )
+            )]
         );
     }
 }
