@@ -998,6 +998,1045 @@ mod legacy_sse {
     }
 }
 
+mod filters_and_prefixes {
+    use regex::Regex;
+
+    use super::*;
+
+    fn names(tools: &[McpTool]) -> Vec<String> {
+        tools.iter().map(|tool| Tool::name(tool).to_owned()).collect()
+    }
+
+    fn server_of(names: &[&str]) -> TestServer {
+        TestServer::with_tools(names.iter().map(|name| tool(name, None)).collect())
+    }
+
+    #[tokio::test]
+    async fn matches_strings_and_regexes_against_the_server_side_name_and_passes_the_renamed_tool_to_callbacks()
+     {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let callback = {
+            let seen = Arc::clone(&seen);
+            McpToolMatcher::callback(move |tool| {
+                seen.lock().expect("seen").push(Tool::name(tool).to_owned());
+                Tool::name(tool) == "server_callback_tool"
+            })
+        };
+        let server = server_of(&[
+            "exact",
+            "exact_extra",
+            "regex_allowed",
+            "xregex_unanchored",
+            "regex_rejected",
+            "callback_tool",
+        ]);
+        let client = server.client_with(McpClientOptions {
+            prefix: Some("server".to_owned()),
+            tool_filters: Some(McpToolFilters {
+                allowed: Some(vec![
+                    "exact".into(),
+                    Regex::new("regex_").expect("regex").into(),
+                    callback,
+                ]),
+                rejected: Some(vec!["regex_rejected".into()]),
+            }),
+            ..Default::default()
+        });
+        let tools = client.list_tools().await.expect("tools");
+        assert_eq!(
+            names(&tools),
+            ["server_exact", "server_regex_allowed", "server_callback_tool"]
+        );
+        assert_eq!(
+            *seen.lock().expect("seen"),
+            [
+                "server_exact_extra",
+                "server_xregex_unanchored",
+                "server_callback_tool"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn applies_allowed_before_rejected_with_rejected_winning_and_distinguishes_missing_from_empty_allowed()
+     {
+        let client = server_of(&["one", "two"]).client();
+        let list = |allowed: Option<Vec<McpToolMatcher>>, rejected: Option<Vec<McpToolMatcher>>| {
+            let client = client.clone();
+            async move {
+                let options = McpListToolsOptions {
+                    tool_filters: Some(McpToolFilters { allowed, rejected }),
+                    ..Default::default()
+                };
+                names(&client.list_tools_with(options).await.expect("tools"))
+            }
+        };
+        assert_eq!(list(None, Some(vec!["two".into()])).await, ["one"]);
+        assert!(list(Some(vec![]), None).await.is_empty());
+        assert!(
+            list(Some(vec!["one".into()]), Some(vec!["one".into()]))
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn inherits_constructor_defaults_while_explicit_empty_prefix_and_filters_disable_them() {
+        let mut one = tool("one", None);
+        one.input_schema = Arc::new(rmcp::model::JsonObject::new());
+        let client = TestServer::with_tools(vec![one, tool("two", None)]).client_with(McpClientOptions {
+            prefix: Some("default".to_owned()),
+            tool_filters: Some(McpToolFilters {
+                allowed: Some(vec!["one".into()]),
+                rejected: None,
+            }),
+            ..Default::default()
+        });
+        let defaulted = client.list_tools().await.expect("tools");
+        assert_eq!(names(&defaulted), ["default_one"]);
+        assert_eq!(
+            serde_json::to_value(defaulted[0].tool_spec()).expect("json"),
+            json!({"name": "default_one", "description": "Tool which performs one", "inputSchema": {}})
+        );
+        let disabled = McpListToolsOptions {
+            prefix: Some(String::new()),
+            tool_filters: Some(McpToolFilters::default()),
+        };
+        assert_eq!(
+            names(&client.list_tools_with(disabled).await.expect("tools")),
+            ["one", "two"]
+        );
+        let overridden = McpListToolsOptions {
+            prefix: Some("override".to_owned()),
+            tool_filters: Some(McpToolFilters {
+                allowed: Some(vec!["two".into()]),
+                rejected: None,
+            }),
+        };
+        assert_eq!(
+            names(&client.list_tools_with(overridden).await.expect("tools")),
+            ["override_two"]
+        );
+    }
+
+    #[tokio::test]
+    async fn filters_and_prefixes_sdk_results_and_invokes_tools_by_the_server_side_name() {
+        let mut tools = vec![tool("keep_one", None), tool("drop_one", None)];
+        let mut echo = tool("echo_args", None);
+        echo.name = "keep_two".into();
+        tools.push(echo);
+        let server = TestServer::with_tools(tools);
+        let client = server.client_with(McpClientOptions {
+            prefix: Some("server".to_owned()),
+            tool_filters: Some(McpToolFilters {
+                allowed: Some(vec![Regex::new("keep_").expect("regex").into()]),
+                rejected: None,
+            }),
+            ..Default::default()
+        });
+        let tools = client.list_tools().await.expect("tools");
+        assert_eq!(names(&tools), ["server_keep_one", "server_keep_two"]);
+        let _ = client.call_tool(&tools[1], json!({"value": 1})).await;
+        let calls = server.calls.lock().expect("calls").clone();
+        assert_eq!(calls[0].name, "keep_two");
+        assert_eq!(calls[0].arguments, Some(server::object(json!({"value": 1}))));
+    }
+
+    #[test]
+    fn skips_overlong_names_in_listed_tools_and_preserves_the_64_character_boundary() {
+        let boundary = "a".repeat(57);
+        let overlong = "a".repeat(58);
+        let ((tools, state), warnings) = crate::test_support::WarnRecorder::capture(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            runtime.block_on(async {
+                let client = server_of(&[&overlong, &boundary, "short"]).client_with(McpClientOptions {
+                    prefix: Some("server".to_owned()),
+                    continue_on_error: true,
+                    ..Default::default()
+                });
+                (
+                    names(&client.list_tools().await.expect("tools")),
+                    client.connection_state(),
+                )
+            })
+        });
+        assert_eq!(tools, [format!("server_{boundary}"), "server_short".to_owned()]);
+        assert_eq!(state, McpConnectionState::Connected);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        for detail in [
+            "test-server",
+            overlong.as_str(),
+            &format!("server_{overlong}"),
+            "65",
+            "64",
+            "prefix",
+            "skipping",
+        ] {
+            assert!(
+                warnings[0].contains(detail),
+                "{detail} missing from {}",
+                warnings[0]
+            );
+        }
+    }
+
+    async fn throws_an_actionable_error(continue_on_error: bool) {
+        let server = server_of(&["get_cloudformation_pre_deploy_validation_instructions"]);
+        let client = server.client_with(McpClientOptions {
+            prefix: Some("awslabs_aws-iac-mcp-server".to_owned()),
+            continue_on_error,
+            ..Default::default()
+        });
+        let error = client.list_tools().await.expect_err("overlong");
+        assert_eq!(error.name(), "ToolValidationError");
+        let message = error.to_string();
+        let regex = Regex::new("test-server.*get_cloudformation.*64.*prefix").expect("regex");
+        assert!(regex.is_match(&message), "{message}");
+    }
+
+    #[tokio::test]
+    async fn throws_an_actionable_error_with_continue_on_error_undefined() {
+        throws_an_actionable_error(false).await;
+    }
+
+    #[tokio::test]
+    async fn surfaces_tool_annotations_in_the_tool_spec() {
+        let mut annotations = rmcp::model::ToolAnnotations::default();
+        annotations.read_only_hint = Some(true);
+        annotations.destructive_hint = Some(false);
+        let mut annotated = tool("annotated", Some("A"));
+        annotated.annotations = Some(annotations);
+        let client = TestServer::with_tools(vec![annotated]).client();
+        let tools = client.list_tools().await.expect("tools");
+        assert_eq!(
+            serde_json::to_value(tools[0].tool_spec()).expect("json")["annotations"],
+            json!({"readOnlyHint": true, "destructiveHint": false})
+        );
+    }
+
+    #[tokio::test]
+    async fn omits_annotations_from_the_tool_spec_when_the_server_provides_none() {
+        let client = server_of(&["plain"]).client();
+        let tools = client.list_tools().await.expect("tools");
+        assert!(
+            serde_json::to_value(tools[0].tool_spec())
+                .expect("json")
+                .get("annotations")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn omits_annotations_from_the_tool_spec_when_the_server_provides_an_empty_annotations_object() {
+        let mut empty = tool("empty", None);
+        empty.annotations = Some(rmcp::model::ToolAnnotations::default());
+        let client = TestServer::with_tools(vec![empty]).client();
+        let tools = client.list_tools().await.expect("tools");
+        assert!(
+            serde_json::to_value(tools[0].tool_spec())
+                .expect("json")
+                .get("annotations")
+                .is_none()
+        );
+    }
+}
+
+mod pagination {
+    use super::*;
+
+    #[tokio::test]
+    async fn aggregates_every_tools_page() {
+        let server = TestServer {
+            page_size: Some(2),
+            ..TestServer::default()
+        };
+        let client = server.client();
+        assert_eq!(client.list_tools().await.expect("tools").len(), 9);
+        assert_eq!(server.list_calls.load(std::sync::atomic::Ordering::SeqCst), 5);
+    }
+
+    #[tokio::test]
+    async fn passes_list_max_pages_to_the_sdk_client_when_set() {
+        let server = TestServer {
+            page_size: Some(2),
+            ..TestServer::default()
+        };
+        let client = server.client_with(McpClientOptions {
+            list_max_pages: Some(3),
+            ..Default::default()
+        });
+        let error = client.list_tools().await.expect_err("cap");
+        assert_eq!(
+            error.to_string(),
+            "tools/list: exceeded listMaxPages (3); server pagination did not terminate"
+        );
+        assert_eq!(error.name(), "SdkError");
+    }
+
+    #[tokio::test]
+    async fn omits_list_max_pages_when_unset_so_the_sdk_default_applies() {
+        let mut tools = Vec::new();
+        for n in 0..70 {
+            tools.push(tool(&format!("t{n}"), None));
+        }
+        let server = TestServer {
+            page_size: Some(1),
+            ..TestServer::with_tools(tools)
+        };
+        let error = server.client().list_tools().await.expect_err("cap");
+        assert_eq!(
+            error.to_string(),
+            "tools/list: exceeded listMaxPages (64); server pagination did not terminate"
+        );
+        let uncapped = server.client_with(McpClientOptions {
+            list_max_pages: Some(0),
+            ..Default::default()
+        });
+        assert_eq!(uncapped.list_tools().await.expect("tools").len(), 70);
+    }
+
+    #[tokio::test]
+    async fn ends_the_walk_on_a_repeated_page() {
+        let server = TestServer {
+            endless_pages: true,
+            ..TestServer::default()
+        };
+        assert_eq!(server.client().list_tools().await.expect("tools").len(), 9);
+        assert_eq!(server.list_calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+}
+
+mod trace_context {
+    use super::*;
+    use crate::mcp::trace::{current_trace_context, inject_trace_context};
+
+    fn carrier() -> crate::types::json::JsonObject {
+        server::object(json!({"traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"}))
+    }
+
+    fn echoed_arguments(result: &serde_json::Value) -> serde_json::Value {
+        serde_json::from_str(result["content"][0]["text"].as_str().expect("text")).expect("json")
+    }
+
+    async fn call_with_trace(disable: bool, args: serde_json::Value) -> serde_json::Value {
+        let config = McpClientConfig {
+            transport: Some(TestServer::default().transport()),
+            options: McpClientOptions {
+                disable_mcp_instrumentation: disable,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let client = McpClient::with_trace_source(config, Arc::new(|| Some(carrier()))).expect("client");
+        let echo = tool_named(&client, "echo_args").await;
+        echoed_arguments(&client.call_tool(&echo, args).await.expect("result"))
+    }
+
+    #[tokio::test]
+    async fn sends_trace_context_in_the_arguments_meta() {
+        assert_eq!(
+            call_with_trace(false, json!({"a": 1})).await,
+            json!({"a": 1, "_meta": carrier()})
+        );
+    }
+
+    #[tokio::test]
+    async fn skips_trace_context_injection_when_disable_mcp_instrumentation_is_true() {
+        assert_eq!(call_with_trace(true, json!({"a": 1})).await, json!({"a": 1}));
+    }
+
+    #[test]
+    fn injects_trace_context_into_tool_arguments_when_active_span_exists() {
+        let args = inject_trace_context(server::object(json!({"a": 1})), Some(carrier()));
+        assert_eq!(
+            serde_json::Value::Object(args),
+            json!({"a": 1, "_meta": {"traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"}})
+        );
+    }
+
+    #[test]
+    fn merges_trace_context_with_existing_meta_field() {
+        let args = inject_trace_context(
+            server::object(json!({"a": 1, "_meta": {"progressToken": "p"}})),
+            Some(carrier()),
+        );
+        assert_eq!(
+            serde_json::Value::Object(args),
+            json!({"a": 1, "_meta": {"progressToken": "p", "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"}})
+        );
+    }
+
+    #[test]
+    fn passes_args_unchanged_when_no_active_span_exists() {
+        assert!(current_trace_context().is_none());
+        let args = inject_trace_context(server::object(json!({"a": 1})), current_trace_context());
+        assert_eq!(serde_json::Value::Object(args), json!({"a": 1}));
+    }
+}
+
+mod progress {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    fn recorder() -> (McpProgressCallback, Arc<Mutex<Vec<McpProgress>>>) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        (
+            Arc::new(move |progress| sink.lock().expect("seen").push(progress)),
+            seen,
+        )
+    }
+
+    fn steps() -> Vec<McpProgress> {
+        (1..=3)
+            .map(|step| McpProgress::new(f64::from(step), Some(3.0), Some(format!("step {step}"))))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn forwards_the_client_progress_callback_to_sdk_call_tool_and_delivers_progress_updates() {
+        let (callback, seen) = recorder();
+        let client = TestServer::default().client_with(McpClientOptions {
+            progress_callback: Some(callback),
+            ..Default::default()
+        });
+        let tool = tool_named(&client, "progress").await;
+        client.call_tool(&tool, json!({})).await.expect("result");
+        server::eventually(|| seen.lock().expect("seen").len() == 3).await;
+        assert_eq!(*seen.lock().expect("seen"), steps());
+    }
+
+    #[tokio::test]
+    async fn per_call_progress_callback_takes_precedence_over_the_client_callback() {
+        let (client_callback, client_seen) = recorder();
+        let (call_callback, call_seen) = recorder();
+        let client = TestServer::default().client_with(McpClientOptions {
+            progress_callback: Some(client_callback),
+            ..Default::default()
+        });
+        let tool = tool_named(&client, "progress").await;
+        let options = McpCallToolOptions {
+            progress_callback: Some(call_callback),
+            ..Default::default()
+        };
+        client
+            .call_tool_with(&tool, json!({}), options)
+            .await
+            .expect("result");
+        server::eventually(|| call_seen.lock().expect("seen").len() == 3).await;
+        assert!(client_seen.lock().expect("seen").is_empty());
+    }
+
+    #[tokio::test]
+    async fn delivers_progress_to_the_user_callback_when_a_call_timeout_is_also_set() {
+        let (callback, seen) = recorder();
+        let client = TestServer::default().client_with(McpClientOptions {
+            progress_callback: Some(callback),
+            ..Default::default()
+        });
+        let tool = tool_named(&client, "progress").await;
+        let options = McpCallToolOptions {
+            timeout: Some(std::time::Duration::from_secs(60)),
+            ..Default::default()
+        };
+        client
+            .call_tool_with(&tool, json!({}), options)
+            .await
+            .expect("result");
+        server::eventually(|| seen.lock().expect("seen").len() == 3).await;
+        assert_eq!(*seen.lock().expect("seen"), steps());
+    }
+
+    #[test]
+    fn logs_a_warning_when_the_progress_callback_throws() {
+        let (_, warnings) = crate::test_support::WarnRecorder::capture(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            runtime.block_on(async {
+                let client = TestServer::default().client_with(McpClientOptions {
+                    application_name: Some("TestApp".to_owned()),
+                    progress_callback: Some(Arc::new(|_| panic!("boom"))),
+                    ..Default::default()
+                });
+                let tool = tool_named(&client, "progress").await;
+                client.call_tool(&tool, json!({})).await.expect("result");
+                tokio::task::yield_now().await;
+            });
+        });
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning == "client=<TestApp>, error=<boom> | progress callback failed"),
+            "{warnings:?}"
+        );
+    }
+}
+
+mod elicitation {
+    use rmcp::model::{ElicitResult, ElicitationAction};
+
+    use super::*;
+
+    fn answering(
+        result: ElicitResult,
+    ) -> (ElicitationCallback, Arc<std::sync::Mutex<Vec<serde_json::Value>>>) {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let callback: ElicitationCallback = Arc::new(move |context, params| {
+            assert!(!context.cancel_signal().is_cancelled());
+            sink.lock()
+                .expect("seen")
+                .push(serde_json::to_value(&params).expect("json"));
+            let result = result.clone();
+            Box::pin(async move { Ok(result) })
+        });
+        (callback, seen)
+    }
+
+    async fn elicit(callback: ElicitationCallback) -> serde_json::Value {
+        let client = TestServer {
+            legacy_only: true,
+            ..TestServer::default()
+        }
+        .client_with(McpClientOptions {
+            elicitation_callback: Some(callback),
+            ..Default::default()
+        });
+        let tool = tool_named(&client, "elicit").await;
+        client.call_tool(&tool, json!({})).await.expect("result")
+    }
+
+    fn answer(action: ElicitationAction, content: Option<serde_json::Value>) -> ElicitResult {
+        let mut result: ElicitResult = serde_json::from_value(json!({"action": "decline"})).expect("result");
+        result.action = action;
+        result.content = content;
+        result
+    }
+
+    #[tokio::test]
+    async fn passes_elicitation_capabilities_to_client_when_callback_is_provided() {
+        let (callback, _) = answering(answer(ElicitationAction::Accept, None));
+        let client = TestServer::default().client_with(McpClientOptions {
+            elicitation_callback: Some(callback),
+            ..Default::default()
+        });
+        assert_eq!(
+            serde_json::to_value(client.inner_capabilities()).expect("json"),
+            json!({"elicitation": {"form": {}, "url": {}}})
+        );
+        assert_eq!(
+            serde_json::to_value(TestServer::default().client().inner_capabilities()).expect("json"),
+            json!({})
+        );
+    }
+
+    #[tokio::test]
+    async fn elicitation_handler_returns_accepted_result_with_content_and_exposes_the_abort_signal_at_mcp_req_signal()
+     {
+        let (callback, seen) = answering(answer(
+            ElicitationAction::Accept,
+            Some(json!({"confirmed": true})),
+        ));
+        let result = elicit(callback).await;
+        assert_eq!(
+            result["content"][0]["text"],
+            json!("{\"action\":\"accept\",\"content\":{\"confirmed\":true}}")
+        );
+        assert_eq!(seen.lock().expect("seen")[0]["message"], json!("Confirm?"));
+    }
+
+    #[tokio::test]
+    async fn elicitation_handler_returns_decline_result() {
+        let (callback, _) = answering(answer(ElicitationAction::Decline, None));
+        assert_eq!(
+            elicit(callback).await["content"][0]["text"],
+            json!("{\"action\":\"decline\"}")
+        );
+    }
+
+    #[tokio::test]
+    async fn elicitation_handler_returns_cancel_result() {
+        let (callback, _) = answering(answer(ElicitationAction::Cancel, None));
+        assert_eq!(
+            elicit(callback).await["content"][0]["text"],
+            json!("{\"action\":\"cancel\"}")
+        );
+    }
+
+    #[tokio::test]
+    async fn answers_input_required_elicitations_on_a_2026_07_28_connection() {
+        let (callback, seen) = answering(answer(ElicitationAction::Accept, Some(json!({"ok": true}))));
+        let mut tools = TestServer::default().tools.lock().expect("tools").clone();
+        tools.push(tool("elicit_mrtr", None));
+        let server = TestServer::with_tools(tools);
+        let client = server.client_with(McpClientOptions {
+            elicitation_callback: Some(callback),
+            ..Default::default()
+        });
+        let tool = tool_named(&client, "elicit_mrtr").await;
+        let result = client.call_tool(&tool, json!({})).await.expect("result");
+        assert_eq!(
+            client.negotiated_protocol_version().as_deref(),
+            Some("2026-07-28")
+        );
+        assert_eq!(
+            result["content"][0]["text"],
+            json!("{\"action\":\"accept\",\"content\":{\"ok\":true}}")
+        );
+        assert_eq!(seen.lock().expect("seen").len(), 1);
+        let calls = server.calls.lock().expect("calls").clone();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1].request_state.as_deref(), Some("state-1"));
+    }
+
+    #[tokio::test]
+    async fn elicitation_callback_errors_propagate() {
+        let callback: ElicitationCallback = Arc::new(|_, _| Box::pin(async { Err("User cancelled".into()) }));
+        let client = TestServer {
+            legacy_only: true,
+            ..TestServer::default()
+        }
+        .client_with(McpClientOptions {
+            elicitation_callback: Some(callback),
+            ..Default::default()
+        });
+        let tool = tool_named(&client, "elicit").await;
+        let error = client.call_tool(&tool, json!({})).await.expect_err("propagated");
+        assert!(error.to_string().contains("User cancelled"), "{error}");
+    }
+}
+
+mod tools_list_changed {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    type Calls = Arc<Mutex<Vec<(Vec<String>, Vec<String>)>>>;
+
+    fn record(client: &McpClient) -> Calls {
+        let calls = Calls::default();
+        let sink = Arc::clone(&calls);
+        client.set_on_tools_changed(Some(Arc::new(move |old, new: Vec<McpTool>| {
+            let new = new.iter().map(|tool| Tool::name(tool).to_owned()).collect();
+            sink.lock().expect("calls").push((old, new));
+        })));
+        calls
+    }
+
+    fn set_tools(server: &TestServer, names: &[&str]) {
+        *server.tools.lock().expect("tools") = names.iter().map(|name| tool(name, None)).collect();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn calls_on_tools_changed_with_old_names_and_new_tools_when_list_changes() {
+        let server = TestServer::with_tools(vec![tool("tool_a", None)]);
+        let client = server.client_with(McpClientOptions {
+            prefix: Some("server".to_owned()),
+            continue_on_error: true,
+            ..Default::default()
+        });
+        client.list_tools().await.expect("tools");
+        let calls = record(&client);
+        set_tools(&server, &["tool_a", "tool_b", &"a".repeat(58)]);
+        client.refresh_tools().await;
+        set_tools(&server, &[]);
+        client.refresh_tools().await;
+        set_tools(&server, &["tool_c"]);
+        client.refresh_tools().await;
+        let strings = |names: &[&str]| names.iter().map(|name| (*name).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            *calls.lock().expect("calls"),
+            [
+                (
+                    strings(&["server_tool_a"]),
+                    strings(&["server_tool_a", "server_tool_b"])
+                ),
+                (strings(&["server_tool_a", "server_tool_b"]), vec![]),
+                (vec![], strings(&["server_tool_c"])),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn updates_registered_tool_names_after_each_list_tools_call() {
+        let server = TestServer::with_tools(vec![tool("x", None), tool("y", None)]);
+        let client = server.client();
+        client.list_tools().await.expect("tools");
+        let calls = record(&client);
+        set_tools(&server, &["z"]);
+        client.refresh_tools().await;
+        let calls = calls.lock().expect("calls").clone();
+        assert_eq!(
+            calls,
+            [(vec!["x".to_owned(), "y".to_owned()], vec!["z".to_owned()])]
+        );
+    }
+
+    #[tokio::test]
+    async fn keeps_default_registered_names_after_an_overridden_listing() {
+        let client = TestServer::with_tools(vec![tool("tool_a", None)]).client_with(McpClientOptions {
+            prefix: Some("default".to_owned()),
+            ..Default::default()
+        });
+        client.list_tools().await.expect("tools");
+        let temporary = McpListToolsOptions {
+            prefix: Some("temporary".to_owned()),
+            ..Default::default()
+        };
+        client.list_tools_with(temporary).await.expect("tools");
+        let calls = record(&client);
+        client.refresh_tools().await;
+        assert_eq!(calls.lock().expect("calls")[0].0, ["default_tool_a"]);
+    }
+
+    #[tokio::test]
+    async fn reapplies_constructor_filters_and_prefix_when_refreshing() {
+        let server = TestServer::with_tools(vec![tool("tool_a", None), tool("tool_b", None)]);
+        let client = server.client_with(McpClientOptions {
+            prefix: Some("server".to_owned()),
+            tool_filters: Some(McpToolFilters {
+                allowed: Some(vec!["tool_a".into()]),
+                rejected: None,
+            }),
+            ..Default::default()
+        });
+        client.list_tools().await.expect("tools");
+        let calls = record(&client);
+        client.refresh_tools().await;
+        assert_eq!(
+            *calls.lock().expect("calls"),
+            [(vec!["server_tool_a".to_owned()], vec!["server_tool_a".to_owned()])]
+        );
+    }
+
+    #[tokio::test]
+    async fn does_not_throw_when_on_tools_changed_is_not_set() {
+        let server = TestServer::with_tools(vec![tool("tool_a", None)]);
+        let client = server.client();
+        client.list_tools().await.expect("tools");
+        set_tools(&server, &["tool_b"]);
+        client.refresh_tools().await;
+    }
+
+    #[test]
+    fn logs_warning_and_preserves_registry_when_list_tools_fails_during_refresh_name_length() {
+        let (calls, warnings) = crate::test_support::WarnRecorder::capture(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            runtime.block_on(async {
+                let server = TestServer::with_tools(vec![tool("tool_a", None)]);
+                let client = server.client_with(McpClientOptions {
+                    prefix: Some("server".to_owned()),
+                    ..Default::default()
+                });
+                client.list_tools().await.expect("tools");
+                let calls = record(&client);
+                set_tools(&server, &[&"a".repeat(58)]);
+                client.refresh_tools().await;
+                let after_failure = calls.lock().expect("calls").len();
+                set_tools(&server, &["tool_b"]);
+                client.refresh_tools().await;
+                (after_failure, calls.lock().expect("calls").clone())
+            })
+        });
+        assert_eq!(calls.0, 0);
+        assert_eq!(calls.1[0].0, ["server_tool_a"]);
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("failed to refresh tools")),
+            "{warnings:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn coalesces_notifications_received_during_an_in_flight_refresh_into_one_extra_refresh() {
+        let server = TestServer::default();
+        let client = server.client();
+        client.list_tools().await.expect("tools");
+        let calls = record(&client);
+        let before = server.list_calls.load(std::sync::atomic::Ordering::SeqCst);
+        let refreshes = (0..4).map(|_| client.refresh_tools());
+        futures::future::join_all(refreshes).await;
+        assert_eq!(calls.lock().expect("calls").len(), 2);
+        assert_eq!(
+            server.list_calls.load(std::sync::atomic::Ordering::SeqCst),
+            before + 2
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn debounces_server_notifications_into_one_refresh() {
+        let server = TestServer::default();
+        let client = server.client();
+        let tool = tool_named(&client, "change_tools").await;
+        let calls = record(&client);
+        for _ in 0..3 {
+            client.call_tool(&tool, json!({})).await.expect("result");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        server::eventually(|| !calls.lock().expect("calls").is_empty()).await;
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        assert_eq!(calls.lock().expect("calls").len(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_agent_replaces_its_mcp_tools_after_a_list_change() {
+        use crate::testing::MockMessageModel;
+        use crate::types::messages::{ContentBlock, TextBlock, ToolUseBlock};
+
+        let server = TestServer::default();
+        let client = server.client();
+        let model = MockMessageModel::new();
+        model.add_turn(vec![ContentBlock::from(ToolUseBlock::new(
+            "change_tools",
+            "t1",
+            json!({}),
+        ))]);
+        model.add_turn(vec![TextBlock::new("done").into()]);
+        let mut agent = crate::Agent::builder()
+            .model(model)
+            .tools(vec![ToolSource::from(client.clone())])
+            .printer(false)
+            .build()
+            .expect("agent");
+        agent.initialize().await.expect("initialize");
+        set_tools(&server, &["fresh"]);
+        agent.invoke("go").await.expect("first turn");
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        server::eventually(|| server.list_calls.load(std::sync::atomic::Ordering::SeqCst) >= 2).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let model = MockMessageModel::new();
+        model.add_turn(vec![TextBlock::new("again").into()]);
+        agent.set_model(Arc::new(model));
+        agent.invoke("again").await.expect("second turn");
+        assert!(agent.tool_registry().get("fresh").is_some());
+        assert!(agent.tool_registry().get("echo").is_none());
+    }
+}
+
+mod prompts_and_resources {
+    use super::*;
+
+    fn options(token: Option<&str>) -> McpListOptions {
+        McpListOptions {
+            pagination_token: token.map(str::to_owned),
+        }
+    }
+
+    #[tokio::test]
+    async fn connects_lazily_and_lists_prompts_with_the_raw_result_returned() {
+        let client = TestServer::default().client();
+        let result = client.list_prompts(options(None)).await.expect("prompts");
+        let names: Vec<&str> = result.prompts.iter().map(|prompt| prompt.name.as_str()).collect();
+        assert_eq!(names, ["greeting", "farewell"]);
+        assert!(result.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn fetches_a_single_prompts_page_when_pagination_token_is_set() {
+        let client = TestServer::default().client();
+        let result = client.list_prompts(options(Some("p2"))).await.expect("prompts");
+        assert_eq!(result.prompts.len(), 1);
+        assert_eq!(result.prompts[0].name, "farewell");
+    }
+
+    #[tokio::test]
+    async fn gets_a_prompt_by_name_with_arguments() {
+        let client = TestServer::default().client();
+        let arguments = [("name".to_owned(), "Ada".to_owned())].into_iter().collect();
+        let result = client
+            .get_prompt("greeting", Some(arguments))
+            .await
+            .expect("prompt");
+        assert_eq!(
+            serde_json::to_value(&result.messages[0]).expect("json")["content"]["text"],
+            json!("greeting: hello Ada")
+        );
+    }
+
+    #[tokio::test]
+    async fn gets_a_prompt_by_name_without_arguments() {
+        let client = TestServer::default().client();
+        let result = client.get_prompt("greeting", None).await.expect("prompt");
+        assert_eq!(
+            serde_json::to_value(&result.messages[0]).expect("json")["content"]["text"],
+            json!("greeting: hello world")
+        );
+    }
+
+    #[tokio::test]
+    async fn lists_resources_with_the_raw_result_returned() {
+        let client = TestServer::default().client();
+        let result = client.list_resources(options(None)).await.expect("resources");
+        let uris: Vec<&str> = result
+            .resources
+            .iter()
+            .map(|resource| resource.uri.as_str())
+            .collect();
+        assert_eq!(uris, ["test://static", "test://second"]);
+    }
+
+    #[tokio::test]
+    async fn fetches_a_single_resources_page_when_pagination_token_is_set() {
+        let client = TestServer::default().client();
+        let result = client
+            .list_resources(options(Some("r2")))
+            .await
+            .expect("resources");
+        assert_eq!(result.resources.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn reads_a_resource_by_string_uri() {
+        let client = TestServer::default().client();
+        let result = client.read_resource("test://static").await.expect("resource");
+        assert_eq!(
+            serde_json::to_value(&result.contents[0]).expect("json")["text"],
+            json!("contents of test://static")
+        );
+    }
+
+    #[tokio::test]
+    async fn lists_resource_templates_with_pagination() {
+        let client = TestServer::default().client();
+        let result = client
+            .list_resource_templates(options(None))
+            .await
+            .expect("templates");
+        assert_eq!(result.resource_templates[0].uri_template, "test://users/{id}");
+    }
+
+    #[tokio::test]
+    async fn throws_when_the_connection_previously_failed_under_continue_on_error() {
+        let gate = Gate::default();
+        gate.fail();
+        let client = gated_client(&gate, true);
+        let error = client.list_prompts(options(None)).await.expect_err("failed");
+        assert_eq!(
+            error.to_string(),
+            "MCP server failed to connect. Call connect(true) to retry."
+        );
+        assert!(client.read_resource("test://static").await.is_err());
+    }
+}
+
+mod log_routing {
+    #![allow(deprecated, reason = "MCP logging is deprecated in rmcp")]
+
+    use rmcp::model::{LoggingLevel, LoggingMessageNotificationParam};
+
+    use super::*;
+    use crate::mcp::handler::{log_level, log_message};
+
+    fn routed(level: LoggingLevel) -> tracing::Level {
+        log_level(level)
+    }
+
+    #[test]
+    fn routes_debug_level_to_logger_debug() {
+        assert_eq!(routed(LoggingLevel::Debug), tracing::Level::DEBUG);
+    }
+
+    #[test]
+    fn routes_info_level_to_logger_info() {
+        assert_eq!(routed(LoggingLevel::Info), tracing::Level::INFO);
+    }
+
+    #[test]
+    fn routes_notice_level_to_logger_info() {
+        assert_eq!(routed(LoggingLevel::Notice), tracing::Level::INFO);
+    }
+
+    #[test]
+    fn routes_warning_level_to_logger_warn() {
+        assert_eq!(routed(LoggingLevel::Warning), tracing::Level::WARN);
+    }
+
+    #[test]
+    fn routes_error_level_to_logger_error() {
+        assert_eq!(routed(LoggingLevel::Error), tracing::Level::ERROR);
+    }
+
+    #[test]
+    fn routes_critical_level_to_logger_error() {
+        assert_eq!(routed(LoggingLevel::Critical), tracing::Level::ERROR);
+    }
+
+    #[test]
+    fn routes_alert_level_to_logger_error() {
+        assert_eq!(routed(LoggingLevel::Alert), tracing::Level::ERROR);
+    }
+
+    #[test]
+    fn routes_emergency_level_to_logger_error() {
+        assert_eq!(routed(LoggingLevel::Emergency), tracing::Level::ERROR);
+    }
+
+    #[test]
+    fn includes_logger_name_and_data_in_the_message() {
+        let params = LoggingMessageNotificationParam::new(LoggingLevel::Info, json!({"key": "value"}))
+            .with_logger("my-logger");
+        assert_eq!(
+            log_message(&params),
+            "logger=<my-logger>, data=<{\"key\":\"value\"}> | MCP server log"
+        );
+        let unnamed = LoggingMessageNotificationParam::new(LoggingLevel::Info, json!("text"));
+        assert_eq!(
+            log_message(&unnamed),
+            "logger=<mcp>, data=<\"text\"> | MCP server log"
+        );
+    }
+
+    #[tokio::test]
+    async fn calls_custom_log_handler_when_provided() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let client = TestServer::default().client_with(McpClientOptions {
+            log_handler: Some(Arc::new(move |params| sink.lock().expect("seen").push(params))),
+            ..Default::default()
+        });
+        let tool = tool_named(&client, "log").await;
+        client.call_tool(&tool, json!({})).await.expect("result");
+        server::eventually(|| !seen.lock().expect("seen").is_empty()).await;
+        let params = seen.lock().expect("seen")[0].clone();
+        assert_eq!(params.logger.as_deref(), Some("srv"));
+        assert_eq!(params.data, json!({"note": "hi"}));
+    }
+
+    #[test]
+    fn routes_server_logs_through_tracing_by_default() {
+        let (_, warnings) = crate::test_support::WarnRecorder::capture(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            runtime.block_on(async {
+                let client = TestServer::default().client();
+                let tool = tool_named(&client, "log").await;
+                client.call_tool(&tool, json!({})).await.expect("result");
+                for _ in 0..10 {
+                    tokio::task::yield_now().await;
+                }
+            });
+        });
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning == "logger=<srv>, data=<{\"note\":\"hi\"}> | MCP server log"),
+            "{warnings:?}"
+        );
+    }
+}
+
 mod agent_integration {
     use super::*;
     use crate::Agent;
@@ -1097,6 +2136,66 @@ mod transport_resolution {
         assert_eq!(
             error(config),
             "McpClientConfig: \"auth\", \"authProvider\", and \"headers\" require \"url\" (not compatible with \"transport\")"
+        );
+    }
+
+    fn credentials() -> McpClientCredentials {
+        McpClientCredentials {
+            client_id: "id".to_owned(),
+            client_secret: "secret".to_owned(),
+            scopes: Some(vec!["read".to_owned(), "write".to_owned()]),
+        }
+    }
+
+    #[test]
+    fn constructs_client_credentials_provider_when_auth_is_provided() {
+        let mut config = config(false, Some("http://localhost:3000/mcp"));
+        config.auth = Some(credentials());
+        assert!(McpClient::new(config).is_ok());
+    }
+
+    #[test]
+    fn throws_when_auth_is_provided_with_transport() {
+        let mut config = config(true, None);
+        config.auth = Some(credentials());
+        assert_eq!(
+            error(config),
+            "McpClientConfig: \"auth\", \"authProvider\", and \"headers\" require \"url\" (not compatible with \"transport\")"
+        );
+    }
+
+    #[tokio::test]
+    async fn throws_when_both_auth_and_auth_provider_are_provided() {
+        let mut config = config(false, Some("http://localhost:3000/mcp"));
+        config.auth = Some(credentials());
+        config.auth_provider = Some(rmcp::transport::AuthClient::new(
+            reqwest::Client::new(),
+            rmcp::transport::AuthorizationManager::new("http://localhost:3000/mcp")
+                .await
+                .expect("manager"),
+        ));
+        assert_eq!(
+            error(config),
+            "McpClientConfig: provide either \"auth\" or \"authProvider\", not both"
+        );
+    }
+
+    #[test]
+    fn redacts_the_client_secret_in_debug_output() {
+        let debug = format!("{:?}", credentials());
+        assert!(!debug.contains("secret\""), "{debug}");
+        assert!(debug.contains("<redacted>"));
+    }
+
+    #[tokio::test]
+    async fn passes_both_auth_and_headers_to_transport() {
+        let mut config = config(false, Some("http://127.0.0.1:9/mcp"));
+        config.auth = Some(credentials());
+        config.headers = Some([("X-Test".to_owned(), "1".to_owned())].into_iter().collect());
+        let client = McpClient::new(config).expect("client");
+        assert!(
+            client.connect(false).await.is_err(),
+            "no server answers on the discard port"
         );
     }
 

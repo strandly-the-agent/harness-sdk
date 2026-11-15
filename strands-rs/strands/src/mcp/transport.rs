@@ -18,7 +18,7 @@ use super::handler::McpHandler;
 use super::sse::SseClientTransport;
 
 pub(crate) type Running = RunningService<RoleClient, McpHandler>;
-type ConnectFn = Arc<
+pub(crate) type ConnectFn = Arc<
     dyn Fn(McpHandler, ClientLifecycleMode) -> BoxFuture<'static, Result<Running, McpError>> + Send + Sync,
 >;
 pub(crate) type EnvLookup = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
@@ -156,6 +156,12 @@ impl McpTransport {
                 .boxed()
             }),
         }
+    }
+
+    /// A transport whose connection is produced by `connect`; the url-configured client uses
+    /// this to run the OAuth setup inside the connection attempt.
+    pub(crate) fn from_connect(kind: &'static str, connect: ConnectFn) -> Self {
+        Self { kind, connect }
     }
 
     pub(crate) fn connect(

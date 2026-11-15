@@ -28,18 +28,25 @@
 
 pub(crate) mod agent_tools;
 mod client;
+mod elicitation;
 mod error;
-mod handler;
+mod filters;
+pub(crate) mod handler;
 mod mcp_tool;
 mod sse;
+pub(crate) mod trace;
 mod transport;
 
 pub use rmcp;
 
 pub use client::{
-    DEFAULT_CLIENT_NAME, McpCallToolOptions, McpClient, McpClientConfig, McpClientOptions, McpConnectionState,
+    DEFAULT_CLIENT_NAME, McpAuthProvider, McpCallToolOptions, McpClient, McpClientConfig,
+    McpClientCredentials, McpClientOptions, McpConnectionState, McpListOptions, McpListToolsOptions,
+    McpLogHandler, McpProgress, McpProgressCallback, McpToolsChangedCallback,
 };
+pub use elicitation::{ElicitationCallback, ElicitationContext};
 pub use error::{McpError, McpErrorKind};
+pub use filters::{McpToolFilterCallback, McpToolFilters, McpToolMatcher};
 pub use mcp_tool::McpTool;
 pub use transport::{McpTransport, StdioServerParameters};
 

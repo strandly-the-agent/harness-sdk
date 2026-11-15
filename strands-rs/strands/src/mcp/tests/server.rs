@@ -139,6 +139,29 @@ impl TestServer {
     }
 }
 
+/// A 2026-07-28 `input_required` round: ask for confirmation, then echo the answer.
+fn input_required(request: &CallToolRequestParams) -> CallToolResponse {
+    if let Some(answer) = request
+        .input_responses
+        .as_ref()
+        .and_then(|responses| responses.get("confirm"))
+    {
+        return text(answer.to_string()).into();
+    }
+    let elicit: rmcp::model::ElicitRequest = serde_json::from_value(json!({
+        "method": "elicitation/create",
+        "params": {"mode": "form", "message": "Confirm?", "requestedSchema": {"type": "object", "properties": {}}}
+    }))
+    .expect("elicit request");
+    let requests = [(
+        "confirm".to_owned(),
+        rmcp::model::InputRequest::Elicitation(elicit),
+    )]
+    .into_iter()
+    .collect();
+    rmcp::model::InputRequiredResult::new(Some(requests), Some("state-1".to_owned())).into()
+}
+
 fn text(value: impl Into<String>) -> CallToolResult {
     CallToolResult::success(vec![Content::text(value)])
 }
@@ -270,6 +293,9 @@ impl ServerHandler for TestServer {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         self.calls.lock().expect("calls").push(request.clone());
+        if request.name == "elicit_mrtr" {
+            return Ok(input_required(&request));
+        }
         run_tool(&request, context).await.map(CallToolResponse::from)
     }
 

@@ -1,4 +1,8 @@
 //! `McpClient` (TS `mcp/client.ts`).
+#![expect(
+    deprecated,
+    reason = "MCP logging (SEP-2577) is deprecated in rmcp but part of the TS client"
+)]
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,8 +13,12 @@ use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
 use indexmap::IndexMap;
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientRequest, Implementation,
-    ListToolsRequest, PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerResult,
+    CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientRequest, ElicitationCapability,
+    FormElicitationCapability, GetPromptRequestParams, GetPromptResult, Implementation, InputRequest,
+    InputRequiredResult, InputResponses, ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult,
+    ListToolsRequest, LoggingMessageNotificationParam, PaginatedRequestParams, ProgressToken,
+    ProtocolVersion, ReadResourceRequestParams, ReadResourceResult, ServerCapabilities, ServerResult,
+    UrlElicitationCapability,
 };
 use rmcp::service::{ClientLifecycleMode, PeerRequestOptions};
 use rmcp::transport::StreamableHttpClientTransport;
@@ -18,12 +26,16 @@ use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig
 use rmcp::{Peer, RoleClient};
 use tracing::Instrument;
 
+use super::elicitation::{ElicitationCallback, ElicitationContext};
 use super::error::McpError;
+use super::filters::McpToolFilters;
 use super::handler::McpHandler;
 use super::mcp_tool::McpTool;
+use super::trace::{current_trace_context, inject_trace_context};
 use super::transport::{McpTransport, Running, header_map};
 use crate::cancel::CancelSignal;
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, ToolValidationError};
+use crate::tools::Tool;
 use crate::types::json::{JsonObject, JsonValue};
 
 /// The client name sent in the MCP handshake when `application_name` is unset.
@@ -32,6 +44,10 @@ pub const DEFAULT_CLIENT_NAME: &str = "strands-agents-rs-sdk";
 const DEFAULT_LIST_MAX_PAGES: u32 = 64;
 /// TS `MAX_TIMER_DELAY_MS`.
 const MAX_TIMER_DELAY: Duration = Duration::from_millis(2_147_483_647);
+const MAX_TOOL_NAME_LENGTH: usize = 64;
+const MRTR_MAX_ROUNDS: usize = 10;
+/// The MCP SDK `listChanged.tools.debounceMs`.
+const TOOLS_CHANGED_DEBOUNCE: Duration = Duration::from_millis(300);
 const FAILED_TO_CONNECT: &str = "MCP server failed to connect. Call connect(true) to retry.";
 
 /// The connection state of an [`McpClient`] (TS `McpConnectionState`).
@@ -46,12 +62,70 @@ pub enum McpConnectionState {
     Failed,
 }
 
+/// One progress notification for a tool call (TS `McpProgress`).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct McpProgress {
+    /// Progress so far.
+    pub progress: f64,
+    /// The total, when the server gives one.
+    pub total: Option<f64>,
+    /// A message, when the server gives one.
+    pub message: Option<String>,
+}
+
+impl McpProgress {
+    /// A progress value.
+    pub fn new(progress: f64, total: Option<f64>, message: Option<String>) -> Self {
+        Self {
+            progress,
+            total,
+            message,
+        }
+    }
+}
+
+/// Receives tool-call progress (TS `McpProgressCallback`). A panic is caught and logged.
+pub type McpProgressCallback = Arc<dyn Fn(McpProgress) + Send + Sync>;
+/// Receives server log messages (TS `logHandler`).
+pub type McpLogHandler = Arc<dyn Fn(LoggingMessageNotificationParam) + Send + Sync>;
+/// Receives the previously registered tool names and the freshly listed tools after a
+/// tools-list change (TS `onToolsChanged`).
+pub type McpToolsChangedCallback = Arc<dyn Fn(Vec<String>, Vec<McpTool>) + Send + Sync>;
+/// An OAuth-authorized HTTP client for the Streamable HTTP transport (TS `authProvider`).
+pub type McpAuthProvider = rmcp::transport::AuthClient<reqwest::Client>;
+
+/// OAuth 2.0 client-credentials for machine-to-machine auth (TS `McpClientCredentials`).
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct McpClientCredentials {
+    /// The client id.
+    pub client_id: String,
+    /// The client secret.
+    pub client_secret: String,
+    /// Scopes to request.
+    pub scopes: Option<Vec<String>>,
+}
+
+impl fmt::Debug for McpClientCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("McpClientCredentials")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"<redacted>")
+            .field("scopes", &self.scopes)
+            .finish()
+    }
+}
+
 /// Behavioural options shared by every client configuration (TS `McpClientOptions`).
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, bon::Builder)]
+#[derive(Clone, Default, bon::Builder)]
 #[builder(on(String, into))]
 pub struct McpClientOptions {
     /// The client name sent in the handshake; defaults to `strands-agents-rs-sdk`.
@@ -61,13 +135,42 @@ pub struct McpClientOptions {
     /// Skips injecting W3C trace context into tool-call arguments.
     #[builder(default)]
     pub disable_mcp_instrumentation: bool,
+    /// Prefix for agent-facing tool names, applied as `<prefix>_<toolName>`.
+    pub prefix: Option<String>,
+    /// Which tools this client exposes.
+    pub tool_filters: Option<McpToolFilters>,
+    /// Page cap for the no-token list methods, which aggregate every page; `0` disables the cap.
+    /// Defaults to 64.
+    pub list_max_pages: Option<u32>,
+    /// Progress for every tool call, including calls an agent makes; a per-call callback
+    /// takes precedence.
+    pub progress_callback: Option<McpProgressCallback>,
+    /// Answers server elicitation requests; when set, the client advertises elicitation
+    /// support (form and url modes).
+    pub elicitation_callback: Option<ElicitationCallback>,
     /// When `true`, connection failures and overlong prefixed names during tool listing are
     /// skipped with warnings.
     #[builder(default)]
     pub continue_on_error: bool,
-    /// Page cap for the no-token list methods, which aggregate every page; `0` disables the cap.
-    /// Defaults to 64.
-    pub list_max_pages: Option<u32>,
+    /// Receives server log messages; defaults to logging them through `tracing`.
+    pub log_handler: Option<McpLogHandler>,
+}
+
+impl fmt::Debug for McpClientOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("McpClientOptions")
+            .field("application_name", &self.application_name)
+            .field("application_version", &self.application_version)
+            .field("disable_mcp_instrumentation", &self.disable_mcp_instrumentation)
+            .field("prefix", &self.prefix)
+            .field("tool_filters", &self.tool_filters)
+            .field("list_max_pages", &self.list_max_pages)
+            .field("progress_callback", &self.progress_callback.is_some())
+            .field("elicitation_callback", &self.elicitation_callback.is_some())
+            .field("continue_on_error", &self.continue_on_error)
+            .field("log_handler", &self.log_handler.is_some())
+            .finish()
+    }
 }
 
 /// Everything [`McpClient::new`] takes (TS `McpClientConfig`): a transport or a url, and the
@@ -76,13 +179,17 @@ pub struct McpClientOptions {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, bon::Builder)]
+#[derive(Clone, Default, bon::Builder)]
 #[builder(on(String, into))]
 pub struct McpClientConfig {
     /// A transport recipe. Mutually exclusive with `url`.
     pub transport: Option<McpTransport>,
     /// A server url; the client builds a Streamable HTTP transport for it.
     pub url: Option<String>,
+    /// Client credentials for OAuth machine-to-machine auth. Requires `url`.
+    pub auth: Option<McpClientCredentials>,
+    /// An OAuth-authorized HTTP client. Requires `url`; exclusive with `auth`.
+    pub auth_provider: Option<McpAuthProvider>,
     /// HTTP headers sent with every request. Requires `url`.
     pub headers: Option<IndexMap<String, String>>,
     /// The shared options.
@@ -90,18 +197,76 @@ pub struct McpClientConfig {
     pub options: McpClientOptions,
 }
 
+impl fmt::Debug for McpClientConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("McpClientConfig")
+            .field("transport", &self.transport)
+            .field("url", &self.url)
+            .field("auth", &self.auth)
+            .field("auth_provider", &self.auth_provider.is_some())
+            .field(
+                "headers",
+                &self
+                    .headers
+                    .as_ref()
+                    .map(|headers| headers.keys().collect::<Vec<_>>()),
+            )
+            .field("options", &self.options)
+            .finish()
+    }
+}
+
 /// Per-call options for [`McpClient::call_tool_with`] (TS `McpCallToolOptions`).
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, bon::Builder)]
+#[derive(Clone, Default, bon::Builder)]
 pub struct McpCallToolOptions {
     /// Cancels the in-flight request.
     pub cancel_signal: Option<CancelSignal>,
     /// Overall time limit for this call; progress notifications reset the idle timer. Without
     /// it, the default request timeout applies.
     pub timeout: Option<Duration>,
+    /// Progress for this call; takes precedence over the client's callback.
+    pub progress_callback: Option<McpProgressCallback>,
+}
+
+impl fmt::Debug for McpCallToolOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("McpCallToolOptions")
+            .field("cancel_signal", &self.cancel_signal)
+            .field("timeout", &self.timeout)
+            .field("progress_callback", &self.progress_callback.is_some())
+            .finish()
+    }
+}
+
+/// Overrides for [`McpClient::list_tools_with`] (TS `McpListToolsOptions`). An unset field uses
+/// the client's value; `Some("")` or empty filters disable it.
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(on(String, into))]
+pub struct McpListToolsOptions {
+    /// The prefix for this listing.
+    pub prefix: Option<String>,
+    /// The filters for this listing.
+    pub tool_filters: Option<McpToolFilters>,
+}
+
+/// Pagination for the prompt and resource list methods (TS `McpListOptions`).
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(on(String, into))]
+pub struct McpListOptions {
+    /// Fetch the single page after this cursor; without it, every page is aggregated.
+    pub pagination_token: Option<String>,
 }
 
 /// A client for one MCP server (TS `McpClient`).
@@ -126,6 +291,57 @@ pub(crate) struct Inner {
     connecting: Mutex<Option<(u64, SharedConnect)>>,
     connect_ids: AtomicU64,
     generation: AtomicU64,
+    /// Names from the last listing that used the client's own prefix and filters.
+    registered: Mutex<Vec<String>>,
+    refresh: Mutex<Refresh>,
+    on_tools_changed: Mutex<Option<McpToolsChangedCallback>>,
+    /// Bumped by every tools-list-changed notification; a refresh runs once it settles.
+    tools_changed: AtomicU64,
+    pub(crate) progress: Mutex<ProgressRoutes>,
+    pub(crate) trace_context: TraceSource,
+}
+
+pub(crate) type TraceSource = Arc<dyn Fn() -> Option<JsonObject> + Send + Sync>;
+
+#[derive(Default)]
+struct Refresh {
+    running: bool,
+    pending: bool,
+}
+
+/// Per-call progress callbacks by progress token. Notifications that arrive before their call
+/// registers are held briefly so none is lost to that race.
+#[derive(Default)]
+pub(crate) struct ProgressRoutes {
+    routes: std::collections::HashMap<ProgressToken, McpProgressCallback>,
+    early: std::collections::VecDeque<(ProgressToken, McpProgress)>,
+}
+
+const EARLY_PROGRESS_LIMIT: usize = 32;
+
+impl ProgressRoutes {
+    fn register(&mut self, token: ProgressToken, callback: McpProgressCallback) -> Vec<McpProgress> {
+        let (early, rest): (Vec<_>, Vec<_>) = self.early.drain(..).partition(|(held, _)| *held == token);
+        self.early = rest.into_iter().collect();
+        self.routes.insert(token, callback);
+        early.into_iter().map(|(_, progress)| progress).collect()
+    }
+
+    /// The callback for `token`, or `None` after holding the notification.
+    pub(crate) fn route(
+        &mut self,
+        token: &ProgressToken,
+        progress: &McpProgress,
+    ) -> Option<McpProgressCallback> {
+        if let Some(callback) = self.routes.get(token) {
+            return Some(Arc::clone(callback));
+        }
+        if self.early.len() >= EARLY_PROGRESS_LIMIT {
+            self.early.pop_front();
+        }
+        self.early.push_back((token.clone(), progress.clone()));
+        None
+    }
 }
 
 enum Conn {
@@ -145,8 +361,13 @@ impl McpClient {
     /// Both or neither of `transport` and `url` are set, `headers` come with a `transport`, or
     /// the url doesn't parse.
     pub fn new(config: McpClientConfig) -> Result<Self> {
-        let transport = resolve_transport(config.transport, config.url.as_deref(), config.headers)?;
-        let options = config.options;
+        Self::with_trace_source(config, Arc::new(current_trace_context))
+    }
+
+    /// [`new`](Self::new) with the trace-context seam the tests set.
+    pub(crate) fn with_trace_source(config: McpClientConfig, trace_context: TraceSource) -> Result<Self> {
+        let options = config.options.clone();
+        let transport = resolve_transport(config)?;
         let name = options
             .application_name
             .clone()
@@ -167,6 +388,12 @@ impl McpClient {
                 connecting: Mutex::new(None),
                 connect_ids: AtomicU64::new(0),
                 generation: AtomicU64::new(0),
+                registered: Mutex::default(),
+                refresh: Mutex::default(),
+                on_tools_changed: Mutex::default(),
+                tools_changed: AtomicU64::new(0),
+                progress: Mutex::default(),
+                trace_context,
             }),
         })
     }
@@ -285,16 +512,67 @@ impl McpClient {
         Ok(())
     }
 
-    /// The server's tools as [`McpTool`]s.
+    /// The server's tools as [`McpTool`]s, with the client's prefix and filters.
     ///
     /// # Errors
     ///
-    /// Connecting or listing failed.
+    /// As [`list_tools_with`](Self::list_tools_with).
     pub async fn list_tools(&self) -> Result<Vec<McpTool>> {
+        self.list_tools_with(McpListToolsOptions::default()).await
+    }
+
+    /// The server's tools, with `options` overriding the client's prefix and filters.
+    ///
+    /// A prefix renames tools for the agent only; tools are always called, and matched by name
+    /// and pattern filters, under their server-side name. Prefixed names longer than 64
+    /// characters are skipped with a warning under `continue_on_error`, and fail the listing
+    /// otherwise. With `continue_on_error` and a failed connection, the list is empty.
+    ///
+    /// # Errors
+    ///
+    /// Connecting or listing failed, or a prefixed name is too long (`ToolValidationError`).
+    pub async fn list_tools_with(&self, options: McpListToolsOptions) -> Result<Vec<McpTool>> {
         self.connect(false).await?;
         let Some(peer) = self.connected_peer()? else {
             return Ok(Vec::new());
         };
+        let defaults = options.prefix.is_none() && options.tool_filters.is_none();
+        let prefix = options
+            .prefix
+            .or_else(|| self.inner.options.prefix.clone())
+            .unwrap_or_default();
+        let filters = options
+            .tool_filters
+            .or_else(|| self.inner.options.tool_filters.clone());
+        let mut tools = Vec::new();
+        for server_tool in self.server_tools(&peer).await? {
+            let name = if prefix.is_empty() {
+                server_tool.name.to_string()
+            } else {
+                let renamed = format!("{prefix}_{}", server_tool.name);
+                tracing::debug!("tool_rename=<{}->{renamed}> | renamed tool", server_tool.name);
+                renamed
+            };
+            let tool = McpTool::from_server_tool(name, &server_tool, self.clone());
+            if !filters
+                .as_ref()
+                .is_none_or(|filters| filters.includes(&tool, &server_tool.name))
+            {
+                continue;
+            }
+            if !prefix.is_empty() && Tool::name(&tool).chars().count() > MAX_TOOL_NAME_LENGTH {
+                self.overlong(&tool)?;
+                continue;
+            }
+            tools.push(tool);
+        }
+        if defaults {
+            *lock(&self.inner.registered) = tools.iter().map(|tool| Tool::name(tool).to_owned()).collect();
+        }
+        Ok(tools)
+    }
+
+    async fn server_tools(&self, peer: &Peer<RoleClient>) -> Result<Vec<rmcp::model::Tool>> {
         if self
             .inner
             .server_info()
@@ -302,8 +580,7 @@ impl McpClient {
         {
             return Ok(Vec::new());
         }
-        let max_pages = self.inner.list_max_pages();
-        let result = aggregate("tools/list", max_pages, |cursor| {
+        let result = aggregate("tools/list", self.inner.list_max_pages(), |cursor| {
             let peer = peer.clone();
             async move {
                 let request = ListToolsRequest::with_param(paginated(cursor));
@@ -316,11 +593,204 @@ impl McpClient {
             .boxed()
         })
         .await?;
-        Ok(result
-            .tools
-            .into_iter()
-            .map(|tool| McpTool::from_server_tool(tool.name.to_string(), &tool, self.clone()))
-            .collect())
+        Ok(result.tools)
+    }
+
+    /// An overlong prefixed name: an error, or a warning under `continue_on_error`.
+    fn overlong(&self, tool: &McpTool) -> Result<()> {
+        let name = Tool::name(tool);
+        let server = self
+            .server_version()
+            .map_or_else(|| "unknown".to_owned(), |version| version.name);
+        let message = format!(
+            "server=<{server}>, tool=<{}>, name=<{name}>, length=<{}>, limit=<{MAX_TOOL_NAME_LENGTH}> | tool name exceeds registry limit | use a shorter prefix or tool name",
+            tool.server_name(),
+            name.chars().count()
+        );
+        if !self.inner.options.continue_on_error {
+            return Err(ToolValidationError::new(message).into());
+        }
+        tracing::warn!("{message} | skipping tool (continueOnError)");
+        Ok(())
+    }
+
+    /// Sets the callback a tools-list change notification triggers (TS `onToolsChanged`). An
+    /// agent that takes this client as a tool source installs its own on `initialize`.
+    pub fn set_on_tools_changed(&self, callback: Option<McpToolsChangedCallback>) {
+        *lock(&self.inner.on_tools_changed) = callback;
+    }
+
+    /// Re-lists the tools with the client's prefix and filters and reports the change;
+    /// notifications during a refresh coalesce into one more refresh (TS `_handleToolsChanged`).
+    pub(crate) async fn refresh_tools(&self) {
+        {
+            let mut refresh = lock(&self.inner.refresh);
+            if refresh.running {
+                refresh.pending = true;
+                return;
+            }
+            refresh.running = true;
+        }
+        loop {
+            lock(&self.inner.refresh).pending = false;
+            let old = lock(&self.inner.registered).clone();
+            match self.list_tools().await {
+                Ok(tools) => {
+                    let callback = lock(&self.inner.on_tools_changed).clone();
+                    if let Some(callback) = callback {
+                        callback(old, tools);
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        "client=<{}>, error=<{error}> | failed to refresh tools after toolsChanged notification",
+                        self.inner.name
+                    );
+                    break;
+                }
+            }
+            if !lock(&self.inner.refresh).pending {
+                break;
+            }
+        }
+        lock(&self.inner.refresh).running = false;
+    }
+
+    /// Debounces tools-list change notifications (the MCP SDK `listChanged.tools.debounceMs`).
+    pub(crate) fn tools_changed(&self) {
+        let ticket = self
+            .inner
+            .tools_changed
+            .fetch_add(1, Ordering::SeqCst)
+            .wrapping_add(1);
+        let client = self.clone();
+        tokio::spawn(
+            async move {
+                tokio::time::sleep(TOOLS_CHANGED_DEBOUNCE).await;
+                if client.inner.tools_changed.load(Ordering::SeqCst) == ticket {
+                    client.refresh_tools().await;
+                }
+            }
+            .in_current_span(),
+        );
+    }
+
+    /// The server's prompts (TS `listPrompts`).
+    ///
+    /// # Errors
+    ///
+    /// The connection failed earlier under `continue_on_error` (call `connect(true)`), or the
+    /// request failed, or pagination passed `list_max_pages`.
+    pub async fn list_prompts(&self, options: McpListOptions) -> Result<ListPromptsResult> {
+        let peer = self.connected_or_throw().await?;
+        Ok(self
+            .list_paged("prompts/list", &peer, options, |params| {
+                ClientRequest::ListPromptsRequest(rmcp::model::ListPromptsRequest::with_param(params))
+            })
+            .await?)
+    }
+
+    /// Renders a prompt (TS `getPrompt`).
+    ///
+    /// # Errors
+    ///
+    /// As [`list_prompts`](Self::list_prompts).
+    pub async fn get_prompt(
+        &self,
+        name: &str,
+        arguments: Option<IndexMap<String, String>>,
+    ) -> Result<GetPromptResult> {
+        let peer = self.connected_or_throw().await?;
+        let mut params = GetPromptRequestParams::new(name.to_owned());
+        params.arguments = arguments.map(|arguments| {
+            arguments
+                .into_iter()
+                .map(|(key, value)| (key, JsonValue::String(value)))
+                .collect()
+        });
+        let request = ClientRequest::GetPromptRequest(rmcp::model::GetPromptRequest::new(params));
+        match request_with(&peer, request, default_options()).await? {
+            ServerResult::GetPromptResult(result) => Ok(result),
+            _ => Err(McpError::sdk("Unexpected response type").into()),
+        }
+    }
+
+    /// The server's resources (TS `listResources`).
+    ///
+    /// # Errors
+    ///
+    /// As [`list_prompts`](Self::list_prompts).
+    pub async fn list_resources(&self, options: McpListOptions) -> Result<ListResourcesResult> {
+        let peer = self.connected_or_throw().await?;
+        Ok(self
+            .list_paged("resources/list", &peer, options, |params| {
+                ClientRequest::ListResourcesRequest(rmcp::model::ListResourcesRequest::with_param(params))
+            })
+            .await?)
+    }
+
+    /// The server's resource templates (TS `listResourceTemplates`).
+    ///
+    /// # Errors
+    ///
+    /// As [`list_prompts`](Self::list_prompts).
+    pub async fn list_resource_templates(
+        &self,
+        options: McpListOptions,
+    ) -> Result<ListResourceTemplatesResult> {
+        let peer = self.connected_or_throw().await?;
+        Ok(self
+            .list_paged("resources/templates/list", &peer, options, |params| {
+                ClientRequest::ListResourceTemplatesRequest(
+                    rmcp::model::ListResourceTemplatesRequest::with_param(params),
+                )
+            })
+            .await?)
+    }
+
+    /// Reads a resource (TS `readResource`).
+    ///
+    /// # Errors
+    ///
+    /// As [`list_prompts`](Self::list_prompts).
+    pub async fn read_resource(&self, uri: &str) -> Result<ReadResourceResult> {
+        let peer = self.connected_or_throw().await?;
+        let params = ReadResourceRequestParams::new(uri.to_owned());
+        let request = ClientRequest::ReadResourceRequest(rmcp::model::ReadResourceRequest::new(params));
+        match request_with(&peer, request, default_options()).await? {
+            ServerResult::ReadResourceResult(result) => Ok(result),
+            _ => Err(McpError::sdk("Unexpected response type").into()),
+        }
+    }
+
+    async fn list_paged<R>(
+        &self,
+        method: &'static str,
+        peer: &Peer<RoleClient>,
+        options: McpListOptions,
+        build: fn(PaginatedRequestParams) -> ClientRequest,
+    ) -> Result<R, McpError>
+    where
+        R: Paged + Send + 'static,
+    {
+        let fetch = |cursor: Option<String>| {
+            let peer = peer.clone();
+            async move {
+                let response = request_with(&peer, build(paginated(cursor)), default_options()).await?;
+                R::from_result(response).ok_or_else(|| McpError::sdk("Unexpected response type"))
+            }
+            .boxed()
+        };
+        match options.pagination_token {
+            Some(token) => fetch(Some(token)).await,
+            None => aggregate(method, self.inner.list_max_pages(), fetch).await,
+        }
+    }
+
+    async fn connected_or_throw(&self) -> Result<Peer<RoleClient>> {
+        self.connect(false).await?;
+        self.connected_peer()?
+            .ok_or_else(|| Error::other(FAILED_TO_CONNECT))
     }
 
     /// Calls `tool` with `args` and returns the raw `CallToolResult` JSON.
@@ -354,26 +824,121 @@ impl McpClient {
             return Err(Error::other(FAILED_TO_CONNECT));
         };
         let arguments = prepare_arguments(args)?;
+        let arguments = if self.inner.options.disable_mcp_instrumentation {
+            arguments
+        } else {
+            inject_trace_context(arguments, (self.inner.trace_context)())
+        };
         let mut params = CallToolRequestParams::new(tool.server_name().to_owned());
         params.arguments = Some(arguments);
-        let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
+        let progress = options
+            .progress_callback
+            .clone()
+            .or_else(|| self.inner.options.progress_callback.clone());
+        for _round in 0..MRTR_MAX_ROUNDS {
+            let request = ClientRequest::CallToolRequest(CallToolRequest::new(params.clone()));
+            match self
+                .call_once(&peer, request, &options, progress.as_ref())
+                .await?
+            {
+                ServerResult::InputRequiredResult(input) => {
+                    let (responses, state) = self.fulfill_inputs(input).await?;
+                    params.input_responses = responses;
+                    params.request_state = state;
+                }
+                response => return call_result(response),
+            }
+        }
+        Err(McpError::sdk(format!(
+            "input_required did not complete within {MRTR_MAX_ROUNDS} MRTR rounds"
+        ))
+        .into())
+    }
+
+    /// One `tools/call` round with its progress route and cancellation.
+    async fn call_once(
+        &self,
+        peer: &Peer<RoleClient>,
+        request: ClientRequest,
+        options: &McpCallToolOptions,
+        progress: Option<&McpProgressCallback>,
+    ) -> Result<ServerResult> {
         let handle = peer
             .send_request_with_option(request, call_options(options.timeout))
             .await?;
         let id = handle.id.clone();
-        let response = match signal {
+        let token = handle.progress_token.clone();
+        if let Some(callback) = progress {
+            let early = lock(&self.inner.progress).register(token.clone(), Arc::clone(callback));
+            for update in early {
+                self.deliver_progress(callback, update);
+            }
+        }
+        let response = match &options.cancel_signal {
             None => handle.await_response().await,
             Some(signal) => {
                 tokio::select! {
                     response = handle.await_response() => response,
                     () = signal.cancelled() => {
-                        notify_cancelled(&peer, id, signal).await;
+                        lock(&self.inner.progress).routes.remove(&token);
+                        notify_cancelled(peer, id, signal).await;
                         return Err(abort_error(signal));
                     }
                 }
             }
         };
-        call_result(response?)
+        lock(&self.inner.progress).routes.remove(&token);
+        Ok(response?)
+    }
+
+    /// Answers a 2026-07-28 `input_required` result's elicitation requests through the
+    /// elicitation callback, for the next round.
+    async fn fulfill_inputs(
+        &self,
+        input: InputRequiredResult,
+    ) -> Result<(Option<InputResponses>, Option<String>)> {
+        let requests = input.input_requests.unwrap_or_default();
+        if requests.is_empty() && input.request_state.is_none() {
+            return Err(McpError::sdk("Unexpected response type").into());
+        }
+        let mut responses = InputResponses::new();
+        for (key, request) in requests {
+            let InputRequest::Elicitation(request) = request else {
+                return Err(McpError::sdk(format!("input request {key} is not supported")).into());
+            };
+            let Some(callback) = self.inner.options.elicitation_callback.clone() else {
+                return Err(
+                    McpError::sdk("elicitation requested but no elicitation callback is configured").into(),
+                );
+            };
+            let (signal, _handle) = CancelSignal::new();
+            let result = callback(ElicitationContext::new(signal), request.params)
+                .await
+                .map_err(Error::other)?;
+            responses.insert(key, serde_json::to_value(result)?);
+        }
+        Ok(((!responses.is_empty()).then_some(responses), input.request_state))
+    }
+
+    pub(crate) fn deliver_progress(&self, callback: &McpProgressCallback, progress: McpProgress) {
+        let callback = Arc::clone(callback);
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || callback(progress)));
+        if let Err(panic) = outcome {
+            let error = panic
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_owned())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "panic".to_owned());
+            tracing::warn!(
+                "client=<{}>, error=<{error}> | progress callback failed",
+                self.inner.name
+            );
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inner_capabilities(&self) -> ClientCapabilities {
+        self.inner.capabilities()
     }
 
     fn connected_peer(&self) -> Result<Option<Peer<RoleClient>>> {
@@ -466,7 +1031,14 @@ impl Inner {
     }
 
     fn capabilities(&self) -> ClientCapabilities {
-        ClientCapabilities::default()
+        let mut capabilities = ClientCapabilities::default();
+        if self.options.elicitation_callback.is_some() {
+            let mut elicitation = ElicitationCapability::default();
+            elicitation.form = Some(FormElicitationCapability::default());
+            elicitation.url = Some(UrlElicitationCapability::default());
+            capabilities.elicitation = Some(elicitation);
+        }
+        capabilities
     }
 }
 
@@ -533,11 +1105,18 @@ fn lifecycle() -> ClientLifecycleMode {
     }
 }
 
-fn resolve_transport(
-    transport: Option<McpTransport>,
-    url: Option<&str>,
-    headers: Option<IndexMap<String, String>>,
-) -> Result<McpTransport> {
+const URL_ONLY: &str = "McpClientConfig: \"auth\", \"authProvider\", and \"headers\" require \"url\" (not compatible with \"transport\")";
+
+/// TS `_resolveTransport`: exactly one of `transport` and `url`; auth and headers need `url`.
+fn resolve_transport(config: McpClientConfig) -> Result<McpTransport> {
+    let McpClientConfig {
+        transport,
+        url,
+        auth,
+        auth_provider,
+        headers,
+        ..
+    } = config;
     match (transport, url) {
         (Some(_), Some(_)) => Err(Error::other(
             "McpClientConfig: provide either \"transport\" or \"url\", not both",
@@ -546,27 +1125,86 @@ fn resolve_transport(
             "McpClientConfig: either \"transport\" or \"url\" must be provided",
         )),
         (Some(transport), None) => {
-            if headers.is_some() {
-                return Err(Error::other(
-                    "McpClientConfig: \"auth\", \"authProvider\", and \"headers\" require \"url\" (not compatible with \"transport\")",
-                ));
+            if auth.is_some() || auth_provider.is_some() || headers.is_some() {
+                return Err(Error::other(URL_ONLY));
             }
             Ok(transport)
         }
-        (None, Some(url)) => streamable_http(url, headers.unwrap_or_default()),
+        (None, Some(url)) => {
+            if auth.is_some() && auth_provider.is_some() {
+                return Err(Error::other(
+                    "McpClientConfig: provide either \"auth\" or \"authProvider\", not both",
+                ));
+            }
+            streamable_http(&url, auth, auth_provider, headers.unwrap_or_default())
+        }
     }
 }
 
-fn streamable_http(url: &str, headers: IndexMap<String, String>) -> Result<McpTransport> {
+fn streamable_http(
+    url: &str,
+    auth: Option<McpClientCredentials>,
+    auth_provider: Option<McpAuthProvider>,
+    headers: IndexMap<String, String>,
+) -> Result<McpTransport> {
     reqwest::Url::parse(url).map_err(|_| Error::other("Invalid URL"))?;
     let custom_headers = header_map(headers)?
         .into_iter()
         .filter_map(|(name, value)| Some((name?, value)))
         .collect();
     let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(custom_headers);
-    Ok(McpTransport::from_factory(move || {
-        StreamableHttpClientTransport::from_config(config.clone())
-    }))
+    if let Some(provider) = auth_provider {
+        return Ok(McpTransport::from_factory(move || {
+            StreamableHttpClientTransport::with_client(provider.clone(), config.clone())
+        }));
+    }
+    let Some(credentials) = auth else {
+        return Ok(McpTransport::from_factory(move || {
+            StreamableHttpClientTransport::from_config(config.clone())
+        }));
+    };
+    let url = url.to_owned();
+    Ok(McpTransport::from_connect(
+        "streamable-http",
+        Arc::new(move |handler, lifecycle| {
+            let (url, credentials, config) = (url.clone(), credentials.clone(), config.clone());
+            async move {
+                let provider = client_credentials(&url, credentials).await?;
+                let transport = StreamableHttpClientTransport::with_client(provider, config);
+                Ok(rmcp::service::serve_client_with_lifecycle(handler, transport, lifecycle).await?)
+            }
+            .boxed()
+        }),
+    ))
+}
+
+/// The OAuth client-credentials grant against the server's discovered authorization server
+/// (TS `ClientCredentialsProvider`); scopes are sent space-separated.
+async fn client_credentials(
+    url: &str,
+    credentials: McpClientCredentials,
+) -> Result<McpAuthProvider, McpError> {
+    let auth_error = |error: rmcp::transport::AuthError| McpError::sdk(error.to_string());
+    let mut state = rmcp::transport::auth::OAuthState::new(url, None)
+        .await
+        .map_err(auth_error)?;
+    let config = rmcp::transport::ClientCredentialsConfig::ClientSecret {
+        client_id: credentials.client_id,
+        client_secret: credentials.client_secret,
+        scopes: credentials.scopes.unwrap_or_default(),
+        resource: None,
+    };
+    state
+        .authenticate_client_credentials(config)
+        .await
+        .map_err(auth_error)?;
+    let manager = state
+        .into_authorization_manager()
+        .ok_or_else(|| McpError::sdk("OAuth client credentials did not authorize"))?;
+    Ok(rmcp::transport::AuthClient::new(
+        reqwest::Client::default(),
+        manager,
+    ))
 }
 
 /// Walks every page of a list method, as the MCP SDK `_listAllPages` does: a page repeating the
@@ -601,16 +1239,23 @@ pub(crate) async fn aggregate<R: Paged>(
 }
 
 /// A paginated MCP list result.
-pub(crate) trait Paged {
+pub(crate) trait Paged: Sized {
     type Item: serde::Serialize;
+    fn from_result(result: ServerResult) -> Option<Self>;
     fn items(&mut self) -> &mut Vec<Self::Item>;
     fn next_cursor(&mut self) -> &mut Option<String>;
 }
 
 macro_rules! paged {
-    ($($result:ty => $items:ident: $item:ty),* $(,)?) => {$(
-        impl Paged for $result {
+    ($($result:ident => $items:ident: $item:ty),* $(,)?) => {$(
+        impl Paged for rmcp::model::$result {
             type Item = $item;
+            fn from_result(result: ServerResult) -> Option<Self> {
+                match result {
+                    ServerResult::$result(result) => Some(result),
+                    _ => None,
+                }
+            }
             fn items(&mut self) -> &mut Vec<$item> {
                 &mut self.$items
             }
@@ -622,10 +1267,10 @@ macro_rules! paged {
 }
 
 paged!(
-    rmcp::model::ListToolsResult => tools: rmcp::model::Tool,
-    rmcp::model::ListPromptsResult => prompts: rmcp::model::Prompt,
-    rmcp::model::ListResourcesResult => resources: rmcp::model::Resource,
-    rmcp::model::ListResourceTemplatesResult => resource_templates: rmcp::model::ResourceTemplate,
+    ListToolsResult => tools: rmcp::model::Tool,
+    ListPromptsResult => prompts: rmcp::model::Prompt,
+    ListResourcesResult => resources: rmcp::model::Resource,
+    ListResourceTemplatesResult => resource_templates: rmcp::model::ResourceTemplate,
 );
 
 pub(crate) fn paginated(cursor: Option<String>) -> PaginatedRequestParams {
@@ -721,4 +1366,8 @@ fn abort_error(signal: &CancelSignal) -> Error {
 async fn notify_cancelled(peer: &Peer<RoleClient>, id: rmcp::model::RequestId, signal: &CancelSignal) {
     let params = rmcp::model::CancelledNotificationParam::new(Some(id), signal.reason());
     let _sent = peer.notify_cancelled(params).await;
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
