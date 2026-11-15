@@ -19,7 +19,7 @@ harness-rs/
   docs/           # PARITY.md, DIVERGENCES.md, reviews/
 ```
 
-Cargo features forward to `strands`: `bedrock`, `anthropic`, `openai`, `mcp` (all default) and `otel`.
+Cargo features forward to `strands`: `bedrock`, `anthropic`, `openai`, `mcp` and `otel`, all default (harness-ts always sets up telemetry).
 
 ## Gates
 

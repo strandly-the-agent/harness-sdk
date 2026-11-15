@@ -52,10 +52,24 @@ Never weaken a lint or skip a test to get green. Where a lint is wrong for one s
 - Rustdoc on every public item. Every doc example compiles as a doctest; `no_run` when it needs network or credentials.
 - Comments state only what a reader can't infer. Imports at the top of the file. Flat control flow.
 - Don't build with `panic = "abort"`: a panicking tool becomes an error tool result, which needs unwinding.
+- TS `@internal` becomes `pub(crate)`, or `#[doc(hidden)]` where another crate in the workspace needs it. Crate-root re-exports are explicit; no glob re-exports.
+- Structured logging goes through `tracing` in the `field=<value>, field=<value> | lowercase human-readable message` format.
+- Acronyms follow TS where TS has the type (`OpenAIModel`, `McpClient`); Rust-only helper types follow Rust conventions (`JsonValue`).
+- Outside byte-identical wire data, use Rust-native forms: `Duration`, not `f64` milliseconds; `Option<T>` for unlimited, not `Infinity`; slice strings by `char`, never by byte or UTF-16 code unit.
+- No Rust-only features: v0.1 adds nothing TS lacks beyond small idiomatic accessors.
+- Test code: integration-test helpers carry `#[cfg(test)]`, or the test file starts with `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "test code")]`. Shared test helpers are `pub(crate)`.
+- Examples use `main() -> Result` with `?`, never `unwrap` or `expect`.
 
 ### Selected lints
 
-`unsafe_code` is forbidden. `missing_docs`, `unreachable_pub` and the `rust_2018_idioms` group warn (errors under `-D warnings`). Clippy runs `all` plus these denies: `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable`, `dbg_macro`, `print_stdout`, `print_stderr` (the printer and examples opt out explicitly), `await_holding_lock`, `await_holding_refcell_ref`, `await_holding_invalid_type`, `allow_attributes_without_reason`; and a selective set of pedantic warnings (`needless_pass_by_value`, `redundant_clone`, `manual_let_else`, `match_same_arms`, `cast_*`, `uninlined_format_args`, `doc_markdown`, `missing_errors_doc`, and others listed in the root `Cargo.toml`). `clippy.toml` allows `unwrap`, `expect`, `panic`, `dbg!` and printing in tests.
+These match `[workspace.lints]` in the root `Cargo.toml`. Rust: `unsafe_code` is forbidden; `missing_docs`, `unreachable_pub` and the `rust_2018_idioms` group warn (errors under `-D warnings`). Clippy runs the `all` group as warnings, plus these lints from outside it, enabled one by one rather than whole groups:
+
+- Denied: `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable`, `dbg_macro`, `print_stdout`, `print_stderr` (the printer and examples opt out explicitly), `await_holding_lock`, `await_holding_refcell_ref`, `await_holding_invalid_type`, `allow_attributes_without_reason`, `string_slice`, `disallowed_types`, `exhaustive_enums`, `exhaustive_structs`.
+- Warned: `needless_pass_by_value`, `redundant_clone` (a nursery lint), `redundant_closure_for_method_calls`, `semicolon_if_nothing_returned`, `explicit_iter_loop`, `manual_let_else`, `match_same_arms`, `cast_possible_truncation`, `cast_sign_loss`, `cast_lossless`, `cast_possible_wrap`, `cast_precision_loss`, `inefficient_to_string`, `implicit_clone`, `uninlined_format_args`, `doc_markdown`, `missing_errors_doc`, `large_futures`, `indexing_slicing`.
+- Counter modules (`Usage`, `Metrics` and wherever counters are summed) add `#![deny(clippy::arithmetic_side_effects)]` and use saturating ops.
+- Config and option structs carry `#[expect(clippy::exhaustive_structs, reason = "config struct: struct-literal construction")]`; every other public struct and enum is `#[non_exhaustive]`.
+
+`clippy.toml` denies `std::any::Any` and `std::any::TypeId` through `disallowed-types`, and allows `unwrap`, `expect`, `panic`, indexing, `dbg!` and printing in tests.
 
 ## Wire compatibility
 
