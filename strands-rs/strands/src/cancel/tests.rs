@@ -18,7 +18,8 @@ fn a_new_signal_is_not_cancelled() {
 fn cancel_cancels_every_clone_of_the_signal() {
     let (signal, handle) = CancelSignal::new();
     let clone = signal.clone();
-    handle.clone().cancel(CancelOptions::default());
+    let other_handle = handle.clone();
+    other_handle.cancel(CancelOptions::default());
     assert!(signal.is_cancelled());
     assert!(clone.is_cancelled());
     assert!(handle.signal().is_cancelled());
