@@ -12,6 +12,7 @@ use indexmap::IndexMap;
 
 use crate::agent::stream::Emitter;
 use crate::agent::{Agent, InvocationContext};
+use crate::cancel::CancelOptions;
 use crate::error::{Error, Result};
 use crate::hooks::{
     AfterInvocationEvent, AfterModelCallEvent, AfterToolsEvent, AgentResultEvent, BeforeInvocationEvent,
@@ -64,6 +65,28 @@ impl From<Error> for Stop {
 
 type Step<T> = std::result::Result<T, Stop>;
 
+/// What a dropped invocation left for the next call.
+pub(crate) struct AbandonedRun {
+    state: InvocationState,
+    /// The cancel message the drop appended, for its `MessageAddedEvent` hooks.
+    repair: Option<Message>,
+}
+
+/// Lives for one invocation; dropped unfinished, it repairs the agent synchronously.
+struct RunGuard<'a> {
+    agent: &'a mut Agent,
+    state: InvocationState,
+    finished: bool,
+}
+
+impl Drop for RunGuard<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.agent.abandon(self.state.clone());
+        }
+    }
+}
+
 /// How a cycle ended.
 enum Cycle {
     /// Tools ran; call the model again.
@@ -112,13 +135,63 @@ impl Agent {
         options: InvokeOptions,
         out: &Emitter,
     ) -> Result<()> {
-        let outcome = self.run_passes(args, options, out).await;
+        let state = options.invocation_state.clone();
+        let mut guard = RunGuard {
+            agent: self,
+            state,
+            finished: false,
+        };
+        let outcome = guard.agent.run_passes(args, options, out).await;
+        guard.finished = true;
+        guard.agent.in_pass = false;
         // After `AgentResultEvent`, so its consumers still read the cancel signal (TS `stream`).
-        self.local.end_cancel();
+        guard.agent.local.end_cancel();
         outcome
     }
 
+    /// Runs the hooks a dropped invocation's stream skipped (#63): `MessageAddedEvent` for the
+    /// cancel message the drop appended, then `AfterInvocationEvent`.
+    pub(crate) async fn finish_abandoned_run(&mut self) -> Result<()> {
+        let Some(run) = self.abandoned.take() else {
+            return Ok(());
+        };
+        let hooks = self.local.hooks().clone();
+        if let Some(message) = run.repair {
+            let mut event = MessageAddedEvent::new(&mut self.local, message, run.state.clone());
+            hooks.invoke::<MessageAddedEvent<'static>>(&mut event).await?;
+        }
+        let mut event = AfterInvocationEvent::new(&mut self.local, run.state);
+        hooks.invoke::<AfterInvocationEvent<'static>>(&mut event).await
+    }
+
+    /// The synchronous half of a dropped invocation, in the TS cancel shape: the signal is
+    /// cancelled and an open user turn is closed with the cancel message, unless the turn is
+    /// paused on an interrupt. The skipped hooks run on the next call.
+    fn abandon(&mut self, state: InvocationState) {
+        if self.structured_output_registered {
+            self.local.tool_registry_mut().remove(STRUCTURED_OUTPUT_TOOL_NAME);
+            self.structured_output_registered = false;
+        }
+        self.local.cancel(CancelOptions::default());
+        let in_pass = std::mem::take(&mut self.in_pass);
+        let paused = self.local.interrupt_state().lock().activated;
+        let open_turn = self
+            .local
+            .messages()
+            .last()
+            .is_some_and(|last| last.role() == Role::User);
+        let repair = (in_pass && !paused && open_turn).then(|| self.cancel_message());
+        if let Some(message) = &repair {
+            self.local.messages_mut().push(message.clone());
+        }
+        self.local.end_cancel();
+        if in_pass {
+            self.abandoned = Some(AbandonedRun { state, repair });
+        }
+    }
+
     async fn run_passes(&mut self, args: InvokeArgs, options: InvokeOptions, out: &Emitter) -> Result<()> {
+        self.finish_abandoned_run().await?;
         self.initialize().await?;
         let hooks = self.local.hooks().clone();
         let state = options.invocation_state;
@@ -160,6 +233,7 @@ impl Agent {
                 self.after_invocation(&hooks, &state, out).await?;
                 break result;
             }
+            self.in_pass = true;
             let outcome = self
                 .run_loop(input, resuming, &state, &hooks, out, schema.clone())
                 .await;
@@ -172,6 +246,7 @@ impl Agent {
                     interrupt_state.deactivate();
                 }
             }
+            self.in_pass = false;
             let resume = self.after_invocation(&hooks, &state, out).await?;
             let result = outcome?;
             match resume {
@@ -226,11 +301,6 @@ impl Agent {
             tool: schema.map(StructuredOutputTool::new),
             choice: None,
         };
-        // A run whose stream was dropped never reached the removal below.
-        if self.structured_output_registered {
-            self.local.tool_registry_mut().remove(STRUCTURED_OUTPUT_TOOL_NAME);
-            self.structured_output_registered = false;
-        }
         if let Some(tool) = &structured.tool {
             self.local.tool_registry_mut().add(Arc::new(tool.clone()))?;
             self.structured_output_registered = true;

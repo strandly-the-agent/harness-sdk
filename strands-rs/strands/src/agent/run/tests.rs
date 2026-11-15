@@ -1377,6 +1377,7 @@ mod concurrent {
 }
 
 mod cancel;
+mod drop_guard;
 mod end_turn_resume;
 mod interrupt;
 mod invocation_state;

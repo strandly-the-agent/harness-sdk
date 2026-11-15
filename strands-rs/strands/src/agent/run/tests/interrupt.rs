@@ -868,3 +868,120 @@ mod cancel {
         assert_eq!(*side_effects.lock().unwrap(), ["email sent"]);
     }
 }
+
+mod stream_break_at_interrupt_event {
+    use super::*;
+    use crate::interrupt::InterruptParams;
+
+    /// A streaming consumer that stops once the interrupt surfaces and returns its id.
+    async fn stream_until_interrupt(agent: &mut Agent, prompt: &str) -> String {
+        let mut stream = agent.stream(prompt);
+        while let Some(event) = stream.next().await {
+            if let AgentStreamEvent::Interrupt(event) = event.unwrap() {
+                return event.interrupt().id().to_owned();
+            }
+        }
+        panic!("stream ended without an InterruptEvent")
+    }
+
+    fn model() -> Arc<MockMessageModel> {
+        mock(vec![
+            vec![tool_use("deleteFiles", "tool-1", json!({}))],
+            vec![text("Done")],
+        ])
+    }
+
+    fn confirming_tool(runs: &Arc<Mutex<Vec<String>>>) -> FunctionTool {
+        let runs = Arc::clone(runs);
+        FunctionTool::new(
+            "deleteFiles",
+            "deletes",
+            move |_input: JsonValue, ctx: ToolContext| {
+                let runs = Arc::clone(&runs);
+                async move {
+                    let response = ctx.interrupt(InterruptParams {
+                        name: "confirm".into(),
+                        reason: Some(json!("Delete?")),
+                        ..Default::default()
+                    })?;
+                    runs.lock()
+                        .unwrap()
+                        .push(response.as_str().unwrap_or_default().to_owned());
+                    Ok::<_, ToolError>("deleted")
+                }
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn rejects_a_new_prompt_instead_of_replaying_the_stored_tool_cycle() {
+        let model = model();
+        let runs = Arc::new(Mutex::new(Vec::new()));
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([confirming_tool(&runs)])
+            .build()
+            .unwrap();
+        stream_until_interrupt(&mut agent, "Delete old files").await;
+
+        let error = agent.invoke("anything new").await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Agent is in an interrupted state. Resume by invoking with interruptResponse content blocks."
+        );
+        assert!(runs.lock().unwrap().is_empty());
+        assert_eq!(model.call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn runs_a_tool_approved_call_once_when_resumed() {
+        let model = model();
+        let runs = Arc::new(Mutex::new(Vec::new()));
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([confirming_tool(&runs)])
+            .build()
+            .unwrap();
+        let id = stream_until_interrupt(&mut agent, "Delete old files").await;
+        // The paused turn is not closed with a cancel message.
+        assert_eq!(agent.messages().last().unwrap().role(), Role::User);
+
+        let result = agent
+            .invoke(vec![InterruptResponse::new(id, json!("yes"))])
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(*runs.lock().unwrap(), ["yes"]);
+        assert_eq!(model.call_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn runs_a_hook_approved_call_once_when_resumed() {
+        let model = model();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([logging_tool("deleteFiles", &log)])
+            .build()
+            .unwrap();
+        agent.add_hook(|event: &mut BeforeToolCallEvent| {
+            let approval = event.interrupt(InterruptParams {
+                name: "approve_delete".into(),
+                reason: Some(json!("Delete?")),
+                ..Default::default()
+            });
+            if approval.is_some_and(|approval| approval != json!("yes")) {
+                event.set_cancel("not approved");
+            }
+        });
+        let id = stream_until_interrupt(&mut agent, "Delete old files").await;
+
+        let result = agent
+            .invoke(vec![InterruptResponse::new(id, json!("yes"))])
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(*log.lock().unwrap(), ["deleteFiles"]);
+        assert_eq!(model.call_count(), 2);
+    }
+}

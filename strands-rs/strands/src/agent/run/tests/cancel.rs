@@ -1,6 +1,5 @@
-//! Cancellation, ported from strands-ts/src/agent/__tests__/agent.cancel.test.ts.
-//!
-//! The two stream-break cases land with the drop guard.
+//! Cancellation, ported from strands-ts/src/agent/__tests__/agent.cancel.test.ts. A stream
+//! break is a dropped `AgentStream`.
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -587,6 +586,36 @@ async fn allows_a_second_invocation_after_cancellation() {
     let second = agent.invoke("Hello again").await.unwrap();
     assert_eq!(second.stop_reason(), StopReason::EndTurn);
     assert_eq!(texts(second.last_message()), ["Second"]);
+}
+
+/// Drops the stream at its first model stream update, after cancelling.
+async fn cancel_and_break(agent: &mut Agent, prompt: &str) {
+    let handle = agent.cancel_handle();
+    let mut stream = agent.stream(prompt);
+    while let Some(event) = stream.next().await {
+        if let AgentStreamEvent::ModelStreamUpdate(_) = event.unwrap() {
+            handle.cancel(cancel());
+            break;
+        }
+    }
+}
+
+#[tokio::test]
+async fn appends_assistant_message_when_stream_is_broken_out_of_after_cancel() {
+    let mut agent = test_agent(mock(vec![vec![text("A long story...")]]));
+    cancel_and_break(&mut agent, "Write a story").await;
+    let last = agent.messages().last().unwrap();
+    assert_eq!(last.role(), Role::Assistant);
+    assert_eq!(texts(last), ["Cancelled by user"]);
+}
+
+#[tokio::test]
+async fn allows_reuse_after_cancellation_via_stream_break() {
+    let mut agent = test_agent(mock(vec![vec![text("A long story...")], vec![text("pineapple")]]));
+    cancel_and_break(&mut agent, "Write a story").await;
+    let result = agent.invoke("Say the word \"pineapple\"").await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert_eq!(texts(result.last_message()), ["pineapple"]);
 }
 
 #[tokio::test]

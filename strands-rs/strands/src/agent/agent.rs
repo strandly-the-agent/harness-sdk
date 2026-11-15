@@ -8,6 +8,7 @@ use futures::future::BoxFuture;
 
 use crate::agent::config::{AgentBuilder, AgentConfig, DefaultModel, ModelSource};
 use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
+use crate::agent::run::AbandonedRun;
 use crate::agent::stream::AgentStream;
 use crate::cancel::{CancelHandle, CancelSignal};
 use crate::error::{Error, Result};
@@ -54,8 +55,8 @@ pub struct Agent {
     pub(crate) local: LocalAgent,
     pub(crate) tool_executor: ToolExecutor,
     pub(crate) structured_output_schema: Option<StructuredOutputSchema>,
-    /// Set while the run's `strands_structured_output` tool is in the registry, so a run whose
-    /// stream was dropped leaves a marker for the next run to clean up.
+    /// Set while the run's `strands_structured_output` tool is in the registry, so the drop
+    /// guard removes only that tool, never a user tool with the same name.
     pub(crate) structured_output_registered: bool,
     retry_strategies: Vec<Arc<dyn ModelRetryStrategy>>,
     pub(crate) retry_sleeper: Sleeper,
@@ -64,6 +65,10 @@ pub struct Agent {
     initialized: bool,
     /// TS `_printer`; `None` with `printer: false`.
     pub(crate) printer: Option<SharedPrinter>,
+    /// Set between `BeforeInvocationEvent` and `AfterInvocationEvent` of a pass.
+    pub(crate) in_pass: bool,
+    /// Hooks a dropped stream skipped; the next `invoke`, `stream` or `shutdown` runs them.
+    pub(crate) abandoned: Option<AbandonedRun>,
 }
 
 impl Agent {
@@ -123,6 +128,8 @@ impl Agent {
             attach_token: Arc::new(()),
             initialized: false,
             printer: None,
+            in_pass: false,
+            abandoned: None,
         }
     }
 
@@ -208,11 +215,15 @@ impl Agent {
 
     /// Finishes the agent's pending work; a no-op when there is none (TS `shutdown`).
     ///
+    /// A dropped [`AgentStream`] repairs history at once and leaves the hooks it skipped
+    /// (`AfterInvocationEvent`, and `MessageAddedEvent` for the cancel message it appended) to
+    /// the next `invoke`, `stream` or `shutdown`. Call this before dropping such an agent.
+    ///
     /// # Errors
     ///
     /// Pending work failed.
     pub async fn shutdown(&mut self) -> Result<()> {
-        Ok(())
+        self.finish_abandoned_run().await
     }
 
     /// A cloneable handle that cancels whichever invocation of this agent is running (TS
@@ -409,6 +420,17 @@ impl Agent {
         hook: impl for<'a> Hook<<E::Kind as HookEvent>::Event<'a>>,
     ) -> HookCleanup {
         self.local.hooks().add_hook_impl_with::<E>(options, hook)
+    }
+}
+
+impl Drop for Agent {
+    fn drop(&mut self) {
+        if self.abandoned.is_some() {
+            tracing::warn!(
+                agent_id = %self.local.id(),
+                "agent dropped with hooks pending from a dropped stream; call shutdown().await before dropping it"
+            );
+        }
     }
 }
 
