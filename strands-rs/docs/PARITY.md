@@ -43,7 +43,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/agent/__tests__/invocation-context.test.ts` | `strands::agent::invocation_context::tests` | 2/2 | |
 | `strands-ts/src/agent/__tests__/printer.test.ts` | | 0/9 | |
 | `strands-ts/src/agent/__tests__/snapshot.test.ts` | | 0/32 | |
-| `strands-ts/src/agent/__tests__/tool-caller.test.ts` | | 0/26 | |
+| `strands-ts/src/agent/__tests__/tool-caller.test.ts` | `strands::agent::tool_caller::tests` | 20/26 | the three concurrency cases are compile-time (`agent.tool(..)` borrows the agent mutably, so a recorded call can't overlap an invocation and there is no `isInvoking`; unrecorded calls from inside a tool are `ToolAgent::call_tool`, Phase 12); the three `agent.tool` accessor cases test the TS `Proxy` (same instance, `invoke`/`stream` present), which the compiler checks |
 | `strands-ts/src/background-tasks/__tests__/background-tasks.test.ts` | | 0/9 | |
 | `strands-ts/src/background-tasks/in-process/__tests__/engine-execution.test.ts` | | 0/5 | |
 | `strands-ts/src/background-tasks/in-process/__tests__/engine-transitions.test.ts` | | 0/7 | |

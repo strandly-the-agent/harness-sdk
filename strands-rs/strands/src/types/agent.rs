@@ -350,6 +350,21 @@ impl LocalAgent {
         self.invocation_context = context;
     }
 
+    pub(crate) fn take_invocation_context(&mut self) -> Option<InvocationContext> {
+        self.invocation_context.take()
+    }
+
+    /// The view for a direct tool call: no invocation context, and interrupts land in a
+    /// throwaway state, so they never reach the agent's.
+    pub(crate) fn direct_tool_agent(&self) -> ToolAgent {
+        let mut agent = self.tool_agent();
+        if let Some(inner) = Arc::get_mut(&mut agent.inner) {
+            inner.interrupt_state = InterruptState::default();
+            inner.invocation_context = None;
+        }
+        agent
+    }
+
     /// The view handed to tools and per-tool hooks for one tool batch.
     pub(crate) fn tool_agent(&self) -> ToolAgent {
         ToolAgent {

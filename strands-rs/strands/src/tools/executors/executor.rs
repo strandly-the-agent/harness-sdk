@@ -389,7 +389,7 @@ fn normalize_id(result: ToolResultBlock, tool_use_id: &str) -> ToolResultBlock {
     clippy::disallowed_types,
     reason = "a panic payload is only reachable as `dyn Any`; nothing public exposes it"
 )]
-fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     payload
         .downcast_ref::<&str>()
         .map(|message| (*message).to_owned())

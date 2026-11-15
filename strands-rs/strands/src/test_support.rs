@@ -75,3 +75,59 @@ impl Subscriber for WarnRecorder {
 
     fn exit(&self, _: &Id) {}
 }
+
+/// A tool whose stream is a closure (TS `__fixtures__/tool-helpers.ts` tools).
+pub(crate) struct MockTool {
+    name: String,
+    stream: Box<dyn Fn(crate::tools::ToolContext) -> crate::tools::ToolStream + Send + Sync>,
+}
+
+impl crate::tools::Tool for MockTool {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> &str {
+        "Mock tool"
+    }
+
+    fn tool_spec(&self) -> crate::types::tools::ToolSpec {
+        crate::types::tools::ToolSpec::new(self.name.as_str(), format!("Mock tool {}", self.name))
+    }
+
+    fn stream(&self, context: crate::tools::ToolContext) -> crate::tools::ToolStream {
+        (self.stream)(context)
+    }
+}
+
+/// TS `createMockTool`: a tool returning `result(context)`.
+pub(crate) fn mock_tool(
+    name: &str,
+    result: impl Fn(&crate::tools::ToolContext) -> crate::types::messages::ToolResultBlock + Send + Sync + 'static,
+) -> MockTool {
+    let result = std::sync::Arc::new(result);
+    stream_tool(name, move |context| {
+        let result = std::sync::Arc::clone(&result);
+        crate::tools::ToolStream::from_future(async move { result(&context).into() })
+    })
+}
+
+/// A tool whose stream is built by `stream`.
+pub(crate) fn stream_tool(
+    name: &str,
+    stream: impl Fn(crate::tools::ToolContext) -> crate::tools::ToolStream + Send + Sync + 'static,
+) -> MockTool {
+    MockTool {
+        name: name.to_owned(),
+        stream: Box::new(stream),
+    }
+}
+
+/// A success result with one text block.
+pub(crate) fn text_result(tool_use_id: &str, text: &str) -> crate::types::messages::ToolResultBlock {
+    crate::types::messages::ToolResultBlock::new(
+        tool_use_id,
+        crate::types::tools::ToolResultStatus::Success,
+        vec![text.into()],
+    )
+}

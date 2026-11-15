@@ -7,8 +7,10 @@ mod config;
 pub mod invocation_context;
 mod run;
 mod stream;
+mod tool_caller;
 
 pub use agent::Agent;
 pub use config::{AgentBuilder, AgentConfig, ModelSource};
 pub use invocation_context::{InvocationContext, InvocationContextUsage};
 pub use stream::AgentStream;
+pub use tool_caller::{DirectToolCallOptions, ToolCallStream, ToolHandle};
