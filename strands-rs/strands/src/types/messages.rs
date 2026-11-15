@@ -577,6 +577,21 @@ pub struct ToolResultBlock {
 
 impl ToolResultBlock {
     /// A tool result block.
+    ///
+    /// ```
+    /// use strands::types::json::JsonValue;
+    /// use strands::types::messages::{JsonBlock, ToolResultBlock};
+    /// use strands::types::tools::ToolResultStatus;
+    ///
+    /// let result = ToolResultBlock::new(
+    ///     "tooluse_1",
+    ///     ToolResultStatus::Error,
+    ///     vec!["city not found".into(), JsonBlock::new(JsonValue::from(404)).into()],
+    /// )
+    /// .with_error(std::io::Error::other("lookup failed"));
+    /// assert_eq!(result.status(), &ToolResultStatus::Error);
+    /// assert_eq!(result.error().map(ToString::to_string).as_deref(), Some("lookup failed"));
+    /// ```
     pub fn new(
         tool_use_id: impl Into<String>,
         status: ToolResultStatus,
@@ -1113,6 +1128,20 @@ impl From<DocumentBlock> for ToolResultContent {
 
 open_enum! {
     /// Why a model or agent stopped (TS `StopReason`).
+    ///
+    /// Known wire strings map to their variants; unknown ones are kept in [`StopReason::Other`].
+    ///
+    /// ```
+    /// use strands::StopReason;
+    ///
+    /// assert_eq!(StopReason::from("endTurn"), StopReason::EndTurn);
+    ///
+    /// let future: StopReason = serde_json::from_str(r#""pausedForReview""#)?;
+    /// assert!(matches!(future, StopReason::Other(_)));
+    /// assert_eq!(future.as_str(), "pausedForReview");
+    /// assert_eq!(serde_json::to_string(&future)?, r#""pausedForReview""#);
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub enum StopReason / UnknownStopReason {
         /// The invocation was cancelled.
         Cancelled => "cancelled",

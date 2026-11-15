@@ -300,6 +300,27 @@ path_error! {
 }
 
 /// Every error the SDK returns, one variant per TS error class.
+///
+/// ```
+/// use strands::error::{ModelThrottledError, ToolNotFoundError};
+/// use strands::Error;
+///
+/// fn describe(error: &Error) -> String {
+///     match error {
+///         Error::ModelThrottled(_) => "throttled, retry later".to_owned(),
+///         Error::ToolNotFound(e) => format!("no tool: {e}"),
+///         other => format!("{}: {other}", other.name()),
+///     }
+/// }
+///
+/// let throttled = Error::from(ModelThrottledError::new("Rate exceeded"));
+/// assert!(throttled.is_model_error());
+/// assert_eq!(describe(&throttled), "throttled, retry later");
+///
+/// let missing = Error::from(ToolNotFoundError::new("search"));
+/// assert!(!missing.is_model_error());
+/// assert_eq!(missing.name(), "ToolNotFoundError");
+/// ```
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {

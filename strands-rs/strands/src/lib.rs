@@ -4,6 +4,33 @@
 //! list of tools, and the model's own reasoning decides which tools to call. This crate mirrors the
 //! TypeScript SDK (`@strands-agents/sdk`) concept for concept, re-cased for Rust.
 //!
+//! ```
+//! use serde_json::json;
+//! use strands::types::messages::{Role, TextBlock, ToolResultBlock, ToolUseBlock};
+//! use strands::types::tools::ToolResultStatus;
+//! use strands::Message;
+//!
+//! let message = Message::new(
+//!     Role::User,
+//!     vec![
+//!         TextBlock::new("What's the weather?").into(),
+//!         ToolUseBlock::new("weather", "tooluse_1", json!({"city": "Seattle"})).into(),
+//!         ToolResultBlock::new("tooluse_1", ToolResultStatus::Success, vec!["Sunny".into()]).into(),
+//!     ],
+//! );
+//! let wire = serde_json::to_value(&message)?;
+//! assert_eq!(wire["role"], "user");
+//! assert_eq!(
+//!     wire["content"],
+//!     json!([
+//!         {"text": "What's the weather?"},
+//!         {"toolUse": {"name": "weather", "toolUseId": "tooluse_1", "input": {"city": "Seattle"}}},
+//!         {"toolResult": {"toolUseId": "tooluse_1", "status": "success", "content": [{"text": "Sunny"}]}}
+//!     ])
+//! );
+//! # Ok::<(), strands::Error>(())
+//! ```
+//!
 //! # Cargo features
 //!
 //! - `bedrock` (default): the Amazon Bedrock model provider and the default model.
