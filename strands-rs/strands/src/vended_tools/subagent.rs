@@ -14,13 +14,12 @@ pub use spec::{
 };
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use futures::StreamExt;
 use indexmap::IndexMap;
 use regex::Regex;
 use serde_json::json;
-use std::sync::LazyLock;
 
 use crate::JsonValue;
 use crate::agent::Agent;
@@ -535,15 +534,8 @@ impl Inner {
                 .get("context")
                 .filter(|value| !value.is_null())
                 .map(js_string)
-                .filter(|name| choice.options.iter().any(|option| &option.name == name))
-                .map(|name| {
-                    choice
-                        .options
-                        .iter()
-                        .find(|option| option.name == name)
-                        .and_then(|option| option.value.clone())
-                        .unwrap_or(name)
-                }),
+                .and_then(|name| choice.options.iter().find(|option| option.name == name))
+                .map(|option| option.value.clone().unwrap_or_else(|| option.name.clone())),
             ContextAxis::Fixed(mode) => mode.clone(),
         };
         let last = raw.get("last_messages").and_then(|value| match value {
@@ -554,9 +546,18 @@ impl Inner {
         let last_messages = last
             .map(f64::trunc)
             .filter(|count| count.is_finite() && *count >= 1.0)
-            .and_then(|count| format!("{count}").parse::<usize>().ok());
+            .map(saturating_count);
         (mode.unwrap_or_else(|| "none".to_owned()), last_messages)
     }
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a finite whole count of at least 1; `as` saturates"
+)]
+fn saturating_count(count: f64) -> usize {
+    count as usize
 }
 
 /// JS `String(value)` for the scalar values a model sends.
