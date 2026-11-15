@@ -21,6 +21,7 @@
 mod open_enum;
 
 pub mod error;
+pub mod interrupt;
 pub mod mime;
 pub mod models;
 pub mod types;
@@ -29,5 +30,6 @@ pub mod types;
 mod test_support;
 
 pub use error::{Error, Result};
+pub use interrupt::InterruptResponse;
 pub use types::json::JsonValue;
-pub use types::messages::{ContentBlock, Message};
+pub use types::messages::{ContentBlock, Message, StopReason};

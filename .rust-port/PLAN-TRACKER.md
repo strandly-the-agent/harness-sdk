@@ -15,7 +15,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 ## [ ] Phase 1: types, wire and errors
 
 - [x] Messages, 14 content blocks, `JsonBlock`, media and citations
-- [ ] Tool types, `StopReason`, `Usage`, `Metrics`, snapshot and interrupt types
+- [x] Tool types, `StopReason`, `Usage`, `Metrics`, snapshot and interrupt types
 - [ ] `strands::Error` and TS-mirrored error types with exact messages
 - [ ] Constructors for non-exhaustive wire structs
 - [ ] Fixture round-trips byte-identical

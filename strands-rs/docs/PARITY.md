@@ -11,7 +11,7 @@ Every TS spec file at the pinned TS baseline maps to Rust tests here. Each Rust 
 | `strands-ts/src/__tests__/default-slot.test.ts` | | 0/4 | |
 | `strands-ts/src/__tests__/errors.test.ts` | | 0/29 | |
 | `strands-ts/src/__tests__/index.test.ts` | | 0/9 | |
-| `strands-ts/src/__tests__/interrupt.test.ts` | | 0/26 | |
+| `strands-ts/src/__tests__/interrupt.test.ts` | `strands::interrupt::tests` | 6/26 | `InterruptError` (2), `InterruptState` behaviour, restore validation and `interruptFromAgent` (18) land with interrupt resume in Phase 4 |
 | `strands-ts/src/__tests__/mime.test.ts` | `strands::mime::tests` | 6/6 | |
 | `strands-ts/src/__tests__/queue.test.ts` | | 0/10 | |
 | `strands-ts/src/__tests__/state-store.test.ts` | | 0/49 | |
@@ -91,7 +91,7 @@ Every TS spec file at the pinned TS baseline maps to Rust tests here. Each Rust 
 | `strands-ts/src/models/__tests__/model.test.ts` | | 0/68 | |
 | `strands-ts/src/models/__tests__/native-output.test.ts` | | 0/11 | |
 | `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | | 0/1 | |
-| `strands-ts/src/models/__tests__/streaming.test.ts` | | 0/14 | |
+| `strands-ts/src/models/__tests__/streaming.test.ts` | `strands::models::streaming::tests` | 5/14 | `isModelStreamEvent` (9) lands with `ModelStreamEvent` in Phase 2 |
 | `strands-ts/src/models/__tests__/strict-schema.test.ts` | | 0/24 | |
 | `strands-ts/src/models/__tests__/vercel.test.ts` | | 0/100 | |
 | `strands-ts/src/models/openai/__tests__/chat.test.ts` | | 0/96 | |
@@ -135,7 +135,7 @@ Every TS spec file at the pinned TS baseline maps to Rust tests here. Each Rust 
 | `strands-ts/src/types/__tests__/citations.test.ts` | `strands::types::citations::tests` | 6/6 | |
 | `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | |
 | `strands-ts/src/types/__tests__/media.test.ts` | `strands::types::media::tests` | 51/51 | |
-| `strands-ts/src/types/__tests__/messages.test.ts` | `strands::types::messages::tests` | 69/86 | systemPromptFromData/systemPromptToData (16) land with `SystemPrompt`; `keeps an InjectedBlock passed inside message data an InjectedBlock` is TS-only (class instances inside plain data) |
+| `strands-ts/src/types/__tests__/messages.test.ts` | `strands::types::messages::tests` | 84/86 | `returns them unchanged` (systemPromptFromData with class instances) and `keeps an InjectedBlock passed inside message data an InjectedBlock` are TS-only (class instances inside plain data) |
 | `strands-ts/src/types/__tests__/validation.test.ts` | | 0/5 | |
 | `strands-ts/src/vended-interventions/cedar/__tests__/cedar.test.node.ts` | | 0/39 | |
 | `strands-ts/src/vended-interventions/hitl/__tests__/hitl.test.ts` | | 0/36 | |

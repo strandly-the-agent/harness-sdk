@@ -133,3 +133,100 @@ impl Metrics {
         self.time_to_first_byte_ms
     }
 }
+
+/// Ported from strands-ts/src/models/__tests__/streaming.test.ts (the `Usage` parts).
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    mod total_prompt_tokens {
+        use super::*;
+
+        #[test]
+        fn counts_cache_tokens_on_disjoint_providers_where_they_add_to_input_tokens() {
+            assert_eq!(
+                Usage::new(10, 4, 5862)
+                    .with_cache_read_input_tokens(5848)
+                    .total_prompt_tokens(),
+                5858
+            );
+        }
+
+        #[test]
+        fn does_not_double_count_cache_tokens_on_subset_providers_where_they_sit_inside_input_tokens() {
+            assert_eq!(
+                Usage::new(12936, 10, 12946)
+                    .with_cache_read_input_tokens(6457)
+                    .total_prompt_tokens(),
+                12936
+            );
+        }
+
+        #[test]
+        fn counts_the_cache_read_from_an_anthropic_direct_payload_whose_total_tokens_includes_the_cache() {
+            assert_eq!(
+                Usage::new(10, 4, 5862)
+                    .with_cache_read_input_tokens(5848)
+                    .total_prompt_tokens(),
+                5858
+            );
+        }
+
+        #[test]
+        fn adds_cache_reads_and_writes_on_disjoint_providers() {
+            let usage = Usage::new(10, 5, 100)
+                .with_cache_read_input_tokens(60)
+                .with_cache_write_input_tokens(25);
+            assert_eq!(usage.total_prompt_tokens(), 95);
+        }
+
+        #[test]
+        fn collapses_to_input_tokens_when_there_are_no_cache_tokens() {
+            assert_eq!(Usage::new(100, 50, 150).total_prompt_tokens(), 100);
+        }
+    }
+
+    #[test]
+    fn accumulate_adds_counters_and_starts_cache_counters_when_seen() {
+        let mut total = Usage::default();
+        total.accumulate(&Usage::new(10, 5, 15));
+        assert_eq!(total.cache_read_input_tokens(), None);
+        total.accumulate(
+            &Usage::new(20, 10, 30)
+                .with_cache_read_input_tokens(8)
+                .with_cache_write_input_tokens(2),
+        );
+        assert_eq!(
+            serde_json::to_value(total).unwrap(),
+            json!({"inputTokens": 30, "outputTokens": 15, "totalTokens": 45, "cacheReadInputTokens": 8, "cacheWriteInputTokens": 2})
+        );
+    }
+
+    #[test]
+    fn accumulate_saturates_instead_of_overflowing() {
+        let mut total = Usage::new(u64::MAX, 1, u64::MAX - 1).with_cache_read_input_tokens(u64::MAX);
+        total.accumulate(&Usage::new(1, 1, 5).with_cache_read_input_tokens(1));
+        assert_eq!(
+            (total.input_tokens(), total.output_tokens(), total.total_tokens()),
+            (u64::MAX, 2, u64::MAX)
+        );
+        assert_eq!(total.cache_read_input_tokens(), Some(u64::MAX));
+        assert_eq!(total.total_prompt_tokens(), u64::MAX);
+    }
+
+    #[test]
+    fn counters_serialize_as_integers() {
+        let usage = Usage::new(0, 4_294_967_296, 9_007_199_254_740_991);
+        assert_eq!(
+            serde_json::to_string(&usage).unwrap(),
+            r#"{"inputTokens":0,"outputTokens":4294967296,"totalTokens":9007199254740991}"#
+        );
+        let metrics = Metrics::new(812).with_time_to_first_byte_ms(95);
+        assert_eq!(
+            serde_json::to_string(&metrics).unwrap(),
+            r#"{"latencyMs":812,"timeToFirstByteMs":95}"#
+        );
+    }
+}

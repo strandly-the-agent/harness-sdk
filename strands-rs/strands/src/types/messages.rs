@@ -1111,5 +1111,186 @@ impl From<DocumentBlock> for ToolResultContent {
     }
 }
 
+open_enum! {
+    /// Why a model or agent stopped (TS `StopReason`).
+    pub enum StopReason / UnknownStopReason {
+        /// The invocation was cancelled.
+        Cancelled => "cancelled",
+        /// The agent paused at a checkpoint.
+        Checkpoint => "checkpoint",
+        /// The provider filtered the content.
+        ContentFiltered => "contentFiltered",
+        /// The model finished its turn.
+        EndTurn => "endTurn",
+        /// A guardrail intervened.
+        GuardrailIntervened => "guardrailIntervened",
+        /// An interrupt paused the agent.
+        Interrupt => "interrupt",
+        /// The model hit its output token limit.
+        MaxTokens => "maxTokens",
+        /// The invocation hit its output token limit.
+        LimitOutputTokens => "limitOutputTokens",
+        /// The invocation hit its structured-output attempt limit.
+        LimitStructuredOutputAttempts => "limitStructuredOutputAttempts",
+        /// The invocation hit its total token limit.
+        LimitTotalTokens => "limitTotalTokens",
+        /// The invocation hit its turn limit.
+        LimitTurns => "limitTurns",
+        /// The provider paused a long-running turn.
+        PauseTurn => "pauseTurn",
+        /// The model refused.
+        Refusal => "refusal",
+        /// The model emitted a stop sequence.
+        StopSequence => "stopSequence",
+        /// The model requested tool calls.
+        ToolUse => "toolUse",
+        /// The request exceeded the model's context window.
+        ModelContextWindowExceeded => "modelContextWindowExceeded",
+    }
+}
+
+/// The stop reasons for invocation limits, in TS `LIMIT_STOP_REASONS` order.
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop limit checks"))]
+pub(crate) const LIMIT_STOP_REASONS: [StopReason; 4] = [
+    StopReason::LimitTurns,
+    StopReason::LimitTotalTokens,
+    StopReason::LimitOutputTokens,
+    StopReason::LimitStructuredOutputAttempts,
+];
+
+impl StopReason {
+    /// Whether this is one of the invocation-limit stop reasons.
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop limit checks"))]
+    pub(crate) fn is_limit(&self) -> bool {
+        LIMIT_STOP_REASONS.contains(self)
+    }
+}
+
+/// The text of the final message when a limit stops an agent (TS `limitStopMessage`).
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop limit checks"))]
+pub(crate) fn limit_stop_message(agent_name: &str, stop_reason: &StopReason) -> String {
+    format!(
+        "Agent '{agent_name}' stopped early ({stop_reason}): a limit on this call was reached, so its answer is incomplete"
+    )
+}
+
+/// A system prompt (TS `SystemPrompt`): a plain string or a list of system content blocks.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+#[non_exhaustive]
+pub enum SystemPrompt {
+    /// A plain string, written as a JSON string.
+    Text(String),
+    /// System content blocks, written as an array.
+    Blocks(Vec<SystemContentBlock>),
+}
+
+impl<'de> Deserialize<'de> for SystemPrompt {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        match JsonValue::deserialize(deserializer)? {
+            JsonValue::String(text) => Ok(Self::Text(text)),
+            JsonValue::Array(blocks) => from_json(JsonValue::Array(blocks))
+                .map(Self::Blocks)
+                .map_err(D::Error::custom),
+            other => Err(D::Error::custom(format!(
+                "system prompt must be a string or an array, got {other}"
+            ))),
+        }
+    }
+}
+
+impl From<&str> for SystemPrompt {
+    fn from(text: &str) -> Self {
+        Self::Text(text.to_owned())
+    }
+}
+
+impl From<String> for SystemPrompt {
+    fn from(text: String) -> Self {
+        Self::Text(text)
+    }
+}
+
+impl From<Vec<SystemContentBlock>> for SystemPrompt {
+    fn from(blocks: Vec<SystemContentBlock>) -> Self {
+        Self::Blocks(blocks)
+    }
+}
+
+/// A block in a system prompt (TS `SystemContentBlock`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SystemContentBlock {
+    /// `{"text": ..}`
+    Text(TextBlock),
+    /// `{"cachePoint": ..}`
+    CachePoint(CachePointBlock),
+    /// `{"guardContent": ..}`
+    GuardContent(GuardContentBlock),
+}
+
+impl SystemContentBlock {
+    /// A text block.
+    pub fn text(text: impl Into<String>) -> Self {
+        Self::Text(TextBlock::new(text))
+    }
+}
+
+impl Serialize for SystemContentBlock {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            Self::Text(block) => block.serialize(serializer),
+            Self::CachePoint(block) => serialize_wrapped(serializer, "cachePoint", block),
+            Self::GuardContent(block) => serialize_wrapped(serializer, "guardContent", block),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SystemContentBlock {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        const UNKNOWN: &str = "Unknown SystemContentBlockData type";
+        let JsonValue::Object(mut data) = JsonValue::deserialize(deserializer)? else {
+            return Err(D::Error::custom(UNKNOWN));
+        };
+        let parsed = match take_first(&mut data, &["cachePoint", "guardContent", "text"]) {
+            Some(("cachePoint", inner)) => from_json(inner).map(Self::CachePoint),
+            Some(("guardContent", inner)) => from_json(inner).map(Self::GuardContent),
+            Some((_, inner)) => from_json(inner).map(|text| Self::Text(TextBlock { text })),
+            None => Err(UNKNOWN.to_owned()),
+        };
+        parsed.map_err(D::Error::custom)
+    }
+}
+
+impl From<TextBlock> for SystemContentBlock {
+    fn from(block: TextBlock) -> Self {
+        Self::Text(block)
+    }
+}
+
+impl From<CachePointBlock> for SystemContentBlock {
+    fn from(block: CachePointBlock) -> Self {
+        Self::CachePoint(block)
+    }
+}
+
+impl From<GuardContentBlock> for SystemContentBlock {
+    fn from(block: GuardContentBlock) -> Self {
+        Self::GuardContent(block)
+    }
+}
+
+impl From<&str> for SystemContentBlock {
+    fn from(text: &str) -> Self {
+        Self::text(text)
+    }
+}
+
+impl From<String> for SystemContentBlock {
+    fn from(text: String) -> Self {
+        Self::text(text)
+    }
+}
+
 #[cfg(test)]
 mod tests;

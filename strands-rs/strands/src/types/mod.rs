@@ -4,4 +4,5 @@ pub mod citations;
 pub mod json;
 pub mod media;
 pub mod messages;
+pub mod snapshot;
 pub mod tools;

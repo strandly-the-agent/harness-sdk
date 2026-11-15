@@ -5,8 +5,8 @@
 
 use std::io;
 
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Arbitrary JSON (`JSONValue` in TS).
 pub type JsonValue = serde_json::Value;
@@ -38,6 +38,13 @@ pub(crate) fn from_json_str<T: DeserializeOwned>(text: &str) -> serde_json::Resu
             serde_json::from_str(&sanitized)
         }
     }
+}
+
+/// Deserializes a present `null` as `Some(JsonValue::Null)`; use with `#[serde(default)]`.
+pub(crate) fn present_null<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<JsonValue>, D::Error> {
+    JsonValue::deserialize(deserializer).map(Some)
 }
 
 struct JsFormatter;

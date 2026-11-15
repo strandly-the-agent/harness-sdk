@@ -848,3 +848,226 @@ fn unknown_status_and_formats_load_without_failing_the_message() {
     assert!(matches!(result.status(), ToolResultStatus::Other(_)));
     assert_eq!(to_json(&message), saved);
 }
+
+fn guard_text() -> GuardContentBlock {
+    GuardContentBlock::from(GuardContentText::new(
+        "No secrets.",
+        vec![GuardQualifier::GuardContent],
+    ))
+}
+
+fn guard_text_json() -> JsonValue {
+    json!({"guardContent": {"text": {"qualifiers": ["guard_content"], "text": "No secrets."}}})
+}
+
+mod system_prompt_from_data {
+    use super::*;
+
+    fn from_data(value: JsonValue) -> SystemPrompt {
+        from_saved(value)
+    }
+
+    #[test]
+    fn returns_the_string_unchanged() {
+        assert_eq!(
+            from_data(json!("You are helpful.")),
+            SystemPrompt::from("You are helpful.")
+        );
+    }
+
+    #[test]
+    fn converts_to_text_block() {
+        assert_eq!(
+            from_data(json!([{"text": "hi"}])),
+            SystemPrompt::Blocks(vec![TextBlock::new("hi").into()])
+        );
+    }
+
+    #[test]
+    fn converts_to_cache_point_block() {
+        assert_eq!(
+            from_data(json!([{"cachePoint": {"cacheType": "default"}}])),
+            SystemPrompt::Blocks(vec![CachePointBlock::new().into()])
+        );
+    }
+
+    #[test]
+    fn converts_to_guard_content_block() {
+        assert_eq!(
+            from_data(JsonValue::Array(vec![guard_text_json()])),
+            SystemPrompt::Blocks(vec![guard_text().into()])
+        );
+    }
+
+    #[test]
+    fn converts_all_block_types_correctly() {
+        let prompt =
+            from_data(json!([{"text": "a"}, {"cachePoint": {"cacheType": "default"}}, guard_text_json()]));
+        assert_eq!(
+            prompt,
+            SystemPrompt::Blocks(vec![
+                SystemContentBlock::text("a"),
+                CachePointBlock::new().into(),
+                guard_text().into()
+            ])
+        );
+    }
+
+    #[test]
+    fn returns_empty_array() {
+        assert_eq!(from_data(json!([])), SystemPrompt::Blocks(vec![]));
+    }
+
+    #[test]
+    fn throws_error() {
+        let error =
+            serde_json::from_value::<SystemPrompt>(json!([{"unknownType": {"data": "value"}}])).unwrap_err();
+        assert!(
+            error.to_string().contains("Unknown SystemContentBlockData type"),
+            "{error}"
+        );
+        let error = serde_json::from_value::<SystemContentBlock>(json!({"unknownType": {}})).unwrap_err();
+        assert_eq!(error.to_string(), "Unknown SystemContentBlockData type");
+    }
+}
+
+mod system_prompt_to_data {
+    use super::*;
+
+    #[test]
+    fn returns_the_string_unchanged() {
+        assert_eq!(
+            to_json(&SystemPrompt::from("You are helpful.".to_owned())),
+            json!("You are helpful.")
+        );
+    }
+
+    #[test]
+    fn converts_to_text_block_data_array() {
+        assert_eq!(
+            to_json(&SystemPrompt::from(vec![SystemContentBlock::from("a")])),
+            json!([{"text": "a"}])
+        );
+    }
+
+    #[test]
+    fn converts_to_cache_point_block_data_array() {
+        assert_eq!(
+            to_json(&SystemPrompt::from(vec![CachePointBlock::new().into()])),
+            json!([{"cachePoint": {"cacheType": "default"}}])
+        );
+    }
+
+    #[test]
+    fn converts_to_guard_content_block_data_array() {
+        assert_eq!(
+            to_json(&SystemPrompt::from(vec![guard_text().into()])),
+            JsonValue::Array(vec![guard_text_json()])
+        );
+    }
+
+    #[test]
+    fn converts_all_block_types_correctly() {
+        let prompt = SystemPrompt::from(vec![
+            TextBlock::new("a").into(),
+            CachePointBlock::new().with_ttl("5m").into(),
+            guard_text().into(),
+        ]);
+        assert_eq!(
+            to_json(&prompt),
+            json!([{"text": "a"}, {"cachePoint": {"cacheType": "default", "ttl": "5m"}}, guard_text_json()])
+        );
+    }
+
+    #[test]
+    fn returns_empty_array() {
+        assert_eq!(to_json(&SystemPrompt::Blocks(vec![])), json!([]));
+    }
+
+    #[test]
+    fn preserves_data_through_to_data_from_data_cycle() {
+        let prompt = SystemPrompt::from(vec![
+            "a".into(),
+            CachePointBlock::new().into(),
+            guard_text().into(),
+        ]);
+        assert_eq!(from_saved::<SystemPrompt>(to_json(&prompt)), prompt);
+    }
+
+    #[test]
+    fn preserves_string_through_to_data_from_data_cycle() {
+        let prompt = SystemPrompt::from("plain");
+        assert_eq!(from_saved::<SystemPrompt>(to_json(&prompt)), prompt);
+    }
+}
+
+mod stop_reason {
+    use super::*;
+
+    const KNOWN: [&str; 16] = [
+        "cancelled",
+        "checkpoint",
+        "contentFiltered",
+        "endTurn",
+        "guardrailIntervened",
+        "interrupt",
+        "maxTokens",
+        "limitOutputTokens",
+        "limitStructuredOutputAttempts",
+        "limitTotalTokens",
+        "limitTurns",
+        "pauseTurn",
+        "refusal",
+        "stopSequence",
+        "toolUse",
+        "modelContextWindowExceeded",
+    ];
+
+    #[test]
+    fn known_strings_map_to_their_variants_and_round_trip() {
+        for wire in KNOWN {
+            let reason = StopReason::from(wire);
+            assert!(!matches!(reason, StopReason::Other(_)), "{wire}");
+            assert_eq!(reason.as_str(), wire);
+            assert_eq!(from_saved::<StopReason>(to_json(&reason)), reason);
+        }
+        assert_eq!(StopReason::from("endTurn"), StopReason::EndTurn);
+    }
+
+    #[test]
+    fn other_never_holds_a_known_value() {
+        let reason: StopReason = from_saved(json!("endTurn"));
+        assert_eq!(reason, StopReason::EndTurn);
+        let unknown = StopReason::from("someFutureReason".to_owned());
+        let StopReason::Other(payload) = &unknown else {
+            panic!("expected Other")
+        };
+        assert_eq!(payload.as_str(), "someFutureReason");
+        assert_eq!(to_json(&unknown), json!("someFutureReason"));
+        assert_eq!(unknown.to_string(), "someFutureReason");
+    }
+
+    #[test]
+    fn limit_stop_reasons_are_the_four_limit_values_in_ts_order() {
+        let names: Vec<&str> = LIMIT_STOP_REASONS.iter().map(StopReason::as_str).collect();
+        assert_eq!(
+            names,
+            [
+                "limitTurns",
+                "limitTotalTokens",
+                "limitOutputTokens",
+                "limitStructuredOutputAttempts"
+            ]
+        );
+        assert!(StopReason::LimitTurns.is_limit());
+        assert!(!StopReason::MaxTokens.is_limit());
+    }
+
+    #[test]
+    fn limit_stop_message_names_the_agent_and_the_reason() {
+        assert_eq!(
+            limit_stop_message("my_agent", &StopReason::LimitTurns),
+            "Agent 'my_agent' stopped early (limitTurns): a limit on this call was reached, so its answer is incomplete"
+        );
+    }
+}
