@@ -14,6 +14,7 @@ pub mod read;
 pub mod shell;
 pub mod sleep;
 pub mod stop;
+pub mod subagent;
 pub mod web_fetch;
 pub mod write;
 
@@ -38,6 +39,10 @@ pub use sleep::{DEFAULT_MAX_DURATION, MakeSleepOptions, make_sleep, sleep, sleep
 pub use stop::{
     DEFAULT_MAX_STOP_MESSAGE_LENGTH, DEFAULT_STOP_DESCRIPTION, DEFAULT_STOP_MESSAGE, MakeStopOptions,
     make_stop, stop,
+};
+pub use subagent::{
+    DEFAULT_SUBAGENT_DESCRIPTION, DEFAULT_SUBAGENT_MAX_DEPTH, MakeSubagentOptions, SubagentTool,
+    make_subagent, subagent,
 };
 pub use web_fetch::{
     DEFAULT_MAX_BYTES, DEFAULT_MAX_CONTENT_CHARS, MakeWebFetchOptions, WEB_FETCH_DESCRIPTION_AGENTIC,

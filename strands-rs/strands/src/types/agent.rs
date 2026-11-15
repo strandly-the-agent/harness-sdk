@@ -86,6 +86,18 @@ impl InvocationState {
             .is_empty()
     }
 
+    /// A state holding copies of this one's values (TS `{ ...invocationState }`).
+    pub(crate) fn copy(&self) -> Self {
+        let extensions = self
+            .extensions
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Self {
+            extensions: Arc::new(RwLock::new(extensions)),
+        }
+    }
+
     /// Removes every value.
     pub fn clear(&self) {
         self.extensions

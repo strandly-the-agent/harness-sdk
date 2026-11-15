@@ -2,7 +2,7 @@
 
 #[expect(clippy::module_inception, reason = "mirrors TS `agent/agent.ts`")]
 mod agent;
-mod agent_as_tool;
+pub(crate) mod agent_as_tool;
 mod agent_delegation;
 pub mod agent_metadata;
 mod config;

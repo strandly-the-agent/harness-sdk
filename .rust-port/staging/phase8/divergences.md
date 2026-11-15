@@ -16,3 +16,5 @@
 | `web_fetch` markdown | `turndown` output | `htmd` output with the same options and rules (title heading, dropped elements, safe images and links); whitespace and escaping can differ | No turndown port in Rust; `htmd` follows turndown's rules (P-280) |
 | `web_fetch` `maxContentChars` | Counts UTF-16 code units | Counts `char`s | Section 7.3 (P-280) |
 | `web_fetch` `statusText` | The server's reason phrase | The canonical reason phrase for the status | `reqwest` doesn't expose the received phrase (P-272, P-280) |
+| `subagent` default builder | The child inherits the parent's printer, gets `contextManager: 'auto'` unless its model is stateful, and shares the parent's intervention handlers and trace attributes | The child's printer is off and it gets none of the others | Context managers, interventions and telemetry are not on this branch yet (P-282) |
+| `subagent` `maxDepth` | Any positive integer `number` | `u32`, zero rejected | Negative and fractional values are unrepresentable (P-281) |

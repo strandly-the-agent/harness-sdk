@@ -269,7 +269,7 @@ impl Tool for AgentAsTool {
             let outcome = match (failure, result) {
                 (Some(error), _) => error_result(&tool_use_id, error),
                 (None, None) => error_result(&tool_use_id, format!("Agent '{name}' did not produce a result.")),
-                (None, Some(result)) => match unfinished(&name, &result, cancelled) {
+                (None, Some(result)) => match unfinished(&format!("Agent '{name}'"), &name, &result, cancelled) {
                     Some(text) => error_result(&tool_use_id, text),
                     None => ToolResultBlock::new(&tool_use_id, ToolResultStatus::Success, render(&result)),
                 },
@@ -283,19 +283,20 @@ impl Tool for AgentAsTool {
     }
 }
 
-/// Why a finished child call doesn't count as an answer (TS `ChildAgentAdapter.classify`).
-fn unfinished(name: &str, result: &AgentResult, cancelled: bool) -> Option<String> {
+/// Why a finished child call doesn't count as an answer (TS `ChildAgentAdapter.classify`);
+/// `label` names the child in the message, `name` in a limit-stop message.
+pub(crate) fn unfinished(label: &str, name: &str, result: &AgentResult, cancelled: bool) -> Option<String> {
     let stop_reason = result.stop_reason();
     match stop_reason {
-        StopReason::Interrupt => Some(format!("Agent '{name}' interrupted without any interrupts")),
-        StopReason::Cancelled => cancelled.then(|| format!("Agent '{name}' cancelled")),
+        StopReason::Interrupt => Some(format!("{label} interrupted without any interrupts")),
+        StopReason::Cancelled => cancelled.then(|| format!("{label} cancelled")),
         _ if stop_reason.is_limit() => Some(limit_stop_message(name, &stop_reason)),
         _ => None,
     }
 }
 
 /// How a call relates to the parent's interrupt state (TS `AgentToolStreamer.isResuming`/`resume`).
-enum Resume {
+pub(crate) enum Resume {
     /// Not resuming this call.
     Fresh,
     /// Resuming, but none of this call's interrupts were answered.
@@ -304,7 +305,7 @@ enum Resume {
     With(Vec<InterruptResponse>),
 }
 
-fn resume_input(parent: &InterruptState, prefix: &str) -> Resume {
+pub(crate) fn resume_input(parent: &InterruptState, prefix: &str) -> Resume {
     let state = parent.lock();
     if !state.activated || !state.interrupts.keys().any(|id| id.starts_with(prefix)) {
         return Resume::Fresh;
@@ -333,7 +334,7 @@ fn resume_input(parent: &InterruptState, prefix: &str) -> Resume {
 
 /// Registers the child's interrupts on the parent under this call's scope and returns the
 /// first; all are registered because a tool outcome carries one interrupt.
-fn register(parent: &InterruptState, prefix: &str, interrupts: &[Interrupt]) -> Option<Interrupt> {
+pub(crate) fn register(parent: &InterruptState, prefix: &str, interrupts: &[Interrupt]) -> Option<Interrupt> {
     let mut state = parent.lock();
     let registered: Vec<Interrupt> = interrupts
         .iter()
@@ -351,7 +352,7 @@ fn register(parent: &InterruptState, prefix: &str, interrupts: &[Interrupt]) -> 
 }
 
 /// JavaScript `encodeURIComponent`.
-fn encode_uri_component(value: &str) -> String {
+pub(crate) fn encode_uri_component(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
         if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&byte) {
@@ -372,7 +373,7 @@ fn render(result: &AgentResult) -> Vec<ToolResultContent> {
 }
 
 /// How restoring a paused child turn went (TS `AgentToolStreamer.resume`).
-enum Restored {
+pub(crate) enum Restored {
     /// The child awaits the responses.
     Ready,
     /// The stored turn didn't load; its interrupts are raised again, unanswered.
@@ -383,7 +384,12 @@ enum Restored {
 
 /// Loads the call's stored turn into the child (a context-preserving child keeps its own) and
 /// reports whether the child awaits interrupt responses.
-fn restore(agent: &mut Agent, parent: &InterruptState, prefix: &str, tool_use_id: &str) -> Restored {
+pub(crate) fn restore(
+    agent: &mut Agent,
+    parent: &InterruptState,
+    prefix: &str,
+    tool_use_id: &str,
+) -> Restored {
     let turn = stored_turn(parent, tool_use_id);
     let loaded = turn.as_ref().map_or(Ok(()), |turn| {
         serde_json::from_value::<Snapshot>(turn.clone())
@@ -404,7 +410,12 @@ fn restore(agent: &mut Agent, parent: &InterruptState, prefix: &str, tool_use_id
 
 /// TS `_handleFailedRestore`: the call's interrupts the stored turn still awaits become
 /// unanswered again, and the turn stays stored.
-fn reraise(parent: &InterruptState, prefix: &str, tool_use_id: &str, turn: Option<&JsonValue>) -> Restored {
+pub(crate) fn reraise(
+    parent: &InterruptState,
+    prefix: &str,
+    tool_use_id: &str,
+    turn: Option<&JsonValue>,
+) -> Restored {
     let pending = turn
         .and_then(|turn| turn.get("data")?.get("interrupts")?.get("interrupts"))
         .and_then(JsonValue::as_object);
@@ -428,7 +439,7 @@ fn reraise(parent: &InterruptState, prefix: &str, tool_use_id: &str, turn: Optio
     })
 }
 
-fn stored_turn(parent: &InterruptState, tool_use_id: &str) -> Option<JsonValue> {
+pub(crate) fn stored_turn(parent: &InterruptState, tool_use_id: &str) -> Option<JsonValue> {
     parent
         .lock()
         .context
@@ -439,7 +450,7 @@ fn stored_turn(parent: &InterruptState, tool_use_id: &str) -> Option<JsonValue> 
 
 /// Keeps the child's paused turn in the parent's interrupt context, so it survives a parent
 /// snapshot (TS `turns[toolUseId] = takeSnapshot(child)`).
-fn store_turn(parent: &InterruptState, tool_use_id: &str, agent: &Agent) {
+pub(crate) fn store_turn(parent: &InterruptState, tool_use_id: &str, agent: &Agent) {
     let Ok(turn) = agent
         .take_snapshot(&TakeSnapshotOptions::session())
         .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Error::other))
@@ -459,7 +470,7 @@ fn store_turn(parent: &InterruptState, tool_use_id: &str, agent: &Agent) {
     }
 }
 
-fn remove_turn(parent: &InterruptState, tool_use_id: &str) {
+pub(crate) fn remove_turn(parent: &InterruptState, tool_use_id: &str) {
     if let Some(JsonValue::Object(turns)) = parent.lock().context.get_mut(INTERRUPTED_TURNS_KEY) {
         turns.shift_remove(tool_use_id);
     }

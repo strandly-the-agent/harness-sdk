@@ -89,6 +89,15 @@ impl AgentSandbox {
             .ok_or_else(|| DefaultNotConfiguredError::new(NO_SANDBOX_MESSAGE))
     }
 
+    /// The `sandbox` key this was built from, for a child agent inheriting it.
+    pub(crate) fn source(&self) -> Option<SandboxSource> {
+        match (&self.sandbox, self.configured) {
+            (Some(sandbox), true) => Some(SandboxSource::Sandbox(Arc::clone(sandbox))),
+            (None, _) => Some(SandboxSource::Off),
+            (Some(_), false) => None,
+        }
+    }
+
     /// Tools vended by an explicitly configured sandbox (TS `if (this._sandbox)`).
     pub(crate) fn vended_tools(&self) -> Vec<Arc<dyn crate::tools::Tool>> {
         match (&self.sandbox, self.configured) {
