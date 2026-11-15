@@ -1,4 +1,11 @@
 //! Media formats and MIME type mapping (TS `src/mime.ts`).
+//!
+//! The four format enums are public through [`crate::types::media`]; the MIME mapping is
+//! crate-internal.
+#![cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the MIME mapping is used by the model providers")
+)]
 
 open_enum! {
     /// Audio formats (TS `AudioFormat`).
@@ -105,7 +112,7 @@ open_enum! {
 }
 
 /// The image formats, in TS `IMAGE_FORMATS` order.
-pub const IMAGE_FORMATS: [ImageFormat; 5] = [
+pub(crate) const IMAGE_FORMATS: [ImageFormat; 5] = [
     ImageFormat::Png,
     ImageFormat::Jpg,
     ImageFormat::Jpeg,
@@ -116,7 +123,7 @@ pub const IMAGE_FORMATS: [ImageFormat; 5] = [
 /// A document, image or video format (TS `MediaFormat`, a union of the three).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub enum MediaFormat {
+pub(crate) enum MediaFormat {
     /// A document format.
     Document(DocumentFormat),
     /// An image format.
@@ -127,7 +134,7 @@ pub enum MediaFormat {
 
 impl MediaFormat {
     /// The wire string.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Self::Document(format) => format.as_str(),
             Self::Image(format) => format.as_str(),
@@ -212,7 +219,7 @@ const TO_MEDIA_FORMAT: [(&str, MediaFormat); 23] = [
 ];
 
 /// The MIME type for a document, image or video format, case-insensitively (TS `toMimeType`).
-pub fn to_mime_type(format: &str) -> Option<&'static str> {
+pub(crate) fn to_mime_type(format: &str) -> Option<&'static str> {
     let format = format.to_lowercase();
     TO_MIME_TYPE
         .iter()
@@ -221,7 +228,7 @@ pub fn to_mime_type(format: &str) -> Option<&'static str> {
 }
 
 /// The media format for a MIME type, case-insensitively (TS `toMediaFormat`).
-pub fn to_media_format(mime_type: &str) -> Option<MediaFormat> {
+pub(crate) fn to_media_format(mime_type: &str) -> Option<MediaFormat> {
     let mime_type = mime_type.to_lowercase();
     TO_MEDIA_FORMAT
         .iter()

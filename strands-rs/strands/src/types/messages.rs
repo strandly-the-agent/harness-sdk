@@ -19,7 +19,7 @@ use crate::error::{BoxError, Error, Result};
 use crate::models::streaming::{Metrics, Usage};
 
 /// Mints a durable message tracking id (TS `generateTrackingId`), a UUID v7.
-pub fn generate_tracking_id() -> String {
+pub(crate) fn generate_tracking_id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 

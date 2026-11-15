@@ -7,7 +7,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::json::{JsonObject, JsonValue};
 use super::messages::TextBlock;
-pub use crate::mime::{AudioFormat, DocumentFormat, ImageFormat, MediaFormat, VideoFormat};
+pub use crate::mime::{
+    AudioFormat, DocumentFormat, ImageFormat, UnknownAudioFormat, UnknownDocumentFormat, UnknownImageFormat,
+    UnknownVideoFormat, VideoFormat,
+};
 
 /// Encodes bytes as standard, padded base64 (TS `encodeBase64`).
 pub(crate) fn encode_base64(bytes: &[u8]) -> String {

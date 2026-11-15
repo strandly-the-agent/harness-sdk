@@ -26,7 +26,7 @@ pub mod agent;
 pub mod cancel;
 pub mod error;
 pub mod interrupt;
-pub mod mime;
+mod mime;
 pub mod models;
 pub mod state_store;
 pub mod types;
