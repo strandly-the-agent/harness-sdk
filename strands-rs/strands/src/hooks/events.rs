@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent::continuation::ContinuationInput;
 use crate::error::Error;
 use crate::interrupt::{Interrupt, InterruptParams, InterruptSource};
 use crate::models::model::Model;
@@ -264,6 +265,7 @@ pub struct AfterInvocationEvent<'a> {
     agent: &'a mut LocalAgent,
     invocation_state: InvocationState,
     resume: Option<InvokeArgs>,
+    continuations: Vec<ContinuationInput>,
 }
 
 impl<'a> AfterInvocationEvent<'a> {
@@ -272,7 +274,17 @@ impl<'a> AfterInvocationEvent<'a> {
             agent,
             invocation_state,
             resume: None,
+            continuations: Vec::new(),
         }
+    }
+
+    /// Adds follow-up input for another pass (TS `continuations.addInput`).
+    pub(crate) fn add_continuation(&mut self, input: ContinuationInput) {
+        self.continuations.push(input);
+    }
+
+    pub(crate) fn take_continuations(&mut self) -> Vec<ContinuationInput> {
+        std::mem::take(&mut self.continuations)
     }
 
     sequential_accessors!();
@@ -551,9 +563,29 @@ pub struct BeforeModelCallEvent<'a> {
     invocation_state: InvocationState,
     cancel: Option<Cancel>,
     projected_input_tokens: Option<u64>,
+    continuations: Vec<ContinuationInput>,
+    interrupts: Vec<Interrupt>,
 }
 
 impl<'a> BeforeModelCallEvent<'a> {
+    /// Adds input appended before this model call (TS `continuations.addInput`).
+    pub(crate) fn add_continuation(&mut self, input: ContinuationInput) {
+        self.continuations.push(input);
+    }
+
+    pub(crate) fn take_continuations(&mut self) -> Vec<ContinuationInput> {
+        std::mem::take(&mut self.continuations)
+    }
+
+    /// Stops the invocation with these interrupts (a TS hook throwing `InterruptError`).
+    pub(crate) fn raise_interrupts(&mut self, interrupts: Vec<Interrupt>) {
+        self.interrupts.extend(interrupts);
+    }
+
+    pub(crate) fn take_raised_interrupts(&mut self) -> Vec<Interrupt> {
+        std::mem::take(&mut self.interrupts)
+    }
+
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         model: Arc<dyn Model>,
@@ -566,6 +598,8 @@ impl<'a> BeforeModelCallEvent<'a> {
             invocation_state,
             cancel: None,
             projected_input_tokens,
+            continuations: Vec::new(),
+            interrupts: Vec::new(),
         }
     }
 

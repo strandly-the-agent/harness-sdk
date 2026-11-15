@@ -1377,6 +1377,7 @@ mod concurrent {
 }
 
 mod cancel;
+mod continuation;
 mod copy_on_input;
 mod drop_guard;
 mod end_turn_resume;

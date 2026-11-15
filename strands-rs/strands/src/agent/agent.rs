@@ -8,6 +8,7 @@ use futures::future::BoxFuture;
 
 use crate::agent::agent_delegation::{AGENT_DELEGATION_NAME, AgentDelegation};
 use crate::agent::config::{AgentBuilder, AgentConfig, DefaultModel, ModelSource};
+use crate::agent::continuation::ContinuationInput;
 use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
 use crate::agent::run::AbandonedRun;
 use crate::agent::stream::AgentStream;
@@ -78,6 +79,8 @@ pub struct Agent {
     pub(crate) in_pass: bool,
     /// Hooks a dropped stream skipped; the next `invoke`, `stream` or `shutdown` runs them.
     pub(crate) abandoned: Option<AbandonedRun>,
+    /// Follow-up input a pass that stopped on an interrupt deferred to the next finished pass.
+    pub(crate) deferred_continuations: Vec<ContinuationInput>,
 }
 
 impl Agent {
@@ -142,6 +145,7 @@ impl Agent {
             printer: None,
             in_pass: false,
             abandoned: None,
+            deferred_continuations: Vec::new(),
         }
     }
 

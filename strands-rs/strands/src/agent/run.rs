@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use futures::StreamExt;
 use indexmap::IndexMap;
 
+use crate::agent::continuation::{self, ContinuationInput, Prepared};
 use crate::agent::stream::{Driven, DrivenItem, Emitter};
 use crate::agent::{Agent, InvocationContext};
 use crate::cancel::CancelOptions;
@@ -214,8 +215,10 @@ impl Agent {
         let context = InvocationContext::resolve(options.invocation_context, options.limits);
         self.local.set_invocation_context(Some(context.clone()));
 
-        // A hook's `AfterInvocationEvent::set_resume` runs another pass (TS `stream`'s loop).
+        // A hook's `AfterInvocationEvent::set_resume` runs another pass (TS `stream`'s loop), and
+        // so does follow-up input a hook contributed (TS `continuations`).
         let mut args = args;
+        let mut continuation: Option<Prepared> = None;
         let result = loop {
             self.local.begin_cancel(external_cancel.as_ref());
             // Consumed before the hooks run so their `interrupt()` finds the responses.
@@ -242,7 +245,10 @@ impl Agent {
                 let message = assistant_text(cancel.message().unwrap_or("invocation denied by hook"));
                 self.append_message(message.clone(), &state, &hooks, out).await?;
                 let result = self.result(StopReason::EndTurn, message, &state);
-                // TS returns here without reading `resume`.
+                if let Some(prepared) = continuation.take() {
+                    prepared.abandon(continuation::NOT_INCORPORATED);
+                }
+                // TS returns here without reading `resume`; its inputs are dropped (abandoned).
                 self.after_invocation(&hooks, &state, out).await?;
                 break result;
             }
@@ -254,10 +260,15 @@ impl Agent {
                 state: state.clone(),
                 hooks: hooks.clone(),
                 schema: schema.clone(),
+                continuation: Arc::new(Mutex::new(continuation.take())),
             };
+            let unused = Arc::clone(&pass.continuation);
             let outcome = self
                 .stream_with_middleware(pass, stage_options.clone(), out)
                 .await;
+            if let Some(prepared) = lock(&unused).take() {
+                prepared.abandon(continuation::NOT_INCORPORATED);
+            }
             if outcome
                 .as_ref()
                 .is_ok_and(|result| result.stop_reason() != StopReason::Interrupt)
@@ -268,10 +279,25 @@ impl Agent {
                 }
             }
             self.in_pass = false;
-            let resume = self.after_invocation(&hooks, &state, out).await?;
+            let (resume, inputs) = self.after_invocation(&hooks, &state, out).await?;
             let result = outcome?;
+            let stop_reason = result.stop_reason();
+            let inputs = match &stop_reason {
+                StopReason::EndTurn | StopReason::StopSequence | StopReason::Interrupt => inputs,
+                other => {
+                    continuation::abandon(inputs, &continuation::stopped_after(other));
+                    Vec::new()
+                }
+            };
+            continuation = continuation::prepare(
+                inputs,
+                Some(&mut self.deferred_continuations),
+                Some(&stop_reason),
+                normalize_input,
+            );
             match resume {
-                Some(resume) if should_resume(&context) => args = resume,
+                Some(resume) if continuation.is_some() || should_resume(&context) => args = resume,
+                None if continuation.is_some() => args = InvokeArgs::Messages(Vec::new()),
                 _ => break result,
             }
         };
@@ -292,8 +318,8 @@ impl Agent {
         out: &Emitter,
     ) -> Result<AgentResult> {
         if !self.local.middleware().has::<AgentStreamStage>() {
+            let input = pass.input_for(&pass.args)?;
             let Pass {
-                input,
                 resuming,
                 state,
                 hooks,
@@ -336,23 +362,25 @@ impl Agent {
         }
     }
 
-    /// Fires `AfterInvocationEvent`; returns the input a hook asked to resume with.
+    /// Fires `AfterInvocationEvent`; returns the input a hook asked to resume with and the
+    /// follow-up input hooks contributed.
     async fn after_invocation(
         &mut self,
         hooks: &HookRegistry,
         state: &InvocationState,
         out: &Emitter,
-    ) -> Result<Option<InvokeArgs>> {
+    ) -> Result<(Option<InvokeArgs>, Vec<ContinuationInput>)> {
         let mut event = AfterInvocationEvent::new(&mut self.local, state.clone());
         hooks.invoke::<AfterInvocationEvent<'static>>(&mut event).await?;
         out.emit(AgentStreamEvent::AfterInvocation((&event).into())).await;
-        Ok(event.take_resume())
+        let inputs = event.take_continuations();
+        Ok((event.take_resume(), inputs))
     }
 
     /// The cycles of one invocation (TS `_stream`).
     async fn run_loop(
         &mut self,
-        input: Vec<Message>,
+        input: PassInput,
         resuming: bool,
         state: &InvocationState,
         hooks: &HookRegistry,
@@ -365,7 +393,14 @@ impl Agent {
             ));
         }
         // A resume continues the paused cycle; hook-added input isn't appended.
-        let input = if resuming { Vec::new() } else { input };
+        let input = if resuming {
+            PassInput {
+                messages: Vec::new(),
+                continuation: input.continuation,
+            }
+        } else {
+            input
+        };
         {
             let mut telemetry = self.local.telemetry().lock();
             telemetry.meter.start_new_invocation();
@@ -389,7 +424,7 @@ impl Agent {
 
     async fn cycles(
         &mut self,
-        input: Vec<Message>,
+        input: PassInput,
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
@@ -493,15 +528,25 @@ impl Agent {
 
     async fn run_cycle(
         &mut self,
-        input: Option<Vec<Message>>,
+        input: Option<PassInput>,
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
         structured: &mut Structured,
         context: &InvocationContext,
     ) -> Step<Cycle> {
-        for message in input.into_iter().flatten() {
-            self.append_message(message, state, hooks, out).await?;
+        if let Some(input) = input {
+            match input.continuation {
+                Some(prepared) => {
+                    self.append_continuation_messages(input.messages, prepared, state, hooks, out)
+                        .await?;
+                }
+                None => {
+                    for message in input.messages {
+                        self.append_message(message, state, hooks, out).await?;
+                    }
+                }
+            }
         }
 
         let forced = structured.choice.clone();
@@ -709,10 +754,21 @@ impl Agent {
             let mut before =
                 BeforeModelCallEvent::new(&mut self.local, Arc::clone(&model), state.clone(), projected);
             hooks.invoke::<BeforeModelCallEvent<'static>>(&mut before).await?;
+            let raised = before.take_raised_interrupts();
+            if !raised.is_empty() {
+                // TS throws from the hook, before the event is yielded.
+                return Err(Stop::Interrupted(raised));
+            }
             out.emit(AgentStreamEvent::BeforeModelCall((&before).into()))
                 .await;
+            let inputs = before.take_continuations();
+            let cancel = before.take_cancel();
+            let model_continuation = continuation::prepare(inputs, None, None, normalize_input);
 
-            if let Some(cancel) = before.take_cancel() {
+            if let Some(cancel) = cancel {
+                if let Some(prepared) = model_continuation {
+                    prepared.abandon(continuation::CANCELLED_BY_MODEL_HOOK);
+                }
                 let message = assistant_text(cancel.message().unwrap_or("model call denied by hook"));
                 let stop_data = ModelStopData::new(message.clone(), StopReason::EndTurn);
                 let mut after =
@@ -725,6 +781,13 @@ impl Agent {
                     continue;
                 }
                 return Ok(StreamAggregatedResult::new(message, StopReason::EndTurn));
+            }
+            let mut projected = projected;
+            if let Some(mut prepared) = model_continuation {
+                let messages = std::mem::take(&mut prepared.messages);
+                self.append_continuation_messages(messages, prepared, state, hooks, out)
+                    .await?;
+                projected = self.estimate_input_tokens(&tool_specs).await;
             }
 
             let outcome = self
@@ -1014,6 +1077,53 @@ impl Agent {
             });
     }
 
+    /// Appends follow-up input, merging a message into the last one when they share a role, then
+    /// runs the inputs' `on_appended` callbacks and fires one `MessageAddedEvent` per message
+    /// that changed (TS `_appendContinuationMessages`).
+    async fn append_continuation_messages(
+        &mut self,
+        messages: Vec<Message>,
+        prepared: Prepared,
+        state: &InvocationState,
+        hooks: &HookRegistry,
+        out: &Emitter,
+    ) -> Result<()> {
+        let mut added: Vec<Message> = Vec::new();
+        // Whether the last added message is the one now last in history.
+        let mut last_is_added = false;
+        for message in messages {
+            let history = self.local.messages_mut();
+            match history.last_mut() {
+                Some(last) if last.role() == message.role() => {
+                    let mut content = last.content().to_vec();
+                    content.extend(message.content().iter().cloned());
+                    let mut merged =
+                        Message::new(message.role(), content).with_tracking_id(last.tracking_id());
+                    if let Some(metadata) = last.metadata() {
+                        merged = merged.with_metadata(metadata.clone());
+                    }
+                    *last = merged.clone();
+                    if last_is_added {
+                        added.pop();
+                    }
+                    added.push(merged);
+                }
+                _ => {
+                    history.push(message.clone());
+                    added.push(message);
+                }
+            }
+            last_is_added = true;
+        }
+        prepared.mark_appended();
+        for message in added {
+            let mut event = MessageAddedEvent::new(&mut self.local, message, state.clone());
+            hooks.invoke::<MessageAddedEvent<'static>>(&mut event).await?;
+            out.emit(AgentStreamEvent::MessageAdded((&event).into())).await;
+        }
+        Ok(())
+    }
+
     /// Appends a message and fires `MessageAddedEvent` (TS `_appendMessage`).
     async fn append_message(
         &mut self,
@@ -1129,6 +1239,40 @@ struct Pass {
     state: InvocationState,
     hooks: HookRegistry,
     schema: Option<StructuredOutputSchema>,
+    /// Follow-up input from the previous pass, taken when this pass incorporates it.
+    continuation: Arc<Mutex<Option<Prepared>>>,
+}
+
+/// What a pass appends before its first model call.
+struct PassInput {
+    messages: Vec<Message>,
+    /// Set when `messages` start with follow-up input; consecutive same-role messages merge.
+    continuation: Option<Prepared>,
+}
+
+impl Pass {
+    /// The pass input for `args` (the stage context's), combined with follow-up input from the
+    /// previous pass (TS `continuations.combine` in `_streamWithMiddleware`). Replaced arguments
+    /// replace the hook-processed input.
+    fn input_for(&self, args: &InvokeArgs) -> Result<PassInput> {
+        let replaced = *args != self.args;
+        let public = normalize_input(args.clone())?;
+        let mut slot = lock(&self.continuation);
+        let applies = slot.is_some() && (!public.is_empty() || continuation::is_empty_list(args));
+        let input = if replaced { public } else { self.input.clone() };
+        let Some(mut prepared) = slot.take().filter(|_| applies) else {
+            return Ok(PassInput {
+                messages: input,
+                continuation: None,
+            });
+        };
+        let mut messages = std::mem::take(&mut prepared.messages);
+        messages.extend(input);
+        Ok(PassInput {
+            messages,
+            continuation: Some(prepared),
+        })
+    }
 }
 
 /// The innermost layer of the `AgentStreamStage` chain: the pass's cycles (TS `_streamCore`). It
@@ -1167,12 +1311,7 @@ impl<'a> PassTerminal<'a> {
             agent: Some(agent),
         };
         // A handler that replaced the arguments replaces the hook-processed input.
-        let input = if context.args == self.pass.args {
-            Ok(self.pass.input.clone())
-        } else {
-            normalize_input(context.args)
-        };
-        let input = match input {
+        let input = match self.pass.input_for(&context.args) {
             Ok(input) => input,
             Err(error) => return Box::pin(futures::stream::iter([Err(error.into())])),
         };
