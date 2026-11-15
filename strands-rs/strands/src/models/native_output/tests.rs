@@ -1,6 +1,7 @@
 //! Ported from strands-ts/src/models/__tests__/native-output.test.ts. The Zod schemas of the TS spec
 //! appear as the JSON schemas TS `zodSchemaToJsonSchema` writes for them, and the expected
-//! conversions as the Anthropic SDK's `transformJSONSchema` output, both in `zod-schemas.json`.
+//! conversions as the Anthropic SDK's `transformJSONSchema` output, both in the conformance fixture
+//! `schemas/native_output_schemas.json` (`conformance/src/native-output.ts`).
 
 use std::sync::LazyLock;
 
@@ -16,8 +17,12 @@ use crate::models::model_info::{ModelCapabilities, ModelInfo};
 use crate::types::json::JsonValue;
 use crate::types::tools::ToolChoice;
 
-static FIXTURES: LazyLock<JsonValue> =
-    LazyLock::new(|| serde_json::from_str(include_str!("zod-schemas.json")).unwrap());
+static FIXTURES: LazyLock<JsonValue> = LazyLock::new(|| {
+    serde_json::from_str(include_str!(
+        "../../../../conformance/fixtures/schemas/native_output_schemas.json"
+    ))
+    .unwrap()
+});
 
 fn schema(name: &str) -> JsonValue {
     FIXTURES["schemas"][name].clone()

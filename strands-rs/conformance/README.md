@@ -53,4 +53,4 @@ Fixtures marked "validity only" in the index are transcribed from a TS type rath
 
 - `generate.ts`: entry point; applies the patches, then runs the sections in order.
 - `src/scripted-model.ts`: a `Model` that replays scripted `ModelStreamEvent` turns and records `StreamOptions`.
-- `src/types.ts`, `src/events.ts`, `src/persistence.ts`, `src/schemas.ts`, `src/telemetry.ts`: one section each.
+- `src/types.ts`, `src/events.ts`, `src/persistence.ts`, `src/schemas.ts`, `src/native-output.ts`, `src/telemetry.ts`: one section each.
