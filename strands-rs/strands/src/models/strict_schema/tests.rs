@@ -3,9 +3,12 @@
 //! `strands-ts/dist/src/models/strict-schema.js`, run with `npx tsx` from the repo root; the
 //! conformance fixture `schemas/strict_json_schemas.json` pins the same cases.
 
+use std::sync::Mutex;
+
 use serde_json::json;
 
-use super::{ensure_strict_json_schema, find_unsupported_strict_keywords};
+use super::{ensure_strict_json_schema, ensure_strict_json_schema_in, find_unsupported_strict_keywords};
+use crate::logging::capture::capture_warnings;
 use crate::types::json::{JsonValue, to_string};
 
 #[test]
@@ -232,7 +235,7 @@ fn ignores_a_ref_pointing_at_a_missing_path_but_still_closes_the_root() {
 
 #[test]
 fn terminates_on_a_recursive_ref_with_sibling_keys_leaving_the_cycle_point_unresolved() {
-    let result = ensure_strict_json_schema(&json!({
+    let schema = json!({
         "type": "object",
         "properties": { "filter": { "$ref": "#/definitions/Filter", "description": "root filter" } },
         "definitions": {
@@ -241,7 +244,8 @@ fn terminates_on_a_recursive_ref_with_sibling_keys_leaving_the_cycle_point_unres
                 "properties": { "and": { "type": "array", "items": { "$ref": "#/definitions/Filter", "description": "sub" } } },
             },
         },
-    }));
+    });
+    let (result, warnings) = capture_warnings(|| ensure_strict_json_schema_in(&Mutex::default(), &schema));
     let filter = &result["properties"]["filter"];
     assert_eq!(filter["description"], "root filter");
     assert_eq!(filter["additionalProperties"], false);
@@ -252,6 +256,12 @@ fn terminates_on_a_recursive_ref_with_sibling_keys_leaving_the_cycle_point_unres
     assert_eq!(
         node,
         &json!({ "$ref": "#/definitions/Filter", "description": "sub" })
+    );
+    assert_eq!(warnings.len(), 1);
+    assert!(
+        warnings[0].contains("ref=<#/definitions/Filter> | recursive $ref"),
+        "{}",
+        warnings[0]
     );
 }
 

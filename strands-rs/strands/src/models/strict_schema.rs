@@ -4,11 +4,12 @@
     expect(dead_code, reason = "used by the Bedrock provider and native output")
 )]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
+use std::sync::Mutex;
 
 use serde_json::Map;
 
-use crate::logging::warn_once;
+use crate::logging::{WARNED, warn_once_in};
 use crate::types::json::{JsonValue, js_ordered_entries};
 
 const SCHEMA_MAP_KEYWORDS: [&str; 3] = ["$defs", "definitions", "properties"];
@@ -106,16 +107,26 @@ fn is_object_type(schema: &Map<String, JsonValue>) -> bool {
 /// every `$ref` that has sibling keys inlined, siblings winning (TS `ensureStrictJsonSchema`). A
 /// recursive `$ref` is left unresolved with a one-time warning.
 pub(crate) fn ensure_strict_json_schema(schema: &JsonValue) -> JsonValue {
+    ensure_strict_json_schema_in(&WARNED, schema)
+}
+
+/// [`ensure_strict_json_schema`], warning once per `warned` set.
+fn ensure_strict_json_schema_in(warned: &Mutex<HashSet<String>>, schema: &JsonValue) -> JsonValue {
     let mut copy = schema.clone();
     if copy.is_object() {
-        apply_strict(&mut copy, &mut Vec::new(), &[]);
+        apply_strict(warned, &mut copy, &mut Vec::new(), &[]);
     }
     copy
 }
 
 /// Makes the subschema at `path` strict. Refs resolve against `root` as rewritten so far, so a
 /// target visited earlier is inlined in its strict form, as in TS.
-fn apply_strict(root: &mut JsonValue, path: &mut Vec<Step>, inlining: &[String]) {
+fn apply_strict(
+    warned: &Mutex<HashSet<String>>,
+    root: &mut JsonValue,
+    path: &mut Vec<Step>,
+    inlining: &[String],
+) {
     let Some(schema) = node_mut(root, path) else {
         return;
     };
@@ -126,7 +137,7 @@ fn apply_strict(root: &mut JsonValue, path: &mut Vec<Step>, inlining: &[String])
     for steps in child_steps(schema) {
         let depth = path.len();
         path.extend(steps);
-        apply_strict(root, path, inlining);
+        apply_strict(warned, root, path, inlining);
         path.truncate(depth);
     }
     let Some(schema) = node_mut(root, path) else {
@@ -140,9 +151,8 @@ fn apply_strict(root: &mut JsonValue, path: &mut Vec<Step>, inlining: &[String])
     }
     let reference = reference.clone();
     if inlining.contains(&reference) {
-        warn_once(&format!(
-            "ref=<{reference}> | recursive $ref cannot be inlined, leaving it unresolved"
-        ));
+        let message = format!("ref=<{reference}> | recursive $ref cannot be inlined, leaving it unresolved");
+        warn_once_in(warned, &message, |message| tracing::warn!("{message}"));
         return;
     }
     let Some(mut merged) = resolve_ref(root, &reference).cloned() else {
@@ -158,7 +168,7 @@ fn apply_strict(root: &mut JsonValue, path: &mut Vec<Step>, inlining: &[String])
     *schema = merged;
     let mut inlining = inlining.to_vec();
     inlining.push(reference);
-    apply_strict(root, path, &inlining);
+    apply_strict(warned, root, path, &inlining);
 }
 
 fn resolve_ref<'a>(root: &'a JsonValue, reference: &str) -> Option<&'a Map<String, JsonValue>> {
