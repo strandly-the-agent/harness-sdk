@@ -4,12 +4,12 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 ## [ ] Phase 0: setup and guardrails
 
-- [ ] Branch `feat/rust-sdk` from `7296caba7`, `/tmp/ts-spec` export, toolchains and cargo tools, `.rust-port/` run folder
-- [ ] Workspace skeleton: root `Cargo.toml`, three crates, features, lints, `deny.toml`, rustfmt/clippy config
-- [ ] AGENTS.md files (root layout, strands-rs, harness-rs), `docs/TESTING.md`, `docs/PARITY.md`
+- [x] Branch `feat/rust-sdk` from `7296caba7`, `/tmp/ts-spec` export, toolchains and cargo tools, `.rust-port/` run folder
+- [x] Workspace skeleton: root `Cargo.toml`, three crates, features, lints, `deny.toml`, rustfmt/clippy config
+- [x] AGENTS.md files (root layout, strands-rs, harness-rs), `docs/TESTING.md`, `docs/PARITY.md`
 - [ ] CI workflows and `ci.yml` path filters (test-lint, MSRV, deny, doctests)
 - [ ] Conformance fixture generator (tsx) and committed fixtures
-- [ ] Run logs and `DIVERGENCES.md` files created
+- [x] Run logs and `DIVERGENCES.md` files created
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 1: types, wire and errors
