@@ -6,34 +6,28 @@ Each row is one TypeScript spec file at commit `7296caba7`, the TypeScript revis
 
 ## Root modules
 
-Phase 1 (`errors`, `interrupt`, `mime`), Phase 2 (`state-store`), Phase 3 (`default-slot`, `index`, `queue`, where they apply).
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `__tests__/default-slot.test.ts` | - | 0/4 | - |
-| `__tests__/errors.test.ts` | - | 0/29 | - |
+| `__tests__/errors.test.ts` | `error::tests` | 20/29 | `isFetchNetworkError` (3 cases) and `normalizeError` (6 cases): TypeScript-only mechanism, they classify untyped JavaScript values and are not exported |
 | `__tests__/index.test.ts` | - | 0/9 | - |
-| `__tests__/interrupt.test.ts` | - | 0/26 | - |
-| `__tests__/mime.test.ts` | - | 0/6 | - |
+| `__tests__/interrupt.test.ts` | `interrupt::tests` | 7/26 | - |
+| `__tests__/mime.test.ts` | `mime::tests` | 6/6 | - |
 | `__tests__/queue.test.ts` | - | 0/10 | - |
 | `__tests__/state-store.test.ts` | - | 0/49 | - |
 
 ## Types
 
-Phase 1. The `AgentResult` parts of `types/agent` land in Phase 3.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
-| `types/__tests__/agent.test.ts` | - | 0/30 | - |
-| `types/__tests__/citations.test.ts` | - | 0/6 | - |
-| `types/__tests__/json.test.ts` | - | 0/44 | - |
-| `types/__tests__/media.test.ts` | - | 0/51 | - |
-| `types/__tests__/messages.test.ts` | - | 0/86 | - |
-| `types/__tests__/validation.test.ts` | - | 0/5 | - |
+| `types/__tests__/agent.test.ts` | - | 0/30 | `defaults checkpoint to undefined`, `accepts a checkpoint`, `includes the serialized checkpoint in toJSON when present`, `omits checkpoint from toJSON when absent`: out of scope, checkpointing is not in v0.1 |
+| `types/__tests__/citations.test.ts` | `types::citations::tests` | 5/6 | `creates block with correct type discriminator`: TypeScript-only mechanism, the `type` discriminator is a TypeScript runtime field |
+| `types/__tests__/json.test.ts` | - | 0/44 | all 44 cases: TypeScript-only mechanism, `deepCopy` guards JavaScript values that JSON can't hold; `JsonValue::clone` is already a deep copy |
+| `types/__tests__/media.test.ts` | `types::media::tests` | 51/51 | - |
+| `types/__tests__/messages.test.ts` | `types::messages::tests` | 86/86 | - |
+| `types/__tests__/validation.test.ts` | `types::validation::tests` | 4/5 | `when value is null throws error with field name`: TypeScript-only mechanism, Rust has one `None` for TypeScript `null` and `undefined` |
 
 ## Models
-
-Phase 2 (trait, streaming, model info, defaults, schemas), Phase 3 (`model-proxy`), Phase 5 (providers, and the provider parts of `cache-portability` and `server-side-summary-capability`).
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -49,7 +43,7 @@ Phase 2 (trait, streaming, model info, defaults, schemas), Phase 3 (`model-proxy
 | `models/__tests__/model.test.ts` | - | 0/68 | - |
 | `models/__tests__/native-output.test.ts` | - | 0/12 | - |
 | `models/__tests__/server-side-summary-capability.test.ts` | - | 0/1 | - |
-| `models/__tests__/streaming.test.ts` | - | 0/14 | - |
+| `models/__tests__/streaming.test.ts` | `models::streaming::tests` | 14/14 | - |
 | `models/__tests__/strict-schema.test.ts` | - | 0/24 | - |
 | `models/__tests__/vercel.test.ts` | n/a | n/a | out of scope: the Google and Vercel providers are not in v0.1 |
 | `models/openai/__tests__/chat.test.ts` | - | 0/96 | - |
@@ -60,18 +54,14 @@ Phase 2 (trait, streaming, model info, defaults, schemas), Phase 3 (`model-proxy
 
 ## Model routing
 
-Phase 7.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `models/routing/__tests__/classifier-strategy.decision-model.test.ts` | n/a | n/a | out of scope: the decision-model classifier is not in v0.1 |
-| `models/routing/__tests__/classifier-strategy.test.ts` | - | 0/25 | - |
+| `models/routing/__tests__/classifier-strategy.test.ts` | - | 0/25 | `routes a Model the same way as an LLMDecisionModel wrapping it`, `rejects a value that is neither a Model nor a DecisionModel`: out of scope, decision models are not in v0.1 |
 | `models/routing/__tests__/fallback-strategy.test.ts` | - | 0/5 | - |
 | `models/routing/__tests__/router.test.ts` | - | 0/22 | - |
 
 ## Retry
-
-Phase 2 (strategy and backoff logic), Phase 3 (agent wiring).
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -80,16 +70,12 @@ Phase 2 (strategy and backoff logic), Phase 3 (agent wiring).
 
 ## Logging
 
-Phase 2 (`warn-once`), Phase 10 (`logger`, where it maps to `tracing` output).
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
-| `logging/__tests__/logger.test.ts` | - | 0/6 | - |
+| `logging/__tests__/logger.test.ts` | - | 0/6 | `allows custom logger injection`, `passes multiple arguments to logger`: out of scope, `configureLogging` is replaced by `tracing` subscribers |
 | `logging/__tests__/warn-once.test.ts` | - | 0/3 | - |
 
 ## Agent
-
-Phase 3, except `agent.interrupt`, `agent.cancel`, `agent-as-tool.interrupt`, `snapshot` and `agent.stateful-model` (Phase 4), `agent.storage` and `agent.context-manager` (Phase 6), `agent.model-routing` (Phase 7) and `agent.tracer` (Phase 10).
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -111,7 +97,7 @@ Phase 3, except `agent.interrupt`, `agent.cancel`, `agent-as-tool.interrupt`, `s
 | `agent/__tests__/agent.model-routing.test.ts` | - | 0/10 | - |
 | `agent/__tests__/agent.stateful-model.test.ts` | - | 0/12 | - |
 | `agent/__tests__/agent.storage.test.ts` | - | 0/7 | - |
-| `agent/__tests__/agent.test.ts` | - | 0/147 | - |
+| `agent/__tests__/agent.test.ts` | - | 0/147 | `counts a failed attempt on a turn that pauses at a checkpoint`: out of scope, checkpointing is not in v0.1 |
 | `agent/__tests__/agent.tracer.test.node.ts` | - | 0/47 | - |
 | `agent/__tests__/invocation-context.test.ts` | - | 0/2 | - |
 | `agent/__tests__/printer.test.ts` | - | 0/9 | - |
@@ -120,16 +106,12 @@ Phase 3, except `agent.interrupt`, `agent.cancel`, `agent-as-tool.interrupt`, `s
 
 ## Hooks
 
-Phase 3.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `hooks/__tests__/events.test.ts` | - | 0/71 | - |
 | `hooks/__tests__/registry.test.ts` | - | 0/25 | - |
 
 ## Tools
-
-Phase 3. The cancel-signal cases of `executor.cancel-signal` that need cancellation land in Phase 4.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -141,8 +123,6 @@ Phase 3. The cancel-signal cases of `executor.cancel-signal` that need cancellat
 | `tools/executors/__tests__/executor.cancel-signal.test.ts` | - | 0/3 | - |
 
 ## Plugins, middleware and background tasks
-
-Phase 4.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -160,8 +140,6 @@ Phase 4.
 
 ## Conversation manager
 
-Phase 4. The context-manager parts of `agentic-context` land in Phase 6.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `conversation-manager/__tests__/agentic-context.test.ts` | - | 0/30 | - |
@@ -174,8 +152,6 @@ Phase 4. The context-manager parts of `agentic-context` land in Phase 6.
 | `conversation-manager/__tests__/token-usage-middleware.test.ts` | - | 0/15 | - |
 
 ## Storage
-
-Phase 6.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -190,19 +166,15 @@ Phase 6.
 
 ## Session
 
-Phase 6.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `session/__tests__/file-storage.test.node.ts` | n/a | n/a | out of scope: deprecated (the session `FileStorage`) |
 | `session/__tests__/s3-storage.test.ts` | n/a | n/a | out of scope: S3 storage is not in v0.1, and the session `S3Storage` is deprecated |
-| `session/__tests__/session-manager.test.ts` | - | 0/71 | - |
+| `session/__tests__/session-manager.test.ts` | - | 0/71 | the 12 multi-agent cases at lines 1311-1517 (multi-agent `saveSnapshot` and `restoreSnapshot`, `AfterMultiAgentInvocationEvent` and `BeforeMultiAgentInvocationEvent` handling, scope isolation): out of scope, they drive Graph and Swarm orchestrators, which are not in v0.1 |
 | `session/__tests__/snapshot-storage-adapter.test.ts` | - | 0/24 | - |
 | `session/__tests__/validation.test.ts` | - | 0/10 | - |
 
 ## Context manager (`strands::experimental`)
-
-Phase 6.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -216,15 +188,11 @@ Phase 6.
 
 ## Injection
 
-Phase 6.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `injection/__tests__/message-injection.test.ts` | - | 0/31 | - |
 
 ## Memory
-
-Phase 6. `memory-tracing` lands in Phase 10.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -236,17 +204,13 @@ Phase 6. `memory-tracing` lands in Phase 10.
 
 ## Vended memory stores
 
-Phase 6.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `vended-memory-stores/bedrock-knowledge-base/__tests__/bedrock-knowledge-base-store.test.node.ts` | n/a | n/a | out of scope: the Bedrock Knowledge Base memory store is not in v0.1 |
-| `vended-memory-stores/file-memory-store/__tests__/file-memory-store.test.node.ts` | - | 0/52 | - |
+| `vended-memory-stores/file-memory-store/__tests__/file-memory-store.test.node.ts` | - | 0/52 | `warns that the search option is deprecated and still delegates to it`, `warns about the deprecated search option once per store name`: deprecated (`FileMemoryStore` search option) |
 | `vended-memory-stores/test-memory-store/__tests__/test-memory-store.test.node.ts` | n/a | n/a | out of scope: not in the v0.1 memory store set; `FileMemoryStore` covers local persistence |
 
 ## Vended plugins
-
-Phase 6.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -263,27 +227,23 @@ Phase 6.
 
 ## Interventions
 
-Phase 7.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `interventions/__tests__/handler.test.ts` | - | 0/2 | - |
 | `interventions/__tests__/registry.test.ts` | - | 0/44 | - |
 | `vended-interventions/cedar/__tests__/cedar.test.node.ts` | - | 0/39 | - |
-| `vended-interventions/hitl/__tests__/hitl.test.ts` | - | 0/36 | - |
+| `vended-interventions/hitl/__tests__/hitl.test.ts` | - | 0/36 | the 8 `decision model classifier` cases: out of scope, the decision-model classifier is not in v0.1 |
 | `vended-interventions/steering/__tests__/handler.test.ts` | n/a | n/a | out of scope: steering is not in v0.1 |
 | `vended-interventions/steering/__tests__/llm.test.ts` | n/a | n/a | out of scope: steering is not in v0.1 |
 | `vended-interventions/steering/__tests__/tool-ledger.test.ts` | n/a | n/a | out of scope: steering is not in v0.1 |
 
 ## Sandbox
 
-Phase 8.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `sandbox/__tests__/default.test.node.ts` | - | 0/4 | - |
 | `sandbox/__tests__/docker.test.node.ts` | n/a | n/a | out of scope: Docker and SSH sandboxes are not in v0.1 |
-| `sandbox/__tests__/errors.test.node.ts` | - | 0/9 | - |
+| `sandbox/__tests__/errors.test.node.ts` | `error::sandbox::tests` | 9/9 | - |
 | `sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts` | - | 0/27 | - |
 | `sandbox/__tests__/posix-shell.test.node.ts` | - | 0/55 | - |
 | `sandbox/__tests__/read-file-errors.test.node.ts` | - | 0/6 | - |
@@ -291,8 +251,6 @@ Phase 8.
 | `sandbox/__tests__/stream-process.test.node.ts` | - | 0/5 | - |
 
 ## Vended tools
-
-Phase 8. `mcp-router` lands in Phase 9.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -309,7 +267,7 @@ Phase 8. `mcp-router` lands in Phase 9.
 | `vended-tools/notebook/__tests__/notebook.test.ts` | - | 0/62 | - |
 | `vended-tools/python-repl/__tests__/python-repl.test.node.ts` | - | 0/12 | - |
 | `vended-tools/read/__tests__/read.test.node.ts` | - | 0/34 | - |
-| `vended-tools/shell/__tests__/shell.test.node.ts` | - | 0/18 | - |
+| `vended-tools/shell/__tests__/shell.test.node.ts` | - | 0/18 | `keeps the pre-rename tool name`, `matches makeShell apart from the name`, `an explicit name still wins`, `still exposes every shell name`: deprecated (`makeBash`) |
 | `vended-tools/sleep/__tests__/sleep.test.ts` | - | 0/19 | - |
 | `vended-tools/stop/__tests__/stop.test.ts` | - | 0/18 | - |
 | `vended-tools/subagent/__tests__/subagent.test.ts` | - | 0/33 | - |
@@ -320,22 +278,18 @@ Phase 8. `mcp-router` lands in Phase 9.
 
 ## MCP
 
-Phase 9.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `mcp/__tests__/client-annotations.test.ts` | - | 0/4 | - |
 | `mcp/__tests__/client-progress.test.ts` | - | 0/2 | - |
-| `mcp/__tests__/client.test.ts` | - | 0/126 | - |
-| `mcp/__tests__/config.test.node.ts` | - | 0/48 | - |
+| `mcp/__tests__/client.test.ts` | - | 0/126 | `still lists tools when tasksConfig is set`: out of scope, MCP tasks are not in v0.1 |
+| `mcp/__tests__/config.test.node.ts` | - | 0/48 | `skips invalid task settings when that server allows errors and keeps valid servers`, `rejects invalid task settings when that server overrides lenient defaults`: out of scope, MCP tasks are not in v0.1; `lets requestTimeout take precedence over the deprecated ttl alias`: deprecated (`ttl`) |
 | `mcp/__tests__/task-client-legacy.test.node.ts` | n/a | n/a | out of scope: MCP tasks are not in v0.1 |
 | `mcp/__tests__/task-client-stdio.test.node.ts` | n/a | n/a | out of scope: MCP tasks are not in v0.1 |
 | `mcp/__tests__/task-client.test.ts` | n/a | n/a | out of scope: MCP tasks are not in v0.1 |
 | `mcp/__tests__/task-transport.test.ts` | n/a | n/a | out of scope: MCP tasks are not in v0.1 |
 
 ## Telemetry
-
-Phase 10.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -380,3 +334,68 @@ None of these areas are in v0.1.
 | `multiagent/__tests__/swarm.invocation-state.test.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
 | `multiagent/__tests__/swarm.test.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
 | `multiagent/__tests__/swarm.tracer.test.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
+
+## Integration (live checklist)
+
+These specs live under `strands-ts/test/integ/` (paths below are relative to it) and call real models. They are ported as `live_*` tests, and results are recorded in [reviews/live.md](reviews/live.md).
+
+| TS spec | Rust tests | ported/total | gaps (with reason) |
+|---|---|---|---|
+| `a2a/a2a-agent.test.ts` | n/a | n/a | out of scope: A2A is not in v0.1 |
+| `a2a/express-server.test.node.ts` | n/a | n/a | out of scope: A2A is not in v0.1 |
+| `agent-as-tool.test.ts` | - | 0/1 | - |
+| `agent.cancel.test.ts` | - | 0/5 | - |
+| `agent.checkpoint.test.node.ts` | n/a | n/a | out of scope: checkpointing is not in v0.1 |
+| `agent.test.ts` | - | 0/18 | - |
+| `cedar.test.node.ts` | - | 0/3 | - |
+| `conversation-manager/agentic-context.test.ts` | - | 0/11 | - |
+| `conversation-manager/context-manager-message-reduction.test.ts` | - | 0/1 | - |
+| `conversation-manager/context-manager-summarize-tool-calls.test.ts` | - | 0/1 | - |
+| `conversation-manager/summarizing-conversation-manager.test.ts` | - | 0/2 | - |
+| `decisions/decision-model.test.ts` | n/a | n/a | out of scope: decision models are not in v0.1 |
+| `decisions/system-one-decision-models.test.node.ts` | n/a | n/a | out of scope: decision models are not in v0.1 |
+| `environment.test.node.ts` | - | 0/2 | - |
+| `environment.test.ts` | - | 0/3 | - |
+| `goal/goal.test.node.ts` | n/a | n/a | out of scope: GoalLoop is not in v0.1 |
+| `interrupt.test.ts` | - | 0/3 | - |
+| `interventions.test.ts` | - | 0/52 | - |
+| `mcp/mcp-connect-abort.test.node.ts` | - | 0/1 | - |
+| `mcp/mcp-legacy-fallback.test.node.ts` | - | 0/4 | - |
+| `mcp/mcp-reconnect.test.node.ts` | - | 0/3 | `runs SEP-2663 tasks again after disconnect and reconnect`: out of scope, MCP tasks are not in v0.1 |
+| `mcp/mcp-sep2663.test.node.ts` | n/a | n/a | out of scope: every case drives SEP-2663 MCP tasks, which are not in v0.1 |
+| `mcp/mcp-tasks-stdio.test.node.ts` | n/a | n/a | out of scope: MCP tasks are not in v0.1 |
+| `mcp/mcp-tasks.test.node.ts` | n/a | n/a | out of scope: MCP tasks are not in v0.1 |
+| `mcp/mcp-v2.test.node.ts` | - | 0/7 | - |
+| `mcp/mcp.test.node.ts` | - | 0/7 | - |
+| `memory/bedrock-knowledge-base-memory-manager.test.node.ts` | n/a | n/a | out of scope: the Bedrock Knowledge Base memory store is not in v0.1 |
+| `memory/bedrock-knowledge-base-store.test.node.ts` | n/a | n/a | out of scope: the Bedrock Knowledge Base memory store is not in v0.1 |
+| `models/anthropic.test.ts` | - | 0/13 | - |
+| `models/bedrock.test.node.ts` | - | 0/3 | - |
+| `models/bedrock.test.ts` | - | 0/29 | - |
+| `models/classifier-strategy.test.ts` | - | 0/1 | - |
+| `models/context-windows.test.ts` | - | 0/1 | the Gemini table rows: out of scope, the Google provider is not in v0.1 |
+| `models/google.test.ts` | n/a | n/a | out of scope: the Google provider is not in v0.1 |
+| `models/model-smoke.test.ts` | - | 0/2 | - |
+| `models/openai/chat.test.ts` | - | 0/7 | - |
+| `models/openai/mantle-routing.test.node.ts` | - | 0/1 | - |
+| `models/openai/mantle.test.node.ts` | - | 0/4 | - |
+| `models/openai/responses.test.ts` | - | 0/12 | - |
+| `models/openai/session-cache-key.test.ts` | - | 0/6 | - |
+| `multiagent/graph.test.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
+| `multiagent/interrupt-hook.test.node.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
+| `multiagent/interrupt-node.test.node.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
+| `multiagent/interrupt-session.test.node.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
+| `multiagent/session-manager.test.node.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
+| `multiagent/swarm.test.ts` | n/a | n/a | out of scope: Graph and Swarm are not in v0.1 |
+| `qmd-search-strategy.test.node.ts` | n/a | n/a | out of scope: needs the optional `@tobilu/qmd` SQLite index package, which has no Rust counterpart; v0.1 search is `KeywordSearchStrategy` |
+| `s3-vector-search-strategy.test.node.ts` | n/a | n/a | out of scope: S3 storage and vector search are not in v0.1 |
+| `sandbox/docker.test.node.ts` | n/a | n/a | out of scope: Docker and SSH sandboxes are not in v0.1 |
+| `sandbox/ssh.test.node.ts` | n/a | n/a | out of scope: Docker and SSH sandboxes are not in v0.1 |
+| `session-manager.test.node.ts` | - | 0/9 | the 4 `Session Management - S3Storage` cases: out of scope, S3 storage is not in v0.1 (and the session `S3Storage` is deprecated) |
+| `skills/agent-skills.test.node.ts` | - | 0/4 | - |
+| `telemetry.test.node.ts` | - | 0/36 | - |
+| `tools/bash.test.node.ts` | - | 0/4 | - |
+| `tools/file-editor.test.node.ts` | n/a | n/a | out of scope: deprecated (`fileEditor`) |
+| `tools/http-request.test.ts` | - | 0/1 | - |
+| `tools/notebook.test.ts` | - | 0/3 | - |
+| `vended-interventions/steering/steering.test.node.ts` | n/a | n/a | out of scope: steering is not in v0.1 |

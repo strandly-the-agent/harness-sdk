@@ -6,21 +6,17 @@ Each row is one TypeScript spec file at commit `7296caba7`, the TypeScript revis
 
 ## Factory, config and models
 
-Phase 12.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `agent-generalist-memory.test.ts` | - | 0/3 | - |
-| `agent.test.ts` | - | 0/100 | - |
+| `agent.test.ts` | - | 0/100 | `enables web_search when explicitly selected on a supported provider`: out of scope, it uses the Google provider, which is not in v0.1 |
 | `config.test.ts` | - | 0/32 | - |
 | `internal.test.ts` | - | 0/2 | - |
-| `models.test.ts` | - | 0/111 | - |
+| `models.test.ts` | - | 0/111 | `maps google auto to the high thinking level`, `uses the google model id directly`, `adds the google googleSearch built-in tool for web_search`, `omits google built-in tools when web_search is off`, `does not warn when caching is supported for litellm`, `builds litellm with explicit caching and sets no cacheConfig`, and the `google/` assertions and table rows in `rejects a level the provider does not support`, the thinking-level table and `is true for openai, google and bedrock-mantle`: out of scope, the Google and LiteLLM providers are not in v0.1 |
 | `openai-cache.test.ts` | - | 0/2 | - |
 | `prompt.test.ts` | - | 0/3 | - |
 
 ## Built-in features
-
-Phase 12.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -32,16 +28,12 @@ Phase 12.
 
 ## Plugins
 
-Phase 12.
-
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `plugins/environment.test.ts` | - | 0/11 | - |
 | `plugins/todos.test.ts` | - | 0/9 | - |
 
 ## Tools
-
-Phase 12.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
@@ -54,10 +46,10 @@ Phase 12.
 
 ## Integration (live checklist)
 
-Phase 12. These specs call real models; they are ported as `live_*` tests, and results are recorded in `docs/reviews/live.md`.
+These specs call real models; they are ported as `live_*` tests, and results are recorded in `docs/reviews/live.md`.
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
-| `integration/caching.test.ts` | - | 0/2 | - |
-| `integration/e2e.test.ts` | - | 0/11 | - |
+| `integration/caching.test.ts` | - | 0/1 | - |
+| `integration/e2e.test.ts` | - | 0/10 | - |
 | `integration/web-search.test.ts` | - | 0/1 | - |

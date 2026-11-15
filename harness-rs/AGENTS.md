@@ -61,6 +61,17 @@ cargo deny check
 - **Subagents** are built from the parent's already-connected MCP clients passed as tools, never by re-passing `mcp_servers`, and are narrowed per server as in harness-ts. Delegates get recall-only memory and no extraction. Reuse the parent's discovery results where harness-ts does, forward child progress as full serialized child events, and resume child interrupts through `AgentResult::interrupts`. Presets keep harness-ts order.
 - **No hidden global effects.** Telemetry setup is explicit and idempotent; constructors register nothing process-wide. Dates and platform come from `jiff` and `std::env::consts::OS`, never from shelling out.
 
+## Error texts
+
+- A provider harness-ts supports but Rust doesn't yet (`google`, `ollama`, `litellm`): `model provider "google" is not supported in Rust yet`.
+- An unknown provider uses the harness-ts text: `Unknown model provider "x" in "x/y". Supported providers: .... Pass a Model instance for anything else.`
+- A portable config with a module reference: `module references are not supported in Rust yet`, with ` (language "typescript")` appended when the reference names a language.
+- A provider whose cargo feature is disabled: `model '<id>' requires the strands feature "<feature>"`.
+
+## Byte-observable behaviour
+
+These follow harness-ts byte for byte: system prompt assembly; tool-name collision rules, with `-` and `_` treated as equal; the `read`, `edit` and `todos` text; `EnvironmentContext` discovery limits; programmatic tool caller limits; `web_fetch` body caps and URL cache; session id sanitization.
+
 ## Persisted layout
 
 Default sessions are written through `LocalFileStorage::new("./.agent").namespace("sessions")`, so the files match the harness-ts layout and a session written by either SDK resumes in the other. Snapshot keys, ID rules and timestamp formats follow [strands-rs/AGENTS.md](../strands-rs/AGENTS.md#persisted-layout).

@@ -2,7 +2,7 @@
 
 This document provides guidance for AI agents working on the Strands Rust SDK (`strands-rs/`). For human contributor guidelines, see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-> **Cross-SDK rules live in the [root AGENTS.md](../AGENTS.md).** Plugin naming, cross-SDK parity, public and internal API marking, the structured-logging format, and the evergreen-comment rule apply to every SDK and are stated once there. This file shows only the Rust-idiomatic form and the rules unique to Rust.
+> **Cross-SDK rules live in the [root AGENTS.md](../AGENTS.md).** Rust follows the cross-SDK conventions stated there (plugin naming, cross-SDK parity, public and internal API marking, the structured-logging format, and the evergreen-comment rule); this file gives the Rust form and the rules unique to Rust.
 
 ## Overview
 
@@ -65,8 +65,8 @@ Fix `cargo deny` advisories by choosing versions or features, not by ignoring th
 | Functions, fields, parameters | `camelCase` | `snake_case` |
 | Enum-like literals | `'endTurn'` | `StopReason::EndTurn` |
 | Modules | `kebab-case` | `snake_case`, same stem (`vended-plugins/` to `vended_plugins/`) |
-| `@strands-agents/sdk/experimental` | | `strands::experimental` |
-| `index.ts` barrel, `@internal` | | crate-root re-exports; `pub(crate)` or `#[doc(hidden)]` |
+| TypeScript `experimental` entry point | `@strands-agents/sdk/experimental` | `strands::experimental` |
+| Barrel exports and internal items | `index.ts` barrel, `@internal` | crate-root re-exports; `pub(crate)` or `#[doc(hidden)]` |
 
 - A name changes only when it clashes with the Rust prelude (the harness subagent `Option` becomes `ChoiceOption`).
 - Name constructs for what they do, never with a `Plugin` suffix.
@@ -131,7 +131,7 @@ The lint set lives in `[workspace.lints]` in the root `Cargo.toml` and applies t
 | `missing_docs`, `unreachable_pub`, `rust_2018_idioms` | Every public item is documented, and `pub` means part of the public API. |
 | clippy `all` | The default clippy set. |
 | `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable` (deny) | Library code returns errors instead of panicking. `clippy.toml` allows `unwrap`, `expect` and `panic` in tests. |
-| `dbg_macro`, `print_stdout`, `print_stderr` (deny) | Output goes through `tracing`. The stdout printer and examples opt out with a narrow `#[expect(..., reason = "...")]`. |
+| `dbg_macro`, `print_stdout`, `print_stderr` (deny) | Output goes through `tracing`. `clippy.toml` allows printing and `dbg!` in tests (`allow-print-in-tests`, `allow-dbg-in-tests`). The stdout printer and examples opt out with a narrow `#[expect(..., reason = "...")]`. |
 | `allow_attributes_without_reason` (deny) | Every lint exception says why; prefer `#[expect]` so a stale exception fails the build. |
 | `await_holding_lock`, `await_holding_refcell_ref`, `await_holding_invalid_type` (deny) | Backs the no-lock-across-await rule. |
 | `cast_lossless`, `cast_possible_truncation`, `cast_possible_wrap`, `cast_sign_loss` | Numeric conversions are explicit (`From`, `try_from`, saturating arithmetic), so counters can't silently wrap. |
@@ -175,6 +175,60 @@ Data written by one SDK must load in the others, so serialized shapes follow Typ
 - The stash `storageType` uses the TypeScript class names (`LocalFileStorage`, `InMemoryStorage`).
 - `Snapshot.created_at` keeps the TypeScript `toISOString()` format with millisecond precision (`2026-11-11T12:00:00.000Z`).
 - `LocalFileStorage` validates keys and writes atomically (temporary file plus rename). Rust writes compact JSON where TypeScript pretty-prints; both read either.
+
+## Behaviour contracts
+
+These are the TypeScript behaviours ports most often get wrong. The TypeScript source and tests remain the full spec.
+
+### Agent loop
+
+- The assistant tool-use message is appended only after its tools finish, so history is always re-invokable.
+- The retry strategy sleeps inside an `AfterModelCallEvent` hook and sets `retry`. `attempt_count` resets when the router switches models.
+- Limits are checked in the order turns, total tokens, output tokens, then structured-output attempts.
+- `AfterInvocationEvent.resume` re-enters the loop and is ignored on error or when a limit is hit. `end_turn` from `AfterToolsEvent` ends the turn after tools.
+- Structured output goes through the `strands_structured_output` tool, with the TypeScript retry behaviour and error texts.
+- A tool that panics produces an error tool result, and the loop continues.
+- On context overflow the conversation or context manager reduces history and retries; otherwise the call fails with `Error::ContextWindowOverflow`.
+
+### Plugins and models
+
+- Plugins register in a fixed order: router, conversation manager, retry strategies, user plugins, background tasks, delegation, memory, context manager, session manager, then the model plugin (as in `strands-ts/src/agent/agent.ts`).
+- A duplicate plugin name is an error with the TypeScript text, `plugin_name=<name> | plugin already registered`.
+- Stateful models force `NullConversationManager`, discard restored messages, and reject explicit conversation or context managers. A `stateful` flag never ships without the `model_state` plumbing; OpenAI keeps `previous_response_id` in `ModelState`, committed only on success.
+- Tool names match `^[a-zA-Z0-9_-]{1,64}$`.
+
+### Interrupts and cancellation
+
+- Interrupts are never modelled as `Err`. IDs follow TypeScript: `tool:<toolUseId>:<name>`, `hook:beforeToolCall:<toolUseId>:<name>`, and the rest as in TypeScript.
+- On resume, completed sibling results come from the pending tool execution; interrupted tools re-run, and `interrupt()` returns the stored response. Interrupt state lives in snapshots.
+- Tools that didn't finish get a synthetic error result with the text `Tool execution cancelled`, and the invocation closes with an assistant message (`Cancelled by user` unless a cancel message is given). `after_current_tools` lets running tools finish.
+- In-flight tools run to completion unless they honour the signal. Dropping the stream aborts them, leaves history ending with the cancel message, and runs deferred cleanup on the next call.
+- `shutdown()` flushes memory and runs deferred cleanup, and doesn't disconnect MCP. `McpClient::disconnect().await` and dropping the client end its transport.
+
+### Providers
+
+- Only HTTP 429 and rate-limit codes map to `ModelThrottledError`; 408, 5xx and 529 are left to the transport retry. Context-overflow messages map to `ContextWindowOverflowError` (Anthropic: six patterns; OpenAI: eight; Bedrock: the TypeScript rules). Transport failures map to `ModelNetworkError`.
+- `DefaultModelRetryStrategy` retries only throttled and network errors (6 attempts, 4 s base, 240 s maximum).
+- Every HTTP provider has timeouts and the vendor-style transport retry.
+- A provider whose cargo feature is disabled fails with `model '<id>' requires the strands feature "<feature>"`.
+
+### Telemetry
+
+- Span names are `invoke_agent <name>`, `execute_agent_loop_cycle`, `chat` and `execute_tool <tool>`; memory spans use the TypeScript names.
+- Metric names (`gen_ai.agent.*`, `gen_ai.server.time_to_first_token`, and the rest) and units follow TypeScript.
+- `OTEL_SEMCONV_STABILITY_OPT_IN` modes, duplicated legacy usage keys, Langfuse detection and resource attributes follow TypeScript; the service name defaults to `strands-agents`.
+- Agent, model and tool spans nest through `tracing`, the only telemetry system.
+
+### Architecture
+
+- Errors callers branch on are typed variants, never a stringly `Error::Other(String)`.
+- Event data separates read-only fields from writable ones (private fields, getters, explicit setters). Live handles stay out of serialized stream payloads.
+- MCP calls never hold an async mutex across an RPC; they clone the `rmcp` `Peer`, so concurrent calls to one server work.
+- `web_fetch` and `http_request` cap bodies while streaming (`bytes_stream` with a running limit) and filter private and link-local addresses where TypeScript does.
+- Tools run as one spawned task each in a `JoinSet`.
+- Memory extraction is spawned rather than blocking lifecycle hooks, and `shutdown()` flushes it.
+- Builder `.tools(..)` extends the tool list; it never replaces it.
+- `ToolChoice` serialization, child-process cleanup, non-blocking file I/O, instrumented spawns and the `await_holding_*` lints are covered under [Serde conventions](#serde-conventions), [Concurrency and locks](#concurrency-and-locks) and [Lints](#lints).
 
 ## Testing
 

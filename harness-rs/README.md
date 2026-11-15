@@ -29,7 +29,7 @@ use strands_harness::{create_harness, HarnessAgentOptions};
 async fn main() -> Result<(), strands::Error> {
     let mut agent = create_harness(
         HarnessAgentOptions::builder()
-            .model("anthropic/claude-opus-5")
+            .model("global.anthropic.claude-opus-5")
             .mcp_servers("./mcp.json")
             .build(),
     )

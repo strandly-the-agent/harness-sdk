@@ -51,7 +51,7 @@ npx tsx strands-rs/conformance/generate.ts
 - Unit tests make no network calls. Test providers with constructed SDK types, a local HTTP test server, or a transport seam.
 - Never mutate process env (`std::env::set_var` is `unsafe` in edition 2024, and `unsafe_code` is forbidden). Every env-reading path takes a crate-internal env-lookup seam; spawned children get env through the sandbox's `env` option.
 - Never call `std::env::set_current_dir`; it is process-global and races parallel tests. Code that resolves relative paths takes a crate-internal base-directory seam.
-- Check `Send` at compile time with a `fn assert_send<T: Send>(_: &T)` helper: `Agent`, `AgentResult`, `ToolAgent`, `ToolContext`, `Error`, every event type, `AgentStream<'_>` and the futures from `agent.invoke(..)` and `create_harness(..)` are `Send`.
+- Check `Send`, and `Sync` where shared, at compile time with `fn assert_send<T: Send>(_: &T)` and `fn assert_sync<T: Sync>(_: &T)` helpers: `Agent`, `AgentResult`, `ToolAgent`, `ToolContext`, `Error`, every event type and `AgentStream<'_>` are `Send` (and `Sync` where shared), and the futures from `agent.invoke(..)` and `create_harness(..)` are `Send`.
 - Canonicalize paths before comparing them (macOS `/var` versus `/private/var`).
 - Test code may use `unwrap` and `expect`. Tests carry no issue references.
 
