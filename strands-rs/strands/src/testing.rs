@@ -117,7 +117,9 @@ impl fmt::Debug for TestModelProvider {
 
 impl Model for TestModelProvider {
     fn stream(&self, _request: ModelRequest) -> BoxStream<'static, Result<ModelStreamEvent>> {
-        match lock(&self.generator).clone() {
+        // Released before calling, so a generator can replace itself.
+        let generator = lock(&self.generator).clone();
+        match generator {
             Some(generator) => generator(),
             None => Box::pin(stream::once(async {
                 Err(Error::other("Event generator not set"))

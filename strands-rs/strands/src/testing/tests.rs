@@ -185,3 +185,29 @@ async fn test_model_provider_fails_until_an_event_generator_is_set() {
     let result = aggregate(&provider, ModelRequest::default()).await.unwrap();
     assert!(result.message().content().is_empty());
 }
+
+#[tokio::test]
+async fn an_event_generator_can_replace_itself() {
+    let provider = Arc::new(TestModelProvider::new());
+    let weak = Arc::downgrade(&provider);
+    provider.set_event_generator(move || {
+        if let Some(provider) = weak.upgrade() {
+            provider.set_event_generator(|| {
+                Box::pin(stream::iter([Ok(ModelMessageStopEvent::new(
+                    StopReason::MaxTokens,
+                )
+                .into())]))
+            });
+        }
+        Box::pin(stream::iter([Ok(ModelMessageStopEvent::new(
+            StopReason::EndTurn,
+        )
+        .into())]))
+    });
+    let first = aggregate(provider.as_ref(), ModelRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(first.stop_reason(), &StopReason::EndTurn);
+    let second = aggregate(provider.as_ref(), ModelRequest::default()).await;
+    assert!(matches!(second, Err(Error::MaxTokens(_))), "{second:?}");
+}
