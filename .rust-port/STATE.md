@@ -4,7 +4,7 @@
 
 - Status: in progress (fresh start on 2026-11-15)
 - Current phase: Phase 3
-- Current item: Phase 3 item 7 (direct tool calls, `as_tool`, agents as tools, printer). Items 1-6, the macros and the stream event records are committed. The loop lives in `strands/src/agent/run.rs` (P-69, P-72, P-76..P-80); item-6 leftovers: the 8 cycle-duration and `_estimateInputTokens` cases of `agent.test.ts` (PARITY); continuations wait for background tasks (P-78)
+- Current item: Phase 3 core items 1-7 are committed (item 7: direct tool calls P-81, `as_tool` and delegation P-82, printer P-83, section 13 examples and the downstream agent test P-84). Next: the Phase 3 review gate. Leftovers recorded in PARITY: the 8 cycle-duration and `_estimateInputTokens` cases of `agent.test.ts`; continuations wait for background tasks (P-78); agent-as-tool cancel cases and sub-agent interrupts wait for Phase 4
 - Phase base commits: Phase 0 = 7296caba7; Phase 1 = d2cce53e2 (Phase 0 review diff 7296caba7..d2cce53e2; Phase 0 fixes landed in 95c800b0e..0e4b20905); Phase 2 = 0e4b20905 (Phase 1 review diff d2cce53e2..0e4b20905); Phase 3 = ef33e6992 (Phase 2 review diff 0e4b20905..ef33e6992)
 
 ## Credentials
@@ -22,6 +22,8 @@
 - Host: Linux aarch64, 4 cores.
 
 ## Open threads
+
+- Disk: `/mnt/workspace` (40G) filled up on 2026-11-15; the shared `CARGO_TARGET_DIR=/mnt/workspace/.cache/cargo-target` held 30G of debug output. Clearing `debug/incremental` freed 7.6G; `debug/build` (22G) is the next candidate if it fills again.
 
 - CI workflows can't be pushed under `.github/workflows/` with this environment's token; they are staged in `.rust-port/ci-workflows/` (P-13). Any later CI edits go there too.
 
