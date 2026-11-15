@@ -4,8 +4,14 @@
 //! Enable it with the `background_tasks` agent config key; [`BackgroundTasksConfig`] selects
 //! which tools may run in the background.
 
+#[expect(
+    clippy::module_inception,
+    reason = "mirrors TS `background-tasks/background-tasks.ts`"
+)]
+mod background_tasks;
 pub(crate) mod in_process;
 mod types;
 
-pub(crate) use types::{BackgroundTask, Failure, FailureType, TaskStatus};
+pub(crate) use background_tasks::{BACKGROUND_TASKS_NAME, BackgroundTaskScheduler, Route};
+
 pub use types::{BackgroundTasks, BackgroundTasksConfig};

@@ -34,7 +34,7 @@ use crate::models::model_proxy::ModelProxy;
 use crate::state_store::StateStore;
 use crate::telemetry::LocalTelemetry;
 use crate::tools::executors::executor::{
-    ToolExecutionInput, ToolExecutorEvent, ToolExecutorItem, error_text_result,
+    BackgroundRoute, ToolExecutionInput, ToolExecutorEvent, ToolExecutorItem, error_text_result,
 };
 use crate::tools::structured_output::{
     STRUCTURED_OUTPUT_TOOL_NAME, StructuredOutputSchema, StructuredOutputTool, structured_output_tool_use_ids,
@@ -1034,6 +1034,10 @@ impl Agent {
                 assistant_message: assistant.clone(),
                 completed_tool_results,
                 telemetry: self.local.telemetry().clone(),
+                background: self.background_tasks.clone().map(|scheduler| BackgroundRoute {
+                    scheduler,
+                    pass_id: assistant.tracking_id().to_owned(),
+                }),
             };
             let mut stream = self.tool_executor.execute(input);
             while let Some(item) = stream.next().await {

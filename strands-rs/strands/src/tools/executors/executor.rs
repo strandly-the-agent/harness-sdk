@@ -17,6 +17,7 @@ use tokio::task::JoinSet;
 use tokio::time::Instant;
 use tracing::Instrument;
 
+use crate::background_tasks::{BackgroundTaskScheduler, Route};
 use crate::error::{Error, Result};
 use crate::hooks::{
     AfterToolCallEvent, BeforeToolCallEvent, HookRegistry, ToolResultEvent, ToolStreamUpdateEvent,
@@ -50,6 +51,8 @@ pub(crate) struct ToolExecutionInput {
     /// Results restored on resume, keyed by tool use id; these tools don't run again.
     pub(crate) completed_tool_results: IndexMap<String, ToolResultBlock>,
     pub(crate) telemetry: LocalTelemetry,
+    /// Background routing, when the agent has background tasks.
+    pub(crate) background: Option<BackgroundRoute>,
 }
 
 /// A lifecycle event of a tool batch, yielded after its hooks ran.
@@ -134,6 +137,7 @@ pub(crate) struct Batch {
     /// Results by tool use id, restored ones first (TS `resultsByToolUseId`).
     pub(crate) results: IndexMap<String, ToolResultBlock>,
     pub(crate) interrupts: Vec<Interrupt>,
+    background: Option<BackgroundRoute>,
     tasks: JoinSet<()>,
 }
 
@@ -144,6 +148,7 @@ impl Batch {
             hooks: input.hooks.clone(),
             invocation_state: input.invocation_state.clone(),
             telemetry: input.telemetry.clone(),
+            background: input.background.clone(),
             results: input.completed_tool_results.clone(),
             interrupts: Vec::new(),
             tasks: JoinSet::new(),
@@ -162,6 +167,7 @@ impl Batch {
             invocation_state: self.invocation_state.clone(),
             telemetry: self.telemetry.clone(),
             sender,
+            background: self.background.clone(),
         };
         self.tasks.spawn(task.run(tool_use).instrument(span));
     }
@@ -267,6 +273,14 @@ struct ToolTask {
     invocation_state: InvocationState,
     telemetry: LocalTelemetry,
     sender: mpsc::Sender<TaskMessage>,
+    background: Option<BackgroundRoute>,
+}
+
+/// The background tasks plugin and the pass a batch belongs to (TS `backgroundTaskPassId`).
+#[derive(Debug, Clone)]
+pub(crate) struct BackgroundRoute {
+    pub(crate) scheduler: BackgroundTaskScheduler,
+    pub(crate) pass_id: String,
 }
 
 impl ToolTask {
@@ -309,7 +323,16 @@ impl ToolTask {
             // A hook's cancel skips the middleware chain (TS `executeTool`).
             let outcome = match cancel {
                 Some(message) => Ok(error_text_result(block.tool_use_id(), message)),
-                None => self.run_with_middleware(tool.clone(), &tool_use, None).await?,
+                None => {
+                    let preset = match self.route(&mut tool_use, registry_tool.as_ref(), tool.as_ref()) {
+                        Ok(preset) => preset,
+                        // The dispatch ack; the background run fires the call's `AfterToolCallEvent`.
+                        Err(dispatched) => {
+                            return Some(ToolOutcome::Result(normalize_id(dispatched, block.tool_use_id())));
+                        }
+                    };
+                    self.run_with_middleware(tool.clone(), &tool_use, preset).await?
+                }
             };
             let result = match outcome {
                 Ok(result) => normalize_id(result, block.tool_use_id()),
@@ -399,6 +422,38 @@ impl ToolTask {
             }
         }
         Some(outcome.unwrap_or_else(|| Err(ended_without_result::<ExecuteToolStage>().into())))
+    }
+
+    /// Routes the call through the background tasks plugin: `Err` holds the dispatch result of a
+    /// call sent to the background, `Ok` an admission error to run the chain with, if any.
+    fn route(
+        &self,
+        tool_use: &mut ToolUse,
+        requested: Option<&Arc<dyn Tool>>,
+        effective: Option<&Arc<dyn Tool>>,
+    ) -> std::result::Result<Option<ToolResultBlock>, ToolResultBlock> {
+        let Some(background) = &self.background else {
+            return Ok(None);
+        };
+        match background
+            .scheduler
+            .route_tool_call(tool_use, requested, effective)
+        {
+            Route::Foreground => Ok(None),
+            Route::Rejected(result) => Ok(Some(result)),
+            Route::Background => {
+                let Some(tool) = effective.cloned() else {
+                    return Ok(None);
+                };
+                Err(background.scheduler.submit_tool_call(
+                    tool_use,
+                    self.invocation_state.clone(),
+                    &background.pass_id,
+                    tool,
+                    self.agent.clone(),
+                ))
+            }
+        }
     }
 
     async fn send(&self, message: TaskMessage) -> Option<()> {

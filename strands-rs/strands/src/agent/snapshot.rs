@@ -327,7 +327,17 @@ impl Agent {
     /// When the scope isn't `agent`, the schema version isn't [`SNAPSHOT_SCHEMA_VERSION`], or
     /// a field doesn't parse; nothing is restored then.
     pub fn load_snapshot(&mut self, snapshot: &Snapshot) -> Result<()> {
-        self.local.load_snapshot(snapshot)
+        let background = self.background_tasks.clone().filter(|_| self.initialized);
+        if let Some(background) = &background {
+            background.assert_can_load_snapshot()?;
+        }
+        self.local.load_snapshot(snapshot)?;
+        if let Some(background) = background
+            && snapshot.data().contains_key("state")
+        {
+            background.load_app_state();
+        }
+        Ok(())
     }
 }
 

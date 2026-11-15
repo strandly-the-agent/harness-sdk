@@ -98,6 +98,7 @@ impl Fixture {
             assistant_message: Message::new(Role::Assistant, content),
             completed_tool_results: IndexMap::new(),
             telemetry: crate::telemetry::LocalTelemetry::default(),
+            background: None,
         }
     }
 }

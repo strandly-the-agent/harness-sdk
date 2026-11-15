@@ -12,6 +12,7 @@ use crate::agent::continuation::ContinuationInput;
 use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
 use crate::agent::run::AbandonedRun;
 use crate::agent::stream::AgentStream;
+use crate::background_tasks::{BackgroundTaskScheduler, BackgroundTasks};
 use crate::cancel::{CancelHandle, CancelSignal};
 use crate::error::{Error, Result};
 use crate::hooks::{
@@ -72,7 +73,7 @@ pub struct Agent {
     plugin_registry: PluginRegistry,
     /// This agent's identity for the retry strategies' attach-once check.
     attach_token: Arc<()>,
-    initialized: bool,
+    pub(crate) initialized: bool,
     /// TS `_printer`; `None` with `printer: false`.
     pub(crate) printer: Option<SharedPrinter>,
     /// Set between `BeforeInvocationEvent` and `AfterInvocationEvent` of a pass.
@@ -81,6 +82,8 @@ pub struct Agent {
     pub(crate) abandoned: Option<AbandonedRun>,
     /// Follow-up input a pass that stopped on an interrupt deferred to the next finished pass.
     pub(crate) deferred_continuations: Vec<ContinuationInput>,
+    /// The background tasks plugin, when the config enables it.
+    pub(crate) background_tasks: Option<BackgroundTaskScheduler>,
 }
 
 impl Agent {
@@ -126,6 +129,11 @@ impl Agent {
             agent.retry_strategies = strategies;
         }
         agent.plugins = config.plugins;
+        agent.background_tasks = config
+            .background_tasks
+            .and_then(BackgroundTasks::into_config)
+            .map(BackgroundTaskScheduler::new)
+            .transpose()?;
         Ok(agent)
     }
 
@@ -146,6 +154,7 @@ impl Agent {
             in_pass: false,
             abandoned: None,
             deferred_continuations: Vec::new(),
+            background_tasks: None,
         }
     }
 
@@ -190,9 +199,14 @@ impl Agent {
             .iter()
             .any(|plugin| plugin.name() == AGENT_DELEGATION_NAME);
         let delegation = (!has_delegation).then(|| Arc::new(AgentDelegation) as Arc<dyn Plugin>);
+        let background = self
+            .background_tasks
+            .clone()
+            .map(|scheduler| Arc::new(scheduler) as Arc<dyn Plugin>);
         let model: Arc<dyn Plugin> = Arc::new(ModelLifecycle::new(Arc::clone(self.local.model())));
         retry
             .chain(self.plugins.iter().cloned())
+            .chain(background)
             .chain(delegation)
             .chain([model])
             .collect()

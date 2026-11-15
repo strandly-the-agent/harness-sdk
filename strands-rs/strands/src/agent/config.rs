@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::background_tasks::BackgroundTasks;
 use crate::error::{DefaultNotConfiguredError, Error, Result};
 use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, Model, ModelRequest};
 use crate::models::streaming::ModelStreamEvent;
@@ -203,6 +204,10 @@ pub struct AgentConfig {
     /// [`InvokeOptions::structured_output_schema`](crate::InvokeOptions::structured_output_schema)
     /// overrides it (for example `StructuredOutputSchema::of::<T>()`).
     pub structured_output_schema: Option<StructuredOutputSchema>,
+    /// Background tool execution (TS `backgroundTasks`): `true` or a config enables it; `None`
+    /// and `false` leave it off.
+    #[builder(into)]
+    pub background_tasks: Option<BackgroundTasks>,
     /// Print text, reasoning and tool activity to stdout as the agent runs (default `true`).
     ///
     /// Servers and other services should set `.printer(false)`: the printer writes every
