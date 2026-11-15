@@ -30,6 +30,14 @@ pub(crate) fn present_null<'de, D: Deserializer<'de>>(
     JsonValue::deserialize(deserializer).map(Some)
 }
 
+/// Deserializes a field TS fills with a default when the saved value is missing or `null`
+/// (`value ?? default`); pair with `#[serde(default)]`.
+pub(crate) fn null_as_default<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
+    deserializer: D,
+) -> Result<T, D::Error> {
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
 /// Rewrites every `\uXXXX` escape of a UTF-16 surrogate that isn't part of a valid pair to `\ufffd`,
 /// so `serde_json` can parse JSON text that JavaScript wrote from a string with a lone surrogate.
 #[cfg_attr(

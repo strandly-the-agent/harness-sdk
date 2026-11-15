@@ -7,7 +7,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::types::json::{JsonValue, present_null};
+use crate::types::json::{JsonValue, null_as_default, present_null};
 
 /// What raised an interrupt (TS `InterruptSource`).
 #[non_exhaustive]
@@ -66,8 +66,9 @@ pub struct Interrupt {
         skip_serializing_if = "Option::is_none"
     )]
     pub response: Option<JsonValue>,
-    /// What raised the interrupt. Data saved without it loads as [`InterruptSource::Hook`].
-    #[serde(default)]
+    /// What raised the interrupt. Data saved without it, or with `null`, loads as
+    /// [`InterruptSource::Hook`].
+    #[serde(default, deserialize_with = "null_as_default")]
     pub source: InterruptSource,
 }
 
@@ -214,7 +215,11 @@ pub(crate) struct InterruptStateData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pending_tool_execution: Option<PendingToolExecution>,
     /// TS writes `context` only when it is non-empty.
-    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "null_as_default",
+        skip_serializing_if = "serde_json::Map::is_empty"
+    )]
     pub(crate) context: serde_json::Map<String, JsonValue>,
 }
 
@@ -300,6 +305,24 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&interrupt).unwrap(),
             json!({ "id": "x", "name": "legacy", "response": null, "source": "hook" })
+        );
+    }
+
+    #[test]
+    fn a_null_source_loads_as_hook() {
+        let interrupt: Interrupt =
+            serde_json::from_value(json!({ "id": "x", "name": "legacy", "source": null })).unwrap();
+        assert_eq!(interrupt.source, InterruptSource::Hook);
+    }
+
+    #[test]
+    fn a_null_context_loads_as_empty() {
+        let state: InterruptStateData =
+            serde_json::from_value(json!({ "interrupts": {}, "activated": false, "context": null })).unwrap();
+        assert!(state.context.is_empty());
+        assert_eq!(
+            serde_json::to_value(&state).unwrap(),
+            json!({ "interrupts": {}, "activated": false })
         );
     }
 
