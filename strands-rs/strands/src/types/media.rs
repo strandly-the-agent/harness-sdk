@@ -127,7 +127,6 @@ pub(crate) mod base64_bytes_opt {
 
 /// Serde for optional byte fields of stream events, written as TS `JSON.stringify` writes a
 /// `Uint8Array` (`{"0":1,"1":2}`); pair with `default` and `skip_serializing_if`.
-#[expect(dead_code, reason = "TEMP until the stream event types land")]
 pub(crate) mod indexed_bytes_opt {
     use super::{BytesVisitor, Deserializer, SerializeMap, Serializer};
 

@@ -18,7 +18,6 @@ pub type JsonValue = serde_json::Value;
 
 /// Deserializes a field where TS distinguishes a present `null` from a missing key: a present `null`
 /// becomes `Some(JsonValue::Null)`; pair with `#[serde(default)]` so a missing key stays `None`.
-#[expect(dead_code, reason = "TEMP until the stream event types land")]
 pub(crate) fn present_null<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<JsonValue>, D::Error> {
