@@ -2,7 +2,7 @@
 
 Tick an item when finished; tick a phase heading when the phase and its review gate are done.
 
-## [ ] Phase 0: setup and guardrails
+## [x] Phase 0: setup and guardrails
 
 - [x] Branch `feat/rust-sdk` from `7296caba7`, `/tmp/ts-spec` export, toolchains and cargo tools, `.rust-port/` run folder
 - [x] Workspace skeleton: root `Cargo.toml`, three crates, features, lints, `deny.toml`, rustfmt/clippy config
@@ -10,7 +10,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] CI workflows and `ci.yml` path filters (test-lint, MSRV, deny, doctests) (staged in `.rust-port/ci-workflows/`, P-13)
 - [x] Conformance fixture generator (tsx) and committed fixtures
 - [x] Run logs and `DIVERGENCES.md` files created
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [ ] Phase 1: types, wire and errors
 

@@ -4,6 +4,7 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 export RUSTUP_HOME="${RUSTUP_HOME:-/mnt/workspace/.rust/rustup}" CARGO_HOME="${CARGO_HOME:-/mnt/workspace/.rust/cargo}"
 export PATH="$CARGO_HOME/bin:$PATH"
 out="${GATE_OUT:-/tmp}"
+mkdir -p "$out"
 fail=0
 run(){ name=$1; shift; "$@" > "$out/gate_$name.txt" 2>&1; rc=$?; echo "$name: $rc"; [ $rc -ne 0 ] && fail=1; }
 run fmt cargo fmt --all --check
