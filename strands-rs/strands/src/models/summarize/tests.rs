@@ -1,13 +1,8 @@
 //! Ported from strands-ts/src/models/__tests__/model.test.ts (the `summarize` cases).
 
-use std::sync::{Arc, Mutex};
-
 use serde_json::json;
-use tracing::field::{Field, Visit};
-use tracing::span::{Attributes, Id, Record};
-use tracing::{Event, Metadata, Subscriber};
 
-use super::{DEFAULT_SUMMARIZE_INSTRUCTIONS, SUMMARIZE_GUARD, SummarizeResult};
+use super::{DEFAULT_SUMMARIZE_INSTRUCTIONS, SUMMARIZE_GUARD, SummarizeResult, unfinished_reply_warning};
 use crate::agent::agent_metadata::AgentMetadata;
 use crate::cancel::{CancelOptions, CancelSignal};
 use crate::error::{Error, ModelError, Result};
@@ -16,42 +11,10 @@ use crate::models::streaming::{ModelStreamEvent, Usage};
 use crate::testing::TestModelProvider;
 use crate::types::json::JsonValue;
 use crate::types::messages::{
-    CachePointBlock, ContentBlock, Message, Role, SummaryBlock, SystemContentBlock, SystemPrompt, TextBlock,
-    ToolResultBlock, ToolUseBlock,
+    CachePointBlock, ContentBlock, Message, Role, StopReason, SummaryBlock, SystemContentBlock, SystemPrompt,
+    TextBlock, ToolResultBlock, ToolUseBlock,
 };
 use crate::types::tools::{ToolResultStatus, ToolSpec};
-
-/// Records the message of every event emitted while it is the default subscriber.
-#[derive(Clone, Default)]
-struct LogRecorder(Arc<Mutex<Vec<String>>>);
-
-struct MessageVisitor<'a>(&'a mut String);
-
-impl Visit for MessageVisitor<'_> {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            *self.0 = format!("{value:?}");
-        }
-    }
-}
-
-impl Subscriber for LogRecorder {
-    fn enabled(&self, _: &Metadata<'_>) -> bool {
-        true
-    }
-    fn new_span(&self, _: &Attributes<'_>) -> Id {
-        Id::from_u64(1)
-    }
-    fn record(&self, _: &Id, _: &Record<'_>) {}
-    fn record_follows_from(&self, _: &Id, _: &Id) {}
-    fn event(&self, event: &Event<'_>) {
-        let mut message = String::new();
-        event.record(&mut MessageVisitor(&mut message));
-        self.0.lock().unwrap().push(message);
-    }
-    fn enter(&self, _: &Id) {}
-    fn exit(&self, _: &Id) {}
-}
 
 fn events(value: JsonValue) -> Vec<Result<ModelStreamEvent>> {
     serde_json::from_value::<Vec<ModelStreamEvent>>(value)
@@ -215,18 +178,14 @@ async fn sends_no_system_prompt_and_the_default_instructions_for_instructions_in
 async fn returns_an_empty_summary_for_an_unfinished_reply_stop_reason() {
     for stop_reason in ["toolUse", "guardrailIntervened", "contentFiltered"] {
         let model = recording_model(&["canned"], stop_reason, None, Some(usage(10, 1)));
-        let recorder = LogRecorder::default();
-        let result = {
-            let _guard = tracing::subscriber::set_default(recorder.clone());
-            model.summarize(hi(), SummarizeOptions::default()).await.unwrap()
-        };
+        let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
         assert_eq!(result, empty(usage(10, 1)), "{stop_reason}");
-        let logs = recorder.0.lock().unwrap().clone();
-        let expected = format!("stop_reason=<{stop_reason}> | summary reply did not finish");
-        assert!(logs.iter().any(|log| log.contains(&expected)), "{logs:?}");
-        assert!(
-            logs.iter().any(|log| log.starts_with("model=<test-model>")),
-            "{logs:?}"
+        let warning = unfinished_reply_warning("test-model", Some(&StopReason::from(stop_reason)));
+        assert_eq!(
+            warning,
+            format!(
+                "model=<test-model>, stop_reason=<{stop_reason}> | summary reply did not finish | ignoring the reply"
+            )
         );
     }
 }

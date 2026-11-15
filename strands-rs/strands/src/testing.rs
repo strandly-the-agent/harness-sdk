@@ -82,7 +82,7 @@ struct Turn {
 ///     }
 /// }
 /// assert_eq!(done.unwrap().message.content, vec![ContentBlock::from("Hello!")]);
-/// assert_eq!(model.call_count(), 1);
+/// assert_eq!(model.requests().len(), 1);
 /// # }
 /// ```
 pub struct MockModel {

@@ -123,10 +123,7 @@ pub(crate) async fn summarize_with_stream<M: Model + ?Sized>(
     );
     if !finished {
         let model_id = model.model_id().unwrap_or_default();
-        let stop_reason = stop_reason.as_ref().map_or("undefined", StopReason::as_str);
-        tracing::warn!(
-            "model=<{model_id}>, stop_reason=<{stop_reason}> | summary reply did not finish | ignoring the reply"
-        );
+        tracing::warn!("{}", unfinished_reply_warning(&model_id, stop_reason.as_ref()));
         return Ok(SummarizeResult::new(Vec::new()).with_usage(usage));
     }
     let text = reply_text(reply.as_ref());
@@ -134,6 +131,13 @@ pub(crate) async fn summarize_with_stream<M: Model + ?Sized>(
         return Ok(SummarizeResult::new(Vec::new()).with_usage(usage));
     }
     Ok(SummarizeResult::new(vec![SummaryBlock::new(text).into()]).with_usage(usage))
+}
+
+fn unfinished_reply_warning(model_id: &str, stop_reason: Option<&StopReason>) -> String {
+    let stop_reason = stop_reason.map_or("undefined", StopReason::as_str);
+    format!(
+        "model=<{model_id}>, stop_reason=<{stop_reason}> | summary reply did not finish | ignoring the reply"
+    )
 }
 
 fn reply_text(reply: Option<&Message>) -> String {
