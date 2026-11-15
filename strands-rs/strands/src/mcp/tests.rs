@@ -3,6 +3,7 @@
 //! The TS tests mock the MCP SDK `Client`; these run against an in-process `rmcp` server
 //! (`tests/server.rs`) over an in-memory pipe.
 
+mod config;
 mod server;
 
 use std::sync::Arc;

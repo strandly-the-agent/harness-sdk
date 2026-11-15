@@ -28,6 +28,7 @@
 
 pub(crate) mod agent_tools;
 mod client;
+pub(crate) mod config;
 mod elicitation;
 mod error;
 mod filters;
@@ -35,7 +36,7 @@ pub(crate) mod handler;
 mod mcp_tool;
 mod sse;
 pub(crate) mod trace;
-mod transport;
+pub(crate) mod transport;
 
 pub use rmcp;
 
@@ -43,6 +44,9 @@ pub use client::{
     DEFAULT_CLIENT_NAME, McpAuthProvider, McpCallToolOptions, McpClient, McpClientConfig,
     McpClientCredentials, McpClientOptions, McpConnectionState, McpListOptions, McpListToolsOptions,
     McpLogHandler, McpProgress, McpProgressCallback, McpToolsChangedCallback,
+};
+pub use config::{
+    McpLoadServersOptions, McpServerConfig, McpServerCredentials, McpServers, SerializableMcpToolFilters,
 };
 pub use elicitation::{ElicitationCallback, ElicitationContext};
 pub use error::{McpError, McpErrorKind};
