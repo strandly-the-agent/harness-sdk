@@ -41,6 +41,10 @@ pub mod testing;
 mod text;
 pub mod types;
 
+/// The [`async_trait`](https://docs.rs/async-trait) attribute, for implementing the SDK's async
+/// traits ([`Model`](models::model::Model), [`ModelRetryStrategy`](retry::ModelRetryStrategy))
+/// without depending on `async-trait` directly.
+pub use async_trait::async_trait;
 pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;

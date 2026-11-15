@@ -16,6 +16,40 @@ use crate::error::Error;
 /// for retry, sleeps for the returned delay and then retries.
 ///
 /// Instances usually carry per-budget state, so give each agent its own instance.
+///
+/// `compute_retry_decision` is async, so an implementation needs the `#[strands::async_trait]`
+/// attribute on its `impl` block:
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use strands::Error;
+/// use strands::error::ModelThrottledError;
+/// use strands::retry::{ModelRetryContext, ModelRetryStrategy, RetryDecision};
+///
+/// struct RetryThrottlesOnce;
+///
+/// #[strands::async_trait]
+/// impl ModelRetryStrategy for RetryThrottlesOnce {
+///     fn name(&self) -> &str {
+///         "retry-throttles-once"
+///     }
+///
+///     async fn compute_retry_decision(&self, context: &ModelRetryContext<'_>) -> RetryDecision {
+///         match context.error() {
+///             Error::ModelThrottled(_) if context.attempt_count() == 1 => RetryDecision::Retry(Duration::from_secs(1)),
+///             _ => RetryDecision::NoRetry,
+///         }
+///     }
+/// }
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let error = Error::from(ModelThrottledError::new("slow down"));
+/// let decision = RetryThrottlesOnce.compute_retry_decision(&ModelRetryContext::new(1, &error)).await;
+/// assert_eq!(decision, RetryDecision::Retry(Duration::from_secs(1)));
+/// # }
+/// ```
 #[async_trait]
 pub trait ModelRetryStrategy: Send + Sync + 'static {
     /// A stable identifier for this strategy.

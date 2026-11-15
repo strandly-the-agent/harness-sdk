@@ -56,6 +56,25 @@ impl BackoffContext {
 }
 
 /// Computes the delay before the next retry attempt.
+///
+/// ```
+/// use std::num::NonZeroU32;
+/// use std::time::Duration;
+///
+/// use strands::retry::{BackoffContext, BackoffStrategy};
+///
+/// /// Waits 100 ms more per attempt, never more than 1 s.
+/// struct Stepped;
+///
+/// impl BackoffStrategy for Stepped {
+///     fn next_delay(&self, context: &BackoffContext) -> Duration {
+///         Duration::from_millis(100 * u64::from(context.attempt.get())).min(Duration::from_secs(1))
+///     }
+/// }
+///
+/// let context = BackoffContext::new(NonZeroU32::new(3).unwrap());
+/// assert_eq!(Stepped.next_delay(&context), Duration::from_millis(300));
+/// ```
 pub trait BackoffStrategy: Send + Sync + 'static {
     /// Returns the delay before the next attempt.
     fn next_delay(&self, context: &BackoffContext) -> Duration;
@@ -258,6 +277,24 @@ impl Default for ExponentialBackoffOptions {
 
 /// Exponential backoff: the delay grows as `base * multiplier^(attempt - 1)`, capped at `max`, then
 /// jittered.
+///
+/// Seed the jitter with [`RandomSource::seeded`] for repeatable delays:
+///
+/// ```
+/// use std::num::NonZeroU32;
+/// use std::time::Duration;
+///
+/// use strands::retry::{BackoffContext, BackoffStrategy, ExponentialBackoff, ExponentialBackoffOptions, RandomSource};
+///
+/// let backoff = |seed| {
+///     ExponentialBackoff::new(ExponentialBackoffOptions::builder().base(Duration::from_millis(500)).build())
+///         .with_random(RandomSource::seeded(seed))
+/// };
+/// let context = BackoffContext::new(NonZeroU32::new(3).unwrap());
+/// let delay = backoff(7).next_delay(&context);
+/// assert!(delay <= Duration::from_secs(2), "full jitter stays within 500 ms * 2^2");
+/// assert_eq!(backoff(7).next_delay(&context), delay);
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ExponentialBackoff {
     options: ExponentialBackoffOptions,

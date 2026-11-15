@@ -250,6 +250,9 @@ pub enum AggregatedEvent {
 /// [`update_config`](Model::update_config); everything else has a default. `stream` returns a
 /// `'static` stream so model calls can be spawned: clone what the stream needs out of `&self`.
 ///
+/// Overriding the async methods ([`count_tokens`](Model::count_tokens),
+/// [`summarize`](Model::summarize)) needs `#[strands::async_trait]` on the `impl` block.
+///
 /// ```
 /// use std::sync::Mutex;
 ///
