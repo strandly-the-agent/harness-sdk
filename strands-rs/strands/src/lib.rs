@@ -29,6 +29,7 @@ extern crate self as strands;
 mod macros;
 
 pub mod agent;
+pub mod cancel;
 pub mod error;
 pub mod interrupt;
 pub mod mime;
@@ -37,6 +38,7 @@ pub mod retry;
 pub mod state_store;
 pub mod types;
 
+pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
 pub use state_store::StateStore;
