@@ -24,8 +24,7 @@ use crate::interrupt::Interrupt;
 use crate::middleware::ended_without_result;
 use crate::middleware::{
     AgentStreamContext, AgentStreamResult, AgentStreamStage, InvokeModelContext, InvokeModelResult,
-    InvokeModelStage, MiddlewareError, MiddlewareInterrupt, MiddlewareItem, MiddlewareStage,
-    MiddlewareStream,
+    InvokeModelStage, MiddlewareError, MiddlewareInterrupt, MiddlewareItem, MiddlewareStream,
 };
 use crate::models::model::{
     AggregatedEvent, CountTokensOptions, Model, ModelRequest, StreamAggregatedResult, js_trim,
@@ -331,7 +330,7 @@ impl Agent {
         match outcome {
             Ok(result) => Ok(result),
             Err(MiddlewareError::Interrupt(interrupt)) => {
-                self.interrupted(vec![interrupt], &state, &hooks, out).await
+                self.interrupted(vec![*interrupt], &state, &hooks, out).await
             }
             Err(MiddlewareError::Failed(error)) => Err(error),
         }
@@ -877,7 +876,7 @@ impl Agent {
     /// Why a chain stopped; a failure while the invocation is cancelled is its cancel.
     fn classify(&self, error: MiddlewareError) -> Stop {
         match error {
-            MiddlewareError::Interrupt(interrupt) => Stop::Interrupted(vec![interrupt]),
+            MiddlewareError::Interrupt(interrupt) => Stop::Interrupted(vec![*interrupt]),
             _ if self.local.cancel_signal().is_cancelled() => Stop::Cancelled,
             MiddlewareError::Failed(error) => Stop::Failed(error),
         }

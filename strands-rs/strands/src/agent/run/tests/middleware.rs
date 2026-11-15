@@ -784,7 +784,7 @@ mod execute_tool_stage {
         let block = agent
             .messages()
             .iter()
-            .flat_map(|message| message.content())
+            .flat_map(Message::content)
             .find_map(|block| match block {
                 ContentBlock::ToolResult(result) => Some(result.clone()),
                 _ => None,

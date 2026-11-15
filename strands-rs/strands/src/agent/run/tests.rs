@@ -1377,11 +1377,13 @@ mod concurrent {
 }
 
 mod cancel;
+mod copy_on_input;
 mod drop_guard;
 mod end_turn_resume;
 mod interrupt;
 mod invocation_state;
 mod limits;
 mod middleware;
+mod middleware_interrupts;
 mod model_retry;
 mod structured_output;

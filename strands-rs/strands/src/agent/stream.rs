@@ -76,6 +76,10 @@ impl Stream for AgentStream<'_> {
 }
 
 /// An item of a [`Driven`] stream.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "events are the common item; boxing each would allocate per event"
+)]
 pub(crate) enum DrivenItem<T> {
     Event(AgentStreamEvent),
     /// The future's output; the last item.

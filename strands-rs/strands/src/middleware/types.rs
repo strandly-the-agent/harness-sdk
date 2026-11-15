@@ -233,12 +233,12 @@ pub enum MiddlewareError {
     Failed(#[from] Error),
     /// An interrupt, which stops the agent with stop reason `interrupt`.
     #[error("interrupt {}", .0.name())]
-    Interrupt(Interrupt),
+    Interrupt(Box<Interrupt>),
 }
 
 impl From<Interrupt> for MiddlewareError {
     fn from(interrupt: Interrupt) -> Self {
-        Self::Interrupt(interrupt)
+        Self::Interrupt(Box::new(interrupt))
     }
 }
 

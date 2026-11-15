@@ -49,7 +49,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Drop guard history repair, deferred cleanup, `shutdown()`, drop warning
 - [x] Snapshots (`take_snapshot`/`load_snapshot`)
 - [x] `Plugin` trait and built-in registration order
-- [ ] Middleware stages and phases
+- [x] Middleware stages and phases
 - [ ] Background tasks
 - [ ] Conversation managers (trait, Null, SlidingWindow, Summarizing)
 - [ ] Phase review gate and fixes

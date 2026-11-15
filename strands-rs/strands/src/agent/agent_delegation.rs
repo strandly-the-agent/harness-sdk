@@ -68,7 +68,7 @@ impl Plugin for AgentDelegation {
         let state = Shared::default();
         install(agent.hooks(), &state);
         agent.add_middleware(ExecuteToolStage::wrap(move |context, next| {
-            handle_tool_execution(&state, context, next)
+            handle_tool_execution(&state, context, &next)
         }));
         Ok(())
     }
@@ -210,7 +210,7 @@ fn to_content_blocks(result: &ToolResultBlock) -> Vec<ContentBlock> {
 fn handle_tool_execution<'a>(
     state: &Shared,
     context: ExecuteToolContext,
-    next: MiddlewareNext<'a, ExecuteToolStage>,
+    next: &MiddlewareNext<'a, ExecuteToolStage>,
 ) -> MiddlewareStream<'a, ExecuteToolStage> {
     let delegates = context.tool.as_ref().is_some_and(|tool| tool.is_delegate());
     if !delegates || context.agent().model().stateful() {

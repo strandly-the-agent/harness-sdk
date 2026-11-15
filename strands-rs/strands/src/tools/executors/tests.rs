@@ -152,6 +152,43 @@ mod cancel_signal {
     use super::*;
 
     #[tokio::test]
+    async fn keeps_middleware_and_tools_on_the_supplied_execution_signal() {
+        use crate::middleware::{ExecuteToolStage, MiddlewareStage};
+
+        let tool_signal: Arc<Mutex<Option<crate::cancel::CancelSignal>>> = Arc::default();
+        let tool_slot = Arc::clone(&tool_signal);
+        let probe = Arc::new(FunctionTool::new(
+            "probe",
+            "probe",
+            move |_input, context: crate::tools::ToolContext| {
+                *tool_slot.lock().unwrap() = Some(context.cancel_signal().clone());
+                async { Ok::<_, ToolError>("ok") }
+            },
+        ));
+        let fixture = fixture(vec![probe]);
+        let middleware_signal: Arc<Mutex<Option<crate::cancel::CancelSignal>>> = Arc::default();
+        let middleware_slot = Arc::clone(&middleware_signal);
+        fixture
+            .agent
+            .add_middleware(ExecuteToolStage::wrap(move |context, next| {
+                *middleware_slot.lock().unwrap() = Some(context.cancel_signal().clone());
+                next.run(context)
+            }));
+
+        let (_, batch) = run(
+            SequentialToolExecutor::new(),
+            fixture.input(vec![tool_use("probe", "probe-1")]),
+        )
+        .await;
+
+        assert_eq!(batch.results, [success("probe-1", "ok")]);
+        fixture.cancel.cancel(CancelOptions::default());
+        let middleware_signal = middleware_signal.lock().unwrap().take().unwrap();
+        let tool_signal = tool_signal.lock().unwrap().take().unwrap();
+        assert!(middleware_signal.is_cancelled() && tool_signal.is_cancelled());
+    }
+
+    #[tokio::test]
     async fn uses_the_supplied_signal_between_sequential_tool_executions() {
         let mut fixture = fixture(vec![]);
         let executed = Arc::new(Mutex::new(Vec::new()));

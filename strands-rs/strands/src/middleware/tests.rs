@@ -124,7 +124,7 @@ async fn stores_handlers_in_registration_order() {
         push(&terminal_log, "3");
         stream(vec![result("done")])
     });
-    collect(chain).await;
+    collect(chain).await.1.unwrap();
     assert_eq!(entries(&log), ["1", "2", "3"]);
 }
 
@@ -452,7 +452,10 @@ async fn removes_a_handler_so_it_no_longer_runs() {
     let log = Log::default();
     let cleanup = registry.add(logging(&log, "handler"));
     cleanup.remove();
-    collect(registry.invoke::<TestStage>("test".to_owned(), |_| stream(vec![result("done")]))).await;
+    collect(registry.invoke::<TestStage>("test".to_owned(), |_| stream(vec![result("done")])))
+        .await
+        .1
+        .unwrap();
     assert!(entries(&log).is_empty());
 }
 
@@ -464,7 +467,10 @@ async fn only_removes_the_first_occurrence_of_a_duplicate_handler() {
     let first = registry.add(handler.clone());
     registry.add(handler);
     first.remove();
-    collect(registry.invoke::<TestStage>("test".to_owned(), |_| stream(vec![result("done")]))).await;
+    collect(registry.invoke::<TestStage>("test".to_owned(), |_| stream(vec![result("done")])))
+        .await
+        .1
+        .unwrap();
     assert_eq!(entries(&log), ["handler"]);
 }
 
@@ -475,7 +481,10 @@ async fn is_a_no_op_when_handler_was_never_registered() {
     let log = Log::default();
     registry.add(logging(&log, "kept"));
     other.add(logging(&log, "elsewhere")).remove();
-    collect(registry.invoke::<TestStage>("test".to_owned(), |_| stream(vec![result("done")]))).await;
+    collect(registry.invoke::<TestStage>("test".to_owned(), |_| stream(vec![result("done")])))
+        .await
+        .1
+        .unwrap();
     assert_eq!(entries(&log), ["kept"]);
 }
 
@@ -579,7 +588,10 @@ async fn two_stages_with_the_same_name_are_distinct_reference_identity() {
         push(&second_log, "second");
         next.run(context)
     }));
-    collect(registry.invoke::<TestStage>("test".to_owned(), |_| stream(vec![result("done")]))).await;
+    collect(registry.invoke::<TestStage>("test".to_owned(), |_| stream(vec![result("done")])))
+        .await
+        .1
+        .unwrap();
     assert_eq!(entries(&log), ["first"]);
 }
 

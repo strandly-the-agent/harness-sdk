@@ -26,7 +26,7 @@ use crate::interrupt::state::{PendingToolExecution, ToolResultEntry};
 use crate::middleware::ended_without_result;
 use crate::middleware::{
     ExecuteToolContext, ExecuteToolResult, ExecuteToolStage, MiddlewareError, MiddlewareInterrupt,
-    MiddlewareItem, MiddlewareStage, MiddlewareStream,
+    MiddlewareItem, MiddlewareStream,
 };
 use crate::telemetry::LocalTelemetry;
 use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStreamItem};
@@ -309,7 +309,9 @@ impl ToolTask {
             let preset = cancel.map(|message| error_text_result(block.tool_use_id(), message));
             let result = match self.run_with_middleware(tool.clone(), &tool_use, preset).await? {
                 Ok(result) => normalize_id(result, block.tool_use_id()),
-                Err(MiddlewareError::Interrupt(interrupt)) => return Some(ToolOutcome::Interrupt(interrupt)),
+                Err(MiddlewareError::Interrupt(interrupt)) => {
+                    return Some(ToolOutcome::Interrupt(*interrupt));
+                }
                 Err(MiddlewareError::Failed(error)) => {
                     self.send(TaskMessage::Failed(error)).await?;
                     return None;
@@ -463,7 +465,7 @@ impl ToolTerminal {
                 telemetry.meter.end_tool_call(tool_use.name(), started.elapsed(), success);
             }
             match outcome {
-                ToolOutcome::Interrupt(interrupt) => yield Err(MiddlewareError::Interrupt(interrupt)),
+                ToolOutcome::Interrupt(interrupt) => yield Err(interrupt.into()),
                 ToolOutcome::Result(result) => yield Ok(MiddlewareItem::Result(ExecuteToolResult::new(result))),
             }
         })
