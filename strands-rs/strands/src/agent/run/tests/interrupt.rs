@@ -520,6 +520,75 @@ mod concurrent {
     use super::*;
 
     #[tokio::test]
+    async fn allows_in_flight_tool_to_complete_when_sibling_interrupts() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use tokio::sync::Notify;
+
+        let model = mock(vec![
+            vec![
+                tool_use("toolA", "tool-a", json!({})),
+                tool_use("toolB", "tool-b", json!({})),
+            ],
+            vec![text("Done")],
+        ]);
+        let started = Arc::new(Notify::new());
+        let gate = Arc::new(Notify::new());
+        let completed = Arc::new(AtomicBool::new(false));
+        let (a_started, a_gate, a_completed) =
+            (Arc::clone(&started), Arc::clone(&gate), Arc::clone(&completed));
+        let tool_a = FunctionTool::new("toolA", "gated", move |_input: JsonValue, _ctx| {
+            let (started, gate, completed) = (
+                Arc::clone(&a_started),
+                Arc::clone(&a_gate),
+                Arc::clone(&a_completed),
+            );
+            async move {
+                started.notify_one();
+                gate.notified().await;
+                completed.store(true, Ordering::SeqCst);
+                Ok::<_, ToolError>("A done")
+            }
+        });
+        let tool_b = FunctionTool::new(
+            "toolB",
+            "asks",
+            |_input: JsonValue, ctx: ToolContext| async move {
+                ctx.interrupt(InterruptParams {
+                    name: "confirm_b".into(),
+                    reason: Some(json!("Approve B?")),
+                    ..Default::default()
+                })?;
+                Ok::<_, ToolError>("B done")
+            },
+        );
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools(tool_list![tool_a, tool_b])
+            .build()
+            .unwrap();
+        let release = async {
+            started.notified().await;
+            assert!(!completed.load(Ordering::SeqCst));
+            gate.notify_one();
+        };
+        let (result, ()) = tokio::join!(agent.invoke("Go"), release);
+        let result = result.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        assert!(completed.load(Ordering::SeqCst));
+        let [interrupt] = result.interrupts() else {
+            panic!("one interrupt")
+        };
+        assert_eq!(interrupt.name(), "confirm_b");
+        assert_eq!(interrupt.source(), &InterruptSource::Tool);
+        let state = agent.local.interrupt_state().lock();
+        let pending = state.pending_tool_execution.as_ref().unwrap();
+        assert_eq!(
+            serde_json::to_value(&pending.completed_tool_results["tool-a"]).unwrap(),
+            json!({"toolResult": {"toolUseId": "tool-a", "status": "success", "content": [{"text": "A done"}]}})
+        );
+    }
+
+    #[tokio::test]
     async fn stores_completed_tool_results_and_resumes_only_the_interrupted_tool() {
         let log = Arc::new(Mutex::new(Vec::new()));
         let model = mock(vec![
@@ -548,5 +617,117 @@ mod concurrent {
         let mut results = tool_result_texts(tool_result_message(&agent));
         results.sort();
         assert_eq!(results, ["approved", "fast result"]);
+    }
+}
+
+mod hook_rewritten_tool_use_id {
+    use super::*;
+    use crate::tools::{ConcurrentToolExecutor, ToolExecutor};
+    use crate::types::tools::ToolUse;
+
+    /// The tool use and tool result ids of every request that carried tool results.
+    fn provider_ids(model: &MockMessageModel) -> Vec<(Vec<String>, Vec<String>)> {
+        model
+            .requests()
+            .iter()
+            .map(|request| {
+                let content: Vec<&ContentBlock> =
+                    request.messages.iter().flat_map(Message::content).collect();
+                let uses = content
+                    .iter()
+                    .filter_map(|block| match block {
+                        ContentBlock::ToolUse(tool_use) => Some(tool_use.tool_use_id().to_owned()),
+                        _ => None,
+                    })
+                    .collect();
+                let results: Vec<String> = content
+                    .iter()
+                    .filter_map(|block| match block {
+                        ContentBlock::ToolResult(result) => Some(result.tool_use_id().to_owned()),
+                        _ => None,
+                    })
+                    .collect();
+                (uses, results)
+            })
+            .filter(|(_, results)| !results.is_empty())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn runs_the_completed_tool_exactly_once_across_interrupt_and_resume() {
+        for executor in [
+            ToolExecutor::Sequential(SequentialToolExecutor::new()),
+            ToolExecutor::Concurrent(ConcurrentToolExecutor::new()),
+        ] {
+            let log = Arc::new(Mutex::new(Vec::new()));
+            let model = mock(vec![
+                vec![
+                    tool_use("toolA", "tool-a", json!({})),
+                    tool_use("toolB", "tool-b", json!({})),
+                ],
+                vec![text("Done")],
+            ]);
+            let tool_b_log = Arc::clone(&log);
+            let tool_b = FunctionTool::new("toolB", "asks", move |_input: JsonValue, ctx: ToolContext| {
+                let log = Arc::clone(&tool_b_log);
+                async move {
+                    log.lock().unwrap().push("toolB".to_owned());
+                    let response = ctx.interrupt(InterruptParams::new("confirm_b"))?;
+                    Ok::<_, ToolError>(format!("B: {response}"))
+                }
+            });
+            let mut agent = Agent::builder()
+                .model(Arc::clone(&model))
+                .tools(tool_list![logging_tool("toolA", &log), tool_b])
+                .tool_executor(executor)
+                .build()
+                .unwrap();
+            agent.add_hook(|event: &mut BeforeToolCallEvent| {
+                if event.tool_use().name() == "toolA" {
+                    let tool_use = event.tool_use();
+                    let rewritten = ToolUse::new(tool_use.name(), "rewritten-a", tool_use.input().clone());
+                    event.set_tool_use(rewritten);
+                }
+            });
+            agent.add_hook(|event: &mut AfterToolCallEvent| {
+                if event.tool_use().name() == "toolA" {
+                    let result = event.result();
+                    let rewritten = ToolResultBlock::new(
+                        "after-rewritten-a",
+                        result.status().clone(),
+                        result.content().to_vec(),
+                    );
+                    event.set_result(rewritten);
+                }
+            });
+
+            let interrupted = agent.invoke("Go").await.unwrap();
+            assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+            assert_eq!(*log.lock().unwrap(), ["toolA", "toolB"]);
+            {
+                let state = agent.local.interrupt_state().lock();
+                let pending = state.pending_tool_execution.as_ref().unwrap();
+                assert_eq!(
+                    pending.completed_tool_results.keys().collect::<Vec<_>>(),
+                    ["tool-a"]
+                );
+                assert_eq!(
+                    pending.completed_tool_results["tool-a"].tool_result.tool_use_id(),
+                    "tool-a"
+                );
+            }
+
+            let result = agent
+                .invoke(respond(&interrupted, &json!("approved")))
+                .await
+                .unwrap();
+            assert_eq!(result.stop_reason(), StopReason::EndTurn);
+            assert_eq!(*log.lock().unwrap(), ["toolA", "toolB", "toolB"]);
+            let ids = |values: &[&str]| values.iter().map(|id| (*id).to_owned()).collect::<Vec<_>>();
+            assert_eq!(
+                provider_ids(&model),
+                [(ids(&["tool-a", "tool-b"]), ids(&["tool-a", "tool-b"]))]
+            );
+        }
     }
 }
