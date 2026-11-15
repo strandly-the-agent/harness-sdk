@@ -14,7 +14,7 @@ Each row is one TypeScript spec file at commit `7296caba7`, the TypeScript revis
 | `__tests__/interrupt.test.ts` | `interrupt::tests` | 7/26 | `InterruptError` `creates catchable error with single interrupt` and `creates error with multiple interrupts`: TypeScript-only mechanism, interrupts are not errors |
 | `__tests__/mime.test.ts` | `mime::tests` | 52/52 | - |
 | `__tests__/queue.test.ts` | - | 0/10 | - |
-| `__tests__/state-store.test.ts` | - | 0/49 | - |
+| `__tests__/state-store.test.ts` | `state_store::tests` | 31/49 | 18 cases: TypeScript-only mechanism, functions, symbols and `undefined` in state, a `null` key, the symbol serialization helpers and `isStateSerializable` guard JavaScript values that `JsonValue` can't hold |
 
 ## Types
 
@@ -33,18 +33,18 @@ Each row is one TypeScript spec file at commit `7296caba7`, the TypeScript revis
 |---|---|---|---|
 | `models/__tests__/anthropic.test.ts` | - | 0/186 | - |
 | `models/__tests__/bedrock.test.ts` | - | 0/275 | - |
-| `models/__tests__/cache-portability.test.ts` | - | 0/1 | - |
-| `models/__tests__/defaults.test.ts` | - | 0/7 | - |
+| `models/__tests__/cache-portability.test.ts` | `models::model::tests` | 7/7 | - |
+| `models/__tests__/defaults.test.ts` | `models::defaults::tests` | 7/7 | - |
 | `models/__tests__/google.test.ts` | n/a | n/a | out of scope: the Google and Vercel providers are not in v0.1 |
-| `models/__tests__/model-info-lookup.test.ts` | - | 0/9 | - |
-| `models/__tests__/model-info.test.node.ts` | - | 0/1 | - |
-| `models/__tests__/model-info.test.ts` | - | 0/5 | - |
+| `models/__tests__/model-info-lookup.test.ts` | `models::model_info::tests` | 9/9 | - |
+| `models/__tests__/model-info.test.node.ts` | `models::model_info::tests` | 1/1 | - |
+| `models/__tests__/model-info.test.ts` | `models::model_info::tests` | 4/5 | `returns a frozen record`: TypeScript-only mechanism, Rust values are immutable without `Object.freeze` |
 | `models/__tests__/model-proxy.test.ts` | - | 0/19 | - |
-| `models/__tests__/model.test.ts` | - | 0/68 | - |
-| `models/__tests__/native-output.test.ts` | - | 0/12 | - |
-| `models/__tests__/server-side-summary-capability.test.ts` | - | 0/1 | - |
+| `models/__tests__/model.test.ts` | `models::model::tests`, `models::summarize::tests` | 72/72 | - |
+| `models/__tests__/native-output.test.ts` | `models::native_output::tests` | 37/37 | - |
+| `models/__tests__/server-side-summary-capability.test.ts` | - | 0/2 | - |
 | `models/__tests__/streaming.test.ts` | `models::streaming::tests` | 14/14 | - |
-| `models/__tests__/strict-schema.test.ts` | - | 0/24 | - |
+| `models/__tests__/strict-schema.test.ts` | `models::strict_schema::tests` | 24/24 | - |
 | `models/__tests__/vercel.test.ts` | n/a | n/a | out of scope: the Google and Vercel providers are not in v0.1 |
 | `models/openai/__tests__/chat.test.ts` | - | 0/96 | - |
 | `models/openai/__tests__/errors.test.ts` | - | 0/7 | - |
@@ -65,15 +65,15 @@ Each row is one TypeScript spec file at commit `7296caba7`, the TypeScript revis
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
-| `retry/__tests__/backoff-strategy.test.ts` | - | 0/19 | - |
-| `retry/__tests__/default-model-retry-strategy.test.ts` | - | 0/15 | - |
+| `retry/__tests__/backoff-strategy.test.ts` | `retry::backoff_strategy::tests` | 15/19 | the four `rejects ...` cases: TypeScript-only mechanism, `BackoffContext::attempt` is a `NonZeroU32`, so an invalid count can't be built |
+| `retry/__tests__/default-model-retry-strategy.test.ts` | `retry::default_model_retry_strategy::tests` | 12/15 | `rejects maxAttempts below 1`: TypeScript-only mechanism, `max_attempts` is a `NonZeroU32` |
 
 ## Logging
 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `logging/__tests__/logger.test.ts` | - | 0/6 | `allows custom logger injection`, `passes multiple arguments to logger`: out of scope, `configureLogging` is replaced by `tracing` subscribers |
-| `logging/__tests__/warn-once.test.ts` | - | 0/3 | - |
+| `logging/__tests__/warn-once.test.ts` | `logging::tests` | 3/3 | - |
 
 ## Agent
 
