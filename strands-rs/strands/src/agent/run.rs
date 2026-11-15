@@ -14,7 +14,7 @@ use crate::agent::{Agent, InvocationContext};
 use crate::error::{Error, Result};
 use crate::hooks::{
     AfterInvocationEvent, AfterModelCallEvent, AfterToolsEvent, AgentResultEvent, BeforeInvocationEvent,
-    BeforeModelCallEvent, BeforeToolsEvent, ContentBlockEvent, HookRegistry, InterruptEvent,
+    BeforeModelCallEvent, BeforeToolsEvent, ContentBlockEvent, EndTurn, HookRegistry, InterruptEvent,
     MessageAddedEvent, ModelMessageEvent, ModelStopData, ModelStreamUpdateEvent, ToolResultEvent,
 };
 use crate::interrupt::Interrupt;
@@ -75,6 +75,7 @@ enum TextTurn {
 struct ToolsOutcome {
     message: Message,
     interrupts: Vec<Interrupt>,
+    end_turn: Option<EndTurn>,
 }
 
 impl Agent {
@@ -92,35 +93,44 @@ impl Agent {
             .structured_output_schema
             .or_else(|| self.structured_output_schema.clone());
         let context = InvocationContext::resolve(options.invocation_context, options.limits);
-        self.local.set_invocation_context(Some(context));
-        self.local.set_invocation_cancel(Default::default());
+        self.local.set_invocation_context(Some(context.clone()));
 
-        if matches!(args, InvokeArgs::InterruptResponses(_)) {
-            return Err(Error::other(
-                "resuming from interrupt responses is not supported yet",
-            ));
-        }
-        let input = normalize_input(args)?;
+        // A hook's `AfterInvocationEvent::set_resume` runs another pass (TS `stream`'s loop).
+        let mut args = args;
+        let result = loop {
+            self.local.set_invocation_cancel(Default::default());
+            if matches!(args, InvokeArgs::InterruptResponses(_)) {
+                return Err(Error::other(
+                    "resuming from interrupt responses is not supported yet",
+                ));
+            }
+            let input = normalize_input(args)?;
 
-        let mut before = BeforeInvocationEvent::new(&mut self.local, state.clone(), input);
-        hooks
-            .invoke::<BeforeInvocationEvent<'static>>(&mut before)
-            .await?;
-        out.emit(AgentStreamEvent::BeforeInvocation((&before).into()))
-            .await;
-        let (input, cancel) = before.into_parts();
+            let mut before = BeforeInvocationEvent::new(&mut self.local, state.clone(), input);
+            hooks
+                .invoke::<BeforeInvocationEvent<'static>>(&mut before)
+                .await?;
+            out.emit(AgentStreamEvent::BeforeInvocation((&before).into()))
+                .await;
+            let (input, cancel) = before.into_parts();
 
-        let outcome = match cancel {
-            Some(cancel) => {
+            if let Some(cancel) = cancel {
                 // TS skips `MessageAddedEvent` and `AgentResultEvent` hooks here (see ts-bugs).
                 let message = assistant_text(cancel.message().unwrap_or("invocation denied by hook"));
                 self.append_message(message.clone(), &state, &hooks, out).await?;
-                Ok(self.result(StopReason::EndTurn, message, &state))
+                let result = self.result(StopReason::EndTurn, message, &state);
+                // TS returns here without reading `resume`.
+                self.after_invocation(&hooks, &state, out).await?;
+                break result;
             }
-            None => self.run_loop(input, &state, &hooks, out, schema).await,
+            let outcome = self.run_loop(input, &state, &hooks, out, schema.clone()).await;
+            let resume = self.after_invocation(&hooks, &state, out).await?;
+            let result = outcome?;
+            match resume {
+                Some(resume) if should_resume(&context) => args = resume,
+                _ => break result,
+            }
         };
-        self.after_invocation(&hooks, &state, out).await?;
-        let result = outcome?;
 
         let mut event = AgentResultEvent::new(&mut self.local, result, state);
         hooks.invoke::<AgentResultEvent<'static>>(&mut event).await?;
@@ -129,16 +139,17 @@ impl Agent {
         Ok(())
     }
 
+    /// Fires `AfterInvocationEvent`; returns the input a hook asked to resume with.
     async fn after_invocation(
         &mut self,
         hooks: &HookRegistry,
         state: &InvocationState,
         out: &Emitter,
-    ) -> Result<()> {
+    ) -> Result<Option<InvokeArgs>> {
         let mut event = AfterInvocationEvent::new(&mut self.local, state.clone());
         hooks.invoke::<AfterInvocationEvent<'static>>(&mut event).await?;
         out.emit(AgentStreamEvent::AfterInvocation((&event).into())).await;
-        Ok(())
+        Ok(event.take_resume())
     }
 
     /// The cycles of one invocation (TS `_stream`).
@@ -305,6 +316,16 @@ impl Agent {
             context.record_structured_output_failure();
         }
 
+        if let Some(content) = tools.end_turn.and_then(end_turn_content) {
+            let last_message = Message::new(Role::Assistant, content);
+            self.append_message(last_message.clone(), state, hooks, out)
+                .await?;
+            return Ok(Cycle::Done(Box::new(AgentResult::new(
+                StopReason::EndTurn,
+                last_message,
+                state.clone(),
+            ))));
+        }
         match output {
             Some(output) => Ok(Cycle::Done(Box::new(
                 AgentResult::new(StopReason::ToolUse, assistant, state.clone())
@@ -520,6 +541,7 @@ impl Agent {
             return Ok(ToolsOutcome {
                 message: Message::new(Role::User, Vec::new()),
                 interrupts: hook_interrupts,
+                end_turn: None,
             });
         }
         let cancel = before.take_cancel();
@@ -589,6 +611,7 @@ impl Agent {
         Ok(ToolsOutcome {
             message: after.message().clone(),
             interrupts,
+            end_turn: after.take_end_turn(),
         })
     }
 
@@ -699,6 +722,29 @@ impl Agent {
             Some(context) => result.with_invocation_context(context.clone()),
             None => result,
         }
+    }
+}
+
+/// TS `_shouldResume`: a resume never starts another pass once a limit is reached.
+fn should_resume(context: &InvocationContext) -> bool {
+    let Some(limit) = context.reached_limit() else {
+        return true;
+    };
+    tracing::debug!("limit=<{limit}> | ignoring resume because the request reached its limit");
+    false
+}
+
+/// The final message content an `AfterToolsEvent::end_turn` asks for; an empty text or block
+/// list doesn't end the turn, as in TS.
+fn end_turn_content(end_turn: EndTurn) -> Option<Vec<ContentBlock>> {
+    match end_turn {
+        EndTurn::Message(text) if text.is_empty() => None,
+        EndTurn::Content(content) if content.is_empty() => None,
+        EndTurn::Message(text) => Some(vec![TextBlock::new(text).into()]),
+        EndTurn::Content(content) => Some(content),
+        _ => Some(vec![
+            TextBlock::new("Turn ended early by hook after tool execution").into(),
+        ]),
     }
 }
 

@@ -79,7 +79,7 @@ impl From<String> for Cancel {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum EndTurn {
-    /// End the turn with no final message content.
+    /// End the turn with the TS default text, `Turn ended early by hook after tool execution`.
     Requested,
     /// End the turn with this text as the final message.
     Message(String),
@@ -293,7 +293,6 @@ impl<'a> AfterInvocationEvent<'a> {
         self.resume = None;
     }
 
-    #[allow(dead_code, reason = "read by the loop's resume handling")]
     pub(crate) fn take_resume(&mut self) -> Option<InvokeArgs> {
         self.resume.take()
     }
@@ -1035,7 +1034,6 @@ impl<'a> AfterToolsEvent<'a> {
         self.end_turn = None;
     }
 
-    #[allow(dead_code, reason = "read by the loop's end-turn handling")]
     pub(crate) fn take_end_turn(&mut self) -> Option<EndTurn> {
         self.end_turn.take()
     }
