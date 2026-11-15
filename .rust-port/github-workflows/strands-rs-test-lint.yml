@@ -1,0 +1,145 @@
+name: "Rust: Test and Lint"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+# Covers the SDK crates (`strands`, `strands-macros`); `strands-harness` has its own workflow.
+jobs:
+  lint:
+    name: Format, Clippy and Docs
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: strands-rs
+
+      - name: Check formatting
+        run: cargo fmt --check -p strands -p strands-macros
+
+      - name: Clippy (all features)
+        run: cargo clippy --locked -p strands -p strands-macros --all-targets --all-features -- -D warnings
+
+      - name: Clippy (no default features)
+        run: cargo clippy --locked -p strands -p strands-macros --all-targets --no-default-features -- -D warnings
+
+      - name: Build docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked -p strands -p strands-macros --all-features --no-deps
+
+  test:
+    name: Tests (${{ matrix.features }})
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [all-features, no-default-features]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: strands-rs-${{ matrix.features }}
+
+      - name: Unit and integration tests
+        run: cargo test --locked -p strands -p strands-macros --all-targets --${{ matrix.features }}
+
+      - name: Doctests
+        run: cargo test --locked -p strands -p strands-macros --doc --${{ matrix.features }}
+
+  msrv:
+    name: MSRV (Rust 1.96.0)
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.96.0
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: strands-rs-msrv
+
+      - name: Check on the minimum supported Rust version
+        run: cargo check --locked -p strands -p strands-macros --all-features
+
+  conformance:
+    name: Conformance Fixtures
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build strands-ts
+        run: npm run build
+
+      - name: Regenerate fixtures
+        run: npx tsx strands-rs/conformance/generate.ts
+
+      # The fixtures are generated from strands-ts; a diff means they are stale.
+      - name: Check fixtures are up to date
+        run: |
+          git diff --exit-code -- strands-rs/conformance/fixtures
+          untracked=$(git ls-files --others --exclude-standard -- strands-rs/conformance/fixtures)
+          if [ -n "$untracked" ]; then
+            echo "::error::Generated fixtures are not committed: $untracked"
+            exit 1
+          fi

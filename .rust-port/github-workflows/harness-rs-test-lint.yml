@@ -1,0 +1,107 @@
+name: "Harness Rust: Test and Lint"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+# Covers `strands-harness`; the SDK crates it depends on have their own workflow.
+jobs:
+  lint:
+    name: Format, Clippy and Docs
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: harness-rs
+
+      - name: Check formatting
+        run: cargo fmt --check -p strands-harness
+
+      - name: Clippy (all features)
+        run: cargo clippy --locked -p strands-harness --all-targets --all-features -- -D warnings
+
+      - name: Clippy (no default features)
+        run: cargo clippy --locked -p strands-harness --all-targets --no-default-features -- -D warnings
+
+      - name: Build docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked -p strands-harness --all-features --no-deps
+
+  test:
+    name: Tests (${{ matrix.features }})
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [all-features, no-default-features]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: harness-rs-${{ matrix.features }}
+
+      - name: Unit and integration tests
+        run: cargo test --locked -p strands-harness --all-targets --${{ matrix.features }}
+
+      - name: Doctests
+        run: cargo test --locked -p strands-harness --doc --${{ matrix.features }}
+
+  msrv:
+    name: MSRV (Rust 1.96.0)
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.96.0
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: harness-rs-msrv
+
+      - name: Check on the minimum supported Rust version
+        run: cargo check --locked -p strands-harness --all-features

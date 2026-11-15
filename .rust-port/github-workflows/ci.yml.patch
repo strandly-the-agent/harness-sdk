@@ -1,0 +1,84 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 18f6f2027..286c43070 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -29,6 +29,8 @@ jobs:
+       strands-cli: ${{ steps.filter.outputs.strands-cli }}
+       pr-metrics: ${{ steps.filter.outputs.pr-metrics }}
+       integ-metrics: ${{ steps.filter.outputs.integ-metrics }}
++      strands-rs: ${{ steps.filter.outputs.strands-rs }}
++      harness-rs: ${{ steps.filter.outputs.harness-rs }}
+     steps:
+       - uses: actions/checkout@v7
+       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+@@ -86,6 +88,29 @@ jobs:
+               - '.github/scripts/test_upload_integ_test_metrics.py'
+               - 'test-infra/dashboards/**'
+               - '.github/workflows/ci.yml'
++            strands-rs:
++              - 'strands-rs/**/!(*.md)'
++              # The conformance job regenerates fixtures from the strands-ts sources.
++              - 'strands-ts/src/**'
++              - 'Cargo.toml'
++              - 'Cargo.lock'
++              - 'deny.toml'
++              - 'rustfmt.toml'
++              - 'clippy.toml'
++              - '.github/workflows/strands-rs-*'
++              - '.github/workflows/rust-security-audit.yml'
++              - '.github/workflows/ci.yml'
++            harness-rs:
++              - 'harness-rs/**/!(*.md)'
++              # strands-harness depends on the SDK crates.
++              - 'strands-rs/**'
++              - 'Cargo.toml'
++              - 'Cargo.lock'
++              - 'deny.toml'
++              - 'rustfmt.toml'
++              - 'clippy.toml'
++              - '.github/workflows/harness-rs-*'
++              - '.github/workflows/ci.yml'
+ 
+   dependency-review:
+     name: Dependency Review
+@@ -188,6 +213,24 @@ jobs:
+     permissions:
+       contents: read
+ 
++  rust:
++    name: Rust
++    needs: detect-changes
++    if: needs.detect-changes.outputs.strands-rs == 'true'
++    uses: ./.github/workflows/strands-rs-pr-and-push.yml
++    permissions:
++      contents: read
++
++  harness-rust:
++    name: Harness Rust
++    needs: detect-changes
++    if: needs.detect-changes.outputs.harness-rs == 'true'
++    uses: ./.github/workflows/harness-rs-test-lint.yml
++    permissions:
++      contents: read
++    with:
++      ref: ${{ github.event.pull_request.head.sha || github.sha }}
++
+   pr-metrics:
+     name: PR Metrics Scripts
+     needs: detect-changes
+@@ -251,6 +294,8 @@ jobs:
+         cli,
+         cli-tui-integration,
+         cli-package,
++        rust,
++        harness-rust,
+         pr-metrics,
+         integ-metrics,
+       ]
+@@ -259,5 +304,5 @@ jobs:
+     steps:
+       - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # release/v1
+         with:
+-          allowed-skips: dependency-review, python, typescript, docs, mcp, harness-python, harness-typescript, cli, cli-tui-integration, cli-package, pr-metrics, integ-metrics
++          allowed-skips: dependency-review, python, typescript, docs, mcp, harness-python, harness-typescript, cli, cli-tui-integration, cli-package, rust, harness-rust, pr-metrics, integ-metrics
+           jobs: ${{ toJSON(needs) }}

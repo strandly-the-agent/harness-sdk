@@ -1,0 +1,1 @@
+Staged CI workflows. The token that returns this branch cannot push changes under `.github/workflows/` (GitHub requires the `workflow` scope), so the workflow files live here. At handoff, copy every `*.yml` here into `.github/workflows/` (`ci.yml` replaces the existing file; `ci.yml.patch` is the same change as a diff against the pin). See P-14.
