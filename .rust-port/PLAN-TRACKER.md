@@ -83,10 +83,10 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 ## [ ] Phase 8: sandbox and vended tools
 
-- [ ] `Sandbox` trait, protocol, errors, default local sandbox (POSIX and PowerShell)
-- [ ] `shell`, `read`, `write`, `edit`, `bash`
-- [ ] `python_repl`, `notebook`, `http_request`, `sleep`, `stop`, `handoff_to_user`
-- [ ] `web_fetch` and `subagent`
+- [x] `Sandbox` trait, protocol, errors, default local sandbox (POSIX and PowerShell)
+- [x] `shell`, `read`, `write`, `edit`, `bash`
+- [x] `python_repl`, `notebook`, `http_request`, `sleep`, `stop`, `handoff_to_user`
+- [x] `web_fetch` and `subagent`
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 9: MCP

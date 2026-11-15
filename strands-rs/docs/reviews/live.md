@@ -84,3 +84,9 @@ Mantle live run on the fix branch (2026-11-15), `cargo test -p strands --all-fea
 | `live_mantle_cache_hit` | `openai.gpt-6.1-sol` | pass (second call reports `cacheReadInputTokens > 0`) |
 
 Not rerun after the fixes: `openai_live` (no `OPENAI_API_KEY` in this environment) and `bedrock_live` (no Bedrock live test changed).
+
+## Sandbox and vended tools
+
+No live tests were added or run for Phase 8 items 1-3: the sandbox and the vended tools make no model calls, and their behaviour is covered by unit tests against the host, child processes and a local HTTP server.
+
+No live tests were added or run for item 4: `web_fetch` and `subagent` are covered by unit tests on mock models and a local HTTP server.
