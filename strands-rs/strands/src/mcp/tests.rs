@@ -860,6 +860,36 @@ mod streamable_http {
     }
 
     #[tokio::test]
+    async fn forces_reconnection_of_a_url_configured_client_on_a_fresh_transport() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let url = server::serve_http(TestServer::default(), Arc::clone(&seen)).await;
+        let client = McpClient::new(McpClientConfig {
+            url: Some(url),
+            ..Default::default()
+        })
+        .expect("client");
+        client.connect(false).await.expect("connect");
+        let first = client.peer().expect("peer");
+        client.connect(true).await.expect("reconnect");
+        assert!(first.is_transport_closed());
+        assert_eq!(tool_named(&client, "echo").await.server_name(), "echo");
+    }
+
+    #[tokio::test]
+    async fn connects_a_url_configured_client_on_a_fresh_transport_after_disconnect() {
+        let url = server::serve_http(TestServer::default(), Arc::default()).await;
+        let client = McpClient::new(McpClientConfig {
+            url: Some(url),
+            ..Default::default()
+        })
+        .expect("client");
+        client.connect(false).await.expect("connect");
+        client.disconnect().await.expect("disconnect");
+        assert_eq!(client.connection_state(), McpConnectionState::Disconnected);
+        assert_eq!(tool_named(&client, "add").await.server_name(), "add");
+    }
+
+    #[tokio::test]
     async fn falls_back_to_the_legacy_protocol_revision_over_streamable_http() {
         let server = TestServer {
             legacy_only: true,
@@ -1597,6 +1627,18 @@ mod elicitation {
     }
 
     #[tokio::test]
+    async fn does_not_register_elicitation_handler_when_no_callback_is_provided() {
+        let client = TestServer {
+            legacy_only: true,
+            ..TestServer::default()
+        }
+        .client();
+        let tool = tool_named(&client, "elicit").await;
+        let error = client.call_tool(&tool, json!({})).await.expect_err("no handler");
+        assert!(error.to_string().contains("Method not found") || error.to_string().contains("-32601"), "{error}");
+    }
+
+    #[tokio::test]
     async fn elicitation_callback_errors_propagate() {
         let callback: ElicitationCallback = Arc::new(|_, _| Box::pin(async { Err("User cancelled".into()) }));
         let client = TestServer {
@@ -2072,6 +2114,29 @@ mod agent_integration {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].arguments, Some(server::object(json!({"message": "hi"}))));
         client.disconnect().await.expect("disconnect");
+    }
+
+    #[tokio::test]
+    async fn forwards_the_tool_execution_cancel_signal_to_call_tool() {
+        let server = TestServer::default();
+        let model = MockMessageModel::new();
+        model.add_turn(vec![ContentBlock::from(ToolUseBlock::new("slow", "t1", json!({})))]);
+        model.add_turn(vec![TextBlock::new("done").into()]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools(vec![ToolSource::from(server.client())])
+            .printer(false)
+            .build()
+            .expect("agent");
+        let handle = agent.cancel_handle();
+        let calls = Arc::clone(&server.calls);
+        let canceller = tokio::spawn(async move {
+            server::eventually(|| !calls.lock().expect("calls").is_empty()).await;
+            handle.cancel(CancelOptions::default());
+        });
+        let result = agent.invoke("go").await.expect("result");
+        canceller.await.expect("join");
+        assert_eq!(result.stop_reason(), crate::StopReason::Cancelled);
     }
 
     #[tokio::test]
