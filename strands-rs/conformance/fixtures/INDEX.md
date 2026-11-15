@@ -43,8 +43,8 @@ type rather than produced by TS code, so they prove JSON shape only.
 | `schemas/tool_specs.json` | pretty | `tool({ inputSchema: zod })`, `new FunctionTool(...)` `toolSpec` | `ToolSpec` wire shape for Zod, JSON schema and schema-less tools |
 | `schemas/zod_to_json_schema.json` | pretty | `z.toJSONSchema` (zod 4, root `node_modules`) | Raw Zod JSON Schema output, including `$schema`, for schema-normalization tests |
 | `snapshots/multi_agent_result.json` | pretty | `MultiAgentResult.toJSON()` | Graph result shape with node results |
-| `snapshots/take_snapshot.json` | pretty | `Agent.takeSnapshot()` with preset, include, exclude, appData | Agent-scope snapshot shape, field order, `createdAt` in `toISOString()` form, null `interrupts` |
-| `snapshots/take_snapshot_empty_agent.json` | pretty | `Agent.takeSnapshot({ preset: "session" })` | Fresh agent: empty messages, null `systemPrompt` and `interrupts` |
+| `snapshots/take_snapshot.json` | pretty | `Agent.takeSnapshot()` with preset, include, exclude, appData | Agent-scope snapshot shape, field order, `createdAt` in `toISOString()` form, empty interrupt state |
+| `snapshots/take_snapshot_empty_agent.json` | pretty | `Agent.takeSnapshot({ preset: "session" })` | Fresh agent: empty messages, null `systemPrompt`, interrupt state `{"interrupts":{},"activated":false}` |
 | `snapshots/take_snapshot_errors.json` | pretty | `takeSnapshot`, `loadSnapshot` (`agent/snapshot.ts`) | Exact error texts |
 | `stash/stash_records.json` | pretty | `Stash.storeMessage`, `Stash.list`, `Stash.takeSnapshot` (`context-manager/stash.ts`) | `storageTypeName` from `constructor.name`, record keys and decoded record bodies per block kind |
 | `telemetry/agent_run.default.json` | pretty | Agent `Meter` and `Tracer` (`telemetry/meter.ts`, `telemetry/tracer.ts`) under recording OTel providers | Instrument names, kinds, units and descriptions; span names, kinds, parents, attributes and events for a tool turn (default semconv) |

@@ -57,13 +57,13 @@ async function dumpStorage(
     },
     {
       api: '`Agent.takeSnapshot()` with preset, include, exclude, appData',
-      note: 'Agent-scope snapshot shape, field order, `createdAt` in `toISOString()` form, null `interrupts`',
+      note: 'Agent-scope snapshot shape, field order, `createdAt` in `toISOString()` form, empty interrupt state',
     }
   )
   const bare = new sdk.Agent({ model: new ScriptedModel([]), printer: false })
   pretty('snapshots/take_snapshot_empty_agent.json', bare.takeSnapshot({ preset: 'session' }), {
     api: '`Agent.takeSnapshot({ preset: "session" })`',
-    note: 'Fresh agent: empty messages, null `systemPrompt` and `interrupts`',
+    note: 'Fresh agent: empty messages, null `systemPrompt`, interrupt state `{"interrupts":{},"activated":false}`',
   })
   pretty(
     'snapshots/take_snapshot_errors.json',
