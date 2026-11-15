@@ -8,6 +8,8 @@
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
+use serde::{Serialize, Serializer};
+
 use crate::cancel::{CancelHandle, CancelOptions, CancelSignal};
 use crate::hooks::HookRegistry;
 use crate::interrupt::state::InterruptStateData;
@@ -537,6 +539,11 @@ impl AgentResult {
         }
     }
 
+    pub(crate) fn with_structured_output(mut self, structured_output: JsonValue) -> Self {
+        self.structured_output = Some(structured_output);
+        self
+    }
+
     /// Why the invocation stopped.
     pub fn stop_reason(&self) -> &StopReason {
         &self.stop_reason
@@ -562,6 +569,34 @@ impl AgentResult {
         &self.invocation_state
     }
 }
+
+impl Serialize for AgentResult {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "type", rename = "agentResult", rename_all = "camelCase")]
+        struct Json<'a> {
+            stop_reason: &'a StopReason,
+            last_message: &'a Message,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            structured_output: Option<&'a JsonValue>,
+        }
+        Json {
+            stop_reason: &self.stop_reason,
+            last_message: &self.last_message,
+            structured_output: self.structured_output.as_ref(),
+        }
+        .serialize(serializer)
+    }
+}
+
+mod stream_event;
+
+pub use stream_event::{
+    AfterInvocationEventData, AfterModelCallEventData, AfterToolCallEventData, AfterToolsEventData,
+    AgentStreamEvent, BeforeInvocationEventData, BeforeModelCallEventData, BeforeToolCallEventData,
+    BeforeToolsEventData, ContentBlockEventData, InterruptEventData, MessageAddedEventData,
+    ModelMessageEventData, ModelStreamUpdateEventData, ToolResultEventData, ToolStreamUpdateEventData,
+};
 
 #[cfg(test)]
 mod tests;

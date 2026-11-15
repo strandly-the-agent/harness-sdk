@@ -111,9 +111,7 @@ pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
 pub use state_store::StateStore;
 pub use strands_macros::{tool, tools};
-pub use tools::{
-    ConcurrentToolExecutor, SequentialToolExecutor, Tool, ToolContext, ToolError, ToolOutcome, ToolSource,
-};
-pub use types::agent::{AgentResult, InvocationState, InvokeArgs};
+pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};
+pub use types::agent::{AgentResult, AgentStreamEvent, InvocationState, InvokeArgs};
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};

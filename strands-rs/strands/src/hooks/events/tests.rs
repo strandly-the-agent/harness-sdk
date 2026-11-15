@@ -1,6 +1,6 @@
 //! Ported from strands-ts/src/hooks/__tests__/events.test.ts (construction, getters, setters and
 //! callback order). The `toJSON` cases are ported with the stream event records in
-//! `agent::stream_event`. `allows mutating toolUse fields in-place` maps to `set_tool_use`
+//! `types::agent::stream_event`. `allows mutating toolUse fields in-place` maps to `set_tool_use`
 //! because `ToolUse` is a wire struct with private fields.
 
 use std::sync::Arc;

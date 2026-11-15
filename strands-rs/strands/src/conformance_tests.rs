@@ -11,6 +11,7 @@ use crate::interrupt::state::InterruptStateData;
 use crate::interrupt::{Interrupt, InterruptResponseContent};
 use crate::mime::{AudioFormat, DocumentFormat, ImageFormat, VideoFormat, to_media_format, to_mime_type};
 use crate::models::streaming::{Metrics, Usage};
+use crate::types::agent::AgentStreamEvent;
 use crate::types::json::{JsonObject, JsonValue, from_json_str, to_js_string};
 use crate::types::media::bytes_from_json;
 use crate::types::messages::{
@@ -458,5 +459,195 @@ fn model_requests_carry_the_fields_the_ts_model_received() {
             };
             assert!(!request.messages.is_empty(), "{path}");
         }
+    }
+}
+
+/// Builds the live hook event a stream event fixture entry was serialized from, and returns its
+/// stream record.
+fn stream_event_from(entry: &JsonValue, agent: &mut crate::types::agent::LocalAgent) -> AgentStreamEvent {
+    use std::sync::Arc;
+
+    use crate::hooks::{
+        AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent,
+        BeforeInvocationEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent,
+        ContentBlockEvent, InterruptEvent, MessageAddedEvent, ModelMessageEvent, ModelStopData,
+        ModelStreamUpdateEvent, Redaction, ToolResultEvent, ToolStreamUpdateEvent,
+    };
+    use crate::tools::ToolStreamEvent;
+    use crate::types::agent::{AgentResult, InvocationState};
+    use crate::types::messages::ToolResultBlock;
+    use crate::types::tools::ToolUse;
+
+    fn field<T: DeserializeOwned>(entry: &JsonValue, key: &str) -> T {
+        serde_json::from_value(entry[key].clone()).unwrap_or_else(|e| panic!("{key}: {e}"))
+    }
+    let state = InvocationState::new;
+    let tool_result = |entry: &JsonValue| -> ToolResultBlock {
+        serde_json::from_value(entry["result"]["toolResult"].clone()).unwrap()
+    };
+    let model = Arc::clone(agent.model());
+    match entry["type"].as_str().unwrap() {
+        "modelStreamUpdateEvent" => AgentStreamEvent::ModelStreamUpdate(
+            (&ModelStreamUpdateEvent::new(agent, field(entry, "event"), state())).into(),
+        ),
+        "contentBlockEvent" => AgentStreamEvent::ContentBlock(
+            (&ContentBlockEvent::new(agent, field(entry, "contentBlock"), state())).into(),
+        ),
+        "modelMessageEvent" => AgentStreamEvent::ModelMessage(
+            (&ModelMessageEvent::new(
+                agent,
+                field(entry, "message"),
+                field(entry, "stopReason"),
+                state(),
+            ))
+                .into(),
+        ),
+        "toolStreamUpdateEvent" => {
+            let event = match entry["event"].get("data") {
+                Some(data) => ToolStreamEvent::new(data.clone()),
+                None => ToolStreamEvent::default(),
+            };
+            AgentStreamEvent::ToolStreamUpdate(
+                (&ToolStreamUpdateEvent::new(agent.tool_agent(), event, state())).into(),
+            )
+        }
+        "toolResultEvent" => AgentStreamEvent::ToolResult(
+            (&ToolResultEvent::new(agent.tool_agent(), tool_result(entry), state())).into(),
+        ),
+        "beforeInvocationEvent" => AgentStreamEvent::BeforeInvocation(
+            (&BeforeInvocationEvent::new(agent, state(), Vec::new())).into(),
+        ),
+        "afterInvocationEvent" => {
+            AgentStreamEvent::AfterInvocation((&AfterInvocationEvent::new(agent, state())).into())
+        }
+        "beforeModelCallEvent" => {
+            let projected = entry
+                .get("projectedInputTokens")
+                .map(|tokens| tokens.as_u64().unwrap());
+            AgentStreamEvent::BeforeModelCall(
+                (&BeforeModelCallEvent::new(agent, model, state(), projected)).into(),
+            )
+        }
+        "afterModelCallEvent" => {
+            let attempt_count = u32::try_from(entry["attemptCount"].as_u64().unwrap()).unwrap();
+            let error = entry
+                .get("error")
+                .map(|error| crate::Error::other(error["message"].as_str().unwrap().to_owned()));
+            let mut event = AfterModelCallEvent::new(agent, model, state(), attempt_count);
+            if let Some(stop_data) = entry.get("stopData") {
+                let mut data =
+                    ModelStopData::new(field(stop_data, "message"), field(stop_data, "stopReason"));
+                if let Some(redaction) = stop_data.get("redaction") {
+                    data = data.with_redaction(Redaction::new(redaction["userMessage"].as_str().unwrap()));
+                }
+                event = event.with_stop_data(data);
+            }
+            if let Some(error) = &error {
+                event = event.with_error(error);
+            }
+            AgentStreamEvent::AfterModelCall((&event).into())
+        }
+        "beforeToolsEvent" => AgentStreamEvent::BeforeTools(
+            (&BeforeToolsEvent::new(agent, field(entry, "message"), state())).into(),
+        ),
+        "afterToolsEvent" => AgentStreamEvent::AfterTools(
+            (&AfterToolsEvent::new(agent, field(entry, "message"), state())).into(),
+        ),
+        "beforeToolCallEvent" => {
+            let tool_use: ToolUse = field(entry, "toolUse");
+            AgentStreamEvent::BeforeToolCall(
+                (&BeforeToolCallEvent::new(agent.tool_agent(), tool_use, None, state())).into(),
+            )
+        }
+        "afterToolCallEvent" => {
+            let error = entry.get("error").map(|error| {
+                let error: Arc<dyn std::error::Error + Send + Sync> = Arc::new(std::io::Error::other(
+                    error["message"].as_str().unwrap().to_owned(),
+                ));
+                error
+            });
+            let event = AfterToolCallEvent::new(
+                agent.tool_agent(),
+                field(entry, "toolUse"),
+                None,
+                tool_result(entry),
+                state(),
+            )
+            .with_error(error);
+            AgentStreamEvent::AfterToolCall((&event).into())
+        }
+        "messageAddedEvent" => AgentStreamEvent::MessageAdded(
+            (&MessageAddedEvent::new(agent, field(entry, "message"), state())).into(),
+        ),
+        "interruptEvent" => AgentStreamEvent::Interrupt(
+            (&InterruptEvent::new(agent, field(entry, "interrupt"), state())).into(),
+        ),
+        "agentResultEvent" => {
+            let result = &entry["result"];
+            let mut agent_result =
+                AgentResult::new(field(result, "stopReason"), field(result, "lastMessage"), state());
+            if let Some(output) = result.get("structuredOutput") {
+                agent_result = agent_result.with_structured_output(output.clone());
+            }
+            AgentStreamEvent::AgentResult(agent_result)
+        }
+        other => panic!("unexpected event type {other}"),
+    }
+}
+
+fn test_agent() -> crate::types::agent::LocalAgent {
+    crate::types::agent::LocalAgent::new(std::sync::Arc::new(crate::testing::MockMessageModel::new()))
+}
+
+#[test]
+fn agent_stream_events_serialize_byte_identically() {
+    let mut agent = test_agent();
+    let files: Vec<String> = files_in("agent_stream_events")
+        .into_iter()
+        .filter(|path| !path.ends_with("_types.json"))
+        .collect();
+    assert_eq!(files.len(), 4);
+    let mut seen = std::collections::BTreeSet::new();
+    for path in &files {
+        let entries: Vec<JsonValue> = parse(path);
+        let events: Vec<AgentStreamEvent> = entries
+            .iter()
+            .map(|entry| stream_event_from(entry, &mut agent))
+            .collect();
+        assert_eq!(js(&events), read(path), "{path}");
+        seen.extend(
+            entries
+                .iter()
+                .map(|entry| entry["type"].as_str().unwrap().to_owned()),
+        );
+    }
+    assert_eq!(seen.len(), 16, "every stream event type is covered: {seen:?}");
+
+    let types: Vec<String> = parse("agent_stream_events/tool_run_types.json");
+    let entries: Vec<JsonValue> = parse("agent_stream_events/tool_run.json");
+    let written: Vec<&str> = entries
+        .iter()
+        .map(|entry| entry["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(types, written);
+}
+
+#[test]
+fn hook_events_serialize_byte_identically() {
+    use crate::hooks::InitializedEvent;
+
+    let mut agent = test_agent();
+    assert_eq!(
+        js(&InitializedEvent::new(&mut agent)),
+        read("hook_events/initialized.json")
+    );
+    let files: Vec<String> = files_in("hook_events")
+        .into_iter()
+        .filter(|path| !path.ends_with("initialized.json") && !path.ends_with("tool_run_order.json"))
+        .collect();
+    assert_eq!(files.len(), 6);
+    for path in &files {
+        let entry: JsonValue = parse(path);
+        assert_eq!(js(&stream_event_from(&entry, &mut agent)), read(path), "{path}");
     }
 }

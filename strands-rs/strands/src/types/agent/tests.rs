@@ -178,3 +178,31 @@ async fn hook_recorder_records_events_in_firing_order() {
     recorder.clear();
     assert!(recorder.events().is_empty());
 }
+
+/// Ported from strands-ts/src/types/__tests__/agent.test.ts (`AgentResult` `toJSON`; the traces and
+/// metrics cases land with `AgentMetrics`).
+mod agent_result_to_json {
+    use super::*;
+    use crate::types::messages::{Role, TextBlock};
+
+    fn result() -> AgentResult {
+        let message = Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Text(TextBlock::new("Response"))],
+        );
+        AgentResult::new(StopReason::EndTurn, message, InvocationState::new())
+    }
+
+    #[test]
+    fn includes_structured_output_when_present() {
+        let json = serde_json::to_value(result().with_structured_output(json!({"field": "value"}))).unwrap();
+        assert_eq!(json["structuredOutput"], json!({"field": "value"}));
+    }
+
+    #[test]
+    fn excludes_structured_output_when_not_present() {
+        let json = serde_json::to_value(result()).unwrap();
+        assert_eq!(json["type"], "agentResult");
+        assert!(json.get("structuredOutput").is_none());
+    }
+}
