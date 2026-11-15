@@ -643,6 +643,8 @@ mod to_json_from_json_round_trips {
         );
         assert_block_round_trip(ReasoningBlock::new().with_redacted_content(vec![1, 2, 3]));
         assert_block_round_trip(CachePointBlock::new());
+        let json_block = JsonBlock::new(json!({"key": "value", "nested": {"a": 1}}));
+        assert_eq!(from_saved::<JsonBlock>(to_json(&json_block)), json_block);
         assert_block_round_trip(InjectedBlock::new("reminder", "test"));
         assert_block_round_trip(GuardContentBlock::from(GuardContentText::new(
             "Guard this",
