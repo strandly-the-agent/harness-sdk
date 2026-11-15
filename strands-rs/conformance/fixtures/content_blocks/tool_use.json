@@ -1,0 +1,1 @@
+{"toolUse":{"name":"get_weather","toolUseId":"tooluse_weather_1","input":{"city":"Seattle","days":3,"units":null,"tags":["a","b"],"nested":{"deep":[1,{"x":true}]}}}}

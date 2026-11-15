@@ -1,0 +1,1 @@
+{"type":"modelRedactionEvent","inputRedaction":{"replaceContent":"[input redacted]"},"outputRedaction":{"redactedContent":"the original text","replaceContent":"[output redacted]"}}

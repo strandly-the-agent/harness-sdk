@@ -1,0 +1,1 @@
+{"name":"flaky_tool","description":"Always fails.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}

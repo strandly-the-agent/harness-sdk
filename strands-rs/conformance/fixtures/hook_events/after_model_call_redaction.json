@@ -1,0 +1,1 @@
+{"type":"afterModelCallEvent","attemptCount":1,"stopData":{"message":{"role":"assistant","content":[{"text":"hi"}],"trackingId":"tracking-hook-1"},"stopReason":"guardrailIntervened","redaction":{"userMessage":"[redacted]"}}}

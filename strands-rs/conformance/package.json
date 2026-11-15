@@ -1,0 +1,10 @@
+{
+  "name": "strands-rs-conformance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Writes the strands-ts JSON fixtures that the Rust SDK round-trips byte for byte",
+  "scripts": {
+    "generate": "tsx generate.ts"
+  }
+}

@@ -1,0 +1,531 @@
+{
+  "_note": "Index of every fixture: what it holds. Fixture files are exact strands-ts JSON.stringify output; entries with _note explain where the generator, not TS, chose part of the shape.",
+  "fixtures": {
+    "agent_results/interrupt.json": {
+      "description": "AgentResult.toJSON() for stopReason interrupt"
+    },
+    "agent_results/interrupt_resumed.json": {
+      "description": "AgentResult.toJSON() after the resumed run"
+    },
+    "agent_results/structured_output.json": {
+      "description": "AgentResult.toJSON() with structuredOutput"
+    },
+    "agent_results/sub_agent_interrupt_resumed.json": {
+      "description": "AgentResult.toJSON() of the parent after resuming"
+    },
+    "agent_results/tool_run.json": {
+      "description": "AgentResult.toJSON() of the tool run"
+    },
+    "agent_results/tool_run_metrics.json": {
+      "description": "AgentMetrics.toJSON() of the tool run"
+    },
+    "agent_stream_events/interrupt_resume_run.json": {
+      "description": "AgentStreamEvents after resuming with a null interrupt response; the sibling result comes from pendingToolExecution"
+    },
+    "agent_stream_events/interrupt_run.json": {
+      "description": "AgentStreamEvents of a run where one of two concurrent tools raises an interrupt (includes InterruptEvent)"
+    },
+    "agent_stream_events/structured_output_run.json": {
+      "description": "AgentStreamEvents of a structured-output run: a plain text turn is dropped, then the structured output tool is forced"
+    },
+    "agent_stream_events/tool_run.json": {
+      "description": "Every AgentStreamEvent of a two-cycle run (reasoning, redacted reasoning, text, three concurrent tools including a streaming one and a failing one, citations), each serialized when yielded"
+    },
+    "agent_stream_events/tool_run_types.json": {
+      "description": "Event type sequence of agent_stream_events/tool_run.json",
+      "_note": "Generator-built list of the TS `type` strings"
+    },
+    "content_blocks/audio_bytes.json": {
+      "description": "audioBlock toJSON()"
+    },
+    "content_blocks/audio_s3.json": {
+      "description": "audioBlock toJSON()"
+    },
+    "content_blocks/cache_point.json": {
+      "description": "cachePointBlock toJSON()"
+    },
+    "content_blocks/cache_point_ttl.json": {
+      "description": "cachePointBlock toJSON()"
+    },
+    "content_blocks/citations.json": {
+      "description": "citationsBlock toJSON()"
+    },
+    "content_blocks/document_bytes.json": {
+      "description": "documentBlock toJSON()"
+    },
+    "content_blocks/document_citations_context.json": {
+      "description": "documentBlock toJSON()"
+    },
+    "content_blocks/document_content.json": {
+      "description": "documentBlock toJSON()"
+    },
+    "content_blocks/document_s3.json": {
+      "description": "documentBlock toJSON()"
+    },
+    "content_blocks/document_text.json": {
+      "description": "documentBlock toJSON()"
+    },
+    "content_blocks/guard_content_image.json": {
+      "description": "guardContentBlock toJSON()"
+    },
+    "content_blocks/guard_content_text.json": {
+      "description": "guardContentBlock toJSON()"
+    },
+    "content_blocks/image_bytes.json": {
+      "description": "imageBlock toJSON()"
+    },
+    "content_blocks/image_s3.json": {
+      "description": "imageBlock toJSON()"
+    },
+    "content_blocks/image_url.json": {
+      "description": "imageBlock toJSON()"
+    },
+    "content_blocks/injected.json": {
+      "description": "injectedBlock toJSON()"
+    },
+    "content_blocks/reasoning_redacted.json": {
+      "description": "reasoningBlock toJSON()"
+    },
+    "content_blocks/reasoning_text.json": {
+      "description": "reasoningBlock toJSON()"
+    },
+    "content_blocks/summary.json": {
+      "description": "summaryBlock toJSON()"
+    },
+    "content_blocks/summary_provider_signature.json": {
+      "description": "summaryBlock toJSON()"
+    },
+    "content_blocks/text.json": {
+      "description": "textBlock toJSON()"
+    },
+    "content_blocks/tool_result_error.json": {
+      "description": "toolResultBlock toJSON()"
+    },
+    "content_blocks/tool_result_json.json": {
+      "description": "toolResultBlock toJSON()"
+    },
+    "content_blocks/tool_result_media.json": {
+      "description": "toolResultBlock toJSON()"
+    },
+    "content_blocks/tool_result_text.json": {
+      "description": "toolResultBlock toJSON()"
+    },
+    "content_blocks/tool_result_unknown_content.json": {
+      "description": "ToolResultBlock.fromJSON keeps an unrecognized tool result content entry as an UnknownBlock"
+    },
+    "content_blocks/tool_use.json": {
+      "description": "toolUseBlock toJSON()"
+    },
+    "content_blocks/tool_use_reasoning_signature.json": {
+      "description": "toolUseBlock toJSON()"
+    },
+    "content_blocks/unknown.json": {
+      "description": "unknownBlock toJSON()"
+    },
+    "content_blocks/video_bytes.json": {
+      "description": "videoBlock toJSON()"
+    },
+    "content_blocks/video_s3.json": {
+      "description": "videoBlock toJSON()"
+    },
+    "edge_cases/base64_canonical.input.json": {
+      "description": "Input for edge_cases/base64_canonical.json: Message.fromJSON decodes canonical base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_canonical.json": {
+      "description": "Message.fromJSON decodes canonical base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_trailing_data_after_padding.input.json": {
+      "description": "Input for edge_cases/base64_trailing_data_after_padding.json: Message.fromJSON decodes trailing_data_after_padding base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_trailing_data_after_padding.json": {
+      "description": "Message.fromJSON decodes trailing_data_after_padding base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_unpadded.input.json": {
+      "description": "Input for edge_cases/base64_unpadded.json: Message.fromJSON decodes unpadded base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_unpadded.json": {
+      "description": "Message.fromJSON decodes unpadded base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_url_safe.input.json": {
+      "description": "Input for edge_cases/base64_url_safe.json: Message.fromJSON decodes url_safe base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_url_safe.json": {
+      "description": "Message.fromJSON decodes url_safe base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_url_safe_unpadded.input.json": {
+      "description": "Input for edge_cases/base64_url_safe_unpadded.json: Message.fromJSON decodes url_safe_unpadded base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_url_safe_unpadded.json": {
+      "description": "Message.fromJSON decodes url_safe_unpadded base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_whitespace.input.json": {
+      "description": "Input for edge_cases/base64_whitespace.json: Message.fromJSON decodes whitespace base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/base64_whitespace.json": {
+      "description": "Message.fromJSON decodes whitespace base64 leniently (Buffer.from) and re-encodes canonical base64"
+    },
+    "edge_cases/created_at_milliseconds.json": {
+      "description": "Date.toISOString() keeps millisecond precision, including .000",
+      "_note": "Values are TS Date output; the wrapper object is generator-built"
+    },
+    "edge_cases/numbers_in_tool_input.json": {
+      "description": "JS number formatting in a JSON value: -0, 1e21, 2^64, 1.5e-7 and others"
+    },
+    "edge_cases/reasoning_redacted_uint8array_in_stream_event.json": {
+      "description": "A Uint8Array in a stream event serializes as an index-keyed object, unlike persisted blocks (base64)"
+    },
+    "edge_cases/text_escapes.json": {
+      "description": "Text covering every JSON.stringify escape and characters it leaves raw"
+    },
+    "edge_cases/text_lone_surrogates.json": {
+      "description": "Text with a lone high surrogate, a lone low surrogate and a valid pair (JSON.stringify escapes lone ones)"
+    },
+    "hook_events/after_model_call_error.json": {
+      "description": "afterModelCallEvent.toJSON() for a variant the scripted runs do not reach"
+    },
+    "hook_events/after_model_call_redaction.json": {
+      "description": "afterModelCallEvent.toJSON() for a variant the scripted runs do not reach"
+    },
+    "hook_events/after_tool_call_error.json": {
+      "description": "afterToolCallEvent.toJSON() for a variant the scripted runs do not reach"
+    },
+    "hook_events/before_model_call_projected_tokens.json": {
+      "description": "beforeModelCallEvent.toJSON() for a variant the scripted runs do not reach"
+    },
+    "hook_events/before_model_call_without_projection.json": {
+      "description": "beforeModelCallEvent.toJSON() for a variant the scripted runs do not reach"
+    },
+    "hook_events/initialized.json": {
+      "description": "initializedEvent.toJSON() for a variant the scripted runs do not reach"
+    },
+    "hook_events/interrupt.json": {
+      "description": "interruptEvent.toJSON() for a variant the scripted runs do not reach"
+    },
+    "hook_events/tool_run_order.json": {
+      "description": "Order in which hook callbacks fired for every hook event class during the tool run",
+      "_note": "Generator-built list of the TS `type` strings"
+    },
+    "interrupts/agent_result_interrupts.json": {
+      "description": "AgentResult.interrupts (Interrupt.toJSON) after a tool interrupt"
+    },
+    "interrupts/response_content_null.json": {
+      "description": "InterruptResponseContent.toJSON() with a null response"
+    },
+    "interrupts/state_fresh.json": {
+      "description": "new InterruptState().toJSON()"
+    },
+    "interrupts/state_pending.json": {
+      "description": "Activated InterruptState with three interrupts, context and pendingToolExecution"
+    },
+    "interrupts/state_resumed_with_context.json": {
+      "description": "The same state after resume(): one null response, one object response, one unanswered; context kept"
+    },
+    "interrupts/state_round_trip.json": {
+      "description": "InterruptState.fromJSON(state.toJSON()).toJSON()"
+    },
+    "interrupts/unanswered_after_null_response.json": {
+      "description": "getUnansweredInterrupts() after the round trip: a null response counts as answered"
+    },
+    "media_formats/audio.json": {
+      "description": "An AudioBlock for every AudioFormat",
+      "_note": "The format list is transcribed from the TS type union (no runtime list at the pin); each block is real TS output"
+    },
+    "media_formats/document.json": {
+      "description": "A DocumentBlock for every DocumentFormat",
+      "_note": "The format list is transcribed from the TS type union (no runtime list at the pin); each block is real TS output"
+    },
+    "media_formats/image.json": {
+      "description": "An ImageBlock for every entry of the runtime IMAGE_FORMATS list"
+    },
+    "media_formats/to_media_format.json": {
+      "description": "toMediaFormat for every known MIME type, an upper-case input and an unknown one (null = undefined)",
+      "_note": "Map built by the generator; each value is TS output"
+    },
+    "media_formats/to_mime_type.json": {
+      "description": "toMimeType for every image, video and document format, an upper-case input and an unknown one (null = undefined)",
+      "_note": "Map built by the generator; each value is TS output"
+    },
+    "media_formats/unknown_format.json": {
+      "description": "An ImageBlock with a format outside the union; TS accepts any string at runtime"
+    },
+    "media_formats/video.json": {
+      "description": "A VideoBlock for every VideoFormat",
+      "_note": "The format list is transcribed from the TS type union (no runtime list at the pin); each block is real TS output"
+    },
+    "messages/assistant_every_block.json": {
+      "description": "One message carrying every content block type, in the order of content_blocks/"
+    },
+    "messages/legacy_without_tracking_id.input.json": {
+      "description": "Input for messages/legacy_without_tracking_id.json: Message.fromJSON on data without trackingId mints one on load"
+    },
+    "messages/legacy_without_tracking_id.json": {
+      "description": "Message.fromJSON on data without trackingId mints one on load"
+    },
+    "messages/saved_unknown_block.input.json": {
+      "description": "Input for messages/saved_unknown_block.json: Message.fromJSON (the saved-data path) keeps an unknown block in place"
+    },
+    "messages/saved_unknown_block.json": {
+      "description": "Message.fromJSON (the saved-data path) keeps an unknown block in place"
+    },
+    "messages/strict_unknown_block_error.json": {
+      "description": "Message.fromMessageData (the strict path) rejects an unknown block with this error text",
+      "_note": "Wraps a TS error message; only the message string is TS output"
+    },
+    "messages/system_prompt_blocks.json": {
+      "description": "systemPromptToData for text, cache point and guard content blocks"
+    },
+    "messages/system_prompt_string.json": {
+      "description": "systemPromptToData for a string"
+    },
+    "messages/user_text.json": {
+      "description": "Message with a minted trackingId (counter UUID) and one text block"
+    },
+    "messages/with_metadata.json": {
+      "description": "Message with usage, metrics and custom metadata"
+    },
+    "model_requests/structured_output_run.json": {
+      "description": "What the model received: the second request carries toolChoice { tool: { name: \"strands_structured_output\" } } and the structured output ToolSpec",
+      "_note": "Generator-built record of StreamOptions fields"
+    },
+    "model_requests/tool_run.json": {
+      "description": "Messages (toJSON), toolSpecs and systemPrompt the model received in each cycle",
+      "_note": "Generator-built record of StreamOptions fields"
+    },
+    "model_stream_events/content_block_start_empty.json": {
+      "description": "modelContentBlockStartEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/content_block_start_tool_use.json": {
+      "description": "modelContentBlockStartEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/content_block_start_tool_use_signature.json": {
+      "description": "modelContentBlockStartEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/content_block_stop.json": {
+      "description": "modelContentBlockStopEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/delta_citations.json": {
+      "description": "modelContentBlockDeltaEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/delta_reasoning_redacted.json": {
+      "description": "modelContentBlockDeltaEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/delta_reasoning_signature.json": {
+      "description": "modelContentBlockDeltaEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/delta_reasoning_text.json": {
+      "description": "modelContentBlockDeltaEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/delta_text.json": {
+      "description": "modelContentBlockDeltaEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/delta_tool_use_input.json": {
+      "description": "modelContentBlockDeltaEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/message_start.json": {
+      "description": "modelMessageStartEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/message_stop.json": {
+      "description": "modelMessageStopEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/message_stop_additional_fields.json": {
+      "description": "modelMessageStopEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/message_stop_additional_fields_null.json": {
+      "description": "modelMessageStopEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/metadata_empty.json": {
+      "description": "modelMetadataEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/metadata_full.json": {
+      "description": "modelMetadataEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/metadata_trace_null.json": {
+      "description": "modelMetadataEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/redaction_both.json": {
+      "description": "modelRedactionEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/redaction_input.json": {
+      "description": "modelRedactionEvent serialized with JSON.stringify"
+    },
+    "model_stream_events/redaction_output.json": {
+      "description": "modelRedactionEvent serialized with JSON.stringify"
+    },
+    "sessions/agent_history/session/conformance-session/scopes/agent/session_agent/snapshots/immutable_history/snapshot_01a1ca7b-9ff6-717e-bc71-f6419678f9d2.json": {
+      "description": "SessionManager with snapshotTrigger: latest snapshot, two uuidv7 immutable history snapshots and an explicitly saved manifest (storage key `session/conformance-session/scopes/agent/session_agent/snapshots/immutable_history/snapshot_01a1ca7b-9ff6-717e-bc71-f6419678f9d2.json`)"
+    },
+    "sessions/agent_history/session/conformance-session/scopes/agent/session_agent/snapshots/immutable_history/snapshot_01a1ca7b-a5fc-74ef-9b2e-011eaaaddf1d.json": {
+      "description": "SessionManager with snapshotTrigger: latest snapshot, two uuidv7 immutable history snapshots and an explicitly saved manifest (storage key `session/conformance-session/scopes/agent/session_agent/snapshots/immutable_history/snapshot_01a1ca7b-a5fc-74ef-9b2e-011eaaaddf1d.json`)"
+    },
+    "sessions/agent_history/session/conformance-session/scopes/agent/session_agent/snapshots/manifest.json": {
+      "description": "SessionManager with snapshotTrigger: latest snapshot, two uuidv7 immutable history snapshots and an explicitly saved manifest (storage key `session/conformance-session/scopes/agent/session_agent/snapshots/manifest.json`)"
+    },
+    "sessions/agent_history/session/conformance-session/scopes/agent/session_agent/snapshots/snapshot_latest.json": {
+      "description": "SessionManager with snapshotTrigger: latest snapshot, two uuidv7 immutable history snapshots and an explicitly saved manifest (storage key `session/conformance-session/scopes/agent/session_agent/snapshots/snapshot_latest.json`)"
+    },
+    "sessions/agent_history_keys.json": {
+      "description": "Every storage key the agent_history session wrote, sorted",
+      "_note": "Generator-built list of TS storage keys"
+    },
+    "sessions/agent_history_snapshot_ids.json": {
+      "description": "SnapshotStorageAdapter.listSnapshotIds"
+    },
+    "sessions/inline_stash/context/inline-stash-session/scopes/agent/inline_stash_agent/00000000-0000-4000-8000-000000000068_0": {
+      "description": "InMemoryStorage agent storage with a ContextManager: the snapshot embeds stash entries inline ({ location: \"inline\" }) (storage key `context/inline-stash-session/scopes/agent/inline_stash_agent/00000000-0000-4000-8000-000000000068_0`)"
+    },
+    "sessions/inline_stash/context/inline-stash-session/scopes/agent/inline_stash_agent/00000000-0000-4000-8000-000000000074_0": {
+      "description": "InMemoryStorage agent storage with a ContextManager: the snapshot embeds stash entries inline ({ location: \"inline\" }) (storage key `context/inline-stash-session/scopes/agent/inline_stash_agent/00000000-0000-4000-8000-000000000074_0`)"
+    },
+    "sessions/inline_stash/context/inline-stash-session/scopes/agent/inline_stash_agent/tooluse_stash_1_0": {
+      "description": "InMemoryStorage agent storage with a ContextManager: the snapshot embeds stash entries inline ({ location: \"inline\" }) (storage key `context/inline-stash-session/scopes/agent/inline_stash_agent/tooluse_stash_1_0`)"
+    },
+    "sessions/inline_stash/session/inline-stash-session/scopes/agent/inline_stash_agent/snapshots/snapshot_latest.json": {
+      "description": "InMemoryStorage agent storage with a ContextManager: the snapshot embeds stash entries inline ({ location: \"inline\" }) (storage key `session/inline-stash-session/scopes/agent/inline_stash_agent/snapshots/snapshot_latest.json`)"
+    },
+    "sessions/local_file_external_stash/context/file-stash-session/scopes/agent/file_stash_agent/00000000-0000-4000-8000-000000000075_0": {
+      "description": "LocalFileStorage file `context/file-stash-session/scopes/agent/file_stash_agent/00000000-0000-4000-8000-000000000075_0`: session snapshot with { location: \"external\", storageType: \"LocalFileStorage\" }, stash entries and manifest"
+    },
+    "sessions/local_file_external_stash/context/file-stash-session/scopes/agent/file_stash_agent/00000000-0000-4000-8000-000000000081_0": {
+      "description": "LocalFileStorage file `context/file-stash-session/scopes/agent/file_stash_agent/00000000-0000-4000-8000-000000000081_0`: session snapshot with { location: \"external\", storageType: \"LocalFileStorage\" }, stash entries and manifest"
+    },
+    "sessions/local_file_external_stash/context/file-stash-session/scopes/agent/file_stash_agent/tooluse_stash_2_0": {
+      "description": "LocalFileStorage file `context/file-stash-session/scopes/agent/file_stash_agent/tooluse_stash_2_0`: session snapshot with { location: \"external\", storageType: \"LocalFileStorage\" }, stash entries and manifest"
+    },
+    "sessions/local_file_external_stash/context/file-stash-session/scopes/agent/file_stash_agent/tooluse_stash_2_1": {
+      "description": "LocalFileStorage file `context/file-stash-session/scopes/agent/file_stash_agent/tooluse_stash_2_1`: session snapshot with { location: \"external\", storageType: \"LocalFileStorage\" }, stash entries and manifest"
+    },
+    "sessions/local_file_external_stash/context/file-stash-session/scopes/agent/file_stash_agent/tooluse_stash_2_2": {
+      "description": "LocalFileStorage file `context/file-stash-session/scopes/agent/file_stash_agent/tooluse_stash_2_2`: session snapshot with { location: \"external\", storageType: \"LocalFileStorage\" }, stash entries and manifest"
+    },
+    "sessions/local_file_external_stash/context/file-stash-session/scopes/agent/file_stash_agent/tooluse_stash_2_3": {
+      "description": "LocalFileStorage file `context/file-stash-session/scopes/agent/file_stash_agent/tooluse_stash_2_3`: session snapshot with { location: \"external\", storageType: \"LocalFileStorage\" }, stash entries and manifest"
+    },
+    "sessions/local_file_external_stash/session/file-stash-session/scopes/agent/file_stash_agent/snapshots/manifest.json": {
+      "description": "LocalFileStorage file `session/file-stash-session/scopes/agent/file_stash_agent/snapshots/manifest.json`: session snapshot with { location: \"external\", storageType: \"LocalFileStorage\" }, stash entries and manifest"
+    },
+    "sessions/local_file_external_stash/session/file-stash-session/scopes/agent/file_stash_agent/snapshots/snapshot_latest.json": {
+      "description": "LocalFileStorage file `session/file-stash-session/scopes/agent/file_stash_agent/snapshots/snapshot_latest.json`: session snapshot with { location: \"external\", storageType: \"LocalFileStorage\" }, stash entries and manifest"
+    },
+    "sessions/manifest_default.json": {
+      "description": "SnapshotStorageAdapter.loadManifest default when no manifest exists"
+    },
+    "sessions/multi_agent_graph/session/graph-session/scopes/multiAgent/article_graph/snapshots/manifest.json": {
+      "description": "Graph with a SessionManager: multiAgent-scope snapshot with serialized graph state, and the manifest (storage key `session/graph-session/scopes/multiAgent/article_graph/snapshots/manifest.json`)"
+    },
+    "sessions/multi_agent_graph/session/graph-session/scopes/multiAgent/article_graph/snapshots/snapshot_latest.json": {
+      "description": "Graph with a SessionManager: multiAgent-scope snapshot with serialized graph state, and the manifest (storage key `session/graph-session/scopes/multiAgent/article_graph/snapshots/snapshot_latest.json`)"
+    },
+    "snapshots/agent_after_interrupt_resolved.json": {
+      "description": "Session snapshot after the resumed run: interrupt state deactivated"
+    },
+    "snapshots/agent_empty.json": {
+      "description": "Session snapshot of a fresh agent (no system prompt: null)"
+    },
+    "snapshots/agent_exclude_interrupts.json": {
+      "description": "takeSnapshot({ preset: \"session\", exclude: [\"interrupts\", \"messages\"] })"
+    },
+    "snapshots/agent_include_subset.json": {
+      "description": "takeSnapshot with include: messages and state, plus appData"
+    },
+    "snapshots/agent_pending_interrupt.json": {
+      "description": "Session snapshot while an interrupt is pending: activated state, the interrupt and pendingToolExecution with the completed sibling result"
+    },
+    "snapshots/agent_resuming_interrupt_null_response.json": {
+      "description": "Snapshot taken at BeforeInvocationEvent of the resumed invocation (right after resume()): resumeResponses holds the null answer and the interrupt has response: null"
+    },
+    "snapshots/agent_session_preset.json": {
+      "description": "takeSnapshot({ preset: \"session\" }) after the tool run"
+    },
+    "snapshots/agent_sub_agent_interrupt_context.json": {
+      "description": "Parent snapshot while a sub-agent interrupt is pending: interrupt state context holds the child turn snapshot"
+    },
+    "snapshots/agent_sub_agent_resume_with_context.json": {
+      "description": "Parent snapshot at BeforeInvocationEvent of the resumed invocation: resume() stored the responses and the context still holds the child turn"
+    },
+    "snapshots/agent_system_prompt_string.json": {
+      "description": "Snapshot of a string system prompt and empty model state"
+    },
+    "snapshots/multi_agent_fresh_state.json": {
+      "description": "multiagent takeSnapshot with a fresh MultiAgentState"
+    },
+    "snapshots/multi_agent_orchestrator_only.json": {
+      "description": "multiagent takeSnapshot(graph) without state: data holds only orchestratorId"
+    },
+    "snapshots/schema_version.json": {
+      "description": "SNAPSHOT_SCHEMA_VERSION"
+    },
+    "stash/inline_entries.json": {
+      "description": "Stash.takeSnapshot() entries after storing a text/image message and a tool result"
+    },
+    "stash/storage_type_names.json": {
+      "description": "Stash.storageTypeName (constructor.name) per storage class",
+      "_note": "Map built by the generator; each value is TS output"
+    },
+    "stop_reasons/all.json": {
+      "description": "A ModelMessageStopEvent for each of the 16 StopReason values plus one unknown value",
+      "_note": "The value list is transcribed from the TS StopReason union; each event is real TS output"
+    },
+    "stop_reasons/limit_stop_message.json": {
+      "description": "limitStopMessage text for agent \"my_agent\" and limitTurns"
+    },
+    "stop_reasons/limit_stop_reasons.json": {
+      "description": "The runtime LIMIT_STOP_REASONS set, in order"
+    },
+    "telemetry/agent_metrics.json": {
+      "description": "AgentMetrics.toJSON() from the telemetry run"
+    },
+    "telemetry/agent_traces.json": {
+      "description": "AgentTrace.toJSON() for every local trace of the telemetry run"
+    },
+    "telemetry/metric_instruments.json": {
+      "description": "Every OpenTelemetry instrument strands-ts creates: meter name, kind, instrument name and the options (unit, description, advice) it passed",
+      "_note": "Recorded through a proxy meter; the record shape is generator-built"
+    },
+    "telemetry/metric_points.json": {
+      "description": "Metric data points recorded during the telemetry run (cumulative)",
+      "_note": "Recorded by an OpenTelemetry metric reader; the record shape is generator-built"
+    },
+    "telemetry/span_names.json": {
+      "description": "Span names, in end order, for a two-cycle agent run with two tools (one fails)",
+      "_note": "Recorded by an in-memory OpenTelemetry exporter; the list itself is generator-built"
+    },
+    "telemetry/spans_latest_experimental.json": {
+      "description": "Spans for a one-tool run with OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental",
+      "_note": "Recorded from the OpenTelemetry SDK; the record shape is generator-built, the values are what strands-ts set"
+    },
+    "telemetry/spans_stable.json": {
+      "description": "Spans (name, kind, parent span name, attributes, events, status) with default semantic conventions",
+      "_note": "Recorded from the OpenTelemetry SDK; the record shape is generator-built, the values are what strands-ts set"
+    },
+    "tools/function_tool_default_schema.json": {
+      "description": "FunctionTool.toolSpec when no inputSchema is given (the TS default schema)"
+    },
+    "tools/function_tool_spec.json": {
+      "description": "FunctionTool.toolSpec with an explicit inputSchema"
+    },
+    "tools/tool_choice_any.json": {
+      "description": "ToolChoice any",
+      "_note": "ToolChoice is a TS type; this literal only proves the JSON shape"
+    },
+    "tools/tool_choice_auto.json": {
+      "description": "ToolChoice auto",
+      "_note": "ToolChoice is a TS type; this literal only proves the JSON shape"
+    },
+    "tools/tool_choice_tool.json": {
+      "description": "ToolChoice for one named tool",
+      "_note": "ToolChoice is a TS type; this literal only proves the JSON shape"
+    },
+    "tools/zod_tool_spec.json": {
+      "description": "tool() with a zod schema: the generated ToolSpec"
+    },
+    "usage/accumulated.json": {
+      "description": "accumulateUsage over a plain usage and one with cache tokens"
+    },
+    "usage/empty.json": {
+      "description": "createEmptyUsage()"
+    },
+    "usage/large_integers.json": {
+      "description": "Usage and Metrics with zero, 2^32 and MAX_SAFE_INTEGER: integers have no fractional part"
+    }
+  }
+}

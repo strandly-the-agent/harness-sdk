@@ -1,0 +1,1 @@
+{"audio":{"format":"wav","source":{"location":{"type":"s3","uri":"s3://bucket/a.wav","bucketOwner":"123456789012"}}}}

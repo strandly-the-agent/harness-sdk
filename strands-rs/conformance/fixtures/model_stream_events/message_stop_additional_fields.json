@@ -1,0 +1,1 @@
+{"type":"modelMessageStopEvent","stopReason":"maxTokens","additionalModelResponseFields":{"stop_sequence":null,"nested":{"a":[1,2]}}}

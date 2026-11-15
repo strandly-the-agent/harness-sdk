@@ -1,0 +1,1 @@
+{"scope":"agent","schemaVersion":"1.0","createdAt":"2026-11-11T12:00:00.543Z","data":{"state":{"user":{"id":"u-1","tier":"pro"},"counter":3},"systemPrompt":[{"text":"You report the weather."},{"cachePoint":{"cacheType":"default"}}],"modelState":{}},"appData":{}}

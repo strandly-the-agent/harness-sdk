@@ -1,0 +1,1 @@
+{"type":"interruptEvent","interrupt":{"id":"hook:beforeTools:approve_batch","name":"approve_batch","reason":{"count":2},"source":"hook"}}

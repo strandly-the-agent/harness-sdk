@@ -1,0 +1,1 @@
+{"toolResult":{"toolUseId":"tooluse_media_1","status":"success","content":[{"text":"Here are the files"},{"image":{"format":"png","source":{"bytes":"iVBORw0KGgo="}}},{"document":{"name":"notes","format":"txt","source":{"text":"Plain notes"}}},{"video":{"format":"mp4","source":{"location":{"type":"s3","uri":"s3://bucket/clip.mp4"}}}}]}}

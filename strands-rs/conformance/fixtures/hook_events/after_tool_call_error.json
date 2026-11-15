@@ -1,0 +1,1 @@
+{"type":"afterToolCallEvent","toolUse":{"name":"get_weather","toolUseId":"tooluse_hook_1","input":{"city":"Paris"}},"result":{"toolResult":{"toolUseId":"tooluse_hook_1","status":"error","content":[{"text":"Error: no"}]}},"error":{"message":"tool exploded"}}

@@ -1,0 +1,1 @@
+{"type":"agentResult","stopReason":"endTurn","lastMessage":{"role":"assistant","content":[{"text":"Parent done."}],"trackingId":"00000000-0000-4000-8000-00000000005d","metadata":{"usage":{"inputTokens":12,"outputTokens":5,"totalTokens":17},"metrics":{"latencyMs":21}}}}

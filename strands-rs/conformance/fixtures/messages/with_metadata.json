@@ -1,0 +1,1 @@
+{"role":"assistant","content":[{"text":"Done."}],"trackingId":"tracking-fixed-1","metadata":{"usage":{"inputTokens":100,"outputTokens":20,"totalTokens":120,"cacheReadInputTokens":64,"cacheWriteInputTokens":0},"metrics":{"latencyMs":812,"timeToFirstByteMs":95},"custom":{"compressed":true,"source":"summarizer","ratio":0.3}}}
