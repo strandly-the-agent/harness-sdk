@@ -26,10 +26,12 @@ mod chat;
 mod client;
 mod errors;
 mod formatting;
+#[cfg(feature = "bedrock")]
+mod mantle;
 mod responses;
 
 use std::fmt;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -45,6 +47,8 @@ use self::client::{
 };
 use self::errors::{OpenAIErrorKind, classify_openai_error};
 use self::formatting::warn_managed_params;
+#[cfg(feature = "bedrock")]
+pub use self::mantle::BedrockMantleConfig;
 use self::responses::{ResponsesStream, format_responses_request};
 use crate::cancel::CancelSignal;
 use crate::error::{
@@ -301,6 +305,10 @@ pub struct OpenAIModelOptions {
     /// The model configuration.
     #[builder(default)]
     pub config: OpenAIModelConfig,
+    /// Routes requests through Amazon Bedrock's OpenAI-compatible Mantle endpoint, which
+    /// derives the base URL and API key (TS `bedrockMantleConfig`).
+    #[cfg(feature = "bedrock")]
+    pub bedrock_mantle_config: Option<BedrockMantleConfig>,
 }
 
 impl fmt::Debug for OpenAIModelOptions {
@@ -310,7 +318,7 @@ impl fmt::Debug for OpenAIModelOptions {
             .field("api_key", &self.api_key)
             .field("client_config", &self.client_config)
             .field("config", &self.config)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -348,6 +356,8 @@ pub(crate) struct Seams {
     pub(crate) sleeper: Sleeper,
     pub(crate) random: Arc<dyn Fn() -> f64 + Send + Sync>,
     pub(crate) transport: Transport,
+    #[cfg(feature = "bedrock")]
+    pub(crate) token_provider: mantle::TokenProviderFactory,
 }
 
 impl Default for Seams {
@@ -358,6 +368,8 @@ impl Default for Seams {
             sleeper: tokio_sleeper(),
             random: Arc::new(fastrand::f64),
             transport: Transport::Built(http_factory()),
+            #[cfg(feature = "bedrock")]
+            token_provider: mantle::sigv4_token_provider_factory(),
         }
     }
 }
@@ -374,7 +386,18 @@ struct Inner {
     api: OpenAIApi,
     config: RwLock<OpenAIModelConfig>,
     client: RwLock<Arc<dyn OpenAIClient>>,
+    /// Set on the Mantle pathway, so a model swap across base paths can rebuild the client.
+    mantle: Option<MantleRoute>,
     warn_once: WarnOnce,
+}
+
+/// What rebuilding the Mantle client needs: the region, the current base URL, and the client
+/// parts with the construction-time key setter (it memoizes the token provider).
+struct MantleRoute {
+    region: String,
+    template: HttpClientParts,
+    base_url: Mutex<String>,
+    factory: ClientFactory,
 }
 
 impl fmt::Debug for OpenAIModel {
@@ -461,6 +484,65 @@ fn resolve_client(
     Ok(factory(client_parts(base_url, key, client_config, seams)?))
 }
 
+#[cfg(feature = "bedrock")]
+fn mantle_base_url(region: &str, model_id: &str) -> String {
+    mantle::bedrock_mantle_base_url(region, model_id)
+}
+
+#[cfg(not(feature = "bedrock"))]
+fn mantle_base_url(_region: &str, _model_id: &str) -> String {
+    String::new()
+}
+
+/// The Mantle client parts: the region's endpoint for `model_id` and a minting key setter (TS
+/// `buildMantleClient`).
+#[cfg(feature = "bedrock")]
+fn build_mantle_route(
+    mantle_config: &BedrockMantleConfig,
+    api_key: Option<&OpenAIApiKey>,
+    client_config: &OpenAIClientConfig,
+    model_id: &str,
+    seams: &Seams,
+) -> Result<MantleRoute> {
+    let factory = match &seams.transport {
+        Transport::Injected(_) => {
+            return Err(Error::other(
+                "'bedrock_mantle_config' cannot be combined with a pre-built 'client'.",
+            ));
+        }
+        Transport::Built(factory) => Arc::clone(factory),
+    };
+    if api_key.is_some() {
+        return Err(Error::other(
+            "'api_key' cannot be combined with 'bedrock_mantle_config'; the API key is derived from the Mantle config automatically.",
+        ));
+    }
+    let conflicting: Vec<&str> = [
+        ("api_key", client_config.api_key.is_some()),
+        ("base_url", client_config.base_url.is_some()),
+    ]
+    .into_iter()
+    .filter_map(|(name, set)| set.then_some(name))
+    .collect();
+    if !conflicting.is_empty() {
+        return Err(Error::other(format!(
+            "client_config must not contain {} when bedrock_mantle_config is set; these are derived from the Mantle config automatically.",
+            conflicting.join(", ")
+        )));
+    }
+    // Resolved eagerly, so a missing or malformed region fails before any token is minted.
+    let region = mantle::resolve_mantle_region(mantle_config, seams.env.as_ref())?;
+    let base_url = mantle::bedrock_mantle_base_url(&region, model_id);
+    let setter = mantle::mantle_api_key_setter(mantle_config, &region, Arc::clone(&seams.token_provider));
+    let template = client_parts(base_url.clone(), KeySource::Setter(setter), client_config, seams)?;
+    Ok(MantleRoute {
+        region,
+        template,
+        base_url: Mutex::new(base_url),
+        factory,
+    })
+}
+
 /// Maps throttling, a context overflow or a transport failure to the SDK's error types (TS `_rewrapError`).
 fn translate_error(error: ApiError) -> Error {
     let message = error.message.clone();
@@ -538,17 +620,36 @@ impl OpenAIModel {
             api_key,
             client_config,
             config,
+            #[cfg(feature = "bedrock")]
+            bedrock_mantle_config,
         } = options;
         if config.model_id.is_none() {
             (seams.warn_once)(&default_model_warning_message(MODEL_DEFAULTS.openai.model_id));
         }
         warn_api_managed_params(api, config.params.as_ref());
-        let client = resolve_client(api_key, &client_config, &seams)?;
+        #[cfg(feature = "bedrock")]
+        let (client, mantle) = match bedrock_mantle_config {
+            Some(mantle_config) => {
+                let route = build_mantle_route(
+                    &mantle_config,
+                    api_key.as_ref(),
+                    &client_config,
+                    config.model_id_or_default(),
+                    &seams,
+                )?;
+                let client = (route.factory)(route.template.clone());
+                (client, Some(route))
+            }
+            None => (resolve_client(api_key, &client_config, &seams)?, None),
+        };
+        #[cfg(not(feature = "bedrock"))]
+        let (client, mantle) = (resolve_client(api_key, &client_config, &seams)?, None);
         Ok(Self {
             inner: Arc::new(Inner {
                 api,
                 config: RwLock::new(config),
                 client: RwLock::new(client),
+                mantle,
                 warn_once: seams.warn_once,
             }),
         })
@@ -594,12 +695,33 @@ impl OpenAIModel {
                 "stateful=<{stateful}> | 'stateful' is construction-only and cannot be changed via updateConfig — ignoring"
             );
         }
+        if let (Some(route), Some(model_id)) = (&self.inner.mantle, config.model_id.as_deref()) {
+            self.reroute(route, model_id);
+        }
         warn_api_managed_params(self.inner.api, config.params.as_ref());
         self.inner
             .config
             .write()
             .unwrap_or_else(PoisonError::into_inner)
             .merge(config);
+    }
+
+    /// Rebuilds the Mantle client when `model_id` lives on the other base path.
+    fn reroute(&self, route: &MantleRoute, model_id: &str) {
+        let next = mantle_base_url(&route.region, model_id);
+        let mut base_url = route.base_url.lock().unwrap_or_else(PoisonError::into_inner);
+        if *base_url == next {
+            return;
+        }
+        tracing::debug!(
+            "model_id=<{model_id}> | rerouting the Bedrock Mantle client from <{base_url}> to <{next}>"
+        );
+        let client = (route.factory)(HttpClientParts {
+            base_url: next.clone(),
+            ..route.template.clone()
+        });
+        *self.inner.client.write().unwrap_or_else(PoisonError::into_inner) = client;
+        *base_url = next;
     }
 
     fn stream_events(&self, request: ModelRequest) -> BoxStream<'static, Result<ModelStreamEvent>> {
