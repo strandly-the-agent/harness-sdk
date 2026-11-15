@@ -5,7 +5,7 @@
 - Status: in progress (fresh start on 2026-11-15)
 - Current phase: Phase 0 review gate running; Phase 1 implementation started in parallel
 - Current item: Phase 1 messages and content blocks
-- Phase base commits: Phase 0 = 7296caba7; Phase 1 = c157fab7e (Phase 0 review diff is 7296caba7..c157fab7e)
+- Phase base commits: Phase 0 = 7296caba7; Phase 1 = d2cce53e2 (Phase 0 review diff is 7296caba7..d2cce53e2)
 
 ## Credentials
 
