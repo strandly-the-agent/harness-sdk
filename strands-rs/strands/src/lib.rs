@@ -107,10 +107,10 @@ pub mod error;
 pub mod hooks;
 pub mod interrupt;
 mod logging;
-pub mod middleware;
 #[cfg(feature = "mcp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "mcp")))]
 pub mod mcp;
+pub mod middleware;
 mod mime;
 pub mod models;
 pub mod plugins;

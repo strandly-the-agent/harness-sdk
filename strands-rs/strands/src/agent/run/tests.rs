@@ -454,6 +454,7 @@ mod config {
         assert!(!Arc::ptr_eq(agent.aux_model(), agent.model()));
     }
 
+    #[cfg(not(feature = "bedrock"))]
     #[tokio::test]
     async fn without_a_model_the_first_call_fails_with_a_default_not_configured_error() {
         let mut agent = Agent::builder().build().unwrap();
@@ -462,8 +463,27 @@ mod config {
         assert!(error.to_string().starts_with("no model configured"), "{error}");
     }
 
+    #[cfg(feature = "bedrock")]
     #[test]
-    fn a_model_id_string_fails_the_build_until_the_bedrock_provider_exists() {
+    fn a_model_id_string_builds_a_bedrock_model_and_no_model_means_the_default_one() {
+        let agent = Agent::builder()
+            .model("global.anthropic.claude-sonnet-4-6")
+            .build()
+            .unwrap();
+        assert_eq!(
+            agent.model().model_id().as_deref(),
+            Some("global.anthropic.claude-sonnet-4-6")
+        );
+        let agent = Agent::builder().build().unwrap();
+        assert_eq!(
+            agent.model().model_id(),
+            crate::models::model::Model::model_id(&crate::models::bedrock::BedrockModel::default())
+        );
+    }
+
+    #[cfg(not(feature = "bedrock"))]
+    #[test]
+    fn a_model_id_string_fails_the_build_without_the_bedrock_feature() {
         let error = Agent::builder()
             .model("global.anthropic.claude-sonnet-4-6")
             .build()

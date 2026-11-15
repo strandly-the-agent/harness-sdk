@@ -33,7 +33,8 @@ cargo test -p strands --all-features --test anthropic_live -- --ignored live_ --
 
 The TS checklist (`strands-ts/test/integ/models/anthropic.test.ts`) also covers image input, thinking blocks, the `web_search` server tool with citations, injected context with preserved thinking, the pinned `anthropic-version` with `temperature`, and native token counting; those are not yet live tests here and stay on the checklist for the live-test item.
 
-## phase5c
+## OpenAI and Bedrock Mantle
+
 ```bash
 cargo test -p strands --all-features --no-fail-fast --test openai_live --test mantle_live -- --ignored live_ --nocapture --test-threads=2
 ```
@@ -59,3 +60,27 @@ Model `openai.gpt-oss-120b`, region `us-east-1` (as in `strands-ts/test/integ/mo
 | `live_mantle_stateful_conversation` | `stateful: true`, second turn answers with the name from the first (`previous_response_id` chaining) | pass |
 | `live_mantle_reasoning_multi_turn` | `params.reasoning.effort = low`, two turns, second ends `endTurn` | pass |
 | `live_mantle_cache_hit` | second identical request (`cache_config` set, session key `strands-rust-live-cache`) reports `cacheReadInputTokens > 0` | fail: the second call's usage was `{"inputTokens":3086,"outputTokens":123,"totalTokens":3209}`, with no `cached_tokens` reported (tried on Chat Completions and on Responses). `openai.gpt-oss-120b` has no `cachePoints` capability in the model-info table, so no checkpoints are sent; the endpoint reported no implicit cache read for this model. The test is kept |
+
+## MCP
+
+No live model tests were added; the MCP tests run against local servers (in-process `rmcp` servers and a Node stdio fixture), which need no credentials.
+
+Stdio fixture run: 2026-11-15, `STRANDS_TEST_NODE=<node> STRANDS_TEST_NODE_MODULES=<repo node_modules> cargo test -p strands --features mcp --test mcp_stdio`: 5 passed, 0 failed.
+
+## Bedrock Mantle after the Phase 5 review fixes
+
+Mantle live run on the fix branch (2026-11-15), `cargo test -p strands --all-features --test mantle_live -- --ignored live_ --test-threads=2 --nocapture`, region `us-east-1`, default AWS credential chain; no test printed a skip message. Output scanned with the section 9.5 patterns: clean.
+
+| Test | Model | Result |
+|---|---|---|
+| `live_mantle_text_chat` | `openai.gpt-oss-120b` | pass |
+| `live_mantle_text_responses` | `openai.gpt-oss-120b` | pass |
+| `live_mantle_streaming` | `openai.gpt-oss-120b` | pass |
+| `live_mantle_tool_round_trip_chat` | `openai.gpt-oss-120b` | pass |
+| `live_mantle_tool_round_trip_responses` | `openai.gpt-oss-120b` | pass |
+| `live_mantle_structured_output` | `openai.gpt-oss-120b` | pass |
+| `live_mantle_stateful_conversation` | `openai.gpt-oss-120b` | pass (now also asserts `endTurn` and empty local history per turn) |
+| `live_mantle_reasoning_multi_turn` | `openai.gpt-oss-120b` | pass |
+| `live_mantle_cache_hit` | `openai.gpt-6.1-sol` | pass (second call reports `cacheReadInputTokens > 0`) |
+
+Not rerun after the fixes: `openai_live` (no `OPENAI_API_KEY` in this environment) and `bedrock_live` (no Bedrock live test changed).

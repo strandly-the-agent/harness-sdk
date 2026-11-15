@@ -23,6 +23,9 @@
 
 ## Open threads
 
+- Subagents are cut off after 2 hours (`Timed out after 7200s`) and occasionally fail with `maximum recursion depth exceeded`; scope each brief to fit, ask for commits after each step, and check the worktree for uncommitted work after a failure.
+- Disk: several worktree target dirs at once fill the 40 GB volume. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`, delete a worktree's target dir as soon as it is integrated, and prune stale `debug/build/strands*` dirs older than 15 minutes.
+
 - Parallel tracks (second session): Phase 4 runs in this checkout; Phase 5 providers and Phase 9 MCP items 1-4 run in separate worktrees (`/mnt/workspace/wt-phase5c` on `wip/phase5c`, `/mnt/workspace/wt-phase9` on `wip/phase9`, never pushed) and are cherry-picked onto `feat/rust-sdk` between Phase 4 runs. Their logs are staged under `.rust-port/staging/<track>/` and folded into the shared logs at integration. P-number ranges: Phase 4 below P-150, Bedrock P-150.., Anthropic P-180.., OpenAI/Mantle P-200.., MCP P-230... Because later-phase work lands during Phase 4, phase review diffs are path-scoped (Phase 4 excludes `models/{bedrock,anthropic,openai}*` and `mcp*`; Phase 5 and Phase 9 reviews take only their paths). If a session ends with a worktree branch unintegrated, check whether `/mnt/workspace/wt-*` survived and cherry-pick it; otherwise redo that item.
 
 - Disk: `/mnt/workspace` is 40 GB. The shared cargo target (`CARGO_TARGET_DIR=/mnt/workspace/.cache/cargo-target`) grows past 28 GB when reviewers build from separate worktrees; give reviewers that same target dir, and when free space drops under about 5 GB delete `$CARGO_TARGET_DIR/debug` (a full rebuild takes a few minutes).

@@ -7,7 +7,7 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 
 use crate::agent::agent_delegation::{AGENT_DELEGATION_NAME, AgentDelegation};
-use crate::agent::config::{AgentBuilder, AgentConfig, DefaultModel, ModelSource};
+use crate::agent::config::{AgentBuilder, AgentConfig, ModelSource, default_model};
 use crate::agent::continuation::ContinuationInput;
 use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
 use crate::agent::run::AbandonedRun;
@@ -103,7 +103,7 @@ impl Agent {
     pub fn new(config: AgentConfig) -> Result<Self> {
         let model = match config.model {
             Some(source) => source.into_model()?,
-            None => Arc::new(DefaultModel::default()),
+            None => default_model(),
         };
         let mut agent = Self::with_model(model);
         let local = &mut agent.local;

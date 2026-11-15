@@ -1,10 +1,19 @@
 //! Agent configuration (TS `AgentConfig` in `agent/agent.ts`) and the model a config names.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
+#[cfg(not(feature = "bedrock"))]
+use std::sync::{Mutex, PoisonError};
 
 use crate::background_tasks::BackgroundTasks;
-use crate::error::{DefaultNotConfiguredError, Error, Result};
-use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, Model, ModelRequest};
+use crate::error::Result;
+#[cfg(not(feature = "bedrock"))]
+use crate::error::{DefaultNotConfiguredError, Error};
+#[cfg(feature = "bedrock")]
+use crate::models::bedrock::{BedrockModel, BedrockModelConfig};
+use crate::models::model::Model;
+#[cfg(not(feature = "bedrock"))]
+use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, ModelRequest};
+#[cfg(not(feature = "bedrock"))]
 use crate::models::streaming::ModelStreamEvent;
 use crate::plugins::Plugin;
 use crate::retry::ModelRetryStrategy;
@@ -70,6 +79,12 @@ impl ModelSource {
     pub(crate) fn into_model(self) -> Result<Arc<dyn Model>> {
         match self {
             Self::Model(model) => Ok(model),
+            #[cfg(feature = "bedrock")]
+            Self::Id(model_id) => Ok(Arc::new(BedrockModel::new(BedrockModelConfig {
+                model_id: Some(model_id),
+                ..Default::default()
+            }))),
+            #[cfg(not(feature = "bedrock"))]
             Self::Id(model_id) => Err(Error::other(format!(
                 "model_id=<{model_id}> | a model id string needs the Bedrock model provider, {BEDROCK_UNAVAILABLE}"
             ))),
@@ -77,18 +92,31 @@ impl ModelSource {
     }
 }
 
+/// The model of an agent configured without one: a `BedrockModel` with the default model id.
 #[cfg(feature = "bedrock")]
-const BEDROCK_UNAVAILABLE: &str = "which this version doesn't include yet; pass a model instance";
+pub(crate) fn default_model() -> Arc<dyn Model> {
+    Arc::new(BedrockModel::default())
+}
+
+/// The model of an agent configured without one; without the `bedrock` feature it fails the
+/// first model call, not the build.
+#[cfg(not(feature = "bedrock"))]
+pub(crate) fn default_model() -> Arc<dyn Model> {
+    Arc::new(DefaultModel::default())
+}
+
 #[cfg(not(feature = "bedrock"))]
 const BEDROCK_UNAVAILABLE: &str = "which needs the `bedrock` feature; enable it or pass a model instance";
 
-/// Stands in for the default Bedrock model until a call needs it (#45): `build()` stays sync and
-/// a missing provider fails the first model call, not the build.
+/// Stands in for the default Bedrock model when the `bedrock` feature is off (#45): `build()`
+/// stays sync and the missing provider fails the first model call, not the build.
+#[cfg(not(feature = "bedrock"))]
 #[derive(Debug, Default)]
 pub(crate) struct DefaultModel {
     config: Mutex<BaseModelConfig>,
 }
 
+#[cfg(not(feature = "bedrock"))]
 impl DefaultModel {
     fn unavailable() -> Error {
         DefaultNotConfiguredError::new(format!(
@@ -98,6 +126,7 @@ impl DefaultModel {
     }
 }
 
+#[cfg(not(feature = "bedrock"))]
 impl Model for DefaultModel {
     fn stream(&self, _request: ModelRequest) -> BoxStream<'static, Result<ModelStreamEvent>> {
         Box::pin(futures::stream::once(async { Err(Self::unavailable()) }))

@@ -60,7 +60,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] `AnthropicModel` (reqwest SSE, transport retry, error mapping, thinking, caching, compaction, server tools)
 - [x] `OpenAIModel` (Responses, Chat, stateful, params, caching, error mapping, transport retry)
 - [x] Bedrock Mantle (region, routing, SigV4 bearer token)
-- [ ] Live tests for Bedrock, Mantle, Anthropic, OpenAI
+- [x] Live tests for Bedrock, Mantle, Anthropic, OpenAI (Bedrock and Mantle run green; Anthropic and OpenAI skip without keys, see `strands-rs/docs/reviews/live.md`)
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 6: storage, sessions, context and memory
@@ -91,10 +91,10 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 ## [ ] Phase 9: MCP
 
-- [ ] `McpClient` stdio and streamable HTTP
-- [ ] Custom legacy SSE transport
-- [ ] Filters, prefixes, auth, elicitation, prompts, resources, list-changed, progress, logging, trace context
-- [ ] `load_servers` config loading
+- [x] `McpClient` stdio and streamable HTTP
+- [x] Custom legacy SSE transport
+- [x] Filters, prefixes, auth, elicitation, prompts, resources, list-changed, progress, logging, trace context
+- [x] `load_servers` config loading
 - [ ] `mcp_router` tool
 - [ ] Phase review gate and fixes
 
