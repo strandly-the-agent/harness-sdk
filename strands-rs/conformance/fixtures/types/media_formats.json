@@ -1,0 +1,341 @@
+{
+  "audio": {
+    "mp3": {
+      "audio": {
+        "format": "mp3",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "opus": {
+      "audio": {
+        "format": "opus",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "wav": {
+      "audio": {
+        "format": "wav",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "aac": {
+      "audio": {
+        "format": "aac",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "flac": {
+      "audio": {
+        "format": "flac",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mp4": {
+      "audio": {
+        "format": "mp4",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "ogg": {
+      "audio": {
+        "format": "ogg",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mkv": {
+      "audio": {
+        "format": "mkv",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mka": {
+      "audio": {
+        "format": "mka",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "x-aac": {
+      "audio": {
+        "format": "x-aac",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "m4a": {
+      "audio": {
+        "format": "m4a",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mpeg": {
+      "audio": {
+        "format": "mpeg",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mpga": {
+      "audio": {
+        "format": "mpga",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "pcm": {
+      "audio": {
+        "format": "pcm",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "webm": {
+      "audio": {
+        "format": "webm",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    }
+  },
+  "image": {
+    "png": {
+      "image": {
+        "format": "png",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "jpg": {
+      "image": {
+        "format": "jpg",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "jpeg": {
+      "image": {
+        "format": "jpeg",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "gif": {
+      "image": {
+        "format": "gif",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "webp": {
+      "image": {
+        "format": "webp",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    }
+  },
+  "video": {
+    "mkv": {
+      "video": {
+        "format": "mkv",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mov": {
+      "video": {
+        "format": "mov",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mp4": {
+      "video": {
+        "format": "mp4",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "webm": {
+      "video": {
+        "format": "webm",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "flv": {
+      "video": {
+        "format": "flv",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mpeg": {
+      "video": {
+        "format": "mpeg",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "mpg": {
+      "video": {
+        "format": "mpg",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "wmv": {
+      "video": {
+        "format": "wmv",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "3gp": {
+      "video": {
+        "format": "3gp",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    }
+  },
+  "document": {
+    "pdf": {
+      "document": {
+        "name": "doc-pdf",
+        "format": "pdf",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "csv": {
+      "document": {
+        "name": "doc-csv",
+        "format": "csv",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "doc": {
+      "document": {
+        "name": "doc-doc",
+        "format": "doc",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "docx": {
+      "document": {
+        "name": "doc-docx",
+        "format": "docx",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "xls": {
+      "document": {
+        "name": "doc-xls",
+        "format": "xls",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "xlsx": {
+      "document": {
+        "name": "doc-xlsx",
+        "format": "xlsx",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "html": {
+      "document": {
+        "name": "doc-html",
+        "format": "html",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "txt": {
+      "document": {
+        "name": "doc-txt",
+        "format": "txt",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "md": {
+      "document": {
+        "name": "doc-md",
+        "format": "md",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "json": {
+      "document": {
+        "name": "doc-json",
+        "format": "json",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    },
+    "xml": {
+      "document": {
+        "name": "doc-xml",
+        "format": "xml",
+        "source": {
+          "bytes": "AQ=="
+        }
+      }
+    }
+  }
+}

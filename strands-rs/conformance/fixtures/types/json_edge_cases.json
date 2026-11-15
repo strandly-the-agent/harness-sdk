@@ -1,0 +1,180 @@
+{
+  "numbers": {
+    "toolUse": {
+      "name": "numbers",
+      "toolUseId": "n",
+      "input": {
+        "zero": 0,
+        "negativeZero": 0,
+        "one": 1,
+        "fraction": 0.1,
+        "big": 1e+21,
+        "small": 1.5e-7,
+        "maxSafe": 9007199254740991,
+        "beyondSafe": 9007199254740994,
+        "negative": -42
+      }
+    }
+  },
+  "loneHighSurrogate": {
+    "text": "a\ud83db"
+  },
+  "loneLowSurrogate": {
+    "text": "\ude00"
+  },
+  "surrogatePair": {
+    "text": "emoji 😀"
+  },
+  "controlCharacters": {
+    "text": "tab\tnl\ncr\rnul\u0000bell\u0007del"
+  },
+  "escapes": {
+    "text": "quote\" backslash\\ slash/ ls  ps "
+  },
+  "nonAscii": {
+    "text": "héllo wörld 日本語"
+  },
+  "keyOrder": {
+    "json": {
+      "2": "sorted first",
+      "10": "numeric-like key",
+      "z": 1,
+      "a": 2,
+      "m": {
+        "y": 1,
+        "b": 2
+      }
+    }
+  },
+  "deepNesting": {
+    "json": {
+      "child": {
+        "child": {
+          "child": {
+            "child": {
+              "child": {
+                "child": {
+                  "child": {
+                    "child": {
+                      "child": {
+                        "child": {
+                          "child": {
+                            "child": {
+                              "child": {
+                                "child": {
+                                  "child": {
+                                    "child": {
+                                      "child": {
+                                        "child": {
+                                          "child": {
+                                            "child": {
+                                              "child": {
+                                                "child": {
+                                                  "child": {
+                                                    "child": {
+                                                      "child": {
+                                                        "child": {
+                                                          "child": {
+                                                            "child": {
+                                                              "child": {
+                                                                "child": {
+                                                                  "child": {
+                                                                    "child": {
+                                                                      "child": {
+                                                                        "child": {
+                                                                          "child": {
+                                                                            "child": {
+                                                                              "child": {
+                                                                                "child": {
+                                                                                  "child": {
+                                                                                    "child": {
+                                                                                      "child": {
+                                                                                        "child": {
+                                                                                          "child": {
+                                                                                            "child": {
+                                                                                              "child": {
+                                                                                                "child": {
+                                                                                                  "child": {
+                                                                                                    "child": {
+                                                                                                      "child": {
+                                                                                                        "child": {
+                                                                                                          "child": {
+                                                                                                            "child": {
+                                                                                                              "child": {
+                                                                                                                "child": {
+                                                                                                                  "child": {
+                                                                                                                    "child": {
+                                                                                                                      "child": {
+                                                                                                                        "child": {
+                                                                                                                          "child": {
+                                                                                                                            "child": {
+                                                                                                                              "child": {
+                                                                                                                                "child": {
+                                                                                                                                  "child": {
+                                                                                                                                    "child": "leaf"
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

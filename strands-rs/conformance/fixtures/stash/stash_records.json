@@ -1,0 +1,62 @@
+{
+  "InMemoryStorage": {
+    "storageTypeName": "InMemoryStorage",
+    "keys": [
+      "tooluse_stash_0",
+      "tooluse_stash_1",
+      "tracking-stash_0",
+      "tracking-stash_1"
+    ],
+    "snapshot": {
+      "tooluse_stash_0": {
+        "text": "result text"
+      },
+      "tooluse_stash_1": {
+        "json": {
+          "k": 1
+        }
+      },
+      "tracking-stash_0": {
+        "text": "text block"
+      },
+      "tracking-stash_1": {
+        "image": {
+          "format": "png",
+          "source": {
+            "bytes": "AQI="
+          }
+        }
+      }
+    }
+  },
+  "LocalFileStorage": {
+    "storageTypeName": "LocalFileStorage",
+    "keys": [
+      "tooluse_stash_0",
+      "tooluse_stash_1",
+      "tracking-stash_0",
+      "tracking-stash_1"
+    ],
+    "snapshot": {
+      "tooluse_stash_0": {
+        "text": "result text"
+      },
+      "tooluse_stash_1": {
+        "json": {
+          "k": 1
+        }
+      },
+      "tracking-stash_0": {
+        "text": "text block"
+      },
+      "tracking-stash_1": {
+        "image": {
+          "format": "png",
+          "source": {
+            "bytes": "AQI="
+          }
+        }
+      }
+    }
+  }
+}

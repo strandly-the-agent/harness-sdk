@@ -1,0 +1,346 @@
+[
+  {
+    "type": "beforeInvocationEvent"
+  },
+  {
+    "type": "beforeToolsEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "confirm_tool",
+            "toolUseId": "tooluse_a",
+            "input": {
+              "amount": 1
+            }
+          }
+        },
+        {
+          "toolUse": {
+            "name": "confirm_tool",
+            "toolUseId": "tooluse_b",
+            "input": {
+              "amount": 2
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000025",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "beforeToolCallEvent",
+    "toolUse": {
+      "name": "confirm_tool",
+      "toolUseId": "tooluse_b",
+      "input": {
+        "amount": 2
+      }
+    }
+  },
+  {
+    "type": "afterToolCallEvent",
+    "toolUse": {
+      "name": "confirm_tool",
+      "toolUseId": "tooluse_b",
+      "input": {
+        "amount": 2
+      }
+    },
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_b",
+        "status": "success",
+        "content": [
+          {
+            "text": "sent 2"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "toolResultEvent",
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_b",
+        "status": "success",
+        "content": [
+          {
+            "text": "sent 2"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "afterToolsEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_a",
+            "status": "success",
+            "content": [
+              {
+                "text": "sent 1"
+              }
+            ]
+          }
+        },
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_b",
+            "status": "success",
+            "content": [
+              {
+                "text": "sent 2"
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000002a"
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "confirm_tool",
+            "toolUseId": "tooluse_a",
+            "input": {
+              "amount": 1
+            }
+          }
+        },
+        {
+          "toolUse": {
+            "name": "confirm_tool",
+            "toolUseId": "tooluse_b",
+            "input": {
+              "amount": 2
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000025",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_a",
+            "status": "success",
+            "content": [
+              {
+                "text": "sent 1"
+              }
+            ]
+          }
+        },
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_b",
+            "status": "success",
+            "content": [
+              {
+                "text": "sent 2"
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000002a"
+    }
+  },
+  {
+    "type": "beforeModelCallEvent",
+    "projectedInputTokens": 19
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "textDelta",
+        "text": "Done."
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "text": "Done."
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      },
+      "metrics": {
+        "latencyMs": 100
+      }
+    }
+  },
+  {
+    "type": "modelMessageEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Done."
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000002e",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    },
+    "stopReason": "endTurn"
+  },
+  {
+    "type": "afterModelCallEvent",
+    "attemptCount": 1,
+    "stopData": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "Done."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000002e",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Done."
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000002e",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "afterInvocationEvent"
+  },
+  {
+    "type": "agentResultEvent",
+    "result": {
+      "type": "agentResult",
+      "stopReason": "endTurn",
+      "lastMessage": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "Done."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000002e",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    }
+  }
+]

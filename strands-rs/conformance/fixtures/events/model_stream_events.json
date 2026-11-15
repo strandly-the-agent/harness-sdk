@@ -1,0 +1,144 @@
+{
+  "messageStart": {
+    "type": "modelMessageStartEvent",
+    "role": "assistant"
+  },
+  "blockStartBare": {
+    "type": "modelContentBlockStartEvent"
+  },
+  "blockStartToolUse": {
+    "type": "modelContentBlockStartEvent",
+    "start": {
+      "type": "toolUseStart",
+      "name": "get_weather",
+      "toolUseId": "tooluse_1",
+      "reasoningSignature": "sig"
+    }
+  },
+  "deltaText": {
+    "type": "modelContentBlockDeltaEvent",
+    "delta": {
+      "type": "textDelta",
+      "text": "Hel"
+    }
+  },
+  "deltaToolUseInput": {
+    "type": "modelContentBlockDeltaEvent",
+    "delta": {
+      "type": "toolUseInputDelta",
+      "input": "{\"city\":"
+    }
+  },
+  "deltaReasoning": {
+    "type": "modelContentBlockDeltaEvent",
+    "delta": {
+      "type": "reasoningContentDelta",
+      "text": "think",
+      "signature": "sig"
+    }
+  },
+  "deltaReasoningRedacted": {
+    "type": "modelContentBlockDeltaEvent",
+    "delta": {
+      "type": "reasoningContentDelta",
+      "redactedContent": {
+        "0": 0,
+        "1": 127,
+        "2": 128,
+        "3": 255
+      }
+    }
+  },
+  "deltaCitations": {
+    "type": "modelContentBlockDeltaEvent",
+    "delta": {
+      "type": "citationsDelta",
+      "citations": [
+        {
+          "location": {
+            "type": "web",
+            "url": "https://example.com",
+            "domain": "example.com"
+          },
+          "source": "web",
+          "sourceContent": [
+            {
+              "text": "quoted"
+            }
+          ],
+          "title": "Example"
+        }
+      ],
+      "content": [
+        {
+          "text": "generated"
+        }
+      ]
+    }
+  },
+  "blockStop": {
+    "type": "modelContentBlockStopEvent"
+  },
+  "messageStop": {
+    "type": "modelMessageStopEvent",
+    "stopReason": "endTurn"
+  },
+  "messageStopNullFields": {
+    "type": "modelMessageStopEvent",
+    "stopReason": "toolUse",
+    "additionalModelResponseFields": null
+  },
+  "messageStopUnknownReason": {
+    "type": "modelMessageStopEvent",
+    "stopReason": "someFutureReason",
+    "additionalModelResponseFields": {
+      "stop_sequence": "###",
+      "nested": {
+        "n": 1
+      }
+    }
+  },
+  "metadataEmpty": {
+    "type": "modelMetadataEvent"
+  },
+  "metadataNullTrace": {
+    "type": "modelMetadataEvent",
+    "usage": {
+      "inputTokens": 1,
+      "outputTokens": 2,
+      "totalTokens": 3
+    },
+    "metrics": {
+      "latencyMs": 4
+    },
+    "trace": null
+  },
+  "metadataTrace": {
+    "type": "modelMetadataEvent",
+    "usage": {
+      "inputTokens": 1,
+      "outputTokens": 2,
+      "totalTokens": 3,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 7
+    },
+    "trace": {
+      "guardrail": {
+        "action": "NONE"
+      }
+    }
+  },
+  "redactionInput": {
+    "type": "modelRedactionEvent",
+    "inputRedaction": {
+      "replaceContent": "[redacted]"
+    }
+  },
+  "redactionOutput": {
+    "type": "modelRedactionEvent",
+    "outputRedaction": {
+      "redactedContent": "secret",
+      "replaceContent": "[redacted]"
+    }
+  }
+}

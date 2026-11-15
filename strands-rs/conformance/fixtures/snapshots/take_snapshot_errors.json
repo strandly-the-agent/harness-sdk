@@ -1,0 +1,7 @@
+{
+  "invalidPreset": "Invalid preset: everything. Valid presets are: session",
+  "invalidField": "Invalid snapshot field: history. Valid fields are: messages, state, systemPrompt, modelState, interrupts",
+  "noFields": "No fields to include in snapshot. Specify a preset or include fields.",
+  "wrongScope": "Expected snapshot scope 'agent', got 'multiAgent'",
+  "wrongVersion": "Unsupported snapshot schema version: 2.0. Current version: 1.0"
+}

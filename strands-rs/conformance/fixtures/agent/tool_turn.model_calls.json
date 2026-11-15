@@ -1,0 +1,64 @@
+[
+  {
+    "toolSpecs": [
+      {
+        "name": "progress_tool",
+        "description": "Streams progress, then returns",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "steps": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "steps"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "failing_tool",
+        "description": "Always throws",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "messageCount": 1
+  },
+  {
+    "toolSpecs": [
+      {
+        "name": "progress_tool",
+        "description": "Streams progress, then returns",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "steps": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "steps"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "failing_tool",
+        "description": "Always throws",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "messageCount": 3
+  }
+]

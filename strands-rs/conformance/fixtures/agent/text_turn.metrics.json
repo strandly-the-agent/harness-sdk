@@ -1,0 +1,41 @@
+{
+  "cycleCount": 1,
+  "accumulatedUsage": {
+    "inputTokens": 12,
+    "outputTokens": 7,
+    "totalTokens": 19,
+    "cacheReadInputTokens": 3,
+    "cacheWriteInputTokens": 1
+  },
+  "accumulatedMetrics": {
+    "latencyMs": 250
+  },
+  "agentInvocations": [
+    {
+      "cycles": [
+        {
+          "cycleId": "cycle-1",
+          "duration": 0,
+          "usage": {
+            "inputTokens": 12,
+            "outputTokens": 7,
+            "totalTokens": 19,
+            "cacheReadInputTokens": 3,
+            "cacheWriteInputTokens": 1
+          }
+        }
+      ],
+      "usage": {
+        "inputTokens": 12,
+        "outputTokens": 7,
+        "totalTokens": 19,
+        "cacheReadInputTokens": 3,
+        "cacheWriteInputTokens": 1
+      }
+    }
+  ],
+  "toolMetrics": {},
+  "totalDuration": 0,
+  "latestContextSize": 12,
+  "projectedContextSize": 19
+}

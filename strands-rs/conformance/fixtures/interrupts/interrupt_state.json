@@ -1,0 +1,81 @@
+{
+  "beforeResume": {
+    "interrupts": {
+      "tool:tooluse_1:confirm": {
+        "id": "tool:tooluse_1:confirm",
+        "name": "confirm",
+        "reason": "Proceed?",
+        "source": "tool"
+      },
+      "hook:beforeToolCall:tooluse_2:approve": {
+        "id": "hook:beforeToolCall:tooluse_2:approve",
+        "name": "approve",
+        "reason": {
+          "risk": "high"
+        },
+        "source": "hook"
+      }
+    },
+    "activated": true,
+    "context": {
+      "interruptedTurns": {
+        "tooluse_1": {
+          "turn": 1
+        }
+      }
+    }
+  },
+  "afterResume": {
+    "interrupts": {
+      "tool:tooluse_1:confirm": {
+        "id": "tool:tooluse_1:confirm",
+        "name": "confirm",
+        "reason": "Proceed?",
+        "response": null,
+        "source": "tool"
+      },
+      "hook:beforeToolCall:tooluse_2:approve": {
+        "id": "hook:beforeToolCall:tooluse_2:approve",
+        "name": "approve",
+        "reason": {
+          "risk": "high"
+        },
+        "response": {
+          "approved": true
+        },
+        "source": "hook"
+      }
+    },
+    "resumeResponses": [
+      {
+        "interruptResponse": {
+          "interruptId": "tool:tooluse_1:confirm",
+          "response": null
+        }
+      },
+      {
+        "interruptResponse": {
+          "interruptId": "hook:beforeToolCall:tooluse_2:approve",
+          "response": {
+            "approved": true
+          }
+        }
+      }
+    ],
+    "activated": true,
+    "context": {
+      "interruptedTurns": {
+        "tooluse_1": {
+          "turn": 1
+        }
+      }
+    }
+  },
+  "restoredUnanswered": [],
+  "legacyWithoutSource": {
+    "id": "x",
+    "name": "legacy",
+    "source": "hook"
+  },
+  "resumeUnknownId": "interrupt_id=<missing> | no interrupt found"
+}

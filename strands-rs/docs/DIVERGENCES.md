@@ -1,0 +1,10 @@
+# Divergences from the TypeScript SDK
+
+This file lists every user-visible behaviour difference between the Rust SDK (`strands`) and the TypeScript SDK, with the reason for it. The TypeScript SDK (`strands-ts/`) is the specification, so a difference is recorded here only when Rust can't or shouldn't match it, for example where the language rules out the TypeScript mechanism. Differences in API shape that follow Rust idiom (builders, `Result`, `snake_case` names) aren't listed. A fix never changes a cross-SDK wire or persisted format: data written by either SDK keeps loading in the other.
+
+| Area | TypeScript | Rust | Reason |
+|---|---|---|---|
+| JSON strings | A string can hold a lone UTF-16 surrogate, written as `\ud83d` | A lone surrogate escape fails to parse; load paths replace it with U+FFFD before parsing | Rust strings are valid UTF-8 and can't hold a lone surrogate |
+| JSON nesting | No nesting limit beyond the call stack | Parsing stops at 128 nested arrays or objects | `serde_json`'s recursion limit guards against stack overflow |
+| Counters | `Usage`, `Metrics` and citation positions are `number` | `u64`; a fractional value fails to load | Integer types keep integers free of a `.0` suffix; TS never writes fractions there |
+| MIME lookup | `toMimeType('constructor')` returns an object-prototype function | Returns `None` | TS looks up a plain object literal, so prototype keys match |

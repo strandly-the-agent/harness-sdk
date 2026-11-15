@@ -1,0 +1,59 @@
+[
+  {
+    "toolSpecs": [
+      {
+        "name": "strands_structured_output",
+        "description": "This tool MUST only be invoked as the last and final tool before returning the completed result to the caller.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "City name"
+            },
+            "temperature": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "city",
+            "temperature"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "messageCount": 1
+  },
+  {
+    "toolChoice": {
+      "tool": {
+        "name": "strands_structured_output"
+      }
+    },
+    "toolSpecs": [
+      {
+        "name": "strands_structured_output",
+        "description": "This tool MUST only be invoked as the last and final tool before returning the completed result to the caller.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "City name"
+            },
+            "temperature": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "city",
+            "temperature"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "messageCount": 1
+  }
+]

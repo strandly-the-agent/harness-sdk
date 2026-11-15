@@ -1,0 +1,619 @@
+[
+  {
+    "type": "beforeInvocationEvent"
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "text": "Run the tools"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000007"
+    }
+  },
+  {
+    "type": "beforeModelCallEvent",
+    "projectedInputTokens": 180
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent",
+      "start": {
+        "type": "toolUseStart",
+        "name": "progress_tool",
+        "toolUseId": "tooluse_progress"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "toolUseInputDelta",
+        "input": "{\"ste"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "toolUseInputDelta",
+        "input": "ps\":2}"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "toolUse": {
+        "name": "progress_tool",
+        "toolUseId": "tooluse_progress",
+        "input": {
+          "steps": 2
+        }
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent",
+      "start": {
+        "type": "toolUseStart",
+        "name": "failing_tool",
+        "toolUseId": "tooluse_failing"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "toolUseInputDelta",
+        "input": "{"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "toolUseInputDelta",
+        "input": "}"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "toolUse": {
+        "name": "failing_tool",
+        "toolUseId": "tooluse_failing",
+        "input": {}
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "toolUse"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      },
+      "metrics": {
+        "latencyMs": 100
+      }
+    }
+  },
+  {
+    "type": "modelMessageEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "progress_tool",
+            "toolUseId": "tooluse_progress",
+            "input": {
+              "steps": 2
+            }
+          }
+        },
+        {
+          "toolUse": {
+            "name": "failing_tool",
+            "toolUseId": "tooluse_failing",
+            "input": {}
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000000b",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    },
+    "stopReason": "toolUse"
+  },
+  {
+    "type": "afterModelCallEvent",
+    "attemptCount": 1,
+    "stopData": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "progress_tool",
+              "toolUseId": "tooluse_progress",
+              "input": {
+                "steps": 2
+              }
+            }
+          },
+          {
+            "toolUse": {
+              "name": "failing_tool",
+              "toolUseId": "tooluse_failing",
+              "input": {}
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000000b",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "toolUse"
+    }
+  },
+  {
+    "type": "beforeToolsEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "progress_tool",
+            "toolUseId": "tooluse_progress",
+            "input": {
+              "steps": 2
+            }
+          }
+        },
+        {
+          "toolUse": {
+            "name": "failing_tool",
+            "toolUseId": "tooluse_failing",
+            "input": {}
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000000b",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "beforeToolCallEvent",
+    "toolUse": {
+      "name": "progress_tool",
+      "toolUseId": "tooluse_progress",
+      "input": {
+        "steps": 2
+      }
+    }
+  },
+  {
+    "type": "toolStreamUpdateEvent",
+    "event": {
+      "type": "toolStreamEvent",
+      "data": {
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "toolStreamUpdateEvent",
+    "event": {
+      "type": "toolStreamEvent",
+      "data": {
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "afterToolCallEvent",
+    "toolUse": {
+      "name": "progress_tool",
+      "toolUseId": "tooluse_progress",
+      "input": {
+        "steps": 2
+      }
+    },
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_progress",
+        "status": "success",
+        "content": [
+          {
+            "text": "done after 2 steps"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "toolResultEvent",
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_progress",
+        "status": "success",
+        "content": [
+          {
+            "text": "done after 2 steps"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "beforeToolCallEvent",
+    "toolUse": {
+      "name": "failing_tool",
+      "toolUseId": "tooluse_failing",
+      "input": {}
+    }
+  },
+  {
+    "type": "afterToolCallEvent",
+    "toolUse": {
+      "name": "failing_tool",
+      "toolUseId": "tooluse_failing",
+      "input": {}
+    },
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_failing",
+        "status": "error",
+        "content": [
+          {
+            "text": "Error: tool exploded"
+          }
+        ]
+      }
+    },
+    "error": {
+      "message": "tool exploded"
+    }
+  },
+  {
+    "type": "toolResultEvent",
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_failing",
+        "status": "error",
+        "content": [
+          {
+            "text": "Error: tool exploded"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "afterToolsEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_progress",
+            "status": "success",
+            "content": [
+              {
+                "text": "done after 2 steps"
+              }
+            ]
+          }
+        },
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_failing",
+            "status": "error",
+            "content": [
+              {
+                "text": "Error: tool exploded"
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000000e"
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "progress_tool",
+            "toolUseId": "tooluse_progress",
+            "input": {
+              "steps": 2
+            }
+          }
+        },
+        {
+          "toolUse": {
+            "name": "failing_tool",
+            "toolUseId": "tooluse_failing",
+            "input": {}
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000000b",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_progress",
+            "status": "success",
+            "content": [
+              {
+                "text": "done after 2 steps"
+              }
+            ]
+          }
+        },
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_failing",
+            "status": "error",
+            "content": [
+              {
+                "text": "Error: tool exploded"
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000000e"
+    }
+  },
+  {
+    "type": "beforeModelCallEvent",
+    "projectedInputTokens": 25
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "textDelta",
+        "text": "All tools ran."
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "text": "All tools ran."
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      },
+      "metrics": {
+        "latencyMs": 100
+      }
+    }
+  },
+  {
+    "type": "modelMessageEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "All tools ran."
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000012",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    },
+    "stopReason": "endTurn"
+  },
+  {
+    "type": "afterModelCallEvent",
+    "attemptCount": 1,
+    "stopData": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "All tools ran."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000012",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "All tools ran."
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000012",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "afterInvocationEvent"
+  },
+  {
+    "type": "agentResultEvent",
+    "result": {
+      "type": "agentResult",
+      "stopReason": "endTurn",
+      "lastMessage": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "All tools ran."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000012",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    }
+  }
+]

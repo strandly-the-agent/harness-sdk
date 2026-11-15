@@ -1,0 +1,16 @@
+{
+  "keys": [
+    "session/conformance-session/scopes/agent/main-agent/snapshots/immutable_history/snapshot_019b76da-a800-71a7-85b2-4531183ebcd2.json",
+    "session/conformance-session/scopes/agent/main-agent/snapshots/immutable_history/snapshot_019b76da-a800-71a7-85b2-4aae2bc8222f.json",
+    "session/conformance-session/scopes/agent/main-agent/snapshots/manifest.json",
+    "session/conformance-session/scopes/agent/main-agent/snapshots/snapshot_latest.json"
+  ],
+  "historyIds": [
+    "019b76da-a800-71a7-85b2-4531183ebcd2",
+    "019b76da-a800-71a7-85b2-4aae2bc8222f"
+  ],
+  "loadManifestWhenMissing": {
+    "schemaVersion": "1.0",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  }
+}

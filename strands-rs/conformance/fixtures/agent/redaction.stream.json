@@ -1,0 +1,184 @@
+[
+  {
+    "type": "beforeInvocationEvent"
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "text": "Tell me the secret"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000003a"
+    }
+  },
+  {
+    "type": "beforeModelCallEvent",
+    "projectedInputTokens": 5
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "textDelta",
+        "text": "secret answer"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "text": "secret answer"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelRedactionEvent",
+      "inputRedaction": {
+        "replaceContent": "[input redacted]"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelRedactionEvent",
+      "outputRedaction": {
+        "redactedContent": "secret answer",
+        "replaceContent": "[output redacted]"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "guardrailIntervened"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 1,
+        "outputTokens": 1,
+        "totalTokens": 2
+      }
+    }
+  },
+  {
+    "type": "modelMessageEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "secret answer"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000003f",
+      "metadata": {
+        "usage": {
+          "inputTokens": 1,
+          "outputTokens": 1,
+          "totalTokens": 2
+        }
+      }
+    },
+    "stopReason": "guardrailIntervened"
+  },
+  {
+    "type": "afterModelCallEvent",
+    "attemptCount": 1,
+    "stopData": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "secret answer"
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000003f",
+        "metadata": {
+          "usage": {
+            "inputTokens": 1,
+            "outputTokens": 1,
+            "totalTokens": 2
+          }
+        }
+      },
+      "stopReason": "guardrailIntervened",
+      "redaction": {
+        "userMessage": "[input redacted]"
+      }
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "secret answer"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000003f",
+      "metadata": {
+        "usage": {
+          "inputTokens": 1,
+          "outputTokens": 1,
+          "totalTokens": 2
+        }
+      }
+    }
+  },
+  {
+    "type": "afterInvocationEvent"
+  },
+  {
+    "type": "agentResultEvent",
+    "result": {
+      "type": "agentResult",
+      "stopReason": "guardrailIntervened",
+      "lastMessage": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "secret answer"
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000003f",
+        "metadata": {
+          "usage": {
+            "inputTokens": 1,
+            "outputTokens": 1,
+            "totalTokens": 2
+          }
+        }
+      }
+    }
+  }
+]

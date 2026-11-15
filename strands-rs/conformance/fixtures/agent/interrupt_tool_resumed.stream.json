@@ -1,0 +1,314 @@
+[
+  {
+    "type": "beforeInvocationEvent"
+  },
+  {
+    "type": "beforeToolsEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "confirm_tool",
+            "toolUseId": "tooluse_confirm",
+            "input": {
+              "amount": 5
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000017",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "beforeToolCallEvent",
+    "toolUse": {
+      "name": "confirm_tool",
+      "toolUseId": "tooluse_confirm",
+      "input": {
+        "amount": 5
+      }
+    }
+  },
+  {
+    "type": "afterToolCallEvent",
+    "toolUse": {
+      "name": "confirm_tool",
+      "toolUseId": "tooluse_confirm",
+      "input": {
+        "amount": 5
+      }
+    },
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_confirm",
+        "status": "success",
+        "content": [
+          {
+            "json": {
+              "response": "answered with null"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "toolResultEvent",
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_confirm",
+        "status": "success",
+        "content": [
+          {
+            "json": {
+              "response": "answered with null"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "afterToolsEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_confirm",
+            "status": "success",
+            "content": [
+              {
+                "json": {
+                  "response": "answered with null"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000001c"
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "confirm_tool",
+            "toolUseId": "tooluse_confirm",
+            "input": {
+              "amount": 5
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000017",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_confirm",
+            "status": "success",
+            "content": [
+              {
+                "json": {
+                  "response": "answered with null"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000001c"
+    }
+  },
+  {
+    "type": "beforeModelCallEvent",
+    "projectedInputTokens": 32
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "textDelta",
+        "text": "Confirmed."
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "text": "Confirmed."
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      },
+      "metrics": {
+        "latencyMs": 100
+      }
+    }
+  },
+  {
+    "type": "modelMessageEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Confirmed."
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000020",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    },
+    "stopReason": "endTurn"
+  },
+  {
+    "type": "afterModelCallEvent",
+    "attemptCount": 1,
+    "stopData": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "Confirmed."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000020",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Confirmed."
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000020",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "afterInvocationEvent"
+  },
+  {
+    "type": "agentResultEvent",
+    "result": {
+      "type": "agentResult",
+      "stopReason": "endTurn",
+      "lastMessage": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "Confirmed."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000020",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "string": "You are helpful.",
+  "blocks": [
+    {
+      "text": "You are helpful."
+    },
+    {
+      "cachePoint": {
+        "cacheType": "default"
+      }
+    },
+    {
+      "guardContent": {
+        "text": {
+          "text": "policy",
+          "qualifiers": [
+            "guard_content"
+          ]
+        }
+      }
+    },
+    {
+      "guardContent": {
+        "image": {
+          "format": "png",
+          "source": {
+            "bytes": "aVZCT1J3MEtHZ289"
+          }
+        }
+      }
+    }
+  ]
+}

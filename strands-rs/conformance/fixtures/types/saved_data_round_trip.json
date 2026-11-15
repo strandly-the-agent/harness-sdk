@@ -1,0 +1,201 @@
+{
+  "unknownContentBlock": {
+    "input": {
+      "role": "user",
+      "content": [
+        {
+          "futureBlock": {
+            "a": 1
+          }
+        },
+        {
+          "text": "kept"
+        }
+      ],
+      "trackingId": "t-1"
+    },
+    "output": {
+      "role": "user",
+      "content": [
+        {
+          "futureBlock": {
+            "a": 1
+          }
+        },
+        {
+          "text": "kept"
+        }
+      ],
+      "trackingId": "t-1"
+    }
+  },
+  "unknownToolResultContent": {
+    "input": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "x",
+            "status": "success",
+            "content": [
+              {
+                "futureContent": {
+                  "b": 2
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "t-2"
+    },
+    "output": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "x",
+            "status": "success",
+            "content": [
+              {
+                "futureContent": {
+                  "b": 2
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "t-2"
+    }
+  },
+  "unknownMediaFormat": {
+    "input": {
+      "role": "user",
+      "content": [
+        {
+          "image": {
+            "format": "heic",
+            "source": {
+              "bytes": "AAEC"
+            }
+          }
+        }
+      ],
+      "trackingId": "t-3"
+    },
+    "output": {
+      "role": "user",
+      "content": [
+        {
+          "image": {
+            "format": "heic",
+            "source": {
+              "bytes": "AAEC"
+            }
+          }
+        }
+      ],
+      "trackingId": "t-3"
+    }
+  },
+  "unknownCitationLocationAndStatus": {
+    "input": {
+      "role": "assistant",
+      "content": [
+        {
+          "citations": {
+            "citations": [
+              {
+                "location": {
+                  "type": "futureLocation",
+                  "x": 1
+                },
+                "source": "s",
+                "sourceContent": [],
+                "title": "t"
+              }
+            ],
+            "content": [
+              {
+                "text": "c"
+              }
+            ]
+          }
+        },
+        {
+          "toolResult": {
+            "toolUseId": "y",
+            "status": "partial",
+            "content": []
+          }
+        }
+      ],
+      "trackingId": "t-4"
+    },
+    "output": {
+      "role": "assistant",
+      "content": [
+        {
+          "citations": {
+            "citations": [
+              {
+                "location": {
+                  "type": "futureLocation",
+                  "x": 1
+                },
+                "source": "s",
+                "sourceContent": [],
+                "title": "t"
+              }
+            ],
+            "content": [
+              {
+                "text": "c"
+              }
+            ]
+          }
+        },
+        {
+          "toolResult": {
+            "toolUseId": "y",
+            "status": "partial",
+            "content": []
+          }
+        }
+      ],
+      "trackingId": "t-4"
+    }
+  },
+  "toolResultErrorFieldDropped": {
+    "input": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "z",
+            "status": "error",
+            "content": [],
+            "error": {
+              "message": "x"
+            }
+          }
+        }
+      ],
+      "trackingId": "t-5"
+    },
+    "output": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "z",
+            "status": "error",
+            "content": []
+          }
+        }
+      ],
+      "trackingId": "t-5"
+    }
+  }
+}

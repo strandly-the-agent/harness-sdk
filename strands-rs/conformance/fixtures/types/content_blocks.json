@@ -1,0 +1,418 @@
+{
+  "text": {
+    "text": "Hello, world"
+  },
+  "textEmpty": {
+    "text": ""
+  },
+  "toolUse": {
+    "toolUse": {
+      "name": "get_weather",
+      "toolUseId": "tooluse_1",
+      "input": {
+        "city": "Paris",
+        "days": 3
+      }
+    }
+  },
+  "toolUseWithSignature": {
+    "toolUse": {
+      "name": "get_weather",
+      "toolUseId": "tooluse_2",
+      "input": {},
+      "reasoningSignature": "sig-abc"
+    }
+  },
+  "toolUseNullInput": {
+    "toolUse": {
+      "name": "noop",
+      "toolUseId": "tooluse_3",
+      "input": null
+    }
+  },
+  "toolResultEveryContent": {
+    "toolResult": {
+      "toolUseId": "tooluse_1",
+      "status": "success",
+      "content": [
+        {
+          "text": "sunny"
+        },
+        {
+          "json": {
+            "temperature": 21,
+            "unit": "C",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "nested": {
+              "ok": true,
+              "none": null
+            }
+          }
+        },
+        {
+          "image": {
+            "format": "png",
+            "source": {
+              "bytes": "iVBORw0KGgo="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "mp4",
+            "source": {
+              "location": {
+                "type": "s3",
+                "uri": "s3://bucket/video.mp4"
+              }
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "report",
+            "format": "txt",
+            "source": {
+              "text": "plain text"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "toolResultError": {
+    "toolResult": {
+      "toolUseId": "tooluse_2",
+      "status": "error",
+      "content": [
+        {
+          "text": "Error: boom"
+        }
+      ]
+    }
+  },
+  "toolResultEmpty": {
+    "toolResult": {
+      "toolUseId": "tooluse_3",
+      "status": "success",
+      "content": []
+    }
+  },
+  "reasoningText": {
+    "reasoning": {
+      "text": "Let me think.",
+      "signature": "sig-xyz"
+    }
+  },
+  "reasoningRedacted": {
+    "reasoning": {
+      "redactedContent": "AAEC+vv8/f7/"
+    }
+  },
+  "reasoningAllFields": {
+    "reasoning": {
+      "text": "t",
+      "signature": "s",
+      "redactedContent": "AQID"
+    }
+  },
+  "cachePoint": {
+    "cachePoint": {
+      "cacheType": "default"
+    }
+  },
+  "cachePointTtl": {
+    "cachePoint": {
+      "cacheType": "default",
+      "ttl": "1h"
+    }
+  },
+  "guardContentText": {
+    "guardContent": {
+      "text": {
+        "text": "guard me",
+        "qualifiers": [
+          "grounding_source",
+          "query"
+        ]
+      }
+    }
+  },
+  "guardContentTextNoQualifiers": {
+    "guardContent": {
+      "text": {
+        "text": "guard me",
+        "qualifiers": []
+      }
+    }
+  },
+  "guardContentImage": {
+    "guardContent": {
+      "image": {
+        "format": "png",
+        "source": {
+          "bytes": "iVBORw0KGgo="
+        }
+      }
+    }
+  },
+  "guardContentImageJpeg": {
+    "guardContent": {
+      "image": {
+        "format": "jpeg",
+        "source": {
+          "bytes": "/9g="
+        }
+      }
+    }
+  },
+  "audioBytes": {
+    "audio": {
+      "format": "mp3",
+      "source": {
+        "bytes": "AAEC+vv8/f7/"
+      }
+    }
+  },
+  "audioS3": {
+    "audio": {
+      "format": "wav",
+      "source": {
+        "location": {
+          "type": "s3",
+          "uri": "s3://bucket/a.wav"
+        }
+      }
+    }
+  },
+  "imageBytes": {
+    "image": {
+      "format": "png",
+      "source": {
+        "bytes": "iVBORw0KGgo="
+      }
+    }
+  },
+  "imageS3": {
+    "image": {
+      "format": "jpeg",
+      "source": {
+        "location": {
+          "type": "s3",
+          "uri": "s3://bucket/key",
+          "bucketOwner": "123456789012"
+        }
+      }
+    }
+  },
+  "imageUrl": {
+    "image": {
+      "format": "webp",
+      "source": {
+        "url": "https://example.com/cat.webp"
+      }
+    }
+  },
+  "videoBytes": {
+    "video": {
+      "format": "mp4",
+      "source": {
+        "bytes": "AAEC+vv8/f7/"
+      }
+    }
+  },
+  "videoS3": {
+    "video": {
+      "format": "mov",
+      "source": {
+        "location": {
+          "type": "s3",
+          "uri": "s3://bucket/v.mov"
+        }
+      }
+    }
+  },
+  "documentBytes": {
+    "document": {
+      "name": "doc",
+      "format": "pdf",
+      "source": {
+        "bytes": "AAEC+vv8/f7/"
+      }
+    }
+  },
+  "documentText": {
+    "document": {
+      "name": "notes",
+      "format": "txt",
+      "source": {
+        "text": "hello"
+      }
+    }
+  },
+  "documentContent": {
+    "document": {
+      "name": "chunks",
+      "format": "txt",
+      "source": {
+        "content": [
+          {
+            "text": "chunk one"
+          },
+          {
+            "text": "chunk two"
+          }
+        ]
+      }
+    }
+  },
+  "documentS3": {
+    "document": {
+      "name": "remote",
+      "format": "docx",
+      "source": {
+        "location": {
+          "type": "s3",
+          "uri": "s3://bucket/key",
+          "bucketOwner": "123456789012"
+        }
+      }
+    }
+  },
+  "documentCitationsContext": {
+    "document": {
+      "name": "cited",
+      "format": "md",
+      "source": {
+        "text": "# Title"
+      },
+      "citations": {
+        "enabled": true
+      },
+      "context": "Background for the model"
+    }
+  },
+  "citations": {
+    "citations": {
+      "citations": [
+        {
+          "location": {
+            "type": "documentChar",
+            "documentIndex": 0,
+            "start": 0,
+            "end": 12
+          },
+          "source": "doc-0",
+          "sourceContent": [
+            {
+              "text": "quoted text"
+            }
+          ],
+          "title": "Document zero"
+        },
+        {
+          "location": {
+            "type": "documentPage",
+            "documentIndex": 1,
+            "start": 2,
+            "end": 3
+          },
+          "source": "doc-1",
+          "sourceContent": [],
+          "title": "Pages"
+        },
+        {
+          "location": {
+            "type": "documentChunk",
+            "documentIndex": 2,
+            "start": 4,
+            "end": 9
+          },
+          "source": "doc-2",
+          "sourceContent": [
+            {
+              "text": "a"
+            },
+            {
+              "text": "b"
+            }
+          ],
+          "title": "Chunks"
+        },
+        {
+          "location": {
+            "type": "searchResult",
+            "searchResultIndex": 0,
+            "start": 1,
+            "end": 2
+          },
+          "source": "search",
+          "sourceContent": [
+            {
+              "text": "hit"
+            }
+          ],
+          "title": "Search"
+        },
+        {
+          "location": {
+            "type": "web",
+            "url": "https://example.com/page",
+            "domain": "example.com"
+          },
+          "source": "web",
+          "sourceContent": [
+            {
+              "text": "web text"
+            }
+          ],
+          "title": "Web"
+        },
+        {
+          "location": {
+            "type": "web",
+            "url": "https://example.com/no-domain"
+          },
+          "source": "web",
+          "sourceContent": [],
+          "title": "Web without domain"
+        }
+      ],
+      "content": [
+        {
+          "text": "generated answer"
+        }
+      ]
+    }
+  },
+  "injected": {
+    "injected": {
+      "text": "injected context",
+      "source": "memory"
+    }
+  },
+  "summary": {
+    "summary": {
+      "text": "summary text"
+    }
+  },
+  "summaryAllFields": {
+    "summary": {
+      "provider": "anthropic",
+      "signature": "sig",
+      "text": "summary text"
+    }
+  },
+  "unknown": {
+    "futureBlock": {
+      "field": 1,
+      "nested": [
+        true,
+        null
+      ]
+    }
+  }
+}

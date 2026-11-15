@@ -1,0 +1,22 @@
+{
+  "object": {
+    "interruptResponse": {
+      "interruptId": "tool:t1:confirm",
+      "response": {
+        "ok": true
+      }
+    }
+  },
+  "null": {
+    "interruptResponse": {
+      "interruptId": "tool:t1:confirm",
+      "response": null
+    }
+  },
+  "string": {
+    "interruptResponse": {
+      "interruptId": "hook:beforeToolCall:t1:approve",
+      "response": "y"
+    }
+  }
+}

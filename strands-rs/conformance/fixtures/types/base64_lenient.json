@@ -1,0 +1,105 @@
+{
+  "decode": {
+    "canonical": {
+      "input": "AAEC+v8=",
+      "decoded": [
+        0,
+        1,
+        2,
+        250,
+        255
+      ],
+      "canonical": "AAEC+v8="
+    },
+    "unpadded": {
+      "input": "AAEC+v8",
+      "decoded": [
+        0,
+        1,
+        2,
+        250,
+        255
+      ],
+      "canonical": "AAEC+v8="
+    },
+    "urlSafe": {
+      "input": "AAEC-v8=",
+      "decoded": [
+        0,
+        1,
+        2,
+        250,
+        255
+      ],
+      "canonical": "AAEC+v8="
+    },
+    "urlSafeUnpadded": {
+      "input": "AAEC-_8",
+      "decoded": [
+        0,
+        1,
+        2,
+        251,
+        255
+      ],
+      "canonical": "AAEC+/8="
+    },
+    "whitespace": {
+      "input": "AA EC\n+v8=",
+      "decoded": [
+        0,
+        1,
+        2,
+        250,
+        255
+      ],
+      "canonical": "AAEC+v8="
+    },
+    "empty": {
+      "input": "",
+      "decoded": [],
+      "canonical": ""
+    },
+    "trailingGarbage": {
+      "input": "AAEC+v8=!!",
+      "decoded": [
+        0,
+        1,
+        2,
+        250,
+        255
+      ],
+      "canonical": "AAEC+v8="
+    }
+  },
+  "imageFromNonCanonical": {
+    "input": {
+      "image": {
+        "format": "png",
+        "source": {
+          "bytes": "AAEC-_8"
+        }
+      }
+    },
+    "output": {
+      "image": {
+        "format": "png",
+        "source": {
+          "bytes": "AAEC+/8="
+        }
+      }
+    }
+  },
+  "reasoningFromUnpadded": {
+    "input": {
+      "reasoning": {
+        "redactedContent": "AQI"
+      }
+    },
+    "output": {
+      "reasoning": {
+        "redactedContent": "AQI="
+      }
+    }
+  }
+}

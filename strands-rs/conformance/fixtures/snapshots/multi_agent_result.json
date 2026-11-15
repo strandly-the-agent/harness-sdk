@@ -1,0 +1,49 @@
+{
+  "type": "multiAgentResult",
+  "status": "COMPLETED",
+  "results": [
+    {
+      "type": "nodeResult",
+      "nodeId": "writer",
+      "status": "COMPLETED",
+      "duration": 0,
+      "content": [
+        {
+          "text": "Draft."
+        }
+      ],
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      }
+    },
+    {
+      "type": "nodeResult",
+      "nodeId": "editor",
+      "status": "COMPLETED",
+      "duration": 0,
+      "content": [
+        {
+          "text": "Edited."
+        }
+      ],
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      }
+    }
+  ],
+  "content": [
+    {
+      "text": "Edited."
+    }
+  ],
+  "duration": 0,
+  "usage": {
+    "inputTokens": 20,
+    "outputTokens": 10,
+    "totalTokens": 30
+  }
+}

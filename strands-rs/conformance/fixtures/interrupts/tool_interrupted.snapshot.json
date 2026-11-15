@@ -1,0 +1,63 @@
+{
+  "scope": "agent",
+  "schemaVersion": "1.0",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "data": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "text": "Send money"
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000013"
+      }
+    ],
+    "state": {},
+    "systemPrompt": null,
+    "modelState": {},
+    "interrupts": {
+      "interrupts": {
+        "tool:tooluse_confirm:confirm": {
+          "id": "tool:tooluse_confirm:confirm",
+          "name": "confirm",
+          "reason": {
+            "question": "Send 5?"
+          },
+          "source": "tool"
+        }
+      },
+      "activated": true,
+      "pendingToolExecution": {
+        "assistantMessageData": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "confirm_tool",
+                "toolUseId": "tooluse_confirm",
+                "input": {
+                  "amount": 5
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000017",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        },
+        "completedToolResults": {}
+      }
+    }
+  },
+  "appData": {}
+}

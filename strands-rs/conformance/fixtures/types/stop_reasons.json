@@ -1,0 +1,26 @@
+{
+  "all": [
+    "cancelled",
+    "checkpoint",
+    "contentFiltered",
+    "endTurn",
+    "guardrailIntervened",
+    "interrupt",
+    "maxTokens",
+    "limitOutputTokens",
+    "limitStructuredOutputAttempts",
+    "limitTotalTokens",
+    "limitTurns",
+    "pauseTurn",
+    "refusal",
+    "stopSequence",
+    "toolUse",
+    "modelContextWindowExceeded"
+  ],
+  "limit": [
+    "limitTurns",
+    "limitTotalTokens",
+    "limitOutputTokens",
+    "limitStructuredOutputAttempts"
+  ]
+}

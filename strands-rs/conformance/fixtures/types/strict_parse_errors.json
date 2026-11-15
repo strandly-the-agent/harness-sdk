@@ -1,0 +1,9 @@
+{
+  "unknownContentBlock": "Unknown ContentBlockData type",
+  "unknownToolResultContent": "Unknown ToolResultContentData type",
+  "unknownToolResultContentInBlock": "Unknown ToolResultContentData type",
+  "unknownMessageBlock": "Unknown ContentBlockData type",
+  "guardContentEmpty": "GuardContentBlock must have either text or image content",
+  "guardContentBoth": "GuardContentBlock cannot have both text and image content",
+  "unknownSystemContentBlock": "Unknown SystemContentBlockData type"
+}

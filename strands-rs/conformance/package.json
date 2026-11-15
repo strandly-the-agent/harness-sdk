@@ -1,0 +1,9 @@
+{
+  "name": "strands-rs-conformance",
+  "private": true,
+  "type": "module",
+  "description": "Generates TypeScript-written conformance fixtures for the Strands Rust SDK",
+  "scripts": {
+    "generate": "cd ../.. && npx tsx strands-rs/conformance/generate.ts"
+  }
+}

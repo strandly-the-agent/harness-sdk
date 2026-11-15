@@ -1,0 +1,60 @@
+{
+  "zodTool": {
+    "name": "get_weather",
+    "description": "Gets the weather",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "string"
+        },
+        "optional": {
+          "type": "string"
+        },
+        "nullable": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "withDefault": {
+          "default": 3,
+          "type": "number"
+        }
+      },
+      "required": [
+        "required",
+        "nullable",
+        "withDefault"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "jsonSchemaTool": {
+    "name": "json_tool",
+    "description": "JSON schema tool",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "b": {
+          "type": "string"
+        },
+        "a": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "b"
+      ]
+    }
+  },
+  "noInputSchema": {
+    "name": "no_schema",
+    "description": "No input schema",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,1601 @@
+{
+  "afterInvocationEvent": [
+    {
+      "type": "afterInvocationEvent"
+    }
+  ],
+  "afterModelCallEvent": [
+    {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "stopData": {
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "reasoning": {
+                "text": "Thinking hard.",
+                "signature": "sig-1"
+              }
+            },
+            {
+              "reasoning": {
+                "redactedContent": "AQID/w=="
+              }
+            },
+            {
+              "text": "Hello, world"
+            },
+            {
+              "citations": {
+                "citations": [
+                  {
+                    "location": {
+                      "type": "documentChar",
+                      "documentIndex": 0,
+                      "start": 0,
+                      "end": 5
+                    },
+                    "source": "doc-0",
+                    "sourceContent": [
+                      {
+                        "text": "Hello"
+                      }
+                    ],
+                    "title": "Doc"
+                  }
+                ],
+                "content": [
+                  {
+                    "text": "cited"
+                  }
+                ]
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000006",
+          "metadata": {
+            "usage": {
+              "inputTokens": 12,
+              "outputTokens": 7,
+              "totalTokens": 19,
+              "cacheReadInputTokens": 3,
+              "cacheWriteInputTokens": 1
+            },
+            "metrics": {
+              "latencyMs": 250,
+              "timeToFirstByteMs": 20
+            }
+          }
+        },
+        "stopReason": "endTurn"
+      }
+    },
+    {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "stopData": {
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "progress_tool",
+                "toolUseId": "tooluse_progress",
+                "input": {
+                  "steps": 2
+                }
+              }
+            },
+            {
+              "toolUse": {
+                "name": "failing_tool",
+                "toolUseId": "tooluse_failing",
+                "input": {}
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000000b",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        },
+        "stopReason": "toolUse"
+      }
+    },
+    {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "stopData": {
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "All tools ran."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000012",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        },
+        "stopReason": "endTurn"
+      }
+    },
+    {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "stopData": {
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "confirm_tool",
+                "toolUseId": "tooluse_confirm",
+                "input": {
+                  "amount": 5
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000017",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        },
+        "stopReason": "toolUse"
+      }
+    },
+    {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "stopData": {
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "strands_structured_output",
+                "toolUseId": "tooluse_so",
+                "input": {
+                  "city": "Paris",
+                  "temperature": 21
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000037",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        },
+        "stopReason": "toolUse"
+      }
+    },
+    {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "stopData": {
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "secret answer"
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000003f",
+          "metadata": {
+            "usage": {
+              "inputTokens": 1,
+              "outputTokens": 1,
+              "totalTokens": 2
+            }
+          }
+        },
+        "stopReason": "guardrailIntervened",
+        "redaction": {
+          "userMessage": "[input redacted]"
+        }
+      }
+    },
+    {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "error": {
+        "message": "model unavailable"
+      }
+    }
+  ],
+  "afterToolCallEvent": [
+    {
+      "type": "afterToolCallEvent",
+      "toolUse": {
+        "name": "progress_tool",
+        "toolUseId": "tooluse_progress",
+        "input": {
+          "steps": 2
+        }
+      },
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_progress",
+          "status": "success",
+          "content": [
+            {
+              "text": "done after 2 steps"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "afterToolCallEvent",
+      "toolUse": {
+        "name": "failing_tool",
+        "toolUseId": "tooluse_failing",
+        "input": {}
+      },
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_failing",
+          "status": "error",
+          "content": [
+            {
+              "text": "Error: tool exploded"
+            }
+          ]
+        }
+      },
+      "error": {
+        "message": "tool exploded"
+      }
+    },
+    {
+      "type": "afterToolCallEvent",
+      "toolUse": {
+        "name": "confirm_tool",
+        "toolUseId": "tooluse_confirm",
+        "input": {
+          "amount": 5
+        }
+      },
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_confirm",
+          "status": "success",
+          "content": [
+            {
+              "json": {
+                "response": "answered with null"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "afterToolCallEvent",
+      "toolUse": {
+        "name": "confirm_tool",
+        "toolUseId": "tooluse_a",
+        "input": {
+          "amount": 1
+        }
+      },
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_a",
+          "status": "success",
+          "content": [
+            {
+              "text": "sent 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "afterToolCallEvent",
+      "toolUse": {
+        "name": "strands_structured_output",
+        "toolUseId": "tooluse_so",
+        "input": {
+          "city": "Paris",
+          "temperature": 21
+        }
+      },
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_so",
+          "status": "success",
+          "content": [
+            {
+              "json": {
+                "city": "Paris",
+                "temperature": 21
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "afterToolsEvent": [
+    {
+      "type": "afterToolsEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_progress",
+              "status": "success",
+              "content": [
+                {
+                  "text": "done after 2 steps"
+                }
+              ]
+            }
+          },
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_failing",
+              "status": "error",
+              "content": [
+                {
+                  "text": "Error: tool exploded"
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000000e"
+      }
+    },
+    {
+      "type": "afterToolsEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_confirm",
+              "status": "success",
+              "content": [
+                {
+                  "json": {
+                    "response": "answered with null"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000001c"
+      }
+    },
+    {
+      "type": "afterToolsEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_so",
+              "status": "success",
+              "content": [
+                {
+                  "json": {
+                    "city": "Paris",
+                    "temperature": 21
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000039"
+      }
+    }
+  ],
+  "agentResultEvent": [
+    {
+      "type": "agentResultEvent",
+      "result": {
+        "type": "agentResult",
+        "stopReason": "endTurn",
+        "lastMessage": {
+          "role": "assistant",
+          "content": [
+            {
+              "reasoning": {
+                "text": "Thinking hard.",
+                "signature": "sig-1"
+              }
+            },
+            {
+              "reasoning": {
+                "redactedContent": "AQID/w=="
+              }
+            },
+            {
+              "text": "Hello, world"
+            },
+            {
+              "citations": {
+                "citations": [
+                  {
+                    "location": {
+                      "type": "documentChar",
+                      "documentIndex": 0,
+                      "start": 0,
+                      "end": 5
+                    },
+                    "source": "doc-0",
+                    "sourceContent": [
+                      {
+                        "text": "Hello"
+                      }
+                    ],
+                    "title": "Doc"
+                  }
+                ],
+                "content": [
+                  {
+                    "text": "cited"
+                  }
+                ]
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000006",
+          "metadata": {
+            "usage": {
+              "inputTokens": 12,
+              "outputTokens": 7,
+              "totalTokens": 19,
+              "cacheReadInputTokens": 3,
+              "cacheWriteInputTokens": 1
+            },
+            "metrics": {
+              "latencyMs": 250,
+              "timeToFirstByteMs": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "agentResultEvent",
+      "result": {
+        "type": "agentResult",
+        "stopReason": "endTurn",
+        "lastMessage": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "All tools ran."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000012",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "agentResultEvent",
+      "result": {
+        "type": "agentResult",
+        "stopReason": "interrupt",
+        "lastMessage": {
+          "role": "user",
+          "content": [
+            {
+              "text": "Send money"
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000013"
+        }
+      }
+    },
+    {
+      "type": "agentResultEvent",
+      "result": {
+        "type": "agentResult",
+        "stopReason": "toolUse",
+        "lastMessage": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "strands_structured_output",
+                "toolUseId": "tooluse_so",
+                "input": {
+                  "city": "Paris",
+                  "temperature": 21
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000037",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        },
+        "structuredOutput": {
+          "city": "Paris",
+          "temperature": 21
+        }
+      }
+    },
+    {
+      "type": "agentResultEvent",
+      "result": {
+        "type": "agentResult",
+        "stopReason": "guardrailIntervened",
+        "lastMessage": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "secret answer"
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000003f",
+          "metadata": {
+            "usage": {
+              "inputTokens": 1,
+              "outputTokens": 1,
+              "totalTokens": 2
+            }
+          }
+        }
+      }
+    }
+  ],
+  "beforeInvocationEvent": [
+    {
+      "type": "beforeInvocationEvent"
+    }
+  ],
+  "beforeModelCallEvent": [
+    {
+      "type": "beforeModelCallEvent",
+      "projectedInputTokens": 11
+    }
+  ],
+  "beforeToolCallEvent": [
+    {
+      "type": "beforeToolCallEvent",
+      "toolUse": {
+        "name": "progress_tool",
+        "toolUseId": "tooluse_progress",
+        "input": {
+          "steps": 2
+        }
+      }
+    },
+    {
+      "type": "beforeToolCallEvent",
+      "toolUse": {
+        "name": "failing_tool",
+        "toolUseId": "tooluse_failing",
+        "input": {}
+      }
+    },
+    {
+      "type": "beforeToolCallEvent",
+      "toolUse": {
+        "name": "confirm_tool",
+        "toolUseId": "tooluse_confirm",
+        "input": {
+          "amount": 5
+        }
+      }
+    },
+    {
+      "type": "beforeToolCallEvent",
+      "toolUse": {
+        "name": "strands_structured_output",
+        "toolUseId": "tooluse_so",
+        "input": {
+          "city": "Paris",
+          "temperature": 21
+        }
+      }
+    }
+  ],
+  "beforeToolsEvent": [
+    {
+      "type": "beforeToolsEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "progress_tool",
+              "toolUseId": "tooluse_progress",
+              "input": {
+                "steps": 2
+              }
+            }
+          },
+          {
+            "toolUse": {
+              "name": "failing_tool",
+              "toolUseId": "tooluse_failing",
+              "input": {}
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000000b",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "beforeToolsEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "confirm_tool",
+              "toolUseId": "tooluse_confirm",
+              "input": {
+                "amount": 5
+              }
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000017",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "beforeToolsEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "strands_structured_output",
+              "toolUseId": "tooluse_so",
+              "input": {
+                "city": "Paris",
+                "temperature": 21
+              }
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000037",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    }
+  ],
+  "contentBlockEvent": [
+    {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "reasoning": {
+          "text": "Thinking hard.",
+          "signature": "sig-1"
+        }
+      }
+    },
+    {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "reasoning": {
+          "redactedContent": "AQID/w=="
+        }
+      }
+    },
+    {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "text": "Hello, world"
+      }
+    },
+    {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "citations": {
+          "citations": [
+            {
+              "location": {
+                "type": "documentChar",
+                "documentIndex": 0,
+                "start": 0,
+                "end": 5
+              },
+              "source": "doc-0",
+              "sourceContent": [
+                {
+                  "text": "Hello"
+                }
+              ],
+              "title": "Doc"
+            }
+          ],
+          "content": [
+            {
+              "text": "cited"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "toolUse": {
+          "name": "progress_tool",
+          "toolUseId": "tooluse_progress",
+          "input": {
+            "steps": 2
+          }
+        }
+      }
+    },
+    {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "toolUse": {
+          "name": "failing_tool",
+          "toolUseId": "tooluse_failing",
+          "input": {}
+        }
+      }
+    },
+    {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "toolUse": {
+          "name": "confirm_tool",
+          "toolUseId": "tooluse_confirm",
+          "input": {
+            "amount": 5
+          }
+        }
+      }
+    },
+    {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "toolUse": {
+          "name": "strands_structured_output",
+          "toolUseId": "tooluse_so",
+          "input": {
+            "city": "Paris",
+            "temperature": 21
+          }
+        }
+      }
+    }
+  ],
+  "initializedEvent": [
+    {
+      "type": "initializedEvent"
+    }
+  ],
+  "interruptEvent": [
+    {
+      "type": "interruptEvent",
+      "interrupt": {
+        "id": "tool:tooluse_confirm:confirm",
+        "name": "confirm",
+        "reason": {
+          "question": "Send 5?"
+        },
+        "source": "tool"
+      }
+    },
+    {
+      "type": "interruptEvent",
+      "interrupt": {
+        "id": "hook:beforeToolCall:tooluse_b:approve",
+        "name": "approve",
+        "reason": "Approve B?",
+        "source": "hook"
+      }
+    }
+  ],
+  "messageAddedEvent": [
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "text": "Say hello"
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000002"
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "reasoning": {
+              "text": "Thinking hard.",
+              "signature": "sig-1"
+            }
+          },
+          {
+            "reasoning": {
+              "redactedContent": "AQID/w=="
+            }
+          },
+          {
+            "text": "Hello, world"
+          },
+          {
+            "citations": {
+              "citations": [
+                {
+                  "location": {
+                    "type": "documentChar",
+                    "documentIndex": 0,
+                    "start": 0,
+                    "end": 5
+                  },
+                  "source": "doc-0",
+                  "sourceContent": [
+                    {
+                      "text": "Hello"
+                    }
+                  ],
+                  "title": "Doc"
+                }
+              ],
+              "content": [
+                {
+                  "text": "cited"
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000006",
+        "metadata": {
+          "usage": {
+            "inputTokens": 12,
+            "outputTokens": 7,
+            "totalTokens": 19,
+            "cacheReadInputTokens": 3,
+            "cacheWriteInputTokens": 1
+          },
+          "metrics": {
+            "latencyMs": 250,
+            "timeToFirstByteMs": 20
+          }
+        }
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "progress_tool",
+              "toolUseId": "tooluse_progress",
+              "input": {
+                "steps": 2
+              }
+            }
+          },
+          {
+            "toolUse": {
+              "name": "failing_tool",
+              "toolUseId": "tooluse_failing",
+              "input": {}
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000000b",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_progress",
+              "status": "success",
+              "content": [
+                {
+                  "text": "done after 2 steps"
+                }
+              ]
+            }
+          },
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_failing",
+              "status": "error",
+              "content": [
+                {
+                  "text": "Error: tool exploded"
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000000e"
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "All tools ran."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000012",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "confirm_tool",
+              "toolUseId": "tooluse_confirm",
+              "input": {
+                "amount": 5
+              }
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000017",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_confirm",
+              "status": "success",
+              "content": [
+                {
+                  "json": {
+                    "response": "answered with null"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000001c"
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "strands_structured_output",
+              "toolUseId": "tooluse_so",
+              "input": {
+                "city": "Paris",
+                "temperature": 21
+              }
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000037",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_so",
+              "status": "success",
+              "content": [
+                {
+                  "json": {
+                    "city": "Paris",
+                    "temperature": 21
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000039"
+      }
+    },
+    {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "secret answer"
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000003f",
+        "metadata": {
+          "usage": {
+            "inputTokens": 1,
+            "outputTokens": 1,
+            "totalTokens": 2
+          }
+        }
+      }
+    }
+  ],
+  "modelMessageEvent": [
+    {
+      "type": "modelMessageEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "reasoning": {
+              "text": "Thinking hard.",
+              "signature": "sig-1"
+            }
+          },
+          {
+            "reasoning": {
+              "redactedContent": "AQID/w=="
+            }
+          },
+          {
+            "text": "Hello, world"
+          },
+          {
+            "citations": {
+              "citations": [
+                {
+                  "location": {
+                    "type": "documentChar",
+                    "documentIndex": 0,
+                    "start": 0,
+                    "end": 5
+                  },
+                  "source": "doc-0",
+                  "sourceContent": [
+                    {
+                      "text": "Hello"
+                    }
+                  ],
+                  "title": "Doc"
+                }
+              ],
+              "content": [
+                {
+                  "text": "cited"
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000006",
+        "metadata": {
+          "usage": {
+            "inputTokens": 12,
+            "outputTokens": 7,
+            "totalTokens": 19,
+            "cacheReadInputTokens": 3,
+            "cacheWriteInputTokens": 1
+          },
+          "metrics": {
+            "latencyMs": 250,
+            "timeToFirstByteMs": 20
+          }
+        }
+      },
+      "stopReason": "endTurn"
+    },
+    {
+      "type": "modelMessageEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "progress_tool",
+              "toolUseId": "tooluse_progress",
+              "input": {
+                "steps": 2
+              }
+            }
+          },
+          {
+            "toolUse": {
+              "name": "failing_tool",
+              "toolUseId": "tooluse_failing",
+              "input": {}
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000000b",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "toolUse"
+    },
+    {
+      "type": "modelMessageEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "All tools ran."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000012",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "endTurn"
+    },
+    {
+      "type": "modelMessageEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "confirm_tool",
+              "toolUseId": "tooluse_confirm",
+              "input": {
+                "amount": 5
+              }
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000017",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "toolUse"
+    },
+    {
+      "type": "modelMessageEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "strands_structured_output",
+              "toolUseId": "tooluse_so",
+              "input": {
+                "city": "Paris",
+                "temperature": 21
+              }
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000037",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "toolUse"
+    },
+    {
+      "type": "modelMessageEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "secret answer"
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000003f",
+        "metadata": {
+          "usage": {
+            "inputTokens": 1,
+            "outputTokens": 1,
+            "totalTokens": 2
+          }
+        }
+      },
+      "stopReason": "guardrailIntervened"
+    }
+  ],
+  "modelStreamUpdateEvent": [
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelMessageStartEvent",
+        "role": "assistant"
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelContentBlockStartEvent"
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelContentBlockDeltaEvent",
+        "delta": {
+          "type": "reasoningContentDelta",
+          "text": "Thinking "
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelContentBlockDeltaEvent",
+        "delta": {
+          "type": "reasoningContentDelta",
+          "signature": "sig-1"
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelContentBlockDeltaEvent",
+        "delta": {
+          "type": "reasoningContentDelta",
+          "redactedContent": {
+            "0": 1,
+            "1": 2,
+            "2": 3,
+            "3": 255
+          }
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelContentBlockDeltaEvent",
+        "delta": {
+          "type": "citationsDelta",
+          "citations": [
+            {
+              "location": {
+                "type": "documentChar",
+                "documentIndex": 0,
+                "start": 0,
+                "end": 5
+              },
+              "source": "doc-0",
+              "sourceContent": [
+                {
+                  "text": "Hello"
+                }
+              ],
+              "title": "Doc"
+            }
+          ],
+          "content": [
+            {
+              "text": "cited"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelMessageStopEvent",
+        "stopReason": "endTurn",
+        "additionalModelResponseFields": null
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelMetadataEvent",
+        "usage": {
+          "inputTokens": 12,
+          "outputTokens": 7,
+          "totalTokens": 19,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 1
+        },
+        "metrics": {
+          "latencyMs": 250,
+          "timeToFirstByteMs": 20
+        },
+        "trace": null
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelContentBlockStartEvent",
+        "start": {
+          "type": "toolUseStart",
+          "name": "progress_tool",
+          "toolUseId": "tooluse_progress"
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelContentBlockDeltaEvent",
+        "delta": {
+          "type": "toolUseInputDelta",
+          "input": "{\"ste"
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelMessageStopEvent",
+        "stopReason": "toolUse"
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelMetadataEvent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelRedactionEvent",
+        "inputRedaction": {
+          "replaceContent": "[input redacted]"
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelRedactionEvent",
+        "outputRedaction": {
+          "redactedContent": "secret answer",
+          "replaceContent": "[output redacted]"
+        }
+      }
+    },
+    {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelMetadataEvent",
+        "usage": {
+          "inputTokens": 1,
+          "outputTokens": 1,
+          "totalTokens": 2
+        }
+      }
+    }
+  ],
+  "toolResultEvent": [
+    {
+      "type": "toolResultEvent",
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_progress",
+          "status": "success",
+          "content": [
+            {
+              "text": "done after 2 steps"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "toolResultEvent",
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_confirm",
+          "status": "success",
+          "content": [
+            {
+              "json": {
+                "response": "answered with null"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "toolResultEvent",
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_so",
+          "status": "success",
+          "content": [
+            {
+              "json": {
+                "city": "Paris",
+                "temperature": 21
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "toolStreamUpdateEvent": [
+    {
+      "type": "toolStreamUpdateEvent",
+      "event": {
+        "type": "toolStreamEvent",
+        "data": {
+          "step": 1
+        }
+      }
+    }
+  ]
+}

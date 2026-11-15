@@ -1,0 +1,468 @@
+[
+  {
+    "type": "beforeInvocationEvent"
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "text": "Weather in Paris as JSON"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-00000000002f"
+    }
+  },
+  {
+    "type": "beforeModelCallEvent",
+    "projectedInputTokens": 184
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "textDelta",
+        "text": "Here is some prose instead."
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "text": "Here is some prose instead."
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      },
+      "metrics": {
+        "latencyMs": 100
+      }
+    }
+  },
+  {
+    "type": "modelMessageEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Here is some prose instead."
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000033",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    },
+    "stopReason": "endTurn"
+  },
+  {
+    "type": "afterModelCallEvent",
+    "attemptCount": 1,
+    "stopData": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "Here is some prose instead."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000033",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "beforeModelCallEvent",
+    "projectedInputTokens": 184
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent",
+      "start": {
+        "type": "toolUseStart",
+        "name": "strands_structured_output",
+        "toolUseId": "tooluse_so"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "toolUseInputDelta",
+        "input": "{\"city\":\"Paris\","
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "toolUseInputDelta",
+        "input": "\"temperature\":21}"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "toolUse": {
+        "name": "strands_structured_output",
+        "toolUseId": "tooluse_so",
+        "input": {
+          "city": "Paris",
+          "temperature": 21
+        }
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "toolUse"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15
+      },
+      "metrics": {
+        "latencyMs": 100
+      }
+    }
+  },
+  {
+    "type": "modelMessageEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "strands_structured_output",
+            "toolUseId": "tooluse_so",
+            "input": {
+              "city": "Paris",
+              "temperature": 21
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000037",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    },
+    "stopReason": "toolUse"
+  },
+  {
+    "type": "afterModelCallEvent",
+    "attemptCount": 1,
+    "stopData": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "strands_structured_output",
+              "toolUseId": "tooluse_so",
+              "input": {
+                "city": "Paris",
+                "temperature": 21
+              }
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000037",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "stopReason": "toolUse"
+    }
+  },
+  {
+    "type": "beforeToolsEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "strands_structured_output",
+            "toolUseId": "tooluse_so",
+            "input": {
+              "city": "Paris",
+              "temperature": 21
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000037",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "beforeToolCallEvent",
+    "toolUse": {
+      "name": "strands_structured_output",
+      "toolUseId": "tooluse_so",
+      "input": {
+        "city": "Paris",
+        "temperature": 21
+      }
+    }
+  },
+  {
+    "type": "afterToolCallEvent",
+    "toolUse": {
+      "name": "strands_structured_output",
+      "toolUseId": "tooluse_so",
+      "input": {
+        "city": "Paris",
+        "temperature": 21
+      }
+    },
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_so",
+        "status": "success",
+        "content": [
+          {
+            "json": {
+              "city": "Paris",
+              "temperature": 21
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "toolResultEvent",
+    "result": {
+      "toolResult": {
+        "toolUseId": "tooluse_so",
+        "status": "success",
+        "content": [
+          {
+            "json": {
+              "city": "Paris",
+              "temperature": 21
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "afterToolsEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_so",
+            "status": "success",
+            "content": [
+              {
+                "json": {
+                  "city": "Paris",
+                  "temperature": 21
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000039"
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "name": "strands_structured_output",
+            "toolUseId": "tooluse_so",
+            "input": {
+              "city": "Paris",
+              "temperature": 21
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000037",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "metrics": {
+          "latencyMs": 100
+        }
+      }
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "tooluse_so",
+            "status": "success",
+            "content": [
+              {
+                "json": {
+                  "city": "Paris",
+                  "temperature": 21
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000039"
+    }
+  },
+  {
+    "type": "afterInvocationEvent"
+  },
+  {
+    "type": "agentResultEvent",
+    "result": {
+      "type": "agentResult",
+      "stopReason": "toolUse",
+      "lastMessage": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "strands_structured_output",
+              "toolUseId": "tooluse_so",
+              "input": {
+                "city": "Paris",
+                "temperature": 21
+              }
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000037",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 100
+          }
+        }
+      },
+      "structuredOutput": {
+        "city": "Paris",
+        "temperature": 21
+      }
+    }
+  }
+]

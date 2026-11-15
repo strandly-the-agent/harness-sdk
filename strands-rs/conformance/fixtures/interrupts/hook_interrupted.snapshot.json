@@ -1,0 +1,82 @@
+{
+  "scope": "agent",
+  "schemaVersion": "1.0",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "data": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "text": "Send both"
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000021"
+      }
+    ],
+    "state": {},
+    "systemPrompt": null,
+    "modelState": {},
+    "interrupts": {
+      "interrupts": {
+        "hook:beforeToolCall:tooluse_b:approve": {
+          "id": "hook:beforeToolCall:tooluse_b:approve",
+          "name": "approve",
+          "reason": "Approve B?",
+          "source": "hook"
+        }
+      },
+      "activated": true,
+      "pendingToolExecution": {
+        "assistantMessageData": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "confirm_tool",
+                "toolUseId": "tooluse_a",
+                "input": {
+                  "amount": 1
+                }
+              }
+            },
+            {
+              "toolUse": {
+                "name": "confirm_tool",
+                "toolUseId": "tooluse_b",
+                "input": {
+                  "amount": 2
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000025",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        },
+        "completedToolResults": {
+          "tooluse_a": {
+            "toolResult": {
+              "toolUseId": "tooluse_a",
+              "status": "success",
+              "content": [
+                {
+                  "text": "sent 1"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "appData": {}
+}

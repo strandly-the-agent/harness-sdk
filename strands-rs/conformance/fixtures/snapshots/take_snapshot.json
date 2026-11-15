@@ -1,0 +1,157 @@
+{
+  "sessionPreset": {
+    "scope": "agent",
+    "schemaVersion": "1.0",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "data": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Remember this"
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000043"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Noted."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000047",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        }
+      ],
+      "state": {
+        "counter": 3,
+        "nested": {
+          "list": [
+            1,
+            "two",
+            null
+          ]
+        }
+      },
+      "systemPrompt": [
+        {
+          "text": "You are helpful."
+        },
+        {
+          "cachePoint": {
+            "cacheType": "default"
+          }
+        }
+      ],
+      "modelState": {
+        "previousResponseId": "resp_1"
+      },
+      "interrupts": {
+        "interrupts": {},
+        "activated": false
+      }
+    },
+    "appData": {}
+  },
+  "includeMessagesOnly": {
+    "scope": "agent",
+    "schemaVersion": "1.0",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "data": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Remember this"
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000043"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Noted."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000047",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 100
+            }
+          }
+        }
+      ]
+    },
+    "appData": {}
+  },
+  "presetExcludingMessages": {
+    "scope": "agent",
+    "schemaVersion": "1.0",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "data": {
+      "state": {
+        "counter": 3,
+        "nested": {
+          "list": [
+            1,
+            "two",
+            null
+          ]
+        }
+      },
+      "systemPrompt": [
+        {
+          "text": "You are helpful."
+        },
+        {
+          "cachePoint": {
+            "cacheType": "default"
+          }
+        }
+      ],
+      "modelState": {
+        "previousResponseId": "resp_1"
+      }
+    },
+    "appData": {}
+  },
+  "withAppData": {
+    "scope": "agent",
+    "schemaVersion": "1.0",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "data": {
+      "state": {
+        "counter": 3,
+        "nested": {
+          "list": [
+            1,
+            "two",
+            null
+          ]
+        }
+      }
+    },
+    "appData": {
+      "label": "checkpoint-1",
+      "version": 2
+    }
+  }
+}

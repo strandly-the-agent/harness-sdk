@@ -1,0 +1,510 @@
+[
+  {
+    "type": "beforeInvocationEvent"
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "text": "Say hello"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "type": "beforeModelCallEvent",
+    "projectedInputTokens": 11
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "reasoningContentDelta",
+        "text": "Thinking "
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "reasoningContentDelta",
+        "text": "hard."
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "reasoningContentDelta",
+        "signature": "sig-1"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "reasoning": {
+        "text": "Thinking hard.",
+        "signature": "sig-1"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "reasoningContentDelta",
+        "redactedContent": {
+          "0": 1,
+          "1": 2,
+          "2": 3,
+          "3": 255
+        }
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "reasoning": {
+        "redactedContent": "AQID/w=="
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "textDelta",
+        "text": "Hello"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "textDelta",
+        "text": ", world"
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "text": "Hello, world"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "citationsDelta",
+        "citations": [
+          {
+            "location": {
+              "type": "documentChar",
+              "documentIndex": 0,
+              "start": 0,
+              "end": 5
+            },
+            "source": "doc-0",
+            "sourceContent": [
+              {
+                "text": "Hello"
+              }
+            ],
+            "title": "Doc"
+          }
+        ],
+        "content": [
+          {
+            "text": "cited"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  {
+    "type": "contentBlockEvent",
+    "contentBlock": {
+      "citations": {
+        "citations": [
+          {
+            "location": {
+              "type": "documentChar",
+              "documentIndex": 0,
+              "start": 0,
+              "end": 5
+            },
+            "source": "doc-0",
+            "sourceContent": [
+              {
+                "text": "Hello"
+              }
+            ],
+            "title": "Doc"
+          }
+        ],
+        "content": [
+          {
+            "text": "cited"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "endTurn",
+      "additionalModelResponseFields": null
+    }
+  },
+  {
+    "type": "modelStreamUpdateEvent",
+    "event": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 12,
+        "outputTokens": 7,
+        "totalTokens": 19,
+        "cacheReadInputTokens": 3,
+        "cacheWriteInputTokens": 1
+      },
+      "metrics": {
+        "latencyMs": 250,
+        "timeToFirstByteMs": 20
+      },
+      "trace": null
+    }
+  },
+  {
+    "type": "modelMessageEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "reasoning": {
+            "text": "Thinking hard.",
+            "signature": "sig-1"
+          }
+        },
+        {
+          "reasoning": {
+            "redactedContent": "AQID/w=="
+          }
+        },
+        {
+          "text": "Hello, world"
+        },
+        {
+          "citations": {
+            "citations": [
+              {
+                "location": {
+                  "type": "documentChar",
+                  "documentIndex": 0,
+                  "start": 0,
+                  "end": 5
+                },
+                "source": "doc-0",
+                "sourceContent": [
+                  {
+                    "text": "Hello"
+                  }
+                ],
+                "title": "Doc"
+              }
+            ],
+            "content": [
+              {
+                "text": "cited"
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000006",
+      "metadata": {
+        "usage": {
+          "inputTokens": 12,
+          "outputTokens": 7,
+          "totalTokens": 19,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 1
+        },
+        "metrics": {
+          "latencyMs": 250,
+          "timeToFirstByteMs": 20
+        }
+      }
+    },
+    "stopReason": "endTurn"
+  },
+  {
+    "type": "afterModelCallEvent",
+    "attemptCount": 1,
+    "stopData": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "reasoning": {
+              "text": "Thinking hard.",
+              "signature": "sig-1"
+            }
+          },
+          {
+            "reasoning": {
+              "redactedContent": "AQID/w=="
+            }
+          },
+          {
+            "text": "Hello, world"
+          },
+          {
+            "citations": {
+              "citations": [
+                {
+                  "location": {
+                    "type": "documentChar",
+                    "documentIndex": 0,
+                    "start": 0,
+                    "end": 5
+                  },
+                  "source": "doc-0",
+                  "sourceContent": [
+                    {
+                      "text": "Hello"
+                    }
+                  ],
+                  "title": "Doc"
+                }
+              ],
+              "content": [
+                {
+                  "text": "cited"
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000006",
+        "metadata": {
+          "usage": {
+            "inputTokens": 12,
+            "outputTokens": 7,
+            "totalTokens": 19,
+            "cacheReadInputTokens": 3,
+            "cacheWriteInputTokens": 1
+          },
+          "metrics": {
+            "latencyMs": 250,
+            "timeToFirstByteMs": 20
+          }
+        }
+      },
+      "stopReason": "endTurn"
+    }
+  },
+  {
+    "type": "messageAddedEvent",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "reasoning": {
+            "text": "Thinking hard.",
+            "signature": "sig-1"
+          }
+        },
+        {
+          "reasoning": {
+            "redactedContent": "AQID/w=="
+          }
+        },
+        {
+          "text": "Hello, world"
+        },
+        {
+          "citations": {
+            "citations": [
+              {
+                "location": {
+                  "type": "documentChar",
+                  "documentIndex": 0,
+                  "start": 0,
+                  "end": 5
+                },
+                "source": "doc-0",
+                "sourceContent": [
+                  {
+                    "text": "Hello"
+                  }
+                ],
+                "title": "Doc"
+              }
+            ],
+            "content": [
+              {
+                "text": "cited"
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000006",
+      "metadata": {
+        "usage": {
+          "inputTokens": 12,
+          "outputTokens": 7,
+          "totalTokens": 19,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 1
+        },
+        "metrics": {
+          "latencyMs": 250,
+          "timeToFirstByteMs": 20
+        }
+      }
+    }
+  },
+  {
+    "type": "afterInvocationEvent"
+  },
+  {
+    "type": "agentResultEvent",
+    "result": {
+      "type": "agentResult",
+      "stopReason": "endTurn",
+      "lastMessage": {
+        "role": "assistant",
+        "content": [
+          {
+            "reasoning": {
+              "text": "Thinking hard.",
+              "signature": "sig-1"
+            }
+          },
+          {
+            "reasoning": {
+              "redactedContent": "AQID/w=="
+            }
+          },
+          {
+            "text": "Hello, world"
+          },
+          {
+            "citations": {
+              "citations": [
+                {
+                  "location": {
+                    "type": "documentChar",
+                    "documentIndex": 0,
+                    "start": 0,
+                    "end": 5
+                  },
+                  "source": "doc-0",
+                  "sourceContent": [
+                    {
+                      "text": "Hello"
+                    }
+                  ],
+                  "title": "Doc"
+                }
+              ],
+              "content": [
+                {
+                  "text": "cited"
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000006",
+        "metadata": {
+          "usage": {
+            "inputTokens": 12,
+            "outputTokens": 7,
+            "totalTokens": 19,
+            "cacheReadInputTokens": 3,
+            "cacheWriteInputTokens": 1
+          },
+          "metrics": {
+            "latencyMs": 250,
+            "timeToFirstByteMs": 20
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,30 @@
+{
+  "usageMinimal": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "totalTokens": 0
+  },
+  "usageAccumulated": {
+    "inputTokens": 4,
+    "outputTokens": 5,
+    "totalTokens": 9,
+    "cacheReadInputTokens": 2,
+    "cacheWriteInputTokens": 5
+  },
+  "usageMaxSafeInteger": {
+    "inputTokens": 9007199254740991,
+    "outputTokens": 0,
+    "totalTokens": 9007199254740991
+  },
+  "metricsMinimal": {
+    "latencyMs": 0
+  },
+  "metricsFull": {
+    "latencyMs": 1234,
+    "timeToFirstByteMs": 56
+  },
+  "totalPromptTokens": {
+    "consistent": 5,
+    "withCache": 11
+  }
+}

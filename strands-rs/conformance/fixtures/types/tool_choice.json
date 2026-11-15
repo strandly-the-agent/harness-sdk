@@ -1,0 +1,13 @@
+{
+  "auto": {
+    "auto": {}
+  },
+  "any": {
+    "any": {}
+  },
+  "tool": {
+    "tool": {
+      "name": "get_weather"
+    }
+  }
+}
