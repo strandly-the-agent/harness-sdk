@@ -26,8 +26,8 @@
 
 ## [ ] Phase 3: agent loop, hooks and tools
 - [ ] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult`
-- [ ] Serializable stream event records (fixture-checked)
-- [ ] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
+- [x] Serializable stream event records (fixture-checked)
+- [x] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
 - [ ] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles
 - [x] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
 - [x] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
