@@ -1,17 +1,22 @@
 //! Delegation semantics for agent tools with `delegate` set (TS `agent/agent-delegation.ts`).
 //!
 //! A delegation tool must be the only tool of its turn; when it succeeds, the parent ends the
-//! turn with the tool's content as the final message instead of calling the model again. TS
-//! registers this as the `strands:agent-delegation` plugin on every agent; until plugins land
-//! (Phase 4) the agent installs these hooks in `initialize`, after the retry strategies.
+//! turn with the tool's content as the final message instead of calling the model again. It is
+//! the `strands:agent-delegation` plugin every agent registers unless a user plugin takes that
+//! name. TS refuses a lifted batch cancel and unwraps child events in an `ExecuteToolStage`
+//! middleware; until middleware lands those jobs are a `BeforeToolCallEvent` hook and an
+//! executor event (P-82).
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+use async_trait::async_trait;
 
 use crate::error::{Error, Result};
 use crate::hooks::{
     AfterToolCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent,
     HookCallbackOptions, HookOrder, HookRegistry,
 };
+use crate::plugins::Plugin;
 use crate::tools::executors::executor::error_text_result;
 use crate::tools::{STRUCTURED_OUTPUT_TOOL_NAME, Tool, ToolContext, ToolOutcome, ToolRegistry, ToolStream};
 use crate::types::agent::LocalAgent;
@@ -41,8 +46,27 @@ fn is_delegation_tool(registry: &ToolRegistry, name: &str) -> bool {
     registry.get(name).is_some_and(|tool| tool.is_delegate())
 }
 
+/// The name of the built-in delegation plugin (TS `AgentDelegation.name`).
+pub(crate) const AGENT_DELEGATION_NAME: &str = "strands:agent-delegation";
+
+/// The built-in delegation plugin (TS `AgentDelegation`).
+pub(crate) struct AgentDelegation;
+
+#[async_trait]
+impl Plugin for AgentDelegation {
+    fn name(&self) -> &str {
+        AGENT_DELEGATION_NAME
+    }
+
+    async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {
+        check(agent)?;
+        install(agent.hooks());
+        Ok(())
+    }
+}
+
 /// TS `initAgent`'s fail-fast check.
-pub(crate) fn check(agent: &LocalAgent) -> Result<()> {
+fn check(agent: &LocalAgent) -> Result<()> {
     let has_delegation = agent.tool_registry().list().any(|tool| tool.is_delegate());
     if agent.model().stateful() && has_delegation {
         return Err(Error::other(STATEFUL_UNSUPPORTED));
@@ -51,7 +75,7 @@ pub(crate) fn check(agent: &LocalAgent) -> Result<()> {
 }
 
 /// Registers the delegation hooks on `hooks`.
-pub(crate) fn install(hooks: &HookRegistry) {
+fn install(hooks: &HookRegistry) {
     let state = Shared::default();
 
     let batch = Arc::clone(&state);

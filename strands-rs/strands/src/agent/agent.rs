@@ -6,6 +6,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 
+use crate::agent::agent_delegation::{AGENT_DELEGATION_NAME, AgentDelegation};
 use crate::agent::config::{AgentBuilder, AgentConfig, DefaultModel, ModelSource};
 use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
 use crate::agent::run::AbandonedRun;
@@ -17,7 +18,10 @@ use crate::hooks::{
     IntoSyncHook,
 };
 use crate::models::model::Model;
-use crate::retry::model_retry_strategy::{Sleeper, attach, install, tokio_sleeper, warn_on_duplicate_types};
+use crate::plugins::{ModelLifecycle, Plugin, PluginRegistry};
+use crate::retry::model_retry_strategy::{
+    RetryStrategyInstaller, Sleeper, tokio_sleeper, warn_on_duplicate_types,
+};
 use crate::retry::{DefaultModelRetryStrategy, ModelRetryStrategy};
 use crate::state_store::StateStore;
 use crate::telemetry::AgentMetrics;
@@ -60,6 +64,10 @@ pub struct Agent {
     pub(crate) structured_output_registered: bool,
     retry_strategies: Vec<Arc<dyn ModelRetryStrategy>>,
     pub(crate) retry_sleeper: Sleeper,
+    /// The user's plugins (TS `plugins`), registered between the retry strategies and the
+    /// built-ins that follow them.
+    plugins: Vec<Arc<dyn Plugin>>,
+    plugin_registry: PluginRegistry,
     /// This agent's identity for the retry strategies' attach-once check.
     attach_token: Arc<()>,
     initialized: bool,
@@ -113,6 +121,7 @@ impl Agent {
             warn_on_duplicate_types(&strategies);
             agent.retry_strategies = strategies;
         }
+        agent.plugins = config.plugins;
         Ok(agent)
     }
 
@@ -125,6 +134,8 @@ impl Agent {
             structured_output_registered: false,
             retry_strategies: vec![Arc::new(DefaultModelRetryStrategy::default())],
             retry_sleeper: tokio_sleeper(),
+            plugins: Vec::new(),
+            plugin_registry: PluginRegistry::default(),
             attach_token: Arc::new(()),
             initialized: false,
             printer: None,
@@ -138,35 +149,48 @@ impl Agent {
     ///
     /// # Errors
     ///
-    /// Two retry strategies share a name (`plugin already registered`), a retry strategy is
-    /// already attached to another agent, the agent has delegation tools on a stateful model, or
-    /// an `InitializedEvent` hook raised duplicate interrupts.
+    /// Two plugins (retry strategies included) share a name (`plugin already registered`), a
+    /// plugin's `init_agent` or tools failed (every later call returns that failure again), a
+    /// retry strategy is already attached to another agent, the agent has delegation tools on a
+    /// stateful model, or an `InitializedEvent` hook raised duplicate interrupts.
     pub async fn initialize(&mut self) -> Result<()> {
         if self.initialized {
             return Ok(());
         }
-        // TS lists MCP tools, registers sandbox tools, initializes plugins and runs intervention
-        // observers before `InitializedEvent`; those steps run here, in that order.
+        // TS lists MCP tools and registers sandbox tools before the plugins, and runs
+        // intervention observers after them; those steps join here with their subsystems.
+        let plugins = self.registration_order();
+        self.plugin_registry.initialize(plugins, &mut self.local).await?;
         let hooks = self.local.hooks().clone();
-        // Retry strategies are plugins in TS; the plugin registry rejects a duplicate name.
-        let mut names = Vec::new();
-        for strategy in &self.retry_strategies {
-            if names.contains(&strategy.name()) {
-                return Err(Error::other(format!(
-                    "plugin_name=<{}> | plugin already registered",
-                    strategy.name()
-                )));
-            }
-            names.push(strategy.name());
-            attach(strategy, &self.attach_token)?;
-            install(Arc::clone(strategy), &hooks, Arc::clone(&self.retry_sleeper));
-        }
-        crate::agent::agent_delegation::check(&self.local)?;
-        crate::agent::agent_delegation::install(&hooks);
         let mut event = InitializedEvent::new(&mut self.local);
         hooks.invoke::<InitializedEvent<'static>>(&mut event).await?;
         self.initialized = true;
         Ok(())
+    }
+
+    /// The plugins in TS registration order (`agent/agent.ts`): model router, conversation
+    /// manager, retry strategies, user plugins, background tasks, delegation (unless a user
+    /// plugin has its name), memory, context manager, session manager, then the model plugin.
+    /// The router, managers and background tasks join with their subsystems.
+    fn registration_order(&self) -> Vec<Arc<dyn Plugin>> {
+        let retry = self.retry_strategies.iter().map(|strategy| -> Arc<dyn Plugin> {
+            Arc::new(RetryStrategyInstaller {
+                strategy: Arc::clone(strategy),
+                agent: Arc::clone(&self.attach_token),
+                sleeper: Arc::clone(&self.retry_sleeper),
+            })
+        });
+        let has_delegation = self
+            .plugins
+            .iter()
+            .any(|plugin| plugin.name() == AGENT_DELEGATION_NAME);
+        let delegation = (!has_delegation).then(|| Arc::new(AgentDelegation) as Arc<dyn Plugin>);
+        let model: Arc<dyn Plugin> = Arc::new(ModelLifecycle::new(Arc::clone(self.local.model())));
+        retry
+            .chain(self.plugins.iter().cloned())
+            .chain(delegation)
+            .chain([model])
+            .collect()
     }
 
     /// Runs the agent on `args` until it stops, and returns the result.

@@ -301,12 +301,19 @@ async fn does_not_enforce_single_call_constraint_for_stateful_models_with_runtim
     agent.initialize().await.unwrap();
     let tool = sub_agent("Sub", "Sub response").as_tool(AgentAsToolOptions::builder().delegate(true).build());
     agent.tool_registry_mut().add(Arc::new(tool)).unwrap();
+    // The model plugin clears a stateful model's history after the invocation.
+    let added = Arc::new(Mutex::new(Vec::new()));
+    let record = Arc::clone(&added);
+    agent.add_hook(move |event: &mut MessageAddedEvent<'_>| {
+        record.lock().unwrap().push(event.message().clone());
+    });
 
     let result = agent.invoke("Do both").await.unwrap();
 
     assert_eq!(result.stop_reason(), StopReason::EndTurn);
     assert_eq!(first_text(&result), "Both tools ran successfully.");
-    let statuses: Vec<ToolResultStatus> = agent.messages()[2]
+    assert!(agent.messages().is_empty());
+    let statuses: Vec<ToolResultStatus> = added.lock().unwrap()[2]
         .content()
         .iter()
         .filter_map(|block| match block {

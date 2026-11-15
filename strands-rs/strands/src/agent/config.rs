@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use crate::error::{DefaultNotConfiguredError, Error, Result};
 use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, Model, ModelRequest};
 use crate::models::streaming::ModelStreamEvent;
+use crate::plugins::Plugin;
 use crate::retry::ModelRetryStrategy;
 use crate::tools::{StructuredOutputSchema, ToolExecutor, ToolSource};
 use crate::types::json::JsonObject;
@@ -121,7 +122,7 @@ impl Model for DefaultModel {
 /// struct literal and [`Agent::new`].
 ///
 /// Keys whose TS behaviour lands with later subsystems (conversation and context managers,
-/// plugins, interventions, sessions, memory, sandbox, storage, background tasks and telemetry
+/// interventions, sessions, memory, sandbox, storage, background tasks and telemetry
 /// attributes) are added with them, so no key is accepted and ignored.
 ///
 /// ```
@@ -166,6 +167,10 @@ pub struct AgentConfig {
     /// `.no_retry_strategy()` disables them.
     #[builder(field)]
     pub retry_strategy: Option<Vec<Arc<dyn ModelRetryStrategy>>>,
+    /// Plugins, initialized in order on the first call; names must be unique. The builder's
+    /// `.plugin(..)` and `.plugins(..)` extend the list.
+    #[builder(field)]
+    pub plugins: Vec<Arc<dyn Plugin>>,
     /// The model (default: a `BedrockModel` with the default model id, resolved on first use).
     #[builder(into)]
     pub model: Option<ModelSource>,
@@ -219,6 +224,18 @@ impl<S: agent_builder::State> AgentBuilder<S> {
         self.retry_strategy
             .get_or_insert_with(Vec::new)
             .push(Arc::new(strategy));
+        self
+    }
+
+    /// Adds a plugin.
+    pub fn plugin(mut self, plugin: impl Plugin) -> Self {
+        self.plugins.push(Arc::new(plugin));
+        self
+    }
+
+    /// Adds plugins the caller keeps handles to; calling it again extends the list.
+    pub fn plugins(mut self, plugins: impl IntoIterator<Item = Arc<dyn Plugin>>) -> Self {
+        self.plugins.extend(plugins);
         self
     }
 

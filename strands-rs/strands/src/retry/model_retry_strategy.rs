@@ -1,6 +1,7 @@
 //! The base of model retry strategies (TS `retry/model-retry-strategy.ts`).
 //!
-//! The agent installs one `AfterModelCallEvent` hook per strategy when it initializes.
+//! Each strategy is registered as a plugin that installs one `AfterModelCallEvent` hook when
+//! the agent initializes.
 
 use std::fmt;
 use std::num::NonZeroU32;
@@ -13,7 +14,9 @@ use futures::future::{self, BoxFuture, Either};
 use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
 use crate::hooks::{AfterModelCallEvent, HookRegistry};
+use crate::plugins::Plugin;
 use crate::retry::retry_strategy::RetryDecision;
+use crate::types::agent::LocalAgent;
 
 /// What a [`ModelRetryStrategy`] knows about a finished model call (the fields of TS
 /// `AfterModelCallEvent` the strategies read).
@@ -155,6 +158,31 @@ pub(crate) fn install(strategy: Arc<dyn ModelRetryStrategy>, hooks: &HookRegistr
             }
         })
     });
+}
+
+/// A retry strategy registered as the plugin it is in TS (`ModelRetryStrategy implements
+/// Plugin`): `init_agent` attaches it to the agent behind `agent` and installs its hook.
+pub(crate) struct RetryStrategyInstaller {
+    pub(crate) strategy: Arc<dyn ModelRetryStrategy>,
+    pub(crate) agent: Arc<()>,
+    pub(crate) sleeper: Sleeper,
+}
+
+#[async_trait]
+impl Plugin for RetryStrategyInstaller {
+    fn name(&self) -> &str {
+        self.strategy.name()
+    }
+
+    async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {
+        attach(&self.strategy, &self.agent)?;
+        install(
+            Arc::clone(&self.strategy),
+            agent.hooks(),
+            Arc::clone(&self.sleeper),
+        );
+        Ok(())
+    }
 }
 
 /// Waits out a retry delay; tests inject one that records instead of sleeping.
