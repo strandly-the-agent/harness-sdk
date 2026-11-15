@@ -22,10 +22,10 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/__tests__/queue.test.ts` | | 0/10 | |
 | `strands-ts/src/__tests__/state-store.test.ts` | `strands::state_store::tests` | 30/49 | functions, symbols and `undefined` in values (10) and the null-key check (1) are JS runtime cases Rust types rule out (one `Serialize` failure test covers the path); typed-interface delete (1) is TS type-level only; the serializable-symbol helpers and `isStateSerializable` (7) are a TS-only mechanism |
 | `strands-ts/src/agent/__tests__/agent-as-tool.interrupt.test.ts` | | 0/15 | |
-| `strands-ts/src/agent/__tests__/agent-as-tool.invocation-context.test.ts` | | 0/3 | |
-| `strands-ts/src/agent/__tests__/agent-as-tool.invocation-state.test.ts` | | 0/1 | |
-| `strands-ts/src/agent/__tests__/agent-as-tool.test.ts` | | 0/31 | |
-| `strands-ts/src/agent/__tests__/agent-delegation.test.ts` | | 0/17 | |
+| `strands-ts/src/agent/__tests__/agent-as-tool.invocation-context.test.ts` | `strands::agent::agent_as_tool::tests` | 3/3 | |
+| `strands-ts/src/agent/__tests__/agent-as-tool.invocation-state.test.ts` | `strands::agent::agent_as_tool::tests` | 1/1 | |
+| `strands-ts/src/agent/__tests__/agent-as-tool.test.ts` | `strands::agent::agent_as_tool::tests` | 24/31 | the four cancel-signal cases (execution signal, deferred and immediate cancel, abort during initialization) need `InvokeOptions::cancel_signal` and the loop's cancel checkpoints (Phase 4); the three `sessionManager` cases need `SessionManager` (Phase 6). `instanceof AgentAsTool` checks read the name, description and input schema instead (no downcasting); the construction-time snapshot case mutates the wrapped agent through `with_agent`, because `as_tool` takes the agent by value |
+| `strands-ts/src/agent/__tests__/agent-delegation.test.ts` | `strands::agent::agent_delegation::tests` | 16/17 | the cross-request case needs an `AfterToolsEvent` hook that throws, and hooks can't fail; the late-error-flip case flips the result in an `AfterToolCallEvent` hook (`AfterToolsEvent.message` is read-only), which reaches the same `AfterToolsEvent` re-check; the routing case runs without `backgroundTasks` (later phase) |
 | `strands-ts/src/agent/__tests__/agent.cancel.test.ts` | | 0/28 | |
 | `strands-ts/src/agent/__tests__/agent.concurrent.test.ts` | | 0/22 | |
 | `strands-ts/src/agent/__tests__/agent.context-manager.test.ts` | | 0/16 | |

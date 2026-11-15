@@ -804,6 +804,7 @@ fn stream_event(event: &ToolExecutorEvent) -> AgentStreamEvent {
         ToolExecutorEvent::ToolStreamUpdate(event) => AgentStreamEvent::ToolStreamUpdate(event.into()),
         ToolExecutorEvent::AfterToolCall(event) => AgentStreamEvent::AfterToolCall(event.into()),
         ToolExecutorEvent::ToolResult(event) => AgentStreamEvent::ToolResult(event.into()),
+        ToolExecutorEvent::Delegated(event) => event.clone(),
     }
 }
 

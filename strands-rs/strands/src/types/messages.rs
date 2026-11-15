@@ -1196,7 +1196,6 @@ open_enum! {
 }
 
 /// The stop reasons for invocation limits, in TS `LIMIT_STOP_REASONS` order.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop limit checks"))]
 pub(crate) const LIMIT_STOP_REASONS: [StopReason; 4] = [
     StopReason::LimitTurns,
     StopReason::LimitTotalTokens,
@@ -1206,14 +1205,12 @@ pub(crate) const LIMIT_STOP_REASONS: [StopReason; 4] = [
 
 impl StopReason {
     /// Whether this is one of the invocation-limit stop reasons.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop limit checks"))]
     pub(crate) fn is_limit(&self) -> bool {
         LIMIT_STOP_REASONS.contains(self)
     }
 }
 
 /// The text of the final message when a limit stops an agent (TS `limitStopMessage`).
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop limit checks"))]
 pub(crate) fn limit_stop_message(agent_name: &str, stop_reason: &StopReason) -> String {
     format!(
         "Agent '{agent_name}' stopped early ({stop_reason}): a limit on this call was reached, so its answer is incomplete"

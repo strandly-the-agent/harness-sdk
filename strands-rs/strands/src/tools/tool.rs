@@ -3,6 +3,7 @@
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::Stream;
@@ -12,7 +13,7 @@ use serde::Serialize;
 use crate::cancel::CancelSignal;
 use crate::error::BoxError;
 use crate::interrupt::{Interrupt, InterruptParams, InterruptSource};
-use crate::types::agent::{InvocationState, ToolAgent};
+use crate::types::agent::{AgentStreamEvent, InvocationState, ToolAgent};
 use crate::types::json::JsonValue;
 use crate::types::messages::{ToolResultBlock, ToolResultContent};
 use crate::types::tools::{ToolResultStatus, ToolSpec, ToolUse};
@@ -34,6 +35,13 @@ pub trait Tool: Send + Sync + 'static {
 
     /// Runs the tool for one tool use.
     fn stream(&self, context: ToolContext) -> ToolStream;
+
+    /// Whether this is an agent tool with `delegate` set (TS `tool instanceof AgentAsTool &&
+    /// tool.delegate`).
+    #[doc(hidden)]
+    fn is_delegate(&self) -> bool {
+        false
+    }
 }
 
 impl fmt::Debug for dyn Tool {
@@ -44,19 +52,45 @@ impl fmt::Debug for dyn Tool {
 
 /// A progress event a tool emits while running (TS `ToolStreamEvent`).
 ///
-/// Serializes as `{"type":"toolStreamEvent","data":..}`.
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+/// Serializes as `{"type":"toolStreamEvent","data":..}`; equality compares `data`.
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(tag = "type", rename = "toolStreamEvent")]
 #[non_exhaustive]
 pub struct ToolStreamEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<JsonValue>,
+    /// A delegate agent's own event, which the parent's stream yields in place of this one.
+    #[serde(skip)]
+    delegated: Option<Arc<AgentStreamEvent>>,
+}
+
+impl PartialEq for ToolStreamEvent {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
 }
 
 impl ToolStreamEvent {
     /// An event carrying `data`.
     pub fn new(data: JsonValue) -> Self {
-        Self { data: Some(data) }
+        Self {
+            data: Some(data),
+            delegated: None,
+        }
+    }
+
+    /// An event carrying `event` as its data, which a parent surfaces as its own event when the
+    /// tool delegates (TS `AgentDelegation` unwrapping).
+    pub(crate) fn wrapping(event: AgentStreamEvent, delegated: bool) -> Self {
+        let data = serde_json::to_value(&event).unwrap_or_default();
+        Self {
+            data: Some(data),
+            delegated: delegated.then(|| Arc::new(event)),
+        }
+    }
+
+    pub(crate) fn delegated(&self) -> Option<&AgentStreamEvent> {
+        self.delegated.as_deref()
     }
 
     /// The event payload.

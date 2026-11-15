@@ -10,6 +10,8 @@ pub mod tool;
 
 use std::sync::Arc;
 
+use crate::agent::{Agent, AgentAsTool, AgentAsToolOptions};
+
 pub use executors::{ConcurrentToolExecutor, SequentialToolExecutor, ToolExecutor};
 pub use function_tool::FunctionTool;
 pub use registry::ToolRegistry;
@@ -27,6 +29,8 @@ pub enum ToolSource {
     Tool(Arc<dyn Tool>),
     /// Several sources, flattened in order.
     List(Vec<ToolSource>),
+    /// An agent, as a tool (TS `AgentAsTool`).
+    Agent(Arc<AgentAsTool>),
 }
 
 impl ToolSource {
@@ -35,6 +39,7 @@ impl ToolSource {
         match self {
             Self::Tool(tool) => vec![tool],
             Self::List(sources) => sources.into_iter().flat_map(Self::into_tools).collect(),
+            Self::Agent(tool) => vec![tool],
         }
     }
 }
@@ -42,6 +47,14 @@ impl ToolSource {
 impl<T: Tool> From<T> for ToolSource {
     fn from(tool: T) -> Self {
         Self::Tool(Arc::new(tool))
+    }
+}
+
+/// An agent becomes a tool with default [`AgentAsToolOptions`]
+/// (TS wraps agents in `tools` with `asTool()`).
+impl From<Agent> for ToolSource {
+    fn from(agent: Agent) -> Self {
+        Self::Agent(Arc::new(agent.as_tool(AgentAsToolOptions::default())))
     }
 }
 

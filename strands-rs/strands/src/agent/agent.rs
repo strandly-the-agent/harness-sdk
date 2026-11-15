@@ -142,6 +142,8 @@ impl Agent {
             attach(strategy, &self.attach_token)?;
             install(Arc::clone(strategy), &hooks, Arc::clone(&self.retry_sleeper));
         }
+        crate::agent::agent_delegation::check(&self.local)?;
+        crate::agent::agent_delegation::install(&hooks);
         let mut event = InitializedEvent::new(&mut self.local);
         hooks.invoke::<InitializedEvent<'static>>(&mut event).await?;
         self.initialized = true;

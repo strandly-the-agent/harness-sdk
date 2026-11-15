@@ -25,7 +25,7 @@ use crate::interrupt::Interrupt;
 use crate::interrupt::state::{PendingToolExecution, ToolResultEntry};
 use crate::telemetry::LocalTelemetry;
 use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStreamEvent, ToolStreamItem};
-use crate::types::agent::{InvocationState, ToolAgent};
+use crate::types::agent::{AgentStreamEvent, InvocationState, ToolAgent};
 use crate::types::messages::{Message, ToolResultBlock, ToolUseBlock};
 use crate::types::tools::{ToolResultStatus, ToolUse};
 
@@ -54,6 +54,8 @@ pub(crate) enum ToolExecutorEvent {
     ToolStreamUpdate(ToolStreamUpdateEvent),
     AfterToolCall(AfterToolCallEvent),
     ToolResult(ToolResultEvent),
+    /// A delegate agent's event, yielded as is.
+    Delegated(AgentStreamEvent),
 }
 
 /// An item of an executor stream; [`ToolExecutorItem::Done`] is the last.
@@ -185,6 +187,15 @@ impl Batch {
                 )
             }
             TaskMessage::Update(event) => {
+                // TS `AgentDelegation` middleware: a delegate's own events surface as the parent's.
+                if let Some(delegated) = event.delegated()
+                    && !self.agent.model().stateful()
+                {
+                    return Ok(Some((
+                        ToolExecutorEvent::Delegated(delegated.clone()),
+                        Reply::None,
+                    )));
+                }
                 let mut event =
                     ToolStreamUpdateEvent::new(self.agent.clone(), event, self.invocation_state.clone());
                 self.hooks.invoke::<ToolStreamUpdateEvent>(&mut event).await?;

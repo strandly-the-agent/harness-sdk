@@ -220,5 +220,5 @@ async fn the_strategy_registers_an_after_model_call_hook_at_initialize() {
     assert!(!agent.hooks().is_empty());
     let mut disabled = Agent::builder().model(model).no_retry_strategy().build().unwrap();
     disabled.initialize().await.unwrap();
-    assert!(disabled.hooks().is_empty());
+    assert!(!disabled.hooks().has_callbacks::<AfterModelCallEvent<'static>>());
 }

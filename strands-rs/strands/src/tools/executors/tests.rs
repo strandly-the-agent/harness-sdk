@@ -116,6 +116,7 @@ fn label(event: &ToolExecutorEvent) -> String {
         }
         ToolExecutorEvent::AfterToolCall(event) => format!("after:{}", event.tool_use().tool_use_id()),
         ToolExecutorEvent::ToolResult(event) => format!("result:{}", event.result().tool_use_id()),
+        ToolExecutorEvent::Delegated(_) => "delegated".to_owned(),
     }
 }
 
