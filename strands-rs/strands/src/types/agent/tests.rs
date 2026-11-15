@@ -206,3 +206,175 @@ mod agent_result_to_json {
         assert!(json.get("structuredOutput").is_none());
     }
 }
+
+/// Ported from strands-ts/src/types/__tests__/agent.test.ts (`toString`, `contextSize`,
+/// `projectedContextSize`, the remaining `toJSON` cases; `checkpoint` is out of scope).
+mod agent_result {
+    use super::*;
+    use crate::models::streaming::{ModelMetadataEvent, Usage};
+    use crate::telemetry::AgentMetrics;
+    use crate::telemetry::meter::Meter;
+    use crate::types::citations::{CitationGeneratedContent, CitationsBlock};
+    use crate::types::media::ImageBlock;
+    use crate::types::messages::{ReasoningBlock, Role, TextBlock, ToolUseBlock};
+
+    fn with_content(content: Vec<ContentBlock>) -> AgentResult {
+        AgentResult::new(
+            StopReason::EndTurn,
+            Message::new(Role::Assistant, content),
+            InvocationState::new(),
+        )
+    }
+
+    fn text(text: &str) -> ContentBlock {
+        TextBlock::new(text).into()
+    }
+
+    fn metrics_with_usage(usage: Usage) -> AgentMetrics {
+        let mut meter = Meter::default();
+        meter.start_new_invocation();
+        meter.start_cycle();
+        meter.update_cycle(Some(&ModelMetadataEvent::new().with_usage(usage)));
+        meter.metrics().clone()
+    }
+
+    #[test]
+    fn to_string_of_empty_content_is_empty() {
+        assert_eq!(with_content(vec![]).to_string(), "");
+    }
+
+    #[test]
+    fn to_string_joins_text_blocks_with_newlines() {
+        assert_eq!(
+            with_content(vec![text("Hello, world!")]).to_string(),
+            "Hello, world!"
+        );
+        assert_eq!(
+            with_content(vec![text("First"), text("Second"), text("Third")]).to_string(),
+            "First\nSecond\nThird"
+        );
+    }
+
+    #[test]
+    fn to_string_prefixes_and_indents_reasoning_and_skips_empty_reasoning() {
+        let reasoning: ContentBlock = ReasoningBlock::new().with_text("Line 1\nLine 2").into();
+        assert_eq!(
+            with_content(vec![reasoning]).to_string(),
+            "💭 Reasoning:\n   Line 1\n   Line 2"
+        );
+        let signed: ContentBlock = ReasoningBlock::new().with_signature("sig").into();
+        assert_eq!(with_content(vec![signed]).to_string(), "");
+        let mixed = vec![
+            text("Answer"),
+            ReasoningBlock::new().with_text("why").into(),
+            text("More"),
+        ];
+        assert_eq!(
+            with_content(mixed).to_string(),
+            "Answer\n💭 Reasoning:\n   why\nMore"
+        );
+    }
+
+    #[test]
+    fn to_string_skips_non_text_blocks() {
+        let tool_use: ContentBlock = ToolUseBlock::new("t", "id", json!({})).into();
+        let image: ContentBlock = ImageBlock::new(crate::mime::ImageFormat::Png, vec![1, 2, 3]).into();
+        assert_eq!(with_content(vec![tool_use.clone(), image]).to_string(), "");
+        assert_eq!(
+            with_content(vec![tool_use, text("Visible")]).to_string(),
+            "Visible"
+        );
+    }
+
+    #[test]
+    fn to_string_concatenates_citation_content() {
+        let citations = CitationsBlock::new(
+            vec![],
+            vec![
+                CitationGeneratedContent::new("Cited one."),
+                CitationGeneratedContent::new("Cited two."),
+            ],
+        );
+        assert_eq!(
+            with_content(vec![citations.into(), text("Tail")]).to_string(),
+            "Cited one.\nCited two.\nTail"
+        );
+    }
+
+    #[test]
+    fn to_string_prefers_interrupts_then_structured_output() {
+        let interrupt = Interrupt::new("i-1", "confirm").with_reason(json!("ok?"));
+        let result = with_content(vec![text("ignored")]).with_interrupts(vec![interrupt.clone()]);
+        assert_eq!(
+            result.to_string(),
+            to_js_string(std::slice::from_ref(&interrupt)).unwrap()
+        );
+        assert_eq!(
+            with_content(vec![text("Hello")])
+                .with_interrupts(vec![])
+                .to_string(),
+            "Hello"
+        );
+        let structured =
+            with_content(vec![text("ignored")]).with_structured_output(json!({"a": 1, "b": [2]}));
+        assert_eq!(structured.to_string(), r#"{"a":1,"b":[2]}"#);
+        let both = structured.with_interrupts(vec![interrupt.clone()]);
+        assert_eq!(both.to_string(), to_js_string(&[interrupt]).unwrap());
+        assert_eq!(
+            format!("Result: {}", with_content(vec![text("Hi")])),
+            "Result: Hi"
+        );
+    }
+
+    #[test]
+    fn context_sizes_come_from_the_metrics() {
+        let usage = Usage::new(100, 20, 120);
+        let result = with_content(vec![]).with_telemetry(metrics_with_usage(usage), vec![]);
+        assert_eq!(result.context_size(), Some(100));
+        assert_eq!(result.projected_context_size(), Some(120));
+        let empty = with_content(vec![]);
+        assert_eq!(
+            (empty.context_size(), empty.projected_context_size()),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn to_json_excludes_traces_metrics_and_interrupts_but_keeps_them_readable() {
+        let result = with_content(vec![text("Hello")])
+            .with_telemetry(metrics_with_usage(Usage::new(1, 2, 3)), vec![])
+            .with_interrupts(vec![Interrupt::new("i-1", "confirm")]);
+        assert_eq!(
+            serde_json::to_value(&result).unwrap(),
+            json!({"type": "agentResult", "stopReason": "endTurn", "lastMessage": serde_json::to_value(result.last_message()).unwrap()})
+        );
+        assert_eq!(result.metrics().cycle_count(), 1);
+        assert_eq!(result.interrupts().len(), 1);
+    }
+
+    #[test]
+    fn structured_output_deserializes_into_the_requested_type() {
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        struct Weather {
+            city: String,
+        }
+        let result = with_content(vec![]).with_structured_output(json!({"city": "Lisbon"}));
+        assert_eq!(
+            result.structured_output::<Weather>().unwrap(),
+            Weather {
+                city: "Lisbon".into()
+            }
+        );
+        assert_eq!(
+            result.structured_output::<u32>().unwrap_err().name(),
+            "StructuredOutputError"
+        );
+        assert_eq!(
+            with_content(vec![])
+                .structured_output::<Weather>()
+                .unwrap_err()
+                .name(),
+            "StructuredOutputError"
+        );
+    }
+}

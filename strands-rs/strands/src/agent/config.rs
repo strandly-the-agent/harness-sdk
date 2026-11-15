@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::error::{DefaultNotConfiguredError, Error, Result};
-use crate::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest};
+use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, Model, ModelRequest};
 use crate::models::streaming::ModelStreamEvent;
 use crate::tools::{ToolExecutor, ToolSource};
 use crate::types::json::JsonObject;
@@ -80,12 +80,22 @@ pub(crate) struct DefaultModel {
     config: Mutex<BaseModelConfig>,
 }
 
+impl DefaultModel {
+    fn unavailable() -> Error {
+        DefaultNotConfiguredError::new(format!(
+            "no model configured: the default model is a BedrockModel, {BEDROCK_UNAVAILABLE}"
+        ))
+        .into()
+    }
+}
+
 impl Model for DefaultModel {
     fn stream(&self, _request: ModelRequest) -> BoxStream<'static, Result<ModelStreamEvent>> {
-        let error = DefaultNotConfiguredError::new(format!(
-            "no model configured: the default model is a BedrockModel, {BEDROCK_UNAVAILABLE}"
-        ));
-        Box::pin(futures::stream::once(async move { Err(error.into()) }))
+        Box::pin(futures::stream::once(async { Err(Self::unavailable()) }))
+    }
+
+    fn stream_aggregated(&self, _request: ModelRequest) -> BoxStream<'static, Result<AggregatedEvent>> {
+        Box::pin(futures::stream::once(async { Err(Self::unavailable()) }))
     }
 
     fn get_config(&self) -> BaseModelConfig {

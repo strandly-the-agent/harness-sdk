@@ -70,7 +70,8 @@ impl Agent {
             Some(source) => source.into_model()?,
             None => Arc::new(DefaultModel::default()),
         };
-        let mut local = LocalAgent::new(model);
+        let mut agent = Self::with_model(model);
+        let local = &mut agent.local;
         local.set_aux_model(config.aux_model.map(ModelSource::into_model).transpose()?);
         if let Some(id) = config.id {
             local.set_id(id);
@@ -85,12 +86,18 @@ impl Agent {
         local.set_model_state(StateStore::from_map(config.model_state));
         let tools = config.tools.into_iter().flat_map(ToolSource::into_tools);
         local.tool_registry_mut().add_all(tools)?;
-        Ok(Self {
-            local,
-            tool_executor: config.tool_executor.unwrap_or_default(),
+        agent.tool_executor = config.tool_executor.unwrap_or_default();
+        Ok(agent)
+    }
+
+    /// An agent over `model` with every other key at its default.
+    pub(crate) fn with_model(model: Arc<dyn Model>) -> Self {
+        Self {
+            local: LocalAgent::new(model),
+            tool_executor: ToolExecutor::default(),
             telemetry: LocalTelemetry::default(),
             initialized: false,
-        })
+        }
     }
 
     /// Runs one-time setup and fires `InitializedEvent`; idempotent. The first

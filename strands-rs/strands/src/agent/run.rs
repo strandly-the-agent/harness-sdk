@@ -78,20 +78,15 @@ impl Agent {
             .await;
         let (input, cancel) = before.into_parts();
 
-        if let Some(cancel) = cancel {
-            // TS appends the denial without firing `MessageAddedEvent` hooks and returns without an
-            // `AgentResultEvent`; the stream still ends with the result record.
-            let message = assistant_text(cancel.message().unwrap_or("invocation denied by hook"));
-            self.local.messages_mut().push(message.clone());
-            let added = MessageAddedEvent::new(&mut self.local, message.clone(), state.clone());
-            out.emit(AgentStreamEvent::MessageAdded((&added).into())).await;
-            self.after_invocation(&hooks, &state, out).await?;
-            let result = self.result(StopReason::EndTurn, message, &state);
-            out.emit(AgentStreamEvent::AgentResult(result)).await;
-            return Ok(());
-        }
-
-        let outcome = self.run_loop(input, &state, &hooks, out).await;
+        let outcome = match cancel {
+            Some(cancel) => {
+                // TS skips `MessageAddedEvent` and `AgentResultEvent` hooks here (see ts-bugs).
+                let message = assistant_text(cancel.message().unwrap_or("invocation denied by hook"));
+                self.append_message(message.clone(), &state, &hooks, out).await?;
+                Ok(self.result(StopReason::EndTurn, message, &state))
+            }
+            None => self.run_loop(input, &state, &hooks, out).await,
+        };
         self.after_invocation(&hooks, &state, out).await?;
         let result = outcome?;
 

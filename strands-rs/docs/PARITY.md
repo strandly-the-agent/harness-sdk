@@ -30,7 +30,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/agent/__tests__/agent.concurrent.test.ts` | | 0/22 | |
 | `strands-ts/src/agent/__tests__/agent.context-manager.test.ts` | | 0/16 | |
 | `strands-ts/src/agent/__tests__/agent.continuation.test.ts` | | 0/6 | |
-| `strands-ts/src/agent/__tests__/agent.hook.test.ts` | | 0/70 | |
+| `strands-ts/src/agent/__tests__/agent.hook.test.ts` | `strands::agent::run::tests::hooks`, `strands::conformance_tests::the_agent_loop_reproduces_the_ts_tool_run` | 32/70 | invocation lifecycle, before-invocation messages (the caller-owned-array case holds by ownership), runtime registration, multi-turn, tool hooks, `ModelStreamUpdateEvent`, `MessageAddedEvent`, `AfterModelCallEvent` retry, `BeforeToolsEvent` cancel, invocation and model-call cancel and `AfterToolCallEvent` result replacement are ported. Per-tool retry, `BeforeToolCallEvent` cancel, `selectedTool` and `toolUse` mutation (16) are covered at the executor (`strands::tools::executors::tests`); `endTurn` (11), `resume` (7) and the `AfterToolsEvent` result case (1) land with item 6; the plugin cases (3) with Phase 4 |
 | `strands-ts/src/agent/__tests__/agent.interrupt.test.ts` | | 0/32 | |
 | `strands-ts/src/agent/__tests__/agent.invocation-context.test.ts` | | 0/16 | |
 | `strands-ts/src/agent/__tests__/agent.invocation-state.test.ts` | | 0/11 | |
@@ -38,7 +38,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/agent/__tests__/agent.model-routing.test.ts` | | 0/10 | |
 | `strands-ts/src/agent/__tests__/agent.stateful-model.test.ts` | | 0/12 | |
 | `strands-ts/src/agent/__tests__/agent.storage.test.ts` | | 0/7 | |
-| `strands-ts/src/agent/__tests__/agent.test.ts` | | 0/147 | |
+| `strands-ts/src/agent/__tests__/agent.test.ts` | `strands::agent::run::tests`, `strands::conformance_tests::the_agent_loop_reproduces_the_ts_tool_run` | 52/147 | stream, invoke, traces, metrics, API consistency, messages, nested tools, system prompt, model property, tracking ids, multimodal input, aux model, redaction, token estimate, tool-name and empty-message normalization are ported; the two `AsyncGenerator` type cases are compile-time. Not yet: structured output (31), limits (14) and the remaining cycle-duration and estimate cases (8) with item 6; printer (4) with item 7; the consumer-break and cancel cases (2) with Phase 4; hook-error cleanup (5) can't happen (hooks return `()`); concurrency guards (3) are compile errors (`&mut self`); string/`BedrockModel` model ids (8) with Phase 5; `ModelRouter` (1) with Phase 7; `sessionId`/`agentMetadata`/`shutdown` flush (10) with Phase 6; MCP `toolsChanged` (1) with Phase 9; `ContentBlockData`/`MessageData`/`SystemPromptData` inputs (6) don't apply to typed Rust input; injected blocks (1) are provider formatting (Phase 5); all-block-types input (1) is not ported |
 | `strands-ts/src/agent/__tests__/agent.tracer.test.node.ts` | | 0/47 | |
 | `strands-ts/src/agent/__tests__/invocation-context.test.ts` | | 0/2 | |
 | `strands-ts/src/agent/__tests__/printer.test.ts` | | 0/9 | |
@@ -134,7 +134,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/tools/__tests__/tool.test.ts` | `strands::tools::tool::tests`, `strands::tools::function_tool::tests` | 22/46 | async generator callbacks (TS-only mechanism; streaming tools implement `Tool`), deep-copy and circular-reference cases (owned acyclic values), non-`Error` throws and stack traces, `instanceof` and interface-shape cases (no Rust form); remaining `isValidToolName` table rows are covered by one table test |
 | `strands-ts/src/tools/__tests__/zod-tool.test.ts` | `strands::tools::function_tool::tests::typed`, `strands::tools::schema::tests` | 7/32 | mapped to `FunctionTool::typed`; the `#[tool]` macro cases land with `strands-macros`; Zod-specific parse cases (Zod error text, `z.void`) have no Rust form |
 | `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | `strands::tools::executors::tests::cancel_signal` | 2/3 | `keeps middleware and tools on the supplied execution signal` (1) needs middleware (Phase 4); the tool half is covered by `tools_see_the_hooked_input_and_the_execution_signal`. The stream-consumer `event.retry = true` is ported as an `AfterToolCallEvent` hook, since stream records are read-only (section 8.6) |
-| `strands-ts/src/types/__tests__/agent.test.ts` | `strands::types::agent::tests::agent_result_to_json` | 2/30 | the other 24 `AgentResult` cases (`toString`, context sizes, and the two `toJSON` cases with traces and metrics) land with `AgentResult` in Phase 3 item 5; the 4 `checkpoint` cases are out of scope (checkpointing is out of v0.1) |
+| `strands-ts/src/types/__tests__/agent.test.ts` | `strands::types::agent::tests::{agent_result_to_json, agent_result}` | 26/30 | the 4 `checkpoint` cases are out of scope (checkpointing is out of v0.1) |
 | `strands-ts/src/types/__tests__/citations.test.ts` | `strands::types::citations::tests` | 6/6 | |
 | `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | TS-only: `deepCopy`/`deepCopyWithValidation` clone JS values and reject functions, symbols, `undefined` and cycles, none of which a Rust `JsonValue` can hold (`clone()` is the deep copy) |
 | `strands-ts/src/types/__tests__/media.test.ts` | `strands::types::media::tests` | 51/51 | |

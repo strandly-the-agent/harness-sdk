@@ -21,6 +21,27 @@ mod hook_recorder;
 
 pub use hook_recorder::HookRecorder;
 
+/// An agent over `model` with every other config key at its default, for tests.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use strands::testing::{MockMessageModel, test_agent};
+/// use strands::types::messages::TextBlock;
+///
+/// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+/// let model = Arc::new(MockMessageModel::new());
+/// model.add_turn(vec![TextBlock::new("Hi").into()]);
+/// let mut agent = test_agent(model.clone());
+/// agent.invoke("Hello").await?;
+/// assert_eq!(model.requests().len(), 1);
+/// # Ok::<(), strands::Error>(())
+/// # }).unwrap();
+/// ```
+pub fn test_agent(model: Arc<dyn Model>) -> crate::Agent {
+    crate::Agent::with_model(model)
+}
+
 type EventGenerator = Arc<dyn Fn() -> BoxStream<'static, Result<ModelStreamEvent>> + Send + Sync>;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

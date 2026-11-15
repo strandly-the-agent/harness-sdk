@@ -31,7 +31,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 ## [ ] Phase 3: agent loop, hooks and tools
 
-- [ ] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult`
+- [x] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult` (deferred config keys in P-67)
 - [x] Serializable stream event records (fixture-checked)
 - [x] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
 - [x] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles (landed with the hook events, P-50; the registry view joins `ToolAgent` with tools)
