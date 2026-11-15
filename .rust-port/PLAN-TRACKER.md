@@ -29,7 +29,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] `strands::testing` mock model, hook recorder, test agent (Phase 2: `MockMessageModel`, `TestModelProvider`; `HookRecorder` and `test_agent` come in Phase 3)
 - [x] Phase review gate and fixes
 
-## [ ] Phase 3: agent loop, hooks and tools
+## [x] Phase 3: agent loop, hooks and tools
 
 - [x] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult` (deferred config keys in P-67)
 - [x] Serializable stream event records (fixture-checked)
@@ -40,7 +40,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Concurrent and sequential executors
 - [x] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
 - [x] Direct tool calls, `as_tool`, agents as tools, printer
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [ ] Phase 4: interrupts, cancellation, lifecycle, plugins and middleware
 
