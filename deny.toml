@@ -1,0 +1,82 @@
+[graph]
+all-features = true
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "aarch64-unknown-linux-musl",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+  "aarch64-pc-windows-msvc",
+]
+
+[advisories]
+yanked = "deny"
+ignore = []
+
+[licenses]
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "BlueOak-1.0.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "all"
+# Duplicates that come from transitive dependencies only. Every direct dependency resolves to one
+# version; remove an entry as soon as its dependents converge (cargo deny warns about unused skips).
+skip = [
+  # The RustCrypto 0.10 to 0.11 transition: aws-config (sha1), the rmcp OAuth client (sha2) and cedar-policy
+  # still use the 0.10 hashes, while aws-sigv4, rmcp and monty use 0.11.
+  { crate = "block-buffer@0.10", reason = "RustCrypto 0.10 family (aws-config, oauth2, cedar-policy)" },
+  { crate = "cpufeatures@0.2", reason = "RustCrypto 0.10 family and const-hex (opentelemetry-proto)" },
+  { crate = "crypto-common@0.1", reason = "RustCrypto 0.10 family (aws-config, oauth2, cedar-policy)" },
+  { crate = "digest@0.10", reason = "RustCrypto 0.10 family (aws-config, oauth2, cedar-policy)" },
+  { crate = "sha1@0.10", reason = "aws-config sso credentials" },
+  { crate = "sha2@0.10", reason = "oauth2, used by the rmcp auth client" },
+  # rand and getrandom generations: oauth2 and build-time phf generators use rand 0.8, opentelemetry_sdk
+  # uses rand 0.9, jsonschema and monty use getrandom 0.3, uuid and tempfile use getrandom 0.4.
+  { crate = "rand@0.8", reason = "oauth2 (rmcp auth) and phf_generator 0.11 (monty build)" },
+  { crate = "rand_chacha@0.3", reason = "rand 0.8" },
+  { crate = "rand_core@0.6", reason = "rand 0.8" },
+  { crate = "getrandom@0.2", reason = "rand_core 0.6 and oauth2" },
+  { crate = "getrandom@0.3", reason = "jsonschema, ahash and monty" },
+  # Older majors kept by single dependencies.
+  { crate = "base64@0.22", reason = "oauth2, opentelemetry-proto and wiremock; reqwest and rmcp use 0.23" },
+  { crate = "syn@2", reason = "proc macros not yet on syn 3 (serde helpers, tracing, prost, monty and others)" },
+  { crate = "thiserror@1", reason = "oauth2, used by the rmcp auth client" },
+  { crate = "thiserror-impl@1", reason = "thiserror 1" },
+  { crate = "nom@7", reason = "eventsource-stream; iso8601 (cedar-policy-mcp-schema-generator) uses nom 8" },
+  { crate = "unicode-width@0.1", reason = "miette, used by cedar-policy-core" },
+  { crate = "arrayvec@0.5", reason = "pretty, used by cedar-policy-formatter" },
+  { crate = "string_cache@0.8", reason = "lalrpop, used to build cedar-policy-core; htmd uses 0.9" },
+  { crate = "itertools@0.14", reason = "monty and lalrpop; cedar-policy uses 0.15" },
+  # monty (programmatic tool calling in strands-harness) pins older versions of these.
+  { crate = "hashbrown@0.16", reason = "monty" },
+  { crate = "strum@0.27", reason = "monty" },
+  { crate = "strum_macros@0.27", reason = "strum 0.27 (monty)" },
+  { crate = "phf@0.11", reason = "unicode_names2 (monty)" },
+  { crate = "phf@0.12", reason = "strum 0.27 (monty)" },
+  { crate = "phf_codegen@0.11", reason = "unicode_names2 (monty)" },
+  { crate = "phf_generator@0.11", reason = "unicode_names2 (monty)" },
+  { crate = "phf_generator@0.12", reason = "strum 0.27 (monty)" },
+  { crate = "phf_macros@0.12", reason = "strum 0.27 (monty)" },
+  { crate = "phf_shared@0.11", reason = "unicode_names2 (monty)" },
+  { crate = "phf_shared@0.12", reason = "strum 0.27 (monty)" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -1,0 +1,33 @@
+[package]
+name = "strands-harness"
+description = "Strands harness: a batteries-included agent in one call, built on Strands Agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["agents", "ai", "llm", "harness"]
+categories = ["asynchronous"]
+publish = false
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["bedrock"]
+bedrock = ["strands/bedrock"]
+anthropic = ["strands/anthropic"]
+openai = ["strands/openai"]
+
+[dependencies]
+strands = { workspace = true, features = ["mcp", "otel"] }
+monty.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros", "process", "fs", "io-util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+tempfile.workspace = true

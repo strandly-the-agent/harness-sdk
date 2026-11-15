@@ -1,0 +1,121 @@
+[workspace]
+resolver = "3"
+members = ["strands-rs/strands", "strands-rs/strands-macros", "harness-rs/strands-harness"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+repository = "https://github.com/strands-agents/harness-sdk"
+authors = ["AWS <opensource@amazon.com>"]
+
+[workspace.dependencies]
+strands = { path = "strands-rs/strands", version = "=0.1.0", default-features = false }
+strands-macros = { path = "strands-rs/strands-macros", version = "=0.1.0" }
+strands-harness = { path = "harness-rs/strands-harness", version = "=0.1.0", default-features = false }
+
+# Async
+tokio = { version = "1.54", default-features = false }
+futures = "0.3.34"
+async-stream = "0.3.6"
+async-trait = "0.1.92"
+tokio-util = { version = "0.7.20", default-features = false }
+
+# Data. `preserve_order` keeps JSON key order, which is part of the wire format and of prompt caching.
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+schemars = { version = "1.2", features = ["preserve_order"] }
+jsonschema = { version = "0.61", default-features = false }
+http = "1.5"
+uuid = { version = "1.29", features = ["v7"] }
+base64 = "0.23"
+jiff = "0.2.44"
+indexmap = "2.14"
+
+# Errors and builders
+thiserror = "2.0.21"
+bon = "3.10"
+
+# Bedrock and Bedrock Mantle. Without default features the AWS crates use the hyper 1 / rustls 0.23
+# client only; their defaults also pull the legacy hyper 0.14 / rustls 0.21 stack.
+aws-config = { version = "1.13", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+  "credentials-process",
+  "sso",
+  "behavior-version-latest",
+] }
+aws-sdk-bedrockruntime = { version = "1.155", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+] }
+aws-sigv4 = { version = "1.6", default-features = false, features = ["sign-http", "http1"] }
+
+# HTTP providers and tools. reqwest stays on the major version that rmcp and opentelemetry-otlp use.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream"] }
+eventsource-stream = "0.2.3"
+htmd = "0.5.6"
+
+# MCP (client side only)
+rmcp = { version = "3.10", default-features = false, features = [
+  "client",
+  "transport-child-process",
+  "transport-streamable-http-client-reqwest",
+  "auth",
+  "elicitation",
+] }
+
+# Telemetry. The opentelemetry crates and tracing-opentelemetry move in lockstep; bump them together.
+tracing = "0.1.44"
+opentelemetry = "0.33"
+opentelemetry_sdk = { version = "0.33", features = ["trace", "metrics"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = [
+  "http-json",
+  "reqwest-client",
+  "trace",
+  "metrics",
+] }
+tracing-opentelemetry = "0.34"
+
+# Policy and scripting. cedar-policy-mcp-schema-generator pins cedar-policy-core exactly, so cedar-policy
+# is pinned to the release built on the same core; bump the two together.
+cedar-policy = "=4.14.0"
+cedar-policy-mcp-schema-generator = { version = "=0.7.0", default-features = false }
+mcp-tools-sdk = "0.5"
+# monty 1.6 requires Rust 1.98; stay on 1.5 while the MSRV is 1.96.
+monty = "~1.5"
+
+# Macros
+syn = { version = "3", features = ["full"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+darling = "0.24"
+
+# Dev
+trybuild = "1.0.122"
+tempfile = "3.27"
+wiremock = "0.6.5"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+exit = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+allow_attributes_without_reason = "deny"
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_invalid_type = "deny"
+needless_pass_by_value = "deny"
+redundant_clone = "deny"
