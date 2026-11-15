@@ -3,9 +3,9 @@
 ## Where we are
 
 - Status: in progress (fresh start on 2026-11-15)
-- Current phase: Phase 0
-- Current item: workspace skeleton
-- Phase base commits: Phase 0 = 7296caba7
+- Current phase: Phase 0 review gate running; Phase 1 implementation started in parallel
+- Current item: Phase 1 messages and content blocks
+- Phase base commits: Phase 0 = 7296caba7; Phase 1 = c157fab7e (Phase 0 review diff is 7296caba7..c157fab7e)
 
 ## Credentials
 
