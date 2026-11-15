@@ -12,7 +12,11 @@
 
 use std::sync::Arc;
 
-use strands::{ToolContext, ToolError, ToolSource, tool, tool_list, tools};
+use strands::hooks::{
+    AfterToolCallEvent, BeforeInvocationEvent, BeforeToolCallEvent, Hook, HookOptions, HookOrder,
+    HookRegistry,
+};
+use strands::{ToolContext, ToolError, ToolSource, async_trait, tool, tool_list, tools};
 
 /// Get the current weather for a city.
 ///
@@ -101,4 +105,43 @@ pub fn all_tools(inventory: &Arc<Inventory>) -> Vec<ToolSource> {
     let mut tools = tool_list![GetWeather, DeleteFile, CountWords];
     tools.extend(inventory.tools());
     tools
+}
+
+/// Counts invocations in the agent's app state.
+pub struct InvocationCounter;
+
+#[async_trait]
+impl<'x> Hook<BeforeInvocationEvent<'x>> for InvocationCounter {
+    async fn handle(&self, event: &mut BeforeInvocationEvent<'x>) {
+        let state = event.agent().app_state();
+        let count: u64 = state.get("invocations").ok().flatten().unwrap_or(0);
+        let _ = state.set("invocations", count.saturating_add(1));
+    }
+}
+
+/// Registers this crate's hooks with all three registration forms.
+pub fn register_hooks(registry: &HookRegistry) {
+    registry.add_hook(|event: &mut BeforeToolCallEvent| {
+        if event.tool_use().name != "delete_file" {
+            return;
+        }
+        if event.interrupt("approve").is_ok_and(|answer| answer != "yes") {
+            event.set_cancel(Some("not approved".into()));
+        }
+    });
+    registry.add_async_hook_with::<AfterToolCallEvent>(
+        HookOptions {
+            order: HookOrder::SDK_FIRST - 1,
+        },
+        |event| {
+            Box::pin(async move {
+                tokio::task::yield_now().await;
+                if event.error().is_some() {
+                    event.set_retry(true);
+                }
+            })
+        },
+    );
+    let cleanup = registry.add_hook_impl(InvocationCounter);
+    cleanup.remove();
 }
