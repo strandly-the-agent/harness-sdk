@@ -14,7 +14,7 @@ use strands::types::media::{AudioFormat, DocumentFormat, ImageFormat, ImageSourc
 use strands::types::messages::{
     ContentBlock, Message, ReasoningBlock, StopReason, SystemPrompt, ToolResultContent,
 };
-use strands::types::tools::{ToolChoice, ToolResultStatus};
+use strands::types::tools::{ToolChoice, ToolResultStatus, ToolSpec};
 
 use common::{COVERED, DEFERRED, assert_compact, assert_pretty_bytes, assert_pretty_cases, cases, parse};
 
@@ -89,7 +89,11 @@ fn saved_data_keeps_unknown_blocks_formats_locations_and_statuses() {
     let path = "types/saved_data_round_trip.json";
     for (name, case) in cases(path) {
         let message: Message = parse(&case["input"]);
-        assert_eq!(serde_json::to_value(&message).unwrap(), case["output"], "{name}");
+        assert_eq!(
+            strands::types::json::to_string(&message).unwrap(),
+            serde_json::to_string(&case["output"]).unwrap(),
+            "{name}"
+        );
     }
     let all = cases(path);
     let unknown_block: Message = parse(&all["unknownContentBlock"]["input"]);
@@ -182,6 +186,11 @@ fn strict_parsers_fail_with_the_ts_texts() {
 #[test]
 fn system_prompts_round_trip() {
     assert_pretty_cases::<SystemPrompt>("types/system_prompts.json");
+}
+
+#[test]
+fn tool_specs_round_trip() {
+    assert_pretty_cases::<ToolSpec>("schemas/tool_specs.json");
 }
 
 #[test]

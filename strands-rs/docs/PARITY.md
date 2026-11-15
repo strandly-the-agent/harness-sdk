@@ -11,8 +11,8 @@ Each row is one TypeScript spec file at commit `7296caba7`, the TypeScript revis
 | `__tests__/default-slot.test.ts` | - | 0/4 | - |
 | `__tests__/errors.test.ts` | `error::tests` | 20/29 | `isFetchNetworkError` (3 cases) and `normalizeError` (6 cases): TypeScript-only mechanism, they classify untyped JavaScript values and are not exported |
 | `__tests__/index.test.ts` | - | 0/9 | - |
-| `__tests__/interrupt.test.ts` | `interrupt::tests` | 7/26 | - |
-| `__tests__/mime.test.ts` | `mime::tests` | 6/6 | - |
+| `__tests__/interrupt.test.ts` | `interrupt::tests` | 7/26 | `InterruptError` `creates catchable error with single interrupt` and `creates error with multiple interrupts`: TypeScript-only mechanism, interrupts are not errors |
+| `__tests__/mime.test.ts` | `mime::tests` | 52/52 | - |
 | `__tests__/queue.test.ts` | - | 0/10 | - |
 | `__tests__/state-store.test.ts` | - | 0/49 | - |
 
@@ -24,7 +24,7 @@ Each row is one TypeScript spec file at commit `7296caba7`, the TypeScript revis
 | `types/__tests__/citations.test.ts` | `types::citations::tests` | 5/6 | `creates block with correct type discriminator`: TypeScript-only mechanism, the `type` discriminator is a TypeScript runtime field |
 | `types/__tests__/json.test.ts` | - | 0/44 | all 44 cases: TypeScript-only mechanism, `deepCopy` guards JavaScript values that JSON can't hold; `JsonValue::clone` is already a deep copy |
 | `types/__tests__/media.test.ts` | `types::media::tests` | 51/51 | - |
-| `types/__tests__/messages.test.ts` | `types::messages::tests` | 86/86 | - |
+| `types/__tests__/messages.test.ts` | `types::messages::tests` | 105/105 | - |
 | `types/__tests__/validation.test.ts` | `types::validation::tests` | 4/5 | `when value is null throws error with field name`: TypeScript-only mechanism, Rust has one `None` for TypeScript `null` and `undefined` |
 
 ## Models
