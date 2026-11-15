@@ -1,0 +1,1 @@
+CI workflow files for the Rust workspace. Move every `*.yml` here into `.github/workflows/` (`ci.yml` replaces the existing one; it adds the `strands-rs` and `harness-rs` areas to the pinned `ci.yml`). They live here because the token that persists this branch cannot write `.github/workflows/`.

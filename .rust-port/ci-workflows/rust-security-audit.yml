@@ -1,0 +1,29 @@
+name: "Rust: Security Audit"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+jobs:
+  security-audit:
+    name: Cargo Deny
+    permissions:
+      contents: read
+    runs-on: strands-agents_ubuntu-latest_4-core
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # Blocking: advisories, licenses, bans and sources per the root deny.toml.
+      - name: Run cargo deny
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check
