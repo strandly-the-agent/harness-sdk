@@ -12,7 +12,7 @@ Every TS spec file at the pinned TS baseline maps to Rust tests here. Each Rust 
 | `strands-ts/src/__tests__/errors.test.ts` | | 0/29 | |
 | `strands-ts/src/__tests__/index.test.ts` | | 0/9 | |
 | `strands-ts/src/__tests__/interrupt.test.ts` | | 0/26 | |
-| `strands-ts/src/__tests__/mime.test.ts` | | 0/6 | |
+| `strands-ts/src/__tests__/mime.test.ts` | `strands::mime::tests` | 6/6 | |
 | `strands-ts/src/__tests__/queue.test.ts` | | 0/10 | |
 | `strands-ts/src/__tests__/state-store.test.ts` | | 0/49 | |
 | `strands-ts/src/agent/__tests__/agent-as-tool.interrupt.test.ts` | | 0/15 | |
@@ -132,10 +132,10 @@ Every TS spec file at the pinned TS baseline maps to Rust tests here. Each Rust 
 | `strands-ts/src/tools/__tests__/zod-tool.test.ts` | | 0/32 | |
 | `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | | 0/3 | |
 | `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | |
-| `strands-ts/src/types/__tests__/citations.test.ts` | | 0/6 | |
+| `strands-ts/src/types/__tests__/citations.test.ts` | `strands::types::citations::tests` | 6/6 | |
 | `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | |
-| `strands-ts/src/types/__tests__/media.test.ts` | | 0/51 | |
-| `strands-ts/src/types/__tests__/messages.test.ts` | | 0/86 | |
+| `strands-ts/src/types/__tests__/media.test.ts` | `strands::types::media::tests` | 51/51 | |
+| `strands-ts/src/types/__tests__/messages.test.ts` | `strands::types::messages::tests` | 69/86 | systemPromptFromData/systemPromptToData (16) land with `SystemPrompt`; `keeps an InjectedBlock passed inside message data an InjectedBlock` is TS-only (class instances inside plain data) |
 | `strands-ts/src/types/__tests__/validation.test.ts` | | 0/5 | |
 | `strands-ts/src/vended-interventions/cedar/__tests__/cedar.test.node.ts` | | 0/39 | |
 | `strands-ts/src/vended-interventions/hitl/__tests__/hitl.test.ts` | | 0/36 | |

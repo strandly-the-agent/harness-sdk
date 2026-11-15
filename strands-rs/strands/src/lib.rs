@@ -16,3 +16,18 @@
 //!
 //! A panicking tool becomes an error tool result, which relies on unwinding. Don't build with
 //! `panic = "abort"`.
+
+#[macro_use]
+mod open_enum;
+
+pub mod error;
+pub mod mime;
+pub mod models;
+pub mod types;
+
+#[cfg(test)]
+mod test_support;
+
+pub use error::{Error, Result};
+pub use types::json::JsonValue;
+pub use types::messages::{ContentBlock, Message};
