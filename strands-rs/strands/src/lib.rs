@@ -32,6 +32,7 @@ pub mod agent;
 pub mod cancel;
 pub mod error;
 pub mod interrupt;
+mod logging;
 pub mod mime;
 pub mod models;
 pub mod retry;
