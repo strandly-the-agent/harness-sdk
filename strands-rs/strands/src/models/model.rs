@@ -473,6 +473,12 @@ impl<M: Model> From<M> for ModelSource {
     }
 }
 
+impl<M: Model> From<Arc<M>> for ModelSource {
+    fn from(model: Arc<M>) -> Self {
+        Self::Model(model)
+    }
+}
+
 impl From<&str> for ModelSource {
     fn from(id: &str) -> Self {
         Self::Id(id.to_owned())

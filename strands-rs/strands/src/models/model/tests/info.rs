@@ -2,6 +2,8 @@
 //! strands-ts/src/models/__tests__/model.test.ts and server-side-summary-capability.test.ts, and
 //! the generic cache section cases of cache-portability.test.ts.
 
+use std::sync::Arc;
+
 use serde_json::json;
 
 use super::provider;
@@ -363,6 +365,16 @@ fn model_source_converts_from_models_and_ids() {
     };
     assert_eq!(model.model_id().as_deref(), Some("test-model"));
     assert_eq!(format!("{source:?}"), r#"Model(Some("test-model"))"#);
+}
+
+#[test]
+fn model_source_shares_a_model_arc() {
+    let shared = Arc::new(test_provider());
+    let ModelSource::Model(model) = ModelSource::from(Arc::clone(&shared)) else {
+        panic!("expected a model");
+    };
+    assert_eq!(model.model_id().as_deref(), Some("test-model"));
+    assert_eq!(Arc::strong_count(&shared), 2);
 }
 
 /// The cache sections each case of cache-portability.test.ts resolves to: `(tools, messages)`,
