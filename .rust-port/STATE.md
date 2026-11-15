@@ -4,7 +4,7 @@
 
 - Status: in progress (fresh start on 2026-11-15)
 - Current phase: Phase 3
-- Current item: Phase 3 item 4 (executors); items 1-3 and the macros are committed
+- Current item: Phase 3 item 5 (`Agent`, `AgentConfig`, loop); items 1-4, the macros and the serializable stream event records are committed. The executors yield live tool events plus a final `ToolBatch` (P-62); the loop converts events with `From<&live>` into `AgentStreamEvent` records (P-65) and fires one `InterruptEvent` per `ToolBatch::interrupts` entry (P-64)
 - Phase base commits: Phase 0 = 7296caba7; Phase 1 = d2cce53e2 (Phase 0 review diff 7296caba7..d2cce53e2; Phase 0 fixes landed in 95c800b0e..0e4b20905); Phase 2 = 0e4b20905 (Phase 1 review diff d2cce53e2..0e4b20905); Phase 3 = ef33e6992 (Phase 2 review diff 0e4b20905..ef33e6992)
 
 ## Credentials
