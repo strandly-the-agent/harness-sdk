@@ -499,6 +499,25 @@ async fn drops_the_resulting_empty_text_block_from_the_aggregated_message_but_st
 }
 
 #[tokio::test]
+async fn drops_a_text_block_holding_only_a_byte_order_mark_and_keeps_one_holding_a_next_line_character() {
+    let model = provider(json!([
+        start(),
+        block_start(),
+        text("\u{FEFF}"),
+        block_stop(),
+        block_start(),
+        text("\u{0085}"),
+        block_stop(),
+        stop("endTurn"),
+    ]));
+    let collected = collect(&model).await;
+    assert_eq!(
+        serde_json::to_value(&collected.result.unwrap().message.content).unwrap(),
+        json!([{ "text": "\u{0085}" }])
+    );
+}
+
+#[tokio::test]
 async fn yields_all_metadata_events_but_keeps_only_the_last_one_in_return_value() {
     let last =
         json!({ "type": "modelMetadataEvent", "usage": usage(20, 10), "metrics": { "latencyMs": 100 } });

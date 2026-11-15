@@ -38,6 +38,7 @@ pub mod models;
 pub mod retry;
 pub mod state_store;
 pub mod testing;
+mod text;
 pub mod types;
 
 pub use cancel::{CancelHandle, CancelOptions, CancelSignal};

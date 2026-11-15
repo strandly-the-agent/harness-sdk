@@ -6,6 +6,7 @@ use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
 use crate::models::model::{AggregatedEvent, Model, ModelRequest, SummarizeOptions};
 use crate::models::streaming::{ModelStreamEvent, Usage};
+use crate::text::js_trim;
 use crate::types::messages::{ContentBlock, Message, Role, StopReason, SummaryBlock, TextBlock};
 
 /// Opens every summarize instruction, whatever the caller's instructions say, because the request
@@ -149,7 +150,7 @@ fn reply_text(reply: Option<&Message>) -> String {
             _ => None,
         })
         .collect();
-    texts.join("\n").trim().to_owned()
+    js_trim(&texts.join("\n")).to_owned()
 }
 
 /// Returns `messages` with `instructions` closing the final user turn, or in a user turn after it.

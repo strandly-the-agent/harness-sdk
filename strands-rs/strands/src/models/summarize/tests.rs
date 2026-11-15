@@ -274,6 +274,24 @@ async fn returns_an_empty_summary_when_the_reply_holds_no_text() {
 }
 
 #[tokio::test]
+async fn returns_an_empty_summary_when_the_reply_holds_only_a_byte_order_mark() {
+    let model = recording_model(&["\u{FEFF}"], "endTurn", None, Some(usage(10, 1)));
+    assert_eq!(
+        model.summarize(hi(), SummarizeOptions::default()).await.unwrap(),
+        empty(usage(10, 1))
+    );
+}
+
+#[tokio::test]
+async fn keeps_a_next_line_character_in_the_summary_as_js_trim_does() {
+    let model = recording_model(&[" \u{0085}x\u{FEFF}"], "endTurn", None, Some(usage(10, 1)));
+    assert_eq!(
+        model.summarize(hi(), SummarizeOptions::default()).await.unwrap(),
+        summary("\u{0085}x", usage(10, 1))
+    );
+}
+
+#[tokio::test]
 async fn returns_its_usage() {
     let model = recording_model(&["the summary"], "endTurn", None, Some(usage(10, 5)));
     assert_eq!(

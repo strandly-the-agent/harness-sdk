@@ -8,6 +8,7 @@ use crate::error::{Error, MaxTokensError, ModelError, Result};
 use crate::models::streaming::{
     ContentBlockDelta, ContentBlockStart, ModelMetadataEventData, ModelStreamEvent, ReasoningContentDelta,
 };
+use crate::text::js_trim;
 use crate::types::citations::{Citation, CitationGeneratedContent, CitationsBlock};
 use crate::types::json::JsonValue;
 use crate::types::messages::{
@@ -242,7 +243,7 @@ impl Aggregator {
 }
 
 fn is_blank_text(block: &ContentBlock) -> bool {
-    matches!(block, ContentBlock::Text(text) if text.text.trim().is_empty())
+    matches!(block, ContentBlock::Text(text) if js_trim(&text.text).is_empty())
 }
 
 fn message_metadata(metadata: Option<&ModelMetadataEventData>) -> Option<MessageMetadata> {
