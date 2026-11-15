@@ -274,15 +274,6 @@ mod stateful {
             "{logged:?}"
         );
     }
-
-    #[test]
-    fn turns_server_side_summary_off() {
-        let summary = model(None)
-            .model_info()
-            .capabilities
-            .and_then(|c| c.server_side_summary);
-        assert_eq!(summary, Some(false));
-    }
 }
 
 mod update_config_get_config {

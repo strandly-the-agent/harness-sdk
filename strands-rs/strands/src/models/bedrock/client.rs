@@ -4,6 +4,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use aws_config::imds::region::ImdsRegionProvider;
 use aws_config::meta::region::ProvideRegion as _;
 use aws_config::profile::ProfileFileRegionProvider;
 use aws_config::{BehaviorVersion, SdkConfig};
@@ -44,11 +45,18 @@ impl ClientOptions {
     }
 }
 
-/// The region: explicit, then the SDK config's, then `AWS_REGION`/`AWS_DEFAULT_REGION`, then the
-/// shared config profile, then the Bedrock default (TS falls back to it on "Region is missing").
-pub(crate) async fn resolve_region<F>(options: &ClientOptions, env: &EnvLookup, profile_region: F) -> String
+/// The region, in the JS SDK's order (TS lets `@smithy/core` resolve it): explicit, then the
+/// SDK config's, then `AWS_REGION`, then the shared config profile, then the instance metadata
+/// service, then the Bedrock default (TS falls back to it on "Region is missing").
+pub(crate) async fn resolve_region<P, I>(
+    options: &ClientOptions,
+    env: &EnvLookup,
+    profile_region: P,
+    imds_region: I,
+) -> String
 where
-    F: Future<Output = Option<String>>,
+    P: Future<Output = Option<String>>,
+    I: Future<Output = Option<String>>,
 {
     let configured = options
         .region
@@ -61,12 +69,14 @@ where
                 .and_then(SdkConfig::region)
                 .map(ToString::to_string)
         })
-        .or_else(|| env("AWS_REGION").filter(|region| !region.is_empty()))
-        .or_else(|| env("AWS_DEFAULT_REGION").filter(|region| !region.is_empty()));
+        .or_else(|| env("AWS_REGION").filter(|region| !region.is_empty()));
     if let Some(region) = configured {
         return region;
     }
     if let Some(region) = profile_region.await {
+        return region;
+    }
+    if let Some(region) = imds_region.await {
         return region;
     }
     MODEL_DEFAULTS.bedrock.region.unwrap_or("us-west-2").to_owned()
@@ -114,13 +124,20 @@ pub(crate) fn client_config(
 }
 
 async fn build_transport(options: &ClientOptions, env: &EnvLookup) -> Arc<dyn Transport> {
-    let region = resolve_region(options, env, async {
+    let profile_region = async {
         ProfileFileRegionProvider::new()
             .region()
             .await
             .map(|region| region.to_string())
-    })
-    .await;
+    };
+    let imds_region = async {
+        ImdsRegionProvider::builder()
+            .build()
+            .region()
+            .await
+            .map(|region| region.to_string())
+    };
+    let region = resolve_region(options, env, profile_region, imds_region).await;
     let sdk_config = match &options.sdk_config {
         Some(sdk_config) => sdk_config.clone(),
         None => {

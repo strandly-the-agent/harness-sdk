@@ -24,6 +24,8 @@ use strands::{Agent, InvokeOptions, ToolError, tool};
 
 const REGION: &str = "us-east-1";
 const MODEL_ID: &str = "openai.gpt-oss-120b";
+/// The Mantle model id the shared model info gives `promptCaching: cachePoints`.
+const CACHE_MODEL_ID: &str = "openai.gpt-6.1-sol";
 
 async fn has_credentials() -> bool {
     let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
@@ -47,7 +49,7 @@ async fn model(api: OpenAIApi, config: OpenAIModelConfig) -> Option<OpenAIModel>
     let options = OpenAIModelOptions {
         api,
         config: OpenAIModelConfig {
-            model_id: Some(MODEL_ID.to_owned()),
+            model_id: config.model_id.or_else(|| Some(MODEL_ID.to_owned())),
             ..config
         },
         ..Default::default()
@@ -239,8 +241,18 @@ async fn live_mantle_stateful_conversation() {
         .printer(false)
         .build()
         .unwrap();
-    agent.invoke("My name is Alice.").await.unwrap();
+    let first = agent.invoke("My name is Alice.").await.unwrap();
+    assert_eq!(first.stop_reason(), StopReason::EndTurn);
+    assert!(
+        agent.messages().is_empty(),
+        "a stateful model keeps no local history"
+    );
     let result = agent.invoke("What is my name?").await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert!(
+        agent.messages().is_empty(),
+        "a stateful model keeps no local history"
+    );
     assert!(reply_text(result.last_message()).to_lowercase().contains("alice"));
 }
 
@@ -272,6 +284,7 @@ async fn live_mantle_reasoning_multi_turn() {
 #[ignore = "live mantle"]
 async fn live_mantle_cache_hit() {
     let config = OpenAIModelConfig {
+        model_id: Some(CACHE_MODEL_ID.to_owned()),
         cache_config: Some(CacheConfig::default()),
         ..Default::default()
     };

@@ -314,8 +314,9 @@ impl BedrockModelConfig {
 /// Everything a [`BedrockModel`] is built from (TS `BedrockModelOptions`): the model config plus
 /// how the client is set up.
 ///
-/// The region resolves in this order: `region`, the region of `client_config`, the `AWS_REGION` and
-/// `AWS_DEFAULT_REGION` environment variables, the shared AWS config profile, then `us-west-2`.
+/// The region resolves in this order: `region`, the region of `client_config`, the `AWS_REGION`
+/// environment variable, the shared AWS config profile, the EC2 instance metadata service, then
+/// `us-west-2`.
 ///
 /// ```no_run
 /// use std::time::Duration;

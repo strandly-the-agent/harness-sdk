@@ -6,6 +6,7 @@
 mod chat;
 mod responses;
 mod responses_cache;
+mod server_side_summary_capability;
 
 use std::sync::{Arc, Mutex};
 

@@ -198,15 +198,24 @@ async fn live_stateful_responses() {
         return;
     };
     let mut agent = Agent::builder().model(model).printer(false).build().unwrap();
-    agent
+    let first = agent
         .invoke("My name is Alice. Reply with one word.")
         .await
         .unwrap();
+    assert_eq!(first.stop_reason(), StopReason::EndTurn);
+    assert!(
+        agent.messages().is_empty(),
+        "a stateful model keeps no local history"
+    );
     let result = agent
         .invoke("What is my name? Reply with one word.")
         .await
         .unwrap();
     assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert!(
+        agent.messages().is_empty(),
+        "a stateful model keeps no local history"
+    );
     assert!(
         serde_json::to_string(result.last_message())
             .unwrap()

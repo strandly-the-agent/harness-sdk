@@ -768,43 +768,66 @@ mod region_configuration {
         })
     }
 
+    fn none() -> std::future::Ready<Option<String>> {
+        std::future::ready(None)
+    }
+
+    fn some(region: &str) -> std::future::Ready<Option<String>> {
+        std::future::ready(Some(region.to_owned()))
+    }
+
     #[test]
     fn uses_explicit_region_when_provided() {
         let region = run(resolve_region(
             &region_options("eu-west-1"),
             &env(&[("AWS_REGION", "ap-south-1")]),
-            async { Some("us-east-2".to_owned()) },
+            some("us-east-2"),
+            some("ca-central-1"),
         ));
         assert_eq!(region, "eu-west-1");
     }
 
     #[test]
     fn defaults_to_us_west_2_when_region_is_missing() {
-        let region = run(resolve_region(&ClientOptions::default(), &no_env(), async {
-            None
-        }));
+        let region = run(resolve_region(
+            &ClientOptions::default(),
+            &no_env(),
+            none(),
+            none(),
+        ));
         assert_eq!(region, "us-west-2");
     }
 
     #[test]
-    fn reads_the_region_from_the_environment_then_the_profile() {
+    fn reads_the_region_from_the_environment_then_the_profile_then_instance_metadata() {
         let options = ClientOptions::default();
         let from_env = run(resolve_region(
             &options,
             &env(&[("AWS_REGION", "ap-south-1")]),
-            async { Some("us-east-2".to_owned()) },
+            some("us-east-2"),
+            some("ca-central-1"),
         ));
         assert_eq!(from_env, "ap-south-1");
-        let from_default_env = run(resolve_region(
+        let from_profile = run(resolve_region(
             &options,
-            &env(&[("AWS_DEFAULT_REGION", "eu-central-1")]),
-            async { None },
+            &no_env(),
+            some("us-east-2"),
+            some("ca-central-1"),
         ));
-        assert_eq!(from_default_env, "eu-central-1");
-        let from_profile = run(resolve_region(&options, &no_env(), async {
-            Some("us-east-2".to_owned())
-        }));
         assert_eq!(from_profile, "us-east-2");
+        let from_imds = run(resolve_region(&options, &no_env(), none(), some("ca-central-1")));
+        assert_eq!(from_imds, "ca-central-1");
+    }
+
+    #[test]
+    fn ignores_aws_default_region_as_the_js_sdk_does() {
+        let region = run(resolve_region(
+            &ClientOptions::default(),
+            &env(&[("AWS_DEFAULT_REGION", "eu-central-1")]),
+            none(),
+            none(),
+        ));
+        assert_eq!(region, "us-west-2");
     }
 
     #[test]
@@ -816,7 +839,8 @@ mod region_configuration {
         let region = run(resolve_region(
             &options,
             &env(&[("AWS_REGION", "ap-south-1")]),
-            async { None },
+            none(),
+            none(),
         ));
         assert_eq!(region, "sa-east-1");
     }
