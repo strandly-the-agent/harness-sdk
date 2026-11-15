@@ -144,6 +144,24 @@ mod constructor {
     }
 
     #[test]
+    fn passes_custom_endpoint_to_client() {
+        let endpoint = "https://vpce-abc.bedrock-runtime.us-west-2.vpce.amazonaws.com";
+        let sdk = SdkConfig::builder().endpoint_url(endpoint).build();
+        assert_eq!(
+            effective_sdk_config(&region_options("us-west-2"), &sdk).endpoint_url(),
+            Some(endpoint)
+        );
+        let with_key = ClientOptions {
+            api_key: Some("br-test-key".into()),
+            ..region_options("us-west-2")
+        };
+        assert_eq!(
+            effective_sdk_config(&with_key, &sdk).endpoint_url(),
+            Some(endpoint)
+        );
+    }
+
+    #[test]
     fn passes_custom_credentials_to_client() {
         let credentials = Credentials::new("AKIDEXAMPLE", "secret", None, None, "test");
         let sdk = SdkConfig::builder()

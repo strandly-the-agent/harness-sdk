@@ -1252,3 +1252,105 @@ mod system_prompt_formatting {
         );
     }
 }
+
+/// Ported from strands-ts/src/models/__tests__/cache-portability.test.ts (the Bedrock half).
+mod cache_config_portability_across_providers {
+    use super::*;
+
+    fn sections(cache_config: CacheConfig) -> (Vec<Option<String>>, Vec<Option<String>>) {
+        let tool = ToolSpec::new("calculator", "Calculate").with_input_schema(json!({ "type": "object" }));
+        let sent = send(
+            cache_config,
+            vec![user(vec![text("durable prefix")])],
+            vec![tool],
+            None,
+        );
+        let ttls = |items: &JsonValue| -> Vec<Option<String>> {
+            items
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|block| block.get("cachePoint"))
+                .map(|point| {
+                    point
+                        .get("ttl")
+                        .and_then(JsonValue::as_str)
+                        .map(ToOwned::to_owned)
+                })
+                .collect()
+        };
+        let messages = sent["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|message| ttls(&message["content"]))
+            .collect();
+        (ttls(&sent["toolConfig"]["tools"]), messages)
+    }
+
+    fn some(ttl: &str) -> Option<String> {
+        Some(ttl.to_owned())
+    }
+
+    #[test]
+    fn agrees_on_label() {
+        let shared = |value: &str| CacheConfig {
+            ttl: Some(CacheTtl::from(value)),
+            ..Default::default()
+        };
+        let cases = [
+            (
+                "both sections by default",
+                CacheConfig::default(),
+                (vec![None], vec![None]),
+            ),
+            (
+                "a shared ttl on both sections",
+                shared("1h"),
+                (vec![some("1h")], vec![some("1h")]),
+            ),
+            (
+                "tool definitions only",
+                CacheConfig {
+                    messages_ttl: Some(CacheSection::Enabled(false)),
+                    ..shared("1h")
+                },
+                (vec![some("1h")], vec![]),
+            ),
+            (
+                "conversation only",
+                CacheConfig {
+                    tools_ttl: Some(CacheSection::Enabled(false)),
+                    ..shared("1h")
+                },
+                (vec![], vec![some("1h")]),
+            ),
+            (
+                "a per-section ttl override",
+                CacheConfig {
+                    messages_ttl: Some(ttl("5m")),
+                    ..shared("1h")
+                },
+                (vec![some("1h")], vec![some("5m")]),
+            ),
+            (
+                "an empty ttl treated as unset",
+                shared(""),
+                (vec![None], vec![None]),
+            ),
+            (
+                "every section disabled",
+                CacheConfig {
+                    tools_ttl: Some(CacheSection::Enabled(false)),
+                    messages_ttl: Some(CacheSection::Enabled(false)),
+                    ..Default::default()
+                },
+                (vec![], vec![]),
+            ),
+        ];
+        for (label, config, expected) in cases {
+            assert_eq!(sections(config), expected, "{label}");
+        }
+    }
+}
