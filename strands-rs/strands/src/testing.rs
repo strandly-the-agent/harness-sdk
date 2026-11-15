@@ -21,7 +21,8 @@ mod hook_recorder;
 
 pub use hook_recorder::HookRecorder;
 
-/// An agent over `model` with every other config key at its default, for tests.
+/// An agent over `model` with every other config key at its default, except that the stdout
+/// printer is off, for tests.
 ///
 /// ```
 /// use std::sync::Arc;

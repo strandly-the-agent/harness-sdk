@@ -7,6 +7,7 @@ mod agent_delegation;
 pub mod agent_metadata;
 mod config;
 pub mod invocation_context;
+pub(crate) mod printer;
 mod run;
 mod stream;
 mod tool_caller;

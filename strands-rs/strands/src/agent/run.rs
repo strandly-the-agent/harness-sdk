@@ -540,8 +540,9 @@ impl Agent {
                 end_turn: None,
             });
         }
+        let record = AgentStreamEvent::BeforeTools((&before).into());
         let cancel = before.take_cancel();
-        out.emit(AgentStreamEvent::BeforeTools((&before).into())).await;
+        out.emit(record).await;
 
         let tool_uses: Vec<ToolUseBlock> = assistant
             .content()

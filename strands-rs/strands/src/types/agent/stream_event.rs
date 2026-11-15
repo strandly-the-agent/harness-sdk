@@ -9,8 +9,8 @@ use serde::{Serialize, Serializer};
 
 use crate::hooks::{
     AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent, AgentResultEvent,
-    BeforeInvocationEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, ContentBlockEvent,
-    InitializedEvent, InterruptEvent, MessageAddedEvent, ModelMessageEvent, ModelStopData,
+    BeforeInvocationEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, Cancel,
+    ContentBlockEvent, InitializedEvent, InterruptEvent, MessageAddedEvent, ModelMessageEvent, ModelStopData,
     ModelStreamUpdateEvent, ToolResultEvent, ToolStreamUpdateEvent,
 };
 use crate::interrupt::Interrupt;
@@ -272,6 +272,8 @@ record! {
     /// The payload of [`AgentStreamEvent::BeforeTools`] (TS `BeforeToolsEvent`).
     BeforeToolsEventData = "beforeToolsEvent" from BeforeToolsEvent<'_> {
         ref message: Message = |e| e.message().clone(), "The assistant message requesting the tools.";
+        #[serde(skip)]
+        opt cancel: Cancel = |e| e.cancel().cloned(), "The batch cancel hooks requested, if any; not serialized.";
     }
 }
 
@@ -286,6 +288,8 @@ record! {
     /// The payload of [`AgentStreamEvent::BeforeToolCall`] (TS `BeforeToolCallEvent`).
     BeforeToolCallEventData = "beforeToolCallEvent" from BeforeToolCallEvent {
         ref tool_use: ToolUse = |e| e.tool_use().clone(), "The tool call, after the hooks ran.";
+        #[serde(skip)]
+        opt cancel: Cancel = |e| e.cancel().cloned(), "The cancel hooks requested, if any; not serialized.";
     }
 }
 

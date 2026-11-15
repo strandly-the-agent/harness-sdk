@@ -8,6 +8,7 @@ use std::task::{Context, Poll};
 
 use futures::Stream;
 
+use crate::agent::printer::{SharedPrinter, print};
 use crate::error::Result;
 use crate::types::agent::AgentStreamEvent;
 
@@ -52,13 +53,14 @@ pub struct AgentStream<'a> {
 
 impl<'a> AgentStream<'a> {
     /// A stream driving `run`, which hands its events to the [`Emitter`] it is given.
-    pub(crate) fn new<F>(run: impl FnOnce(Emitter) -> F) -> Self
+    pub(crate) fn new<F>(printer: Option<SharedPrinter>, run: impl FnOnce(Emitter) -> F) -> Self
     where
         F: Future<Output = Result<()>> + Send + 'a,
     {
         let slot = Slot::default();
         let emitter = Emitter {
             slot: Arc::clone(&slot),
+            printer,
         };
         Self {
             run: Some(Box::pin(run(emitter))),
@@ -106,6 +108,7 @@ impl fmt::Debug for AgentStream<'_> {
 /// Hands events from the agent loop to its [`AgentStream`], one at a time.
 pub(crate) struct Emitter {
     slot: Slot,
+    printer: Option<SharedPrinter>,
 }
 
 impl Emitter {
@@ -114,9 +117,11 @@ impl Emitter {
     /// The loop must await this directly (never inside a `select!` or `join!`): the returned
     /// future parks without a waker, relying on the stream returning the event to its poller.
     pub(crate) fn emit(&self, event: impl Into<AgentStreamEvent>) -> impl Future<Output = ()> + Send + '_ {
+        let event = event.into();
+        print(self.printer.as_ref(), &event);
         Yield {
             slot: &self.slot,
-            event: Some(event.into()),
+            event: Some(event),
         }
     }
 }

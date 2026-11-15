@@ -192,6 +192,8 @@ pub struct AgentConfig {
     /// [`InvokeOptions::structured_output_schema`](crate::InvokeOptions::structured_output_schema)
     /// overrides it (for example `StructuredOutputSchema::of::<T>()`).
     pub structured_output_schema: Option<StructuredOutputSchema>,
+    /// Print text, reasoning and tool activity to stdout as the agent runs (default `true`).
+    pub printer: Option<bool>,
 }
 
 impl<S: agent_builder::State> AgentBuilder<S> {

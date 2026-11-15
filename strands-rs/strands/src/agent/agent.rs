@@ -7,6 +7,7 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 
 use crate::agent::config::{AgentBuilder, AgentConfig, DefaultModel, ModelSource};
+use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
 use crate::agent::stream::AgentStream;
 use crate::error::{Error, Result};
 use crate::hooks::{
@@ -58,6 +59,8 @@ pub struct Agent {
     /// This agent's identity for the retry strategies' attach-once check.
     attach_token: Arc<()>,
     initialized: bool,
+    /// TS `_printer`; `None` with `printer: false`.
+    pub(crate) printer: Option<SharedPrinter>,
 }
 
 impl Agent {
@@ -95,6 +98,9 @@ impl Agent {
         local.tool_registry_mut().add_all(tools)?;
         agent.tool_executor = config.tool_executor.unwrap_or_default();
         agent.structured_output_schema = config.structured_output_schema;
+        if config.printer.unwrap_or(true) {
+            agent.printer = Some(AgentPrinter::shared(stdout_appender()));
+        }
         if let Some(strategies) = config.retry_strategy {
             warn_on_duplicate_types(&strategies);
             agent.retry_strategies = strategies;
@@ -113,6 +119,7 @@ impl Agent {
             retry_sleeper: tokio_sleeper(),
             attach_token: Arc::new(()),
             initialized: false,
+            printer: None,
         }
     }
 
@@ -189,7 +196,9 @@ impl Agent {
     /// [`stream`](Self::stream) with per-invocation options.
     pub fn stream_with(&mut self, args: impl Into<InvokeArgs>, options: InvokeOptions) -> AgentStream<'_> {
         let args = args.into();
-        AgentStream::new(move |emitter| async move { self.run(args, options, &emitter).await })
+        AgentStream::new(self.printer.clone(), move |emitter| async move {
+            self.run(args, options, &emitter).await
+        })
     }
 
     /// Finishes the agent's pending work; a no-op when there is none (TS `shutdown`).
