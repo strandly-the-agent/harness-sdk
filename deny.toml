@@ -1,0 +1,62 @@
+# cargo-deny configuration for the Rust workspace (strands-rs and harness-rs).
+
+[graph]
+all-features = true
+# The platforms the SDK supports. Limiting the graph keeps target-specific crates for embedded
+# targets (for example atomic-polyfill under heapless) out of the advisory and license checks.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BlueOak-1.0.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+deny = [
+    { crate = "reqwest", deny-multiple-versions = true },
+    { crate = "hyper", deny-multiple-versions = true },
+    { crate = "rustls", deny-multiple-versions = true },
+    { crate = "h2", deny-multiple-versions = true },
+    { crate = "opentelemetry", deny-multiple-versions = true },
+    { crate = "opentelemetry_sdk", deny-multiple-versions = true },
+    { crate = "cedar-policy-core", deny-multiple-versions = true },
+    { crate = "tokio", deny-multiple-versions = true },
+    { crate = "serde_json", deny-multiple-versions = true },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
