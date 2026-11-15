@@ -199,3 +199,11 @@ pub(crate) fn text_of(content: &crate::types::messages::ToolResultContent) -> &s
         other => panic!("expected text, got {other:?}"),
     }
 }
+
+/// A tool context whose cancel signal the returned handle cancels.
+pub(crate) fn cancellable_context(sandbox: Option<Arc<dyn Sandbox>>) -> (ToolContext, crate::CancelHandle) {
+    let (signal, handle) = crate::CancelSignal::new();
+    let mut agent = agent_with(sandbox);
+    agent.begin_cancel(Some(&signal));
+    (context_for(&agent, "tool", JsonValue::Null), handle)
+}

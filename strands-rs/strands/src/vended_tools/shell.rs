@@ -136,7 +136,7 @@ fn shell_input_schema(default_timeout: Duration) -> JsonValue {
 }
 
 /// Seconds as a JSON number: an integer when whole, so it never gains `.0`.
-fn seconds_json(duration: Duration) -> JsonValue {
+pub(crate) fn seconds_json(duration: Duration) -> JsonValue {
     if duration.subsec_nanos() == 0 {
         return duration.as_secs().into();
     }

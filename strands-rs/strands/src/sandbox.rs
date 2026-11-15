@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 pub use base::{ExecuteOptions, Sandbox};
 pub use constants::LANGUAGE_PATTERN;
+pub(crate) use constants::is_valid_language;
 pub use not_a_sandbox_local_environment::NotASandboxLocalEnvironment;
 pub use posix_shell::{PosixShellSandbox, build_shell_env_prefix, shell_quote, validate_env_keys};
 pub use types::{ExecutionEvent, ExecutionResult, FileInfo, OutputFile, StreamChunk, StreamType};
