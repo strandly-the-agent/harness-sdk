@@ -21,6 +21,7 @@ use crate::hooks::{
     MessageAddedEvent, ModelMessageEvent, ModelStopData, ModelStreamUpdateEvent, ToolResultEvent,
 };
 use crate::interrupt::Interrupt;
+use crate::middleware::ended_without_result;
 use crate::middleware::{
     AgentStreamContext, AgentStreamResult, AgentStreamStage, InvokeModelContext, InvokeModelResult,
     InvokeModelStage, MiddlewareError, MiddlewareInterrupt, MiddlewareItem, MiddlewareStage,
@@ -314,23 +315,18 @@ impl Agent {
             pass,
         };
         let mut chain = registry.invoke::<AgentStreamStage>(context, move |context| terminal.stream(context));
-        let mut outcome = Err(MiddlewareError::Failed(Error::other(format!(
-            "the {} middleware chain ended without a result",
-            AgentStreamStage::NAME
-        ))));
+        let mut outcome = None;
         while let Some(item) = chain.next().await {
+            if outcome.is_some() {
+                continue;
+            }
             match item {
                 Ok(MiddlewareItem::Event(event)) => out.forward(event).await,
-                Ok(MiddlewareItem::Result(result)) => {
-                    outcome = Ok(result.result);
-                    break;
-                }
-                Err(error) => {
-                    outcome = Err(error);
-                    break;
-                }
+                Ok(MiddlewareItem::Result(result)) => outcome = Some(Ok(result.result)),
+                Err(error) => outcome = Some(Err(error)),
             }
         }
+        let outcome = outcome.unwrap_or_else(|| Err(ended_without_result::<AgentStreamStage>().into()));
         drop(chain);
         match outcome {
             Ok(result) => Ok(result),
@@ -847,29 +843,23 @@ impl Agent {
             .local
             .middleware()
             .invoke::<InvokeModelStage>(context, move |context| terminal.stream(context));
-        let mut outcome = Err(Stop::Failed(Error::other(format!(
-            "the {} middleware chain ended without a result",
-            InvokeModelStage::NAME
-        ))));
+        // Drained past the result, so handler code after its `next` stream still runs.
+        let mut outcome = None;
         while let Some(item) = chain.next().await {
+            if outcome.is_some() {
+                continue;
+            }
             match item {
                 Ok(MiddlewareItem::Event(record)) => match self.record_hooks(record, state, hooks).await {
                     Ok(record) => out.emit(record).await,
-                    Err(error) => {
-                        outcome = Err(Stop::Failed(error));
-                        break;
-                    }
+                    Err(error) => outcome = Some(Err(Stop::Failed(error))),
                 },
-                Ok(MiddlewareItem::Result(result)) => {
-                    outcome = Ok(result.result);
-                    break;
-                }
-                Err(error) => {
-                    outcome = Err(self.classify(error));
-                    break;
-                }
+                Ok(MiddlewareItem::Result(result)) => outcome = Some(Ok(result.result)),
+                Err(error) => outcome = Some(Err(self.classify(error))),
             }
         }
+        let outcome =
+            outcome.unwrap_or_else(|| Err(Stop::Failed(ended_without_result::<InvokeModelStage>())));
         drop(chain);
         let invoked = lock(&invoked).take().unwrap_or_else(|| Arc::clone(model));
         match outcome {

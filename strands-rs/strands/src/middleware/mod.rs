@@ -48,6 +48,7 @@ pub use stages::{
     AgentStreamContext, AgentStreamResult, AgentStreamStage, ExecuteToolContext, ExecuteToolResult,
     ExecuteToolStage, InvokeModelContext, InvokeModelResult, InvokeModelStage, MiddlewareInterruptResult,
 };
+pub(crate) use types::ended_without_result;
 pub use types::{
     Middleware, MiddlewareError, MiddlewareItem, MiddlewareNext, MiddlewarePhaseKind, MiddlewareStage,
     MiddlewareStream,

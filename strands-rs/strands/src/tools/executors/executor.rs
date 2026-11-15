@@ -23,6 +23,7 @@ use crate::hooks::{
 };
 use crate::interrupt::Interrupt;
 use crate::interrupt::state::{PendingToolExecution, ToolResultEntry};
+use crate::middleware::ended_without_result;
 use crate::middleware::{
     ExecuteToolContext, ExecuteToolResult, ExecuteToolStage, MiddlewareError, MiddlewareInterrupt,
     MiddlewareItem, MiddlewareStage, MiddlewareStream,
@@ -358,33 +359,39 @@ impl ToolTask {
             telemetry: self.telemetry.clone(),
             preset,
         };
-        let mut chain = self
-            .agent
-            .middleware()
-            .invoke::<ExecuteToolStage>(context, move |context| terminal.stream(context));
+        let registry = self.agent.middleware();
+        let composed = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            registry.invoke::<ExecuteToolStage>(context, move |context| terminal.stream(context))
+        }));
+        let mut chain = match composed {
+            Ok(chain) => chain,
+            Err(panic) => return Some(Ok(panic_result(panic.as_ref(), tool_use))),
+        };
+        // Drained past the result, so handler code after its `next` stream still runs.
+        let mut outcome = None;
         loop {
             // A panicking handler fails like a panicking tool: an error result with the message.
             let item = match AssertUnwindSafe(chain.next()).catch_unwind().await {
-                Ok(item) => item,
-                Err(panic) => return Some(Ok(panic_result(panic.as_ref(), tool_use))),
+                Ok(Some(item)) => item,
+                Ok(None) => break,
+                Err(panic) => {
+                    return Some(outcome.unwrap_or_else(|| Ok(panic_result(panic.as_ref(), tool_use))));
+                }
             };
+            if outcome.is_some() {
+                continue;
+            }
             match item {
-                Some(Ok(MiddlewareItem::Event(record))) => {
+                Ok(MiddlewareItem::Event(record)) => {
                     let (sender, reply) = oneshot::channel();
                     self.send(TaskMessage::Update(record, sender)).await?;
                     reply.await.ok()?;
                 }
-                Some(Ok(MiddlewareItem::Result(result))) => return Some(Ok(result.result)),
-                Some(Err(error)) => return Some(Err(error)),
-                None => {
-                    let message = format!(
-                        "the {} middleware chain ended without a result",
-                        ExecuteToolStage::NAME
-                    );
-                    return Some(Err(Error::other(message).into()));
-                }
+                Ok(MiddlewareItem::Result(result)) => outcome = Some(Ok(result.result)),
+                Err(error) => outcome = Some(Err(error)),
             }
         }
+        Some(outcome.unwrap_or_else(|| Err(ended_without_result::<ExecuteToolStage>().into())))
     }
 
     async fn send(&self, message: TaskMessage) -> Option<()> {

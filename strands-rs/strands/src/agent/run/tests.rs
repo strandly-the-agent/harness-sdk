@@ -1382,5 +1382,6 @@ mod end_turn_resume;
 mod interrupt;
 mod invocation_state;
 mod limits;
+mod middleware;
 mod model_retry;
 mod structured_output;

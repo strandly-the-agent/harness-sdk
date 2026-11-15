@@ -131,18 +131,20 @@ pub trait MiddlewareStage: Sized + Send + Sync + 'static {
         let handler = Arc::new(handler);
         let wrap = wrap_fn::<Self, _>(move |context, next| {
             let handler = Arc::clone(&handler);
-            let inner = next.run(context);
-            Box::pin(inner.then(move |item| {
-                let handler = Arc::clone(&handler);
-                async move {
+            let mut inner = next.run(context);
+            // Applied once the inner layers finish, after any code they run past their result.
+            Box::pin(async_stream::stream! {
+                let mut result = None;
+                while let Some(item) = inner.next().await {
                     match item {
-                        Ok(MiddlewareItem::Result(result)) => {
-                            handler(result).await.map(MiddlewareItem::Result)
-                        }
-                        other => other,
+                        Ok(MiddlewareItem::Result(done)) if result.is_none() => result = Some(done),
+                        other => yield other,
                     }
                 }
-            }))
+                if let Some(result) = result {
+                    yield handler(result).await.map(MiddlewareItem::Result);
+                }
+            })
         });
         Middleware::new(MiddlewarePhaseKind::Output, wrap)
     }
@@ -292,4 +294,9 @@ impl<S: MiddlewareStage> fmt::Debug for MiddlewareNext<'_, S> {
             .field("remaining", &self.handlers.len().saturating_sub(self.index))
             .finish_non_exhaustive()
     }
+}
+
+/// The error of a chain that ended without its result.
+pub(crate) fn ended_without_result<S: MiddlewareStage>() -> Error {
+    Error::other(format!("the {} middleware chain ended without a result", S::NAME))
 }
