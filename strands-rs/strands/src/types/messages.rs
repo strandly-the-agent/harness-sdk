@@ -273,7 +273,7 @@ impl ContentBlock {
     }
 }
 
-fn serialize_wrapped<S: Serializer, T: Serialize + ?Sized>(
+pub(crate) fn serialize_wrapped<S: Serializer, T: Serialize + ?Sized>(
     serializer: S,
     key: &'static str,
     inner: &T,
@@ -610,6 +610,15 @@ impl ToolResultBlock {
     pub fn with_error(mut self, error: impl Into<BoxError>) -> Self {
         self.error = Some(Arc::from(error.into()));
         self
+    }
+
+    pub(crate) fn with_tool_use_id(mut self, tool_use_id: impl Into<String>) -> Self {
+        self.tool_use_id = tool_use_id.into();
+        self
+    }
+
+    pub(crate) fn shared_error(&self) -> Option<Arc<dyn std::error::Error + Send + Sync + 'static>> {
+        self.error.clone()
     }
 
     /// The tool use id this result answers.

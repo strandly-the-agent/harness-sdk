@@ -1,5 +1,6 @@
 //! Tools (TS `src/tools/` and `src/registry/`).
 
+pub mod executors;
 pub mod function_tool;
 pub(crate) mod macro_support;
 pub mod registry;
@@ -8,6 +9,7 @@ pub mod tool;
 
 use std::sync::Arc;
 
+pub use executors::{ConcurrentToolExecutor, SequentialToolExecutor, ToolExecutor};
 pub use function_tool::FunctionTool;
 pub use registry::ToolRegistry;
 pub use tool::{Tool, ToolContext, ToolError, ToolOutcome, ToolStream, ToolStreamEvent, ToolStreamItem};
