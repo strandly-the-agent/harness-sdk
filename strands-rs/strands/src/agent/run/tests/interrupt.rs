@@ -731,3 +731,140 @@ mod hook_rewritten_tool_use_id {
         }
     }
 }
+
+mod cancel {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use tokio::sync::Notify;
+
+    use super::*;
+    use crate::cancel::CancelOptions;
+    use crate::hooks::BeforeToolsEvent;
+
+    fn has_pending(agent: &Agent) -> bool {
+        agent
+            .local
+            .interrupt_state()
+            .lock()
+            .pending_tool_execution
+            .is_some()
+    }
+
+    #[tokio::test]
+    async fn preserves_the_pending_tool_interrupt_when_a_resume_is_cancelled_before_the_tool_runs() {
+        let model = mock(vec![
+            vec![tool_use("confirmTool", "tool-1", json!({}))],
+            vec![text("Done")],
+        ]);
+        let executed = Arc::new(AtomicBool::new(false));
+        let ran = Arc::clone(&executed);
+        let tool = FunctionTool::new(
+            "confirmTool",
+            "asks",
+            move |_input: JsonValue, ctx: ToolContext| {
+                let ran = Arc::clone(&ran);
+                async move {
+                    if !ran.load(Ordering::SeqCst) {
+                        ctx.interrupt(InterruptParams {
+                            name: "confirm".into(),
+                            reason: Some(json!("Approve?")),
+                            ..Default::default()
+                        })?;
+                    }
+                    ran.store(true, Ordering::SeqCst);
+                    Ok::<_, ToolError>("executed")
+                }
+            },
+        );
+        let mut agent = Agent::builder().model(model).tools([tool]).build().unwrap();
+
+        let interrupted = agent.invoke("Go").await.unwrap();
+        assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+        assert!(has_pending(&agent));
+
+        let cancel_hook = agent.add_hook(|event: &mut BeforeToolsEvent<'_>| {
+            event.agent().cancel(CancelOptions::default());
+        });
+        let cancelled = agent.invoke(respond(&interrupted, &json!("yes"))).await.unwrap();
+        assert_eq!(cancelled.stop_reason(), StopReason::Cancelled);
+        assert!(!executed.load(Ordering::SeqCst));
+        assert!(has_pending(&agent));
+
+        cancel_hook.remove();
+        let finished = agent.invoke(respond(&interrupted, &json!("yes"))).await.unwrap();
+        assert_eq!(finished.stop_reason(), StopReason::EndTurn);
+        assert!(executed.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn runs_an_approved_tool_only_once_when_the_resume_is_cancelled_while_the_tool_is_in_flight() {
+        let model = mock(vec![
+            vec![tool_use("sendEmail", "tool-1", json!({}))],
+            vec![text("Done")],
+            vec![text("Nothing else happened")],
+        ]);
+        let raised = Arc::new(AtomicBool::new(false));
+        let side_effects = Arc::new(Mutex::new(Vec::new()));
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let (tool_raised, tool_effects, tool_started, tool_release) = (
+            Arc::clone(&raised),
+            Arc::clone(&side_effects),
+            Arc::clone(&started),
+            Arc::clone(&release),
+        );
+        let tool = FunctionTool::new(
+            "sendEmail",
+            "sends",
+            move |_input: JsonValue, ctx: ToolContext| {
+                let (raised, effects, started, release) = (
+                    Arc::clone(&tool_raised),
+                    Arc::clone(&tool_effects),
+                    Arc::clone(&tool_started),
+                    Arc::clone(&tool_release),
+                );
+                async move {
+                    if !raised.swap(true, Ordering::SeqCst) {
+                        ctx.interrupt(InterruptParams {
+                            name: "confirm".into(),
+                            reason: Some(json!("Send the email?")),
+                            ..Default::default()
+                        })?;
+                    }
+                    effects.lock().unwrap().push("email sent");
+                    started.notify_one();
+                    release.notified().await;
+                    Ok::<_, ToolError>("sent")
+                }
+            },
+        );
+        let mut agent = Agent::builder().model(model).tools([tool]).build().unwrap();
+        let interrupted = agent.invoke("Send the email").await.unwrap();
+        let responses = respond(&interrupted, &json!("yes"));
+
+        let handle = agent.cancel_handle();
+        let inflight = tokio::spawn(async move {
+            let result = agent.invoke(responses).await;
+            (agent, result)
+        });
+        started.notified().await;
+        handle.cancel(CancelOptions::default());
+        release.notify_one();
+        let (mut agent, result) = inflight.await.unwrap();
+        assert_eq!(result.unwrap().stop_reason(), StopReason::Cancelled);
+        assert!(!has_pending(&agent));
+        let tool_use_ids: Vec<&str> = agent
+            .messages()
+            .iter()
+            .flat_map(Message::content)
+            .filter_map(|block| match block {
+                ContentBlock::ToolUse(tool_use) => Some(tool_use.tool_use_id()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tool_use_ids, ["tool-1"]);
+
+        agent.invoke("what happened?").await.unwrap();
+        assert_eq!(*side_effects.lock().unwrap(), ["email sent"]);
+    }
+}

@@ -148,17 +148,19 @@ impl InterruptState {
     }
 }
 
-/// The cancel signal of the running invocation and the handle that triggers it.
+/// The cancel signal of the running invocation and the agent's stable handle to it.
 #[derive(Debug, Clone)]
 pub(crate) struct InvocationCancel {
-    pub(crate) signal: CancelSignal,
-    pub(crate) handle: CancelHandle,
+    signal: CancelSignal,
+    handle: CancelHandle,
 }
 
 impl Default for InvocationCancel {
     fn default() -> Self {
-        let (signal, handle) = CancelSignal::new();
-        Self { signal, handle }
+        Self {
+            signal: CancelSignal::joining(None),
+            handle: CancelHandle::idle(),
+        }
     }
 }
 
@@ -340,13 +342,28 @@ impl LocalAgent {
         &self.cancel.signal
     }
 
-    /// Cancels the current invocation cooperatively (TS `cancel`).
+    /// Cancels the running invocation cooperatively; a no-op while the agent is idle (TS
+    /// `cancel`).
     pub fn cancel(&self, options: CancelOptions) {
         self.cancel.handle.cancel(options);
     }
 
-    pub(crate) fn set_invocation_cancel(&mut self, cancel: InvocationCancel) {
-        self.cancel = cancel;
+    /// A handle that cancels whichever invocation of this agent is running.
+    pub fn cancel_handle(&self) -> &CancelHandle {
+        &self.cancel.handle
+    }
+
+    /// Starts a pass with fresh cancel state joined with `external` (TS `resetCancelState`
+    /// and `AbortSignal.any`).
+    pub(crate) fn begin_cancel(&mut self, external: Option<&CancelSignal>) {
+        self.cancel.signal = CancelSignal::joining(external);
+        self.cancel.handle.attach(&self.cancel.signal);
+    }
+
+    /// Ends the invocation: the handle goes idle and the signal is fresh (TS `resetCancelState`).
+    pub(crate) fn end_cancel(&mut self) {
+        self.cancel.handle.detach();
+        self.cancel.signal = CancelSignal::joining(None);
     }
 
     pub(crate) fn interrupt_state(&self) -> &InterruptState {
@@ -390,7 +407,7 @@ impl LocalAgent {
                 app_state: self.app_state.clone(),
                 model_state: self.model_state.clone(),
                 tool_registry: self.tool_registry.clone(),
-                cancel_signal: self.cancel.signal.clone(),
+                cancel: self.cancel.clone(),
                 interrupt_state: self.interrupt_state.clone(),
                 invocation_context: self.invocation_context.clone(),
             }),
@@ -429,7 +446,7 @@ struct ToolAgentInner {
     app_state: StateStore,
     model_state: StateStore,
     tool_registry: ToolRegistry,
-    cancel_signal: CancelSignal,
+    cancel: InvocationCancel,
     interrupt_state: InterruptState,
     invocation_context: Option<InvocationContext>,
 }
@@ -482,7 +499,18 @@ impl ToolAgent {
 
     /// The cancellation signal of the running invocation.
     pub fn cancel_signal(&self) -> &CancelSignal {
-        &self.inner.cancel_signal
+        &self.inner.cancel.signal
+    }
+
+    /// Cancels the running invocation cooperatively (TS `cancel`); with `after_current_tools`
+    /// the current tool batch finishes first.
+    pub fn cancel(&self, options: CancelOptions) {
+        self.inner.cancel.handle.cancel(options);
+    }
+
+    /// A handle that cancels whichever invocation of the agent is running.
+    pub fn cancel_handle(&self) -> &CancelHandle {
+        &self.inner.cancel.handle
     }
 
     pub(crate) fn interrupt_state(&self) -> &InterruptState {
@@ -604,6 +632,9 @@ pub struct InvokeOptions {
     pub limits: Option<InvokeLimits>,
     /// The structured output schema for this call, overriding the agent's.
     pub structured_output_schema: Option<StructuredOutputSchema>,
+    /// An external signal that also cancels this call (TS `cancelSignal`). The agent's own
+    /// signal joins it, so cancelling the agent never cancels this one.
+    pub cancel_signal: Option<CancelSignal>,
 }
 
 impl InvokeOptions {

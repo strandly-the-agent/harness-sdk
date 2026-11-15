@@ -14,12 +14,12 @@ use tokio::sync::{Notify, oneshot};
 
 use super::executor::{ToolBatch, ToolExecutionInput, ToolExecutorEvent, ToolExecutorItem};
 use super::*;
-use crate::cancel::{CancelHandle, CancelOptions, CancelSignal};
+use crate::cancel::{CancelHandle, CancelOptions};
 use crate::hooks::{AfterToolCallEvent, BeforeToolCallEvent, Cancel, HookRegistry};
 use crate::interrupt::InterruptParams;
 use crate::testing::MockMessageModel;
 use crate::tools::{FunctionTool, Tool, ToolContext, ToolError, ToolOutcome, ToolStream, ToolStreamEvent};
-use crate::types::agent::{InvocationCancel, InvocationState, LocalAgent};
+use crate::types::agent::{InvocationState, LocalAgent};
 use crate::types::messages::{ContentBlock, Message, Role, ToolResultBlock, ToolResultContent, ToolUseBlock};
 use crate::types::tools::{ToolResultStatus, ToolSpec, ToolUse};
 
@@ -74,15 +74,12 @@ struct Fixture {
 fn fixture(tools: Vec<Arc<dyn Tool>>) -> Fixture {
     let mut agent = LocalAgent::new(Arc::new(MockMessageModel::new()));
     agent.tool_registry_mut().add_all(tools).unwrap();
-    let (signal, handle) = CancelSignal::new();
-    agent.set_invocation_cancel(InvocationCancel {
-        signal,
-        handle: handle.clone(),
-    });
+    agent.begin_cancel(None);
+    let cancel = agent.cancel_handle().clone();
     Fixture {
         agent,
         hooks: HookRegistry::new(),
-        cancel: handle,
+        cancel,
     }
 }
 

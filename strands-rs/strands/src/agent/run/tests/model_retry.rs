@@ -2,8 +2,7 @@
 //! and the `registers an AfterModelCallEvent hook` case of
 //! retry/__tests__/default-model-retry-strategy.test.ts.
 //!
-//! Gap: `interrupts retry backoff on cancellation without another model call` needs the
-//! invocation cancel signal (Phase 4). Delays go to a recording sleeper instead of fake timers.
+//! Delays go to a recording sleeper, or to the tokio timer under paused time, instead of fake timers.
 
 use std::time::Duration;
 
@@ -58,6 +57,32 @@ async fn retries_model_calls_that_fail_with_model_throttled_error() {
     let result = agent.invoke("hi").await.unwrap();
     assert_eq!(ok_text(&result), ["ok"]);
     assert_eq!(*delays.lock().unwrap(), [Duration::from_millis(1)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn interrupts_retry_backoff_on_cancellation_without_another_model_call() {
+    let model = Arc::new(MockMessageModel::new());
+    model
+        .add_error(throttled("rate limited"))
+        .add_turn(vec![text("unexpected retry")]);
+    let mut agent = Agent::builder()
+        .model(Arc::clone(&model))
+        .retry_strategy(strategy(3, 5000))
+        .build()
+        .unwrap();
+    let (signal, handle) = crate::cancel::CancelSignal::new();
+    let options = InvokeOptions {
+        cancel_signal: Some(signal),
+        ..Default::default()
+    };
+    let invocation = tokio::spawn(async move { agent.invoke_with("hi", options).await });
+    tokio::time::sleep(Duration::from_millis(499)).await;
+    assert_eq!(model.call_count(), 1);
+
+    handle.cancel(crate::cancel::CancelOptions::default());
+    let result = invocation.await.unwrap().unwrap();
+    assert_eq!(result.stop_reason(), StopReason::Cancelled);
+    assert_eq!(model.call_count(), 1);
 }
 
 #[tokio::test]

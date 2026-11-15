@@ -39,8 +39,30 @@ use crate::types::tools::{ToolChoice, ToolResultStatus, ToolSpec};
 
 /// TS `INVALID_TOOL_NAME_PLACEHOLDER`.
 const INVALID_TOOL_NAME_PLACEHOLDER: &str = "INVALID_TOOL_NAME";
+/// The error text of a tool call a cancel stopped before it ran.
+const TOOL_CANCELLED: &str = "Tool execution cancelled";
 /// TS `BLANK_TEXT_PLACEHOLDER`.
 const BLANK_TEXT_PLACEHOLDER: &str = "[blank text]";
+
+/// TS `CancelledError`: what `AfterModelCallEvent` hooks see when a cancel stops a model call.
+#[derive(Debug, thiserror::Error)]
+#[error("Agent invocation cancelled")]
+struct CancelledError;
+
+/// Why a loop step stopped before finishing.
+enum Stop {
+    /// A cancel checkpoint saw the invocation's signal (TS `CancelledError`).
+    Cancelled,
+    Failed(Error),
+}
+
+impl From<Error> for Stop {
+    fn from(error: Error) -> Self {
+        Self::Failed(error)
+    }
+}
+
+type Step<T> = std::result::Result<T, Stop>;
 
 /// How a cycle ended.
 enum Cycle {
@@ -78,6 +100,8 @@ struct ToolsOutcome {
     message: Message,
     interrupts: Vec<Interrupt>,
     end_turn: Option<EndTurn>,
+    /// The batch was cancelled before any tool ran.
+    skipped: bool,
 }
 
 impl Agent {
@@ -88,9 +112,17 @@ impl Agent {
         options: InvokeOptions,
         out: &Emitter,
     ) -> Result<()> {
+        let outcome = self.run_passes(args, options, out).await;
+        // After `AgentResultEvent`, so its consumers still read the cancel signal (TS `stream`).
+        self.local.end_cancel();
+        outcome
+    }
+
+    async fn run_passes(&mut self, args: InvokeArgs, options: InvokeOptions, out: &Emitter) -> Result<()> {
         self.initialize().await?;
         let hooks = self.local.hooks().clone();
         let state = options.invocation_state;
+        let external_cancel = options.cancel_signal;
         let schema = options
             .structured_output_schema
             .or_else(|| self.structured_output_schema.clone());
@@ -100,7 +132,7 @@ impl Agent {
         // A hook's `AfterInvocationEvent::set_resume` runs another pass (TS `stream`'s loop).
         let mut args = args;
         let result = loop {
-            self.local.set_invocation_cancel(Default::default());
+            self.local.begin_cancel(external_cancel.as_ref());
             // Consumed before the hooks run so their `interrupt()` finds the responses.
             let resuming = match &args {
                 InvokeArgs::InterruptResponses(responses) if !responses.is_empty() => {
@@ -227,6 +259,9 @@ impl Agent {
         let message_count_at_start = self.local.messages().len();
         let mut input = Some(input);
         loop {
+            if self.local.cancel_signal().is_cancelled() {
+                return self.cancelled_at_checkpoint(state, hooks, out).await;
+            }
             if let Some(stop_reason) = context.reached_limit() {
                 let last_message = self
                     .local
@@ -253,11 +288,60 @@ impl Agent {
                 telemetry.meter.end_cycle(started);
                 telemetry.tracer.end_cycle();
             }
-            match cycle? {
-                Cycle::Continue => {}
-                Cycle::Done(result) => return Ok(self.with_telemetry(*result)),
+            match cycle {
+                Ok(Cycle::Continue) => {}
+                Ok(Cycle::Done(result)) => return Ok(self.with_telemetry(*result)),
+                Err(Stop::Cancelled) => return self.cancelled_at_checkpoint(state, hooks, out).await,
+                Err(Stop::Failed(error)) => return Err(error),
             }
         }
+    }
+
+    /// TS `_stream`'s `CancelledError` handler: closes an open user turn with the cancel message.
+    async fn cancelled_at_checkpoint(
+        &mut self,
+        state: &InvocationState,
+        hooks: &HookRegistry,
+        out: &Emitter,
+    ) -> Result<AgentResult> {
+        let message = self.cancel_message();
+        if self
+            .local
+            .messages()
+            .last()
+            .is_some_and(|last| last.role() == Role::User)
+        {
+            self.append_message(message.clone(), state, hooks, out).await?;
+        }
+        Ok(self.result(StopReason::Cancelled, message, state))
+    }
+
+    /// The final message of a cancelled invocation (TS `cancelResultMessage`, else the default).
+    fn cancel_message(&self) -> Message {
+        let reason = self
+            .local
+            .cancel_signal()
+            .reason()
+            .filter(|reason| !reason.is_empty());
+        assistant_text(reason.as_deref().unwrap_or("Cancelled by user"))
+    }
+
+    /// Ends the cycle as cancelled: appends the cancel message and builds the result.
+    async fn cancelled(
+        &mut self,
+        structured_output: Option<JsonValue>,
+        state: &InvocationState,
+        hooks: &HookRegistry,
+        out: &Emitter,
+    ) -> Step<Cycle> {
+        // Always ends on an assistant message, so history stays re-invokable.
+        let message = self.cancel_message();
+        self.append_message(message.clone(), state, hooks, out).await?;
+        let mut result = AgentResult::new(StopReason::Cancelled, message, state.clone());
+        if let Some(output) = structured_output {
+            result = result.with_structured_output(output);
+        }
+        Ok(Cycle::Done(Box::new(result)))
     }
 
     async fn run_cycle(
@@ -268,7 +352,7 @@ impl Agent {
         out: &Emitter,
         structured: &mut Structured,
         context: &InvocationContext,
-    ) -> Result<Cycle> {
+    ) -> Step<Cycle> {
         for message in input.into_iter().flatten() {
             self.append_message(message, state, hooks, out).await?;
         }
@@ -327,6 +411,9 @@ impl Agent {
                 if forced.is_some() && structured_output_tool_use_ids(&assistant).is_empty() {
                     context.record_structured_output_failure();
                 }
+                if self.local.cancel_signal().is_cancelled() {
+                    return self.cancelled_before_tools(assistant, state, hooks, out).await;
+                }
                 (assistant, IndexMap::new())
             }
         };
@@ -335,10 +422,20 @@ impl Agent {
             .execute_tools(&assistant, completed, state, hooks, out)
             .await?;
         if !tools.interrupts.is_empty() {
-            return self
-                .interrupted(tools.interrupts, state, hooks, out)
-                .await
-                .map(|result| Cycle::Done(Box::new(result)));
+            let result = self.interrupted(tools.interrupts, state, hooks, out).await?;
+            return Ok(Cycle::Done(Box::new(result)));
+        }
+        // A skipped resume keeps its pending batch; the next cycle's checkpoint stops the loop.
+        if tools.skipped
+            && self.local.cancel_signal().is_cancelled()
+            && self
+                .local
+                .interrupt_state()
+                .lock()
+                .pending_tool_execution
+                .is_some()
+        {
+            return Ok(Cycle::Continue);
         }
         // Extracted before the appends: message-added hooks may rewrite the JSON block.
         let output = structured
@@ -371,6 +468,11 @@ impl Agent {
                 state.clone(),
             ))));
         }
+        let cancel = self.local.cancel_signal();
+        if cancel.is_deferred() || cancel.is_cancelled() {
+            // Wins over a structured-output stop, which still carries its output.
+            return self.cancelled(output, state, hooks, out).await;
+        }
         match output {
             Some(output) => Ok(Cycle::Done(Box::new(
                 AgentResult::new(StopReason::ToolUse, assistant, state.clone())
@@ -378,6 +480,26 @@ impl Agent {
             ))),
             None => Ok(Cycle::Continue),
         }
+    }
+
+    /// The cancel checkpoint between the model's tool use and its tools: every call gets the
+    /// `Tool execution cancelled` result without running.
+    async fn cancelled_before_tools(
+        &mut self,
+        assistant: Message,
+        state: &InvocationState,
+        hooks: &HookRegistry,
+        out: &Emitter,
+    ) -> Step<Cycle> {
+        let results = tool_uses(&assistant)
+            .map(|tool_use| {
+                ContentBlock::ToolResult(error_text_result(tool_use.tool_use_id(), TOOL_CANCELLED))
+            })
+            .collect();
+        self.append_message(assistant, state, hooks, out).await?;
+        self.append_message(Message::new(Role::User, results), state, hooks, out)
+            .await?;
+        self.cancelled(None, state, hooks, out).await
     }
 
     /// TS `_stream`'s `InterruptError` handler: fires one `InterruptEvent` per interrupt.
@@ -427,10 +549,14 @@ impl Agent {
         hooks: &HookRegistry,
         out: &Emitter,
         forcing: Forcing,
-    ) -> Result<StreamAggregatedResult> {
+    ) -> Step<StreamAggregatedResult> {
         let tool_specs = self.local.tool_registry().tool_specs();
         let mut attempt_count = NonZeroU32::MIN;
         loop {
+            // A cancel during a retry backoff stops before the next attempt.
+            if self.local.cancel_signal().is_cancelled() {
+                return Err(Stop::Cancelled);
+            }
             let model = Arc::clone(self.local.model());
             let projected = self.estimate_input_tokens(&tool_specs).await;
             let mut before =
@@ -493,17 +619,25 @@ impl Agent {
                     }
                     return Ok(result);
                 }
-                Err(error) => {
+                Err(stop) => {
+                    let (error, cancelled) = match stop {
+                        Stop::Cancelled => (Error::other(CancelledError), true),
+                        Stop::Failed(error) => (error, false),
+                    };
                     let mut after =
                         AfterModelCallEvent::new(&mut self.local, model, state.clone(), attempt_count)
                             .with_error(&error);
                     hooks.invoke::<AfterModelCallEvent<'static>>(&mut after).await?;
                     out.emit(AgentStreamEvent::AfterModelCall((&after).into())).await;
+                    // The event pair stays, but a cancel is never retried.
+                    if cancelled {
+                        return Err(Stop::Cancelled);
+                    }
                     if after.retry() {
                         attempt_count = attempt_count.saturating_add(1);
                         continue;
                     }
-                    return Err(error);
+                    return Err(error.into());
                 }
             }
         }
@@ -518,7 +652,7 @@ impl Agent {
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
-    ) -> Result<StreamAggregatedResult> {
+    ) -> Step<StreamAggregatedResult> {
         // The provider writes to a snapshot, committed only when the call succeeds.
         let model_state = self.local.model_state().snapshot();
         let request = ModelRequest::builder()
@@ -537,15 +671,19 @@ impl Agent {
             .stream_aggregated(request, self.local.invocation_context().cloned());
         let mut result = None;
         while let Some(item) = stream.next().await {
-            let item = match item {
-                Ok(item) => item,
+            let cancelled = self.local.cancel_signal().is_cancelled();
+            match item {
+                Ok(AggregatedEvent::Done(done)) => result = Some(*done),
+                // Providers surface a cancel as a transport error; the cancel wins.
+                Ok(_) | Err(_) if cancelled => {
+                    self.local.telemetry().lock().tracer.end_model(None);
+                    return Err(Stop::Cancelled);
+                }
                 Err(error) => {
                     self.local.telemetry().lock().tracer.end_model(None);
-                    return Err(error);
+                    return Err(error.into());
                 }
-            };
-            match item {
-                AggregatedEvent::ModelStreamEvent(event) => {
+                Ok(AggregatedEvent::ModelStreamEvent(event)) => {
                     let mut event = ModelStreamUpdateEvent::new(&mut self.local, event, state.clone());
                     hooks
                         .invoke::<ModelStreamUpdateEvent<'static>>(&mut event)
@@ -553,12 +691,11 @@ impl Agent {
                     out.emit(AgentStreamEvent::ModelStreamUpdate((&event).into()))
                         .await;
                 }
-                AggregatedEvent::ContentBlock(block) => {
+                Ok(AggregatedEvent::ContentBlock(block)) => {
                     let mut event = ContentBlockEvent::new(&mut self.local, block, state.clone());
                     hooks.invoke::<ContentBlockEvent<'static>>(&mut event).await?;
                     out.emit(AgentStreamEvent::ContentBlock((&event).into())).await;
                 }
-                AggregatedEvent::Done(done) => result = Some(*done),
             }
         }
         let result = result.ok_or_else(|| Error::other("the model stream ended without a result"))?;
@@ -580,7 +717,7 @@ impl Agent {
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
-    ) -> Result<ToolsOutcome> {
+    ) -> Step<ToolsOutcome> {
         let mut before = BeforeToolsEvent::new(&mut self.local, assistant.clone(), state.clone());
         hooks.invoke::<BeforeToolsEvent<'static>>(&mut before).await?;
         let hook_interrupts = before.take_interrupts();
@@ -591,20 +728,23 @@ impl Agent {
                 message: Message::new(Role::User, Vec::new()),
                 interrupts: hook_interrupts,
                 end_turn: None,
+                skipped: false,
             });
         }
         let record = AgentStreamEvent::BeforeTools((&before).into());
         let cancel = before.take_cancel();
         out.emit(record).await;
 
-        let tool_uses: Vec<ToolUseBlock> = assistant
-            .content()
-            .iter()
-            .filter_map(|block| match block {
-                ContentBlock::ToolUse(tool_use) => Some(tool_use.clone()),
-                _ => None,
-            })
-            .collect();
+        let tool_uses: Vec<ToolUseBlock> = tool_uses(assistant).cloned().collect();
+        // Pre-launch cancellation is executor-independent (TS `executeTools`).
+        let cancel_text = match &cancel {
+            Some(cancel) => Some(cancel.message().unwrap_or("Tool cancelled by hook")),
+            None => self
+                .local
+                .cancel_signal()
+                .is_cancelled()
+                .then_some(TOOL_CANCELLED),
+        };
         let mut results: Vec<ToolResultBlock> = Vec::new();
         let mut interrupts = Vec::new();
         let mut failure = None;
@@ -612,8 +752,7 @@ impl Agent {
             failure = Some(Error::other(
                 "Model indicated toolUse but no tool use blocks found in message",
             ));
-        } else if let Some(cancel) = cancel {
-            let text = cancel.message().unwrap_or("Tool cancelled by hook");
+        } else if let Some(text) = cancel_text {
             let agent = self.local.tool_agent();
             for tool_use in &tool_uses {
                 let result = error_text_result(tool_use.tool_use_id(), text);
@@ -656,12 +795,13 @@ impl Agent {
         hooks.invoke::<AfterToolsEvent<'static>>(&mut after).await?;
         out.emit(AgentStreamEvent::AfterTools((&after).into())).await;
         if let Some(error) = failure {
-            return Err(error);
+            return Err(error.into());
         }
         Ok(ToolsOutcome {
             message: after.message().clone(),
             interrupts,
             end_turn: after.take_end_turn(),
+            skipped: cancel_text.is_some(),
         })
     }
 
@@ -860,6 +1000,13 @@ fn stream_event(event: &ToolExecutorEvent) -> AgentStreamEvent {
         ToolExecutorEvent::ToolResult(event) => AgentStreamEvent::ToolResult(event.into()),
         ToolExecutorEvent::Delegated(event) => event.clone(),
     }
+}
+
+fn tool_uses(message: &Message) -> impl Iterator<Item = &ToolUseBlock> {
+    message.content().iter().filter_map(|block| match block {
+        ContentBlock::ToolUse(tool_use) => Some(tool_use),
+        _ => None,
+    })
 }
 
 fn assistant_text(text: &str) -> Message {

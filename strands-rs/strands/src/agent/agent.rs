@@ -9,6 +9,7 @@ use futures::future::BoxFuture;
 use crate::agent::config::{AgentBuilder, AgentConfig, DefaultModel, ModelSource};
 use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
 use crate::agent::stream::AgentStream;
+use crate::cancel::{CancelHandle, CancelSignal};
 use crate::error::{Error, Result};
 use crate::hooks::{
     EventKind, Hook, HookCallbackOptions, HookCleanup, HookEvent, HookRegistry, InitializedEvent,
@@ -212,6 +213,34 @@ impl Agent {
     /// Pending work failed.
     pub async fn shutdown(&mut self) -> Result<()> {
         Ok(())
+    }
+
+    /// A cloneable handle that cancels whichever invocation of this agent is running (TS
+    /// `cancel`). Cancelling while the agent is idle does nothing, so it never pre-cancels the
+    /// next call; each invocation starts with fresh cancel state.
+    ///
+    /// ```
+    /// use strands::testing::MockMessageModel;
+    /// use strands::types::messages::TextBlock;
+    /// use strands::{Agent, CancelOptions, StopReason};
+    ///
+    /// # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+    /// let model = MockMessageModel::new();
+    /// model.add_turn(vec![TextBlock::new("Hello!").into()]);
+    /// let mut agent = Agent::builder().model(model).printer(false).build()?;
+    /// agent.cancel_handle().cancel(CancelOptions::default());
+    /// assert_eq!(agent.invoke("Hi").await?.stop_reason(), StopReason::EndTurn);
+    /// # Ok::<(), strands::Error>(())
+    /// # }).unwrap();
+    /// ```
+    pub fn cancel_handle(&self) -> CancelHandle {
+        self.local.cancel_handle().clone()
+    }
+
+    /// The cancellation signal of the running invocation; a fresh, uncancelled one while the
+    /// agent is idle (TS `cancelSignal`).
+    pub fn cancel_signal(&self) -> &CancelSignal {
+        self.local.cancel_signal()
     }
 
     /// The agent id (default `agent`).

@@ -1,6 +1,6 @@
 //! Cancellation primitives (TS `AbortSignal` and `CancelOptions` from `types/agent.ts`).
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tokio_util::sync::CancellationToken;
 
@@ -30,11 +30,27 @@ struct CancelState {
 struct Shared {
     token: CancellationToken,
     state: Mutex<CancelState>,
+    /// The external signal this one joins (TS `AbortSignal.any`).
+    parent: Option<CancelSignal>,
 }
 
 impl Shared {
-    fn state(&self) -> std::sync::MutexGuard<'_, CancelState> {
+    fn state(&self) -> MutexGuard<'_, CancelState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn cancel(&self, options: CancelOptions) {
+        {
+            let mut state = self.state();
+            if options.message.is_some() {
+                state.reason = options.message;
+            }
+            if options.after_current_tools {
+                state.deferred = true;
+                return;
+            }
+        }
+        self.token.cancel();
     }
 }
 
@@ -55,22 +71,35 @@ pub struct CancelSignal {
     shared: Arc<Shared>,
 }
 
-/// The triggering side of a cancellation. Cheap to clone.
+/// The triggering side of a cancellation. Cheap to clone; clones cancel the same target.
+///
+/// The handle from [`CancelSignal::new`] cancels its signal. The handle from
+/// `Agent::cancel_handle` cancels whichever invocation of that agent is running, and does
+/// nothing while the agent is idle.
 #[derive(Debug, Clone)]
 pub struct CancelHandle {
-    shared: Arc<Shared>,
+    target: Arc<Mutex<Option<Arc<Shared>>>>,
 }
 
 impl CancelSignal {
     /// A new signal and the handle that cancels it.
     pub fn new() -> (Self, CancelHandle) {
-        let shared = Arc::new(Shared::default());
-        (
-            Self {
-                shared: Arc::clone(&shared),
-            },
-            CancelHandle { shared },
-        )
+        let signal = Self::joining(None);
+        let handle = CancelHandle::idle();
+        handle.attach(&signal);
+        (signal, handle)
+    }
+
+    /// A fresh signal that is also cancelled when `parent` is.
+    pub(crate) fn joining(parent: Option<&Self>) -> Self {
+        let token = parent.map_or_else(CancellationToken::new, |parent| parent.shared.token.child_token());
+        Self {
+            shared: Arc::new(Shared {
+                token,
+                state: Mutex::default(),
+                parent: parent.cloned(),
+            }),
+        }
     }
 
     /// Whether the signal has been cancelled.
@@ -85,45 +114,60 @@ impl CancelSignal {
 
     /// The message given with the cancellation, if any.
     pub fn reason(&self) -> Option<String> {
-        self.shared.state().reason.clone()
+        let own = self.shared.state().reason.clone();
+        own.or_else(|| self.shared.parent.as_ref().and_then(Self::reason))
+    }
+
+    /// Whether both observe the same cancellation (TS `toBe` on signals).
+    #[cfg(test)]
+    pub(crate) fn same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
     }
 
     /// Whether a deferred (`after_current_tools`) cancel is pending.
-    #[allow(dead_code, reason = "read by the agent loop's tool batches")]
     pub(crate) fn is_deferred(&self) -> bool {
-        self.shared.state().deferred
+        self.shared.state().deferred || self.shared.parent.as_ref().is_some_and(Self::is_deferred)
     }
 }
 
 impl CancelHandle {
-    /// Requests cancellation.
+    /// A handle with nothing to cancel until [`attach`](Self::attach).
+    pub(crate) fn idle() -> Self {
+        Self {
+            target: Arc::default(),
+        }
+    }
+
+    fn target(&self) -> MutexGuard<'_, Option<Arc<Shared>>> {
+        self.target.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Points this handle and its clones at `signal`.
+    pub(crate) fn attach(&self, signal: &CancelSignal) {
+        *self.target() = Some(Arc::clone(&signal.shared));
+    }
+
+    /// Leaves this handle and its clones with nothing to cancel.
+    pub(crate) fn detach(&self) {
+        *self.target() = None;
+    }
+
+    /// Requests cancellation; a no-op when there is nothing to cancel.
     ///
     /// With `after_current_tools`, the cancel is recorded as deferred and the signal stays
     /// uncancelled until the running tool batch finishes.
     pub fn cancel(&self, options: CancelOptions) {
-        {
-            let mut state = self.shared.state();
-            if options.message.is_some() {
-                state.reason = options.message;
-            }
-            if options.after_current_tools {
-                state.deferred = true;
-                return;
-            }
+        let target = self.target().clone();
+        if let Some(shared) = target {
+            shared.cancel(options);
         }
-        self.shared.token.cancel();
     }
 
-    /// Whether the signal has been cancelled.
+    /// Whether the target signal has been cancelled; `false` when there is none.
     pub fn is_cancelled(&self) -> bool {
-        self.shared.token.is_cancelled()
-    }
-
-    /// A signal observing this handle's cancellation.
-    pub fn signal(&self) -> CancelSignal {
-        CancelSignal {
-            shared: Arc::clone(&self.shared),
-        }
+        self.target()
+            .as_ref()
+            .is_some_and(|shared| shared.token.is_cancelled())
     }
 }
 
@@ -148,7 +192,7 @@ mod tests {
         let (signal, handle) = CancelSignal::new();
         let clone = signal.clone();
         handle.cancel(CancelOptions::builder().message("Task complete").build());
-        assert!(signal.is_cancelled() && clone.is_cancelled() && handle.signal().is_cancelled());
+        assert!(signal.is_cancelled() && clone.is_cancelled() && handle.is_cancelled());
         assert_eq!(clone.reason().as_deref(), Some("Task complete"));
     }
 
@@ -172,6 +216,33 @@ mod tests {
         assert!(signal.is_deferred());
         handle.cancel(CancelOptions::default());
         assert!(signal.is_cancelled());
+    }
+
+    #[test]
+    fn a_joined_signal_follows_its_parent_but_not_the_reverse() {
+        let (parent, parent_handle) = CancelSignal::new();
+        let joined = CancelSignal::joining(Some(&parent));
+        let handle = CancelHandle::idle();
+        handle.attach(&joined);
+        handle.cancel(CancelOptions::default());
+        assert!(joined.is_cancelled() && !parent.is_cancelled());
+
+        let joined = CancelSignal::joining(Some(&parent));
+        parent_handle.cancel(CancelOptions::builder().message("outer").build());
+        assert!(joined.is_cancelled());
+        assert_eq!(joined.reason().as_deref(), Some("outer"));
+    }
+
+    #[test]
+    fn an_idle_handle_cancels_nothing() {
+        let handle = CancelHandle::idle();
+        handle.cancel(CancelOptions::default());
+        assert!(!handle.is_cancelled());
+        let signal = CancelSignal::joining(None);
+        handle.attach(&signal);
+        handle.detach();
+        handle.cancel(CancelOptions::default());
+        assert!(!signal.is_cancelled());
     }
 
     #[tokio::test(start_paused = true)]

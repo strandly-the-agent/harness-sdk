@@ -207,10 +207,14 @@ impl Tool for AgentAsTool {
             let options = InvokeOptions {
                 invocation_state: context.invocation_state().clone(),
                 invocation_context: context.invocation_context().cloned(),
+                cancel_signal: Some(context.cancel_signal().clone()),
                 ..InvokeOptions::default()
             };
             let mut result = None;
             let mut failure = None;
+            // Read on the result event, before the child's cancel state resets (TS `classify`).
+            let child_cancel = agent.cancel_handle();
+            let mut cancelled = false;
             {
                 let mut events = agent.stream_with(input, options);
                 while let Some(item) = events.next().await {
@@ -221,6 +225,7 @@ impl Tool for AgentAsTool {
                         Ok(event) => {
                             if let AgentStreamEvent::AgentResult(last) = &event {
                                 result = Some(last.clone());
+                                cancelled = child_cancel.is_cancelled();
                             }
                             yield ToolStreamItem::Event(ToolStreamEvent::wrapping(event, delegate));
                         }
@@ -228,7 +233,6 @@ impl Tool for AgentAsTool {
                     }
                 }
             }
-            let cancelled = agent.local.cancel_signal().is_cancelled();
             let interrupted = result
                 .as_ref()
                 .filter(|result| failure.is_none() && result.stop_reason() == StopReason::Interrupt && !result.interrupts().is_empty());

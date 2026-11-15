@@ -549,3 +549,127 @@ async fn agent_tool_streams_are_send_and_the_agent_comes_back_after_a_dropped_ca
     assert!(tool.with_agent(|_| ()).is_some());
 }
 mod interrupt;
+
+/// The cancel-signal cases of agent-as-tool.test.ts.
+mod cancel {
+    use tokio::sync::Notify;
+
+    use super::*;
+    use crate::cancel::{CancelHandle, CancelOptions, CancelSignal};
+    use crate::hooks::InitializedEvent;
+    use crate::tools::FunctionTool;
+    use crate::tools::ToolError;
+
+    /// A context whose execution signal the returned handle cancels.
+    fn cancellable_context(name: &str, tool_use_id: &str, input: JsonValue) -> (ToolContext, CancelHandle) {
+        let (signal, handle) = CancelSignal::new();
+        let mut parent = LocalAgent::new(Arc::new(MockMessageModel::new()));
+        parent.begin_cancel(Some(&signal));
+        let context = ToolContext::new(
+            ToolUse::new(name, tool_use_id, input),
+            parent.tool_agent(),
+            InvocationState::new(),
+        );
+        (context, handle)
+    }
+
+    fn cancelling_agent(tool: &'static str, options: CancelOptions) -> Agent {
+        let model = MockMessageModel::new();
+        model
+            .add_turn(vec![ToolUseBlock::new(tool, "t1", json!({})).into()])
+            .add_turn(vec![text("unreachable")]);
+        let reply = options.message.clone().unwrap_or_else(|| "aborting".to_owned());
+        let cancelling = FunctionTool::new(tool, "cancels", move |_input: JsonValue, ctx: ToolContext| {
+            ctx.agent().cancel(options.clone());
+            let reply = reply.clone();
+            async move { Ok::<_, ToolError>(reply) }
+        });
+        Agent::builder()
+            .model(model)
+            .name("test-agent")
+            .tools([cancelling])
+            .printer(false)
+            .build()
+            .unwrap()
+    }
+
+    fn cancelled_result() -> JsonValue {
+        json!([{"text": "Error: Agent 'test-agent' cancelled"}])
+    }
+
+    #[tokio::test]
+    async fn returns_an_error_when_the_execution_signal_cancels_the_wrapped_agent() {
+        let agent = Agent::builder()
+            .model(model("Agent response"))
+            .name("test-agent")
+            .printer(false)
+            .build()
+            .unwrap();
+        let (context, handle) = cancellable_context("test-agent", "tool-1", json!({"input": "Hello agent"}));
+        agent.add_hook(move |_: &mut BeforeModelCallEvent<'_>| handle.cancel(CancelOptions::default()));
+        let tool = agent.as_tool(AgentAsToolOptions::default());
+
+        let (_, result) = collect(tool.stream(context)).await;
+
+        assert_eq!(*result.status(), ToolResultStatus::Error);
+        assert_eq!(content_json(&result), cancelled_result());
+    }
+
+    #[tokio::test]
+    async fn returns_a_success_result_when_the_wrapped_agent_ends_via_a_deferred_cancel_stop_tool() {
+        let options = CancelOptions {
+            message: Some("Answer is 42".to_owned()),
+            after_current_tools: true,
+        };
+        let tool = cancelling_agent("stop", options).as_tool(AgentAsToolOptions::default());
+
+        let (_, result) =
+            collect(tool.stream(context("test-agent", "tool-1", json!({"input": "Hello agent"})))).await;
+
+        assert_eq!(*result.status(), ToolResultStatus::Success);
+        assert_eq!(content_json(&result), json!([{"text": "Answer is 42"}]));
+    }
+
+    #[tokio::test]
+    async fn returns_an_error_when_the_wrapped_agent_is_cancelled_immediately_from_a_tool() {
+        let tool = cancelling_agent("abort", CancelOptions::default()).as_tool(AgentAsToolOptions::default());
+
+        let (_, result) =
+            collect(tool.stream(context("test-agent", "tool-1", json!({"input": "Hello agent"})))).await;
+
+        assert_eq!(*result.status(), ToolResultStatus::Error);
+        assert_eq!(content_json(&result), cancelled_result());
+    }
+
+    // TS delays a plugin's `initAgent`; an async `InitializedEvent` hook holds initialization the same way.
+    #[tokio::test]
+    async fn does_not_persist_cancellation_when_the_signal_aborts_during_initialization() {
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let agent = Agent::builder()
+            .model(model("Agent response"))
+            .name("test-agent")
+            .printer(false)
+            .build()
+            .unwrap();
+        let (hook_started, hook_release) = (Arc::clone(&started), Arc::clone(&release));
+        agent.add_async_hook::<InitializedEvent<'static>>(move |_event| {
+            let (started, release) = (Arc::clone(&hook_started), Arc::clone(&hook_release));
+            Box::pin(async move {
+                started.notify_one();
+                release.notified().await;
+            })
+        });
+        let tool = Arc::new(agent.as_tool(AgentAsToolOptions::builder().preserve_context(true).build()));
+        let (context, handle) = cancellable_context("test-agent", "tool-1", json!({"input": "Hello agent"}));
+
+        let execution = tokio::spawn(collect(tool.stream(context)));
+        started.notified().await;
+        handle.cancel(CancelOptions::default());
+        release.notify_one();
+        let (_, result) = execution.await.unwrap();
+
+        assert_eq!(content_json(&result), cancelled_result());
+        assert_eq!(message_count(&tool), 0);
+    }
+}

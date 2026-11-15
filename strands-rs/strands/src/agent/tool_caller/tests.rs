@@ -6,7 +6,7 @@ use futures::StreamExt;
 use serde_json::json;
 
 use crate::agent::{Agent, DirectToolCallOptions};
-use crate::cancel::{CancelOptions, CancelSignal};
+use crate::cancel::CancelSignal;
 use crate::error::Error;
 use crate::hooks::MessageAddedEvent;
 use crate::test_support::{mock_tool, stream_tool, text_result};
@@ -81,10 +81,9 @@ async fn passes_agent_cancel_signal_to_direct_tool_calls() {
     let mut agent = agent_with(vec![tool.into()]);
 
     agent.tool("probe").invoke(json!({})).await.unwrap();
-    agent.local.cancel(CancelOptions::default());
 
     let signal = received.lock().unwrap().clone().unwrap();
-    assert!(signal.is_cancelled());
+    assert!(signal.same(agent.cancel_signal()));
 }
 
 #[tokio::test]

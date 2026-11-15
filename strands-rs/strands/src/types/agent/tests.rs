@@ -83,7 +83,8 @@ fn tool_agent_snapshots_history_and_shares_state() {
 
 #[test]
 fn cancel_reaches_tool_agent_signal() {
-    let agent = local_agent();
+    let mut agent = local_agent();
+    agent.begin_cancel(None);
     let view = agent.tool_agent();
     agent.cancel(CancelOptions {
         message: Some("stop".into()),
@@ -91,6 +92,15 @@ fn cancel_reaches_tool_agent_signal() {
     });
     assert!(view.cancel_signal().is_cancelled());
     assert_eq!(view.cancel_signal().reason().as_deref(), Some("stop"));
+}
+
+#[test]
+fn cancel_is_a_no_op_while_idle() {
+    let agent = local_agent();
+    let view = agent.tool_agent();
+    agent.cancel(CancelOptions::default());
+    view.cancel(CancelOptions::default());
+    assert!(!view.cancel_signal().is_cancelled() && !agent.cancel_signal().is_cancelled());
 }
 
 #[test]
