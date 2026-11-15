@@ -352,7 +352,7 @@ pub enum Error {
     #[error(transparent)]
     SandboxPermission(#[from] SandboxPermissionError),
     /// Plumbing failures (I/O, JSON) and the plain `Error` TS throws for malformed data.
-    #[error("{0}")]
+    #[error(transparent)]
     Other(BoxError),
 }
 

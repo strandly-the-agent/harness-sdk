@@ -229,6 +229,17 @@ fn plumbing_errors_convert_to_other() {
     assert!(matches!(Error::from(cause()), Error::Other(_)));
 }
 
+#[test]
+fn other_forwards_display_and_source_of_the_wrapped_error() {
+    #[derive(Debug, thiserror::Error)]
+    #[error("outer failure")]
+    struct Outer(#[source] std::io::Error);
+
+    let error = Error::other(Outer(cause()));
+    assert_eq!(error.to_string(), "outer failure");
+    assert_eq!(error.source().unwrap().to_string(), "Original error");
+}
+
 mod sandbox_timeout_error {
     use super::*;
 
