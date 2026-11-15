@@ -1,26 +1,28 @@
 //! An agent exposed as a tool for another agent (TS `agent/agent-as-tool.ts`).
 
-use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::StreamExt;
 use serde_json::json;
 
-use crate::agent::Agent;
-use crate::interrupt::state::InterruptStateData;
+use crate::agent::{Agent, TakeSnapshotOptions};
+use crate::error::Error;
 use crate::interrupt::{Interrupt, InterruptResponse, InterruptSource};
 use crate::tools::tool::error_result;
 use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStream, ToolStreamEvent, ToolStreamItem};
 use crate::types::agent::{AgentResult, AgentStreamEvent, InterruptState, InvokeArgs, InvokeOptions};
-use crate::types::json::{JsonObject, JsonValue};
-use crate::types::messages::{
-    JsonBlock, Message, StopReason, SystemPrompt, ToolResultBlock, ToolResultContent, limit_stop_message,
-};
+use crate::types::json::JsonValue;
+use crate::types::messages::{JsonBlock, StopReason, ToolResultBlock, ToolResultContent, limit_stop_message};
+use crate::types::snapshot::Snapshot;
 use crate::types::tools::{ToolResultStatus, ToolSpec};
 
 /// Appended to a delegation tool's description to guide the model (TS
 /// `DELEGATION_DESCRIPTION_SUFFIX`).
+/// Where a context-resetting child's paused turn is kept in the parent's interrupt context (TS
+/// `INTERRUPTED_TURNS_KEY`).
+const INTERRUPTED_TURNS_KEY: &str = "subAgentInterruptedTurns";
+
 pub(crate) const DELEGATION_DESCRIPTION_SUFFIX: &str = " Calling this tool will return its response directly to the user as the final answer. It should be the only tool called in the turn.";
 
 /// Options for [`Agent::as_tool`] (TS `AgentAsToolOptions`).
@@ -81,9 +83,9 @@ pub struct AgentAsTool {
     description: String,
     delegate: bool,
     agent: Arc<Mutex<Option<Agent>>>,
-    baseline: Option<Arc<Baseline>>,
-    /// Paused turns of a context-resetting child, by tool use id (TS `subAgentInterruptedTurns`).
-    turns: Arc<Mutex<HashMap<String, Baseline>>>,
+    preserve_context: bool,
+    /// What each call of a context-resetting tool starts from (TS `_initialSnapshot`).
+    initial_snapshot: Option<Arc<Snapshot>>,
 }
 
 impl fmt::Debug for AgentAsTool {
@@ -91,7 +93,7 @@ impl fmt::Debug for AgentAsTool {
         f.debug_struct("AgentAsTool")
             .field("name", &self.name)
             .field("delegate", &self.delegate)
-            .field("preserve_context", &self.baseline.is_none())
+            .field("preserve_context", &self.preserve_context)
             .finish_non_exhaustive()
     }
 }
@@ -106,14 +108,21 @@ impl AgentAsTool {
         if options.delegate {
             description.push_str(DELEGATION_DESCRIPTION_SUFFIX);
         }
-        let baseline = (!options.preserve_context).then(|| Arc::new(Baseline::of(&agent)));
+        let initial_snapshot = if options.preserve_context {
+            None
+        } else {
+            agent
+                .take_snapshot(&TakeSnapshotOptions::session())
+                .ok()
+                .map(Arc::new)
+        };
         Self {
             name,
             description,
             delegate: options.delegate,
             agent: Arc::new(Mutex::new(Some(agent))),
-            baseline,
-            turns: Arc::default(),
+            preserve_context: options.preserve_context,
+            initial_snapshot,
         }
     }
 
@@ -152,8 +161,8 @@ impl Tool for AgentAsTool {
 
     fn stream(&self, context: ToolContext) -> ToolStream {
         let slot = Arc::clone(&self.agent);
-        let baseline = self.baseline.clone();
-        let turns = Arc::clone(&self.turns);
+        let preserve_context = self.preserve_context;
+        let initial_snapshot = self.initial_snapshot.clone();
         let name = self.name.clone();
         let delegate = self.delegate;
         ToolStream::new(async_stream::stream! {
@@ -175,8 +184,11 @@ impl Tool for AgentAsTool {
                         yield ToolOutcome::Result(error_result(&tool_use_id, text)).into();
                         return;
                     };
-                    if let Some(baseline) = &baseline {
-                        baseline.restore(agent);
+                    if let Some(snapshot) = &initial_snapshot
+                        && let Err(error) = agent.load_snapshot(snapshot)
+                    {
+                        yield ToolOutcome::Result(error_result(&tool_use_id, error)).into();
+                        return;
                     }
                     InvokeArgs::from(input)
                 }
@@ -185,18 +197,21 @@ impl Tool for AgentAsTool {
                     return;
                 }
                 Resume::With(responses) => {
-                    // A context-resetting child resumes from the turn stored when it paused.
-                    let restored = baseline.is_none()
-                        || lock(&turns).remove(&tool_use_id).map(|turn| turn.restore(agent)).is_some();
-                    if !restored || !agent.local.interrupt_state().lock().activated {
-                        tracing::error!(tool_use_id = %tool_use_id, "interrupted sub-agent turn is not available to resume");
-                        let text = format!(
-                            "Agent '{name}' did NOT run and the human's response was NOT applied: its interrupted turn \
-                             is not available. Do not report the requested action as completed; tell the user it failed and \
-                             ask them to respond again."
-                        );
-                        yield ToolOutcome::Result(error_result(&tool_use_id, text)).into();
-                        return;
+                    match restore(agent, &parent, &prefix, &tool_use_id) {
+                        Restored::Ready => {}
+                        Restored::Interrupt(interrupt) => {
+                            yield ToolOutcome::Interrupt(*interrupt).into();
+                            return;
+                        }
+                        Restored::Unavailable => {
+                            let text = format!(
+                                "Agent '{name}' did NOT run and the human's response was NOT applied: its interrupted turn \
+                                 is not available. Do not report the requested action as completed; tell the user it failed and \
+                                 ask them to respond again."
+                            );
+                            yield ToolOutcome::Result(error_result(&tool_use_id, text)).into();
+                            return;
+                        }
                     }
                     tracing::debug!(tool_name = %name, tool_use_id = %tool_use_id, "resuming sub-agent from interrupt");
                     InvokeArgs::from(responses)
@@ -236,10 +251,15 @@ impl Tool for AgentAsTool {
             let interrupted = result
                 .as_ref()
                 .filter(|result| failure.is_none() && result.stop_reason() == StopReason::Interrupt && !result.interrupts().is_empty());
-            if interrupted.is_some() && baseline.is_some() {
-                lock(&turns).insert(tool_use_id.clone(), Baseline::of(agent));
-            } else {
-                lock(&turns).remove(&tool_use_id);
+            match (interrupted, &result) {
+                (Some(_), _) if preserve_context => tracing::warn!(
+                    tool_name = %name,
+                    tool_use_id = %tool_use_id,
+                    "interrupted sub-agent has preserveContext=true and no session manager, so its interrupt cannot be resumed after a restart"
+                ),
+                (Some(_), _) => store_turn(&parent, &tool_use_id, agent),
+                (None, Some(_)) => remove_turn(&parent, &tool_use_id),
+                (None, None) => {}
             }
             drop(lease);
             if let Some(interrupt) = interrupted.and_then(|result| register(&parent, &prefix, result.interrupts())) {
@@ -351,37 +371,97 @@ fn render(result: &AgentResult) -> Vec<ToolResultContent> {
     }
 }
 
-/// What a context-resetting agent tool restores before each call (TS `takeSnapshot` with the
-/// `session` preset).
-struct Baseline {
-    messages: Vec<Message>,
-    system_prompt: Option<SystemPrompt>,
-    app_state: JsonObject,
-    model_state: JsonObject,
-    interrupts: InterruptStateData,
+/// How restoring a paused child turn went (TS `AgentToolStreamer.resume`).
+enum Restored {
+    /// The child awaits the responses.
+    Ready,
+    /// The stored turn didn't load; its interrupts are raised again, unanswered.
+    Interrupt(Box<Interrupt>),
+    /// There is no turn to resume.
+    Unavailable,
 }
 
-impl Baseline {
-    fn of(agent: &Agent) -> Self {
-        Self {
-            messages: agent.messages().to_vec(),
-            system_prompt: agent.system_prompt().cloned(),
-            app_state: agent.app_state().get_all(),
-            model_state: agent.model_state().get_all(),
-            interrupts: agent.local.interrupt_state().lock().clone(),
+/// Loads the call's stored turn into the child (a context-preserving child keeps its own) and
+/// reports whether the child awaits interrupt responses.
+fn restore(agent: &mut Agent, parent: &InterruptState, prefix: &str, tool_use_id: &str) -> Restored {
+    let turn = stored_turn(parent, tool_use_id);
+    let loaded = turn.as_ref().map_or(Ok(()), |turn| {
+        serde_json::from_value::<Snapshot>(turn.clone())
+            .map_err(Error::other)
+            .and_then(|snapshot| agent.load_snapshot(&snapshot))
+    });
+    if let Err(error) = loaded {
+        tracing::error!(tool_use_id = %tool_use_id, error = %error, "failed to restore interrupted sub-agent turn");
+        return reraise(parent, prefix, tool_use_id, turn.as_ref());
+    }
+    remove_turn(parent, tool_use_id);
+    if !agent.local.interrupt_state().lock().activated {
+        tracing::error!(tool_use_id = %tool_use_id, "interrupted sub-agent turn is not available to resume");
+        return Restored::Unavailable;
+    }
+    Restored::Ready
+}
+
+/// TS `_handleFailedRestore`: the call's interrupts the stored turn still awaits become
+/// unanswered again, and the turn stays stored.
+fn reraise(parent: &InterruptState, prefix: &str, tool_use_id: &str, turn: Option<&JsonValue>) -> Restored {
+    let pending = turn
+        .and_then(|turn| turn.get("data")?.get("interrupts")?.get("interrupts"))
+        .and_then(JsonValue::as_object);
+    let Some(pending) = pending else {
+        tracing::error!(tool_use_id = %tool_use_id, "stored turn has no readable interrupt state");
+        return Restored::Unavailable;
+    };
+    let mut state = parent.lock();
+    let mut raised = None;
+    for (id, interrupt) in &mut state.interrupts {
+        if id
+            .strip_prefix(prefix)
+            .is_some_and(|child_id| pending.contains_key(child_id))
+        {
+            interrupt.clear_response();
+            raised.get_or_insert_with(|| interrupt.clone());
         }
     }
+    raised.map_or(Restored::Unavailable, |interrupt| {
+        Restored::Interrupt(Box::new(interrupt))
+    })
+}
 
-    fn restore(&self, agent: &mut Agent) {
-        agent.local.set_messages(self.messages.clone());
-        agent.local.set_system_prompt(self.system_prompt.clone());
-        agent
-            .app_state()
-            .load_json(JsonValue::Object(self.app_state.clone()));
-        agent
-            .model_state()
-            .load_json(JsonValue::Object(self.model_state.clone()));
-        *agent.local.interrupt_state().lock() = self.interrupts.clone();
+fn stored_turn(parent: &InterruptState, tool_use_id: &str) -> Option<JsonValue> {
+    parent
+        .lock()
+        .context
+        .get(INTERRUPTED_TURNS_KEY)?
+        .get(tool_use_id)
+        .cloned()
+}
+
+/// Keeps the child's paused turn in the parent's interrupt context, so it survives a parent
+/// snapshot (TS `turns[toolUseId] = takeSnapshot(child)`).
+fn store_turn(parent: &InterruptState, tool_use_id: &str, agent: &Agent) {
+    let Ok(turn) = agent
+        .take_snapshot(&TakeSnapshotOptions::session())
+        .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Error::other))
+    else {
+        return;
+    };
+    let mut state = parent.lock();
+    let turns = state
+        .context
+        .entry(INTERRUPTED_TURNS_KEY)
+        .or_insert_with(|| json!({}));
+    match turns.as_object_mut() {
+        Some(turns) => {
+            turns.insert(tool_use_id.to_owned(), turn);
+        }
+        None => *turns = json!({ tool_use_id: turn }),
+    }
+}
+
+fn remove_turn(parent: &InterruptState, tool_use_id: &str) {
+    if let Some(JsonValue::Object(turns)) = parent.lock().context.get_mut(INTERRUPTED_TURNS_KEY) {
+        turns.shift_remove(tool_use_id);
     }
 }
 

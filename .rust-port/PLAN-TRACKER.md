@@ -47,7 +47,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Interrupts and resume with `pendingToolExecution`
 - [x] `CancelHandle`, `CancelOptions`, `CancelSignal`, TS cancel semantics
 - [x] Drop guard history repair, deferred cleanup, `shutdown()`, drop warning
-- [ ] Snapshots (`take_snapshot`/`load_snapshot`)
+- [x] Snapshots (`take_snapshot`/`load_snapshot`)
 - [ ] `Plugin` trait and built-in registration order
 - [ ] Middleware stages and phases
 - [ ] Background tasks

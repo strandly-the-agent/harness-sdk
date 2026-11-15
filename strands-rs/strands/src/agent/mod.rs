@@ -9,6 +9,7 @@ mod config;
 pub mod invocation_context;
 pub(crate) mod printer;
 mod run;
+mod snapshot;
 mod stream;
 mod tool_caller;
 
@@ -16,5 +17,6 @@ pub use agent::Agent;
 pub use agent_as_tool::{AgentAsTool, AgentAsToolOptions};
 pub use config::{AgentBuilder, AgentConfig, ModelSource, agent_builder};
 pub use invocation_context::{InvocationContext, InvocationContextUsage};
+pub use snapshot::{SnapshotField, SnapshotPreset, TakeSnapshotOptions};
 pub use stream::AgentStream;
 pub use tool_caller::{DirectToolCallOptions, ToolCallStream, ToolHandle};

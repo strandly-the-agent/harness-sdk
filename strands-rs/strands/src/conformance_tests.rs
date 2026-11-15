@@ -341,6 +341,45 @@ fn session_snapshot_files_round_trip_byte_identically() {
     }
 }
 
+/// Loads every agent-scope snapshot fixture into a fresh agent and takes it again with the same
+/// fields: the result is byte-identical. Snapshots with a context-manager `stash` wait for
+/// Phase 6.
+#[test]
+fn agent_snapshot_fixtures_survive_load_snapshot_and_take_snapshot() {
+    use crate::agent::{Agent, SnapshotField, TakeSnapshotOptions};
+
+    let files: Vec<String> = files_in("snapshots")
+        .into_iter()
+        .chain(files_in("sessions"))
+        .filter(|path| path.contains("snapshot") && !path.ends_with("manifest.json"))
+        .filter(|path| parse::<JsonValue>(path)["scope"] == "agent")
+        .filter(|path| parse::<JsonValue>(path)["data"].get("stash").is_none())
+        .collect();
+    assert_eq!(files.len(), 13, "{files:?}");
+    for path in &files {
+        let fixture: Snapshot = parse(path);
+        let mut agent = Agent::builder()
+            .model(crate::testing::MockMessageModel::new())
+            .build()
+            .unwrap();
+        agent.load_snapshot(&fixture).unwrap();
+        let options = TakeSnapshotOptions {
+            include: fixture
+                .data()
+                .keys()
+                .map(|key| key.parse::<SnapshotField>().unwrap())
+                .collect(),
+            app_data: fixture.app_data().clone(),
+            ..TakeSnapshotOptions::default()
+        };
+        let taken = agent
+            .take_snapshot(&options)
+            .unwrap()
+            .with_created_at(fixture.created_at());
+        assert_eq!(js(&taken), read(path), "{path}");
+    }
+}
+
 #[test]
 fn stop_reasons_round_trip_and_unknown_values_stay_other() {
     let events: Vec<JsonObject> = parse("stop_reasons/all.json");
@@ -845,4 +884,270 @@ async fn the_agent_loop_reproduces_the_ts_tool_run() {
     fired_batch.sort_unstable();
     order_batch.sort_unstable();
     assert_eq!(fired_batch, order_batch);
+
+    use crate::agent::{SnapshotField, SnapshotPreset, TakeSnapshotOptions};
+    let session = TakeSnapshotOptions::session();
+    assert_snapshot_matches(
+        &agent.take_snapshot(&session).unwrap(),
+        "snapshots/agent_session_preset.json",
+    );
+    let mut app_data = JsonObject::new();
+    app_data.insert("userId".into(), json!("u-123"));
+    app_data.insert("tags".into(), json!(["a"]));
+    let subset = TakeSnapshotOptions {
+        include: vec![SnapshotField::Messages, SnapshotField::State],
+        app_data,
+        ..TakeSnapshotOptions::default()
+    };
+    assert_snapshot_matches(
+        &agent.take_snapshot(&subset).unwrap(),
+        "snapshots/agent_include_subset.json",
+    );
+    let exclude = TakeSnapshotOptions {
+        preset: Some(SnapshotPreset::Session),
+        exclude: vec![SnapshotField::Interrupts, SnapshotField::Messages],
+        ..TakeSnapshotOptions::default()
+    };
+    assert_snapshot_matches(
+        &agent.take_snapshot(&exclude).unwrap(),
+        "snapshots/agent_exclude_interrupts.json",
+    );
+
+    let mut bare = Agent::builder()
+        .id("bare_agent")
+        .model(ScriptedModel {
+            turns: Default::default(),
+        })
+        .build()
+        .unwrap();
+    assert_snapshot_matches(
+        &bare.take_snapshot(&session).unwrap(),
+        "snapshots/agent_empty.json",
+    );
+    bare.set_system_prompt(Some("A plain string prompt.".into()));
+    let prompt = TakeSnapshotOptions {
+        include: vec![SnapshotField::SystemPrompt, SnapshotField::ModelState],
+        ..TakeSnapshotOptions::default()
+    };
+    assert_snapshot_matches(
+        &bare.take_snapshot(&prompt).unwrap(),
+        "snapshots/agent_system_prompt_string.json",
+    );
+}
+
+/// Compares a snapshot the Rust agent took with the TS fixture, creation times and message
+/// tracking ids aside.
+fn assert_snapshot_matches(snapshot: &Snapshot, path: &str) {
+    let normalize = |mut value: JsonValue| {
+        value["createdAt"] = json!("");
+        normalize_turns(&mut value);
+        without_tracking_ids(&mut value);
+        js(&value)
+    };
+    assert_eq!(
+        normalize(serde_json::to_value(snapshot).unwrap()),
+        normalize(parse(path)),
+        "{path}"
+    );
+}
+
+/// Clears the creation time of child turns stored in interrupt context.
+fn normalize_turns(value: &mut JsonValue) {
+    if let Some(turns) = value["data"]["interrupts"]["context"]["subAgentInterruptedTurns"].as_object_mut() {
+        for turn in turns.values_mut() {
+            turn["createdAt"] = json!("");
+        }
+    }
+}
+
+/// TS `textTurn` and `toolUseTurn` from `conformance/generate.ts`.
+fn text_turn(text: &str) -> Vec<crate::models::streaming::ModelStreamEvent> {
+    scripted_turn(&json!([
+        {"type": "modelMessageStartEvent", "role": "assistant"},
+        {"type": "modelContentBlockStartEvent"},
+        {"type": "modelContentBlockDeltaEvent", "delta": {"type": "textDelta", "text": text}},
+        {"type": "modelContentBlockStopEvent"},
+        {"type": "modelMessageStopEvent", "stopReason": "endTurn"},
+        {"type": "modelMetadataEvent", "usage": {"inputTokens": 12, "outputTokens": 5, "totalTokens": 17}, "metrics": {"latencyMs": 21}},
+    ]))
+}
+
+fn tool_use_turn(uses: &[(&str, &str, JsonValue)]) -> Vec<crate::models::streaming::ModelStreamEvent> {
+    let mut events = vec![json!({"type": "modelMessageStartEvent", "role": "assistant"})];
+    for (name, tool_use_id, input) in uses {
+        events.extend([
+            json!({"type": "modelContentBlockStartEvent", "start": {"type": "toolUseStart", "name": name, "toolUseId": tool_use_id}}),
+            json!({"type": "modelContentBlockDeltaEvent", "delta": {"type": "toolUseInputDelta", "input": input.to_string()}}),
+            json!({"type": "modelContentBlockStopEvent"}),
+        ]);
+    }
+    events.extend([
+        json!({"type": "modelMessageStopEvent", "stopReason": "toolUse"}),
+        json!({"type": "modelMetadataEvent", "usage": {"inputTokens": 30, "outputTokens": 14, "totalTokens": 44}, "metrics": {"latencyMs": 40, "timeToFirstByteMs": 9}}),
+    ]);
+    scripted_turn(&JsonValue::Array(events))
+}
+
+fn scripted_turn(events: &JsonValue) -> Vec<crate::models::streaming::ModelStreamEvent> {
+    serde_json::from_value(events.clone()).unwrap()
+}
+
+fn scripted(turns: Vec<Vec<crate::models::streaming::ModelStreamEvent>>) -> ScriptedModel {
+    ScriptedModel {
+        turns: std::sync::Mutex::new(turns.into()),
+    }
+}
+
+/// The TS `interruptRun` scenario: the snapshots while the interrupt is pending, at
+/// `BeforeInvocationEvent` of the resume with a `null` answer, and after the resumed run.
+#[tokio::test]
+async fn the_agent_loop_reproduces_the_ts_interrupt_run_snapshots() {
+    use crate::agent::{Agent, SnapshotField, TakeSnapshotOptions};
+    use crate::hooks::BeforeInvocationEvent;
+    use crate::interrupt::{InterruptParams, InterruptResponse};
+    use crate::tools::{FunctionTool, ToolContext, ToolError};
+
+    let confirm = FunctionTool::new(
+        "confirm_tool",
+        "Asks for confirmation.",
+        |_input: JsonValue, ctx: ToolContext| async move {
+            let answer = ctx.interrupt(InterruptParams {
+                name: "confirm".into(),
+                reason: Some(json!({"question": "Proceed?", "risk": 2})),
+                ..Default::default()
+            })?;
+            Ok::<_, ToolError>(json!({"answer": answer}))
+        },
+    );
+    let weather = FunctionTool::new(
+        "get_weather",
+        "Get the weather for a city.",
+        |input: JsonValue, _ctx| async move {
+            Ok::<_, ToolError>(json!({"city": input["city"], "forecast": "sunny", "high": 21}))
+        },
+    );
+    let model = scripted(vec![
+        tool_use_turn(&[
+            ("confirm_tool", "tooluse_confirm_1", json!({})),
+            ("get_weather", "tooluse_sibling_1", json!({"city": "Rome"})),
+        ]),
+        text_turn("Confirmed."),
+    ]);
+    let mut agent = Agent::builder()
+        .id("interrupt_agent")
+        .model(model)
+        .tools(crate::tool_list![confirm, weather])
+        .build()
+        .unwrap();
+    let first = agent.invoke("Do the risky thing").await.unwrap();
+    let session = TakeSnapshotOptions::session();
+    assert_snapshot_matches(
+        &agent.take_snapshot(&session).unwrap(),
+        "snapshots/agent_pending_interrupt.json",
+    );
+
+    let resumed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let slot = std::sync::Arc::clone(&resumed);
+    agent.add_hook(move |event: &mut BeforeInvocationEvent<'_>| {
+        let interrupts = TakeSnapshotOptions {
+            include: vec![SnapshotField::Interrupts],
+            ..TakeSnapshotOptions::default()
+        };
+        slot.lock()
+            .unwrap()
+            .get_or_insert_with(|| event.agent().take_snapshot(&interrupts).unwrap());
+    });
+    let responses: Vec<InterruptResponse> = first
+        .interrupts()
+        .iter()
+        .map(|interrupt| InterruptResponse::new(interrupt.id(), JsonValue::Null))
+        .collect();
+    agent.invoke(responses).await.unwrap();
+    let resumed = resumed.lock().unwrap().take().unwrap();
+    assert_snapshot_matches(&resumed, "snapshots/agent_resuming_interrupt_null_response.json");
+    assert_snapshot_matches(
+        &agent.take_snapshot(&session).unwrap(),
+        "snapshots/agent_after_interrupt_resolved.json",
+    );
+}
+
+/// The TS `subAgentInterruptRun` scenario: the child's paused turn is a session snapshot in
+/// the parent's interrupt context, before and at the start of the resume.
+#[tokio::test]
+async fn the_agent_loop_reproduces_the_ts_sub_agent_interrupt_snapshots() {
+    use crate::agent::{Agent, SnapshotField, TakeSnapshotOptions};
+    use crate::hooks::BeforeInvocationEvent;
+    use crate::interrupt::{InterruptParams, InterruptResponse};
+    use crate::tools::{FunctionTool, ToolContext, ToolError};
+
+    let confirm = FunctionTool::new(
+        "confirm_tool",
+        "Asks for confirmation.",
+        |_input: JsonValue, ctx: ToolContext| async move {
+            let answer = ctx.interrupt(InterruptParams {
+                name: "approve".into(),
+                reason: Some(json!("Child needs approval")),
+                ..Default::default()
+            })?;
+            Ok::<_, ToolError>(json!({"answer": answer}))
+        },
+    );
+    let child = Agent::builder()
+        .name("child_agent")
+        .id("child_agent")
+        .description("A child agent that asks for approval.")
+        .model(scripted(vec![
+            tool_use_turn(&[("confirm_tool", "tooluse_child_1", json!({}))]),
+            text_turn("Child approved."),
+        ]))
+        .tools([confirm])
+        .build()
+        .unwrap();
+    let mut parent = Agent::builder()
+        .id("parent_agent")
+        .model(scripted(vec![
+            tool_use_turn(&[(
+                "child_agent",
+                "tooluse_parent_1",
+                json!({"input": "Please approve"}),
+            )]),
+            text_turn("Parent done."),
+        ]))
+        .tools([child])
+        .build()
+        .unwrap();
+    let interrupts = TakeSnapshotOptions {
+        include: vec![SnapshotField::Interrupts],
+        ..TakeSnapshotOptions::default()
+    };
+    let first = parent.invoke("Delegate").await.unwrap();
+    assert_snapshot_matches(
+        &parent.take_snapshot(&interrupts).unwrap(),
+        "snapshots/agent_sub_agent_interrupt_context.json",
+    );
+
+    let resumed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let slot = std::sync::Arc::clone(&resumed);
+    parent.add_hook(move |event: &mut BeforeInvocationEvent<'_>| {
+        slot.lock()
+            .unwrap()
+            .get_or_insert_with(|| event.agent().take_snapshot(&interrupts).unwrap());
+    });
+    let responses: Vec<InterruptResponse> = first
+        .interrupts()
+        .iter()
+        .map(|interrupt| InterruptResponse::new(interrupt.id(), json!({"approved": true})))
+        .collect();
+    let result = parent.invoke(responses).await.unwrap();
+    assert_eq!(result.to_string(), "Parent done.");
+    // TS `InterruptState.toJSON` shares `context` with the live state, so the fixture shows the
+    // turn the resumed tool deleted afterwards (ts-bugs.md); Rust's snapshot is a copy.
+    let mut resumed = serde_json::to_value(resumed.lock().unwrap().take().unwrap()).unwrap();
+    let turns = &mut resumed["data"]["interrupts"]["context"]["subAgentInterruptedTurns"];
+    assert!(turns.get("tooluse_parent_1").is_some());
+    *turns = json!({});
+    assert_snapshot_matches(
+        &serde_json::from_value(resumed).unwrap(),
+        "snapshots/agent_sub_agent_resume_with_context.json",
+    );
 }

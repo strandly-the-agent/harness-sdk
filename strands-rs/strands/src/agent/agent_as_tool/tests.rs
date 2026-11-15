@@ -15,7 +15,7 @@ use crate::test_support::stream_tool;
 use crate::testing::{MockMessageModel, MockTurnOptions};
 use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStream, ToolStreamEvent, ToolStreamItem};
 use crate::types::agent::{InvocationState, InvokeLimits, InvokeOptions, LocalAgent};
-use crate::types::json::JsonValue;
+use crate::types::json::{JsonObject, JsonValue};
 use crate::types::messages::{
     ContentBlock, Message, Role, StopReason, TextBlock, ToolResultBlock, ToolUseBlock, limit_stop_message,
 };

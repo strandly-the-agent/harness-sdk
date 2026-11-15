@@ -210,6 +210,10 @@ impl Interrupt {
     pub(crate) fn set_response(&mut self, response: JsonValue) {
         self.response = Some(response);
     }
+
+    pub(crate) fn clear_response(&mut self) {
+        self.response = None;
+    }
 }
 
 pub(crate) mod state {
@@ -219,11 +223,12 @@ pub(crate) mod state {
     )]
 
     use indexmap::IndexMap;
+    use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
 
     use super::{Interrupt, InterruptResponse, InterruptResponseContent};
-    use crate::types::json::{JsonObject, null_as_default};
-    use crate::types::messages::{Message, ToolResultBlock};
+    use crate::types::json::{JsonObject, JsonValue, null_as_default};
+    use crate::types::messages::{ContentBlock, Message, Role, ToolResultBlock};
 
     /// Persisted interrupt state (TS `InterruptStateData`), the `interrupts` entry of a snapshot.
     #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -279,6 +284,20 @@ pub(crate) mod state {
             *self = Self::default();
         }
 
+        /// Restores persisted state (TS `InterruptState.fromJSON`): a pending tool execution is
+        /// kept only when activated, and then it must be resumable.
+        pub(crate) fn from_json(value: &JsonValue) -> crate::Result<Self> {
+            let mut value = value.clone();
+            let pending = value
+                .as_object_mut()
+                .and_then(|map| map.remove("pendingToolExecution"));
+            let mut state: Self = serde_json::from_value(value).map_err(crate::Error::other)?;
+            if let Some(pending) = pending.filter(|pending| state.activated && !pending.is_null()) {
+                state.pending_tool_execution = Some(restore_pending(&pending)?);
+            }
+            Ok(state)
+        }
+
         /// The paused batch to resume, when activated (TS `getPendingExecution`).
         pub(crate) fn pending_execution(&self) -> Option<PendingToolExecution> {
             self.pending_tool_execution.clone().filter(|_| self.activated)
@@ -291,6 +310,74 @@ pub(crate) mod state {
     pub(crate) struct PendingToolExecution {
         pub(crate) assistant_message_data: Message,
         pub(crate) completed_tool_results: IndexMap<String, ToolResultEntry>,
+    }
+
+    /// TS `validatePendingToolExecution`: an assistant message with tool uses, and completed
+    /// results keyed by tool use ids from that message.
+    fn restore_pending(pending: &JsonValue) -> crate::Result<PendingToolExecution> {
+        let message: Message = parse_restored(
+            "field=<pendingToolExecution.assistantMessageData>",
+            &pending["assistantMessageData"],
+        )?;
+        if message.role() != Role::Assistant {
+            return Err(session_error(
+                "field=<pendingToolExecution.assistantMessageData.role> | pending tool execution message must be an assistant message",
+            ));
+        }
+        let tool_use_ids: Vec<&str> = message
+            .content()
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::ToolUse(tool_use) => Some(tool_use.tool_use_id()),
+                _ => None,
+            })
+            .collect();
+        if tool_use_ids.is_empty() {
+            return Err(session_error(
+                "field=<pendingToolExecution.assistantMessageData.content> | pending tool execution message has no tool uses",
+            ));
+        }
+        let Some(results) = pending["completedToolResults"].as_object() else {
+            return Err(session_error(
+                "field=<pendingToolExecution.completedToolResults> | completed tool results must be an object",
+            ));
+        };
+        let mut completed_tool_results = IndexMap::new();
+        for (tool_use_id, result) in results {
+            let field =
+                format!("field=<pendingToolExecution.completedToolResults>, tool_use_id=<{tool_use_id}>");
+            if !tool_use_ids.contains(&tool_use_id.as_str()) {
+                return Err(session_error(format!(
+                    "{field} | does not match a tool use in the pending assistant message"
+                )));
+            }
+            completed_tool_results.insert(tool_use_id.clone(), parse_restored(&field, result)?);
+        }
+        Ok(PendingToolExecution {
+            assistant_message_data: message,
+            completed_tool_results,
+        })
+    }
+
+    fn parse_restored<T: DeserializeOwned>(field: &str, value: &JsonValue) -> crate::Result<T> {
+        serde_json::from_value(value.clone()).map_err(|error| {
+            crate::Error::other(RestoreError {
+                message: format!("{field} | failed to parse restored pending tool execution"),
+                source: error,
+            })
+        })
+    }
+
+    fn session_error(message: impl Into<String>) -> crate::Error {
+        crate::Error::other(message.into())
+    }
+
+    /// A restore failure keeping the parse error as its source (TS `SessionError` with `cause`).
+    #[derive(Debug, thiserror::Error)]
+    #[error("{message}")]
+    struct RestoreError {
+        message: String,
+        source: serde_json::Error,
     }
 
     /// A completed sibling result, written as `{"toolResult": ..}`.
@@ -519,5 +606,126 @@ mod tests {
             InterruptSource::from("multiagent-hook"),
             InterruptSource::MultiagentHook
         );
+    }
+
+    mod restore {
+        use super::*;
+
+        fn pending_json() -> JsonValue {
+            serde_json::to_value(pending_tool_execution()).unwrap()
+        }
+
+        #[expect(clippy::needless_pass_by_value, reason = "test helper over json! literals")]
+        fn restore(pending: JsonValue) -> crate::Result<InterruptStateData> {
+            InterruptStateData::from_json(&json!({
+                "interrupts": {}, "activated": true, "pendingToolExecution": pending,
+            }))
+        }
+
+        #[test]
+        fn restores_a_pending_tool_execution_a_newer_sdk_saved_with_content_block_types_this_version_does_not_know()
+         {
+            let saved = json!({
+                "assistantMessageData": {
+                    "role": "assistant",
+                    "content": [
+                        {"futureBlock": {"value": 1}},
+                        {"toolUse": {"name": "load_tools", "toolUseId": "t-0", "input": {}}},
+                        {"toolUse": {"name": "tool", "toolUseId": "t-1", "input": {}}},
+                    ],
+                    "trackingId": "pending-1",
+                },
+                "completedToolResults": {
+                    "t-0": {"toolResult": {
+                        "toolUseId": "t-0",
+                        "status": "success",
+                        "content": [{"text": "loaded"}, {"toolReference": {"name": "shell"}}],
+                    }},
+                },
+            });
+            let state = restore(saved.clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(&state).unwrap()["pendingToolExecution"],
+                saved
+            );
+            let pending = state.pending_execution().unwrap();
+            assert!(matches!(
+                pending.assistant_message_data.content()[0],
+                ContentBlock::Unknown(_)
+            ));
+            assert_eq!(pending.assistant_message_data.content().len(), 3);
+            assert_eq!(
+                pending.completed_tool_results["t-0"].tool_result.content().len(),
+                2
+            );
+        }
+
+        #[test]
+        fn drops_a_pending_tool_execution_when_the_interrupt_state_is_not_activated() {
+            let state = InterruptStateData::from_json(&json!({
+                "interrupts": {}, "activated": false, "pendingToolExecution": pending_json(),
+            }))
+            .unwrap();
+            assert_eq!(state.pending_tool_execution, None);
+        }
+
+        #[test]
+        fn throws_session_error_when_the_restored_pending_tool_execution_is_malformed() {
+            let pending = pending_json();
+            let mut user = pending.clone();
+            user["assistantMessageData"]["role"] = json!("user");
+            let mut not_a_list = pending.clone();
+            not_a_list["assistantMessageData"] = json!({"role": "assistant", "content": "not-a-list"});
+            let no_tool_uses = json!({
+                "assistantMessageData": {"role": "assistant", "content": [{"text": "hello"}]},
+                "completedToolResults": {},
+            });
+            let mut array_results = pending.clone();
+            array_results["completedToolResults"] = json!(["t-0"]);
+            let mut unknown_result = pending.clone();
+            unknown_result["completedToolResults"] =
+                json!({"t-9": {"toolResult": {"toolUseId": "t-9", "status": "success", "content": []}}});
+            let mut unparseable_result = pending;
+            unparseable_result["completedToolResults"] =
+                json!({"tool-a": {"toolResult": {"toolUseId": "tool-a"}}});
+            let cases = [
+                (user, "field=<pendingToolExecution.assistantMessageData.role>"),
+                (not_a_list, "field=<pendingToolExecution.assistantMessageData>"),
+                (
+                    no_tool_uses,
+                    "field=<pendingToolExecution.assistantMessageData.content>",
+                ),
+                (array_results, "field=<pendingToolExecution.completedToolResults>"),
+                (
+                    unknown_result,
+                    "field=<pendingToolExecution.completedToolResults>, tool_use_id=<t-9>",
+                ),
+                (
+                    unparseable_result,
+                    "field=<pendingToolExecution.completedToolResults>, tool_use_id=<tool-a>",
+                ),
+            ];
+            for (pending, message) in cases {
+                let error = restore(pending).unwrap_err().to_string();
+                assert!(error.starts_with(&format!("{message} | ")), "{error}");
+            }
+        }
+
+        #[test]
+        fn keeps_the_parse_error_as_the_cause_when_the_restored_pending_assistant_message_is_unparseable() {
+            let error = restore(json!({
+                "assistantMessageData": {"role": "assistant", "content": "not-a-list"},
+                "completedToolResults": {},
+            }))
+            .unwrap_err();
+            let crate::Error::Other(inner) = &error else {
+                panic!("a plain error")
+            };
+            assert!(
+                inner
+                    .source()
+                    .is_some_and(<dyn std::error::Error>::is::<serde_json::Error>)
+            );
+        }
     }
 }

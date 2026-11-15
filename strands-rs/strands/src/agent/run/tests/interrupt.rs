@@ -985,3 +985,154 @@ mod stream_break_at_interrupt_event {
         assert_eq!(model.call_count(), 2);
     }
 }
+
+mod restored_interrupt_state {
+    use super::*;
+    use crate::agent::TakeSnapshotOptions;
+    use crate::types::snapshot::Snapshot;
+
+    fn approval_gate(agent: &Agent) {
+        agent.add_hook(|event: &mut BeforeToolCallEvent| {
+            let approval = event.interrupt(InterruptParams {
+                name: "approval".into(),
+                reason: Some(json!("Approve?")),
+                ..Default::default()
+            });
+            if approval.is_some_and(|approval| approval != json!("yes")) {
+                event.set_cancel("not approved");
+            }
+        });
+    }
+
+    fn two_turn_model(first: ContentBlock) -> Arc<MockMessageModel> {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn(vec![first]);
+        model.add_turn(vec![text("Unused")]);
+        model
+    }
+
+    struct Restored {
+        agent: Agent,
+        model: Arc<MockMessageModel>,
+        interrupt_id: String,
+        log: Arc<Mutex<Vec<String>>>,
+    }
+
+    /// Interrupts an approval-gated tool call, then loads a JSON round-trip of the session
+    /// snapshot into a fresh agent.
+    async fn interrupt_and_restore() -> Restored {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut interrupted = Agent::builder()
+            .model(two_turn_model(tool_use(
+                "deleteTool",
+                "tool-1",
+                json!({"key": "X"}),
+            )))
+            .tools([logging_tool("deleteTool", &log)])
+            .build()
+            .unwrap();
+        approval_gate(&interrupted);
+        let result = interrupted.invoke("Delete X").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        let json = serde_json::to_string(
+            &interrupted
+                .take_snapshot(&TakeSnapshotOptions::session())
+                .unwrap(),
+        )
+        .unwrap();
+        let snapshot: Snapshot = serde_json::from_str(&json).unwrap();
+
+        let model = two_turn_model(text("Deleted"));
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([logging_tool("deleteTool", &log)])
+            .build()
+            .unwrap();
+        approval_gate(&agent);
+        agent.load_snapshot(&snapshot).unwrap();
+        Restored {
+            agent,
+            model,
+            interrupt_id: result.interrupts()[0].id().to_owned(),
+            log,
+        }
+    }
+
+    #[tokio::test]
+    async fn ignores_a_restored_pending_tool_execution_when_the_interrupt_state_is_not_activated() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = two_turn_model(text("Hello back"));
+        let mut agent = Agent::builder()
+            .id("agent-1")
+            .model(Arc::clone(&model))
+            .tools([logging_tool("recordTool", &log)])
+            .build()
+            .unwrap();
+        let snapshot: Snapshot = serde_json::from_value(json!({
+            "scope": "agent",
+            "schemaVersion": "1.0",
+            "createdAt": "2026-01-15T12:00:00.000Z",
+            "data": {
+                "messages": [],
+                "interrupts": {
+                    "interrupts": {},
+                    "activated": false,
+                    "pendingToolExecution": {
+                        "assistantMessageData": {
+                            "role": "assistant",
+                            "content": [{"toolUse": {"name": "recordTool", "toolUseId": "tool-1", "input": {}}}],
+                        },
+                        "completedToolResults": {},
+                    },
+                },
+            },
+            "appData": {},
+        }))
+        .unwrap();
+        agent.load_snapshot(&snapshot).unwrap();
+        let result = agent.invoke("Hello").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(model.requests().len(), 1);
+        assert!(log.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn resumes_a_pending_tool_execution_restored_from_a_snapshot_after_an_interrupt_response() {
+        let Restored {
+            mut agent,
+            model,
+            interrupt_id,
+            log,
+        } = interrupt_and_restore().await;
+        log.lock().unwrap().clear();
+        let result = agent
+            .invoke(vec![InterruptResponse::new(interrupt_id, json!("yes"))])
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(*log.lock().unwrap(), ["deleteTool"]);
+        assert_eq!(model.requests().len(), 1);
+        assert_eq!(tool_result_texts(&agent.messages()[2]).len(), 1);
+        assert!(tool_result_texts(&agent.messages()[2])[0].contains("deleteTool result"));
+    }
+
+    #[tokio::test]
+    async fn throws_type_error_when_a_restored_activated_interrupt_state_receives_a_new_prompt() {
+        let Restored {
+            mut agent,
+            model,
+            log,
+            ..
+        } = interrupt_and_restore().await;
+        log.lock().unwrap().clear();
+        for _ in 0..2 {
+            let error = agent.invoke("Something else").await.unwrap_err();
+            assert!(
+                error.to_string().contains("Agent is in an interrupted state"),
+                "{error}"
+            );
+        }
+        assert!(log.lock().unwrap().is_empty());
+        assert_eq!(model.requests().len(), 0);
+    }
+}

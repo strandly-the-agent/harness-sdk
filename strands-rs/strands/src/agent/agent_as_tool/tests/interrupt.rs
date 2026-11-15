@@ -1,10 +1,8 @@
 //! Sub-agent interrupts through `as_tool`, ported from
 //! strands-ts/src/agent/__tests__/agent-as-tool.interrupt.test.ts.
 
-use std::collections::HashMap;
-
 use super::*;
-use crate::agent::agent_as_tool::Baseline;
+use crate::agent::TakeSnapshotOptions;
 use crate::hooks::BeforeInvocationEvent;
 use crate::interrupt::{Interrupt, InterruptParams, InterruptResponse, InterruptSource};
 use crate::tools::{FunctionTool, ToolError};
@@ -21,12 +19,16 @@ struct Nested {
     orch: Agent,
     orch_model: Arc<MockMessageModel>,
     sub_model: Arc<MockMessageModel>,
-    turns: Arc<Mutex<HashMap<String, Baseline>>>,
     confirmed: Arc<Mutex<usize>>,
 }
 
 /// A sub-agent whose only tool asks for confirmation, and the orchestrator that calls it once.
 fn nested(preserve_context: bool) -> Nested {
+    nested_with(preserve_context, false)
+}
+
+/// `rebuilt`: a fresh process whose models start at the turn after the interrupted tool call.
+fn nested_with(preserve_context: bool, rebuilt: bool) -> Nested {
     let confirmed = Arc::new(Mutex::new(0));
     let count = Arc::clone(&confirmed);
     let confirm_tool = FunctionTool::new(
@@ -46,7 +48,9 @@ fn nested(preserve_context: bool) -> Nested {
         },
     );
     let sub_model = Arc::new(MockMessageModel::new());
-    sub_model.add_turn(vec![tool_use("confirmTool", "inner-1", json!({}))]);
+    if !rebuilt {
+        sub_model.add_turn(vec![tool_use("confirmTool", "inner-1", json!({}))]);
+    }
     sub_model.add_turn(vec![text("sub done")]);
     let sub = Agent::builder()
         .name("sub")
@@ -58,9 +62,10 @@ fn nested(preserve_context: bool) -> Nested {
         preserve_context,
         ..AgentAsToolOptions::default()
     });
-    let turns = Arc::clone(&tool.turns);
     let orch_model = Arc::new(MockMessageModel::new());
-    orch_model.add_turn(vec![tool_use("sub", "outer-1", json!({"input": "go"}))]);
+    if !rebuilt {
+        orch_model.add_turn(vec![tool_use("sub", "outer-1", json!({"input": "go"}))]);
+    }
     orch_model.add_turn(vec![text("orch done")]);
     let orch = Agent::builder()
         .model(Arc::clone(&orch_model))
@@ -71,7 +76,6 @@ fn nested(preserve_context: bool) -> Nested {
         orch,
         orch_model,
         sub_model,
-        turns,
         confirmed,
     }
 }
@@ -86,8 +90,27 @@ fn ids(interrupts: &[Interrupt]) -> Vec<&str> {
     ids
 }
 
-fn stored(turns: &Mutex<HashMap<String, Baseline>>) -> Vec<String> {
-    turns.lock().unwrap().keys().cloned().collect()
+/// The paused sub-agent turns kept in the orchestrator's interrupt context, by tool use id.
+fn turns(orch: &Agent) -> JsonObject {
+    let state = orch.local.interrupt_state().lock();
+    state
+        .context
+        .get("subAgentInterruptedTurns")
+        .and_then(JsonValue::as_object)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn stored(orch: &Agent) -> Vec<String> {
+    turns(orch).keys().cloned().collect()
+}
+
+fn set_turn(orch: &Agent, turn: &JsonValue) {
+    let mut state = orch.local.interrupt_state().lock();
+    state.context.insert(
+        "subAgentInterruptedTurns".into(),
+        json!({ "outer-1": turn.clone() }),
+    );
 }
 
 /// A tool context whose parent interrupt state is `parent`.
@@ -149,26 +172,101 @@ async fn resumes_the_sub_agent_in_process_and_runs_the_confirmed_tool_once() {
 }
 
 #[tokio::test]
-async fn stores_an_ephemeral_sub_agent_turn_and_frees_it_on_resume() {
-    let Nested { mut orch, turns, .. } = nested(false);
+async fn stores_an_ephemeral_sub_agent_turn_on_the_orchestrator_and_frees_it_on_resume() {
+    let Nested { mut orch, .. } = nested(false);
     orch.invoke("Test").await.unwrap();
-    assert_eq!(stored(&turns), ["outer-1"]);
-    assert!(
-        turns.lock().unwrap()["outer-1"]
-            .interrupts
-            .interrupts
-            .contains_key(INNER_ID)
-    );
+    assert_eq!(stored(&orch), ["outer-1"]);
+    let turn = &turns(&orch)["outer-1"];
+    assert_eq!(turn["scope"], "agent");
+    assert_eq!(turn["data"]["messages"][0]["content"], json!([{"text": "go"}]));
+    assert!(turn["data"]["interrupts"]["interrupts"].get(INNER_ID).is_some());
     orch.invoke(answer(OUTER_ID)).await.unwrap();
-    assert!(stored(&turns).is_empty());
+    assert!(turns(&orch).is_empty());
+}
+
+#[test]
+fn stores_nothing_for_a_context_preserving_sub_agent_and_warns_when_it_has_no_session_manager() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (orch, warnings) = crate::test_support::WarnRecorder::capture(|| {
+        runtime.block_on(async {
+            let Nested { mut orch, .. } = nested(true);
+            orch.invoke("Test").await.unwrap();
+            orch
+        })
+    });
+    assert!(orch.local.interrupt_state().lock().context.is_empty());
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.contains("preserveContext=true and no session manager")),
+        "{warnings:?}"
+    );
 }
 
 #[tokio::test]
-async fn stores_nothing_for_a_context_preserving_sub_agent() {
-    let Nested { mut orch, turns, .. } = nested(true);
+async fn resumes_after_both_agents_are_rebuilt_from_a_session() {
+    let first = nested(false);
+    let mut orch = first.orch;
+    let interrupted = orch.invoke("Test").await.unwrap();
+    assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+    let snapshot =
+        serde_json::to_string(&orch.take_snapshot(&TakeSnapshotOptions::session()).unwrap()).unwrap();
+
+    let second = nested_with(false, true);
+    let mut rebuilt = second.orch;
+    rebuilt
+        .load_snapshot(&serde_json::from_str(&snapshot).unwrap())
+        .unwrap();
+    let result = rebuilt.invoke(answer(OUTER_ID)).await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert_eq!(*second.confirmed.lock().unwrap(), 1);
+    assert_eq!(*first.confirmed.lock().unwrap(), 0);
+}
+
+#[test]
+fn persists_the_stored_turn_through_interrupt_state_json() {
+    let mut state = crate::interrupt::state::InterruptStateData::default();
+    state.context.insert(
+        "subAgentInterruptedTurns".into(),
+        json!({"outer-1": {"data": {}}}),
+    );
+    state.activated = true;
+    let json: JsonValue = serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+    let mut restored = crate::interrupt::state::InterruptStateData::from_json(&json).unwrap();
+    assert_eq!(restored.context, state.context);
+    restored.deactivate();
+    assert!(restored.context.is_empty());
+}
+
+#[tokio::test]
+async fn raises_the_interrupt_again_when_the_stored_turn_cannot_be_loaded() {
+    let Nested { mut orch, .. } = nested(false);
     orch.invoke("Test").await.unwrap();
-    assert!(stored(&turns).is_empty());
-    assert!(orch.local.interrupt_state().lock().context.is_empty());
+    set_turn(
+        &orch,
+        &json!({"data": {"messages": "not-a-list", "interrupts": {"interrupts": {INNER_ID: {}}}}}),
+    );
+    let result = orch.invoke(answer(OUTER_ID)).await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::Interrupt);
+    assert_eq!(ids(result.interrupts()), [OUTER_ID]);
+    assert_eq!(stored(&orch), ["outer-1"]);
+}
+
+#[tokio::test]
+async fn logs_instead_of_re_raising_when_an_unloadable_stored_turn_has_no_readable_interrupt_state() {
+    let Nested { mut orch, .. } = nested(false);
+    orch.invoke("Test").await.unwrap();
+    set_turn(&orch, &json!({"data": {"messages": "not-a-list"}}));
+    let result = orch.invoke(answer(OUTER_ID)).await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert!(
+        serde_json::to_string(orch.messages())
+            .unwrap()
+            .contains("NOT applied")
+    );
 }
 
 #[tokio::test]
@@ -238,7 +336,7 @@ async fn does_not_adopt_an_interrupt_that_belongs_to_another_tool_call() {
 
 #[tokio::test]
 async fn raises_the_interrupt_again_when_only_another_interrupt_was_answered_and_keeps_the_turn() {
-    let Nested { mut orch, turns, .. } = nested(false);
+    let Nested { mut orch, .. } = nested(false);
     orch.invoke("Test").await.unwrap();
     let sibling = "tool:other-1:confirm";
     orch.local
@@ -249,7 +347,32 @@ async fn raises_the_interrupt_again_when_only_another_interrupt_was_answered_and
     let result = orch.invoke(answer(sibling)).await.unwrap();
     assert_eq!(result.stop_reason(), StopReason::Interrupt);
     assert!(ids(result.interrupts()).contains(&OUTER_ID));
-    assert_eq!(stored(&turns), ["outer-1"]);
+    assert_eq!(stored(&orch), ["outer-1"]);
+}
+
+#[tokio::test]
+async fn re_raises_only_the_interrupts_the_stored_turn_still_awaits() {
+    let Nested { mut orch, .. } = nested(false);
+    orch.invoke("Test").await.unwrap();
+    let finished = "agent_as_tool:outer-1:tool:inner-0:earlier";
+    orch.local
+        .interrupt_state()
+        .lock()
+        .interrupts
+        .insert(finished.to_owned(), Interrupt::new(finished, "earlier"));
+    let mut unloadable = turns(&orch)["outer-1"].clone();
+    unloadable["schemaVersion"] = json!("0.0");
+    set_turn(&orch, &unloadable);
+    let result = orch
+        .invoke(vec![
+            InterruptResponse::new(finished, json!("yes")),
+            InterruptResponse::new(OUTER_ID, json!("yes")),
+        ])
+        .await
+        .unwrap();
+    assert_eq!(result.stop_reason(), StopReason::Interrupt);
+    assert_eq!(ids(result.interrupts()), [OUTER_ID]);
+    assert_eq!(stored(&orch), ["outer-1"]);
 }
 
 #[tokio::test]
