@@ -52,6 +52,9 @@ pub struct BaseModelConfig {
 
 impl BaseModelConfig {
     /// Shallow-merges `update` into `self`: every field `update` sets replaces the current value.
+    ///
+    /// A `None` field keeps the current value, so a merge can't clear a field (TS unsets it when
+    /// the update holds `undefined`); replace the whole config to clear one.
     pub fn merge(&mut self, update: BaseModelConfig) {
         let BaseModelConfig {
             model_id,
@@ -250,12 +253,16 @@ pub(crate) fn latest_user_index(messages: &[Message]) -> Option<usize> {
     messages.iter().rposition(|message| message.role() == Role::User)
 }
 
-/// What every provider knows from its config: the shared table entry for the model id, temporary
-/// messages off, the configured context window, and `config.model_info` over all of them.
+/// The default [`Model::model_info`] (TS `super.modelInfo`), in layers where later ones win: the
+/// shared model-info entry for [`Model::model_id`], temporary messages off, the config's
+/// `context_window_limit`, and the config's `model_info` override.
 ///
-/// The default [`Model::model_info`]; a provider that adds facts merges them between this and
-/// `config.model_info`.
-pub(crate) fn base_model_info(config: &BaseModelConfig) -> ModelInfo {
+/// A provider that knows more overrides `model_info` and layers its facts over this, then the
+/// config's `model_info` again so the user's override still wins:
+/// `merge_model_info([Some(&base_model_info(self)), Some(&facts), config.model_info.as_ref()])`.
+/// Don't call [`Model::stateful`] from the override; it reads `model_info`.
+pub fn base_model_info<M: Model + ?Sized>(model: &M) -> ModelInfo {
+    let config = model.get_config();
     let known = ModelInfo {
         capabilities: Some(ModelCapabilities {
             temporary_messages: Some(false),
@@ -266,7 +273,7 @@ pub(crate) fn base_model_info(config: &BaseModelConfig) -> ModelInfo {
             max_output_tokens: None,
         }),
     };
-    let shared = lookup_model(config.model_id.as_deref().unwrap_or_default());
+    let shared = lookup_model(model.model_id().as_deref().unwrap_or_default());
     merge_model_info([shared, Some(&known), config.model_info.as_ref()])
 }
 
@@ -354,18 +361,20 @@ impl StreamAggregatedResult {
 /// use std::sync::Mutex;
 ///
 /// use futures::stream;
-/// use strands::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest};
+/// use strands::models::model::{BaseModelConfig, BoxStream, CountTokensOptions, Model, ModelRequest};
 /// use strands::models::streaming::{
 ///     ModelContentBlockDeltaEvent, ModelContentBlockStartEvent, ModelContentBlockStopEvent,
 ///     ModelMessageStartEvent, ModelMessageStopEvent, ModelStreamEvent, TextDelta,
 /// };
 /// use strands::types::messages::Role;
-/// use strands::{Result, StopReason};
+/// use strands::{Message, Result, StopReason, async_trait};
 ///
 /// struct Echo {
 ///     config: Mutex<BaseModelConfig>,
 /// }
 ///
+/// // The async methods (`count_tokens`, `summarize`) need `#[async_trait]` on the impl.
+/// #[async_trait]
 /// impl Model for Echo {
 ///     fn stream(&self, _request: ModelRequest) -> BoxStream<'static, Result<ModelStreamEvent>> {
 ///         let events: Vec<ModelStreamEvent> = vec![
@@ -384,6 +393,10 @@ impl StreamAggregatedResult {
 ///
 ///     fn update_config(&self, config: BaseModelConfig) {
 ///         self.config.lock().unwrap_or_else(|e| e.into_inner()).merge(config);
+///     }
+///
+///     async fn count_tokens(&self, messages: &[Message], _options: CountTokensOptions) -> Result<u64> {
+///         Ok(messages.len() as u64)
 ///     }
 /// }
 /// ```
@@ -423,7 +436,8 @@ pub trait Model: Send + Sync + 'static {
     /// The provider's current config (TS `getConfig`).
     fn get_config(&self) -> BaseModelConfig;
 
-    /// Shallow-merges `config` into the provider's config (TS `updateConfig`).
+    /// Shallow-merges `config` into the provider's config (TS `updateConfig`), as
+    /// [`BaseModelConfig::merge`] does: a `None` field keeps the current value.
     fn update_config(&self, config: BaseModelConfig);
 
     /// The configured model id (TS `modelId`).
@@ -431,10 +445,13 @@ pub trait Model: Send + Sync + 'static {
         self.get_config().model_id
     }
 
-    /// What the SDK knows about this model (TS `modelInfo`): the shared model-info table entry for
-    /// the model id, merged with the config's context window and `model_info`.
+    /// What the SDK knows about this model (TS `modelInfo`), resolved on each call.
+    ///
+    /// The default is [`base_model_info`]: the shared model-info entry for
+    /// [`model_id`](Model::model_id), then the config's context window and `model_info`. A
+    /// provider with facts of its own overrides this and layers them with [`merge_model_info`].
     fn model_info(&self) -> ModelInfo {
-        base_model_info(&self.get_config())
+        base_model_info(self)
     }
 
     /// Whether the provider keeps the conversation server-side (TS `stateful`); `false` when unknown.
@@ -632,17 +649,16 @@ impl Aggregator {
     }
 
     fn finish_tool_use(&mut self) -> serde_json::Result<ContentBlock> {
+        // Cleared before parsing so a failed block doesn't leak into the next one (TS keeps them).
+        let name = std::mem::take(&mut self.tool_name);
+        let tool_use_id = std::mem::take(&mut self.tool_use_id);
+        let signature = std::mem::take(&mut self.tool_reasoning_signature);
         let input = if self.tool_input.is_empty() {
             JsonValue::Object(serde_json::Map::new())
         } else {
             from_json_str(&self.tool_input)?
         };
-        let mut block = ToolUseBlock::new(
-            std::mem::take(&mut self.tool_name),
-            std::mem::take(&mut self.tool_use_id),
-            input,
-        );
-        let signature = std::mem::take(&mut self.tool_reasoning_signature);
+        let mut block = ToolUseBlock::new(name, tool_use_id, input);
         if !signature.is_empty() {
             block = block.with_reasoning_signature(signature);
         }
@@ -710,7 +726,12 @@ impl Aggregator {
 }
 
 fn is_blank_text(block: &ContentBlock) -> bool {
-    matches!(block, ContentBlock::Text(text) if text.text().trim().is_empty())
+    matches!(block, ContentBlock::Text(text) if js_trim(text.text()).is_empty())
+}
+
+/// Trims like JS `String.prototype.trim`, which strips U+FEFF and keeps U+0085, unlike `str::trim`.
+pub(crate) fn js_trim(text: &str) -> &str {
+    text.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
 }
 
 fn heuristic_text(text: &str) -> u64 {

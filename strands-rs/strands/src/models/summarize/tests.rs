@@ -274,6 +274,16 @@ async fn returns_an_empty_summary_when_the_reply_holds_no_text() {
 }
 
 #[tokio::test]
+async fn trims_the_reply_like_js_trim() {
+    let model = RecordingModel::new(vec!["\u{feff}"], StopReason::EndTurn);
+    let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
+    assert_eq!(result, empty(Usage::default()));
+    let model = RecordingModel::new(vec!["\u{85}"], StopReason::EndTurn);
+    let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
+    assert_eq!(result, summary("\u{85}", Usage::default()));
+}
+
+#[tokio::test]
 async fn returns_its_usage() {
     let usage = Usage::new(10, 5, 15);
     let model = RecordingModel::default_reply().with_usage(usage);

@@ -377,9 +377,9 @@ mod stream_aggregated {
     }
 
     /// TS keeps the failed block's tool-use id, so the next block reads as that tool use (see
-    /// `.rust-port/ts-bugs.md`).
+    /// `.rust-port/ts-bugs.md`); Rust clears it.
     #[tokio::test]
-    async fn a_block_after_unparseable_tool_input_becomes_the_stale_tool_use_like_ts() {
+    async fn a_block_after_unparseable_tool_input_is_its_own_block() {
         let mut events = tool_use_events("{bad", None);
         events.as_array_mut().unwrap().extend([
             json!({"type": "modelContentBlockStartEvent"}),
@@ -392,8 +392,22 @@ mod stream_aggregated {
         };
         assert_eq!(
             error.partial_message().content(),
-            &[ToolUseBlock::new("tool", "t", json!({})).into()]
+            &[TextBlock::new("after").into()]
         );
+    }
+
+    #[tokio::test]
+    async fn tool_input_nested_beyond_the_depth_cap_is_a_model_error() {
+        let depth = crate::types::json::MAX_JSON_DEPTH + 1;
+        let input = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
+        let (_, result) = collect(&provider(tool_use_events(&input, Some("toolUse")))).await;
+        let Err(Error::Model(error)) = result else {
+            panic!("expected ModelError, got {result:?}");
+        };
+        assert_eq!(error.message(), "unable to parse tool input JSON");
+        let deep = format!("{}{}", "[".repeat(10_000), "]".repeat(10_000));
+        let (_, result) = collect(&provider(tool_use_events(&deep, Some("toolUse")))).await;
+        assert!(matches!(result, Err(Error::Model(_))), "{result:?}");
     }
 
     #[tokio::test]
@@ -562,6 +576,22 @@ mod stream_aggregated {
         ];
         assert_eq!(blocks(&items), expected);
         assert_eq!(result.unwrap().message().content(), expected.as_slice());
+    }
+
+    #[tokio::test]
+    async fn drops_text_blocks_that_js_trim_empties() {
+        for (value, kept) in [("\u{feff} \n", false), ("\u{85}", true)] {
+            let model = provider(json!([
+                {"type": "modelMessageStartEvent", "role": "assistant"},
+                {"type": "modelContentBlockStartEvent"},
+                {"type": "modelContentBlockDeltaEvent", "delta": {"type": "textDelta", "text": value}},
+                {"type": "modelContentBlockStopEvent"},
+                {"type": "modelMessageStopEvent", "stopReason": "endTurn"},
+            ]));
+            let content = collect(&model).await.1.unwrap().message().content().to_vec();
+            assert_eq!(content == [text(value)], kept, "{value:?}");
+            assert_eq!(content.is_empty(), !kept, "{value:?}");
+        }
     }
 
     #[tokio::test]
@@ -1040,9 +1070,36 @@ mod info {
 
         fn model_info(&self) -> ModelInfo {
             let config = self.get_config();
-            let base = base_model_info(&config);
-            merge_model_info([Some(&base), Some(&self.facts), config.model_info.as_ref()])
+            merge_model_info([
+                Some(&base_model_info(self)),
+                Some(&self.facts),
+                config.model_info.as_ref(),
+            ])
         }
+    }
+
+    /// A provider whose model id comes from somewhere other than its config.
+    struct FixedIdProvider;
+
+    impl Model for FixedIdProvider {
+        fn stream(&self, _request: ModelRequest) -> BoxStream<'static, Result<ModelStreamEvent>> {
+            Box::pin(futures::stream::empty())
+        }
+
+        fn get_config(&self) -> BaseModelConfig {
+            BaseModelConfig::builder().model_id("unknown-model").build()
+        }
+
+        fn update_config(&self, _config: BaseModelConfig) {}
+
+        fn model_id(&self) -> Option<String> {
+            Some("us.anthropic.claude-sonnet-4-6".into())
+        }
+    }
+
+    #[test]
+    fn looks_up_the_shared_model_info_by_the_model_id_method() {
+        assert_eq!(FixedIdProvider.model_info().context_window(), Some(1_000_000));
     }
 
     #[test]

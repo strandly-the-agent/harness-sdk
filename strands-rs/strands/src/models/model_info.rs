@@ -133,7 +133,11 @@ fn merge_field<T: Clone>(slot: &mut Option<T>, value: &Option<T>) {
 
 /// Merges records left to right: a later record's known fields win, unknown ones inherit, and a
 /// section with nothing known is left out (TS `mergeModelInfo`).
-pub(crate) fn merge_model_info<'a>(parts: impl IntoIterator<Item = Option<&'a ModelInfo>>) -> ModelInfo {
+///
+/// Providers that override [`Model::model_info`](crate::models::model::Model::model_info) use it to
+/// layer their facts over [`base_model_info`](crate::models::model::base_model_info), then the
+/// config's `model_info` over those.
+pub fn merge_model_info<'a>(parts: impl IntoIterator<Item = Option<&'a ModelInfo>>) -> ModelInfo {
     let mut capabilities = ModelCapabilities::default();
     let mut limits = ModelLimits::default();
     for part in parts.into_iter().flatten() {

@@ -5,7 +5,7 @@ use futures::StreamExt;
 use crate::agent::agent_metadata::AgentMetadata;
 use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
-use crate::models::model::{AggregatedEvent, Model, ModelRequest};
+use crate::models::model::{AggregatedEvent, Model, ModelRequest, js_trim};
 use crate::models::streaming::{ModelStreamEvent, Usage};
 use crate::types::messages::{
     ContentBlock, Message, Role, StopReason, SummaryBlock, SystemPrompt, TextBlock,
@@ -138,7 +138,7 @@ pub(crate) async fn summarize_with_stream<M: Model + ?Sized>(
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let text = text.trim();
+    let text = js_trim(&text);
     let content = if text.is_empty() {
         Vec::new()
     } else {

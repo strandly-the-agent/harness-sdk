@@ -2,12 +2,18 @@
 //!
 //! Also holds the crate-internal JSON plumbing that keeps Rust output byte-identical to TS
 //! `JSON.stringify`: JS number formatting, and parsing that tolerates lone UTF-16 surrogate escapes
-//! and nesting of any depth, as `JSON.parse` does.
+//! and nesting past the 128-level `serde_json` limit, as `JSON.parse` does.
 
 use std::io;
 
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, Error as _};
 use serde::{Deserialize, Deserializer, Serialize};
+
+/// The deepest array/object nesting [`from_json_str`] accepts.
+///
+/// Cloning, comparing, serializing and dropping a `JsonValue` recurse once per level; a debug build
+/// overflows a 2 MiB thread stack cloning objects nested about 1,000 deep, so this keeps a 2x margin.
+pub(crate) const MAX_JSON_DEPTH: usize = 500;
 
 /// Arbitrary JSON (`JSONValue` in TS).
 pub type JsonValue = serde_json::Value;
@@ -26,8 +32,13 @@ pub(crate) fn to_js_string<T: Serialize + ?Sized>(value: &T) -> serde_json::Resu
 /// Parses JSON written by TS, replacing lone UTF-16 surrogate escapes (`\ud83d`) with U+FFFD.
 ///
 /// `JSON.stringify` writes lone surrogates as escapes, which Rust strings can't hold. Nesting
-/// depth is unlimited, as with `JSON.parse`.
+/// deeper than [`MAX_JSON_DEPTH`] is a parse error.
 pub(crate) fn from_json_str<T: DeserializeOwned>(text: &str) -> serde_json::Result<T> {
+    if nesting_depth(text) > MAX_JSON_DEPTH {
+        return Err(serde_json::Error::custom(format!(
+            "JSON nested deeper than {MAX_JSON_DEPTH} levels"
+        )));
+    }
     match parse_unbounded(text) {
         Ok(value) => Ok(value),
         Err(error) => {
@@ -38,6 +49,35 @@ pub(crate) fn from_json_str<T: DeserializeOwned>(text: &str) -> serde_json::Resu
             parse_unbounded(&sanitized)
         }
     }
+}
+
+/// The maximum array/object nesting in `text`, skipping brackets inside strings.
+///
+/// The parser rejects input at the first point it disagrees with this count, so it never builds a
+/// value deeper than the count.
+fn nesting_depth(text: &str) -> usize {
+    let (mut depth, mut max, mut in_string, mut escaped) = (0_usize, 0, false, false);
+    for byte in text.bytes() {
+        if in_string {
+            match byte {
+                _ if escaped => escaped = false,
+                b'\\' => escaped = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'[' | b'{' => {
+                depth += 1;
+                max = max.max(depth);
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    max
 }
 
 /// Parses without the 128-level `serde_json` recursion limit (TS `JSON.parse` has none), growing the
@@ -196,12 +236,71 @@ mod tests {
         assert!(error.is_eof());
     }
 
+    fn nested(kind: &str, depth: usize) -> String {
+        match kind {
+            "array" => format!("{}{}", "[".repeat(depth), "]".repeat(depth)),
+            _ => format!("{}1{}", r#"{"a":"#.repeat(depth), "}".repeat(depth)),
+        }
+    }
+
     #[test]
     fn from_json_str_reads_nesting_deeper_than_the_serde_json_limit() {
-        let deep = format!("{}{}", "[".repeat(1_000), "]".repeat(1_000));
+        let deep = nested("array", 200);
         assert!(serde_json::from_str::<JsonValue>(&deep).is_err());
         let value: JsonValue = from_json_str(&deep).unwrap();
         assert_eq!(to_js_string(&value).unwrap(), deep);
+    }
+
+    #[test]
+    fn values_at_the_depth_cap_are_safe_on_a_2_mib_stack() {
+        let handle = std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                for kind in ["array", "object"] {
+                    let text = nested(kind, MAX_JSON_DEPTH);
+                    let value: JsonValue = from_json_str(&text).unwrap();
+                    let copy = value.clone();
+                    assert!(copy == value);
+                    assert_eq!(to_js_string(&copy).unwrap(), text);
+                    assert_eq!(serde_json::to_string(&value).unwrap(), text);
+                    drop(copy);
+                    drop(value);
+                }
+            })
+            .unwrap();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn from_json_str_rejects_nesting_beyond_the_cap() {
+        for kind in ["array", "object"] {
+            let error = from_json_str::<JsonValue>(&nested(kind, MAX_JSON_DEPTH + 1)).unwrap_err();
+            assert_eq!(error.to_string(), "JSON nested deeper than 500 levels");
+        }
+        let error = from_json_str::<JsonValue>(&nested("array", 10_000)).unwrap_err();
+        assert!(error.is_data());
+    }
+
+    #[test]
+    fn saved_messages_beyond_the_depth_cap_fail_to_load() {
+        use crate::types::messages::Message;
+        let saved = |depth: usize| {
+            format!(
+                r#"{{"role":"assistant","content":[{{"toolUse":{{"name":"t","toolUseId":"t1","input":{}}}}}]}}"#,
+                nested("object", depth)
+            )
+        };
+        // `Message` wraps the input in four levels.
+        assert!(from_json_str::<Message>(&saved(MAX_JSON_DEPTH - 4)).is_ok());
+        assert!(from_json_str::<Message>(&saved(MAX_JSON_DEPTH - 3)).is_err());
+        assert!(from_json_str::<Message>(&saved(10_000)).is_err());
+    }
+
+    #[test]
+    fn from_json_str_ignores_brackets_inside_strings() {
+        let text = format!(r#"["{}\"{}"]"#, "[".repeat(1_000), "{".repeat(1_000));
+        let value: JsonValue = from_json_str(&text).unwrap();
+        assert_eq!(to_js_string(&value).unwrap(), text);
     }
 
     #[test]
