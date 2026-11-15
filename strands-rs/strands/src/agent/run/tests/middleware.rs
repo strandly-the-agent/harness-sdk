@@ -900,22 +900,16 @@ mod execute_tool_stage {
     }
 
     #[tokio::test]
-    async fn a_hook_cancelled_call_still_runs_the_chain_with_the_cancel_result() {
+    async fn a_hook_cancelled_call_skips_the_chain() {
         let model = tool_then_done("testTool", json!({}));
         let calls = Arc::new(Mutex::new(0));
         let mut agent = agent_with_tool(&model, counting_tool("testTool", &calls));
         agent.add_hook(|event: &mut BeforeToolCallEvent| event.set_cancel("denied"));
-        let seen: Arc<Mutex<Vec<ToolResultBlock>>> = Arc::default();
-        let slot = Arc::clone(&seen);
-        agent.add_middleware(ExecuteToolStage::output(move |result: ExecuteToolResult| {
-            slot.lock().unwrap().push(result.result.clone());
-            async move { Ok(result) }
-        }));
+        let log = Log::default();
+        agent.add_middleware(around::<ExecuteToolStage>(&log, "before", "after"));
         agent.invoke("Use the tool").await.unwrap();
         assert_eq!(*calls.lock().unwrap(), 0);
-        let seen = seen.lock().unwrap();
-        assert_eq!(seen.len(), 1);
-        assert_eq!(*seen[0].status(), ToolResultStatus::Error);
+        assert!(entries(&log).is_empty());
     }
 
     #[tokio::test]

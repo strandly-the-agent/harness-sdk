@@ -306,8 +306,12 @@ impl ToolTask {
                 }
             });
 
-            let preset = cancel.map(|message| error_text_result(block.tool_use_id(), message));
-            let result = match self.run_with_middleware(tool.clone(), &tool_use, preset).await? {
+            // A hook's cancel skips the middleware chain (TS `executeTool`).
+            let outcome = match cancel {
+                Some(message) => Ok(error_text_result(block.tool_use_id(), message)),
+                None => self.run_with_middleware(tool.clone(), &tool_use, None).await?,
+            };
+            let result = match outcome {
                 Ok(result) => normalize_id(result, block.tool_use_id()),
                 Err(MiddlewareError::Interrupt(interrupt)) => {
                     return Some(ToolOutcome::Interrupt(*interrupt));
@@ -337,8 +341,7 @@ impl ToolTask {
     }
 
     /// Runs the call through the `ExecuteToolStage` chain (TS `_executeToolWithMiddleware`),
-    /// forwarding the events it yields. A `preset` result (a hook's cancel) ends the chain in
-    /// place of the tool. `None` when the executor stream is gone.
+    /// forwarding the events it yields. A `preset` result ends the chain in place of the tool. `None` when the executor stream is gone.
     async fn run_with_middleware(
         &self,
         tool: Option<Arc<dyn Tool>>,
