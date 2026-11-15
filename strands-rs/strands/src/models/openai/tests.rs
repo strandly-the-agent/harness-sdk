@@ -3,6 +3,7 @@
 //! [`OpenAIClient`] that returns scripted events and records every request; the TS mocked
 //! `OpenAI` constructor becomes [`Recorder`], a client factory that records the client parts.
 
+mod chat;
 mod responses;
 mod responses_cache;
 

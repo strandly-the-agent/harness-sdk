@@ -22,6 +22,7 @@
 //! ```
 
 mod cache;
+mod chat;
 mod client;
 mod errors;
 mod formatting;
@@ -35,11 +36,12 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use http::{HeaderMap, HeaderValue};
 
+use self::chat::{ChatStream, format_chat_request};
 pub use self::client::ApiKeySetter;
 use self::client::{
-    ApiError, ApiErrorKind, ApiRequest, DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, EventStream,
-    HttpClient, HttpClientParts, KeySource, OpenAIClient, RESPONSES_PATH, merge_headers,
-    parse_custom_headers,
+    ApiError, ApiErrorKind, ApiRequest, CHAT_COMPLETIONS_PATH, DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES,
+    DEFAULT_TIMEOUT, EventStream, HttpClient, HttpClientParts, KeySource, OpenAIClient, RESPONSES_PATH,
+    merge_headers, parse_custom_headers,
 };
 use self::errors::{OpenAIErrorKind, classify_openai_error};
 use self::formatting::warn_managed_params;
@@ -496,6 +498,7 @@ async fn next_or_cancel(
 /// The adapter of the stream in flight.
 enum StreamState {
     Responses(ResponsesStream),
+    Chat(ChatStream),
 }
 
 impl StreamState {
@@ -506,12 +509,14 @@ impl StreamState {
     ) -> std::result::Result<Vec<ModelStreamEvent>, ApiError> {
         match self {
             Self::Responses(state) => state.on_event(event, &request.model_state),
+            Self::Chat(state) => Ok(state.on_chunk(event)),
         }
     }
 
     fn finish(self) -> Vec<ModelStreamEvent> {
         match self {
             Self::Responses(state) => state.finish(),
+            Self::Chat(state) => state.finish(),
         }
     }
 }
@@ -604,7 +609,13 @@ impl OpenAIModel {
                 yield Err(Error::other("At least one message is required"));
                 return;
             }
-            let (api_request, mut state) = model.prepare(&request);
+            let (api_request, mut state) = match model.prepare(&request) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    yield Err(error);
+                    return;
+                }
+            };
             let mut events = model.client().stream(api_request);
             let cancel = request.cancel_signal.clone();
             loop {
@@ -640,30 +651,34 @@ impl OpenAIModel {
     }
 
     /// The request for `request` and the adapter that maps its events.
-    fn prepare(&self, request: &ModelRequest) -> (ApiRequest, StreamState) {
+    fn prepare(&self, request: &ModelRequest) -> Result<(ApiRequest, StreamState)> {
         let config = self.config_snapshot();
-        let stateful = self.stateful();
-        let body = format_responses_request(
-            &config,
-            request,
-            stateful,
-            &self.model_info(),
-            self.inner.warn_once.as_ref(),
-        );
-        (
-            ApiRequest {
-                path: RESPONSES_PATH,
+        let warn_once = self.inner.warn_once.as_ref();
+        if self.inner.api == OpenAIApi::Chat {
+            let body = format_chat_request(&config, request, warn_once)?;
+            let api_request = ApiRequest {
+                path: CHAT_COMPLETIONS_PATH,
                 body: JsonValue::Object(body),
-            },
+            };
+            return Ok((api_request, StreamState::Chat(ChatStream::default())));
+        }
+        let stateful = self.stateful();
+        let body = format_responses_request(&config, request, stateful, &self.model_info(), warn_once);
+        let api_request = ApiRequest {
+            path: RESPONSES_PATH,
+            body: JsonValue::Object(body),
+        };
+        Ok((
+            api_request,
             StreamState::Responses(ResponsesStream::new(stateful)),
-        )
+        ))
     }
 }
 
 fn warn_api_managed_params(api: OpenAIApi, params: Option<&JsonObject>) {
     match api {
         OpenAIApi::Responses => warn_managed_params(params, &responses::MANAGED_PARAMS),
-        OpenAIApi::Chat => {}
+        OpenAIApi::Chat => warn_managed_params(params, &chat::MANAGED_PARAMS),
     }
 }
 

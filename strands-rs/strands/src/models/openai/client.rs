@@ -22,6 +22,7 @@ pub(crate) const DEFAULT_MAX_RETRIES: u32 = 2;
 /// The vendor SDK's request timeout, which covers the wait for the response headers.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 pub(crate) const RESPONSES_PATH: &str = "/responses";
+pub(crate) const CHAT_COMPLETIONS_PATH: &str = "/chat/completions";
 /// The largest delay one JS timer can represent; Node fires a longer (or negative) timer after 1 ms.
 const MAX_TIMER_MS: f64 = 2_147_483_647.0;
 
