@@ -642,3 +642,20 @@ async fn does_not_include_redaction_when_no_redact_events_are_received() {
     ]));
     assert_eq!(collect(&model).await.result.unwrap().redaction, None);
 }
+
+#[tokio::test]
+async fn keeps_the_tool_state_after_unparsable_tool_input_as_typescript_does() {
+    let model = provider(json!([
+        start(),
+        tool_start("t", "tool"),
+        tool_input("{bad"),
+        block_stop(),
+        text("after"),
+        block_stop(),
+        stop("maxTokens"),
+    ]));
+    let Err(Error::MaxTokens(error)) = collect(&model).await.result else {
+        panic!("expected MaxTokensError");
+    };
+    assert!(error.partial_message().content.is_empty());
+}
