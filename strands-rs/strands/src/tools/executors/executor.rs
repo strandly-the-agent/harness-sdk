@@ -23,9 +23,13 @@ use crate::hooks::{
 };
 use crate::interrupt::Interrupt;
 use crate::interrupt::state::{PendingToolExecution, ToolResultEntry};
+use crate::middleware::{
+    ExecuteToolContext, ExecuteToolResult, ExecuteToolStage, MiddlewareError, MiddlewareInterrupt,
+    MiddlewareItem, MiddlewareStage, MiddlewareStream,
+};
 use crate::telemetry::LocalTelemetry;
-use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStreamEvent, ToolStreamItem};
-use crate::types::agent::{AgentStreamEvent, InvocationState, ToolAgent};
+use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStreamItem};
+use crate::types::agent::{AgentStreamEvent, InvocationState, ToolAgent, ToolStreamUpdateEventData};
 use crate::types::messages::{Message, ToolResultBlock, ToolUseBlock};
 use crate::types::tools::{ToolResultStatus, ToolUse};
 
@@ -54,8 +58,9 @@ pub(crate) enum ToolExecutorEvent {
     ToolStreamUpdate(ToolStreamUpdateEvent),
     AfterToolCall(AfterToolCallEvent),
     ToolResult(ToolResultEvent),
-    /// A delegate agent's event, yielded as is.
-    Delegated(AgentStreamEvent),
+    /// Any other event a tool's middleware chain yielded (a delegate agent's own events),
+    /// yielded as is.
+    Record(AgentStreamEvent),
 }
 
 /// An item of an executor stream; [`ToolExecutorItem::Done`] is the last.
@@ -91,9 +96,11 @@ type AfterReply = (ToolResultBlock, bool);
 /// A message from a tool task to the executor stream.
 pub(crate) enum TaskMessage {
     Before(BeforeToolCallEvent, oneshot::Sender<BeforeReply>),
-    Update(ToolStreamEvent, oneshot::Sender<()>),
+    Update(AgentStreamEvent, oneshot::Sender<()>),
     After(AfterToolCallEvent, oneshot::Sender<AfterReply>),
     Interrupted(Interrupt),
+    /// A middleware handler failed; the batch fails with it.
+    Failed(Error),
     Done(ToolResultBlock),
 }
 
@@ -188,21 +195,16 @@ impl Batch {
                     Reply::Before(sender, Some(reply)),
                 )
             }
-            TaskMessage::Update(event, sender) => {
-                // TS `AgentDelegation` middleware: a delegate's own events surface as the parent's.
-                if let Some(delegated) = event.delegated()
-                    && !self.agent.model().stateful()
-                {
-                    return Ok(Some((
-                        ToolExecutorEvent::Delegated(delegated.clone()),
-                        Reply::Update(sender),
-                    )));
-                }
-                let mut event =
-                    ToolStreamUpdateEvent::new(self.agent.clone(), event, self.invocation_state.clone());
+            TaskMessage::Update(AgentStreamEvent::ToolStreamUpdate(data), sender) => {
+                let mut event = ToolStreamUpdateEvent::new(
+                    self.agent.clone(),
+                    data.event().clone(),
+                    self.invocation_state.clone(),
+                );
                 self.hooks.invoke::<ToolStreamUpdateEvent>(&mut event).await?;
                 (ToolExecutorEvent::ToolStreamUpdate(event), Reply::Update(sender))
             }
+            TaskMessage::Update(record, sender) => (ToolExecutorEvent::Record(record), Reply::Update(sender)),
             TaskMessage::After(mut event, sender) => {
                 self.hooks.invoke::<AfterToolCallEvent>(&mut event).await?;
                 let reply = (event.result().clone(), event.retry());
@@ -215,6 +217,7 @@ impl Batch {
                 self.interrupts.push(interrupt);
                 return Ok(None);
             }
+            TaskMessage::Failed(error) => return Err(error),
             TaskMessage::Done(result) => {
                 self.results
                     .insert(result.tool_use_id().to_owned(), result.clone());
@@ -302,12 +305,14 @@ impl ToolTask {
                 }
             });
 
-            let result = match cancel {
-                Some(message) => error_text_result(block.tool_use_id(), message),
-                None => match self.run_recorded(tool.as_ref(), &tool_use).await? {
-                    ToolOutcome::Result(result) => normalize_id(result, block.tool_use_id()),
-                    ToolOutcome::Interrupt(interrupt) => return Some(ToolOutcome::Interrupt(interrupt)),
-                },
+            let preset = cancel.map(|message| error_text_result(block.tool_use_id(), message));
+            let result = match self.run_with_middleware(tool.clone(), &tool_use, preset).await? {
+                Ok(result) => normalize_id(result, block.tool_use_id()),
+                Err(MiddlewareError::Interrupt(interrupt)) => return Some(ToolOutcome::Interrupt(interrupt)),
+                Err(MiddlewareError::Failed(error)) => {
+                    self.send(TaskMessage::Failed(error)).await?;
+                    return None;
+                }
             };
             let error = result.shared_error();
             let event = AfterToolCallEvent::new(
@@ -328,62 +333,56 @@ impl ToolTask {
         }
     }
 
-    /// Runs the tool, forwarding its progress events (TS `_executeToolCore`).
-    /// Runs the tool inside a local tool trace and records its tool metrics (TS `_executeToolCore`).
-    async fn run_recorded(&self, tool: Option<&Arc<dyn Tool>>, tool_use: &ToolUse) -> Option<ToolOutcome> {
-        let tool_use_id = tool_use.tool_use_id();
-        self.telemetry
-            .lock()
-            .tracer
-            .start_tool(tool_use.name(), tool_use_id);
-        let started = Instant::now();
-        let outcome = self.run_tool(tool, tool_use).await;
-        let success = matches!(&outcome, Some(ToolOutcome::Result(result)) if *result.status() == ToolResultStatus::Success);
-        let mut telemetry = self.telemetry.lock();
-        telemetry.tracer.end_tool(tool_use_id);
-        telemetry
-            .meter
-            .end_tool_call(tool_use.name(), started.elapsed(), success);
-        outcome
-    }
-
-    async fn run_tool(&self, tool: Option<&Arc<dyn Tool>>, tool_use: &ToolUse) -> Option<ToolOutcome> {
-        let Some(tool) = tool else {
-            let text = format!("Tool '{}' not found in registry", tool_use.name());
-            return Some(error_text_result(tool_use.tool_use_id(), text).into());
-        };
-        let context = ToolContext::new(
-            tool_use.clone(),
-            self.agent.clone(),
-            self.invocation_state.clone(),
+    /// Runs the call through the `ExecuteToolStage` chain (TS `_executeToolWithMiddleware`),
+    /// forwarding the events it yields. A `preset` result (a hook's cancel) ends the chain in
+    /// place of the tool. `None` when the executor stream is gone.
+    async fn run_with_middleware(
+        &self,
+        tool: Option<Arc<dyn Tool>>,
+        tool_use: &ToolUse,
+        preset: Option<ToolResultBlock>,
+    ) -> Option<std::result::Result<ToolResultBlock, MiddlewareError>> {
+        let interrupt = MiddlewareInterrupt::new(
+            self.agent.interrupt_state().clone(),
+            format!("middleware:executeTool:{}", tool_use.tool_use_id()),
         );
-        let body = async {
-            let mut stream = tool.stream(context);
-            while let Some(item) = stream.next().await {
-                match item {
-                    ToolStreamItem::Event(event) => {
-                        let (sender, reply) = oneshot::channel();
-                        self.send(TaskMessage::Update(event, sender)).await?;
-                        reply.await.ok()?;
-                    }
-                    ToolStreamItem::Outcome(outcome) => return Some(outcome),
-                }
-            }
-            let text = format!("Tool '{}' did not return a result", tool_use.name());
-            Some(error_text_result(tool_use.tool_use_id(), text).into())
+        let context = ExecuteToolContext::new(
+            self.agent.clone(),
+            tool,
+            tool_use.clone(),
+            self.invocation_state.clone(),
+            interrupt,
+        );
+        let terminal = ToolTerminal {
+            agent: self.agent.clone(),
+            telemetry: self.telemetry.clone(),
+            preset,
         };
-        // A panicking tool fails like a throwing TS tool body: an error result with the message.
-        match AssertUnwindSafe(body).catch_unwind().await {
-            Ok(outcome) => outcome,
-            Err(panic) => {
-                let message = panic_message(panic.as_ref());
-                tracing::warn!(
-                    "tool_name=<{}>, tool_use_id=<{}>, panic=<{message}> | tool panicked",
-                    tool_use.name(),
-                    tool_use.tool_use_id()
-                );
-                let result = error_text_result(tool_use.tool_use_id(), message.clone());
-                Some(result.with_error(Error::other(message)).into())
+        let mut chain = self
+            .agent
+            .middleware()
+            .invoke::<ExecuteToolStage>(context, move |context| terminal.stream(context));
+        loop {
+            // A panicking handler fails like a panicking tool: an error result with the message.
+            let item = match AssertUnwindSafe(chain.next()).catch_unwind().await {
+                Ok(item) => item,
+                Err(panic) => return Some(Ok(panic_result(panic.as_ref(), tool_use))),
+            };
+            match item {
+                Some(Ok(MiddlewareItem::Event(record))) => {
+                    let (sender, reply) = oneshot::channel();
+                    self.send(TaskMessage::Update(record, sender)).await?;
+                    reply.await.ok()?;
+                }
+                Some(Ok(MiddlewareItem::Result(result))) => return Some(Ok(result.result)),
+                Some(Err(error)) => return Some(Err(error)),
+                None => {
+                    let message = format!(
+                        "the {} middleware chain ended without a result",
+                        ExecuteToolStage::NAME
+                    );
+                    return Some(Err(Error::other(message).into()));
+                }
             }
         }
     }
@@ -391,6 +390,92 @@ impl ToolTask {
     async fn send(&self, message: TaskMessage) -> Option<()> {
         self.sender.send(message).await.ok()
     }
+}
+
+/// The innermost layer of the `ExecuteToolStage` chain: the tool itself, inside a local tool
+/// trace and its tool metrics (TS `_executeToolCore`).
+struct ToolTerminal {
+    agent: ToolAgent,
+    telemetry: LocalTelemetry,
+    preset: Option<ToolResultBlock>,
+}
+
+impl ToolTerminal {
+    fn stream(&self, context: ExecuteToolContext) -> MiddlewareStream<'static, ExecuteToolStage> {
+        if let Some(result) = self.preset.clone() {
+            return Box::pin(futures::stream::iter([Ok(MiddlewareItem::Result(
+                ExecuteToolResult::new(result),
+            ))]));
+        }
+        let agent = self.agent.clone();
+        let telemetry = self.telemetry.clone();
+        Box::pin(async_stream::stream! {
+            let ExecuteToolContext { tool, tool_use, invocation_state, .. } = context;
+            let tool_use_id = tool_use.tool_use_id().to_owned();
+            telemetry.lock().tracer.start_tool(tool_use.name(), &tool_use_id);
+            let started = Instant::now();
+            let mut outcome = None;
+            match tool {
+                None => {
+                    let text = format!("Tool '{}' not found in registry", tool_use.name());
+                    outcome = Some(error_text_result(&tool_use_id, text).into());
+                }
+                Some(tool) => {
+                    let context = ToolContext::new(tool_use.clone(), agent, invocation_state);
+                    let built = std::panic::catch_unwind(AssertUnwindSafe(|| tool.stream(context)));
+                    match built {
+                        Err(panic) => outcome = Some(panic_result(panic.as_ref(), &tool_use).into()),
+                        Ok(mut stream) => loop {
+                            match AssertUnwindSafe(stream.next()).catch_unwind().await {
+                                Ok(Some(ToolStreamItem::Event(event))) => {
+                                    let record = ToolStreamUpdateEventData::new(event);
+                                    yield Ok(MiddlewareItem::Event(AgentStreamEvent::ToolStreamUpdate(record)));
+                                }
+                                Ok(Some(ToolStreamItem::Outcome(done))) => {
+                                    outcome = Some(done);
+                                    break;
+                                }
+                                Ok(None) => break,
+                                Err(panic) => {
+                                    outcome = Some(panic_result(panic.as_ref(), &tool_use).into());
+                                    break;
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+            let outcome = outcome.unwrap_or_else(|| {
+                let text = format!("Tool '{}' did not return a result", tool_use.name());
+                error_text_result(&tool_use_id, text).into()
+            });
+            let success = matches!(&outcome, ToolOutcome::Result(result) if *result.status() == ToolResultStatus::Success);
+            {
+                let mut telemetry = telemetry.lock();
+                telemetry.tracer.end_tool(&tool_use_id);
+                telemetry.meter.end_tool_call(tool_use.name(), started.elapsed(), success);
+            }
+            match outcome {
+                ToolOutcome::Interrupt(interrupt) => yield Err(MiddlewareError::Interrupt(interrupt)),
+                ToolOutcome::Result(result) => yield Ok(MiddlewareItem::Result(ExecuteToolResult::new(result))),
+            }
+        })
+    }
+}
+
+/// The error result of a tool or handler that panicked.
+#[expect(
+    clippy::disallowed_types,
+    reason = "a panic payload is only reachable as `dyn Any`; nothing public exposes it"
+)]
+fn panic_result(panic: &(dyn std::any::Any + Send), tool_use: &ToolUse) -> ToolResultBlock {
+    let message = panic_message(panic);
+    tracing::warn!(
+        "tool_name=<{}>, tool_use_id=<{}>, panic=<{message}> | tool panicked",
+        tool_use.name(),
+        tool_use.tool_use_id()
+    );
+    error_text_result(tool_use.tool_use_id(), message.clone()).with_error(Error::other(message))
 }
 
 /// Keeps the model-issued id on a result a tool or hook rewrote (TS `_normalizeToolResultId`).

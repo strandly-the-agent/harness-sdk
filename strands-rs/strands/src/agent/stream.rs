@@ -47,8 +47,7 @@ type Slot = Arc<Mutex<Option<AgentStreamEvent>>>;
 /// ```
 #[must_use = "streams do nothing unless polled"]
 pub struct AgentStream<'a> {
-    run: Option<Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>>,
-    slot: Slot,
+    inner: Driven<'a, Result<()>>,
 }
 
 impl<'a> AgentStream<'a> {
@@ -56,6 +55,44 @@ impl<'a> AgentStream<'a> {
     pub(crate) fn new<F>(printer: Option<SharedPrinter>, run: impl FnOnce(Emitter) -> F) -> Self
     where
         F: Future<Output = Result<()>> + Send + 'a,
+    {
+        Self {
+            inner: Driven::new(printer, run),
+        }
+    }
+}
+
+impl Stream for AgentStream<'_> {
+    type Item = Result<AgentStreamEvent>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match Pin::new(&mut self.inner).poll_next(cx) {
+            Poll::Ready(Some(DrivenItem::Event(event))) => Poll::Ready(Some(Ok(event))),
+            Poll::Ready(Some(DrivenItem::Done(Err(error)))) => Poll::Ready(Some(Err(error))),
+            Poll::Ready(Some(DrivenItem::Done(Ok(())))) | Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// An item of a [`Driven`] stream.
+pub(crate) enum DrivenItem<T> {
+    Event(AgentStreamEvent),
+    /// The future's output; the last item.
+    Done(T),
+}
+
+/// A future that emits events through an [`Emitter`], as a stream of its events and then its
+/// output.
+pub(crate) struct Driven<'a, T> {
+    run: Option<Pin<Box<dyn Future<Output = T> + Send + 'a>>>,
+    slot: Slot,
+}
+
+impl<'a, T> Driven<'a, T> {
+    pub(crate) fn new<F>(printer: Option<SharedPrinter>, run: impl FnOnce(Emitter) -> F) -> Self
+    where
+        F: Future<Output = T> + Send + 'a,
     {
         let slot = Slot::default();
         let emitter = Emitter {
@@ -73,24 +110,24 @@ impl<'a> AgentStream<'a> {
     }
 }
 
-impl Stream for AgentStream<'_> {
-    type Item = Result<AgentStreamEvent>;
+impl<T> Stream for Driven<'_, T> {
+    type Item = DrivenItem<T>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // An event left in the slot by the last poll comes before the output.
+        if let Some(event) = self.take() {
+            return Poll::Ready(Some(DrivenItem::Event(event)));
+        }
         let Some(run) = self.run.as_mut() else {
             return Poll::Ready(None);
         };
         match run.as_mut().poll(cx) {
-            Poll::Ready(Ok(())) => {
+            Poll::Ready(output) => {
                 self.run = None;
-                Poll::Ready(self.take().map(Ok))
-            }
-            Poll::Ready(Err(error)) => {
-                self.run = None;
-                Poll::Ready(Some(Err(error)))
+                Poll::Ready(Some(DrivenItem::Done(output)))
             }
             Poll::Pending => match self.take() {
-                Some(event) => Poll::Ready(Some(Ok(event))),
+                Some(event) => Poll::Ready(Some(DrivenItem::Event(event))),
                 None => Poll::Pending,
             },
         }
@@ -100,7 +137,7 @@ impl Stream for AgentStream<'_> {
 impl fmt::Debug for AgentStream<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AgentStream")
-            .field("done", &self.run.is_none())
+            .field("done", &self.inner.run.is_none())
             .finish_non_exhaustive()
     }
 }
@@ -112,6 +149,14 @@ pub(crate) struct Emitter {
 }
 
 impl Emitter {
+    /// Yields an event that was printed already (one a middleware chain passes on).
+    pub(crate) fn forward(&self, event: AgentStreamEvent) -> impl Future<Output = ()> + Send + '_ {
+        Yield {
+            slot: &self.slot,
+            event: Some(event),
+        }
+    }
+
     /// Yields `event` to the stream's consumer and resumes once it was taken.
     ///
     /// The loop must await this directly (never inside a `select!` or `join!`): the returned

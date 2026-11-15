@@ -3,26 +3,31 @@
 //! A delegation tool must be the only tool of its turn; when it succeeds, the parent ends the
 //! turn with the tool's content as the final message instead of calling the model again. It is
 //! the `strands:agent-delegation` plugin every agent registers unless a user plugin takes that
-//! name. TS refuses a lifted batch cancel and unwraps child events in an `ExecuteToolStage`
-//! middleware; until middleware lands those jobs are a `BeforeToolCallEvent` hook and an
-//! executor event (P-82).
+//! name. Its `ExecuteToolStage` middleware refuses a lifted batch cancel and unwraps child
+//! events.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
 
 use crate::error::{Error, Result};
+use futures::StreamExt;
+
 use crate::hooks::{
-    AfterToolCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent,
-    HookCallbackOptions, HookOrder, HookRegistry,
+    AfterToolCallEvent, AfterToolsEvent, BeforeModelCallEvent, BeforeToolsEvent, HookCallbackOptions,
+    HookOrder, HookRegistry,
+};
+use crate::middleware::{
+    ExecuteToolContext, ExecuteToolResult, ExecuteToolStage, MiddlewareItem, MiddlewareNext, MiddlewareStage,
+    MiddlewareStream,
 };
 use crate::plugins::Plugin;
 use crate::tools::executors::executor::error_text_result;
-use crate::tools::{STRUCTURED_OUTPUT_TOOL_NAME, Tool, ToolContext, ToolOutcome, ToolRegistry, ToolStream};
-use crate::types::agent::LocalAgent;
+use crate::tools::{STRUCTURED_OUTPUT_TOOL_NAME, ToolRegistry};
+use crate::types::agent::{AgentStreamEvent, LocalAgent};
 use crate::types::json::to_js_string;
 use crate::types::messages::{ContentBlock, TextBlock, ToolResultBlock, ToolResultContent};
-use crate::types::tools::{ToolResultStatus, ToolSpec};
+use crate::types::tools::ToolResultStatus;
 
 const BATCH_CANCEL: &str = "This tool call was not executed. A delegation tool must be the only tool called in a turn. Retry with a single delegation tool call or use only non-delegation tools.";
 const EXECUTION_REFUSED: &str = "Delegation failed: a delegation tool must be the only tool called in a turn. Retry with a single delegation tool call or use only non-delegation tools.";
@@ -60,7 +65,11 @@ impl Plugin for AgentDelegation {
 
     async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {
         check(agent)?;
-        install(agent.hooks());
+        let state = Shared::default();
+        install(agent.hooks(), &state);
+        agent.add_middleware(ExecuteToolStage::wrap(move |context, next| {
+            handle_tool_execution(&state, context, next)
+        }));
         Ok(())
     }
 }
@@ -75,10 +84,8 @@ fn check(agent: &LocalAgent) -> Result<()> {
 }
 
 /// Registers the delegation hooks on `hooks`.
-fn install(hooks: &HookRegistry) {
-    let state = Shared::default();
-
-    let batch = Arc::clone(&state);
+fn install(hooks: &HookRegistry, state: &Shared) {
+    let batch = Arc::clone(state);
     hooks.add_hook(move |event: &mut BeforeToolsEvent<'_>| {
         if event.agent().model().stateful() {
             return;
@@ -105,25 +112,7 @@ fn install(hooks: &HookRegistry) {
         }
     });
 
-    // TS refuses in its `ExecuteToolStage` middleware when a later hook cleared the batch cancel.
-    let batch = Arc::clone(&state);
-    hooks.add_hook_with(
-        HookCallbackOptions::builder().order(HookOrder::SDK_LAST).build(),
-        move |event: &mut BeforeToolCallEvent| {
-            let delegates = event
-                .selected_tool()
-                .or(event.tool())
-                .is_some_and(|tool| tool.is_delegate());
-            let crowded = lock(&batch)
-                .as_ref()
-                .is_some_and(|batch| batch.tool_use_count > 1);
-            if delegates && crowded && !event.agent().model().stateful() {
-                event.set_selected_tool(Arc::new(RefusedDelegation));
-            }
-        },
-    );
-
-    let batch = Arc::clone(&state);
+    let batch = Arc::clone(state);
     hooks.add_hook(move |event: &mut AfterToolCallEvent| {
         let mut guard = lock(&batch);
         let delegates = event.tool().is_some_and(|tool| tool.is_delegate());
@@ -143,7 +132,7 @@ fn install(hooks: &HookRegistry) {
             .then(|| event.tool_use().tool_use_id().to_owned());
     });
 
-    let batch = Arc::clone(&state);
+    let batch = Arc::clone(state);
     hooks.add_hook_with(
         HookCallbackOptions::builder().order(HookOrder::SDK_LAST).build(),
         move |event: &mut AfterToolsEvent<'_>| {
@@ -191,8 +180,9 @@ fn install(hooks: &HookRegistry) {
         },
     );
 
+    let batch = Arc::clone(state);
     hooks.add_hook(move |_: &mut BeforeModelCallEvent<'_>| {
-        *lock(&state) = None;
+        *lock(&batch) = None;
     });
 }
 
@@ -214,26 +204,34 @@ fn to_content_blocks(result: &ToolResultBlock) -> Vec<ContentBlock> {
         .collect()
 }
 
-/// Runs in place of a delegation tool that shares its turn with other tools.
-struct RefusedDelegation;
-
-impl Tool for RefusedDelegation {
-    fn name(&self) -> &str {
-        "refused_delegation"
+/// The `ExecuteToolStage` middleware (TS `_handleToolExecution`): refuses a delegation tool that
+/// shares its turn with other tools (a later hook lifted the batch cancel), and surfaces a
+/// delegate's own events as the parent's.
+fn handle_tool_execution<'a>(
+    state: &Shared,
+    context: ExecuteToolContext,
+    next: MiddlewareNext<'a, ExecuteToolStage>,
+) -> MiddlewareStream<'a, ExecuteToolStage> {
+    let delegates = context.tool.as_ref().is_some_and(|tool| tool.is_delegate());
+    if !delegates || context.agent().model().stateful() {
+        return next.run(context);
     }
-
-    fn description(&self) -> &str {
-        EXECUTION_REFUSED
+    let crowded = lock(state).as_ref().is_some_and(|batch| batch.tool_use_count > 1);
+    if crowded {
+        let result = error_text_result(context.tool_use.tool_use_id(), EXECUTION_REFUSED);
+        return Box::pin(futures::stream::iter([Ok(MiddlewareItem::Result(
+            ExecuteToolResult::new(result),
+        ))]));
     }
-
-    fn tool_spec(&self) -> ToolSpec {
-        ToolSpec::new(self.name(), self.description())
-    }
-
-    fn stream(&self, context: ToolContext) -> ToolStream {
-        let result = error_text_result(context.tool_use().tool_use_id(), EXECUTION_REFUSED);
-        ToolStream::from_future(async move { ToolOutcome::Result(result) })
-    }
+    Box::pin(next.run(context).map(|item| match item {
+        Ok(MiddlewareItem::Event(AgentStreamEvent::ToolStreamUpdate(update))) => {
+            match update.event().delegated() {
+                Some(delegated) => Ok(MiddlewareItem::Event(delegated.clone())),
+                None => Ok(MiddlewareItem::Event(AgentStreamEvent::ToolStreamUpdate(update))),
+            }
+        }
+        other => other,
+    }))
 }
 
 #[cfg(test)]

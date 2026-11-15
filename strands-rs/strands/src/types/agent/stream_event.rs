@@ -189,6 +189,11 @@ record! {
 }
 
 impl ModelStreamUpdateEventData {
+    /// A record of `event`, for middleware that yields its own events.
+    pub fn new(event: ModelStreamEvent) -> Self {
+        Self { event }
+    }
+
     /// The text of a text delta event, if this is one.
     pub fn text_delta(&self) -> Option<&str> {
         let ModelStreamEvent::BlockDelta(delta) = &self.event else {
@@ -208,6 +213,13 @@ record! {
     }
 }
 
+impl ContentBlockEventData {
+    /// A record of `content_block`, for middleware that yields its own events.
+    pub fn new(content_block: ContentBlock) -> Self {
+        Self { content_block }
+    }
+}
+
 record! {
     /// The payload of [`AgentStreamEvent::ModelMessage`] (TS `ModelMessageEvent`).
     ModelMessageEventData = "modelMessageEvent" from ModelMessageEvent<'_> {
@@ -220,6 +232,13 @@ record! {
     /// The payload of [`AgentStreamEvent::ToolStreamUpdate`] (TS `ToolStreamUpdateEvent`).
     ToolStreamUpdateEventData = "toolStreamUpdateEvent" from ToolStreamUpdateEvent {
         ref event: ToolStreamEvent = |e| e.event().clone(), "The tool's progress event.";
+    }
+}
+
+impl ToolStreamUpdateEventData {
+    /// A record of `event`, for middleware that yields its own events.
+    pub fn new(event: ToolStreamEvent) -> Self {
+        Self { event }
     }
 }
 

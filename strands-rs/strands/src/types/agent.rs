@@ -17,6 +17,7 @@ use crate::interrupt::state::InterruptStateData;
 use crate::interrupt::{
     Interrupt, InterruptParams, InterruptResponse, InterruptResponseContent, InterruptSource,
 };
+use crate::middleware::{Middleware, MiddlewareCleanup, MiddlewareRegistry, MiddlewareStage};
 use crate::models::model::Model;
 use crate::state_store::StateStore;
 use crate::telemetry::{AgentMetrics, AgentTrace, LocalTelemetry};
@@ -181,6 +182,7 @@ pub struct LocalAgent {
     model_state: StateStore,
     tool_registry: ToolRegistry,
     hooks: HookRegistry,
+    middleware: MiddlewareRegistry,
     cancel: InvocationCancel,
     interrupt_state: InterruptState,
     invocation_context: Option<InvocationContext>,
@@ -206,6 +208,7 @@ impl LocalAgent {
             model_state: StateStore::new(),
             tool_registry: ToolRegistry::new(),
             hooks: HookRegistry::new(),
+            middleware: MiddlewareRegistry::new(),
             cancel: InvocationCancel::default(),
             interrupt_state: InterruptState::default(),
             invocation_context: None,
@@ -337,6 +340,16 @@ impl LocalAgent {
         &self.hooks
     }
 
+    /// The agent's middleware registry.
+    pub fn middleware(&self) -> &MiddlewareRegistry {
+        &self.middleware
+    }
+
+    /// Registers a middleware handler (TS `addMiddleware`); see [`crate::middleware`].
+    pub fn add_middleware<S: MiddlewareStage>(&self, middleware: Middleware<S>) -> MiddlewareCleanup {
+        self.middleware.add(middleware)
+    }
+
     /// The cancellation signal of the current invocation (TS `cancelSignal`).
     pub fn cancel_signal(&self) -> &CancelSignal {
         &self.cancel.signal
@@ -407,6 +420,7 @@ impl LocalAgent {
                 app_state: self.app_state.clone(),
                 model_state: self.model_state.clone(),
                 tool_registry: self.tool_registry.clone(),
+                middleware: self.middleware.clone(),
                 cancel: self.cancel.clone(),
                 interrupt_state: self.interrupt_state.clone(),
                 invocation_context: self.invocation_context.clone(),
@@ -448,6 +462,7 @@ struct ToolAgentInner {
     tool_registry: ToolRegistry,
     cancel: InvocationCancel,
     interrupt_state: InterruptState,
+    middleware: MiddlewareRegistry,
     invocation_context: Option<InvocationContext>,
 }
 
@@ -515,6 +530,10 @@ impl ToolAgent {
 
     pub(crate) fn interrupt_state(&self) -> &InterruptState {
         &self.inner.interrupt_state
+    }
+
+    pub(crate) fn middleware(&self) -> &MiddlewareRegistry {
+        &self.inner.middleware
     }
 
     pub(crate) fn invocation_context(&self) -> Option<&InvocationContext> {
@@ -694,11 +713,9 @@ pub struct AgentResult {
 }
 
 impl AgentResult {
-    pub(crate) fn new(
-        stop_reason: StopReason,
-        last_message: Message,
-        invocation_state: InvocationState,
-    ) -> Self {
+    /// A result with no structured output, interrupts, metrics or traces, for middleware that
+    /// answers a pass without running it.
+    pub fn new(stop_reason: StopReason, last_message: Message, invocation_state: InvocationState) -> Self {
         Self {
             stop_reason,
             last_message,

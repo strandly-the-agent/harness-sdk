@@ -5,14 +5,15 @@
 //! results, so history is always re-invokable.
 
 use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::StreamExt;
 use indexmap::IndexMap;
 
-use crate::agent::stream::Emitter;
+use crate::agent::stream::{Driven, DrivenItem, Emitter};
 use crate::agent::{Agent, InvocationContext};
 use crate::cancel::CancelOptions;
+use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
 use crate::hooks::{
     AfterInvocationEvent, AfterModelCallEvent, AfterToolsEvent, AgentResultEvent, BeforeInvocationEvent,
@@ -20,10 +21,17 @@ use crate::hooks::{
     MessageAddedEvent, ModelMessageEvent, ModelStopData, ModelStreamUpdateEvent, ToolResultEvent,
 };
 use crate::interrupt::Interrupt;
+use crate::middleware::{
+    AgentStreamContext, AgentStreamResult, AgentStreamStage, InvokeModelContext, InvokeModelResult,
+    InvokeModelStage, MiddlewareError, MiddlewareInterrupt, MiddlewareItem, MiddlewareStage,
+    MiddlewareStream,
+};
 use crate::models::model::{
     AggregatedEvent, CountTokensOptions, Model, ModelRequest, StreamAggregatedResult, js_trim,
 };
 use crate::models::model_proxy::ModelProxy;
+use crate::state_store::StateStore;
+use crate::telemetry::LocalTelemetry;
 use crate::tools::executors::executor::{
     ToolExecutionInput, ToolExecutorEvent, ToolExecutorItem, error_text_result,
 };
@@ -32,6 +40,7 @@ use crate::tools::structured_output::{
 };
 use crate::tools::tool::is_valid_tool_name;
 use crate::types::agent::{AgentResult, AgentStreamEvent, InvocationState, InvokeArgs, InvokeOptions};
+use crate::types::agent::{ContentBlockEventData, ModelStreamUpdateEventData};
 use crate::types::json::JsonValue;
 use crate::types::messages::{
     ContentBlock, Message, Role, StopReason, TextBlock, ToolResultBlock, ToolResultContent, ToolUseBlock,
@@ -54,6 +63,8 @@ struct CancelledError;
 enum Stop {
     /// A cancel checkpoint saw the invocation's signal (TS `CancelledError`).
     Cancelled,
+    /// Middleware raised an interrupt outside a tool batch.
+    Interrupted(Vec<Interrupt>),
     Failed(Error),
 }
 
@@ -194,6 +205,7 @@ impl Agent {
         self.finish_abandoned_run().await?;
         self.initialize().await?;
         let hooks = self.local.hooks().clone();
+        let stage_options = options.clone();
         let state = options.invocation_state;
         let external_cancel = options.cancel_signal;
         let schema = options
@@ -214,6 +226,7 @@ impl Agent {
                 }
                 _ => false,
             };
+            let pass_args = args.clone();
             let input = normalize_input(args)?;
 
             let mut before = BeforeInvocationEvent::new(&mut self.local, state.clone(), input);
@@ -234,8 +247,16 @@ impl Agent {
                 break result;
             }
             self.in_pass = true;
+            let pass = Pass {
+                args: pass_args,
+                input,
+                resuming,
+                state: state.clone(),
+                hooks: hooks.clone(),
+                schema: schema.clone(),
+            };
             let outcome = self
-                .run_loop(input, resuming, &state, &hooks, out, schema.clone())
+                .stream_with_middleware(pass, stage_options.clone(), out)
                 .await;
             if outcome
                 .as_ref()
@@ -260,6 +281,64 @@ impl Agent {
         out.emit(AgentStreamEvent::AgentResult(event.result().clone()))
             .await;
         Ok(())
+    }
+
+    /// Runs one pass through the `AgentStreamStage` chain (TS `_streamWithMiddleware`). An
+    /// interrupt a handler raises stops the pass with stop reason `interrupt`.
+    async fn stream_with_middleware(
+        &mut self,
+        pass: Pass,
+        options: InvokeOptions,
+        out: &Emitter,
+    ) -> Result<AgentResult> {
+        if !self.local.middleware().has::<AgentStreamStage>() {
+            let Pass {
+                input,
+                resuming,
+                state,
+                hooks,
+                schema,
+                ..
+            } = pass;
+            return self.run_loop(input, resuming, &state, &hooks, out, schema).await;
+        }
+        let interrupt =
+            MiddlewareInterrupt::new(self.local.interrupt_state().clone(), "middleware:agentStream")
+                .with_snapshot();
+        let context = AgentStreamContext::new(self.local.tool_agent(), pass.args.clone(), options, interrupt);
+        let registry = self.local.middleware().clone();
+        let state = pass.state.clone();
+        let hooks = pass.hooks.clone();
+        let terminal = PassTerminal {
+            agent: Arc::new(Mutex::new(Some(&mut *self))),
+            pass,
+        };
+        let mut chain = registry.invoke::<AgentStreamStage>(context, move |context| terminal.stream(context));
+        let mut outcome = Err(MiddlewareError::Failed(Error::other(format!(
+            "the {} middleware chain ended without a result",
+            AgentStreamStage::NAME
+        ))));
+        while let Some(item) = chain.next().await {
+            match item {
+                Ok(MiddlewareItem::Event(event)) => out.forward(event).await,
+                Ok(MiddlewareItem::Result(result)) => {
+                    outcome = Ok(result.result);
+                    break;
+                }
+                Err(error) => {
+                    outcome = Err(error);
+                    break;
+                }
+            }
+        }
+        drop(chain);
+        match outcome {
+            Ok(result) => Ok(result),
+            Err(MiddlewareError::Interrupt(interrupt)) => {
+                self.interrupted(vec![interrupt], &state, &hooks, out).await
+            }
+            Err(MiddlewareError::Failed(error)) => Err(error),
+        }
     }
 
     /// Fires `AfterInvocationEvent`; returns the input a hook asked to resume with.
@@ -362,6 +441,9 @@ impl Agent {
                 Ok(Cycle::Continue) => {}
                 Ok(Cycle::Done(result)) => return Ok(self.with_telemetry(*result)),
                 Err(Stop::Cancelled) => return self.cancelled_at_checkpoint(state, hooks, out).await,
+                Err(Stop::Interrupted(interrupts)) => {
+                    return self.interrupted(interrupts, state, hooks, out).await;
+                }
                 Err(Stop::Failed(error)) => return Err(error),
             }
         }
@@ -650,11 +732,19 @@ impl Agent {
                 return Ok(StreamAggregatedResult::new(message, StopReason::EndTurn));
             }
 
-            match self
-                .stream_from_model(&model, tool_specs.clone(), forcing.clone(), state, hooks, out)
-                .await
-            {
-                Ok(result) => {
+            let outcome = self
+                .invoke_model_with_middleware(
+                    &model,
+                    tool_specs.clone(),
+                    forcing.clone(),
+                    projected,
+                    state,
+                    hooks,
+                    out,
+                )
+                .await;
+            match outcome {
+                Ok((result, model)) => {
                     self.local
                         .telemetry()
                         .lock()
@@ -689,10 +779,15 @@ impl Agent {
                     }
                     return Ok(result);
                 }
-                Err(stop) => {
-                    let (error, cancelled) = match stop {
-                        Stop::Cancelled => (Error::other(CancelledError), true),
-                        Stop::Failed(error) => (error, false),
+                Err((stop, model)) => {
+                    let (error, stop) = match stop {
+                        Stop::Failed(error) => (error, None),
+                        Stop::Cancelled => (Error::other(CancelledError), Some(Stop::Cancelled)),
+                        Stop::Interrupted(interrupts) => {
+                            let names: Vec<&str> = interrupts.iter().map(Interrupt::name).collect();
+                            let error = Error::other(format!("interrupt {}", names.join(", ")));
+                            (error, Some(Stop::Interrupted(interrupts)))
+                        }
                     };
                     let mut after =
                         AfterModelCallEvent::new(&mut self.local, model, state.clone(), attempt_count)
@@ -700,82 +795,129 @@ impl Agent {
                     hooks.invoke::<AfterModelCallEvent<'static>>(&mut after).await?;
                     out.emit(AgentStreamEvent::AfterModelCall((&after).into())).await;
                     // The event pair stays, but a cancel is never retried.
-                    if cancelled {
+                    if matches!(stop, Some(Stop::Cancelled)) {
                         return Err(Stop::Cancelled);
                     }
                     if after.retry() {
                         attempt_count = attempt_count.saturating_add(1);
                         continue;
                     }
-                    return Err(error.into());
+                    return Err(stop.unwrap_or(Stop::Failed(error)));
                 }
             }
         }
     }
 
-    /// Streams one model call, firing the stream and content block events (TS `_streamFromModel`).
-    async fn stream_from_model(
+    /// Runs one model call through the `InvokeModelStage` chain (TS
+    /// `_invokeModelWithMiddleware`), firing hooks on the events the chain yields. Returns the
+    /// model the terminal invoked, or `model` when the chain answered without it.
+    #[expect(clippy::too_many_arguments, reason = "the call's inputs, all from the loop")]
+    async fn invoke_model_with_middleware(
         &mut self,
         model: &Arc<dyn Model>,
         tool_specs: Vec<ToolSpec>,
         forcing: Forcing,
+        projected: Option<u64>,
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
-    ) -> Step<StreamAggregatedResult> {
-        // The provider writes to a snapshot, committed only when the call succeeds.
-        let model_state = self.local.model_state().snapshot();
-        let request = ModelRequest::builder()
-            .messages(fill_empty_assistant_messages(normalize_tool_use_names(
-                self.local.messages(),
-            )))
-            .maybe_system_prompt(self.local.system_prompt().cloned())
-            .tool_specs(tool_specs)
-            .maybe_tool_choice(forcing.tool_choice)
-            .maybe_structured_output_schema(forcing.structured_output_schema)
-            .model_state(model_state.clone())
-            .cancel_signal(self.local.cancel_signal().clone())
-            .build();
-        self.local.telemetry().lock().tracer.start_model();
-        let mut stream = ModelProxy::new(model.as_ref())
-            .stream_aggregated(request, self.local.invocation_context().cloned());
-        let mut result = None;
-        while let Some(item) = stream.next().await {
-            let cancelled = self.local.cancel_signal().is_cancelled();
+    ) -> std::result::Result<(StreamAggregatedResult, Arc<dyn Model>), (Stop, Arc<dyn Model>)> {
+        let context = InvokeModelContext::new(
+            self.local.tool_agent(),
+            Arc::clone(model),
+            self.local.messages().to_vec(),
+            self.local.system_prompt().cloned(),
+            tool_specs,
+            forcing.tool_choice,
+            state.clone(),
+            projected,
+            forcing.structured_output_schema,
+        );
+        let terminal = ModelTerminal {
+            base_state: self.local.model_state().snapshot(),
+            written_state: Arc::default(),
+            invoked: Arc::default(),
+            cancel: self.local.cancel_signal().clone(),
+            telemetry: self.local.telemetry().clone(),
+            invocation_context: self.local.invocation_context().cloned(),
+        };
+        let written_state = Arc::clone(&terminal.written_state);
+        let invoked = Arc::clone(&terminal.invoked);
+        let mut chain = self
+            .local
+            .middleware()
+            .invoke::<InvokeModelStage>(context, move |context| terminal.stream(context));
+        let mut outcome = Err(Stop::Failed(Error::other(format!(
+            "the {} middleware chain ended without a result",
+            InvokeModelStage::NAME
+        ))));
+        while let Some(item) = chain.next().await {
             match item {
-                Ok(AggregatedEvent::Done(done)) => result = Some(*done),
-                // Providers surface a cancel as a transport error; the cancel wins.
-                Ok(_) | Err(_) if cancelled => {
-                    self.local.telemetry().lock().tracer.end_model(None);
-                    return Err(Stop::Cancelled);
+                Ok(MiddlewareItem::Event(record)) => match self.record_hooks(record, state, hooks).await {
+                    Ok(record) => out.emit(record).await,
+                    Err(error) => {
+                        outcome = Err(Stop::Failed(error));
+                        break;
+                    }
+                },
+                Ok(MiddlewareItem::Result(result)) => {
+                    outcome = Ok(result.result);
+                    break;
                 }
                 Err(error) => {
-                    self.local.telemetry().lock().tracer.end_model(None);
-                    return Err(error.into());
-                }
-                Ok(AggregatedEvent::ModelStreamEvent(event)) => {
-                    let mut event = ModelStreamUpdateEvent::new(&mut self.local, event, state.clone());
-                    hooks
-                        .invoke::<ModelStreamUpdateEvent<'static>>(&mut event)
-                        .await?;
-                    out.emit(AgentStreamEvent::ModelStreamUpdate((&event).into()))
-                        .await;
-                }
-                Ok(AggregatedEvent::ContentBlock(block)) => {
-                    let mut event = ContentBlockEvent::new(&mut self.local, block, state.clone());
-                    hooks.invoke::<ContentBlockEvent<'static>>(&mut event).await?;
-                    out.emit(AgentStreamEvent::ContentBlock((&event).into())).await;
+                    outcome = Err(self.classify(error));
+                    break;
                 }
             }
         }
-        let result = result.ok_or_else(|| Error::other("the model stream ended without a result"))?;
-        self.local
-            .telemetry()
-            .lock()
-            .tracer
-            .end_model(Some(result.message()));
-        self.local.model_state().load_json(model_state.to_json());
-        Ok(result)
+        drop(chain);
+        let invoked = lock(&invoked).take().unwrap_or_else(|| Arc::clone(model));
+        match outcome {
+            Ok(result) => {
+                // Committed after the whole chain, so no handler's write to the state persists.
+                if let Some(written) = lock(&written_state).take() {
+                    self.local.model_state().load_json(written.to_json());
+                }
+                Ok((result, invoked))
+            }
+            Err(stop) => Err((stop, invoked)),
+        }
+    }
+
+    /// Why a chain stopped; a failure while the invocation is cancelled is its cancel.
+    fn classify(&self, error: MiddlewareError) -> Stop {
+        match error {
+            MiddlewareError::Interrupt(interrupt) => Stop::Interrupted(vec![interrupt]),
+            _ if self.local.cancel_signal().is_cancelled() => Stop::Cancelled,
+            MiddlewareError::Failed(error) => Stop::Failed(error),
+        }
+    }
+
+    /// Fires the hooks of a model event a chain yielded (TS `_streamCore`'s `_invokeCallbacks`)
+    /// and returns its record. Other events pass without hooks.
+    async fn record_hooks(
+        &mut self,
+        record: AgentStreamEvent,
+        state: &InvocationState,
+        hooks: &HookRegistry,
+    ) -> Result<AgentStreamEvent> {
+        match record {
+            AgentStreamEvent::ModelStreamUpdate(data) => {
+                let mut event =
+                    ModelStreamUpdateEvent::new(&mut self.local, data.event().clone(), state.clone());
+                hooks
+                    .invoke::<ModelStreamUpdateEvent<'static>>(&mut event)
+                    .await?;
+                Ok(AgentStreamEvent::ModelStreamUpdate((&event).into()))
+            }
+            AgentStreamEvent::ContentBlock(data) => {
+                let mut event =
+                    ContentBlockEvent::new(&mut self.local, data.content_block().clone(), state.clone());
+                hooks.invoke::<ContentBlockEvent<'static>>(&mut event).await?;
+                Ok(AgentStreamEvent::ContentBlock((&event).into()))
+            }
+            other => Ok(other),
+        }
     }
 
     /// Runs the tool calls of `assistant` (TS `executeTools`). `AfterToolsEvent` fires even when
@@ -988,6 +1130,164 @@ impl Agent {
 }
 
 /// TS `_shouldResume`: a resume never starts another pass once a limit is reached.
+/// One pass of an invocation as the loop prepared it.
+struct Pass {
+    /// The invocation arguments, before the hooks.
+    args: InvokeArgs,
+    /// The input after `BeforeInvocationEvent` hooks.
+    input: Vec<Message>,
+    resuming: bool,
+    state: InvocationState,
+    hooks: HookRegistry,
+    schema: Option<StructuredOutputSchema>,
+}
+
+/// The innermost layer of the `AgentStreamStage` chain: the pass's cycles (TS `_streamCore`). It
+/// lends the agent to one run at a time.
+struct PassTerminal<'a> {
+    agent: Arc<Mutex<Option<&'a mut Agent>>>,
+    pass: Pass,
+}
+
+/// The agent lent to one run of the pass, returned when the run ends or is dropped.
+struct Lease<'a> {
+    slot: Arc<Mutex<Option<&'a mut Agent>>>,
+    agent: Option<&'a mut Agent>,
+}
+
+impl Drop for Lease<'_> {
+    fn drop(&mut self) {
+        if let Some(agent) = self.agent.take() {
+            *lock(&self.slot) = Some(agent);
+        }
+    }
+}
+
+impl<'a> PassTerminal<'a> {
+    fn stream(&self, context: AgentStreamContext) -> MiddlewareStream<'a, AgentStreamStage> {
+        let fail = |message: &str| -> MiddlewareStream<'a, AgentStreamStage> {
+            Box::pin(futures::stream::iter([Err(
+                Error::other(message.to_owned()).into()
+            )]))
+        };
+        let Some(agent) = lock(&self.agent).take() else {
+            return fail("the agent stream is already running; a middleware ran `next` twice at once");
+        };
+        let mut lease = Lease {
+            slot: Arc::clone(&self.agent),
+            agent: Some(agent),
+        };
+        // A handler that replaced the arguments replaces the hook-processed input.
+        let input = if context.args == self.pass.args {
+            Ok(self.pass.input.clone())
+        } else {
+            normalize_input(context.args)
+        };
+        let input = match input {
+            Ok(input) => input,
+            Err(error) => return Box::pin(futures::stream::iter([Err(error.into())])),
+        };
+        let schema = context
+            .options
+            .structured_output_schema
+            .or_else(|| self.pass.schema.clone());
+        let resuming = self.pass.resuming;
+        let state = self.pass.state.clone();
+        let hooks = self.pass.hooks.clone();
+        let printer = lease.agent.as_ref().and_then(|agent| agent.printer.clone());
+        let driven = Driven::new(printer, move |emitter| async move {
+            let Some(agent) = lease.agent.as_deref_mut() else {
+                return Err(Error::other("the agent was not lent to the pass"));
+            };
+            agent
+                .run_loop(input, resuming, &state, &hooks, &emitter, schema)
+                .await
+        });
+        Box::pin(driven.map(|item| match item {
+            DrivenItem::Event(event) => Ok(MiddlewareItem::Event(event)),
+            DrivenItem::Done(Ok(result)) => Ok(MiddlewareItem::Result(AgentStreamResult::new(result))),
+            DrivenItem::Done(Err(error)) => Err(error.into()),
+        }))
+    }
+}
+
+/// The innermost layer of the `InvokeModelStage` chain: the model call itself (TS
+/// `_streamFromModel`). Each run starts from the model state as it was before the chain.
+struct ModelTerminal {
+    base_state: StateStore,
+    /// The state the provider wrote in the last run, committed when the chain succeeds.
+    written_state: Arc<Mutex<Option<StateStore>>>,
+    /// The model the last run invoked.
+    invoked: Arc<Mutex<Option<Arc<dyn Model>>>>,
+    cancel: CancelSignal,
+    telemetry: LocalTelemetry,
+    invocation_context: Option<InvocationContext>,
+}
+
+impl ModelTerminal {
+    fn stream(&self, context: InvokeModelContext) -> MiddlewareStream<'static, InvokeModelStage> {
+        *lock(&self.invoked) = Some(Arc::clone(&context.model));
+        let model_state = self.base_state.snapshot();
+        *lock(&self.written_state) = Some(model_state.clone());
+        let request = ModelRequest::builder()
+            .messages(fill_empty_assistant_messages(normalize_tool_use_names(
+                &context.messages,
+            )))
+            .maybe_system_prompt(context.system_prompt)
+            .tool_specs(context.tool_specs)
+            .maybe_tool_choice(context.tool_choice)
+            .maybe_structured_output_schema(context.structured_output_schema)
+            .maybe_dynamic_trailing_blocks(context.dynamic_trailing_blocks)
+            .model_state(model_state)
+            .cancel_signal(self.cancel.clone())
+            .build();
+        let telemetry = self.telemetry.clone();
+        let cancel = self.cancel.clone();
+        telemetry.lock().tracer.start_model();
+        let mut stream = ModelProxy::new(context.model.as_ref())
+            .stream_aggregated(request, self.invocation_context.clone());
+        Box::pin(async_stream::stream! {
+            let mut result = None;
+            while let Some(item) = stream.next().await {
+                let cancelled = cancel.is_cancelled();
+                match item {
+                    Ok(AggregatedEvent::Done(done)) => result = Some(*done),
+                    // Providers surface a cancel as a transport error; the cancel wins.
+                    Ok(_) | Err(_) if cancelled => {
+                        telemetry.lock().tracer.end_model(None);
+                        yield Err(MiddlewareError::Failed(Error::other(CancelledError)));
+                        return;
+                    }
+                    Err(error) => {
+                        telemetry.lock().tracer.end_model(None);
+                        yield Err(MiddlewareError::Failed(error));
+                        return;
+                    }
+                    Ok(AggregatedEvent::ModelStreamEvent(event)) => {
+                        let record = ModelStreamUpdateEventData::new(event);
+                        yield Ok(MiddlewareItem::Event(AgentStreamEvent::ModelStreamUpdate(record)));
+                    }
+                    Ok(AggregatedEvent::ContentBlock(block)) => {
+                        let record = ContentBlockEventData::new(block);
+                        yield Ok(MiddlewareItem::Event(AgentStreamEvent::ContentBlock(record)));
+                    }
+                }
+            }
+            let Some(result) = result else {
+                telemetry.lock().tracer.end_model(None);
+                yield Err(MiddlewareError::Failed(Error::other("the model stream ended without a result")));
+                return;
+            };
+            telemetry.lock().tracer.end_model(Some(result.message()));
+            yield Ok(MiddlewareItem::Result(InvokeModelResult::new(result)));
+        })
+    }
+}
+
+fn lock<T>(slot: &Mutex<T>) -> MutexGuard<'_, T> {
+    slot.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 fn should_resume(context: &InvocationContext) -> bool {
     let Some(limit) = context.reached_limit() else {
         return true;
@@ -1068,7 +1368,7 @@ fn stream_event(event: &ToolExecutorEvent) -> AgentStreamEvent {
         ToolExecutorEvent::ToolStreamUpdate(event) => AgentStreamEvent::ToolStreamUpdate(event.into()),
         ToolExecutorEvent::AfterToolCall(event) => AgentStreamEvent::AfterToolCall(event.into()),
         ToolExecutorEvent::ToolResult(event) => AgentStreamEvent::ToolResult(event.into()),
-        ToolExecutorEvent::Delegated(event) => event.clone(),
+        ToolExecutorEvent::Record(event) => event.clone(),
     }
 }
 

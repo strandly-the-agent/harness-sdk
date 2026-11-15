@@ -17,6 +17,7 @@ use crate::hooks::{
     EventKind, Hook, HookCallbackOptions, HookCleanup, HookEvent, HookRegistry, InitializedEvent,
     IntoSyncHook,
 };
+use crate::middleware::{Middleware, MiddlewareCleanup, MiddlewareRegistry, MiddlewareStage};
 use crate::models::model::Model;
 use crate::plugins::{ModelLifecycle, Plugin, PluginRegistry};
 use crate::retry::model_retry_strategy::{
@@ -376,6 +377,17 @@ impl Agent {
     /// The hook registry.
     pub fn hooks(&self) -> &HookRegistry {
         self.local.hooks()
+    }
+
+    /// The agent's middleware registry.
+    pub fn middleware(&self) -> &MiddlewareRegistry {
+        self.local.middleware()
+    }
+
+    /// Registers a middleware handler (TS `addMiddleware`) and returns its cleanup handle; see
+    /// [`crate::middleware`].
+    pub fn add_middleware<S: MiddlewareStage>(&self, middleware: Middleware<S>) -> MiddlewareCleanup {
+        self.local.add_middleware(middleware)
     }
 
     /// Registers a sync hook callback; the event type comes from the closure argument.
