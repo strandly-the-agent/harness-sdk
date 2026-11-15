@@ -1,17 +1,18 @@
 //! The base of model retry strategies (TS `retry/model-retry-strategy.ts`).
 //!
-//! The agent calls a strategy after each failed model call; the hook that does it lands with the
-//! agent loop.
+//! The agent installs one `AfterModelCallEvent` hook per strategy when it initializes.
 
+use std::fmt;
 use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::{self, BoxFuture, Either};
 
 use crate::cancel::CancelSignal;
-use crate::error::Error;
+use crate::error::{Error, Result};
+use crate::hooks::{AfterModelCallEvent, HookRegistry};
 use crate::retry::retry_strategy::RetryDecision;
 
 /// What a [`ModelRetryStrategy`] knows about a finished model call (the fields of TS
@@ -66,6 +67,94 @@ pub trait ModelRetryStrategy: Send + Sync + 'static {
 
     /// Resets per-call state; called on attempt 1 of every model call.
     fn on_first_model_attempt(&self) {}
+
+    /// The implementing type's name, for the TS duplicate-type warning and attach error.
+    #[doc(hidden)]
+    fn type_name(&self) -> &'static str {
+        let name = std::any::type_name::<Self>();
+        name.rsplit("::").next().unwrap_or(name)
+    }
+}
+
+impl fmt::Debug for dyn ModelRetryStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModelRetryStrategy")
+            .field("name", &self.name())
+            .finish()
+    }
+}
+
+/// Which agent each strategy instance is attached to (TS `_attachedAgent`), keyed by address;
+/// the weak handles keep the addresses unique while an entry lives.
+type Attachment = (Weak<dyn ModelRetryStrategy>, Weak<()>);
+static ATTACHED: Mutex<Vec<Attachment>> = Mutex::new(Vec::new());
+
+/// Attaches `strategy` to the agent behind `agent` (TS `initAgent`'s check).
+///
+/// # Errors
+///
+/// The instance is already attached to another live agent.
+pub(crate) fn attach(strategy: &Arc<dyn ModelRetryStrategy>, agent: &Arc<()>) -> Result<()> {
+    let mut attached = ATTACHED.lock().unwrap_or_else(PoisonError::into_inner);
+    attached.retain(|(strategy, agent)| strategy.strong_count() > 0 && agent.strong_count() > 0);
+    let address = Arc::as_ptr(strategy).cast::<()>();
+    match attached
+        .iter()
+        .find(|(existing, _)| existing.as_ptr().cast::<()>() == address)
+    {
+        Some((_, owner)) if !std::ptr::eq(owner.as_ptr(), Arc::as_ptr(agent)) => Err(Error::other(format!(
+            "{}: instance is already attached to another agent. Create a separate instance per agent.",
+            strategy.type_name()
+        ))),
+        Some(_) => Ok(()),
+        None => {
+            attached.push((Arc::downgrade(strategy), Arc::downgrade(agent)));
+            Ok(())
+        }
+    }
+}
+
+/// Logs the TS warning for two strategies of one type (TS `warnOnDuplicateRetryStrategyTypes`).
+pub(crate) fn warn_on_duplicate_types(strategies: &[Arc<dyn ModelRetryStrategy>]) {
+    let mut seen = Vec::new();
+    for strategy in strategies {
+        let name = strategy.type_name();
+        if seen.contains(&name) {
+            tracing::warn!(
+                "retry_strategy_type=<{name}> | multiple instances provided; only the first will be used"
+            );
+        } else {
+            seen.push(name);
+        }
+    }
+}
+
+/// Registers the `AfterModelCallEvent` hook that applies `strategy` (TS `initAgent`): it sleeps
+/// out the backoff inside the hook, then sets `retry`.
+pub(crate) fn install(strategy: Arc<dyn ModelRetryStrategy>, hooks: &HookRegistry, sleeper: Sleeper) {
+    hooks.add_async_hook::<AfterModelCallEvent<'static>>(move |event| {
+        let strategy = Arc::clone(&strategy);
+        let sleeper = Arc::clone(&sleeper);
+        Box::pin(async move {
+            let attempt = NonZeroU32::new(event.attempt_count()).unwrap_or(NonZeroU32::MIN);
+            let mut context = ModelRetryContext::new(attempt);
+            if let Some(error) = event.error() {
+                context = context.with_error(error);
+            }
+            let cancel_signal = event.agent().cancel_signal().clone();
+            if retry_model(
+                &*strategy,
+                &context,
+                event.retry(),
+                Some(&cancel_signal),
+                &sleeper,
+            )
+            .await
+            {
+                event.set_retry(true);
+            }
+        })
+    });
 }
 
 /// Waits out a retry delay; tests inject one that records instead of sleeping.
@@ -78,7 +167,6 @@ pub(crate) fn tokio_sleeper() -> Sleeper {
 
 /// Applies `strategy` to one finished attempt (TS `retryModel`); returns whether the call is
 /// retried. `retry_requested` is whether an earlier hook already asked for a retry.
-#[allow(dead_code, reason = "used by the agent loop")]
 pub(crate) async fn retry_model(
     strategy: &dyn ModelRetryStrategy,
     context: &ModelRetryContext<'_>,

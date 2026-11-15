@@ -14,6 +14,8 @@ use crate::hooks::{
     IntoSyncHook,
 };
 use crate::models::model::Model;
+use crate::retry::model_retry_strategy::{Sleeper, attach, install, tokio_sleeper, warn_on_duplicate_types};
+use crate::retry::{DefaultModelRetryStrategy, ModelRetryStrategy};
 use crate::state_store::StateStore;
 use crate::telemetry::{AgentMetrics, LocalTelemetry};
 use crate::tools::{StructuredOutputSchema, Tool, ToolExecutor, ToolRegistry, ToolSource};
@@ -51,6 +53,10 @@ pub struct Agent {
     pub(crate) tool_executor: ToolExecutor,
     pub(crate) telemetry: LocalTelemetry,
     pub(crate) structured_output_schema: Option<StructuredOutputSchema>,
+    retry_strategies: Vec<Arc<dyn ModelRetryStrategy>>,
+    pub(crate) retry_sleeper: Sleeper,
+    /// This agent's identity for the retry strategies' attach-once check.
+    attach_token: Arc<()>,
     initialized: bool,
 }
 
@@ -89,6 +95,10 @@ impl Agent {
         local.tool_registry_mut().add_all(tools)?;
         agent.tool_executor = config.tool_executor.unwrap_or_default();
         agent.structured_output_schema = config.structured_output_schema;
+        if let Some(strategies) = config.retry_strategy {
+            warn_on_duplicate_types(&strategies);
+            agent.retry_strategies = strategies;
+        }
         Ok(agent)
     }
 
@@ -99,6 +109,9 @@ impl Agent {
             tool_executor: ToolExecutor::default(),
             telemetry: LocalTelemetry::default(),
             structured_output_schema: None,
+            retry_strategies: vec![Arc::new(DefaultModelRetryStrategy::default())],
+            retry_sleeper: tokio_sleeper(),
+            attach_token: Arc::new(()),
             initialized: false,
         }
     }
@@ -116,6 +129,19 @@ impl Agent {
         // TS lists MCP tools, registers sandbox tools, initializes plugins and runs intervention
         // observers before `InitializedEvent`; those steps run here, in that order.
         let hooks = self.local.hooks().clone();
+        // Retry strategies are plugins in TS; the plugin registry rejects a duplicate name.
+        let mut names = Vec::new();
+        for strategy in &self.retry_strategies {
+            if names.contains(&strategy.name()) {
+                return Err(Error::other(format!(
+                    "plugin_name=<{}> | plugin already registered",
+                    strategy.name()
+                )));
+            }
+            names.push(strategy.name());
+            attach(strategy, &self.attach_token)?;
+            install(Arc::clone(strategy), &hooks, Arc::clone(&self.retry_sleeper));
+        }
         let mut event = InitializedEvent::new(&mut self.local);
         hooks.invoke::<InitializedEvent<'static>>(&mut event).await?;
         self.initialized = true;

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use crate::error::{DefaultNotConfiguredError, Error, Result};
 use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, Model, ModelRequest};
 use crate::models::streaming::ModelStreamEvent;
+use crate::retry::ModelRetryStrategy;
 use crate::tools::{StructuredOutputSchema, ToolExecutor, ToolSource};
 use crate::types::json::JsonObject;
 use crate::types::messages::{Message, SystemPrompt};
@@ -154,6 +155,11 @@ pub struct AgentConfig {
     /// Tools to register; nested lists are flattened. The builder's `.tools(..)` extends the list.
     #[builder(field)]
     pub tools: Vec<ToolSource>,
+    /// Model retry strategies: `None` installs a [`DefaultModelRetryStrategy`](crate::retry::DefaultModelRetryStrategy), an empty list
+    /// disables retries (TS `null`/`[]`). The builder's `.retry_strategy(..)` adds one and
+    /// `.no_retry_strategy()` disables them.
+    #[builder(field)]
+    pub retry_strategy: Option<Vec<Arc<dyn ModelRetryStrategy>>>,
     /// The model (default: a `BedrockModel` with the default model id, resolved on first use).
     #[builder(into)]
     pub model: Option<ModelSource>,
@@ -194,6 +200,20 @@ impl<S: agent_builder::State> AgentBuilder<S> {
     /// Mixed tool types need [`tool_list!`](crate::tool_list) or [`ToolSource::from`].
     pub fn tools(mut self, tools: impl IntoIterator<Item = impl Into<ToolSource>>) -> Self {
         self.tools.extend(tools.into_iter().map(Into::into));
+        self
+    }
+
+    /// Adds a model retry strategy; the first call replaces the default one.
+    pub fn retry_strategy(mut self, strategy: impl ModelRetryStrategy) -> Self {
+        self.retry_strategy
+            .get_or_insert_with(Vec::new)
+            .push(Arc::new(strategy));
+        self
+    }
+
+    /// Turns model retries off (TS `retryStrategy: null`).
+    pub fn no_retry_strategy(mut self) -> Self {
+        self.retry_strategy = Some(Vec::new());
         self
     }
 

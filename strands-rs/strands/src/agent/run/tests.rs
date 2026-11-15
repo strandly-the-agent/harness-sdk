@@ -926,4 +926,5 @@ mod hooks {
 mod end_turn_resume;
 mod invocation_state;
 mod limits;
+mod model_retry;
 mod structured_output;
