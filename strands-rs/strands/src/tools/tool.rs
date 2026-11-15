@@ -200,6 +200,8 @@ pub struct ToolContext {
     tool_use: ToolUse,
     agent: ToolAgent,
     invocation_state: InvocationState,
+    /// Replaces the tool use id in interrupt ids (a background task's id).
+    interrupt_scope: Option<String>,
 }
 
 impl ToolContext {
@@ -208,7 +210,13 @@ impl ToolContext {
             tool_use,
             agent,
             invocation_state,
+            interrupt_scope: None,
         }
+    }
+
+    pub(crate) fn with_interrupt_scope(mut self, scope: Option<String>) -> Self {
+        self.interrupt_scope = scope;
+        self
     }
 
     /// The tool use being executed.
@@ -253,7 +261,11 @@ impl ToolContext {
         reason = "the interrupt is the designed error value; `?` converts it into `ToolError`"
     )]
     pub fn interrupt(&self, params: InterruptParams) -> Result<JsonValue, Interrupt> {
-        let id = format!("tool:{}:{}", self.tool_use.tool_use_id(), params.name);
+        let scope = self
+            .interrupt_scope
+            .as_deref()
+            .unwrap_or(self.tool_use.tool_use_id());
+        let id = format!("tool:{scope}:{}", params.name);
         self.agent
             .interrupt_state()
             .interrupt(id, params, InterruptSource::Tool)

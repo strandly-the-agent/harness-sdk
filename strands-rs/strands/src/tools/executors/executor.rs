@@ -363,6 +363,8 @@ impl ToolTask {
             agent: self.agent.clone(),
             telemetry: self.telemetry.clone(),
             preset,
+            interrupt_scope: None,
+            guard: None,
         };
         let registry = self.agent.middleware();
         let composed = std::panic::catch_unwind(AssertUnwindSafe(|| {
@@ -404,13 +406,112 @@ impl ToolTask {
     }
 }
 
+/// What a background run of a tool needs (TS `executeBackground`'s options).
+pub(crate) struct BackgroundToolRun {
+    /// The view with the task's cancel signal and interrupt state.
+    pub(crate) agent: ToolAgent,
+    pub(crate) hooks: HookRegistry,
+    pub(crate) tool: Arc<dyn Tool>,
+    pub(crate) tool_use: ToolUse,
+    pub(crate) invocation_state: InvocationState,
+    pub(crate) task_id: String,
+    pub(crate) guard: Option<ToolGuard>,
+}
+
+/// Runs a background tool call through the `ExecuteToolStage` chain and `AfterToolCallEvent`,
+/// retrying while a hook asks (TS `executeBackground`). Hooks fire on its events; nothing is
+/// streamed. The local trace is the run's own; tool metrics stay with it.
+pub(crate) async fn execute_background(
+    run: BackgroundToolRun,
+) -> std::result::Result<ToolResultBlock, MiddlewareError> {
+    let tool_use_id = run.tool_use.tool_use_id().to_owned();
+    loop {
+        let interrupt = MiddlewareInterrupt::new(
+            run.agent.interrupt_state().clone(),
+            format!("middleware:{}", run.task_id),
+        );
+        let context = ExecuteToolContext::new(
+            run.agent.clone(),
+            Some(Arc::clone(&run.tool)),
+            run.tool_use.clone(),
+            run.invocation_state.clone(),
+            interrupt,
+        );
+        let terminal = ToolTerminal {
+            agent: run.agent.clone(),
+            telemetry: LocalTelemetry::default(),
+            preset: None,
+            interrupt_scope: Some(run.task_id.clone()),
+            guard: run.guard.clone(),
+        };
+        let mut chain = run
+            .agent
+            .middleware()
+            .invoke::<ExecuteToolStage>(context, move |context| terminal.stream(context));
+        let mut outcome = None;
+        while let Some(item) = AssertUnwindSafe(chain.next())
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|panic| {
+                Some(Ok(MiddlewareItem::Result(ExecuteToolResult::new(panic_result(
+                    panic.as_ref(),
+                    &run.tool_use,
+                )))))
+            })
+        {
+            if outcome.is_some() {
+                continue;
+            }
+            match item {
+                Ok(MiddlewareItem::Event(AgentStreamEvent::ToolStreamUpdate(data))) => {
+                    let mut event = ToolStreamUpdateEvent::new(
+                        run.agent.clone(),
+                        data.event().clone(),
+                        run.invocation_state.clone(),
+                    );
+                    run.hooks.invoke::<ToolStreamUpdateEvent>(&mut event).await?;
+                }
+                Ok(MiddlewareItem::Event(_)) => {}
+                Ok(MiddlewareItem::Result(result)) => outcome = Some(result.result),
+                Err(error) => return Err(error),
+            }
+        }
+        drop(chain);
+        let result = normalize_id(
+            outcome.ok_or_else(ended_without_result::<ExecuteToolStage>)?,
+            &tool_use_id,
+        );
+        let error = result.shared_error();
+        let mut event = AfterToolCallEvent::new(
+            run.agent.clone(),
+            run.tool_use.clone(),
+            Some(Arc::clone(&run.tool)),
+            result,
+            run.invocation_state.clone(),
+        )
+        .with_error(error);
+        run.hooks.invoke::<AfterToolCallEvent>(&mut event).await?;
+        if event.retry() && !run.agent.cancel_signal().is_cancelled() {
+            continue;
+        }
+        return Ok(normalize_id(event.result().clone(), &tool_use_id));
+    }
+}
+
 /// The innermost layer of the `ExecuteToolStage` chain: the tool itself, inside a local tool
 /// trace and its tool metrics (TS `_executeToolCore`).
 struct ToolTerminal {
     agent: ToolAgent,
     telemetry: LocalTelemetry,
     preset: Option<ToolResultBlock>,
+    /// A background task's id, which scopes the tool's interrupt ids.
+    interrupt_scope: Option<String>,
+    /// Checks the tool a handler left in the context before it runs (TS `toolGuard`).
+    guard: Option<ToolGuard>,
 }
+
+/// Rejects a tool the context names (TS `toolGuard`).
+pub(crate) type ToolGuard = Arc<dyn Fn(Option<&Arc<dyn Tool>>) -> Result<()> + Send + Sync>;
 
 impl ToolTerminal {
     fn stream(&self, context: ExecuteToolContext) -> MiddlewareStream<'static, ExecuteToolStage> {
@@ -419,8 +520,12 @@ impl ToolTerminal {
                 ExecuteToolResult::new(result),
             ))]));
         }
+        if let Some(Err(error)) = self.guard.as_ref().map(|guard| guard(context.tool.as_ref())) {
+            return Box::pin(futures::stream::iter([Err(error.into())]));
+        }
         let agent = self.agent.clone();
         let telemetry = self.telemetry.clone();
+        let scope = self.interrupt_scope.clone();
         Box::pin(async_stream::stream! {
             let ExecuteToolContext { tool, tool_use, invocation_state, .. } = context;
             let tool_use_id = tool_use.tool_use_id().to_owned();
@@ -433,7 +538,7 @@ impl ToolTerminal {
                     outcome = Some(error_text_result(&tool_use_id, text).into());
                 }
                 Some(tool) => {
-                    let context = ToolContext::new(tool_use.clone(), agent, invocation_state);
+                    let context = ToolContext::new(tool_use.clone(), agent, invocation_state).with_interrupt_scope(scope);
                     let built = std::panic::catch_unwind(AssertUnwindSafe(|| tool.stream(context)));
                     match built {
                         Err(panic) => outcome = Some(panic_result(panic.as_ref(), &tool_use).into()),
