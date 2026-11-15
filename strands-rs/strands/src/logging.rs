@@ -7,7 +7,6 @@ static WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
 
 /// Emits `message` as a warning at most once per process (TS `warnOnce`), so repeated nudges such
 /// as the default model id warning don't flood logs when many instances are built.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the model defaults"))]
 pub(crate) fn warn_once(message: &str) {
     warn_once_in(&WARNED, message, |message| tracing::warn!("{message}"));
 }

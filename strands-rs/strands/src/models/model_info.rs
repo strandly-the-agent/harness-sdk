@@ -179,7 +179,7 @@ struct DataDefaultLimits {
 
 static DATA: LazyLock<ModelInfoData> = LazyLock::new(|| {
     serde_json::from_str(MODEL_INFO_JSON).unwrap_or_else(|error| {
-        tracing::error!(error = %error, "| embedded model info table failed to parse");
+        tracing::error!("error=<{error}> | embedded model info table failed to parse");
         ModelInfoData {
             defaults: DataDefaults {
                 limits: DataDefaultLimits {
@@ -193,7 +193,6 @@ static DATA: LazyLock<ModelInfoData> = LazyLock::new(|| {
 
 /// Context window limit in tokens assumed for a model whose window is unknown (TS
 /// `DEFAULT_CONTEXT_WINDOW_LIMIT`, read from the shared table).
-#[cfg_attr(not(test), expect(dead_code, reason = "used by Model::estimate_utilization"))]
 pub(crate) fn default_context_window_limit() -> u64 {
     DATA.defaults.limits.context_window
 }
