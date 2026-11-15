@@ -1,5 +1,6 @@
 //! Core data types: messages, content blocks, media, citations, tools, snapshots.
 
+pub mod agent;
 pub mod citations;
 pub mod json;
 pub mod media;

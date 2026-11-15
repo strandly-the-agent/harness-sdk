@@ -17,6 +17,10 @@ use crate::retry::model_retry_strategy::{Sleeper, tokio_sleeper};
 use crate::types::json::to_js_string;
 use crate::types::messages::{ContentBlock, ReasoningBlock, Role, StopReason};
 
+mod hook_recorder;
+
+pub use hook_recorder::HookRecorder;
+
 type EventGenerator = Arc<dyn Fn() -> BoxStream<'static, Result<ModelStreamEvent>> + Send + Sync>;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

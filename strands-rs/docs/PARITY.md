@@ -63,8 +63,8 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/conversation-manager/__tests__/sliding-window-conversation-manager.test.ts` | | 0/65 | |
 | `strands-ts/src/conversation-manager/__tests__/summarizing-conversation-manager.test.ts` | | 0/20 | |
 | `strands-ts/src/conversation-manager/__tests__/token-usage-middleware.test.ts` | | 0/15 | |
-| `strands-ts/src/hooks/__tests__/events.test.ts` | | 0/71 | |
-| `strands-ts/src/hooks/__tests__/registry.test.ts` | | 0/25 | |
+| `strands-ts/src/hooks/__tests__/events.test.ts` | `strands::hooks::events::tests` | 44/71 | `toJSON` cases (24) land with the stream event records (Phase 3 item 5); `when tool is found`, `allows selectedTool to be set`, `AfterToolCallEvent allows retry to be set when error is present` (3) land with tools |
+| `strands-ts/src/hooks/__tests__/registry.test.ts` | `strands::hooks::registry::tests` | 21/25 | `propagates callback errors`, `stops execution on first non-interrupt error`, `stops on non-interrupt error even when interrupts were collected` (3): Rust hook callbacks return `()` and can't fail; `cleanup function is idempotent` (1): `HookCleanup::remove` takes `self`, so a second call doesn't compile |
 | `strands-ts/src/injection/__tests__/message-injection.test.ts` | | 0/31 | |
 | `strands-ts/src/interventions/__tests__/handler.test.ts` | | 0/2 | |
 | `strands-ts/src/interventions/__tests__/registry.test.ts` | | 0/44 | |

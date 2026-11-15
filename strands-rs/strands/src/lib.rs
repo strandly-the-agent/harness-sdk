@@ -60,6 +60,7 @@ pub mod models;
 pub mod retry;
 pub mod state_store;
 pub mod testing;
+pub mod tools;
 pub mod types;
 
 #[cfg(test)]
@@ -71,5 +72,7 @@ pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
 pub use state_store::StateStore;
+pub use tools::{Tool, ToolContext, ToolOutcome};
+pub use types::agent::{AgentResult, InvocationState, InvokeArgs};
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};

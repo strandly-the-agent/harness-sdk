@@ -33,7 +33,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 - [ ] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult`
 - [ ] Serializable stream event records (fixture-checked)
-- [ ] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
+- [x] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
 - [ ] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles
 - [ ] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
 - [ ] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
