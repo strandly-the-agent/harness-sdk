@@ -30,7 +30,6 @@ pub enum ToolSource {
 
 impl ToolSource {
     /// The tools this source holds, in order.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent builder"))]
     pub(crate) fn into_tools(self) -> Vec<Arc<dyn Tool>> {
         match self {
             Self::Tool(tool) => vec![tool],

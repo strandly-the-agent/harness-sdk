@@ -113,7 +113,6 @@ impl Sleeper for TokioSleeper {
 }
 
 /// The TS `retryModel` hook body: returns the event's new `retry` value.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the agent's retry hook"))]
 pub(crate) async fn retry_model(
     strategy: &dyn ModelRetryStrategy,
     sleeper: &dyn Sleeper,

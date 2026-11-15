@@ -13,8 +13,9 @@ use strands::agent::stream_event::{
     ContentBlockEventData, EventError, InterruptEventData, MessageAddedEventData, ModelMessageEventData,
     ModelStreamUpdateEventData, ToolResultEventData, ToolStreamUpdateEventData,
 };
-use strands::hooks::{ModelStopData, Redaction};
+use strands::hooks::ModelStopData;
 use strands::interrupt::Interrupt;
+use strands::models::model::Redaction;
 use strands::models::streaming::{ModelStreamEvent, TextDelta};
 use strands::tools::ToolStreamEvent;
 use strands::types::agent::{AgentMetrics, AgentResult};

@@ -98,7 +98,6 @@ impl<M: HookEvent> Clone for Callback<M> {
 struct Entry<M: HookEvent> {
     id: u64,
     order: HookOrder,
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     callback: Callback<M>,
 }
 
@@ -138,7 +137,6 @@ impl<M: HookEvent> Entries<M> {
         })
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     fn snapshot(&self, reverse: bool) -> Vec<Callback<M>> {
         let mut entries: Vec<(HookOrder, Callback<M>)> = self
             .0
@@ -421,14 +419,19 @@ impl HookRegistry {
     /// The callback list is copied under a short lock first, so callbacks may register or remove
     /// hooks. Interrupts raised through an event's `interrupt` stay on the event; read them with
     /// its `take_interrupts`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
-    pub(crate) async fn invoke<M: Slot>(&self, event: &mut M::Event<'_>) {
-        for callback in M::entries(self).snapshot(M::REVERSE) {
-            match callback {
-                Callback::Sync(callback) => callback(event),
-                Callback::Async(callback) => callback(event).await,
+    ///
+    /// The future is boxed so its `Send` bound is proven here, for any event lifetime; rustc
+    /// can't prove it through the callbacks' higher-ranked types at an `async fn` call site.
+    pub(crate) fn invoke<'e, M: Slot>(&self, event: &'e mut M::Event<'_>) -> BoxFuture<'e, ()> {
+        let callbacks = M::entries(self).snapshot(M::REVERSE);
+        Box::pin(async move {
+            for callback in callbacks {
+                match callback {
+                    Callback::Sync(callback) => callback(event),
+                    Callback::Async(callback) => callback(event).await,
+                }
             }
-        }
+        })
     }
 }
 

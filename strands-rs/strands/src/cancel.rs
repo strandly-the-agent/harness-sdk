@@ -55,10 +55,18 @@ pub struct CancelSignal {
 
 /// Requests cancellation of the [`CancelSignal`] it was created with.
 ///
-/// Cloning is cheap; any clone can cancel. Cancelling is idempotent.
+/// Cloning is cheap; any clone can cancel. Cancelling is idempotent. The handle an agent returns
+/// from [`Agent::cancel_handle`](crate::Agent::cancel_handle) cancels whichever invocation is
+/// running, and does nothing while the agent is idle.
 #[derive(Debug, Clone)]
 pub struct CancelHandle {
-    state: Arc<CancelState>,
+    target: Target,
+}
+
+#[derive(Debug, Clone)]
+enum Target {
+    Signal(Arc<CancelState>),
+    Current(Arc<Mutex<Option<Arc<CancelState>>>>),
 }
 
 impl CancelSignal {
@@ -70,7 +78,9 @@ impl CancelSignal {
             Self {
                 state: Arc::clone(&state),
             },
-            CancelHandle { state },
+            CancelHandle {
+                target: Target::Signal(state),
+            },
         )
     }
 
@@ -96,7 +106,6 @@ impl CancelSignal {
     }
 
     /// Whether a cancel with [`CancelOptions::after_current_tools`] was requested.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent's deferred cancel"))]
     pub(crate) fn is_deferred(&self) -> bool {
         self.state.deferred.load(Ordering::Acquire)
     }
@@ -107,13 +116,16 @@ impl CancelHandle {
     /// as deferred and the signal stays uncancelled; otherwise the signal is cancelled. A message
     /// replaces any earlier one.
     pub fn cancel(&self, options: CancelOptions) {
+        let Some(state) = self.state() else {
+            return;
+        };
         if let Some(message) = options.message {
-            *self.state.reason.lock().unwrap_or_else(PoisonError::into_inner) = Some(message);
+            *state.reason.lock().unwrap_or_else(PoisonError::into_inner) = Some(message);
         }
         if options.after_current_tools {
-            self.state.deferred.store(true, Ordering::Release);
+            state.deferred.store(true, Ordering::Release);
         } else {
-            self.state.token.cancel();
+            state.token.cancel();
         }
     }
 
@@ -121,7 +133,56 @@ impl CancelHandle {
     #[must_use]
     pub fn signal(&self) -> CancelSignal {
         CancelSignal {
-            state: Arc::clone(&self.state),
+            state: self.state().unwrap_or_default(),
+        }
+    }
+
+    fn state(&self) -> Option<Arc<CancelState>> {
+        match &self.target {
+            Target::Signal(state) => Some(Arc::clone(state)),
+            Target::Current(current) => current.lock().unwrap_or_else(PoisonError::into_inner).clone(),
+        }
+    }
+}
+
+/// The cancel state of an agent's invocations: each invocation gets a fresh signal, and the
+/// agent's stable [`CancelHandle`] reaches whichever one is running (TS `resetCancelState`).
+#[derive(Debug, Default)]
+pub(crate) struct CancelScope {
+    current: Arc<Mutex<Option<Arc<CancelState>>>>,
+}
+
+impl CancelScope {
+    pub(crate) fn handle(&self) -> CancelHandle {
+        CancelHandle {
+            target: Target::Current(Arc::clone(&self.current)),
+        }
+    }
+
+    /// Starts an invocation's cancel state, also cancelled by `external` (TS `AbortSignal.any`).
+    pub(crate) fn begin(&self, external: Option<&CancelSignal>) -> CancelSignal {
+        let token = external.map_or_else(CancellationToken::new, |external| {
+            external.state.token.child_token()
+        });
+        let state = Arc::new(CancelState {
+            token,
+            ..CancelState::default()
+        });
+        *self.current.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&state));
+        CancelSignal { state }
+    }
+
+    /// Ends the running invocation's cancel state; cancelling while idle does nothing.
+    pub(crate) fn end(&self) {
+        *self.current.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+}
+
+impl CancelSignal {
+    /// A handle that cancels this signal.
+    pub(crate) fn handle(&self) -> CancelHandle {
+        CancelHandle {
+            target: Target::Signal(Arc::clone(&self.state)),
         }
     }
 }

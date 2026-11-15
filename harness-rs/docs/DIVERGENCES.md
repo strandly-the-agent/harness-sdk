@@ -4,3 +4,4 @@ This file lists every user-visible behaviour difference between the Rust harness
 
 | Area | TypeScript | Rust | Reason |
 |---|---|---|---|
+| `ToolAgent::call_tool` | The programmatic tool caller runs only `beforeToolCall` hooks, the tool and `afterToolCall` hooks (no middleware, retry, spans or stream events) | `ToolAgent::call_tool` runs the agent's full per-tool pipeline: `BeforeToolCallEvent` (cancel, rewrite, tool swap, interrupts), the tool, `AfterToolCallEvent` with result rewrite and retry, and `ToolResultEvent`; it returns interrupts and cancels as distinct outcomes and emits no stream records | One pipeline for every tool call (design 8.7); Rust exposes no private registry access |

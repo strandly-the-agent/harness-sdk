@@ -33,7 +33,6 @@ impl RetryStrategy {
         self.model.name()
     }
 
-    #[expect(dead_code, reason = "used by the agent's retry hook")]
     pub(crate) fn model_strategy(&self) -> &Arc<dyn ModelRetryStrategy> {
         &self.model
     }

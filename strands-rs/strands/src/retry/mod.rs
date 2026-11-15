@@ -36,5 +36,6 @@ pub use backoff_strategy::{
 pub use default_model_retry_strategy::{
     DefaultModelRetryStrategy, DefaultModelRetryStrategyOptions, RetryablePredicate,
 };
+pub(crate) use model_retry_strategy::retry_model;
 pub use model_retry_strategy::{ModelRetryContext, ModelRetryStrategy, Sleeper, TokioSleeper};
 pub use retry_strategy::{RetryDecision, RetryStrategy};

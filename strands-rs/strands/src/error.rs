@@ -86,6 +86,12 @@ pub enum Error {
     /// See [`DataError`].
     #[error(transparent)]
     Data(#[from] DataError),
+    /// See [`InvalidInputError`].
+    #[error(transparent)]
+    InvalidInput(#[from] InvalidInputError),
+    /// See [`UnsupportedError`].
+    #[error(transparent)]
+    Unsupported(#[from] UnsupportedError),
     /// See [`OtherError`].
     #[error(transparent)]
     Other(#[from] OtherError),
@@ -118,6 +124,8 @@ impl Error {
             Self::SandboxIsADirectory(_) => SandboxIsADirectoryError::NAME,
             Self::SandboxPermission(_) => SandboxPermissionError::NAME,
             Self::Data(_) => DataError::NAME,
+            Self::InvalidInput(_) => InvalidInputError::NAME,
+            Self::Unsupported(_) => UnsupportedError::NAME,
             Self::Other(_) => OtherError::NAME,
         }
     }
@@ -368,6 +376,43 @@ impl DataError {
         &self.message
     }
 }
+
+/// An argument to an SDK call is invalid, for example a blank prompt or resume input mixed with
+/// other content.
+///
+/// TS throws a `TypeError` in these cases, so the name is `"TypeError"`; the message is the TS one.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct InvalidInputError {
+    message: String,
+}
+
+impl InvalidInputError {
+    /// The TS `error.name` of a `TypeError`, `"TypeError"`.
+    pub const NAME: &'static str = "TypeError";
+
+    /// Creates the error.
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// The error message.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+message_error!(
+    /// A TS feature this version of the Rust SDK doesn't implement yet, for example an agent
+    /// configuration key whose subsystem hasn't been ported. Rust-only; the message names the
+    /// feature.
+    UnsupportedError
+);
 
 /// An I/O or JSON failure the SDK passes through unchanged.
 #[non_exhaustive]

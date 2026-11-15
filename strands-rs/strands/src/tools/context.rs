@@ -36,7 +36,6 @@ pub struct ToolContext {
 
 impl ToolContext {
     /// A context for one call of `tool_use`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "built by the tool executors"))]
     pub(crate) fn new(
         tool_use: ToolUse,
         agent: ToolAgent,
@@ -54,7 +53,6 @@ impl ToolContext {
     }
 
     /// Sets the request this call belongs to.
-    #[cfg_attr(not(test), expect(dead_code, reason = "built by the tool executors"))]
     pub(crate) fn with_invocation_context(mut self, invocation_context: InvocationContext) -> Self {
         self.invocation_context = Some(invocation_context);
         self

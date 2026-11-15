@@ -67,6 +67,13 @@ pub trait Tool: Send + Sync + 'static {
     /// Runs the tool. The stream yields zero or more progress events and ends with exactly one
     /// [`ToolStreamItem::Outcome`]. A failure is an error-status result, never a panic.
     fn stream(&self, context: ToolContext) -> ToolStream;
+
+    /// Whether the tool is an agent that delegates: its answer becomes the caller's final
+    /// answer. Only [`AgentAsTool`](crate::agent::AgentAsTool) sets it.
+    #[doc(hidden)]
+    fn delegates(&self) -> bool {
+        false
+    }
 }
 
 impl fmt::Debug for dyn Tool {
@@ -199,7 +206,6 @@ impl ToolStream {
 
     /// Ends the stream at its first outcome, and adds the TS "did not return a result" error
     /// result when it ends without one.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the tool executors"))]
     pub(crate) fn until_outcome(self, tool_use: &ToolUse) -> Self {
         let missing = missing_outcome(tool_use);
         Self::new(futures::stream::unfold(

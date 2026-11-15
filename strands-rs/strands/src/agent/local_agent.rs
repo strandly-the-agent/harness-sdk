@@ -53,7 +53,6 @@ pub struct LocalAgent {
 }
 
 impl LocalAgent {
-    #[cfg_attr(not(test), expect(dead_code, reason = "built by the agent"))]
     pub(crate) fn new(parts: LocalAgentParts) -> Self {
         Self {
             id: parts.id,

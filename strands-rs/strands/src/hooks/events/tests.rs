@@ -123,6 +123,15 @@ fn after_invocation_event_creates_instance_with_correct_properties() {
 }
 
 #[test]
+fn after_invocation_event_allows_resume_to_be_set_to_new_input() {
+    let mut agent = mock_local_agent();
+    let mut event = AfterInvocationEvent::new(&mut agent, state(), None);
+    assert_eq!(event.resume(), None);
+    event.set_resume(Some("follow-up prompt".into()));
+    assert_eq!(event.resume(), Some(&InvokeArgs::from("follow-up prompt")));
+}
+
+#[test]
 fn after_invocation_event_returns_true_for_should_reverse_callbacks() {
     assert!(reverses::<AfterInvocationEvent<'static>>());
 }

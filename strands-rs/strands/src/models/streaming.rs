@@ -556,10 +556,6 @@ impl Usage {
 
     /// Adds `source` into `self` with saturating arithmetic (TS `accumulateUsage`). A cache counter
     /// is only touched when `source` has it.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by stream aggregation and agent metrics")
-    )]
     pub(crate) fn accumulate(&mut self, source: &Usage) {
         self.input_tokens = self.input_tokens.saturating_add(source.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(source.output_tokens);
@@ -577,10 +573,6 @@ impl Usage {
     /// The prompt size including cache tokens, under either provider convention (TS
     /// `totalPromptTokens`): when input plus output already equals the total, the cache tokens sit
     /// inside `input_tokens`; otherwise they are added to it.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the conversation and context managers")
-    )]
     pub(crate) fn total_prompt_tokens(&self) -> u64 {
         if self.input_tokens.saturating_add(self.output_tokens) == self.total_tokens {
             return self.input_tokens;

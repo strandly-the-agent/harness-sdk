@@ -6,6 +6,7 @@
 //! the model sees as `Error: <message>`; it never fails the invocation.
 
 pub mod context;
+pub mod executors;
 #[cfg(test)]
 pub(crate) mod fixtures;
 pub mod function_tool;
@@ -13,6 +14,7 @@ pub mod function_tool;
 mod macro_tests;
 pub mod registry;
 pub(crate) mod schema;
+pub mod structured_output;
 pub mod tool;
 pub mod tool_source;
 

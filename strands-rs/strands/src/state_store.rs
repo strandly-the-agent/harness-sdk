@@ -116,14 +116,12 @@ impl StateStore {
     }
 
     /// The state as a JSON object (TS `[stateToJSONSymbol]`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by agent snapshots"))]
     pub(crate) fn state_to_json(&self) -> JsonValue {
         JsonValue::Object(self.get_all())
     }
 
     /// Replaces the state from JSON; anything but an object clears it (TS
     /// `[loadStateFromJSONSymbol]`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by agent snapshots"))]
     pub(crate) fn load_state_from_json(&self, json: JsonValue) {
         *self.write() = match json {
             JsonValue::Object(map) => map,

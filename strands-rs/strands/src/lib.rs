@@ -45,6 +45,7 @@ pub mod types;
 
 pub use agent::invocation_state::InvocationState;
 pub use agent::stream_event::AgentStreamEvent;
+pub use agent::{Agent, AgentConfig, AgentStream, InvokeArgs, InvokeOptions};
 /// The [`async_trait`](https://docs.rs/async-trait) attribute, for implementing the SDK's async
 /// traits ([`Model`](models::model::Model), [`ModelRetryStrategy`](retry::ModelRetryStrategy))
 /// without depending on `async-trait` directly.

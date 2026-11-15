@@ -3,10 +3,15 @@
 //!
 //! [`MockModel`] scripts whole turns from content blocks; [`TestModelProvider`] scripts the exact
 //! [`ModelStreamEvent`] sequence. Both record every [`ModelRequest`] they receive.
+//! [`HookRecorder`], [`test_agent`] and [`tool_context`] help test hooks, agents and tools.
+
+mod agent;
 
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
+
+pub use agent::{HookRecorder, test_agent, tool_context};
 
 use crate::error::{Error, ModelError, Result};
 use crate::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest};

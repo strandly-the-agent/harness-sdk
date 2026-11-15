@@ -49,7 +49,6 @@ pub struct ToolAgent {
 }
 
 impl ToolAgent {
-    #[cfg_attr(not(test), expect(dead_code, reason = "built by the agent loop"))]
     pub(crate) fn new(parts: ToolAgentParts) -> Self {
         Self {
             inner: Arc::new(parts),

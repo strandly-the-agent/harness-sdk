@@ -14,7 +14,7 @@ pub use events::{
     AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent, AgentResultEvent,
     BeforeInvocationEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, Cancel,
     ContentBlockEvent, EndTurn, InitializedEvent, InterruptEvent, MessageAddedEvent, ModelMessageEvent,
-    ModelStopData, ModelStreamUpdateEvent, Redaction, ToolCallError, ToolResultEvent, ToolStreamUpdateEvent,
+    ModelStopData, ModelStreamUpdateEvent, ToolCallError, ToolResultEvent, ToolStreamUpdateEvent,
 };
 pub use registry::{EventKind, HookEvent, HookRegistry, IntoHookImpl, IntoSyncHook, Slot};
 pub use types::{Hook, HookCleanup, HookOptions, HookOrder};

@@ -15,13 +15,14 @@ use std::sync::Arc;
 use serde::ser::{SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
 
+use crate::agent::InvokeArgs;
 use crate::agent::invocation_context::InvocationContext;
 use crate::agent::invocation_state::InvocationState;
 use crate::agent::local_agent::LocalAgent;
 use crate::agent::tool_agent::ToolAgent;
 use crate::error::{DataError, Error, Result};
 use crate::interrupt::{Interrupt, InterruptParams, InterruptSource};
-use crate::models::model::Model;
+use crate::models::model::{Model, Redaction};
 use crate::models::streaming::ModelStreamEvent;
 use crate::tools::tool::{Tool, ToolStreamEvent};
 use crate::types::agent::AgentResult;
@@ -96,25 +97,6 @@ pub enum EndTurn {
     Message(String),
     /// These blocks, used as the assistant message content (TS `ContentBlock[]`).
     Content(Vec<ContentBlock>),
-}
-
-/// A guardrail redaction of the model's output (TS `Redaction`).
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Redaction {
-    /// The text that replaces the redacted user message.
-    pub user_message: String,
-}
-
-impl Redaction {
-    /// Creates a redaction.
-    #[must_use]
-    pub fn new(user_message: impl Into<String>) -> Self {
-        Self {
-            user_message: user_message.into(),
-        }
-    }
 }
 
 /// How a successful model call ended (TS `ModelStopData`, exported as `ModelStopResponse`).
@@ -243,7 +225,6 @@ pub struct InitializedEvent<'a> {
 }
 
 impl<'a> InitializedEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(agent: &'a mut LocalAgent) -> Self {
         Self { agent }
     }
@@ -279,7 +260,6 @@ pub struct BeforeInvocationEvent<'a> {
 }
 
 impl<'a> BeforeInvocationEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         invocation_state: InvocationState,
@@ -346,7 +326,6 @@ impl<'a> BeforeInvocationEvent<'a> {
         self.cancel = cancel;
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by the agent"))]
     pub(crate) fn into_parts(self) -> (Vec<Message>, Option<Cancel>) {
         (self.messages, self.cancel)
     }
@@ -365,10 +344,10 @@ pub struct AfterInvocationEvent<'a> {
     agent: &'a mut LocalAgent,
     invocation_state: InvocationState,
     invocation_context: Option<InvocationContext>,
+    resume: Option<InvokeArgs>,
 }
 
 impl<'a> AfterInvocationEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         invocation_state: InvocationState,
@@ -378,6 +357,7 @@ impl<'a> AfterInvocationEvent<'a> {
             agent,
             invocation_state,
             invocation_context,
+            resume: None,
         }
     }
 
@@ -403,6 +383,22 @@ impl<'a> AfterInvocationEvent<'a> {
     pub fn invocation_context(&self) -> Option<&InvocationContext> {
         self.invocation_context.as_ref()
     }
+
+    /// The input the agent runs again with after this invocation, if a hook set one.
+    #[must_use]
+    pub fn resume(&self) -> Option<&InvokeArgs> {
+        self.resume.as_ref()
+    }
+
+    /// Runs the agent again with `resume` as input once this invocation ends (TS `resume`).
+    /// Ignored when the invocation failed or its request reached a limit.
+    pub fn set_resume(&mut self, resume: Option<InvokeArgs>) {
+        self.resume = resume;
+    }
+
+    pub(crate) fn into_resume(self) -> Option<InvokeArgs> {
+        self.resume
+    }
 }
 
 impl Serialize for AfterInvocationEvent<'_> {
@@ -421,7 +417,6 @@ pub struct MessageAddedEvent<'a> {
 }
 
 impl<'a> MessageAddedEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         message: Message,
@@ -485,7 +480,6 @@ pub struct BeforeModelCallEvent<'a> {
 }
 
 impl<'a> BeforeModelCallEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         model: Arc<dyn Model>,
@@ -502,7 +496,6 @@ impl<'a> BeforeModelCallEvent<'a> {
         }
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn with_projected_input_tokens(mut self, tokens: u64) -> Self {
         self.projected_input_tokens = Some(tokens);
         self
@@ -585,7 +578,6 @@ pub struct AfterModelCallEvent<'a> {
 }
 
 impl<'a> AfterModelCallEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         model: Arc<dyn Model>,
@@ -605,13 +597,11 @@ impl<'a> AfterModelCallEvent<'a> {
         }
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn with_stop_data(mut self, stop_data: ModelStopData) -> Self {
         self.stop_data = Some(stop_data);
         self
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn with_error(mut self, error: &'a Error) -> Self {
         self.error = Some(error);
         self
@@ -706,7 +696,6 @@ pub struct ModelStreamUpdateEvent<'a> {
 }
 
 impl<'a> ModelStreamUpdateEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         event: ModelStreamEvent,
@@ -767,7 +756,6 @@ pub struct ContentBlockEvent<'a> {
 }
 
 impl<'a> ContentBlockEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         content_block: ContentBlock,
@@ -834,7 +822,6 @@ pub struct ModelMessageEvent<'a> {
 }
 
 impl<'a> ModelMessageEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         message: Message,
@@ -907,7 +894,6 @@ pub struct AgentResultEvent<'a> {
 }
 
 impl<'a> AgentResultEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         result: AgentResult,
@@ -968,7 +954,6 @@ pub struct InterruptEvent<'a> {
 }
 
 impl<'a> InterruptEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         interrupt: Interrupt,
@@ -1032,7 +1017,6 @@ pub struct BeforeToolsEvent<'a> {
 }
 
 impl<'a> BeforeToolsEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         message: Message,
@@ -1113,7 +1097,6 @@ impl<'a> BeforeToolsEvent<'a> {
 
     /// The interrupts the hooks raised, failing when two share a name (TS text
     /// `interrupt_names=<..> | duplicate interrupt names`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by the agent"))]
     pub(crate) fn take_interrupts(&mut self) -> Result<Vec<Interrupt>> {
         self.interrupts.take()
     }
@@ -1137,7 +1120,6 @@ pub struct AfterToolsEvent<'a> {
 }
 
 impl<'a> AfterToolsEvent<'a> {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         message: Message,
@@ -1217,7 +1199,6 @@ pub struct BeforeToolCallEvent {
 }
 
 impl BeforeToolCallEvent {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the tool executors"))]
     pub(crate) fn new(
         agent: ToolAgent,
         tool_use: ToolUse,
@@ -1342,7 +1323,6 @@ impl BeforeToolCallEvent {
 
     /// The interrupts the hooks raised, failing when two share a name (TS text
     /// `interrupt_names=<..> | duplicate interrupt names`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by the tool executors"))]
     pub(crate) fn take_interrupts(&mut self) -> Result<Vec<Interrupt>> {
         self.interrupts.take()
     }
@@ -1379,7 +1359,6 @@ pub struct AfterToolCallEvent {
 }
 
 impl AfterToolCallEvent {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the tool executors"))]
     pub(crate) fn new(
         agent: ToolAgent,
         tool_use: ToolUse,
@@ -1398,7 +1377,6 @@ impl AfterToolCallEvent {
         }
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the tool executors"))]
     pub(crate) fn with_error(mut self, error: ToolCallError) -> Self {
         self.error = Some(error);
         self
@@ -1500,7 +1478,6 @@ pub struct ToolStreamUpdateEvent {
 }
 
 impl ToolStreamUpdateEvent {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the tool executors"))]
     pub(crate) fn new(agent: ToolAgent, event: ToolStreamEvent, invocation_state: InvocationState) -> Self {
         Self {
             agent,
@@ -1557,7 +1534,6 @@ pub struct ToolResultEvent {
 }
 
 impl ToolResultEvent {
-    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the tool executors"))]
     pub(crate) fn new(agent: ToolAgent, result: ToolResultBlock, invocation_state: InvocationState) -> Self {
         Self {
             agent,

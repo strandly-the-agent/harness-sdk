@@ -655,6 +655,10 @@ impl ToolResultBlock {
     pub fn error(&self) -> Option<&(dyn std::error::Error + Send + Sync + 'static)> {
         self.error.as_ref().map(|error| &*error.0)
     }
+
+    pub(crate) fn shared_error(&self) -> Option<Arc<dyn std::error::Error + Send + Sync>> {
+        self.error.as_ref().map(|error| Arc::clone(&error.0))
+    }
 }
 
 #[derive(Serialize)]
