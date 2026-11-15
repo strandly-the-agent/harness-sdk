@@ -8,8 +8,9 @@ use serde_json::json;
 
 use super::provider;
 use crate::models::model::{
-    BaseModelConfig, BoxStream, CacheConfig, CacheSection, CacheTTL, Model, ModelRequest, ModelSource,
-    base_model_info, latest_user_index, resolve_cache_section, resolve_config_metadata, resolve_max_tokens,
+    BaseModelConfig, BoxStream, CacheConfig, CacheKey, CacheSection, CacheTTL, Model, ModelRequest,
+    ModelSource, base_model_info, latest_user_index, resolve_cache_section, resolve_config_metadata,
+    resolve_max_tokens,
 };
 use crate::models::model_info::{ModelCapabilities, ModelInfo, ModelLimits, PromptCaching, merge_model_info};
 use crate::models::streaming::ModelStreamEvent;
@@ -452,9 +453,25 @@ fn cache_config_round_trips_the_ts_shape() {
     );
     assert_eq!(serde_json::to_value(&config).unwrap(), value);
     let keyed: CacheConfig = serde_json::from_value(json!({ "cacheKey": "my-key" })).unwrap();
-    assert_eq!(
-        keyed.cache_key,
-        Some(crate::models::model::CacheKey::Key("my-key".into()))
-    );
+    assert_eq!(keyed.cache_key, Some(CacheKey::Key("my-key".into())));
     assert!(serde_json::from_value::<CacheConfig>(json!({ "cacheKey": true })).is_err());
+}
+
+#[test]
+fn cache_config_builder_takes_a_cache_key_string() {
+    let config = CacheConfig::builder().cache_key("tenant-1").build();
+    assert_eq!(config.cache_key, Some(CacheKey::Key("tenant-1".into())));
+    assert_eq!(
+        serde_json::to_value(&config).unwrap(),
+        json!({ "cacheKey": "tenant-1" })
+    );
+    assert_eq!(
+        CacheKey::from(String::from("tenant-2")),
+        CacheKey::Key("tenant-2".into())
+    );
+    let disabled = CacheConfig::builder().cache_key(CacheKey::Disabled).build();
+    assert_eq!(
+        serde_json::to_value(&disabled).unwrap(),
+        json!({ "cacheKey": false })
+    );
 }

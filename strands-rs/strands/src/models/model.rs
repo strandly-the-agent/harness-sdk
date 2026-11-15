@@ -586,6 +586,18 @@ pub enum CacheKey {
     Disabled,
 }
 
+impl From<&str> for CacheKey {
+    fn from(key: &str) -> Self {
+        Self::Key(key.to_owned())
+    }
+}
+
+impl From<String> for CacheKey {
+    fn from(key: String) -> Self {
+        Self::Key(key)
+    }
+}
+
 impl Serialize for CacheKey {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         match self {
@@ -639,6 +651,7 @@ pub struct CacheConfig {
     pub messages_ttl: Option<CacheSection>,
     /// Identity a prompt-cache-routing provider (`OpenAI`) uses as its cache key. When `None` it is
     /// derived per request as `strands-<sessionId>` if the agent has a session manager.
+    #[builder(into)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_key: Option<CacheKey>,
 }
