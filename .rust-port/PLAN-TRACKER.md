@@ -58,8 +58,8 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 - [x] `BedrockModel` (ConverseStream, caching, guardrails, throttling)
 - [x] `AnthropicModel` (reqwest SSE, transport retry, error mapping, thinking, caching, compaction, server tools)
-- [ ] `OpenAIModel` (Responses, Chat, stateful, params, caching, error mapping, transport retry)
-- [ ] Bedrock Mantle (region, routing, SigV4 bearer token)
+- [x] `OpenAIModel` (Responses, Chat, stateful, params, caching, error mapping, transport retry)
+- [x] Bedrock Mantle (region, routing, SigV4 bearer token)
 - [ ] Live tests for Bedrock, Mantle, Anthropic, OpenAI
 - [ ] Phase review gate and fixes
 
