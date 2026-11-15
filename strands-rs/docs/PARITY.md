@@ -84,9 +84,9 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/middleware/__tests__/custom-stages.test.ts` | | 0/5 | |
 | `strands-ts/src/middleware/__tests__/middleware-interrupts.test.ts` | | 0/15 | |
 | `strands-ts/src/middleware/__tests__/registry.test.ts` | | 0/24 | |
-| `strands-ts/src/models/__tests__/anthropic.test.ts` | | 0/186 | |
-| `strands-ts/src/models/__tests__/bedrock.test.ts` | | 0/274 | |
-| `strands-ts/src/models/__tests__/cache-portability.test.ts` | | 0/1 | every case builds Bedrock and Anthropic requests; ported with the providers in Phase 5 |
+| `strands-ts/src/models/__tests__/anthropic.test.ts` | `strands::models::anthropic::tests` | 183/186 | `disables caching for an unknown strategy` (1): `CacheStrategy` is a closed enum, so the TS runtime check has nothing to reject; `on @anthropic-ai/sdk 0.x` (2): those cases run only against the previous SDK major, whose API version Rust doesn't send (see DIVERGENCES). The `it.each` forms that are JS-only (`Headers` instances, header tuples, `null`/`undefined` header values) fold into one `HeaderMap` case. The pause-turn continuation test expects the accumulated text block too (P-185). Test names drop the `it.each` placeholders (`$name`, `%s`); two Rust-only tests sit beside the ported ones (`skips_s3_location_images`, `the_model_and_its_options_are_send_and_sync`) |
+| `strands-ts/src/models/__tests__/bedrock.test.ts` | `strands::models::bedrock::tests::{client, format, caching, blocks, guardrails, responses, count_tokens}` | 270/274 | `passes a user-provided handler instance through untouched` and `warns and keeps a handler instance untouched when requestTimeout is also given` (TS-only: Node request-handler instances), `api key middleware sets authorization header` (TS-only middleware stack; Rust sets the SDK bearer token, covered by `adds_api_key_middleware_when_api_key_is_provided`), `rethrows other region errors` (TS-only wrapper around the SDK region provider; Rust resolves the region itself) |
+| `strands-ts/src/models/__tests__/cache-portability.test.ts` | `strands::models::bedrock::tests::caching::cache_config_portability_across_providers`, `strands::models::anthropic::tests::cache_portability` | 1/1 | the Bedrock and Anthropic halves are ported; the Vercel half is out of v0.1 |
 | `strands-ts/src/models/__tests__/defaults.test.ts` | `strands::models::defaults::tests` | 7/7 | |
 | `strands-ts/src/models/__tests__/model-info-lookup.test.ts` | `strands::models::model_info::tests` | 9/9 | |
 | `strands-ts/src/models/__tests__/model-info.test.node.ts` | `strands::models::model_info::tests` | 1/1 | |
@@ -94,7 +94,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/models/__tests__/model-proxy.test.ts` | `strands::models::model_proxy::tests` | 19/19 | `toBe` identity checks compare by value |
 | `strands-ts/src/models/__tests__/model.test.ts` | `strands::models::model::tests`, `strands::models::summarize::tests` | 70/70 | |
 | `strands-ts/src/models/__tests__/native-output.test.ts` | `strands::models::native_output::tests` | 15/15 | |
-| `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | `strands::models::model::tests::info` | 1/2 | the provider cases (1) need Bedrock, OpenAI, Google and Vercel providers (Phase 5); the ported case covers the model half, its `Offload` half lands in Phase 6 |
+| `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | `strands::models::model::tests::info`, `strands::models::bedrock::tests::client::info` | 1/2 | the provider `it.each` case (1) has its Bedrock row ported; it is counted when the OpenAI row lands (Google and Vercel are out of v0.1); the ported case covers the model half, its `Offload` half lands in Phase 6 |
 | `strands-ts/src/models/__tests__/streaming.test.ts` | `strands::models::streaming::tests` | 14/14 | |
 | `strands-ts/src/models/__tests__/strict-schema.test.ts` | `strands::models::strict_schema::tests` | 24/24 | |
 | `strands-ts/src/models/openai/__tests__/chat.test.ts` | | 0/96 | |

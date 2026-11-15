@@ -1,9 +1,0 @@
-| Bedrock throttling on the initial call | `ThrottlingException` from `send` is rethrown as the AWS error and not retried by the default retry strategy | `ModelThrottledError`, retried by default | Section 10 maps 429 to throttled; see the TS bug list |
-| Bedrock transport failures | The AWS SDK error is rethrown | `ModelNetworkError` (connection and timeout failures) | Section 10: transport failures map to `ModelNetworkError` |
-| Bedrock `additionalArgs` with a key that is not a Converse request member | Dropped silently by the SDK serializer | The call fails with `key=<k> \| additionalArgs key is not a Converse request field` | Accepted-but-ignored config is worse than an error |
-| Bedrock `modelMetadataEvent.trace` | The SDK trace object as returned | The same JSON keys without automated-reasoning findings and invocation usage/coverage; object keys of `additionalModelResponseFields` sorted | The Rust SDK types have no serde; detection of blocked policies is unchanged |
-| Bedrock JSON documents in requests (tool schemas, tool inputs, `additionalModelRequestFields`) | Key order as written | Key order of a hash map, stable within a process for repeated values | `aws_smithy_types::Document` objects are `HashMap`s |
-| Bedrock CountTokens skip list | Process-wide, cleared with `BedrockModel.clearCountTokensCache()` | Per model instance, no clear function | No process-global mutable state |
-| Bedrock user agent | `<customUserAgent> strands-agents-ts-sdk` | App name `strands-agents-rust-sdk`, or the `SdkConfig` app name when one is set | `AppName` can't hold a space |
-| Bedrock request timeout | Socket inactivity timeout of the Node handler; handler instances keep their own | SDK read timeout; other `SdkConfig` timeouts kept | Closest SDK setting |
-| Bedrock region | AWS SDK chain, `us-west-2` when "Region is missing" | Option, `SdkConfig`, `AWS_REGION`, `AWS_DEFAULT_REGION`, shared profile, then `us-west-2` | Explicit chain with a test seam |
