@@ -5,7 +5,7 @@ Fresh start on 2026-11-15 (an earlier attempt lives on the fork branch `feat/rus
 - Local branch: `feat/rust-sdk`, from `7296caba7`.
 - Returned branch: pushed only to `https://github.com/strandly-the-agent/harness-sdk.git` as `feat/rust-sdk-fresh` (the environment's sandbox is ephemeral; pushing that branch is how work survives between sessions). Nothing else is pushed; no PRs, issues or comments.
 - Resume: clone the fork branch `feat/rust-sdk-fresh`, check it out locally as `feat/rust-sdk`, redo section 9.1 setup (ts-spec export, donor clone, toolchains, Node 22.23.4, `npm ci && npm run build`), then continue from the first unticked tracker item.
-- Current phase: 0. Current item: workspace skeleton.
+- Current phase: 0 (review gate running) and Phase 1 implementation in parallel. Phase 0 build items done and verified with `gates.sh full` (all 0), each `strands` feature alone builds, the fixture generator reruns with no diff.
 
 ## Phase base commits
 
@@ -25,4 +25,5 @@ Fresh start on 2026-11-15 (an earlier attempt lives on the fork branch `feat/rus
 
 ## Open threads
 
-- None yet.
+- CI workflows are staged in `.rust-port/github-workflows/` (P-14): the push token lacks `workflow` scope. Handoff step: copy them into `.github/workflows/`.
+- Never let `git cherry-pick --continue` or a plain `git commit` run: the husky pre-commit hook runs the whole TS suite. Use `.rust-port/commit.sh` or `git -c core.hooksPath=/dev/null commit --no-verify`.
