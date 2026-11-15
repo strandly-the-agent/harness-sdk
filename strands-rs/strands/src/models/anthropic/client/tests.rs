@@ -12,6 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use super::*;
+use crate::models::http_transport::parse_custom_headers;
 
 /// One scripted HTTP response; `None` in a script never answers.
 #[derive(Clone)]
@@ -500,17 +501,6 @@ async fn fails_a_beta_stream_that_ends_without_message_stop() {
 }
 
 #[test]
-fn should_retry_follows_the_sdk_status_rules() {
-    let none = HeaderMap::new();
-    for status in [408, 409, 429, 500, 502, 529] {
-        assert!(should_retry_status(status, &none), "{status}");
-    }
-    for status in [400, 401, 403, 404, 413, 422] {
-        assert!(!should_retry_status(status, &none), "{status}");
-    }
-}
-
-#[test]
 fn retry_after_prefers_milliseconds_and_ignores_unusable_values() {
     let headers = |pairs: &[(&'static str, &'static str)]| {
         let mut map = HeaderMap::new();
@@ -541,16 +531,11 @@ fn retry_after_prefers_milliseconds_and_ignores_unusable_values() {
 }
 
 #[test]
-fn backoff_doubles_up_to_eight_seconds_with_up_to_a_quarter_of_jitter() {
-    assert_eq!(default_retry_delay(2, 2, 0.0), Duration::from_millis(500));
-    assert_eq!(default_retry_delay(1, 2, 0.0), Duration::from_secs(1));
-    assert_eq!(default_retry_delay(0, 10, 0.0), Duration::from_secs(8));
-    assert_eq!(default_retry_delay(2, 2, 1.0), Duration::from_millis(375));
-}
-
-#[test]
 fn parses_anthropic_custom_headers_lines() {
-    let headers = parse_custom_headers("anthropic-version: 2023-06-01\nx-team :  core \nnot a header\n");
+    let headers = parse_custom_headers(
+        "anthropic-version: 2023-06-01\nx-team :  core \nnot a header\n",
+        "ANTHROPIC_CUSTOM_HEADERS",
+    );
     assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
     assert_eq!(headers.get("x-team").unwrap(), "core");
     assert_eq!(headers.len(), 2);

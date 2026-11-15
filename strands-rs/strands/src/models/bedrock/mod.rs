@@ -16,6 +16,9 @@ mod wire;
 #[cfg(test)]
 mod tests;
 
+pub use aws_config;
+pub use aws_sdk_bedrockruntime;
+
 use std::collections::HashSet;
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
@@ -37,7 +40,7 @@ use crate::models::defaults::{
 };
 use crate::models::model::{
     BaseModelConfig, BoxStream, CacheConfig, CacheTtl, CountTokensOptions, Model, ModelRequest,
-    resolve_config_metadata, resolve_max_tokens,
+    replace_if_set, resolve_config_metadata, resolve_max_tokens,
 };
 use crate::models::model_info::{
     ModelCapabilities, ModelInfo, ModelLimits, PromptCaching, SERVER_SIDE_SUMMARY_OFF, lookup_model,
@@ -286,8 +289,8 @@ impl BedrockModelConfig {
     }
 }
 
-impl From<BaseModelConfig> for BedrockModelConfig {
-    fn from(base: BaseModelConfig) -> Self {
+impl BedrockModelConfig {
+    fn from_base(base: BaseModelConfig) -> Self {
         let BaseModelConfig {
             model_id,
             max_tokens,
@@ -308,17 +311,28 @@ impl From<BaseModelConfig> for BedrockModelConfig {
     }
 }
 
-fn replace_if_set<T>(slot: &mut Option<T>, value: Option<T>) {
-    if value.is_some() {
-        *slot = value;
-    }
-}
-
 /// Everything a [`BedrockModel`] is built from (TS `BedrockModelOptions`): the model config plus
 /// how the client is set up.
 ///
-/// The region resolves in this order: `region`, the region of `sdk_config`, the `AWS_REGION` and
+/// The region resolves in this order: `region`, the region of `client_config`, the `AWS_REGION` and
 /// `AWS_DEFAULT_REGION` environment variables, the shared AWS config profile, then `us-west-2`.
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use strands::models::bedrock::{BedrockModel, BedrockModelConfig, BedrockModelOptions};
+///
+/// // TS puts `region` beside the config fields; here it sits next to `config`.
+/// let model = BedrockModel::new(BedrockModelOptions {
+///     region: Some("us-east-1".into()),
+///     request_timeout: Some(Duration::from_secs(60)),
+///     config: BedrockModelConfig {
+///         model_id: Some("global.anthropic.claude-sonnet-4-6".into()),
+///         ..Default::default()
+///     },
+///     ..Default::default()
+/// });
+/// # drop(model);
+/// ```
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
@@ -329,13 +343,13 @@ pub struct BedrockModelOptions {
     /// The model config.
     #[builder(default)]
     pub config: BedrockModelConfig,
-    /// The AWS region; takes precedence over `sdk_config`.
+    /// The AWS region; takes precedence over `client_config`.
     pub region: Option<String>,
     /// AWS SDK settings (credentials, endpoint, retry, app name) for the client (TS
     /// `clientConfig`); loaded from the default provider chain when unset.
-    pub sdk_config: Option<aws_config::SdkConfig>,
+    pub client_config: Option<aws_config::SdkConfig>,
     /// How long a request may wait for response data (default 120 s); takes precedence over the
-    /// read timeout of `sdk_config`.
+    /// read timeout of `client_config`.
     pub request_timeout: Option<Duration>,
     /// An Amazon Bedrock API key; requests then use bearer authentication instead of `SigV4`.
     pub api_key: Option<String>,
@@ -346,7 +360,7 @@ impl fmt::Debug for BedrockModelOptions {
         f.debug_struct("BedrockModelOptions")
             .field("config", &self.config)
             .field("region", &self.region)
-            .field("sdk_config", &self.sdk_config.as_ref().map(|_| "SdkConfig"))
+            .field("client_config", &self.client_config.as_ref().map(|_| "SdkConfig"))
             .field("request_timeout", &self.request_timeout)
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
             .finish()
@@ -581,7 +595,7 @@ impl Model for BedrockModel {
     }
 
     fn update_config(&self, config: BaseModelConfig) {
-        BedrockModel::update_config(self, config.into());
+        BedrockModel::update_config(self, BedrockModelConfig::from_base(config));
     }
 
     fn model_info(&self) -> ModelInfo {

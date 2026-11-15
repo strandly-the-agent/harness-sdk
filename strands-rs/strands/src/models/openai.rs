@@ -43,7 +43,6 @@ pub use self::client::ApiKeySetter;
 use self::client::{
     ApiError, ApiErrorKind, ApiRequest, CHAT_COMPLETIONS_PATH, DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT, EventStream, HttpClient, HttpClientParts, KeySource, OpenAIClient, RESPONSES_PATH,
-    merge_headers, parse_custom_headers,
 };
 use self::errors::{OpenAIErrorKind, classify_openai_error};
 use self::formatting::warn_managed_params;
@@ -56,13 +55,18 @@ use crate::error::{
 };
 use crate::logging::warn_once::warn_once;
 use crate::models::defaults::{MODEL_DEFAULTS, default_model_warning_message};
+use crate::models::http_transport::{merge_headers, parse_custom_headers};
 use crate::models::model::{
-    BaseModelConfig, BoxStream, CacheConfig, Model, ModelRequest, base_model_info, resolve_config_metadata,
+    BaseModelConfig, BoxStream, CacheConfig, Model, ModelRequest, base_model_info, replace_if_set,
+    resolve_config_metadata,
 };
 use crate::models::model_info::{ModelCapabilities, ModelInfo, SERVER_SIDE_SUMMARY_OFF, merge_model_info};
 use crate::models::streaming::ModelStreamEvent;
 use crate::retry::model_retry_strategy::{Sleeper, tokio_sleeper};
 use crate::types::json::{JsonObject, JsonValue};
+#[cfg(feature = "bedrock")]
+pub use aws_credential_types;
+pub use http;
 
 const API_KEY_ENV: &str = "OPENAI_API_KEY";
 const BASE_URL_ENV: &str = "OPENAI_BASE_URL";
@@ -134,12 +138,6 @@ pub struct OpenAIModelConfig {
     /// Responses only: the server keeps the conversation (`store: true` and
     /// `previous_response_id` chaining). Construction-only; defaults to `false`.
     pub stateful: Option<bool>,
-}
-
-fn replace_if_set<T>(slot: &mut Option<T>, value: Option<T>) {
-    if value.is_some() {
-        *slot = value;
-    }
 }
 
 impl OpenAIModelConfig {
@@ -305,10 +303,6 @@ pub struct OpenAIModelOptions {
     /// The model configuration.
     #[builder(default)]
     pub config: OpenAIModelConfig,
-    /// Routes requests through Amazon Bedrock's OpenAI-compatible Mantle endpoint, which
-    /// derives the base URL and API key (TS `bedrockMantleConfig`).
-    #[cfg(feature = "bedrock")]
-    pub bedrock_mantle_config: Option<BedrockMantleConfig>,
 }
 
 impl fmt::Debug for OpenAIModelOptions {
@@ -378,6 +372,35 @@ impl Default for Seams {
 ///
 /// The config sits behind a lock, so [`update_config`](OpenAIModel::update_config) applies to
 /// every holder of a shared model.
+///
+/// ```no_run
+/// use serde_json::json;
+/// use strands::models::openai::{OpenAIApi, OpenAIModel, OpenAIModelConfig, OpenAIModelOptions};
+/// use strands::types::json::JsonObject;
+///
+/// # fn main() -> strands::Result<()> {
+/// // Chat Completions
+/// let chat = OpenAIModel::new(OpenAIModelOptions {
+///     api: OpenAIApi::Chat,
+///     config: OpenAIModelConfig {
+///         model_id: Some("gpt-5.4".into()),
+///         ..Default::default()
+///     },
+///     ..Default::default()
+/// })?;
+///
+/// // Responses API with built-in web search
+/// let mut params = JsonObject::new();
+/// params.insert("tools".into(), json!([{ "type": "web_search" }]));
+/// let searching = OpenAIModel::new(OpenAIModelConfig {
+///     model_id: Some("gpt-5.4".into()),
+///     params: Some(params),
+///     ..Default::default()
+/// })?;
+/// # drop((chat, searching));
+/// # Ok(())
+/// # }
+/// ```
 pub struct OpenAIModel {
     inner: Arc<Inner>,
 }
@@ -431,7 +454,7 @@ fn client_headers(client_config: &OpenAIClientConfig, env: &EnvLookup) -> Header
         }
     }
     let custom = trimmed(env(CUSTOM_HEADERS_ENV))
-        .map(|value| parse_custom_headers(&value))
+        .map(|value| parse_custom_headers(&value, CUSTOM_HEADERS_ENV))
         .unwrap_or_default();
     let configured = merge_headers(custom, &client_config.default_headers);
     merge_headers(headers, &configured)
@@ -614,14 +637,71 @@ impl OpenAIModel {
         Self::with_seams(options.into(), Seams::default())
     }
 
+    /// Builds a model that calls Amazon Bedrock's OpenAI-compatible Mantle endpoint, which
+    /// derives the base URL and the API key (TS `new OpenAIModel({ bedrockMantleConfig })`).
+    ///
+    /// ```no_run
+    /// use strands::models::openai::{BedrockMantleConfig, OpenAIModel, OpenAIModelConfig};
+    ///
+    /// # fn main() -> strands::Result<()> {
+    /// // The bearer token is signed with the default AWS credential chain.
+    /// let model = OpenAIModel::with_bedrock_mantle(
+    ///     OpenAIModelConfig {
+    ///         model_id: Some("openai.gpt-oss-120b".into()),
+    ///         ..Default::default()
+    ///     },
+    ///     BedrockMantleConfig {
+    ///         region: Some("us-east-1".into()),
+    ///         ..Default::default()
+    ///     },
+    /// )?;
+    /// # drop(model);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Fails when the options set `api_key`, `client_config.api_key` or `client_config.base_url`
+    /// (the Mantle config derives them), when no region is configured or found in `AWS_REGION`
+    /// or `AWS_DEFAULT_REGION`, or when the region is not a valid AWS region name.
+    #[cfg(feature = "bedrock")]
+    pub fn with_bedrock_mantle(
+        options: impl Into<OpenAIModelOptions>,
+        bedrock_mantle_config: BedrockMantleConfig,
+    ) -> Result<Self> {
+        Self::build(options.into(), Some(bedrock_mantle_config), Seams::default())
+    }
+
+    #[cfg(feature = "bedrock")]
     pub(crate) fn with_seams(options: OpenAIModelOptions, seams: Seams) -> Result<Self> {
+        Self::build(options, None, seams)
+    }
+
+    #[cfg(not(feature = "bedrock"))]
+    pub(crate) fn with_seams(options: OpenAIModelOptions, seams: Seams) -> Result<Self> {
+        Self::build(options, seams)
+    }
+
+    #[cfg(all(test, feature = "bedrock"))]
+    pub(crate) fn with_mantle_seams(
+        options: OpenAIModelOptions,
+        bedrock_mantle_config: BedrockMantleConfig,
+        seams: Seams,
+    ) -> Result<Self> {
+        Self::build(options, Some(bedrock_mantle_config), seams)
+    }
+
+    fn build(
+        options: OpenAIModelOptions,
+        #[cfg(feature = "bedrock")] bedrock_mantle_config: Option<BedrockMantleConfig>,
+        seams: Seams,
+    ) -> Result<Self> {
         let OpenAIModelOptions {
             api,
             api_key,
             client_config,
             config,
-            #[cfg(feature = "bedrock")]
-            bedrock_mantle_config,
         } = options;
         if config.model_id.is_none() {
             (seams.warn_once)(&default_model_warning_message(MODEL_DEFAULTS.openai.model_id));

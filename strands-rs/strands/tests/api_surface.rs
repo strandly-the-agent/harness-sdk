@@ -100,3 +100,51 @@ fn hook_impls_need_only_the_strands_async_trait_re_export() {
     let agent = Agent::builder().model(model(&[])).printer(false).build().unwrap();
     agent.hooks().add_hook_impl::<BeforeInvocationEvent<'_>>(Audit);
 }
+
+#[cfg(feature = "anthropic")]
+#[test]
+fn the_anthropic_model_builder_feeds_an_agent_config() -> strands::Result<()> {
+    use strands::AgentConfig;
+    use strands::models::AnthropicModel;
+
+    let agent = Agent::new(AgentConfig {
+        model: Some(
+            AnthropicModel::builder()
+                .api_key("test-key")
+                .model_id("claude-sonnet-5-5")
+                .build()?
+                .into(),
+        ),
+        system_prompt: Some("You are a concise assistant.".into()),
+        ..Default::default()
+    })?;
+    assert_eq!(agent.model().model_id().as_deref(), Some("claude-sonnet-5-5"));
+    Ok(())
+}
+
+#[cfg(feature = "openai")]
+#[test]
+fn openai_model_options_take_a_full_struct_literal_under_any_feature_set() {
+    use strands::models::openai::{OpenAIApi, OpenAIClientConfig, OpenAIModelConfig, OpenAIModelOptions};
+
+    let options = OpenAIModelOptions {
+        api: OpenAIApi::Chat,
+        api_key: None,
+        client_config: OpenAIClientConfig::default(),
+        config: OpenAIModelConfig::default(),
+    };
+    assert_eq!(options.api, OpenAIApi::Chat);
+}
+
+#[cfg(feature = "bedrock")]
+#[test]
+fn bedrock_types_are_exported_from_the_crate_root() {
+    let model = strands::BedrockModel::new(strands::BedrockModelConfig {
+        model_id: Some("us.anthropic.claude-sonnet-4-6".into()),
+        ..Default::default()
+    });
+    assert_eq!(
+        strands::models::model::Model::model_id(&model).as_deref(),
+        Some("us.anthropic.claude-sonnet-4-6")
+    );
+}

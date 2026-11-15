@@ -50,13 +50,13 @@ async fn model(api: OpenAIApi, config: OpenAIModelConfig) -> Option<OpenAIModel>
             model_id: Some(MODEL_ID.to_owned()),
             ..config
         },
-        bedrock_mantle_config: Some(BedrockMantleConfig {
-            region: Some(REGION.to_owned()),
-            ..Default::default()
-        }),
         ..Default::default()
     };
-    Some(OpenAIModel::new(options).expect("the model builds"))
+    let mantle = BedrockMantleConfig {
+        region: Some(REGION.to_owned()),
+        ..Default::default()
+    };
+    Some(OpenAIModel::with_bedrock_mantle(options, mantle).expect("the model builds"))
 }
 
 fn user(text: &str) -> Message {

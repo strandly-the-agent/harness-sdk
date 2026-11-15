@@ -37,7 +37,7 @@ impl ClientOptions {
     pub(crate) fn from_options(options: &BedrockModelOptions) -> Self {
         Self {
             region: options.region.clone(),
-            sdk_config: options.sdk_config.clone(),
+            sdk_config: options.client_config.clone(),
             request_timeout: options.request_timeout,
             api_key: options.api_key.clone(),
         }

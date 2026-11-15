@@ -73,7 +73,7 @@ impl BaseModelConfig {
     }
 }
 
-fn replace_if_set<T>(slot: &mut Option<T>, value: Option<T>) {
+pub(crate) fn replace_if_set<T>(slot: &mut Option<T>, value: Option<T>) {
     if value.is_some() {
         *slot = value;
     }

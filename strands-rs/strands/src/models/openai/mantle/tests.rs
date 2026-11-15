@@ -76,6 +76,7 @@ impl Harness {
     fn build_with_env(
         &self,
         options: OpenAIModelOptions,
+        mantle: impl Into<Option<BedrockMantleConfig>>,
         env: &[(&str, &str)],
     ) -> crate::Result<OpenAIModel> {
         let transport = Transport::Built(self.clients.factory(MockClient::new(json!([]))));
@@ -83,11 +84,14 @@ impl Harness {
             token_provider: self.tokens.factory(),
             ..seams_with_env(transport, env)
         };
-        OpenAIModel::with_seams(options, seams)
+        match mantle.into() {
+            Some(mantle) => OpenAIModel::with_mantle_seams(options, mantle, seams),
+            None => OpenAIModel::with_seams(options, seams),
+        }
     }
 
-    fn build(&self, options: OpenAIModelOptions) -> crate::Result<OpenAIModel> {
-        self.build_with_env(options, &[])
+    fn build(&self, options: OpenAIModelOptions, mantle: BedrockMantleConfig) -> crate::Result<OpenAIModel> {
+        self.build_with_env(options, mantle, &[])
     }
 
     fn last(&self) -> HttpClientParts {
@@ -106,13 +110,12 @@ fn mantle(region: Option<&str>) -> BedrockMantleConfig {
     }
 }
 
-fn options(model_id: &str, config: BedrockMantleConfig) -> OpenAIModelOptions {
+fn options(model_id: &str) -> OpenAIModelOptions {
     OpenAIModelOptions {
         config: OpenAIModelConfig {
             model_id: Some(model_id.into()),
             ..Default::default()
         },
-        bedrock_mantle_config: Some(config),
         ..Default::default()
     }
 }
@@ -135,7 +138,7 @@ mod constructor_wiring {
     fn sets_base_url_and_installs_async_api_key_setter_that_mints_a_bearer_token() {
         let harness = Harness::new();
         harness
-            .build(options(TEST_MODEL_ID, mantle(Some("us-east-1"))))
+            .build(options(TEST_MODEL_ID), mantle(Some("us-east-1")))
             .unwrap();
         let parts = harness.last();
         assert_eq!(parts.base_url, "https://bedrock-mantle.us-east-1.api.aws/v1");
@@ -151,14 +154,14 @@ mod constructor_wiring {
         let harness = Harness::new();
         let credentials = SharedCredentialsProvider::new(Credentials::for_tests());
         harness
-            .build(options(
-                TEST_MODEL_ID,
+            .build(
+                options(TEST_MODEL_ID),
                 BedrockMantleConfig {
                     region: Some("us-west-2".into()),
                     credentials: Some(credentials),
                     expires_in_seconds: Some(900),
                 },
-            ))
+            )
             .unwrap();
         mint(&harness.last()).unwrap();
         let options = harness.tokens.options.lock().unwrap()[0].clone();
@@ -171,7 +174,7 @@ mod constructor_wiring {
     fn mints_a_fresh_token_on_every_api_key_setter_call() {
         let harness = Harness::new();
         harness
-            .build(options(TEST_MODEL_ID, mantle(Some("us-east-1"))))
+            .build(options(TEST_MODEL_ID), mantle(Some("us-east-1")))
             .unwrap();
         let parts = harness.last();
         for _ in 0..3 {
@@ -187,14 +190,17 @@ mod constructor_wiring {
         let mut default_headers = http::HeaderMap::new();
         default_headers.insert("x-trace-id", http::HeaderValue::from_static("abc"));
         harness
-            .build(OpenAIModelOptions {
-                client_config: OpenAIClientConfig {
-                    timeout: Some(Duration::from_millis(42)),
-                    default_headers,
-                    ..Default::default()
+            .build(
+                OpenAIModelOptions {
+                    client_config: OpenAIClientConfig {
+                        timeout: Some(Duration::from_millis(42)),
+                        default_headers,
+                        ..Default::default()
+                    },
+                    ..options(TEST_MODEL_ID)
                 },
-                ..options(TEST_MODEL_ID, mantle(Some("us-east-1")))
-            })
+                mantle(Some("us-east-1")),
+            )
             .unwrap();
         let parts = harness.last();
         assert_eq!(parts.base_url, "https://bedrock-mantle.us-east-1.api.aws/v1");
@@ -207,7 +213,8 @@ mod constructor_wiring {
     fn does_not_check_openai_api_key_when_bedrock_mantle_config_is_set() {
         let harness = Harness::new();
         let model = harness.build_with_env(
-            options(TEST_MODEL_ID, mantle(Some("us-east-1"))),
+            options(TEST_MODEL_ID),
+            mantle(Some("us-east-1")),
             &[("OPENAI_API_KEY", "")],
         );
         assert!(model.is_ok());
@@ -217,10 +224,13 @@ mod constructor_wiring {
     fn mints_a_bearer_token_regardless_of_api_mode() {
         let harness = Harness::new();
         harness
-            .build(OpenAIModelOptions {
-                api: OpenAIApi::Chat,
-                ..options(TEST_MODEL_ID, mantle(Some("us-east-1")))
-            })
+            .build(
+                OpenAIModelOptions {
+                    api: OpenAIApi::Chat,
+                    ..options(TEST_MODEL_ID)
+                },
+                mantle(Some("us-east-1")),
+            )
             .unwrap();
         assert_eq!(mint(&harness.last()).unwrap(), TEST_TOKEN);
     }
@@ -232,10 +242,13 @@ mod base_path_resolution_by_model_family {
     fn base_url_for(api: OpenAIApi, model_id: &str) -> String {
         let harness = Harness::new();
         harness
-            .build(OpenAIModelOptions {
-                api,
-                ..options(model_id, mantle(Some("us-west-2")))
-            })
+            .build(
+                OpenAIModelOptions {
+                    api,
+                    ..options(model_id)
+                },
+                mantle(Some("us-west-2")),
+            )
             .unwrap();
         harness.last().base_url
     }
@@ -334,7 +347,7 @@ mod base_path_resolution_by_model_family {
     fn reroutes_the_mantle_base_url_when_update_config_moves_model_id_across_base_paths() {
         let harness = Harness::new();
         let model = harness
-            .build(options("openai.gpt-oss-120b", mantle(Some("us-west-2"))))
+            .build(options("openai.gpt-oss-120b"), mantle(Some("us-west-2")))
             .unwrap();
         assert_eq!(harness.last().base_url, V1);
         let before = harness.count();
@@ -348,7 +361,7 @@ mod base_path_resolution_by_model_family {
     fn reroutes_through_the_model_trait_update_config_too() {
         let harness = Harness::new();
         let model = harness
-            .build(options("openai.gpt-oss-120b", mantle(Some("us-west-2"))))
+            .build(options("openai.gpt-oss-120b"), mantle(Some("us-west-2")))
             .unwrap();
         crate::models::model::Model::update_config(
             &model,
@@ -364,7 +377,7 @@ mod base_path_resolution_by_model_family {
     fn reuses_the_construction_time_api_key_setter_when_rerouting() {
         let harness = Harness::new();
         let model = harness
-            .build(options("openai.gpt-oss-120b", mantle(Some("us-west-2"))))
+            .build(options("openai.gpt-oss-120b"), mantle(Some("us-west-2")))
             .unwrap();
         let original = setter_of(&harness.last());
         model.update_config(model_id("xai.grok-4.3"));
@@ -375,7 +388,7 @@ mod base_path_resolution_by_model_family {
     fn keeps_the_existing_client_when_the_new_model_id_stays_on_the_same_base_path() {
         let harness = Harness::new();
         let model = harness
-            .build(options("openai.gpt-oss-120b", mantle(Some("us-west-2"))))
+            .build(options("openai.gpt-oss-120b"), mantle(Some("us-west-2")))
             .unwrap();
         let before = harness.count();
         model.update_config(model_id("qwen.qwen3-32b"));
@@ -388,7 +401,7 @@ mod base_path_resolution_by_model_family {
     fn keeps_the_existing_client_when_update_config_leaves_model_id_alone() {
         let harness = Harness::new();
         let model = harness
-            .build(options("openai.gpt-oss-120b", mantle(Some("us-west-2"))))
+            .build(options("openai.gpt-oss-120b"), mantle(Some("us-west-2")))
             .unwrap();
         let before = harness.count();
         model.update_config(OpenAIModelConfig {
@@ -407,6 +420,7 @@ mod base_path_resolution_by_model_family {
                     config: model_id("gpt-5.4"),
                     ..Default::default()
                 },
+                None,
                 &[("OPENAI_API_KEY", "sk")],
             )
             .unwrap();
@@ -419,15 +433,15 @@ mod base_path_resolution_by_model_family {
 mod validation {
     use super::*;
 
-    fn failure(options: OpenAIModelOptions) -> String {
-        Harness::new().build(options).unwrap_err().to_string()
+    fn failure(options: OpenAIModelOptions, mantle: BedrockMantleConfig) -> String {
+        Harness::new().build(options, mantle).unwrap_err().to_string()
     }
 
     #[test]
     fn throws_when_bedrock_mantle_config_is_combined_with_a_pre_built_client() {
         let seams = seams_with_env(Transport::Injected(MockClient::new(json!([]))), &[]);
-        let error =
-            OpenAIModel::with_seams(options(TEST_MODEL_ID, mantle(Some("us-east-1"))), seams).unwrap_err();
+        let error = OpenAIModel::with_mantle_seams(options(TEST_MODEL_ID), mantle(Some("us-east-1")), seams)
+            .unwrap_err();
         assert_eq!(
             error.to_string(),
             "'bedrock_mantle_config' cannot be combined with a pre-built 'client'."
@@ -436,13 +450,16 @@ mod validation {
 
     #[test]
     fn throws_when_client_config_base_url_is_set_alongside_bedrock_mantle_config() {
-        let message = failure(OpenAIModelOptions {
-            client_config: OpenAIClientConfig {
-                base_url: Some("https://example.invalid".into()),
-                ..Default::default()
+        let message = failure(
+            OpenAIModelOptions {
+                client_config: OpenAIClientConfig {
+                    base_url: Some("https://example.invalid".into()),
+                    ..Default::default()
+                },
+                ..options(TEST_MODEL_ID)
             },
-            ..options(TEST_MODEL_ID, mantle(Some("us-east-1")))
-        });
+            mantle(Some("us-east-1")),
+        );
         assert_eq!(
             message,
             "client_config must not contain base_url when bedrock_mantle_config is set; these are derived from the Mantle config automatically."
@@ -451,13 +468,16 @@ mod validation {
 
     #[test]
     fn throws_when_client_config_api_key_is_set_alongside_bedrock_mantle_config() {
-        let message = failure(OpenAIModelOptions {
-            client_config: OpenAIClientConfig {
-                api_key: Some("sk-nope".into()),
-                ..Default::default()
+        let message = failure(
+            OpenAIModelOptions {
+                client_config: OpenAIClientConfig {
+                    api_key: Some("sk-nope".into()),
+                    ..Default::default()
+                },
+                ..options(TEST_MODEL_ID)
             },
-            ..options(TEST_MODEL_ID, mantle(Some("us-east-1")))
-        });
+            mantle(Some("us-east-1")),
+        );
         assert!(
             message.starts_with("client_config must not contain api_key "),
             "{message}"
@@ -466,10 +486,13 @@ mod validation {
 
     #[test]
     fn throws_when_top_level_api_key_is_set_alongside_bedrock_mantle_config() {
-        let message = failure(OpenAIModelOptions {
-            api_key: Some("sk-nope".into()),
-            ..options(TEST_MODEL_ID, mantle(Some("us-east-1")))
-        });
+        let message = failure(
+            OpenAIModelOptions {
+                api_key: Some("sk-nope".into()),
+                ..options(TEST_MODEL_ID)
+            },
+            mantle(Some("us-east-1")),
+        );
         assert_eq!(
             message,
             "'api_key' cannot be combined with 'bedrock_mantle_config'; the API key is derived from the Mantle config automatically."
@@ -483,7 +506,7 @@ mod region_resolution {
     #[test]
     fn throws_when_no_region_is_available_from_config_or_env() {
         let error = Harness::new()
-            .build(options(TEST_MODEL_ID, mantle(None)))
+            .build(options(TEST_MODEL_ID), mantle(None))
             .unwrap_err();
         assert_eq!(
             error.to_string(),
@@ -496,7 +519,8 @@ mod region_resolution {
         let harness = Harness::new();
         harness
             .build_with_env(
-                options(TEST_MODEL_ID, mantle(None)),
+                options(TEST_MODEL_ID),
+                mantle(None),
                 &[("AWS_REGION", "eu-west-1")],
             )
             .unwrap();
@@ -513,7 +537,8 @@ mod region_resolution {
         let harness = Harness::new();
         harness
             .build_with_env(
-                options(TEST_MODEL_ID, mantle(None)),
+                options(TEST_MODEL_ID),
+                mantle(None),
                 &[("AWS_REGION", ""), ("AWS_DEFAULT_REGION", "ap-southeast-2")],
             )
             .unwrap();
@@ -526,7 +551,8 @@ mod region_resolution {
         let harness = Harness::new();
         harness
             .build_with_env(
-                options(TEST_MODEL_ID, mantle(Some("us-east-1"))),
+                options(TEST_MODEL_ID),
+                mantle(Some("us-east-1")),
                 &[("AWS_REGION", "eu-west-1")],
             )
             .unwrap();
@@ -547,7 +573,7 @@ mod region_resolution {
         ] {
             let harness = Harness::new();
             let error = harness
-                .build(options(TEST_MODEL_ID, mantle(Some(region))))
+                .build(options(TEST_MODEL_ID), mantle(Some(region)))
                 .unwrap_err();
             assert_eq!(error.to_string(), format!("invalid AWS region: '{region}'"));
             assert_eq!(harness.count(), 0);
@@ -560,7 +586,7 @@ mod region_resolution {
         for region in ["us-east-1", "ap-southeast-1", "us-gov-east-1"] {
             assert!(
                 Harness::new()
-                    .build(options(TEST_MODEL_ID, mantle(Some(region))))
+                    .build(options(TEST_MODEL_ID), mantle(Some(region)))
                     .is_ok(),
                 "{region}"
             );
@@ -571,7 +597,8 @@ mod region_resolution {
     fn rejects_a_malformed_region_supplied_via_aws_region() {
         let error = Harness::new()
             .build_with_env(
-                options(TEST_MODEL_ID, mantle(None)),
+                options(TEST_MODEL_ID),
+                mantle(None),
                 &[("AWS_REGION", "x@attacker.com/")],
             )
             .unwrap_err();
@@ -587,7 +614,7 @@ mod token_minting_errors {
         let harness = Harness::new();
         *harness.tokens.fail_with.lock().unwrap() = Some("no credentials in chain".into());
         harness
-            .build(options(TEST_MODEL_ID, mantle(Some("us-east-1"))))
+            .build(options(TEST_MODEL_ID), mantle(Some("us-east-1")))
             .unwrap();
         let error = mint(&harness.last()).unwrap_err();
         assert_eq!(

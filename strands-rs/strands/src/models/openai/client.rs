@@ -7,10 +7,13 @@ use std::time::Duration;
 
 use eventsource_stream::{Event, EventStreamError, Eventsource};
 use futures::StreamExt;
-use futures::future::{BoxFuture, Either, select};
-use http::{HeaderMap, HeaderName, HeaderValue};
+use futures::future::BoxFuture;
+use http::{HeaderMap, HeaderValue};
 
 use crate::error::BoxError;
+use crate::models::http_transport::{
+    self, RetryPolicy, TransportError, is_truthy, merge_headers, parse_js_float, sensitive,
+};
 use crate::models::model::BoxStream;
 use crate::retry::model_retry_strategy::Sleeper;
 use crate::types::json::{JsonValue, from_json_str, to_js_string};
@@ -130,16 +133,6 @@ fn error_code(error: Option<&JsonValue>) -> Option<String> {
         .and_then(|error| error.get("code"))
         .and_then(JsonValue::as_str)
         .map(str::to_owned)
-}
-
-fn is_truthy(value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Null => false,
-        JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_some_and(|n| n != 0.0),
-        JsonValue::String(text) => !text.is_empty(),
-        JsonValue::Array(_) | JsonValue::Object(_) => true,
-    }
 }
 
 /// One streaming call: the API path and the JSON body.
@@ -278,72 +271,32 @@ impl HttpInner {
             .map_err(|error| other(&error))
     }
 
-    /// One attempt, bounded by the timeout up to the response headers.
-    async fn attempt(&self, request: reqwest::Request) -> Result<reqwest::Response, ApiError> {
-        let send = self.parts.http.execute(request);
-        let timer = (self.parts.sleeper)(self.parts.timeout);
-        match select(Box::pin(send), timer).await {
-            Either::Left((Ok(response), _)) => Ok(response),
-            Either::Left((Err(error), _)) => Err(ApiError::connection(&error)),
-            Either::Right(((), _)) => Err(ApiError::new(ApiErrorKind::Timeout, "Request timed out.")),
-        }
-    }
-
-    /// Sends `request`, retrying as the vendor SDK does: connection errors and timeouts, and the
-    /// statuses `should_retry` accepts, up to `max_retries` times.
+    /// Sends `request` with the vendor SDK's retry.
     async fn send(&self, request: &ApiRequest) -> Result<reqwest::Response, ApiError> {
-        let max_retries = self.parts.max_retries;
-        let mut retries_remaining = max_retries;
-        loop {
-            let built = self.build_request(request).await?;
-            let retry_after = match self.attempt(built).await {
-                Ok(response) if response.status().is_success() => return Ok(response),
-                Ok(response)
-                    if retries_remaining > 0
-                        && should_retry(response.status().as_u16(), response.headers()) =>
-                {
-                    retry_after(response.headers())
-                }
-                Ok(response) => return Err(status_error(response).await),
-                Err(error) if retries_remaining > 0 => {
-                    tracing::debug!(
-                        "retries_remaining=<{retries_remaining}>, error=<{error}> | retrying openai request"
-                    );
-                    None
-                }
-                Err(error) => return Err(error),
-            };
-            let delay = retry_after.unwrap_or_else(|| {
-                default_retry_delay(retries_remaining, max_retries, (self.parts.random)())
-            });
-            (self.parts.sleeper)(delay).await;
-            retries_remaining = retries_remaining.saturating_sub(1);
-        }
+        let policy = RetryPolicy {
+            max_retries: self.parts.max_retries,
+            timeout: self.parts.timeout,
+            sleeper: &self.parts.sleeper,
+            random: self.parts.random.as_ref(),
+            retry_after,
+            label: "openai",
+        };
+        http_transport::send(&self.parts.http, &policy, || self.build_request(request)).await
     }
 }
 
-fn sensitive(mut value: HeaderValue) -> HeaderValue {
-    value.set_sensitive(true);
-    value
-}
-
-async fn status_error(response: reqwest::Response) -> ApiError {
-    let status = response.status().as_u16();
-    let text = response.text().await.unwrap_or_default();
-    ApiError::from_status(status, &text)
-}
-
-/// The vendor SDK's `shouldRetry`: `x-should-retry` wins, else 408, 409, 429 and 5xx.
-pub(crate) fn should_retry(status: u16, headers: &HeaderMap) -> bool {
-    match headers
-        .get("x-should-retry")
-        .and_then(|value| value.to_str().ok())
-    {
-        Some("true") => return true,
-        Some("false") => return false,
-        _ => {}
+impl TransportError for ApiError {
+    fn connection(error: &reqwest::Error) -> Self {
+        Self::connection(error)
     }
-    matches!(status, 408 | 409 | 429) || status >= 500
+
+    fn timed_out() -> Self {
+        Self::new(ApiErrorKind::Timeout, "Request timed out.")
+    }
+
+    fn from_status(status: u16, text: &str) -> Self {
+        Self::from_status(status, text)
+    }
 }
 
 /// The delay `retry-after-ms` or `retry-after` asks for (the vendor `retryRequest`); `None`
@@ -379,36 +332,6 @@ fn retry_after_millis(value: &str) -> f64 {
     #[expect(clippy::cast_precision_loss, reason = "a delay in milliseconds")]
     let delta = delta as f64;
     delta
-}
-
-/// JS `parseFloat`: the longest leading decimal number, ignoring leading whitespace.
-fn parse_js_float(value: &str) -> Option<f64> {
-    let trimmed = value.trim_start();
-    let end = trimmed
-        .char_indices()
-        .take_while(|(index, c)| {
-            c.is_ascii_digit()
-                || *c == '.'
-                || ((*c == '-' || *c == '+') && *index == 0)
-                || *c == 'e'
-                || *c == 'E'
-        })
-        .map(|(index, c)| index + c.len_utf8())
-        .last()?;
-    (1..=end)
-        .rev()
-        .filter_map(|len| trimmed.get(..len))
-        .find_map(|prefix| prefix.parse::<f64>().ok())
-        .filter(|parsed| parsed.is_finite())
-}
-
-/// The vendor SDK's backoff: 0.5 s doubling per retry up to 8 s, less up to 25 % jitter.
-pub(crate) fn default_retry_delay(retries_remaining: u32, max_retries: u32, random: f64) -> Duration {
-    let retries = max_retries.saturating_sub(retries_remaining);
-    let exponent = i32::try_from(retries).unwrap_or(i32::MAX);
-    let seconds = (0.5 * 2f64.powi(exponent)).min(8.0);
-    let jitter = 1.0 - random.clamp(0.0, 1.0) * 0.25;
-    Duration::from_secs_f64(seconds * jitter)
 }
 
 /// What one SSE message becomes: skipped, the end of the stream, a parsed event, or an error.
@@ -466,37 +389,6 @@ impl OpenAIClient for HttpClient {
             }
         })
     }
-}
-
-/// Parses `OPENAI_CUSTOM_HEADERS`: one `name: value` per line, as the vendor SDK does.
-pub(crate) fn parse_custom_headers(value: &str) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    for line in value.split('\n') {
-        let Some((name, value)) = line.split_once(':') else {
-            continue;
-        };
-        let (Ok(name), Ok(value)) = (
-            HeaderName::from_bytes(name.trim().as_bytes()),
-            HeaderValue::from_str(value.trim()),
-        ) else {
-            tracing::debug!("line=<{line}> | skipping an invalid OPENAI_CUSTOM_HEADERS entry");
-            continue;
-        };
-        headers.insert(name, value);
-    }
-    headers
-}
-
-/// `base` with every header of `overrides` replacing the same-named headers of `base`.
-pub(crate) fn merge_headers(base: HeaderMap, overrides: &HeaderMap) -> HeaderMap {
-    let mut merged = base;
-    for name in overrides.keys() {
-        merged.remove(name);
-    }
-    for (name, value) in overrides {
-        merged.append(name, value.clone());
-    }
-    merged
 }
 
 #[cfg(test)]

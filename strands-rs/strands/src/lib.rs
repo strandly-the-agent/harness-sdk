@@ -159,6 +159,11 @@ pub use async_trait::async_trait;
 pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
+#[cfg(feature = "bedrock")]
+pub use models::bedrock::{
+    BedrockCacheConfig, BedrockCacheTtl, BedrockGuardrailConfig, BedrockGuardrailRedactionConfig,
+    BedrockModel, BedrockModelConfig, BedrockModelOptions,
+};
 pub use state_store::StateStore;
 pub use strands_macros::{tool, tools};
 pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};

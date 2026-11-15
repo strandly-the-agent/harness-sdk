@@ -25,6 +25,8 @@ mod client;
 mod format;
 mod stream;
 
+pub use http;
+
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
@@ -35,8 +37,7 @@ use http::HeaderMap;
 
 use self::client::{
     ApiError, ApiErrorKind, ApiRequest, DEFAULT_API_VERSION, DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES,
-    DEFAULT_TIMEOUT, HttpClient, HttpClientParts, MessagesClient, header_values, merge_headers,
-    parse_custom_headers,
+    DEFAULT_TIMEOUT, HttpClient, HttpClientParts, MessagesClient, header_values,
 };
 use self::format::{
     ApiVersion, FormatOptions, Formatter, THINKING_BINDING_BETA, TURN_SCOPED_SYSTEM_BETA,
@@ -51,9 +52,10 @@ use crate::logging::warn_once::warn_once;
 use crate::models::defaults::{
     MODEL_DEFAULTS, default_max_tokens_warning_message, default_model_warning_message,
 };
+use crate::models::http_transport::{merge_headers, parse_custom_headers};
 use crate::models::model::{
     BaseModelConfig, BoxStream, CacheConfig, CountTokensOptions, Model, ModelRequest, base_model_info,
-    estimate_tokens_heuristic, resolve_config_metadata, resolve_max_tokens,
+    estimate_tokens_heuristic, replace_if_set, resolve_config_metadata, resolve_max_tokens,
 };
 use crate::models::model_info::{ModelCapabilities, ModelInfo, lookup_model_info, merge_model_info};
 use crate::models::native_output::{
@@ -121,12 +123,6 @@ pub struct AnthropicModelConfig {
     /// user message; caching is off when unset. Every active Claude model caches, so
     /// `strategy` has no effect beyond honouring a model-info override that says caching is off.
     pub cache_config: Option<CacheConfig>,
-}
-
-fn replace_if_set<T>(slot: &mut Option<T>, value: Option<T>) {
-    if value.is_some() {
-        *slot = value;
-    }
 }
 
 impl AnthropicModelConfig {
@@ -400,7 +396,7 @@ fn resolve_client(
             )
         })?;
     let custom = trimmed((seams.env)(CUSTOM_HEADERS_ENV))
-        .map(|value| parse_custom_headers(&value))
+        .map(|value| parse_custom_headers(&value, CUSTOM_HEADERS_ENV))
         .unwrap_or_default();
     let headers = merge_headers(custom, &client_config.default_headers);
     let api_version = resolve_api_version(&headers, &client_config.default_headers);
@@ -464,7 +460,79 @@ struct Prepared {
     beta: Option<String>,
 }
 
+#[bon::bon]
 impl AnthropicModel {
+    /// A builder over the options and the config fields; `build()` is [`AnthropicModel::new`].
+    ///
+    /// ```no_run
+    /// use strands::models::AnthropicModel;
+    ///
+    /// # fn main() -> strands::Result<()> {
+    /// // The API key comes from `ANTHROPIC_API_KEY`.
+    /// let model = AnthropicModel::builder().model_id("claude-sonnet-5-5").build()?;
+    /// let agent = strands::Agent::builder().model(model).build()?;
+    /// # drop(agent);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// `build()` fails as [`AnthropicModel::new`] does.
+    #[builder(builder_type(doc {
+        /// Builds an [`AnthropicModel`]; start with [`AnthropicModel::builder`].
+    }), finish_fn = build, on(String, into))]
+    pub fn builder(
+        /// The API key; defaults to `ANTHROPIC_API_KEY`.
+        api_key: Option<String>,
+        /// How the HTTP client is built.
+        #[builder(default)]
+        client_config: AnthropicClientConfig,
+        /// See [`AnthropicModelConfig::model_id`].
+        model_id: Option<String>,
+        /// See [`AnthropicModelConfig::max_tokens`].
+        max_tokens: Option<u64>,
+        /// See [`AnthropicModelConfig::temperature`].
+        temperature: Option<f64>,
+        /// See [`AnthropicModelConfig::top_p`].
+        top_p: Option<f64>,
+        /// See [`AnthropicModelConfig::context_window_limit`].
+        context_window_limit: Option<u64>,
+        /// See [`AnthropicModelConfig::model_info`].
+        model_info: Option<ModelInfo>,
+        /// See [`AnthropicModelConfig::stop_sequences`].
+        stop_sequences: Option<Vec<String>>,
+        /// See [`AnthropicModelConfig::params`].
+        params: Option<JsonObject>,
+        /// See [`AnthropicModelConfig::anthropic_tools`].
+        anthropic_tools: Option<Vec<JsonValue>>,
+        /// See [`AnthropicModelConfig::betas`].
+        betas: Option<Vec<String>>,
+        /// See [`AnthropicModelConfig::use_native_token_count`].
+        use_native_token_count: Option<bool>,
+        /// See [`AnthropicModelConfig::cache_config`].
+        cache_config: Option<CacheConfig>,
+    ) -> Result<Self> {
+        Self::new(AnthropicModelOptions {
+            api_key,
+            client_config,
+            config: AnthropicModelConfig {
+                model_id,
+                max_tokens,
+                temperature,
+                top_p,
+                context_window_limit,
+                model_info,
+                stop_sequences,
+                params,
+                anthropic_tools,
+                betas,
+                use_native_token_count,
+                cache_config,
+            },
+        })
+    }
+
     /// Builds a model over the Messages API (TS `new AnthropicModel(options)`).
     ///
     /// # Errors
