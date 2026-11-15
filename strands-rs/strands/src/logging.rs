@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex, PoisonError};
 
-static WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+pub(crate) static WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
 
 /// Emits `message` as a warning at most once per process (TS `warnOnce`), so repeated nudges such
 /// as the default model id warning don't flood logs when many instances are built.
@@ -11,7 +11,7 @@ pub(crate) fn warn_once(message: &str) {
     warn_once_in(&WARNED, message, |message| tracing::warn!("{message}"));
 }
 
-fn warn_once_in(warned: &Mutex<HashSet<String>>, message: &str, emit: impl FnOnce(&str)) {
+pub(crate) fn warn_once_in(warned: &Mutex<HashSet<String>>, message: &str, emit: impl FnOnce(&str)) {
     let first = warned
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -20,6 +20,9 @@ fn warn_once_in(warned: &Mutex<HashSet<String>>, message: &str, emit: impl FnOnc
         emit(message);
     }
 }
+
+#[cfg(test)]
+pub(crate) mod capture;
 
 #[cfg(test)]
 mod tests {

@@ -13,7 +13,7 @@ use std::sync::{Mutex, PoisonError};
 use serde_json::Map;
 
 use crate::error::{DataError, Result};
-use crate::logging::warn_once;
+use crate::logging::{WARNED, warn_once_in};
 use crate::models::model_info::ModelInfo;
 use crate::models::strict_schema::child_schemas;
 use crate::types::json::{JsonValue, to_string};
@@ -111,6 +111,19 @@ impl StructuredOutputSupport {
         schema: &JsonValue,
         model_info: &ModelInfo,
     ) -> Vec<StructuredOutputMechanism> {
+        self.structured_output_mechanisms_in(&WARNED, provider, model_id, tool_choice, schema, model_info)
+    }
+
+    /// [`Self::structured_output_mechanisms`], warning once per `warned` set.
+    fn structured_output_mechanisms_in(
+        &self,
+        warned: &Mutex<HashSet<String>>,
+        provider: &str,
+        model_id: &str,
+        tool_choice: Option<&ToolChoice>,
+        schema: &JsonValue,
+        model_info: &ModelInfo,
+    ) -> Vec<StructuredOutputMechanism> {
         let mut unsupported = self.unsupported_mechanisms(provider, model_id, schema);
         let capabilities = model_info.capabilities.unwrap_or_default();
         if capabilities.forced_tool_choice == Some(false) {
@@ -126,9 +139,10 @@ impl StructuredOutputSupport {
             find_unsupported_native_output_feature(schema)
         };
         if let Some(feature) = feature {
-            warn_once(&format!(
+            let message = format!(
                 "feature=<{feature}> | native structured output cannot represent the schema, if the model cannot be forced to call the structured output tool structured output falls back to auto tool choice"
-            ));
+            );
+            warn_once_in(warned, &message, |message| tracing::warn!("{message}"));
         }
         StructuredOutputMechanism::ALL
             .into_iter()

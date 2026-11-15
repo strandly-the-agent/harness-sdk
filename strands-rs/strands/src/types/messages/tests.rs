@@ -1,57 +1,14 @@
 //! Ported from strands-ts/src/types/__tests__/messages.test.ts
 
-use std::sync::{Arc, Mutex};
-
 use serde_json::json;
-use tracing::field::{Field, Visit};
-use tracing::span::{Attributes, Id, Record};
-use tracing::{Event, Metadata, Subscriber};
 
 use super::*;
 use crate::error::ToolNotFoundError;
+use crate::logging::capture::capture_warnings;
 use crate::types::citations::{Citation, CitationGeneratedContent, CitationLocation, CitationSourceContent};
 use crate::types::media::{
     AudioFormat, AudioSource, DocumentFormat, DocumentSource, ImageFormat, ImageSource,
 };
-
-/// Records the `message` of every event emitted while it is the default subscriber.
-#[derive(Clone, Default)]
-struct WarnRecorder(Arc<Mutex<Vec<String>>>);
-
-struct MessageVisitor<'a>(&'a mut String);
-
-impl Visit for MessageVisitor<'_> {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            *self.0 = format!("{value:?}");
-        }
-    }
-}
-
-impl Subscriber for WarnRecorder {
-    fn enabled(&self, _: &Metadata<'_>) -> bool {
-        true
-    }
-    fn new_span(&self, _: &Attributes<'_>) -> Id {
-        Id::from_u64(1)
-    }
-    fn record(&self, _: &Id, _: &Record<'_>) {}
-    fn record_follows_from(&self, _: &Id, _: &Id) {}
-    fn event(&self, event: &Event<'_>) {
-        let mut message = String::new();
-        event.record(&mut MessageVisitor(&mut message));
-        self.0.lock().unwrap().push(message);
-    }
-    fn enter(&self, _: &Id) {}
-    fn exit(&self, _: &Id) {}
-}
-
-fn capture_warnings<T>(f: impl FnOnce() -> T) -> (T, Vec<String>) {
-    let recorder = WarnRecorder::default();
-    let result = tracing::subscriber::with_default(recorder.clone(), f);
-    let warnings = recorder.0.lock().unwrap().clone();
-    (result, warnings)
-}
 
 fn to_json<T: Serialize>(value: &T) -> JsonValue {
     serde_json::to_value(value).unwrap()

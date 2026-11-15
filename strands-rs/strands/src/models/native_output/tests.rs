@@ -3,7 +3,7 @@
 //! conversions as the Anthropic SDK's `transformJSONSchema` output, both in the conformance fixture
 //! `schemas/native_output_schemas.json` (`conformance/src/native-output.ts`).
 
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 
 use serde_json::json;
 
@@ -13,6 +13,7 @@ use super::{
     NATIVE_OUTPUT_UNSUPPORTED_MESSAGES, StructuredOutputMechanism, StructuredOutputSupport,
     find_unsupported_native_output_feature, to_native_output_schema,
 };
+use crate::logging::capture::capture_warnings;
 use crate::models::model_info::{ModelCapabilities, ModelInfo};
 use crate::types::json::JsonValue;
 use crate::types::tools::ToolChoice;
@@ -52,6 +53,18 @@ fn mechanisms(
     support.structured_output_mechanisms(
         provider,
         model_id,
+        forced().as_ref(),
+        &schema(schema_name),
+        &ModelInfo::default(),
+    )
+}
+
+/// [`mechanisms`] for `p`/`m` with a fresh warn-once set, so a warning shows regardless of test order.
+fn warned_mechanisms(support: &StructuredOutputSupport, schema_name: &str) -> Vec<StructuredOutputMechanism> {
+    support.structured_output_mechanisms_in(
+        &Mutex::default(),
+        "p",
+        "m",
         forced().as_ref(),
         &schema(schema_name),
         &ModelInfo::default(),
@@ -129,7 +142,10 @@ fn skips_mechanisms_the_model_was_learned_to_reject() {
 #[test]
 fn skips_native_output_and_warns_for_a_schema_it_cannot_represent() {
     let support = StructuredOutputSupport::default();
-    assert_eq!(mechanisms(&support, "p", "m", "WithRecord"), [Forced, Auto]);
+    let (found, warnings) = capture_warnings(|| warned_mechanisms(&support, "WithRecord"));
+    assert_eq!(found, [Forced, Auto]);
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains("feature=<record fields>"), "{}", warnings[0]);
 }
 
 #[test]
@@ -142,7 +158,9 @@ fn does_not_inspect_the_schema_when_native_output_is_known_unsupported() {
         &schema("WithTuple"),
         NATIVE_OUTPUT_UNSUPPORTED_MESSAGES[0],
     );
-    assert_eq!(mechanisms(&support, "p", "m", "WithTuple"), [Forced, Auto]);
+    let (found, warnings) = capture_warnings(|| warned_mechanisms(&support, "WithTuple"));
+    assert_eq!(found, [Forced, Auto]);
+    assert_eq!(warnings, Vec::<String>::new());
 }
 
 #[test]
@@ -182,8 +200,13 @@ fn remembers_a_rejected_native_schema_for_that_schema_only_signal() {
     for signal in NATIVE_OUTPUT_REJECTED_MESSAGES {
         let support = StructuredOutputSupport::default();
         let message = format!("invalid_request_error: {signal}");
+        let (rejected, warnings) = capture_warnings(|| {
+            support.handle_rejected_mechanism("p", "m", Native, &schema("Person"), &message)
+        });
+        assert!(rejected, "{signal}");
+        assert_eq!(warnings.len(), 1, "{signal}");
         assert!(
-            support.handle_rejected_mechanism("p", "m", Native, &schema("Person"), &message),
+            warnings[0].contains("native structured output rejected the schema"),
             "{signal}"
         );
         assert_eq!(
