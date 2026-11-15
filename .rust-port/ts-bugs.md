@@ -1,3 +1,5 @@
 # TS bugs found while porting
 
 Format: `file:line`, what is wrong, a minimal repro, and how Rust handles it. Facts only.
+
+**`Uint8Array` fields are written two ways, and the index-object form corrupts on reload.** `strands-ts/src/types/messages.ts:585-589` (`ReasoningBlock.fromJSON`) keeps a non-string `redactedContent` as is, and `types/media.ts:18-41` (`encodeBase64`) treats any non-`Uint8Array` as a string for `btoa`. Stream events serialize `Uint8Array` fields with plain `JSON.stringify` (`models/streaming.ts:465`, `ReasoningContentDelta.redactedContent`), which writes an index-keyed object, while persisted blocks write base64. Repro (Node 22, built strands-ts): `ReasoningBlock.fromJSON({ reasoning: JSON.parse(JSON.stringify({ redactedContent: new Uint8Array([0, 128, 255]) })) }).toJSON()` returns `{"reasoning":{"redactedContent":"W29iamVjdCBPYmplY3Rd"}}`, the base64 of `"[object Object]"`. Fixture: `edge_cases/reasoning_redacted_uint8array_in_stream_event.json`. Rust reads base64 strings, index objects and number arrays as the same bytes and always writes base64 (P-19).

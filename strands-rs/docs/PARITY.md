@@ -131,12 +131,12 @@ Every TS spec file at the pinned TS baseline maps to Rust tests here. Each Rust 
 | `strands-ts/src/tools/__tests__/tool.test.ts` | | 0/44 | |
 | `strands-ts/src/tools/__tests__/zod-tool.test.ts` | | 0/32 | |
 | `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | | 0/3 | |
-| `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | |
+| `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | every case tests `AgentResult`, which lands in Phase 3 |
 | `strands-ts/src/types/__tests__/citations.test.ts` | `strands::types::citations::tests` | 6/6 | |
-| `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | |
+| `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | TS-only: `deepCopy`/`deepCopyWithValidation` clone JS values and reject functions, symbols, `undefined` and cycles, none of which a Rust `JsonValue` can hold (`clone()` is the deep copy) |
 | `strands-ts/src/types/__tests__/media.test.ts` | `strands::types::media::tests` | 51/51 | |
 | `strands-ts/src/types/__tests__/messages.test.ts` | `strands::types::messages::tests` | 84/86 | `returns them unchanged` (systemPromptFromData with class instances) and `keeps an InjectedBlock passed inside message data an InjectedBlock` are TS-only (class instances inside plain data) |
-| `strands-ts/src/types/__tests__/validation.test.ts` | | 0/5 | |
+| `strands-ts/src/types/__tests__/validation.test.ts` | | 0/5 | TS-only: `ensureDefined` guards `null`/`undefined`, which Rust expresses with `Option` |
 | `strands-ts/src/vended-interventions/cedar/__tests__/cedar.test.node.ts` | | 0/39 | |
 | `strands-ts/src/vended-interventions/hitl/__tests__/hitl.test.ts` | | 0/36 | |
 | `strands-ts/src/vended-memory-stores/file-memory-store/__tests__/file-memory-store.test.node.ts` | | 0/52 | |

@@ -1,6 +1,9 @@
 //! Model stream data types (TS `models/streaming.ts`).
 
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::types::json::JsonValue;
 
 /// Token usage for a model call (TS `Usage`).
 ///
@@ -102,9 +105,35 @@ impl Usage {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Metrics {
+    #[serde(deserialize_with = "whole_ms")]
     latency_ms: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "whole_ms_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
     time_to_first_byte_ms: Option<u64>,
+}
+
+/// Reads milliseconds written as an integer or, by other writers, as a fraction (rounded).
+fn whole_ms<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let value = JsonValue::deserialize(deserializer)?;
+    if let Some(ms) = value.as_u64() {
+        return Ok(ms);
+    }
+    match value.as_f64() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "checked finite and non-negative"
+        )]
+        Some(ms) if ms.is_finite() && ms >= 0.0 => Ok(ms.round() as u64),
+        _ => Err(D::Error::custom(format!("invalid milliseconds {value}"))),
+    }
+}
+
+fn whole_ms_opt<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
+    whole_ms(deserializer).map(Some)
 }
 
 impl Metrics {
@@ -214,6 +243,17 @@ mod tests {
         );
         assert_eq!(total.cache_read_input_tokens(), Some(u64::MAX));
         assert_eq!(total.total_prompt_tokens(), u64::MAX);
+    }
+
+    #[test]
+    fn fractional_milliseconds_from_other_writers_load_rounded() {
+        let metrics: Metrics =
+            serde_json::from_value(json!({"latencyMs": 812.6, "timeToFirstByteMs": 95})).unwrap();
+        assert_eq!(
+            (metrics.latency_ms(), metrics.time_to_first_byte_ms()),
+            (813, Some(95))
+        );
+        assert!(serde_json::from_value::<Metrics>(json!({"latencyMs": -1})).is_err());
     }
 
     #[test]
