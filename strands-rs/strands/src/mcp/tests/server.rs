@@ -481,7 +481,7 @@ pub(crate) fn serve_http_on(
     seen: Arc<Mutex<Vec<http::HeaderMap>>>,
     tokens: Arc<Mutex<Vec<String>>>,
 ) -> String {
-    use http_body_util::{BodyExt, Full};
+    use http_body_util::{BodyExt, Collected, Full};
     use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
     use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 
@@ -501,7 +501,7 @@ pub(crate) fn serve_http_on(
                 async move {
                     let path = request.uri().path().to_owned();
                     if path == "/token" {
-                        let body = request.into_body().collect().await.map(|body| body.to_bytes());
+                        let body = request.into_body().collect().await.map(Collected::to_bytes);
                         let body = String::from_utf8_lossy(&body.unwrap_or_default()).into_owned();
                         tokens.lock().expect("tokens").push(body);
                         let token = r#"{"access_token":"tok-123","token_type":"Bearer","expires_in":3600}"#;
