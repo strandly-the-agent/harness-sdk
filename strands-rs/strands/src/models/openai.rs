@@ -595,10 +595,10 @@ impl StreamState {
         }
     }
 
-    fn finish(self) -> Vec<ModelStreamEvent> {
+    fn finish(self) -> Option<Vec<ModelStreamEvent>> {
         match self {
             Self::Responses(state) => state.finish(),
-            Self::Chat(state) => state.finish(),
+            Self::Chat(state) => Some(state.finish()),
         }
     }
 }
@@ -766,7 +766,11 @@ impl OpenAIModel {
                 yield Err(translate_error(ApiError::aborted()));
                 return;
             }
-            for event in state.finish() {
+            let Some(events) = state.finish() else {
+                yield Err(ModelError::new("Stream ended without completing a message").into());
+                return;
+            };
+            for event in events {
                 yield Ok(event);
             }
         })

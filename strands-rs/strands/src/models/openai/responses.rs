@@ -441,6 +441,7 @@ pub(crate) struct ResponsesStream {
     tool_calls: IndexMap<String, ToolCall>,
     final_usage: Option<Usage>,
     stop_reason: StopReason,
+    terminated: bool,
 }
 
 fn str_field<'a>(value: &'a JsonValue, key: &str) -> Option<&'a str> {
@@ -490,6 +491,7 @@ impl ResponsesStream {
             tool_calls: IndexMap::new(),
             final_usage: None,
             stop_reason: StopReason::EndTurn,
+            terminated: false,
         }
     }
 
@@ -548,6 +550,7 @@ impl ResponsesStream {
                 }
             }
             "response.incomplete" => {
+                self.terminated = true;
                 if let Some(usage) = event.pointer("/response/usage") {
                     self.final_usage = Some(map_usage(usage));
                 }
@@ -574,6 +577,7 @@ impl ResponsesStream {
                 ));
             }
             "response.completed" => {
+                self.terminated = true;
                 if let Some(usage) = event.pointer("/response/usage") {
                     self.final_usage = Some(map_usage(usage));
                 }
@@ -633,8 +637,12 @@ impl ResponsesStream {
     }
 
     /// The closing events: the open block's stop, the tool calls, usage and the message stop
-    /// (TS `finalizeResponsesStream`).
-    pub(crate) fn finish(self) -> Vec<ModelStreamEvent> {
+    /// (TS `finalizeResponsesStream`), or `None` when no `response.completed` or
+    /// `response.incomplete` arrived.
+    pub(crate) fn finish(self) -> Option<Vec<ModelStreamEvent>> {
+        if !self.terminated {
+            return None;
+        }
         let mut events = Vec::new();
         if self.data_type.is_some() {
             events.push(ModelContentBlockStopEvent::new().into());
@@ -658,6 +666,6 @@ impl ResponsesStream {
             events.push(ModelMetadataEvent::new().with_usage(usage).into());
         }
         events.push(ModelMessageStopEvent::new(stop_reason).into());
-        events
+        Some(events)
     }
 }

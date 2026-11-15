@@ -684,3 +684,92 @@ mod bearer_token {
         assert!(decoded(&token).ends_with("&Version=1"));
     }
 }
+
+mod default_chain_credentials {
+    use aws_credential_types::provider::error::CredentialsError;
+    use aws_credential_types::provider::{ProvideCredentials, future};
+
+    use super::*;
+
+    const NOW: Duration = Duration::from_secs(1_794_744_000);
+
+    fn at(offset: Duration) -> SystemTime {
+        SystemTime::UNIX_EPOCH + NOW + offset
+    }
+
+    /// Answers with credentials expiring at `expiry` (failing after the first call when
+    /// `fail_after_first`) and counts the calls.
+    #[derive(Debug, Default)]
+    struct Counting {
+        calls: Arc<Mutex<usize>>,
+        expiry: Option<SystemTime>,
+        fail_after_first: bool,
+    }
+
+    impl ProvideCredentials for Counting {
+        fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
+        where
+            Self: 'a,
+        {
+            let mut calls = self.calls.lock().unwrap();
+            *calls += 1;
+            if self.fail_after_first && *calls > 1 {
+                return future::ProvideCredentials::ready(Err(CredentialsError::not_loaded("offline")));
+            }
+            future::ProvideCredentials::ready(Ok(Credentials::new(
+                "AKIDEXAMPLE",
+                "secret",
+                None,
+                self.expiry,
+                "test",
+            )))
+        }
+    }
+
+    fn cache(provider: Counting) -> (CachedCredentials, Arc<Mutex<usize>>) {
+        let calls = Arc::clone(&provider.calls);
+        (
+            CachedCredentials::new(SharedCredentialsProvider::new(provider)),
+            calls,
+        )
+    }
+
+    fn calls(calls: &Mutex<usize>) -> usize {
+        *calls.lock().unwrap()
+    }
+
+    #[tokio::test]
+    async fn fetches_credentials_without_an_expiry_once() {
+        let (cached, provider) = cache(Counting::default());
+        for hours in [0, 1, 24] {
+            cached.get(at(Duration::from_secs(hours * 3600))).await.unwrap();
+        }
+        assert_eq!(calls(&provider), 1);
+    }
+
+    #[tokio::test]
+    async fn reuses_credentials_until_five_minutes_before_their_expiry() {
+        let (cached, provider) = cache(Counting {
+            expiry: Some(at(Duration::from_secs(3600))),
+            ..Counting::default()
+        });
+        cached.get(at(Duration::ZERO)).await.unwrap();
+        cached.get(at(Duration::from_secs(3600 - 301))).await.unwrap();
+        assert_eq!(calls(&provider), 1);
+        cached.get(at(Duration::from_secs(3600 - 300))).await.unwrap();
+        assert_eq!(calls(&provider), 2);
+    }
+
+    #[tokio::test]
+    async fn keeps_unexpired_credentials_when_a_refresh_fails() {
+        let (cached, provider) = cache(Counting {
+            expiry: Some(at(Duration::from_secs(3600))),
+            fail_after_first: true,
+            ..Counting::default()
+        });
+        cached.get(at(Duration::ZERO)).await.unwrap();
+        cached.get(at(Duration::from_secs(3500))).await.unwrap();
+        assert_eq!(calls(&provider), 2);
+        assert!(cached.get(at(Duration::from_secs(3600))).await.is_err());
+    }
+}

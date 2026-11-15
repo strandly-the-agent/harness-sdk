@@ -196,33 +196,80 @@ pub(crate) fn sigv4_token_provider(
         .into());
     }
     let expires_in = Duration::from_secs(options.expires_in_seconds.unwrap_or(MAX_TOKEN_EXPIRES_IN_SECONDS));
-    let chain: Arc<OnceCell<Option<SharedCredentialsProvider>>> = Arc::new(OnceCell::new());
+    let chain: Arc<OnceCell<Option<Arc<CachedCredentials>>>> = Arc::new(OnceCell::new());
     Ok(Arc::new(move || {
         let configured = options.credentials.clone();
         let region = options.region.clone();
         let chain = Arc::clone(&chain);
         let clock = Arc::clone(&clock);
         Box::pin(async move {
-            let provider = match configured {
-                Some(provider) => Some(provider),
-                None => chain
-                    .get_or_init(|| default_credentials(region.clone()))
-                    .await
-                    .clone(),
+            let now = clock();
+            let credentials = match configured {
+                Some(provider) => provider.provide_credentials().await?,
+                None => {
+                    let cached = chain
+                        .get_or_init(|| default_credentials(region.clone()))
+                        .await
+                        .clone()
+                        .ok_or("no AWS credentials provider is configured")?;
+                    cached.get(now).await?
+                }
             };
-            let provider = provider.ok_or("no AWS credentials provider is configured")?;
-            let credentials = provider.provide_credentials().await?;
-            create_token(&credentials, &region, expires_in, clock())
+            create_token(&credentials, &region, expires_in, now)
         })
     }))
 }
 
-async fn default_credentials(region: String) -> Option<SharedCredentialsProvider> {
-    aws_config::defaults(BehaviorVersion::latest())
+async fn default_credentials(region: String) -> Option<Arc<CachedCredentials>> {
+    let provider = aws_config::defaults(BehaviorVersion::latest())
         .region(Region::new(region))
         .load()
         .await
-        .credentials_provider()
+        .credentials_provider()?;
+    Some(Arc::new(CachedCredentials::new(provider)))
+}
+
+/// Credentials treated as expired this long before their expiry (the JS default chain's 5 minutes).
+const CREDENTIALS_REFRESH_WINDOW: Duration = Duration::from_secs(300);
+
+/// The default chain's credentials, memoized as the JS `fromNodeProviderChain` does: fetched again
+/// only within five minutes of their expiry, never when they carry none.
+pub(crate) struct CachedCredentials {
+    provider: SharedCredentialsProvider,
+    cached: tokio::sync::Mutex<Option<Credentials>>,
+}
+
+impl CachedCredentials {
+    pub(crate) fn new(provider: SharedCredentialsProvider) -> Self {
+        Self {
+            provider,
+            cached: tokio::sync::Mutex::new(None),
+        }
+    }
+
+    /// The cached credentials, fetched again when missing or about to expire at `now`. A failed
+    /// refresh of credentials that haven't expired yet keeps them.
+    pub(crate) async fn get(&self, now: SystemTime) -> Result<Credentials, BoxError> {
+        let mut cached = self.cached.lock().await;
+        let expires_within = |credentials: &Credentials, window: Duration| {
+            credentials.expiry().is_some_and(|expiry| expiry <= now + window)
+        };
+        if let Some(credentials) = cached.as_ref()
+            && !expires_within(credentials, CREDENTIALS_REFRESH_WINDOW)
+        {
+            return Ok(credentials.clone());
+        }
+        match self.provider.provide_credentials().await {
+            Ok(fresh) => {
+                *cached = Some(fresh.clone());
+                Ok(fresh)
+            }
+            Err(error) => match cached.as_ref() {
+                Some(credentials) if !expires_within(credentials, Duration::ZERO) => Ok(credentials.clone()),
+                _ => Err(error.into()),
+            },
+        }
+    }
 }
 
 /// AWS URI encoding: everything but `A-Z a-z 0-9 - _ . ~` as uppercase `%XX`.

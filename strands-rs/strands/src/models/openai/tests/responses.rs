@@ -1506,6 +1506,16 @@ mod stream_event_mapping {
         assert_eq!(blocks[0], json!({ "text": "Before " }));
         assert!(blocks[1].get("citations").is_some(), "{}", blocks[1]);
     }
+
+    #[test]
+    fn fails_a_stream_that_ends_without_a_terminal_response_event() {
+        let model = responses_model(&MockClient::new(json!([created(), text("Partial")])), config());
+        let (events, error) = collect(&model, super::super::request(vec![user("x")]));
+        let error = error.expect("the stream fails");
+        assert!(matches!(error, Error::Model(_)), "{error:?}");
+        assert_eq!(error.to_string(), "Stream ended without completing a message");
+        assert!(!types(&events).contains(&"modelMessageStopEvent".to_owned()));
+    }
 }
 
 mod error_mapping {

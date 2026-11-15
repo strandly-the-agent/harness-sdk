@@ -51,6 +51,7 @@ fn index_of(event: &JsonValue) -> Option<u64> {
 #[derive(Debug, Default)]
 pub(crate) struct MessageSnapshot {
     message: Option<JsonObject>,
+    stopped: bool,
 }
 
 impl MessageSnapshot {
@@ -66,6 +67,7 @@ impl MessageSnapshot {
                 .entry("content")
                 .or_insert_with(|| JsonValue::Array(Vec::new()));
             self.message = Some(message);
+            self.stopped = false;
             return;
         }
         let Some(message) = self.message.as_mut() else {
@@ -90,13 +92,14 @@ impl MessageSnapshot {
                     finish_tool_input(block);
                 }
             }
+            Some("message_stop") => self.stopped = true,
             _ => {}
         }
     }
 
-    /// The accumulated message, once a `message_start` arrived.
+    /// The accumulated message, once its `message_stop` arrived.
     pub(crate) fn final_message(self) -> Option<JsonValue> {
-        self.message.map(JsonValue::Object)
+        self.message.filter(|_| self.stopped).map(JsonValue::Object)
     }
 
     /// The accumulated content blocks.

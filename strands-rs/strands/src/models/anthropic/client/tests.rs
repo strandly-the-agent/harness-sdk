@@ -472,6 +472,33 @@ async fn accumulates_the_beta_stream_into_its_final_message() {
     assert_eq!(server.received()[0].target, "/v1/messages?beta=true");
 }
 
+#[tokio::test]
+async fn fails_a_beta_stream_that_ends_without_message_stop() {
+    let server = serve(vec![Some(sse(&[
+        (
+            "message_start",
+            json!({ "type": "message_start", "message": { "role": "assistant", "content": [], "usage": { "input_tokens": 0 } } }),
+        ),
+        (
+            "content_block_start",
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "compaction", "content": null } }),
+        ),
+        (
+            "content_block_delta",
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "compaction_delta", "content": "the sum" } }),
+        ),
+    ]))])
+    .await;
+    let (_, sleeper) = recording_sleeper();
+    let client = HttpClient::new(client_parts(&server.url, sleeper)).unwrap();
+    let error = client.beta_final_message(api_request()).await.unwrap_err();
+    assert_eq!(error.kind, ApiErrorKind::Other);
+    assert_eq!(
+        error.message,
+        "stream ended without producing a Message with role=assistant"
+    );
+}
+
 #[test]
 fn should_retry_follows_the_sdk_status_rules() {
     let none = HeaderMap::new();
