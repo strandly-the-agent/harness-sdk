@@ -34,9 +34,11 @@ pub mod interrupt;
 pub mod mime;
 pub mod models;
 pub mod retry;
+pub mod state_store;
 pub mod types;
 
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
+pub use state_store::StateStore;
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};
