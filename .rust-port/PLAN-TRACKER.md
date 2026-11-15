@@ -26,7 +26,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] `ModelStreamEvent`, `ModelRequest`, `ModelState`, `BaseModelConfig`, `CacheConfig`
 - [x] `Model` trait with `stream_aggregated`, `summarize`, `count_tokens`, `estimate_utilization`, model info
 - [x] Retry strategy plugin, `DefaultModelRetryStrategy`, backoffs and jitter
-- [ ] `strands::testing` mock model, hook recorder, test agent
+- [x] `strands::testing` mock model, hook recorder, test agent (Phase 2: `MockMessageModel`, `TestModelProvider`; `HookRecorder` and `test_agent` come in Phase 3)
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 3: agent loop, hooks and tools

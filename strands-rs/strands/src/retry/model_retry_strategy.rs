@@ -71,7 +71,6 @@ pub trait ModelRetryStrategy: Send + Sync + 'static {
 pub(crate) type Sleeper = Arc<dyn Fn(Duration) -> BoxFuture<'static, ()> + Send + Sync>;
 
 /// The sleeper that waits on the tokio timer.
-#[allow(dead_code, reason = "used by the agent loop")]
 pub(crate) fn tokio_sleeper() -> Sleeper {
     Arc::new(|delay| Box::pin(tokio::time::sleep(delay)))
 }
