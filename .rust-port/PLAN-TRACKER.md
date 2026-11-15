@@ -36,7 +36,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
 - [x] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles (landed with the hook events, P-50; the registry view joins `ToolAgent` with tools)
 - [x] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
-- [ ] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
+- [x] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
 - [ ] Concurrent and sequential executors
 - [ ] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
 - [ ] Direct tool calls, `as_tool`, agents as tools, printer
