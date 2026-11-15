@@ -93,6 +93,7 @@ mod conformance_tests;
 #[cfg(test)]
 mod test_support;
 
+pub use async_trait::async_trait;
 pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
