@@ -11,8 +11,11 @@
 
 use std::sync::Arc;
 
-use strands::hooks::{BeforeToolCallEvent, HookRegistry};
-use strands::{Tool, ToolContext, ToolError, tool, tool_list, tools};
+use strands::agent::AgentAsToolOptions;
+use strands::hooks::{AfterToolCallEvent, BeforeToolCallEvent, HookRegistry};
+use strands::testing::MockMessageModel;
+use strands::types::messages::{TextBlock, ToolUseBlock};
+use strands::{Agent, JsonValue, StopReason, Tool, ToolContext, ToolError, tool, tool_list, tools};
 
 /// Get the current weather for a city.
 ///
@@ -119,4 +122,54 @@ fn generated_tools_have_specs_and_register() {
     });
     assert!(!hooks.is_empty());
     cleanup.remove();
+}
+
+#[tokio::test]
+async fn an_agent_runs_generated_tools_with_a_mock_model() -> Result<(), Box<dyn std::error::Error>> {
+    let input: JsonValue = r#"{"city": "Seattle"}"#.parse()?;
+    let model = Arc::new(MockMessageModel::new());
+    model.add_turn(vec![
+        ToolUseBlock::new("get_weather", "tool-1", input.clone()).into(),
+    ]);
+    model.add_turn(vec![TextBlock::new("It is sunny in Seattle.").into()]);
+    let inventory = Arc::new(Inventory { stock: 3 });
+    let mut agent = Agent::builder()
+        .model(Arc::clone(&model))
+        .system_prompt("You are a concise assistant.")
+        .tools(tool_list![GetWeather, Count, inventory.tools()])
+        .printer(false)
+        .build()?;
+    agent.add_hook(|event: &mut BeforeToolCallEvent| {
+        if event.tool_use().name() == "shell" {
+            event.set_cancel("shell is disabled");
+        }
+    });
+    agent.add_async_hook::<AfterToolCallEvent>(|event| {
+        Box::pin(async move {
+            let _ = event.result().status();
+        })
+    });
+
+    let result = agent.invoke("What's the weather in Seattle?").await?;
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert_eq!(result.to_string(), "It is sunny in Seattle.");
+    assert_eq!(model.requests().len(), 2);
+
+    let direct = agent.tool("get_weather").invoke(input).await?;
+    assert_eq!(direct.tool_use_id().get(..8), Some("tooluse_"));
+    assert_eq!(agent.messages().len(), 7);
+
+    let helper = Agent::builder()
+        .model(MockMessageModel::new())
+        .name("helper")
+        .printer(false)
+        .build()?;
+    let parent = Agent::builder()
+        .model(MockMessageModel::new())
+        .tools([helper.as_tool(AgentAsToolOptions::builder().delegate(true).build())])
+        .printer(false)
+        .build()?;
+    assert!(parent.tool_registry().get("helper").is_some());
+    agent.shutdown().await?;
+    Ok(())
 }
