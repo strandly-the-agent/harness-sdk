@@ -860,6 +860,28 @@ mod streamable_http {
     }
 
     #[tokio::test]
+    async fn retries_a_url_configured_client_on_a_fresh_transport_and_client() {
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let address = probe.local_addr().expect("address");
+        drop(probe);
+        let client = McpClient::new(McpClientConfig {
+            url: Some(format!("http://{address}/mcp")),
+            options: McpClientOptions {
+                continue_on_error: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .expect("client");
+        client.connect(false).await.expect("swallowed");
+        assert_eq!(client.connection_state(), McpConnectionState::Failed);
+        let listener = tokio::net::TcpListener::bind(address).await.expect("rebind");
+        server::serve_http_on(listener, TestServer::default(), Arc::default(), Arc::default());
+        client.connect(true).await.expect("reconnect");
+        assert_eq!(client.connection_state(), McpConnectionState::Connected);
+    }
+
+    #[tokio::test]
     async fn forces_reconnection_of_a_url_configured_client_on_a_fresh_transport() {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let url = server::serve_http(TestServer::default(), Arc::clone(&seen)).await;
@@ -1406,6 +1428,42 @@ mod trace_context {
         let args = inject_trace_context(server::object(json!({"a": 1})), current_trace_context());
         assert_eq!(serde_json::Value::Object(args), json!({"a": 1}));
     }
+
+    #[cfg(feature = "otel")]
+    fn span_context(trace_id: [u8; 16]) -> opentelemetry::Context {
+        use opentelemetry::trace::{SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState};
+
+        let span = SpanContext::new(
+            TraceId::from_bytes(trace_id),
+            SpanId::from_bytes([0xb7, 0xad, 0x6b, 0x71, 0x69, 0x20, 0x33, 0x31]),
+            TraceFlags::SAMPLED,
+            true,
+            TraceState::default(),
+        );
+        opentelemetry::Context::new().with_remote_span_context(span)
+    }
+
+    #[cfg(feature = "otel")]
+    #[test]
+    fn passes_args_unchanged_when_span_has_empty_trace_id() {
+        let carrier = crate::mcp::trace::trace_context_of(&span_context([0; 16]));
+        let args = inject_trace_context(server::object(json!({"a": 1})), carrier);
+        assert_eq!(serde_json::Value::Object(args), json!({"a": 1}));
+    }
+
+    #[cfg(feature = "otel")]
+    #[test]
+    fn formats_the_w3c_traceparent_of_a_valid_span_context() {
+        let trace_id = [
+            0x0a, 0xf7, 0x65, 0x19, 0x16, 0xcd, 0x43, 0xdd, 0x84, 0x48, 0xeb, 0x21, 0x1c, 0x80, 0x31, 0x9c,
+        ];
+        assert_eq!(
+            crate::mcp::trace::trace_context_of(&span_context(trace_id)).map(serde_json::Value::Object),
+            Some(
+                json!({"traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "tracestate": ""})
+            )
+        );
+    }
 }
 
 mod progress {
@@ -1601,6 +1659,28 @@ mod elicitation {
     }
 
     #[tokio::test]
+    async fn elicitation_handler_works_for_url_mode_params() {
+        let (callback, seen) = answering(answer(ElicitationAction::Accept, None));
+        let mut tools = TestServer::default().tools.lock().expect("tools").clone();
+        tools.push(tool("elicit_url", None));
+        let client = TestServer {
+            legacy_only: true,
+            ..TestServer::with_tools(tools)
+        }
+        .client_with(McpClientOptions {
+            elicitation_callback: Some(callback),
+            ..Default::default()
+        });
+        let tool = tool_named(&client, "elicit_url").await;
+        let result = client.call_tool(&tool, json!({})).await.expect("result");
+        assert_eq!(result["content"][0]["text"], json!("{\"action\":\"accept\"}"));
+        assert_eq!(
+            seen.lock().expect("seen")[0],
+            json!({"mode": "url", "message": "Please authenticate", "url": "https://example.com/auth", "elicitationId": "elicit-123"})
+        );
+    }
+
+    #[tokio::test]
     async fn answers_input_required_elicitations_on_a_2026_07_28_connection() {
         let (callback, seen) = answering(answer(ElicitationAction::Accept, Some(json!({"ok": true}))));
         let mut tools = TestServer::default().tools.lock().expect("tools").clone();
@@ -1635,7 +1715,10 @@ mod elicitation {
         .client();
         let tool = tool_named(&client, "elicit").await;
         let error = client.call_tool(&tool, json!({})).await.expect_err("no handler");
-        assert!(error.to_string().contains("Method not found") || error.to_string().contains("-32601"), "{error}");
+        assert!(
+            error.to_string().contains("Method not found") || error.to_string().contains("-32601"),
+            "{error}"
+        );
     }
 
     #[tokio::test]
@@ -1767,8 +1850,7 @@ mod tools_list_changed {
         client.refresh_tools().await;
     }
 
-    #[test]
-    fn logs_warning_and_preserves_registry_when_list_tools_fails_during_refresh_name_length() {
+    fn logs_warning_and_preserves_registry_when_list_tools_fails_during_refresh(failing: &str) {
         let (calls, warnings) = crate::test_support::WarnRecorder::capture(|| {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -1782,7 +1864,7 @@ mod tools_list_changed {
                 });
                 client.list_tools().await.expect("tools");
                 let calls = record(&client);
-                set_tools(&server, &[&"a".repeat(58)]);
+                set_tools(&server, &[failing]);
                 client.refresh_tools().await;
                 let after_failure = calls.lock().expect("calls").len();
                 set_tools(&server, &["tool_b"]);
@@ -1798,6 +1880,16 @@ mod tools_list_changed {
                 .any(|warning| warning.contains("failed to refresh tools")),
             "{warnings:?}"
         );
+    }
+
+    #[test]
+    fn logs_warning_and_preserves_registry_when_list_tools_fails_during_refresh_request() {
+        logs_warning_and_preserves_registry_when_list_tools_fails_during_refresh("fail_list");
+    }
+
+    #[test]
+    fn logs_warning_and_preserves_registry_when_list_tools_fails_during_refresh_name_length() {
+        logs_warning_and_preserves_registry_when_list_tools_fails_during_refresh(&"a".repeat(58));
     }
 
     #[tokio::test]
@@ -2120,7 +2212,11 @@ mod agent_integration {
     async fn forwards_the_tool_execution_cancel_signal_to_call_tool() {
         let server = TestServer::default();
         let model = MockMessageModel::new();
-        model.add_turn(vec![ContentBlock::from(ToolUseBlock::new("slow", "t1", json!({})))]);
+        model.add_turn(vec![ContentBlock::from(ToolUseBlock::new(
+            "slow",
+            "t1",
+            json!({}),
+        ))]);
         model.add_turn(vec![TextBlock::new("done").into()]);
         let mut agent = Agent::builder()
             .model(model)
@@ -2220,6 +2316,76 @@ mod transport_resolution {
         assert!(McpClient::new(config).is_ok());
     }
 
+    fn bearer_tokens(seen: &std::sync::Mutex<Vec<http::HeaderMap>>) -> Vec<String> {
+        seen.lock()
+            .expect("headers")
+            .iter()
+            .filter_map(|headers| headers.get(http::header::AUTHORIZATION))
+            .map(|value| value.to_str().expect("ascii").to_owned())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn passes_scopes_as_space_separated_string() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let tokens = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = server::serve_http_on(
+            listener,
+            TestServer::default(),
+            Arc::clone(&seen),
+            Arc::clone(&tokens),
+        );
+        let mut config = config(false, Some(&url));
+        config.auth = Some(credentials());
+        let client = McpClient::new(config).expect("client");
+        assert_eq!(tool_named(&client, "echo").await.server_name(), "echo");
+        let body = tokens.lock().expect("tokens").join("&");
+        for pair in [
+            "grant_type=client_credentials",
+            "client_id=id",
+            "scope=read+write",
+        ] {
+            assert!(
+                body.split('&').any(|field| field == pair),
+                "{pair} missing from {body}"
+            );
+        }
+        assert!(body.contains("resource=http"), "{body}");
+        assert!(bearer_tokens(&seen).contains(&"Bearer tok-123".to_owned()));
+        client.disconnect().await.expect("disconnect");
+    }
+
+    #[tokio::test]
+    async fn passes_custom_auth_provider_to_transport() {
+        use rmcp::transport::auth::{CredentialStore, InMemoryCredentialStore, StoredCredentials};
+
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let url = server::serve_http(TestServer::default(), Arc::clone(&seen)).await;
+        let store = InMemoryCredentialStore::new();
+        let stored: StoredCredentials = serde_json::from_value(json!({
+            "client_id": "id",
+            "token_response": {"access_token": "custom-token", "token_type": "bearer"}
+        }))
+        .expect("credentials");
+        store.save(stored).await.expect("save");
+        let mut manager = rmcp::transport::AuthorizationManager::new(url.as_str())
+            .await
+            .expect("manager");
+        manager.set_credential_store(store);
+        let mut config = config(false, Some(&url));
+        config.auth_provider = Some(rmcp::transport::AuthClient::new(reqwest::Client::new(), manager));
+        let client = McpClient::new(config).expect("client");
+        assert_eq!(tool_named(&client, "echo").await.server_name(), "echo");
+        let tokens = bearer_tokens(&seen);
+        assert!(!tokens.is_empty());
+        assert!(
+            tokens.iter().all(|token| token == "Bearer custom-token"),
+            "{tokens:?}"
+        );
+        client.disconnect().await.expect("disconnect");
+    }
+
     #[test]
     fn throws_when_auth_is_provided_with_transport() {
         let mut config = config(true, None);
@@ -2268,5 +2434,86 @@ mod transport_resolution {
     #[test]
     fn rejects_an_invalid_url() {
         assert_eq!(error(config(false, Some("not a url"))), "Invalid URL");
+    }
+}
+
+mod client_annotations {
+    //! Ported from strands-ts/src/mcp/__tests__/client-annotations.test.ts, over the in-memory pipe.
+    use super::*;
+
+    /// The server end, with `from` replaced by `to` in every line the server writes.
+    fn rewriting(server: TestServer, from: &'static str, to: &'static str) -> McpTransport {
+        McpTransport::from_factory(move || {
+            use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+            let (client, proxy) = tokio::io::duplex(64 * 1024);
+            let (mut from_client, mut to_client) = tokio::io::split(proxy);
+            let (from_server, mut to_server) = tokio::io::split(server.pipe());
+            tokio::spawn(async move {
+                let _copied = tokio::io::copy(&mut from_client, &mut to_server).await;
+            });
+            tokio::spawn(async move {
+                let mut lines = tokio::io::BufReader::new(from_server).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let line = format!("{}\n", line.replace(from, to));
+                    if to_client.write_all(line.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+            });
+            client
+        })
+    }
+
+    async fn annotations(transport: McpTransport) -> Option<serde_json::Value> {
+        let client = McpClient::new(McpClientConfig {
+            transport: Some(transport),
+            ..Default::default()
+        })
+        .expect("client");
+        let tools = client.list_tools().await.expect("tools");
+        serde_json::to_value(tools[0].tool_spec())
+            .expect("json")
+            .get("annotations")
+            .cloned()
+    }
+
+    fn server(annotations: Option<serde_json::Value>) -> TestServer {
+        let mut echo = tool("echo", Some("Echoes input"));
+        echo.annotations = annotations.map(|value| serde_json::from_value(value).expect("annotations"));
+        TestServer::with_tools(vec![echo])
+    }
+
+    #[tokio::test]
+    async fn surfaces_known_annotation_keys_from_the_server() {
+        let known = json!({"title": "Echo", "readOnlyHint": true, "openWorldHint": false});
+        assert_eq!(
+            annotations(server(Some(known.clone())).transport()).await,
+            Some(known)
+        );
+    }
+
+    #[tokio::test]
+    async fn preserves_explicitly_false_hints() {
+        let hints = json!({"readOnlyHint": false, "destructiveHint": false});
+        assert_eq!(
+            annotations(server(Some(hints.clone())).transport()).await,
+            Some(hints)
+        );
+    }
+
+    #[tokio::test]
+    async fn strips_unknown_annotation_keys_at_the_mcp_sdk_boundary() {
+        let transport = rewriting(
+            server(Some(json!({"readOnlyHint": true}))),
+            r#""readOnlyHint":true"#,
+            r#""readOnlyHint":true,"futureSepKey":"x""#,
+        );
+        assert_eq!(annotations(transport).await, Some(json!({"readOnlyHint": true})));
+    }
+
+    #[tokio::test]
+    async fn omits_annotations_when_the_server_declares_none() {
+        assert_eq!(annotations(server(None).transport()).await, None);
     }
 }

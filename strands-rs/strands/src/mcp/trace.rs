@@ -8,17 +8,23 @@ use crate::types::json::{JsonObject, JsonValue};
 /// and formats it with the W3C trace-context propagator; without it there is no span context.
 #[cfg(feature = "otel")]
 pub(crate) fn current_trace_context() -> Option<JsonObject> {
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    trace_context_of(&tracing::Span::current().context())
+}
+
+/// The W3C carrier of `context`, or `None` when its span context is invalid.
+#[cfg(feature = "otel")]
+pub(crate) fn trace_context_of(context: &opentelemetry::Context) -> Option<JsonObject> {
     use opentelemetry::propagation::TextMapPropagator;
     use opentelemetry::trace::TraceContextExt;
     use opentelemetry_sdk::propagation::TraceContextPropagator;
-    use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-    let context = tracing::Span::current().context();
     if !context.span().span_context().is_valid() {
         return None;
     }
     let mut carrier = std::collections::HashMap::new();
-    TraceContextPropagator::new().inject_context(&context, &mut carrier);
+    TraceContextPropagator::new().inject_context(context, &mut carrier);
     let mut entries: Vec<(String, String)> = carrier.into_iter().collect();
     entries.sort();
     Some(

@@ -207,13 +207,23 @@ async fn run_tool(
             }
             Ok(text("done"))
         }
-        "elicit" => {
-            let params: ElicitRequestParams = serde_json::from_value(json!({
-                "mode": "form",
-                "message": "Confirm?",
-                "requestedSchema": {"type": "object", "properties": {"confirmed": {"type": "boolean"}}}
-            }))
-            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        "elicit" | "elicit_url" => {
+            let params = if request.name == "elicit" {
+                json!({
+                    "mode": "form",
+                    "message": "Confirm?",
+                    "requestedSchema": {"type": "object", "properties": {"confirmed": {"type": "boolean"}}}
+                })
+            } else {
+                json!({
+                    "mode": "url",
+                    "message": "Please authenticate",
+                    "url": "https://example.com/auth",
+                    "elicitationId": "elicit-123"
+                })
+            };
+            let params: ElicitRequestParams = serde_json::from_value(params)
+                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
             let result = context
                 .peer
                 .create_elicitation(params)
@@ -283,6 +293,15 @@ impl ServerHandler for TestServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         self.list_calls.fetch_add(1, Ordering::SeqCst);
+        if self
+            .tools
+            .lock()
+            .expect("tools")
+            .iter()
+            .any(|tool| tool.name == "fail_list")
+        {
+            return Err(ErrorData::internal_error("server disconnected", None));
+        }
         let cursor = request.and_then(|request| request.cursor);
         Ok(self.page(cursor.as_deref()))
     }
@@ -447,9 +466,22 @@ impl Gate {
     }
 }
 
-/// Serves `make` over Streamable HTTP on a localhost port; returns the `/mcp` url. Each request
-/// header named in `seen_headers` is recorded.
+/// Serves `server` over Streamable HTTP on a localhost port; returns the `/mcp` url. The headers
+/// of every request are recorded in `seen`.
 pub(crate) async fn serve_http(server: TestServer, seen: Arc<Mutex<Vec<http::HeaderMap>>>) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    serve_http_on(listener, server, seen, Arc::default())
+}
+
+/// [`serve_http`] on `listener`, plus an OAuth token endpoint at `/token` that records each form
+/// body in `tokens`; other `/.well-known` paths answer 404.
+pub(crate) fn serve_http_on(
+    listener: tokio::net::TcpListener,
+    server: TestServer,
+    seen: Arc<Mutex<Vec<http::HeaderMap>>>,
+    tokens: Arc<Mutex<Vec<String>>>,
+) -> String {
+    use http_body_util::{BodyExt, Full};
     use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
     use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 
@@ -458,15 +490,34 @@ pub(crate) async fn serve_http(server: TestServer, seen: Arc<Mutex<Vec<http::Hea
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default(),
     );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let address = listener.local_addr().expect("address");
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             let service = hyper_util::service::TowerToHyperService::new(service.clone());
-            let seen = Arc::clone(&seen);
+            let (seen, tokens) = (Arc::clone(&seen), Arc::clone(&tokens));
             let handler = hyper::service::service_fn(move |request: http::Request<hyper::body::Incoming>| {
                 seen.lock().expect("headers").push(request.headers().clone());
-                hyper::service::Service::call(&service, request)
+                let (service, tokens) = (service.clone(), Arc::clone(&tokens));
+                async move {
+                    let path = request.uri().path().to_owned();
+                    if path == "/token" {
+                        let body = request.into_body().collect().await.map(|body| body.to_bytes());
+                        let body = String::from_utf8_lossy(&body.unwrap_or_default()).into_owned();
+                        tokens.lock().expect("tokens").push(body);
+                        let token = r#"{"access_token":"tok-123","token_type":"Bearer","expires_in":3600}"#;
+                        return Ok(http::Response::builder()
+                            .header(http::header::CONTENT_TYPE, "application/json")
+                            .body(Full::new(hyper::body::Bytes::from_static(token.as_bytes())).boxed())
+                            .expect("response"));
+                    }
+                    if path.starts_with("/.well-known") {
+                        return Ok(http::Response::builder()
+                            .status(404)
+                            .body(Full::new(hyper::body::Bytes::new()).boxed())
+                            .expect("response"));
+                    }
+                    hyper::service::Service::call(&service, request).await
+                }
             });
             tokio::spawn(async move {
                 let io = hyper_util::rt::TokioIo::new(stream);

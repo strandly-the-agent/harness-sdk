@@ -1179,7 +1179,8 @@ fn streamable_http(
 }
 
 /// The OAuth client-credentials grant against the server's discovered authorization server
-/// (TS `ClientCredentialsProvider`); scopes are sent space-separated.
+/// (TS `ClientCredentialsProvider`); scopes are sent space-separated and the server url is the
+/// RFC 8707 `resource`, which `rmcp` requires.
 async fn client_credentials(
     url: &str,
     credentials: McpClientCredentials,
@@ -1192,7 +1193,7 @@ async fn client_credentials(
         client_id: credentials.client_id,
         client_secret: credentials.client_secret,
         scopes: credentials.scopes.unwrap_or_default(),
-        resource: None,
+        resource: Some(url.to_owned()),
     };
     state
         .authenticate_client_credentials(config)

@@ -9,3 +9,4 @@
 | `loadServers` regex filters | JavaScript `RegExp` syntax; an invalid pattern reports the JS `SyntaxError` text | `regex` crate syntax (no look-around or backreferences); the message keeps the TS prefix `Server "<name>": invalid regex in toolFilters.<key>: "<pattern>": SyntaxError: ` followed by the `regex` error | No JS regex engine in Rust |
 | `loadServers` entry with `tasksConfig` | Validated and used for MCP tasks | Fails that entry with `MCP tasks ("tasksConfig") are not supported in Rust yet` | MCP tasks are out of scope for v0.1 |
 | `loadServers` file errors | Node `ENOENT` / `JSON.parse` messages | `std::io` / `serde_json` messages | Platform error text |
+| MCP client-credentials `resource` parameter | The protected-resource-metadata `resource` when that metadata exists, otherwise omitted | Always the server url | `rmcp` requires a `resource` and does not expose the discovered one (P-246) |
