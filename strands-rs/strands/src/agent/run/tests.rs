@@ -1377,6 +1377,7 @@ mod concurrent {
 }
 
 mod end_turn_resume;
+mod interrupt;
 mod invocation_state;
 mod limits;
 mod model_retry;

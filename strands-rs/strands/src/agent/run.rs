@@ -101,11 +101,14 @@ impl Agent {
         let mut args = args;
         let result = loop {
             self.local.set_invocation_cancel(Default::default());
-            if matches!(args, InvokeArgs::InterruptResponses(_)) {
-                return Err(Error::other(
-                    "resuming from interrupt responses is not supported yet",
-                ));
-            }
+            // Consumed before the hooks run so their `interrupt()` finds the responses.
+            let resuming = match &args {
+                InvokeArgs::InterruptResponses(responses) if !responses.is_empty() => {
+                    self.local.interrupt_state().lock().resume(responses)?;
+                    true
+                }
+                _ => false,
+            };
             let input = normalize_input(args)?;
 
             let mut before = BeforeInvocationEvent::new(&mut self.local, state.clone(), input);
@@ -125,7 +128,18 @@ impl Agent {
                 self.after_invocation(&hooks, &state, out).await?;
                 break result;
             }
-            let outcome = self.run_loop(input, &state, &hooks, out, schema.clone()).await;
+            let outcome = self
+                .run_loop(input, resuming, &state, &hooks, out, schema.clone())
+                .await;
+            if outcome
+                .as_ref()
+                .is_ok_and(|result| result.stop_reason() != StopReason::Interrupt)
+            {
+                let mut interrupt_state = self.local.interrupt_state().lock();
+                if interrupt_state.activated && interrupt_state.pending_tool_execution.is_none() {
+                    interrupt_state.deactivate();
+                }
+            }
             let resume = self.after_invocation(&hooks, &state, out).await?;
             let result = outcome?;
             match resume {
@@ -158,16 +172,19 @@ impl Agent {
     async fn run_loop(
         &mut self,
         input: Vec<Message>,
+        resuming: bool,
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
         schema: Option<StructuredOutputSchema>,
     ) -> Result<AgentResult> {
-        if self.local.interrupt_state().lock().activated {
+        if !resuming && self.local.interrupt_state().lock().activated {
             return Err(Error::other(
                 "Agent is in an interrupted state. Resume by invoking with interruptResponse content blocks.",
             ));
         }
+        // A resume continues the paused cycle; hook-added input isn't appended.
+        let input = if resuming { Vec::new() } else { input };
         {
             let mut telemetry = self.local.telemetry().lock();
             telemetry.meter.start_new_invocation();
@@ -257,49 +274,66 @@ impl Agent {
         }
 
         let forced = structured.choice.clone();
-        let native_schema = forced
-            .as_ref()
-            .and(structured.tool.as_ref())
-            .map(|tool| tool.schema().json_schema().clone());
-        let forcing = Forcing {
-            tool_choice: forced.clone(),
-            structured_output_schema: native_schema,
-        };
-        let model_result = self.invoke_model(state, hooks, out, forcing).await?;
-        let stop_reason = model_result.stop_reason().clone();
-        let assistant = model_result.into_message();
-        if stop_reason != StopReason::ToolUse {
-            let (stop_reason, output) = match resolve_text_turn(
-                &assistant,
-                stop_reason,
-                structured,
-                forced.is_some(),
-                context,
-            )? {
-                TextTurn::Retry => {
-                    // Appending the text turn would end history on an assistant message,
-                    // which providers reject as prefill.
-                    structured.choice = Some(ToolChoice::tool(STRUCTURED_OUTPUT_TOOL_NAME));
-                    tracing::debug!(
-                        "structured output schema set but model responded with plain text; forcing tool use on next cycle"
-                    );
-                    return Ok(Cycle::Continue);
+        // Resuming an interrupted batch skips the model call (TS `getPendingExecution`).
+        let pending = self.local.interrupt_state().lock().pending_execution();
+        let (assistant, completed) = match pending {
+            Some(pending) => (
+                pending.assistant_message_data,
+                pending
+                    .completed_tool_results
+                    .into_iter()
+                    .map(|(id, entry)| (id, entry.tool_result))
+                    .collect(),
+            ),
+            None => {
+                let native_schema = forced
+                    .as_ref()
+                    .and(structured.tool.as_ref())
+                    .map(|tool| tool.schema().json_schema().clone());
+                let forcing = Forcing {
+                    tool_choice: forced.clone(),
+                    structured_output_schema: native_schema,
+                };
+                let model_result = self.invoke_model(state, hooks, out, forcing).await?;
+                let stop_reason = model_result.stop_reason().clone();
+                let assistant = model_result.into_message();
+                if stop_reason != StopReason::ToolUse {
+                    let (stop_reason, output) = match resolve_text_turn(
+                        &assistant,
+                        stop_reason,
+                        structured,
+                        forced.is_some(),
+                        context,
+                    )? {
+                        TextTurn::Retry => {
+                            // Appending the text turn would end history on an assistant message,
+                            // which providers reject as prefill.
+                            structured.choice = Some(ToolChoice::tool(STRUCTURED_OUTPUT_TOOL_NAME));
+                            tracing::debug!(
+                                "structured output schema set but model responded with plain text; forcing tool use on next cycle"
+                            );
+                            return Ok(Cycle::Continue);
+                        }
+                        TextTurn::End(stop_reason, output) => (stop_reason, output),
+                    };
+                    self.append_message(assistant.clone(), state, hooks, out).await?;
+                    let mut result = AgentResult::new(stop_reason, assistant, state.clone());
+                    if let Some(output) = output {
+                        result = result.with_structured_output(output);
+                    }
+                    return Ok(Cycle::Done(Box::new(result)));
                 }
-                TextTurn::End(stop_reason, output) => (stop_reason, output),
-            };
-            self.append_message(assistant.clone(), state, hooks, out).await?;
-            let mut result = AgentResult::new(stop_reason, assistant, state.clone());
-            if let Some(output) = output {
-                result = result.with_structured_output(output);
+                // Counted when the response arrives, so an interrupt before its tools run keeps the count.
+                if forced.is_some() && structured_output_tool_use_ids(&assistant).is_empty() {
+                    context.record_structured_output_failure();
+                }
+                (assistant, IndexMap::new())
             }
-            return Ok(Cycle::Done(Box::new(result)));
-        }
-        // Counted when the response arrives, so an interrupt before its tools run keeps the count.
-        if forced.is_some() && structured_output_tool_use_ids(&assistant).is_empty() {
-            context.record_structured_output_failure();
-        }
+        };
 
-        let tools = self.execute_tools(&assistant, state, hooks, out).await?;
+        let tools = self
+            .execute_tools(&assistant, completed, state, hooks, out)
+            .await?;
         if !tools.interrupts.is_empty() {
             return self
                 .interrupted(tools.interrupts, state, hooks, out)
@@ -316,7 +350,9 @@ impl Agent {
         {
             let mut interrupt_state = self.local.interrupt_state().lock();
             interrupt_state.pending_tool_execution = None;
-            interrupt_state.activated = false;
+            if interrupt_state.activated {
+                interrupt_state.deactivate();
+            }
         }
         if structured.tool.is_some()
             && output.is_none()
@@ -540,6 +576,7 @@ impl Agent {
     async fn execute_tools(
         &mut self,
         assistant: &Message,
+        completed_tool_results: IndexMap<String, ToolResultBlock>,
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
@@ -592,7 +629,7 @@ impl Agent {
                 tool_uses,
                 invocation_state: state.clone(),
                 assistant_message: assistant.clone(),
-                completed_tool_results: IndexMap::new(),
+                completed_tool_results,
                 telemetry: self.local.telemetry().clone(),
             };
             let mut stream = self.tool_executor.execute(input);

@@ -1,0 +1,552 @@
+//! Interrupts and resume, ported from strands-ts/src/agent/__tests__/agent.interrupt.test.ts.
+
+use super::*;
+use crate::hooks::{AfterToolCallEvent, BeforeToolCallEvent, InterruptEvent};
+use crate::interrupt::{InterruptParams, InterruptResponse, InterruptSource};
+use crate::tool_list;
+use crate::tools::ToolContext;
+
+fn respond(result: &AgentResult, response: &JsonValue) -> Vec<InterruptResponse> {
+    result
+        .interrupts()
+        .iter()
+        .map(|interrupt| InterruptResponse::new(interrupt.id(), response.clone()))
+        .collect()
+}
+
+fn approved(response: &JsonValue) -> bool {
+    response["approved"] == json!(true)
+}
+
+/// A tool that asks `name` and logs its label once the answer arrives.
+fn asking_tool(tool: &str, name: &'static str, log: &Arc<Mutex<Vec<String>>>) -> FunctionTool {
+    let log = Arc::clone(log);
+    let label = tool.to_owned();
+    FunctionTool::new(tool, "asks", move |_input: JsonValue, ctx: ToolContext| {
+        let log = Arc::clone(&log);
+        let label = label.clone();
+        async move {
+            let response = ctx.interrupt(InterruptParams {
+                name: name.into(),
+                reason: Some(json!("Confirm?")),
+                ..Default::default()
+            })?;
+            log.lock().unwrap().push(label);
+            Ok::<_, ToolError>(if approved(&response) { "approved" } else { "denied" })
+        }
+    })
+}
+
+fn logging_tool(tool: &str, log: &Arc<Mutex<Vec<String>>>) -> FunctionTool {
+    let log = Arc::clone(log);
+    let label = tool.to_owned();
+    FunctionTool::new(tool, "logs", move |_input: JsonValue, _ctx| {
+        let log = Arc::clone(&log);
+        let label = label.clone();
+        async move {
+            log.lock().unwrap().push(label.clone());
+            Ok::<_, ToolError>(format!("{label} result"))
+        }
+    })
+}
+
+fn tool_result_texts(message: &Message) -> Vec<String> {
+    message
+        .content()
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::ToolResult(result) => Some(serde_json::to_value(result).unwrap()),
+            _ => None,
+        })
+        .map(|value| {
+            value["content"][0]["text"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect()
+}
+
+fn tool_result_message(agent: &Agent) -> &Message {
+    agent
+        .messages()
+        .iter()
+        .find(|message| {
+            message
+                .content()
+                .iter()
+                .any(|block| matches!(block, ContentBlock::ToolResult(_)))
+        })
+        .unwrap()
+}
+
+fn approve_hook(agent: &mut Agent, tool: &'static str) {
+    agent.add_hook(move |event: &mut BeforeToolCallEvent| {
+        if event.tool_use().name() == tool {
+            let approval = event.interrupt(InterruptParams {
+                name: "approve_delete".into(),
+                reason: Some(json!("Confirm delete?")),
+                ..Default::default()
+            });
+            if let Some(approval) = approval
+                && approval != json!("yes")
+            {
+                event.set_cancel("not approved");
+            }
+        }
+    });
+}
+
+#[tokio::test]
+async fn returns_stop_reason_interrupt_when_tool_calls_interrupt() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let model = mock(vec![vec![tool_use("confirmTool", "tool-1", json!({}))]]);
+    let mut agent = Agent::builder()
+        .model(Arc::clone(&model))
+        .tools([asking_tool("confirmTool", "confirm", &log)])
+        .build()
+        .unwrap();
+    let result = agent.invoke("Do it").await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::Interrupt);
+    let [interrupt] = result.interrupts() else {
+        panic!("one interrupt")
+    };
+    assert_eq!(interrupt.id(), "tool:tool-1:confirm");
+    assert_eq!(interrupt.name(), "confirm");
+    assert_eq!(interrupt.reason(), Some(&json!("Confirm?")));
+    assert_eq!(interrupt.source(), &InterruptSource::Tool);
+    assert!(log.lock().unwrap().is_empty());
+}
+
+mod before_tool_call_hook {
+    use super::*;
+
+    #[tokio::test]
+    async fn stores_pending_state_and_resumes_correctly_after_interrupt() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![tool_use("deleteTool", "tool-1", json!({"key": "X"}))],
+            vec![text("Deleted")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([logging_tool("deleteTool", &log)])
+            .build()
+            .unwrap();
+        approve_hook(&mut agent, "deleteTool");
+
+        let interrupted = agent.invoke("Delete X").await.unwrap();
+        assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+        let [interrupt] = interrupted.interrupts() else {
+            panic!("one interrupt")
+        };
+        assert_eq!(interrupt.id(), "hook:beforeToolCall:tool-1:approve_delete");
+        assert_eq!(interrupt.source(), &InterruptSource::Hook);
+        assert!(log.lock().unwrap().is_empty());
+        assert_eq!(model.call_count(), 1);
+        {
+            let state = agent.local.interrupt_state().lock();
+            let pending = state.pending_tool_execution.as_ref().unwrap();
+            assert_eq!(
+                serde_json::to_value(pending.assistant_message_data.content()).unwrap(),
+                json!([{"toolUse": {"name": "deleteTool", "toolUseId": "tool-1", "input": {"key": "X"}}}])
+            );
+            assert!(pending.completed_tool_results.is_empty());
+        }
+
+        let result = agent.invoke(respond(&interrupted, &json!("yes"))).await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(*log.lock().unwrap(), ["deleteTool"]);
+        assert_eq!(model.call_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn preserves_completed_tool_results_when_interrupt_fires_on_a_later_tool() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![
+                tool_use("readTool", "tool-1", json!({})),
+                tool_use("deleteTool", "tool-2", json!({})),
+            ],
+            vec![text("Done")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([logging_tool("readTool", &log), logging_tool("deleteTool", &log)])
+            .tool_executor(SequentialToolExecutor::new())
+            .build()
+            .unwrap();
+        approve_hook(&mut agent, "deleteTool");
+
+        let interrupted = agent.invoke("Go").await.unwrap();
+        assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+        {
+            let state = agent.local.interrupt_state().lock();
+            let pending = state.pending_tool_execution.as_ref().unwrap();
+            assert_eq!(
+                pending.completed_tool_results.keys().collect::<Vec<_>>(),
+                ["tool-1"]
+            );
+        }
+        agent.invoke(respond(&interrupted, &json!("yes"))).await.unwrap();
+        assert_eq!(*log.lock().unwrap(), ["readTool", "deleteTool"]);
+        assert_eq!(
+            tool_result_texts(tool_result_message(&agent)),
+            ["readTool result", "deleteTool result"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_denied_approval_cancels_the_tool() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![tool_use("deleteTool", "tool-1", json!({}))],
+            vec![text("Not deleted")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([logging_tool("deleteTool", &log)])
+            .build()
+            .unwrap();
+        approve_hook(&mut agent, "deleteTool");
+        let interrupted = agent.invoke("Delete").await.unwrap();
+        let result = agent.invoke(respond(&interrupted, &json!("no"))).await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert!(log.lock().unwrap().is_empty());
+        assert_eq!(tool_result_texts(tool_result_message(&agent)), ["not approved"]);
+    }
+}
+
+mod before_tools_hook {
+    use super::*;
+
+    #[tokio::test]
+    async fn returns_stop_reason_interrupt_when_hook_calls_interrupt() {
+        let model = mock(vec![
+            vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))],
+            vec![text("Done")],
+        ]);
+        let mut agent = tool_agent(&model);
+        agent.add_hook(|event: &mut BeforeToolsEvent<'_>| {
+            event.interrupt(InterruptParams::new("approve_batch"));
+        });
+        let result = agent.invoke("Go").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        let [interrupt] = result.interrupts() else {
+            panic!("one interrupt")
+        };
+        assert_eq!(interrupt.name(), "approve_batch");
+        assert_eq!(interrupt.source(), &InterruptSource::Hook);
+        assert_eq!(model.call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn interrupts_again_on_cycle_2_after_resuming_from_cycle_1() {
+        let model = mock(vec![
+            vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))],
+            vec![tool_use("add", "tool-2", json!({"a": 3, "b": 4}))],
+            vec![text("Done")],
+        ]);
+        let mut agent = tool_agent(&model);
+        let count = Arc::new(Mutex::new(0));
+        let counter = Arc::clone(&count);
+        agent.add_hook(move |event: &mut BeforeToolsEvent<'_>| {
+            *counter.lock().unwrap() += 1;
+            event.interrupt(InterruptParams {
+                name: "approval".into(),
+                reason: Some(json!("Approve?")),
+                ..Default::default()
+            });
+        });
+        let first = agent.invoke("Go").await.unwrap();
+        assert_eq!(first.stop_reason(), StopReason::Interrupt);
+        assert_eq!(first.interrupts()[0].reason(), Some(&json!("Approve?")));
+        assert_eq!(*count.lock().unwrap(), 1);
+        let second = agent.invoke(respond(&first, &json!("yes"))).await.unwrap();
+        assert_eq!(second.stop_reason(), StopReason::Interrupt);
+        assert_eq!(*count.lock().unwrap(), 3);
+        let result = agent.invoke(respond(&second, &json!("yes"))).await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(model.call_count(), 3);
+    }
+}
+
+mod resume {
+    use super::*;
+
+    #[tokio::test]
+    async fn resumes_tool_callback_execution_without_re_calling_model() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&calls);
+        let tool = FunctionTool::new(
+            "confirmTool",
+            "confirms",
+            move |input: JsonValue, ctx: ToolContext| {
+                let seen = Arc::clone(&seen);
+                async move {
+                    seen.lock().unwrap().push(None);
+                    let amount = &input["amount"];
+                    let response = ctx.interrupt(InterruptParams {
+                        name: "confirm_transfer".into(),
+                        reason: Some(json!(format!("Confirm transfer of ${amount}?"))),
+                        ..Default::default()
+                    })?;
+                    *seen.lock().unwrap().last_mut().unwrap() = Some(response.clone());
+                    Ok::<_, ToolError>(if approved(&response) {
+                        "Transfer approved"
+                    } else {
+                        "Transfer denied"
+                    })
+                }
+            },
+        );
+        let model = mock(vec![
+            vec![tool_use("confirmTool", "tool-1", json!({"amount": 5000}))],
+            vec![text("Transfer completed")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([tool])
+            .build()
+            .unwrap();
+
+        let interrupted = agent.invoke("Transfer $5000").await.unwrap();
+        assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+        assert_eq!(interrupted.interrupts()[0].name(), "confirm_transfer");
+        assert_eq!(
+            interrupted.interrupts()[0].reason(),
+            Some(&json!("Confirm transfer of $5000?"))
+        );
+        assert_eq!(calls.lock().unwrap().len(), 1);
+        assert_eq!(model.call_count(), 1);
+
+        let result = agent
+            .invoke(respond(&interrupted, &json!({"approved": true})))
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(*calls.lock().unwrap(), [None, Some(json!({"approved": true}))]);
+        assert_eq!(model.call_count(), 2);
+        assert_eq!(
+            tool_result_texts(tool_result_message(&agent)),
+            ["Transfer approved"]
+        );
+        let state = agent.local.interrupt_state().lock();
+        assert!(!state.activated && state.interrupts.is_empty());
+        assert!(state.pending_tool_execution.is_none());
+    }
+
+    #[tokio::test]
+    async fn does_not_append_hook_messages_when_resuming_an_interrupted_tool() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![tool_use("confirmTool", "tool-1", json!({}))],
+            vec![text("Done")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([asking_tool("confirmTool", "confirm", &log)])
+            .build()
+            .unwrap();
+        agent.add_hook(|event: &mut BeforeInvocationEvent<'_>| {
+            event
+                .messages_mut()
+                .push(Message::new(Role::User, vec![text("hook context")]));
+        });
+        let interrupted = agent.invoke("Go").await.unwrap();
+        let before = agent.messages().len();
+        agent
+            .invoke(respond(&interrupted, &json!({"approved": true})))
+            .await
+            .unwrap();
+        let added = &agent.messages()[before..];
+        assert_eq!(
+            added.iter().map(Message::role).collect::<Vec<_>>(),
+            [Role::Assistant, Role::User, Role::Assistant]
+        );
+        assert!(added.iter().all(|message| texts(message) != ["hook context"]));
+    }
+
+    #[tokio::test]
+    async fn skips_already_completed_tools_when_resuming_from_partial_execution() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![
+                tool_use("toolA", "tool-a", json!({})),
+                tool_use("toolB", "tool-b", json!({})),
+                tool_use("toolC", "tool-c", json!({})),
+            ],
+            vec![text("All tools completed")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools(tool_list![
+                logging_tool("toolA", &log),
+                logging_tool("toolB", &log),
+                asking_tool("toolC", "confirm_c", &log)
+            ])
+            .build()
+            .unwrap();
+        let interrupted = agent.invoke("Run all tools").await.unwrap();
+        assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+        assert_eq!(interrupted.interrupts()[0].name(), "confirm_c");
+        assert_eq!(*log.lock().unwrap(), ["toolA", "toolB"]);
+
+        let result = agent
+            .invoke(respond(&interrupted, &json!({"approved": true})))
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(*log.lock().unwrap(), ["toolA", "toolB", "toolC"]);
+        assert_eq!(model.call_count(), 2);
+        assert_eq!(tool_result_texts(tool_result_message(&agent)).len(), 3);
+    }
+
+    #[tokio::test]
+    async fn throws_when_sending_a_new_message_while_in_interrupted_state() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![vec![tool_use("confirmTool", "tool-1", json!({}))]]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([asking_tool("confirmTool", "confirm", &log)])
+            .build()
+            .unwrap();
+        agent.invoke("Go").await.unwrap();
+        let error = agent.invoke("New message").await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Agent is in an interrupted state. Resume by invoking with interruptResponse content blocks."
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_a_response_for_an_unknown_interrupt() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![vec![tool_use("confirmTool", "tool-1", json!({}))]]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([asking_tool("confirmTool", "confirm", &log)])
+            .build()
+            .unwrap();
+        agent.invoke("Go").await.unwrap();
+        let error = agent
+            .invoke(vec![InterruptResponse::new("nope", json!(true))])
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "interrupt_id=<nope> | no interrupt found");
+    }
+
+    #[tokio::test]
+    async fn resumes_correctly_after_multiple_interrupts_are_answered() {
+        let model = mock(vec![
+            vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))],
+            vec![text("Done")],
+        ]);
+        let mut agent = tool_agent(&model);
+        for name in ["first", "second"] {
+            agent.add_hook(move |event: &mut BeforeToolCallEvent| {
+                event.interrupt(InterruptParams::new(name));
+            });
+        }
+        let interrupted = agent.invoke("Go").await.unwrap();
+        assert_eq!(
+            interrupted
+                .interrupts()
+                .iter()
+                .map(crate::interrupt::Interrupt::name)
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        let result = agent.invoke(respond(&interrupted, &json!("ok"))).await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(tool_result_texts(tool_result_message(&agent)), ["3"]);
+    }
+}
+
+mod event_contract {
+    use super::*;
+
+    #[tokio::test]
+    async fn does_not_fire_after_tool_call_event_when_a_hook_or_tool_interrupts() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        for hook in [true, false] {
+            let model = mock(vec![vec![tool_use("confirmTool", "tool-1", json!({}))]]);
+            let mut agent = Agent::builder()
+                .model(model)
+                .tools([asking_tool("confirmTool", "confirm", &log)])
+                .build()
+                .unwrap();
+            if hook {
+                approve_hook(&mut agent, "confirmTool");
+            }
+            let fired = Arc::new(Mutex::new(0));
+            let count = Arc::clone(&fired);
+            agent.add_hook(move |_: &mut AfterToolCallEvent| *count.lock().unwrap() += 1);
+            let result = agent.invoke("Go").await.unwrap();
+            assert_eq!(result.stop_reason(), StopReason::Interrupt);
+            assert_eq!(*fired.lock().unwrap(), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn yields_one_interrupt_event_per_interrupt_tagged_with_source() {
+        let model = mock(vec![vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))]]);
+        let mut agent = tool_agent(&model);
+        for name in ["first", "second"] {
+            agent.add_hook(move |event: &mut BeforeToolCallEvent| {
+                event.interrupt(InterruptParams::new(name));
+            });
+        }
+        let hooked = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&hooked);
+        agent.add_hook(move |event: &mut InterruptEvent<'_>| {
+            seen.lock().unwrap().push(event.interrupt().name().to_owned());
+        });
+        let events = collect(agent.stream("Go")).await;
+        let streamed: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                AgentStreamEvent::Interrupt(data) => Some(serde_json::to_value(data).unwrap()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(streamed.len(), 2);
+        assert_eq!(streamed[0]["interrupt"]["source"], json!("hook"));
+        assert_eq!(*hooked.lock().unwrap(), ["first", "second"]);
+    }
+}
+
+mod concurrent {
+    use super::*;
+
+    #[tokio::test]
+    async fn stores_completed_tool_results_and_resumes_only_the_interrupted_tool() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![
+                tool_use("fast", "tool-1", json!({})),
+                tool_use("confirmTool", "tool-2", json!({})),
+            ],
+            vec![text("Done")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools(tool_list![
+                logging_tool("fast", &log),
+                asking_tool("confirmTool", "confirm", &log)
+            ])
+            .build()
+            .unwrap();
+        let interrupted = agent.invoke("Go").await.unwrap();
+        assert_eq!(*log.lock().unwrap(), ["fast"]);
+        agent
+            .invoke(respond(&interrupted, &json!({"approved": true})))
+            .await
+            .unwrap();
+        assert_eq!(*log.lock().unwrap(), ["fast", "confirmTool"]);
+        assert_eq!(model.call_count(), 2);
+        let mut results = tool_result_texts(tool_result_message(&agent));
+        results.sort();
+        assert_eq!(results, ["approved", "fast result"]);
+    }
+}

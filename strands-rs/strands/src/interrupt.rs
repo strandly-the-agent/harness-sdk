@@ -207,7 +207,6 @@ impl Interrupt {
         &self.source
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by interrupt resume"))]
     pub(crate) fn set_response(&mut self, response: JsonValue) {
         self.response = Some(response);
     }
@@ -222,7 +221,7 @@ pub(crate) mod state {
     use indexmap::IndexMap;
     use serde::{Deserialize, Serialize};
 
-    use super::{Interrupt, InterruptResponseContent};
+    use super::{Interrupt, InterruptResponse, InterruptResponseContent};
     use crate::types::json::{JsonObject, null_as_default};
     use crate::types::messages::{Message, ToolResultBlock};
 
@@ -250,6 +249,39 @@ pub(crate) mod state {
             self.interrupts
                 .values()
                 .filter(|interrupt| interrupt.response().is_none())
+        }
+
+        /// Stores the responses on their interrupts (TS `InterruptState.resume`); a no-op unless
+        /// activated.
+        pub(crate) fn resume(&mut self, responses: &[InterruptResponse]) -> crate::Result<()> {
+            if !self.activated {
+                return Ok(());
+            }
+            for response in responses {
+                let id = response.interrupt_id();
+                let interrupt = self.interrupts.get_mut(id).ok_or_else(|| {
+                    crate::Error::other(format!("interrupt_id=<{id}> | no interrupt found"))
+                })?;
+                interrupt.set_response(response.response().clone());
+            }
+            self.resume_responses = Some(
+                responses
+                    .iter()
+                    .cloned()
+                    .map(InterruptResponseContent::from)
+                    .collect(),
+            );
+            Ok(())
+        }
+
+        /// Clears the interrupts, responses, pending execution and context (TS `deactivate`).
+        pub(crate) fn deactivate(&mut self) {
+            *self = Self::default();
+        }
+
+        /// The paused batch to resume, when activated (TS `getPendingExecution`).
+        pub(crate) fn pending_execution(&self) -> Option<PendingToolExecution> {
+            self.pending_tool_execution.clone().filter(|_| self.activated)
         }
     }
 
