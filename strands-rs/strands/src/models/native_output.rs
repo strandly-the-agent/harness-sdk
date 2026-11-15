@@ -22,6 +22,17 @@ pub(crate) enum StructuredOutputMechanism {
     Auto,
 }
 
+impl StructuredOutputMechanism {
+    /// The TS string form (`forced`, `native`, `auto`).
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Forced => "forced",
+            Self::Native => "native",
+            Self::Auto => "auto",
+        }
+    }
+}
+
 const STRUCTURED_OUTPUT_MECHANISMS: [StructuredOutputMechanism; 3] = [
     StructuredOutputMechanism::Forced,
     StructuredOutputMechanism::Native,
@@ -159,7 +170,8 @@ impl StructuredOutputSupport {
             .or_default()
             .insert(mechanism);
         tracing::debug!(
-            "provider=<{provider}>, model_id=<{model_id}>, mechanism=<{mechanism:?}> | model rejects structured output mechanism"
+            "provider=<{provider}>, model_id=<{model_id}>, mechanism=<{}> | model rejects structured output mechanism",
+            mechanism.as_str()
         );
         true
     }

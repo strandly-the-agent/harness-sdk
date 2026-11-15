@@ -316,3 +316,9 @@ mod to_native_output_schema {
         assert!(error.to_string().contains("Schema must have a 'type'"));
     }
 }
+
+#[test]
+fn mechanisms_log_as_their_ts_strings() {
+    let names = STRUCTURED_OUTPUT_MECHANISMS.map(StructuredOutputMechanism::as_str);
+    assert_eq!(names, ["forced", "native", "auto"]);
+}
