@@ -4186,6 +4186,7 @@ dependencies = [
  "base64 0.23.1",
  "bon",
  "cedar-policy",
+ "encoding_rs",
  "eventsource-stream",
  "fastrand",
  "futures",

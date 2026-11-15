@@ -45,6 +45,7 @@ thiserror.workspace = true
 bon.workspace = true
 reqwest.workspace = true
 htmd.workspace = true
+encoding_rs.workspace = true
 cedar-policy.workspace = true
 process-wrap.workspace = true
 tracing.workspace = true

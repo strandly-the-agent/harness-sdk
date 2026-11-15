@@ -13,3 +13,6 @@
 | `http_request` response body | Read in full | Read as a stream and capped at 10 MiB (`Response body exceeds the 10485760-byte limit: ...`) | Section 11 item 32 (P-272) |
 | `http_request` `statusText` | The server's reason phrase | The canonical reason phrase for the status | `reqwest` doesn't expose the received phrase (P-272) |
 | `notebook` fractional `insertLine` | Spliced at the truncated index | `Line number out of range` | P-271 |
+| `web_fetch` markdown | `turndown` output | `htmd` output with the same options and rules (title heading, dropped elements, safe images and links); whitespace and escaping can differ | No turndown port in Rust; `htmd` follows turndown's rules (P-280) |
+| `web_fetch` `maxContentChars` | Counts UTF-16 code units | Counts `char`s | Section 7.3 (P-280) |
+| `web_fetch` `statusText` | The server's reason phrase | The canonical reason phrase for the status | `reqwest` doesn't expose the received phrase (P-272, P-280) |
