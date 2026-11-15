@@ -1,0 +1,395 @@
+{
+  "agent_session_keys": {
+    "description": "Every storage key and value after two invocations with SessionManager on an InMemoryStorage root (namespace \"session\") and a snapshotTrigger that always fires, plus a manifest written with SnapshotStorageAdapter.saveManifest (SessionManager never writes it). Values are compact JSON in storage.",
+    "expected": {
+      "session/session-1/scopes/agent/agent-1/snapshots/immutable_history/snapshot_019424f8-632e-71a7-85b2-4531183ebcd2.json": {
+        "scope": "agent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:05.678Z",
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "first question"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000001"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "first answer"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000005",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            }
+          ],
+          "state": {},
+          "systemPrompt": null,
+          "modelState": {},
+          "interrupts": {
+            "interrupts": {},
+            "activated": false
+          }
+        },
+        "appData": {}
+      },
+      "session/session-1/scopes/agent/agent-1/snapshots/immutable_history/snapshot_019424f8-6716-75bd-a5bc-e6ae2bc8222f.json": {
+        "scope": "agent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:06.678Z",
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "first question"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000001"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "first answer"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000005",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "second question"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000006"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "second answer"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-00000000000a",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            }
+          ],
+          "state": {},
+          "systemPrompt": null,
+          "modelState": {},
+          "interrupts": {
+            "interrupts": {},
+            "activated": false
+          }
+        },
+        "appData": {}
+      },
+      "session/session-1/scopes/agent/agent-1/snapshots/manifest.json": {
+        "schemaVersion": "1.0",
+        "updatedAt": "2025-01-02T03:04:06.678Z"
+      },
+      "session/session-1/scopes/agent/agent-1/snapshots/snapshot_latest.json": {
+        "scope": "agent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:06.678Z",
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "first question"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000001"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "first answer"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000005",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "second question"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000006"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "second answer"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-00000000000a",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            }
+          ],
+          "state": {},
+          "systemPrompt": null,
+          "modelState": {},
+          "interrupts": {
+            "interrupts": {},
+            "activated": false
+          }
+        },
+        "appData": {}
+      }
+    }
+  },
+  "list_snapshot_ids": {
+    "description": "listSnapshotIds for the session above: sorted uuidv7 ids, with limit and startAfter.",
+    "expected": {
+      "all": [
+        "019424f8-632e-71a7-85b2-4531183ebcd2",
+        "019424f8-6716-75bd-a5bc-e6ae2bc8222f"
+      ],
+      "limitOne": [
+        "019424f8-632e-71a7-85b2-4531183ebcd2"
+      ],
+      "startAfterFirst": [
+        "019424f8-6716-75bd-a5bc-e6ae2bc8222f"
+      ],
+      "limitZero": []
+    }
+  },
+  "default_manifest": {
+    "description": "loadManifest when no manifest exists.",
+    "expected": {
+      "schemaVersion": "1.0",
+      "updatedAt": "2025-01-02T03:04:06.678Z"
+    }
+  },
+  "local_file_storage_layout": {
+    "description": "Files under the LocalFileStorage base directory for LocalFileStorage(dir).namespace(\"sessions\") with saveLatestOn \"message\" (the harness layout). Paths are relative to the base directory.",
+    "expected": {
+      "sessions/cli-session/scopes/agent/default/snapshots/snapshot_latest.json": {
+        "scope": "agent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:05.678Z",
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "save me"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000001"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "on disk"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000005",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            }
+          ],
+          "state": {},
+          "systemPrompt": null,
+          "modelState": {},
+          "interrupts": {
+            "interrupts": {},
+            "activated": false
+          }
+        },
+        "appData": {}
+      }
+    }
+  },
+  "multi_agent_session_keys": {
+    "description": "Storage keys and values after a two-node Graph run with a SessionManager (scope multiAgent).",
+    "expected": {
+      "session/graph-session/scopes/multiAgent/review-graph/snapshots/snapshot_latest.json": {
+        "scope": "multiAgent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:05.678Z",
+        "data": {
+          "orchestratorId": "review-graph",
+          "state": {
+            "startTime": 1735787045678,
+            "steps": 2,
+            "results": [
+              {
+                "type": "nodeResult",
+                "nodeId": "writer",
+                "status": "COMPLETED",
+                "duration": 0,
+                "content": [
+                  {
+                    "text": "draft"
+                  }
+                ],
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                }
+              },
+              {
+                "type": "nodeResult",
+                "nodeId": "editor",
+                "status": "COMPLETED",
+                "duration": 0,
+                "content": [
+                  {
+                    "text": "final"
+                  }
+                ],
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                }
+              }
+            ],
+            "app": {},
+            "nodes": {
+              "writer": {
+                "status": "COMPLETED",
+                "terminus": false,
+                "startTime": 1735787045678,
+                "results": [
+                  {
+                    "type": "nodeResult",
+                    "nodeId": "writer",
+                    "status": "COMPLETED",
+                    "duration": 0,
+                    "content": [
+                      {
+                        "text": "draft"
+                      }
+                    ],
+                    "usage": {
+                      "inputTokens": 10,
+                      "outputTokens": 5,
+                      "totalTokens": 15
+                    }
+                  }
+                ],
+                "interrupts": []
+              },
+              "editor": {
+                "status": "COMPLETED",
+                "terminus": true,
+                "startTime": 1735787045678,
+                "results": [
+                  {
+                    "type": "nodeResult",
+                    "nodeId": "editor",
+                    "status": "COMPLETED",
+                    "duration": 0,
+                    "content": [
+                      {
+                        "text": "final"
+                      }
+                    ],
+                    "usage": {
+                      "inputTokens": 10,
+                      "outputTokens": 5,
+                      "totalTokens": 15
+                    }
+                  }
+                ],
+                "interrupts": []
+              }
+            }
+          }
+        },
+        "appData": {}
+      }
+    }
+  },
+  "identifier_validation": {
+    "description": "validateIdentifier (^[a-z0-9_-]+$), validateScope and validateUuidV7 error texts.",
+    "expected": {
+      "pattern": "^[a-z0-9_-]+$",
+      "valid": [
+        "abc",
+        "a-b_c",
+        "0"
+      ],
+      "upper": "Identifier 'Abc' can only contain lowercase letters, numbers, hyphens, and underscores",
+      "slash": "Identifier 'a/b' can only contain lowercase letters, numbers, hyphens, and underscores",
+      "empty": "Identifier '' can only contain lowercase letters, numbers, hyphens, and underscores",
+      "scope": "Invalid scope 'team': must be 'agent' or 'multiAgent'",
+      "uuidV7": "'00000000-0000-4000-8000-000000000001' is not a valid UUID v7 snapshot ID",
+      "sessionManagerBadId": "Identifier 'Bad Id' can only contain lowercase letters, numbers, hyphens, and underscores"
+    }
+  }
+}

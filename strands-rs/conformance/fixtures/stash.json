@@ -1,0 +1,179 @@
+{
+  "storage_type_names": {
+    "description": "Stash.storageTypeName, which TypeScript takes from storage.constructor.name and persists as stash storageType. A generic namespace() view is a plain object, so its name is \"Object\".",
+    "expected": {
+      "InMemoryStorage": "InMemoryStorage",
+      "LocalFileStorage": "LocalFileStorage",
+      "LocalFileStorageNamespaced": "LocalFileStorage",
+      "InMemoryStorageNamespaced": "InMemoryStorage",
+      "genericNamespaceView": "Object"
+    }
+  },
+  "stash_records": {
+    "description": "Root storage keys and values after Stash(root, \"session-1\", \"agent-1\").storeMessage for an assistant message and a tool result message. Tool use, reasoning and cache point blocks are not stashed; tool result entries are keyed <toolUseId>_<index>, other blocks <trackingId>_<blockIndex>.",
+    "expected": {
+      "context/session-1/scopes/agent/agent-1/msg-a_0": {
+        "text": "Here you go"
+      },
+      "context/session-1/scopes/agent/agent-1/msg-a_4": {
+        "image": {
+          "format": "png",
+          "source": {
+            "bytes": "iVBORw0KGgo="
+          }
+        }
+      },
+      "context/session-1/scopes/agent/agent-1/tooluse_1_0": {
+        "text": "sunny"
+      },
+      "context/session-1/scopes/agent/agent-1/tooluse_1_1": {
+        "json": {
+          "temperatureC": 21
+        }
+      }
+    }
+  },
+  "stash_refs": {
+    "description": "refsFor and formatStashRefs.",
+    "expected": {
+      "textBlock": [
+        "msg-a_0"
+      ],
+      "toolResult": [
+        "tooluse_1_0",
+        "tooluse_1_1"
+      ],
+      "formatOne": " [ref: a_0]",
+      "formatMany": " [refs: a_0, a_1]",
+      "formatNone": "",
+      "prefix": "context"
+    }
+  },
+  "session_inline_stash": {
+    "description": "All keys after one invocation of an agent with a ContextManager and SessionManager on agent.storage = InMemoryStorage. The stash is not durable, so the session snapshot carries it inline.",
+    "expected": {
+      "context/session-1/scopes/agent/agent-1/00000000-0000-4000-8000-000000000001_0": {
+        "text": "remember this"
+      },
+      "context/session-1/scopes/agent/agent-1/00000000-0000-4000-8000-000000000005_0": {
+        "text": "stashed answer"
+      },
+      "session/session-1/scopes/agent/agent-1/snapshots/snapshot_latest.json": {
+        "scope": "agent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:05.678Z",
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "remember this"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000001"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "stashed answer"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000005",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            }
+          ],
+          "state": {},
+          "systemPrompt": null,
+          "modelState": {},
+          "interrupts": {
+            "interrupts": {},
+            "activated": false
+          },
+          "stash": {
+            "location": "inline",
+            "entries": {
+              "00000000-0000-4000-8000-000000000001_0": {
+                "text": "remember this"
+              },
+              "00000000-0000-4000-8000-000000000005_0": {
+                "text": "stashed answer"
+              }
+            }
+          }
+        },
+        "appData": {}
+      }
+    }
+  },
+  "session_external_stash": {
+    "description": "Files after the same run on agent.storage = LocalFileStorage. The stash is durable, so the snapshot records { location: \"external\", storageType: \"LocalFileStorage\" }.",
+    "expected": {
+      "context/session-1/scopes/agent/agent-1/00000000-0000-4000-8000-000000000001_0": {
+        "text": "remember this"
+      },
+      "context/session-1/scopes/agent/agent-1/00000000-0000-4000-8000-000000000005_0": {
+        "text": "stashed answer"
+      },
+      "session/session-1/scopes/agent/agent-1/snapshots/snapshot_latest.json": {
+        "scope": "agent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:05.678Z",
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "remember this"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000001"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "stashed answer"
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000005",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            }
+          ],
+          "state": {},
+          "systemPrompt": null,
+          "modelState": {},
+          "interrupts": {
+            "interrupts": {},
+            "activated": false
+          },
+          "stash": {
+            "location": "external",
+            "storageType": "LocalFileStorage"
+          }
+        },
+        "appData": {}
+      }
+    }
+  }
+}

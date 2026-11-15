@@ -1,0 +1,1167 @@
+{
+  "spans_default": {
+    "description": "Finished spans of an agent run with two tool calls (one fails), with OTEL_SEMCONV_STABILITY_OPT_IN=(unset), in end order: name, kind, parent span name, status, attributes and events (exception.stacktrace cut to its first line).",
+    "expected": [
+      {
+        "name": "chat",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "chat",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 20,
+          "gen_ai.usage.input_tokens": 20,
+          "gen_ai.usage.completion_tokens": 8,
+          "gen_ai.usage.output_tokens": 8,
+          "gen_ai.usage.total_tokens": 28,
+          "gen_ai.server.request.duration": 42
+        },
+        "events": [
+          {
+            "name": "gen_ai.system.message",
+            "attributes": {
+              "content": "[{\"text\":\"Report the weather.\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.user.message",
+            "attributes": {
+              "content": "[{\"text\":\"Weather in Oslo?\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "finish_reason": "toolUse",
+              "message": "[{\"type\":\"toolUse\",\"name\":\"get_weather\",\"toolUseId\":\"tooluse_1\",\"input\":{\"city\":\"Oslo\"}},{\"type\":\"toolUse\",\"name\":\"failing_tool\",\"toolUseId\":\"tooluse_2\",\"input\":{}}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_tool failing_tool",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "ERROR",
+          "message": "tool exploded"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "execute_tool",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.tool.name": "failing_tool",
+          "gen_ai.tool.call.id": "tooluse_2",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.status": "error"
+        },
+        "events": [
+          {
+            "name": "gen_ai.tool.message",
+            "attributes": {
+              "role": "tool",
+              "content": "{}",
+              "id": "tooluse_2"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "message": "[{\"text\":\"Error: tool exploded\"}]",
+              "id": "tooluse_2"
+            }
+          },
+          {
+            "name": "exception",
+            "attributes": {
+              "exception.type": "Error",
+              "exception.message": "tool exploded",
+              "exception.stacktrace": "Error: tool exploded"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_tool get_weather",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "execute_tool",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.tool.name": "get_weather",
+          "gen_ai.tool.call.id": "tooluse_1",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.status": "success"
+        },
+        "events": [
+          {
+            "name": "gen_ai.tool.message",
+            "attributes": {
+              "role": "tool",
+              "content": "{\"city\":\"Oslo\"}",
+              "id": "tooluse_1"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "message": "[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]",
+              "id": "tooluse_1"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_agent_loop_cycle",
+        "kind": "INTERNAL",
+        "parent": "invoke_agent telemetry-agent",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "agent_loop.cycle_id": "cycle-1",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z"
+        },
+        "events": []
+      },
+      {
+        "name": "chat",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "chat",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15,
+          "gen_ai.server.request.duration": 42
+        },
+        "events": [
+          {
+            "name": "gen_ai.system.message",
+            "attributes": {
+              "content": "[{\"text\":\"Report the weather.\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.user.message",
+            "attributes": {
+              "content": "[{\"text\":\"Weather in Oslo?\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.assistant.message",
+            "attributes": {
+              "content": "[{\"toolUse\":{\"name\":\"get_weather\",\"toolUseId\":\"tooluse_1\",\"input\":{\"city\":\"Oslo\"}}},{\"toolUse\":{\"name\":\"failing_tool\",\"toolUseId\":\"tooluse_2\",\"input\":{}}}]"
+            }
+          },
+          {
+            "name": "gen_ai.tool.message",
+            "attributes": {
+              "content": "[{\"toolResult\":{\"toolUseId\":\"tooluse_1\",\"status\":\"success\",\"content\":[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]}},{\"toolResult\":{\"toolUseId\":\"tooluse_2\",\"status\":\"error\",\"content\":[{\"text\":\"Error: tool exploded\"}]}}]"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "finish_reason": "endTurn",
+              "message": "[{\"text\":\"Cold.\"}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_agent_loop_cycle",
+        "kind": "INTERNAL",
+        "parent": "invoke_agent telemetry-agent",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "agent_loop.cycle_id": "cycle-2",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z"
+        },
+        "events": [
+          {
+            "name": "gen_ai.user.message",
+            "attributes": {
+              "content": "[{\"text\":\"Weather in Oslo?\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.assistant.message",
+            "attributes": {
+              "content": "[{\"toolUse\":{\"name\":\"get_weather\",\"toolUseId\":\"tooluse_1\",\"input\":{\"city\":\"Oslo\"}}},{\"toolUse\":{\"name\":\"failing_tool\",\"toolUseId\":\"tooluse_2\",\"input\":{}}}]"
+            }
+          },
+          {
+            "name": "gen_ai.tool.message",
+            "attributes": {
+              "content": "[{\"toolResult\":{\"toolUseId\":\"tooluse_1\",\"status\":\"success\",\"content\":[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]}},{\"toolResult\":{\"toolUseId\":\"tooluse_2\",\"status\":\"error\",\"content\":[{\"text\":\"Error: tool exploded\"}]}}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "invoke_agent telemetry-agent",
+        "kind": "INTERNAL",
+        "parent": null,
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.agent.name": "telemetry-agent",
+          "name": "invoke_agent telemetry-agent",
+          "gen_ai.agent.id": "telemetry-agent",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.agent.tools": "[\"get_weather\",\"failing_tool\"]",
+          "system_prompt": "\"Report the weather.\"",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 30,
+          "gen_ai.usage.input_tokens": 30,
+          "gen_ai.usage.completion_tokens": 13,
+          "gen_ai.usage.output_tokens": 13,
+          "gen_ai.usage.total_tokens": 43
+        },
+        "events": [
+          {
+            "name": "gen_ai.user.message",
+            "attributes": {
+              "content": "[{\"text\":\"Weather in Oslo?\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "message": "Cold.",
+              "finish_reason": "endTurn"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "agent_metrics": {
+    "description": "AgentResult.metrics toJSON (AgentMetrics) of the default-mode run. Durations are 0 under the fixed clock.",
+    "expected": {
+      "cycleCount": 2,
+      "accumulatedUsage": {
+        "inputTokens": 30,
+        "outputTokens": 13,
+        "totalTokens": 43
+      },
+      "accumulatedMetrics": {
+        "latencyMs": 84
+      },
+      "agentInvocations": [
+        {
+          "cycles": [
+            {
+              "cycleId": "cycle-1",
+              "duration": 0,
+              "usage": {
+                "inputTokens": 20,
+                "outputTokens": 8,
+                "totalTokens": 28
+              }
+            },
+            {
+              "cycleId": "cycle-2",
+              "duration": 0,
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          ],
+          "usage": {
+            "inputTokens": 30,
+            "outputTokens": 13,
+            "totalTokens": 43
+          }
+        }
+      ],
+      "toolMetrics": {
+        "failing_tool": {
+          "callCount": 1,
+          "successCount": 0,
+          "errorCount": 1,
+          "totalTime": 0
+        },
+        "get_weather": {
+          "callCount": 1,
+          "successCount": 1,
+          "errorCount": 0,
+          "totalTime": 0
+        }
+      },
+      "totalDuration": 0,
+      "latestContextSize": 10,
+      "projectedContextSize": 15
+    }
+  },
+  "spans_latest_experimental": {
+    "description": "Finished spans of an agent run with two tool calls (one fails), with OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_tool_definitions, in end order: name, kind, parent span name, status, attributes and events (exception.stacktrace cut to its first line).",
+    "expected": [
+      {
+        "name": "chat",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "chat",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 20,
+          "gen_ai.usage.input_tokens": 20,
+          "gen_ai.usage.completion_tokens": 8,
+          "gen_ai.usage.output_tokens": 8,
+          "gen_ai.usage.total_tokens": 28,
+          "gen_ai.server.request.duration": 42
+        },
+        "events": [
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.system_instructions": "[{\"type\":\"text\",\"content\":\"Report the weather.\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Weather in Oslo?\"}]}]"
+            }
+          },
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"get_weather\",\"id\":\"tooluse_1\",\"arguments\":{\"city\":\"Oslo\"}},{\"type\":\"tool_call\",\"name\":\"failing_tool\",\"id\":\"tooluse_2\",\"arguments\":{}}],\"finish_reason\":\"toolUse\"}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_tool failing_tool",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "ERROR",
+          "message": "tool exploded"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "execute_tool",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.tool.name": "failing_tool",
+          "gen_ai.tool.call.id": "tooluse_2",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.call.arguments": "{}",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.status": "error"
+        },
+        "events": [
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.input.messages": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"failing_tool\",\"id\":\"tooluse_2\",\"arguments\":{}}]}]"
+            }
+          },
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.output.messages": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"tooluse_2\",\"response\":[{\"text\":\"Error: tool exploded\"}]}]}]"
+            }
+          },
+          {
+            "name": "exception",
+            "attributes": {
+              "exception.type": "Error",
+              "exception.message": "tool exploded",
+              "exception.stacktrace": "Error: tool exploded"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_tool get_weather",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "execute_tool",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.tool.name": "get_weather",
+          "gen_ai.tool.call.id": "tooluse_1",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.call.arguments": "{\"city\":\"Oslo\"}",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.status": "success",
+          "gen_ai.tool.call.result": "[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]"
+        },
+        "events": [
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.input.messages": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"get_weather\",\"id\":\"tooluse_1\",\"arguments\":{\"city\":\"Oslo\"}}]}]"
+            }
+          },
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.output.messages": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"tooluse_1\",\"response\":[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]}]}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_agent_loop_cycle",
+        "kind": "INTERNAL",
+        "parent": "invoke_agent telemetry-agent",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "agent_loop.cycle_id": "cycle-1",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z"
+        },
+        "events": [
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.input.messages": "[]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "chat",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "chat",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15,
+          "gen_ai.server.request.duration": 42
+        },
+        "events": [
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.system_instructions": "[{\"type\":\"text\",\"content\":\"Report the weather.\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Weather in Oslo?\"}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"get_weather\",\"id\":\"tooluse_1\",\"arguments\":{\"city\":\"Oslo\"}},{\"type\":\"tool_call\",\"name\":\"failing_tool\",\"id\":\"tooluse_2\",\"arguments\":{}}]},{\"role\":\"user\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"tooluse_1\",\"response\":[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]},{\"type\":\"tool_call_response\",\"id\":\"tooluse_2\",\"response\":[{\"text\":\"Error: tool exploded\"}]}]}]"
+            }
+          },
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Cold.\"}],\"finish_reason\":\"endTurn\"}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_agent_loop_cycle",
+        "kind": "INTERNAL",
+        "parent": "invoke_agent telemetry-agent",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "agent_loop.cycle_id": "cycle-2",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z"
+        },
+        "events": [
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Weather in Oslo?\"}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"get_weather\",\"id\":\"tooluse_1\",\"arguments\":{\"city\":\"Oslo\"}},{\"type\":\"tool_call\",\"name\":\"failing_tool\",\"id\":\"tooluse_2\",\"arguments\":{}}]},{\"role\":\"user\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"tooluse_1\",\"response\":[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]},{\"type\":\"tool_call_response\",\"id\":\"tooluse_2\",\"response\":[{\"text\":\"Error: tool exploded\"}]}]}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "invoke_agent telemetry-agent",
+        "kind": "INTERNAL",
+        "parent": null,
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.agent.name": "telemetry-agent",
+          "name": "invoke_agent telemetry-agent",
+          "gen_ai.agent.id": "telemetry-agent",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.agent.tools": "[\"get_weather\",\"failing_tool\"]",
+          "system_prompt": "\"Report the weather.\"",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 30,
+          "gen_ai.usage.input_tokens": 30,
+          "gen_ai.usage.completion_tokens": 13,
+          "gen_ai.usage.output_tokens": 13,
+          "gen_ai.usage.total_tokens": 43
+        },
+        "events": [
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Weather in Oslo?\"}]}]"
+            }
+          },
+          {
+            "name": "gen_ai.client.inference.operation.details",
+            "attributes": {
+              "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Cold.\"}],\"finish_reason\":\"endTurn\"}]"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "spans_span_attributes_only": {
+    "description": "Finished spans of an agent run with two tool calls (one fails), with OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_span_attributes_only, in end order: name, kind, parent span name, status, attributes and events (exception.stacktrace cut to its first line).",
+    "expected": [
+      {
+        "name": "chat",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "chat",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.system_instructions": "[{\"type\":\"text\",\"content\":\"Report the weather.\"}]",
+          "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Weather in Oslo?\"}]}]",
+          "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"get_weather\",\"id\":\"tooluse_1\",\"arguments\":{\"city\":\"Oslo\"}},{\"type\":\"tool_call\",\"name\":\"failing_tool\",\"id\":\"tooluse_2\",\"arguments\":{}}],\"finish_reason\":\"toolUse\"}]",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 20,
+          "gen_ai.usage.input_tokens": 20,
+          "gen_ai.usage.completion_tokens": 8,
+          "gen_ai.usage.output_tokens": 8,
+          "gen_ai.usage.total_tokens": 28,
+          "gen_ai.server.request.duration": 42
+        },
+        "events": []
+      },
+      {
+        "name": "execute_tool failing_tool",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "ERROR",
+          "message": "tool exploded"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "execute_tool",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.tool.name": "failing_tool",
+          "gen_ai.tool.call.id": "tooluse_2",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.call.arguments": "{}",
+          "gen_ai.input.messages": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"failing_tool\",\"id\":\"tooluse_2\",\"arguments\":{}}]}]",
+          "gen_ai.output.messages": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"tooluse_2\",\"response\":[{\"text\":\"Error: tool exploded\"}]}]}]",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.status": "error"
+        },
+        "events": [
+          {
+            "name": "exception",
+            "attributes": {
+              "exception.type": "Error",
+              "exception.message": "tool exploded",
+              "exception.stacktrace": "Error: tool exploded"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_tool get_weather",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "execute_tool",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.tool.name": "get_weather",
+          "gen_ai.tool.call.id": "tooluse_1",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.call.arguments": "{\"city\":\"Oslo\"}",
+          "gen_ai.input.messages": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"get_weather\",\"id\":\"tooluse_1\",\"arguments\":{\"city\":\"Oslo\"}}]}]",
+          "gen_ai.output.messages": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"tooluse_1\",\"response\":[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]}]}]",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.tool.status": "success",
+          "gen_ai.tool.call.result": "[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]"
+        },
+        "events": []
+      },
+      {
+        "name": "execute_agent_loop_cycle",
+        "kind": "INTERNAL",
+        "parent": "invoke_agent telemetry-agent",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "agent_loop.cycle_id": "cycle-1",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.input.messages": "[]",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z"
+        },
+        "events": []
+      },
+      {
+        "name": "chat",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "chat",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.system_instructions": "[{\"type\":\"text\",\"content\":\"Report the weather.\"}]",
+          "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Weather in Oslo?\"}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"get_weather\",\"id\":\"tooluse_1\",\"arguments\":{\"city\":\"Oslo\"}},{\"type\":\"tool_call\",\"name\":\"failing_tool\",\"id\":\"tooluse_2\",\"arguments\":{}}]},{\"role\":\"user\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"tooluse_1\",\"response\":[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]},{\"type\":\"tool_call_response\",\"id\":\"tooluse_2\",\"response\":[{\"text\":\"Error: tool exploded\"}]}]}]",
+          "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Cold.\"}],\"finish_reason\":\"endTurn\"}]",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15,
+          "gen_ai.server.request.duration": 42
+        },
+        "events": []
+      },
+      {
+        "name": "execute_agent_loop_cycle",
+        "kind": "INTERNAL",
+        "parent": "invoke_agent telemetry-agent",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "agent_loop.cycle_id": "cycle-2",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Weather in Oslo?\"}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"name\":\"get_weather\",\"id\":\"tooluse_1\",\"arguments\":{\"city\":\"Oslo\"}},{\"type\":\"tool_call\",\"name\":\"failing_tool\",\"id\":\"tooluse_2\",\"arguments\":{}}]},{\"role\":\"user\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"tooluse_1\",\"response\":[{\"json\":{\"city\":\"Oslo\",\"temperatureC\":21}}]},{\"type\":\"tool_call_response\",\"id\":\"tooluse_2\",\"response\":[{\"text\":\"Error: tool exploded\"}]}]}]",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z"
+        },
+        "events": []
+      },
+      {
+        "name": "invoke_agent telemetry-agent",
+        "kind": "INTERNAL",
+        "parent": null,
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.provider.name": "strands-agents",
+          "gen_ai.agent.name": "telemetry-agent",
+          "name": "invoke_agent telemetry-agent",
+          "gen_ai.agent.id": "telemetry-agent",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.agent.tools": "[\"get_weather\",\"failing_tool\"]",
+          "system_prompt": "\"Report the weather.\"",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Weather in Oslo?\"}]}]",
+          "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Cold.\"}],\"finish_reason\":\"endTurn\"}]",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 30,
+          "gen_ai.usage.input_tokens": 30,
+          "gen_ai.usage.completion_tokens": 13,
+          "gen_ai.usage.output_tokens": 13,
+          "gen_ai.usage.total_tokens": 43
+        },
+        "events": []
+      }
+    ]
+  },
+  "spans_graph": {
+    "description": "Finished spans of a two-node Graph run in the default mode, in end order.",
+    "expected": [
+      {
+        "name": "chat",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "chat",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15,
+          "gen_ai.server.request.duration": 42
+        },
+        "events": [
+          {
+            "name": "gen_ai.user.message",
+            "attributes": {
+              "content": "[{\"text\":\"Write a haiku.\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "finish_reason": "endTurn",
+              "message": "[{\"text\":\"draft\"}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_agent_loop_cycle",
+        "kind": "INTERNAL",
+        "parent": "invoke_agent writer",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "agent_loop.cycle_id": "cycle-1",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z"
+        },
+        "events": []
+      },
+      {
+        "name": "invoke_agent writer",
+        "kind": "INTERNAL",
+        "parent": "node writer",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.agent.name": "writer",
+          "name": "invoke_agent writer",
+          "gen_ai.agent.id": "writer",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15
+        },
+        "events": [
+          {
+            "name": "gen_ai.user.message",
+            "attributes": {
+              "content": "[{\"text\":\"Write a haiku.\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "message": "draft",
+              "finish_reason": "endTurn"
+            }
+          }
+        ]
+      },
+      {
+        "name": "node writer",
+        "kind": "INTERNAL",
+        "parent": "invoke_graph review-graph",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "execute_node",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.agent.id": "writer",
+          "gen_ai.agent.node_type": "agentNode",
+          "name": "node writer",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.agent.status": "COMPLETED",
+          "gen_ai.agent.execution_time": 0,
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15
+        },
+        "events": []
+      },
+      {
+        "name": "chat",
+        "kind": "INTERNAL",
+        "parent": "execute_agent_loop_cycle",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "chat",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15,
+          "gen_ai.server.request.duration": 42
+        },
+        "events": [
+          {
+            "name": "gen_ai.user.message",
+            "attributes": {
+              "content": "[{\"text\":\"Write a haiku.\"},{\"text\":\"[node: writer]\"},{\"text\":\"draft\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "finish_reason": "endTurn",
+              "message": "[{\"text\":\"final\"}]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "execute_agent_loop_cycle",
+        "kind": "INTERNAL",
+        "parent": "invoke_agent editor",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "agent_loop.cycle_id": "cycle-1",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z"
+        },
+        "events": []
+      },
+      {
+        "name": "invoke_agent editor",
+        "kind": "INTERNAL",
+        "parent": "node editor",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.agent.name": "editor",
+          "name": "invoke_agent editor",
+          "gen_ai.agent.id": "editor",
+          "gen_ai.request.model": "scripted-model",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15
+        },
+        "events": [
+          {
+            "name": "gen_ai.user.message",
+            "attributes": {
+              "content": "[{\"text\":\"Write a haiku.\"},{\"text\":\"[node: writer]\"},{\"text\":\"draft\"}]"
+            }
+          },
+          {
+            "name": "gen_ai.choice",
+            "attributes": {
+              "message": "final",
+              "finish_reason": "endTurn"
+            }
+          }
+        ]
+      },
+      {
+        "name": "node editor",
+        "kind": "INTERNAL",
+        "parent": "invoke_graph review-graph",
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "execute_node",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.agent.id": "editor",
+          "gen_ai.agent.node_type": "agentNode",
+          "name": "node editor",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.agent.status": "COMPLETED",
+          "gen_ai.agent.execution_time": 0,
+          "gen_ai.usage.prompt_tokens": 10,
+          "gen_ai.usage.input_tokens": 10,
+          "gen_ai.usage.completion_tokens": 5,
+          "gen_ai.usage.output_tokens": 5,
+          "gen_ai.usage.total_tokens": 15
+        },
+        "events": []
+      },
+      {
+        "name": "invoke_graph review-graph",
+        "kind": "INTERNAL",
+        "parent": null,
+        "status": {
+          "code": "OK"
+        },
+        "attributes": {
+          "gen_ai.operation.name": "invoke_graph",
+          "gen_ai.system": "strands-agents",
+          "gen_ai.agent.name": "graph",
+          "gen_ai.agent.id": "review-graph",
+          "name": "invoke_graph review-graph",
+          "gen_ai.agent.input": "\"Write a haiku.\"",
+          "gen_ai.event.start_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.event.end_time": "2025-01-02T03:04:05.678Z",
+          "gen_ai.agent.execution_time": 0,
+          "gen_ai.usage.prompt_tokens": 20,
+          "gen_ai.usage.input_tokens": 20,
+          "gen_ai.usage.completion_tokens": 10,
+          "gen_ai.usage.output_tokens": 10,
+          "gen_ai.usage.total_tokens": 30
+        },
+        "events": []
+      }
+    ]
+  },
+  "metric_instruments": {
+    "description": "Metric instruments recorded over the runs above, from a recording MeterProvider: meter name, instrument name, type, unit, description and the attribute sets of the data points (values omitted).",
+    "expected": [
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.cycle.count",
+        "type": "COUNTER",
+        "unit": "",
+        "description": "Number of agent loop cycles executed",
+        "dataPointAttributes": [
+          {}
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.invocation.count",
+        "type": "COUNTER",
+        "unit": "",
+        "description": "Number of agent invocations",
+        "dataPointAttributes": [
+          {}
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.cycle.duration",
+        "type": "HISTOGRAM",
+        "unit": "ms",
+        "description": "Duration of agent loop cycles in milliseconds",
+        "dataPointAttributes": [
+          {}
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.tool.call.count",
+        "type": "COUNTER",
+        "unit": "",
+        "description": "Number of tool calls",
+        "dataPointAttributes": [
+          {
+            "gen_ai.tool.name": "failing_tool"
+          },
+          {
+            "gen_ai.tool.name": "get_weather"
+          }
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.tool.error.count",
+        "type": "COUNTER",
+        "unit": "",
+        "description": "Number of failed tool calls",
+        "dataPointAttributes": [
+          {
+            "gen_ai.tool.name": "failing_tool"
+          }
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.tool.duration",
+        "type": "HISTOGRAM",
+        "unit": "ms",
+        "description": "Duration of tool calls in milliseconds",
+        "dataPointAttributes": [
+          {
+            "gen_ai.tool.name": "failing_tool"
+          },
+          {
+            "gen_ai.tool.name": "get_weather"
+          }
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.tokens.input",
+        "type": "COUNTER",
+        "unit": "",
+        "description": "Input tokens consumed",
+        "dataPointAttributes": [
+          {}
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.tokens.output",
+        "type": "COUNTER",
+        "unit": "",
+        "description": "Output tokens consumed",
+        "dataPointAttributes": [
+          {}
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.agent.model.latency",
+        "type": "HISTOGRAM",
+        "unit": "ms",
+        "description": "Model invocation latency in milliseconds",
+        "dataPointAttributes": [
+          {}
+        ]
+      },
+      {
+        "meter": "strands-agents",
+        "name": "gen_ai.server.time_to_first_token",
+        "type": "HISTOGRAM",
+        "unit": "s",
+        "description": "Time to generate first token for successful responses",
+        "dataPointAttributes": [
+          {}
+        ]
+      }
+    ]
+  },
+  "declared_metric_instruments": {
+    "description": "Every createCounter/createHistogram call in the built meter.js, so an instrument that no run records still shows up here.",
+    "expected": [
+      {
+        "kind": "Counter",
+        "name": "gen_ai.agent.cycle.count",
+        "description": "Number of agent loop cycles executed"
+      },
+      {
+        "kind": "Counter",
+        "name": "gen_ai.agent.invocation.count",
+        "description": "Number of agent invocations"
+      },
+      {
+        "kind": "Histogram",
+        "name": "gen_ai.agent.cycle.duration",
+        "description": "Duration of agent loop cycles in milliseconds",
+        "unit": "ms"
+      },
+      {
+        "kind": "Counter",
+        "name": "gen_ai.agent.tool.call.count",
+        "description": "Number of tool calls"
+      },
+      {
+        "kind": "Counter",
+        "name": "gen_ai.agent.tool.error.count",
+        "description": "Number of failed tool calls"
+      },
+      {
+        "kind": "Histogram",
+        "name": "gen_ai.agent.tool.duration",
+        "description": "Duration of tool calls in milliseconds",
+        "unit": "ms"
+      },
+      {
+        "kind": "Counter",
+        "name": "gen_ai.agent.tokens.input",
+        "description": "Input tokens consumed"
+      },
+      {
+        "kind": "Counter",
+        "name": "gen_ai.agent.tokens.output",
+        "description": "Output tokens consumed"
+      },
+      {
+        "kind": "Histogram",
+        "name": "gen_ai.agent.model.latency",
+        "description": "Model invocation latency in milliseconds",
+        "unit": "ms"
+      },
+      {
+        "kind": "Histogram",
+        "name": "gen_ai.server.time_to_first_token",
+        "description": "Time to generate first token for successful responses",
+        "unit": "s"
+      }
+    ]
+  }
+}

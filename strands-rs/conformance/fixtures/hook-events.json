@@ -1,0 +1,904 @@
+{
+  "hook_run_sequence": {
+    "description": "Hook callbacks in firing order for a run where the first model call fails and is retried by a hook, then a tool throws. Each entry is the event class and its toJSON.",
+    "expected": [
+      {
+        "class": "InitializedEvent",
+        "json": {
+          "type": "initializedEvent"
+        }
+      },
+      {
+        "class": "BeforeInvocationEvent",
+        "json": {
+          "type": "beforeInvocationEvent"
+        }
+      },
+      {
+        "class": "MessageAddedEvent",
+        "json": {
+          "type": "messageAddedEvent",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "text": "Run the tool."
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000001"
+          }
+        }
+      },
+      {
+        "class": "BeforeModelCallEvent",
+        "json": {
+          "type": "beforeModelCallEvent",
+          "projectedInputTokens": 70
+        }
+      },
+      {
+        "class": "AfterModelCallEvent",
+        "json": {
+          "type": "afterModelCallEvent",
+          "attemptCount": 1,
+          "error": {
+            "message": "transient model failure"
+          }
+        }
+      },
+      {
+        "class": "BeforeModelCallEvent",
+        "json": {
+          "type": "beforeModelCallEvent",
+          "projectedInputTokens": 70
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelMessageStartEvent",
+            "role": "assistant"
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelContentBlockStartEvent",
+            "start": {
+              "type": "toolUseStart",
+              "name": "failing_tool",
+              "toolUseId": "tooluse_fail"
+            }
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelContentBlockDeltaEvent",
+            "delta": {
+              "type": "toolUseInputDelta",
+              "input": "{}"
+            }
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelContentBlockStopEvent"
+          }
+        }
+      },
+      {
+        "class": "ContentBlockEvent",
+        "json": {
+          "type": "contentBlockEvent",
+          "contentBlock": {
+            "toolUse": {
+              "name": "failing_tool",
+              "toolUseId": "tooluse_fail",
+              "input": {}
+            }
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelMessageStopEvent",
+            "stopReason": "toolUse"
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelMetadataEvent",
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      },
+      {
+        "class": "ModelMessageEvent",
+        "json": {
+          "type": "modelMessageEvent",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "toolUse": {
+                  "name": "failing_tool",
+                  "toolUseId": "tooluse_fail",
+                  "input": {}
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000006",
+            "metadata": {
+              "usage": {
+                "inputTokens": 20,
+                "outputTokens": 8,
+                "totalTokens": 28
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          },
+          "stopReason": "toolUse"
+        }
+      },
+      {
+        "class": "AfterModelCallEvent",
+        "json": {
+          "type": "afterModelCallEvent",
+          "attemptCount": 2,
+          "stopData": {
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "toolUse": {
+                    "name": "failing_tool",
+                    "toolUseId": "tooluse_fail",
+                    "input": {}
+                  }
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000006",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 20,
+                  "outputTokens": 8,
+                  "totalTokens": 28
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            },
+            "stopReason": "toolUse"
+          }
+        }
+      },
+      {
+        "class": "BeforeToolsEvent",
+        "json": {
+          "type": "beforeToolsEvent",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "toolUse": {
+                  "name": "failing_tool",
+                  "toolUseId": "tooluse_fail",
+                  "input": {}
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000006",
+            "metadata": {
+              "usage": {
+                "inputTokens": 20,
+                "outputTokens": 8,
+                "totalTokens": 28
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          }
+        }
+      },
+      {
+        "class": "BeforeToolCallEvent",
+        "json": {
+          "type": "beforeToolCallEvent",
+          "toolUse": {
+            "name": "failing_tool",
+            "toolUseId": "tooluse_fail",
+            "input": {}
+          }
+        }
+      },
+      {
+        "class": "AfterToolCallEvent",
+        "json": {
+          "type": "afterToolCallEvent",
+          "toolUse": {
+            "name": "failing_tool",
+            "toolUseId": "tooluse_fail",
+            "input": {}
+          },
+          "result": {
+            "toolResult": {
+              "toolUseId": "tooluse_fail",
+              "status": "error",
+              "content": [
+                {
+                  "text": "Error: tool exploded"
+                }
+              ]
+            }
+          },
+          "error": {
+            "message": "tool exploded"
+          }
+        }
+      },
+      {
+        "class": "ToolResultEvent",
+        "json": {
+          "type": "toolResultEvent",
+          "result": {
+            "toolResult": {
+              "toolUseId": "tooluse_fail",
+              "status": "error",
+              "content": [
+                {
+                  "text": "Error: tool exploded"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "class": "AfterToolsEvent",
+        "json": {
+          "type": "afterToolsEvent",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "toolResult": {
+                  "toolUseId": "tooluse_fail",
+                  "status": "error",
+                  "content": [
+                    {
+                      "text": "Error: tool exploded"
+                    }
+                  ]
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000008"
+          }
+        }
+      },
+      {
+        "class": "MessageAddedEvent",
+        "json": {
+          "type": "messageAddedEvent",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "toolUse": {
+                  "name": "failing_tool",
+                  "toolUseId": "tooluse_fail",
+                  "input": {}
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000006",
+            "metadata": {
+              "usage": {
+                "inputTokens": 20,
+                "outputTokens": 8,
+                "totalTokens": 28
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          }
+        }
+      },
+      {
+        "class": "MessageAddedEvent",
+        "json": {
+          "type": "messageAddedEvent",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "toolResult": {
+                  "toolUseId": "tooluse_fail",
+                  "status": "error",
+                  "content": [
+                    {
+                      "text": "Error: tool exploded"
+                    }
+                  ]
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000008"
+          }
+        }
+      },
+      {
+        "class": "BeforeModelCallEvent",
+        "json": {
+          "type": "beforeModelCallEvent",
+          "projectedInputTokens": 33
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelMessageStartEvent",
+            "role": "assistant"
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelContentBlockStartEvent"
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelContentBlockDeltaEvent",
+            "delta": {
+              "type": "textDelta",
+              "text": "The tool failed."
+            }
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelContentBlockStopEvent"
+          }
+        }
+      },
+      {
+        "class": "ContentBlockEvent",
+        "json": {
+          "type": "contentBlockEvent",
+          "contentBlock": {
+            "text": "The tool failed."
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelMessageStopEvent",
+            "stopReason": "endTurn"
+          }
+        }
+      },
+      {
+        "class": "ModelStreamUpdateEvent",
+        "json": {
+          "type": "modelStreamUpdateEvent",
+          "event": {
+            "type": "modelMetadataEvent",
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      },
+      {
+        "class": "ModelMessageEvent",
+        "json": {
+          "type": "modelMessageEvent",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "The tool failed."
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-00000000000c",
+            "metadata": {
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          },
+          "stopReason": "endTurn"
+        }
+      },
+      {
+        "class": "AfterModelCallEvent",
+        "json": {
+          "type": "afterModelCallEvent",
+          "attemptCount": 1,
+          "stopData": {
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "The tool failed."
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-00000000000c",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            },
+            "stopReason": "endTurn"
+          }
+        }
+      },
+      {
+        "class": "MessageAddedEvent",
+        "json": {
+          "type": "messageAddedEvent",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "The tool failed."
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-00000000000c",
+            "metadata": {
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          }
+        }
+      },
+      {
+        "class": "AfterInvocationEvent",
+        "json": {
+          "type": "afterInvocationEvent"
+        }
+      },
+      {
+        "class": "AgentResultEvent",
+        "json": {
+          "type": "agentResultEvent",
+          "result": {
+            "type": "agentResult",
+            "stopReason": "endTurn",
+            "lastMessage": {
+              "role": "assistant",
+              "content": [
+                {
+                  "text": "The tool failed."
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-00000000000c",
+              "metadata": {
+                "usage": {
+                  "inputTokens": 10,
+                  "outputTokens": 5,
+                  "totalTokens": 15
+                },
+                "metrics": {
+                  "latencyMs": 42
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "initialized_event": {
+    "description": "First InitializedEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "initializedEvent"
+    }
+  },
+  "before_invocation_event": {
+    "description": "First BeforeInvocationEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "beforeInvocationEvent"
+    }
+  },
+  "after_invocation_event": {
+    "description": "First AfterInvocationEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "afterInvocationEvent"
+    }
+  },
+  "message_added_event": {
+    "description": "First MessageAddedEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "messageAddedEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "text": "Run the tool."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  "before_model_call_event": {
+    "description": "First BeforeModelCallEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "beforeModelCallEvent",
+      "projectedInputTokens": 70
+    }
+  },
+  "after_model_call_event": {
+    "description": "First AfterModelCallEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "error": {
+        "message": "transient model failure"
+      }
+    }
+  },
+  "model_stream_update_event": {
+    "description": "First ModelStreamUpdateEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "modelStreamUpdateEvent",
+      "event": {
+        "type": "modelMessageStartEvent",
+        "role": "assistant"
+      }
+    }
+  },
+  "content_block_event": {
+    "description": "First ContentBlockEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "contentBlockEvent",
+      "contentBlock": {
+        "toolUse": {
+          "name": "failing_tool",
+          "toolUseId": "tooluse_fail",
+          "input": {}
+        }
+      }
+    }
+  },
+  "model_message_event": {
+    "description": "First ModelMessageEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "modelMessageEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "failing_tool",
+              "toolUseId": "tooluse_fail",
+              "input": {}
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000006",
+        "metadata": {
+          "usage": {
+            "inputTokens": 20,
+            "outputTokens": 8,
+            "totalTokens": 28
+          },
+          "metrics": {
+            "latencyMs": 42
+          }
+        }
+      },
+      "stopReason": "toolUse"
+    }
+  },
+  "before_tools_event": {
+    "description": "First BeforeToolsEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "beforeToolsEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "toolUse": {
+              "name": "failing_tool",
+              "toolUseId": "tooluse_fail",
+              "input": {}
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000006",
+        "metadata": {
+          "usage": {
+            "inputTokens": 20,
+            "outputTokens": 8,
+            "totalTokens": 28
+          },
+          "metrics": {
+            "latencyMs": 42
+          }
+        }
+      }
+    }
+  },
+  "after_tools_event": {
+    "description": "First AfterToolsEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "afterToolsEvent",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "toolResult": {
+              "toolUseId": "tooluse_fail",
+              "status": "error",
+              "content": [
+                {
+                  "text": "Error: tool exploded"
+                }
+              ]
+            }
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-000000000008"
+      }
+    }
+  },
+  "before_tool_call_event": {
+    "description": "First BeforeToolCallEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "beforeToolCallEvent",
+      "toolUse": {
+        "name": "failing_tool",
+        "toolUseId": "tooluse_fail",
+        "input": {}
+      }
+    }
+  },
+  "after_tool_call_event": {
+    "description": "First AfterToolCallEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "afterToolCallEvent",
+      "toolUse": {
+        "name": "failing_tool",
+        "toolUseId": "tooluse_fail",
+        "input": {}
+      },
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_fail",
+          "status": "error",
+          "content": [
+            {
+              "text": "Error: tool exploded"
+            }
+          ]
+        }
+      },
+      "error": {
+        "message": "tool exploded"
+      }
+    }
+  },
+  "tool_result_event": {
+    "description": "First ToolResultEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "toolResultEvent",
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_fail",
+          "status": "error",
+          "content": [
+            {
+              "text": "Error: tool exploded"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "agent_result_event": {
+    "description": "First AgentResultEvent toJSON in hook_run_sequence.",
+    "expected": {
+      "type": "agentResultEvent",
+      "result": {
+        "type": "agentResult",
+        "stopReason": "endTurn",
+        "lastMessage": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "The tool failed."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000000c",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      }
+    }
+  },
+  "after_model_call_event_error": {
+    "description": "AfterModelCallEvent toJSON when the model call failed: the error becomes { message }.",
+    "expected": {
+      "type": "afterModelCallEvent",
+      "attemptCount": 1,
+      "error": {
+        "message": "transient model failure"
+      }
+    }
+  },
+  "after_tool_call_event_error": {
+    "description": "AfterToolCallEvent toJSON when the tool threw.",
+    "expected": {
+      "type": "afterToolCallEvent",
+      "toolUse": {
+        "name": "failing_tool",
+        "toolUseId": "tooluse_fail",
+        "input": {}
+      },
+      "result": {
+        "toolResult": {
+          "toolUseId": "tooluse_fail",
+          "status": "error",
+          "content": [
+            {
+              "text": "Error: tool exploded"
+            }
+          ]
+        }
+      },
+      "error": {
+        "message": "tool exploded"
+      }
+    }
+  },
+  "interrupt_event": {
+    "description": "InterruptEvent toJSON.",
+    "expected": {
+      "type": "interruptEvent",
+      "interrupt": {
+        "id": "tool:tooluse_1:confirm",
+        "name": "confirm",
+        "reason": "Sure?",
+        "source": "tool"
+      }
+    }
+  },
+  "tool_stream_update_event": {
+    "description": "ToolStreamUpdateEvent toJSON wrapping a ToolStreamEvent with data.",
+    "expected": {
+      "type": "toolStreamUpdateEvent",
+      "event": {
+        "type": "toolStreamEvent",
+        "data": {
+          "progress": "half"
+        }
+      }
+    }
+  },
+  "before_model_call_event_projected_tokens": {
+    "description": "BeforeModelCallEvent toJSON with projectedInputTokens.",
+    "expected": {
+      "type": "beforeModelCallEvent",
+      "projectedInputTokens": 1234
+    }
+  },
+  "after_model_call_event_redaction": {
+    "description": "AfterModelCallEvent toJSON with stop data that carries a guardrail redaction.",
+    "expected": {
+      "type": "afterModelCallEvent",
+      "attemptCount": 2,
+      "stopData": {
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "blocked"
+            }
+          ],
+          "trackingId": "msg-1"
+        },
+        "stopReason": "guardrailIntervened",
+        "redaction": {
+          "userMessage": "[blocked]"
+        }
+      }
+    }
+  },
+  "model_message_event_redaction": {
+    "description": "ModelMessageEvent toJSON for a guardrail stop.",
+    "expected": {
+      "type": "modelMessageEvent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "blocked"
+          }
+        ],
+        "trackingId": "msg-1"
+      },
+      "stopReason": "guardrailIntervened"
+    }
+  }
+}

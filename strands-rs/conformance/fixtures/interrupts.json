@@ -1,0 +1,669 @@
+{
+  "interrupt_minimal": {
+    "description": "Interrupt with only id and name: source defaults to hook.",
+    "expected": {
+      "id": "hook:x",
+      "name": "x",
+      "source": "hook"
+    }
+  },
+  "interrupt_full": {
+    "description": "Interrupt with reason, response and source.",
+    "expected": {
+      "id": "tool:t1:confirm",
+      "name": "confirm",
+      "reason": {
+        "amount": 5
+      },
+      "response": "yes",
+      "source": "tool"
+    }
+  },
+  "interrupt_response_content": {
+    "description": "InterruptResponseContent toJSON (what a caller passes to resume).",
+    "expected": {
+      "interruptResponse": {
+        "interruptId": "tool:t1:confirm",
+        "response": {
+          "approved": true
+        }
+      }
+    }
+  },
+  "interrupt_error_messages": {
+    "description": "InterruptError message for one and for several interrupts.",
+    "expected": {
+      "one": "Interrupt raised: first",
+      "many": "2 interrupts raised: first, second"
+    }
+  },
+  "tool_interrupt_result": {
+    "description": "AgentResult toJSON and interrupts of the first stop.",
+    "expected": {
+      "result": {
+        "type": "agentResult",
+        "stopReason": "interrupt",
+        "lastMessage": {
+          "role": "user",
+          "content": [
+            {
+              "text": "Send 5."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "interrupts": [
+        {
+          "id": "tool:tooluse_tx:confirm_amount",
+          "name": "confirm_amount",
+          "reason": "Confirm 5?",
+          "source": "tool"
+        }
+      ]
+    }
+  },
+  "tool_interrupt_pending_state": {
+    "description": "Interrupt state after a tool interrupt: activated, with the pending tool execution.",
+    "expected": {
+      "interrupts": {
+        "tool:tooluse_tx:confirm_amount": {
+          "id": "tool:tooluse_tx:confirm_amount",
+          "name": "confirm_amount",
+          "reason": "Confirm 5?",
+          "source": "tool"
+        }
+      },
+      "activated": true,
+      "pendingToolExecution": {
+        "assistantMessageData": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "transfer",
+                "toolUseId": "tooluse_tx",
+                "input": {
+                  "amount": 5
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000005",
+          "metadata": {
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        },
+        "completedToolResults": {}
+      }
+    }
+  },
+  "interrupt_response_null": {
+    "description": "The first interrupt was answered with null and the tool then asked again. The persisted state keeps \"response\": null, which means answered with null, not unanswered.",
+    "expected": {
+      "result": {
+        "type": "agentResult",
+        "stopReason": "interrupt",
+        "lastMessage": {
+          "role": "user",
+          "content": [
+            {
+              "text": "Send 5."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "state": {
+        "interrupts": {
+          "tool:tooluse_tx:confirm_amount": {
+            "id": "tool:tooluse_tx:confirm_amount",
+            "name": "confirm_amount",
+            "reason": "Confirm 5?",
+            "response": null,
+            "source": "tool"
+          },
+          "tool:tooluse_tx:confirm_again": {
+            "id": "tool:tooluse_tx:confirm_again",
+            "name": "confirm_again",
+            "reason": "Really?",
+            "source": "tool"
+          }
+        },
+        "resumeResponses": [
+          {
+            "interruptResponse": {
+              "interruptId": "tool:tooluse_tx:confirm_amount",
+              "response": null
+            }
+          }
+        ],
+        "activated": true,
+        "pendingToolExecution": {
+          "assistantMessageData": {
+            "role": "assistant",
+            "content": [
+              {
+                "toolUse": {
+                  "name": "transfer",
+                  "toolUseId": "tooluse_tx",
+                  "input": {
+                    "amount": 5
+                  }
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000005",
+            "metadata": {
+              "usage": {
+                "inputTokens": 20,
+                "outputTokens": 8,
+                "totalTokens": 28
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          },
+          "completedToolResults": {}
+        }
+      },
+      "snapshot": {
+        "scope": "agent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:05.678Z",
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "Send 5."
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000001"
+            }
+          ],
+          "state": {},
+          "systemPrompt": null,
+          "modelState": {},
+          "interrupts": {
+            "interrupts": {
+              "tool:tooluse_tx:confirm_amount": {
+                "id": "tool:tooluse_tx:confirm_amount",
+                "name": "confirm_amount",
+                "reason": "Confirm 5?",
+                "response": null,
+                "source": "tool"
+              },
+              "tool:tooluse_tx:confirm_again": {
+                "id": "tool:tooluse_tx:confirm_again",
+                "name": "confirm_again",
+                "reason": "Really?",
+                "source": "tool"
+              }
+            },
+            "resumeResponses": [
+              {
+                "interruptResponse": {
+                  "interruptId": "tool:tooluse_tx:confirm_amount",
+                  "response": null
+                }
+              }
+            ],
+            "activated": true,
+            "pendingToolExecution": {
+              "assistantMessageData": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "toolUse": {
+                      "name": "transfer",
+                      "toolUseId": "tooluse_tx",
+                      "input": {
+                        "amount": 5
+                      }
+                    }
+                  }
+                ],
+                "trackingId": "00000000-0000-4000-8000-000000000005",
+                "metadata": {
+                  "usage": {
+                    "inputTokens": 20,
+                    "outputTokens": 8,
+                    "totalTokens": 28
+                  },
+                  "metrics": {
+                    "latencyMs": 42
+                  }
+                }
+              },
+              "completedToolResults": {}
+            }
+          }
+        },
+        "appData": {}
+      }
+    }
+  },
+  "interrupt_response_null_resumed": {
+    "description": "Loading interrupt_response_null into a fresh agent and answering the second interrupt: the tool receives null for the first question without asking again.",
+    "expected": {
+      "answersSeenByTool": [
+        null,
+        "yes"
+      ],
+      "result": {
+        "type": "agentResult",
+        "stopReason": "endTurn",
+        "lastMessage": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Done."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000011",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Send 5."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "transfer",
+                "toolUseId": "tooluse_tx",
+                "input": {
+                  "amount": 5
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000005",
+          "metadata": {
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_tx",
+                "status": "success",
+                "content": [
+                  {
+                    "text": "first=null second=\"yes\""
+                  }
+                ]
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000000d"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Done."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000011",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      ],
+      "stateAfter": {
+        "interrupts": {},
+        "activated": false
+      }
+    }
+  },
+  "hook_interrupt_state": {
+    "description": "Interrupt raised from a BeforeToolCallEvent hook: id hook:beforeToolCall:<toolUseId>:<name>.",
+    "expected": {
+      "interrupts": [
+        {
+          "id": "hook:beforeToolCall:tooluse_h:approve",
+          "name": "approve",
+          "reason": {
+            "tool": "get_weather"
+          },
+          "source": "hook"
+        }
+      ],
+      "state": {
+        "interrupts": {
+          "hook:beforeToolCall:tooluse_h:approve": {
+            "id": "hook:beforeToolCall:tooluse_h:approve",
+            "name": "approve",
+            "reason": {
+              "tool": "get_weather"
+            },
+            "source": "hook"
+          }
+        },
+        "activated": true,
+        "pendingToolExecution": {
+          "assistantMessageData": {
+            "role": "assistant",
+            "content": [
+              {
+                "toolUse": {
+                  "name": "get_weather",
+                  "toolUseId": "tooluse_h",
+                  "input": {
+                    "city": "Rome"
+                  }
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000005",
+            "metadata": {
+              "usage": {
+                "inputTokens": 20,
+                "outputTokens": 8,
+                "totalTokens": 28
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          },
+          "completedToolResults": {}
+        }
+      }
+    }
+  },
+  "agent_as_tool_interrupt_context": {
+    "description": "An orchestrator whose agent tool was interrupted. The interrupt id is prefixed with the tool call, and the child snapshot lives in the interrupt state context under subAgentInterruptedTurns.",
+    "expected": {
+      "interrupts": [
+        {
+          "id": "agent_as_tool:outer-1:tool:inner-1:confirm",
+          "name": "confirm",
+          "reason": "Please confirm",
+          "source": "tool"
+        }
+      ],
+      "snapshot": {
+        "scope": "agent",
+        "schemaVersion": "1.0",
+        "createdAt": "2025-01-02T03:04:05.678Z",
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "Delegate."
+                }
+              ],
+              "trackingId": "00000000-0000-4000-8000-000000000001"
+            }
+          ],
+          "state": {},
+          "systemPrompt": null,
+          "modelState": {},
+          "interrupts": {
+            "interrupts": {
+              "agent_as_tool:outer-1:tool:inner-1:confirm": {
+                "id": "agent_as_tool:outer-1:tool:inner-1:confirm",
+                "name": "confirm",
+                "reason": "Please confirm",
+                "source": "tool"
+              }
+            },
+            "activated": true,
+            "pendingToolExecution": {
+              "assistantMessageData": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "toolUse": {
+                      "name": "sub",
+                      "toolUseId": "outer-1",
+                      "input": {
+                        "input": "go"
+                      }
+                    }
+                  }
+                ],
+                "trackingId": "00000000-0000-4000-8000-000000000005",
+                "metadata": {
+                  "usage": {
+                    "inputTokens": 20,
+                    "outputTokens": 8,
+                    "totalTokens": 28
+                  },
+                  "metrics": {
+                    "latencyMs": 42
+                  }
+                }
+              },
+              "completedToolResults": {}
+            },
+            "context": {
+              "subAgentInterruptedTurns": {
+                "outer-1": {
+                  "scope": "agent",
+                  "schemaVersion": "1.0",
+                  "createdAt": "2025-01-02T03:04:05.678Z",
+                  "data": {
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "text": "go"
+                          }
+                        ],
+                        "trackingId": "00000000-0000-4000-8000-000000000007"
+                      }
+                    ],
+                    "state": {},
+                    "systemPrompt": null,
+                    "modelState": {},
+                    "interrupts": {
+                      "interrupts": {
+                        "tool:inner-1:confirm": {
+                          "id": "tool:inner-1:confirm",
+                          "name": "confirm",
+                          "reason": "Please confirm",
+                          "source": "tool"
+                        }
+                      },
+                      "activated": true,
+                      "pendingToolExecution": {
+                        "assistantMessageData": {
+                          "role": "assistant",
+                          "content": [
+                            {
+                              "toolUse": {
+                                "name": "confirm_tool",
+                                "toolUseId": "inner-1",
+                                "input": {}
+                              }
+                            }
+                          ],
+                          "trackingId": "00000000-0000-4000-8000-00000000000b",
+                          "metadata": {
+                            "usage": {
+                              "inputTokens": 20,
+                              "outputTokens": 8,
+                              "totalTokens": 28
+                            },
+                            "metrics": {
+                              "latencyMs": 42
+                            }
+                          }
+                        },
+                        "completedToolResults": {}
+                      }
+                    }
+                  },
+                  "appData": {}
+                }
+              }
+            }
+          }
+        },
+        "appData": {}
+      }
+    }
+  },
+  "agent_as_tool_resume_with_context": {
+    "description": "Resuming agent_as_tool_interrupt_context in fresh agents: the child resumes from the stored turn.",
+    "expected": {
+      "result": {
+        "type": "agentResult",
+        "stopReason": "endTurn",
+        "lastMessage": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "orch done"
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000001c",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Delegate."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "sub",
+                "toolUseId": "outer-1",
+                "input": {
+                  "input": "go"
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000005",
+          "metadata": {
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "outer-1",
+                "status": "success",
+                "content": [
+                  {
+                    "text": "sub done"
+                  }
+                ]
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000018"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "orch done"
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000001c",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      ],
+      "stateAfter": {
+        "interrupts": {},
+        "activated": false
+      }
+    }
+  },
+  "pending_execution_errors": {
+    "description": "SessionError texts when restored pending tool execution data is malformed.",
+    "expected": {
+      "noToolUses": "field=<pendingToolExecution.assistantMessageData.content> | pending tool execution message has no tool uses",
+      "completedNotObject": "field=<pendingToolExecution.completedToolResults> | completed tool results must be an object",
+      "unknownToolUse": "field=<pendingToolExecution.completedToolResults>, tool_use_id=<nope> | does not match a tool use in the pending assistant message"
+    }
+  }
+}

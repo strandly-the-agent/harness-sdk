@@ -1,0 +1,967 @@
+{
+  "text": {
+    "description": "TextBlock.",
+    "input": {
+      "text": "Hello"
+    },
+    "expected": {
+      "text": "Hello"
+    }
+  },
+  "tool_use": {
+    "description": "ToolUseBlock without a reasoning signature.",
+    "input": {
+      "toolUse": {
+        "name": "get_weather",
+        "toolUseId": "tooluse_1",
+        "input": {
+          "city": "Paris"
+        }
+      }
+    },
+    "expected": {
+      "toolUse": {
+        "name": "get_weather",
+        "toolUseId": "tooluse_1",
+        "input": {
+          "city": "Paris"
+        }
+      }
+    }
+  },
+  "tool_use_reasoning_signature": {
+    "description": "ToolUseBlock with a reasoning signature.",
+    "input": {
+      "toolUse": {
+        "name": "get_weather",
+        "toolUseId": "tooluse_2",
+        "input": {},
+        "reasoningSignature": "sig-abc"
+      }
+    },
+    "expected": {
+      "toolUse": {
+        "name": "get_weather",
+        "toolUseId": "tooluse_2",
+        "input": {},
+        "reasoningSignature": "sig-abc"
+      }
+    }
+  },
+  "tool_result_text": {
+    "description": "ToolResultBlock with text content.",
+    "input": {
+      "toolResult": {
+        "toolUseId": "tooluse_1",
+        "status": "success",
+        "content": [
+          {
+            "text": "sunny"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "toolResult": {
+        "toolUseId": "tooluse_1",
+        "status": "success",
+        "content": [
+          {
+            "text": "sunny"
+          }
+        ]
+      }
+    }
+  },
+  "tool_result_json": {
+    "description": "ToolResultBlock with a JsonBlock.",
+    "input": {
+      "toolResult": {
+        "toolUseId": "tooluse_1",
+        "status": "success",
+        "content": [
+          {
+            "json": {
+              "city": "Paris",
+              "temperatureC": 21,
+              "tags": [
+                "a",
+                "b"
+              ],
+              "nested": {
+                "ok": true,
+                "none": null
+              }
+            }
+          }
+        ]
+      }
+    },
+    "expected": {
+      "toolResult": {
+        "toolUseId": "tooluse_1",
+        "status": "success",
+        "content": [
+          {
+            "json": {
+              "city": "Paris",
+              "temperatureC": 21,
+              "tags": [
+                "a",
+                "b"
+              ],
+              "nested": {
+                "ok": true,
+                "none": null
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "tool_result_error": {
+    "description": "ToolResultBlock with status error.",
+    "input": {
+      "toolResult": {
+        "toolUseId": "tooluse_1",
+        "status": "error",
+        "content": [
+          {
+            "text": "Error: boom"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "toolResult": {
+        "toolUseId": "tooluse_1",
+        "status": "error",
+        "content": [
+          {
+            "text": "Error: boom"
+          }
+        ]
+      }
+    }
+  },
+  "tool_result_media": {
+    "description": "ToolResultBlock with every content kind it accepts: text, json, image, video and document.",
+    "input": {
+      "toolResult": {
+        "toolUseId": "tooluse_3",
+        "status": "success",
+        "content": [
+          {
+            "text": "see attached"
+          },
+          {
+            "json": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "image": {
+              "format": "png",
+              "source": {
+                "bytes": "iVBORw0KGgo="
+              }
+            }
+          },
+          {
+            "video": {
+              "format": "mp4",
+              "source": {
+                "location": {
+                  "type": "s3",
+                  "uri": "s3://bucket/clip.mp4"
+                }
+              }
+            }
+          },
+          {
+            "document": {
+              "name": "notes",
+              "format": "txt",
+              "source": {
+                "text": "plain text"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "expected": {
+      "toolResult": {
+        "toolUseId": "tooluse_3",
+        "status": "success",
+        "content": [
+          {
+            "text": "see attached"
+          },
+          {
+            "json": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "image": {
+              "format": "png",
+              "source": {
+                "bytes": "iVBORw0KGgo="
+              }
+            }
+          },
+          {
+            "video": {
+              "format": "mp4",
+              "source": {
+                "location": {
+                  "type": "s3",
+                  "uri": "s3://bucket/clip.mp4"
+                }
+              }
+            }
+          },
+          {
+            "document": {
+              "name": "notes",
+              "format": "txt",
+              "source": {
+                "text": "plain text"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "tool_result_empty": {
+    "description": "ToolResultBlock with no content.",
+    "input": {
+      "toolResult": {
+        "toolUseId": "tooluse_4",
+        "status": "success",
+        "content": []
+      }
+    },
+    "expected": {
+      "toolResult": {
+        "toolUseId": "tooluse_4",
+        "status": "success",
+        "content": []
+      }
+    }
+  },
+  "reasoning_text": {
+    "description": "ReasoningBlock with text and signature.",
+    "input": {
+      "reasoning": {
+        "text": "thinking",
+        "signature": "sig-1"
+      }
+    },
+    "expected": {
+      "reasoning": {
+        "text": "thinking",
+        "signature": "sig-1"
+      }
+    }
+  },
+  "reasoning_redacted": {
+    "description": "ReasoningBlock with only redacted content (base64 on the wire).",
+    "input": {
+      "reasoning": {
+        "redactedContent": "AAECAw=="
+      }
+    },
+    "expected": {
+      "reasoning": {
+        "redactedContent": "AAECAw=="
+      }
+    }
+  },
+  "reasoning_empty": {
+    "description": "ReasoningBlock with no fields.",
+    "input": {
+      "reasoning": {}
+    },
+    "expected": {
+      "reasoning": {}
+    }
+  },
+  "cache_point": {
+    "description": "CachePointBlock.",
+    "input": {
+      "cachePoint": {
+        "cacheType": "default"
+      }
+    },
+    "expected": {
+      "cachePoint": {
+        "cacheType": "default"
+      }
+    }
+  },
+  "cache_point_ttl": {
+    "description": "CachePointBlock with a ttl.",
+    "input": {
+      "cachePoint": {
+        "cacheType": "default",
+        "ttl": "1h"
+      }
+    },
+    "expected": {
+      "cachePoint": {
+        "cacheType": "default",
+        "ttl": "1h"
+      }
+    }
+  },
+  "guard_content_text": {
+    "description": "GuardContentBlock with text and qualifiers.",
+    "input": {
+      "guardContent": {
+        "text": {
+          "qualifiers": [
+            "grounding_source",
+            "query",
+            "guard_content"
+          ],
+          "text": "check me"
+        }
+      }
+    },
+    "expected": {
+      "guardContent": {
+        "text": {
+          "qualifiers": [
+            "grounding_source",
+            "query",
+            "guard_content"
+          ],
+          "text": "check me"
+        }
+      }
+    }
+  },
+  "guard_content_image": {
+    "description": "GuardContentBlock with an image (bytes as base64).",
+    "input": {
+      "guardContent": {
+        "image": {
+          "format": "png",
+          "source": {
+            "bytes": "iVBORw0KGgo="
+          }
+        }
+      }
+    },
+    "expected": {
+      "guardContent": {
+        "image": {
+          "format": "png",
+          "source": {
+            "bytes": "iVBORw0KGgo="
+          }
+        }
+      }
+    }
+  },
+  "audio_bytes": {
+    "description": "AudioBlock with bytes.",
+    "input": {
+      "audio": {
+        "format": "mp3",
+        "source": {
+          "bytes": "SUQz"
+        }
+      }
+    },
+    "expected": {
+      "audio": {
+        "format": "mp3",
+        "source": {
+          "bytes": "SUQz"
+        }
+      }
+    }
+  },
+  "audio_s3": {
+    "description": "AudioBlock with an S3 location and bucket owner.",
+    "input": {
+      "audio": {
+        "format": "wav",
+        "source": {
+          "location": {
+            "type": "s3",
+            "uri": "s3://bucket/a.wav",
+            "bucketOwner": "123456789012"
+          }
+        }
+      }
+    },
+    "expected": {
+      "audio": {
+        "format": "wav",
+        "source": {
+          "location": {
+            "type": "s3",
+            "uri": "s3://bucket/a.wav",
+            "bucketOwner": "123456789012"
+          }
+        }
+      }
+    }
+  },
+  "image_bytes": {
+    "description": "ImageBlock with bytes.",
+    "input": {
+      "image": {
+        "format": "png",
+        "source": {
+          "bytes": "iVBORw0KGgo="
+        }
+      }
+    },
+    "expected": {
+      "image": {
+        "format": "png",
+        "source": {
+          "bytes": "iVBORw0KGgo="
+        }
+      }
+    }
+  },
+  "image_s3": {
+    "description": "ImageBlock with an S3 location.",
+    "input": {
+      "image": {
+        "format": "jpeg",
+        "source": {
+          "location": {
+            "type": "s3",
+            "uri": "s3://bucket/cat.jpeg"
+          }
+        }
+      }
+    },
+    "expected": {
+      "image": {
+        "format": "jpeg",
+        "source": {
+          "location": {
+            "type": "s3",
+            "uri": "s3://bucket/cat.jpeg"
+          }
+        }
+      }
+    }
+  },
+  "image_url": {
+    "description": "ImageBlock with a URL.",
+    "input": {
+      "image": {
+        "format": "webp",
+        "source": {
+          "url": "https://example.com/cat.webp"
+        }
+      }
+    },
+    "expected": {
+      "image": {
+        "format": "webp",
+        "source": {
+          "url": "https://example.com/cat.webp"
+        }
+      }
+    }
+  },
+  "video_bytes": {
+    "description": "VideoBlock with bytes.",
+    "input": {
+      "video": {
+        "format": "mp4",
+        "source": {
+          "bytes": "AAAA"
+        }
+      }
+    },
+    "expected": {
+      "video": {
+        "format": "mp4",
+        "source": {
+          "bytes": "AAAA"
+        }
+      }
+    }
+  },
+  "video_s3": {
+    "description": "VideoBlock with an S3 location.",
+    "input": {
+      "video": {
+        "format": "mkv",
+        "source": {
+          "location": {
+            "type": "s3",
+            "uri": "s3://bucket/v.mkv"
+          }
+        }
+      }
+    },
+    "expected": {
+      "video": {
+        "format": "mkv",
+        "source": {
+          "location": {
+            "type": "s3",
+            "uri": "s3://bucket/v.mkv"
+          }
+        }
+      }
+    }
+  },
+  "document_bytes": {
+    "description": "DocumentBlock with bytes, citations enabled and context.",
+    "input": {
+      "document": {
+        "name": "report",
+        "format": "pdf",
+        "source": {
+          "bytes": "JVBERi0="
+        },
+        "citations": {
+          "enabled": true
+        },
+        "context": "quarterly report"
+      }
+    },
+    "expected": {
+      "document": {
+        "name": "report",
+        "format": "pdf",
+        "source": {
+          "bytes": "JVBERi0="
+        },
+        "citations": {
+          "enabled": true
+        },
+        "context": "quarterly report"
+      }
+    }
+  },
+  "document_text": {
+    "description": "DocumentBlock with a text source.",
+    "input": {
+      "document": {
+        "name": "notes",
+        "format": "txt",
+        "source": {
+          "text": "line one"
+        }
+      }
+    },
+    "expected": {
+      "document": {
+        "name": "notes",
+        "format": "txt",
+        "source": {
+          "text": "line one"
+        }
+      }
+    }
+  },
+  "document_content": {
+    "description": "DocumentBlock with a content-block source.",
+    "input": {
+      "document": {
+        "name": "parts",
+        "format": "md",
+        "source": {
+          "content": [
+            {
+              "text": "part one"
+            },
+            {
+              "text": "part two"
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "document": {
+        "name": "parts",
+        "format": "md",
+        "source": {
+          "content": [
+            {
+              "text": "part one"
+            },
+            {
+              "text": "part two"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "document_s3": {
+    "description": "DocumentBlock with an S3 location.",
+    "input": {
+      "document": {
+        "name": "sheet",
+        "format": "csv",
+        "source": {
+          "location": {
+            "type": "s3",
+            "uri": "s3://bucket/s.csv"
+          }
+        }
+      }
+    },
+    "expected": {
+      "document": {
+        "name": "sheet",
+        "format": "csv",
+        "source": {
+          "location": {
+            "type": "s3",
+            "uri": "s3://bucket/s.csv"
+          }
+        }
+      }
+    }
+  },
+  "citations": {
+    "description": "CitationsBlock with every citation location type.",
+    "input": {
+      "citations": {
+        "citations": [
+          {
+            "location": {
+              "type": "documentChar",
+              "documentIndex": 0,
+              "start": 0,
+              "end": 10
+            },
+            "source": "doc-0",
+            "sourceContent": [
+              {
+                "text": "source text"
+              }
+            ],
+            "title": "Doc zero"
+          },
+          {
+            "location": {
+              "type": "documentPage",
+              "documentIndex": 1,
+              "start": 2,
+              "end": 3
+            },
+            "source": "doc-1",
+            "sourceContent": [],
+            "title": "Doc one"
+          },
+          {
+            "location": {
+              "type": "documentChunk",
+              "documentIndex": 2,
+              "start": 4,
+              "end": 5
+            },
+            "source": "doc-2",
+            "sourceContent": [
+              {
+                "text": "chunk"
+              }
+            ],
+            "title": "Doc two"
+          },
+          {
+            "location": {
+              "type": "searchResult",
+              "searchResultIndex": 0,
+              "start": 1,
+              "end": 9
+            },
+            "source": "search",
+            "sourceContent": [
+              {
+                "text": "result"
+              }
+            ],
+            "title": "Search result"
+          },
+          {
+            "location": {
+              "type": "web",
+              "url": "https://example.com/page",
+              "domain": "example.com"
+            },
+            "source": "web",
+            "sourceContent": [
+              {
+                "text": "web text"
+              }
+            ],
+            "title": "Web page"
+          },
+          {
+            "location": {
+              "type": "web",
+              "url": "https://example.com/other"
+            },
+            "source": "web",
+            "sourceContent": [],
+            "title": "Web page without domain"
+          }
+        ],
+        "content": [
+          {
+            "text": "generated answer"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "citations": {
+        "citations": [
+          {
+            "location": {
+              "type": "documentChar",
+              "documentIndex": 0,
+              "start": 0,
+              "end": 10
+            },
+            "source": "doc-0",
+            "sourceContent": [
+              {
+                "text": "source text"
+              }
+            ],
+            "title": "Doc zero"
+          },
+          {
+            "location": {
+              "type": "documentPage",
+              "documentIndex": 1,
+              "start": 2,
+              "end": 3
+            },
+            "source": "doc-1",
+            "sourceContent": [],
+            "title": "Doc one"
+          },
+          {
+            "location": {
+              "type": "documentChunk",
+              "documentIndex": 2,
+              "start": 4,
+              "end": 5
+            },
+            "source": "doc-2",
+            "sourceContent": [
+              {
+                "text": "chunk"
+              }
+            ],
+            "title": "Doc two"
+          },
+          {
+            "location": {
+              "type": "searchResult",
+              "searchResultIndex": 0,
+              "start": 1,
+              "end": 9
+            },
+            "source": "search",
+            "sourceContent": [
+              {
+                "text": "result"
+              }
+            ],
+            "title": "Search result"
+          },
+          {
+            "location": {
+              "type": "web",
+              "url": "https://example.com/page",
+              "domain": "example.com"
+            },
+            "source": "web",
+            "sourceContent": [
+              {
+                "text": "web text"
+              }
+            ],
+            "title": "Web page"
+          },
+          {
+            "location": {
+              "type": "web",
+              "url": "https://example.com/other"
+            },
+            "source": "web",
+            "sourceContent": [],
+            "title": "Web page without domain"
+          }
+        ],
+        "content": [
+          {
+            "text": "generated answer"
+          }
+        ]
+      }
+    }
+  },
+  "injected": {
+    "description": "InjectedBlock.",
+    "input": {
+      "injected": {
+        "text": "current time is noon",
+        "source": "clock"
+      }
+    },
+    "expected": {
+      "injected": {
+        "text": "current time is noon",
+        "source": "clock"
+      }
+    }
+  },
+  "summary": {
+    "description": "SummaryBlock with provider and signature.",
+    "input": {
+      "summary": {
+        "provider": "anthropic",
+        "signature": "sig-s",
+        "text": "summary of earlier turns"
+      }
+    },
+    "expected": {
+      "summary": {
+        "provider": "anthropic",
+        "signature": "sig-s",
+        "text": "summary of earlier turns"
+      }
+    }
+  },
+  "summary_text_only": {
+    "description": "SummaryBlock with only text.",
+    "input": {
+      "summary": {
+        "text": "short summary"
+      }
+    },
+    "expected": {
+      "summary": {
+        "text": "short summary"
+      }
+    }
+  },
+  "unknown_passthrough": {
+    "description": "A block type this SDK does not know loads from saved data as UnknownBlock and writes back unchanged.",
+    "input": {
+      "futureBlock": {
+        "kind": "new",
+        "payload": [
+          1,
+          {
+            "a": null
+          }
+        ]
+      }
+    },
+    "expected": {
+      "futureBlock": {
+        "kind": "new",
+        "payload": [
+          1,
+          {
+            "a": null
+          }
+        ]
+      }
+    }
+  },
+  "block_class_type_tags": {
+    "description": "The `type` discriminator of each content block class (not serialized; used for Rust variant names).",
+    "expected": {
+      "TextBlock": "textBlock",
+      "ToolUseBlock": "toolUseBlock",
+      "ToolResultBlock": "toolResultBlock",
+      "ReasoningBlock": "reasoningBlock",
+      "CachePointBlock": "cachePointBlock",
+      "GuardContentBlock": "guardContentBlock",
+      "AudioBlock": "audioBlock",
+      "ImageBlock": "imageBlock",
+      "VideoBlock": "videoBlock",
+      "DocumentBlock": "documentBlock",
+      "CitationsBlock": "citationsBlock",
+      "InjectedBlock": "injectedBlock",
+      "SummaryBlock": "summaryBlock",
+      "UnknownBlock": "unknownBlock",
+      "JsonBlock": "jsonBlock"
+    }
+  },
+  "unknown_block_rejected_by_from_data": {
+    "description": "contentBlockFromData (live input, not saved data) rejects an unknown block type with this error.",
+    "input": {
+      "futureBlock": {}
+    },
+    "expectedError": "Unknown ContentBlockData type"
+  },
+  "unknown_passthrough_in_tool_result": {
+    "description": "Message.fromJSON keeps an unknown tool result content entry as UnknownBlock.",
+    "input": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "t1",
+            "status": "success",
+            "content": [
+              {
+                "text": "ok"
+              },
+              {
+                "futureContent": {
+                  "v": 2
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-0000000000aa"
+    },
+    "expected": {
+      "role": "user",
+      "content": [
+        {
+          "toolResult": {
+            "toolUseId": "t1",
+            "status": "success",
+            "content": [
+              {
+                "text": "ok"
+              },
+              {
+                "futureContent": {
+                  "v": 2
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-0000000000aa"
+    }
+  }
+}

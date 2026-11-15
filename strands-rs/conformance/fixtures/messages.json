@@ -1,0 +1,251 @@
+{
+  "message_full": {
+    "description": "Message with trackingId and every metadata field.",
+    "input": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Hi"
+        },
+        {
+          "toolUse": {
+            "name": "get_weather",
+            "toolUseId": "tooluse_1",
+            "input": {
+              "city": "Paris"
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-0000000000ab",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 2
+        },
+        "metrics": {
+          "latencyMs": 120,
+          "timeToFirstByteMs": 30
+        },
+        "custom": {
+          "compressed": true,
+          "source": "summary"
+        }
+      }
+    },
+    "expected": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Hi"
+        },
+        {
+          "toolUse": {
+            "name": "get_weather",
+            "toolUseId": "tooluse_1",
+            "input": {
+              "city": "Paris"
+            }
+          }
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-0000000000ab",
+      "metadata": {
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 2
+        },
+        "metrics": {
+          "latencyMs": 120,
+          "timeToFirstByteMs": 30
+        },
+        "custom": {
+          "compressed": true,
+          "source": "summary"
+        }
+      }
+    }
+  },
+  "message_minimal": {
+    "description": "User message with no metadata.",
+    "input": {
+      "role": "user",
+      "content": [
+        {
+          "text": "Hello"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-0000000000ac"
+    },
+    "expected": {
+      "role": "user",
+      "content": [
+        {
+          "text": "Hello"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-0000000000ac"
+    }
+  },
+  "message_missing_tracking_id": {
+    "description": "Saved data without a trackingId gets a fresh one on load (here the first counter UUID of the generator).",
+    "input": {
+      "role": "user",
+      "content": [
+        {
+          "text": "legacy"
+        }
+      ]
+    },
+    "expected": {
+      "role": "user",
+      "content": [
+        {
+          "text": "legacy"
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  "message_empty_content": {
+    "description": "A message with no content blocks.",
+    "input": {
+      "role": "assistant",
+      "content": [],
+      "trackingId": "00000000-0000-4000-8000-0000000000ad"
+    },
+    "expected": {
+      "role": "assistant",
+      "content": [],
+      "trackingId": "00000000-0000-4000-8000-0000000000ad"
+    }
+  },
+  "system_prompt_string": {
+    "description": "systemPromptToData for a string prompt.",
+    "input": "You are helpful.",
+    "expected": "You are helpful."
+  },
+  "system_prompt_blocks": {
+    "description": "systemPromptToData for a block prompt with text, cache point and guard content.",
+    "input": [
+      {
+        "text": "You are helpful."
+      },
+      {
+        "cachePoint": {
+          "cacheType": "default"
+        }
+      },
+      {
+        "guardContent": {
+          "text": {
+            "qualifiers": [
+              "guard_content"
+            ],
+            "text": "policy"
+          }
+        }
+      }
+    ],
+    "expected": [
+      {
+        "text": "You are helpful."
+      },
+      {
+        "cachePoint": {
+          "cacheType": "default"
+        }
+      },
+      {
+        "guardContent": {
+          "text": {
+            "qualifiers": [
+              "guard_content"
+            ],
+            "text": "policy"
+          }
+        }
+      }
+    ]
+  },
+  "stop_reasons": {
+    "description": "Every StopReason literal TypeScript declares (from messages.d.ts), and which ones are limit stop reasons.",
+    "expected": {
+      "all": [
+        "cancelled",
+        "checkpoint",
+        "contentFiltered",
+        "endTurn",
+        "guardrailIntervened",
+        "interrupt",
+        "maxTokens",
+        "limitOutputTokens",
+        "limitStructuredOutputAttempts",
+        "limitTotalTokens",
+        "limitTurns",
+        "pauseTurn",
+        "refusal",
+        "stopSequence",
+        "toolUse",
+        "modelContextWindowExceeded"
+      ],
+      "limit": [
+        "limitTurns",
+        "limitTotalTokens",
+        "limitOutputTokens",
+        "limitStructuredOutputAttempts"
+      ]
+    }
+  },
+  "limit_stop_messages": {
+    "description": "limitStopMessage(agentName, stopReason) for each limit stop reason.",
+    "expected": {
+      "limitTurns": "Agent 'my-agent' stopped early (limitTurns): a limit on this call was reached, so its answer is incomplete",
+      "limitTotalTokens": "Agent 'my-agent' stopped early (limitTotalTokens): a limit on this call was reached, so its answer is incomplete",
+      "limitOutputTokens": "Agent 'my-agent' stopped early (limitOutputTokens): a limit on this call was reached, so its answer is incomplete",
+      "limitStructuredOutputAttempts": "Agent 'my-agent' stopped early (limitStructuredOutputAttempts): a limit on this call was reached, so its answer is incomplete"
+    }
+  },
+  "usage_full": {
+    "description": "Usage with cache counters (TypeScript declares Usage only as a type).",
+    "shapeOnly": true,
+    "expected": {
+      "inputTokens": 10,
+      "outputTokens": 5,
+      "totalTokens": 15,
+      "cacheReadInputTokens": 3,
+      "cacheWriteInputTokens": 2
+    }
+  },
+  "usage_empty_and_accumulated": {
+    "description": "createEmptyUsage(), then accumulateUsage with a plain and a cache-carrying usage.",
+    "expected": {
+      "empty": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0
+      },
+      "accumulated": {
+        "inputTokens": 11,
+        "outputTokens": 7,
+        "totalTokens": 18,
+        "cacheReadInputTokens": 4,
+        "cacheWriteInputTokens": 5
+      }
+    }
+  },
+  "metrics_full": {
+    "description": "Model Metrics with time to first byte (TypeScript declares Metrics only as a type).",
+    "shapeOnly": true,
+    "expected": {
+      "latencyMs": 120,
+      "timeToFirstByteMs": 30
+    }
+  }
+}

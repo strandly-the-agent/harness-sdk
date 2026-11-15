@@ -1,0 +1,990 @@
+{
+  "model_message_start": {
+    "description": "ModelMessageStartEvent.",
+    "expected": {
+      "type": "modelMessageStartEvent",
+      "role": "assistant"
+    }
+  },
+  "model_content_block_start_text": {
+    "description": "ModelContentBlockStartEvent without a start (text and reasoning blocks).",
+    "expected": {
+      "type": "modelContentBlockStartEvent"
+    }
+  },
+  "model_content_block_start_tool_use": {
+    "description": "ModelContentBlockStartEvent for a tool use, with a reasoning signature.",
+    "expected": {
+      "type": "modelContentBlockStartEvent",
+      "start": {
+        "type": "toolUseStart",
+        "name": "get_weather",
+        "toolUseId": "tooluse_1",
+        "reasoningSignature": "sig"
+      }
+    }
+  },
+  "model_content_block_delta_text": {
+    "description": "Text delta.",
+    "expected": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "textDelta",
+        "text": "Hel"
+      }
+    }
+  },
+  "model_content_block_delta_tool_use_input": {
+    "description": "Tool use input delta (a JSON fragment string).",
+    "expected": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "toolUseInputDelta",
+        "input": "{\"city\": \"Pa"
+      }
+    }
+  },
+  "model_content_block_delta_reasoning": {
+    "description": "Reasoning delta with text and signature.",
+    "expected": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "reasoningContentDelta",
+        "text": "thinking",
+        "signature": "sig"
+      }
+    }
+  },
+  "model_content_block_delta_reasoning_redacted": {
+    "description": "Reasoning delta with redacted bytes. JSON.stringify writes a Uint8Array as an object keyed by index; this records that TypeScript behaviour.",
+    "expected": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "reasoningContentDelta",
+        "redactedContent": {
+          "0": 0,
+          "1": 1,
+          "2": 2
+        }
+      }
+    }
+  },
+  "model_content_block_delta_citations": {
+    "description": "Citations delta.",
+    "expected": {
+      "type": "modelContentBlockDeltaEvent",
+      "delta": {
+        "type": "citationsDelta",
+        "citations": [
+          {
+            "location": {
+              "type": "web",
+              "url": "https://example.com"
+            },
+            "source": "web",
+            "sourceContent": [
+              {
+                "text": "x"
+              }
+            ],
+            "title": "Example"
+          }
+        ],
+        "content": [
+          {
+            "text": "cited"
+          }
+        ]
+      }
+    }
+  },
+  "model_content_block_stop": {
+    "description": "ModelContentBlockStopEvent.",
+    "expected": {
+      "type": "modelContentBlockStopEvent"
+    }
+  },
+  "model_message_stop": {
+    "description": "ModelMessageStopEvent without additional fields.",
+    "expected": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "endTurn"
+    }
+  },
+  "model_message_stop_additional_fields": {
+    "description": "ModelMessageStopEvent with additionalModelResponseFields.",
+    "expected": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "toolUse",
+      "additionalModelResponseFields": {
+        "stop_sequence": null,
+        "extra": 1
+      }
+    }
+  },
+  "model_metadata": {
+    "description": "ModelMetadataEvent with usage, metrics and trace.",
+    "expected": {
+      "type": "modelMetadataEvent",
+      "usage": {
+        "inputTokens": 1,
+        "outputTokens": 2,
+        "totalTokens": 3
+      },
+      "metrics": {
+        "latencyMs": 4,
+        "timeToFirstByteMs": 1
+      },
+      "trace": {
+        "guardrail": {
+          "action": "NONE"
+        }
+      }
+    }
+  },
+  "model_metadata_empty": {
+    "description": "ModelMetadataEvent with no fields.",
+    "expected": {
+      "type": "modelMetadataEvent"
+    }
+  },
+  "model_redaction_input": {
+    "description": "ModelRedactionEvent for input.",
+    "expected": {
+      "type": "modelRedactionEvent",
+      "inputRedaction": {
+        "replaceContent": "[redacted]"
+      }
+    }
+  },
+  "model_redaction_output": {
+    "description": "ModelRedactionEvent for output, with the redacted content.",
+    "expected": {
+      "type": "modelRedactionEvent",
+      "outputRedaction": {
+        "redactedContent": "secret answer",
+        "replaceContent": "[redacted]"
+      }
+    }
+  },
+  "agent_run_with_tool": {
+    "description": "Every AgentStreamEvent toJSON from agent.stream() for one tool call and a final answer, in order. The scripted model emits plain stream-event objects.",
+    "expected": [
+      {
+        "type": "beforeInvocationEvent"
+      },
+      {
+        "type": "messageAddedEvent",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is the weather in Paris?"
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      {
+        "type": "beforeModelCallEvent",
+        "projectedInputTokens": 93
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMessageStartEvent",
+          "role": "assistant"
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockStartEvent"
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockDeltaEvent",
+          "delta": {
+            "type": "textDelta",
+            "text": "Let me check."
+          }
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockStopEvent"
+        }
+      },
+      {
+        "type": "contentBlockEvent",
+        "contentBlock": {
+          "text": "Let me check."
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockStartEvent",
+          "start": {
+            "type": "toolUseStart",
+            "name": "get_weather",
+            "toolUseId": "tooluse_1"
+          }
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockDeltaEvent",
+          "delta": {
+            "type": "toolUseInputDelta",
+            "input": "{\"city\":\"Paris\"}"
+          }
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockStopEvent"
+        }
+      },
+      {
+        "type": "contentBlockEvent",
+        "contentBlock": {
+          "toolUse": {
+            "name": "get_weather",
+            "toolUseId": "tooluse_1",
+            "input": {
+              "city": "Paris"
+            }
+          }
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMessageStopEvent",
+          "stopReason": "toolUse"
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMetadataEvent",
+          "usage": {
+            "inputTokens": 20,
+            "outputTokens": 8,
+            "totalTokens": 28
+          },
+          "metrics": {
+            "latencyMs": 42
+          }
+        }
+      },
+      {
+        "type": "modelMessageEvent",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Let me check."
+            },
+            {
+              "toolUse": {
+                "name": "get_weather",
+                "toolUseId": "tooluse_1",
+                "input": {
+                  "city": "Paris"
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000005",
+          "metadata": {
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        },
+        "stopReason": "toolUse"
+      },
+      {
+        "type": "afterModelCallEvent",
+        "attemptCount": 1,
+        "stopData": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "Let me check."
+              },
+              {
+                "toolUse": {
+                  "name": "get_weather",
+                  "toolUseId": "tooluse_1",
+                  "input": {
+                    "city": "Paris"
+                  }
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000005",
+            "metadata": {
+              "usage": {
+                "inputTokens": 20,
+                "outputTokens": 8,
+                "totalTokens": 28
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          },
+          "stopReason": "toolUse"
+        }
+      },
+      {
+        "type": "beforeToolsEvent",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Let me check."
+            },
+            {
+              "toolUse": {
+                "name": "get_weather",
+                "toolUseId": "tooluse_1",
+                "input": {
+                  "city": "Paris"
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000005",
+          "metadata": {
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      },
+      {
+        "type": "beforeToolCallEvent",
+        "toolUse": {
+          "name": "get_weather",
+          "toolUseId": "tooluse_1",
+          "input": {
+            "city": "Paris"
+          }
+        }
+      },
+      {
+        "type": "toolStreamUpdateEvent",
+        "event": {
+          "type": "toolStreamEvent",
+          "data": {
+            "progress": "looking up Paris"
+          }
+        }
+      },
+      {
+        "type": "afterToolCallEvent",
+        "toolUse": {
+          "name": "get_weather",
+          "toolUseId": "tooluse_1",
+          "input": {
+            "city": "Paris"
+          }
+        },
+        "result": {
+          "toolResult": {
+            "toolUseId": "tooluse_1",
+            "status": "success",
+            "content": [
+              {
+                "json": {
+                  "city": "Paris",
+                  "temperatureC": 21
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "toolResultEvent",
+        "result": {
+          "toolResult": {
+            "toolUseId": "tooluse_1",
+            "status": "success",
+            "content": [
+              {
+                "json": {
+                  "city": "Paris",
+                  "temperatureC": 21
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "afterToolsEvent",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_1",
+                "status": "success",
+                "content": [
+                  {
+                    "json": {
+                      "city": "Paris",
+                      "temperatureC": 21
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000007"
+        }
+      },
+      {
+        "type": "messageAddedEvent",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Let me check."
+            },
+            {
+              "toolUse": {
+                "name": "get_weather",
+                "toolUseId": "tooluse_1",
+                "input": {
+                  "city": "Paris"
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000005",
+          "metadata": {
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      },
+      {
+        "type": "messageAddedEvent",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_1",
+                "status": "success",
+                "content": [
+                  {
+                    "json": {
+                      "city": "Paris",
+                      "temperatureC": 21
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000007"
+        }
+      },
+      {
+        "type": "beforeModelCallEvent",
+        "projectedInputTokens": 45
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMessageStartEvent",
+          "role": "assistant"
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockStartEvent"
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockDeltaEvent",
+          "delta": {
+            "type": "textDelta",
+            "text": "It is 21 degrees in Paris."
+          }
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockStopEvent"
+        }
+      },
+      {
+        "type": "contentBlockEvent",
+        "contentBlock": {
+          "text": "It is 21 degrees in Paris."
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMessageStopEvent",
+          "stopReason": "endTurn"
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMetadataEvent",
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 42
+          }
+        }
+      },
+      {
+        "type": "modelMessageEvent",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "It is 21 degrees in Paris."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000000b",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        },
+        "stopReason": "endTurn"
+      },
+      {
+        "type": "afterModelCallEvent",
+        "attemptCount": 1,
+        "stopData": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "It is 21 degrees in Paris."
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-00000000000b",
+            "metadata": {
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          },
+          "stopReason": "endTurn"
+        }
+      },
+      {
+        "type": "messageAddedEvent",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "It is 21 degrees in Paris."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-00000000000b",
+          "metadata": {
+            "usage": {
+              "inputTokens": 10,
+              "outputTokens": 5,
+              "totalTokens": 15
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      },
+      {
+        "type": "afterInvocationEvent"
+      },
+      {
+        "type": "agentResultEvent",
+        "result": {
+          "type": "agentResult",
+          "stopReason": "endTurn",
+          "lastMessage": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "It is 21 degrees in Paris."
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-00000000000b",
+            "metadata": {
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "agent_result": {
+    "description": "AgentResult.toJSON() of the same run.",
+    "expected": {
+      "type": "agentResult",
+      "stopReason": "endTurn",
+      "lastMessage": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "It is 21 degrees in Paris."
+          }
+        ],
+        "trackingId": "00000000-0000-4000-8000-00000000000b",
+        "metadata": {
+          "usage": {
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "totalTokens": 15
+          },
+          "metrics": {
+            "latencyMs": 42
+          }
+        }
+      }
+    }
+  },
+  "agent_run_event_types": {
+    "description": "The `type` of each event in agent_run_with_tool, for a quick order check.",
+    "expected": [
+      "beforeInvocationEvent",
+      "messageAddedEvent",
+      "beforeModelCallEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "contentBlockEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "contentBlockEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "modelMessageEvent",
+      "afterModelCallEvent",
+      "beforeToolsEvent",
+      "beforeToolCallEvent",
+      "toolStreamUpdateEvent",
+      "afterToolCallEvent",
+      "toolResultEvent",
+      "afterToolsEvent",
+      "messageAddedEvent",
+      "messageAddedEvent",
+      "beforeModelCallEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "contentBlockEvent",
+      "modelStreamUpdateEvent",
+      "modelStreamUpdateEvent",
+      "modelMessageEvent",
+      "afterModelCallEvent",
+      "messageAddedEvent",
+      "afterInvocationEvent",
+      "agentResultEvent"
+    ]
+  },
+  "agent_run_with_interrupt": {
+    "description": "Every AgentStreamEvent toJSON for a run that stops on a tool interrupt (includes InterruptEvent).",
+    "expected": [
+      {
+        "type": "beforeInvocationEvent"
+      },
+      {
+        "type": "messageAddedEvent",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "text": "Delete a.txt."
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      {
+        "type": "beforeModelCallEvent",
+        "projectedInputTokens": 79
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMessageStartEvent",
+          "role": "assistant"
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockStartEvent",
+          "start": {
+            "type": "toolUseStart",
+            "name": "delete_file",
+            "toolUseId": "tooluse_del"
+          }
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockDeltaEvent",
+          "delta": {
+            "type": "toolUseInputDelta",
+            "input": "{\"path\":\"a.txt\"}"
+          }
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelContentBlockStopEvent"
+        }
+      },
+      {
+        "type": "contentBlockEvent",
+        "contentBlock": {
+          "toolUse": {
+            "name": "delete_file",
+            "toolUseId": "tooluse_del",
+            "input": {
+              "path": "a.txt"
+            }
+          }
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMessageStopEvent",
+          "stopReason": "toolUse"
+        }
+      },
+      {
+        "type": "modelStreamUpdateEvent",
+        "event": {
+          "type": "modelMetadataEvent",
+          "usage": {
+            "inputTokens": 20,
+            "outputTokens": 8,
+            "totalTokens": 28
+          },
+          "metrics": {
+            "latencyMs": 42
+          }
+        }
+      },
+      {
+        "type": "modelMessageEvent",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "delete_file",
+                "toolUseId": "tooluse_del",
+                "input": {
+                  "path": "a.txt"
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000005",
+          "metadata": {
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        },
+        "stopReason": "toolUse"
+      },
+      {
+        "type": "afterModelCallEvent",
+        "attemptCount": 1,
+        "stopData": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "toolUse": {
+                  "name": "delete_file",
+                  "toolUseId": "tooluse_del",
+                  "input": {
+                    "path": "a.txt"
+                  }
+                }
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000005",
+            "metadata": {
+              "usage": {
+                "inputTokens": 20,
+                "outputTokens": 8,
+                "totalTokens": 28
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          },
+          "stopReason": "toolUse"
+        }
+      },
+      {
+        "type": "beforeToolsEvent",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "name": "delete_file",
+                "toolUseId": "tooluse_del",
+                "input": {
+                  "path": "a.txt"
+                }
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000005",
+          "metadata": {
+            "usage": {
+              "inputTokens": 20,
+              "outputTokens": 8,
+              "totalTokens": 28
+            },
+            "metrics": {
+              "latencyMs": 42
+            }
+          }
+        }
+      },
+      {
+        "type": "beforeToolCallEvent",
+        "toolUse": {
+          "name": "delete_file",
+          "toolUseId": "tooluse_del",
+          "input": {
+            "path": "a.txt"
+          }
+        }
+      },
+      {
+        "type": "afterToolsEvent",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_del",
+                "status": "error",
+                "content": [
+                  {
+                    "text": "Tool execution interrupted"
+                  }
+                ]
+              }
+            }
+          ],
+          "trackingId": "00000000-0000-4000-8000-000000000007"
+        }
+      },
+      {
+        "type": "interruptEvent",
+        "interrupt": {
+          "id": "tool:tooluse_del:confirm_delete",
+          "name": "confirm_delete",
+          "reason": "Delete it?",
+          "source": "tool"
+        }
+      },
+      {
+        "type": "afterInvocationEvent"
+      },
+      {
+        "type": "agentResultEvent",
+        "result": {
+          "type": "agentResult",
+          "stopReason": "interrupt",
+          "lastMessage": {
+            "role": "user",
+            "content": [
+              {
+                "text": "Delete a.txt."
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000001"
+          }
+        }
+      }
+    ]
+  }
+}

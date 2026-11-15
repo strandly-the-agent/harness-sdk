@@ -1,0 +1,242 @@
+{
+  "agent_session_preset": {
+    "description": "takeSnapshot({ preset: \"session\" }) after one turn, with a block system prompt and app state.",
+    "expected": {
+      "scope": "agent",
+      "schemaVersion": "1.0",
+      "createdAt": "2025-01-02T03:04:05.678Z",
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "text": "Hello"
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "Hello back."
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000005",
+            "metadata": {
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          }
+        ],
+        "state": {
+          "counter": 1,
+          "nested": {
+            "list": [
+              1,
+              2
+            ]
+          }
+        },
+        "systemPrompt": [
+          {
+            "text": "You are terse."
+          },
+          {
+            "cachePoint": {
+              "cacheType": "default"
+            }
+          }
+        ],
+        "modelState": {},
+        "interrupts": {
+          "interrupts": {},
+          "activated": false
+        }
+      },
+      "appData": {}
+    }
+  },
+  "agent_include_exclude_app_data": {
+    "description": "takeSnapshot with include, exclude and appData.",
+    "input": {
+      "include": [
+        "messages",
+        "state"
+      ],
+      "exclude": [
+        "state"
+      ],
+      "appData": {
+        "label": "v1",
+        "n": 2
+      }
+    },
+    "expected": {
+      "scope": "agent",
+      "schemaVersion": "1.0",
+      "createdAt": "2025-01-02T03:04:05.678Z",
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "text": "Hello"
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "Hello back."
+              }
+            ],
+            "trackingId": "00000000-0000-4000-8000-000000000005",
+            "metadata": {
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              },
+              "metrics": {
+                "latencyMs": 42
+              }
+            }
+          }
+        ]
+      },
+      "appData": {
+        "label": "v1",
+        "n": 2
+      }
+    }
+  },
+  "agent_empty_no_system_prompt": {
+    "description": "Session snapshot of a fresh agent: systemPrompt and interrupts are null, state objects empty.",
+    "expected": {
+      "scope": "agent",
+      "schemaVersion": "1.0",
+      "createdAt": "2025-01-02T03:04:05.678Z",
+      "data": {
+        "messages": [],
+        "state": {},
+        "systemPrompt": null,
+        "modelState": {},
+        "interrupts": {
+          "interrupts": {},
+          "activated": false
+        }
+      },
+      "appData": {}
+    }
+  },
+  "agent_created_at_zero_millis": {
+    "description": "createdAt keeps the .000 millisecond part (toISOString), and a string system prompt.",
+    "expected": {
+      "scope": "agent",
+      "schemaVersion": "1.0",
+      "createdAt": "2025-01-02T03:04:05.000Z",
+      "data": {
+        "messages": [],
+        "state": {},
+        "systemPrompt": "Plain prompt.",
+        "modelState": {},
+        "interrupts": {
+          "interrupts": {},
+          "activated": false
+        }
+      },
+      "appData": {}
+    }
+  },
+  "snapshot_errors": {
+    "description": "Error texts of takeSnapshot and loadSnapshot.",
+    "expected": {
+      "noFields": "No fields to include in snapshot. Specify a preset or include fields.",
+      "invalidPreset": "Invalid preset: everything. Valid presets are: session",
+      "invalidField": "Invalid snapshot field: bogus. Valid fields are: messages, state, systemPrompt, modelState, interrupts",
+      "wrongScope": "Expected snapshot scope 'agent', got 'multiAgent'",
+      "wrongVersion": "Unsupported snapshot schema version: 0.9. Current version: 1.0"
+    }
+  },
+  "snapshot_constants": {
+    "description": "SNAPSHOT_SCHEMA_VERSION, ALL_SNAPSHOT_FIELDS and SNAPSHOT_PRESETS.",
+    "expected": {
+      "schemaVersion": "1.0",
+      "allFields": [
+        "messages",
+        "state",
+        "systemPrompt",
+        "modelState",
+        "interrupts"
+      ],
+      "presets": {
+        "session": [
+          "messages",
+          "state",
+          "systemPrompt",
+          "modelState",
+          "interrupts"
+        ]
+      }
+    }
+  },
+  "multi_agent_without_state": {
+    "description": "takeSnapshot for a Graph without state: scope multiAgent with only orchestratorId.",
+    "expected": {
+      "scope": "multiAgent",
+      "schemaVersion": "1.0",
+      "createdAt": "2025-01-02T03:04:05.678Z",
+      "data": {
+        "orchestratorId": "review-graph"
+      },
+      "appData": {
+        "run": 1
+      }
+    }
+  },
+  "multi_agent_fresh_state": {
+    "description": "takeSnapshot for a Graph with a fresh MultiAgentState.",
+    "expected": {
+      "scope": "multiAgent",
+      "schemaVersion": "1.0",
+      "createdAt": "2025-01-02T03:04:05.678Z",
+      "data": {
+        "orchestratorId": "review-graph",
+        "state": {
+          "startTime": 1735787045678,
+          "steps": 0,
+          "results": [],
+          "app": {},
+          "nodes": {
+            "writer": {
+              "status": "PENDING",
+              "terminus": false,
+              "startTime": 1735787045678,
+              "results": [],
+              "interrupts": []
+            },
+            "editor": {
+              "status": "PENDING",
+              "terminus": false,
+              "startTime": 1735787045678,
+              "results": [],
+              "interrupts": []
+            }
+          }
+        }
+      },
+      "appData": {}
+    }
+  }
+}

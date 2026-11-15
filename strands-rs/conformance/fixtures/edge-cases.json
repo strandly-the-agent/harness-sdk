@@ -1,0 +1,716 @@
+{
+  "stop_event_null_additional_fields": {
+    "description": "A present null additionalModelResponseFields is kept (null is not the same as missing).",
+    "expected": {
+      "type": "modelMessageStopEvent",
+      "stopReason": "endTurn",
+      "additionalModelResponseFields": null
+    }
+  },
+  "metadata_null_trace": {
+    "description": "A present null trace is kept.",
+    "expected": {
+      "type": "modelMetadataEvent",
+      "trace": null
+    }
+  },
+  "number_formatting": {
+    "description": "How JSON.stringify writes numbers in a tool input: -0 as 0, 1.0 as 1, 1e21 as 1e+21, 1e-7 as 1e-7. expectedText is the exact compact text TypeScript writes.",
+    "expected": {
+      "toolUse": {
+        "name": "calc",
+        "toolUseId": "tooluse_n",
+        "input": {
+          "int": 42,
+          "negative": -7,
+          "zero": 0,
+          "negativeZero": 0,
+          "wholeFloat": 1,
+          "fraction": 1.5,
+          "sum": 0.30000000000000004,
+          "maxSafe": 9007199254740991,
+          "beyondSafe": 9007199254740994,
+          "large": 1e+21,
+          "largeInt": 100000000000000000000,
+          "small": 1e-7,
+          "smallish": 0.000001
+        }
+      }
+    },
+    "expectedText": "{\"toolUse\":{\"name\":\"calc\",\"toolUseId\":\"tooluse_n\",\"input\":{\"int\":42,\"negative\":-7,\"zero\":0,\"negativeZero\":0,\"wholeFloat\":1,\"fraction\":1.5,\"sum\":0.30000000000000004,\"maxSafe\":9007199254740991,\"beyondSafe\":9007199254740994,\"large\":1e+21,\"largeInt\":100000000000000000000,\"small\":1e-7,\"smallish\":0.000001}}}"
+  },
+  "usage_integers": {
+    "description": "Token counts serialize as plain integers, and a zero cache counter is kept.",
+    "expected": {
+      "inputTokens": 1,
+      "outputTokens": 0,
+      "totalTokens": 1,
+      "cacheReadInputTokens": 0
+    },
+    "expectedText": "{\"inputTokens\":1,\"outputTokens\":0,\"totalTokens\":1,\"cacheReadInputTokens\":0}"
+  },
+  "surrogate_pair": {
+    "description": "A surrogate pair (U+1F600) is written as plain UTF-8, not escaped.",
+    "expected": {
+      "text": "pair 😀 end"
+    },
+    "expectedText": "{\"text\":\"pair 😀 end\"}"
+  },
+  "lone_surrogates": {
+    "description": "Text with a lone high and a lone low surrogate. JSON.stringify escapes them as \\ud800 and \\udc00. Only the text is recorded: serde_json and a Rust String cannot hold lone surrogates, so `expected` would make this file unparseable.",
+    "expectedText": "{\"text\":\"high \\ud800 low \\udc00 end\"}"
+  },
+  "string_escapes": {
+    "description": "Which characters JSON.stringify escapes (control characters as \\uXXXX, not / or U+2028).",
+    "expected": {
+      "text": "quote \" backslash \\ newline \n tab \t nul \u0000 bell \u0007 del  sep   slash /"
+    },
+    "expectedText": "{\"text\":\"quote \\\" backslash \\\\ newline \\n tab \\t nul \\u0000 bell \\u0007 del  sep   slash /\"}"
+  },
+  "base64_non_canonical": {
+    "description": "Non-canonical base64 in saved data is decoded leniently (Node Buffer) and written back canonical. Each entry is the ImageBlock and ReasoningBlock JSON TypeScript writes after loading that input.",
+    "input": {
+      "canonical": "aGk=",
+      "unpadded": "aGk",
+      "nonZeroPadBits": "aGl=",
+      "whitespace": "aG k=\n",
+      "urlSafe": "-_8=",
+      "empty": ""
+    },
+    "expected": {
+      "canonical": {
+        "image": {
+          "image": {
+            "format": "png",
+            "source": {
+              "bytes": "aGk="
+            }
+          }
+        },
+        "reasoning": {
+          "reasoning": {
+            "redactedContent": "aGk="
+          }
+        }
+      },
+      "unpadded": {
+        "image": {
+          "image": {
+            "format": "png",
+            "source": {
+              "bytes": "aGk="
+            }
+          }
+        },
+        "reasoning": {
+          "reasoning": {
+            "redactedContent": "aGk="
+          }
+        }
+      },
+      "nonZeroPadBits": {
+        "image": {
+          "image": {
+            "format": "png",
+            "source": {
+              "bytes": "aGk="
+            }
+          }
+        },
+        "reasoning": {
+          "reasoning": {
+            "redactedContent": "aGk="
+          }
+        }
+      },
+      "whitespace": {
+        "image": {
+          "image": {
+            "format": "png",
+            "source": {
+              "bytes": "aGk="
+            }
+          }
+        },
+        "reasoning": {
+          "reasoning": {
+            "redactedContent": "aGk="
+          }
+        }
+      },
+      "urlSafe": {
+        "image": {
+          "image": {
+            "format": "png",
+            "source": {
+              "bytes": "+/8="
+            }
+          }
+        },
+        "reasoning": {
+          "reasoning": {
+            "redactedContent": "+/8="
+          }
+        }
+      },
+      "empty": {
+        "image": {
+          "image": {
+            "format": "png",
+            "source": {
+              "bytes": ""
+            }
+          }
+        },
+        "reasoning": {
+          "reasoning": {
+            "redactedContent": ""
+          }
+        }
+      }
+    }
+  },
+  "redacted_content_bytes": {
+    "description": "ReasoningBlock built from bytes writes redactedContent as base64 and drops unset fields.",
+    "expected": {
+      "reasoning": {
+        "redactedContent": "AP+AQA=="
+      }
+    }
+  },
+  "media_formats": {
+    "description": "Every media format TypeScript accepts, by kind (audio, video and document from the built .d.ts).",
+    "expected": {
+      "image": [
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "webp"
+      ],
+      "audio": [
+        "mp3",
+        "opus",
+        "wav",
+        "aac",
+        "flac",
+        "mp4",
+        "ogg",
+        "mkv",
+        "mka",
+        "x-aac",
+        "m4a",
+        "mpeg",
+        "mpga",
+        "pcm",
+        "webm"
+      ],
+      "video": [
+        "mkv",
+        "mov",
+        "mp4",
+        "webm",
+        "flv",
+        "mpeg",
+        "mpg",
+        "wmv",
+        "3gp"
+      ],
+      "document": [
+        "pdf",
+        "csv",
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "html",
+        "txt",
+        "md",
+        "json",
+        "xml"
+      ]
+    }
+  },
+  "media_format_mime_types": {
+    "description": "toMimeType for every format, and toMediaFormat for some MIME types (null where TypeScript returns undefined).",
+    "expected": {
+      "toMimeType": {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "mp3": null,
+        "opus": null,
+        "wav": null,
+        "aac": null,
+        "flac": null,
+        "mp4": "video/mp4",
+        "ogg": null,
+        "mkv": "video/x-matroska",
+        "mka": null,
+        "x-aac": null,
+        "m4a": null,
+        "mpeg": "video/mpeg",
+        "mpga": null,
+        "pcm": null,
+        "webm": "video/webm",
+        "mov": "video/quicktime",
+        "flv": "video/x-flv",
+        "mpg": "video/mpeg",
+        "wmv": "video/x-ms-wmv",
+        "3gp": "video/3gpp",
+        "pdf": "application/pdf",
+        "csv": "text/csv",
+        "doc": "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls": "application/vnd.ms-excel",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "html": "text/html",
+        "txt": "text/plain",
+        "md": "text/markdown",
+        "json": "application/json",
+        "xml": "application/xml"
+      },
+      "toMediaFormat": {
+        "image/png": "png",
+        "image/jpeg": "jpeg",
+        "application/pdf": "pdf",
+        "text/plain": "txt",
+        "video/mp4": "mp4",
+        "audio/mpeg": null,
+        "application/x-unknown": null
+      }
+    }
+  },
+  "media_every_format": {
+    "description": "One block per accepted format, as TypeScript writes it.",
+    "expected": {
+      "image": [
+        {
+          "image": {
+            "format": "png",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "image": {
+            "format": "jpg",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "image": {
+            "format": "jpeg",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "image": {
+            "format": "gif",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "image": {
+            "format": "webp",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        }
+      ],
+      "audio": [
+        {
+          "audio": {
+            "format": "mp3",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "opus",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "wav",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "aac",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "flac",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "mp4",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "ogg",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "mkv",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "mka",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "x-aac",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "m4a",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "mpeg",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "mpga",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "pcm",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "audio": {
+            "format": "webm",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        }
+      ],
+      "video": [
+        {
+          "video": {
+            "format": "mkv",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "mov",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "mp4",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "webm",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "flv",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "mpeg",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "mpg",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "wmv",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "video": {
+            "format": "3gp",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        }
+      ],
+      "document": [
+        {
+          "document": {
+            "name": "doc-pdf",
+            "format": "pdf",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-csv",
+            "format": "csv",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-doc",
+            "format": "doc",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-docx",
+            "format": "docx",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-xls",
+            "format": "xls",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-xlsx",
+            "format": "xlsx",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-html",
+            "format": "html",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-txt",
+            "format": "txt",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-md",
+            "format": "md",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-json",
+            "format": "json",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        },
+        {
+          "document": {
+            "name": "doc-xml",
+            "format": "xml",
+            "source": {
+              "bytes": "AA=="
+            }
+          }
+        }
+      ]
+    }
+  },
+  "nulls_in_tool_input": {
+    "description": "Nulls inside JSON values are kept as null.",
+    "input": {
+      "toolUse": {
+        "name": "n",
+        "toolUseId": "t",
+        "input": {
+          "a": null,
+          "b": [
+            null
+          ],
+          "c": {
+            "d": null
+          }
+        }
+      }
+    },
+    "expected": {
+      "toolUse": {
+        "name": "n",
+        "toolUseId": "t",
+        "input": {
+          "a": null,
+          "b": [
+            null
+          ],
+          "c": {
+            "d": null
+          }
+        }
+      }
+    }
+  },
+  "empty_text": {
+    "description": "An empty text block survives a round trip.",
+    "input": {
+      "role": "user",
+      "content": [
+        {
+          "text": ""
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-0000000000ae"
+    },
+    "expected": {
+      "role": "user",
+      "content": [
+        {
+          "text": ""
+        }
+      ],
+      "trackingId": "00000000-0000-4000-8000-0000000000ae"
+    }
+  },
+  "key_order": {
+    "description": "Wrapper keys are written in TypeScript field order (name, toolUseId, input), while keys inside a JSON value keep their input order.",
+    "input": {
+      "toolUse": {
+        "input": {
+          "z": 1,
+          "a": 2,
+          "m": {
+            "y": 1,
+            "b": 2
+          }
+        },
+        "toolUseId": "order",
+        "name": "order"
+      }
+    },
+    "expected": {
+      "toolUse": {
+        "name": "order",
+        "toolUseId": "order",
+        "input": {
+          "z": 1,
+          "a": 2,
+          "m": {
+            "y": 1,
+            "b": 2
+          }
+        }
+      }
+    },
+    "expectedText": "{\"toolUse\":{\"name\":\"order\",\"toolUseId\":\"order\",\"input\":{\"z\":1,\"a\":2,\"m\":{\"y\":1,\"b\":2}}}}"
+  }
+}
