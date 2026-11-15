@@ -17,6 +17,7 @@ use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, ModelReq
 use crate::models::streaming::ModelStreamEvent;
 use crate::plugins::Plugin;
 use crate::retry::ModelRetryStrategy;
+use crate::sandbox::SandboxSource;
 use crate::tools::{StructuredOutputSchema, ToolExecutor, ToolSource};
 use crate::types::json::JsonObject;
 use crate::types::messages::{Message, SystemPrompt};
@@ -242,6 +243,11 @@ pub struct AgentConfig {
     /// Servers and other services should set `.printer(false)`: the printer writes every
     /// invocation's output to the process's stdout.
     pub printer: Option<bool>,
+    /// Where commands and file operations run (TS `sandbox`): unset uses
+    /// [`NotASandboxLocalEnvironment`](crate::sandbox::NotASandboxLocalEnvironment),
+    /// [`SandboxSource::Off`] opts out.
+    #[builder(into)]
+    pub sandbox: Option<SandboxSource>,
 }
 
 impl<S: agent_builder::State> AgentBuilder<S> {

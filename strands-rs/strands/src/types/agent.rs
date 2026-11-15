@@ -19,6 +19,7 @@ use crate::interrupt::{
 };
 use crate::middleware::{Middleware, MiddlewareCleanup, MiddlewareRegistry, MiddlewareStage};
 use crate::models::model::Model;
+use crate::sandbox::{AgentSandbox, Sandbox};
 use crate::state_store::StateStore;
 use crate::telemetry::{AgentMetrics, AgentTrace, LocalTelemetry};
 use crate::tools::{StructuredOutputSchema, ToolRegistry};
@@ -194,6 +195,7 @@ pub struct LocalAgent {
     interrupt_state: InterruptState,
     invocation_context: Option<InvocationContext>,
     telemetry: LocalTelemetry,
+    sandbox: AgentSandbox,
 }
 
 impl LocalAgent {
@@ -220,6 +222,7 @@ impl LocalAgent {
             interrupt_state: InterruptState::default(),
             invocation_context: None,
             telemetry: LocalTelemetry::default(),
+            sandbox: AgentSandbox::default(),
         }
     }
 
@@ -296,6 +299,24 @@ impl LocalAgent {
     /// The application state (TS `appState`).
     pub fn app_state(&self) -> &StateStore {
         &self.app_state
+    }
+
+    /// The sandbox commands and file operations run in (TS `sandbox`).
+    ///
+    /// # Errors
+    ///
+    /// [`DefaultNotConfiguredError`](crate::error::DefaultNotConfiguredError) when the agent was
+    /// built with `sandbox: SandboxSource::Off`.
+    pub fn sandbox(&self) -> Result<Arc<dyn Sandbox>> {
+        Ok(self.sandbox.get()?)
+    }
+
+    pub(crate) fn agent_sandbox(&self) -> &AgentSandbox {
+        &self.sandbox
+    }
+
+    pub(crate) fn set_sandbox(&mut self, sandbox: AgentSandbox) {
+        self.sandbox = sandbox;
     }
 
     /// The metrics accumulated over the agent's invocations (TS `metrics`), including the
@@ -431,6 +452,7 @@ impl LocalAgent {
                 cancel: self.cancel.clone(),
                 interrupt_state: self.interrupt_state.clone(),
                 invocation_context: self.invocation_context.clone(),
+                sandbox: self.sandbox.clone(),
             }),
         }
     }
@@ -472,6 +494,7 @@ struct ToolAgentInner {
     interrupt_state: InterruptState,
     middleware: MiddlewareRegistry,
     invocation_context: Option<InvocationContext>,
+    sandbox: AgentSandbox,
 }
 
 impl ToolAgent {
@@ -513,6 +536,21 @@ impl ToolAgent {
     /// The model state.
     pub fn model_state(&self) -> &StateStore {
         &self.inner.model_state
+    }
+
+    /// The agent's sandbox (TS `agent.sandbox`).
+    ///
+    /// # Errors
+    ///
+    /// [`DefaultNotConfiguredError`](crate::error::DefaultNotConfiguredError) when the agent was
+    /// built with `sandbox: SandboxSource::Off`.
+    pub fn sandbox(&self) -> Result<Arc<dyn Sandbox>> {
+        Ok(self.inner.sandbox.get()?)
+    }
+
+    #[expect(dead_code, reason = "read by the bash tool")]
+    pub(crate) fn agent_sandbox(&self) -> &AgentSandbox {
+        &self.inner.sandbox
     }
 
     /// The agent's tools as they were when the tool batch started (read-only).

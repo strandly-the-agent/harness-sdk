@@ -1,0 +1,3 @@
+# Phase 8 TS bugs (staging)
+
+**`buildShellEnvPrefix` and `shellQuote` are documented for implementers but not exported.** `strands-ts/src/sandbox/posix-shell.ts:47-63` tells `PosixShellSandbox` subclasses to prepend `buildShellEnvPrefix` (or call `validateEnvKeys`) in `executeStreaming`, or `options.env` has no effect, but `sandbox/index.ts:1-4` and `index.ts:403-413` export only `Sandbox`, `PosixShellSandbox`, the types and `LANGUAGE_PATTERN`. Repro: `import { buildShellEnvPrefix } from '@strands-agents/sdk/sandbox'` fails to resolve; the in-repo fixture (`__fixtures__/test-sandbox.node.ts:1-2`) imports it by relative path. Rust exports `build_shell_env_prefix`, `validate_env_keys` and `shell_quote` from `strands::sandbox` (P-262).

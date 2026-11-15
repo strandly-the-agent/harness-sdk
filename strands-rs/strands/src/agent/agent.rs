@@ -26,6 +26,7 @@ use crate::retry::model_retry_strategy::{
     RetryStrategyInstaller, Sleeper, tokio_sleeper, warn_on_duplicate_types,
 };
 use crate::retry::{DefaultModelRetryStrategy, ModelRetryStrategy};
+use crate::sandbox::{AgentSandbox, Sandbox};
 use crate::state_store::StateStore;
 use crate::telemetry::AgentMetrics;
 use crate::tools::{StructuredOutputSchema, Tool, ToolExecutor, ToolRegistry, ToolSource};
@@ -123,6 +124,7 @@ impl Agent {
         {
             agent.mcp_clients = config.tools.iter().flat_map(ToolSource::mcp_clients).collect();
         }
+        local.set_sandbox(AgentSandbox::from_source(config.sandbox));
         let tools = config.tools.into_iter().flat_map(ToolSource::into_tools);
         local.tool_registry_mut().add_all(tools)?;
         agent.tool_executor = config.tool_executor.unwrap_or_default();
@@ -185,6 +187,16 @@ impl Agent {
         {
             let hooks = self.local.hooks().clone();
             crate::mcp::agent_tools::initialize(&self.mcp_clients, &mut self.local, &hooks).await?;
+        }
+        for tool in self.local.agent_sandbox().vended_tools() {
+            if self.local.tool_registry().get(tool.name()).is_some() {
+                tracing::debug!(
+                    "tool_name=<{}> | sandbox-vended tool skipped, user already registered a tool with this name",
+                    tool.name()
+                );
+            } else {
+                self.local.tool_registry_mut().add(tool)?;
+            }
         }
         let plugins = self.registration_order();
         self.plugin_registry.initialize(plugins, &mut self.local).await?;
@@ -368,6 +380,16 @@ impl Agent {
     /// The app state.
     pub fn app_state(&self) -> &StateStore {
         self.local.app_state()
+    }
+
+    /// The sandbox commands and file operations run in (TS `sandbox`).
+    ///
+    /// # Errors
+    ///
+    /// [`DefaultNotConfiguredError`](crate::error::DefaultNotConfiguredError) with
+    /// `sandbox: SandboxSource::Off`.
+    pub fn sandbox(&self) -> Result<Arc<dyn Sandbox>> {
+        self.local.sandbox()
     }
 
     /// The model state (provider-owned, such as a server-side response id).
