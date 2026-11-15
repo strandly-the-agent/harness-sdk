@@ -743,11 +743,20 @@ pub struct Metrics {
     time_to_first_byte_ms: Option<u64>,
 }
 
-/// Reads milliseconds written as an integer or, by other writers, as a fraction (rounded).
+/// Reads milliseconds written as an integer or, by other writers, as a fraction (rounded). A
+/// `null` latency, which TS keeps, reads as `0`.
 fn whole_ms<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    whole_ms_opt(deserializer).map(Option::unwrap_or_default)
+}
+
+/// As [`whole_ms`], with `null` read as `None` (TS treats an optional `null` field as missing).
+fn whole_ms_opt<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
     let value = JsonValue::deserialize(deserializer)?;
+    if value.is_null() {
+        return Ok(None);
+    }
     if let Some(ms) = value.as_u64() {
-        return Ok(ms);
+        return Ok(Some(ms));
     }
     match value.as_f64() {
         #[expect(
@@ -755,13 +764,9 @@ fn whole_ms<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error>
             clippy::cast_sign_loss,
             reason = "checked finite and non-negative"
         )]
-        Some(ms) if ms.is_finite() && ms >= 0.0 => Ok(ms.round() as u64),
+        Some(ms) if ms.is_finite() && ms >= 0.0 => Ok(Some(ms.round() as u64)),
         _ => Err(D::Error::custom(format!("invalid milliseconds {value}"))),
     }
-}
-
-fn whole_ms_opt<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
-    whole_ms(deserializer).map(Some)
 }
 
 impl Metrics {
@@ -971,6 +976,24 @@ mod tests {
             (813, Some(95))
         );
         assert!(serde_json::from_value::<Metrics>(json!({"latencyMs": -1})).is_err());
+    }
+
+    #[test]
+    fn null_milliseconds_load_as_missing() {
+        let metrics: Metrics =
+            serde_json::from_value(json!({"latencyMs": 812, "timeToFirstByteMs": null})).unwrap();
+        assert_eq!(metrics, Metrics::new(812));
+        let metrics: Metrics = serde_json::from_value(json!({"latencyMs": null})).unwrap();
+        assert_eq!(metrics, Metrics::new(0));
+        let event: ModelStreamEvent = serde_json::from_value(json!({
+            "type": "modelMetadataEvent",
+            "metrics": {"latencyMs": 812, "timeToFirstByteMs": null}
+        }))
+        .unwrap();
+        let ModelStreamEvent::Metadata(metadata) = event else {
+            panic!("expected a metadata event")
+        };
+        assert_eq!(metadata.metrics(), Some(&Metrics::new(812)));
     }
 
     #[test]

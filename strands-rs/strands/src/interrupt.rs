@@ -3,7 +3,7 @@
 //! A tool or hook raises an interrupt to pause the agent for a human answer; the caller resumes by
 //! invoking again with [`InterruptResponse`]s. Interrupt state is persisted in snapshots.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::types::json::{JsonValue, present_null};
 
@@ -135,12 +135,17 @@ pub struct Interrupt {
         skip_serializing_if = "Option::is_none"
     )]
     response: Option<JsonValue>,
-    #[serde(default = "default_source")]
+    #[serde(default = "default_source", deserialize_with = "source_or_hook")]
     source: InterruptSource,
 }
 
 fn default_source() -> InterruptSource {
     InterruptSource::Hook
+}
+
+/// TS reads a missing or `null` source as `hook` (`data.source ?? 'hook'`).
+fn source_or_hook<'de, D: Deserializer<'de>>(deserializer: D) -> Result<InterruptSource, D::Error> {
+    Option::deserialize(deserializer).map(|source| source.unwrap_or_else(default_source))
 }
 
 impl Interrupt {
@@ -217,7 +222,7 @@ pub(crate) mod state {
     use serde::{Deserialize, Serialize};
 
     use super::{Interrupt, InterruptResponseContent};
-    use crate::types::json::JsonObject;
+    use crate::types::json::{JsonObject, null_as_default};
     use crate::types::messages::{Message, ToolResultBlock};
 
     /// Persisted interrupt state (TS `InterruptStateData`), the `interrupts` entry of a snapshot.
@@ -230,7 +235,11 @@ pub(crate) mod state {
         pub(crate) activated: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub(crate) pending_tool_execution: Option<PendingToolExecution>,
-        #[serde(default, skip_serializing_if = "JsonObject::is_empty")]
+        #[serde(
+            default,
+            deserialize_with = "null_as_default",
+            skip_serializing_if = "JsonObject::is_empty"
+        )]
         pub(crate) context: JsonObject,
     }
 
@@ -406,6 +415,27 @@ mod tests {
             serde_json::to_value(&state.interrupts["a"]).unwrap(),
             json!({"id": "a", "name": "a", "response": null, "source": "tool"})
         );
+    }
+
+    #[test]
+    fn a_null_source_loads_as_hook() {
+        let interrupt: Interrupt =
+            serde_json::from_value(json!({"id": "a", "name": "a", "source": null})).unwrap();
+        assert_eq!(interrupt, Interrupt::new("a", "a"));
+        assert_eq!(interrupt.source(), &InterruptSource::Hook);
+    }
+
+    #[test]
+    fn a_null_context_loads_as_empty() {
+        let state: InterruptStateData = serde_json::from_value(json!({
+            "interrupts": {},
+            "activated": false,
+            "resumeResponses": null,
+            "pendingToolExecution": null,
+            "context": null
+        }))
+        .unwrap();
+        assert_eq!(state, InterruptStateData::default());
     }
 
     #[test]

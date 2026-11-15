@@ -10,6 +10,7 @@ Every user-visible behaviour difference from the TypeScript SDK, with the reason
 | Serializing a single block struct (`AudioBlock`, `ToolUseBlock`, ...) | `block.toJSON()` returns the wrapped form `{"audio": ..}` | The struct serializes its inner object; `ContentBlock` adds the wrapper | Wire JSON of messages and content blocks is identical; only standalone block serialization differs |
 | Pending interrupt message saved without `trackingId` | Raw data kept as saved | Parsed as a `Message`, so a tracking id is minted and written back | Interrupt state is typed |
 | Fractional `latencyMs`/`timeToFirstByteMs` | Kept as a fraction | Rounded to whole milliseconds on load | Counters are integers so they never gain `.0` |
+| `latencyMs: null` in saved metrics | Kept as `null` | Loads as `0` | `latency_ms` is a required integer; the message still loads (a `null` `timeToFirstByteMs` loads as missing, as in TS) |
 | Strict parsing of a malformed known block | Throws whatever the block constructor throws (often a `TypeError`) | `Error::Other` with the serde message | Only the unknown-block texts are part of the contract |
 | `SandboxTimeoutError` constructor | Takes seconds as a number | Takes a `Duration`; the message text is the same | Rust-native durations |
 | `StateStore.set` with a value JSON can't hold | Throws `JsonValidationError` naming the path of the function, symbol or `undefined` | Returns `JsonValidationError` with `value for key "<key>" cannot be serialized: <reason>` | Rust values can only fail inside their `Serialize` impl, which has no path |

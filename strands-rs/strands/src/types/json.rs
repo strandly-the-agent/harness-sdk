@@ -59,6 +59,14 @@ pub(crate) fn present_null<'de, D: Deserializer<'de>>(
     JsonValue::deserialize(deserializer).map(Some)
 }
 
+/// Deserializes a present `null` as `T::default()`, where TS treats `null` like a missing field;
+/// use with `#[serde(default)]`.
+pub(crate) fn null_as_default<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
+    deserializer: D,
+) -> Result<T, D::Error> {
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
 struct JsFormatter;
 
 impl serde_json::ser::Formatter for JsFormatter {
