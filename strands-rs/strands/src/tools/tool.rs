@@ -192,6 +192,13 @@ impl ToolContext {
         &self.invocation_state
     }
 
+    /// The request this tool call belongs to; pass it as
+    /// [`InvokeOptions::invocation_context`](crate::InvokeOptions::invocation_context) to run a
+    /// nested call in the same request. `None` for a direct tool call.
+    pub fn invocation_context(&self) -> Option<&crate::agent::InvocationContext> {
+        self.agent.invocation_context()
+    }
+
     /// The cancellation signal of the running invocation.
     pub fn cancel_signal(&self) -> &CancelSignal {
         self.agent.cancel_signal()

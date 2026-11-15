@@ -4,9 +4,11 @@
 mod agent;
 pub mod agent_metadata;
 mod config;
+pub mod invocation_context;
 mod run;
 mod stream;
 
 pub use agent::Agent;
 pub use config::{AgentBuilder, AgentConfig, ModelSource};
+pub use invocation_context::{InvocationContext, InvocationContextUsage};
 pub use stream::AgentStream;

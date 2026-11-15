@@ -2,11 +2,13 @@
 //! state, invoke arguments and the agent result.
 
 use std::fmt;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
 use serde::de::DeserializeOwned;
 use serde::{Serialize, Serializer};
 
+use crate::agent::InvocationContext;
 use crate::cancel::{CancelHandle, CancelOptions, CancelSignal};
 use crate::error::{Result, StructuredOutputError};
 use crate::hooks::HookRegistry;
@@ -178,6 +180,7 @@ pub struct LocalAgent {
     hooks: HookRegistry,
     cancel: InvocationCancel,
     interrupt_state: InterruptState,
+    invocation_context: Option<InvocationContext>,
 }
 
 impl LocalAgent {
@@ -201,6 +204,7 @@ impl LocalAgent {
             hooks: HookRegistry::new(),
             cancel: InvocationCancel::default(),
             interrupt_state: InterruptState::default(),
+            invocation_context: None,
         }
     }
 
@@ -336,6 +340,15 @@ impl LocalAgent {
         &self.interrupt_state
     }
 
+    /// The request the running invocation belongs to.
+    pub(crate) fn invocation_context(&self) -> Option<&InvocationContext> {
+        self.invocation_context.as_ref()
+    }
+
+    pub(crate) fn set_invocation_context(&mut self, context: Option<InvocationContext>) {
+        self.invocation_context = context;
+    }
+
     /// The view handed to tools and per-tool hooks for one tool batch.
     pub(crate) fn tool_agent(&self) -> ToolAgent {
         ToolAgent {
@@ -351,6 +364,7 @@ impl LocalAgent {
                 tool_registry: self.tool_registry.clone(),
                 cancel_signal: self.cancel.signal.clone(),
                 interrupt_state: self.interrupt_state.clone(),
+                invocation_context: self.invocation_context.clone(),
             }),
         }
     }
@@ -389,6 +403,7 @@ struct ToolAgentInner {
     tool_registry: ToolRegistry,
     cancel_signal: CancelSignal,
     interrupt_state: InterruptState,
+    invocation_context: Option<InvocationContext>,
 }
 
 impl ToolAgent {
@@ -444,6 +459,10 @@ impl ToolAgent {
 
     pub(crate) fn interrupt_state(&self) -> &InterruptState {
         &self.inner.interrupt_state
+    }
+
+    pub(crate) fn invocation_context(&self) -> Option<&InvocationContext> {
+        self.inner.invocation_context.as_ref()
     }
 }
 
@@ -543,6 +562,40 @@ pub struct InvokeOptions {
     /// hook event, tool context and the [`AgentResult`], so the caller sees their writes.
     #[builder(default)]
     pub invocation_state: InvocationState,
+    /// Runs this call as a nested call in the request a hook event's, tool context's or result's
+    /// handle belongs to, sharing its limits and usage; `limits` set alongside it only add
+    /// stricter limits.
+    pub invocation_context: Option<InvocationContext>,
+    /// Limits for the request this call starts, or extra limits for a nested call.
+    pub limits: Option<InvokeLimits>,
+}
+
+/// Request-wide limits (TS `InvokeLimits`). Reaching one ends the call with its `limit*` stop
+/// reason; they are checked before each turn in the order turns, total tokens, output tokens,
+/// structured-output attempts.
+///
+/// ```
+/// use std::num::NonZeroU32;
+/// use strands::types::agent::InvokeLimits;
+///
+/// let limits = InvokeLimits { turns: NonZeroU32::new(5), ..InvokeLimits::default() };
+/// assert!(limits.total_tokens.is_none());
+/// ```
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InvokeLimits {
+    /// Maximum turns (one model call plus the tool calls it requests) across the request.
+    pub turns: Option<NonZeroU32>,
+    /// Maximum model-generated tokens across every model call in the request.
+    pub output_tokens: Option<NonZeroU64>,
+    /// Maximum input + output tokens across every model call in the request.
+    pub total_tokens: Option<NonZeroU64>,
+    /// Maximum failed structured output attempts; without it, retries are unbounded and a failed
+    /// forced response fails with `StructuredOutputError`.
+    pub structured_output_attempts: Option<NonZeroU32>,
 }
 
 /// The result of an invocation (TS `AgentResult`).
@@ -559,6 +612,7 @@ pub struct AgentResult {
     invocation_state: InvocationState,
     metrics: Box<AgentMetrics>,
     traces: Vec<AgentTrace>,
+    invocation_context: Option<InvocationContext>,
 }
 
 impl AgentResult {
@@ -575,7 +629,20 @@ impl AgentResult {
             invocation_state,
             metrics: Box::default(),
             traces: Vec::new(),
+            invocation_context: None,
         }
+    }
+
+    pub(crate) fn with_invocation_context(mut self, context: InvocationContext) -> Self {
+        self.invocation_context = Some(context);
+        self
+    }
+
+    /// The request this call ran in. Pass it as
+    /// [`InvokeOptions::invocation_context`] to a later call to continue on the same limits and
+    /// usage. It is live, so work that finishes after this call still adds to it.
+    pub fn invocation_context(&self) -> Option<&InvocationContext> {
+        self.invocation_context.as_ref()
     }
 
     #[allow(dead_code, reason = "set by the loop's structured output handling")]

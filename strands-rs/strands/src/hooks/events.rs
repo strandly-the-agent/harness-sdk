@@ -160,6 +160,13 @@ macro_rules! sequential_accessors {
         pub fn agent_mut(&mut self) -> &mut LocalAgent {
             self.agent
         }
+
+        /// The request this event belongs to; pass it as
+        /// [`InvokeOptions::invocation_context`](crate::InvokeOptions::invocation_context) to
+        /// join it. `None` outside an invocation.
+        pub fn invocation_context(&self) -> Option<&crate::agent::InvocationContext> {
+            self.agent.invocation_context()
+        }
     };
 }
 
@@ -361,6 +368,11 @@ impl BeforeToolCallEvent {
         &self.agent
     }
 
+    /// The request this event belongs to; `None` for a direct tool call.
+    pub fn invocation_context(&self) -> Option<&crate::agent::InvocationContext> {
+        self.agent.invocation_context()
+    }
+
     /// The tool use about to run.
     pub fn tool_use(&self) -> &ToolUse {
         &self.tool_use
@@ -480,6 +492,11 @@ impl AfterToolCallEvent {
     /// The agent view for tools.
     pub fn agent(&self) -> &ToolAgent {
         &self.agent
+    }
+
+    /// The request this event belongs to; `None` for a direct tool call.
+    pub fn invocation_context(&self) -> Option<&crate::agent::InvocationContext> {
+        self.agent.invocation_context()
     }
 
     /// The tool use that ran.
@@ -787,6 +804,11 @@ impl ToolResultEvent {
         &self.agent
     }
 
+    /// The request this event belongs to; `None` for a direct tool call.
+    pub fn invocation_context(&self) -> Option<&crate::agent::InvocationContext> {
+        self.agent.invocation_context()
+    }
+
     /// The tool result.
     pub fn result(&self) -> &ToolResultBlock {
         &self.result
@@ -816,6 +838,11 @@ impl ToolStreamUpdateEvent {
     /// The agent view for tools.
     pub fn agent(&self) -> &ToolAgent {
         &self.agent
+    }
+
+    /// The request this event belongs to; `None` for a direct tool call.
+    pub fn invocation_context(&self) -> Option<&crate::agent::InvocationContext> {
+        self.agent.invocation_context()
     }
 
     /// The tool's progress event.

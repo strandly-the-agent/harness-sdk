@@ -9,8 +9,8 @@ use std::sync::Arc;
 use futures::StreamExt;
 use indexmap::IndexMap;
 
-use crate::agent::Agent;
 use crate::agent::stream::Emitter;
+use crate::agent::{Agent, InvocationContext};
 use crate::error::{Error, Result};
 use crate::hooks::{
     AfterInvocationEvent, AfterModelCallEvent, AfterToolsEvent, AgentResultEvent, BeforeInvocationEvent,
@@ -61,6 +61,8 @@ impl Agent {
         self.initialize().await?;
         let hooks = self.local.hooks().clone();
         let state = options.invocation_state;
+        let context = InvocationContext::resolve(options.invocation_context, options.limits);
+        self.local.set_invocation_context(Some(context));
         self.local.set_invocation_cancel(Default::default());
 
         if matches!(args, InvokeArgs::InterruptResponses(_)) {
@@ -127,8 +129,26 @@ impl Agent {
             telemetry.meter.start_new_invocation();
             telemetry.tracer.reset();
         }
+        let context = self
+            .local
+            .invocation_context()
+            .cloned()
+            .unwrap_or_else(|| InvocationContext::new(None, None, false));
+        let message_count_at_start = self.local.messages().len();
         let mut input = Some(input);
         loop {
+            if let Some(stop_reason) = context.reached_limit() {
+                let last_message = self
+                    .local
+                    .messages()
+                    .get(message_count_at_start..)
+                    .and_then(<[Message]>::last)
+                    .cloned()
+                    .unwrap_or_else(|| Message::new(Role::Assistant, Vec::new()));
+                return Ok(self.result(stop_reason, last_message, state));
+            }
+            // Counted before the turn runs, so nested calls started by its tools see it.
+            context.record_turn();
             let started = {
                 let mut telemetry = self.telemetry.lock();
                 let (cycle_id, started) = telemetry.meter.start_cycle();
@@ -359,6 +379,12 @@ impl Agent {
             }
         }
         let result = result.ok_or_else(|| Error::other("the model stream ended without a result"))?;
+        if let (Some(usage), Some(context)) = (
+            result.metadata().and_then(|metadata| metadata.usage()),
+            self.local.invocation_context(),
+        ) {
+            context.record_usage(usage);
+        }
         self.telemetry.lock().tracer.end_model(Some(result.message()));
         self.local.model_state().load_json(model_state.to_json());
         Ok(result)
@@ -553,10 +579,14 @@ impl Agent {
 
     fn with_telemetry(&self, result: AgentResult) -> AgentResult {
         let telemetry = self.telemetry.lock();
-        result.with_telemetry(
+        let result = result.with_telemetry(
             telemetry.meter.metrics().clone(),
             telemetry.tracer.traces().to_vec(),
-        )
+        );
+        match self.local.invocation_context() {
+            Some(context) => result.with_invocation_context(context.clone()),
+            None => result,
+        }
     }
 }
 
