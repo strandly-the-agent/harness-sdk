@@ -17,23 +17,24 @@
 - [x] Fixture round-trips byte-identical
 - [x] Phase review gate and fixes
 
-## [ ] Phase 2: model abstraction, streaming and retry
-- [ ] `ModelStreamEvent`, `ModelRequest`, `ModelState`, `BaseModelConfig`, `CacheConfig`
-- [ ] `Model` trait with `stream_aggregated`, `summarize`, `count_tokens`, `estimate_utilization`, model info
+## [x] Phase 2: model abstraction, streaming and retry
+- [x] `ModelStreamEvent`, `ModelRequest`, `ModelState`, `BaseModelConfig`, `CacheConfig`
+- [x] `Model` trait with `stream_aggregated`, `summarize`, `count_tokens`, `estimate_utilization`, model info
 - [x] Retry strategy plugin, `DefaultModelRetryStrategy`, backoffs and jitter
-- [ ] `strands::testing` mock model, hook recorder, test agent
-- [ ] Phase review gate and fixes
+- [x] `strands::testing` mock model (the hook recorder and test agent need the agent loop; tracked under Phase 3)
+- [x] Phase review gate and fixes
 
 ## [ ] Phase 3: agent loop, hooks and tools
 - [ ] `Agent`, `AgentConfig`, builder, lazy default model, `invoke`/`stream`/`AgentStream`, `AgentResult`
 - [ ] Serializable stream event records (fixture-checked)
 - [ ] Hook events, setters, `HookOrder`, `HookCleanup`, three registration forms
 - [ ] `LocalAgent`, `ToolAgent`, `AppState`, `ModelState`, `InvocationState` handles
-- [ ] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
-- [ ] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
+- [x] `Tool`, `ToolContext`, `ToolOutcome`, `ToolRegistry`, `FunctionTool`, `ToolSource`, `tool_list!`, `ToolError`
+- [x] `#[tool]` and `#[tools]` macros with schema normalization, validation, trybuild tests
 - [ ] Concurrent and sequential executors
 - [ ] Loop semantics: deferred append, limits, `InvocationContext`, structured output, `end_turn`/`resume`
 - [ ] Direct tool calls, `as_tool`, agents as tools, printer
+- [ ] `strands::testing` hook recorder and test agent
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 4: interrupts, cancellation, lifecycle, plugins and middleware

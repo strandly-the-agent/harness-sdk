@@ -2,8 +2,8 @@
 
 ## Where we are
 
-- Current phase: Phase 2 (model abstraction, streaming and retry), review gate in progress. Phase 0 closed at `0371b1577` (`strands-rs/docs/reviews/phase-0.md`); Phase 1 closed at `6b89c5dd6` (`phase-1.md`; full gates pass, 573 tests). Phase 2 items done: models, Model trait, retry, MockModel (HookRecorder and test_agent are Phase 3 per the spec). Phase 2 correctness findings are being fixed (`briefs/phase2-fixes.md`); API and parity reviews pending.
-- Phase base commits: Phase 0 base = `7296caba7`; Phase 1 base = `1a04bf10a`; Phase 2 base = `5383d5c20` (retry landed at `fd48e74f0`; models from `836087c6a`); Phase 3 base = TBD (Phase 1 commits start at `7a8080e54`; Phase 0 files committed later are docs, conformance and `.rust-port/` only)
+- Current phase: Phase 3 (agent loop, hooks and tools). Phases 0-2 closed: Phase 0 at `0371b1577`, Phase 1 at `6b89c5dd6`, Phase 2 at `0724c715f` (review files `strands-rs/docs/reviews/phase-{0,1,2}.md`; full gates pass, 749 tests). Phase 3 done: tools layer and macros (`0d9a8e91a`..`0724c715f`, seams for the loop listed in P-71..P-80). In progress: hook registry (`briefs/phase3-hooks.md`). Next: the agent loop brief (Agent, AgentConfig, builder, invoke/stream, stream records, executors, loop semantics, direct calls, as_tool, printer, retry wiring, HookRecorder/test_agent), then the Phase 3 review gate.
+- Phase base commits: Phase 0 base = `7296caba7`; Phase 1 base = `1a04bf10a`; Phase 2 base = `5383d5c20` (retry landed at `fd48e74f0`; models from `836087c6a`); Phase 3 base = `913a2f3bb` (Phase 3 commits start at `0d9a8e91a`) (Phase 1 commits start at `7a8080e54`; Phase 0 files committed later are docs, conformance and `.rust-port/` only)
 
 ## Credentials (checked without printing)
 
