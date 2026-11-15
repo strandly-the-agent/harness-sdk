@@ -4,6 +4,7 @@
 //! message that requested tools is appended only after its tools finish, together with their
 //! results, so history is always re-invokable.
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -168,7 +169,7 @@ impl Agent {
             ));
         }
         {
-            let mut telemetry = self.telemetry.lock();
+            let mut telemetry = self.local.telemetry().lock();
             telemetry.meter.start_new_invocation();
             telemetry.tracer.reset();
         }
@@ -222,7 +223,7 @@ impl Agent {
             // Counted before the turn runs, so nested calls started by its tools see it.
             context.record_turn();
             let started = {
-                let mut telemetry = self.telemetry.lock();
+                let mut telemetry = self.local.telemetry().lock();
                 let (cycle_id, started) = telemetry.meter.start_cycle();
                 telemetry.tracer.start_cycle(&cycle_id);
                 started
@@ -231,7 +232,7 @@ impl Agent {
                 .run_cycle(input.take(), state, hooks, out, structured, &context)
                 .await;
             {
-                let mut telemetry = self.telemetry.lock();
+                let mut telemetry = self.local.telemetry().lock();
                 telemetry.meter.end_cycle(started);
                 telemetry.tracer.end_cycle();
             }
@@ -392,7 +393,7 @@ impl Agent {
         forcing: Forcing,
     ) -> Result<StreamAggregatedResult> {
         let tool_specs = self.local.tool_registry().tool_specs();
-        let mut attempt_count = 1_u32;
+        let mut attempt_count = NonZeroU32::MIN;
         loop {
             let model = Arc::clone(self.local.model());
             let projected = self.estimate_input_tokens(&tool_specs).await;
@@ -422,7 +423,11 @@ impl Agent {
                 .await
             {
                 Ok(result) => {
-                    self.telemetry.lock().meter.update_cycle(result.metadata());
+                    self.local
+                        .telemetry()
+                        .lock()
+                        .meter
+                        .update_cycle(result.metadata());
                     let message = result.message().clone();
                     let stop_reason = result.stop_reason().clone();
                     let mut event = ModelMessageEvent::new(
@@ -491,7 +496,7 @@ impl Agent {
             .model_state(model_state.clone())
             .cancel_signal(self.local.cancel_signal().clone())
             .build();
-        self.telemetry.lock().tracer.start_model();
+        self.local.telemetry().lock().tracer.start_model();
         let mut stream = ModelProxy::new(model.as_ref())
             .stream_aggregated(request, self.local.invocation_context().cloned());
         let mut result = None;
@@ -499,7 +504,7 @@ impl Agent {
             let item = match item {
                 Ok(item) => item,
                 Err(error) => {
-                    self.telemetry.lock().tracer.end_model(None);
+                    self.local.telemetry().lock().tracer.end_model(None);
                     return Err(error);
                 }
             };
@@ -521,7 +526,11 @@ impl Agent {
             }
         }
         let result = result.ok_or_else(|| Error::other("the model stream ended without a result"))?;
-        self.telemetry.lock().tracer.end_model(Some(result.message()));
+        self.local
+            .telemetry()
+            .lock()
+            .tracer
+            .end_model(Some(result.message()));
         self.local.model_state().load_json(model_state.to_json());
         Ok(result)
     }
@@ -584,7 +593,7 @@ impl Agent {
                 invocation_state: state.clone(),
                 assistant_message: assistant.clone(),
                 completed_tool_results: IndexMap::new(),
-                telemetry: self.telemetry.clone(),
+                telemetry: self.local.telemetry().clone(),
             };
             let mut stream = self.tool_executor.execute(input);
             while let Some(item) = stream.next().await {
@@ -719,7 +728,7 @@ impl Agent {
     }
 
     fn with_telemetry(&self, result: AgentResult) -> AgentResult {
-        let telemetry = self.telemetry.lock();
+        let telemetry = self.local.telemetry().lock();
         let result = result.with_telemetry(
             telemetry.meter.metrics().clone(),
             telemetry.tracer.traces().to_vec(),

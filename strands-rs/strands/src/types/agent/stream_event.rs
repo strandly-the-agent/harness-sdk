@@ -253,7 +253,7 @@ record! {
 record! {
     /// The payload of [`AgentStreamEvent::AfterModelCall`] (TS `AfterModelCallEvent`).
     AfterModelCallEventData = "afterModelCallEvent" from AfterModelCallEvent<'_> {
-        copy attempt_count: u32 = |e| e.attempt_count(), "The attempt number of this call, from 1.";
+        copy attempt_count: u32 = |e| e.attempt_count().get(), "The attempt number of this call, from 1.";
         #[serde(skip_serializing_if = "Option::is_none")]
         opt stop_data: ModelStopData = |e| e.stop_data().cloned(), "What a successful call produced.";
         #[serde(skip_serializing_if = "Option::is_none")]

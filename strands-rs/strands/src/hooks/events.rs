@@ -5,6 +5,7 @@
 //! [`ToolResultEvent`]) are `'static` and hold a [`ToolAgent`]. Fields are read through getters;
 //! only the fields TS lets hooks write have setters.
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -609,7 +610,7 @@ pub struct AfterModelCallEvent<'a> {
     agent: &'a mut LocalAgent,
     model: Arc<dyn Model>,
     invocation_state: InvocationState,
-    attempt_count: u32,
+    attempt_count: NonZeroU32,
     stop_data: Option<ModelStopData>,
     error: Option<&'a Error>,
     retry: bool,
@@ -620,7 +621,7 @@ impl<'a> AfterModelCallEvent<'a> {
         agent: &'a mut LocalAgent,
         model: Arc<dyn Model>,
         invocation_state: InvocationState,
-        attempt_count: u32,
+        attempt_count: NonZeroU32,
     ) -> Self {
         Self {
             agent,
@@ -652,7 +653,7 @@ impl<'a> AfterModelCallEvent<'a> {
     }
 
     /// The 1-based attempt number for this turn; resets when the model changes.
-    pub fn attempt_count(&self) -> u32 {
+    pub fn attempt_count(&self) -> NonZeroU32 {
         self.attempt_count
     }
 

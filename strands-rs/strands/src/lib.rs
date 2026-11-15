@@ -4,6 +4,48 @@
 //! list of tools, and the model's own reasoning decides which tools to call. This crate mirrors the
 //! TypeScript SDK (`@strands-agents/sdk`) concept for concept, re-cased for Rust.
 //!
+//! An agent with one tool, invoked and then streamed (it needs a configured default model, so this
+//! example is only compiled):
+//!
+//! ```no_run
+//! use futures::StreamExt;
+//! use strands::{Agent, AgentStreamEvent, tool};
+//!
+//! /// Get the current weather for a city.
+//! #[tool]
+//! async fn get_weather(
+//!     /// City name, for example "Seattle".
+//!     city: String,
+//! ) -> Result<String, strands::ToolError> {
+//!     Ok(format!("Sunny in {city}"))
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), strands::Error> {
+//!     let mut agent = Agent::builder() // default model: Bedrock
+//!         .system_prompt("You are a concise assistant.")
+//!         .tools([GetWeather])
+//!         .build()?;
+//!
+//!     let result = agent.invoke("What's the weather in Seattle?").await?;
+//!     println!("{result}");
+//!
+//!     {
+//!         let mut stream = agent.stream("And in Lisbon?");
+//!         while let Some(event) = stream.next().await {
+//!             if let AgentStreamEvent::ModelStreamUpdate(update) = event? {
+//!                 if let Some(text) = update.text_delta() {
+//!                     print!("{text}");
+//!                 }
+//!             }
+//!         }
+//!     }
+//!     agent.shutdown().await
+//! }
+//! ```
+//!
+//! Messages serialize to the same wire JSON as TS:
+//!
 //! ```
 //! use serde_json::json;
 //! use strands::types::messages::{Role, TextBlock, ToolResultBlock, ToolUseBlock};

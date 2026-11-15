@@ -21,6 +21,7 @@ use super::events::{
     ToolResultEvent, ToolStreamUpdateEvent,
 };
 use super::types::{HookCallbackOptions, HookCleanup, HookOrder};
+use slot::Slot;
 
 /// A synchronous hook callback for marker `M`.
 pub type SyncHookFn<M> = Arc<dyn for<'a, 'b> Fn(&'b mut <M as HookEvent>::Event<'a>) + Send + Sync>;
@@ -30,7 +31,13 @@ pub type AsyncHookFn<M> =
     Arc<dyn for<'a, 'b> Fn(&'b mut <M as HookEvent>::Event<'a>) -> BoxFuture<'b, ()> + Send + Sync>;
 
 pub(crate) mod sealed {
-    use super::{Interrupt, Slot, Slots};
+    use super::{HookEvent, Interrupt, Slot, Slots};
+
+    /// Seals [`super::EventKind`].
+    pub trait SealedKind {}
+
+    /// Seals [`super::IntoSyncHook`].
+    pub trait SealedHook<M: HookEvent> {}
 
     /// Registry plumbing behind [`super::HookEvent`]; implemented only in this crate.
     pub trait Sealed: Sized + 'static {
@@ -59,14 +66,22 @@ pub trait HookEvent: sealed::Sealed {
 }
 
 /// Maps a concrete event type, at any lifetime, to its [`HookEvent`] marker. Sealed.
-pub trait EventKind: Send {
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a hook event",
+    note = "name one of the event types in `strands::hooks`, for example `add_async_hook::<BeforeToolCallEvent>(..)`"
+)]
+pub trait EventKind: sealed::SealedKind + Send {
     /// The marker.
     type Kind: HookEvent;
 }
 
 /// A callback type [`HookRegistry::add_hook`] accepts for marker `M`: a closure taking
-/// `&mut Event`. The event type is inferred from the closure's annotated argument.
-pub trait IntoSyncHook<M: HookEvent> {
+/// `&mut Event`. The event type is inferred from the closure's annotated argument. Sealed.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a hook callback for this event",
+    note = "annotate the event: `|event: &mut BeforeToolCallEvent| ..`"
+)]
+pub trait IntoSyncHook<M: HookEvent>: sealed::SealedHook<M> {
     #[doc(hidden)]
     fn into_hook_fn(self) -> SyncHookFn<M>;
 }
@@ -80,7 +95,7 @@ pub trait IntoSyncHook<M: HookEvent> {
 ///
 /// struct Audit;
 ///
-/// #[async_trait::async_trait]
+/// #[strands::async_trait]
 /// impl<'x> Hook<BeforeInvocationEvent<'x>> for Audit {
 ///     async fn handle(&self, event: &mut BeforeInvocationEvent<'x>) {
 ///         let _ = event.agent().id();
@@ -113,61 +128,69 @@ struct Entry<M: HookEvent> {
     callback: Callback<M>,
 }
 
-/// The callbacks of one event, sorted by order (same order keeps registration order).
-#[doc(hidden)]
-pub struct Slot<M: HookEvent> {
-    entries: RwLock<Vec<Entry<M>>>,
-}
+mod slot {
+    use super::{Callback, Entry, HookEvent, PoisonError, RwLock};
 
-impl<M: HookEvent> Default for Slot<M> {
-    fn default() -> Self {
-        Self {
-            entries: RwLock::new(Vec::new()),
+    /// The callbacks of one event, sorted by order (same order keeps registration order).
+    pub struct Slot<M: HookEvent> {
+        entries: RwLock<Vec<Entry<M>>>,
+    }
+
+    impl<M: HookEvent> Default for Slot<M> {
+        fn default() -> Self {
+            Self {
+                entries: RwLock::new(Vec::new()),
+            }
         }
     }
-}
 
-impl<M: HookEvent> Slot<M> {
-    fn insert(&self, entry: Entry<M>) {
-        let mut entries = self.entries.write().unwrap_or_else(PoisonError::into_inner);
-        let at = entries
-            .iter()
-            .position(|e| e.order > entry.order)
-            .unwrap_or(entries.len());
-        entries.insert(at, entry);
-    }
-
-    fn remove(&self, id: u64) {
-        self.entries
-            .write()
-            .unwrap_or_else(PoisonError::into_inner)
-            .retain(|e| e.id != id);
-    }
-
-    fn callbacks(&self) -> Vec<Callback<M>> {
-        let entries = self.entries.read().unwrap_or_else(PoisonError::into_inner);
-        if !M::REVERSE {
-            return entries.iter().map(|e| e.callback.clone()).collect();
+    impl<M: HookEvent> Slot<M> {
+        pub(super) fn insert(&self, entry: Entry<M>) {
+            let mut entries = self.entries.write().unwrap_or_else(PoisonError::into_inner);
+            let at = entries
+                .iter()
+                .position(|e| e.order > entry.order)
+                .unwrap_or(entries.len());
+            entries.insert(at, entry);
         }
-        let mut reversed: Vec<&Entry<M>> = entries.iter().rev().collect();
-        reversed.sort_by_key(|e| e.order);
-        reversed.into_iter().map(|e| e.callback.clone()).collect()
-    }
 
-    fn len(&self) -> usize {
-        self.entries.read().unwrap_or_else(PoisonError::into_inner).len()
+        pub(super) fn remove(&self, id: u64) {
+            self.entries
+                .write()
+                .unwrap_or_else(PoisonError::into_inner)
+                .retain(|e| e.id != id);
+        }
+
+        pub(super) fn callbacks(&self) -> Vec<Callback<M>> {
+            let entries = self.entries.read().unwrap_or_else(PoisonError::into_inner);
+            if !M::REVERSE {
+                return entries.iter().map(|e| e.callback.clone()).collect();
+            }
+            let mut reversed: Vec<&Entry<M>> = entries.iter().rev().collect();
+            reversed.sort_by_key(|e| e.order);
+            reversed.into_iter().map(|e| e.callback.clone()).collect()
+        }
+
+        pub(super) fn len(&self) -> usize {
+            self.entries.read().unwrap_or_else(PoisonError::into_inner).len()
+        }
     }
 }
 
 macro_rules! hook_events {
     ($( $field:ident: $marker:ty => $event:ident $(<$lt:lifetime>)?, reverse: $reverse:literal $(, interrupts: $interrupts:ident)? ; )*) => {
-        /// Per-event callback lists.
-        #[doc(hidden)]
-        #[derive(Default)]
-        pub struct Slots {
-            next_id: AtomicU64,
-            $( $field: Slot<$marker>, )*
+        mod slots {
+            use super::*;
+
+            /// Per-event callback lists.
+            #[derive(Default)]
+            pub struct Slots {
+                pub(super) next_id: AtomicU64,
+                $( pub(super) $field: Slot<$marker>, )*
+            }
         }
+
+        use slots::Slots;
 
         $(
             impl sealed::Sealed for $marker {
@@ -188,8 +211,16 @@ macro_rules! hook_events {
                 type Event<'a> = $event $(<$lt>)?;
             }
 
+            impl<'a> sealed::SealedKind for $event $(<$lt>)? {}
+
             impl<'a> EventKind for $event $(<$lt>)? {
                 type Kind = $marker;
+            }
+
+            impl<F> sealed::SealedHook<$marker> for F
+            where
+                F: for<'a, 'b> Fn(&'b mut $event $(<$lt>)?) + Send + Sync + 'static,
+            {
             }
 
             impl<F> IntoSyncHook<$marker> for F

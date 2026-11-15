@@ -18,7 +18,7 @@ use crate::models::model::Model;
 use crate::retry::model_retry_strategy::{Sleeper, attach, install, tokio_sleeper, warn_on_duplicate_types};
 use crate::retry::{DefaultModelRetryStrategy, ModelRetryStrategy};
 use crate::state_store::StateStore;
-use crate::telemetry::{AgentMetrics, LocalTelemetry};
+use crate::telemetry::AgentMetrics;
 use crate::tools::{StructuredOutputSchema, Tool, ToolExecutor, ToolRegistry, ToolSource};
 use crate::types::agent::{AgentResult, AgentStreamEvent, InvokeArgs, InvokeOptions, LocalAgent};
 use crate::types::messages::{Message, SystemPrompt};
@@ -52,7 +52,6 @@ use crate::types::messages::{Message, SystemPrompt};
 pub struct Agent {
     pub(crate) local: LocalAgent,
     pub(crate) tool_executor: ToolExecutor,
-    pub(crate) telemetry: LocalTelemetry,
     pub(crate) structured_output_schema: Option<StructuredOutputSchema>,
     /// Set while the run's `strands_structured_output` tool is in the registry, so a run whose
     /// stream was dropped leaves a marker for the next run to clean up.
@@ -116,7 +115,6 @@ impl Agent {
         Self {
             local: LocalAgent::new(model),
             tool_executor: ToolExecutor::default(),
-            telemetry: LocalTelemetry::default(),
             structured_output_schema: None,
             structured_output_registered: false,
             retry_strategies: vec![Arc::new(DefaultModelRetryStrategy::default())],
@@ -132,7 +130,9 @@ impl Agent {
     ///
     /// # Errors
     ///
-    /// An `InitializedEvent` hook raised duplicate interrupts.
+    /// Two retry strategies share a name (`plugin already registered`), a retry strategy is
+    /// already attached to another agent, the agent has delegation tools on a stateful model, or
+    /// an `InitializedEvent` hook raised duplicate interrupts.
     pub async fn initialize(&mut self) -> Result<()> {
         if self.initialized {
             return Ok(());
@@ -165,8 +165,8 @@ impl Agent {
     ///
     /// # Errors
     ///
-    /// The model call failed (after any retry a hook requested), the input is blank, or a hook
-    /// raised duplicate interrupts.
+    /// [`initialize`](Self::initialize) failed, the model call failed (after any retry a hook
+    /// requested), the input is blank, or a hook raised duplicate interrupts.
     pub async fn invoke(&mut self, args: impl Into<InvokeArgs>) -> Result<AgentResult> {
         self.invoke_with(args, InvokeOptions::default()).await
     }
@@ -255,8 +255,8 @@ impl Agent {
     }
 
     /// Replaces the model; takes effect on the next model call.
-    pub fn set_model(&mut self, model: impl Into<Arc<dyn Model>>) {
-        self.local.set_model(model.into());
+    pub fn set_model(&mut self, model: Arc<dyn Model>) {
+        self.local.set_model(model);
     }
 
     /// The model for auxiliary side calls; the agent's model unless set.
@@ -306,7 +306,7 @@ impl Agent {
 
     /// The metrics accumulated over the agent's invocations.
     pub fn metrics(&self) -> AgentMetrics {
-        self.telemetry.lock().meter.metrics().clone()
+        self.local.telemetry().lock().meter.metrics().clone()
     }
 
     /// The hook registry.

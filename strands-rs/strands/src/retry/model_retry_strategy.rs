@@ -136,7 +136,7 @@ pub(crate) fn install(strategy: Arc<dyn ModelRetryStrategy>, hooks: &HookRegistr
         let strategy = Arc::clone(&strategy);
         let sleeper = Arc::clone(&sleeper);
         Box::pin(async move {
-            let attempt = NonZeroU32::new(event.attempt_count()).unwrap_or(NonZeroU32::MIN);
+            let attempt = event.attempt_count();
             let mut context = ModelRetryContext::new(attempt);
             if let Some(error) = event.error() {
                 context = context.with_error(error);

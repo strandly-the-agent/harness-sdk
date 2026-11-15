@@ -58,6 +58,12 @@ impl From<String> for ModelSource {
     }
 }
 
+impl From<&String> for ModelSource {
+    fn from(model_id: &String) -> Self {
+        Self::Id(model_id.clone())
+    }
+}
+
 impl ModelSource {
     pub(crate) fn into_model(self) -> Result<Arc<dyn Model>> {
         match self {
@@ -115,9 +121,8 @@ impl Model for DefaultModel {
 /// struct literal and [`Agent::new`].
 ///
 /// Keys whose TS behaviour lands with later subsystems (conversation and context managers,
-/// plugins, retry strategies, interventions, sessions, memory, sandbox, storage, background tasks,
-/// structured output, telemetry attributes and the printer) are added with them, so no key is
-/// accepted and ignored.
+/// plugins, interventions, sessions, memory, sandbox, storage, background tasks and telemetry
+/// attributes) are added with them, so no key is accepted and ignored.
 ///
 /// ```
 /// use strands::agent::AgentConfig;
@@ -147,6 +152,7 @@ impl Model for DefaultModel {
             /// Builds an [`Agent`](crate::Agent); start with [`Agent::builder`](crate::Agent::builder).
         }
     ),
+    state_mod(vis = "pub"),
     start_fn(name = builder, vis = "pub(crate)"),
     finish_fn(name = into_config, vis = "pub(crate)"),
     on(String, into)
@@ -193,6 +199,9 @@ pub struct AgentConfig {
     /// overrides it (for example `StructuredOutputSchema::of::<T>()`).
     pub structured_output_schema: Option<StructuredOutputSchema>,
     /// Print text, reasoning and tool activity to stdout as the agent runs (default `true`).
+    ///
+    /// Servers and other services should set `.printer(false)`: the printer writes every
+    /// invocation's output to the process's stdout.
     pub printer: Option<bool>,
 }
 

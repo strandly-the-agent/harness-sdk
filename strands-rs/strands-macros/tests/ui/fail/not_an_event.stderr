@@ -1,0 +1,26 @@
+error[E0277]: `String` is not a hook event
+ --> tests/ui/fail/not_an_event.rs:5:31
+  |
+5 |     registry.add_async_hook::<String>(|_event| Box::pin(async {}));
+  |              --------------   ^^^^^^ the trait `EventKind` is not implemented for `String`
+  |              |
+  |              required by a bound introduced by this call
+  |
+  = note: name one of the event types in `strands::hooks`, for example `add_async_hook::<BeforeToolCallEvent>(..)`
+  = help: the following other types implement trait `EventKind`:
+            AfterInvocationEvent<'a>
+            AfterModelCallEvent<'a>
+            AfterToolCallEvent
+            AfterToolsEvent<'a>
+            AgentResultEvent<'a>
+            BeforeInvocationEvent<'a>
+            BeforeModelCallEvent<'a>
+            BeforeToolCallEvent
+          and $N others
+note: required by a bound in `HookRegistry::add_async_hook`
+ --> $WORKSPACE/strands-rs/strands/src/hooks/registry.rs
+  |
+  | impl HookRegistry {
+...
+  |     pub fn add_async_hook<E: EventKind>(
+  |                              ^^^^^^^^^ required by this bound in `HookRegistry::add_async_hook`

@@ -18,7 +18,7 @@ pub use registry::ToolRegistry;
 pub use structured_output::{STRUCTURED_OUTPUT_TOOL_NAME, StructuredOutputSchema};
 pub use tool::{Tool, ToolContext, ToolError, ToolOutcome, ToolStream, ToolStreamEvent, ToolStreamItem};
 
-/// Something `.tools(..)` accepts: a tool or a list of sources.
+/// Something `.tools(..)` accepts: a tool, an agent (as a tool) or a list of sources.
 ///
 /// Mixed lists need [`ToolSource::from`] or [`tool_list!`](crate::tool_list), because `.into()`
 /// has no single target there.
@@ -60,6 +60,12 @@ impl From<Agent> for ToolSource {
 
 impl From<Arc<dyn Tool>> for ToolSource {
     fn from(tool: Arc<dyn Tool>) -> Self {
+        Self::Tool(tool)
+    }
+}
+
+impl<T: Tool> From<Arc<T>> for ToolSource {
+    fn from(tool: Arc<T>) -> Self {
         Self::Tool(tool)
     }
 }

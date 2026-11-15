@@ -1,10 +1,9 @@
 //! Local agent traces (TS `telemetry/tracer.ts` `AgentTrace` and the local trace state). OpenTelemetry
 //! spans join in the `otel` feature.
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use indexmap::IndexMap;
-use jiff::Timestamp;
 use serde::{Serialize, Serializer};
 use tokio::time::Instant;
 
@@ -14,12 +13,17 @@ fn as_ms<S: Serializer>(duration: &Duration, serializer: S) -> Result<S::Ok, S::
     serializer.serialize_u64(u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
 }
 
-fn timestamp_ms<S: Serializer>(timestamp: &Timestamp, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_i64(timestamp.as_millisecond())
+/// Epoch milliseconds, as TS `Date.now()`.
+fn timestamp_ms<S: Serializer>(timestamp: &SystemTime, serializer: S) -> Result<S::Ok, S::Error> {
+    let ms = match timestamp.duration_since(UNIX_EPOCH) {
+        Ok(since) => i64::try_from(since.as_millis()).unwrap_or(i64::MAX),
+        Err(before) => i64::try_from(before.duration().as_millis()).map_or(i64::MIN, |ms| -ms),
+    };
+    serializer.serialize_i64(ms)
 }
 
 fn optional_timestamp_ms<S: Serializer>(
-    timestamp: &Option<Timestamp>,
+    timestamp: &Option<SystemTime>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     match timestamp {
@@ -39,9 +43,9 @@ pub struct AgentTrace {
     name: String,
     parent_id: Option<String>,
     #[serde(serialize_with = "timestamp_ms")]
-    start_time: Timestamp,
+    start_time: SystemTime,
     #[serde(serialize_with = "optional_timestamp_ms")]
-    end_time: Option<Timestamp>,
+    end_time: Option<SystemTime>,
     #[serde(serialize_with = "as_ms")]
     duration: Duration,
     children: Vec<AgentTrace>,
@@ -57,7 +61,7 @@ impl AgentTrace {
             id: uuid::Uuid::now_v7().to_string(),
             name: name.into(),
             parent_id,
-            start_time: Timestamp::now(),
+            start_time: SystemTime::now(),
             end_time: None,
             duration: Duration::ZERO,
             children: Vec::new(),
@@ -93,12 +97,12 @@ impl AgentTrace {
     }
 
     /// When the traced step started.
-    pub fn start_time(&self) -> Timestamp {
+    pub fn start_time(&self) -> SystemTime {
         self.start_time
     }
 
     /// When the traced step ended; `None` while it runs.
-    pub fn end_time(&self) -> Option<Timestamp> {
+    pub fn end_time(&self) -> Option<SystemTime> {
         self.end_time
     }
 

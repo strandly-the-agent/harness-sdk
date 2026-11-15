@@ -501,7 +501,7 @@ mod config {
         let second = mock(vec![vec![text("two")]]);
         let mut agent = test_agent(first.clone());
         agent.invoke("Hi").await.unwrap();
-        agent.set_model(second.clone() as Arc<dyn crate::models::model::Model>);
+        agent.set_model(second.clone());
         let result = agent.invoke("Again").await.unwrap();
         assert_eq!(result.to_string(), "two");
         assert_eq!((first.requests().len(), second.requests().len()), (1, 1));
@@ -797,8 +797,8 @@ mod hooks {
         let attempts = Arc::new(Mutex::new(Vec::new()));
         let record = Arc::clone(&attempts);
         agent.add_hook(move |event: &mut AfterModelCallEvent<'_>| {
-            record.lock().unwrap().push(event.attempt_count());
-            if event.attempt_count() == 1 {
+            record.lock().unwrap().push(event.attempt_count().get());
+            if event.attempt_count().get() == 1 {
                 event.set_retry(true);
             }
         });

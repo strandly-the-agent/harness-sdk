@@ -1,0 +1,43 @@
+error[E0603]: struct `Slots` is private
+ --> tests/ui/fail/sealed_slots.rs:2:39
+  |
+2 |     let _ = strands::hooks::registry::Slots::default();
+  |                                       ^^^^^ private struct
+  |
+note: the struct `Slots` is defined here
+ --> $WORKSPACE/strands-rs/strands/src/hooks/registry.rs
+  |
+  |           use slots::Slots;
+  |               ^^^^^^^^^^^^
+...
+  | / hook_events! {
+  | |     initialized: InitializedEvent<'static> => InitializedEvent<'a>, reverse: false;
+  | |     before_invocation: BeforeInvocationEvent<'static> => BeforeInvocationEvent<'a>, reverse: false;
+  | |     after_invocation: AfterInvocationEvent<'static> => AfterInvocationEvent<'a>, reverse: true;
+... |
+  | |     after_tools: AfterToolsEvent<'static> => AfterToolsEvent<'a>, reverse: true;
+  | | }
+  | |_- in this macro invocation
+  = note: this error originates in the macro `hook_events` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: import `Slots` directly
+  |
+2 -     let _ = strands::hooks::registry::Slots::default();
+2 +     let _ = strands::hooks::registry::slots::Slots();
+  |
+
+error[E0603]: struct `Slot` is private
+ --> tests/ui/fail/sealed_slots.rs:3:59
+  |
+3 |     let _ = std::mem::size_of::<strands::hooks::registry::Slot<strands::hooks::BeforeToolCallEvent>>();
+  |                                                           ^^^^ private struct
+  |
+note: the struct `Slot` is defined here
+ --> $WORKSPACE/strands-rs/strands/src/hooks/registry.rs
+  |
+  | use slot::Slot;
+  |     ^^^^^^^^^^
+help: import `Slot` directly
+  |
+3 -     let _ = std::mem::size_of::<strands::hooks::registry::Slot<strands::hooks::BeforeToolCallEvent>>();
+3 +     let _ = std::mem::size_of::<strands::hooks::registry::slot::Slot>();
+  |

@@ -2,6 +2,8 @@
 //! the `projectedInputTokens` `toJSON` cases). The `toJSON serialization completeness` cases
 //! reflect over TS instance keys; Rust records have a fixed field list, so they don't apply.
 
+use std::num::NonZeroU32;
+
 use std::sync::Arc;
 
 use serde_json::json;
@@ -265,7 +267,7 @@ fn after_model_call_event_includes_stop_data_and_attempt_count_and_excludes_agen
     let model = Arc::clone(agent.model());
     let message = text_message(Role::Assistant, "Hi");
     let tracking_id = message.tracking_id().to_owned();
-    let event = AfterModelCallEvent::new(&mut agent, model, state(), 2)
+    let event = AfterModelCallEvent::new(&mut agent, model, state(), NonZeroU32::new(2).unwrap())
         .with_stop_data(ModelStopData::new(message, StopReason::EndTurn));
     assert_eq!(
         json_of(&event),
@@ -285,7 +287,7 @@ fn after_model_call_event_converts_error_to_message_string_and_excludes_retry() 
     let mut agent = local_agent();
     let model = Arc::clone(agent.model());
     let error = Error::other("Model failed");
-    let mut event = AfterModelCallEvent::new(&mut agent, model, state(), 1).with_error(&error);
+    let mut event = AfterModelCallEvent::new(&mut agent, model, state(), NonZeroU32::MIN).with_error(&error);
     event.set_retry(true);
     assert_eq!(
         json_of(&event),
@@ -385,7 +387,8 @@ fn after_model_call_stop_data_carries_the_redaction() {
     let message = text_message(Role::Assistant, "hi");
     let stop_data = ModelStopData::new(message, StopReason::GuardrailIntervened)
         .with_redaction(Redaction::new("[redacted]"));
-    let event = AfterModelCallEvent::new(&mut agent, model, state(), 1).with_stop_data(stop_data.clone());
+    let event = AfterModelCallEvent::new(&mut agent, model, state(), NonZeroU32::MIN)
+        .with_stop_data(stop_data.clone());
     assert_eq!(
         json_of(&event)["stopData"]["redaction"],
         json!({"userMessage": "[redacted]"})

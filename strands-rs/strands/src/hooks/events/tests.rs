@@ -3,6 +3,8 @@
 //! `types::agent::stream_event`. `allows mutating toolUse fields in-place` maps to `set_tool_use`
 //! because `ToolUse` is a wire struct with private fields.
 
+use std::num::NonZeroU32;
+
 use std::sync::Arc;
 
 use serde_json::json;
@@ -302,10 +304,10 @@ mod after_model_call_event {
     fn creates_instance_with_correct_properties_on_success() {
         let mut agent = local_agent();
         let stop = ModelStopData::new(user("hi"), StopReason::EndTurn);
-        let event = AfterModelCallEvent::new(&mut agent, model(), InvocationState::new(), 1)
+        let event = AfterModelCallEvent::new(&mut agent, model(), InvocationState::new(), NonZeroU32::MIN)
             .with_stop_data(stop.clone());
         assert_eq!(event.stop_data(), Some(&stop));
-        assert_eq!(event.attempt_count(), 1);
+        assert_eq!(event.attempt_count().get(), 1);
         assert!(event.error().is_none());
     }
 
@@ -313,8 +315,13 @@ mod after_model_call_event {
     fn creates_instance_with_error_property_when_model_invocation_fails() {
         let mut agent = local_agent();
         let error = Error::other("model throttled");
-        let event =
-            AfterModelCallEvent::new(&mut agent, model(), InvocationState::new(), 2).with_error(&error);
+        let event = AfterModelCallEvent::new(
+            &mut agent,
+            model(),
+            InvocationState::new(),
+            NonZeroU32::new(2).unwrap(),
+        )
+        .with_error(&error);
         assert_eq!(
             event.error().map(ToString::to_string).as_deref(),
             Some("model throttled")
@@ -332,7 +339,8 @@ mod after_model_call_event {
         let mut agent = local_agent();
         let error = Error::other("boom");
         let mut event =
-            AfterModelCallEvent::new(&mut agent, model(), InvocationState::new(), 1).with_error(&error);
+            AfterModelCallEvent::new(&mut agent, model(), InvocationState::new(), NonZeroU32::MIN)
+                .with_error(&error);
         event.set_retry(true);
         assert!(event.retry());
     }
@@ -340,7 +348,7 @@ mod after_model_call_event {
     #[test]
     fn retry_is_optional_and_defaults_to_undefined() {
         let mut agent = local_agent();
-        let event = AfterModelCallEvent::new(&mut agent, model(), InvocationState::new(), 1);
+        let event = AfterModelCallEvent::new(&mut agent, model(), InvocationState::new(), NonZeroU32::MIN);
         assert!(!event.retry());
     }
 }

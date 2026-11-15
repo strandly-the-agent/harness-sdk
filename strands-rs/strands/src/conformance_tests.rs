@@ -1,6 +1,7 @@
 //! Conformance: every Phase 0 fixture a type in this crate covers parses and re-serializes to the
 //! exact bytes strands-ts wrote (`strands-rs/conformance/fixtures/`, compact `JSON.stringify` output).
 
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -529,7 +530,8 @@ fn stream_event_from(entry: &JsonValue, agent: &mut crate::types::agent::LocalAg
             )
         }
         "afterModelCallEvent" => {
-            let attempt_count = u32::try_from(entry["attemptCount"].as_u64().unwrap()).unwrap();
+            let attempt_count =
+                NonZeroU32::new(u32::try_from(entry["attemptCount"].as_u64().unwrap()).unwrap()).unwrap();
             let error = entry
                 .get("error")
                 .map(|error| crate::Error::other(error["message"].as_str().unwrap().to_owned()));

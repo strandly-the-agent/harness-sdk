@@ -1,0 +1,20 @@
+error[E0277]: `{closure@$DIR/tests/ui/fail/unannotated_hook.rs:5:23: 5:30}` is not a hook callback for this event
+ --> tests/ui/fail/unannotated_hook.rs:5:23
+  |
+5 |       registry.add_hook(|event| {
+  |  ______________--------_^
+  | |              |
+  | |              required by a bound introduced by this call
+6 | |         let _: &mut MessageAddedEvent<'_> = event;
+7 | |     });
+  | |_____^ unsatisfied trait bound
+  |
+  = help: the trait `IntoSyncHook<_>` is not implemented for closure `{closure@$DIR/tests/ui/fail/unannotated_hook.rs:5:23: 5:30}`
+  = note: annotate the event: `|event: &mut BeforeToolCallEvent| ..`
+note: required by a bound in `HookRegistry::add_hook`
+ --> $WORKSPACE/strands-rs/strands/src/hooks/registry.rs
+  |
+  | impl HookRegistry {
+...
+  |     pub fn add_hook<M: HookEvent, F: IntoSyncHook<M>>(&self, callback: F) -> HookCleanup {
+  |                                      ^^^^^^^^^^^^^^^ required by this bound in `HookRegistry::add_hook`

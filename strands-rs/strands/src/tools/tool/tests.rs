@@ -39,3 +39,22 @@ async fn from_future_yields_exactly_the_outcome() {
     assert_eq!(items.len(), 1);
     assert!(matches!(&items[0], ToolStreamItem::Outcome(ToolOutcome::Result(r)) if *r == expected));
 }
+
+#[test]
+fn a_tool_error_leaves_through_question_mark_as_a_boxed_error() {
+    fn failing() -> Result<(), ToolError> {
+        Err(ToolError::msg("no weather"))
+    }
+    fn caller() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        failing()?;
+        Ok(())
+    }
+    fn local_caller() -> Result<(), Box<dyn std::error::Error>> {
+        failing()?;
+        Ok(())
+    }
+    assert_eq!(caller().unwrap_err().to_string(), "no weather");
+    assert_eq!(local_caller().unwrap_err().to_string(), "no weather");
+    let interrupt = BoxError::from(ToolError::from(Interrupt::new("tool:t1:approve", "approve")));
+    assert_eq!(interrupt.to_string(), "interrupt approve");
+}

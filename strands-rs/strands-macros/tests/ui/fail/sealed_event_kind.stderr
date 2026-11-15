@@ -1,0 +1,37 @@
+error[E0277]: the trait bound `Mine: strands::hooks::registry::sealed::SealedKind` is not satisfied
+ --> tests/ui/fail/sealed_event_kind.rs:5:20
+  |
+5 | impl EventKind for Mine {
+  |                    ^^^^ unsatisfied trait bound
+  |
+help: the trait `strands::hooks::registry::sealed::SealedKind` is not implemented for `Mine`
+ --> tests/ui/fail/sealed_event_kind.rs:3:1
+  |
+3 | struct Mine;
+  | ^^^^^^^^^^^
+  = help: the following other types implement trait `strands::hooks::registry::sealed::SealedKind`:
+            AfterInvocationEvent<'a>
+            AfterModelCallEvent<'a>
+            AfterToolCallEvent
+            AfterToolsEvent<'a>
+            AgentResultEvent<'a>
+            BeforeInvocationEvent<'a>
+            BeforeModelCallEvent<'a>
+            BeforeToolCallEvent
+          and $N others
+note: required by a bound in `EventKind`
+ --> $WORKSPACE/strands-rs/strands/src/hooks/registry.rs
+  |
+  | pub trait EventKind: sealed::SealedKind + Send {
+  |                      ^^^^^^^^^^^^^^^^^^ required by this bound in `EventKind`
+  = note: `EventKind` is a "sealed trait", because to implement it you also need to implement `strands::hooks::registry::sealed::SealedKind`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+  = help: the following types implement the trait:
+            strands::hooks::InitializedEvent<'a>
+            strands::hooks::BeforeInvocationEvent<'a>
+            strands::hooks::AfterInvocationEvent<'a>
+            strands::hooks::MessageAddedEvent<'a>
+            strands::hooks::BeforeToolCallEvent
+            strands::hooks::AfterToolCallEvent
+            strands::hooks::BeforeModelCallEvent<'a>
+            strands::hooks::AfterModelCallEvent<'a>
+          and $N others

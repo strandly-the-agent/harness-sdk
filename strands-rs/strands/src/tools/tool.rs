@@ -340,6 +340,25 @@ impl From<Interrupt> for ToolError {
     }
 }
 
+/// Lets `?` carry a tool error out of code returning a boxed error; an interrupt becomes its
+/// message.
+impl From<ToolError> for BoxError {
+    fn from(error: ToolError) -> Self {
+        match error.kind {
+            ToolErrorKind::Failed(error) => error,
+            ToolErrorKind::Interrupt(interrupt) => {
+                Box::new(MessageError(format!("interrupt {}", interrupt.name())))
+            }
+        }
+    }
+}
+
+impl From<ToolError> for Box<dyn std::error::Error + 'static> {
+    fn from(error: ToolError) -> Self {
+        BoxError::from(error)
+    }
+}
+
 impl fmt::Display for ToolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {

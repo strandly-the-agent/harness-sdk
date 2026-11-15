@@ -14,7 +14,7 @@ mod tool_caller;
 
 pub use agent::Agent;
 pub use agent_as_tool::{AgentAsTool, AgentAsToolOptions};
-pub use config::{AgentBuilder, AgentConfig, ModelSource};
+pub use config::{AgentBuilder, AgentConfig, ModelSource, agent_builder};
 pub use invocation_context::{InvocationContext, InvocationContextUsage};
 pub use stream::AgentStream;
 pub use tool_caller::{DirectToolCallOptions, ToolCallStream, ToolHandle};

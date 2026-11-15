@@ -19,7 +19,7 @@ use crate::interrupt::{
 };
 use crate::models::model::Model;
 use crate::state_store::StateStore;
-use crate::telemetry::{AgentMetrics, AgentTrace};
+use crate::telemetry::{AgentMetrics, AgentTrace, LocalTelemetry};
 use crate::tools::{StructuredOutputSchema, ToolRegistry};
 use crate::types::json::{JsonValue, to_js_string};
 use crate::types::messages::{ContentBlock, Message, StopReason, SystemPrompt};
@@ -182,6 +182,7 @@ pub struct LocalAgent {
     cancel: InvocationCancel,
     interrupt_state: InterruptState,
     invocation_context: Option<InvocationContext>,
+    telemetry: LocalTelemetry,
 }
 
 impl LocalAgent {
@@ -206,6 +207,7 @@ impl LocalAgent {
             cancel: InvocationCancel::default(),
             interrupt_state: InterruptState::default(),
             invocation_context: None,
+            telemetry: LocalTelemetry::default(),
         }
     }
 
@@ -282,6 +284,16 @@ impl LocalAgent {
     /// The application state (TS `appState`).
     pub fn app_state(&self) -> &StateStore {
         &self.app_state
+    }
+
+    /// The metrics accumulated over the agent's invocations (TS `metrics`), including the
+    /// running one.
+    pub fn metrics(&self) -> AgentMetrics {
+        self.telemetry.lock().meter.metrics().clone()
+    }
+
+    pub(crate) fn telemetry(&self) -> &LocalTelemetry {
+        &self.telemetry
     }
 
     /// The model state (TS `modelState`), for providers that keep server-side state.
@@ -520,6 +532,12 @@ impl From<String> for InvokeArgs {
     }
 }
 
+impl From<&String> for InvokeArgs {
+    fn from(text: &String) -> Self {
+        Self::Text(text.clone())
+    }
+}
+
 impl From<Vec<ContentBlock>> for InvokeArgs {
     fn from(content: Vec<ContentBlock>) -> Self {
         Self::Content(content)
@@ -608,12 +626,13 @@ impl InvokeOptions {
 ///
 /// let limits = InvokeLimits { turns: NonZeroU32::new(5), ..InvokeLimits::default() };
 /// assert!(limits.total_tokens.is_none());
+/// assert_eq!(InvokeLimits::builder().maybe_turns(NonZeroU32::new(5)).build(), limits);
 /// ```
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
 pub struct InvokeLimits {
     /// Maximum turns (one model call plus the tool calls it requests) across the request.
     pub turns: Option<NonZeroU32>,
