@@ -2,7 +2,7 @@
 
 ## Where we are
 
-- Current phase: Phase 0 review gate running; Phase 1 in progress in parallel (types done, errors next, then fixture round-trips and the Phase 1 gate)
+- Current phase: Phase 1 (types, wire and errors). Phase 0 closed at `0371b1577` (review file `strands-rs/docs/reviews/phase-0.md`; full gates pass, 256 tests). Remaining Phase 1 items: fixture round-trips, then the Phase 1 review gate. Phase 2 retry work may run in parallel on `strands-rs/strands/src/retry/`.
 - Phase base commits: Phase 0 base = `7296caba7`; Phase 1 base = `1a04bf10a` (Phase 1 commits start at `7a8080e54`; Phase 0 files committed later are docs, conformance and `.rust-port/` only)
 
 ## Credentials (checked without printing)
@@ -24,4 +24,6 @@
 
 ## Open threads
 
-- None yet.
+- The sandbox crashed twice under load (five agents compiling at once). Run at most 2 subagents at once and use `CARGO_BUILD_JOBS=2`.
+- The scheduled 9-hour resume job could not be created from this run (the schedule tool needs a verified team requester from Slack, the portal or a GitHub mention).
+- Briefs ready: `briefs/phase1-roundtrip.md`, `briefs/phase2-models.md`, `briefs/phase2-retry.md`.
