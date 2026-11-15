@@ -114,7 +114,7 @@ fn saved_data_keeps_unknown_blocks_formats_locations_and_statuses() {
     };
     assert!(matches!(
         citations.citations[0].location,
-        CitationLocation::Other(_)
+        Some(CitationLocation::Other(_))
     ));
     let ContentBlock::ToolResult(partial) = &open.content[1] else {
         panic!("not a tool result")

@@ -75,7 +75,7 @@ fn estimate_content_block_tokens(block: &ContentBlock) -> u64 {
         ContentBlock::Citations(citations) => citations
             .content
             .iter()
-            .map(|item| heuristic_text(&item.text))
+            .map(|item| item.text.as_deref().map_or(0, heuristic_text))
             .fold(0, u64::saturating_add),
         ContentBlock::Injected(injected) => heuristic_text(&injected.text),
         ContentBlock::Summary(summary) => heuristic_text(&summary.text),
