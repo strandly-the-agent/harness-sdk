@@ -10,10 +10,10 @@ use std::sync::{Arc, PoisonError, RwLock, Weak};
 use futures::future::BoxFuture;
 
 use crate::hooks::events::{
-    AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent, BeforeInvocationEvent,
-    BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, ContentBlockEvent, InitializedEvent,
-    InterruptEvent, MessageAddedEvent, ModelMessageEvent, ModelStreamUpdateEvent, ToolResultEvent,
-    ToolStreamUpdateEvent,
+    AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent, AgentResultEvent,
+    BeforeInvocationEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, ContentBlockEvent,
+    InitializedEvent, InterruptEvent, MessageAddedEvent, ModelMessageEvent, ModelStreamUpdateEvent,
+    ToolResultEvent, ToolStreamUpdateEvent,
 };
 use crate::hooks::types::{Hook, HookCleanup, HookOptions, HookOrder};
 
@@ -301,6 +301,7 @@ hook_events! {
         model_stream_update: ModelStreamUpdateEvent, reverse = false;
         content_block: ContentBlockEvent, reverse = false;
         model_message: ModelMessageEvent, reverse = false;
+        agent_result: AgentResultEvent, reverse = false;
         interrupt: InterruptEvent, reverse = false;
         before_tools: BeforeToolsEvent, reverse = false;
         after_tools: AfterToolsEvent, reverse = true;

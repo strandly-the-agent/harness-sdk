@@ -24,6 +24,7 @@ use crate::interrupt::{Interrupt, InterruptParams, InterruptSource};
 use crate::models::model::Model;
 use crate::models::streaming::ModelStreamEvent;
 use crate::tools::tool::{Tool, ToolStreamEvent};
+use crate::types::agent::AgentResult;
 use crate::types::json::JsonValue;
 use crate::types::messages::{ContentBlock, Message, StopReason, ToolResultBlock};
 use crate::types::tools::ToolUse;
@@ -893,6 +894,67 @@ impl Serialize for ModelMessageEvent<'_> {
         map.serialize_entry("message", &self.message)?;
         map.serialize_entry("stopReason", &self.stop_reason)?;
         map.end()
+    }
+}
+
+/// Fired with the invocation's result, before it is returned (TS `AgentResultEvent`).
+#[non_exhaustive]
+pub struct AgentResultEvent<'a> {
+    agent: &'a mut LocalAgent,
+    result: AgentResult,
+    invocation_state: InvocationState,
+    invocation_context: Option<InvocationContext>,
+}
+
+impl<'a> AgentResultEvent<'a> {
+    #[cfg_attr(not(test), expect(dead_code, reason = "fired by the agent"))]
+    pub(crate) fn new(
+        agent: &'a mut LocalAgent,
+        result: AgentResult,
+        invocation_state: InvocationState,
+        invocation_context: Option<InvocationContext>,
+    ) -> Self {
+        Self {
+            agent,
+            result,
+            invocation_state,
+            invocation_context,
+        }
+    }
+
+    /// The agent.
+    #[must_use]
+    pub fn agent(&self) -> &LocalAgent {
+        self.agent
+    }
+
+    /// The agent, to change.
+    pub fn agent_mut(&mut self) -> &mut LocalAgent {
+        self.agent
+    }
+
+    /// The invocation's result.
+    #[must_use]
+    pub fn result(&self) -> &AgentResult {
+        &self.result
+    }
+
+    /// The caller's invocation state.
+    #[must_use]
+    pub fn invocation_state(&self) -> &InvocationState {
+        &self.invocation_state
+    }
+
+    /// The request this invocation belongs to.
+    #[must_use]
+    pub fn invocation_context(&self) -> Option<&InvocationContext> {
+        self.invocation_context.as_ref()
+    }
+}
+
+impl Serialize for AgentResultEvent<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        type_and(serializer, "agentResultEvent", "result", &self.result)
     }
 }
 

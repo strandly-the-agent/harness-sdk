@@ -11,10 +11,10 @@ pub mod registry;
 pub mod types;
 
 pub use events::{
-    AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent, BeforeInvocationEvent,
-    BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, Cancel, ContentBlockEvent, EndTurn,
-    InitializedEvent, InterruptEvent, MessageAddedEvent, ModelMessageEvent, ModelStopData,
-    ModelStreamUpdateEvent, Redaction, ToolCallError, ToolResultEvent, ToolStreamUpdateEvent,
+    AfterInvocationEvent, AfterModelCallEvent, AfterToolCallEvent, AfterToolsEvent, AgentResultEvent,
+    BeforeInvocationEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent, Cancel,
+    ContentBlockEvent, EndTurn, InitializedEvent, InterruptEvent, MessageAddedEvent, ModelMessageEvent,
+    ModelStopData, ModelStreamUpdateEvent, Redaction, ToolCallError, ToolResultEvent, ToolStreamUpdateEvent,
 };
 pub use registry::{EventKind, HookEvent, HookRegistry, IntoHookImpl, IntoSyncHook, Slot};
 pub use types::{Hook, HookCleanup, HookOptions, HookOrder};
