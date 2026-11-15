@@ -134,7 +134,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/tools/__tests__/tool.test.ts` | | 0/46 | |
 | `strands-ts/src/tools/__tests__/zod-tool.test.ts` | | 0/32 | |
 | `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | | 0/3 | |
-| `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | every case tests `AgentResult`, which lands in Phase 3 |
+| `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | 26 `AgentResult` cases land in Phase 3; the 4 `checkpoint` cases are out of scope (checkpointing is out of v0.1) |
 | `strands-ts/src/types/__tests__/citations.test.ts` | `strands::types::citations::tests` | 6/6 | |
 | `strands-ts/src/types/__tests__/json.test.ts` | | 0/44 | TS-only: `deepCopy`/`deepCopyWithValidation` clone JS values and reject functions, symbols, `undefined` and cycles, none of which a Rust `JsonValue` can hold (`clone()` is the deep copy) |
 | `strands-ts/src/types/__tests__/media.test.ts` | `strands::types::media::tests` | 51/51 | |
