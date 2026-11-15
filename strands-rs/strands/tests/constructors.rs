@@ -42,11 +42,7 @@ fn public_types_are_send_and_sync() {
 fn message_and_every_content_block_build_from_constructors() {
     let location = S3Location::new("s3://bucket/key").with_bucket_owner("123456789012");
     let citation = Citation::new(
-        CitationLocation::DocumentPage {
-            document_index: 0,
-            start: 1,
-            end: 2,
-        },
+        CitationLocation::document_page(0, 1, 2),
         "doc-0",
         vec![CitationSourceContent::new("quote")],
         "Title",
@@ -118,7 +114,7 @@ fn tool_snapshot_and_interrupt_types_build_from_constructors() {
     assert_eq!(spec.input_schema(), Some(&json!({"type": "object"})));
     assert_eq!(ToolUse::new("calc", "t1", json!({})).tool_use_id(), "t1");
     assert_eq!(
-        serde_json::to_value(ToolChoice::Tool { name: "calc".into() }).unwrap(),
+        serde_json::to_value(ToolChoice::tool("calc")).unwrap(),
         json!({"tool": {"name": "calc"}})
     );
 

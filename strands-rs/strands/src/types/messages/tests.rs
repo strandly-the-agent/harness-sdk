@@ -467,10 +467,7 @@ mod message_from_message_data {
         }}));
         let expected = CitationsBlock::new(
             vec![Citation::new(
-                CitationLocation::Web {
-                    url: "https://x".into(),
-                    domain: None,
-                },
+                CitationLocation::web("https://x"),
                 "s",
                 vec![],
                 "T",
@@ -658,11 +655,7 @@ mod to_json_from_json_round_trips {
         assert_block_round_trip(AudioBlock::new(AudioFormat::Mp3, vec![1, 2, 3]));
         assert_block_round_trip(CitationsBlock::new(
             vec![Citation::new(
-                CitationLocation::DocumentChar {
-                    document_index: 0,
-                    start: 0,
-                    end: 10,
-                },
+                CitationLocation::document_char(0, 0, 10),
                 "doc-0",
                 vec![CitationSourceContent::new("source")],
                 "Test",

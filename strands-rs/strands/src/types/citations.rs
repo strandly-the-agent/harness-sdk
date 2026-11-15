@@ -9,6 +9,7 @@ use super::json::{JsonObject, JsonValue};
 #[non_exhaustive]
 pub enum CitationLocation {
     /// A character range in a document (`documentChar`).
+    #[non_exhaustive]
     DocumentChar {
         /// Index of the cited document.
         document_index: u64,
@@ -18,6 +19,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A page range in a document (`documentPage`).
+    #[non_exhaustive]
     DocumentPage {
         /// Index of the cited document.
         document_index: u64,
@@ -27,6 +29,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A chunk range in a document (`documentChunk`).
+    #[non_exhaustive]
     DocumentChunk {
         /// Index of the cited document.
         document_index: u64,
@@ -36,6 +39,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A range in a search result (`searchResult`).
+    #[non_exhaustive]
     SearchResult {
         /// Index of the cited search result.
         search_result_index: u64,
@@ -45,6 +49,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A web page (`web`).
+    #[non_exhaustive]
     Web {
         /// The page URL.
         url: String,
@@ -173,6 +178,58 @@ impl<'de> Deserialize<'de> for CitationLocation {
 }
 
 impl CitationLocation {
+    /// A character range in a document.
+    pub fn document_char(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentChar {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A page range in a document.
+    pub fn document_page(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentPage {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A chunk range in a document.
+    pub fn document_chunk(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentChunk {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A range in a search result.
+    pub fn search_result(search_result_index: u64, start: u64, end: u64) -> Self {
+        Self::SearchResult {
+            search_result_index,
+            start,
+            end,
+        }
+    }
+
+    /// A web page without a domain.
+    pub fn web(url: impl Into<String>) -> Self {
+        Self::Web {
+            url: url.into(),
+            domain: None,
+        }
+    }
+
+    /// A web page with its domain.
+    pub fn web_with_domain(url: impl Into<String>, domain: impl Into<String>) -> Self {
+        Self::Web {
+            url: url.into(),
+            domain: Some(domain.into()),
+        }
+    }
+
     fn from_known(known: KnownLocation) -> Self {
         match known {
             KnownLocation::DocumentChar {
@@ -338,34 +395,12 @@ mod tests {
 
     fn every_location() -> Vec<CitationLocation> {
         vec![
-            CitationLocation::DocumentChar {
-                document_index: 0,
-                start: 0,
-                end: 10,
-            },
-            CitationLocation::DocumentPage {
-                document_index: 1,
-                start: 2,
-                end: 3,
-            },
-            CitationLocation::DocumentChunk {
-                document_index: 2,
-                start: 4,
-                end: 5,
-            },
-            CitationLocation::SearchResult {
-                search_result_index: 0,
-                start: 1,
-                end: 2,
-            },
-            CitationLocation::Web {
-                url: "https://example.com".into(),
-                domain: Some("example.com".into()),
-            },
-            CitationLocation::Web {
-                url: "https://example.org".into(),
-                domain: None,
-            },
+            CitationLocation::document_char(0, 0, 10),
+            CitationLocation::document_page(1, 2, 3),
+            CitationLocation::document_chunk(2, 4, 5),
+            CitationLocation::search_result(0, 1, 2),
+            CitationLocation::web_with_domain("https://example.com", "example.com"),
+            CitationLocation::web("https://example.org"),
         ]
     }
 
@@ -430,11 +465,7 @@ mod tests {
         fn to_json_returns_wrapped_format() {
             let block = CitationsBlock::new(
                 vec![Citation::new(
-                    CitationLocation::DocumentChar {
-                        document_index: 0,
-                        start: 0,
-                        end: 10,
-                    },
+                    CitationLocation::document_char(0, 0, 10),
                     "doc-0",
                     vec![CitationSourceContent::new("source")],
                     "Test",

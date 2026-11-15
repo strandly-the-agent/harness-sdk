@@ -136,10 +136,18 @@ pub enum ToolChoice {
     /// The model must call some tool.
     Any,
     /// The model must call this tool.
+    #[non_exhaustive]
     Tool {
         /// The tool name.
         name: String,
     },
+}
+
+impl ToolChoice {
+    /// The model must call the tool with this name.
+    pub fn tool(name: impl Into<String>) -> Self {
+        Self::Tool { name: name.into() }
+    }
 }
 
 #[derive(Serialize)]
@@ -193,10 +201,7 @@ mod tests {
         let cases = [
             (ToolChoice::Auto, json!({"auto": {}})),
             (ToolChoice::Any, json!({"any": {}})),
-            (
-                ToolChoice::Tool { name: "calc".into() },
-                json!({"tool": {"name": "calc"}}),
-            ),
+            (ToolChoice::tool("calc"), json!({"tool": {"name": "calc"}})),
         ];
         for (choice, wire) in cases {
             assert_eq!(serde_json::to_value(&choice).unwrap(), wire);
