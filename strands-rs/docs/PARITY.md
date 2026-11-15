@@ -9,7 +9,7 @@ Every TS spec file at the pinned TS baseline maps to Rust tests here. Each Rust 
 | TS spec | Rust tests | ported/total | gaps (with reason) |
 |---|---|---|---|
 | `strands-ts/src/__tests__/default-slot.test.ts` | | 0/4 | |
-| `strands-ts/src/__tests__/errors.test.ts` | | 0/29 | |
+| `strands-ts/src/__tests__/errors.test.ts` | `strands::error::tests` | 20/29 | `isFetchNetworkError` (3) and `normalizeError` (6) are TS-only (JS `TypeError` messages and non-`Error` throwables); providers map transport failures in Phase 5 |
 | `strands-ts/src/__tests__/index.test.ts` | | 0/9 | |
 | `strands-ts/src/__tests__/interrupt.test.ts` | `strands::interrupt::tests` | 6/26 | `InterruptError` (2), `InterruptState` behaviour, restore validation and `interruptFromAgent` (18) land with interrupt resume in Phase 4 |
 | `strands-ts/src/__tests__/mime.test.ts` | `strands::mime::tests` | 6/6 | |
@@ -108,7 +108,7 @@ Every TS spec file at the pinned TS baseline maps to Rust tests here. Each Rust 
 | `strands-ts/src/retry/__tests__/backoff-strategy.test.ts` | | 0/19 | |
 | `strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts` | | 0/15 | |
 | `strands-ts/src/sandbox/__tests__/default.test.node.ts` | | 0/4 | |
-| `strands-ts/src/sandbox/__tests__/errors.test.node.ts` | | 0/9 | |
+| `strands-ts/src/sandbox/__tests__/errors.test.node.ts` | `strands::error::tests` | 9/9 | |
 | `strands-ts/src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts` | | 0/26 | |
 | `strands-ts/src/sandbox/__tests__/posix-shell.test.node.ts` | | 0/52 | |
 | `strands-ts/src/sandbox/__tests__/read-file-errors.test.node.ts` | | 0/3 | |
