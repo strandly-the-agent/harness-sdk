@@ -5,7 +5,7 @@
 - Status: in progress (fresh start on 2026-11-15)
 - Current phase: Phase 1 review gate; Phase 2 implementation in parallel
 - Current item: Phase 2 item 1 (ModelStreamEvent, ModelRequest, ...)
-- Phase base commits: Phase 0 = 7296caba7; Phase 1 = d2cce53e2 (Phase 0 review diff is 7296caba7..d2cce53e2)
+- Phase base commits: Phase 0 = 7296caba7; Phase 1 = d2cce53e2 (Phase 0 review diff 7296caba7..d2cce53e2; Phase 0 fixes landed in 95c800b0e..0e4b20905); Phase 2 = 0e4b20905 (Phase 1 review diff d2cce53e2..0e4b20905)
 
 ## Credentials
 
