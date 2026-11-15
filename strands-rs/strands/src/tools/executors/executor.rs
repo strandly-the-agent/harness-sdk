@@ -4,7 +4,6 @@
 //! stream, which runs the hooks, yields the event, and answers the task only when the consumer
 //! asks for the next item, as a TS generator resumes on the next pull. Hooks therefore run one at
 //! a time on the stream, never concurrently across tools.
-#![allow(dead_code, reason = "the agent loop drives the executors")]
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -15,6 +14,7 @@ use futures::stream::BoxStream;
 use indexmap::IndexMap;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
+use tokio::time::Instant;
 use tracing::Instrument;
 
 use crate::error::{Error, Result};
@@ -23,6 +23,7 @@ use crate::hooks::{
 };
 use crate::interrupt::Interrupt;
 use crate::interrupt::state::{PendingToolExecution, ToolResultEntry};
+use crate::telemetry::LocalTelemetry;
 use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStreamEvent, ToolStreamItem};
 use crate::types::agent::{InvocationState, ToolAgent};
 use crate::types::messages::{Message, ToolResultBlock, ToolUseBlock};
@@ -43,6 +44,7 @@ pub(crate) struct ToolExecutionInput {
     pub(crate) assistant_message: Message,
     /// Results restored on resume, keyed by tool use id; these tools don't run again.
     pub(crate) completed_tool_results: IndexMap<String, ToolResultBlock>,
+    pub(crate) telemetry: LocalTelemetry,
 }
 
 /// A lifecycle event of a tool batch, yielded after its hooks ran.
@@ -116,6 +118,7 @@ pub(crate) struct Batch {
     agent: ToolAgent,
     hooks: HookRegistry,
     invocation_state: InvocationState,
+    telemetry: LocalTelemetry,
     /// Results by tool use id, restored ones first (TS `resultsByToolUseId`).
     pub(crate) results: IndexMap<String, ToolResultBlock>,
     pub(crate) interrupts: Vec<Interrupt>,
@@ -128,6 +131,7 @@ impl Batch {
             agent: input.agent.clone(),
             hooks: input.hooks.clone(),
             invocation_state: input.invocation_state.clone(),
+            telemetry: input.telemetry.clone(),
             results: input.completed_tool_results.clone(),
             interrupts: Vec::new(),
             tasks: JoinSet::new(),
@@ -144,6 +148,7 @@ impl Batch {
         let task = ToolTask {
             agent: self.agent.clone(),
             invocation_state: self.invocation_state.clone(),
+            telemetry: self.telemetry.clone(),
             sender,
         };
         self.tasks.spawn(task.run(tool_use).instrument(span));
@@ -243,6 +248,7 @@ pub(crate) fn error_text_result(tool_use_id: &str, text: impl Into<String>) -> T
 struct ToolTask {
     agent: ToolAgent,
     invocation_state: InvocationState,
+    telemetry: LocalTelemetry,
     sender: mpsc::Sender<TaskMessage>,
 }
 
@@ -285,7 +291,7 @@ impl ToolTask {
 
             let result = match cancel {
                 Some(message) => error_text_result(block.tool_use_id(), message),
-                None => match self.run_tool(tool.as_ref(), &tool_use).await? {
+                None => match self.run_recorded(tool.as_ref(), &tool_use).await? {
                     ToolOutcome::Result(result) => normalize_id(result, block.tool_use_id()),
                     ToolOutcome::Interrupt(interrupt) => return Some(ToolOutcome::Interrupt(interrupt)),
                 },
@@ -310,6 +316,24 @@ impl ToolTask {
     }
 
     /// Runs the tool, forwarding its progress events (TS `_executeToolCore`).
+    /// Runs the tool inside a local tool trace and records its tool metrics (TS `_executeToolCore`).
+    async fn run_recorded(&self, tool: Option<&Arc<dyn Tool>>, tool_use: &ToolUse) -> Option<ToolOutcome> {
+        let tool_use_id = tool_use.tool_use_id();
+        self.telemetry
+            .lock()
+            .tracer
+            .start_tool(tool_use.name(), tool_use_id);
+        let started = Instant::now();
+        let outcome = self.run_tool(tool, tool_use).await;
+        let success = matches!(&outcome, Some(ToolOutcome::Result(result)) if *result.status() == ToolResultStatus::Success);
+        let mut telemetry = self.telemetry.lock();
+        telemetry.tracer.end_tool(tool_use_id);
+        telemetry
+            .meter
+            .end_tool_call(tool_use.name(), started.elapsed(), success);
+        outcome
+    }
+
     async fn run_tool(&self, tool: Option<&Arc<dyn Tool>>, tool_use: &ToolUse) -> Option<ToolOutcome> {
         let Some(tool) = tool else {
             let text = format!("Tool '{}' not found in registry", tool_use.name());

@@ -47,7 +47,6 @@ impl From<SequentialToolExecutor> for ToolExecutor {
 }
 
 impl ToolExecutor {
-    #[allow(dead_code, reason = "the agent loop drives the executors")]
     pub(crate) fn execute(&self, input: ToolExecutionInput) -> ToolExecutorStream {
         match self {
             Self::Concurrent(executor) => executor.execute(input),

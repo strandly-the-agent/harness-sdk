@@ -1,16 +1,14 @@
 //! Agent-facing types (TS `types/agent.ts`): the agent views hooks and tools see, invocation
 //! state, invoke arguments and the agent result.
-#![allow(
-    dead_code,
-    reason = "crate-internal constructors are used by the agent loop, which lands with `Agent`"
-)]
 
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
+use serde::de::DeserializeOwned;
 use serde::{Serialize, Serializer};
 
 use crate::cancel::{CancelHandle, CancelOptions, CancelSignal};
+use crate::error::{Result, StructuredOutputError};
 use crate::hooks::HookRegistry;
 use crate::interrupt::state::InterruptStateData;
 use crate::interrupt::{
@@ -18,8 +16,9 @@ use crate::interrupt::{
 };
 use crate::models::model::Model;
 use crate::state_store::StateStore;
+use crate::telemetry::{AgentMetrics, AgentTrace};
 use crate::tools::ToolRegistry;
-use crate::types::json::JsonValue;
+use crate::types::json::{JsonValue, to_js_string};
 use crate::types::messages::{ContentBlock, Message, StopReason, SystemPrompt};
 
 /// The caller's per-invocation values, passed to tools and hooks (TS `InvocationState`).
@@ -285,6 +284,14 @@ impl LocalAgent {
         &self.model_state
     }
 
+    pub(crate) fn set_app_state(&mut self, app_state: StateStore) {
+        self.app_state = app_state;
+    }
+
+    pub(crate) fn set_model_state(&mut self, model_state: StateStore) {
+        self.model_state = model_state;
+    }
+
     /// The agent's tools (TS `toolRegistry`).
     pub fn tool_registry(&self) -> &ToolRegistry {
         &self.tool_registry
@@ -513,7 +520,35 @@ impl From<Vec<InterruptResponseContent>> for InvokeArgs {
     }
 }
 
+/// Per-invocation options (TS `InvokeOptions`).
+///
+/// ```
+/// use strands::{InvocationState, InvokeOptions};
+///
+/// #[derive(Clone)]
+/// struct RequestId(&'static str);
+///
+/// let state = InvocationState::new();
+/// state.insert(RequestId("req-1"));
+/// let options = InvokeOptions::builder().invocation_state(state).build();
+/// assert!(options.invocation_state.get::<RequestId>().is_some());
+/// ```
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Debug, Clone, Default, bon::Builder)]
+pub struct InvokeOptions {
+    /// Values for the tools and hooks of this invocation. The agent shares this handle with every
+    /// hook event, tool context and the [`AgentResult`], so the caller sees their writes.
+    #[builder(default)]
+    pub invocation_state: InvocationState,
+}
+
 /// The result of an invocation (TS `AgentResult`).
+///
+/// `Display` is TS `toString()`: the interrupts or the structured output as JSON when present,
+/// otherwise the text of the last message.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct AgentResult {
@@ -522,6 +557,8 @@ pub struct AgentResult {
     structured_output: Option<JsonValue>,
     interrupts: Vec<Interrupt>,
     invocation_state: InvocationState,
+    metrics: Box<AgentMetrics>,
+    traces: Vec<AgentTrace>,
 }
 
 impl AgentResult {
@@ -536,22 +573,55 @@ impl AgentResult {
             structured_output: None,
             interrupts: Vec::new(),
             invocation_state,
+            metrics: Box::default(),
+            traces: Vec::new(),
         }
     }
 
+    #[allow(dead_code, reason = "set by the loop's structured output handling")]
     pub(crate) fn with_structured_output(mut self, structured_output: JsonValue) -> Self {
         self.structured_output = Some(structured_output);
         self
     }
 
-    /// Why the invocation stopped.
-    pub fn stop_reason(&self) -> &StopReason {
-        &self.stop_reason
+    pub(crate) fn with_interrupts(mut self, interrupts: Vec<Interrupt>) -> Self {
+        self.interrupts = interrupts;
+        self
     }
 
-    /// The final assistant message.
+    pub(crate) fn with_telemetry(mut self, metrics: AgentMetrics, traces: Vec<AgentTrace>) -> Self {
+        self.metrics = Box::new(metrics);
+        self.traces = traces;
+        self
+    }
+
+    /// Why the invocation stopped.
+    pub fn stop_reason(&self) -> StopReason {
+        self.stop_reason.clone()
+    }
+
+    /// The final message of the invocation.
     pub fn last_message(&self) -> &Message {
         &self.last_message
+    }
+
+    /// The structured output, deserialized into `T`.
+    ///
+    /// # Errors
+    ///
+    /// [`StructuredOutputError`] when the invocation produced no structured output or it doesn't
+    /// deserialize into `T`.
+    pub fn structured_output<T: DeserializeOwned>(&self) -> Result<T> {
+        let value = self
+            .structured_output
+            .as_ref()
+            .ok_or_else(|| StructuredOutputError::new("the invocation produced no structured output"))?;
+        serde_json::from_value(value.clone()).map_err(|error| {
+            StructuredOutputError::new(format!(
+                "structured output doesn't match the requested type: {error}"
+            ))
+            .into()
+        })
     }
 
     /// The structured output as JSON, when a schema was requested.
@@ -567,6 +637,58 @@ impl AgentResult {
     /// The invocation state the invocation ran with.
     pub fn invocation_state(&self) -> &InvocationState {
         &self.invocation_state
+    }
+
+    /// The agent's metrics when the invocation ended.
+    pub fn metrics(&self) -> &AgentMetrics {
+        &self.metrics
+    }
+
+    /// The local trace of the invocation: one tree per cycle.
+    pub fn traces(&self) -> &[AgentTrace] {
+        &self.traces
+    }
+
+    /// Prompt tokens of the latest model call (TS `contextSize`).
+    pub fn context_size(&self) -> Option<u64> {
+        self.metrics.latest_context_size()
+    }
+
+    /// The next model call's context size (TS `projectedContextSize`).
+    pub fn projected_context_size(&self) -> Option<u64> {
+        self.metrics.projected_context_size()
+    }
+}
+
+impl fmt::Display for AgentResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.interrupts.is_empty() {
+            return f.write_str(&to_js_string(&self.interrupts).map_err(|_| fmt::Error)?);
+        }
+        if let Some(output) = &self.structured_output {
+            return f.write_str(&to_js_string(output).map_err(|_| fmt::Error)?);
+        }
+        let mut parts: Vec<String> = Vec::new();
+        for block in self.last_message.content() {
+            match block {
+                ContentBlock::Text(text) => parts.push(text.text().to_owned()),
+                ContentBlock::Reasoning(reasoning) => {
+                    if let Some(text) = reasoning.text().filter(|text| !text.is_empty()) {
+                        parts.push(format!("💭 Reasoning:\n   {}", text.replace('\n', "\n   ")));
+                    }
+                }
+                ContentBlock::Citations(citations) => {
+                    parts.extend(
+                        citations
+                            .content()
+                            .iter()
+                            .map(|content| content.text().to_owned()),
+                    );
+                }
+                _ => {}
+            }
+        }
+        f.write_str(&parts.join("\n"))
     }
 }
 

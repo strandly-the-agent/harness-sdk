@@ -399,7 +399,7 @@ mod stream_and_result_events {
         let mut agent = local_agent();
         let agent_result = AgentResult::new(StopReason::EndTurn, user("done"), InvocationState::new());
         let event = AgentResultEvent::new(&mut agent, agent_result, InvocationState::new());
-        assert_eq!(event.result().stop_reason(), &StopReason::EndTurn);
+        assert_eq!(event.result().stop_reason(), StopReason::EndTurn);
         const { assert!(!<AgentResultEvent<'static> as Sealed>::REVERSE) };
     }
 

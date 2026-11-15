@@ -29,7 +29,6 @@ pub enum ToolSource {
 
 impl ToolSource {
     /// The tools in order, with lists flattened.
-    #[allow(dead_code, reason = "read by the agent builder, which lands with `Agent`")]
     pub(crate) fn into_tools(self) -> Vec<Arc<dyn Tool>> {
         match self {
             Self::Tool(tool) => vec![tool],

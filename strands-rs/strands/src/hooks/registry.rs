@@ -4,10 +4,6 @@
 //! and an event borrowing the agent (`BeforeInvocationEvent<'a>`) uses its `'static`
 //! instantiation. [`EventKind`] maps an event type of any lifetime to its marker, so callers name
 //! events the natural way: `add_async_hook::<BeforeInvocationEvent>(..)`.
-#![allow(
-    dead_code,
-    reason = "`invoke` is called by the agent loop, which lands with `Agent`"
-)]
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -350,14 +346,22 @@ impl HookRegistry {
     ///
     /// Two raised interrupts share a name (TS text
     /// `interrupt_names=<a, b> | duplicate interrupt names`).
-    pub(crate) async fn invoke<M: HookEvent>(&self, event: &mut M::Event<'_>) -> Result<()> {
-        for callback in M::slot(&self.slots).callbacks() {
-            match callback {
-                Callback::Sync(f) => f(event),
-                Callback::Async(f) => f(event).await,
+    ///
+    /// Boxed so callers' futures stay provably `Send`: rustc can't check auto traits through the
+    /// `Event<'a>` projection of a borrowing event inside an `async fn`.
+    pub(crate) fn invoke<'a, 'e: 'a, M: HookEvent>(
+        &'a self,
+        event: &'a mut M::Event<'e>,
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            for callback in M::slot(&self.slots).callbacks() {
+                match callback {
+                    Callback::Sync(f) => f(event),
+                    Callback::Async(f) => f(event).await,
+                }
             }
-        }
-        check_duplicate_interrupts(M::interrupts(event))
+            check_duplicate_interrupts(M::interrupts(event))
+        })
     }
 }
 

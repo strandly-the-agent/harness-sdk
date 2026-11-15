@@ -718,7 +718,6 @@ impl Usage {
     ///
     /// Providers that count cache tokens inside `inputTokens` report `input + output == total`;
     /// for them the input count is already the full prompt. Otherwise cache tokens are added.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the agent loop and telemetry"))]
     pub(crate) fn total_prompt_tokens(&self) -> u64 {
         if self.input_tokens.saturating_add(self.output_tokens) == self.total_tokens {
             return self.input_tokens;

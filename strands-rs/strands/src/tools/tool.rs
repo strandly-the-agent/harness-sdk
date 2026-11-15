@@ -1,8 +1,4 @@
 //! The tool interface (TS `tools/tool.ts`).
-#![allow(
-    dead_code,
-    reason = "crate-internal constructors are used by the executors, which land later in Phase 3"
-)]
 
 use std::fmt;
 use std::future::Future;

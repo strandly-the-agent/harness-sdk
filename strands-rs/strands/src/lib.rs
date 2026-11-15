@@ -68,6 +68,7 @@ mod mime;
 pub mod models;
 pub mod retry;
 pub mod state_store;
+pub mod telemetry;
 pub mod testing;
 pub mod tools;
 pub mod types;
@@ -105,6 +106,7 @@ mod conformance_tests;
 #[cfg(test)]
 mod test_support;
 
+pub use agent::{Agent, AgentConfig, AgentStream};
 pub use async_trait::async_trait;
 pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
@@ -112,6 +114,6 @@ pub use interrupt::InterruptResponse;
 pub use state_store::StateStore;
 pub use strands_macros::{tool, tools};
 pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};
-pub use types::agent::{AgentResult, AgentStreamEvent, InvocationState, InvokeArgs};
+pub use types::agent::{AgentResult, AgentStreamEvent, InvocationState, InvokeArgs, InvokeOptions};
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};

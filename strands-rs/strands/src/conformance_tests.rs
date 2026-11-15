@@ -651,3 +651,196 @@ fn hook_events_serialize_byte_identically() {
         assert_eq!(js(&stream_event_from(&entry, &mut agent)), read(path), "{path}");
     }
 }
+
+/// Replays scripted model turns, one per call.
+struct ScriptedModel {
+    turns: std::sync::Mutex<std::collections::VecDeque<Vec<crate::models::streaming::ModelStreamEvent>>>,
+}
+
+impl crate::models::model::Model for ScriptedModel {
+    fn stream(
+        &self,
+        _request: crate::models::model::ModelRequest,
+    ) -> crate::models::model::BoxStream<'static, crate::Result<crate::models::streaming::ModelStreamEvent>>
+    {
+        let turn = self.turns.lock().unwrap().pop_front().expect("a scripted turn");
+        Box::pin(futures::stream::iter(turn.into_iter().map(Ok)))
+    }
+
+    fn get_config(&self) -> crate::models::model::BaseModelConfig {
+        crate::models::model::BaseModelConfig::default()
+    }
+
+    fn update_config(&self, _config: crate::models::model::BaseModelConfig) {}
+}
+
+fn without_tracking_ids(value: &mut JsonValue) {
+    match value {
+        JsonValue::Object(map) => {
+            map.remove("trackingId");
+            map.values_mut().for_each(without_tracking_ids);
+        }
+        JsonValue::Array(items) => items.iter_mut().for_each(without_tracking_ids),
+        _ => {}
+    }
+}
+
+/// The TS `toolRun` scenario (`conformance/generate.ts`) through the real agent loop: the stream
+/// matches `agent_stream_events/tool_run.json` event for event (tracking ids aside) and the hooks
+/// fire in `hook_events/tool_run_order.json` order.
+#[tokio::test(flavor = "current_thread")]
+async fn the_agent_loop_reproduces_the_ts_tool_run() {
+    use futures::StreamExt;
+
+    use crate::agent::Agent;
+    use crate::testing::HookRecorder;
+    use crate::tools::{
+        FunctionTool, Tool, ToolContext, ToolError, ToolOutcome, ToolStream, ToolStreamEvent,
+    };
+    use crate::types::messages::ToolResultBlock;
+
+    struct MediaTool(ToolResultBlock);
+
+    impl Tool for MediaTool {
+        fn name(&self) -> &str {
+            "fetch_media"
+        }
+        fn description(&self) -> &str {
+            "Returns mixed media."
+        }
+        fn tool_spec(&self) -> ToolSpec {
+            ToolSpec::new("fetch_media", "Returns mixed media.").with_input_schema(
+                json!({"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}),
+            )
+        }
+        fn stream(&self, _context: ToolContext) -> ToolStream {
+            let result = self.0.clone();
+            ToolStream::new(futures::stream::iter([
+                ToolStreamEvent::new(json!({"progress": 0.5, "stage": "download"})).into(),
+                ToolStreamEvent::new(json!("almost done")).into(),
+                ToolOutcome::Result(result).into(),
+            ]))
+        }
+    }
+
+    let entries: Vec<JsonValue> = parse("agent_stream_events/tool_run.json");
+    let mut turns = std::collections::VecDeque::new();
+    let mut turn = Vec::new();
+    for entry in entries
+        .iter()
+        .filter(|entry| entry["type"] == "modelStreamUpdateEvent")
+    {
+        let event: crate::models::streaming::ModelStreamEvent =
+            serde_json::from_value(entry["event"].clone()).unwrap();
+        let ends_turn = entry["event"]["type"] == "modelMetadataEvent";
+        turn.push(event);
+        if ends_turn {
+            turns.push_back(std::mem::take(&mut turn));
+        }
+    }
+    let media_result: ToolResultBlock = entries
+        .iter()
+        .find(|entry| entry["type"] == "afterToolCallEvent" && entry["toolUse"]["name"] == "fetch_media")
+        .map(|entry| serde_json::from_value(entry["result"]["toolResult"].clone()).unwrap())
+        .unwrap();
+
+    let weather = FunctionTool::new(
+        "get_weather",
+        "Get the weather for a city.",
+        |input: JsonValue, _ctx| async move {
+            Ok::<_, ToolError>(json!({"city": input["city"], "forecast": "sunny", "high": 21}))
+        },
+    )
+    .with_input_schema(json!({
+        "type": "object",
+        "properties": {"city": {"type": "string", "description": "City name"}},
+        "required": ["city"],
+        "additionalProperties": false
+    }));
+    let flaky = FunctionTool::new(
+        "flaky_tool",
+        "Always fails.",
+        |_input: JsonValue, _ctx| async move { Err::<JsonValue, _>(ToolError::msg("flaky_tool exploded")) },
+    );
+    let mut app_state = JsonObject::new();
+    app_state.insert("user".into(), json!({"id": "u-1", "tier": "pro"}));
+    app_state.insert("counter".into(), json!(3));
+    let system_prompt: SystemPrompt = serde_json::from_value(
+        json!([{"text": "You report the weather."}, {"cachePoint": {"cacheType": "default"}}]),
+    )
+    .unwrap();
+
+    let mut agent = Agent::builder()
+        .name("weather_agent")
+        .id("weather_agent")
+        .model(ScriptedModel { turns: turns.into() })
+        .tools(crate::tool_list![weather, MediaTool(media_result), flaky])
+        .system_prompt(system_prompt)
+        .app_state(app_state)
+        .build()
+        .unwrap();
+    let recorder = HookRecorder::new();
+    recorder.register(agent.hooks());
+
+    let mut written = Vec::new();
+    {
+        let mut stream = agent.stream("What is the weather in Seattle?");
+        while let Some(event) = stream.next().await {
+            let mut event = serde_json::to_value(event.unwrap()).unwrap();
+            without_tracking_ids(&mut event);
+            written.push(event);
+        }
+    }
+    let mut expected = entries;
+    expected.iter_mut().for_each(without_tracking_ids);
+    // Tools run on their own tasks, so only each tool's own event order is TS's (section 8.8);
+    // everything outside the batch matches exactly.
+    let batch = |events: &[JsonValue]| {
+        let start = events
+            .iter()
+            .position(|e| e["type"] == "beforeToolsEvent")
+            .unwrap();
+        let end = events
+            .iter()
+            .position(|e| e["type"] == "afterToolsEvent")
+            .unwrap();
+        (start, end)
+    };
+    let per_tool = |events: &[JsonValue]| {
+        let mut by_tool: std::collections::BTreeMap<String, Vec<JsonValue>> = Default::default();
+        for event in events {
+            let id = event["toolUse"]["toolUseId"]
+                .as_str()
+                .or_else(|| event["result"]["toolResult"]["toolUseId"].as_str())
+                .unwrap_or("tooluse_run_2"); // the one streaming tool
+            by_tool.entry(id.to_owned()).or_default().push(event.clone());
+        }
+        by_tool
+    };
+    let (start, end) = batch(&written);
+    assert_eq!((start, end), batch(&expected));
+    assert_eq!(written.len(), expected.len());
+    assert_eq!(written[..=start], expected[..=start]);
+    assert_eq!(written[end..], expected[end..]);
+    assert_eq!(
+        per_tool(&written[start + 1..end]),
+        per_tool(&expected[start + 1..end])
+    );
+
+    let order: Vec<String> = parse("hook_events/tool_run_order.json");
+    let fired = recorder.events();
+    let types: Vec<&str> = written
+        .iter()
+        .map(|event| event["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(fired[0], "initializedEvent");
+    assert_eq!(fired[1..], types[..], "hooks fire in stream order");
+    let (start, end) = (start + 1, end + 1);
+    assert_eq!(fired[..=start], order[..=start]);
+    assert_eq!(fired[end..], order[end..]);
+    let mut fired_batch: Vec<&str> = fired[start + 1..end].to_vec();
+    let mut order_batch: Vec<&str> = order[start + 1..end].iter().map(String::as_str).collect();
+    fired_batch.sort_unstable();
+    order_batch.sort_unstable();
+    assert_eq!(fired_batch, order_batch);
+}

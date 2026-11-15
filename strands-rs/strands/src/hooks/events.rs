@@ -4,10 +4,6 @@
 //! ([`BeforeToolCallEvent`], [`AfterToolCallEvent`], [`ToolStreamUpdateEvent`],
 //! [`ToolResultEvent`]) are `'static` and hold a [`ToolAgent`]. Fields are read through getters;
 //! only the fields TS lets hooks write have setters.
-#![allow(
-    dead_code,
-    reason = "crate-internal constructors are used by the agent loop, which lands with `Agent`"
-)]
 
 use std::sync::Arc;
 
@@ -290,6 +286,7 @@ impl<'a> AfterInvocationEvent<'a> {
         self.resume = None;
     }
 
+    #[allow(dead_code, reason = "read by the loop's resume handling")]
     pub(crate) fn take_resume(&mut self) -> Option<InvokeArgs> {
         self.resume.take()
     }
@@ -520,6 +517,7 @@ impl AfterToolCallEvent {
         self.retry = retry;
     }
 
+    #[allow(dead_code, reason = "read by direct tool calls")]
     pub(crate) fn into_result(self) -> (ToolResultBlock, bool) {
         (self.result, self.retry)
     }
@@ -1010,6 +1008,7 @@ impl<'a> AfterToolsEvent<'a> {
         self.end_turn = None;
     }
 
+    #[allow(dead_code, reason = "read by the loop's end-turn handling")]
     pub(crate) fn take_end_turn(&mut self) -> Option<EndTurn> {
         self.end_turn.take()
     }
