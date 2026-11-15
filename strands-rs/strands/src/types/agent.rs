@@ -53,7 +53,7 @@ pub struct AgentResult {
     #[serde(skip)]
     traces: Vec<AgentTrace>,
     #[serde(skip)]
-    metrics: Option<AgentMetrics>,
+    metrics: Option<Box<AgentMetrics>>,
     #[serde(skip)]
     interrupts: Vec<Interrupt>,
     #[serde(skip)]
@@ -96,7 +96,7 @@ impl AgentResult {
     /// Sets the metrics.
     #[must_use]
     pub fn with_metrics(mut self, metrics: AgentMetrics) -> Self {
-        self.metrics = Some(metrics);
+        self.metrics = Some(Box::new(metrics));
         self
     }
 
@@ -157,7 +157,7 @@ impl AgentResult {
     /// The agent's metrics, when the loop recorded them.
     #[must_use]
     pub fn metrics(&self) -> Option<&AgentMetrics> {
-        self.metrics.as_ref()
+        self.metrics.as_deref()
     }
 
     /// The unanswered interrupts, when the stop reason is [`StopReason::Interrupt`].

@@ -5,4 +5,5 @@ pub mod invocation_context;
 pub mod invocation_state;
 pub mod local_agent;
 pub mod snapshot;
+pub mod stream_event;
 pub mod tool_agent;

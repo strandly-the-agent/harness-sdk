@@ -20,6 +20,16 @@ use serde_json::{Map, Value};
 
 /// Fixtures that a Rust test in this crate round-trips (paths relative to `fixtures/`).
 pub(crate) const COVERED: &[&str] = &[
+    "agent/interrupt_hook.stream.json",
+    "agent/interrupt_hook_resumed.stream.json",
+    "agent/interrupt_tool.stream.json",
+    "agent/interrupt_tool_resumed.stream.json",
+    "agent/model_error.stream.json",
+    "agent/redaction.stream.json",
+    "agent/structured_output.stream.json",
+    "agent/text_turn.metrics.json",
+    "agent/text_turn.stream.json",
+    "agent/tool_turn.stream.json",
     "events/model_stream_events.json",
     "interrupts/hook_interrupted.snapshot.json",
     "interrupts/interrupt_state.json",
@@ -60,19 +70,9 @@ pub(crate) const COVERED: &[&str] = &[
 
 /// Fixtures whose types arrive in a later phase.
 pub(crate) const DEFERRED: &[&str] = &[
-    "agent/interrupt_hook.stream.json",
-    "agent/interrupt_hook_resumed.stream.json",
-    "agent/interrupt_tool.stream.json",
-    "agent/interrupt_tool_resumed.stream.json",
     "agent/model_error.error.json",
-    "agent/model_error.stream.json",
-    "agent/redaction.stream.json",
     "agent/structured_output.model_calls.json",
-    "agent/structured_output.stream.json",
-    "agent/text_turn.metrics.json",
-    "agent/text_turn.stream.json",
     "agent/tool_turn.model_calls.json",
-    "agent/tool_turn.stream.json",
     "hooks/hook_events.json",
     "hooks/text_turn.order.json",
     "hooks/tool_turn.order.json",
