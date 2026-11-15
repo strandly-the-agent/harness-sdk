@@ -90,6 +90,33 @@ impl<'de> Visitor<'de> for BytesVisitor {
     }
 }
 
+/// Like [`BytesVisitor`], but a present `null` reads as `None`, as TS drops it on write.
+struct OptionalBytesVisitor;
+
+impl<'de> Visitor<'de> for OptionalBytesVisitor {
+    type Value = Option<Vec<u8>>;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("null, a base64 string or an index-keyed byte object")
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        BytesVisitor.visit_str(value).map(Some)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        BytesVisitor.visit_map(map).map(Some)
+    }
+}
+
 /// Serde for required byte fields: base64 out, base64 or index-keyed object in.
 pub(crate) mod base64_bytes {
     use super::{BytesVisitor, Deserializer, Serializer, encode_base64};
@@ -105,7 +132,7 @@ pub(crate) mod base64_bytes {
 
 /// Serde for optional byte fields of persisted blocks; pair with `default` and `skip_serializing_if`.
 pub(crate) mod base64_bytes_opt {
-    use super::{BytesVisitor, Deserializer, Serializer, encode_base64};
+    use super::{Deserializer, OptionalBytesVisitor, Serializer, encode_base64};
 
     #[expect(clippy::ref_option, reason = "serde `with` passes `&Option<T>`")]
     pub(crate) fn serialize<S: Serializer>(
@@ -121,14 +148,14 @@ pub(crate) mod base64_bytes_opt {
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<Vec<u8>>, D::Error> {
-        deserializer.deserialize_any(BytesVisitor).map(Some)
+        deserializer.deserialize_any(OptionalBytesVisitor)
     }
 }
 
 /// Serde for optional byte fields of stream events, written as TS `JSON.stringify` writes a
 /// `Uint8Array` (`{"0":1,"1":2}`); pair with `default` and `skip_serializing_if`.
 pub(crate) mod indexed_bytes_opt {
-    use super::{BytesVisitor, Deserializer, SerializeMap, Serializer};
+    use super::{Deserializer, OptionalBytesVisitor, SerializeMap, Serializer};
 
     #[expect(clippy::ref_option, reason = "serde `with` passes `&Option<T>`")]
     pub(crate) fn serialize<S: Serializer>(
@@ -148,7 +175,7 @@ pub(crate) mod indexed_bytes_opt {
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<Vec<u8>>, D::Error> {
-        deserializer.deserialize_any(BytesVisitor).map(Some)
+        deserializer.deserialize_any(OptionalBytesVisitor)
     }
 }
 

@@ -769,6 +769,15 @@ mod tests {
     }
 
     #[test]
+    fn a_null_redacted_content_in_a_stream_delta_reads_as_absent() {
+        let parsed = event(json!({
+            "type": "modelContentBlockDeltaEvent",
+            "delta": { "type": "reasoningContentDelta", "text": "t", "redactedContent": null }
+        }));
+        assert_eq!(parsed, ReasoningContentDelta::new().with_text("t").into());
+    }
+
+    #[test]
     fn counts_cache_tokens_on_disjoint_providers_where_they_add_to_input_tokens() {
         let usage = Usage::new(10, 4, 5862).with_cache_read_input_tokens(5848);
         assert_eq!(usage.total_prompt_tokens(), 5858);

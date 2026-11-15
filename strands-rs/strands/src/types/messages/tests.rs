@@ -882,6 +882,16 @@ fn message_works_with_json_stringify() {
 }
 
 #[test]
+fn reasoning_block_reads_a_null_redacted_content_as_absent_and_drops_it_on_write() {
+    let block: ReasoningBlock = saved(json!({ "reasoning": { "text": "t", "redactedContent": null } }));
+    assert_eq!(block.redacted_content, None);
+    assert_eq!(
+        serde_json::to_value(&block).unwrap(),
+        json!({ "reasoning": { "text": "t" } })
+    );
+}
+
+#[test]
 fn reasoning_block_from_json_accepts_base64_string_for_redacted_content() {
     let block: ReasoningBlock = saved(json!({ "reasoning": { "redactedContent": "AQIDBAU=" } }));
     assert_eq!(block.redacted_content, Some(vec![1, 2, 3, 4, 5]));
