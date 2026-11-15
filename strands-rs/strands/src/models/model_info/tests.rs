@@ -83,6 +83,25 @@ fn leaves_out_sections_with_nothing_known() {
 }
 
 #[test]
+fn merge_puts_a_later_record_over_this_one_with_the_merge_rules() {
+    let later = info(json!({ "capabilities": { "stateful": true }, "limits": { "maxOutputTokens": 64 } }));
+    let mut merged = base();
+    merged.merge(later);
+    assert_eq!(merged, merge_model_info([Some(&base()), Some(&later)]));
+    assert_eq!(
+        serde_json::to_value(merged).unwrap(),
+        json!({
+            "capabilities": { "stateful": true, "promptCaching": "cachePoints" },
+            "limits": { "contextWindow": 200_000, "maxOutputTokens": 64 },
+        })
+    );
+
+    let mut empty = ModelInfo::default();
+    empty.merge(info(json!({ "limits": {} })));
+    assert_eq!(empty, ModelInfo::default());
+}
+
+#[test]
 fn resolves_every_spelling_of_a_model_to_its_one_entry() {
     let entry = lookup_model("claude-opus-5-5");
     assert_eq!(entry.unwrap().limits.unwrap().context_window, Some(1_000_000));

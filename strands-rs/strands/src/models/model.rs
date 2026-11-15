@@ -324,6 +324,47 @@ pub trait Model: Send + Sync + 'static {
     /// A provider that knows better overrides this: put its facts over [`base_model_info`], then
     /// the user's `get_config().model_info` over those. Don't call [`Model::stateful`] from the
     /// override; it calls this.
+    ///
+    /// ```
+    /// use std::sync::Mutex;
+    ///
+    /// use strands::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest, base_model_info};
+    /// use strands::models::model_info::{ModelCapabilities, ModelInfo};
+    /// use strands::models::streaming::ModelStreamEvent;
+    ///
+    /// struct Provider {
+    ///     config: Mutex<BaseModelConfig>,
+    /// }
+    ///
+    /// impl Model for Provider {
+    ///     fn stream(&self, _request: ModelRequest) -> BoxStream<'static, strands::Result<ModelStreamEvent>> {
+    ///         Box::pin(futures::stream::empty())
+    ///     }
+    ///
+    ///     fn get_config(&self) -> BaseModelConfig {
+    ///         self.config.lock().unwrap().clone()
+    ///     }
+    ///
+    ///     fn update_config(&self, config: BaseModelConfig) {
+    ///         self.config.lock().unwrap().merge(config);
+    ///     }
+    ///
+    ///     fn model_info(&self) -> ModelInfo {
+    ///         let config = self.get_config();
+    ///         let mut info = base_model_info(&config);
+    ///         info.merge(ModelInfo {
+    ///             capabilities: Some(ModelCapabilities { temporary_messages: Some(true), ..Default::default() }),
+    ///             ..ModelInfo::default()
+    ///         });
+    ///         info.merge(config.model_info.unwrap_or_default());
+    ///         info
+    ///     }
+    /// }
+    ///
+    /// let model = Provider { config: Mutex::new(BaseModelConfig::default()) };
+    /// let capabilities = model.model_info().capabilities.unwrap_or_default();
+    /// assert_eq!(capabilities.temporary_messages, Some(true));
+    /// ```
     fn model_info(&self) -> ModelInfo {
         let mut config = self.get_config();
         config.model_id = self.model_id();

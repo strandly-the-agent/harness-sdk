@@ -99,6 +99,28 @@ pub struct ModelInfo {
     pub limits: Option<ModelLimits>,
 }
 
+impl ModelInfo {
+    /// Merges `later` over this record: each field `later` knows wins, fields it leaves unknown
+    /// keep their value, and a section with nothing known becomes `None`.
+    ///
+    /// ```
+    /// use strands::models::model_info::{ModelInfo, ModelLimits};
+    ///
+    /// let mut info = ModelInfo {
+    ///     limits: Some(ModelLimits { context_window: Some(200_000), max_output_tokens: Some(8_192) }),
+    ///     ..ModelInfo::default()
+    /// };
+    /// info.merge(ModelInfo {
+    ///     limits: Some(ModelLimits { max_output_tokens: Some(64_000), ..ModelLimits::default() }),
+    ///     ..ModelInfo::default()
+    /// });
+    /// assert_eq!(info.limits, Some(ModelLimits { context_window: Some(200_000), max_output_tokens: Some(64_000) }));
+    /// ```
+    pub fn merge(&mut self, later: ModelInfo) {
+        *self = merge_model_info([Some(&*self), Some(&later)]);
+    }
+}
+
 impl ModelCapabilities {
     fn merged(self, later: Self) -> Self {
         Self {
