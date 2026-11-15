@@ -10,8 +10,9 @@ use crate::types::json::JsonValue;
 
 /// Where a citation points (TS `CitationLocation`), written with a `type` tag.
 ///
-/// The union is open: a location with an unknown `type` loads as [`CitationLocation::Other`] and is
-/// written back unchanged.
+/// The union is open, and TS keeps a saved location without checking it: a location with an
+/// unknown `type`, or with a known `type` whose fields don't fit that variant (a missing `end`, a
+/// fractional `start`), loads as [`CitationLocation::Other`] and is written back unchanged.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -60,12 +61,14 @@ pub enum CitationLocation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         domain: Option<String>,
     },
-    /// A location this version doesn't know, kept as written.
+    /// A location this version doesn't know, or a known `type` with fields that don't fit it, kept
+    /// as written.
     #[serde(untagged)]
     Other(UnknownCitationLocation),
 }
 
-/// A [`CitationLocation`] this version doesn't know: the raw JSON object, `type` included.
+/// A [`CitationLocation`] this version can't read as a known variant: the raw JSON object, `type`
+/// included. Its `type` may be a known tag when the other fields don't fit that variant.
 ///
 /// It is only built by deserialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -493,5 +496,17 @@ mod tests {
                 .to_string()
                 .starts_with("missing field `title`")
         );
+    }
+
+    #[test]
+    fn a_known_location_type_with_fields_that_dont_fit_is_kept_as_written() {
+        for location in [
+            json!({ "type": "documentChar", "documentIndex": 0, "start": 1 }),
+            json!({ "type": "documentChar", "documentIndex": 0, "start": 1.5, "end": 2 }),
+        ] {
+            let parsed: CitationLocation = serde_json::from_str(&location.to_string()).unwrap();
+            assert!(matches!(parsed, CitationLocation::Other(_)), "{location}");
+            assert_eq!(serde_json::to_string(&parsed).unwrap(), location.to_string());
+        }
     }
 }
