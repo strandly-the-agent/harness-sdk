@@ -2,8 +2,8 @@
 
 ## Where we are
 
-- Current phase: Phase 1 (types, wire and errors). Phase 0 closed at `0371b1577` (review file `strands-rs/docs/reviews/phase-0.md`; full gates pass, 256 tests). Remaining Phase 1 items: fixture round-trips, then the Phase 1 review gate. Phase 2 retry work may run in parallel on `strands-rs/strands/src/retry/`.
-- Phase base commits: Phase 0 base = `7296caba7`; Phase 1 base = `1a04bf10a` (Phase 1 commits start at `7a8080e54`; Phase 0 files committed later are docs, conformance and `.rust-port/` only)
+- Current phase: Phase 2 (model abstraction, streaming and retry), review gate in progress. Phase 0 closed at `0371b1577` (`strands-rs/docs/reviews/phase-0.md`); Phase 1 closed at `6b89c5dd6` (`phase-1.md`; full gates pass, 573 tests). Phase 2 items done: models, Model trait, retry, MockModel (HookRecorder and test_agent are Phase 3 per the spec). Phase 2 correctness findings are being fixed (`briefs/phase2-fixes.md`); API and parity reviews pending.
+- Phase base commits: Phase 0 base = `7296caba7`; Phase 1 base = `1a04bf10a`; Phase 2 base = `5383d5c20` (retry landed at `fd48e74f0`; models from `836087c6a`); Phase 3 base = TBD (Phase 1 commits start at `7a8080e54`; Phase 0 files committed later are docs, conformance and `.rust-port/` only)
 
 ## Credentials (checked without printing)
 
@@ -24,6 +24,6 @@
 
 ## Open threads
 
-- The sandbox crashed twice under load (five agents compiling at once). Run at most 2 subagents at once and use `CARGO_BUILD_JOBS=2`.
+- The sandbox has dropped connections five times, under load and while idle. It recovers by itself; commit and push after every finished item. Run at most 2 subagents at once and use `CARGO_BUILD_JOBS=2`.
 - The scheduled 9-hour resume job could not be created from this run (the schedule tool needs a verified team requester from Slack, the portal or a GitHub mention).
 - Briefs ready: `briefs/phase1-roundtrip.md`, `briefs/phase2-models.md`, `briefs/phase2-retry.md`.
