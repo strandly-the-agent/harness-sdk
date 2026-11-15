@@ -115,6 +115,13 @@ pub(crate) struct InterruptState {
 }
 
 impl InterruptState {
+    /// A state holding `data`, independent of any agent's.
+    pub(crate) fn from_data(data: InterruptStateData) -> Self {
+        Self {
+            data: Arc::new(Mutex::new(data)),
+        }
+    }
+
     pub(crate) fn lock(&self) -> MutexGuard<'_, InterruptStateData> {
         self.data.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -450,6 +457,7 @@ pub struct ToolAgent {
     inner: Arc<ToolAgentInner>,
 }
 
+#[derive(Clone)]
 struct ToolAgentInner {
     id: String,
     name: String,
@@ -534,6 +542,18 @@ impl ToolAgent {
 
     pub(crate) fn middleware(&self) -> &MiddlewareRegistry {
         &self.inner.middleware
+    }
+
+    /// This view for a background task: its own cancel signal and interrupt state.
+    pub(crate) fn for_background(&self, signal: CancelSignal, interrupt_state: InterruptState) -> Self {
+        let handle = CancelHandle::idle();
+        handle.attach(&signal);
+        let mut inner = (*self.inner).clone();
+        inner.cancel = InvocationCancel { signal, handle };
+        inner.interrupt_state = interrupt_state;
+        Self {
+            inner: Arc::new(inner),
+        }
     }
 
     pub(crate) fn invocation_context(&self) -> Option<&InvocationContext> {

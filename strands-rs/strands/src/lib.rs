@@ -101,6 +101,7 @@ extern crate self as strands;
 mod open_enum;
 
 pub mod agent;
+pub mod background_tasks;
 pub mod cancel;
 pub mod error;
 pub mod hooks;
