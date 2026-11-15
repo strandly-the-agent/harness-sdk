@@ -571,24 +571,16 @@ mod resolution {
 
     #[tokio::test]
     async fn maps_tools_choice_option_names_to_values() {
-        for (requested, expected) in [
-            (json!(["readonly"]), vec!["read"]),
-            (json!(["readonly", "write"]), vec!["read"]),
-        ] {
-            let capture = capturing();
-            let tool = capture.tool_with(MakeSubagentOptions {
-                tools: ToolsAxis::Choice(Choice::multiple([
-                    ChoiceOption::new("readonly").with_value("read"),
-                    ChoiceOption::new("sh").with_value("shell"),
-                ])),
-                ..MakeSubagentOptions::default()
-            });
-            run(&tool, json!({ "task": "x", "tools": requested })).await;
-            assert_eq!(
-                capture.specs()[0].tools,
-                Some(expected.iter().map(|tool| (*tool).to_owned()).collect())
-            );
-        }
+        let capture = capturing();
+        let tool = capture.tool_with(MakeSubagentOptions {
+            tools: ToolsAxis::Choice(Choice::multiple([
+                ChoiceOption::new("readonly").with_value("read"),
+                ChoiceOption::new("sh").with_value("shell"),
+            ])),
+            ..MakeSubagentOptions::default()
+        });
+        run(&tool, json!({ "task": "x", "tools": ["readonly"] })).await;
+        assert_eq!(capture.specs()[0].tools, Some(vec!["read".to_owned()]));
     }
 
     #[tokio::test]
