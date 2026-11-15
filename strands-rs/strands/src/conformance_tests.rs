@@ -14,9 +14,10 @@ use crate::models::streaming::{Metrics, Usage};
 use crate::types::json::{JsonObject, JsonValue, from_json_str, to_js_string};
 use crate::types::media::bytes_from_json;
 use crate::types::messages::{
-    ContentBlock, LIMIT_STOP_REASONS, Message, StopReason, SystemPrompt, TextBlock, limit_stop_message,
+    ContentBlock, LIMIT_STOP_REASONS, Message, Role, StopReason, SystemPrompt, TextBlock, ToolUseBlock,
+    limit_stop_message,
 };
-use crate::types::snapshot::{SNAPSHOT_SCHEMA_VERSION, Snapshot, iso_timestamp};
+use crate::types::snapshot::{SNAPSHOT_SCHEMA_VERSION, Scope, Snapshot, iso_timestamp};
 use crate::types::tools::{ToolChoice, ToolSpec};
 
 fn fixtures() -> PathBuf {
@@ -171,6 +172,30 @@ fn numbers_in_tool_input_keep_js_formatting() {
     };
     assert_eq!(tool_use.input()["maxSafe"], json!(9_007_199_254_740_991_u64));
     assert_eq!(js(&tool_use.input()["large"]), "1e+21");
+}
+
+#[test]
+fn nesting_deeper_than_the_serde_json_limit_round_trips() {
+    assert_round_trip::<ContentBlock>("edge_cases/deep_nesting.json");
+}
+
+#[test]
+fn a_snapshot_with_200_levels_of_tool_input_reads_back_what_rust_wrote() {
+    let mut input = json!({"leaf": true});
+    for _ in 1..200 {
+        input = json!({"nested": input});
+    }
+    let message = Message::new(
+        Role::Assistant,
+        vec![ToolUseBlock::new("deep", "tooluse_deep", input).into()],
+    );
+    let mut data = JsonObject::new();
+    data.insert("messages".into(), serde_json::to_value(vec![&message]).unwrap());
+    let written = js(&Snapshot::new(Scope::Agent, data, JsonObject::new()));
+    let snapshot: Snapshot = from_json_str(&written).unwrap();
+    assert_eq!(js(&snapshot), written);
+    let messages: Vec<Message> = serde_json::from_value(snapshot.data()["messages"].clone()).unwrap();
+    assert_eq!(messages, [message]);
 }
 
 #[test]

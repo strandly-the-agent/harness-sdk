@@ -1,7 +1,8 @@
 //! JSON values (TS `types/json.ts`).
 //!
 //! Also holds the crate-internal JSON plumbing that keeps Rust output byte-identical to TS
-//! `JSON.stringify`: JS number formatting, and tolerant parsing of lone UTF-16 surrogate escapes.
+//! `JSON.stringify`: JS number formatting, and parsing that tolerates lone UTF-16 surrogate escapes
+//! and nesting of any depth, as `JSON.parse` does.
 
 use std::io;
 
@@ -25,19 +26,30 @@ pub(crate) fn to_js_string<T: Serialize + ?Sized>(value: &T) -> serde_json::Resu
 
 /// Parses JSON written by TS, replacing lone UTF-16 surrogate escapes (`\ud83d`) with U+FFFD.
 ///
-/// `JSON.stringify` writes lone surrogates as escapes, which Rust strings can't hold.
+/// `JSON.stringify` writes lone surrogates as escapes, which Rust strings can't hold. Nesting
+/// depth is unlimited, as with `JSON.parse`.
 #[cfg_attr(not(test), expect(dead_code, reason = "used by storage and session readers"))]
 pub(crate) fn from_json_str<T: DeserializeOwned>(text: &str) -> serde_json::Result<T> {
-    match serde_json::from_str(text) {
+    match parse_unbounded(text) {
         Ok(value) => Ok(value),
         Err(error) => {
             let sanitized = replace_lone_surrogates(text);
             if sanitized == text {
                 return Err(error);
             }
-            serde_json::from_str(&sanitized)
+            parse_unbounded(&sanitized)
         }
     }
+}
+
+/// Parses without the 128-level `serde_json` recursion limit (TS `JSON.parse` has none), growing the
+/// stack on demand instead of overflowing it.
+fn parse_unbounded<T: DeserializeOwned>(text: &str) -> serde_json::Result<T> {
+    let mut deserializer = serde_json::Deserializer::from_str(text);
+    deserializer.disable_recursion_limit();
+    let value = T::deserialize(serde_stacker::Deserializer::new(&mut deserializer))?;
+    deserializer.end()?;
+    Ok(value)
 }
 
 /// Deserializes a present `null` as `Some(JsonValue::Null)`; use with `#[serde(default)]`.
@@ -64,47 +76,7 @@ fn js_number(value: f64) -> String {
     if !value.is_finite() {
         return "null".to_owned();
     }
-    if value == 0.0 {
-        return "0".to_owned();
-    }
-    let sign = if value < 0.0 { "-" } else { "" };
-    let scientific = format!("{:e}", value.abs());
-    let Some((mantissa, exponent)) = scientific.split_once('e') else {
-        return value.to_string();
-    };
-    let Ok(exponent) = exponent.parse::<i32>() else {
-        return value.to_string();
-    };
-    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
-    let k = i32::try_from(digits.len()).unwrap_or(i32::MAX);
-    let n = exponent + 1;
-    format!("{sign}{}", js_number_body(&digits, k, n))
-}
-
-fn js_number_body(digits: &str, k: i32, n: i32) -> String {
-    let zeros = |count: i32| "0".repeat(usize::try_from(count).unwrap_or(0));
-    if k <= n && n <= 21 {
-        return format!("{digits}{}", zeros(n - k));
-    }
-    if 0 < n && n <= 21 {
-        let split = usize::try_from(n).unwrap_or(0);
-        if let Some((int, frac)) = digits.split_at_checked(split) {
-            return format!("{int}.{frac}");
-        }
-    }
-    if -6 < n && n <= 0 {
-        return format!("0.{}{digits}", zeros(-n));
-    }
-    let exponent = n - 1;
-    let exponent = if exponent >= 0 {
-        format!("e+{exponent}")
-    } else {
-        format!("e-{}", -exponent)
-    };
-    match digits.split_at_checked(1) {
-        Some((first, rest)) if !rest.is_empty() => format!("{first}.{rest}{exponent}"),
-        _ => format!("{digits}{exponent}"),
-    }
+    ryu_js::Buffer::new().format_finite(value).to_owned()
 }
 
 fn replace_lone_surrogates(text: &str) -> String {
@@ -169,6 +141,18 @@ mod tests {
     }
 
     #[test]
+    fn js_number_rounds_exact_ties_to_even_like_js() {
+        let cases = [
+            ("1780042780656181.25", "1780042780656181.2"),
+            ("1780042780656181.75", "1780042780656181.8"),
+            ("5e-7", "5e-7"),
+        ];
+        for (literal, expected) in cases {
+            assert_eq!(js_number(literal.parse().unwrap()), expected, "{literal}");
+        }
+    }
+
+    #[test]
     fn floats_round_trip_with_their_exact_bits() {
         let text = "[394301.33835633675,0.30000000000000004,5e-324,1.7976931348623157e+308]";
         let value: JsonValue = from_json_str(text).unwrap();
@@ -207,11 +191,15 @@ mod tests {
     }
 
     #[test]
-    fn parsing_stops_at_the_serde_json_recursion_limit() {
-        let ok = format!("{}{}", "[".repeat(100), "]".repeat(100));
-        assert!(serde_json::from_str::<JsonValue>(&ok).is_ok());
-        let deep = format!("{}{}", "[".repeat(200), "]".repeat(200));
-        let error = serde_json::from_str::<JsonValue>(&deep).unwrap_err();
-        assert!(error.to_string().contains("recursion limit exceeded"));
+    fn from_json_str_reads_nesting_deeper_than_the_serde_json_limit() {
+        let deep = format!("{}{}", "[".repeat(1_000), "]".repeat(1_000));
+        assert!(serde_json::from_str::<JsonValue>(&deep).is_err());
+        let value: JsonValue = from_json_str(&deep).unwrap();
+        assert_eq!(to_js_string(&value).unwrap(), deep);
+    }
+
+    #[test]
+    fn from_json_str_rejects_trailing_characters() {
+        assert!(from_json_str::<JsonValue>("[] x").is_err());
     }
 }

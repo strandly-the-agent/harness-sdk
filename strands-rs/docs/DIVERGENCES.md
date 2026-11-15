@@ -6,7 +6,6 @@ Every user-visible behaviour difference from the TypeScript SDK, with the reason
 |---|---|---|---|
 | Message tracking ids | `crypto.randomUUID()` (UUID v4) | UUID v7 | Time-ordered ids from the `uuid` crate; any non-empty string is still accepted |
 | Lone UTF-16 surrogates in saved JSON (`"\ud83d"`) | Kept in the string | The SDK's readers replace each with U+FFFD; `serde_json::from_str` rejects them | Rust strings are UTF-8 and can't hold lone surrogates |
-| JSON nested deeper than 128 levels | Parses | Fails to parse with an error | serde_json's recursion limit guards against stack overflow |
 | `Uint8Array` fields saved as `JSON.stringify` index objects (`{"0":1}`) | Re-encoded as the base64 of `"[object Object]"` | Read as the original bytes, written as base64 | The TS behaviour corrupts the bytes (see the TS bug list) |
 | Serializing a single block struct (`AudioBlock`, `ToolUseBlock`, ...) | `block.toJSON()` returns the wrapped form `{"audio": ..}` | The struct serializes its inner object; `ContentBlock` adds the wrapper | Wire JSON of messages and content blocks is identical; only standalone block serialization differs |
 | Pending interrupt message saved without `trackingId` | Raw data kept as saved | Parsed as a `Message`, so a tracking id is minted and written back | Interrupt state is typed |

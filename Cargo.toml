@@ -25,7 +25,9 @@ tokio-util = { version = "0.7.20", default-features = false }
 
 # Data
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip", "unbounded_depth"] }
+serde_stacker = "0.1.14"
+ryu-js = "1.0.3"
 schemars = { version = "1.2.3", features = ["preserve_order"] }
 jsonschema = { version = "0.61.2", default-features = false }
 http = "1.5"
