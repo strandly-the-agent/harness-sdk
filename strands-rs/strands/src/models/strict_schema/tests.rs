@@ -431,3 +431,15 @@ fn matches_the_strict_json_schemas_conformance_fixture() {
         );
     }
 }
+
+#[test]
+fn visits_array_index_property_keys_first_as_ts_writes_it() {
+    let result = ensure_strict_json_schema(&json!({
+        "type": "object",
+        "properties": { "b": { "$ref": "#/properties/1", "description": "d" }, "1": { "type": "object" } },
+    }));
+    assert_eq!(
+        to_string(&result).unwrap(),
+        r#"{"type":"object","properties":{"1":{"type":"object","additionalProperties":false},"b":{"type":"object","additionalProperties":false,"description":"d"}},"additionalProperties":false}"#
+    );
+}

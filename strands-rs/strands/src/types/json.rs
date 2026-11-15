@@ -11,12 +11,15 @@
 //!
 //! [`to_string`] and [`to_string_pretty`] write the bytes JavaScript `JSON.stringify` writes, so
 //! data TS saved is written back unchanged; plain `serde_json` differs from JavaScript in how it
-//! writes some floats (`1e-6` for `0.000001`, `-0.0`, `1.2345678901234567e+20`).
+//! writes some floats (`1e-6` for `0.000001`, `-0.0`, `1.2345678901234567e+20`) and in object key
+//! order (JavaScript writes array-index keys such as `"1"` first, ascending).
 
 use std::borrow::Cow;
 use std::io;
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Map;
 use serde_json::ser::{CompactFormatter, Formatter, PrettyFormatter};
 
 /// A JSON value (TS `JSONValue`).
@@ -92,12 +95,12 @@ fn escape_unit(bytes: &[u8], at: usize) -> Option<u32> {
     u32::from_str_radix(hex, 16).ok()
 }
 
-/// `keys` in JavaScript `Object.keys` order: array-index keys ascending, then the rest in their
-/// given order.
-pub(crate) fn js_key_order<'a>(keys: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
-    let mut keys: Vec<&str> = keys.into_iter().collect();
-    keys.sort_by_key(|key| array_index(key).map_or((1, 0), |index| (0, index)));
-    keys
+/// The entries of `map` in JavaScript `Object.keys` order: array-index keys ascending, then the
+/// rest in insertion order.
+pub(crate) fn js_ordered_entries(map: &Map<String, JsonValue>) -> Vec<(&String, &JsonValue)> {
+    let mut entries: Vec<_> = map.iter().collect();
+    entries.sort_by_key(|(key, _)| array_index(key).map_or((1, 0), |index| (0, index)));
+    entries
 }
 
 /// The index JavaScript reads from `key` when it is an array index: the canonical decimal form of an
@@ -113,8 +116,10 @@ fn array_index(key: &str) -> Option<u32> {
 /// Serializes `value` to the bytes JavaScript `JSON.stringify(value)` writes for the same JSON.
 ///
 /// `serde_json` already escapes strings as JavaScript does; this also writes non-integer numbers
-/// the JavaScript way (`0.000001`, not `1e-6`; `1e+21`; `-0` as `0`), so data TS wrote is saved back
-/// byte for byte.
+/// the JavaScript way (`0.000001`, not `1e-6`; `1e+21`; `-0` as `0`) and object keys in JavaScript
+/// order (array-index keys ascending, then the rest in insertion order), so data TS wrote is saved
+/// back byte for byte. `value` goes through [`JsonValue`] first, so an `f32` is written as the
+/// `f64` it widens to.
 ///
 /// ```
 /// let value = serde_json::json!({ "small": 0.000001, "big": 1e21, "count": 3 });
@@ -147,9 +152,29 @@ pub fn to_string_pretty<T: ?Sized + Serialize>(value: &T) -> crate::Result<Strin
 }
 
 fn write_js<T: ?Sized + Serialize, F: Formatter>(value: &T, formatter: F) -> crate::Result<String> {
+    let value = serde_json::to_value(value)?;
     let mut out = Vec::new();
-    value.serialize(&mut serde_json::Serializer::with_formatter(&mut out, formatter))?;
+    JsOrdered(&value).serialize(&mut serde_json::Serializer::with_formatter(&mut out, formatter))?;
     String::from_utf8(out).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error).into())
+}
+
+/// Serializes a [`JsonValue`] with every object's keys in JavaScript `Object.keys` order.
+struct JsOrdered<'a>(&'a JsonValue);
+
+impl Serialize for JsOrdered<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            JsonValue::Object(map) => {
+                let mut out = serializer.serialize_map(Some(map.len()))?;
+                for (key, value) in js_ordered_entries(map) {
+                    out.serialize_entry(key, &JsOrdered(value))?;
+                }
+                out.end()
+            }
+            JsonValue::Array(items) => serializer.collect_seq(items.iter().map(JsOrdered)),
+            other => other.serialize(serializer),
+        }
+    }
 }
 
 /// Wraps a `serde_json` formatter and writes floats as JavaScript `Number.prototype.toString` does.
@@ -256,6 +281,43 @@ mod tests {
     use super::*;
     use crate::types::messages::{ContentBlock, Message};
 
+    // Expected bytes from `JSON.stringify` in node 22.
+    #[test]
+    fn writes_array_index_keys_first_ascending_like_json_stringify() {
+        let mut map = Map::new();
+        for key in ["b", "2", "1"] {
+            map.insert(key.to_owned(), json!(key));
+        }
+        assert_eq!(to_string(&map).unwrap(), r#"{"1":"1","2":"2","b":"b"}"#);
+        assert_eq!(
+            to_string_pretty(&json!({ "outer": [map] })).unwrap(),
+            "{\n  \"outer\": [\n    {\n      \"1\": \"1\",\n      \"2\": \"2\",\n      \"b\": \"b\"\n    }\n  ]\n}"
+        );
+    }
+
+    #[test]
+    fn treats_only_canonical_integers_up_to_4294967294_as_array_index_keys() {
+        let mut map = Map::new();
+        for key in [
+            "x",
+            "4294967295",
+            "01",
+            "4294967294",
+            "-1",
+            "10",
+            "0",
+            "1.5",
+            " 1",
+            "",
+        ] {
+            map.insert(key.to_owned(), json!(1));
+        }
+        assert_eq!(
+            to_string(&map).unwrap(),
+            r#"{"0":1,"10":1,"4294967294":1,"x":1,"4294967295":1,"01":1,"-1":1,"1.5":1," 1":1,"":1}"#
+        );
+    }
+
     #[test]
     fn lone_surrogates_fail_to_parse_without_the_rewrite() {
         let text = r#"{"text":"a\ud83db"}"#;
@@ -311,7 +373,10 @@ mod tests {
             to_string(&[-0.0_f64, 1e-6, 2.5e25]).unwrap(),
             "[0,0.000001,2.5e+25]"
         );
-        assert_eq!(to_string(&[0.1_f32, 1e-6_f32]).unwrap(), "[0.1,0.000001]");
+        assert_eq!(
+            to_string(&[0.1_f32, 1e-6_f32]).unwrap(),
+            "[0.10000000149011612,9.999999974752427e-7]"
+        );
         assert_eq!(to_string(&f64::NAN).unwrap(), "null");
     }
 

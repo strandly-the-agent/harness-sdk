@@ -111,5 +111,34 @@
       },
       "additionalProperties": false
     }
+  },
+  "arrayIndexPropertyFirst": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "1": {
+          "type": "object"
+        },
+        "b": {
+          "$ref": "#/properties/1",
+          "description": "d"
+        }
+      }
+    },
+    "strict": {
+      "type": "object",
+      "properties": {
+        "1": {
+          "type": "object",
+          "additionalProperties": false
+        },
+        "b": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "d"
+        }
+      },
+      "additionalProperties": false
+    }
   }
 }

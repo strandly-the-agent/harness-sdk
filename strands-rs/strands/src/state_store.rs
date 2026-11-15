@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Map;
 
 use crate::error::{Error, JsonValidationError, Result};
-use crate::types::json::JsonValue;
+use crate::types::json::{JsonValue, js_ordered_entries};
 
 /// Key-value storage for application or model state, kept outside the conversation (TS
 /// `StateStore`, called `AppState` in prose where TS does).
@@ -80,16 +80,23 @@ impl StateStore {
         self.write().clear();
     }
 
-    /// A copy of the whole state.
+    /// A copy of the whole state, its keys in [`StateStore::keys`] order.
     #[must_use]
     pub fn get_all(&self) -> Map<String, JsonValue> {
-        self.read().clone()
+        js_ordered_entries(&self.read())
+            .into_iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
     }
 
-    /// The keys in insertion order.
+    /// The keys in JavaScript `Object.keys` order, as TS returns them: keys that are array indexes
+    /// (`"0"`, `"1"`, up to `"4294967294"`) ascending, then the rest in insertion order.
     #[must_use]
     pub fn keys(&self) -> Vec<String> {
-        self.read().keys().cloned().collect()
+        js_ordered_entries(&self.read())
+            .into_iter()
+            .map(|(key, _)| key.clone())
+            .collect()
     }
 
     /// A new, independent store holding a copy of this one's state.

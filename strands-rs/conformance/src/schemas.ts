@@ -112,6 +112,10 @@ const strictInputs: Record<string, object> = {
     properties: { root: { $ref: '#/$defs/Node', description: 'r' } },
     $defs: { Node: { type: 'object', properties: { child: { $ref: '#/$defs/Node', description: 'c' } } } },
   },
+  arrayIndexPropertyFirst: {
+    type: 'object',
+    properties: { b: { $ref: '#/properties/1', description: 'd' }, '1': { type: 'object' } },
+  },
 }
 pretty(
   'schemas/strict_json_schemas.json',
@@ -120,6 +124,6 @@ pretty(
   ),
   {
     api: '`ensureStrictJsonSchema` (`models/strict-schema.ts`)',
-    note: 'Strict schemas whose `$ref` inlining depends on the keyword visit order and on resolving against the rewritten copy',
+    note: 'Strict schemas whose `$ref` inlining depends on the visit order (keywords, array-index keys first) and on resolving against the rewritten copy',
   }
 )

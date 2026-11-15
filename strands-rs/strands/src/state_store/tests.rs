@@ -303,3 +303,31 @@ fn snapshot_is_independent_of_the_original() {
     assert_eq!(state.get_value("key"), Some(json!("value")));
     assert_eq!(snapshot.keys(), ["key"]);
 }
+
+// Expected orders from TS `StateStore.keys()` and `JSON.stringify(state.getAll())` in node 22.
+#[test]
+fn lists_array_index_keys_first_ascending_as_ts_does() {
+    let state = StateStore::new();
+    for key in ["b", "2", "1"] {
+        state.set(key, key).unwrap();
+    }
+    assert_eq!(state.keys(), ["1", "2", "b"]);
+    assert_eq!(
+        crate::types::json::to_string(&state.get_all()).unwrap(),
+        r#"{"1":"1","2":"2","b":"b"}"#
+    );
+}
+
+#[test]
+fn keeps_keys_that_are_not_array_indexes_in_insertion_order() {
+    let state = StateStore::new();
+    for key in ["b", "2", "1", "01", "-1", "4294967295", "4294967294"] {
+        state.set(key, key).unwrap();
+    }
+    assert_eq!(
+        state.keys(),
+        ["1", "2", "4294967294", "b", "01", "-1", "4294967295"]
+    );
+    let all: Vec<String> = state.get_all().keys().cloned().collect();
+    assert_eq!(all, state.keys());
+}

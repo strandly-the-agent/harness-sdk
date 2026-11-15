@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use serde_json::Map;
 
 use crate::logging::warn_once;
-use crate::types::json::{JsonValue, js_key_order};
+use crate::types::json::{JsonValue, js_ordered_entries};
 
 const SCHEMA_MAP_KEYWORDS: [&str; 3] = ["$defs", "definitions", "properties"];
 const SCHEMA_LIST_KEYWORDS: [&str; 3] = ["anyOf", "allOf", "oneOf"];
@@ -57,12 +57,11 @@ fn child_steps(schema: &Map<String, JsonValue>) -> Vec<Vec<Step>> {
     let mut steps = Vec::new();
     for keyword in SCHEMA_MAP_KEYWORDS {
         if let Some(JsonValue::Object(map)) = schema.get(keyword) {
-            let children = js_key_order(map.keys().map(String::as_str));
             steps.extend(
-                children
+                js_ordered_entries(map)
                     .into_iter()
-                    .filter(|child| map.get(*child).is_some_and(JsonValue::is_object))
-                    .map(|child| vec![key(keyword), key(child)]),
+                    .filter(|(_, child)| child.is_object())
+                    .map(|(child, _)| vec![key(keyword), key(child)]),
             );
         }
     }
