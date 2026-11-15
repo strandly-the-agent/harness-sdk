@@ -52,10 +52,13 @@ mod open_enum;
 pub mod agent;
 pub mod cancel;
 pub mod error;
+pub mod hooks;
 pub mod interrupt;
+mod logging;
 mod mime;
 pub mod models;
 pub mod state_store;
+pub mod testing;
 pub mod types;
 
 #[cfg(test)]

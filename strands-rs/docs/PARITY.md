@@ -69,7 +69,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/interventions/__tests__/handler.test.ts` | | 0/2 | |
 | `strands-ts/src/interventions/__tests__/registry.test.ts` | | 0/44 | |
 | `strands-ts/src/logging/__tests__/logger.test.ts` | | 0/6 | |
-| `strands-ts/src/logging/__tests__/warn-once.test.ts` | | 0/3 | |
+| `strands-ts/src/logging/__tests__/warn-once.test.ts` | `strands::logging::warn_once::tests` | 3/3 | |
 | `strands-ts/src/mcp/__tests__/client-annotations.test.ts` | | 0/4 | |
 | `strands-ts/src/mcp/__tests__/client-progress.test.ts` | | 0/2 | |
 | `strands-ts/src/mcp/__tests__/client.test.ts` | | 0/126 | |
@@ -86,17 +86,17 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/middleware/__tests__/registry.test.ts` | | 0/24 | |
 | `strands-ts/src/models/__tests__/anthropic.test.ts` | | 0/186 | |
 | `strands-ts/src/models/__tests__/bedrock.test.ts` | | 0/274 | |
-| `strands-ts/src/models/__tests__/cache-portability.test.ts` | | 0/1 | |
-| `strands-ts/src/models/__tests__/defaults.test.ts` | | 0/7 | |
-| `strands-ts/src/models/__tests__/model-info-lookup.test.ts` | | 0/9 | |
-| `strands-ts/src/models/__tests__/model-info.test.node.ts` | | 0/1 | |
-| `strands-ts/src/models/__tests__/model-info.test.ts` | | 0/5 | |
+| `strands-ts/src/models/__tests__/cache-portability.test.ts` | | 0/1 | every case builds Bedrock and Anthropic requests; ported with the providers in Phase 5 |
+| `strands-ts/src/models/__tests__/defaults.test.ts` | `strands::models::defaults::tests` | 7/7 | |
+| `strands-ts/src/models/__tests__/model-info-lookup.test.ts` | `strands::models::model_info::tests` | 9/9 | |
+| `strands-ts/src/models/__tests__/model-info.test.node.ts` | `strands::models::model_info::tests` | 1/1 | |
+| `strands-ts/src/models/__tests__/model-info.test.ts` | `strands::models::model_info::tests` | 4/5 | `returns a frozen record` (1) is a TS-only mechanism (`Object.freeze`); Rust returns an owned value |
 | `strands-ts/src/models/__tests__/model-proxy.test.ts` | | 0/19 | |
-| `strands-ts/src/models/__tests__/model.test.ts` | | 0/70 | |
-| `strands-ts/src/models/__tests__/native-output.test.ts` | | 0/15 | |
-| `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | | 0/2 | |
+| `strands-ts/src/models/__tests__/model.test.ts` | `strands::models::model::tests`, `strands::models::summarize::tests` | 70/70 | |
+| `strands-ts/src/models/__tests__/native-output.test.ts` | `strands::models::native_output::tests` | 15/15 | |
+| `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | `strands::models::model::tests::info` | 1/2 | the provider cases (1) need Bedrock, OpenAI, Google and Vercel providers (Phase 5); the ported case covers the model half, its `Offload` half lands in Phase 6 |
 | `strands-ts/src/models/__tests__/streaming.test.ts` | `strands::models::streaming::tests` | 14/14 | |
-| `strands-ts/src/models/__tests__/strict-schema.test.ts` | | 0/24 | |
+| `strands-ts/src/models/__tests__/strict-schema.test.ts` | `strands::models::strict_schema::tests` | 24/24 | |
 | `strands-ts/src/models/openai/__tests__/chat.test.ts` | | 0/96 | |
 | `strands-ts/src/models/openai/__tests__/errors.test.ts` | | 0/7 | |
 | `strands-ts/src/models/openai/__tests__/mantle.test.ts` | | 0/30 | |

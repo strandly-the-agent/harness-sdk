@@ -16,7 +16,6 @@ pub type JsonValue = serde_json::Value;
 pub type JsonObject = serde_json::Map<String, JsonValue>;
 
 /// Serializes `value` exactly as `JSON.stringify` would: compact, with JS number formatting.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by storage and session writers"))]
 pub(crate) fn to_js_string<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<String> {
     let mut buffer = Vec::new();
     let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, JsFormatter);
@@ -28,7 +27,6 @@ pub(crate) fn to_js_string<T: Serialize + ?Sized>(value: &T) -> serde_json::Resu
 ///
 /// `JSON.stringify` writes lone surrogates as escapes, which Rust strings can't hold. Nesting
 /// depth is unlimited, as with `JSON.parse`.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by storage and session readers"))]
 pub(crate) fn from_json_str<T: DeserializeOwned>(text: &str) -> serde_json::Result<T> {
     match parse_unbounded(text) {
         Ok(value) => Ok(value),
