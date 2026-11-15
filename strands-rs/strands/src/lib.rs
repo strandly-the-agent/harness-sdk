@@ -63,6 +63,31 @@ pub mod testing;
 pub mod tools;
 pub mod types;
 
+#[doc(hidden)]
+pub mod __private {
+    //! Re-exports for macro-generated code; not a public API.
+    pub use async_trait;
+    pub use jsonschema;
+    pub use schemars;
+    pub use serde;
+    pub use serde_json;
+
+    pub use crate::tools::function_tool::InputValidator;
+
+    /// The normalized input schema for `T`, as typed tools use it.
+    pub fn input_schema_for<T: schemars::JsonSchema>() -> crate::JsonValue {
+        crate::tools::schema::input_schema_for::<T>()
+    }
+
+    /// A handler value as a tool result (the `FunctionTool` wrapping rules).
+    pub fn wrap_in_tool_result(
+        value: crate::JsonValue,
+        tool_use_id: &str,
+    ) -> crate::types::messages::ToolResultBlock {
+        crate::tools::function_tool::wrap_in_tool_result(value, tool_use_id)
+    }
+}
+
 #[cfg(test)]
 mod conformance_tests;
 #[cfg(test)]
@@ -72,7 +97,7 @@ pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
 pub use state_store::StateStore;
-pub use tools::{Tool, ToolContext, ToolOutcome};
+pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};
 pub use types::agent::{AgentResult, InvocationState, InvokeArgs};
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};

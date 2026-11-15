@@ -107,7 +107,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/models/routing/__tests__/router.test.ts` | | 0/22 | |
 | `strands-ts/src/plugins/__tests__/plugin.test.ts` | | 0/7 | |
 | `strands-ts/src/plugins/__tests__/registry.test.ts` | | 0/10 | |
-| `strands-ts/src/registry/__tests__/tool-registry.test.ts` | | 0/33 | |
+| `strands-ts/src/registry/__tests__/tool-registry.test.ts` | `strands::tools::registry::tests` | 31/33 | `throws ToolValidationError for a non-string tool name`, `allows a tool with a null or undefined description` (2): `Tool::name`/`description` return `&str` |
 | `strands-ts/src/retry/__tests__/backoff-strategy.test.ts` | `strands::retry::backoff_strategy::tests` | 15/19 | the attempt checks (`rejects attempts below 1` x3, `rejects non-integer attempts`) are ruled out by `BackoffContext::attempt: NonZeroU32` |
 | `strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts` | `strands::retry::default_model_retry_strategy::tests` | 13/15 | `registers an AfterModelCallEvent hook` (1) needs the Phase 3 hook registry; `rejects maxAttempts below 1` (1) is ruled out by `max_attempts: NonZeroU32` |
 | `strands-ts/src/sandbox/__tests__/default.test.node.ts` | | 0/4 | |
@@ -131,8 +131,8 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/telemetry/__tests__/tracer.test.node.ts` | | 0/100 | |
 | `strands-ts/src/tools/__tests__/structured-output-tool.test.ts` | | 0/12 | |
 | `strands-ts/src/tools/__tests__/tool-factory.test.ts` | | 0/8 | |
-| `strands-ts/src/tools/__tests__/tool.test.ts` | | 0/46 | |
-| `strands-ts/src/tools/__tests__/zod-tool.test.ts` | | 0/32 | |
+| `strands-ts/src/tools/__tests__/tool.test.ts` | `strands::tools::tool::tests`, `strands::tools::function_tool::tests` | 22/46 | async generator callbacks (TS-only mechanism; streaming tools implement `Tool`), deep-copy and circular-reference cases (owned acyclic values), non-`Error` throws and stack traces, `instanceof` and interface-shape cases (no Rust form); remaining `isValidToolName` table rows are covered by one table test |
+| `strands-ts/src/tools/__tests__/zod-tool.test.ts` | `strands::tools::function_tool::tests::typed`, `strands::tools::schema::tests` | 7/32 | mapped to `FunctionTool::typed`; the `#[tool]` macro cases land with `strands-macros`; Zod-specific parse cases (Zod error text, `z.void`) have no Rust form |
 | `strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts` | | 0/3 | |
 | `strands-ts/src/types/__tests__/agent.test.ts` | | 0/30 | 26 `AgentResult` cases land in Phase 3; the 4 `checkpoint` cases are out of scope (checkpointing is out of v0.1) |
 | `strands-ts/src/types/__tests__/citations.test.ts` | `strands::types::citations::tests` | 6/6 | |

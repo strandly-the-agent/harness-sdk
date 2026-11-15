@@ -14,11 +14,12 @@ use futures::stream::BoxStream;
 use serde::Serialize;
 
 use crate::cancel::CancelSignal;
+use crate::error::BoxError;
 use crate::interrupt::{Interrupt, InterruptParams, InterruptSource};
 use crate::types::agent::{InvocationState, ToolAgent};
 use crate::types::json::JsonValue;
-use crate::types::messages::ToolResultBlock;
-use crate::types::tools::{ToolSpec, ToolUse};
+use crate::types::messages::{ToolResultBlock, ToolResultContent};
+use crate::types::tools::{ToolResultStatus, ToolSpec, ToolUse};
 
 /// A tool the model can call (TS `Tool`).
 ///
@@ -220,6 +221,115 @@ impl ToolContext {
             .interrupt_state()
             .interrupt(id, params, InterruptSource::Tool)
     }
+}
+
+/// Why a tool failed, or the interrupt it raised (anyhow-like).
+///
+/// Any `std::error::Error` converts with `?`, and so does the [`Interrupt`] that
+/// [`ToolContext::interrupt`] returns, so a tool can't swallow an interrupt by accident. A failure
+/// becomes an error result (`Error: <message>`); an interrupt becomes [`ToolOutcome::Interrupt`].
+///
+/// ```
+/// use strands::ToolError;
+///
+/// fn parse(input: &str) -> Result<u32, ToolError> {
+///     if input.is_empty() {
+///         return Err(ToolError::msg("empty input"));
+///     }
+///     Ok(input.parse::<u32>()?)
+/// }
+/// assert_eq!(parse("").unwrap_err().to_string(), "empty input");
+/// assert!(parse("x").is_err());
+/// ```
+pub struct ToolError {
+    kind: ToolErrorKind,
+}
+
+enum ToolErrorKind {
+    Failed(BoxError),
+    Interrupt(Box<Interrupt>),
+}
+
+#[derive(Debug)]
+struct MessageError(String);
+
+impl fmt::Display for MessageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for MessageError {}
+
+impl ToolError {
+    /// A failure with `message`.
+    pub fn msg(message: impl fmt::Display) -> Self {
+        Self {
+            kind: ToolErrorKind::Failed(Box::new(MessageError(message.to_string()))),
+        }
+    }
+
+    /// The raised interrupt, when this is one.
+    pub fn interrupt(&self) -> Option<&Interrupt> {
+        match &self.kind {
+            ToolErrorKind::Interrupt(interrupt) => Some(interrupt),
+            ToolErrorKind::Failed(_) => None,
+        }
+    }
+
+    /// The outcome a tool run ends with: an error result, or the interrupt (TS
+    /// `createErrorResult`).
+    pub fn into_outcome(self, tool_use_id: &str) -> ToolOutcome {
+        match self.kind {
+            ToolErrorKind::Interrupt(interrupt) => ToolOutcome::Interrupt(*interrupt),
+            ToolErrorKind::Failed(error) => ToolOutcome::Result(error_result(tool_use_id, error)),
+        }
+    }
+}
+
+impl<E: std::error::Error + Send + Sync + 'static> From<E> for ToolError {
+    fn from(error: E) -> Self {
+        Self {
+            kind: ToolErrorKind::Failed(Box::new(error)),
+        }
+    }
+}
+
+impl From<Interrupt> for ToolError {
+    fn from(interrupt: Interrupt) -> Self {
+        Self {
+            kind: ToolErrorKind::Interrupt(Box::new(interrupt)),
+        }
+    }
+}
+
+impl fmt::Display for ToolError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            ToolErrorKind::Failed(error) => fmt::Display::fmt(error, f),
+            ToolErrorKind::Interrupt(interrupt) => write!(f, "interrupt {}", interrupt.name()),
+        }
+    }
+}
+
+impl fmt::Debug for ToolError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            ToolErrorKind::Failed(error) => f.debug_tuple("ToolError").field(error).finish(),
+            ToolErrorKind::Interrupt(interrupt) => f.debug_tuple("ToolError").field(interrupt).finish(),
+        }
+    }
+}
+
+/// An error-status result with the content `Error: <message>` (TS `createErrorResult`).
+pub(crate) fn error_result(tool_use_id: &str, error: impl Into<BoxError>) -> ToolResultBlock {
+    let error = error.into();
+    ToolResultBlock::new(
+        tool_use_id,
+        ToolResultStatus::Error,
+        vec![ToolResultContent::from(format!("Error: {error}"))],
+    )
+    .with_error(error)
 }
 
 /// Whether `name` is a valid tool name: 1 to 64 characters of `[a-zA-Z0-9_-]` (TS

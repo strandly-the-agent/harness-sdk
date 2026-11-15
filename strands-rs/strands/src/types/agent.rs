@@ -16,6 +16,7 @@ use crate::interrupt::{
 };
 use crate::models::model::Model;
 use crate::state_store::StateStore;
+use crate::tools::ToolRegistry;
 use crate::types::json::JsonValue;
 use crate::types::messages::{ContentBlock, Message, StopReason, SystemPrompt};
 
@@ -172,6 +173,7 @@ pub struct LocalAgent {
     aux_model: Option<Arc<dyn Model>>,
     app_state: StateStore,
     model_state: StateStore,
+    tool_registry: ToolRegistry,
     hooks: HookRegistry,
     cancel: InvocationCancel,
     interrupt_state: InterruptState,
@@ -194,6 +196,7 @@ impl LocalAgent {
             aux_model: None,
             app_state: StateStore::new(),
             model_state: StateStore::new(),
+            tool_registry: ToolRegistry::new(),
             hooks: HookRegistry::new(),
             cancel: InvocationCancel::default(),
             interrupt_state: InterruptState::default(),
@@ -280,6 +283,16 @@ impl LocalAgent {
         &self.model_state
     }
 
+    /// The agent's tools (TS `toolRegistry`).
+    pub fn tool_registry(&self) -> &ToolRegistry {
+        &self.tool_registry
+    }
+
+    /// The agent's tools, mutably.
+    pub fn tool_registry_mut(&mut self) -> &mut ToolRegistry {
+        &mut self.tool_registry
+    }
+
     /// The agent's hook registry (TS `addHook` goes through it).
     ///
     /// ```
@@ -326,6 +339,7 @@ impl LocalAgent {
                 aux_model: Arc::clone(self.aux_model()),
                 app_state: self.app_state.clone(),
                 model_state: self.model_state.clone(),
+                tool_registry: self.tool_registry.clone(),
                 cancel_signal: self.cancel.signal.clone(),
                 interrupt_state: self.interrupt_state.clone(),
             }),
@@ -363,6 +377,7 @@ struct ToolAgentInner {
     aux_model: Arc<dyn Model>,
     app_state: StateStore,
     model_state: StateStore,
+    tool_registry: ToolRegistry,
     cancel_signal: CancelSignal,
     interrupt_state: InterruptState,
 }
@@ -406,6 +421,11 @@ impl ToolAgent {
     /// The model state.
     pub fn model_state(&self) -> &StateStore {
         &self.inner.model_state
+    }
+
+    /// The agent's tools as they were when the tool batch started (read-only).
+    pub fn tool_registry(&self) -> &ToolRegistry {
+        &self.inner.tool_registry
     }
 
     /// The cancellation signal of the running invocation.
