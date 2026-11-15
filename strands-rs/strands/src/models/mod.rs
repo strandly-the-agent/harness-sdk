@@ -1,5 +1,7 @@
 //! Model abstraction (TS `src/models/`).
 
+#[cfg(feature = "bedrock")]
+pub mod bedrock;
 pub(crate) mod defaults;
 pub mod model;
 pub mod model_info;

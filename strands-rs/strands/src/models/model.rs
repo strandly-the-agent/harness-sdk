@@ -793,7 +793,7 @@ fn estimate_system_prompt_tokens(system_prompt: &SystemPrompt) -> u64 {
     }
 }
 
-fn estimate_tokens_heuristic(messages: &[Message], options: &CountTokensOptions) -> u64 {
+pub(crate) fn estimate_tokens_heuristic(messages: &[Message], options: &CountTokensOptions) -> u64 {
     let latest_user = latest_user_index(messages);
     let message_tokens = messages
         .iter()
