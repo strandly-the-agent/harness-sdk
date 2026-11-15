@@ -67,8 +67,12 @@ jobs:
               - '.github/workflows/ci.yml'
             strands-rs:
               - 'strands-rs/**/!(*.md)'
-              # The conformance job regenerates its fixtures from the strands-ts wire format.
+              - 'strands-rs/conformance/fixtures/**'
+              # The conformance job regenerates its fixtures from the strands-ts wire format
+              # and the resolved npm dependencies (for example zod's JSON Schema output).
               - 'strands-ts/src/**'
+              - 'strands-ts/package.json'
+              - 'package-lock.json'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'deny.toml'

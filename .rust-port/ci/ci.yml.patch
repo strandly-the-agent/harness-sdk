@@ -1,8 +1,6 @@
-diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 18f6f2027..5ece1fd06 100644
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -24,6 +24,8 @@ jobs:
+@@ -24,6 +24,8 @@
        mcp: ${{ steps.filter.outputs.mcp }}
        harness-py: ${{ steps.filter.outputs.harness-py }}
        harness-ts: ${{ steps.filter.outputs.harness-ts }}
@@ -11,14 +9,18 @@ index 18f6f2027..5ece1fd06 100644
        strands-py-src: ${{ steps.filter.outputs.strands-py-src }}
        strands-ts-src: ${{ steps.filter.outputs.strands-ts-src }}
        strands-cli: ${{ steps.filter.outputs.strands-cli }}
-@@ -63,6 +65,29 @@ jobs:
+@@ -63,6 +65,33 @@
                - 'harness-ts/**/!(*.md)'
                - '.github/workflows/harness-ts-*'
                - '.github/workflows/ci.yml'
 +            strands-rs:
 +              - 'strands-rs/**/!(*.md)'
-+              # The conformance job regenerates its fixtures from the strands-ts wire format.
++              - 'strands-rs/conformance/fixtures/**'
++              # The conformance job regenerates its fixtures from the strands-ts wire format
++              # and the resolved npm dependencies (for example zod's JSON Schema output).
 +              - 'strands-ts/src/**'
++              - 'strands-ts/package.json'
++              - 'package-lock.json'
 +              - 'Cargo.toml'
 +              - 'Cargo.lock'
 +              - 'deny.toml'
@@ -41,7 +43,7 @@ index 18f6f2027..5ece1fd06 100644
              # SDK runtime sources: changes here also run the harness suites against the local SDK.
              strands-py-src:
                - 'strands-py/src/**/!(*.md)'
-@@ -90,7 +115,7 @@ jobs:
+@@ -90,7 +119,7 @@
    dependency-review:
      name: Dependency Review
      # Repo-level security gate covering every ecosystem in the monorepo
@@ -50,7 +52,7 @@ index 18f6f2027..5ece1fd06 100644
      # base and fails only on vulnerabilities the PR introduces (adds or bumps
      # to a vulnerable version); pre-existing advisories do not block.
      # PR-only: it needs a base ref to diff, so it is skipped on dispatch.
-@@ -164,6 +189,22 @@ jobs:
+@@ -164,6 +193,22 @@
        ref: ${{ github.event.pull_request.head.sha || github.sha }}
        local-strands-ts: ${{ needs.detect-changes.outputs.strands-ts-src == 'true' }}
  
@@ -73,7 +75,7 @@ index 18f6f2027..5ece1fd06 100644
    cli:
      name: Strands CLI
      needs: detect-changes
-@@ -248,6 +289,8 @@ jobs:
+@@ -248,6 +293,8 @@
          mcp,
          harness-python,
          harness-typescript,
@@ -82,7 +84,7 @@ index 18f6f2027..5ece1fd06 100644
          cli,
          cli-tui-integration,
          cli-package,
-@@ -259,5 +302,5 @@ jobs:
+@@ -259,5 +306,5 @@
      steps:
        - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # release/v1
          with:

@@ -90,7 +90,7 @@ Don't add features TypeScript lacks. Small idiomatic accessors (like `text_delta
 
 ### Panic-free library code
 
-Library code has no `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `unreachable!` or `unsafe`; the workspace lints enforce this. Tests may use `unwrap` and `expect`. Return a `strands::Error` instead. Never set `panic = "abort"` in a profile: a panicking tool is turned into an error result, which needs unwinding.
+Library code has no `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `unreachable!` or `unsafe`; the workspace lints enforce this. `#[test]` functions and `#[cfg(test)]` modules may use `unwrap` and `expect`; helper functions in integration-test crates under `tests/` need a crate-level `#![expect(clippy::unwrap_used, clippy::expect_used, reason = "test code")]`. Return a `strands::Error` instead. Never set `panic = "abort"` in a profile: a panicking tool is turned into an error result, which needs unwinding.
 
 ### Public API shape
 
@@ -130,7 +130,7 @@ The lint set lives in `[workspace.lints]` in the root `Cargo.toml` and applies t
 | `unsafe_code = "forbid"` | The SDK needs no `unsafe`. This also rules out `std::env::set_var` in tests. |
 | `missing_docs`, `unreachable_pub`, `rust_2018_idioms` | Every public item is documented, and `pub` means part of the public API. |
 | clippy `all` | The default clippy set. |
-| `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable` (deny) | Library code returns errors instead of panicking. `clippy.toml` allows `unwrap`, `expect` and `panic` in tests. |
+| `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable` (deny) | Library code returns errors instead of panicking. `clippy.toml` allows `unwrap`, `expect`, `panic`, printing and `dbg!` in `#[test]` functions and `#[cfg(test)]` modules (not in plain helpers under `tests/`). |
 | `dbg_macro`, `print_stdout`, `print_stderr` (deny) | Output goes through `tracing`. `clippy.toml` allows printing and `dbg!` in tests (`allow-print-in-tests`, `allow-dbg-in-tests`). The stdout printer and examples opt out with a narrow `#[expect(..., reason = "...")]`. |
 | `allow_attributes_without_reason` (deny) | Every lint exception says why; prefer `#[expect]` so a stale exception fails the build. |
 | `await_holding_lock`, `await_holding_refcell_ref`, `await_holding_invalid_type` (deny) | Backs the no-lock-across-await rule. |

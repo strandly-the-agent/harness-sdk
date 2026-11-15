@@ -53,7 +53,7 @@ npx tsx strands-rs/conformance/generate.ts
 - Never call `std::env::set_current_dir`; it is process-global and races parallel tests. Code that resolves relative paths takes a crate-internal base-directory seam.
 - Check `Send`, and `Sync` where shared, at compile time with `fn assert_send<T: Send>(_: &T)` and `fn assert_sync<T: Sync>(_: &T)` helpers: `Agent`, `AgentResult`, `ToolAgent`, `ToolContext`, `Error`, every event type and `AgentStream<'_>` are `Send` (and `Sync` where shared), and the futures from `agent.invoke(..)` and `create_harness(..)` are `Send`.
 - Canonicalize paths before comparing them (macOS `/var` versus `/private/var`).
-- Test code may use `unwrap` and `expect`. Tests carry no issue references.
+- `#[test]` functions and `#[cfg(test)]` modules may use `unwrap` and `expect`; integration-test crates under `tests/` with helper functions add a crate-level `#![expect(clippy::unwrap_used, clippy::expect_used, reason = "test code")]`. Tests carry no issue references.
 
 ## Running
 
