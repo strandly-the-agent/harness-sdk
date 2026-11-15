@@ -84,6 +84,8 @@ pub struct Agent {
     pub(crate) deferred_continuations: Vec<ContinuationInput>,
     /// The background tasks plugin, when the config enables it.
     pub(crate) background_tasks: Option<BackgroundTaskScheduler>,
+    #[cfg(feature = "mcp")]
+    mcp_clients: Vec<crate::mcp::McpClient>,
 }
 
 impl Agent {
@@ -117,6 +119,10 @@ impl Agent {
         local.set_system_prompt(config.system_prompt);
         local.set_app_state(StateStore::from_map(config.app_state));
         local.set_model_state(StateStore::from_map(config.model_state));
+        #[cfg(feature = "mcp")]
+        {
+            agent.mcp_clients = config.tools.iter().flat_map(ToolSource::mcp_clients).collect();
+        }
         let tools = config.tools.into_iter().flat_map(ToolSource::into_tools);
         local.tool_registry_mut().add_all(tools)?;
         agent.tool_executor = config.tool_executor.unwrap_or_default();
@@ -155,6 +161,8 @@ impl Agent {
             abandoned: None,
             deferred_continuations: Vec::new(),
             background_tasks: None,
+            #[cfg(feature = "mcp")]
+            mcp_clients: Vec::new(),
         }
     }
 
@@ -173,6 +181,11 @@ impl Agent {
         }
         // TS lists MCP tools and registers sandbox tools before the plugins, and runs
         // intervention observers after them; those steps join here with their subsystems.
+        #[cfg(feature = "mcp")]
+        {
+            let hooks = self.local.hooks().clone();
+            crate::mcp::agent_tools::initialize(&self.mcp_clients, &mut self.local, &hooks).await?;
+        }
         let plugins = self.registration_order();
         self.plugin_registry.initialize(plugins, &mut self.local).await?;
         let hooks = self.local.hooks().clone();

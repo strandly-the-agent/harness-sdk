@@ -64,6 +64,9 @@ opentelemetry-otlp = { workspace = true, optional = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile.workspace = true
+rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
+hyper.workspace = true
+hyper-util.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

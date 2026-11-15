@@ -372,6 +372,10 @@ pub enum Error {
     /// [`SandboxPermissionError`]
     #[error(transparent)]
     SandboxPermission(#[from] SandboxPermissionError),
+    /// An MCP request failed (TS `ProtocolError` or `SdkError`).
+    #[cfg(feature = "mcp")]
+    #[error(transparent)]
+    Mcp(#[from] crate::mcp::McpError),
     /// Plumbing failures (I/O, JSON) and the plain `Error` TS throws for malformed data.
     #[error(transparent)]
     Other(BoxError),
@@ -402,6 +406,8 @@ impl Error {
             Self::SandboxPathNotFound(_) => SandboxPathNotFoundError::NAME,
             Self::SandboxIsADirectory(_) => SandboxIsADirectoryError::NAME,
             Self::SandboxPermission(_) => SandboxPermissionError::NAME,
+            #[cfg(feature = "mcp")]
+            Self::Mcp(error) => error.name(),
             Self::Other(_) => "Error",
         }
     }

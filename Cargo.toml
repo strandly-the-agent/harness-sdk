@@ -78,6 +78,8 @@ darling = "0.24"
 # Dev
 trybuild = "1.0.123"
 tempfile = "3.27"
+hyper = { version = "1.12", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", default-features = false, features = ["tokio", "service"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

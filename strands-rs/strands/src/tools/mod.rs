@@ -18,7 +18,8 @@ pub use registry::ToolRegistry;
 pub use structured_output::{STRUCTURED_OUTPUT_TOOL_NAME, StructuredOutputSchema};
 pub use tool::{Tool, ToolContext, ToolError, ToolOutcome, ToolStream, ToolStreamEvent, ToolStreamItem};
 
-/// Something `.tools(..)` accepts: a tool, an agent (as a tool) or a list of sources.
+/// Something `.tools(..)` accepts: a tool, an agent (as a tool), an MCP client or a list of
+/// sources.
 ///
 /// Mixed lists need [`ToolSource::from`] or [`tool_list!`](crate::tool_list), because `.into()`
 /// has no single target there.
@@ -31,6 +32,9 @@ pub enum ToolSource {
     List(Vec<ToolSource>),
     /// An agent, as a tool (TS `AgentAsTool`).
     Agent(Arc<AgentAsTool>),
+    /// An MCP client; the agent lists its tools in `Agent::initialize`.
+    #[cfg(feature = "mcp")]
+    McpClient(crate::mcp::McpClient),
 }
 
 impl ToolSource {
@@ -40,7 +44,26 @@ impl ToolSource {
             Self::Tool(tool) => vec![tool],
             Self::List(sources) => sources.into_iter().flat_map(Self::into_tools).collect(),
             Self::Agent(tool) => vec![tool],
+            #[cfg(feature = "mcp")]
+            Self::McpClient(_) => Vec::new(),
         }
+    }
+
+    /// The MCP clients in order, with lists flattened (TS `flattenTools`).
+    #[cfg(feature = "mcp")]
+    pub(crate) fn mcp_clients(&self) -> Vec<crate::mcp::McpClient> {
+        match self {
+            Self::McpClient(client) => vec![client.clone()],
+            Self::List(sources) => sources.iter().flat_map(Self::mcp_clients).collect(),
+            Self::Tool(_) | Self::Agent(_) => Vec::new(),
+        }
+    }
+}
+
+#[cfg(feature = "mcp")]
+impl From<crate::mcp::McpClient> for ToolSource {
+    fn from(client: crate::mcp::McpClient) -> Self {
+        Self::McpClient(client)
     }
 }
 
