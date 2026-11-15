@@ -27,7 +27,7 @@ function errorText(fn: () => unknown): string {
 async function dumpStorage(
   storage: any,
   dir: string,
-  meta: { api: string; phase: 4 | 6; note: string }
+  meta: { api: string; note: string }
 ): Promise<string[]> {
   const keys: string[] = (await storage.list('')).sort()
   for (const key of keys) {
@@ -57,14 +57,12 @@ async function dumpStorage(
     },
     {
       api: '`Agent.takeSnapshot()` with preset, include, exclude, appData',
-      phase: 6,
       note: 'Agent-scope snapshot shape, field order, `createdAt` in `toISOString()` form, null `interrupts`',
     }
   )
   const bare = new sdk.Agent({ model: new ScriptedModel([]), printer: false })
   pretty('snapshots/take_snapshot_empty_agent.json', bare.takeSnapshot({ preset: 'session' }), {
     api: '`Agent.takeSnapshot({ preset: "session" })`',
-    phase: 6,
     note: 'Fresh agent: empty messages, null `systemPrompt` and `interrupts`',
   })
   pretty(
@@ -80,7 +78,7 @@ async function dumpStorage(
         agent.loadSnapshot({ ...agent.takeSnapshot({ preset: 'session' }), schemaVersion: '2.0' })
       ),
     },
-    { api: '`takeSnapshot`, `loadSnapshot` (`agent/snapshot.ts`)', phase: 6, note: 'Exact error texts' }
+    { api: '`takeSnapshot`, `loadSnapshot` (`agent/snapshot.ts`)', note: 'Exact error texts' }
   )
 }
 
@@ -103,7 +101,6 @@ async function dumpStorage(
   await adapter.saveManifest({ location, manifest: { schemaVersion: '1.0', updatedAt: new Date().toISOString() } })
   const keys = await dumpStorage(storage, 'session_agent', {
     api: '`SessionManager` (`snapshotTrigger`) and `SnapshotStorageAdapter.saveManifest` over `InMemoryStorage`',
-    phase: 6,
     note: 'Persisted agent snapshot, immutable history (uuid v7 ids) and manifest bytes',
   })
   pretty(
@@ -115,7 +112,6 @@ async function dumpStorage(
     },
     {
       api: '`Storage.list`, `SnapshotStorageAdapter.listSnapshotIds`, `loadManifest`',
-      phase: 6,
       note: 'Key layout `session/<sessionId>/scopes/agent/<scopeId>/snapshots/...` and the default manifest',
     }
   )
@@ -138,12 +134,10 @@ async function dumpStorage(
   const result = await graph.invoke('Write something')
   await dumpStorage(storage, 'session_graph', {
     api: '`Graph` with `SessionManager` over `InMemoryStorage`',
-    phase: 6,
     note: 'Multi-agent scope snapshot (`scopes/multiAgent/<graphId>`)',
   })
   pretty('snapshots/multi_agent_result.json', result, {
     api: '`MultiAgentResult.toJSON()`',
-    phase: 6,
     note: 'Graph result shape with node results',
   })
 }
@@ -168,7 +162,6 @@ async function dumpStorage(
       await agent.invoke('Stash this message')
       await dumpStorage(storage, `stash_${label}`, {
         api: `\`ContextManager\` stash and \`SessionManager\` over \`${storage.constructor.name}\``,
-        phase: 6,
         note: 'Stash records (`context/<sessionId>/scopes/agent/<agentId>/<trackingId>_<index>`) and `data.stash` in the snapshot',
       })
     }
@@ -199,7 +192,6 @@ async function dumpStorage(
     }
     pretty('stash/stash_records.json', records, {
       api: '`Stash.storeMessage`, `Stash.list`, `Stash.takeSnapshot` (`context-manager/stash.ts`)',
-      phase: 6,
       note: '`storageTypeName` from `constructor.name`, record keys and decoded record bodies per block kind',
     })
   } finally {
@@ -246,7 +238,6 @@ async function dumpStorage(
     },
     {
       api: '`InterruptState.toJSON()`, `resume()`, `fromJSON()` (`src/interrupt.ts`)',
-      phase: 4,
       note: '`interrupt_response_null`: a `null` response counts as answered; `context` kept; legacy `source` default; unknown id error text',
     }
   )

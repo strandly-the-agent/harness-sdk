@@ -146,6 +146,34 @@ async function run(optIn: string | undefined): Promise<void> {
   delete process.env.OTEL_SEMCONV_STABILITY_OPT_IN
 }
 
+async function runMemory(): Promise<void> {
+  const entries: string[] = ['The user prefers OTel']
+  const store = {
+    name: 'notes',
+    description: 'User notes',
+    writable: true,
+    extraction: {
+      trigger: new sdk.InvocationTrigger(),
+      extractor: { extract: async () => [{ content: 'The user asked about otel' }] },
+    },
+    search: async () => entries.map((content) => ({ content })),
+    add: async (content: string) => {
+      entries.push(content)
+    },
+  }
+  const memory = new sdk.MemoryManager({ stores: [store], addToolConfig: true })
+  const model = new ScriptedModel([
+    turns.toolUse([
+      { name: 'search_memory', toolUseId: 'tooluse_search', input: { query: 'otel' } },
+      { name: 'add_memory', toolUseId: 'tooluse_add', input: { entries: ['The user likes tracing'] } },
+    ]),
+    turns.text('Noted.'),
+  ])
+  const agent = new sdk.Agent({ name: 'memory-agent', model, plugins: [memory], printer: false })
+  await agent.invoke('Remember that I like tracing')
+  await memory.flush()
+}
+
 function capture(): unknown {
   const result = {
     meterNames: [...new Set(meterNames)],
@@ -170,13 +198,17 @@ function capture(): unknown {
 await run(undefined)
 pretty('telemetry/agent_run.default.json', capture(), {
   api: 'Agent `Meter` and `Tracer` (`telemetry/meter.ts`, `telemetry/tracer.ts`) under recording OTel providers',
-  phase: 10,
   note: 'Instrument names, kinds, units and descriptions; span names, kinds, parents, attributes and events for a tool turn (default semconv)',
 })
 
 await run('gen_ai_latest_experimental')
 pretty('telemetry/agent_run.latest_experimental.json', capture(), {
   api: 'Agent `Meter` and `Tracer` with `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`',
-  phase: 10,
   note: 'Same run under the latest experimental GenAI semantic conventions',
+})
+
+await runMemory()
+pretty('telemetry/memory_run.default.json', capture(), {
+  api: '`MemoryManager` search, add, injection and extraction spans (`telemetry/tracer.ts`) under recording OTel providers',
+  note: 'Span names, kinds, parents, attributes and events for `memory.search`, `memory.add`, `memory.inject` and `memory.extract`',
 })

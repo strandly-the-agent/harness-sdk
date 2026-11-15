@@ -6,6 +6,7 @@ const media = await import(`${dist}/types/media.js`)
 const citations = await import(`${dist}/types/citations.js`)
 const mime = await import(`${dist}/mime.js`)
 const streaming = await import(`${dist}/models/streaming.js`)
+const meter = await import(`${dist}/telemetry/meter.js`)
 const interruptTypes = await import(`${dist}/types/interrupt.js`)
 
 const { Message, TextBlock, ToolUseBlock, ToolResultBlock, ReasoningBlock, CachePointBlock, GuardContentBlock } =
@@ -188,7 +189,6 @@ const blocks = {
 
 pretty('types/content_blocks.json', blocks, {
   api: '`ContentBlock.toJSON()` for every block class',
-  phase: 1,
   note: 'Every content block type, every ToolResultContent, redacted reasoning, guard text and image',
 })
 
@@ -213,7 +213,6 @@ pretty(
   },
   {
     api: '`Message.toJSON()`, `Message.fromJSON()`',
-    phase: 1,
     note: 'Message wire shape; `legacyWithoutTrackingId` shows the id minted on load (counter UUID)',
   }
 )
@@ -288,7 +287,6 @@ pretty(
   },
   {
     api: '`Message.fromJSON()` (saved-data parser) then `toJSON()`',
-    phase: 1,
     note: 'Unknown blocks, unknown ToolResultContent, unknown media format, open citation location and status kept as written',
   }
 )
@@ -302,6 +300,10 @@ for (const [name, input] of Object.entries({
   whitespace: 'AA EC\n+v8=',
   empty: '',
   trailingGarbage: 'AAEC+v8=!!',
+  innerGarbage: 'AAEC!+v8=',
+  innerPadding: 'AA=EC',
+  dataAfterPadding: 'AA==AQ',
+  singleChar: 'A',
 })) {
   const decoded = decodeBase64(input)
   base64Cases[name] = { input, decoded: Array.from(decoded), canonical: encodeBase64(decoded) }
@@ -321,8 +323,7 @@ pretty(
   },
   {
     api: '`decodeBase64`/`encodeBase64` (`types/media.ts`, Node `Buffer`)',
-    phase: 1,
-    note: 'Lenient base64 decode (unpadded, URL-safe, whitespace, trailing garbage) and canonical re-encode',
+    note: 'Lenient base64 decode (unpadded, URL-safe, whitespace, garbage, inner padding) and canonical re-encode',
   }
 )
 
@@ -336,7 +337,6 @@ const formatBlocks = {
 }
 pretty('types/media_formats.json', formatBlocks, {
   api: '`AudioBlock`/`ImageBlock`/`VideoBlock`/`DocumentBlock` `toJSON()` per format',
-  phase: 1,
   note: 'One block per member of every media format list',
 })
 
@@ -355,7 +355,6 @@ pretty(
   },
   {
     api: '`toMimeType`, `toMediaFormat` (`src/mime.ts`)',
-    phase: 1,
     note: 'Format to MIME maps; `null` means undefined',
   }
 )
@@ -365,13 +364,18 @@ pretty(
   { all: STOP_REASONS, limit: [...LIMIT_STOP_REASONS] },
   {
     api: '`StopReason` union, `LIMIT_STOP_REASONS`',
-    phase: 1,
     note: 'Known stop reason strings; `limit` is read from the runtime set, `all` from the type',
     validityOnly: true,
   }
 )
 
-const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+const usage = streaming.createEmptyUsage()
+const usageMaxSafeInteger = streaming.createEmptyUsage()
+streaming.accumulateUsage(usageMaxSafeInteger, {
+  inputTokens: Number.MAX_SAFE_INTEGER,
+  outputTokens: 0,
+  totalTokens: Number.MAX_SAFE_INTEGER,
+})
 streaming.accumulateUsage(usage, { inputTokens: 3, outputTokens: 4, totalTokens: 7, cacheReadInputTokens: 2 })
 streaming.accumulateUsage(usage, { inputTokens: 1, outputTokens: 1, totalTokens: 2, cacheWriteInputTokens: 5 })
 pretty(
@@ -379,13 +383,8 @@ pretty(
   {
     usageMinimal: streaming.createEmptyUsage(),
     usageAccumulated: usage,
-    usageMaxSafeInteger: {
-      inputTokens: Number.MAX_SAFE_INTEGER,
-      outputTokens: 0,
-      totalTokens: Number.MAX_SAFE_INTEGER,
-    },
-    metricsMinimal: { latencyMs: 0 },
-    metricsFull: { latencyMs: 1234, timeToFirstByteMs: 56 },
+    usageMaxSafeInteger,
+    metricsMinimal: new meter.AgentMetrics().toJSON().accumulatedMetrics,
     totalPromptTokens: {
       consistent: streaming.totalPromptTokens({ inputTokens: 5, outputTokens: 2, totalTokens: 7 }),
       withCache: streaming.totalPromptTokens({
@@ -398,9 +397,18 @@ pretty(
     },
   },
   {
-    api: '`createEmptyUsage`, `accumulateUsage`, `totalPromptTokens` (`models/streaming.ts`)',
-    phase: 1,
+    api: '`createEmptyUsage`, `accumulateUsage`, `totalPromptTokens` (`models/streaming.ts`), `AgentMetrics`',
     note: 'Usage and Metrics shapes; integer counters written without `.0`',
+  }
+)
+
+pretty(
+  'types/metrics_full.json',
+  { latencyMs: 1234, timeToFirstByteMs: 56 },
+  {
+    api: '`Metrics` (`models/streaming.ts`)',
+    note: 'Metrics with every optional field; no TS code path accumulates `timeToFirstByteMs`',
+    validityOnly: true,
   }
 )
 
@@ -433,7 +441,6 @@ pretty(
   },
   {
     api: '`JSON.stringify` of `ToolUseBlock`, `TextBlock`, `JsonBlock`',
-    phase: 1,
     note: 'JS number formatting, lone surrogates (escaped as `\\udXXX`), control escapes, key order (integer-like keys first), 64-deep nesting',
   }
 )
@@ -457,7 +464,7 @@ pretty(
       ])
     ),
   },
-  { api: '`systemPromptFromData`, `systemPromptToData`', phase: 1, note: 'String and block system prompts' }
+  { api: '`systemPromptFromData`, `systemPromptToData`', note: 'String and block system prompts' }
 )
 
 pretty(
@@ -472,7 +479,6 @@ pretty(
   },
   {
     api: '`InterruptResponseContent.toJSON()`',
-    phase: 1,
     note: 'Interrupt response wire shape including a `null` response',
   }
 )
@@ -482,7 +488,6 @@ pretty(
   { auto: { auto: {} }, any: { any: {} }, tool: { tool: { name: 'get_weather' } } },
   {
     api: '`ToolChoice` (`tools/types.ts`)',
-    phase: 1,
     note: 'Empty-object variants `{"auto":{}}` and `{"any":{}}`; the forced-tool form is also captured from a live run in `agent/structured_output.model_calls.json`',
     validityOnly: true,
   }
@@ -509,13 +514,11 @@ pretty(
   },
   {
     api: '`contentBlockFromData`, `toolResultContentFromData`, `Message.fromMessageData`, `GuardContentBlock`',
-    phase: 1,
     note: 'Exact error texts of the strict parsers and constructors',
   }
 )
 
 compact('types/compact_message.json', new TextEncoder().encode(JSON.stringify(message)), {
   api: '`JSON.stringify(message)`',
-  phase: 1,
   note: 'Compact byte form of a message, for byte-for-byte serializer comparison',
 })

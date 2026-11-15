@@ -65,7 +65,6 @@ pretty(
   Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [name, z.toJSONSchema(schema)])),
   {
     api: '`z.toJSONSchema` (zod 4, root `node_modules`)',
-    phase: 3,
     note: 'Raw Zod JSON Schema output, including `$schema`, for schema-normalization tests',
   }
 )
@@ -75,7 +74,6 @@ pretty(
   Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [name, zodSchemaToJsonSchema(schema)])),
   {
     api: '`zodSchemaToJsonSchema` (`tools/zod-utils.ts`)',
-    phase: 3,
     note: 'The tool input schema TS sends: Zod output with only `$schema` stripped',
   }
 )
@@ -98,7 +96,6 @@ pretty(
   { zodTool: zodTool.toolSpec, jsonSchemaTool: jsonTool.toolSpec, noInputSchema: noSchemaTool.toolSpec },
   {
     api: '`tool({ inputSchema: zod })`, `new FunctionTool(...)` `toolSpec`',
-    phase: 3,
     note: '`ToolSpec` wire shape for Zod, JSON schema and schema-less tools',
   }
 )

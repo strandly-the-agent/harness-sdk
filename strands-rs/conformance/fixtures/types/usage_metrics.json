@@ -19,10 +19,6 @@
   "metricsMinimal": {
     "latencyMs": 0
   },
-  "metricsFull": {
-    "latencyMs": 1234,
-    "timeToFirstByteMs": 56
-  },
   "totalPromptTokens": {
     "consistent": 5,
     "withCache": 11

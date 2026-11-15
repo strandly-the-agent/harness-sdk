@@ -1,6 +1,6 @@
 # Conformance fixtures
 
-`generate.ts` drives the built TypeScript SDK (`strands-ts/dist/`, imported by relative path, not from npm) and writes JSON fixtures to `fixtures/`. Rust tests parse each fixture, serialize it back, and compare against the TS-written bytes, so the Rust wire and persisted formats stay identical to TypeScript. The tests that consume each fixture land with the Rust phase that implements the types; `fixtures/INDEX.md` lists every fixture, the TS API that produced it and the consuming phase.
+`generate.ts` drives the built TypeScript SDK (`strands-ts/dist/`, imported by relative path, not from npm) and writes JSON fixtures to `fixtures/`. Rust tests parse each fixture, serialize it back, and compare against the TS-written bytes, so the Rust wire and persisted formats stay identical to TypeScript. `fixtures/INDEX.md` lists every fixture and the TS API that produced it.
 
 ## Regenerate
 

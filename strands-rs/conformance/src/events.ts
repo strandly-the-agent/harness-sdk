@@ -58,7 +58,7 @@ async function collect(stream: AsyncIterable<unknown>): Promise<unknown[]> {
 }
 
 function streamFixture(name: string, events: unknown[], note: string, api = '`Agent.stream()` event `toJSON()`'): void {
-  pretty(`agent/${name}.stream.json`, events, { api, phase: 3, note })
+  pretty(`agent/${name}.stream.json`, events, { api, note })
 }
 
 function newAgent(model: ScriptedModel, extra: Record<string, unknown> = {}): any {
@@ -121,12 +121,10 @@ function newAgent(model: ScriptedModel, extra: Record<string, unknown> = {}): an
   )
   pretty('hooks/text_turn.order.json', order, {
     api: '`Agent.addHook` for every hook event class',
-    phase: 3,
     note: 'Hook firing order for a single text turn',
   })
   pretty('agent/text_turn.metrics.json', (events.at(-1) as any).result.metrics.toJSON(), {
     api: '`AgentResult.metrics.toJSON()`',
-    phase: 3,
     note: 'AgentMetrics shape after one text turn (clock patched, so durations are 0)',
   })
 }
@@ -167,12 +165,10 @@ function newAgent(model: ScriptedModel, extra: Record<string, unknown> = {}): an
   )
   pretty('hooks/tool_turn.order.json', order, {
     api: '`Agent.addHook` for every hook event class',
-    phase: 3,
     note: 'Hook firing order across a tool turn and the closing text turn',
   })
   pretty('agent/tool_turn.model_calls.json', model.calls, {
     api: '`StreamOptions` passed to `Model.stream`',
-    phase: 3,
     note: 'Tool specs the agent sends (Zod and JSON schema tools), no tool choice',
   })
 }
@@ -202,7 +198,6 @@ function newAgent(model: ScriptedModel, extra: Record<string, unknown> = {}): an
   )
   pretty('interrupts/tool_interrupted.snapshot.json', agent.takeSnapshot({ preset: 'session' }), {
     api: '`Agent.takeSnapshot({ preset: "session" })`',
-    phase: 4,
     note: 'Activated interrupt state with `pendingToolExecution`',
   })
   const interruptId = (first.at(-1) as any).result.interrupts[0].id
@@ -214,7 +209,6 @@ function newAgent(model: ScriptedModel, extra: Record<string, unknown> = {}): an
   )
   pretty('interrupts/tool_resumed.snapshot.json', agent.takeSnapshot({ preset: 'session' }), {
     api: '`Agent.takeSnapshot({ preset: "session" })`',
-    phase: 4,
     note: 'Interrupt state after the resumed run completes: empty and deactivated',
   })
 
@@ -240,7 +234,6 @@ function newAgent(model: ScriptedModel, extra: Record<string, unknown> = {}): an
   streamFixture('interrupt_hook', hookFirst, 'BeforeToolCallEvent hook interrupt after a completed sibling tool')
   pretty('interrupts/hook_interrupted.snapshot.json', hookAgent.takeSnapshot({ preset: 'session' }), {
     api: '`Agent.takeSnapshot({ preset: "session" })`',
-    phase: 4,
     note: 'Hook interrupt id `hook:beforeToolCall:<toolUseId>:<name>` with the completed sibling in `completedToolResults`',
   })
   const hookId = (hookFirst.at(-1) as any).result.interrupts[0].id
@@ -269,7 +262,6 @@ function newAgent(model: ScriptedModel, extra: Record<string, unknown> = {}): an
   streamFixture('structured_output', events, 'Structured output through `strands_structured_output`, forced on retry')
   pretty('agent/structured_output.model_calls.json', model.calls, {
     api: '`StreamOptions` passed to `Model.stream`',
-    phase: 3,
     note: 'Structured output tool spec and the forced `{"tool":{"name":"strands_structured_output"}}` tool choice',
   })
 }
@@ -318,7 +310,6 @@ function newAgent(model: ScriptedModel, extra: Record<string, unknown> = {}): an
     { message: error },
     {
       api: '`Agent.stream()` rejection',
-      phase: 3,
       note: 'Error text surfaced to the caller',
     }
   )
@@ -333,7 +324,6 @@ pretty(
   ),
   {
     api: 'Hook event `toJSON()` (`hooks/events.ts`)',
-    phase: 3,
     note: 'One example per distinct key structure of every hook event seen across the agent runs; includes `initializedEvent` and error forms',
   }
 )
@@ -411,6 +401,5 @@ const modelStreamEvents = {
 }
 pretty('events/model_stream_events.json', modelStreamEvents, {
   api: '`JSON.stringify` of the `Model*Event` classes (`models/streaming.ts`)',
-  phase: 2,
   note: 'All 7 ModelStreamEvent kinds and every delta; `redactedContent` as an index-keyed object; null and unknown stop fields',
 })

@@ -70,6 +70,36 @@
         255
       ],
       "canonical": "AAEC+v8="
+    },
+    "innerGarbage": {
+      "input": "AAEC!+v8=",
+      "decoded": [
+        0,
+        1,
+        2,
+        250,
+        255
+      ],
+      "canonical": "AAEC+v8="
+    },
+    "innerPadding": {
+      "input": "AA=EC",
+      "decoded": [
+        0
+      ],
+      "canonical": "AA=="
+    },
+    "dataAfterPadding": {
+      "input": "AA==AQ",
+      "decoded": [
+        0
+      ],
+      "canonical": "AA=="
+    },
+    "singleChar": {
+      "input": "A",
+      "decoded": [],
+      "canonical": ""
     }
   },
   "imageFromNonCanonical": {

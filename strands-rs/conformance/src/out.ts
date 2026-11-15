@@ -4,13 +4,9 @@ import { fileURLToPath } from 'node:url'
 
 export const FIXTURES_DIR = fileURLToPath(new URL('../fixtures/', import.meta.url))
 
-export type Phase = 1 | 2 | 3 | 4 | 6 | 10
-
 export interface FixtureMeta {
   /** TS API that produced the content. */
   api: string
-  /** Rust phase whose tests consume the fixture. */
-  phase: Phase
   /** What the fixture pins. */
   note: string
   /** Set when the content is transcribed from a TS type rather than produced by TS code. */
@@ -55,12 +51,12 @@ export function writeIndex(): void {
     'form `compact` is the exact bytes TS wrote to storage. Rows marked "validity only" are transcribed from a TS',
     'type rather than produced by TS code, so they prove JSON shape only.',
     '',
-    '| Fixture | Form | TS API | Rust phase | What it pins |',
-    '|---|---|---|---|---|',
+    '| Fixture | Form | TS API | What it pins |',
+    '|---|---|---|---|',
   ]
   for (const e of [...entries].sort((a, b) => (a.path < b.path ? -1 : 1))) {
     const note = e.validityOnly ? `${e.note} (validity only)` : e.note
-    lines.push(`| \`${e.path}\` | ${e.form} | ${e.api} | ${e.phase} | ${note} |`)
+    lines.push(`| \`${e.path}\` | ${e.form} | ${e.api} | ${note} |`)
   }
   lines.push('', `${entries.length} fixtures.`, '')
   writeRaw('INDEX.md', lines.join('\n'))
