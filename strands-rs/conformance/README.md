@@ -15,14 +15,14 @@ The generator is deterministic: before strands-ts loads it fixes `Date`, `Date.n
 
 ## Layout
 
-- `fixtures/manifest.json` lists every fixture with a description. An entry with `_note` says which part of the shape the generator chose rather than TS (for example a list transcribed from a TS type union, or a record wrapping OpenTelemetry data).
+- `fixtures/manifest.json` lists every fixture with a description. An entry with `_note` says which part of the shape the generator chose rather than TS (for example a list the generator assembled, or a record wrapping OpenTelemetry data).
 - `<topic>/<case>.json` holds one object. `<case>.input.json` next to it is the input TS parsed to produce `<case>.json`.
 - `sessions/<case>/` mirrors the storage keys a `SessionManager` wrote, byte for byte (`session/<sessionId>/scopes/<scope>/<scopeId>/snapshots/...` and the stash under `context/...`).
 
-## Not produced at the pin
+## Shapes TS doesn't produce at runtime
 
 - `ModelStreamEvent` classes have no `toJSON`; their fixtures are `JSON.stringify` of the instance.
 - `ToolChoice` `auto` and `any` are only built inside provider request formatting, so `tools/tool_choice_{auto,any}.json` are literals that prove the JSON shape. The `tool` variant also appears in `model_requests/structured_output_run.json` from a real run.
-- The `StopReason` values and the audio, video and document format lists are TS type unions with no runtime list; the generator transcribes them and builds a real TS object for each value. Images use the runtime `IMAGE_FORMATS`.
+- The `StopReason` values and the audio, video and document format lists are TS type unions with no runtime list; the generator reads them from the TS source with the TypeScript compiler API and builds a real TS object for each value. Images use the runtime `IMAGE_FORMATS`.
 - `ToolResultBlock.error` is never serialized, so `content_blocks/tool_result_error.json` has no error field.
 - Checkpoints (experimental, `checkpointing`) and the deprecated `FileStorage` session layout are not covered.

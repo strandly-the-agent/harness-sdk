@@ -168,6 +168,9 @@
       "description": "Date.toISOString() keeps millisecond precision, including .000",
       "_note": "Values are TS Date output; the wrapper object is generator-built"
     },
+    "edge_cases/deep_nesting.json": {
+      "description": "A ToolUseBlock whose input nests 200 objects deep, past the default serde_json recursion limit of 128"
+    },
     "edge_cases/numbers_in_tool_input.json": {
       "description": "JS number formatting in a JSON value: -0, 1e21, 2^64, 1.5e-7 and others"
     },
@@ -227,12 +230,10 @@
       "description": "getUnansweredInterrupts() after the round trip: a null response counts as answered"
     },
     "media_formats/audio.json": {
-      "description": "An AudioBlock for every AudioFormat",
-      "_note": "The format list is transcribed from the TS type union (no runtime list at the pin); each block is real TS output"
+      "description": "An AudioBlock for every AudioFormat"
     },
     "media_formats/document.json": {
-      "description": "A DocumentBlock for every DocumentFormat",
-      "_note": "The format list is transcribed from the TS type union (no runtime list at the pin); each block is real TS output"
+      "description": "A DocumentBlock for every DocumentFormat"
     },
     "media_formats/image.json": {
       "description": "An ImageBlock for every entry of the runtime IMAGE_FORMATS list"
@@ -249,8 +250,7 @@
       "description": "An ImageBlock with a format outside the union; TS accepts any string at runtime"
     },
     "media_formats/video.json": {
-      "description": "A VideoBlock for every VideoFormat",
-      "_note": "The format list is transcribed from the TS type union (no runtime list at the pin); each block is real TS output"
+      "description": "A VideoBlock for every VideoFormat"
     },
     "messages/assistant_every_block.json": {
       "description": "One message carrying every content block type, in the order of content_blocks/"
@@ -462,8 +462,7 @@
       "_note": "Map built by the generator; each value is TS output"
     },
     "stop_reasons/all.json": {
-      "description": "A ModelMessageStopEvent for each of the 16 StopReason values plus one unknown value",
-      "_note": "The value list is transcribed from the TS StopReason union; each event is real TS output"
+      "description": "A ModelMessageStopEvent for each of the 16 StopReason values plus one unknown value"
     },
     "stop_reasons/limit_stop_message.json": {
       "description": "limitStopMessage text for agent \"my_agent\" and limitTurns"

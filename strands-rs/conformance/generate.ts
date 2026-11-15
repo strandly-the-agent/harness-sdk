@@ -125,7 +125,7 @@ otelApi.metrics.setGlobalMeterProvider({
 })
 
 // ---------------------------------------------------------------------------------------------------
-// strands-ts (built output at the pin)
+// strands-ts (the compiled SDK in strands-ts/dist)
 // ---------------------------------------------------------------------------------------------------
 
 const DIST = '../../strands-ts/dist/src'
@@ -142,6 +142,7 @@ const mime = await import(`${DIST}/mime.js`)
 const messagesModule = await import(`${DIST}/types/messages.js`)
 const streaming = await import(`${DIST}/models/streaming.js`)
 const { z } = await import('zod')
+const ts = (await import('typescript')).default
 
 const {
   Agent,
@@ -216,6 +217,21 @@ function emit(name: string, value: unknown, description: string, note?: string):
 function emitPair(name: string, input: unknown, output: unknown, description: string, note?: string): void {
   emit(`${name}.input`, input, `Input for ${name}.json: ${description}`, note)
   emit(name, output, description, note)
+}
+
+/** Reads the string literals of a TS type union (`export type X = 'a' | 'b' | (string & {})`) from source. */
+function typeUnion(file: string, name: string): string[] {
+  const path = join(HERE, '../../strands-ts/src', file)
+  const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
+  for (const statement of source.statements) {
+    if (!ts.isTypeAliasDeclaration(statement) || statement.name.text !== name) continue
+    if (!ts.isUnionTypeNode(statement.type)) break
+    const values = statement.type.types.flatMap((member) =>
+      ts.isLiteralTypeNode(member) && ts.isStringLiteral(member.literal) ? [member.literal.text] : []
+    )
+    if (values.length > 0) return values
+  }
+  throw new Error(`no string union ${name} in ${file}`)
 }
 
 /** Copies every key of a storage backend into `fixtures/<dir>/<key>`, byte for byte. */
@@ -714,27 +730,9 @@ function messages(): void {
 }
 
 function mediaFormats(): void {
-  const audio = [
-    'mp3',
-    'opus',
-    'wav',
-    'aac',
-    'flac',
-    'mp4',
-    'ogg',
-    'mkv',
-    'mka',
-    'x-aac',
-    'm4a',
-    'mpeg',
-    'mpga',
-    'pcm',
-    'webm',
-  ]
-  const video = ['mkv', 'mov', 'mp4', 'webm', 'flv', 'mpeg', 'mpg', 'wmv', '3gp']
-  const documents = ['pdf', 'csv', 'doc', 'docx', 'xls', 'xlsx', 'html', 'txt', 'md', 'json', 'xml']
-  const transcribed =
-    'The format list is transcribed from the TS type union (no runtime list at the pin); each block is real TS output'
+  const audio = typeUnion('mime.ts', 'AudioFormat')
+  const video = typeUnion('mime.ts', 'VideoFormat')
+  const documents = typeUnion('mime.ts', 'DocumentFormat')
   emit(
     'media_formats/image',
     mime.IMAGE_FORMATS.map((format: string) => new ImageBlock({ format, source: { bytes: bytes(1) } })),
@@ -743,20 +741,17 @@ function mediaFormats(): void {
   emit(
     'media_formats/audio',
     audio.map((format) => new AudioBlock({ format, source: { bytes: bytes(1) } })),
-    'An AudioBlock for every AudioFormat',
-    transcribed
+    'An AudioBlock for every AudioFormat'
   )
   emit(
     'media_formats/video',
     video.map((format) => new VideoBlock({ format, source: { bytes: bytes(1) } })),
-    'A VideoBlock for every VideoFormat',
-    transcribed
+    'A VideoBlock for every VideoFormat'
   )
   emit(
     'media_formats/document',
     documents.map((format) => new DocumentBlock({ name: `file_${format}`, format, source: { bytes: bytes(1) } })),
-    'A DocumentBlock for every DocumentFormat',
-    transcribed
+    'A DocumentBlock for every DocumentFormat'
   )
   emit(
     'media_formats/unknown_format',
@@ -809,30 +804,11 @@ function toolsAndStopReasons(): void {
   emit('tools/tool_choice_any', { any: {} }, 'ToolChoice any', note)
   emit('tools/tool_choice_tool', { tool: { name: 'get_weather' } }, 'ToolChoice for one named tool', note)
 
-  const stopReasons = [
-    'cancelled',
-    'checkpoint',
-    'contentFiltered',
-    'endTurn',
-    'guardrailIntervened',
-    'interrupt',
-    'maxTokens',
-    'limitOutputTokens',
-    'limitStructuredOutputAttempts',
-    'limitTotalTokens',
-    'limitTurns',
-    'pauseTurn',
-    'refusal',
-    'stopSequence',
-    'toolUse',
-    'modelContextWindowExceeded',
-    'someFutureReason',
-  ]
+  const stopReasons = [...typeUnion('types/messages.ts', 'StopReason'), 'someFutureReason']
   emit(
     'stop_reasons/all',
     stopReasons.map((stopReason) => new ModelMessageStopEvent({ type: 'modelMessageStopEvent', stopReason })),
-    'A ModelMessageStopEvent for each of the 16 StopReason values plus one unknown value',
-    'The value list is transcribed from the TS StopReason union; each event is real TS output'
+    `A ModelMessageStopEvent for each of the ${stopReasons.length - 1} StopReason values plus one unknown value`
   )
   emit(
     'stop_reasons/limit_stop_reasons',
@@ -868,7 +844,7 @@ function toolsAndStopReasons(): void {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// 4. Model stream events (no toJSON at the pin: JSON.stringify of the class instance)
+// 4. Model stream events (no toJSON in TS: JSON.stringify of the class instance)
 // ---------------------------------------------------------------------------------------------------
 
 function modelStreamEvents(): void {
@@ -1648,6 +1624,13 @@ function edgeCases(): void {
       },
     }),
     'JS number formatting in a JSON value: -0, 1e21, 2^64, 1.5e-7 and others'
+  )
+  let deepInput: Record<string, unknown> = { leaf: true }
+  for (let depth = 1; depth < 200; depth++) deepInput = { nested: deepInput }
+  emit(
+    'edge_cases/deep_nesting',
+    new ToolUseBlock({ name: 'deep', toolUseId: 'tooluse_deep', input: deepInput }),
+    'A ToolUseBlock whose input nests 200 objects deep, past the default serde_json recursion limit of 128'
   )
 
   const base64Inputs: Record<string, string> = {
