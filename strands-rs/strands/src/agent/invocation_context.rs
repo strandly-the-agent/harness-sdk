@@ -137,7 +137,6 @@ impl InvocationContext {
     }
 
     /// Counts one failed structured output attempt here and in every parent whose limits apply.
-    #[allow(dead_code, reason = "used by structured output in the next commit")]
     pub(crate) fn record_structured_output_failure(&self) {
         {
             let mut counters = self.counters();
@@ -159,7 +158,6 @@ impl InvocationContext {
     }
 
     /// Whether this context or a limiting parent sets a structured-output attempt limit.
-    #[allow(dead_code, reason = "used by structured output in the next commit")]
     pub(crate) fn has_structured_output_attempts_limit(&self) -> bool {
         self.inner
             .limits

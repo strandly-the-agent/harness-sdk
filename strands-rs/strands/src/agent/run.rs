@@ -24,12 +24,16 @@ use crate::models::model::{
 use crate::tools::executors::executor::{
     ToolExecutionInput, ToolExecutorEvent, ToolExecutorItem, error_text_result,
 };
+use crate::tools::structured_output::{
+    STRUCTURED_OUTPUT_TOOL_NAME, StructuredOutputSchema, StructuredOutputTool, structured_output_tool_use_ids,
+};
 use crate::tools::tool::is_valid_tool_name;
 use crate::types::agent::{AgentResult, AgentStreamEvent, InvocationState, InvokeArgs, InvokeOptions};
+use crate::types::json::JsonValue;
 use crate::types::messages::{
-    ContentBlock, Message, Role, StopReason, TextBlock, ToolResultBlock, ToolUseBlock,
+    ContentBlock, Message, Role, StopReason, TextBlock, ToolResultBlock, ToolResultContent, ToolUseBlock,
 };
-use crate::types::tools::ToolSpec;
+use crate::types::tools::{ToolChoice, ToolResultStatus, ToolSpec};
 
 /// TS `INVALID_TOOL_NAME_PLACEHOLDER`.
 const INVALID_TOOL_NAME_PLACEHOLDER: &str = "INVALID_TOOL_NAME";
@@ -42,6 +46,29 @@ enum Cycle {
     Continue,
     /// The invocation is over.
     Done(Box<AgentResult>),
+}
+
+/// The structured output state of one invocation.
+struct Structured {
+    tool: Option<StructuredOutputTool>,
+    /// Set once a text turn forces the structured output tool; stays for the invocation.
+    choice: Option<ToolChoice>,
+}
+
+/// The structured output retry's request fields: the forced tool and the schema for providers
+/// with native structured output.
+#[derive(Clone, Default)]
+struct Forcing {
+    tool_choice: Option<ToolChoice>,
+    structured_output_schema: Option<JsonValue>,
+}
+
+/// How a turn that ended without a tool call continues (TS `TextTurnOutcome`).
+enum TextTurn {
+    /// Retry with the structured output tool forced.
+    Retry,
+    /// End with this stop reason and any structured output.
+    End(StopReason, Option<JsonValue>),
 }
 
 /// What a tool batch produced.
@@ -61,6 +88,9 @@ impl Agent {
         self.initialize().await?;
         let hooks = self.local.hooks().clone();
         let state = options.invocation_state;
+        let schema = options
+            .structured_output_schema
+            .or_else(|| self.structured_output_schema.clone());
         let context = InvocationContext::resolve(options.invocation_context, options.limits);
         self.local.set_invocation_context(Some(context));
         self.local.set_invocation_cancel(Default::default());
@@ -87,7 +117,7 @@ impl Agent {
                 self.append_message(message.clone(), &state, &hooks, out).await?;
                 Ok(self.result(StopReason::EndTurn, message, &state))
             }
-            None => self.run_loop(input, &state, &hooks, out).await,
+            None => self.run_loop(input, &state, &hooks, out, schema).await,
         };
         self.after_invocation(&hooks, &state, out).await?;
         let result = outcome?;
@@ -118,6 +148,7 @@ impl Agent {
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
+        schema: Option<StructuredOutputSchema>,
     ) -> Result<AgentResult> {
         if self.local.interrupt_state().lock().activated {
             return Err(Error::other(
@@ -129,6 +160,28 @@ impl Agent {
             telemetry.meter.start_new_invocation();
             telemetry.tracer.reset();
         }
+        let mut structured = Structured {
+            tool: schema.map(StructuredOutputTool::new),
+            choice: None,
+        };
+        if let Some(tool) = &structured.tool {
+            self.local.tool_registry_mut().add(Arc::new(tool.clone()))?;
+        }
+        let outcome = self.cycles(input, state, hooks, out, &mut structured).await;
+        if structured.tool.is_some() {
+            self.local.tool_registry_mut().remove(STRUCTURED_OUTPUT_TOOL_NAME);
+        }
+        outcome
+    }
+
+    async fn cycles(
+        &mut self,
+        input: Vec<Message>,
+        state: &InvocationState,
+        hooks: &HookRegistry,
+        out: &Emitter,
+        structured: &mut Structured,
+    ) -> Result<AgentResult> {
         let context = self
             .local
             .invocation_context()
@@ -155,7 +208,9 @@ impl Agent {
                 telemetry.tracer.start_cycle(&cycle_id);
                 started
             };
-            let cycle = self.run_cycle(input.take(), state, hooks, out).await;
+            let cycle = self
+                .run_cycle(input.take(), state, hooks, out, structured, &context)
+                .await;
             {
                 let mut telemetry = self.telemetry.lock();
                 telemetry.meter.end_cycle(started);
@@ -174,21 +229,54 @@ impl Agent {
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
+        structured: &mut Structured,
+        context: &InvocationContext,
     ) -> Result<Cycle> {
         for message in input.into_iter().flatten() {
             self.append_message(message, state, hooks, out).await?;
         }
 
-        let model_result = self.invoke_model(state, hooks, out).await?;
+        let forced = structured.choice.clone();
+        let native_schema = forced
+            .as_ref()
+            .and(structured.tool.as_ref())
+            .map(|tool| tool.schema().json_schema().clone());
+        let forcing = Forcing {
+            tool_choice: forced.clone(),
+            structured_output_schema: native_schema,
+        };
+        let model_result = self.invoke_model(state, hooks, out, forcing).await?;
         let stop_reason = model_result.stop_reason().clone();
         let assistant = model_result.into_message();
         if stop_reason != StopReason::ToolUse {
-            self.append_message(assistant.clone(), state, hooks, out).await?;
-            return Ok(Cycle::Done(Box::new(AgentResult::new(
+            let (stop_reason, output) = match resolve_text_turn(
+                &assistant,
                 stop_reason,
-                assistant,
-                state.clone(),
-            ))));
+                structured,
+                forced.is_some(),
+                context,
+            )? {
+                TextTurn::Retry => {
+                    // Appending the text turn would end history on an assistant message,
+                    // which providers reject as prefill.
+                    structured.choice = Some(ToolChoice::tool(STRUCTURED_OUTPUT_TOOL_NAME));
+                    tracing::debug!(
+                        "structured output schema set but model responded with plain text; forcing tool use on next cycle"
+                    );
+                    return Ok(Cycle::Continue);
+                }
+                TextTurn::End(stop_reason, output) => (stop_reason, output),
+            };
+            self.append_message(assistant.clone(), state, hooks, out).await?;
+            let mut result = AgentResult::new(stop_reason, assistant, state.clone());
+            if let Some(output) = output {
+                result = result.with_structured_output(output);
+            }
+            return Ok(Cycle::Done(Box::new(result)));
+        }
+        // Counted when the response arrives, so an interrupt before its tools run keeps the count.
+        if forced.is_some() && structured_output_tool_use_ids(&assistant).is_empty() {
+            context.record_structured_output_failure();
         }
 
         let tools = self.execute_tools(&assistant, state, hooks, out).await?;
@@ -198,12 +286,32 @@ impl Agent {
                 .await
                 .map(|result| Cycle::Done(Box::new(result)));
         }
-        self.append_message(assistant, state, hooks, out).await?;
+        // Extracted before the appends: message-added hooks may rewrite the JSON block.
+        let output = structured
+            .tool
+            .as_ref()
+            .and_then(|_| extract_structured_output(&assistant, &tools.message));
+        self.append_message(assistant.clone(), state, hooks, out).await?;
         self.append_message(tools.message, state, hooks, out).await?;
-        let mut interrupt_state = self.local.interrupt_state().lock();
-        interrupt_state.pending_tool_execution = None;
-        interrupt_state.activated = false;
-        Ok(Cycle::Continue)
+        {
+            let mut interrupt_state = self.local.interrupt_state().lock();
+            interrupt_state.pending_tool_execution = None;
+            interrupt_state.activated = false;
+        }
+        if structured.tool.is_some()
+            && output.is_none()
+            && !structured_output_tool_use_ids(&assistant).is_empty()
+        {
+            context.record_structured_output_failure();
+        }
+
+        match output {
+            Some(output) => Ok(Cycle::Done(Box::new(
+                AgentResult::new(StopReason::ToolUse, assistant, state.clone())
+                    .with_structured_output(output),
+            ))),
+            None => Ok(Cycle::Continue),
+        }
     }
 
     /// TS `_stream`'s `InterruptError` handler: fires one `InterruptEvent` per interrupt.
@@ -252,6 +360,7 @@ impl Agent {
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
+        forcing: Forcing,
     ) -> Result<StreamAggregatedResult> {
         let tool_specs = self.local.tool_registry().tool_specs();
         let mut attempt_count = 1_u32;
@@ -280,7 +389,7 @@ impl Agent {
             }
 
             match self
-                .stream_from_model(&model, tool_specs.clone(), state, hooks, out)
+                .stream_from_model(&model, tool_specs.clone(), forcing.clone(), state, hooks, out)
                 .await
             {
                 Ok(result) => {
@@ -335,6 +444,7 @@ impl Agent {
         &mut self,
         model: &Arc<dyn Model>,
         tool_specs: Vec<ToolSpec>,
+        forcing: Forcing,
         state: &InvocationState,
         hooks: &HookRegistry,
         out: &Emitter,
@@ -347,6 +457,8 @@ impl Agent {
             )))
             .maybe_system_prompt(self.local.system_prompt().cloned())
             .tool_specs(tool_specs)
+            .maybe_tool_choice(forcing.tool_choice)
+            .maybe_structured_output_schema(forcing.structured_output_schema)
             .model_state(model_state.clone())
             .cancel_signal(self.local.cancel_signal().clone())
             .build();
@@ -587,6 +699,57 @@ impl Agent {
             Some(context) => result.with_invocation_context(context.clone()),
             None => result,
         }
+    }
+}
+
+/// TS `_resolveTextTurn`: with a schema set and no structured output yet, retry with the tool
+/// forced unless a limit is reached, which ends the turn with that limit's stop reason.
+fn resolve_text_turn(
+    message: &Message,
+    stop_reason: StopReason,
+    structured: &Structured,
+    forced: bool,
+    context: &InvocationContext,
+) -> Result<TextTurn> {
+    let Some(tool) = &structured.tool else {
+        return Ok(TextTurn::End(stop_reason, None));
+    };
+    if forced {
+        // The provider may return the forced output as JSON text.
+        match tool.result_from_text(message) {
+            Ok(output) => return Ok(TextTurn::End(stop_reason, Some(output))),
+            Err(error) if context.has_structured_output_attempts_limit() => {
+                context.record_structured_output_failure();
+                tracing::debug!(
+                    "error=<{error}> | structured output retry failed | counted toward the structured output attempt limit"
+                );
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(match context.reached_limit() {
+        Some(limit) => TextTurn::End(limit, None),
+        None => TextTurn::Retry,
+    })
+}
+
+/// The JSON of the first successful structured output tool result (TS `_extractStructuredOutput`).
+fn extract_structured_output(tool_use_message: &Message, tool_result_message: &Message) -> Option<JsonValue> {
+    let ids = structured_output_tool_use_ids(tool_use_message);
+    let result = tool_result_message
+        .content()
+        .iter()
+        .find_map(|block| match block {
+            ContentBlock::ToolResult(result)
+                if ids.contains(&result.tool_use_id()) && result.status() == &ToolResultStatus::Success =>
+            {
+                Some(result)
+            }
+            _ => None,
+        })?;
+    match result.content().first()? {
+        ToolResultContent::Json(json) => Some(json.json().clone()),
+        _ => None,
     }
 }
 

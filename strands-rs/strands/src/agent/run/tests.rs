@@ -925,3 +925,4 @@ mod hooks {
 
 mod invocation_state;
 mod limits;
+mod structured_output;

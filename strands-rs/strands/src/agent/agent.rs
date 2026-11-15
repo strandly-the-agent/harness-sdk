@@ -16,7 +16,7 @@ use crate::hooks::{
 use crate::models::model::Model;
 use crate::state_store::StateStore;
 use crate::telemetry::{AgentMetrics, LocalTelemetry};
-use crate::tools::{Tool, ToolExecutor, ToolRegistry, ToolSource};
+use crate::tools::{StructuredOutputSchema, Tool, ToolExecutor, ToolRegistry, ToolSource};
 use crate::types::agent::{AgentResult, AgentStreamEvent, InvokeArgs, InvokeOptions, LocalAgent};
 use crate::types::messages::{Message, SystemPrompt};
 
@@ -50,6 +50,7 @@ pub struct Agent {
     pub(crate) local: LocalAgent,
     pub(crate) tool_executor: ToolExecutor,
     pub(crate) telemetry: LocalTelemetry,
+    pub(crate) structured_output_schema: Option<StructuredOutputSchema>,
     initialized: bool,
 }
 
@@ -87,6 +88,7 @@ impl Agent {
         let tools = config.tools.into_iter().flat_map(ToolSource::into_tools);
         local.tool_registry_mut().add_all(tools)?;
         agent.tool_executor = config.tool_executor.unwrap_or_default();
+        agent.structured_output_schema = config.structured_output_schema;
         Ok(agent)
     }
 
@@ -96,6 +98,7 @@ impl Agent {
             local: LocalAgent::new(model),
             tool_executor: ToolExecutor::default(),
             telemetry: LocalTelemetry::default(),
+            structured_output_schema: None,
             initialized: false,
         }
     }

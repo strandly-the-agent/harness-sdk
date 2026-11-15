@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use crate::error::{DefaultNotConfiguredError, Error, Result};
 use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, Model, ModelRequest};
 use crate::models::streaming::ModelStreamEvent;
-use crate::tools::{ToolExecutor, ToolSource};
+use crate::tools::{StructuredOutputSchema, ToolExecutor, ToolSource};
 use crate::types::json::JsonObject;
 use crate::types::messages::{Message, SystemPrompt};
 
@@ -182,6 +182,10 @@ pub struct AgentConfig {
     /// How the tool calls of one model turn run (default concurrent).
     #[builder(into)]
     pub tool_executor: Option<ToolExecutor>,
+    /// Structured output every invocation must produce, unless
+    /// [`InvokeOptions::structured_output_schema`](crate::InvokeOptions::structured_output_schema)
+    /// overrides it (for example `StructuredOutputSchema::of::<T>()`).
+    pub structured_output_schema: Option<StructuredOutputSchema>,
 }
 
 impl<S: agent_builder::State> AgentBuilder<S> {

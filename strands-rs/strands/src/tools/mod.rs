@@ -5,6 +5,7 @@ pub mod function_tool;
 pub(crate) mod macro_support;
 pub mod registry;
 pub(crate) mod schema;
+pub mod structured_output;
 pub mod tool;
 
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use std::sync::Arc;
 pub use executors::{ConcurrentToolExecutor, SequentialToolExecutor, ToolExecutor};
 pub use function_tool::FunctionTool;
 pub use registry::ToolRegistry;
+pub use structured_output::{STRUCTURED_OUTPUT_TOOL_NAME, StructuredOutputSchema};
 pub use tool::{Tool, ToolContext, ToolError, ToolOutcome, ToolStream, ToolStreamEvent, ToolStreamItem};
 
 /// Something `.tools(..)` accepts: a tool or a list of sources.

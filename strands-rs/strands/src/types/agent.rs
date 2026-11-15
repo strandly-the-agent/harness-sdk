@@ -5,6 +5,7 @@ use std::fmt;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
+use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Serialize, Serializer};
 
@@ -19,7 +20,7 @@ use crate::interrupt::{
 use crate::models::model::Model;
 use crate::state_store::StateStore;
 use crate::telemetry::{AgentMetrics, AgentTrace};
-use crate::tools::ToolRegistry;
+use crate::tools::{StructuredOutputSchema, ToolRegistry};
 use crate::types::json::{JsonValue, to_js_string};
 use crate::types::messages::{ContentBlock, Message, StopReason, SystemPrompt};
 
@@ -568,6 +569,18 @@ pub struct InvokeOptions {
     pub invocation_context: Option<InvocationContext>,
     /// Limits for the request this call starts, or extra limits for a nested call.
     pub limits: Option<InvokeLimits>,
+    /// The structured output schema for this call, overriding the agent's.
+    pub structured_output_schema: Option<StructuredOutputSchema>,
+}
+
+impl InvokeOptions {
+    /// Asks this call for structured output of type `T`; read it with
+    /// [`AgentResult::structured_output`].
+    #[must_use]
+    pub fn structured_output_schema<T: DeserializeOwned + JsonSchema + 'static>(mut self) -> Self {
+        self.structured_output_schema = Some(StructuredOutputSchema::of::<T>());
+        self
+    }
 }
 
 /// Request-wide limits (TS `InvokeLimits`). Reaching one ends the call with its `limit*` stop
@@ -645,7 +658,6 @@ impl AgentResult {
         self.invocation_context.as_ref()
     }
 
-    #[allow(dead_code, reason = "set by the loop's structured output handling")]
     pub(crate) fn with_structured_output(mut self, structured_output: JsonValue) -> Self {
         self.structured_output = Some(structured_output);
         self

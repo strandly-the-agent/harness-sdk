@@ -174,29 +174,47 @@ impl InputValidator {
         }
     }
 
+    /// A validator that also checks `format` keywords (email, uri, ...), as zod does.
+    pub(crate) fn with_formats(schema: &JsonValue) -> Self {
+        Self {
+            validator: jsonschema::options()
+                .should_validate_formats(true)
+                .build(schema)
+                .ok()
+                .map(Arc::new),
+        }
+    }
+
     /// Validates `input` and deserializes it as `I`.
     ///
     /// # Errors
     ///
     /// A [`ToolValidationError`] naming the first failing path, or the serde message.
     pub fn parse<I: DeserializeOwned>(&self, input: JsonValue) -> Result<I, ToolError> {
-        if let Some(error) = self
-            .validator
-            .as_ref()
-            .and_then(|validator| validator.iter_errors(&input).next())
-        {
-            {
+        if let Some(error) = self.errors(&input).into_iter().next() {
+            return Err(ToolValidationError::new(error).into());
+        }
+        serde_json::from_value(input)
+            .map_err(|error| ToolValidationError::new(format!("Invalid input: {error}")).into())
+    }
+
+    /// Every schema violation in `input`, as `Invalid input[ at <path>]: <message>`.
+    pub(crate) fn errors(&self, input: &JsonValue) -> Vec<String> {
+        let Some(validator) = &self.validator else {
+            return Vec::new();
+        };
+        validator
+            .iter_errors(input)
+            .map(|error| {
                 let path = error.instance_path().to_string();
                 let location = if path.is_empty() {
                     String::new()
                 } else {
                     format!(" at {path}")
                 };
-                return Err(ToolValidationError::new(format!("Invalid input{location}: {error}")).into());
-            }
-        }
-        serde_json::from_value(input)
-            .map_err(|error| ToolValidationError::new(format!("Invalid input: {error}")).into())
+                format!("Invalid input{location}: {error}")
+            })
+            .collect()
     }
 }
 
