@@ -53,6 +53,7 @@ pub use interrupt::InterruptResponse;
 pub use state_store::StateStore;
 pub use strands_macros::{tool, tools};
 pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};
+pub use types::agent::AgentResult;
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};
 
