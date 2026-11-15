@@ -18,7 +18,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Tool types, `StopReason`, `Usage`, `Metrics`, snapshot and interrupt types
 - [x] `strands::Error` and TS-mirrored error types with exact messages
 - [x] Constructors for non-exhaustive wire structs
-- [ ] Fixture round-trips byte-identical
+- [x] Fixture round-trips byte-identical
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 2: model abstraction, streaming and retry

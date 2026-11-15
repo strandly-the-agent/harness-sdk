@@ -1071,3 +1071,35 @@ mod stop_reason {
         );
     }
 }
+
+#[test]
+fn ergonomic_from_impls_build_the_expected_variants() {
+    let system: Vec<SystemContentBlock> = vec![
+        TextBlock::new("a").into(),
+        CachePointBlock::new().into(),
+        guard_text().into(),
+        "b".into(),
+        "c".to_owned().into(),
+    ];
+    assert_eq!(to_json(&system)[3], json!({"text": "b"}));
+    assert!(matches!(system[2], SystemContentBlock::GuardContent(_)));
+    let content: Vec<ToolResultContent> = vec![
+        "a".into(),
+        "b".to_owned().into(),
+        ImageBlock::new(ImageFormat::Png, vec![1]).into(),
+        VideoBlock::new(VideoFormat::Mp4, vec![1]).into(),
+        DocumentBlock::new("d", DocumentFormat::Txt, vec![1]).into(),
+    ];
+    assert!(matches!(
+        content.as_slice(),
+        [
+            ToolResultContent::Text(_),
+            ToolResultContent::Text(_),
+            ToolResultContent::Image(_),
+            ToolResultContent::Video(_),
+            ToolResultContent::Document(_)
+        ]
+    ));
+    let image = GuardContentBlock::from(GuardContentImage::new(GuardImageFormat::Png, vec![1]));
+    assert!(image.image().is_some());
+}

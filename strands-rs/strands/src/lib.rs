@@ -27,6 +27,8 @@ pub mod models;
 pub mod types;
 
 #[cfg(test)]
+mod conformance_tests;
+#[cfg(test)]
 mod test_support;
 
 pub use error::{Error, Result};
