@@ -118,10 +118,13 @@ impl ToolUse {
 #[serde(rename_all = "camelCase")]
 pub enum ToolChoice {
     /// The model decides whether to use tools.
+    #[non_exhaustive]
     Auto {},
     /// The model must use at least one tool.
+    #[non_exhaustive]
     Any {},
     /// The model must use the named tool.
+    #[non_exhaustive]
     Tool {
         /// The tool name.
         name: String,

@@ -354,7 +354,9 @@ impl DataError {
     /// The TS `error.name` of a plain `Error`, `"Error"`.
     pub const NAME: &'static str = "Error";
 
-    pub(crate) fn new(message: impl Into<String>) -> Self {
+    /// Creates a data error with the given message.
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
         }

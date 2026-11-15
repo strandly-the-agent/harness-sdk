@@ -39,10 +39,7 @@ fn to_json<T: serde::Serialize>(value: &T) -> Value {
 fn message_and_content_blocks() {
     let citations = CitationsBlock::new(
         vec![Citation::new(
-            CitationLocation::Web {
-                url: "https://example.com".into(),
-                domain: None,
-            },
+            CitationLocation::web("https://example.com"),
             "web-0",
             vec![CitationSourceContent::new("quoted")],
             "Example",
@@ -205,4 +202,33 @@ fn interrupts_and_snapshots() {
         ..TakeSnapshotOptions::default()
     };
     assert_eq!(options.exclude, None);
+}
+
+#[test]
+fn citation_location_constructors_write_the_ts_shapes() {
+    let cases = [
+        (
+            CitationLocation::document_char(0, 1, 2),
+            r#"{"type":"documentChar","documentIndex":0,"start":1,"end":2}"#,
+        ),
+        (
+            CitationLocation::document_page(0, 1, 2),
+            r#"{"type":"documentPage","documentIndex":0,"start":1,"end":2}"#,
+        ),
+        (
+            CitationLocation::document_chunk(0, 1, 2),
+            r#"{"type":"documentChunk","documentIndex":0,"start":1,"end":2}"#,
+        ),
+        (
+            CitationLocation::search_result(3, 1, 2),
+            r#"{"type":"searchResult","searchResultIndex":3,"start":1,"end":2}"#,
+        ),
+        (
+            CitationLocation::web("https://example.com").with_domain("example.com"),
+            r#"{"type":"web","url":"https://example.com","domain":"example.com"}"#,
+        ),
+    ];
+    for (location, expected) in cases {
+        assert_eq!(serde_json::to_string(&location).unwrap(), expected);
+    }
 }

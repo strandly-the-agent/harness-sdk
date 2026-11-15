@@ -18,6 +18,7 @@ use crate::types::json::JsonValue;
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum CitationLocation {
     /// A character range in a document.
+    #[non_exhaustive]
     DocumentChar {
         /// The index of the cited document.
         document_index: u64,
@@ -27,6 +28,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A page range in a document.
+    #[non_exhaustive]
     DocumentPage {
         /// The index of the cited document.
         document_index: u64,
@@ -36,6 +38,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A chunk range in a document.
+    #[non_exhaustive]
     DocumentChunk {
         /// The index of the cited document.
         document_index: u64,
@@ -45,6 +48,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A range in a search result.
+    #[non_exhaustive]
     SearchResult {
         /// The index of the cited search result.
         search_result_index: u64,
@@ -54,6 +58,7 @@ pub enum CitationLocation {
         end: u64,
     },
     /// A web page.
+    #[non_exhaustive]
     Web {
         /// The page URL.
         url: String,
@@ -65,6 +70,69 @@ pub enum CitationLocation {
     /// as written.
     #[serde(untagged)]
     Other(UnknownCitationLocation),
+}
+
+impl CitationLocation {
+    /// A character range in a document.
+    #[must_use]
+    pub fn document_char(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentChar {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A page range in a document.
+    #[must_use]
+    pub fn document_page(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentPage {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A chunk range in a document.
+    #[must_use]
+    pub fn document_chunk(document_index: u64, start: u64, end: u64) -> Self {
+        Self::DocumentChunk {
+            document_index,
+            start,
+            end,
+        }
+    }
+
+    /// A range in a search result.
+    #[must_use]
+    pub fn search_result(search_result_index: u64, start: u64, end: u64) -> Self {
+        Self::SearchResult {
+            search_result_index,
+            start,
+            end,
+        }
+    }
+
+    /// A web page, without a domain.
+    #[must_use]
+    pub fn web(url: impl Into<String>) -> Self {
+        Self::Web {
+            url: url.into(),
+            domain: None,
+        }
+    }
+
+    /// Sets the domain of a [`CitationLocation::Web`] location; other locations are returned unchanged.
+    #[must_use]
+    pub fn with_domain(self, domain: impl Into<String>) -> Self {
+        match self {
+            Self::Web { url, .. } => Self::Web {
+                url,
+                domain: Some(domain.into()),
+            },
+            other => other,
+        }
+    }
 }
 
 /// A [`CitationLocation`] this version can't read as a known variant: the raw JSON object, `type`
