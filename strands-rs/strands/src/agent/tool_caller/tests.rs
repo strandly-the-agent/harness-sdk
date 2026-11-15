@@ -225,6 +225,17 @@ async fn propagates_errors_when_tool_throws() {
 }
 
 #[tokio::test]
+async fn a_tool_that_panics_while_building_its_stream_is_an_error() {
+    let eager = stream_tool("eager", |_| panic!("Eager boom"));
+    let mut agent = agent_with(vec![eager.into()]);
+
+    let error = agent.tool("eager").invoke(json!({})).await.unwrap_err();
+
+    assert_eq!(error.to_string(), "Eager boom");
+    assert!(agent.messages().is_empty());
+}
+
+#[tokio::test]
 async fn generates_unique_tool_use_ids_using_crypto_random_uuid() {
     let mut agent = agent_with(vec![fixed("id-tool", "ok")]);
 

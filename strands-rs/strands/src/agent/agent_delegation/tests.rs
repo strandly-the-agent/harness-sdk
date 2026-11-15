@@ -13,8 +13,12 @@ use crate::hooks::{
 };
 use crate::models::model::{BaseModelConfig, Model};
 use crate::models::model_info::{ModelCapabilities, ModelInfo};
+use crate::models::streaming::{
+    ModelContentBlockDeltaEvent, ModelContentBlockStartEvent, ModelContentBlockStopEvent,
+    ModelMessageStartEvent, ModelMessageStopEvent, ToolUseInputDelta, ToolUseStart,
+};
 use crate::test_support::{mock_tool, text_result};
-use crate::testing::MockMessageModel;
+use crate::testing::{MockMessageModel, TestModelProvider};
 use crate::tools::{StructuredOutputSchema, Tool, ToolSource};
 use crate::types::agent::{AgentResult, AgentStreamEvent};
 use crate::types::json::JsonValue;
@@ -347,6 +351,37 @@ async fn converts_json_block_to_text_block_with_json_stringified_content() {
         panic!("expected one text block");
     };
     assert_eq!(serde_json::from_str::<JsonValue>(block.text()).unwrap(), payload);
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[expect(dead_code, reason = "only the schema is read")]
+struct Price {
+    price: f64,
+}
+
+#[tokio::test]
+async fn stringifies_json_block_numbers_as_json_stringify_does() {
+    let sub_model = TestModelProvider::from_events(vec![
+        ModelMessageStartEvent::new(Role::Assistant).into(),
+        ModelContentBlockStartEvent::new()
+            .with_start(ToolUseStart::new("strands_structured_output", "so-1"))
+            .into(),
+        ModelContentBlockDeltaEvent::new(ToolUseInputDelta::new(r#"{"price": 1.0}"#)).into(),
+        ModelContentBlockStopEvent::new().into(),
+        ModelMessageStopEvent::new(StopReason::ToolUse).into(),
+    ]);
+    let pricer = Agent::builder()
+        .model(sub_model)
+        .name("Pricer")
+        .structured_output_schema(StructuredOutputSchema::of::<Price>())
+        .build()
+        .unwrap();
+    let model = mock(vec![vec![call("Pricer", "p-1", json!({"input": "price?"}))]]);
+    let mut agent = orchestrator(model, vec![delegate(pricer)]);
+
+    let result = agent.invoke("price?").await.unwrap();
+
+    assert_eq!(first_text(&result), r#"{"price":1}"#);
 }
 
 #[tokio::test]

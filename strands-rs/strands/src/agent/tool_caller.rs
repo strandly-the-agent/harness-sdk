@@ -2,7 +2,7 @@
 //! registered tool without the model and records the call in the history.
 
 use std::fmt;
-use std::panic::AssertUnwindSafe;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -127,7 +127,14 @@ impl<'a> ToolHandle<'a> {
                     agent.local.direct_tool_agent(),
                     InvocationState::new(),
                 );
-                let mut events = AssertUnwindSafe(tool.stream(context)).catch_unwind();
+                let events = match catch_unwind(AssertUnwindSafe(|| tool.stream(context))) {
+                    Ok(events) => events,
+                    Err(panic) => {
+                        yield Err(Error::other(panic_message(panic.as_ref())));
+                        return;
+                    }
+                };
+                let mut events = AssertUnwindSafe(events).catch_unwind();
                 let mut result = None;
                 loop {
                     match events.next().await {

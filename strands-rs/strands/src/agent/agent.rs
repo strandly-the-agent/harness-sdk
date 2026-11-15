@@ -54,6 +54,9 @@ pub struct Agent {
     pub(crate) tool_executor: ToolExecutor,
     pub(crate) telemetry: LocalTelemetry,
     pub(crate) structured_output_schema: Option<StructuredOutputSchema>,
+    /// Set while the run's `strands_structured_output` tool is in the registry, so a run whose
+    /// stream was dropped leaves a marker for the next run to clean up.
+    pub(crate) structured_output_registered: bool,
     retry_strategies: Vec<Arc<dyn ModelRetryStrategy>>,
     pub(crate) retry_sleeper: Sleeper,
     /// This agent's identity for the retry strategies' attach-once check.
@@ -115,6 +118,7 @@ impl Agent {
             tool_executor: ToolExecutor::default(),
             telemetry: LocalTelemetry::default(),
             structured_output_schema: None,
+            structured_output_registered: false,
             retry_strategies: vec![Arc::new(DefaultModelRetryStrategy::default())],
             retry_sleeper: tokio_sleeper(),
             attach_token: Arc::new(()),

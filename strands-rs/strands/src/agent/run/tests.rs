@@ -563,6 +563,16 @@ mod input {
     }
 
     #[tokio::test]
+    async fn blank_means_empty_after_js_trim() {
+        let mut agent = test_agent(mock(vec![vec![text("ok")]]));
+        let error = agent.invoke("\u{feff}").await.unwrap_err();
+        assert!(error.to_string().starts_with("Input prompt is blank."));
+        let mut agent = test_agent(mock(vec![vec![text("ok")]]));
+        let result = agent.invoke("\u{85}").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    }
+
+    #[tokio::test]
     async fn invalid_tool_names_and_empty_assistant_messages_are_fixed_only_in_the_request() {
         let model = mock(vec![vec![text("ok")]]);
         let history = vec![

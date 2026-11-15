@@ -647,3 +647,32 @@ async fn a_user_tool_named_like_the_structured_output_tool_fails_the_invocation(
     assert!(agent.invoke("Test").await.is_err());
     assert!(agent.tool_registry().get(STRUCTURED_OUTPUT_TOOL_NAME).is_some());
 }
+
+#[tokio::test]
+async fn a_dropped_stream_leaves_no_structured_output_tool_for_the_next_run() {
+    let model = mock(vec![
+        vec![text("Partial")],
+        vec![output_call(json!({"value": 1}), "so-1")],
+    ]);
+    let mut agent = test_agent(model);
+    {
+        let mut stream = agent.stream_with(
+            "First",
+            InvokeOptions::default().structured_output_schema::<Value>(),
+        );
+        while let Some(event) = stream.next().await {
+            if matches!(event.unwrap(), AgentStreamEvent::ModelStreamUpdate(_)) {
+                break;
+            }
+        }
+    }
+    let result = agent
+        .invoke_with(
+            "Second",
+            InvokeOptions::default().structured_output_schema::<Value>(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.structured_output_value(), Some(&json!({"value": 1})));
+    assert!(agent.tool_registry().get(STRUCTURED_OUTPUT_TOOL_NAME).is_none());
+}

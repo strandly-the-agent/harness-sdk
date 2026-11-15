@@ -524,6 +524,33 @@ async fn a_tool_runs_at_most_a_few_events_ahead_of_the_consumer() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_tool_body_stays_paused_at_its_yield_until_the_consumer_pulls() {
+    let resumed = Arc::new(AtomicUsize::new(0));
+    let tool_resumed = Arc::clone(&resumed);
+    let chatty = stream_tool("chatty", move |_context| {
+        let resumed = Arc::clone(&tool_resumed);
+        ToolStream::new(async_stream::stream! {
+            for _ in 0..5 {
+                yield ToolStreamEvent::new(json!("tick")).into();
+                resumed.fetch_add(1, Ordering::SeqCst);
+            }
+            yield ToolOutcome::Result(ToolResultBlock::new("c1", ToolResultStatus::Success, vec![])).into();
+        })
+    });
+    let fixture = fixture(vec![chatty]);
+    let mut stream = ConcurrentToolExecutor::new().execute(fixture.input(vec![tool_use("chatty", "c1")]));
+
+    stream.next().await.unwrap().unwrap();
+    stream.next().await.unwrap().unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(resumed.load(Ordering::SeqCst), 0);
+
+    stream.next().await.unwrap().unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(resumed.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(start_paused = true)]
 async fn hooks_of_concurrent_tools_never_overlap() {
     let fixture = fixture(vec![
         text_tool("a", "a"),

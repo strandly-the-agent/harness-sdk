@@ -91,7 +91,7 @@ type AfterReply = (ToolResultBlock, bool);
 /// A message from a tool task to the executor stream.
 pub(crate) enum TaskMessage {
     Before(BeforeToolCallEvent, oneshot::Sender<BeforeReply>),
-    Update(ToolStreamEvent),
+    Update(ToolStreamEvent, oneshot::Sender<()>),
     After(AfterToolCallEvent, oneshot::Sender<AfterReply>),
     Interrupted(Interrupt),
     Done(ToolResultBlock),
@@ -100,6 +100,7 @@ pub(crate) enum TaskMessage {
 /// The answer to a task, sent once the consumer pulls the next item.
 pub(crate) enum Reply {
     None,
+    Update(oneshot::Sender<()>),
     Before(oneshot::Sender<BeforeReply>, BeforeReply),
     After(oneshot::Sender<AfterReply>, AfterReply),
 }
@@ -109,6 +110,7 @@ impl Reply {
         // A closed receiver means the task is gone; nothing waits for the answer.
         match self {
             Self::None => {}
+            Self::Update(sender) => drop(sender.send(())),
             Self::Before(sender, reply) => drop(sender.send(reply)),
             Self::After(sender, reply) => drop(sender.send(reply)),
         }
@@ -186,20 +188,20 @@ impl Batch {
                     Reply::Before(sender, Some(reply)),
                 )
             }
-            TaskMessage::Update(event) => {
+            TaskMessage::Update(event, sender) => {
                 // TS `AgentDelegation` middleware: a delegate's own events surface as the parent's.
                 if let Some(delegated) = event.delegated()
                     && !self.agent.model().stateful()
                 {
                     return Ok(Some((
                         ToolExecutorEvent::Delegated(delegated.clone()),
-                        Reply::None,
+                        Reply::Update(sender),
                     )));
                 }
                 let mut event =
                     ToolStreamUpdateEvent::new(self.agent.clone(), event, self.invocation_state.clone());
                 self.hooks.invoke::<ToolStreamUpdateEvent>(&mut event).await?;
-                (ToolExecutorEvent::ToolStreamUpdate(event), Reply::None)
+                (ToolExecutorEvent::ToolStreamUpdate(event), Reply::Update(sender))
             }
             TaskMessage::After(mut event, sender) => {
                 self.hooks.invoke::<AfterToolCallEvent>(&mut event).await?;
@@ -359,7 +361,11 @@ impl ToolTask {
             let mut stream = tool.stream(context);
             while let Some(item) = stream.next().await {
                 match item {
-                    ToolStreamItem::Event(event) => self.send(TaskMessage::Update(event)).await?,
+                    ToolStreamItem::Event(event) => {
+                        let (sender, reply) = oneshot::channel();
+                        self.send(TaskMessage::Update(event, sender)).await?;
+                        reply.await.ok()?;
+                    }
                     ToolStreamItem::Outcome(outcome) => return Some(outcome),
                 }
             }

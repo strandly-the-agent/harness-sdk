@@ -13,7 +13,7 @@ use serde::de::DeserializeOwned;
 use crate::error::ToolValidationError;
 use crate::tools::schema::input_schema_for;
 use crate::tools::tool::{Tool, ToolContext, ToolError, ToolOutcome, ToolStream};
-use crate::types::json::JsonValue;
+use crate::types::json::{JsonValue, to_js_string};
 use crate::types::messages::{JsonBlock, ToolResultBlock, ToolResultContent};
 use crate::types::tools::{ToolResultStatus, ToolSpec};
 
@@ -235,7 +235,10 @@ pub(crate) fn wrap_in_tool_result(value: JsonValue, tool_use_id: &str) -> ToolRe
     }
     match value {
         JsonValue::String(text) => success(vec![ToolResultContent::from(text)]),
-        JsonValue::Number(number) => success(vec![ToolResultContent::from(number.to_string())]),
+        JsonValue::Number(number) => {
+            let text = to_js_string(&number).unwrap_or_else(|_| number.to_string());
+            success(vec![ToolResultContent::from(text)])
+        }
         JsonValue::Bool(flag) => success(vec![ToolResultContent::from(flag.to_string())]),
         JsonValue::Array(items) => {
             let blocks: Option<Vec<ToolResultContent>> = items.iter().map(as_tool_result_content).collect();

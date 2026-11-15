@@ -19,7 +19,7 @@ use crate::hooks::{
 };
 use crate::interrupt::Interrupt;
 use crate::models::model::{
-    AggregatedEvent, CountTokensOptions, Model, ModelRequest, StreamAggregatedResult,
+    AggregatedEvent, CountTokensOptions, Model, ModelRequest, StreamAggregatedResult, js_trim,
 };
 use crate::models::model_proxy::ModelProxy;
 use crate::tools::executors::executor::{
@@ -176,12 +176,19 @@ impl Agent {
             tool: schema.map(StructuredOutputTool::new),
             choice: None,
         };
+        // A run whose stream was dropped never reached the removal below.
+        if self.structured_output_registered {
+            self.local.tool_registry_mut().remove(STRUCTURED_OUTPUT_TOOL_NAME);
+            self.structured_output_registered = false;
+        }
         if let Some(tool) = &structured.tool {
             self.local.tool_registry_mut().add(Arc::new(tool.clone()))?;
+            self.structured_output_registered = true;
         }
         let outcome = self.cycles(input, state, hooks, out, &mut structured).await;
         if structured.tool.is_some() {
             self.local.tool_registry_mut().remove(STRUCTURED_OUTPUT_TOOL_NAME);
+            self.structured_output_registered = false;
         }
         outcome
     }
@@ -827,7 +834,7 @@ fn normalize_input(args: InvokeArgs) -> Result<Vec<Message>> {
             && message
                 .content()
                 .iter()
-                .all(|block| matches!(block, ContentBlock::Text(text) if text.text().trim().is_empty()))
+                .all(|block| matches!(block, ContentBlock::Text(text) if js_trim(text.text()).is_empty()))
     };
     if messages.iter().any(blank) {
         return Err(Error::other(

@@ -15,7 +15,8 @@ use crate::hooks::{
 use crate::tools::executors::executor::error_text_result;
 use crate::tools::{STRUCTURED_OUTPUT_TOOL_NAME, Tool, ToolContext, ToolOutcome, ToolRegistry, ToolStream};
 use crate::types::agent::LocalAgent;
-use crate::types::messages::{ContentBlock, ToolResultBlock, ToolResultContent};
+use crate::types::json::to_js_string;
+use crate::types::messages::{ContentBlock, TextBlock, ToolResultBlock, ToolResultContent};
 use crate::types::tools::{ToolResultStatus, ToolSpec};
 
 const BATCH_CANCEL: &str = "This tool call was not executed. A delegation tool must be the only tool called in a turn. Retry with a single delegation tool call or use only non-delegation tools.";
@@ -179,7 +180,7 @@ fn to_content_blocks(result: &ToolResultBlock) -> Vec<ContentBlock> {
         .filter_map(|content| match content {
             ToolResultContent::Text(text) => Some(text.clone().into()),
             ToolResultContent::Json(json) => {
-                Some(crate::types::messages::TextBlock::new(json.json().to_string()).into())
+                Some(TextBlock::new(to_js_string(json.json()).unwrap_or_default()).into())
             }
             ToolResultContent::Image(image) => Some(image.clone().into()),
             ToolResultContent::Video(video) => Some(video.clone().into()),

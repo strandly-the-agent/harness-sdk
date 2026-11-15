@@ -175,6 +175,14 @@ mod stream_method {
             result_json(&returning(json!(1.5)), json!({})).await,
             success(json!([{"text": "1.5"}]))
         );
+        assert_eq!(
+            result_json(&returning(json!(8.0)), json!({})).await,
+            success(json!([{"text": "8"}]))
+        );
+        assert_eq!(
+            result_json(&returning(json!(1e21)), json!({})).await,
+            success(json!([{"text": "1e+21"}]))
+        );
     }
 
     #[tokio::test]
