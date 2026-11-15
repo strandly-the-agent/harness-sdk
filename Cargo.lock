@@ -4228,7 +4228,9 @@ dependencies = [
  "darling",
  "proc-macro2",
  "quote",
+ "strands",
  "syn 3.0.10",
+ "tokio",
  "trybuild",
 ]
 

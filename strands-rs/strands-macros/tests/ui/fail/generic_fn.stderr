@@ -1,0 +1,5 @@
+error: #[tool] functions can't be generic: the input schema is derived from concrete types
+ --> tests/ui/fail/generic_fn.rs:5:8
+  |
+5 | fn echo<T: Clone>(value: T) -> String {
+  |        ^

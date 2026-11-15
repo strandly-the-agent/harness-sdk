@@ -1,0 +1,5 @@
+error: #[tool] needs a doc comment: it is the tool description the model sees, and tool registration rejects an empty description
+ --> tests/ui/fail/missing_doc.rs:4:4
+  |
+4 | fn undocumented(value: String) -> String {
+  |    ^^^^^^^^^^^^

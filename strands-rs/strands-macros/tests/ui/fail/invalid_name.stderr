@@ -1,0 +1,5 @@
+error: invalid tool name `bad name`: use 1 to 64 characters of [a-zA-Z0-9_-]
+ --> tests/ui/fail/invalid_name.rs:5:4
+  |
+5 | fn spaced(value: String) -> String {
+  |    ^^^^^^

@@ -1,0 +1,58 @@
+error[E0277]: the trait bound `NotSerialize: serde::Serialize` is not satisfied
+ --> tests/ui/fail/non_serializable_return.rs:7:29
+  |
+7 | fn opaque(value: String) -> Result<NotSerialize, ToolError> {
+  |                             ^^^^^^ unsatisfied trait bound
+  |
+help: the trait `strands::__private::serde::Serialize` is not implemented for `NotSerialize`
+ --> tests/ui/fail/non_serializable_return.rs:3:1
+  |
+3 | struct NotSerialize;
+  | ^^^^^^^^^^^^^^^^^^^
+  = note: for local types consider adding `#[derive(serde::Serialize)]` to your `NotSerialize` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `strands::__private::serde::Serialize`:
+            &'a T
+            &'a mut T
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+          and $N others
+note: required by a bound in `strands::__private::result_output`
+ --> $WORKSPACE/strands-rs/strands/src/tools/macro_support.rs
+  |
+  | pub fn result_output<T: Serialize, E: Into<ToolError>>(result: Result<T, E>) -> Result<JsonValue, ToolError> {
+  |                         ^^^^^^^^^ required by this bound in `result_output`
+
+error[E0277]: the trait bound `NotSerialize: serde::Serialize` is not satisfied
+ --> tests/ui/fail/non_serializable_return.rs:6:1
+  |
+6 | #[tool]
+  | ^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `strands::__private::serde::Serialize` is not implemented for `NotSerialize`
+ --> tests/ui/fail/non_serializable_return.rs:3:1
+  |
+3 | struct NotSerialize;
+  | ^^^^^^^^^^^^^^^^^^^
+  = note: for local types consider adding `#[derive(serde::Serialize)]` to your `NotSerialize` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `strands::__private::serde::Serialize`:
+            &'a T
+            &'a mut T
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+          and $N others
+note: required by a bound in `strands::__private::result_output`
+ --> $WORKSPACE/strands-rs/strands/src/tools/macro_support.rs
+  |
+  | pub fn result_output<T: Serialize, E: Into<ToolError>>(result: Result<T, E>) -> Result<JsonValue, ToolError> {
+  |                         ^^^^^^^^^ required by this bound in `result_output`
+  = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)

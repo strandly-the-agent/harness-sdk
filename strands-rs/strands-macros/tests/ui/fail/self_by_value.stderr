@@ -1,0 +1,5 @@
+error: #[tool] methods in #[tools] take `&self`
+ --> tests/ui/fail/self_by_value.rs:9:16
+  |
+9 |     fn consume(self) -> u32 {
+  |                ^^^^

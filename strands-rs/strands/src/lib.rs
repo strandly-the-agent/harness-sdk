@@ -46,6 +46,15 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_extern_crates,
+        reason = "`#[tool]` code in this crate names `::strands`; only tests use it yet"
+    )
+)]
+extern crate self as strands;
+
 #[macro_use]
 mod open_enum;
 
@@ -73,6 +82,9 @@ pub mod __private {
     pub use serde_json;
 
     pub use crate::tools::function_tool::InputValidator;
+    pub use crate::tools::macro_support::{LazyToolDef, ToolDef, blocking, result_output, value_output};
+    pub use crate::tools::{Tool, ToolContext, ToolSource, ToolStream};
+    pub use crate::types::tools::ToolSpec;
 
     /// The normalized input schema for `T`, as typed tools use it.
     pub fn input_schema_for<T: schemars::JsonSchema>() -> crate::JsonValue {
@@ -98,6 +110,7 @@ pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
 pub use state_store::StateStore;
+pub use strands_macros::{tool, tools};
 pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};
 pub use types::agent::{AgentResult, InvocationState, InvokeArgs};
 pub use types::json::JsonValue;

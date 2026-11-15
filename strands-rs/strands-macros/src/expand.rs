@@ -1,0 +1,263 @@
+//! Code generation for `#[tool]` and `#[tools]`.
+
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote, quote_spanned};
+use syn::ext::IdentExt;
+use syn::spanned::Spanned;
+use syn::{Attribute, ImplItem, ItemFn, ItemImpl, Visibility, parse_quote};
+
+use crate::signature::{self, Output, Param, Receiver, ToolArgs, ToolFn};
+
+/// `#[tool]` on a free function: the function, a unit struct and its `Tool` impl.
+pub(crate) fn tool_fn(args: ToolArgs, mut item: ItemFn) -> syn::Result<TokenStream> {
+    let tool = signature::read(&item.attrs, &mut item.sig, args, Receiver::None)?;
+    item.attrs.extend(lint_allows(&tool));
+    let fn_ident = &tool.ident;
+    let struct_ident = format_ident!(
+        "{}",
+        pascal_case(&fn_ident.unraw().to_string()),
+        span = fn_ident.span()
+    );
+    let vis = &item.vis;
+    let docs = &tool.docs;
+    let tool_impl = tool_impl(
+        &tool,
+        &quote!(#struct_ident),
+        &quote!(#fn_ident),
+        &TokenStream::new(),
+    );
+    Ok(quote! {
+        #item
+
+        #(#docs)*
+        #[derive(Debug, Clone, Copy, Default)]
+        #[allow(clippy::exhaustive_structs, reason = "a unit struct that names the tool")]
+        #vis struct #struct_ident;
+
+        const _: () = {
+            #tool_impl
+        };
+    })
+}
+
+/// `#[tools]` on an impl block: the block without the inner `#[tool]` attributes, a
+/// `<method>_tool` constructor per tool method and `tools()`.
+pub(crate) fn tools_impl(mut item: ItemImpl) -> syn::Result<TokenStream> {
+    if let Some((path, _)) = &item.trait_ {
+        return Err(syn::Error::new(
+            path.span(),
+            "#[tools] goes on an inherent impl block",
+        ));
+    }
+    if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
+        return Err(syn::Error::new(
+            item.generics.span(),
+            "#[tools] impl blocks can't be generic",
+        ));
+    }
+    let self_ty = item.self_ty.clone();
+    let mut generated = Vec::new();
+    let mut constructors: Vec<(syn::Ident, Visibility)> = Vec::new();
+    for impl_item in &mut item.items {
+        let ImplItem::Fn(method) = impl_item else {
+            continue;
+        };
+        let Some(index) = method.attrs.iter().position(is_tool_attr) else {
+            continue;
+        };
+        let attr = method.attrs.remove(index);
+        let tool = signature::read(
+            &method.attrs,
+            &mut method.sig,
+            ToolArgs::from_attr(&attr)?,
+            Receiver::Ref,
+        )?;
+        method.attrs.extend(lint_allows(&tool));
+        let method_ident = &tool.ident;
+        let constructor = format_ident!("{}_tool", method_ident.unraw());
+        let vis = &method.vis;
+        let docs = &tool.docs;
+        let summary = format!("The `{}` tool, bound to this value.", tool.name);
+        let bind_this = quote!(let __this = ::std::sync::Arc::clone(&self.0););
+        let tool_impl = tool_impl(
+            &tool,
+            &quote!(__StrandsTool),
+            &quote!(__this.#method_ident),
+            &bind_this,
+        );
+        generated.push(quote! {
+            const _: () = {
+                struct __StrandsTool(::std::sync::Arc<#self_ty>);
+
+                #tool_impl
+
+                impl #self_ty {
+                    #[doc = #summary]
+                    #[doc = ""]
+                    #(#docs)*
+                    #[must_use]
+                    #vis fn #constructor(
+                        self: &::std::sync::Arc<Self>,
+                    ) -> impl ::strands::__private::Tool + use<> {
+                        __StrandsTool(::std::sync::Arc::clone(self))
+                    }
+                }
+            };
+        });
+        constructors.push((constructor, vis.clone()));
+    }
+    let Some((_, first_vis)) = constructors.first() else {
+        return Err(syn::Error::new(
+            self_ty.span(),
+            "#[tools] needs at least one #[tool] method",
+        ));
+    };
+    let vis = constructors
+        .iter()
+        .map(|(_, vis)| vis)
+        .find(|vis| matches!(vis, Visibility::Public(_)))
+        .unwrap_or(first_vis);
+    let idents = constructors.iter().map(|(ident, _)| ident);
+    Ok(quote! {
+        #item
+
+        #(#generated)*
+
+        impl #self_ty {
+            /// The tools of the `#[tool]` methods in this impl block, bound to this value, in
+            /// declaration order.
+            #[must_use]
+            #vis fn tools(self: &::std::sync::Arc<Self>) -> ::std::vec::Vec<::strands::__private::ToolSource> {
+                ::std::vec![#(::strands::__private::ToolSource::from(self.#idents())),*]
+            }
+        }
+    })
+}
+
+/// The input struct, the cached definition and the `Tool` impl for `target`, which calls
+/// `callee` after running `bind_this` in `stream`.
+fn tool_impl(
+    tool: &ToolFn,
+    target: &TokenStream,
+    callee: &TokenStream,
+    bind_this: &TokenStream,
+) -> TokenStream {
+    let private = quote!(::strands::__private);
+    let name = &tool.name;
+    let description = &tool.description;
+    let args = tool.params.iter().map(|param| match param {
+        Param::Input { ident, .. } => quote!(__input.#ident),
+        Param::Context { by_ref: true } => quote!(&__context),
+        Param::Context { by_ref: false } => quote!(__context),
+    });
+    let call = quote!(#callee(#(#args),*));
+    let (span, convert) = match tool.output {
+        Output::Result(span) => (span, quote_spanned!(span=> ::strands::__private::result_output)),
+        Output::Value(span) => (span, quote_spanned!(span=> ::strands::__private::value_output)),
+    };
+    let body = if tool.is_async {
+        quote_spanned!(span=> #convert(#call.await))
+    } else {
+        quote_spanned!(span=> #private::blocking(move || #call).await.and_then(#convert))
+    };
+    let context = if tool.has_context() {
+        quote!(__context)
+    } else {
+        quote!(_)
+    };
+    let (input, def, run) = if tool.has_input() {
+        let fields = tool.params.iter().filter_map(|param| match param {
+            Param::Input { ident, ty, attrs } => Some(quote!(#(#attrs)* #ident: #ty)),
+            Param::Context { .. } => None,
+        });
+        (
+            quote! {
+                #[derive(#private::serde::Deserialize, #private::schemars::JsonSchema)]
+                #[serde(crate = "::strands::__private::serde")]
+                #[schemars(crate = "::strands::__private::schemars")]
+                struct __StrandsInput {
+                    #(#fields),*
+                }
+            },
+            quote!(__STRANDS_TOOL.typed::<__StrandsInput>(#name, #description)),
+            quote! {
+                run(context, move |__input: __StrandsInput, #context: #private::ToolContext| async move {
+                    #body
+                })
+            },
+        )
+    } else {
+        (
+            TokenStream::new(),
+            quote!(__STRANDS_TOOL.untyped(#name, #description)),
+            quote! {
+                run_without_input(context, move |#context: #private::ToolContext| async move {
+                    #body
+                })
+            },
+        )
+    };
+    quote! {
+        #input
+
+        static __STRANDS_TOOL: #private::LazyToolDef = #private::LazyToolDef::new();
+
+        impl #private::Tool for #target {
+            fn name(&self) -> &str {
+                #name
+            }
+
+            fn description(&self) -> &str {
+                #description
+            }
+
+            fn tool_spec(&self) -> #private::ToolSpec {
+                #def.spec()
+            }
+
+            fn stream(&self, context: #private::ToolContext) -> #private::ToolStream {
+                #bind_this
+                #def.#run
+            }
+        }
+    }
+}
+
+/// Lints the macro's own contract triggers on the re-emitted function.
+fn lint_allows(tool: &ToolFn) -> Vec<Attribute> {
+    let mut allows = Vec::new();
+    if !tool.params.is_empty() {
+        allows.push(parse_quote!(#[allow(
+            clippy::needless_pass_by_value,
+            reason = "tool parameters are owned: they are deserialized from the tool input"
+        )]));
+    }
+    if tool.is_async {
+        allows.push(parse_quote!(#[allow(
+            clippy::unused_async,
+            reason = "an async tool body runs on the tool task, a sync one on a blocking thread"
+        )]));
+    }
+    allows
+}
+
+fn is_tool_attr(attr: &Attribute) -> bool {
+    attr.path()
+        .segments
+        .last()
+        .is_some_and(|last| last.ident == "tool")
+}
+
+/// `get_weather` becomes `GetWeather`.
+fn pascal_case(name: &str) -> String {
+    name.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .map(|first| first.to_uppercase().chain(chars).collect::<String>())
+                .unwrap_or_default()
+        })
+        .collect()
+}

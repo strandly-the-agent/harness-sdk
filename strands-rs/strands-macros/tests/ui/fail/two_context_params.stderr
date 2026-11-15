@@ -1,0 +1,13 @@
+error: only one parameter can be #[tool(context)]
+ --> tests/ui/fail/two_context_params.rs:5:27
+  |
+5 | fn twice(#[tool(context)] first: &ToolContext, #[tool(context)] second: &ToolContext) -> String {
+  |                           ^^^^^
+
+warning: unused import: `ToolContext`
+ --> tests/ui/fail/two_context_params.rs:1:15
+  |
+1 | use strands::{ToolContext, tool};
+  |               ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

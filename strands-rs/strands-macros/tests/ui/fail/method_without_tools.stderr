@@ -1,0 +1,5 @@
+error: #[tool] on a method needs #[tools] on its impl block
+ --> tests/ui/fail/method_without_tools.rs:8:13
+  |
+8 |     fn read(&self) -> u32 {
+  |             ^

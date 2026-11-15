@@ -1,0 +1,13 @@
+error: mark the `ToolContext` parameter with #[tool(context)]
+ --> tests/ui/fail/unmarked_context.rs:5:19
+  |
+5 | fn unmarked(ctx: &ToolContext) -> String {
+  |                   ^^^^^^^^^^^
+
+warning: unused import: `ToolContext`
+ --> tests/ui/fail/unmarked_context.rs:1:15
+  |
+1 | use strands::{ToolContext, tool};
+  |               ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
