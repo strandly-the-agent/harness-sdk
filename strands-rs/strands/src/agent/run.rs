@@ -21,6 +21,7 @@ use crate::interrupt::Interrupt;
 use crate::models::model::{
     AggregatedEvent, CountTokensOptions, Model, ModelRequest, StreamAggregatedResult,
 };
+use crate::models::model_proxy::ModelProxy;
 use crate::tools::executors::executor::{
     ToolExecutionInput, ToolExecutorEvent, ToolExecutorItem, error_text_result,
 };
@@ -484,7 +485,8 @@ impl Agent {
             .cancel_signal(self.local.cancel_signal().clone())
             .build();
         self.telemetry.lock().tracer.start_model();
-        let mut stream = model.stream_aggregated(request);
+        let mut stream = ModelProxy::new(model.as_ref())
+            .stream_aggregated(request, self.local.invocation_context().cloned());
         let mut result = None;
         while let Some(item) = stream.next().await {
             let item = match item {
@@ -512,12 +514,6 @@ impl Agent {
             }
         }
         let result = result.ok_or_else(|| Error::other("the model stream ended without a result"))?;
-        if let (Some(usage), Some(context)) = (
-            result.metadata().and_then(|metadata| metadata.usage()),
-            self.local.invocation_context(),
-        ) {
-            context.record_usage(usage);
-        }
         self.telemetry.lock().tracer.end_model(Some(result.message()));
         self.local.model_state().load_json(model_state.to_json());
         Ok(result)
@@ -654,7 +650,7 @@ impl Agent {
         });
         let estimate = match baseline {
             Some((index, known)) => match messages.get(index.saturating_add(1)..) {
-                Some(newer) if !newer.is_empty() => model
+                Some(newer) if !newer.is_empty() => ModelProxy::new(model.as_ref())
                     .count_tokens(newer, Default::default())
                     .await
                     .map(|count| known.saturating_add(count)),
@@ -665,7 +661,9 @@ impl Agent {
                     system_prompt: self.local.system_prompt().cloned(),
                     tool_specs: tool_specs.to_vec(),
                 };
-                model.count_tokens(messages, options).await
+                ModelProxy::new(model.as_ref())
+                    .count_tokens(messages, options)
+                    .await
             }
         };
         estimate

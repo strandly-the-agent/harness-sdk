@@ -617,6 +617,14 @@ impl ToolResultBlock {
         self
     }
 
+    pub(crate) fn with_shared_error(
+        mut self,
+        error: Arc<dyn std::error::Error + Send + Sync + 'static>,
+    ) -> Self {
+        self.error = Some(error);
+        self
+    }
+
     pub(crate) fn shared_error(&self) -> Option<Arc<dyn std::error::Error + Send + Sync + 'static>> {
         self.error.clone()
     }

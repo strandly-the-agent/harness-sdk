@@ -6,6 +6,7 @@ use crate::agent::agent_metadata::AgentMetadata;
 use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
 use crate::models::model::{AggregatedEvent, Model, ModelRequest, js_trim};
+use crate::models::model_proxy::ModelProxy;
 use crate::models::streaming::{ModelStreamEvent, Usage};
 use crate::types::messages::{
     ContentBlock, Message, Role, StopReason, SummaryBlock, SystemPrompt, TextBlock,
@@ -157,7 +158,7 @@ async fn read_reply<M: Model + ?Sized>(
         message: None,
         usage: Usage::default(),
     };
-    let mut stream = model.stream_aggregated(request);
+    let mut stream = ModelProxy::new(model).stream_aggregated(request, None);
     while let Some(item) = stream.next().await {
         match item {
             Ok(AggregatedEvent::Done(result)) => {
