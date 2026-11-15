@@ -22,8 +22,21 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
-      # Blocking: advisories, licenses, bans and sources per the root deny.toml.
-      - name: Run cargo deny
+      - name: Check bans, licenses and sources
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
+          arguments: --all-features --locked
           command: check
+          command-arguments: bans licenses sources
+
+      # Informational: full-tree advisory check for visibility into pre-existing
+      # advisories. Does not block merge so unrelated PRs are not held hostage
+      # by transitive vulns; drive these down via Dependabot. PR-introduced
+      # vulns are gated by the repo-level Dependency Review job in ci.yml.
+      - name: Check advisories (informational)
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          arguments: --all-features --locked
+          command: check
+          command-arguments: advisories

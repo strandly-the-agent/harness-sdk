@@ -75,12 +75,15 @@ jobs:
               - 'deny.toml'
               - 'rustfmt.toml'
               - 'clippy.toml'
-              # The conformance job regenerates fixtures from the TS SDK.
+              # The conformance job builds the TS SDK and regenerates the fixtures from it.
               - 'strands-ts/src/**'
+              - 'strands-ts/package.json'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.node-version'
             harness-rs:
               - 'harness-rs/**/!(*.md)'
               - '.github/workflows/harness-rs-*'
-              - '.github/workflows/rust-security-audit.yml'
               - '.github/workflows/ci.yml'
               - 'Cargo.toml'
               - 'Cargo.lock'
@@ -201,9 +204,11 @@ jobs:
     name: Harness Rust
     needs: detect-changes
     if: needs.detect-changes.outputs.harness-rs == 'true'
-    uses: ./.github/workflows/harness-rs-pr-and-push.yml
+    uses: ./.github/workflows/harness-rs-test-lint.yml
     permissions:
       contents: read
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
   cli:
     name: Strands CLI

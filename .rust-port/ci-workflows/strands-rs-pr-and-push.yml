@@ -6,6 +6,11 @@ on:
     branches: [ main ]
     paths:
       - 'strands-rs/**'
+      - 'strands-ts/src/**'
+      - 'strands-ts/package.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.node-version'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'deny.toml'

@@ -1,7 +1,6 @@
 name: "Harness Rust: Pull Request and Push"
 
 on:
-  workflow_call:
   push:
     branches: [ main ]
     paths:
@@ -13,17 +12,13 @@ on:
       - 'rustfmt.toml'
       - 'clippy.toml'
       - '.github/workflows/harness-rs-*'
-      - '.github/workflows/rust-security-audit.yml'
   workflow_dispatch:
 
-jobs:
-  call-security-audit:
-    uses: ./.github/workflows/rust-security-audit.yml
-    permissions:
-      contents: read
-    with:
-      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
+jobs:
   call-test-lint:
     uses: ./.github/workflows/harness-rs-test-lint.yml
     permissions:
