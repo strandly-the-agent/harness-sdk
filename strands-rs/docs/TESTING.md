@@ -29,6 +29,9 @@ The TypeScript test suite is the behavioural spec. Every applicable `it(...)` ca
 - Compile-time `Send` checks cover `Agent`, `AgentResult`, `ToolAgent`, `ToolContext`, `Error`, every event type, `AgentStream<'_>`, and the futures returned by `agent.invoke(..)`.
 - At least one agent-loop test with tools runs on `#[tokio::test(flavor = "current_thread")]`.
 - Test files that need a cargo feature start with `#![cfg(feature = "...")]`.
+- Clippy's `allow-*-in-tests` settings only reach `#[test]` functions and `#[cfg(test)]` items. Helpers in `tests/` files carry `#[cfg(test)]`, or the file starts with `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "test code")]`.
+- Test helpers shared across unit-test modules are `pub(crate)`, never `pub`.
+- An example's `main` returns a `Result` and uses `?`, never `unwrap` or `expect`.
 - Canonicalize paths before comparing them (macOS `/var` and `/private/var`).
 
 ## Running
@@ -43,7 +46,7 @@ Doctests run as part of `cargo test`.
 
 ## Live tests
 
-Live tests call real model providers. They are `#[ignore = "live <provider>"]`, named `live_*`, and skip with a message when credentials are missing.
+Live tests call real model providers. The live checklist in [PARITY.md](PARITY.md#live-checklist) lists the TS integration specs they cover. They are `#[ignore = "live <provider>"]`, named `live_*`, and skip with a message when credentials are missing.
 
 ```bash
 cargo test -p strands --all-features -- --ignored live_
