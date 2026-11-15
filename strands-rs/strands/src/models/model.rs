@@ -487,7 +487,7 @@ impl From<String> for ModelSource {
 
 open_string_enum! {
     /// Time to live of a prompt cache entry (TS `CacheTTL`). Providers validate it server-side.
-    CacheTtl, UnknownCacheTtl {
+    CacheTTL, UnknownCacheTTL {
         FiveMinutes => "5m",
         OneHour => "1h",
     }
@@ -514,7 +514,7 @@ pub enum CacheSection {
     /// `true` caches the section with the shared TTL; `false` disables it.
     Enabled(bool),
     /// Caches the section with this TTL.
-    Ttl(CacheTtl),
+    Ttl(CacheTTL),
 }
 
 impl From<bool> for CacheSection {
@@ -523,8 +523,8 @@ impl From<bool> for CacheSection {
     }
 }
 
-impl From<CacheTtl> for CacheSection {
-    fn from(ttl: CacheTtl) -> Self {
+impl From<CacheTTL> for CacheSection {
+    fn from(ttl: CacheTTL) -> Self {
         Self::Ttl(ttl)
     }
 }
@@ -561,10 +561,10 @@ impl<'de> Deserialize<'de> for CacheKey {
 /// Prompt caching configuration (TS `CacheConfig`). Providers use the fields they support.
 ///
 /// ```
-/// use strands::models::model::{CacheConfig, CacheSection, CacheTtl};
+/// use strands::models::model::{CacheConfig, CacheSection, CacheTTL};
 ///
 /// let config: CacheConfig = serde_json::from_value(serde_json::json!({ "ttl": "1h", "messagesTTL": false })).unwrap();
-/// assert_eq!(config.ttl, Some(CacheTtl::OneHour));
+/// assert_eq!(config.ttl, Some(CacheTTL::OneHour));
 /// assert_eq!(config.messages_ttl, Some(CacheSection::Enabled(false)));
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
@@ -577,7 +577,7 @@ pub struct CacheConfig {
     /// `None`. It also fills in for a hand-placed system prompt cache point without one.
     #[builder(into)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ttl: Option<CacheTtl>,
+    pub ttl: Option<CacheTTL>,
     /// Cache the tool definitions; on when `None`.
     #[builder(into)]
     #[serde(default, rename = "toolsTTL", skip_serializing_if = "Option::is_none")]
@@ -602,7 +602,7 @@ pub(crate) struct ResolvedCacheSection {
     /// Whether the section carries a cache point.
     pub(crate) enabled: bool,
     /// The TTL to emit, if any applies.
-    pub(crate) ttl: Option<CacheTtl>,
+    pub(crate) ttl: Option<CacheTTL>,
 }
 
 /// Resolves whether a cache section is enabled and its TTL: the section's own TTL, then the
@@ -610,7 +610,7 @@ pub(crate) struct ResolvedCacheSection {
 #[cfg_attr(not(test), expect(dead_code, reason = "used by the model providers"))]
 pub(crate) fn resolve_cache_section(
     section: Option<&CacheSection>,
-    ttl_fallbacks: &[Option<&CacheTtl>],
+    ttl_fallbacks: &[Option<&CacheTTL>],
 ) -> ResolvedCacheSection {
     let section_ttl = match section {
         Some(CacheSection::Ttl(ttl)) => Some(ttl),

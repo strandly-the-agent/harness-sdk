@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::provider;
 use crate::models::model::{
-    BaseModelConfig, BoxStream, CacheConfig, CacheSection, CacheTtl, Model, ModelRequest, ModelSource,
+    BaseModelConfig, BoxStream, CacheConfig, CacheSection, CacheTTL, Model, ModelRequest, ModelSource,
     base_model_info, latest_user_index, resolve_cache_section, resolve_config_metadata, resolve_max_tokens,
 };
 use crate::models::model_info::{ModelCapabilities, ModelInfo, ModelLimits, PromptCaching, merge_model_info};
@@ -433,10 +433,10 @@ fn cache_config_round_trips_the_ts_shape() {
         "cacheKey": false,
     });
     let config: CacheConfig = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(config.ttl, Some(CacheTtl::FiveMinutes));
+    assert_eq!(config.ttl, Some(CacheTTL::FiveMinutes));
     assert_eq!(
         config.system_prompt_ttl,
-        Some(CacheSection::Ttl(CacheTtl::OneHour))
+        Some(CacheSection::Ttl(CacheTTL::OneHour))
     );
     assert_eq!(serde_json::to_value(&config).unwrap(), value);
     let keyed: CacheConfig = serde_json::from_value(json!({ "cacheKey": "my-key" })).unwrap();
