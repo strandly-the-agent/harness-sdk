@@ -39,8 +39,10 @@ pub mod retry;
 pub mod state_store;
 pub mod testing;
 mod text;
+pub mod tools;
 pub mod types;
 
+pub use agent::invocation_state::InvocationState;
 /// The [`async_trait`](https://docs.rs/async-trait) attribute, for implementing the SDK's async
 /// traits ([`Model`](models::model::Model), [`ModelRetryStrategy`](retry::ModelRetryStrategy))
 /// without depending on `async-trait` directly.
@@ -49,5 +51,21 @@ pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
 pub use state_store::StateStore;
+pub use strands_macros::{tool, tools};
+pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};
+
+/// What `#[tool]` and `#[tools]` expansions name, so users don't depend on these crates directly.
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::tools::function_tool::{TypedInputSchema, finish, run_blocking, serialize_output};
+    pub use crate::tools::{Tool, ToolContext, ToolError, ToolSource, ToolStream};
+    pub use crate::types::json::JsonValue;
+    pub use crate::types::tools::ToolSpec;
+    pub use async_trait;
+    pub use jsonschema;
+    pub use schemars;
+    pub use serde;
+    pub use serde_json;
+}
