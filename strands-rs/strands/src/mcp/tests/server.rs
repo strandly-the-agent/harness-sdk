@@ -452,3 +452,120 @@ pub(crate) async fn serve_http(server: TestServer, seen: Arc<Mutex<Vec<http::Hea
     });
     format!("http://{address}/mcp")
 }
+
+type SseBody = http_body_util::combinators::BoxBody<hyper::body::Bytes, std::convert::Infallible>;
+type Sessions = Arc<
+    Mutex<
+        std::collections::HashMap<
+            String,
+            futures::channel::mpsc::Sender<rmcp::service::RxJsonRpcMessage<RoleServer>>,
+        >,
+    >,
+>;
+
+/// Serves `server` over the legacy HTTP+SSE transport (`GET /sse`, `POST /messages`); returns
+/// the `/sse` url. `endpoint` overrides the advertised POST url.
+pub(crate) async fn serve_sse(
+    server: TestServer,
+    endpoint: Option<String>,
+    seen: Arc<Mutex<Vec<http::HeaderMap>>>,
+) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let address = listener.local_addr().expect("address");
+    let sessions: Sessions = Arc::default();
+    let ids = Arc::new(AtomicUsize::new(0));
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let (server, endpoint, seen, sessions, ids) = (
+                server.clone(),
+                endpoint.clone(),
+                Arc::clone(&seen),
+                Arc::clone(&sessions),
+                Arc::clone(&ids),
+            );
+            let handler = hyper::service::service_fn(move |request: http::Request<hyper::body::Incoming>| {
+                seen.lock().expect("headers").push(request.headers().clone());
+                sse_route(
+                    request,
+                    server.clone(),
+                    endpoint.clone(),
+                    Arc::clone(&sessions),
+                    Arc::clone(&ids),
+                )
+            });
+            tokio::spawn(async move {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let _served = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(io, handler)
+                    .await;
+            });
+        }
+    });
+    format!("http://{address}/sse")
+}
+
+async fn sse_route(
+    request: http::Request<hyper::body::Incoming>,
+    server: TestServer,
+    endpoint: Option<String>,
+    sessions: Sessions,
+    ids: Arc<AtomicUsize>,
+) -> Result<http::Response<SseBody>, std::convert::Infallible> {
+    use futures::{SinkExt, StreamExt};
+    use http_body_util::{BodyExt, Full, StreamBody};
+
+    let full = |status: u16, text: &'static str| {
+        http::Response::builder()
+            .status(status)
+            .body(Full::new(hyper::body::Bytes::from_static(text.as_bytes())).boxed())
+            .expect("response")
+    };
+    if request.method() == http::Method::GET && request.uri().path() == "/sse" {
+        let id = ids.fetch_add(1, Ordering::SeqCst).to_string();
+        let (to_server, from_client) = futures::channel::mpsc::channel(16);
+        let (to_client, from_server) =
+            futures::channel::mpsc::channel::<rmcp::service::TxJsonRpcMessage<RoleServer>>(16);
+        sessions.lock().expect("sessions").insert(id.clone(), to_server);
+        tokio::spawn(async move {
+            if let Ok(running) = server.serve((to_client, from_client)).await {
+                let _done: Result<_, _> = RunningService::waiting(running).await;
+            }
+        });
+        let endpoint = endpoint.unwrap_or_else(|| format!("/messages?sessionId={id}"));
+        let first = futures::stream::once(async move { format!("event: endpoint\ndata: {endpoint}\n\n") });
+        let rest = from_server.map(|message| {
+            format!(
+                "event: message\ndata: {}\n\n",
+                serde_json::to_string(&message).unwrap_or_default()
+            )
+        });
+        let frames = first.chain(rest).map(|text| {
+            Ok::<_, std::convert::Infallible>(hyper::body::Frame::data(hyper::body::Bytes::from(text)))
+        });
+        let response = http::Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(BodyExt::boxed(StreamBody::new(frames)))
+            .expect("response");
+        return Ok(response);
+    }
+    if request.method() == http::Method::POST && request.uri().path() == "/messages" {
+        let id = request
+            .uri()
+            .query()
+            .and_then(|query| query.strip_prefix("sessionId="))
+            .unwrap_or_default()
+            .to_owned();
+        let Some(mut sender) = sessions.lock().expect("sessions").get(&id).cloned() else {
+            return Ok(full(404, "unknown session"));
+        };
+        let Ok(body) = request.into_body().collect().await else {
+            return Ok(full(400, "bad body"));
+        };
+        let Ok(message) = serde_json::from_slice(&body.to_bytes()) else {
+            return Ok(full(400, "bad json"));
+        };
+        let _sent = sender.send(message).await;
+        return Ok(full(202, "Accepted"));
+    }
+    Ok(full(404, "not found"))
+}

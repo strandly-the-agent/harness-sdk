@@ -15,6 +15,7 @@ use rmcp::transport::{IntoTransport, TokioChildProcess};
 
 use super::error::McpError;
 use super::handler::McpHandler;
+use super::sse::SseClientTransport;
 
 pub(crate) type Running = RunningService<RoleClient, McpHandler>;
 type ConnectFn = Arc<
@@ -110,6 +111,20 @@ impl McpTransport {
         Self::from_fallible_factory("stdio", move || spawn_child(&parameters, &env))
     }
 
+    /// The legacy HTTP+SSE transport (protocol revision 2024-11-05; TS `SSEClientTransport`),
+    /// sending `headers` with the event-stream `GET` and every `POST`.
+    ///
+    /// # Errors
+    ///
+    /// The url doesn't parse, or a header name or value is invalid.
+    pub fn sse(url: &str, headers: IndexMap<String, String>) -> crate::Result<Self> {
+        let url = reqwest::Url::parse(url).map_err(|_| crate::Error::other("Invalid URL"))?;
+        let headers = header_map(headers)?;
+        Ok(Self::from_fallible_factory("sse", move || {
+            Ok(SseClientTransport::start(url.clone(), headers.clone()))
+        }))
+    }
+
     /// A transport built by `factory` for every connection attempt, from any `rmcp` client
     /// transport (for example `rmcp::transport::StreamableHttpClientTransport`, or an in-memory
     /// pipe).
@@ -176,4 +191,19 @@ fn spawn_child(
     command.wrap(process_wrap::tokio::JobObject);
     command.wrap(KillOnDrop);
     TokioChildProcess::new(command).map_err(|error| McpError::sdk(error.to_string()))
+}
+
+/// Typed headers from a string map.
+pub(crate) fn header_map(headers: IndexMap<String, String>) -> crate::Result<http::HeaderMap> {
+    let mut map = http::HeaderMap::new();
+    for (name, value) in headers {
+        let name = http::HeaderName::try_from(name.as_str()).map_err(|error| {
+            crate::Error::other(format!("header=<{name}> | invalid header name: {error}"))
+        })?;
+        let value = http::HeaderValue::try_from(value.as_str()).map_err(|error| {
+            crate::Error::other(format!("header=<{name}> | invalid header value: {error}"))
+        })?;
+        map.insert(name, value);
+    }
+    Ok(map)
 }

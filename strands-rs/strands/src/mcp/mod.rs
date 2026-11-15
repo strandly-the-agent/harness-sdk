@@ -31,6 +31,7 @@ mod client;
 mod error;
 mod handler;
 mod mcp_tool;
+mod sse;
 mod transport;
 
 pub use rmcp;

@@ -7,6 +7,7 @@ mod server;
 
 use std::sync::Arc;
 
+use indexmap::IndexMap;
 use serde_json::json;
 
 use self::server::{Gate, TestServer, tool};
@@ -898,6 +899,102 @@ mod streamable_http {
             .await
             .expect("result");
         assert_eq!(result["content"][0]["text"], json!("legacy"));
+    }
+}
+
+mod legacy_sse {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    fn sse_client(url: &str, headers: IndexMap<String, String>) -> McpClient {
+        McpClient::new(McpClientConfig {
+            transport: Some(McpTransport::sse(url, headers).expect("transport")),
+            ..Default::default()
+        })
+        .expect("client")
+    }
+
+    #[tokio::test]
+    async fn lists_and_calls_tools_over_the_legacy_sse_transport_with_headers() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let server = TestServer {
+            legacy_only: true,
+            ..TestServer::default()
+        };
+        let url = server::serve_sse(server, None, Arc::clone(&seen)).await;
+        let client = sse_client(
+            &url,
+            [("X-Api-Token".to_owned(), "abc".to_owned())]
+                .into_iter()
+                .collect(),
+        );
+        let echo = tool_named(&client, "echo").await;
+        let result = client
+            .call_tool(&echo, json!({"message": "over sse"}))
+            .await
+            .expect("result");
+        assert_eq!(result["content"][0]["text"], json!("over sse"));
+        assert_eq!(
+            client.negotiated_protocol_version().as_deref(),
+            Some("2025-11-25")
+        );
+        let headers = seen.lock().expect("headers").clone();
+        assert!(headers.len() >= 3, "GET and at least two POSTs");
+        assert!(
+            headers
+                .iter()
+                .all(|headers| headers.get("x-api-token").is_some_and(|value| value == "abc"))
+        );
+        client.disconnect().await.expect("disconnect");
+    }
+
+    #[tokio::test]
+    async fn reconnects_over_the_legacy_sse_transport_after_disconnect() {
+        let url = server::serve_sse(TestServer::default(), None, Arc::default()).await;
+        let client = sse_client(&url, IndexMap::new());
+        assert_eq!(tool_named(&client, "add").await.server_name(), "add");
+        client.disconnect().await.expect("disconnect");
+        assert_eq!(tool_named(&client, "add").await.server_name(), "add");
+    }
+
+    #[tokio::test]
+    async fn rejects_an_endpoint_on_another_origin() {
+        let url = server::serve_sse(
+            TestServer::default(),
+            Some("http://other.example/messages".to_owned()),
+            Arc::default(),
+        )
+        .await;
+        let client = sse_client(&url, IndexMap::new());
+        let error = client.connect(false).await.expect_err("origin mismatch");
+        assert!(
+            error
+                .to_string()
+                .contains("Endpoint origin does not match connection origin: http://other.example"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fails_to_connect_when_the_event_stream_is_missing() {
+        let url = server::serve_sse(TestServer::default(), None, Arc::default()).await;
+        let client = sse_client(&url.replace("/sse", "/missing"), IndexMap::new());
+        let error = client.connect(false).await.expect_err("404");
+        assert!(
+            error.to_string().contains("SSE error: Non-200 status code (404)"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rejects_an_invalid_sse_url() {
+        assert_eq!(
+            McpTransport::sse("nope", IndexMap::new())
+                .expect_err("invalid")
+                .to_string(),
+            "Invalid URL"
+        );
     }
 }
 

@@ -18,7 +18,7 @@ default = ["bedrock"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-sigv4", "dep:aws-smithy-types", "dep:aws-credential-types"]
 anthropic = ["dep:eventsource-stream"]
 openai = ["dep:eventsource-stream"]
-mcp = ["dep:rmcp"]
+mcp = ["dep:rmcp", "dep:eventsource-stream"]
 otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry", "dep:opentelemetry-otlp"]
 
 [dependencies]
@@ -66,6 +66,7 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile.workspace = true
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 hyper.workspace = true
+http-body-util.workspace = true
 hyper-util.workspace = true
 
 [package.metadata.docs.rs]

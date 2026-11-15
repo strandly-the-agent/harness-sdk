@@ -21,7 +21,7 @@ use tracing::Instrument;
 use super::error::McpError;
 use super::handler::McpHandler;
 use super::mcp_tool::McpTool;
-use super::transport::{McpTransport, Running};
+use super::transport::{McpTransport, Running, header_map};
 use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
 use crate::types::json::{JsonObject, JsonValue};
@@ -559,14 +559,10 @@ fn resolve_transport(
 
 fn streamable_http(url: &str, headers: IndexMap<String, String>) -> Result<McpTransport> {
     reqwest::Url::parse(url).map_err(|_| Error::other("Invalid URL"))?;
-    let mut custom_headers = std::collections::HashMap::new();
-    for (name, value) in headers {
-        let name = http::HeaderName::try_from(name.as_str())
-            .map_err(|error| Error::other(format!("header=<{name}> | invalid header name: {error}")))?;
-        let value = http::HeaderValue::try_from(value.as_str())
-            .map_err(|error| Error::other(format!("header=<{name}> | invalid header value: {error}")))?;
-        custom_headers.insert(name, value);
-    }
+    let custom_headers = header_map(headers)?
+        .into_iter()
+        .filter_map(|(name, value)| Some((name?, value)))
+        .collect();
     let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(custom_headers);
     Ok(McpTransport::from_factory(move || {
         StreamableHttpClientTransport::from_config(config.clone())
