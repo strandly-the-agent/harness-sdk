@@ -548,3 +548,4 @@ async fn agent_tool_streams_are_send_and_the_agent_comes_back_after_a_dropped_ca
     drop(stream);
     assert!(tool.with_agent(|_| ()).is_some());
 }
+mod interrupt;

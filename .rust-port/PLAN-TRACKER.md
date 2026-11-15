@@ -44,7 +44,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 ## [ ] Phase 4: interrupts, cancellation, lifecycle, plugins and middleware
 
-- [ ] Interrupts and resume with `pendingToolExecution`
+- [x] Interrupts and resume with `pendingToolExecution`
 - [ ] `CancelHandle`, `CancelOptions`, `CancelSignal`, TS cancel semantics
 - [ ] Drop guard history repair, deferred cleanup, `shutdown()`, drop warning
 - [ ] Snapshots (`take_snapshot`/`load_snapshot`)

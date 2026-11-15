@@ -1,5 +1,6 @@
 //! An agent exposed as a tool for another agent (TS `agent/agent-as-tool.ts`).
 
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -8,9 +9,10 @@ use serde_json::json;
 
 use crate::agent::Agent;
 use crate::interrupt::state::InterruptStateData;
+use crate::interrupt::{Interrupt, InterruptResponse, InterruptSource};
 use crate::tools::tool::error_result;
 use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStream, ToolStreamEvent, ToolStreamItem};
-use crate::types::agent::{AgentResult, AgentStreamEvent, InvokeOptions};
+use crate::types::agent::{AgentResult, AgentStreamEvent, InterruptState, InvokeArgs, InvokeOptions};
 use crate::types::json::{JsonObject, JsonValue};
 use crate::types::messages::{
     JsonBlock, Message, StopReason, SystemPrompt, ToolResultBlock, ToolResultContent, limit_stop_message,
@@ -80,6 +82,8 @@ pub struct AgentAsTool {
     delegate: bool,
     agent: Arc<Mutex<Option<Agent>>>,
     baseline: Option<Arc<Baseline>>,
+    /// Paused turns of a context-resetting child, by tool use id (TS `subAgentInterruptedTurns`).
+    turns: Arc<Mutex<HashMap<String, Baseline>>>,
 }
 
 impl fmt::Debug for AgentAsTool {
@@ -109,6 +113,7 @@ impl AgentAsTool {
             delegate: options.delegate,
             agent: Arc::new(Mutex::new(Some(agent))),
             baseline,
+            turns: Arc::default(),
         }
     }
 
@@ -148,26 +153,55 @@ impl Tool for AgentAsTool {
     fn stream(&self, context: ToolContext) -> ToolStream {
         let slot = Arc::clone(&self.agent);
         let baseline = self.baseline.clone();
+        let turns = Arc::clone(&self.turns);
         let name = self.name.clone();
         let delegate = self.delegate;
         ToolStream::new(async_stream::stream! {
             let tool_use_id = context.tool_use().tool_use_id().to_owned();
+            let parent = context.agent().interrupt_state().clone();
+            let prefix = format!("agent_as_tool:{}:", encode_uri_component(&tool_use_id));
             let Some(mut lease) = Lease::take(slot) else {
                 let text = format!("Agent '{name}' is already processing a request");
-                yield ToolOutcome::Result(error_result(&tool_use_id, text)).into();
-                return;
-            };
-            let Some(input) = context.tool_use().input().get("input").and_then(JsonValue::as_str) else {
-                let text = format!("Agent '{name}' needs a string `input`");
                 yield ToolOutcome::Result(error_result(&tool_use_id, text)).into();
                 return;
             };
             let Some(agent) = lease.agent.as_mut() else {
                 return;
             };
-            if let Some(baseline) = &baseline {
-                baseline.restore(agent);
-            }
+            let input = match resume_input(&parent, &prefix) {
+                Resume::Fresh => {
+                    let Some(input) = context.tool_use().input().get("input").and_then(JsonValue::as_str) else {
+                        let text = format!("Agent '{name}' needs a string `input`");
+                        yield ToolOutcome::Result(error_result(&tool_use_id, text)).into();
+                        return;
+                    };
+                    if let Some(baseline) = &baseline {
+                        baseline.restore(agent);
+                    }
+                    InvokeArgs::from(input)
+                }
+                Resume::Unanswered(interrupt) => {
+                    yield ToolOutcome::Interrupt(interrupt).into();
+                    return;
+                }
+                Resume::With(responses) => {
+                    // A context-resetting child resumes from the turn stored when it paused.
+                    let restored = baseline.is_none()
+                        || lock(&turns).remove(&tool_use_id).map(|turn| turn.restore(agent)).is_some();
+                    if !restored || !agent.local.interrupt_state().lock().activated {
+                        tracing::error!(tool_use_id = %tool_use_id, "interrupted sub-agent turn is not available to resume");
+                        let text = format!(
+                            "Agent '{name}' did NOT run and the human's response was NOT applied: its interrupted turn \
+                             is not available. Do not report the requested action as completed; tell the user it failed and \
+                             ask them to respond again."
+                        );
+                        yield ToolOutcome::Result(error_result(&tool_use_id, text)).into();
+                        return;
+                    }
+                    tracing::debug!(tool_name = %name, tool_use_id = %tool_use_id, "resuming sub-agent from interrupt");
+                    InvokeArgs::from(responses)
+                }
+            };
             // The outer invocation's state and request are shared, so the child's writes and
             // usage reach the parent.
             let options = InvokeOptions {
@@ -178,7 +212,7 @@ impl Tool for AgentAsTool {
             let mut result = None;
             let mut failure = None;
             {
-                let mut events = agent.stream_with(input.to_owned(), options);
+                let mut events = agent.stream_with(input, options);
                 while let Some(item) = events.next().await {
                     match item {
                         Ok(AgentStreamEvent::ToolStreamUpdate(update)) => {
@@ -195,7 +229,19 @@ impl Tool for AgentAsTool {
                 }
             }
             let cancelled = agent.local.cancel_signal().is_cancelled();
+            let interrupted = result
+                .as_ref()
+                .filter(|result| failure.is_none() && result.stop_reason() == StopReason::Interrupt && !result.interrupts().is_empty());
+            if interrupted.is_some() && baseline.is_some() {
+                lock(&turns).insert(tool_use_id.clone(), Baseline::of(agent));
+            } else {
+                lock(&turns).remove(&tool_use_id);
+            }
             drop(lease);
+            if let Some(interrupt) = interrupted.and_then(|result| register(&parent, &prefix, result.interrupts())) {
+                yield ToolOutcome::Interrupt(interrupt).into();
+                return;
+            }
             let outcome = match (failure, result) {
                 (Some(error), _) => error_result(&tool_use_id, error),
                 (None, None) => error_result(&tool_use_id, format!("Agent '{name}' did not produce a result.")),
@@ -217,13 +263,80 @@ impl Tool for AgentAsTool {
 fn unfinished(name: &str, result: &AgentResult, cancelled: bool) -> Option<String> {
     let stop_reason = result.stop_reason();
     match stop_reason {
-        StopReason::Interrupt => Some(format!(
-            "Agent '{name}' stopped on an interrupt, which agent tools don't support yet"
-        )),
+        StopReason::Interrupt => Some(format!("Agent '{name}' interrupted without any interrupts")),
         StopReason::Cancelled => cancelled.then(|| format!("Agent '{name}' cancelled")),
         _ if stop_reason.is_limit() => Some(limit_stop_message(name, &stop_reason)),
         _ => None,
     }
+}
+
+/// How a call relates to the parent's interrupt state (TS `AgentToolStreamer.isResuming`/`resume`).
+enum Resume {
+    /// Not resuming this call.
+    Fresh,
+    /// Resuming, but none of this call's interrupts were answered.
+    Unanswered(Interrupt),
+    /// This call's responses, with the scope prefix removed.
+    With(Vec<InterruptResponse>),
+}
+
+fn resume_input(parent: &InterruptState, prefix: &str) -> Resume {
+    let state = parent.lock();
+    if !state.activated || !state.interrupts.keys().any(|id| id.starts_with(prefix)) {
+        return Resume::Fresh;
+    }
+    let responses: Vec<InterruptResponse> = state
+        .resume_responses
+        .iter()
+        .flatten()
+        .filter_map(|content| {
+            let response = content.interrupt_response();
+            let id = response.interrupt_id().strip_prefix(prefix)?;
+            Some(InterruptResponse::new(id, response.response().clone()))
+        })
+        .collect();
+    if !responses.is_empty() {
+        return Resume::With(responses);
+    }
+    match state
+        .unanswered()
+        .find(|interrupt| interrupt.id().starts_with(prefix))
+    {
+        Some(interrupt) => Resume::Unanswered(interrupt.clone()),
+        None => Resume::With(Vec::new()),
+    }
+}
+
+/// Registers the child's interrupts on the parent under this call's scope and returns the
+/// first; all are registered because a tool outcome carries one interrupt.
+fn register(parent: &InterruptState, prefix: &str, interrupts: &[Interrupt]) -> Option<Interrupt> {
+    let mut state = parent.lock();
+    let registered: Vec<Interrupt> = interrupts
+        .iter()
+        .map(|interrupt| {
+            let id = format!("{prefix}{}", interrupt.id());
+            let scoped = Interrupt::new(id.clone(), interrupt.name()).with_source(InterruptSource::Tool);
+            let scoped = match interrupt.reason() {
+                Some(reason) => scoped.with_reason(reason.clone()),
+                None => scoped,
+            };
+            state.interrupts.entry(id).or_insert(scoped).clone()
+        })
+        .collect();
+    registered.into_iter().next()
+}
+
+/// JavaScript `encodeURIComponent`.
+fn encode_uri_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
 }
 
 /// TS `_renderSuccess`: the structured output as JSON, else the result text.
@@ -292,7 +405,7 @@ impl Drop for Lease {
     }
 }
 
-fn lock(slot: &Mutex<Option<Agent>>) -> MutexGuard<'_, Option<Agent>> {
+fn lock<T>(slot: &Mutex<T>) -> MutexGuard<'_, T> {
     slot.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
