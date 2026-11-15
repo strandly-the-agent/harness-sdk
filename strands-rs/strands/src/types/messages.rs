@@ -327,7 +327,7 @@ impl OnUnknown {
                     "block_keys=<{}> | unrecognized content block type | keeping it in history and leaving it out of model requests | if a newer sdk version saved it, upgrade to use it",
                     keys.join(",")
                 );
-                Ok(UnknownBlock { data })
+                Ok(UnknownBlock::new(data))
             }
         }
     }
@@ -1022,7 +1022,8 @@ impl InjectedBlock {
 
 /// A content block this SDK version doesn't recognize, kept so it round-trips (TS `UnknownBlock`).
 ///
-/// It stays in history and is left out of model requests.
+/// It stays in history and is left out of model requests. Built only by deserialization, so it
+/// never holds a known block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 #[non_exhaustive]
@@ -1031,8 +1032,7 @@ pub struct UnknownBlock {
 }
 
 impl UnknownBlock {
-    /// An unknown block holding the raw data.
-    pub fn new(data: JsonObject) -> Self {
+    pub(crate) fn new(data: JsonObject) -> Self {
         Self { data }
     }
 

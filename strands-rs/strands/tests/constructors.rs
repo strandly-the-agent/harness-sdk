@@ -21,7 +21,7 @@ use strands::types::messages::{
     CachePointBlock, GuardContentBlock, GuardContentImage, GuardContentText, GuardImageFormat,
     GuardImageSource, GuardQualifier, InjectedBlock, JsonBlock, MessageMetadata, ReasoningBlock, Role,
     SummaryBlock, SystemContentBlock, SystemPrompt, TextBlock, ToolResultBlock, ToolResultContent,
-    ToolUseBlock, UnknownBlock,
+    ToolUseBlock,
 };
 use strands::types::snapshot::{Scope, Snapshot};
 use strands::types::tools::{ToolChoice, ToolResultStatus, ToolSpec, ToolUse};
@@ -91,7 +91,7 @@ fn message_and_every_content_block_build_from_constructors() {
             .with_provider("anthropic")
             .with_signature("sig")
             .into(),
-        UnknownBlock::new(JsonObject::from_iter([("futureBlock".to_owned(), json!({}))])).into(),
+        serde_json::from_value(json!({"futureBlock": {}})).unwrap(),
     ];
     let metadata = MessageMetadata::new()
         .with_usage(
