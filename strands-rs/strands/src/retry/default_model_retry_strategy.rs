@@ -167,14 +167,14 @@ impl ModelRetryStrategy for DefaultModelRetryStrategy {
         let max_attempts = self.max_attempts;
         let Some(attempt) = NonZeroU32::new(attempt_count).filter(|attempt| *attempt < max_attempts) else {
             tracing::debug!(
-                "attempt_count=<{attempt_count}>, max_attempts=<{max_attempts}> | max retry attempts reached"
+                "attempt_count=<{attempt_count}> max_attempts=<{max_attempts}> | max retry attempts reached"
             );
             return RetryDecision::NoRetry;
         };
 
         let wait = self.backoff.next_delay(&self.backoff_context(attempt));
         tracing::debug!(
-            "retry_delay_ms=<{}>, attempt_count=<{attempt_count}>, max_attempts=<{max_attempts}> | retryable \
+            "retry_delay_ms=<{}> attempt_count=<{attempt_count}> max_attempts=<{max_attempts}> | retryable \
              model error, delaying before retry",
             wait.as_millis()
         );

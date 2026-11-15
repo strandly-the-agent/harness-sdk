@@ -9,9 +9,11 @@ use std::pin::pin;
 use std::sync::Arc;
 
 use futures::poll;
+use tracing::Level;
 
 use super::*;
 use crate::error::{ModelError, ModelNetworkError, ModelThrottledError};
+use crate::logging::capture::LogRecorder;
 use crate::retry::backoff_strategy::{ConstantBackoff, ConstantBackoffOptions};
 use crate::retry::model_retry_strategy::{TokioSleeper, retry_model};
 use crate::retry::retry_strategy::RetryStrategy;
@@ -127,9 +129,20 @@ async fn does_not_retry_non_retryable_errors() {
 async fn stops_retrying_once_max_attempts_is_reached() {
     let strategy = strategy(3, 1);
     let error = throttled("x");
+    let recorder = LogRecorder::default();
+    let guard = recorder.set_default();
     assert!(run(&strategy, &error, 1, false).await);
     assert!(run(&strategy, &error, 2, false).await);
     assert!(!run(&strategy, &error, 3, false).await);
+    drop(guard);
+    assert_eq!(
+        recorder.messages(Level::DEBUG),
+        [
+            "retry_delay_ms=<1> attempt_count=<1> max_attempts=<3> | retryable model error, delaying before retry",
+            "retry_delay_ms=<1> attempt_count=<2> max_attempts=<3> | retryable model error, delaying before retry",
+            "attempt_count=<3> max_attempts=<3> | max retry attempts reached",
+        ]
+    );
 }
 
 #[tokio::test(start_paused = true)]
