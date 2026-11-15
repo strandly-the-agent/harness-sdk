@@ -144,7 +144,7 @@ fn overwrites_existing_value() {
 }
 
 #[test]
-fn set_stores_deep_copy_that_cannot_mutate_stored_state() {
+fn stores_deep_copy_that_cannot_mutate_stored_state() {
     let state = StateStore::new();
     let mut value = json!({ "nested": { "value": "test" } });
     state.set("key", &value).unwrap();

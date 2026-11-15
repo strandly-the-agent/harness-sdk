@@ -394,7 +394,7 @@ fn sections(config: &CacheConfig) -> (Option<Option<String>>, Option<Option<Stri
 }
 
 #[test]
-fn agrees_on_the_cache_sections_of_every_portable_config() {
+fn agrees_on_label() {
     let one_hour = Some(Some("1h".to_owned()));
     let cases = [
         ("both sections by default", json!({}), (Some(None), Some(None))),
