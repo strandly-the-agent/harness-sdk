@@ -1,0 +1,5 @@
+error: only one parameter can be #[tool(context)]
+ --> tests/fail/two_contexts.rs:5:70
+  |
+5 | fn twice(#[tool(context)] a: &strands::ToolContext, #[tool(context)] b: &strands::ToolContext) -> bool {
+  |                                                                      ^

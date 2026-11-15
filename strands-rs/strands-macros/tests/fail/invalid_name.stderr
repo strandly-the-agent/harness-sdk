@@ -1,0 +1,5 @@
+error: invalid tool name `get weather`: use 1 to 64 ASCII letters, digits, `_` or `-`
+ --> tests/fail/invalid_name.rs:5:4
+  |
+5 | fn get_weather() -> String {
+  |    ^^^^^^^^^^^

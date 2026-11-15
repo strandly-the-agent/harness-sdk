@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["strands-rs/strands", "strands-rs/strands-macros", "harness-rs/strands-harness"]
+members = [
+    "strands-rs/strands",
+    "strands-rs/strands-macros",
+    "strands-rs/strands-macros/downstream",
+    "harness-rs/strands-harness",
+]
 
 [workspace.package]
 version = "0.1.0"

@@ -1,0 +1,15 @@
+[package]
+name = "strands-downstream-test"
+description = "Compiles #[tool], #[tools] and tool_list! from a crate that depends only on strands and tokio."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+strands.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]

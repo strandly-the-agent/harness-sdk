@@ -1,0 +1,5 @@
+error: #[tool] functions need a doc comment: it is the tool description the model sees
+ --> tests/fail/missing_doc.rs:4:10
+  |
+4 | async fn undocumented(city: String) -> String {
+  |          ^^^^^^^^^^^^

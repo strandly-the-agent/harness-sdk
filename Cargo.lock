@@ -4226,6 +4226,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "strands-downstream-test"
+version = "0.1.0"
+dependencies = [
+ "strands",
+ "tokio",
+]
+
+[[package]]
 name = "strands-harness"
 version = "0.1.0"
 dependencies = [
@@ -4249,7 +4257,9 @@ dependencies = [
  "darling",
  "proc-macro2",
  "quote",
+ "strands",
  "syn 3.0.10",
+ "tokio",
  "trybuild",
 ]
 

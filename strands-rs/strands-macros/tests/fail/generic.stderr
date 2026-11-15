@@ -1,0 +1,5 @@
+error: #[tool] functions can't be generic
+ --> tests/fail/generic.rs:5:8
+  |
+5 | fn echo<T: Clone>(value: T) -> T {
+  |        ^

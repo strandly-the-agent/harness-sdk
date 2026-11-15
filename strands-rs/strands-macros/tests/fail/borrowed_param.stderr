@@ -1,0 +1,5 @@
+error: #[tool] parameters must be owned types (`String` rather than `&str`); only the #[tool(context)] parameter can be a reference
+ --> tests/fail/borrowed_param.rs:5:16
+  |
+5 | fn shout(text: &str) -> String {
+  |                ^
