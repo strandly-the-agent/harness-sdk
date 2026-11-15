@@ -82,7 +82,7 @@ fn retries_once_with_drop_block_and_keeps_it_on_for_later_requests() {
 }
 
 #[test]
-fn keeps_betas_from_client_default_headers_on_the_retry() {
+fn keeps_betas_from_client_default_headers_given_as_on_the_retry() {
     let single = HeaderMap::from_iter([(
         http::header::HeaderName::from_static("anthropic-beta"),
         HeaderValue::from_static("client-beta"),
@@ -112,7 +112,7 @@ fn keeps_betas_from_client_default_headers_on_the_retry() {
 }
 
 #[test]
-fn maps_name_on_the_retry_to_its_sdk_error() {
+fn maps_on_the_retry_to_its_sdk_error() {
     let cases: [(ApiError, ErrorCheck); 2] = [
         (status_error(429, "Rate limit exceeded"), |error| {
             matches!(error, Error::ModelThrottled(_))
@@ -140,7 +140,7 @@ fn re_throws_a_second_binding_error_without_retrying_again() {
 }
 
 #[test]
-fn re_throws_the_binding_error_with_name() {
+fn re_throws_the_binding_error_with() {
     let caller_set = json!({ "thinking": { "type": "adaptive", "block_binding": { "prefix_mismatch_behavior": "error" } } });
     for params in [caller_set.as_object().cloned(), None] {
         let client = rejecting_once(binding_error(), None);

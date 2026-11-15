@@ -80,7 +80,7 @@ fn sent_mechanisms(client: &MockClient) -> Vec<&'static str> {
 }
 
 #[test]
-fn falls_back_to_the_next_mechanism_after_name_and_remembers_it() {
+fn falls_back_to_the_next_mechanism_after_and_remembers_it() {
     let cases = [
         (vec![], vec!["forced"]),
         (vec![forced_rejection()], vec!["forced", "native"]),
@@ -191,7 +191,7 @@ fn retries_with_drop_block_before_trying_the_next_mechanism() {
 }
 
 #[test]
-fn re_throws_name_without_retrying() {
+fn re_throws_without_retrying() {
     let forced_only = ModelRequest {
         messages: vec![user("Generate a person")],
         tool_choice: Some(ToolChoice::tool("strands_structured_output")),

@@ -110,7 +110,7 @@ fn rejects_temperature_when_the_current_api_version_is_pinned() {
 }
 
 #[test]
-fn rejects_name_before_sending_the_request() {
+fn rejects_before_sending_the_request() {
     let cases = [
         (m1_temperature(), "temperature is"),
         (
@@ -151,7 +151,7 @@ fn rejects_name_before_sending_the_request() {
 }
 
 #[test]
-fn sends_temperature_when_the_previous_api_version_is_pinned_as_name() {
+fn sends_temperature_when_the_previous_api_version_is_pinned_as() {
     // HeaderMap names are case-insensitive, so the TS object, tuple and Headers forms are one case here.
     let client = Arc::new(MockClient::empty());
     let options = pinned(

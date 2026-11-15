@@ -194,7 +194,7 @@ pub(crate) struct HttpClient {
 struct HttpInner {
     http: reqwest::Client,
     base_url: String,
-    api_key: String,
+    /// Every request's headers: the defaults, the API key, then the configured headers.
     headers: HeaderMap,
     max_retries: u32,
     timeout: Duration,
@@ -206,7 +206,6 @@ impl fmt::Debug for HttpClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HttpClient")
             .field("base_url", &self.inner.base_url)
-            .field("api_key", &"<redacted>")
             .field("max_retries", &self.inner.max_retries)
             .field("timeout", &self.inner.timeout)
             .finish_non_exhaustive()
@@ -247,13 +246,15 @@ impl HttpClient {
             HeaderValue::from_static("application/json"),
         );
         defaults.insert(VERSION_HEADER, HeaderValue::from_static(DEFAULT_API_VERSION));
+        if let Ok(key) = HeaderValue::from_str(&api_key) {
+            defaults.insert(API_KEY_HEADER, sensitive(key));
+        }
         let headers = merge_headers(defaults, &extra);
         let http = reqwest::Client::builder().build()?;
         Ok(Self {
             inner: Arc::new(HttpInner {
                 http,
                 base_url: base_url.trim_end_matches('/').to_owned(),
-                api_key,
                 headers,
                 max_retries,
                 timeout,
@@ -268,20 +269,17 @@ impl HttpInner {
     fn build_request(&self, path: &str, request: &ApiRequest) -> Result<reqwest::Request, ApiError> {
         let body = to_js_string(&request.body)
             .map_err(|error| ApiError::new(ApiErrorKind::Other, error.to_string()))?;
-        let mut builder = self
-            .http
-            .post(format!("{}{path}", self.base_url))
-            .headers(self.headers.clone())
-            .body(body);
-        if let Ok(key) = HeaderValue::from_str(&self.api_key) {
-            builder = builder.header(API_KEY_HEADER, sensitive(key));
-        }
+        let mut headers = self.headers.clone();
+        // A request header replaces the client's header of the same name.
         if let Some(beta) = &request.beta {
             let value = HeaderValue::from_str(beta)
                 .map_err(|error| ApiError::new(ApiErrorKind::Other, error.to_string()))?;
-            builder = builder.header(BETA_HEADER, value);
+            headers.insert(BETA_HEADER, value);
         }
-        builder
+        self.http
+            .post(format!("{}{path}", self.base_url))
+            .headers(headers)
+            .body(body)
             .build()
             .map_err(|error| ApiError::new(ApiErrorKind::Other, error.to_string()))
     }

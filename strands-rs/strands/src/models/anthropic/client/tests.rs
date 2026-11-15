@@ -249,15 +249,35 @@ async fn sends_configured_headers_over_the_defaults() {
     let mut headers = HeaderMap::new();
     headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
     headers.insert("x-custom", HeaderValue::from_static("yes"));
+    headers.insert("anthropic-beta", HeaderValue::from_static("client-beta"));
+    headers.insert("x-api-key", HeaderValue::from_static("header-key"));
     let client = HttpClient::new(HttpClientParts {
         headers,
         ..client_parts(&server.url, sleeper)
     })
     .unwrap();
     drain(&client, api_request()).await;
-    let sent = &server.received()[0];
-    assert_eq!(sent.header("anthropic-version"), Some("2023-06-01"));
-    assert_eq!(sent.header("x-custom"), Some("yes"));
+    let request = ApiRequest {
+        beta: Some("request-beta".to_owned()),
+        ..api_request()
+    };
+    drain(&client, request).await;
+    let received = server.received();
+    assert_eq!(received[0].header("anthropic-version"), Some("2023-06-01"));
+    assert_eq!(received[0].header("x-custom"), Some("yes"));
+    assert_eq!(received[0].header("anthropic-beta"), Some("client-beta"));
+    // Configured headers replace the defaults and the key, and request headers replace both,
+    // rather than adding a second header of the same name.
+    let values = |name: &str| -> Vec<String> {
+        received[1]
+            .headers
+            .iter()
+            .filter(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.clone())
+            .collect()
+    };
+    assert_eq!(values("anthropic-beta"), ["request-beta"]);
+    assert_eq!(values("x-api-key"), ["header-key"]);
 }
 
 #[tokio::test]

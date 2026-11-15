@@ -381,6 +381,48 @@ fn resolve_api_version(sent: &HeaderMap, configured: &HeaderMap) -> ApiVersion {
     }
 }
 
+/// The Messages client and the API version it sends; an injected client's version is unknown.
+fn resolve_client(
+    api_key: Option<String>,
+    client_config: AnthropicClientConfig,
+    seams: Seams,
+) -> Result<(Arc<dyn MessagesClient>, Option<ApiVersion>)> {
+    let replacement = match seams.transport {
+        Transport::Injected(client) => return Ok((client, None)),
+        Transport::Built(client) => Some(client),
+        Transport::Http => None,
+    };
+    let api_key = trimmed(api_key)
+        .or_else(|| trimmed((seams.env)(API_KEY_ENV)))
+        .ok_or_else(|| {
+            Error::other(
+                "Anthropic API key is required. Provide it via the 'api_key' option or set the ANTHROPIC_API_KEY environment variable.",
+            )
+        })?;
+    let custom = trimmed((seams.env)(CUSTOM_HEADERS_ENV))
+        .map(|value| parse_custom_headers(&value))
+        .unwrap_or_default();
+    let headers = merge_headers(custom, &client_config.default_headers);
+    let api_version = resolve_api_version(&headers, &client_config.default_headers);
+    if let Some(client) = replacement {
+        return Ok((client, Some(api_version)));
+    }
+    let base_url = trimmed(client_config.base_url)
+        .or_else(|| trimmed((seams.env)(BASE_URL_ENV)))
+        .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned());
+    let client = HttpClient::new(HttpClientParts {
+        base_url,
+        api_key,
+        headers,
+        max_retries: client_config.max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
+        timeout: client_config.timeout.unwrap_or(DEFAULT_TIMEOUT),
+        sleeper: seams.sleeper,
+        random: seams.random,
+    })
+    .map_err(Error::other)?;
+    Ok((Arc::new(client), Some(api_version)))
+}
+
 /// Maps a context overflow, a 429 or a transport failure to the SDK's error types.
 fn translate_error(error: ApiError) -> Error {
     let message = error.message.clone();
@@ -458,48 +500,18 @@ impl AnthropicModel {
         if config.max_tokens.is_none() && !max_output_pinned {
             (seams.warn_once)(&default_max_tokens_warning_message(config.resolved_max_tokens()));
         }
-        let (client, api_version) = match seams.transport {
-            Transport::Injected(client) => (client, None),
-            transport => {
-                let api_key = trimmed(api_key).or_else(|| trimmed((seams.env)(API_KEY_ENV))).ok_or_else(|| {
-                    Error::other(
-                        "Anthropic API key is required. Provide it via the 'api_key' option or set the ANTHROPIC_API_KEY environment variable.",
-                    )
-                })?;
-                let custom = trimmed((seams.env)(CUSTOM_HEADERS_ENV))
-                    .map(|value| parse_custom_headers(&value))
-                    .unwrap_or_default();
-                let headers = merge_headers(custom, &client_config.default_headers);
-                let api_version = resolve_api_version(&headers, &client_config.default_headers);
-                let client: Arc<dyn MessagesClient> = match transport {
-                    Transport::Built(client) | Transport::Injected(client) => client,
-                    Transport::Http => Arc::new(
-                        HttpClient::new(HttpClientParts {
-                            base_url: trimmed(client_config.base_url.clone())
-                                .or_else(|| trimmed((seams.env)(BASE_URL_ENV)))
-                                .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned()),
-                            api_key,
-                            headers,
-                            max_retries: client_config.max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
-                            timeout: client_config.timeout.unwrap_or(DEFAULT_TIMEOUT),
-                            sleeper: seams.sleeper,
-                            random: seams.random,
-                        })
-                        .map_err(Error::other)?,
-                    ),
-                };
-                (client, Some(api_version))
-            }
-        };
+        let client_betas = header_betas(&client_config.default_headers);
+        let warn_once = Arc::clone(&seams.warn_once);
+        let (client, api_version) = resolve_client(api_key, client_config, seams)?;
         Ok(Self {
             inner: Arc::new(Inner {
                 config: RwLock::new(config),
                 client,
-                client_betas: header_betas(&client_config.default_headers),
+                client_betas,
                 api_version,
                 drop_stale_thinking_model_id: Mutex::new(None),
                 structured_output: StructuredOutputSupport::default(),
-                warn_once: seams.warn_once,
+                warn_once,
             }),
         })
     }

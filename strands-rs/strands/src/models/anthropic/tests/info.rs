@@ -27,7 +27,7 @@ fn reads_cache_points_from_the_shared_model_info() {
 }
 
 #[test]
-fn reports_temporary_messages_from_the_shared_model_info() {
+fn reports_temporary_messages_from_the_shared_model_info_for() {
     for (id, expected) in [
         ("claude-opus-5-5", true),
         ("claude-opus-5-5-20260401", true),

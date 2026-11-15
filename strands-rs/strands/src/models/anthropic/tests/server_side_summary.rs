@@ -119,7 +119,7 @@ fn sends_a_compaction_request_and_returns_the_summary_block() {
 }
 
 #[test]
-fn maps_name_from_the_compaction_request_like_stream() {
+fn maps_from_the_compaction_request_like_stream() {
     let cases: [(ApiError, ErrorCheck); 2] = [
         (status_error(429, "rate limited"), |error| {
             matches!(error, Error::ModelThrottled(_))
