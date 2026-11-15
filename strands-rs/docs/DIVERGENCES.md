@@ -13,3 +13,4 @@ Every user-visible behaviour difference from the TypeScript SDK, with the reason
 | Fractional `latencyMs`/`timeToFirstByteMs` | Kept as a fraction | Rounded to whole milliseconds on load | Counters are integers so they never gain `.0` |
 | Strict parsing of a malformed known block | Throws whatever the block constructor throws (often a `TypeError`) | `Error::Other` with the serde message | Only the unknown-block texts are part of the contract |
 | `SandboxTimeoutError` constructor | Takes seconds as a number | Takes a `Duration`; the message text is the same | Rust-native durations |
+| `StateStore.set` with a value JSON can't hold | Throws `JsonValidationError` naming the path of the function, symbol or `undefined` | Returns `JsonValidationError` with `value for key "<key>" cannot be serialized: <reason>` | Rust values can only fail inside their `Serialize` impl, which has no path |

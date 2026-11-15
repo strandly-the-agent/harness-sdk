@@ -22,10 +22,13 @@
 #[macro_use]
 mod open_enum;
 
+pub mod agent;
+pub mod cancel;
 pub mod error;
 pub mod interrupt;
 pub mod mime;
 pub mod models;
+pub mod state_store;
 pub mod types;
 
 #[cfg(test)]
@@ -33,7 +36,9 @@ mod conformance_tests;
 #[cfg(test)]
 mod test_support;
 
+pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
 pub use interrupt::InterruptResponse;
+pub use state_store::StateStore;
 pub use types::json::JsonValue;
 pub use types::messages::{ContentBlock, Message, StopReason};

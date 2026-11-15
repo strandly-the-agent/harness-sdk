@@ -20,7 +20,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/__tests__/interrupt.test.ts` | `strands::interrupt::tests` | 6/26 | `InterruptError` (2), `InterruptState` behaviour, restore validation and `interruptFromAgent` (18) land with interrupt resume in Phase 4 |
 | `strands-ts/src/__tests__/mime.test.ts` | `strands::mime::tests` | 6/6 | |
 | `strands-ts/src/__tests__/queue.test.ts` | | 0/10 | |
-| `strands-ts/src/__tests__/state-store.test.ts` | | 0/49 | |
+| `strands-ts/src/__tests__/state-store.test.ts` | `strands::state_store::tests` | 30/49 | functions, symbols and `undefined` in values (10) and the null-key check (1) are JS runtime cases Rust types rule out (one `Serialize` failure test covers the path); typed-interface delete (1) is TS type-level only; the serializable-symbol helpers and `isStateSerializable` (7) are a TS-only mechanism |
 | `strands-ts/src/agent/__tests__/agent-as-tool.interrupt.test.ts` | | 0/15 | |
 | `strands-ts/src/agent/__tests__/agent-as-tool.invocation-context.test.ts` | | 0/3 | |
 | `strands-ts/src/agent/__tests__/agent-as-tool.invocation-state.test.ts` | | 0/1 | |
@@ -95,7 +95,7 @@ node strands-rs/docs/count-ts-cases.mjs strands-ts/src
 | `strands-ts/src/models/__tests__/model.test.ts` | | 0/70 | |
 | `strands-ts/src/models/__tests__/native-output.test.ts` | | 0/15 | |
 | `strands-ts/src/models/__tests__/server-side-summary-capability.test.ts` | | 0/2 | |
-| `strands-ts/src/models/__tests__/streaming.test.ts` | `strands::models::streaming::tests` | 5/14 | `isModelStreamEvent` (9) lands with `ModelStreamEvent` in Phase 2 |
+| `strands-ts/src/models/__tests__/streaming.test.ts` | `strands::models::streaming::tests` | 14/14 | |
 | `strands-ts/src/models/__tests__/strict-schema.test.ts` | | 0/24 | |
 | `strands-ts/src/models/openai/__tests__/chat.test.ts` | | 0/96 | |
 | `strands-ts/src/models/openai/__tests__/errors.test.ts` | | 0/7 | |

@@ -377,3 +377,61 @@ fn usage_round_trips_with_integer_counters() {
     event.insert("metrics".to_owned(), serde_json::to_value(metrics).unwrap());
     assert_eq!(js(&event), read("usage/large_integers.json"));
 }
+
+#[test]
+fn model_stream_events_round_trip_byte_identically() {
+    use crate::models::streaming::{ContentBlockDelta, ModelStreamEvent};
+
+    let files = files_in("model_stream_events");
+    assert_eq!(files.len(), 20);
+    for path in &files {
+        let event: ModelStreamEvent = assert_round_trip(path);
+        let written: JsonValue = parse(path);
+        assert_eq!(written["type"], event.event_type(), "{path}");
+    }
+    let ModelStreamEvent::BlockDelta(event) = parse("model_stream_events/delta_reasoning_redacted.json")
+    else {
+        panic!("expected a delta");
+    };
+    let ContentBlockDelta::ReasoningContent(delta) = event.delta() else {
+        panic!("expected a reasoning delta");
+    };
+    assert_eq!(delta.redacted_content(), Some(&[0, 1, 2, 255][..]));
+    let ModelStreamEvent::MessageStop(stop) =
+        parse("model_stream_events/message_stop_additional_fields_null.json")
+    else {
+        panic!("expected a message stop");
+    };
+    assert_eq!(stop.additional_model_response_fields(), Some(&JsonValue::Null));
+}
+
+#[test]
+fn model_requests_carry_the_fields_the_ts_model_received() {
+    use crate::models::model::ModelRequest;
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Recorded {
+        messages: Vec<Message>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tool_specs: Vec<ToolSpec>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        system_prompt: Option<SystemPrompt>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_choice: Option<ToolChoice>,
+    }
+
+    for path in files_in("model_requests") {
+        let recorded: Vec<Recorded> = assert_round_trip(&path);
+        for call in recorded {
+            let request = ModelRequest {
+                messages: call.messages,
+                tool_specs: call.tool_specs,
+                system_prompt: call.system_prompt,
+                tool_choice: call.tool_choice,
+                ..Default::default()
+            };
+            assert!(!request.messages.is_empty(), "{path}");
+        }
+    }
+}

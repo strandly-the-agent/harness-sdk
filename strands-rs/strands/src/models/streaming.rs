@@ -1,11 +1,637 @@
-//! Model stream data types (TS `models/streaming.ts`).
+//! Model stream events and their data types (TS `models/streaming.ts`).
 
 #![deny(clippy::arithmetic_side_effects)]
 
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::types::json::JsonValue;
+use crate::types::citations::{Citation, CitationGeneratedContent};
+use crate::types::json::{JsonValue, present_null};
+use crate::types::messages::{Role, StopReason};
+
+/// TS type discriminators of the [`ModelStreamEvent`] variants.
+const MODEL_STREAM_EVENT_TYPES: [&str; 7] = [
+    "modelMessageStartEvent",
+    "modelContentBlockStartEvent",
+    "modelContentBlockDeltaEvent",
+    "modelContentBlockStopEvent",
+    "modelMessageStopEvent",
+    "modelMetadataEvent",
+    "modelRedactionEvent",
+];
+
+/// Whether `event_type` is the `type` discriminator of a model stream event (TS `isModelStreamEvent`).
+pub fn is_model_stream_event(event_type: &str) -> bool {
+    MODEL_STREAM_EVENT_TYPES.contains(&event_type)
+}
+
+/// One streaming event from a model provider (TS `ModelStreamEvent`), tagged by `type` on the wire.
+///
+/// Variants are named after the TS class without the `Model` prefix and `Event` suffix, shortened
+/// so they don't collide with the [`ContentBlockStart`] and [`ContentBlockDelta`] payload types.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[non_exhaustive]
+pub enum ModelStreamEvent {
+    /// A message started (`modelMessageStartEvent`).
+    #[serde(rename = "modelMessageStartEvent")]
+    MessageStart(ModelMessageStartEvent),
+    /// A content block started (`modelContentBlockStartEvent`).
+    #[serde(rename = "modelContentBlockStartEvent")]
+    BlockStart(ModelContentBlockStartEvent),
+    /// New content for the current block (`modelContentBlockDeltaEvent`).
+    #[serde(rename = "modelContentBlockDeltaEvent")]
+    BlockDelta(ModelContentBlockDeltaEvent),
+    /// The current content block finished (`modelContentBlockStopEvent`).
+    #[serde(rename = "modelContentBlockStopEvent")]
+    BlockStop(ModelContentBlockStopEvent),
+    /// The message finished (`modelMessageStopEvent`).
+    #[serde(rename = "modelMessageStopEvent")]
+    MessageStop(ModelMessageStopEvent),
+    /// Usage, metrics and trace data (`modelMetadataEvent`).
+    #[serde(rename = "modelMetadataEvent")]
+    Metadata(ModelMetadataEvent),
+    /// A guardrail redacted input or output (`modelRedactionEvent`).
+    #[serde(rename = "modelRedactionEvent")]
+    Redaction(ModelRedactionEvent),
+}
+
+impl ModelStreamEvent {
+    /// The TS `type` discriminator (`modelMessageStartEvent`, ...).
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            Self::MessageStart(_) => "modelMessageStartEvent",
+            Self::BlockStart(_) => "modelContentBlockStartEvent",
+            Self::BlockDelta(_) => "modelContentBlockDeltaEvent",
+            Self::BlockStop(_) => "modelContentBlockStopEvent",
+            Self::MessageStop(_) => "modelMessageStopEvent",
+            Self::Metadata(_) => "modelMetadataEvent",
+            Self::Redaction(_) => "modelRedactionEvent",
+        }
+    }
+
+    /// The text of a text delta event.
+    pub fn text_delta(&self) -> Option<&str> {
+        match self {
+            Self::BlockDelta(event) => match event.delta() {
+                ContentBlockDelta::Text(delta) => Some(delta.text()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+macro_rules! into_stream_event {
+    ($($payload:ident => $variant:ident),+ $(,)?) => {
+        $(impl From<$payload> for ModelStreamEvent {
+            fn from(event: $payload) -> Self {
+                Self::$variant(event)
+            }
+        })+
+    };
+}
+
+into_stream_event! {
+    ModelMessageStartEvent => MessageStart,
+    ModelContentBlockStartEvent => BlockStart,
+    ModelContentBlockDeltaEvent => BlockDelta,
+    ModelContentBlockStopEvent => BlockStop,
+    ModelMessageStopEvent => MessageStop,
+    ModelMetadataEvent => Metadata,
+    ModelRedactionEvent => Redaction,
+}
+
+/// A new message starts in the stream (TS `ModelMessageStartEvent`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ModelMessageStartEvent {
+    role: Role,
+}
+
+impl ModelMessageStartEvent {
+    /// A message start for `role`.
+    pub fn new(role: Role) -> Self {
+        Self { role }
+    }
+
+    /// The role of the message being started.
+    pub fn role(&self) -> Role {
+        self.role
+    }
+}
+
+/// A new content block starts in the stream (TS `ModelContentBlockStartEvent`).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ModelContentBlockStartEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    start: Option<ContentBlockStart>,
+}
+
+impl ModelContentBlockStartEvent {
+    /// A block start without start data (text, reasoning and citation blocks).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the start data (only tool use blocks have it).
+    #[must_use]
+    pub fn with_start(mut self, start: impl Into<ContentBlockStart>) -> Self {
+        self.start = Some(start.into());
+        self
+    }
+
+    /// Information about the block being started; only present for tool use blocks.
+    pub fn start(&self) -> Option<&ContentBlockStart> {
+        self.start.as_ref()
+    }
+}
+
+/// New content in the current content block (TS `ModelContentBlockDeltaEvent`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ModelContentBlockDeltaEvent {
+    delta: ContentBlockDelta,
+}
+
+impl ModelContentBlockDeltaEvent {
+    /// A delta event.
+    pub fn new(delta: impl Into<ContentBlockDelta>) -> Self {
+        Self { delta: delta.into() }
+    }
+
+    /// The incremental content update.
+    pub fn delta(&self) -> &ContentBlockDelta {
+        &self.delta
+    }
+}
+
+/// The current content block is complete (TS `ModelContentBlockStopEvent`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ModelContentBlockStopEvent {}
+
+impl ModelContentBlockStopEvent {
+    /// A block stop event.
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+/// The message is complete (TS `ModelMessageStopEvent`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct ModelMessageStopEvent {
+    stop_reason: StopReason,
+    #[serde(
+        default,
+        deserialize_with = "present_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    additional_model_response_fields: Option<JsonValue>,
+}
+
+impl ModelMessageStopEvent {
+    /// A message stop with this stop reason.
+    pub fn new(stop_reason: impl Into<StopReason>) -> Self {
+        Self {
+            stop_reason: stop_reason.into(),
+            additional_model_response_fields: None,
+        }
+    }
+
+    /// Sets provider-specific response fields; a JSON `null` is kept as present.
+    #[must_use]
+    pub fn with_additional_model_response_fields(mut self, fields: JsonValue) -> Self {
+        self.additional_model_response_fields = Some(fields);
+        self
+    }
+
+    /// Why the model stopped.
+    pub fn stop_reason(&self) -> &StopReason {
+        &self.stop_reason
+    }
+
+    /// Provider-specific response fields.
+    pub fn additional_model_response_fields(&self) -> Option<&JsonValue> {
+        self.additional_model_response_fields.as_ref()
+    }
+}
+
+/// Usage, metrics and trace data for the call (TS `ModelMetadataEvent`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ModelMetadataEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    usage: Option<Usage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    metrics: Option<Metrics>,
+    #[serde(
+        default,
+        deserialize_with = "present_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    trace: Option<JsonValue>,
+}
+
+impl ModelMetadataEvent {
+    /// An empty metadata event.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the token usage.
+    #[must_use]
+    pub fn with_usage(mut self, usage: Usage) -> Self {
+        self.usage = Some(usage);
+        self
+    }
+
+    /// Sets the performance metrics.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Metrics) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
+
+    /// Sets the provider trace data; a JSON `null` is kept as present.
+    #[must_use]
+    pub fn with_trace(mut self, trace: JsonValue) -> Self {
+        self.trace = Some(trace);
+        self
+    }
+
+    /// Token usage.
+    pub fn usage(&self) -> Option<&Usage> {
+        self.usage.as_ref()
+    }
+
+    /// Performance metrics.
+    pub fn metrics(&self) -> Option<&Metrics> {
+        self.metrics.as_ref()
+    }
+
+    /// Provider trace data (for example guardrail traces).
+    pub fn trace(&self) -> Option<&JsonValue> {
+        self.trace.as_ref()
+    }
+}
+
+/// Replacement for redacted user input (TS `RedactInputContent`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct RedactInputContent {
+    replace_content: String,
+}
+
+impl RedactInputContent {
+    /// Input redaction with this replacement text.
+    pub fn new(replace_content: impl Into<String>) -> Self {
+        Self {
+            replace_content: replace_content.into(),
+        }
+    }
+
+    /// The text that replaces the user's input.
+    pub fn replace_content(&self) -> &str {
+        &self.replace_content
+    }
+}
+
+/// Replacement for redacted model output (TS `RedactOutputContent`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct RedactOutputContent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    redacted_content: Option<String>,
+    replace_content: String,
+}
+
+impl RedactOutputContent {
+    /// Output redaction with this replacement text.
+    pub fn new(replace_content: impl Into<String>) -> Self {
+        Self {
+            redacted_content: None,
+            replace_content: replace_content.into(),
+        }
+    }
+
+    /// Sets the original output that was redacted.
+    #[must_use]
+    pub fn with_redacted_content(mut self, redacted_content: impl Into<String>) -> Self {
+        self.redacted_content = Some(redacted_content.into());
+        self
+    }
+
+    /// The original output that was redacted.
+    pub fn redacted_content(&self) -> Option<&str> {
+        self.redacted_content.as_deref()
+    }
+
+    /// The text that replaces the model's output.
+    pub fn replace_content(&self) -> &str {
+        &self.replace_content
+    }
+}
+
+/// A guardrail redacted input or output (TS `ModelRedactionEvent`).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct ModelRedactionEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    input_redaction: Option<RedactInputContent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_redaction: Option<RedactOutputContent>,
+}
+
+impl ModelRedactionEvent {
+    /// A redaction event with neither side set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the input redaction.
+    #[must_use]
+    pub fn with_input_redaction(mut self, redaction: RedactInputContent) -> Self {
+        self.input_redaction = Some(redaction);
+        self
+    }
+
+    /// Sets the output redaction.
+    #[must_use]
+    pub fn with_output_redaction(mut self, redaction: RedactOutputContent) -> Self {
+        self.output_redaction = Some(redaction);
+        self
+    }
+
+    /// The input redaction.
+    pub fn input_redaction(&self) -> Option<&RedactInputContent> {
+        self.input_redaction.as_ref()
+    }
+
+    /// The output redaction.
+    pub fn output_redaction(&self) -> Option<&RedactOutputContent> {
+        self.output_redaction.as_ref()
+    }
+}
+
+/// Start data for a content block (TS `ContentBlockStart`), tagged by `type`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[non_exhaustive]
+pub enum ContentBlockStart {
+    /// A tool use block starts (`toolUseStart`).
+    #[serde(rename = "toolUseStart")]
+    ToolUse(ToolUseStart),
+}
+
+impl From<ToolUseStart> for ContentBlockStart {
+    fn from(start: ToolUseStart) -> Self {
+        Self::ToolUse(start)
+    }
+}
+
+/// Start data for a tool use block (TS `ToolUseStart`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct ToolUseStart {
+    name: String,
+    tool_use_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reasoning_signature: Option<String>,
+}
+
+impl ToolUseStart {
+    /// The start of a call to tool `name` with this tool use id.
+    pub fn new(name: impl Into<String>, tool_use_id: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            tool_use_id: tool_use_id.into(),
+            reasoning_signature: None,
+        }
+    }
+
+    /// Sets the reasoning signature some providers attach to tool calls.
+    #[must_use]
+    pub fn with_reasoning_signature(mut self, signature: impl Into<String>) -> Self {
+        self.reasoning_signature = Some(signature.into());
+        self
+    }
+
+    /// The tool name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The tool use id.
+    pub fn tool_use_id(&self) -> &str {
+        &self.tool_use_id
+    }
+
+    /// The reasoning signature.
+    pub fn reasoning_signature(&self) -> Option<&str> {
+        self.reasoning_signature.as_deref()
+    }
+}
+
+/// An incremental content update (TS `ContentBlockDelta`), tagged by `type`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[non_exhaustive]
+pub enum ContentBlockDelta {
+    /// Text (`textDelta`).
+    #[serde(rename = "textDelta")]
+    Text(TextDelta),
+    /// A chunk of tool input JSON (`toolUseInputDelta`).
+    #[serde(rename = "toolUseInputDelta")]
+    ToolUseInput(ToolUseInputDelta),
+    /// Reasoning content (`reasoningContentDelta`).
+    #[serde(rename = "reasoningContentDelta")]
+    ReasoningContent(ReasoningContentDelta),
+    /// Citations (`citationsDelta`).
+    #[serde(rename = "citationsDelta")]
+    Citations(CitationsDelta),
+}
+
+macro_rules! into_delta {
+    ($($payload:ident => $variant:ident),+ $(,)?) => {
+        $(impl From<$payload> for ContentBlockDelta {
+            fn from(delta: $payload) -> Self {
+                Self::$variant(delta)
+            }
+        })+
+    };
+}
+
+into_delta! {
+    TextDelta => Text,
+    ToolUseInputDelta => ToolUseInput,
+    ReasoningContentDelta => ReasoningContent,
+    CitationsDelta => Citations,
+}
+
+/// A text delta (TS `TextDelta`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct TextDelta {
+    text: String,
+}
+
+impl TextDelta {
+    /// A text delta.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self { text: text.into() }
+    }
+
+    /// The text.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+/// A chunk of tool input JSON (TS `ToolUseInputDelta`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ToolUseInputDelta {
+    input: String,
+}
+
+impl ToolUseInputDelta {
+    /// A tool input chunk; chunks concatenate into the input JSON.
+    pub fn new(input: impl Into<String>) -> Self {
+        Self { input: input.into() }
+    }
+
+    /// The JSON chunk.
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+}
+
+/// A reasoning delta (TS `ReasoningContentDelta`).
+///
+/// `redactedContent` is written like TS stream-event JSON, as an index-keyed object
+/// (`{"0":1,"1":2}`); base64 strings and byte arrays are accepted on read.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct ReasoningContentDelta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "uint8array_opt")]
+    redacted_content: Option<Vec<u8>>,
+}
+
+impl ReasoningContentDelta {
+    /// An empty reasoning delta.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the reasoning text.
+    #[must_use]
+    pub fn with_text(mut self, text: impl Into<String>) -> Self {
+        self.text = Some(text.into());
+        self
+    }
+
+    /// Sets the reasoning signature.
+    #[must_use]
+    pub fn with_signature(mut self, signature: impl Into<String>) -> Self {
+        self.signature = Some(signature.into());
+        self
+    }
+
+    /// Sets the redacted reasoning bytes.
+    #[must_use]
+    pub fn with_redacted_content(mut self, redacted_content: Vec<u8>) -> Self {
+        self.redacted_content = Some(redacted_content);
+        self
+    }
+
+    /// The reasoning text.
+    pub fn text(&self) -> Option<&str> {
+        self.text.as_deref()
+    }
+
+    /// The reasoning signature.
+    pub fn signature(&self) -> Option<&str> {
+        self.signature.as_deref()
+    }
+
+    /// The redacted reasoning bytes.
+    pub fn redacted_content(&self) -> Option<&[u8]> {
+        self.redacted_content.as_deref()
+    }
+}
+
+/// A citations delta (TS `CitationsDelta`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct CitationsDelta {
+    citations: Vec<Citation>,
+    content: Vec<CitationGeneratedContent>,
+}
+
+impl CitationsDelta {
+    /// Citations and the generated content they back.
+    pub fn new(citations: Vec<Citation>, content: Vec<CitationGeneratedContent>) -> Self {
+        Self { citations, content }
+    }
+
+    /// The citations.
+    pub fn citations(&self) -> &[Citation] {
+        &self.citations
+    }
+
+    /// The generated content the citations back.
+    pub fn content(&self) -> &[CitationGeneratedContent] {
+        &self.content
+    }
+}
+
+/// serde adapter: `Option<Vec<u8>>` written as a `JSON.stringify`'d `Uint8Array`, read leniently.
+mod uint8array_opt {
+    use serde::ser::SerializeMap;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use crate::types::json::JsonValue;
+    use crate::types::media::bytes_from_json;
+
+    #[expect(clippy::ref_option, reason = "serde `with` adapters receive `&Option<T>`")]
+    pub(super) fn serialize<S: Serializer>(
+        bytes: &Option<Vec<u8>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let Some(bytes) = bytes else {
+            return serializer.serialize_none();
+        };
+        let mut map = serializer.serialize_map(Some(bytes.len()))?;
+        for (index, byte) in bytes.iter().enumerate() {
+            map.serialize_entry(&index.to_string(), byte)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Vec<u8>>, D::Error> {
+        match Option::<JsonValue>::deserialize(deserializer)? {
+            None | Some(JsonValue::Null) => Ok(None),
+            Some(value) => bytes_from_json(&value)
+                .map(Some)
+                .map_err(serde::de::Error::custom),
+        }
+    }
+}
 
 /// Token usage for a model call (TS `Usage`).
 ///
@@ -165,12 +791,101 @@ impl Metrics {
     }
 }
 
-/// Ported from strands-ts/src/models/__tests__/streaming.test.ts (the `Usage` parts).
+/// Ported from strands-ts/src/models/__tests__/streaming.test.ts.
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::*;
+
+    mod is_model_stream_event {
+        use super::*;
+
+        fn check(event: &JsonValue) -> bool {
+            is_model_stream_event(event["type"].as_str().unwrap())
+        }
+
+        fn typed(event: ModelStreamEvent) -> bool {
+            check(&serde_json::to_value(event).unwrap())
+        }
+
+        #[test]
+        fn returns_true_for_modelmessagestartevent() {
+            assert!(typed(ModelMessageStartEvent::new(Role::Assistant).into()));
+        }
+
+        #[test]
+        fn returns_true_for_modelcontentblockstartevent() {
+            assert!(typed(ModelContentBlockStartEvent::new().into()));
+        }
+
+        #[test]
+        fn returns_true_for_modelcontentblockdeltaevent() {
+            assert!(typed(
+                ModelContentBlockDeltaEvent::new(TextDelta::new("hello")).into()
+            ));
+        }
+
+        #[test]
+        fn returns_true_for_modelcontentblockstopevent() {
+            assert!(typed(ModelContentBlockStopEvent::new().into()));
+        }
+
+        #[test]
+        fn returns_true_for_modelmessagestopevent() {
+            assert!(typed(ModelMessageStopEvent::new(StopReason::EndTurn).into()));
+        }
+
+        #[test]
+        fn returns_true_for_modelmetadataevent() {
+            assert!(typed(
+                ModelMetadataEvent::new().with_usage(Usage::new(10, 5, 15)).into()
+            ));
+        }
+
+        #[test]
+        fn returns_true_for_modelredactionevent() {
+            let redaction = RedactInputContent::new("[User input redacted.]");
+            assert!(typed(
+                ModelRedactionEvent::new().with_input_redaction(redaction).into()
+            ));
+        }
+
+        #[test]
+        fn returns_false_for_unknown_event_types() {
+            assert!(!check(&json!({"type": "unknownEvent"})));
+        }
+
+        #[test]
+        fn returns_false_for_content_block_types() {
+            assert!(!check(&json!({"type": "textBlock", "text": "hello"})));
+        }
+
+        #[test]
+        fn event_type_matches_the_serialized_discriminator() {
+            let event: ModelStreamEvent = ModelContentBlockStopEvent::new().into();
+            assert_eq!(serde_json::to_value(&event).unwrap()["type"], event.event_type());
+        }
+    }
+
+    #[test]
+    fn text_delta_reads_only_text_deltas() {
+        let text: ModelStreamEvent = ModelContentBlockDeltaEvent::new(TextDelta::new("hi")).into();
+        let input: ModelStreamEvent = ModelContentBlockDeltaEvent::new(ToolUseInputDelta::new("{")).into();
+        assert_eq!(text.text_delta(), Some("hi"));
+        assert_eq!(input.text_delta(), None);
+    }
+
+    #[test]
+    fn redacted_reasoning_deltas_write_index_objects_and_read_base64() {
+        let delta = ReasoningContentDelta::new().with_redacted_content(vec![0, 255]);
+        assert_eq!(
+            serde_json::to_value(&delta).unwrap(),
+            json!({"redactedContent": {"0": 0, "1": 255}})
+        );
+        let read: ReasoningContentDelta = serde_json::from_value(json!({"redactedContent": "AP8="})).unwrap();
+        assert_eq!(read.redacted_content(), Some(&[0, 255][..]));
+    }
 
     mod total_prompt_tokens {
         use super::*;
