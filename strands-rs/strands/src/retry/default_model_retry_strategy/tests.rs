@@ -46,7 +46,7 @@ struct RecordingBackoff {
 
 impl BackoffStrategy for RecordingBackoff {
     fn next_delay(&self, context: &BackoffContext) -> Duration {
-        self.calls.lock().unwrap().push(*context);
+        self.calls.lock().unwrap().push(context.clone());
         Duration::from_millis(5)
     }
 }
@@ -61,7 +61,7 @@ fn recording_strategy() -> (DefaultModelRetryStrategy, Arc<RecordingBackoff>) {
     (strategy, backoff)
 }
 
-fn attempt_and_last_delay(context: BackoffContext) -> (u32, Option<Duration>) {
+fn attempt_and_last_delay(context: &BackoffContext) -> (u32, Option<Duration>) {
     (context.attempt.get(), context.last_delay)
 }
 
@@ -148,7 +148,7 @@ async fn clears_backoff_state_at_the_start_of_each_new_turn() {
     assert!(run(&strategy, &error, 1, false).await);
 
     let calls = backoff.calls.lock().unwrap();
-    assert_eq!(attempt_and_last_delay(calls[1]), (1, None));
+    assert_eq!(attempt_and_last_delay(&calls[1]), (1, None));
 }
 
 #[tokio::test(start_paused = true)]
@@ -159,7 +159,7 @@ async fn passes_backoff_context_with_attempt_and_last_delay_ms_to_the_backoff_st
     assert!(run(&strategy, &error, 1, false).await);
     assert_eq!(backoff.calls.lock().unwrap().len(), 1);
     assert_eq!(
-        attempt_and_last_delay(backoff.calls.lock().unwrap()[0]),
+        attempt_and_last_delay(&backoff.calls.lock().unwrap()[0]),
         (1, None)
     );
 
@@ -167,7 +167,7 @@ async fn passes_backoff_context_with_attempt_and_last_delay_ms_to_the_backoff_st
     let calls = backoff.calls.lock().unwrap();
     assert_eq!(calls.len(), 2);
     assert_eq!(
-        attempt_and_last_delay(calls[1]),
+        attempt_and_last_delay(&calls[1]),
         (2, Some(Duration::from_millis(5)))
     );
     assert_eq!(calls[1].elapsed, Duration::from_millis(5));
@@ -184,7 +184,7 @@ async fn clears_per_turn_state_on_attempt_1_even_when_a_prior_hook_already_set_e
 
     let calls = backoff.calls.lock().unwrap();
     assert_eq!(calls.len(), 2);
-    assert_eq!(attempt_and_last_delay(calls[1]), (2, None));
+    assert_eq!(attempt_and_last_delay(&calls[1]), (2, None));
 }
 
 #[tokio::test(start_paused = true)]

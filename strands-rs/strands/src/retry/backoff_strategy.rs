@@ -19,7 +19,7 @@ const TWO_POW_53: f64 = 9_007_199_254_740_992.0;
 ///
 /// An additive-only contract: fields may be added, never removed or repurposed.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BackoffContext {
     /// 1-based index of the attempt that just failed.
     pub attempt: NonZeroU32,
