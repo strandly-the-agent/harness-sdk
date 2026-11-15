@@ -9,6 +9,10 @@ use crate::types::json::{JsonValue, present_null};
 
 /// Parameters for raising an interrupt (TS `InterruptParams`).
 #[derive(Debug, Clone, PartialEq, Default)]
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
 pub struct InterruptParams {
     /// The interrupt name, unique within the tool or hook that raises it.
     pub name: String,

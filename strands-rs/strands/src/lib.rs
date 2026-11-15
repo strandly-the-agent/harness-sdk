@@ -17,6 +17,8 @@
 //! A panicking tool becomes an error tool result, which relies on unwinding. Don't build with
 //! `panic = "abort"`.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 #[macro_use]
 mod open_enum;
 

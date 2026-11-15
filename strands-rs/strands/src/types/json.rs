@@ -88,7 +88,9 @@ fn js_number_body(digits: &str, k: i32, n: i32) -> String {
     }
     if 0 < n && n <= 21 {
         let split = usize::try_from(n).unwrap_or(0);
-        return format!("{}.{}", &digits[..split], &digits[split..]);
+        if let Some((int, frac)) = digits.split_at_checked(split) {
+            return format!("{int}.{frac}");
+        }
     }
     if -6 < n && n <= 0 {
         return format!("0.{}{digits}", zeros(-n));
@@ -106,46 +108,37 @@ fn js_number_body(digits: &str, k: i32, n: i32) -> String {
 }
 
 fn replace_lone_surrogates(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] != b'\\' || i + 1 >= bytes.len() {
-            out.push(bytes[i]);
-            i += 1;
-            continue;
-        }
-        if bytes[i + 1] != b'u' {
-            out.extend_from_slice(&bytes[i..i + 2]);
-            i += 2;
-            continue;
-        }
-        match escape_at(bytes, i) {
-            Some(0xD800..=0xDBFF) if matches!(escape_at(bytes, i + 6), Some(0xDC00..=0xDFFF)) => {
-                out.extend_from_slice(&bytes[i..i + 12]);
-                i += 12;
-            }
-            Some(0xD800..=0xDFFF) => {
-                out.extend_from_slice(b"\\ufffd");
-                i += 6;
-            }
-            _ => {
-                out.extend_from_slice(&bytes[i..i + 2]);
-                i += 2;
-            }
-        }
+    let mut rest = text.as_bytes();
+    let mut out = Vec::with_capacity(rest.len());
+    while let Some(&first) = rest.first() {
+        let len = match (first, rest.get(1)) {
+            (b'\\', Some(b'u')) => match escape_at(rest) {
+                Some(0xD800..=0xDBFF)
+                    if matches!(rest.get(6..).and_then(escape_at), Some(0xDC00..=0xDFFF)) =>
+                {
+                    12
+                }
+                Some(0xD800..=0xDFFF) => {
+                    out.extend_from_slice(b"\\ufffd");
+                    rest = rest.get(6..).unwrap_or_default();
+                    continue;
+                }
+                _ => 2,
+            },
+            (b'\\', Some(_)) => 2,
+            _ => 1,
+        };
+        let (head, tail) = rest.split_at_checked(len).unwrap_or((rest, &[]));
+        out.extend_from_slice(head);
+        rest = tail;
     }
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// The UTF-16 code unit of a `\uXXXX` escape starting at `at`.
-fn escape_at(bytes: &[u8], at: usize) -> Option<u16> {
-    let escape = bytes.get(at..at + 6)?;
-    if escape[0] != b'\\' || escape[1] != b'u' {
-        return None;
-    }
-    let hex = std::str::from_utf8(&escape[2..]).ok()?;
-    u16::from_str_radix(hex, 16).ok()
+/// The UTF-16 code unit of a `\uXXXX` escape at the start of `bytes`.
+fn escape_at(bytes: &[u8]) -> Option<u16> {
+    let hex = bytes.strip_prefix(b"\\u")?.get(..4)?;
+    u16::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()
 }
 
 #[cfg(test)]
@@ -173,6 +166,13 @@ mod tests {
         for (value, expected) in cases {
             assert_eq!(js_number(value), expected, "{value:e}");
         }
+    }
+
+    #[test]
+    fn floats_round_trip_with_their_exact_bits() {
+        let text = "[394301.33835633675,0.30000000000000004,5e-324,1.7976931348623157e+308]";
+        let value: JsonValue = from_json_str(text).unwrap();
+        assert_eq!(to_js_string(&value).unwrap(), text);
     }
 
     #[test]

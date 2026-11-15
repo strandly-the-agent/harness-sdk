@@ -51,21 +51,18 @@ pub(crate) fn bytes_from_json(value: &JsonValue) -> Result<Vec<u8>, String> {
 }
 
 fn bytes_from_index_object(map: &JsonObject) -> Result<Vec<u8>, String> {
-    let mut bytes = vec![0_u8; map.len()];
-    let mut seen = vec![false; map.len()];
+    let mut bytes = vec![None; map.len()];
     for (key, value) in map {
         let index: usize = key.parse().map_err(|_| format!("invalid byte index `{key}`"))?;
         let slot = bytes
             .get_mut(index)
             .ok_or_else(|| format!("byte index {index} out of range"))?;
-        *slot = byte_from_json(value)?;
-        seen[index] = true;
+        *slot = Some(byte_from_json(value)?);
     }
-    if seen.iter().all(|s| *s) {
-        Ok(bytes)
-    } else {
-        Err("byte indexes are not contiguous".to_owned())
-    }
+    bytes
+        .into_iter()
+        .collect::<Option<Vec<u8>>>()
+        .ok_or_else(|| "byte indexes are not contiguous".to_owned())
 }
 
 fn byte_from_json(value: &JsonValue) -> Result<u8, String> {

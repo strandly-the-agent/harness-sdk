@@ -1,5 +1,7 @@
 //! Model stream data types (TS `models/streaming.ts`).
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 
