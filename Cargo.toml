@@ -1,0 +1,117 @@
+[workspace]
+resolver = "3"
+members = ["strands-rs/strands", "strands-rs/strands-macros", "harness-rs/strands-harness"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+repository = "https://github.com/strands-agents/harness-sdk"
+homepage = "https://strandsagents.com"
+authors = ["Strands Agents"]
+
+[workspace.dependencies]
+strands = { path = "strands-rs/strands", version = "=0.1.0", default-features = false }
+strands-macros = { path = "strands-rs/strands-macros", version = "=0.1.0" }
+strands-harness = { path = "harness-rs/strands-harness", version = "=0.1.0", default-features = false }
+
+# Async
+tokio = { version = "1.54", default-features = false }
+futures = "0.3.34"
+async-stream = "0.3.6"
+async-trait = "0.1.92"
+tokio-util = { version = "0.7.20", default-features = false }
+
+# Data
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+schemars = { version = "1.2.3", features = ["preserve_order"] }
+jsonschema = { version = "0.61.2", default-features = false }
+http = "1.5"
+uuid = { version = "1.29", features = ["v7"] }
+base64 = "0.23"
+jiff = "0.2.45"
+indexmap = { version = "2.14", features = ["serde"] }
+regex = "1.13"
+
+# Errors and builders
+thiserror = "2.0.21"
+bon = "3.10"
+
+# Bedrock and Mantle
+aws-config = { version = "1.13", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process", "sso", "behavior-version-latest"] }
+aws-sdk-bedrockruntime = { version = "1.155", default-features = false, features = ["default-https-client", "rt-tokio", "behavior-version-latest"] }
+aws-sigv4 = "1.6"
+aws-smithy-types = "1.9"
+aws-credential-types = "1.3"
+
+# HTTP providers and tools
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream", "http2", "charset"] }
+eventsource-stream = "0.2.3"
+htmd = "0.5.6"
+
+# MCP
+rmcp = { version = "3.10", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest", "auth", "elicitation"] }
+
+# Telemetry
+tracing = "0.1.44"
+opentelemetry = "0.33.1"
+opentelemetry_sdk = "0.33.1"
+tracing-opentelemetry = "0.34"
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-client", "trace", "metrics"] }
+
+# Policy, scripting and processes
+cedar-policy = "=4.14.1"
+monty = "1.5"
+process-wrap = { version = "10.0.1", default-features = false, features = ["tokio1", "process-group", "kill-on-drop", "job-object"] }
+
+# Macros
+syn = { version = "3.0", features = ["full"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+darling = "0.24"
+
+# Dev
+trybuild = "1.0.123"
+tempfile = "3.27"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_invalid_type = "deny"
+allow_attributes_without_reason = "deny"
+needless_pass_by_value = "warn"
+redundant_clone = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+explicit_iter_loop = "warn"
+manual_let_else = "warn"
+match_same_arms = "warn"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_lossless = "warn"
+inefficient_to_string = "warn"
+implicit_clone = "warn"
+uninlined_format_args = "warn"
+doc_markdown = "warn"
+missing_errors_doc = "warn"
+large_futures = "warn"
