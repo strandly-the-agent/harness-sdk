@@ -8,7 +8,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::types::json::{JsonValue, present_null};
 
 /// Parameters for raising an interrupt (TS `InterruptParams`).
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, bon::Builder)]
+#[builder(on(String, into))]
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
@@ -455,6 +456,21 @@ mod tests {
         };
         assert_eq!(params.name, "confirm");
         assert_eq!(params.response, None);
+    }
+
+    #[test]
+    fn interrupt_params_build_with_the_builder() {
+        let params = InterruptParams::builder()
+            .name("confirm")
+            .reason(json!("why"))
+            .build();
+        assert_eq!(
+            params,
+            InterruptParams {
+                reason: Some(json!("why")),
+                ..InterruptParams::new("confirm")
+            }
+        );
     }
 
     #[test]
