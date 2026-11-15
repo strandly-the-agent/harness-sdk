@@ -13,6 +13,23 @@ use syn::{Attribute, Meta};
 #[darling(default)]
 pub(crate) struct ToolArgs {
     pub(crate) name: Option<String>,
+    /// The path of the `strands` crate, for a renamed dependency.
+    #[darling(rename = "crate")]
+    pub(crate) krate: Option<syn::Path>,
+}
+
+/// Arguments of `#[tools(..)]` on an impl block.
+#[derive(Debug, Default, FromMeta)]
+#[darling(default)]
+pub(crate) struct ToolsArgs {
+    /// The path of the `strands` crate, for a renamed dependency.
+    #[darling(rename = "crate")]
+    pub(crate) krate: Option<syn::Path>,
+}
+
+/// The `strands` crate path: `krate`, or `::strands`.
+pub(crate) fn crate_path(krate: Option<&syn::Path>) -> syn::Path {
+    krate.cloned().unwrap_or_else(|| syn::parse_quote!(::strands))
 }
 
 impl ToolArgs {

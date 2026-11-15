@@ -11,7 +11,7 @@ use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
 use syn::{ItemFn, ItemImpl, parse_macro_input};
 
-use crate::args::ToolArgs;
+use crate::args::{ToolArgs, ToolsArgs};
 
 /// Turns a function into a tool.
 ///
@@ -20,6 +20,8 @@ use crate::args::ToolArgs;
 /// visibility and doc comment:
 ///
 /// - The tool name is the function name; `#[tool(name = "..")]` overrides it.
+/// - Generated code names the `strands` crate as `::strands`; under a renamed dependency, pass
+///   its path with `#[tool(crate = "::my_strands")]` (`#[tools(crate = "..")]` on an impl block).
 /// - The doc comment is the tool description, and is required. Parameter doc comments are the
 ///   property descriptions, and `#[serde(..)]` and `#[schemars(..)]` attributes on parameters
 ///   shape the input schema.
@@ -95,13 +97,11 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 pub fn tools(attr: TokenStream, item: TokenStream) -> TokenStream {
-    if let Some(token) = proc_macro2::TokenStream::from(attr).into_iter().next() {
-        return syn::Error::new(token.span(), "#[tools] takes no arguments")
-            .into_compile_error()
-            .into();
-    }
     let item = parse_macro_input!(item as ItemImpl);
-    expand::tools_impl(item)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+    let expanded = NestedMeta::parse_meta_list(attr.into())
+        .map_err(darling::Error::from)
+        .and_then(|list| ToolsArgs::from_list(&list))
+        .map_err(syn::Error::from)
+        .and_then(|args| expand::tools_impl(&args, item));
+    expanded.unwrap_or_else(syn::Error::into_compile_error).into()
 }
