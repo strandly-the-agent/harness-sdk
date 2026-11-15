@@ -12,15 +12,15 @@
 ## [ ] Phase 1: types, wire and errors
 - [x] Messages, 14 content blocks, `JsonBlock`, media and citations
 - [x] Tool types, `StopReason`, `Usage`, `Metrics`, snapshot and interrupt types
-- [ ] `strands::Error` and TS-mirrored error types with exact messages
+- [x] `strands::Error` and TS-mirrored error types with exact messages
 - [x] Constructors for non-exhaustive wire structs
-- [ ] Fixture round-trips byte-identical
+- [x] Fixture round-trips byte-identical
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 2: model abstraction, streaming and retry
 - [ ] `ModelStreamEvent`, `ModelRequest`, `ModelState`, `BaseModelConfig`, `CacheConfig`
 - [ ] `Model` trait with `stream_aggregated`, `summarize`, `count_tokens`, `estimate_utilization`, model info
-- [ ] Retry strategy plugin, `DefaultModelRetryStrategy`, backoffs and jitter
+- [x] Retry strategy plugin, `DefaultModelRetryStrategy`, backoffs and jitter
 - [ ] `strands::testing` mock model, hook recorder, test agent
 - [ ] Phase review gate and fixes
 
