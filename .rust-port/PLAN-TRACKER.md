@@ -67,18 +67,18 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 - [x] `Storage`, `InMemoryStorage`, `LocalFileStorage`, namespaces, `KeywordSearchStrategy`
 - [x] `SessionManager` with TS layout and cross-SDK fixtures
-- [ ] Experimental `ContextManager` (presets, offload strategies, stash, `retrieve_context`, pinning, agentic tools)
-- [ ] `ContextInjector` and injection with `InjectedBlock`
-- [ ] `MemoryManager`, `MemoryStore`, `FileMemoryStore`, `ModelExtractor`
-- [ ] `AgentSkills` and `Skill`
+- [x] Experimental `ContextManager` (presets, offload strategies, stash, `retrieve_context`, pinning, agentic tools)
+- [x] `ContextInjector` and injection with `InjectedBlock`
+- [x] `MemoryManager`, `MemoryStore`, `FileMemoryStore`, `ModelExtractor`
+- [x] `AgentSkills` and `Skill`
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 7: interventions and routing
 
-- [ ] `InterventionHandler` and registry
-- [ ] `HumanInTheLoop` with classifiers
-- [ ] `CedarAuthorization`
-- [ ] `ModelRouter` with `FallbackStrategy` and `ClassifierStrategy`
+- [x] `InterventionHandler` and registry
+- [x] `HumanInTheLoop` with classifiers
+- [x] `CedarAuthorization`
+- [x] `ModelRouter` with `FallbackStrategy` and `ClassifierStrategy`
 - [ ] Phase review gate and fixes
 
 ## [x] Phase 8: sandbox and vended tools
