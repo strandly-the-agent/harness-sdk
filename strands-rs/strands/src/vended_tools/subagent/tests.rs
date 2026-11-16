@@ -1404,3 +1404,191 @@ mod with_real_agents {
         assert!(result_text(&refused).starts_with("Delegation depth limit reached (2 levels)"));
     }
 }
+
+/// The `_defaultBuilder` cases of strands-ts/src/multiagent/__tests__/spec.test.ts that the
+/// `subagent` tool's default builder shares (the rest of that spec is multi-agent, out of v0.1).
+mod default_builder {
+    use super::*;
+    use crate::experimental::context_manager::ContextManagerPreset;
+    use crate::hooks::BeforeToolCallEvent;
+    use crate::interventions::{BeforeToolCallAction, InterventionHandler, deny};
+    use crate::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest};
+    use crate::models::streaming::ModelStreamEvent;
+    use crate::telemetry::AttributeValue;
+
+    struct DenyToolCalls;
+
+    #[async_trait::async_trait]
+    impl InterventionHandler for DenyToolCalls {
+        fn name(&self) -> &str {
+            "deny-tool-calls"
+        }
+
+        async fn before_tool_call(
+            &self,
+            _event: &mut BeforeToolCallEvent,
+        ) -> crate::Result<BeforeToolCallAction> {
+            Ok(deny("not authorized").into())
+        }
+    }
+
+    struct StatefulModel(MockMessageModel);
+
+    impl Model for StatefulModel {
+        fn stream(&self, request: ModelRequest) -> BoxStream<'static, crate::Result<ModelStreamEvent>> {
+            self.0.stream(request)
+        }
+
+        fn get_config(&self) -> BaseModelConfig {
+            self.0.get_config()
+        }
+
+        fn update_config(&self, config: BaseModelConfig) {
+            self.0.update_config(config);
+        }
+
+        fn stateful(&self) -> bool {
+            true
+        }
+    }
+
+    fn read_tool() -> FunctionTool {
+        FunctionTool::new("read", "Reads.", |_input: JsonValue, _ctx| async move {
+            Ok::<_, ToolError>(json!("ok"))
+        })
+    }
+
+    fn child_of(parent: &Agent, spec: &AgentSpec) -> Agent {
+        spec::default_build(&parent.local.tool_agent(), spec).unwrap()
+    }
+
+    fn tool_names(agent: &Agent) -> Vec<&str> {
+        agent
+            .local
+            .tool_registry()
+            .list()
+            .map(|tool| tool.name())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn does_not_inherit_the_parents_context_manager_tools() {
+        let mut parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .tools([read_tool()])
+            .printer(false)
+            .context_manager(ContextManagerPreset::Auto)
+            .build()
+            .unwrap();
+        parent.initialize().await.unwrap();
+
+        let mut child = child_of(&parent, &AgentSpec::default());
+        child.initialize().await.unwrap();
+
+        let retrieve = |agent: &Agent| {
+            let tool = agent.local.tool_registry().get("retrieve_context").cloned();
+            tool.expect("a retrieval tool")
+        };
+        assert_eq!(tool_names(&child), ["read", "retrieve_context"]);
+        assert!(!std::ptr::addr_eq(
+            Arc::as_ptr(&retrieve(&parent)),
+            Arc::as_ptr(&retrieve(&child))
+        ));
+    }
+
+    #[test]
+    fn gives_the_child_an_auto_context_manager_for_a_stateless_model() {
+        let parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .printer(false)
+            .build()
+            .unwrap();
+        assert!(
+            child_of(&parent, &AgentSpec::default())
+                .context_manager()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn skips_the_context_manager_for_a_stateful_model() {
+        let parent = Agent::builder()
+            .model(StatefulModel(MockMessageModel::new()))
+            .printer(false)
+            .build()
+            .unwrap();
+        assert!(
+            child_of(&parent, &AgentSpec::default())
+                .context_manager()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn propagates_the_parents_sandbox_trace_attributes_and_printer_setting_printer() {
+        for printer in [true, false] {
+            let parent = Agent::builder()
+                .model(MockMessageModel::new())
+                .printer(printer)
+                .trace_attributes([("team".to_owned(), AttributeValue::from("infra"))])
+                .build()
+                .unwrap();
+
+            let child = child_of(&parent, &AgentSpec::default());
+
+            assert_eq!(
+                child.local.telemetry().lock().tracer.trace_attributes(),
+                [("team".to_owned(), AttributeValue::from("infra"))]
+            );
+            assert_eq!(child.printer.is_some(), printer);
+        }
+    }
+
+    #[test]
+    fn shares_the_parents_intervention_handler_instances() {
+        let handler: Arc<dyn InterventionHandler> = Arc::new(DenyToolCalls);
+        let parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .printer(false)
+            .interventions([Arc::clone(&handler)])
+            .build()
+            .unwrap();
+
+        let child = child_of(&parent, &AgentSpec::default());
+
+        let view = child.local.tool_agent();
+        let [shared] = &view.child_defaults().interventions[..] else {
+            panic!("one handler")
+        };
+        assert!(std::ptr::addr_eq(Arc::as_ptr(shared), Arc::as_ptr(&handler)));
+    }
+
+    #[tokio::test]
+    async fn gates_an_inherited_tool_with_the_parents_interventions_when_the_childs_model_calls_it() {
+        let ran = Arc::new(Mutex::new(0));
+        let runs = Arc::clone(&ran);
+        let danger = FunctionTool::new("dangerTool", "Dangerous.", move |_input: JsonValue, _ctx| {
+            *runs.lock().unwrap() += 1;
+            async move { Ok::<_, ToolError>(json!("done")) }
+        });
+        let child_model = Arc::new(MockMessageModel::new());
+        child_model.add_turn(vec![tool_use("dangerTool", "t1", json!({}))]);
+        child_model.add_turn(vec![text("finished")]);
+        let parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .printer(false)
+            .tools([danger])
+            .intervention(DenyToolCalls)
+            .build()
+            .unwrap();
+        let spec = AgentSpec {
+            model: Some(ModelSource::Model(child_model)),
+            ..AgentSpec::default()
+        };
+
+        let mut child = child_of(&parent, &spec);
+        child.invoke("run dangerTool").await.unwrap();
+
+        assert_eq!(*ran.lock().unwrap(), 0);
+    }
+}

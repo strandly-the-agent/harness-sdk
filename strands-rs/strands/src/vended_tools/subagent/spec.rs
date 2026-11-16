@@ -12,6 +12,8 @@ use serde_json::json;
 use crate::JsonValue;
 use crate::agent::{Agent, ModelSource};
 use crate::error::Result;
+use crate::experimental::context_manager::ContextManagerPreset;
+use crate::plugins::Plugin;
 use crate::tools::Tool;
 use crate::types::agent::ToolAgent;
 use crate::types::json::JsonObject;
@@ -507,17 +509,30 @@ fn resolve_tools(
     }
 }
 
-/// Builds a child inheriting the parent's model, tools and sandbox (TS `_defaultBuilder`):
-/// `spec.tools` picks from the parent's tools, skipping (with a warning) names it doesn't own,
-/// and `spec.name` becomes the child's name and id.
+/// Builds a child inheriting the parent's model, tools, sandbox, printer setting, trace
+/// attributes and intervention handlers (TS `_defaultBuilder`): `spec.tools` picks from the
+/// parent's tools, skipping (with a warning) names it doesn't own, and `spec.name` becomes the
+/// child's name and id. The child gets its own `auto` context manager unless its model is
+/// stateful, so the parent's context manager tools are not inherited.
 pub(super) fn default_build(parent: &ToolAgent, spec: &AgentSpec) -> Result<Agent> {
+    let defaults = parent.child_defaults();
+    let managed = defaults
+        .context_manager
+        .as_ref()
+        .map(Plugin::get_tools)
+        .unwrap_or_default();
+    let inherited = |tool: &&Arc<dyn Tool>| {
+        !managed
+            .iter()
+            .any(|managed| std::ptr::addr_eq(Arc::as_ptr(managed), Arc::as_ptr(tool)))
+    };
     let registry = parent.tool_registry();
     let tools: Vec<Arc<dyn Tool>> = match &spec.tools {
-        None => registry.list().cloned().collect(),
+        None => registry.list().filter(inherited).cloned().collect(),
         Some(names) => names
             .iter()
             .filter_map(|name| {
-                let tool = registry.get(name).cloned();
+                let tool = registry.get(name).filter(inherited).cloned();
                 if tool.is_none() {
                     tracing::warn!(tool_name = %name, "subagent requested tool but parent does not own it, skipping");
                 }
@@ -529,11 +544,16 @@ pub(super) fn default_build(parent: &ToolAgent, spec: &AgentSpec) -> Result<Agen
         .model
         .clone()
         .unwrap_or_else(|| ModelSource::Model(Arc::clone(parent.model())));
+    // TS reads `stateful` off a model instance only; a router or a model id has none.
+    let stateful = matches!(&model, ModelSource::Model(model) if model.stateful());
     Agent::builder()
         .system_prompt(spec.instructions.clone().unwrap_or_default())
         .tools(tools)
         .model(model)
-        .printer(false)
+        .maybe_context_manager((!stateful).then_some(ContextManagerPreset::Auto))
+        .printer(defaults.printer)
+        .trace_attributes(parent.trace_attributes().iter().cloned())
+        .interventions(defaults.interventions.iter().cloned())
         .maybe_sandbox(parent.agent_sandbox().source())
         .maybe_name(spec.name.clone())
         .maybe_id(spec.name.clone())
