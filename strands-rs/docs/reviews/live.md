@@ -17,7 +17,7 @@ AWS credentials came from the default chain and were used for Bedrock and Bedroc
 | 2 | `5dbfffe94` | 66 | 53 | 13 | 0 | 0 |
 | 3 | `d53f7a521` | 67 | 54 | 13 | 0 | 0 |
 
-Run 3 adds `live_handles_multiple_media_blocks_in_single_request`. Commits after `d53f7a521` change documentation, a doc comment, and three lint fixes with no change in behaviour (an `allow` on the skip message, backticks in a doc comment, and a copy in place of a `clone` in `live_telemetry.rs`); `live_telemetry.rs` was rerun after its fix: 2 ran, 2 passed.
+Run 3 adds `live_handles_multiple_media_blocks_in_single_request`. Commits after `d53f7a521` change documentation, two doc comments, and three lint fixes with no change in behaviour (an `allow` on the skip message, backticks in a doc comment, and a copy in place of a `clone` in `live_telemetry.rs`); `live_telemetry.rs` was rerun after its fix: 2 ran, 2 passed.
 
 A skipped test returns early and the test harness prints `ok` for it. The 13 skips were counted from the `skipping:` lines (`--nocapture`): 5 `skipping: ANTHROPIC_API_KEY is not set` and 8 `skipping: OPENAI_API_KEY is not set` in each run, and no skip line from any Bedrock, Mantle or MCP test. No request was sent to Anthropic or OpenAI.
 
