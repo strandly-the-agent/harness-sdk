@@ -903,8 +903,9 @@ impl Agent {
         hooks: &HookRegistry,
         out: &Emitter,
     ) -> std::result::Result<(StreamAggregatedResult, Arc<dyn Model>), (Stop, Arc<dyn Model>)> {
+        let tool_agent = self.local.tool_agent();
         let context = InvokeModelContext::new(
-            self.local.tool_agent(),
+            tool_agent.clone(),
             Arc::clone(model),
             self.local.messages().to_vec(),
             self.local.system_prompt().cloned(),
@@ -932,6 +933,11 @@ impl Agent {
         // Drained past the result, so handler code after its `next` stream still runs.
         let mut outcome = None;
         while let Some(item) = chain.next().await {
+            // A handler's write to the history (TS mutates `agent.messages` in place) lands before
+            // the hooks of the call's events run.
+            if let Some(messages) = tool_agent.take_history_edit() {
+                self.local.set_messages(messages);
+            }
             if outcome.is_some() {
                 continue;
             }
@@ -947,6 +953,9 @@ impl Agent {
         let outcome =
             outcome.unwrap_or_else(|| Err(Stop::Failed(ended_without_result::<InvokeModelStage>())));
         drop(chain);
+        if let Some(messages) = tool_agent.take_history_edit() {
+            self.local.set_messages(messages);
+        }
         let invoked = lock(&invoked).take().unwrap_or_else(|| Arc::clone(model));
         match outcome {
             Ok(result) => {
