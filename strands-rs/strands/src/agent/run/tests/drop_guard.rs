@@ -83,7 +83,7 @@ async fn dropping_mid_model_stream_closes_the_turn_and_defers_after_invocation()
     assert_eq!(roles, [Role::User, Role::Assistant]);
     assert_eq!(cancel_text(agent.messages()), ["Cancelled by user"]);
     assert_eq!(*log.lock().unwrap(), ["before", "added:Hi"]);
-    assert!(!agent.cancel_signal().is_cancelled());
+    assert!(!agent.local.cancel_signal().is_cancelled());
 
     agent.set_model(mock(vec![vec![text("Hello")]]));
     let result = agent.invoke("Again").await.unwrap();
@@ -261,7 +261,7 @@ async fn dropping_the_stream_cancels_the_invocation_signal() {
     }
     let signal = signal.lock().unwrap().take().unwrap();
     assert!(signal.is_cancelled());
-    assert!(!agent.cancel_signal().is_cancelled());
+    assert!(!agent.local.cancel_signal().is_cancelled());
     agent.shutdown().await.unwrap();
 }
 

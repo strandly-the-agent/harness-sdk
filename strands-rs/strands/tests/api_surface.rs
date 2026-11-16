@@ -184,6 +184,16 @@ async fn a_downstream_crate_configures_and_implements_conversation_managers() {
     .unwrap();
     assert_eq!(sliding.compression_threshold(), Some(0.7));
     assert_eq!(summarizing.compression_threshold(), Some(0.5));
+    let literal = SlidingWindowConversationManagerConfig {
+        window_size: 10,
+        ..Default::default()
+    };
+    assert!(SlidingWindowConversationManager::new(literal).is_ok());
+    let literal = SummarizingConversationManagerConfig {
+        preserve_recent_messages: 4,
+        ..Default::default()
+    };
+    assert!(SummarizingConversationManager::new(literal).is_ok());
     let mut agent = Agent::builder()
         .model(model(&["ok"]))
         .conversation_manager(DropOldest)

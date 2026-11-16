@@ -13,7 +13,7 @@ use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
 use crate::agent::run::AbandonedRun;
 use crate::agent::stream::AgentStream;
 use crate::background_tasks::{BackgroundTaskScheduler, BackgroundTasks};
-use crate::cancel::{CancelHandle, CancelSignal};
+use crate::cancel::CancelHandle;
 use crate::conversation_manager::{
     ConversationManager, ConversationManagerPlugin, NullConversationManager, SlidingWindowConversationManager,
 };
@@ -352,12 +352,6 @@ impl Agent {
     /// ```
     pub fn cancel_handle(&self) -> CancelHandle {
         self.local.cancel_handle().clone()
-    }
-
-    /// The cancellation signal of the running invocation; a fresh, uncancelled one while the
-    /// agent is idle (TS `cancelSignal`).
-    pub fn cancel_signal(&self) -> &CancelSignal {
-        self.local.cancel_signal()
     }
 
     /// The agent id (default `agent`).

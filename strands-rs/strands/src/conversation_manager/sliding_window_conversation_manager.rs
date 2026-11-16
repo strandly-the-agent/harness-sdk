@@ -140,8 +140,11 @@ fn truncate_result(result: &ToolResultBlock) -> Option<ToolResultBlock> {
 }
 
 /// Configuration of [`SlidingWindowConversationManager`] (TS `SlidingWindowConversationManagerConfig`).
-#[derive(Debug, Clone, Copy, bon::Builder)]
-#[non_exhaustive]
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Debug, Clone, bon::Builder)]
 pub struct SlidingWindowConversationManagerConfig {
     /// The most messages to keep; 40 by default.
     #[builder(default = 40)]
@@ -193,6 +196,10 @@ impl SlidingWindowConversationManager {
     /// # Errors
     ///
     /// The proactive compression threshold is outside (0, 1].
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "takes its config by value like the other managers"
+    )]
     pub fn new(config: SlidingWindowConversationManagerConfig) -> Result<Self> {
         Ok(Self {
             window_size: config.window_size,

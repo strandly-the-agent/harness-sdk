@@ -18,8 +18,11 @@ use crate::models::model::Model;
 use crate::types::agent::LocalAgent;
 
 /// Configuration of [`SummarizingConversationManager`] (TS `SummarizingConversationManagerConfig`).
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
 #[derive(Debug, Clone, bon::Builder)]
-#[non_exhaustive]
 pub struct SummarizingConversationManagerConfig {
     /// The model that writes summaries; the agent's `aux_model` (by default its model) otherwise.
     pub model: Option<Arc<dyn Model>>,

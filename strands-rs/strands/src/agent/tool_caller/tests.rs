@@ -83,7 +83,7 @@ async fn passes_agent_cancel_signal_to_direct_tool_calls() {
     agent.tool("probe").invoke(json!({})).await.unwrap();
 
     let signal = received.lock().unwrap().clone().unwrap();
-    assert!(signal.same(agent.cancel_signal()));
+    assert!(signal.same(agent.local.cancel_signal()));
 }
 
 #[tokio::test]

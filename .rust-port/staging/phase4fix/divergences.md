@@ -1,0 +1,1 @@
+| A dropped first `initialize` | Can't happen: a consumer break doesn't cancel an in-flight `initAgent` | The next call resumes at the plugin whose `init_agent` was awaiting and runs it again from the start | A dropped future stops at any `await` (P-98) |
