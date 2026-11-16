@@ -252,3 +252,57 @@ fn trace_and_baggage_attributes_take_plain_pairs() {
         .build();
     assert!(agent.is_ok());
 }
+
+#[cfg(feature = "otel")]
+mod otel {
+    use strands::telemetry::{
+        Exporters, MeterConfig, MeterConfigBuilder, TracerConfig, TracerConfigBuilder, get_tracer,
+        meter_config_builder, opentelemetry, opentelemetry_sdk, tracer_config_builder, tracing_layer,
+        tracing_opentelemetry, tracing_subscriber,
+    };
+
+    fn traces_to_console<S: tracer_config_builder::State>(
+        builder: TracerConfigBuilder<S>,
+    ) -> TracerConfigBuilder<tracer_config_builder::SetExporters<S>>
+    where
+        S::Exporters: tracer_config_builder::IsUnset,
+    {
+        builder.exporters(Exporters::builder().console(true).build())
+    }
+
+    fn metrics_to_console<S: meter_config_builder::State>(
+        builder: MeterConfigBuilder<S>,
+    ) -> MeterConfigBuilder<meter_config_builder::SetExporters<S>>
+    where
+        S::Exporters: meter_config_builder::IsUnset,
+    {
+        builder.exporters(Exporters::builder().console(true).build())
+    }
+
+    #[test]
+    fn a_helper_can_take_and_return_the_telemetry_config_builders() {
+        let console = Exporters {
+            otlp: false,
+            console: true,
+        };
+        assert_eq!(
+            traces_to_console(TracerConfig::builder()).build().exporters,
+            console
+        );
+        assert_eq!(
+            metrics_to_console(MeterConfig::builder()).build().exporters,
+            console
+        );
+    }
+
+    #[test]
+    fn the_opentelemetry_crates_of_the_api_are_re_exported() {
+        use tracing_subscriber::layer::SubscriberExt as _;
+
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
+        let layer: tracing_opentelemetry::OpenTelemetryLayer<_, opentelemetry_sdk::trace::SdkTracer> =
+            tracing_layer(&provider);
+        let _subscriber = tracing_subscriber::registry().with(layer);
+        let _tracer: opentelemetry::global::BoxedTracer = get_tracer();
+    }
+}

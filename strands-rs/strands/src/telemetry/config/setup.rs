@@ -36,11 +36,14 @@ use crate::error::{Error, Result};
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct Exporters {
     /// Export over OTLP HTTP.
+    #[builder(default)]
     pub otlp: bool,
     /// Print to standard output.
+    #[builder(default)]
     pub console: bool,
 }
 
@@ -120,6 +123,7 @@ impl SpanProcessor for BaggageSpanProcessor {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct TracerConfig {
     /// A provider the caller built; the exporters and the baggage processor are then ignored.
     pub provider: Option<SdkTracerProvider>,
@@ -136,6 +140,7 @@ pub struct TracerConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct MeterConfig {
     /// A provider the caller built; the exporters are then ignored.
     pub provider: Option<SdkMeterProvider>,

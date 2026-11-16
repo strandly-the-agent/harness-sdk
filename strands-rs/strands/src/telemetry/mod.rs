@@ -14,8 +14,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 pub(crate) use config::setup::with_baggage;
 #[cfg(feature = "otel")]
 pub use config::setup::{
-    BaggageKeyPredicate, BaggageKeys, BaggageSpanProcessor, Exporters, MeterConfig, TracerConfig,
-    get_meter, get_tracer, setup_meter, setup_tracer, tracing_layer,
+    BaggageKeyPredicate, BaggageKeys, BaggageSpanProcessor, Exporters, ExportersBuilder, MeterConfig,
+    MeterConfigBuilder, TracerConfig, TracerConfigBuilder, exporters_builder, get_meter, get_tracer,
+    meter_config_builder, setup_meter, setup_tracer, tracer_config_builder, tracing_layer,
 };
 #[cfg(feature = "otel")]
 pub use opentelemetry;
