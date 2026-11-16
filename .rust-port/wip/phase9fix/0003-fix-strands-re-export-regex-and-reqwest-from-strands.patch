@@ -1,0 +1,248 @@
+From 112ce65476fad26eafcee2670cd2e4cd37c7bbb1 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 02:14:48 +0000
+Subject: [PATCH 3/3] fix(strands): re-export regex and reqwest from
+ strands::mcp, merge the MCP credentials types, add MCP config builders, drop
+ tasks_config
+
+---
+ .rust-port/staging/phase9fix/decisions.md     |  2 +
+ .rust-port/staging/phase9fix/dispositions.md  |  6 ++-
+ strands-rs/strands/src/mcp/client.rs          |  5 +-
+ strands-rs/strands/src/mcp/config.rs          | 47 ++++---------------
+ strands-rs/strands/src/mcp/filters.rs         |  2 +-
+ strands-rs/strands/src/mcp/mod.rs             |  9 ++--
+ .../strands/src/mcp/tests/robustness.rs       | 20 ++++++++
+ 7 files changed, 47 insertions(+), 44 deletions(-)
+
+diff --git a/.rust-port/staging/phase9fix/decisions.md b/.rust-port/staging/phase9fix/decisions.md
+index 28fb90be0..478138214 100644
+--- a/.rust-port/staging/phase9fix/decisions.md
++++ b/.rust-port/staging/phase9fix/decisions.md
+@@ -7,3 +7,5 @@
+ **P-257. MCP auth headers and client-credentials renewal.** Phase 9 review (correctness 7, 8). With `auth` or `auth_provider`, a user `Authorization` header went out next to the bearer token (`reqwest` appends); and a client-credentials token was granted once per connection, so after expiry `rmcp`'s refresh (client-credentials responses carry no refresh token) failed and requests went out unauthenticated until `connect(true)`. TS sets the token with `headers.set("Authorization", ..)`, and its non-interactive provider runs the grant again on a 401. Choice: with `auth` or `auth_provider`, `authorization` is dropped from the custom headers, so the token wins. The url-configured client with `auth` uses a private `StreamableHttpClient` (`mcp::auth::ClientCredentialsClient`) around the granted `AuthClient`: before each request it takes the stored token, or runs the grant again when `rmcp` reports none usable; on a 401 it runs the grant again (once per rejected grant, shared by concurrent requests) and retries once. A freshly granted token is used as granted, without `rmcp`'s 30-second expiry margin, so a server issuing tokens shorter than 30 s still works. TS reference: `@modelcontextprotocol/client` `dist/index.mjs:5444-5452,5740-5752`. Files: `src/mcp/auth.rs`, `src/mcp/client.rs`.
+ 
+ **P-258. MCP prompt and resource lists without the capability; P-258 amends P-248.** Phase 9 review (correctness 9). Only `list_tools` checked the server capability; `list_prompts`, `list_resources` and `list_resource_templates` sent the request and failed with `-32601` against a tools-only server. The MCP SDK returns `{ prompts: [] }` / `{ resources: [] }` / `{ resourceTemplates: [] }` when the capability is missing. Choice: each list method returns the empty (`Default`) result when the connected server lacks `prompts` (prompts) or `resources` (resources and templates). TS reference: `@modelcontextprotocol/client` `dist/index.mjs:3681-3684,3719-3722`. Files: `src/mcp/client.rs`.
++
++**P-259. Phase 9 public surface fixes; P-259 amends P-217, P-231, P-235, P-248 and P-250.** Phase 9 review (API 1-8). (1) `regex` (`McpToolMatcher::Pattern`, `From<Regex>`) and `reqwest` (`McpAuthProvider = AuthClient<reqwest::Client>`) are public dependencies of the `mcp` feature, so `strands::mcp::regex` and `strands::mcp::reqwest` re-export them, as P-217 does for the AWS crates and `http` (amends P-217 and P-231). (2) `McpServerCredentials` is gone: `McpClientCredentials` (TS has one type, `config.ts:38`) derives `Serialize`/`Deserialize` (camelCase, `scopes` omitted when `None`) and keeps its redacting `Debug`, and `McpServerConfig::auth` is `Option<McpClientCredentials>` (amends P-250). (3) `McpClientCredentials`, `McpToolFilters`, `SerializableMcpToolFilters`, `McpServerConfig` and `McpLoadServersOptions` derive `bon::Builder` (#65). (4) `McpServerConfig::tasks_config` is removed: the raw entry's `tasksConfig` is rejected before parsing with the same text (`MCP tasks ("tasksConfig") are not supported in Rust yet`), so a typed `TasksConfig` can be added later without a breaking change. (5) `list_prompts()`, `list_resources()` and `list_resource_templates()` take no arguments, with `list_prompts_with`, `list_resources_with` and `list_resource_templates_with(McpListOptions)` for one page, matching `list_tools`/`list_tools_with` and TS's optional `options` (amends P-248). (6) `connect_with(reconnect, McpConnectOptions)`, where `McpConnectOptions { cancel_signal: Option<CancelSignal> }` is a config struct with `Default` and a builder (TS `connect(reconnect, options?: { signal })`; amends P-235). (7) Accessors TS lacks, kept as small idiomatic accessors: `McpClient::client_version()` (the handshake version beside TS's `clientName`), `McpClient::negotiated_protocol_version()` (TS reaches it as `client.getNegotiatedProtocolVersion()` through the SDK client; here it saves going through `peer()`), and `McpTool::server_name()` (TS keeps the server-side name in a private `WeakMap`; Rust callers need it for filters and `call_tool` diagnostics). (8) Erratum for the lead: P-233's cross-reference "`McpTransport::sse(..)` (P-238)" should read P-241. Files: `src/mcp/{mod,client,config,filters}.rs`.
+diff --git a/.rust-port/staging/phase9fix/dispositions.md b/.rust-port/staging/phase9fix/dispositions.md
+index 80d90d8d1..ab7d771a3 100644
+--- a/.rust-port/staging/phase9fix/dispositions.md
++++ b/.rust-port/staging/phase9fix/dispositions.md
+@@ -11,4 +11,8 @@
+ | correctness-9 | Fixed: prompt and resource list methods return an empty result when the server lacks the capability (P-258, amends P-248). Test `mcp::tests::robustness::lists_no_prompts_or_resources_from_a_server_without_those_capabilities` | 12d80f1c3 |
+ | parity-2 | Fixed: SDK driver (11 requests, 10 fulfilments), shrinking total timeout, 250 ms `requestState`-only pacing, SDK texts, round progress (P-256). Tests `mcp::tests::robustness::fulfils_ten_input_required_rounds_before_giving_up`, `paces_a_request_state_only_round`, `names_the_missing_handler_for_an_input_request`, `the_call_timeout_bounds_every_input_required_round` | 12d80f1c3 |
+ | parity-3 | Fixed with correctness-6 (P-256). Test `mcp::tests::robustness::cancelling_a_call_cancels_its_pending_input_required_elicitation` | 12d80f1c3 |
+-| parity-1 | Fixed: `call_tool_with` checks the result against the tool's listed `outputSchema` with the SDK rules and texts (P-256; divergence row for the per-error wording). Test `mcp::tests::robustness::checks_structured_content_against_the_tool_output_schema` (fails without the fix: the missing and invalid cases return `Ok`) | pending |
++| parity-1 | Fixed: `call_tool_with` checks the result against the tool's listed `outputSchema` with the SDK rules and texts (P-256; divergence row for the per-error wording). Test `mcp::tests::robustness::checks_structured_content_against_the_tool_output_schema` (fails without the fix: the missing and invalid cases return `Ok`) | a20e1908d |
++| api-1 | Fixed: `pub use regex;` and `pub use reqwest;` in `strands::mcp` (P-259) | pending |
++| api-2 | Fixed: `McpServerCredentials` removed; `McpClientCredentials` is serde-enabled and `McpServerConfig::auth` uses it (P-259). Test `mcp::tests::robustness::a_config_entry_reads_auth_as_client_credentials` | pending |
++| api-3 | Fixed: `bon::Builder` on `McpClientCredentials`, `McpToolFilters`, `SerializableMcpToolFilters`, `McpServerConfig`, `McpLoadServersOptions` (the sixth, `McpServerCredentials`, is removed by api-2) (P-259) | pending |
++| api-4 | Fixed: `McpServerConfig::tasks_config` removed; the raw entry's `tasksConfig` is rejected before parsing with the same text; existing tests in `mcp::tests::config` still pass (P-259) | pending |
+diff --git a/strands-rs/strands/src/mcp/client.rs b/strands-rs/strands/src/mcp/client.rs
+index c276af649..53f4f9ab2 100644
+--- a/strands-rs/strands/src/mcp/client.rs
++++ b/strands-rs/strands/src/mcp/client.rs
+@@ -109,13 +109,16 @@ pub type McpAuthProvider = rmcp::transport::AuthClient<reqwest::Client>;
+     clippy::exhaustive_structs,
+     reason = "config struct: struct-literal construction"
+ )]
+-#[derive(Clone, Default, PartialEq, Eq)]
++#[derive(Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, bon::Builder)]
++#[builder(on(String, into))]
++#[serde(rename_all = "camelCase")]
+ pub struct McpClientCredentials {
+     /// The client id.
+     pub client_id: String,
+     /// The client secret.
+     pub client_secret: String,
+     /// Scopes to request.
++    #[serde(skip_serializing_if = "Option::is_none")]
+     pub scopes: Option<Vec<String>>,
+ }
+ 
+diff --git a/strands-rs/strands/src/mcp/config.rs b/strands-rs/strands/src/mcp/config.rs
+index cf41eb394..0b40e115e 100644
+--- a/strands-rs/strands/src/mcp/config.rs
++++ b/strands-rs/strands/src/mcp/config.rs
+@@ -20,7 +20,7 @@ use crate::types::json::JsonValue;
+     clippy::exhaustive_structs,
+     reason = "config struct: struct-literal construction"
+ )]
+-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
++#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+ pub struct SerializableMcpToolFilters {
+     /// When present, only tools matching one of these patterns are exposed.
+     #[serde(skip_serializing_if = "Option::is_none")]
+@@ -30,33 +30,6 @@ pub struct SerializableMcpToolFilters {
+     pub rejected: Option<Vec<String>>,
+ }
+ 
+-/// Client credentials in a config file (TS `McpClientCredentials`).
+-#[expect(
+-    clippy::exhaustive_structs,
+-    reason = "config struct: struct-literal construction"
+-)]
+-#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+-#[serde(rename_all = "camelCase")]
+-pub struct McpServerCredentials {
+-    /// The client id.
+-    pub client_id: String,
+-    /// The client secret.
+-    pub client_secret: String,
+-    /// Scopes to request.
+-    #[serde(skip_serializing_if = "Option::is_none")]
+-    pub scopes: Option<Vec<String>>,
+-}
+-
+-impl std::fmt::Debug for McpServerCredentials {
+-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+-        f.debug_struct("McpServerCredentials")
+-            .field("client_id", &self.client_id)
+-            .field("client_secret", &"<redacted>")
+-            .field("scopes", &self.scopes)
+-            .finish()
+-    }
+-}
+-
+ /// One server entry (TS `McpServerConfig`). String fields support `${VAR}` and `${env:VAR}`.
+ ///
+ /// Give `command` (stdio) or `url` (Streamable HTTP, or SSE with `transport: "sse"`); without
+@@ -65,7 +38,8 @@ impl std::fmt::Debug for McpServerCredentials {
+     clippy::exhaustive_structs,
+     reason = "config struct: struct-literal construction"
+ )]
+-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
++#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
++#[builder(on(String, into))]
+ #[serde(rename_all = "camelCase")]
+ pub struct McpServerConfig {
+     /// Command to spawn (stdio).
+@@ -91,7 +65,7 @@ pub struct McpServerConfig {
+     pub transport: Option<String>,
+     /// Client credentials (Streamable HTTP only).
+     #[serde(skip_serializing_if = "Option::is_none")]
+-    pub auth: Option<McpServerCredentials>,
++    pub auth: Option<McpClientCredentials>,
+     /// Prefix for agent-facing tool names.
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub prefix: Option<String>,
+@@ -104,10 +78,6 @@ pub struct McpServerConfig {
+     /// Skip this server's config and connection failures with warnings.
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub continue_on_error: Option<bool>,
+-    /// MCP task settings (TS `tasksConfig`); MCP tasks are not supported in Rust yet, so a
+-    /// present value fails this server.
+-    #[serde(skip_serializing_if = "Option::is_none")]
+-    pub tasks_config: Option<JsonValue>,
+ }
+ 
+ /// How [`McpClient::load_servers`] translates entries (TS `McpLoadServersOptions`).
+@@ -115,10 +85,11 @@ pub struct McpServerConfig {
+     clippy::exhaustive_structs,
+     reason = "config struct: struct-literal construction"
+ )]
+-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
++#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+ pub struct McpLoadServersOptions {
+     /// Servers without an explicit `prefix` use their config key (characters outside
+     /// `[A-Za-z0-9_-]` replaced with `_`) as the tool-name prefix, over a default prefix.
++    #[builder(default)]
+     pub prefix_with_server_name: bool,
+ }
+ 
+@@ -335,12 +306,14 @@ fn resolve_server(
+     options: McpLoadServersOptions,
+     lookup: &EnvLookup,
+ ) -> Result<ResolvedServer> {
+-    let server: McpServerConfig = serde_json::from_value(entry)?;
+-    if server.tasks_config.is_some() {
++    // MCP tasks are not supported yet, so a `tasksConfig` (TS `McpServerConfig.tasksConfig`) fails
++    // the entry.
++    if entry.get("tasksConfig").is_some() {
+         return Err(Error::other(
+             "MCP tasks (\"tasksConfig\") are not supported in Rust yet",
+         ));
+     }
++    let server: McpServerConfig = serde_json::from_value(entry)?;
+     if server.command.is_some() && server.url.is_some() && server.transport.is_none() {
+         return Err(Error::other(
+             "Server config has both \"command\" and \"url\" — set \"transport\" explicitly or remove one",
+diff --git a/strands-rs/strands/src/mcp/filters.rs b/strands-rs/strands/src/mcp/filters.rs
+index 16a584fe0..3594f54ef 100644
+--- a/strands-rs/strands/src/mcp/filters.rs
++++ b/strands-rs/strands/src/mcp/filters.rs
+@@ -76,7 +76,7 @@ impl fmt::Debug for McpToolMatcher {
+     clippy::exhaustive_structs,
+     reason = "config struct: struct-literal construction"
+ )]
+-#[derive(Debug, Clone, Default)]
++#[derive(Debug, Clone, Default, bon::Builder)]
+ pub struct McpToolFilters {
+     /// When set, only tools matching one of these are exposed.
+     pub allowed: Option<Vec<McpToolMatcher>>,
+diff --git a/strands-rs/strands/src/mcp/mod.rs b/strands-rs/strands/src/mcp/mod.rs
+index b326f3026..61ea1bf0c 100644
+--- a/strands-rs/strands/src/mcp/mod.rs
++++ b/strands-rs/strands/src/mcp/mod.rs
+@@ -24,7 +24,8 @@
+ //! ```
+ //!
+ //! The MCP wire types (results, capabilities, elicitation and logging payloads) are `rmcp`'s,
+-//! re-exported as [`rmcp`], as the TS client exposes the MCP SDK types.
++//! re-exported as [`rmcp`], as the TS client exposes the MCP SDK types. [`regex`] (for
++//! [`McpToolMatcher::Pattern`]) and [`reqwest`] (for [`McpAuthProvider`]) are re-exported too.
+ 
+ pub(crate) mod agent_tools;
+ mod auth;
+@@ -39,6 +40,8 @@ mod sse;
+ pub(crate) mod trace;
+ pub(crate) mod transport;
+ 
++pub use regex;
++pub use reqwest;
+ pub use rmcp;
+ 
+ pub use client::{
+@@ -46,9 +49,7 @@ pub use client::{
+     McpClientCredentials, McpClientOptions, McpConnectionState, McpListOptions, McpListToolsOptions,
+     McpLogHandler, McpProgress, McpProgressCallback, McpToolsChangedCallback,
+ };
+-pub use config::{
+-    McpLoadServersOptions, McpServerConfig, McpServerCredentials, McpServers, SerializableMcpToolFilters,
+-};
++pub use config::{McpLoadServersOptions, McpServerConfig, McpServers, SerializableMcpToolFilters};
+ pub use elicitation::{ElicitationCallback, ElicitationContext};
+ pub use error::{McpError, McpErrorKind};
+ pub use filters::{McpToolFilterCallback, McpToolFilters, McpToolMatcher};
+diff --git a/strands-rs/strands/src/mcp/tests/robustness.rs b/strands-rs/strands/src/mcp/tests/robustness.rs
+index 7fc0750f6..38efeaa29 100644
+--- a/strands-rs/strands/src/mcp/tests/robustness.rs
++++ b/strands-rs/strands/src/mcp/tests/robustness.rs
+@@ -421,3 +421,23 @@ async fn checks_structured_content_against_the_tool_output_schema() {
+     };
+     assert_eq!(bad.code(), Some(-32602));
+ }
++
++#[test]
++fn a_config_entry_reads_auth_as_client_credentials() {
++    let config: McpServerConfig = serde_json::from_value(json!({
++        "url": "https://example.com/mcp",
++        "auth": {"clientId": "id", "clientSecret": "secret", "scopes": ["a"]}
++    }))
++    .expect("config");
++    let expected = McpClientCredentials::builder()
++        .client_id("id")
++        .client_secret("secret")
++        .scopes(vec!["a".to_owned()])
++        .build();
++    assert_eq!(config.auth.as_ref(), Some(&expected));
++    assert!(!format!("{expected:?}").contains("secret\""));
++    assert_eq!(
++        serde_json::to_value(&expected).expect("json"),
++        json!({"clientId": "id", "clientSecret": "secret", "scopes": ["a"]})
++    );
++}
+-- 
+2.39.5
+

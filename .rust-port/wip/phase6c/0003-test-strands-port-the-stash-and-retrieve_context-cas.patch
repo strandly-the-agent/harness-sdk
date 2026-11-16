@@ -1,0 +1,451 @@
+From 2607d0f997d207e13abea3bbe2ca0cbcdb6b93f2 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 01:56:54 +0000
+Subject: [PATCH 3/3] test(strands): port the stash and retrieve_context cases
+
+---
+ .../context_manager/retrieval_tool/tests.rs   | 182 ++++++++++++-
+ .../context_manager/stash/tests.rs            | 246 +++++++++++++++++-
+ 2 files changed, 426 insertions(+), 2 deletions(-)
+
+diff --git a/strands-rs/strands/src/experimental/context_manager/retrieval_tool/tests.rs b/strands-rs/strands/src/experimental/context_manager/retrieval_tool/tests.rs
+index 179adb7b4..7e49b731b 100644
+--- a/strands-rs/strands/src/experimental/context_manager/retrieval_tool/tests.rs
++++ b/strands-rs/strands/src/experimental/context_manager/retrieval_tool/tests.rs
+@@ -1 +1,181 @@
+-//! placeholder
++//! Ported from strands-ts/src/context-manager/__tests__/retrieval-tool.test.ts
++
++use std::sync::Arc;
++
++use serde_json::json;
++
++use super::*;
++use crate::storage::InMemoryStorage;
++use crate::tools::Tool;
++use crate::types::messages::ToolResultContent;
++use crate::vended_tools::test_support::{context_for, stream_result};
++
++fn stash() -> Stash {
++    Stash::new(
++        Arc::new(InMemoryStorage::new()),
++        "test-session",
++        "test-agent",
++        false,
++    )
++    .unwrap()
++}
++
++async fn stash_with_text(text: &str) -> (Stash, String) {
++    let stash = stash();
++    let data = serde_json::to_vec(&json!({ "text": text })).unwrap();
++    let reference = stash.store("tool-1", 0, &data).await.unwrap();
++    (stash, reference)
++}
++
++async fn invoke(stash: &Stash, input: JsonValue) -> JsonValue {
++    let input: RetrievalInput = serde_json::from_value(input).unwrap();
++    retrieve(stash, input, DEFAULT_MAX_RESULT_TOKENS * CHARS_PER_TOKEN)
++        .await
++        .unwrap_or_else(|_| panic!("retrieve failed"))
++}
++
++#[test]
++fn has_the_correct_tool_name() {
++    let tool = create_retrieval_tool(stash(), None);
++    assert_eq!(tool.name(), RETRIEVAL_TOOL_NAME);
++    assert_eq!(tool.tool_spec().input_schema(), Some(&input_schema()));
++}
++
++#[tokio::test]
++async fn retrieves_full_text_content() {
++    let (stash, reference) = stash_with_text("hello world\nline two").await;
++    assert_eq!(
++        invoke(&stash, json!({ "reference": reference })).await,
++        json!({"text": "hello world\nline two"})
++    );
++}
++
++#[tokio::test]
++async fn searches_with_pattern() {
++    let text: Vec<String> = (0..20)
++        .map(|index| {
++            format!(
++                "line {}: {}",
++                index + 1,
++                if index % 3 == 0 { "ERROR" } else { "ok" }
++            )
++        })
++        .collect();
++    let (stash, reference) = stash_with_text(&text.join("\n")).await;
++    let result = invoke(&stash, json!({ "reference": reference, "pattern": "ERROR" })).await;
++    let result = result.as_str().unwrap();
++    assert!(result.starts_with("[7 matches for /ERROR/]\n\n"), "{result}");
++    assert!(result.contains(">  1| line 1: ERROR"), "{result}");
++}
++
++#[tokio::test]
++async fn returns_line_range() {
++    let text: Vec<String> = (1..=50).map(|index| format!("line {index}")).collect();
++    let (stash, reference) = stash_with_text(&text.join("\n")).await;
++    let result = invoke(
++        &stash,
++        json!({ "reference": reference, "line_range": {"start": 5, "end": 10} }),
++    )
++    .await;
++    let result = result.as_str().unwrap();
++    assert!(result.starts_with("[Lines 5-10 of 50]\n\n"), "{result}");
++    assert!(result.contains("line 5") && result.contains("line 10") && !result.contains("line 11"));
++}
++
++#[tokio::test]
++async fn returns_error_for_unknown_reference() {
++    let result = invoke(&stash(), json!({ "reference": "nonexistent" })).await;
++    assert_eq!(result, json!("Error: reference not found: nonexistent"));
++}
++
++#[tokio::test]
++async fn returns_error_for_an_offload_placeholder_with_input() {
++    for extra in [json!({}), json!({"pattern": "row-4321"})] {
++        let (stash, reference) =
++            stash_with_text("[Truncated: 1 block, ~10,973 tokens]\n\nrow-1\n\n[Stashed] [ref: tool-1_0]")
++                .await;
++        let mut input = json!({ "reference": reference });
++        input
++            .as_object_mut()
++            .unwrap()
++            .extend(extra.as_object().unwrap().clone());
++        assert_eq!(
++            invoke(&stash, input).await,
++            json!(format!(
++                "Error: original content for reference {reference} is no longer available"
++            ))
++        );
++    }
++}
++
++#[tokio::test]
++async fn restores_image_content_as_an_image_block_instead_of_raw_json() {
++    let stash = stash();
++    let image = json!({"image": {"format": "png", "source": {"bytes": "iVBORw0KGgo="}}});
++    let reference = stash
++        .store("tool-img", 0, &serde_json::to_vec(&image).unwrap())
++        .await
++        .unwrap();
++    let tool = create_retrieval_tool(stash.clone(), None);
++    let agent = crate::vended_tools::test_support::agent_with(None);
++    let result = stream_result(
++        &tool,
++        context_for(&agent, RETRIEVAL_TOOL_NAME, json!({ "reference": reference })),
++    )
++    .await;
++    assert!(
++        matches!(result.content(), [ToolResultContent::Image(_)]),
++        "{:?}",
++        result.content()
++    );
++}
++
++#[tokio::test]
++async fn retrieves_json_content_as_parsed_object() {
++    let stash = stash();
++    let data = json!({"json": {"key": "value", "nested": [1, 2, 3]}});
++    let reference = stash
++        .store("tool-json", 0, &serde_json::to_vec(&data).unwrap())
++        .await
++        .unwrap();
++    assert_eq!(invoke(&stash, json!({ "reference": reference })).await, data);
++}
++
++#[tokio::test]
++async fn returns_error_when_searching_non_text_content() {
++    let stash = stash();
++    let image = json!({"image": {"format": "png", "source": {"bytes": "iVBORw0KGgo="}}});
++    let reference = stash
++        .store("tool-img", 0, &serde_json::to_vec(&image).unwrap())
++        .await
++        .unwrap();
++    let result = invoke(&stash, json!({ "reference": reference, "pattern": "test" })).await;
++    assert!(
++        result
++            .as_str()
++            .unwrap()
++            .contains("cannot search non-text content")
++    );
++}
++
++#[tokio::test]
++async fn caps_full_content_at_the_result_budget() {
++    let (stash, reference) = stash_with_text(&"y".repeat(50)).await;
++    let input: RetrievalInput = serde_json::from_value(json!({ "reference": reference })).unwrap();
++    let result = retrieve(&stash, input, 20)
++        .await
++        .unwrap_or_else(|_| panic!("retrieve failed"));
++    assert_eq!(result, json!("{\"text\":\"yyyyyyyyyyy\n\n[truncated]"));
++}
++
++#[tokio::test]
++async fn rejects_input_outside_the_schema() {
++    let tool = create_retrieval_tool(stash(), None);
++    let agent = crate::vended_tools::test_support::agent_with(None);
++    let result = stream_result(
++        &tool,
++        context_for(&agent, RETRIEVAL_TOOL_NAME, json!({ "pattern": "x" })),
++    )
++    .await;
++    assert_eq!(*result.status(), crate::types::tools::ToolResultStatus::Error);
++}
+diff --git a/strands-rs/strands/src/experimental/context_manager/stash/tests.rs b/strands-rs/strands/src/experimental/context_manager/stash/tests.rs
+index 179adb7b4..6f810222f 100644
+--- a/strands-rs/strands/src/experimental/context_manager/stash/tests.rs
++++ b/strands-rs/strands/src/experimental/context_manager/stash/tests.rs
+@@ -1 +1,245 @@
+-//! placeholder
++//! Ported from strands-ts/src/context-manager/__tests__/stash.test.ts
++
++use std::sync::Arc;
++
++use serde_json::json;
++
++use super::*;
++use crate::storage::{InMemoryStorage, Storage};
++use crate::types::media::{ImageBlock, ImageSource};
++use crate::types::messages::{Message, Role, TextBlock, ToolResultBlock};
++use crate::types::tools::ToolResultStatus;
++
++fn stash() -> Stash {
++    Stash::new(
++        Arc::new(InMemoryStorage::new()),
++        "test-session",
++        "test-agent",
++        false,
++    )
++    .unwrap()
++}
++
++fn bytes(value: &JsonValue) -> Vec<u8> {
++    serde_json::to_vec(value).unwrap()
++}
++
++#[tokio::test]
++async fn round_trips_text_content() {
++    let stash = stash();
++    let data = json!({"type": "text", "text": "hello world"});
++    let reference = stash.store("tool-123", 0, &bytes(&data)).await.unwrap();
++    assert!(reference.contains("tool-123"));
++    assert_eq!(stash.retrieve(&reference).await.unwrap(), Some(data));
++}
++
++#[tokio::test]
++async fn round_trips_json_content() {
++    let stash = stash();
++    let data = json!({"key": "value", "count": 42});
++    let reference = stash.store("tool-456", 1, &bytes(&data)).await.unwrap();
++    assert_eq!(stash.retrieve(&reference).await.unwrap(), Some(data));
++}
++
++#[tokio::test]
++async fn returns_null_for_unknown_references() {
++    assert_eq!(stash().retrieve("nonexistent").await.unwrap(), None);
++}
++
++#[tokio::test]
++async fn produces_deterministic_keys_from_the_same_id_and_block_index() {
++    let stash = stash();
++    let content = bytes(&json!("data"));
++    let first = stash.store("tool-1", 0, &content).await.unwrap();
++    let second = stash.store("tool-1", 0, &content).await.unwrap();
++    assert_eq!(first, second);
++}
++
++#[tokio::test]
++async fn produces_different_keys_for_different_id_or_block_index() {
++    let stash = stash();
++    let content = bytes(&json!("data"));
++    let first = stash.store("tool-1", 0, &content).await.unwrap();
++    let second = stash.store("tool-1", 1, &content).await.unwrap();
++    let third = stash.store("tool-2", 0, &content).await.unwrap();
++    assert_ne!(first, second);
++    assert_ne!(first, third);
++}
++
++#[tokio::test]
++async fn lists_all_stored_references() {
++    let stash = stash();
++    let content = bytes(&json!("data"));
++    let first = stash.store("tool-a", 0, &content).await.unwrap();
++    let second = stash.store("tool-b", 0, &content).await.unwrap();
++    let keys = stash.list().await.unwrap();
++    assert!(keys.contains(&first) && keys.contains(&second));
++}
++
++#[tokio::test]
++async fn removes_a_stashed_entry() {
++    let stash = stash();
++    let reference = stash.store("tool-x", 0, &bytes(&json!("data"))).await.unwrap();
++    stash.delete(&reference).await.unwrap();
++    assert_eq!(stash.retrieve(&reference).await.unwrap(), None);
++}
++
++#[tokio::test]
++async fn does_not_conflict_with_other_storage_users() {
++    let storage = Arc::new(InMemoryStorage::new());
++    let stash = Stash::new(storage.clone(), "test-session", "test-agent", false).unwrap();
++    stash
++        .store("tool-1", 0, &bytes(&json!("stash data")))
++        .await
++        .unwrap();
++    storage.write("other-key", b"other").await.unwrap();
++    let keys = Storage::list(&*storage, "").await.unwrap();
++    assert!(keys.iter().any(|key| key.starts_with("context/")));
++    assert!(keys.contains(&"other-key".to_owned()));
++}
++
++#[tokio::test]
++async fn uses_the_view_as_the_exact_root() {
++    let storage = InMemoryStorage::new();
++    let view: Arc<dyn Storage> = Arc::new(storage.namespace("tenants/t1/research").unwrap());
++    let stash = Stash::new(view, "sess-1", "agent-a", true).unwrap();
++    stash
++        .store("tool-1", 0, &bytes(&json!({"text": "test"})))
++        .await
++        .unwrap();
++    assert_eq!(
++        Storage::list(&storage, "").await.unwrap(),
++        ["tenants/t1/research/tool-1_0"]
++    );
++}
++
++#[tokio::test]
++async fn uses_the_per_agent_root_under_a_view_unless_allowed() {
++    let storage = InMemoryStorage::new();
++    let view: Arc<dyn Storage> = Arc::new(storage.namespace("tenant").unwrap());
++    let stash = Stash::new(view, "sess-1", "agent-a", false).unwrap();
++    stash
++        .store("tool-1", 0, &bytes(&json!({"text": "test"})))
++        .await
++        .unwrap();
++    assert_eq!(
++        Storage::list(&storage, "").await.unwrap(),
++        ["tenant/context/sess-1/scopes/agent/agent-a/tool-1_0"]
++    );
++}
++
++#[tokio::test]
++async fn lets_agents_in_different_sessions_sharing_a_view_read_each_other_entries() {
++    let storage = InMemoryStorage::new();
++    let view = || -> Arc<dyn Storage> { Arc::new(storage.namespace("team").unwrap()) };
++    let first = Stash::new(view(), "sess-1", "agent-a", true).unwrap();
++    let second = Stash::new(view(), "sess-2", "agent-b", true).unwrap();
++    first
++        .store("tool-1", 0, &bytes(&json!({"text": "from a"})))
++        .await
++        .unwrap();
++    assert_eq!(
++        second.retrieve("tool-1_0").await.unwrap(),
++        Some(json!({"text": "from a"}))
++    );
++}
++
++#[tokio::test]
++async fn keeps_a_shared_view_on_clear_session() {
++    let storage = InMemoryStorage::new();
++    let view: Arc<dyn Storage> = Arc::new(storage.namespace("team").unwrap());
++    let stash = Stash::new(view, "sess-1", "agent-a", true).unwrap();
++    stash
++        .store("tool-1", 0, &bytes(&json!({"text": "shared"})))
++        .await
++        .unwrap();
++    stash.clear_session().await.unwrap();
++    assert_eq!(Storage::list(&storage, "").await.unwrap(), ["team/tool-1_0"]);
++}
++
++#[tokio::test]
++async fn clear_session_deletes_every_agent_of_the_session() {
++    let storage = Arc::new(InMemoryStorage::new());
++    let first = Stash::new(storage.clone(), "sess-1", "agent-a", false).unwrap();
++    let second = Stash::new(storage.clone(), "sess-1", "agent-b", false).unwrap();
++    let other = Stash::new(storage.clone(), "sess-2", "agent-a", false).unwrap();
++    for stash in [&first, &second, &other] {
++        stash.store("tool-1", 0, &bytes(&json!("x"))).await.unwrap();
++    }
++    first.clear_session().await.unwrap();
++    assert_eq!(
++        Storage::list(&*storage, "").await.unwrap(),
++        ["context/sess-2/scopes/agent/agent-a/tool-1_0"]
++    );
++}
++
++#[test]
++fn detects_formatted_refs() {
++    for refs in [
++        vec!["tu-1_0".to_owned()],
++        vec!["tu-1_0".to_owned(), "tu-1_1".to_owned()],
++    ] {
++        let text = format!("[Dropped]{}", format_stash_refs(&refs));
++        assert!(is_offload_placeholder(&json!({ "text": text })), "{text}");
++    }
++}
++
++#[test]
++fn ignores_non_placeholder() {
++    for data in [
++        json!({"text": "plain text"}),
++        json!({"text": "see [ref: x] for details"}),
++        json!({"json": {"text": "[Dropped] [ref: tu-1_0]"}}),
++        json!("[Dropped] [ref: tu-1_0]"),
++        JsonValue::Null,
++    ] {
++        assert!(!is_offload_placeholder(&data), "{data}");
++    }
++}
++
++#[tokio::test]
++async fn skips_a_tool_result_carrying_stash_refs_including_its_other_items() {
++    let stash = stash();
++    let result = ToolResultBlock::new(
++        "tu-1",
++        ToolResultStatus::Success,
++        vec![
++            TextBlock::new("[Truncated: 1 block, ~10,973 tokens]\n\nrow-1\n\n[Stashed] [ref: tu-1_0]").into(),
++            ImageBlock::new(crate::mime::ImageFormat::Png, ImageSource::Bytes(vec![1, 2, 3])).into(),
++        ],
++    );
++    stash
++        .store_message(&Message::new(Role::User, vec![result.into()]), None)
++        .await;
++    assert!(stash.take_snapshot().await.unwrap().is_empty());
++}
++
++#[tokio::test]
++async fn skips_a_text_placeholder_and_keeps_other_blocks() {
++    let stash = stash();
++    let message = Message::new(
++        Role::User,
++        vec![
++            TextBlock::new("[Dropped] [refs: track-1_0, track-1_1]").into(),
++            TextBlock::new("see [ref: x] for details").into(),
++        ],
++    )
++    .with_tracking_id("track-1");
++    stash.store_message(&message, None).await;
++    assert_eq!(
++        JsonValue::Object(stash.take_snapshot().await.unwrap()),
++        json!({"track-1_1": {"text": "see [ref: x] for details"}})
++    );
++}
++
++#[test]
++fn records_the_ts_storage_class_names() {
++    let memory = Stash::new(Arc::new(InMemoryStorage::new()), "s", "a", false).unwrap();
++    assert_eq!(memory.storage_type_name(), "InMemoryStorage");
++    assert!(!memory.is_durable());
++    let generic = crate::storage::namespace(Arc::new(InMemoryStorage::new()), "x").unwrap();
++    assert_eq!(
++        Stash::new(generic, "s", "a", false).unwrap().storage_type_name(),
++        "Object"
++    );
++}
+-- 
+2.39.5
+

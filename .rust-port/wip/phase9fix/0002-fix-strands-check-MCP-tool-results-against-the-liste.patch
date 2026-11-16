@@ -1,0 +1,250 @@
+From a20e1908d7ed1c49060b2df7c5b4113e78171083 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 02:09:13 +0000
+Subject: [PATCH 2/3] fix(strands): check MCP tool results against the listed
+ output schema like the SDK callTool
+
+---
+ .rust-port/staging/phase9fix/decisions.md     |  2 +-
+ .rust-port/staging/phase9fix/dispositions.md  | 23 +++----
+ .rust-port/staging/phase9fix/divergences.md   |  1 +
+ strands-rs/strands/src/mcp/client.rs          | 62 ++++++++++++++++++-
+ strands-rs/strands/src/mcp/mcp_tool.rs        |  4 ++
+ .../strands/src/mcp/tests/robustness.rs       | 44 +++++++++++++
+ strands-rs/strands/src/mcp/tests/server.rs    |  9 +++
+ 7 files changed, 132 insertions(+), 13 deletions(-)
+
+diff --git a/.rust-port/staging/phase9fix/decisions.md b/.rust-port/staging/phase9fix/decisions.md
+index 586d62020..28fb90be0 100644
+--- a/.rust-port/staging/phase9fix/decisions.md
++++ b/.rust-port/staging/phase9fix/decisions.md
+@@ -2,7 +2,7 @@
+ 
+ **P-255. MCP progress is routed on the receive path; P-255 amends P-244.** Phase 9 review (correctness 5). `rmcp` hands every notification to its own spawned task, so on a multi-thread runtime `on_progress` callbacks ran out of order, and some ran after the response reached `call_once`, which had already removed the route, so they were lost. TS delivers progress in order and before the result. Choice: every transport is wrapped in a private `ProgressTap` (`transport::serve`, used by the factory, stdio, SSE and OAuth paths) whose `receive` delivers `notifications/progress` inline, before the message reaches `rmcp`'s service loop (which still sees it, for `reset_timeout_on_progress`); `McpHandler` no longer implements `on_progress`. Delivery runs under the progress-routes lock, so notifications held because they arrived before their call registered and live ones keep arrival order. TS reference: `mcp/client.ts` `_buildProgressHandler`. Files: `src/mcp/transport.rs`, `src/mcp/client.rs`, `src/mcp/handler.rs`.
+ 
+-**P-256. The `tools/call` input-required driver follows the MCP SDK; P-256 amends P-249.** Phase 9 review (correctness 6, parity 2, parity 3). The Rust loop sent at most 10 requests and dropped the 10th answer, gave every round a fresh `max_total_timeout`, never paced a `requestState`-only round, used its own error texts, sent no round progress, and handed the elicitation callback a signal nothing cancelled while awaiting it outside the call's cancel. The SDK `runInputRequiredDriver` fulfils up to `maxRounds` (10) rounds after the first response and fails when round 11 would start (11 requests, 10 fulfilments), shrinks one `maxTotalTimeout` across legs, sleeps 250 ms (abortable) before a leg that carries only `requestState`, reports `Fulfilling input required by 'tools/call' (round N)` to `onprogress`, and links the caller's abort signal into each round's handler signal. Choice: the same driver. Texts: `Multi-round-trip request 'tools/call' still required input after 10 rounds (inputRequired.maxRounds)`, `Maximum total timeout exceeded` (checked after each round's fulfilment when the call has a `timeout`; the remaining time is the next leg's `max_total_timeout`), `Cannot fulfil input request '<key>': no handler is registered for '<method>' on this client. Declare the corresponding capability and register a handler, or handle input_required results manually.` (also for sampling and roots, which the TS client registers no handler for), and `Invalid result for tools/call: input_required carries neither inputRequests nor requestState (every input_required result must include at least one of the two)`, all `McpErrorKind::Sdk`. A round's elicitations run concurrently with one `ElicitationContext` signal that is cancelled when the call's signal fires or a sibling fails; the round is raced against the call's signal and returns the abort error at once (TS waits until the callback settles; see the divergence row). Round progress goes to the call's progress callback (per-call, else the client's). TS reference: `@modelcontextprotocol/client` `dist/src-WCy6ifGf.mjs:5130-5273,6484-6560`. Files: `src/mcp/client.rs`.
++**P-256. The `tools/call` path follows the MCP SDK: the input-required driver and the output-schema check; P-256 amends P-239 and P-249.** Phase 9 review (correctness 6, parity 1, parity 2, parity 3). The Rust loop sent at most 10 requests and dropped the 10th answer, gave every round a fresh `max_total_timeout`, never paced a `requestState`-only round, used its own error texts, sent no round progress, and handed the elicitation callback a signal nothing cancelled while awaiting it outside the call's cancel. The SDK `runInputRequiredDriver` fulfils up to `maxRounds` (10) rounds after the first response and fails when round 11 would start (11 requests, 10 fulfilments), shrinks one `maxTotalTimeout` across legs, sleeps 250 ms (abortable) before a leg that carries only `requestState`, reports `Fulfilling input required by 'tools/call' (round N)` to `onprogress`, and links the caller's abort signal into each round's handler signal. Choice: the same driver. Texts: `Multi-round-trip request 'tools/call' still required input after 10 rounds (inputRequired.maxRounds)`, `Maximum total timeout exceeded` (checked after each round's fulfilment when the call has a `timeout`; the remaining time is the next leg's `max_total_timeout`), `Cannot fulfil input request '<key>': no handler is registered for '<method>' on this client. Declare the corresponding capability and register a handler, or handle input_required results manually.` (also for sampling and roots, which the TS client registers no handler for), and `Invalid result for tools/call: input_required carries neither inputRequests nor requestState (every input_required result must include at least one of the two)`, all `McpErrorKind::Sdk`. A round's elicitations run concurrently with one `ElicitationContext` signal that is cancelled when the call's signal fires or a sibling fails; the round is raced against the call's signal and returns the abort error at once (TS waits until the callback settles; see the divergence row). Round progress goes to the call's progress callback (per-call, else the client's). Output schema (parity 1): the SDK `callTool` validates a result against the `outputSchema` the tool was listed with, and `rmcp` doesn't. `call_tool_with` compiles the `McpTool`'s output schema (the crate's `jsonschema`) before sending, and after the final response applies the SDK rules: a schema that doesn't compile is `-32602 Tool '<name>' has an invalid outputSchema: <message, 200 chars>`; no `structuredContent` on a non-error result is `-32600 Tool <name> has an output schema but did not return structured content`; content that fails is `-32602 Structured content does not match the tool's output schema: <errors>`, each error `data<instance path> <jsonschema message>` joined with `, ` (the path prefix follows ajv's `errorsText`; the message wording is `jsonschema`'s, see the divergence row); `isError` results aren't checked. All are `McpErrorKind::Protocol`. TS reference: `@modelcontextprotocol/client` `dist/src-WCy6ifGf.mjs:5130-5273,6484-6560`, `dist/index.mjs:4244-4285`; `strands-ts/src/mcp/client.ts:1561-1605`. Files: `src/mcp/client.rs`, `src/mcp/mcp_tool.rs`.
+ 
+ **P-257. MCP auth headers and client-credentials renewal.** Phase 9 review (correctness 7, 8). With `auth` or `auth_provider`, a user `Authorization` header went out next to the bearer token (`reqwest` appends); and a client-credentials token was granted once per connection, so after expiry `rmcp`'s refresh (client-credentials responses carry no refresh token) failed and requests went out unauthenticated until `connect(true)`. TS sets the token with `headers.set("Authorization", ..)`, and its non-interactive provider runs the grant again on a 401. Choice: with `auth` or `auth_provider`, `authorization` is dropped from the custom headers, so the token wins. The url-configured client with `auth` uses a private `StreamableHttpClient` (`mcp::auth::ClientCredentialsClient`) around the granted `AuthClient`: before each request it takes the stored token, or runs the grant again when `rmcp` reports none usable; on a 401 it runs the grant again (once per rejected grant, shared by concurrent requests) and retries once. A freshly granted token is used as granted, without `rmcp`'s 30-second expiry margin, so a server issuing tokens shorter than 30 s still works. TS reference: `@modelcontextprotocol/client` `dist/index.mjs:5444-5452,5740-5752`. Files: `src/mcp/auth.rs`, `src/mcp/client.rs`.
+ 
+diff --git a/.rust-port/staging/phase9fix/dispositions.md b/.rust-port/staging/phase9fix/dispositions.md
+index c200ab85b..80d90d8d1 100644
+--- a/.rust-port/staging/phase9fix/dispositions.md
++++ b/.rust-port/staging/phase9fix/dispositions.md
+@@ -1,13 +1,14 @@
+ | finding | disposition | commit |
+ |---|---|---|
+-| correctness-1 | Fixed: the agent's `on_tools_changed` callback holds the change queue weakly (P-254). Regression test `mcp::tests::robustness::dropping_an_agent_after_a_tools_refresh_closes_the_connection` (fails without the fix: `condition never held`) | pending |
+-| correctness-2 | Fixed: the generation is read before the connect task is spawned and `Connected`/`Failed` are stored under the `state` lock `disconnect` bumps the generation in (P-254). Test `mcp::tests::robustness::a_disconnect_right_after_connect_starts_leaves_the_client_disconnected` | pending |
+-| correctness-3 | Fixed: `disconnect` invalidates pending tools-changed tickets and a refresh lists over the live peer only (P-254). Test `mcp::tests::robustness::a_pending_tools_refresh_does_not_reconnect_after_disconnect` | pending |
+-| correctness-4 | Fixed: the callback runs under `catch_unwind` and logs the TS text; a drop guard clears `running`; the final `pending` check and reset share one critical section (P-254). Test `mcp::tests::robustness::a_panicking_tools_changed_callback_leaves_later_refreshes_working` | pending |
+-| correctness-5 | Fixed: progress is delivered inline on the transport's receive path (`ProgressTap`), under the routes lock (P-255). Test `mcp::tests::robustness::progress_before_the_result_reaches_the_callback_in_order` (4-worker runtime, 30 calls x 50 notifications) | pending |
+-| correctness-6 | Fixed with parity-2/3: the elicitation signal is cancelled with the call's, the round is raced against it, and one deadline bounds all rounds (`Maximum total timeout exceeded`) (P-256). Tests `mcp::tests::robustness::cancelling_a_call_cancels_its_pending_input_required_elicitation`, `the_call_timeout_bounds_every_input_required_round` | pending |
+-| correctness-7 | Fixed: with `auth`/`auth_provider`, a user `Authorization` header is dropped (P-257). Test `mcp::tests::robustness::the_auth_token_replaces_a_user_authorization_header` | pending |
+-| correctness-8 | Fixed: `ClientCredentialsClient` runs the grant again when no token is usable or on a 401 and retries once (P-257). Test `mcp::tests::robustness::an_expired_client_credentials_token_is_granted_again` | pending |
+-| correctness-9 | Fixed: prompt and resource list methods return an empty result when the server lacks the capability (P-258, amends P-248). Test `mcp::tests::robustness::lists_no_prompts_or_resources_from_a_server_without_those_capabilities` | pending |
+-| parity-2 | Fixed: SDK driver (11 requests, 10 fulfilments), shrinking total timeout, 250 ms `requestState`-only pacing, SDK texts, round progress (P-256). Tests `mcp::tests::robustness::fulfils_ten_input_required_rounds_before_giving_up`, `paces_a_request_state_only_round`, `names_the_missing_handler_for_an_input_request`, `the_call_timeout_bounds_every_input_required_round` | pending |
+-| parity-3 | Fixed with correctness-6 (P-256). Test `mcp::tests::robustness::cancelling_a_call_cancels_its_pending_input_required_elicitation` | pending |
++| correctness-1 | Fixed: the agent's `on_tools_changed` callback holds the change queue weakly (P-254). Regression test `mcp::tests::robustness::dropping_an_agent_after_a_tools_refresh_closes_the_connection` (fails without the fix: `condition never held`) | 12d80f1c3 |
++| correctness-2 | Fixed: the generation is read before the connect task is spawned and `Connected`/`Failed` are stored under the `state` lock `disconnect` bumps the generation in (P-254). Test `mcp::tests::robustness::a_disconnect_right_after_connect_starts_leaves_the_client_disconnected` | 12d80f1c3 |
++| correctness-3 | Fixed: `disconnect` invalidates pending tools-changed tickets and a refresh lists over the live peer only (P-254). Test `mcp::tests::robustness::a_pending_tools_refresh_does_not_reconnect_after_disconnect` | 12d80f1c3 |
++| correctness-4 | Fixed: the callback runs under `catch_unwind` and logs the TS text; a drop guard clears `running`; the final `pending` check and reset share one critical section (P-254). Test `mcp::tests::robustness::a_panicking_tools_changed_callback_leaves_later_refreshes_working` | 12d80f1c3 |
++| correctness-5 | Fixed: progress is delivered inline on the transport's receive path (`ProgressTap`), under the routes lock (P-255). Test `mcp::tests::robustness::progress_before_the_result_reaches_the_callback_in_order` (4-worker runtime, 30 calls x 50 notifications) | 12d80f1c3 |
++| correctness-6 | Fixed with parity-2/3: the elicitation signal is cancelled with the call's, the round is raced against it, and one deadline bounds all rounds (`Maximum total timeout exceeded`) (P-256). Tests `mcp::tests::robustness::cancelling_a_call_cancels_its_pending_input_required_elicitation`, `the_call_timeout_bounds_every_input_required_round` | 12d80f1c3 |
++| correctness-7 | Fixed: with `auth`/`auth_provider`, a user `Authorization` header is dropped (P-257). Test `mcp::tests::robustness::the_auth_token_replaces_a_user_authorization_header` | 12d80f1c3 |
++| correctness-8 | Fixed: `ClientCredentialsClient` runs the grant again when no token is usable or on a 401 and retries once (P-257). Test `mcp::tests::robustness::an_expired_client_credentials_token_is_granted_again` | 12d80f1c3 |
++| correctness-9 | Fixed: prompt and resource list methods return an empty result when the server lacks the capability (P-258, amends P-248). Test `mcp::tests::robustness::lists_no_prompts_or_resources_from_a_server_without_those_capabilities` | 12d80f1c3 |
++| parity-2 | Fixed: SDK driver (11 requests, 10 fulfilments), shrinking total timeout, 250 ms `requestState`-only pacing, SDK texts, round progress (P-256). Tests `mcp::tests::robustness::fulfils_ten_input_required_rounds_before_giving_up`, `paces_a_request_state_only_round`, `names_the_missing_handler_for_an_input_request`, `the_call_timeout_bounds_every_input_required_round` | 12d80f1c3 |
++| parity-3 | Fixed with correctness-6 (P-256). Test `mcp::tests::robustness::cancelling_a_call_cancels_its_pending_input_required_elicitation` | 12d80f1c3 |
++| parity-1 | Fixed: `call_tool_with` checks the result against the tool's listed `outputSchema` with the SDK rules and texts (P-256; divergence row for the per-error wording). Test `mcp::tests::robustness::checks_structured_content_against_the_tool_output_schema` (fails without the fix: the missing and invalid cases return `Ok`) | pending |
+diff --git a/.rust-port/staging/phase9fix/divergences.md b/.rust-port/staging/phase9fix/divergences.md
+index c583dc7d0..415544acd 100644
+--- a/.rust-port/staging/phase9fix/divergences.md
++++ b/.rust-port/staging/phase9fix/divergences.md
+@@ -1 +1,2 @@
+ | Cancelling an MCP tool call while an input-required elicitation callback is pending | The callback's `signal` aborts; the call rejects once the callback settles | The callback's `cancel_signal` is cancelled and the call returns the abort error at once; the callback's future is dropped | Dropping a future is how Rust cancels it, and an agent cancel must not wait on a user-facing prompt (P-256) |
++| MCP output-schema mismatch text | `Structured content does not match the tool's output schema: data/forecast must be string` (ajv wording) | `Structured content does not match the tool's output schema: data/forecast 42 is not of type "string"` (`jsonschema` wording after the same `data<path>` prefix) | The crate validates with `jsonschema`, not ajv; the prefix, error codes and the other two texts match (P-256) |
+diff --git a/strands-rs/strands/src/mcp/client.rs b/strands-rs/strands/src/mcp/client.rs
+index 64d03d289..c276af649 100644
+--- a/strands-rs/strands/src/mcp/client.rs
++++ b/strands-rs/strands/src/mcp/client.rs
+@@ -53,6 +53,10 @@ const REQUEST_STATE_ONLY_LEG_PACING: Duration = Duration::from_millis(250);
+ const INPUT_REQUIRED_WITHOUT_INPUT: &str = "Invalid result for tools/call: input_required carries neither inputRequests nor requestState (every input_required result must include at least one of the two)";
+ /// The MCP SDK `listChanged.tools.debounceMs`.
+ const TOOLS_CHANGED_DEBOUNCE: Duration = Duration::from_millis(300);
++/// JSON-RPC `InvalidRequest`.
++const ERROR_INVALID_REQUEST: i32 = -32600;
++/// JSON-RPC `InvalidParams`.
++const ERROR_INVALID_PARAMS: i32 = -32602;
+ const FAILED_TO_CONNECT: &str = "MCP server failed to connect. Call connect(true) to retry.";
+ 
+ /// The connection state of an [`McpClient`] (TS `McpConnectionState`).
+@@ -887,6 +891,7 @@ impl McpClient {
+             return Err(Error::other(FAILED_TO_CONNECT));
+         };
+         let arguments = prepare_arguments(args)?;
++        let output_schema = compile_output_schema(tool)?;
+         let arguments = if self.inner.options.disable_mcp_instrumentation {
+             arguments
+         } else {
+@@ -906,7 +911,9 @@ impl McpClient {
+         let mut round: u32 = 0;
+         loop {
+             let ServerResult::InputRequiredResult(input) = response else {
+-                return call_result(response);
++                let result = call_result(response)?;
++                check_output(tool.server_name(), output_schema.as_ref(), &result)?;
++                return Ok(result);
+             };
+             if input.input_requests.as_ref().is_none_or(InputRequests::is_empty)
+                 && input.request_state.is_none()
+@@ -1457,6 +1464,59 @@ fn call_result(response: ServerResult) -> Result<JsonValue> {
+     }
+ }
+ 
++/// The tool's listed `outputSchema`, compiled (the MCP SDK `callTool` output validator).
++fn compile_output_schema(tool: &McpTool) -> Result<Option<jsonschema::Validator>, McpError> {
++    let Some(schema) = tool.output_schema() else {
++        return Ok(None);
++    };
++    jsonschema::validator_for(schema).map(Some).map_err(|error| {
++        let message: String = error.to_string().chars().take(200).collect();
++        McpError::protocol(
++            ERROR_INVALID_PARAMS,
++            format!(
++                "Tool '{}' has an invalid outputSchema: {message}",
++                tool.server_name()
++            ),
++            None,
++        )
++    })
++}
++
++/// The MCP SDK `callTool` check of a result against the tool's output schema; error results
++/// are not checked.
++fn check_output(
++    name: &str,
++    schema: Option<&jsonschema::Validator>,
++    result: &JsonValue,
++) -> Result<(), McpError> {
++    let Some(schema) = schema else { return Ok(()) };
++    if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
++        return Ok(());
++    }
++    let Some(structured) = result.get("structuredContent") else {
++        return Err(McpError::protocol(
++            ERROR_INVALID_REQUEST,
++            format!("Tool {name} has an output schema but did not return structured content"),
++            None,
++        ));
++    };
++    let errors: Vec<String> = schema
++        .iter_errors(structured)
++        .map(|error| format!("data{} {error}", error.instance_path()))
++        .collect();
++    if errors.is_empty() {
++        return Ok(());
++    }
++    Err(McpError::protocol(
++        ERROR_INVALID_PARAMS,
++        format!(
++            "Structured content does not match the tool's output schema: {}",
++            errors.join(", ")
++        ),
++        None,
++    ))
++}
++
+ /// `null` becomes `{}`; anything but an object is rejected (TS `_prepareToolCall`).
+ fn prepare_arguments(args: JsonValue) -> Result<JsonObject> {
+     match args {
+diff --git a/strands-rs/strands/src/mcp/mcp_tool.rs b/strands-rs/strands/src/mcp/mcp_tool.rs
+index f81784eb2..1ad457465 100644
+--- a/strands-rs/strands/src/mcp/mcp_tool.rs
++++ b/strands-rs/strands/src/mcp/mcp_tool.rs
+@@ -65,6 +65,10 @@ impl McpTool {
+     pub fn server_name(&self) -> &str {
+         &self.server_name
+     }
++
++    pub(crate) fn output_schema(&self) -> Option<&JsonValue> {
++        self.spec.output_schema()
++    }
+ }
+ 
+ impl fmt::Debug for McpTool {
+diff --git a/strands-rs/strands/src/mcp/tests/robustness.rs b/strands-rs/strands/src/mcp/tests/robustness.rs
+index f3fc0ecd1..7fc0750f6 100644
+--- a/strands-rs/strands/src/mcp/tests/robustness.rs
++++ b/strands-rs/strands/src/mcp/tests/robustness.rs
+@@ -377,3 +377,47 @@ async fn a_panicking_tools_changed_callback_leaves_later_refreshes_working() {
+     client.refresh_tools().await;
+     assert_eq!(calls.load(Ordering::SeqCst), 1);
+ }
++
++#[tokio::test]
++async fn checks_structured_content_against_the_tool_output_schema() {
++    let mut weather = tool("weather", None);
++    weather.output_schema = Some(Arc::new(server::object(json!({
++        "type": "object",
++        "properties": {"forecast": {"type": "string"}},
++        "required": ["forecast"]
++    }))));
++    let mut listed = TestServer::default().tools.lock().expect("tools").clone();
++    listed.push(weather);
++    let client = TestServer::with_tools(listed).client();
++    let tool = tool_named(&client, "weather").await;
++
++    let good = client
++        .call_tool(&tool, json!({"message": "good"}))
++        .await
++        .expect("valid");
++    assert_eq!(good["structuredContent"], json!({"forecast": "sunny"}));
++
++    let missing = client.call_tool(&tool, json!({})).await.expect_err("missing");
++    assert_eq!(
++        missing.to_string(),
++        "Tool weather has an output schema but did not return structured content"
++    );
++    let Error::Mcp(missing) = missing else {
++        panic!("not an MCP error")
++    };
++    assert_eq!(missing.code(), Some(-32600));
++
++    let bad = client
++        .call_tool(&tool, json!({"message": "bad"}))
++        .await
++        .expect_err("bad");
++    assert!(
++        bad.to_string()
++            .starts_with("Structured content does not match the tool's output schema: data/forecast "),
++        "{bad}"
++    );
++    let Error::Mcp(bad) = bad else {
++        panic!("not an MCP error")
++    };
++    assert_eq!(bad.code(), Some(-32602));
++}
+diff --git a/strands-rs/strands/src/mcp/tests/server.rs b/strands-rs/strands/src/mcp/tests/server.rs
+index 9b5bf11a6..67a839204 100644
+--- a/strands-rs/strands/src/mcp/tests/server.rs
++++ b/strands-rs/strands/src/mcp/tests/server.rs
+@@ -254,6 +254,15 @@ async fn run_tool(
+             let _sent = context.peer.notify_logging_message(params).await;
+             Ok(text("logged"))
+         }
++        "weather" => {
++            let mut result = text("sunny");
++            result.structured_content = match argument(request, "message").as_str() {
++                Some("bad") => Some(json!({"forecast": 42})),
++                Some("good") => Some(json!({"forecast": "sunny"})),
++                _ => None,
++            };
++            Ok(result)
++        }
+         "change_tools" => {
+             let _sent = context.peer.notify_tool_list_changed().await;
+             Ok(text("changed"))
+-- 
+2.39.5
+
