@@ -316,7 +316,7 @@ mod setup_tracer {
         );
     }
 
-    /// The OTLP exporter posts protobuf to the endpoint the env seam gives, from the batch
+    /// The OTLP exporter posts OTLP JSON (as the TS exporter does) to the endpoint the env seam gives, from the batch
     /// processor's own thread.
     #[test]
     fn the_otlp_exporter_posts_spans_to_the_endpoint_from_the_environment() {
@@ -358,7 +358,7 @@ mod setup_tracer {
             .recv_timeout(Duration::from_secs(10))
             .expect("an export request");
         assert!(head.starts_with("post /v1/traces http/1.1"), "{head}");
-        assert!(head.contains("content-type: application/x-protobuf"), "{head}");
+        assert!(head.contains("content-type: application/json"), "{head}");
     }
 }
 

@@ -10,7 +10,7 @@ use opentelemetry::baggage::{Baggage, BaggageExt as _};
 use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry::trace::{FutureExt as _, Span as _, TracerProvider as _};
 use opentelemetry::{Context, InstrumentationScope, KeyValue, global};
-use opentelemetry_otlp::WithExportConfig as _;
+use opentelemetry_otlp::{Protocol, WithExportConfig as _};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::OTelSdkResult;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -30,8 +30,8 @@ use crate::error::{Error, Result};
 
 /// Which exporters [`setup_tracer`] and [`setup_meter`] add (TS `exporters`).
 ///
-/// The OTLP exporters send protobuf over HTTP and read the standard `OTEL_EXPORTER_OTLP_*`
-/// variables themselves.
+/// The OTLP exporters send OTLP JSON over HTTP, as the TS ones do, and read the standard
+/// `OTEL_EXPORTER_OTLP_*` variables themselves.
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
@@ -306,7 +306,9 @@ pub(super) fn setup_tracer_in(
                 builder = builder.with_span_processor(BaggageSpanProcessor::new(keys));
             }
             if config.exporters.otlp {
-                let mut exporter = opentelemetry_otlp::SpanExporter::builder().with_http();
+                let mut exporter = opentelemetry_otlp::SpanExporter::builder()
+                    .with_http()
+                    .with_protocol(Protocol::HttpJson);
                 if let Some(endpoint) = otlp_endpoint(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "v1/traces")
                 {
                     exporter = exporter.with_endpoint(endpoint);
@@ -372,7 +374,9 @@ pub(super) fn setup_meter_in(
         None => {
             let mut builder = SdkMeterProvider::builder().with_resource(resource(env));
             if config.exporters.otlp {
-                let mut exporter = opentelemetry_otlp::MetricExporter::builder().with_http();
+                let mut exporter = opentelemetry_otlp::MetricExporter::builder()
+                    .with_http()
+                    .with_protocol(Protocol::HttpJson);
                 if let Some(endpoint) =
                     otlp_endpoint(env, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "v1/metrics")
                 {
