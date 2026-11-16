@@ -231,6 +231,7 @@ mod invocation_context {
             name: Some("relay".into()),
             ..Default::default()
         })
+        .unwrap()
     }
 
     /// A hand-written tool that runs the sub-agent forwarding only the invocation state; `as_tool`

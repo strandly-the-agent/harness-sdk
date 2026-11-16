@@ -108,17 +108,6 @@
       "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
     }
   },
-  "strands-ts/src/agent/__tests__/agent-as-tool.test.ts": {
-    "throws when preserveContext is false and agent has a sessionManager": {
-      "gap": "needs a `SessionManager` on the wrapped agent (the row: Phase 6)"
-    },
-    "throws when preserveContext is explicitly false and agent has a sessionManager": {
-      "gap": "needs a `SessionManager` on the wrapped agent (the row: Phase 6)"
-    },
-    "allows preserveContext true with sessionManager": {
-      "gap": "needs a `SessionManager` on the wrapped agent (the row: Phase 6)"
-    }
-  },
   "strands-ts/src/agent/__tests__/agent-delegation.test.ts": {
     "does not leak delegation state when a later AfterTools hook throws": {
       "gap": "needs an `AfterToolsEvent` hook that throws, and hooks can't fail"

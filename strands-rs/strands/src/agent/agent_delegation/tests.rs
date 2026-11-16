@@ -68,6 +68,7 @@ fn sub_agent(name: &str, reply: &str) -> Agent {
 fn delegate(agent: Agent) -> ToolSource {
     agent
         .as_tool(AgentAsToolOptions::builder().delegate(true).build())
+        .unwrap()
         .into()
 }
 
@@ -279,7 +280,9 @@ async fn skips_delegation_logic_for_delegation_tools_added_after_init_tool_runs_
     ]));
     let mut agent = orchestrator(model, vec![]);
     agent.initialize().await.unwrap();
-    let tool = sub_agent("Sub", "Sub response").as_tool(AgentAsToolOptions::builder().delegate(true).build());
+    let tool = sub_agent("Sub", "Sub response")
+        .as_tool(AgentAsToolOptions::builder().delegate(true).build())
+        .unwrap();
     agent.tool_registry_mut().add(Arc::new(tool)).unwrap();
 
     let result = agent.invoke("Do something").await.unwrap();
@@ -299,7 +302,9 @@ async fn does_not_enforce_single_call_constraint_for_stateful_models_with_runtim
     ]));
     let mut agent = orchestrator(model, vec![calculator()]);
     agent.initialize().await.unwrap();
-    let tool = sub_agent("Sub", "Sub response").as_tool(AgentAsToolOptions::builder().delegate(true).build());
+    let tool = sub_agent("Sub", "Sub response")
+        .as_tool(AgentAsToolOptions::builder().delegate(true).build())
+        .unwrap();
     agent.tool_registry_mut().add(Arc::new(tool)).unwrap();
     // The model plugin clears a stateful model's history after the invocation.
     let added = Arc::new(Mutex::new(Vec::new()));

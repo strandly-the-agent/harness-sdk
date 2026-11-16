@@ -166,7 +166,9 @@ async fn an_agent_runs_generated_tools_with_a_mock_model() -> Result<(), Box<dyn
         .build()?;
     let parent = Agent::builder()
         .model(MockMessageModel::new())
-        .tools([helper.as_tool(AgentAsToolOptions::builder().delegate(true).build())])
+        .tools([helper
+            .as_tool(AgentAsToolOptions::builder().delegate(true).build())
+            .unwrap()])
         .printer(false)
         .build()?;
     assert!(parent.tool_registry().get("helper").is_some());

@@ -76,26 +76,32 @@ fn message_count(tool: &AgentAsTool) -> usize {
 
 #[test]
 fn uses_agent_name_as_default_tool_name() {
-    let tool = agent("researcher", None).as_tool(AgentAsToolOptions::default());
+    let tool = agent("researcher", None)
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
     assert_eq!(tool.name(), "researcher");
 }
 
 #[test]
 fn allows_overriding_the_tool_name() {
     let options = AgentAsToolOptions::builder().name("research-tool").build();
-    let tool = agent("researcher", None).as_tool(options);
+    let tool = agent("researcher", None).as_tool(options).unwrap();
     assert_eq!(tool.name(), "research-tool");
 }
 
 #[test]
 fn uses_agent_description_as_default_tool_description() {
-    let tool = agent("researcher", Some("Finds information")).as_tool(AgentAsToolOptions::default());
+    let tool = agent("researcher", Some("Finds information"))
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
     assert_eq!(tool.description(), "Finds information");
 }
 
 #[test]
 fn falls_back_to_generic_description_when_agent_has_no_description() {
-    let tool = agent("researcher", None).as_tool(AgentAsToolOptions::default());
+    let tool = agent("researcher", None)
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
     assert_eq!(
         tool.description(),
         "Use the researcher agent by providing a natural language input"
@@ -107,13 +113,15 @@ fn allows_overriding_the_tool_description() {
     let options = AgentAsToolOptions::builder()
         .description("Custom description")
         .build();
-    let tool = agent("researcher", None).as_tool(options);
+    let tool = agent("researcher", None).as_tool(options).unwrap();
     assert_eq!(tool.description(), "Custom description");
 }
 
 #[test]
 fn exposes_the_wrapped_agent_via_getter() {
-    let tool = agent("researcher", None).as_tool(AgentAsToolOptions::default());
+    let tool = agent("researcher", None)
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
     assert_eq!(
         tool.with_agent(|agent| agent.name().to_owned()).as_deref(),
         Some("researcher")
@@ -122,7 +130,9 @@ fn exposes_the_wrapped_agent_via_getter() {
 
 #[test]
 fn has_correct_tool_spec_shape() {
-    let tool = agent("researcher", Some("Finds info")).as_tool(AgentAsToolOptions::default());
+    let tool = agent("researcher", Some("Finds info"))
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
     assert_eq!(
         serde_json::to_value(tool.tool_spec()).unwrap(),
         json!({
@@ -153,7 +163,7 @@ fn throws_when_registered_with_agent_name_containing_spaces() {
 #[test]
 fn throws_when_registered_with_explicit_name_containing_invalid_characters() {
     let options = AgentAsToolOptions::builder().name("has spaces").build();
-    let tool = agent("researcher", None).as_tool(options);
+    let tool = agent("researcher", None).as_tool(options).unwrap();
     let error = Agent::builder()
         .model(model("Hi"))
         .tools([tool])
@@ -164,7 +174,9 @@ fn throws_when_registered_with_explicit_name_containing_invalid_characters() {
 
 #[test]
 fn accepts_valid_name_with_hyphens_and_underscores() {
-    let tool = agent("my_research-agent", None).as_tool(AgentAsToolOptions::default());
+    let tool = agent("my_research-agent", None)
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
     assert_eq!(tool.name(), "my_research-agent");
     Agent::builder().model(model("Hi")).tools([tool]).build().unwrap();
 }
@@ -176,6 +188,7 @@ fn wrapped(reply: &str) -> AgentAsTool {
         .build()
         .unwrap()
         .as_tool(AgentAsToolOptions::default())
+        .unwrap()
 }
 
 #[tokio::test]
@@ -227,7 +240,8 @@ async fn unwraps_tool_stream_update_event_by_yielding_inner_tool_stream_event_di
         .tools([streaming])
         .build()
         .unwrap()
-        .as_tool(AgentAsToolOptions::default());
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
 
     let (events, _) = collect(tool.stream(context(
         "test-agent",
@@ -254,7 +268,8 @@ async fn returns_error_result_on_agent_failure() {
         .no_retry_strategy()
         .build()
         .unwrap()
-        .as_tool(AgentAsToolOptions::default());
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
 
     let (_, result) = collect(tool.stream(context("test-agent", "tool-1", json!({"input": "Hello"})))).await;
 
@@ -303,7 +318,8 @@ async fn preserves_agent_state_across_invocations_when_true() {
         .name("test-agent")
         .build()
         .unwrap()
-        .as_tool(options);
+        .as_tool(options)
+        .unwrap();
 
     collect(tool.stream(context("test-agent", "tool-1", json!({"input": "Hello"})))).await;
     let after_first = message_count(&tool);
@@ -334,9 +350,67 @@ async fn snapshots_at_construction_time_not_first_invocation() {
     );
 }
 
+mod session_manager_validation {
+    use super::*;
+    use crate::session::{SessionManager, SessionManagerConfig};
+    use crate::storage::InMemoryStorage;
+
+    const CONFLICT: &str = "Agent 'test-agent' has a SessionManager, which conflicts with preserveContext=false. \
+        The SessionManager persists conversation history externally, but preserveContext=false resets state \
+        between invocations. Use preserveContext=true or remove the SessionManager.";
+
+    fn session_agent() -> Agent {
+        let session_manager = SessionManager::new(SessionManagerConfig {
+            storage: Some(Arc::new(InMemoryStorage::new())),
+            ..Default::default()
+        })
+        .unwrap();
+        Agent::builder()
+            .model(model("Hi"))
+            .name("test-agent")
+            .session_manager(session_manager)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn throws_when_preserve_context_is_false_and_agent_has_a_session_manager() {
+        let error = session_agent()
+            .as_tool(AgentAsToolOptions::default())
+            .unwrap_err();
+        assert_eq!(error.to_string(), CONFLICT);
+    }
+
+    #[test]
+    fn throws_when_preserve_context_is_explicitly_false_and_agent_has_a_session_manager() {
+        let options = AgentAsToolOptions::builder().preserve_context(false).build();
+        let error = session_agent().as_tool(options).unwrap_err();
+        assert_eq!(error.to_string(), CONFLICT);
+    }
+
+    #[test]
+    fn allows_preserve_context_true_with_session_manager() {
+        let options = AgentAsToolOptions::builder().preserve_context(true).build();
+        session_agent().as_tool(options).unwrap();
+    }
+
+    /// TS wraps an agent in `tools` with `new AgentAsTool({ agent })`, which throws the same way.
+    #[test]
+    fn an_agent_with_a_session_manager_in_tools_fails_the_build() {
+        let error = Agent::builder()
+            .model(model("Hi"))
+            .tools([session_agent()])
+            .build()
+            .unwrap_err();
+        assert_eq!(error.to_string(), CONFLICT);
+    }
+}
+
 #[test]
 fn returns_an_agent_as_tool_instance() {
-    let tool = agent("researcher", None).as_tool(AgentAsToolOptions::default());
+    let tool = agent("researcher", None)
+        .as_tool(AgentAsToolOptions::default())
+        .unwrap();
     assert_eq!(tool.name(), "researcher");
     assert!(!tool.delegate());
 }
@@ -347,7 +421,7 @@ fn passes_options_through_to_agent_as_tool() {
         .name("custom-name")
         .description("Custom desc")
         .build();
-    let tool = agent("researcher", None).as_tool(options);
+    let tool = agent("researcher", None).as_tool(options).unwrap();
     assert_eq!(tool.name(), "custom-name");
     assert_eq!(tool.description(), "Custom desc");
 }
@@ -355,7 +429,9 @@ fn passes_options_through_to_agent_as_tool() {
 #[test]
 fn sets_delegate_and_appends_description_suffix_when_delegate_is_true() {
     let options = AgentAsToolOptions::builder().delegate(true).build();
-    let tool = agent("specialist", Some("Handles billing")).as_tool(options);
+    let tool = agent("specialist", Some("Handles billing"))
+        .as_tool(options)
+        .unwrap();
 
     let expected = format!("Handles billing{DELEGATION_DESCRIPTION_SUFFIX}");
     assert!(tool.delegate());
@@ -366,7 +442,9 @@ fn sets_delegate_and_appends_description_suffix_when_delegate_is_true() {
 #[test]
 fn does_not_set_delegate_or_append_description_suffix_when_delegate_is_false() {
     let options = AgentAsToolOptions::builder().delegate(false).build();
-    let tool = agent("specialist", Some("Handles billing")).as_tool(options);
+    let tool = agent("specialist", Some("Handles billing"))
+        .as_tool(options)
+        .unwrap();
 
     assert!(!tool.delegate());
     assert_eq!(tool.description(), "Handles billing");
@@ -607,7 +685,7 @@ mod cancel {
             .unwrap();
         let (context, handle) = cancellable_context("test-agent", "tool-1", json!({"input": "Hello agent"}));
         agent.add_hook(move |_: &mut BeforeModelCallEvent<'_>| handle.cancel(CancelOptions::default()));
-        let tool = agent.as_tool(AgentAsToolOptions::default());
+        let tool = agent.as_tool(AgentAsToolOptions::default()).unwrap();
 
         let (_, result) = collect(tool.stream(context)).await;
 
@@ -637,7 +715,7 @@ mod cancel {
             .printer(false)
             .build()
             .unwrap();
-        let tool = agent.as_tool(AgentAsToolOptions::default());
+        let tool = agent.as_tool(AgentAsToolOptions::default()).unwrap();
 
         let (_, result) = collect(tool.stream(context)).await;
 
@@ -651,7 +729,9 @@ mod cancel {
             message: Some("Answer is 42".to_owned()),
             after_current_tools: true,
         };
-        let tool = cancelling_agent("stop", options).as_tool(AgentAsToolOptions::default());
+        let tool = cancelling_agent("stop", options)
+            .as_tool(AgentAsToolOptions::default())
+            .unwrap();
 
         let (_, result) =
             collect(tool.stream(context("test-agent", "tool-1", json!({"input": "Hello agent"})))).await;
@@ -662,7 +742,9 @@ mod cancel {
 
     #[tokio::test]
     async fn returns_an_error_when_the_wrapped_agent_is_cancelled_immediately_from_a_tool() {
-        let tool = cancelling_agent("abort", CancelOptions::default()).as_tool(AgentAsToolOptions::default());
+        let tool = cancelling_agent("abort", CancelOptions::default())
+            .as_tool(AgentAsToolOptions::default())
+            .unwrap();
 
         let (_, result) =
             collect(tool.stream(context("test-agent", "tool-1", json!({"input": "Hello agent"})))).await;
@@ -690,7 +772,11 @@ mod cancel {
                 release.notified().await;
             })
         });
-        let tool = Arc::new(agent.as_tool(AgentAsToolOptions::builder().preserve_context(true).build()));
+        let tool = Arc::new(
+            agent
+                .as_tool(AgentAsToolOptions::builder().preserve_context(true).build())
+                .unwrap(),
+        );
         let (context, handle) = cancellable_context("test-agent", "tool-1", json!({"input": "Hello agent"}));
 
         let execution = tokio::spawn(collect(tool.stream(context)));

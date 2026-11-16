@@ -750,6 +750,7 @@ mod macro_contract {
         );
         let names: Vec<String> = ToolSource::List(inventory.tools())
             .into_tools()
+            .unwrap()
             .iter()
             .map(|tool| tool.name().to_owned())
             .collect();
@@ -773,6 +774,7 @@ mod macro_contract {
             inventory.tools()
         ])
         .into_tools()
+        .unwrap()
         .iter()
         .map(|tool| tool.name().to_owned())
         .collect();

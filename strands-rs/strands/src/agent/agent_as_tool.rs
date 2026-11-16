@@ -72,7 +72,7 @@ pub struct AgentAsToolOptions {
 ///     .name("researcher")
 ///     .description("Finds information on a topic")
 ///     .build()?;
-/// let tool = researcher.as_tool(AgentAsToolOptions::default());
+/// let tool = researcher.as_tool(AgentAsToolOptions::default())?;
 /// assert_eq!(tool.name(), "researcher");
 /// let writer = Agent::builder().model(MockMessageModel::new()).tools([tool]).build()?;
 /// assert!(writer.tool_registry().get("researcher").is_some());
@@ -86,6 +86,8 @@ pub struct AgentAsTool {
     preserve_context: bool,
     /// What each call of a context-resetting tool starts from (TS `_initialSnapshot`).
     initial_snapshot: Option<Arc<Snapshot>>,
+    /// Why the tool can't be used (TS throws it from the constructor).
+    conflict: Option<String>,
 }
 
 impl fmt::Debug for AgentAsTool {
@@ -99,7 +101,8 @@ impl fmt::Debug for AgentAsTool {
 }
 
 impl AgentAsTool {
-    fn new(agent: Agent, options: AgentAsToolOptions) -> Self {
+    /// The tool without the session-manager check, which [`AgentAsTool::check`] makes.
+    pub(crate) fn new(agent: Agent, options: AgentAsToolOptions) -> Self {
         let name = options.name.unwrap_or_else(|| agent.name().to_owned());
         let mut description = options
             .description
@@ -108,6 +111,14 @@ impl AgentAsTool {
         if options.delegate {
             description.push_str(DELEGATION_DESCRIPTION_SUFFIX);
         }
+        let conflict = (!options.preserve_context && agent.session_manager().is_some()).then(|| {
+            format!(
+                "Agent '{}' has a SessionManager, which conflicts with preserveContext=false. The SessionManager \
+                 persists conversation history externally, but preserveContext=false resets state between \
+                 invocations. Use preserveContext=true or remove the SessionManager.",
+                agent.name()
+            )
+        });
         let initial_snapshot = if options.preserve_context {
             None
         } else {
@@ -123,7 +134,15 @@ impl AgentAsTool {
             agent: Arc::new(Mutex::new(Some(agent))),
             preserve_context: options.preserve_context,
             initial_snapshot,
+            conflict,
         }
+    }
+
+    /// Fails when the agent has a session manager and the tool resets its context between calls.
+    pub(crate) fn check(&self) -> crate::Result<()> {
+        self.conflict
+            .as_ref()
+            .map_or(Ok(()), |text| Err(Error::other(text.clone())))
     }
 
     /// Whether the parent ends its turn with this tool's result (TS `delegate`).
@@ -524,8 +543,14 @@ fn lock<T>(slot: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Agent {
     /// Wraps this agent as a tool for another agent (TS `asTool`). Passing an agent to
     /// `.tools(..)` does the same with default options.
-    pub fn as_tool(self, options: AgentAsToolOptions) -> AgentAsTool {
-        AgentAsTool::new(self, options)
+    ///
+    /// # Errors
+    ///
+    /// The agent has a session manager and `preserve_context` is `false`.
+    pub fn as_tool(self, options: AgentAsToolOptions) -> crate::Result<AgentAsTool> {
+        let tool = AgentAsTool::new(self, options);
+        tool.check()?;
+        Ok(tool)
     }
 }
 

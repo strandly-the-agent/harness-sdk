@@ -81,10 +81,12 @@ fn nested_in_session(
         .maybe_session_manager(sub_session_storage.map(session))
         .build()
         .unwrap();
-    let tool = sub.as_tool(AgentAsToolOptions {
-        preserve_context,
-        ..AgentAsToolOptions::default()
-    });
+    let tool = sub
+        .as_tool(AgentAsToolOptions {
+            preserve_context,
+            ..AgentAsToolOptions::default()
+        })
+        .unwrap();
     let orch_model = Arc::new(MockMessageModel::new());
     if !rebuilt {
         orch_model.add_turn(vec![tool_use("sub", "outer-1", json!({"input": "go"}))]);
@@ -324,7 +326,7 @@ async fn logs_instead_of_re_raising_when_an_unloadable_stored_turn_has_no_readab
 
 #[tokio::test]
 async fn returns_an_error_result_when_there_is_no_turn_to_resume() {
-    let tool = agent("sub", None).as_tool(AgentAsToolOptions::default());
+    let tool = agent("sub", None).as_tool(AgentAsToolOptions::default()).unwrap();
     let parent = LocalAgent::new(Arc::new(MockMessageModel::new()));
     activate(parent.interrupt_state(), &[OUTER_ID]);
     parent.interrupt_state().lock().resume(&answer(OUTER_ID)).unwrap();
@@ -349,10 +351,12 @@ async fn maps_only_this_calls_responses_with_the_tool_use_id_escaped() {
                 .collect::<Vec<_>>(),
         );
     });
-    let tool = sub.as_tool(AgentAsToolOptions {
-        preserve_context: true,
-        ..AgentAsToolOptions::default()
-    });
+    let tool = sub
+        .as_tool(AgentAsToolOptions {
+            preserve_context: true,
+            ..AgentAsToolOptions::default()
+        })
+        .unwrap();
     let mine = "agent_as_tool:tool%3A123:interrupt-1";
     let other = "agent_as_tool:tool%3A123%3Aextra:interrupt-1";
     let parent = LocalAgent::new(Arc::new(MockMessageModel::new()));
@@ -449,6 +453,7 @@ async fn surfaces_the_interrupts_of_two_sub_agents_that_pause_in_the_same_turn()
             .build()
             .unwrap()
             .as_tool(AgentAsToolOptions::default())
+            .unwrap()
     };
     let model = MockMessageModel::new();
     model.add_turn(vec![

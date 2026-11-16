@@ -354,7 +354,7 @@ async fn live_parent_agent_invokes_a_sub_agent_tool_that_uses_a_standard_tool_an
         .printer(false)
         .build()
         .unwrap();
-    let tiger_expert = inner.as_tool(AgentAsToolOptions::default());
+    let tiger_expert = inner.as_tool(AgentAsToolOptions::default()).unwrap();
     let mut outer = Agent::builder()
         .model(bedrock(500))
         .tools([tiger_expert])

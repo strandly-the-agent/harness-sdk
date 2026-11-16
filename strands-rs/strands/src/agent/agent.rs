@@ -215,8 +215,9 @@ impl Agent {
         if let Some(router) = &model_router {
             router.attach_to_agent(local);
         }
-        let tools = config.tools.into_iter().flat_map(ToolSource::into_tools);
-        local.tool_registry_mut().add_all(tools)?;
+        local
+            .tool_registry_mut()
+            .add_all(ToolSource::List(config.tools).into_tools()?)?;
         if agentic {
             let tools = agentic_tools()
                 .into_iter()

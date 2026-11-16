@@ -39,14 +39,27 @@ pub enum ToolSource {
 
 impl ToolSource {
     /// The tools in order, with lists flattened.
-    pub(crate) fn into_tools(self) -> Vec<Arc<dyn Tool>> {
-        match self {
+    ///
+    /// # Errors
+    ///
+    /// An agent in the list has a session manager, which the default tool options conflict with.
+    pub(crate) fn into_tools(self) -> crate::Result<Vec<Arc<dyn Tool>>> {
+        Ok(match self {
             Self::Tool(tool) => vec![tool],
-            Self::List(sources) => sources.into_iter().flat_map(Self::into_tools).collect(),
-            Self::Agent(tool) => vec![tool],
+            Self::List(sources) => {
+                let mut tools = Vec::new();
+                for source in sources {
+                    tools.extend(source.into_tools()?);
+                }
+                tools
+            }
+            Self::Agent(tool) => {
+                tool.check()?;
+                vec![tool]
+            }
             #[cfg(feature = "mcp")]
             Self::McpClient(_) => Vec::new(),
-        }
+        })
     }
 
     /// The MCP clients in order, with lists flattened (TS `flattenTools`).
@@ -77,7 +90,7 @@ impl<T: Tool> From<T> for ToolSource {
 /// (TS wraps agents in `tools` with `asTool()`).
 impl From<Agent> for ToolSource {
     fn from(agent: Agent) -> Self {
-        Self::Agent(Arc::new(agent.as_tool(AgentAsToolOptions::default())))
+        Self::Agent(Arc::new(AgentAsTool::new(agent, AgentAsToolOptions::default())))
     }
 }
 
