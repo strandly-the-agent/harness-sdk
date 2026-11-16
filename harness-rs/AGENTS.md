@@ -16,7 +16,8 @@ harness-rs/
       telemetry.rs builtin_tools.rs sandbox.rs
       tools/      # file_tools, shell, web_fetch, web_search, programmatic_tool_caller, subagent
       plugins/    # todos, environment
-  docs/           # PARITY.md, DIVERGENCES.md, reviews/
+    tests/        # integration tests (programmatic_tool_caller over MCP) and their Node fixture
+  docs/           # PARITY.md, DIVERGENCES.md, test-title-map.json, reviews/
 ```
 
 Cargo features forward to `strands`: `bedrock`, `anthropic`, `openai`, `mcp` and `otel`, all default (harness-ts always sets up telemetry).
