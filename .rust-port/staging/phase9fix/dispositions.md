@@ -16,8 +16,8 @@
 | api-2 | Fixed: `McpServerCredentials` removed; `McpClientCredentials` is serde-enabled and `McpServerConfig::auth` uses it (P-259). Test `mcp::tests::robustness::a_config_entry_reads_auth_as_client_credentials` | 112ce6547 |
 | api-3 | Fixed: `bon::Builder` on `McpClientCredentials`, `McpToolFilters`, `SerializableMcpToolFilters`, `McpServerConfig`, `McpLoadServersOptions` (the sixth, `McpServerCredentials`, is removed by api-2) (P-259) | 112ce6547 |
 | api-4 | Fixed: `McpServerConfig::tasks_config` removed; the raw entry's `tasksConfig` is rejected before parsing with the same text; existing tests in `mcp::tests::config` still pass (P-259) | 112ce6547 |
-| api-5 | Fixed: `list_prompts()`, `list_resources()`, `list_resource_templates()` take no arguments; `*_with(McpListOptions)` take pagination (P-259) | pending |
-| api-6 | Fixed: `connect_with(reconnect, McpConnectOptions)` with `McpConnectOptions { cancel_signal }` (config struct, `Default`, builder; re-exported) (P-259) | pending |
-| api-7 | Logged rather than hidden: `client_version`, `negotiated_protocol_version` and `McpTool::server_name` kept as small accessors, each with its reason (P-259 item 7) | pending |
-| api-8 | Logged as an erratum for the lead in P-259 item 8 (P-233 should cite P-241); `DECISIONS-pending.md` is not edited here per the brief | pending |
-| parity-4 | Fixed in staging: the three model-free rows name their offline Rust tests (and the SEP-2663 case as out of scope); `mcp.test.node.ts` and `mcp-v2.test.node.ts` note that their live tests land with the Phase 11 live sweep (`.rust-port/staging/phase9fix/parity.md`) | pending |
+| api-5 | Fixed: `list_prompts()`, `list_resources()`, `list_resource_templates()` take no arguments; `*_with(McpListOptions)` take pagination (P-259) | 55119f5b2 |
+| api-6 | Fixed: `connect_with(reconnect, McpConnectOptions)` with `McpConnectOptions { cancel_signal }` (config struct, `Default`, builder; re-exported) (P-259) | 55119f5b2 |
+| api-7 | Logged rather than hidden: `client_version`, `negotiated_protocol_version` and `McpTool::server_name` kept as small accessors, each with its reason (P-259 item 7) | 55119f5b2 |
+| api-8 | Logged as an erratum for the lead in P-259 item 8 (P-233 should cite P-241); `DECISIONS-pending.md` is not edited here per the brief | 55119f5b2 |
+| parity-4 | Fixed in staging: the three model-free rows name their offline Rust tests (and the SEP-2663 case as out of scope); `mcp.test.node.ts` and `mcp-v2.test.node.ts` note that their live tests land with the Phase 11 live sweep (`.rust-port/staging/phase9fix/parity.md`) | 55119f5b2 |
