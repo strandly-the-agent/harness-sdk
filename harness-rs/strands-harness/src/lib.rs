@@ -27,7 +27,7 @@ mod types;
 
 pub use agent::{
     BuiltinToolsOption, CachingOption, HarnessAgentOptions, McpServersOption, MemoryOption, SessionOption,
-    SkillsOption,
+    SkillsOption, create_harness,
 };
 pub use config::{
     BUILTIN_PLUGIN_NAMES, BUILTIN_TOOL_NAMES, BuiltinPluginName, BuiltinToolName,
