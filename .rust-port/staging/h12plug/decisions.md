@@ -1,0 +1,7 @@
+# Pending decisions, track h12plug (P-910 to P-929)
+
+**P-910. `TodoStatus` and `TodosConfig` are public names although the TS package entry exports neither (h12plug).** TS `TodoItem.status` is a string union and `new Todos({..})` takes an object literal, so neither needs a name there; Rust needs a named enum for the three statuses and a nameable config struct to call `Todos::new`. Both are re-exported from the crate root beside `Todos` and `TodoItem`. `TodosConfig` is exhaustive with `Default` and a `bon` builder (#65).
+
+**P-911. `todo_write` publishes the TS input schema literally and validates leniently (h12plug).** The spec's `inputSchema` is the JSON the TS SDK's `tool()` produces from the zod schema (generated with the built TS SDK and pinned in `the_tool_spec_is_the_one_ts_publishes`), set with `FunctionTool::with_input_schema`. The handler parses with the schemars-derived schema of the Rust input struct, which accepts unknown keys as zod's non-strict `z.object` does (TS strips them; the published schema says `additionalProperties: false` in both SDKs).
+
+**P-912. The TS case `registers a context injector on initAgent` asserts the effect, not the registration call (h12plug).** `LocalAgent::new` and `MiddlewareRegistry::has` are crate-private in the SDK, so the Rust test builds an agent with the plugin and a mock model and asserts the model sees the reminder only once a list is stored. No SDK change made.
