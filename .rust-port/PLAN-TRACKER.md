@@ -51,7 +51,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] `Plugin` trait and built-in registration order
 - [x] Middleware stages and phases
 - [x] Background tasks
-- [ ] Conversation managers (trait, Null, SlidingWindow, Summarizing)
+- [x] Conversation managers (trait, Null, SlidingWindow, Summarizing)
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 5: providers

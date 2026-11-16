@@ -148,3 +148,47 @@ fn bedrock_types_are_exported_from_the_crate_root() {
         Some("us.anthropic.claude-sonnet-4-6")
     );
 }
+
+#[tokio::test]
+async fn a_downstream_crate_configures_and_implements_conversation_managers() {
+    use strands::conversation_manager::{
+        ConversationManager, ConversationManagerReduceOptions, ProactiveCompression,
+        SlidingWindowConversationManager, SlidingWindowConversationManagerConfig,
+        SummarizingConversationManager, SummarizingConversationManagerConfig,
+    };
+
+    struct DropOldest;
+
+    #[strands::async_trait]
+    impl ConversationManager for DropOldest {
+        fn name(&self) -> &str {
+            "app:drop-oldest"
+        }
+
+        async fn reduce(&self, mut options: ConversationManagerReduceOptions<'_>) -> strands::Result<bool> {
+            let messages = options.agent_mut().messages_mut();
+            Ok(!messages.is_empty() && messages.drain(..1).count() == 1)
+        }
+    }
+
+    let config = SlidingWindowConversationManagerConfig::builder()
+        .window_size(10)
+        .proactive_compression(true)
+        .build();
+    let sliding = SlidingWindowConversationManager::new(config).unwrap();
+    let summarizing = SummarizingConversationManager::new(
+        SummarizingConversationManagerConfig::builder()
+            .proactive_compression(ProactiveCompression::Threshold(0.5))
+            .build(),
+    )
+    .unwrap();
+    assert_eq!(sliding.compression_threshold(), Some(0.7));
+    assert_eq!(summarizing.compression_threshold(), Some(0.5));
+    let mut agent = Agent::builder()
+        .model(model(&["ok"]))
+        .conversation_manager(DropOldest)
+        .printer(false)
+        .build()
+        .unwrap();
+    assert_eq!(agent.invoke("hi").await.unwrap().to_string(), "ok");
+}
