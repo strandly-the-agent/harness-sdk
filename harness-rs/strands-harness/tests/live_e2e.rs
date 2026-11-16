@@ -103,13 +103,15 @@ async fn tools_interrupts_and_session_resume(model: &str) {
         .await
         .expect("the first turn runs");
 
-    // `ask` gates every tool call: the turn pauses before `write` runs.
+    // `ask` gates every tool call: the turn pauses before `write` runs. The approval prompt
+    // carries the call's input; the tool use joins the history once its result is in.
     assert_eq!(paused.stop_reason(), StopReason::Interrupt);
     let reason = paused.interrupts().first().expect("an interrupt").reason();
     let reason = reason.and_then(Value::as_str).expect("the approval prompt");
     assert!(reason.starts_with("Approve \"write\""), "{reason}");
+    assert!(reason.contains(&*out.to_string_lossy()), "{reason}");
     assert!(!out.exists(), "write ran before it was approved");
-    assert!(tool_attempted(&trace(&first), "write"));
+    assert!(!tool_attempted(&trace(&first), "write"));
 
     let (done, answered) = approve_until_done(&mut first, paused).await;
     assert_eq!(done.stop_reason(), StopReason::EndTurn);
