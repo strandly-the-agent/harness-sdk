@@ -69,6 +69,8 @@ const EFFORT_LEVELS: [(&str, Effort); 8] = [
     ("max", Effort::Max),
 ];
 
+/// The largest whole number JavaScript holds exactly (`Number.MAX_SAFE_INTEGER`).
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 const NON_EMPTY_STRING: &str = "must be a non-empty string.";
 const NON_EMPTY_STRINGS: &str = "must be an array of non-empty strings.";
 const BOOL_OR_CONFIG: &str = "must be a boolean or a config object.";
@@ -602,10 +604,13 @@ impl Issues {
         let config = SubagentConfig {
             max_depth: self.optional(object, path, "maxDepth", |issues, path, value| {
                 // A whole non-negative number prints without a fraction, whatever its JSON form.
+                // TS takes any safe integer; one above `u32::MAX` is held as `u32::MAX`, which no
+                // delegation chain reaches either.
                 let depth = value
                     .as_f64()
-                    .filter(|depth| depth.fract() == 0.0 && *depth >= 0.0)
-                    .and_then(|depth| format!("{depth:.0}").parse::<u32>().ok());
+                    .filter(|depth| depth.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER).contains(depth))
+                    .and_then(|depth| format!("{depth:.0}").parse::<u64>().ok())
+                    .map(|depth| u32::try_from(depth).unwrap_or(u32::MAX));
                 if depth.is_none() {
                     issues.push(path, "must be a non-negative integer.");
                 }

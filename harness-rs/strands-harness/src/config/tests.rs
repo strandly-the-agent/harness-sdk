@@ -1101,3 +1101,28 @@ fn a_module_reference_is_built_with_setters() {
     assert_eq!(reference.files, Some(vec!["./tool.ts".to_owned()]));
     assert_eq!(reference.dependency.as_deref(), Some("pkg"));
 }
+
+// Rust-only: TS takes any non-negative safe integer for `maxDepth`; the Rust field is a `u32`.
+#[test]
+fn holds_a_subagent_max_depth_above_u32_max_as_u32_max() {
+    let max_depth_of = |max_depth: JsonValue| {
+        let config = define(&json!({ "builtinTools": { "subagent": { "maxDepth": max_depth } } }));
+        let HarnessConfigBuiltinToolsSetting::Mapping(mapping) = &config.builtin_tools else {
+            panic!("builtinTools is {:?}", config.builtin_tools);
+        };
+        match &mapping.subagent {
+            Some(Setting::Config(subagent)) => subagent.max_depth,
+            other => panic!("subagent is {other:?}"),
+        }
+    };
+    assert_eq!(max_depth_of(json!(4_294_967_295_u64)), Some(u32::MAX));
+    assert_eq!(max_depth_of(json!(5_000_000_000_u64)), Some(u32::MAX));
+    assert_eq!(max_depth_of(json!(9_007_199_254_740_991_u64)), Some(u32::MAX));
+    // Past `Number.MAX_SAFE_INTEGER` TS rejects the number too.
+    for unsafe_integer in [json!(9_007_199_254_740_992_u64), json!(1e300)] {
+        assert_eq!(
+            error_of(&json!({ "builtinTools": { "subagent": { "maxDepth": unsafe_integer } } })),
+            "Invalid agent config:\nbuiltinTools.subagent.maxDepth must be a non-negative integer."
+        );
+    }
+}
