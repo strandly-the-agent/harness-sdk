@@ -4,8 +4,9 @@ pub mod cedar;
 pub mod hitl;
 
 pub use cedar::{
-    CedarAuthorization, CedarAuthorizationConfig, CedarEntities, ContextEnricher, ContextEnricherInput,
-    PrincipalResolver, ToolDefinition, TypeAndId,
+    CedarAuthorization, CedarAuthorizationConfig, CedarAuthorizationConfigBuilder, CedarEntities,
+    ContextEnricher, ContextEnricherInput, PrincipalResolver, ToolDefinition, TypeAndId,
+    cedar_authorization_config_builder,
 };
 pub use hitl::{
     Ask, AskFn, Classifier, ClassifierResult, HumanInTheLoop, HumanInTheLoopClassifier, HumanInTheLoopConfig,

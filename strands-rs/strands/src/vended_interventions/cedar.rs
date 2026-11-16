@@ -2,30 +2,29 @@
 //!
 //! A tool call is the Cedar request `principal`, `Action::"<tool name>"`, `Resource::"agent"`
 //! with `context = { input: <tool input>, session: { hour_utc, call_count, ..enricher } }`.
-//! TS evaluates with `@cedar-policy/cedar-wasm`; this is the `cedar-policy` crate the WASM
-//! build is made from, and `cedar-policy-mcp-schema-generator` for the schema.
+//! TS evaluates with `@cedar-policy/cedar-wasm`; this calls the same entry points
+//! (`cedar_policy::ffi`) of the `cedar-policy` crate the WASM build is made from, with the same
+//! JSON, so decisions and error texts are the engine's own. The schema comes from
+//! `cedar-policy-mcp-schema-generator`.
 
 mod schema_generator;
 
 use std::fmt;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use cedar_policy::{
-    AuthorizationError, Authorizer, Context, Decision, Entities, EntityId, EntityTypeName, EntityUid,
-    PolicySet, Request, Schema, ValidationMode, Validator,
-};
+use cedar_policy::ffi;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::error::{Error, Result};
 use crate::hooks::BeforeToolCallEvent;
 use crate::interventions::{BeforeToolCallAction, InterventionHandler, OnError, deny, proceed};
 use crate::state_store::StateStore;
 use crate::types::agent::InvocationState;
-use crate::types::json::{JsonObject, JsonValue};
+use crate::types::json::{JsonObject, JsonValue, to_js_string};
 
 const INVALID_ENTITY: &str = "Invalid entity: each entity must have a uid with type and id";
 /// The validation errors an auto-generated schema may report: typos in tool names.
@@ -34,14 +33,11 @@ const ACTION_ERRORS: [&str; 2] = ["unrecognized action", "unable to find an appl
 /// A tool the validation schema is generated from (TS `ToolDefinition`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[expect(
-    clippy::exhaustive_structs,
-    reason = "config struct: struct-literal construction"
-)]
+#[non_exhaustive]
 pub struct ToolDefinition {
     /// The tool name, which is the Cedar action id.
     pub name: String,
-    /// The tool's JSON input schema.
+    /// The tool's JSON input schema; schema generation fails without one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_schema: Option<JsonValue>,
     /// The tool description.
@@ -50,22 +46,26 @@ pub struct ToolDefinition {
 }
 
 impl ToolDefinition {
-    /// A tool with no input schema or description.
-    pub fn new(name: impl Into<String>) -> Self {
+    /// A tool with its JSON input schema and no description.
+    pub fn new(name: impl Into<String>, input_schema: impl Into<JsonValue>) -> Self {
         Self {
             name: name.into(),
-            input_schema: None,
+            input_schema: Some(input_schema.into()),
             description: None,
         }
+    }
+
+    /// Sets the description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
     }
 }
 
 /// A Cedar entity reference (TS `TypeAndId`): `type::"id"`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[expect(
-    clippy::exhaustive_structs,
-    reason = "config struct: struct-literal construction"
-)]
+#[non_exhaustive]
 pub struct TypeAndId {
     /// The entity type, namespaced where the policies are (`User`, `Agent::User`).
     #[serde(rename = "type")]
@@ -81,11 +81,6 @@ impl TypeAndId {
             type_name: type_name.into(),
             id: id.into(),
         }
-    }
-
-    fn to_uid(&self) -> std::result::Result<EntityUid, String> {
-        let name = EntityTypeName::from_str(&self.type_name).map_err(|error| error.to_string())?;
-        Ok(EntityUid::from_type_name_and_id(name, EntityId::new(&self.id)))
     }
 }
 
@@ -123,6 +118,17 @@ pub struct ContextEnricherInput<'a> {
     pub invocation_state: &'a InvocationState,
 }
 
+impl<'a> ContextEnricherInput<'a> {
+    /// The input for one tool call; lets a test call an enricher directly.
+    pub fn new(tool_name: &'a str, tool_input: &'a JsonValue, invocation_state: &'a InvocationState) -> Self {
+        Self {
+            tool_name,
+            tool_input,
+            invocation_state,
+        }
+    }
+}
+
 /// Resolves the principal from the invocation state; `None` denies the call.
 pub type PrincipalResolver = Arc<dyn Fn(&InvocationState) -> Result<Option<TypeAndId>> + Send + Sync>;
 
@@ -131,7 +137,7 @@ pub type ContextEnricher = Arc<dyn Fn(&ContextEnricherInput<'_>) -> Result<JsonO
 
 /// Configuration of [`CedarAuthorization`] (TS `CedarAuthorizationConfig`).
 #[derive(Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
@@ -176,7 +182,7 @@ impl fmt::Debug for CedarAuthorizationConfig {
 
 /// The policies and entities in force.
 struct Loaded {
-    policies: PolicySet,
+    policies: String,
     entities: Vec<JsonValue>,
 }
 
@@ -212,8 +218,8 @@ pub struct CedarAuthorization {
 impl CedarAuthorization {
     /// The handler's name.
     pub const NAME: &'static str = "cedar-authorization";
-    /// The app-state key holding the per-tool call counts.
-    pub const STATE_KEY: &'static str = "cedar-authorization";
+    /// The app-state key holding the per-tool call counts (TS `_stateKey`).
+    const STATE_KEY: &'static str = "cedar-authorization";
 
     /// A handler from `config`.
     ///
@@ -328,27 +334,29 @@ impl CedarAuthorization {
         tool_name: &str,
         context: JsonObject,
     ) -> std::result::Result<Option<String>, String> {
-        let principal = principal.to_uid()?;
-        let action = TypeAndId::new(self.action_type.as_str(), tool_name).to_uid()?;
-        let resource = self.resource.to_uid()?;
-        let context =
-            Context::from_json_value(JsonValue::Object(context), None).map_err(|error| error.to_string())?;
-        let request =
-            Request::new(principal, action, resource, context, None).map_err(|error| error.to_string())?;
         let loaded = self.loaded.lock().unwrap_or_else(PoisonError::into_inner);
-        let entities = Entities::from_json_value(JsonValue::Array(loaded.entities.clone()), None)
-            .map_err(|error| error.to_string())?;
-        let response = Authorizer::new().is_authorized(&request, &loaded.policies, &entities);
-        if response.decision() == Decision::Allow {
+        let call = json!({
+            "principal": principal,
+            "action": { "type": self.action_type, "id": tool_name },
+            "resource": self.resource,
+            "context": context,
+            "policies": { "staticPolicies": loaded.policies },
+            "entities": loaded.entities,
+        });
+        let answer = ffi::is_authorized_json(as_js_numbers(&call)?).map_err(|error| error.to_string())?;
+        if answer["type"] == "failure" {
+            return Err(messages(&answer["errors"]).join(", "));
+        }
+        let response = &answer["response"];
+        if response["decision"] == "allow" {
             return Ok(None);
         }
-        let diagnostics = response.diagnostics();
-        let details: Vec<String> = diagnostics
-            .reason()
-            .map(ToString::to_string)
-            .chain(diagnostics.errors().map(|error| match error {
-                AuthorizationError::PolicyEvaluationError(error) => error.inner().to_string(),
-            }))
+        let diagnostics = &response["diagnostics"];
+        let reasons = diagnostics["reason"].as_array().into_iter().flatten();
+        let errors = diagnostics["errors"].as_array().into_iter().flatten();
+        let details: Vec<&str> = reasons
+            .filter_map(JsonValue::as_str)
+            .chain(errors.filter_map(|error| error["error"]["message"].as_str()))
             .filter(|detail| !detail.is_empty())
             .collect();
         Ok(Some(if details.is_empty() {
@@ -426,7 +434,7 @@ impl InterventionHandler for CedarAuthorization {
 
 fn store_counts(app_state: &StateStore, counts: &JsonObject) {
     if let Err(error) = app_state.set(CedarAuthorization::STATE_KEY, counts) {
-        tracing::warn!("failed to store the Cedar call counts: {error}");
+        tracing::warn!(error = %error, "key=<{}> | failed to store the Cedar call counts", CedarAuthorization::STATE_KEY);
     }
 }
 
@@ -451,7 +459,7 @@ fn load(
         (None, Some(tools)) => (Some(schema_generator::generate_schema(tools, namespace)?), true),
         (None, None) => (None, false),
     };
-    let policies = validate_policies(&policies, schema.as_deref(), auto_generated)?;
+    validate_policies(&policies, schema.as_deref(), auto_generated)?;
     Ok(Loaded { policies, entities })
 }
 
@@ -493,27 +501,51 @@ fn load_entities(entities: Option<&CedarEntities>) -> Result<Vec<JsonValue>> {
     Ok(parsed)
 }
 
-fn validate_policies(policies: &str, schema: Option<&str>, auto_generated: bool) -> Result<PolicySet> {
-    let policies = PolicySet::from_str(policies).map_err(|errors| {
-        let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
-        Error::other(format!("Invalid Cedar policy: {}", messages.join(", ")))
-    })?;
+/// `value` with every number as `JSON.parse` would hold it: TS hands Cedar JS values, where
+/// `1.0` is the integer `1`, and Cedar has integers only.
+fn as_js_numbers(value: &JsonValue) -> std::result::Result<JsonValue, String> {
+    let text = to_js_string(value).map_err(|error| error.to_string())?;
+    serde_json::from_str(&text).map_err(|error| error.to_string())
+}
+
+/// The `message` of each error of a `cedar_policy::ffi` answer.
+fn messages(errors: &JsonValue) -> Vec<&str> {
+    let errors = errors.as_array().into_iter().flatten();
+    errors.filter_map(|error| error["message"].as_str()).collect()
+}
+
+fn validate_policies(policies: &str, schema: Option<&str>, auto_generated: bool) -> Result<()> {
+    let policy_set = json!({ "staticPolicies": policies });
+    let parsed = ffi::check_parse_policy_set_json(policy_set.clone()).map_err(Error::other)?;
+    if parsed["type"] == "failure" {
+        return Err(Error::other(format!(
+            "Invalid Cedar policy: {}",
+            messages(&parsed["errors"]).join(", ")
+        )));
+    }
     let Some(schema) = schema.filter(|schema| !schema.is_empty()) else {
-        return Ok(policies);
+        return Ok(());
     };
-    let (schema, _warnings) = Schema::from_cedarschema_str(schema)
-        .map_err(|error| Error::other(format!("Cedar policy validation failed: {error}")))?;
-    let errors: Vec<String> = Validator::new(schema)
-        .validate(&policies, ValidationMode::Strict)
-        .validation_errors()
-        .map(|error| (error.policy_id().to_string(), error.to_string()))
+    let validated =
+        ffi::validate_json(json!({ "schema": schema, "policies": policy_set })).map_err(Error::other)?;
+    if validated["type"] == "failure" {
+        return Err(Error::other(format!(
+            "Cedar policy validation failed: {}",
+            messages(&validated["errors"]).join(", ")
+        )));
+    }
+    let errors: Vec<String> = validated["validationErrors"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|error| Some((error["policyId"].as_str()?, error["error"]["message"].as_str()?)))
         // A generated schema knows the tool inputs, not the session fields the handler adds,
         // so only typos in tool names count.
         .filter(|(_, message)| !auto_generated || ACTION_ERRORS.iter().any(|needle| message.contains(needle)))
         .map(|(policy_id, message)| format!("{policy_id}: {message}"))
         .collect();
     if errors.is_empty() {
-        Ok(policies)
+        Ok(())
     } else {
         Err(Error::other(format!(
             "Cedar policy validation failed: {}",

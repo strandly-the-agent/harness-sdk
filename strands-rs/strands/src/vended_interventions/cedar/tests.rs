@@ -559,7 +559,7 @@ mod session_management {
         assert_eq!(call().await, None);
     }
 
-    /// Rust-only: a new handler picks the counts up from the app state.
+    // No TS case: TS doesn't test that a new handler picks the counts up from the app state.
     #[tokio::test]
     async fn restores_call_counts_from_app_state() {
         let config = || CedarAuthorizationConfig {
@@ -709,7 +709,7 @@ mod schema_validation {
         ));
     }
 
-    /// Rust-only: a missing schema file has the TS text.
+    // No TS case: TS tests the missing policy file only; the schema file has its own text.
     #[test]
     fn throws_when_cedarschema_file_does_not_exist() {
         let error = error_of(with_schema(
@@ -944,6 +944,7 @@ mod namespace_option {
 mod rust_only {
     use super::*;
 
+    // No TS case: TS has no test for its `Invalid entity` check.
     #[test]
     fn entities_must_carry_a_uid_with_a_type_and_an_id() {
         for entity in [json!({ "attrs": {} }), json!({ "uid": { "type": "User" } })] {
@@ -958,6 +959,7 @@ mod rust_only {
         }
     }
 
+    // No TS case: TS has no test for an evaluation failure.
     #[tokio::test]
     async fn a_tool_input_cedar_cannot_represent_fails_evaluation_and_restores_the_count() {
         let handler = cedar(inline("permit(principal, action, resource);"));
@@ -971,13 +973,214 @@ mod rust_only {
         )
         .await
         .unwrap();
-        assert!(denied.starts_with("Cedar evaluation failed: "), "{denied}");
+        assert_eq!(
+            denied,
+            "Cedar evaluation failed: data did not match any variant of untagged enum RawCedarValueJson"
+        );
         assert_eq!(
             agent.app_state().get_value(CedarAuthorization::STATE_KEY),
             Some(json!({ "search": 0 }))
         );
     }
 
+    /// The tool input as a model streams it.
+    fn streamed(text: &str) -> JsonValue {
+        serde_json::from_str(text).unwrap()
+    }
+
+    // No TS case: `JSON.parse` already holds `1.0` and `1e0` as the integer 1 in TS.
+    #[tokio::test]
+    async fn a_whole_number_written_as_a_float_reaches_cedar_as_an_integer() {
+        let handler = cedar(inline(
+            "permit(principal, action, resource) when { context.input.n == 1 };",
+        ));
+        let agent = local_agent();
+        for input in [r#"{"n":1.0}"#, r#"{"n":1e0}"#, r#"{"n":1}"#] {
+            let denied = decide(
+                &handler,
+                &agent,
+                "search",
+                streamed(input),
+                InvocationState::new(),
+            )
+            .await;
+            assert_eq!(denied, None, "{input}");
+        }
+    }
+
+    // No TS case: as above, for entity attributes and the enricher's values.
+    #[tokio::test]
+    async fn whole_number_floats_in_entities_and_session_fields_are_integers() {
+        let handler = cedar(CedarAuthorizationConfig {
+            entities: Some(CedarEntities::Json(vec![streamed(
+                r#"{"uid":{"type":"User","id":"anonymous"},"attrs":{"level":1.0},"parents":[]}"#,
+            )])),
+            context_enricher: Some(Arc::new(|_input| {
+                let mut session = JsonObject::new();
+                session.insert("budget".to_owned(), json!(2.0));
+                Ok(session)
+            })),
+            ..inline(
+                "permit(principal, action, resource) when { principal.level == 1 && context.session.budget == 2 };",
+            )
+        });
+        let denied = decide(
+            &handler,
+            &local_agent(),
+            "search",
+            json!({}),
+            InvocationState::new(),
+        )
+        .await;
+        assert_eq!(denied, None);
+    }
+
+    // No TS case: TS doesn't test the engine's error texts; these are the ones the WASM build gives.
+    #[test]
+    fn construction_errors_carry_the_engine_text() {
+        assert_eq!(
+            error_of(inline("permit(principal, action, resource")),
+            "Invalid Cedar policy: failed to parse policies from string: unexpected end of input"
+        );
+        assert_eq!(
+            error_of(inline(
+                "permit(principal, action, resource) when { 1 + };\nforbid(principal, action resource);"
+            )),
+            "Invalid Cedar policy: failed to parse policies from string: unexpected token `}`"
+        );
+        assert_eq!(
+            error_of(CedarAuthorizationConfig {
+                schema: Some("entity User".to_owned()),
+                ..inline("permit(principal, action, resource);")
+            }),
+            "Cedar policy validation failed: failed to parse schema from string: error parsing schema: unexpected end of input"
+        );
+        assert_eq!(
+            error_of(CedarAuthorizationConfig {
+                schema: Some("entity User; entity Resource; action \"search\" appliesTo { principal: [User], resource: [Resource] };".to_owned()),
+                ..inline("permit(principal, action == Action::\"nope\", resource);")
+            }),
+            "Cedar policy validation failed: policy0: for policy `policy0`, unrecognized action `Action::\"nope\"`"
+        );
+    }
+
+    // No TS case: as above, for evaluation failures and denials.
+    #[tokio::test]
+    async fn evaluation_failures_carry_the_engine_text() {
+        let permit = "permit(principal, action, resource);";
+        let agent = local_agent();
+        let denied = |config: CedarAuthorizationConfig, input: JsonValue| {
+            let agent = &agent;
+            async move {
+                decide(&cedar(config), agent, "search", input, InvocationState::new())
+                    .await
+                    .unwrap()
+            }
+        };
+        assert_eq!(
+            denied(
+                CedarAuthorizationConfig {
+                    principal: Some(TypeAndId::new("not a type", "a")),
+                    ..inline(permit)
+                },
+                json!({})
+            )
+            .await,
+            "Cedar evaluation failed: failed to parse principal: failed to parse escape `__entity`: {\n  \"type\": \"not a type\",\n  \"id\": \"a\"\n}, errors: unexpected token `a`"
+        );
+        assert_eq!(
+            denied(
+                CedarAuthorizationConfig {
+                    entities: Some(CedarEntities::Json(vec![json!({
+                        "uid": { "type": "User", "id": "anonymous" },
+                        "attrs": { "level": 1.5 },
+                        "parents": [],
+                    })])),
+                    ..inline(permit)
+                },
+                json!({})
+            )
+            .await,
+            "Cedar evaluation failed: error during entity deserialization: data did not match any variant of untagged enum RawCedarValueJson"
+        );
+        assert_eq!(
+            denied(inline(permit), json!({ "q": null })).await,
+            "Cedar evaluation failed: while parsing context, found a `null`; JSON `null`s are not allowed in Cedar"
+        );
+        assert_eq!(
+            denied(inline("forbid(principal, action, resource);"), json!({})).await,
+            "Access denied by Cedar policy: policy0"
+        );
+        assert_eq!(
+            denied(
+                inline("permit(principal, action, resource) when { context.input.missing == 1 };"),
+                json!({})
+            )
+            .await,
+            "Access denied by Cedar policy: record does not have the attribute `missing`"
+        );
+    }
+
+    // No TS case: TS reports what the WASM generator returns; these are its texts.
+    #[test]
+    fn schema_generation_failures_name_the_step() {
+        let object = json!({ "type": "object", "properties": {} });
+        let tools = |tool: ToolDefinition| CedarAuthorizationConfig {
+            tools: Some(vec![tool]),
+            ..inline("permit(principal, action, resource);")
+        };
+        let mut no_schema = ToolDefinition::new("search", JsonValue::Null);
+        no_schema.input_schema = None;
+        assert_eq!(
+            error_of(tools(no_schema)),
+            "Schema generation failed: Invalid tool descriptions: failed to parse JSON"
+        );
+        assert_eq!(
+            error_of(CedarAuthorizationConfig {
+                namespace: Some("not valid".to_owned()),
+                ..tools(ToolDefinition::new("search", object.clone()))
+            }),
+            "Schema generation failed: Schema error: failed to parse schema stub"
+        );
+        assert_eq!(
+            error_of(tools(ToolDefinition::new(
+                "web-fetch",
+                json!({ "type": "object", "properties": { "url": { "type": "string" } } })
+            ))),
+            "Schema generation failed: Error adding tools: unexpected token `-`"
+        );
+        let described = ToolDefinition::new("search", object).with_description("Searches");
+        assert_eq!(
+            serde_json::to_value(&described).unwrap(),
+            json!({ "name": "search", "inputSchema": { "type": "object", "properties": {} }, "description": "Searches" })
+        );
+        CedarAuthorization::new(tools(described)).unwrap();
+    }
+
+    // No TS case: the Rust constructor that lets a downstream test call its enricher.
+    #[test]
+    fn a_context_enricher_can_be_called_with_a_built_input() {
+        let enricher: ContextEnricher = Arc::new(|input| {
+            let mut session = JsonObject::new();
+            session.insert("tool".to_owned(), json!(input.tool_name));
+            session.insert(
+                "env".to_owned(),
+                json!(input.invocation_state.get::<Environment>().map(|env| env.0)),
+            );
+            session.insert("q".to_owned(), input.tool_input["q"].clone());
+            Ok(session)
+        });
+        let state = InvocationState::new();
+        state.insert(Environment("prod"));
+        let input = json!({ "q": "cats" });
+        let session = enricher(&ContextEnricherInput::new("search", &input, &state)).unwrap();
+        assert_eq!(
+            JsonValue::Object(session),
+            json!({ "tool": "search", "env": "prod", "q": "cats" })
+        );
+    }
+
+    // No TS case: TS reads `Date.getUTCHours()`.
     #[test]
     fn the_utc_hour_is_the_hour_of_the_day() {
         let at = |seconds| UNIX_EPOCH + std::time::Duration::from_secs(seconds);

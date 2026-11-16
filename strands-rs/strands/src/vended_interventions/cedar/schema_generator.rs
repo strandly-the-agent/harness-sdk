@@ -6,6 +6,7 @@ use mcp_tools_sdk::description::ServerDescription;
 
 use super::ToolDefinition;
 use crate::error::{Error, Result};
+use crate::types::json::to_js_string;
 
 fn failed(error: impl std::fmt::Display) -> Error {
     Error::other(format!("Schema generation failed: {error}"))
@@ -32,12 +33,15 @@ namespace {ns} {{
 "
     );
     let config = SchemaGeneratorConfig::default().flatten_namespaces(true);
-    let mut generator = SchemaGenerator::from_cedarschema_str_with_config(&stub, config).map_err(failed)?;
-    let tools_json = serde_json::to_string(tools).map_err(failed)?;
-    let description = ServerDescription::from_json_str(&tools_json).map_err(failed)?;
+    // The step names are the WASM wrapper's, which TS reports.
+    let mut generator = SchemaGenerator::from_cedarschema_str_with_config(&stub, config)
+        .map_err(|_| failed("Schema error: failed to parse schema stub"))?;
+    let tools_json = to_js_string(tools).map_err(failed)?;
+    let description = ServerDescription::from_json_str(&tools_json)
+        .map_err(|_| failed("Invalid tool descriptions: failed to parse JSON"))?;
     generator
         .add_actions_from_server_description(&description)
-        .map_err(failed)?;
+        .map_err(|error| failed(format!("Error adding tools: {error}")))?;
     let schema = generator.get_schema_as_str();
     if namespace.is_some() {
         return Ok(schema);
