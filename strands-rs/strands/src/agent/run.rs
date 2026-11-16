@@ -443,11 +443,16 @@ impl Agent {
             tool: schema.map(StructuredOutputTool::new),
             choice: None,
         };
+        // Before the structured-output tool is registered, as in TS: the span doesn't list it.
+        self.start_agent_span(&input.messages);
         if let Some(tool) = &structured.tool {
-            self.local.tool_registry_mut().add(Arc::new(tool.clone()))?;
+            if let Err(error) = self.local.tool_registry_mut().add(Arc::new(tool.clone())) {
+                let outcome = Err(error.into());
+                self.end_agent_span(&outcome);
+                return outcome;
+            }
             self.structured_output_registered = true;
         }
-        self.start_agent_span(&input.messages);
         let outcome = self.cycles(input, state, hooks, out, &mut structured).await;
         self.end_agent_span(&outcome);
         if structured.tool.is_some() {
@@ -500,9 +505,18 @@ impl Agent {
             {
                 let mut telemetry = self.local.telemetry().lock();
                 telemetry.meter.end_cycle(started);
+                // TS closes the cycle with whatever error leaves it, a cancel or an interrupt too.
                 let error = match &cycle {
                     Err(Stop::Failed(error)) => Some(error.to_string()),
-                    _ => None,
+                    Err(Stop::Cancelled) => Some(CancelledError.to_string()),
+                    Err(Stop::Interrupted(interrupts)) => Some(match interrupts.as_slice() {
+                        [interrupt] => format!("Interrupt raised: {}", interrupt.name()),
+                        all => {
+                            let names: Vec<&str> = all.iter().map(Interrupt::name).collect();
+                            format!("{} interrupts raised: {}", all.len(), names.join(", "))
+                        }
+                    }),
+                    Ok(_) => None,
                 };
                 telemetry.tracer.end_cycle(error.as_deref());
             }

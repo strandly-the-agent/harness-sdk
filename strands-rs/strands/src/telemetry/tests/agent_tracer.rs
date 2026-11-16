@@ -106,7 +106,7 @@ async fn ends_the_model_invoke_span_once_when_the_consumer_breaks_mid_model_resp
     assert_ended_ok(named(&recorder.spans(), "chat")[0]);
 }
 
-/// Rust-only: a dropped stream aborts the running tool, whose span and metric still end.
+// No TS case: a dropped stream aborts the running tool, whose span and metric still end.
 #[tokio::test(flavor = "current_thread")]
 async fn a_dropped_stream_ends_the_span_of_the_running_tool() {
     let (recorder, _guard) = recording();
@@ -144,4 +144,62 @@ async fn a_dropped_stream_ends_the_span_of_the_running_tool() {
         .find(|(name, _)| *name == "hang")
         .expect("the tool metric");
     assert_eq!((tool.call_count(), tool.success_count()), (1, 0));
+}
+
+// No TS case (TS reads `this.tools` before it registers the structured-output tool).
+#[tokio::test(flavor = "current_thread")]
+async fn agent_span_tools_exclude_the_structured_output_tool() {
+    #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+    struct Value {
+        #[expect(dead_code, reason = "only the schema is used")]
+        value: f64,
+    }
+    let (recorder, _guard) = recording();
+    let model = MockMessageModel::new();
+    model.add_turn(vec![tool_use(
+        crate::tools::STRUCTURED_OUTPUT_TOOL_NAME,
+        "so-1",
+        serde_json::json!({"value": 1}),
+    )]);
+    let mut agent = agent_of(model, Vec::new(), semconv(""));
+    let options = crate::types::agent::InvokeOptions::default().structured_output_schema::<Value>();
+    agent.invoke_with("Hi", options).await.expect("the run succeeds");
+
+    let spans = recorder.spans();
+    let agent_span = named(&spans, "invoke_agent telemetry_agent")[0];
+    assert!(
+        agent_span
+            .attributes
+            .iter()
+            .all(|attribute| attribute.key.as_str() != "gen_ai.agent.tools")
+    );
+    assert_eq!(named(&spans, "execute_tool strands_structured_output").len(), 1);
+}
+
+// No TS case: a `CancelledError` leaves the TS cycle through `closeCycle(error)`.
+#[tokio::test(flavor = "current_thread")]
+async fn ends_the_loop_span_with_an_error_when_the_invocation_is_cancelled_mid_model_call() {
+    let (recorder, _guard) = recording();
+    let mut agent = text_agent();
+    let cancel = agent.cancel_handle();
+    {
+        let mut stream = agent.stream("Hi");
+        while let Some(event) = stream.next().await {
+            if matches!(event.expect("an event"), AgentStreamEvent::ModelStreamUpdate(_)) {
+                cancel.cancel(crate::cancel::CancelOptions::default());
+            }
+        }
+    }
+    let spans = recorder.spans();
+    let cycle = named(&spans, "execute_agent_loop_cycle")[0];
+    assert_eq!(cycle.status, Status::error("Agent invocation cancelled"));
+    assert_eq!(
+        cycle
+            .events
+            .iter()
+            .filter(|event| event.name == "exception")
+            .count(),
+        1
+    );
+    assert_ended_ok(named(&spans, "invoke_agent telemetry_agent")[0]);
 }
