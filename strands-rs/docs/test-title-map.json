@@ -36,9 +36,6 @@
     "can instantiate BedrockModel": {
       "gap": "the row: `BedrockModel` exports land with Phase 5"
     },
-    "exports model routing values": {
-      "gap": "the row: model routing exports land with Phase 7"
-    },
     "exports all required types": {
       "gap": "the row: the required types (Bedrock, background tasks) land with Phases 5 and 6"
     },
