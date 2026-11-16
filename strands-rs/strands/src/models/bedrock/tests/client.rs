@@ -524,7 +524,7 @@ mod max_tokens_default {
     use super::*;
 
     #[test]
-    fn defaults_max_tokens_to_the_model_info_output_ceiling() {
+    fn defaults_max_tokens_to_the_model_info_output_ceiling_for() {
         for (model_id, max_tokens) in [
             (Some("anthropic.claude-sonnet-4-6"), 128_000),
             (Some("us.anthropic.claude-sonnet-4-6"), 128_000),
@@ -592,7 +592,7 @@ mod max_tokens_default {
     }
 
     #[test]
-    fn does_not_cap_the_default_max_tokens_by_the_context_window() {
+    fn does_not_cap_the_default_max_tokens_by_the_context_window_for() {
         for limit in [None, Some(100_000)] {
             let config = BedrockModelConfig {
                 context_window_limit: limit,
@@ -624,7 +624,7 @@ mod max_tokens_default {
     }
 
     #[test]
-    fn does_not_warn_about_max_tokens() {
+    fn does_not_warn_about_max_tokens_when() {
         let pinned = BedrockModelConfig {
             model_info: Some(ModelInfo {
                 capabilities: None,

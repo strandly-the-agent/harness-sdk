@@ -95,7 +95,7 @@ mod usage_recording {
     use super::*;
 
     #[tokio::test]
-    async fn adds_a_clean_call_usage_to_the_context() {
+    async fn accumulates_a_clean_call_usage_into_the_invocation_context_total() {
         let context = InvocationContext::new(None, None, false);
         let model = model_with_usage(Some(Usage::new(10, 5, 15)));
         drain(&model, request(vec![user("go")]), Some(context.clone()))
@@ -105,7 +105,7 @@ mod usage_recording {
     }
 
     #[tokio::test]
-    async fn accumulates_across_calls_that_share_one_context() {
+    async fn accumulates_across_calls_that_share_one_invocation_context() {
         let context = InvocationContext::new(None, None, false);
         let first = model_with_usage(Some(Usage::new(10, 5, 15)));
         let second = model_with_usage(Some(Usage::new(20, 10, 30)));
@@ -119,7 +119,7 @@ mod usage_recording {
     }
 
     #[tokio::test]
-    async fn records_nothing_when_the_model_call_fails() {
+    async fn records_nothing_when_the_model_call_throws() {
         let context = InvocationContext::new(None, None, false);
         let model = MockMessageModel::new();
         model.add_error(|| Error::other("boom"));
@@ -144,7 +144,7 @@ mod usage_recording {
     }
 
     #[tokio::test]
-    async fn is_a_no_op_without_a_context() {
+    async fn is_a_no_op_when_called_without_an_invocation_context() {
         let model = model_with_usage(Some(Usage::new(10, 5, 15)));
         let (_, result) = drain(&model, request(vec![user("go")]), None).await.unwrap();
         assert_eq!(
@@ -184,7 +184,7 @@ async fn yields_the_same_events_as_the_underlying_model() {
 }
 
 #[tokio::test]
-async fn gives_a_tool_result_whose_content_is_all_unknown_a_placeholder() {
+async fn gives_a_tool_result_whose_content_is_all_unknown_a_placeholder_text() {
     let unknown = ToolResultContent::Unknown(UnknownBlock::new(
         serde_json::json!({"toolReference": {"name": "shell"}})
             .as_object()
@@ -240,7 +240,7 @@ mod injected_blocks {
     use super::*;
 
     #[tokio::test]
-    async fn sends_the_text_apart_from_the_content_before_it() {
+    async fn sends_the_text_apart_from_the_content_before_it_for() {
         let tool_result: ContentBlock =
             ToolResultBlock::new("tool-1", ToolResultStatus::Success, vec!["done".into()]).into();
         let cases = [
@@ -304,7 +304,7 @@ mod injected_blocks {
     }
 
     #[tokio::test]
-    async fn keeps_the_cache_point_ahead_of_the_latest_injected_text() {
+    async fn keeps_the_cache_point_ahead_of_the_latest_injected_text_also_when_an_assistant_message_follows() {
         let model = MockMessageModel::new().tap_turn();
         let messages = vec![Message::new(
             Role::User,
@@ -440,7 +440,7 @@ mod injected_blocks {
     }
 
     #[tokio::test]
-    async fn passes_messages_without_an_injected_block_through_unchanged() {
+    async fn passes_messages_without_an_injected_block_through_as_they_are() {
         let messages = vec![user("go")];
         assert_eq!(
             sent(&MockMessageModel::new().tap_turn(), messages.clone()).await,

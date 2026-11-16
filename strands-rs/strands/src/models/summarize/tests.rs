@@ -198,7 +198,7 @@ async fn sends_no_system_prompt_and_the_default_instructions_for_instructions_in
 }
 
 #[tokio::test]
-async fn returns_an_empty_summary_for_an_unfinished_reply_stop_reason() {
+async fn returns_an_empty_summary_for_an_unfinished_reply() {
     for stop_reason in [
         StopReason::ToolUse,
         StopReason::GuardrailIntervened,
@@ -257,7 +257,7 @@ async fn returns_an_empty_summary_when_the_stream_throws_after_a_cancel() {
 }
 
 #[tokio::test]
-async fn keeps_a_reply_that_stopped_at_a_limit_stop_reason() {
+async fn keeps_a_reply_that_stopped_at_a_limit() {
     for stop_reason in [StopReason::MaxTokens, StopReason::StopSequence] {
         let model = RecordingModel::new(vec!["partial"], stop_reason);
         let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();

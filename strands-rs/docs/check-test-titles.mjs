@@ -23,7 +23,8 @@
 //      `$a.b` ones (so "maps $name on the retry" is `maps_on_the_retry`);
 //   2. drop apostrophes inside words ("doesn't" is `doesnt`, "caller's" is `callers`);
 //   3. split camelCase words: `_` between a lowercase letter or digit and the uppercase letter after it
-//      (`toJSON` is `to_json`, `structuredOutput` is `structured_output`);
+//      (`toJSON` is `to_json`, `structuredOutput` is `structured_output`), and between an acronym and
+//      a capitalized word of three letters or more (`APIError` is `api_error`; `PDFs` stays `pdfs`);
 //   4. lowercase; every run of characters outside `a-z0-9` becomes one `_`; trim `_` from both ends;
 //   5. prefix `_` when the result starts with a digit or is empty.
 // A template-literal title uses its source text, so `${name}` contributes `name`. No truncation: names
@@ -82,7 +83,7 @@ function snakeCase(title) {
   const steps = [
     (text) => text.replace(/%[sdifjoOp]|\$[A-Za-z_][\w.]*/g, ' '),
     (text) => text.replace(/(?<=[A-Za-z])['\u2019](?=[A-Za-z])/g, ''),
-    (text) => text.replace(/([a-z0-9])([A-Z])/g, '$1_$2'),
+    (text) => text.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/([A-Z])([A-Z][a-z]{2,})/g, '$1_$2'),
   ]
   const names = []
   for (let skipped = 0; skipped < 1 << steps.length; skipped++) {

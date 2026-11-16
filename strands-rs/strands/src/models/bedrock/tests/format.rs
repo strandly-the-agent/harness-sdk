@@ -437,7 +437,7 @@ fn formats_a_signature_only_reasoning_block() {
 }
 
 #[test]
-fn drops_the_replayed_reasoning_the_model_rejects() {
+fn drops_the_replayed_reasoning_rejects() {
     let signed =
         json!({ "reasoningContent": { "reasoningText": { "text": "Claude thinking", "signature": "sig" } } });
     let unsigned = json!({ "reasoningContent": { "reasoningText": { "text": "gpt-oss thinking" } } });

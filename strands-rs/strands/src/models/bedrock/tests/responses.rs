@@ -433,7 +433,7 @@ mod stream {
         }
 
         #[test]
-        fn falls_back_to_the_next_mechanism_and_remembers_it() {
+        fn falls_back_to_the_next_mechanism_after_and_remembers_it() {
             for (rejections, expected) in [
                 (vec![], vec!["forced"]),
                 (vec![FORCED_REJECTION], vec!["forced", "native"]),

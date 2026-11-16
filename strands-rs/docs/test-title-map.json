@@ -87,6 +87,71 @@
       "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
     }
   },
+  "strands-ts/src/models/__tests__/anthropic.test.ts": {
+    "disables caching for an unknown strategy": {
+      "gap": "`CacheStrategy` is a closed enum, so the TS runtime check has nothing to reject"
+    },
+    "sends sampling params": {
+      "gap": "runs only against the previous `@anthropic-ai/sdk` major, whose API version Rust doesn't send"
+    },
+    "keeps PDF documents in assistant messages": {
+      "gap": "runs only against the previous `@anthropic-ai/sdk` major, whose API version Rust doesn't send"
+    }
+  },
+  "strands-ts/src/models/__tests__/bedrock.test.ts": {
+    "passes a user-provided handler instance through untouched": {
+      "gap": "TS-only: Node request-handler instances"
+    },
+    "warns and keeps a handler instance untouched when requestTimeout is also given": {
+      "gap": "TS-only: Node request-handler instances"
+    },
+    "api key middleware sets authorization header": {
+      "gap": "TS-only middleware stack; Rust sets the SDK bearer token, covered by `adds_api_key_middleware_when_api_key_is_provided`"
+    },
+    "rethrows other region errors": {
+      "gap": "TS-only wrapper around the SDK region provider; Rust resolves the region itself"
+    },
+    "skips wrapping images with unsupported formats (gif)": "skips_wrapping_images_with_unsupported_formats",
+    "skips wrapping images with unsupported formats (webp)": "skips_wrapping_images_with_unsupported_formats"
+  },
+  "strands-ts/src/models/__tests__/model-info.test.node.ts": {
+    "matches shared/model-info.json at the repository root (run `npm run prepare -w strands-ts` to refresh)": "matches_shared_model_info_json_at_the_repository_root"
+  },
+  "strands-ts/src/models/__tests__/model-info.test.ts": {
+    "returns a frozen record": {
+      "gap": "TS-only mechanism (`Object.freeze`); Rust returns an owned value"
+    }
+  },
+  "strands-ts/src/models/__tests__/model-proxy.test.ts": {
+    "does not change the messages it was given": {
+      "gap": "a `ModelRequest` owns its messages, so the proxy has no caller copy to change"
+    },
+    "sends the summary text to a model with serverSideSummary %s": "sends_the_summary_text_to_a_model_without_server_side_summary"
+  },
+  "strands-ts/src/models/openai/__tests__/chat.test.ts": {
+    "throws error for circular reference in tool input": {
+      "gap": "a `JsonValue` can't be circular"
+    }
+  },
+  "strands-ts/src/retry/__tests__/backoff-strategy.test.ts": {
+    "ConstantBackoff > rejects attempts below 1": {
+      "gap": "ruled out by `BackoffContext::attempt: NonZeroU32`"
+    },
+    "LinearBackoff > rejects attempts below 1": {
+      "gap": "ruled out by `BackoffContext::attempt: NonZeroU32`"
+    },
+    "ExponentialBackoff > rejects attempts below 1": {
+      "gap": "ruled out by `BackoffContext::attempt: NonZeroU32`"
+    },
+    "rejects non-integer attempts": {
+      "gap": "ruled out by `BackoffContext::attempt: NonZeroU32`"
+    }
+  },
+  "strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts": {
+    "rejects maxAttempts below 1": {
+      "gap": "ruled out by `max_attempts: NonZeroU32`"
+    }
+  },
   "strands-ts/src/types/__tests__/agent.test.ts": {
     "returns the text content": "to_string_joins_text_blocks_with_newlines",
     "AgentResult > toString > when content has multiple TextBlocks > returns all text joined with newlines": "to_string_joins_text_blocks_with_newlines",
