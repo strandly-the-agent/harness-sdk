@@ -35,10 +35,22 @@ impl McpTool {
             .as_deref()
             .filter(|description| !description.is_empty())
             .map_or_else(|| format!("Tool which performs {}", tool.name), str::to_owned);
+        // The schema keys the MCP TypeScript SDK declares for the negotiated revision.
+        let (input_keys, output_keys): (&[&str], &[&str]) = if client
+            .negotiated_protocol_version()
+            .is_some_and(|version| version.as_str() >= "2026-07-28")
+        {
+            (&["$schema", "type"], &["$schema"])
+        } else {
+            (
+                &["type", "properties", "required"],
+                &["type", "properties", "required"],
+            )
+        };
         let mut spec = ToolSpec::new(name, description)
-            .with_input_schema(JsonValue::Object(JsonObject::clone(&tool.input_schema)));
+            .with_input_schema(JsonValue::Object(keys_first(&tool.input_schema, input_keys)));
         if let Some(output_schema) = &tool.output_schema {
-            spec = spec.with_output_schema(JsonValue::Object(JsonObject::clone(output_schema)));
+            spec = spec.with_output_schema(JsonValue::Object(keys_first(output_schema, output_keys)));
         }
         let annotations = tool
             .annotations
@@ -159,6 +171,37 @@ pub(crate) fn error_block(error: Error, tool_use_id: &str) -> ToolResultBlock {
     error_result(tool_use_id, error)
 }
 
+/// The top-level keys of a `resource_link` item in the order the MCP TypeScript SDK emits them.
+const RESOURCE_LINK_KEYS: &[&str] = &[
+    "name",
+    "title",
+    "icons",
+    "uri",
+    "description",
+    "mimeType",
+    "size",
+    "annotations",
+    "_meta",
+    "type",
+];
+
+/// `object` with the keys in `first` leading, in that order, and the rest as received: the key
+/// order of an object the MCP TypeScript SDK parsed, which is what TS sends on to the model.
+fn keys_first(object: &JsonObject, first: &[&str]) -> JsonObject {
+    let mut ordered = JsonObject::new();
+    for key in first {
+        if let Some(value) = object.get(*key) {
+            ordered.insert((*key).to_owned(), value.clone());
+        }
+    }
+    for (key, value) in object {
+        if !first.contains(&key.as_str()) {
+            ordered.insert(key.clone(), value.clone());
+        }
+    }
+    ordered
+}
+
 fn json(item: &JsonValue) -> ToolResultContent {
     ToolResultContent::Json(JsonBlock::new(item.clone()))
 }
@@ -171,6 +214,10 @@ fn map_content(item: &JsonValue) -> ToolResultContent {
             .map_or_else(|| json(item), ToolResultContent::from),
         Some("image") => map_image(item),
         Some("resource") => map_resource(item),
+        Some("resource_link") => match item {
+            JsonValue::Object(link) => json(&JsonValue::Object(keys_first(link, RESOURCE_LINK_KEYS))),
+            _ => json(item),
+        },
         _ => json(item),
     }
 }

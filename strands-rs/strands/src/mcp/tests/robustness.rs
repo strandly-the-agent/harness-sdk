@@ -509,7 +509,11 @@ async fn a_dropped_invocation_cancels_its_mcp_tool_call() {
     let server = TestServer::default();
     let client = server.client();
     let model = MockMessageModel::new();
-    model.add_turn(vec![ContentBlock::from(ToolUseBlock::new("slow", "t1", json!({})))]);
+    model.add_turn(vec![ContentBlock::from(ToolUseBlock::new(
+        "slow",
+        "t1",
+        json!({}),
+    ))]);
     model.add_turn(vec![TextBlock::new("done").into()]);
     let mut agent = Agent::builder()
         .model(model)
@@ -571,4 +575,76 @@ async fn concurrent_first_calls_open_one_connection() {
         assert_eq!(opened.load(Ordering::SeqCst), 1, "round {round}");
         client.disconnect().await.expect("disconnect");
     }
+}
+
+fn schema_tool(input: serde_json::Value, output: serde_json::Value) -> rmcp::model::Tool {
+    let mut listed = tool("lookup", Some("Looks a city up"));
+    listed.input_schema = Arc::new(server::object(input));
+    listed.output_schema = Some(Arc::new(server::object(output)));
+    listed
+}
+
+async fn listed_schemas(server: &TestServer) -> (String, String) {
+    let spec = tool_named(&server.client(), "lookup").await.tool_spec();
+    let text = |schema: Option<&serde_json::Value>| schema.expect("a schema").to_string();
+    (text(spec.input_schema()), text(spec.output_schema()))
+}
+
+// No TS case: the TS tests mock the MCP SDK, whose result schemas set the key order TS sends on.
+#[tokio::test]
+async fn tool_schemas_of_a_legacy_server_lead_with_the_keys_the_mcp_sdk_declares() {
+    let draft = "http://json-schema.org/draft-07/schema#";
+    let server = TestServer {
+        legacy_only: true,
+        ..TestServer::with_tools(vec![schema_tool(
+            json!({"$schema": draft, "type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}),
+            json!({"$schema": draft, "additionalProperties": false, "type": "object", "properties": {}}),
+        )])
+    };
+    let (input, output) = listed_schemas(&server).await;
+    assert_eq!(
+        input,
+        format!(
+            r#"{{"type":"object","properties":{{"city":{{"type":"string"}}}},"required":["city"],"$schema":"{draft}"}}"#
+        )
+    );
+    assert_eq!(
+        output,
+        format!(r#"{{"type":"object","properties":{{}},"$schema":"{draft}","additionalProperties":false}}"#)
+    );
+}
+
+// No TS case: as above, for the 2026-07-28 revision's schemas.
+#[tokio::test]
+async fn tool_schemas_of_a_2026_server_lead_with_the_keys_the_mcp_sdk_declares() {
+    let draft = "https://json-schema.org/draft/2020-12/schema";
+    let server = TestServer::with_tools(vec![schema_tool(
+        json!({"properties": {}, "type": "object", "$schema": draft}),
+        json!({"type": "object", "properties": {}, "$schema": draft}),
+    )]);
+    let (input, output) = listed_schemas(&server).await;
+    assert_eq!(
+        input,
+        format!(r#"{{"$schema":"{draft}","type":"object","properties":{{}}}}"#)
+    );
+    assert_eq!(
+        output,
+        format!(r#"{{"$schema":"{draft}","type":"object","properties":{{}}}}"#)
+    );
+}
+
+// No TS case: as above; the MCP SDK emits a resource link's keys in its schema's order.
+#[test]
+fn a_resource_link_keeps_the_key_order_of_the_mcp_sdk() {
+    let raw = json!({"content": [
+        {"type": "resource_link", "uri": "file:///tmp/b.txt", "name": "b.txt", "mimeType": "text/plain"},
+    ]});
+    let block = crate::mcp::mcp_tool::result_block(&raw, "t1");
+    let ToolResultContent::Json(link) = &block.content()[0] else {
+        panic!("a json block")
+    };
+    assert_eq!(
+        link.json().to_string(),
+        r#"{"name":"b.txt","uri":"file:///tmp/b.txt","mimeType":"text/plain","type":"resource_link"}"#
+    );
 }
