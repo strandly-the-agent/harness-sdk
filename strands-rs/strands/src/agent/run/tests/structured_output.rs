@@ -9,6 +9,7 @@ use serde::Deserialize;
 use super::*;
 use crate::agent::InvocationContext;
 use crate::error::StructuredOutputError;
+use crate::experimental::context_manager::ContextManagerPreset;
 use crate::tools::{STRUCTURED_OUTPUT_TOOL_NAME, StructuredOutputSchema};
 use crate::types::agent::InvokeLimits;
 use crate::types::tools::ToolChoice;
@@ -389,6 +390,145 @@ mod attempt_limit {
         assert_eq!(model.call_count(), 1);
         assert_eq!(request.structured_output_failures(), 1);
     }
+}
+
+#[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+struct Answer {
+    message: String,
+}
+
+fn long_answer() -> String {
+    "Rust has a steep learning curve but produces fast single binaries. ".repeat(120)
+}
+
+fn is_text_result(block: &ContentBlock, tool_use_id: &str) -> bool {
+    let ContentBlock::ToolResult(result) = block else {
+        return false;
+    };
+    result.tool_use_id() == tool_use_id
+        && result.status() == &ToolResultStatus::Success
+        && matches!(
+            result.content(),
+            [crate::types::messages::ToolResultContent::Text(_)]
+        )
+}
+
+#[tokio::test]
+async fn does_not_count_valid_output_that_history_offloading_rewrites() {
+    let large_valid = json!({"steps": ["Review the change thoroughly before merging. ".repeat(400)]});
+    let model = mock(vec![
+        vec![output_call(large_valid.clone(), "large")],
+        vec![output_call(valid(), "small")],
+    ]);
+    let mut agent = Agent::builder()
+        .model(Arc::clone(&model))
+        .structured_output_schema(StructuredOutputSchema::of::<Plan>())
+        .context_manager(ContextManagerPreset::Auto)
+        .printer(false)
+        .build()
+        .unwrap();
+
+    let first = agent.invoke_with("Plan a review", attempts(1)).await.unwrap();
+    let options = InvokeOptions {
+        invocation_context: first.invocation_context().cloned(),
+        ..InvokeOptions::default()
+    };
+    let second = agent.invoke_with("Plan another", options).await.unwrap();
+
+    assert_eq!(first.structured_output_value(), Some(&large_valid));
+    assert_eq!(second.structured_output_value(), Some(&valid()));
+    let offloaded = agent.messages()[2].content();
+    assert_eq!(offloaded.len(), 1);
+    assert!(is_text_result(&offloaded[0], "large"), "{offloaded:?}");
+}
+
+#[tokio::test]
+async fn preserves_validated_structured_output_with_context_management() {
+    let rows = [
+        (ContextManagerPreset::Auto, "Short answer.".to_owned(), false),
+        (ContextManagerPreset::Auto, long_answer(), true),
+        (ContextManagerPreset::Agentic, long_answer(), false),
+        (ContextManagerPreset::Agentic, long_answer().repeat(5), true),
+    ];
+    for (preset, answer, offloaded) in rows {
+        let model = mock(vec![
+            vec![output_call(json!({"message": answer}), "tool-1")],
+            vec![output_call(
+                json!({"message": "Short fallback answer."}),
+                "tool-2",
+            )],
+        ]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .context_manager(preset)
+            .printer(false)
+            .build()
+            .unwrap();
+
+        let result = agent
+            .invoke_with(
+                "Test",
+                InvokeOptions::default().structured_output_schema::<Answer>(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result.structured_output::<Answer>().unwrap(),
+            Answer {
+                message: answer.clone()
+            }
+        );
+        assert_eq!(model.call_count(), 1);
+        let content = agent.messages()[2].content();
+        assert_eq!(content.len(), 1);
+        if offloaded {
+            assert!(is_text_result(&content[0], "tool-1"), "{preset:?}: {content:?}");
+        } else {
+            let expected = ToolResultBlock::new(
+                "tool-1",
+                ToolResultStatus::Success,
+                vec![crate::types::messages::JsonBlock::new(json!({"message": answer})).into()],
+            );
+            assert_eq!(content, [expected.into()], "{preset:?}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn continues_offloading_ordinary_tool_results() {
+    let model = mock(vec![
+        vec![tool_use("large_result", "tool-1", json!({}))],
+        vec![text("Done")],
+    ]);
+    let large_result = FunctionTool::new(
+        "large_result",
+        "Returns a large result.",
+        |_input: JsonValue, _ctx| async move { Ok::<_, ToolError>(json!({"message": long_answer()})) },
+    );
+    let mut agent = Agent::builder()
+        .model(Arc::clone(&model))
+        .tools([ToolSource::from(large_result)])
+        .context_manager(ContextManagerPreset::Auto)
+        .printer(false)
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("Test").await.unwrap();
+
+    assert!(result.structured_output_value().is_none());
+    assert_eq!(result.last_message().content(), [text("Done")]);
+    assert_eq!(model.call_count(), 2);
+    let content = agent.messages()[2].content();
+    assert_eq!(content.len(), 1);
+    assert!(is_text_result(&content[0], "tool-1"), "{content:?}");
+    let ContentBlock::ToolResult(offloaded) = &content[0] else {
+        panic!("expected a tool result");
+    };
+    let crate::types::messages::ToolResultContent::Text(preview) = &offloaded.content()[0] else {
+        panic!("expected text");
+    };
+    assert!(preview.text().contains("[Truncated:"));
 }
 
 #[tokio::test]
