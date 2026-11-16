@@ -14,6 +14,7 @@ use crate::test_support::WarnRecorder;
 use crate::testing::{MockMessageModel, TestModelProvider};
 use crate::types::agent::LocalAgent;
 use crate::types::messages::{Message, Role, TextBlock};
+use crate::vended_plugins::context_injector::{ContextInjector, ContextInjectorConfig};
 use crate::{Agent, JsonValue};
 
 const LATEST: &str = "session/test-session/scopes/agent/test-agent/snapshots/snapshot_latest.json";
@@ -488,11 +489,13 @@ fn redacting_model(redact: bool) -> TestModelProvider {
     TestModelProvider::from_events(events)
 }
 
-/// Records every write of the latest snapshot as (message count, first message text).
+/// Records every write of the latest snapshot as (message count, first message text), and the
+/// content of each of its messages.
 #[derive(Default)]
 struct RecordingStorage {
     inner: InMemoryStorage,
     latest_writes: Mutex<Vec<(usize, String)>>,
+    latest_contents: Mutex<Vec<Vec<JsonValue>>>,
 }
 
 #[async_trait::async_trait]
@@ -506,6 +509,11 @@ impl Storage for RecordingStorage {
                 .lock()
                 .unwrap()
                 .push((messages.len(), text.to_owned()));
+            let contents = messages
+                .iter()
+                .map(|message| message["content"].clone())
+                .collect();
+            self.latest_contents.lock().unwrap().push(contents);
         }
         self.inner.write(key, data).await
     }
@@ -549,6 +557,48 @@ fn write(count: usize, text: &str) -> (usize, String) {
 }
 
 const REDACTED: &str = "[User input redacted.]";
+
+// SessionManager with text injected into an added message
+
+#[tokio::test]
+async fn saves_the_text_under_message_with_the_next_added_message_with_no_update_event() {
+    let storage = Arc::new(RecordingStorage::default());
+    let sm = SessionManager::new(SessionManagerConfig {
+        storage: Some(storage.clone()),
+        session_id: Some("test-session".into()),
+        save_latest_on: SaveLatestStrategy::Message,
+        ..Default::default()
+    })
+    .unwrap();
+    let mut agent = Agent::builder()
+        .id("test-agent")
+        .model(model(&["ok"]))
+        .printer(false)
+        .session_manager(sm)
+        .plugin(ContextInjector::new(ContextInjectorConfig::new(|_| async {
+            Ok(Some("cwd: /repo".to_owned()))
+        })))
+        .build()
+        .unwrap();
+
+    agent.invoke("ask").await.unwrap();
+
+    let saved = storage.latest_contents.lock().unwrap().clone();
+    // Saved once when the user message was added, before the write.
+    assert_eq!(saved[0], [json!([{ "text": "ask" }])]);
+    // Every save from the reply on holds the text.
+    let with_reply: Vec<_> = saved.iter().filter(|messages| messages.len() == 2).collect();
+    assert!(!with_reply.is_empty());
+    for messages in with_reply {
+        assert_eq!(
+            messages[0],
+            json!([
+                { "text": "ask" },
+                { "injected": { "text": "cwd: /repo", "source": "strands:context-injector" } },
+            ])
+        );
+    }
+}
 
 #[tokio::test]
 async fn saves_snapshot_latest_when_save_latest_on_is_message_and_redaction_occurred() {
