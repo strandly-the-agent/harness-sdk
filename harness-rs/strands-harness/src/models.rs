@@ -605,9 +605,12 @@ fn has_web_search(provider_name: &str, name: &str) -> bool {
 /// provider is used, so the summarizer shares its credentials; a main model instance is reused.
 /// On Bedrock the summarizer follows the main model's family, and a family that can't be
 /// identified reuses the main model with a warning. Thinking and caching are never applied.
-#[expect(
-    dead_code,
-    reason = "used by web_fetch and resolve_memory, which land separately"
+#[cfg_attr(
+    not(all(test, feature = "bedrock", feature = "anthropic", feature = "openai")),
+    expect(
+        dead_code,
+        reason = "used by web_fetch and resolve_memory, which land separately"
+    )
 )]
 pub(crate) fn resolve_web_fetch_model(
     main_model: Option<&ModelSource>,
