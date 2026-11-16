@@ -370,10 +370,9 @@ async fn live_confirm_pauses_agent_execution_and_resumes_with_approval_or_denial
     }
 }
 
-/// TS cases: `confirm with preemptive approval does not pause agent`, `confirm with preemptive
-/// denial blocks tool without pausing`, `confirm with custom evaluate uses custom approval
-/// logic`, `guide on beforeToolCall cancels tool with feedback for model`, `accumulates feedback
-/// from multiple guide handlers into one cancellation`.
+/// TS cases: `confirm with preemptive approval does not pause agent`, `confirm with custom
+/// evaluate accepts custom approval value`, `guide on beforeToolCall cancels tool with feedback
+/// for model`, `accumulates feedback from multiple guide handlers into one cancellation`.
 #[tokio::test]
 #[ignore = "live bedrock"]
 async fn live_preemptive_confirm_does_not_pause_and_guides_accumulate_into_one_cancellation() {
