@@ -1,0 +1,11 @@
+[package]
+name = "review10-api-bonfix"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+bon = "3"
+indexmap = "2"
