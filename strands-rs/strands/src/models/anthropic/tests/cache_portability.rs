@@ -1,5 +1,6 @@
 //! Ported from strands-ts/src/models/__tests__/cache-portability.test.ts (the Anthropic half of
-//! `describe('cacheConfig portability across providers')`; the Bedrock half lands with that provider).
+//! `describe('cacheConfig portability across providers')`; the Bedrock half is
+//! `models::bedrock::tests::caching::cache_config_portability_across_providers`).
 
 use std::sync::Arc;
 
