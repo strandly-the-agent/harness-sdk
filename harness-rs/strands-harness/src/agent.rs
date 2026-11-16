@@ -685,22 +685,8 @@ fn random_session_id() -> String {
 
 /// Storage whose keys sit directly under `dir`, each session in its own folder (decision #70).
 fn session_storage(dir: &str) -> Result<Arc<dyn Storage>> {
-    let path = Path::new(dir);
-    let scoped = match (path.parent(), path.file_name()) {
-        (Some(parent), Some(name)) => {
-            let parent = if parent.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                parent
-            };
-            LocalFileStorage::new(parent.to_string_lossy()).namespace(&name.to_string_lossy())
-        }
-        _ => None,
-    };
-    match scoped {
-        Some(storage) => Ok(storage?),
-        None => Ok(Arc::new(LocalFileStorage::new(dir))),
-    }
+    // Namespaced to `dir` itself, so the session manager adds no `session/` folder of its own.
+    Ok(Arc::new(LocalFileStorage::new(dir).with_namespace("")?))
 }
 
 fn has_skills(plugins: &[Arc<dyn Plugin>]) -> bool {

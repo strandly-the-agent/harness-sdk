@@ -152,3 +152,49 @@ async fn returns_an_offloaded_tool_result_to_the_model_in_full_on_retrieval() {
         .collect();
     assert_eq!(folders, ["retrieval"]);
 }
+
+/// One mock turn with a session in `session_dir`; the snapshot's path below `root`.
+async fn snapshot_of_one_turn(root: &tempfile::TempDir, session_dir: &Path) -> PathBuf {
+    let (model, mut options) = shared_mock();
+    model.add_turn(vec![TextBlock::new("noted").into()]);
+    options.session = session_in("checkpoint", session_dir);
+    options.builtin_tools = names(&[]);
+    options.builtin_plugins = Some(Vec::new());
+    options.context_manager = Some(ContextManagerStrategy::Off);
+    options.memory = MemoryOption::Off;
+    options.skills = SkillsOption::Off;
+    options.agent_config.printer = Some(false);
+    let mut agent = create_harness_with(options, seams(root)).await.unwrap();
+    agent.invoke("Remember the checkpoint").await.unwrap();
+    Path::new("checkpoint")
+        .join("scopes")
+        .join("agent")
+        .join(agent.id())
+        .join("snapshots")
+        .join("snapshot_latest.json")
+}
+
+// Rust-only: TS always writes `<dir>/<id>/scopes/...`, whatever `dir` ends with.
+#[tokio::test]
+async fn stores_a_session_directly_under_a_dir_with_no_final_component() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("inner")).unwrap();
+    let snapshot = snapshot_of_one_turn(&root, &root.path().join("inner").join("..")).await;
+
+    assert!(root.path().join(&snapshot).exists(), "{snapshot:?} missing");
+    assert!(!root.path().join("session").exists());
+    for dir in [".", "..", "/", "x/.."] {
+        assert!(session_storage(dir).unwrap().is_namespaced(), "{dir}");
+    }
+}
+
+// Rust-only: a backslash is a legal character in a Unix directory name.
+#[cfg(unix)]
+#[tokio::test]
+async fn stores_a_session_under_a_dir_whose_name_has_a_backslash() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("we\\ird");
+    let snapshot = snapshot_of_one_turn(&root, &dir).await;
+
+    assert!(dir.join(&snapshot).exists(), "{snapshot:?} missing");
+}
