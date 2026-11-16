@@ -94,11 +94,15 @@ pub struct ListSnapshotIdsOptions {
 pub trait SnapshotTarget: sealed::Sealed {}
 
 mod sealed {
+    use crate::error::Result;
     use crate::types::agent::LocalAgent;
+    use crate::types::snapshot::Snapshot;
 
     pub trait Sealed {
         fn local_agent(&self) -> &LocalAgent;
         fn local_agent_mut(&mut self) -> &mut LocalAgent;
+        /// The target's own `load_snapshot` (TS `target.loadSnapshot(snapshot)`).
+        fn load_snapshot(&mut self, snapshot: &Snapshot) -> Result<()>;
     }
 
     impl Sealed for crate::agent::Agent {
@@ -109,6 +113,10 @@ mod sealed {
         fn local_agent_mut(&mut self) -> &mut LocalAgent {
             &mut self.local
         }
+
+        fn load_snapshot(&mut self, snapshot: &Snapshot) -> Result<()> {
+            Self::load_snapshot(self, snapshot)
+        }
     }
 
     impl Sealed for LocalAgent {
@@ -118,6 +126,10 @@ mod sealed {
 
         fn local_agent_mut(&mut self) -> &mut LocalAgent {
             self
+        }
+
+        fn load_snapshot(&mut self, snapshot: &Snapshot) -> Result<()> {
+            Self::load_snapshot(self, snapshot)
         }
     }
 }
@@ -250,9 +262,7 @@ impl SessionManager {
         target: &mut impl SnapshotTarget,
         snapshot_id: Option<&str>,
     ) -> Result<bool> {
-        self.inner
-            .restore_snapshot(target.local_agent_mut(), snapshot_id)
-            .await
+        self.inner.restore_snapshot(target, snapshot_id).await
     }
 
     /// The immutable snapshot ids of `target`, oldest first.
@@ -357,13 +367,17 @@ impl Inner {
         history.and(latest)
     }
 
-    async fn restore_snapshot(&self, agent: &mut LocalAgent, snapshot_id: Option<&str>) -> Result<bool> {
-        let location = self.location(agent);
+    async fn restore_snapshot(
+        &self,
+        target: &mut impl sealed::Sealed,
+        snapshot_id: Option<&str>,
+    ) -> Result<bool> {
+        let location = self.location(target.local_agent());
         let Some(snapshot) = self.adapter()?.load_snapshot(&location, snapshot_id).await? else {
             return Ok(false);
         };
-        agent.load_snapshot(&snapshot)?;
-        self.restore_stash_data(agent, &snapshot).await?;
+        target.load_snapshot(&snapshot)?;
+        self.restore_stash_data(target.local_agent(), &snapshot).await?;
         Ok(true)
     }
 

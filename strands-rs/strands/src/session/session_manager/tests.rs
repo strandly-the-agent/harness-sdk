@@ -910,3 +910,52 @@ async fn succeeds_when_no_stash_is_available() {
 
     sm.delete_session().await.unwrap();
 }
+
+/// Rust-only cases: `Agent` and `LocalAgent` are separate types here, so `restore_snapshot` must
+/// reach the `Agent`'s own `load_snapshot` (TS `target.loadSnapshot(snapshot)`).
+mod rust_only {
+    use super::*;
+    use crate::agent::TakeSnapshotOptions;
+    use crate::background_tasks::BackgroundTasksConfig;
+    use crate::tools::{FunctionTool, ToolError};
+    use crate::types::messages::ToolUseBlock;
+
+    #[tokio::test]
+    async fn restore_snapshot_on_an_agent_keeps_the_background_task_guard() {
+        let model = MockMessageModel::new();
+        let input = json!({"value": "x", "_background_execution": true});
+        model.add_turn(vec![ToolUseBlock::new("work", "work-use", input).into()]);
+        model.add_turn(vec![TextBlock::new("Tasks admitted.").into()]);
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let held = Arc::clone(&gate);
+        let tool = FunctionTool::new("work", "Wait for the gate.", move |_input: JsonValue, _ctx| {
+            let gate = Arc::clone(&held);
+            async move {
+                gate.notified().await;
+                Ok::<_, ToolError>(json!("released"))
+            }
+        });
+        let sm = manager(&InMemoryStorage::new(), SaveLatestStrategy::Invocation);
+        let mut agent = Agent::builder()
+            .id("test-agent")
+            .model(model)
+            .tools(vec![tool])
+            .background_tasks(BackgroundTasksConfig {
+                wait_for_completion: false,
+                agentic: Some(vec!["work".to_owned()]),
+                ..BackgroundTasksConfig::default()
+            })
+            .session_manager(sm.clone())
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.invoke("Run work.").await.unwrap();
+        let snapshot = agent.take_snapshot(&TakeSnapshotOptions::session()).unwrap();
+        let expected = "Cannot load a snapshot while background tasks are still tracked";
+        assert_eq!(agent.load_snapshot(&snapshot).unwrap_err().to_string(), expected);
+
+        let restored = sm.restore_snapshot(&mut agent, None).await;
+
+        assert_eq!(restored.unwrap_err().to_string(), expected);
+    }
+}
