@@ -1164,6 +1164,40 @@ async fn wires_an_interventions_preset() {
     assert_eq!(names, [HumanInTheLoop::NAME]);
 }
 
+/// The names of the skills an initialized agent gets from the plugin built for `sources`.
+async fn skill_names(sources: Vec<SkillSource>, dir: &tempfile::TempDir) -> Vec<String> {
+    let plugin = Arc::new(skills_plugin(SkillsOption::Sources(sources), &seams(dir)).unwrap());
+    let mut agent = Agent::builder()
+        .model(Arc::new(MockMessageModel::new()))
+        .plugins([Arc::clone(&plugin) as Arc<dyn Plugin>])
+        .printer(false)
+        .build()
+        .unwrap();
+    agent.initialize().await.unwrap();
+    let skills = plugin.get_available_skills(Some(agent.id())).await;
+    skills.iter().map(|skill| skill.name().to_owned()).collect()
+}
+
+// TS reads the plugin's private `_skillPaths`; Rust reads the skills an agent loads from them.
+#[tokio::test]
+async fn loads_skills_from_multiple_directories() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+    write_skill(&a, "hello");
+    write_skill(&b, "world");
+    let names = skill_names(vec![path_source(&a), path_source(&b)], &dir).await;
+    assert_eq!(names, ["hello", "world"]);
+}
+
+#[tokio::test]
+async fn keeps_missing_directories_when_multiple_are_given() {
+    let dir = tempfile::tempdir().unwrap();
+    let (present, absent) = (dir.path().join("present"), dir.path().join("absent"));
+    write_skill(&present, "hello");
+    let names = skill_names(vec![path_source(&present), path_source(&absent)], &dir).await;
+    assert_eq!(names, ["hello"]);
+}
+
 #[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
 mod delegates;
 #[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
