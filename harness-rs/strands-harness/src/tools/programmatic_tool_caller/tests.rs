@@ -432,7 +432,7 @@ async fn truncates_a_syntax_error_that_is_too_long() {
     assert!(
         text(&result).starts_with("Error: Syntax error:"),
         "{}",
-        &text(&result)[..200]
+        text(&result).chars().take(200).collect::<String>()
     );
     assert!(text(&result).len() < 200_100);
 }
@@ -749,16 +749,19 @@ fn the_description_matches_the_ts_constant() {
     else {
         return;
     };
-    let start = source
-        .find("export const DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION =")
+    let (_, rest) = source
+        .split_once("export const DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION =")
         .expect("the TS constant exists");
-    let expected: String = source[start..]
+    let expected: String = rest
         .lines()
         .skip(1)
         .take_while(|line| !line.trim().is_empty())
         .map(|line| {
-            let literal = line.trim().trim_end_matches(" +");
-            &literal[1..literal.len() - 1]
+            // Each line is one quoted literal, with a trailing ` +` on all but the last.
+            let mut literal = line.trim().trim_end_matches(" +").chars();
+            literal.next();
+            literal.next_back();
+            literal.as_str()
         })
         .collect();
     assert_eq!(DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, expected);

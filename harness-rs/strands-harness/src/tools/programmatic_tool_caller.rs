@@ -67,10 +67,6 @@ per model round-trip, keeping large intermediate results out of the conversation
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[expect(
-    clippy::option_option,
-    reason = "TS `timeoutMs?: number | null`: unset is the default, `Some(None)` disables it"
-)]
 #[derive(Debug, Clone, Default, bon::Builder)]
 #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct MakeProgrammaticToolCallerOptions {
@@ -94,10 +90,6 @@ pub(crate) enum InnerCall {
     /// A hook asked for an approval nobody has answered; the text is its reason.
     NeedsApproval(String),
     /// The call was cancelled before the tool ran.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "reported by `ToolAgent::call_tool` once the SDK has it")
-    )]
     Cancelled,
 }
 
@@ -268,10 +260,11 @@ fn unwrap_result(result: &ToolResultBlock) -> JsonValue {
         return json.json().clone();
     }
     let text = extract_text(content);
-    if content.len() == 1 && (text.starts_with('{') || text.starts_with('[')) {
-        if let Ok(parsed) = serde_json::from_str(&text) {
-            return parsed;
-        }
+    if content.len() == 1
+        && (text.starts_with('{') || text.starts_with('['))
+        && let Ok(parsed) = serde_json::from_str(&text)
+    {
+        return parsed;
     }
     JsonValue::String(text)
 }

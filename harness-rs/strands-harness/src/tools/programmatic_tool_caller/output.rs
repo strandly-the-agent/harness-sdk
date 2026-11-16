@@ -65,8 +65,9 @@ impl PrintWriterCallback for Output {
 }
 
 pub(crate) fn cap(raw: &str, limit: usize) -> String {
-    match raw.char_indices().nth(limit) {
-        None => raw.trim().to_owned(),
-        Some((end, _)) => format!("{}\n[output truncated at {limit} characters]", raw[..end].trim()),
+    if raw.chars().nth(limit).is_none() {
+        return raw.trim().to_owned();
     }
+    let kept: String = raw.chars().take(limit).collect();
+    format!("{}\n[output truncated at {limit} characters]", kept.trim())
 }
