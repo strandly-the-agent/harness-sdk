@@ -22,7 +22,7 @@ pub const DEFAULT_WRITE_DESCRIPTION: &str =
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct MakeWriteOptions {
     /// The tool name (default `write`).
     pub name: Option<String>,

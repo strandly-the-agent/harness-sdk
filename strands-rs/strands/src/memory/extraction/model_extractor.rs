@@ -35,6 +35,8 @@ pub struct ModelExtractorOptions {
     pub system_prompt: Option<String>,
 }
 
+opaque_builder_debug!(ModelExtractorOptionsBuilder, model_extractor_options_builder);
+
 impl fmt::Debug for ModelExtractorOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModelExtractorOptions")

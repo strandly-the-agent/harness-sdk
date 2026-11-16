@@ -170,6 +170,8 @@ pub struct CedarAuthorizationConfig {
     pub on_error: Option<OnError>,
 }
 
+opaque_builder_debug!(CedarAuthorizationConfigBuilder, cedar_authorization_config_builder);
+
 impl fmt::Debug for CedarAuthorizationConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CedarAuthorizationConfig")

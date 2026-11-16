@@ -93,7 +93,7 @@ const CUSTOM_HEADERS_ENV: &str = "ANTHROPIC_CUSTOM_HEADERS";
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct AnthropicModelConfig {
     /// The model id; defaults to `claude-sonnet-4-6`, which may change between versions.
     pub model_id: Option<String>,
@@ -222,6 +222,8 @@ pub struct AnthropicClientConfig {
     pub timeout: Option<Duration>,
 }
 
+opaque_builder_debug!(AnthropicClientConfigBuilder, anthropic_client_config_builder);
+
 impl fmt::Debug for AnthropicClientConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let header_names: Vec<&str> = self
@@ -255,6 +257,8 @@ pub struct AnthropicModelOptions {
     #[builder(default)]
     pub config: AnthropicModelConfig,
 }
+
+opaque_builder_debug!(AnthropicModelOptionsBuilder, anthropic_model_options_builder);
 
 impl fmt::Debug for AnthropicModelOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -459,6 +463,8 @@ struct Prepared {
     body: JsonObject,
     beta: Option<String>,
 }
+
+opaque_builder_debug!(AnthropicModelBuilder, anthropic_model_builder);
 
 #[bon::bon]
 impl AnthropicModel {

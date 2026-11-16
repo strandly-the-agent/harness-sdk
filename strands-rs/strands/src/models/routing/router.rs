@@ -237,6 +237,8 @@ pub struct ModelRouterOptions {
     pub max_switches: Option<u32>,
 }
 
+opaque_builder_debug!(ModelRouterOptionsBuilder, model_router_options_builder);
+
 impl ModelRouter {
     /// Attaches this router as `agent`'s configured model (TS `attachToAgent`): registers the
     /// selection middleware and the routing and cleanup hooks, once per agent.

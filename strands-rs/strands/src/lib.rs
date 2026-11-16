@@ -261,6 +261,8 @@
 extern crate self as strands;
 
 #[macro_use]
+mod builder_debug;
+#[macro_use]
 mod open_enum;
 
 pub mod agent;

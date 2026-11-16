@@ -206,7 +206,7 @@ type ErrorFactory = Arc<dyn Fn() -> Error + Send + Sync>;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MockTurnOptions {
     /// The stop reason; default `toolUse` when the turn holds a tool use, else `endTurn`.
     #[builder(into)]

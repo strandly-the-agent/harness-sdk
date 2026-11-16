@@ -128,6 +128,8 @@ pub struct MakeSubagentOptions {
     pub description: Option<String>,
 }
 
+opaque_builder_debug!(MakeSubagentOptionsBuilder, make_subagent_options_builder);
+
 impl fmt::Debug for MakeSubagentOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MakeSubagentOptions")

@@ -154,6 +154,8 @@ pub struct HumanInTheLoopConfig {
     pub ask: Option<Ask>,
 }
 
+opaque_builder_debug!(HumanInTheLoopConfigBuilder, human_in_the_loop_config_builder);
+
 impl fmt::Debug for HumanInTheLoopConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HumanInTheLoopConfig")

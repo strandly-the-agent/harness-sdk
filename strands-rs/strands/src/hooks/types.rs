@@ -60,7 +60,7 @@ impl From<i32> for HookOrder {
 
 /// Options for registering a hook callback (TS `HookCallbackOptions`).
 #[derive(Debug, Clone, PartialEq, Eq, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"

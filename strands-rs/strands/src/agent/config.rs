@@ -305,7 +305,7 @@ impl Model for DefaultModel {
             /// Builds an [`Agent`](crate::Agent); start with [`Agent::builder`](crate::Agent::builder).
         }
     ),
-    state_mod(vis = "pub"),
+    state_mod(vis = "pub"), derive(Debug),
     start_fn(name = builder, vis = "pub(crate)"),
     finish_fn(name = into_config, vis = "pub(crate)"),
     on(String, into)

@@ -63,6 +63,8 @@ pub struct LlmClassifierConfig {
     pub model: Option<Arc<dyn Model>>,
 }
 
+opaque_builder_debug!(LlmClassifierConfigBuilder, llm_classifier_config_builder);
+
 impl fmt::Debug for LlmClassifierConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LlmClassifierConfig")

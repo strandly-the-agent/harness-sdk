@@ -143,7 +143,7 @@ impl FromStr for SnapshotPreset {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct TakeSnapshotOptions {
     /// The starting set of fields; none when unset.
     pub preset: Option<SnapshotPreset>,

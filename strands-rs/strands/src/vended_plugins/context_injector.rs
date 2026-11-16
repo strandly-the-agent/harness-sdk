@@ -62,6 +62,8 @@ pub struct ContextInjectorConfig {
     pub render_content: RenderContent,
 }
 
+opaque_builder_debug!(ContextInjectorConfigBuilder, context_injector_config_builder);
+
 impl<S: context_injector_config_builder::State> ContextInjectorConfigBuilder<S> {
     /// Sets the function that returns the text to inject; see
     /// [`ContextInjectorConfig::render_content`].

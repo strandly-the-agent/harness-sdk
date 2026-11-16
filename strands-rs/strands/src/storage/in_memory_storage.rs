@@ -22,6 +22,8 @@ pub struct InMemoryStorageConfig {
     pub search_strategy: Option<Arc<dyn SearchStrategy<InMemoryStorage>>>,
 }
 
+opaque_builder_debug!(InMemoryStorageConfigBuilder, in_memory_storage_config_builder);
+
 impl fmt::Debug for InMemoryStorageConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("InMemoryStorageConfig")

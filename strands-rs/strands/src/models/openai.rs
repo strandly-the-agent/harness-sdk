@@ -104,7 +104,7 @@ impl OpenAIApi {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into), state_mod(name = openai_model_config_builder, vis = "pub"))]
+#[builder(on(String, into), state_mod(name = openai_model_config_builder, vis = "pub"), derive(Debug))]
 pub struct OpenAIModelConfig {
     /// The model id; defaults to `gpt-5.4`, which may change between versions.
     pub model_id: Option<String>,
@@ -265,6 +265,8 @@ pub struct OpenAIClientConfig {
     pub timeout: Option<Duration>,
 }
 
+opaque_builder_debug!(OpenAIClientConfigBuilder, openai_client_config_builder);
+
 impl fmt::Debug for OpenAIClientConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let header_names: Vec<&str> = self
@@ -305,6 +307,8 @@ pub struct OpenAIModelOptions {
     #[builder(default)]
     pub config: OpenAIModelConfig,
 }
+
+opaque_builder_debug!(OpenAIModelOptionsBuilder, openai_model_options_builder);
 
 impl fmt::Debug for OpenAIModelOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -626,6 +630,8 @@ impl StreamState {
         }
     }
 }
+
+opaque_builder_debug!(OpenAIModelBuilder, openai_model_builder);
 
 #[bon::bon]
 impl OpenAIModel {

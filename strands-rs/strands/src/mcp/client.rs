@@ -122,6 +122,8 @@ pub struct McpClientCredentials {
     pub scopes: Option<Vec<String>>,
 }
 
+opaque_builder_debug!(McpClientCredentialsBuilder, mcp_client_credentials_builder);
+
 impl fmt::Debug for McpClientCredentials {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("McpClientCredentials")
@@ -168,6 +170,8 @@ pub struct McpClientOptions {
     pub log_handler: Option<McpLogHandler>,
 }
 
+opaque_builder_debug!(McpClientOptionsBuilder, mcp_client_options_builder);
+
 impl fmt::Debug for McpClientOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("McpClientOptions")
@@ -209,6 +213,8 @@ pub struct McpClientConfig {
     pub options: McpClientOptions,
 }
 
+opaque_builder_debug!(McpClientConfigBuilder, mcp_client_config_builder);
+
 impl fmt::Debug for McpClientConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("McpClientConfig")
@@ -245,6 +251,8 @@ pub struct McpCallToolOptions {
     pub progress_callback: Option<McpProgressCallback>,
 }
 
+opaque_builder_debug!(McpCallToolOptionsBuilder, mcp_call_tool_options_builder);
+
 impl fmt::Debug for McpCallToolOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("McpCallToolOptions")
@@ -261,7 +269,7 @@ impl fmt::Debug for McpCallToolOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct McpConnectOptions {
     /// Stops waiting for the connection when cancelled.
     pub cancel_signal: Option<CancelSignal>,
@@ -274,7 +282,7 @@ pub struct McpConnectOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct McpListToolsOptions {
     /// The prefix for this listing.
     pub prefix: Option<String>,
@@ -288,7 +296,7 @@ pub struct McpListToolsOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct McpListOptions {
     /// Fetch the single page after this cursor; without it, every page is aggregated.
     pub pagination_token: Option<String>,

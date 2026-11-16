@@ -29,6 +29,8 @@ pub struct LocalFileStorageConfig {
     pub search_strategy: Option<Arc<dyn SearchStrategy<LocalFileStorage>>>,
 }
 
+opaque_builder_debug!(LocalFileStorageConfigBuilder, local_file_storage_config_builder);
+
 impl fmt::Debug for LocalFileStorageConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LocalFileStorageConfig")

@@ -25,7 +25,7 @@ pub(crate) const DEFAULT_SUMMARIZE_INSTRUCTIONS: &str = "Write a handoff summary
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct SummarizeOptions {
     /// The system prompt of the conversation being summarized.
     #[builder(into)]

@@ -113,7 +113,7 @@ impl fmt::Debug for InjectionCondition {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct InjectionConfig {
     /// When to inject (default [`InjectionTrigger::UserTurn`]).
     #[builder(into)]

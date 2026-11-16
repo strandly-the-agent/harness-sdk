@@ -72,7 +72,7 @@ impl MemoryContentBlockType {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MemoryMessageFilter {
     /// Block kinds to drop; a message left with no content is dropped whole.
     pub exclude: Vec<MemoryContentBlockType>,
@@ -226,6 +226,8 @@ pub struct ExtractionConfig {
     /// Which content blocks are dropped first (default: tool use and tool results).
     pub filter: Option<MemoryMessageFilter>,
 }
+
+opaque_builder_debug!(ExtractionConfigBuilder, extraction_config_builder);
 
 impl fmt::Debug for ExtractionConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

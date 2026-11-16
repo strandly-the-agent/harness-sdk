@@ -77,7 +77,7 @@ impl fmt::Debug for McpToolMatcher {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct McpToolFilters {
     /// When set, only tools matching one of these are exposed.
     pub allowed: Option<Vec<McpToolMatcher>>,

@@ -66,7 +66,7 @@ pub(crate) fn candidate_key(index: usize) -> String {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct ClassifierStrategyOptions {
     /// The routing policy, sent verbatim and never truncated. The SDK adds mandatory isolation,
     /// candidate-key and structured-output rules that the policy cannot override. Defaults to

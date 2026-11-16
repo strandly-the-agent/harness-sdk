@@ -65,6 +65,8 @@ pub struct SessionManagerConfig {
     pub snapshot_trigger: Option<SnapshotTriggerCallback>,
 }
 
+opaque_builder_debug!(SessionManagerConfigBuilder, session_manager_config_builder);
+
 impl fmt::Debug for SessionManagerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SessionManagerConfig")
@@ -82,7 +84,7 @@ impl fmt::Debug for SessionManagerConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct ListSnapshotIdsOptions {
     /// At most this many ids.
     pub limit: Option<usize>,

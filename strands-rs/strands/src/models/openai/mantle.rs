@@ -56,7 +56,7 @@ const TOKEN_VERSION: &str = "&Version=1";
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct BedrockMantleConfig {
     /// The AWS region of the endpoint; defaults to `AWS_REGION`, else `AWS_DEFAULT_REGION`.
     pub region: Option<String>,

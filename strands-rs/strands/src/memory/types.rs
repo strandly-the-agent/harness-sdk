@@ -60,7 +60,7 @@ impl MemoryEntry {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct SearchOptions {
     /// Maximum number of results to return from this store.
     pub max_search_results: Option<usize>,
@@ -199,7 +199,7 @@ impl fmt::Debug for dyn MemoryStore {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MemorySearchOptions {
     /// Maximum number of results per store.
     pub max_search_results: Option<usize>,
@@ -213,7 +213,7 @@ pub struct MemorySearchOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MemoryAddOptions {
     /// Metadata stored with the entry.
     pub metadata: Option<JsonObject>,
@@ -227,7 +227,7 @@ pub struct MemoryAddOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MemoryToolConfig {
     /// The tool name.
     #[builder(into)]
@@ -243,7 +243,7 @@ pub struct MemoryToolConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MemoryAddToolConfig {
     /// The tool name (default `add_memory`).
     #[builder(into)]
@@ -317,6 +317,8 @@ pub struct MemoryInjectionConfig {
     pub format: Option<MemoryFormatFn>,
 }
 
+opaque_builder_debug!(MemoryInjectionConfigBuilder, memory_injection_config_builder);
+
 impl fmt::Debug for MemoryInjectionConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MemoryInjectionConfig")
@@ -370,7 +372,7 @@ impl From<MemoryInjectionConfig> for MemorySetting<MemoryInjectionConfig> {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MemoryManagerConfig {
     /// The stores to manage; at least one.
     #[builder(default)]

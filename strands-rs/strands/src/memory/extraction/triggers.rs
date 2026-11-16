@@ -42,7 +42,7 @@ impl ExtractionTrigger for InvocationTrigger {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct IntervalTriggerOptions {
     /// Fire every this many invocations; at least 1.
     pub turns: u64,

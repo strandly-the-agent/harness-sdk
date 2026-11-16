@@ -28,7 +28,7 @@ use crate::types::json::JsonValue;
 /// # Ok::<(), strands::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"

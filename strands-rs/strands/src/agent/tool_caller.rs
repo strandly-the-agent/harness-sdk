@@ -37,7 +37,7 @@ const INTERRUPT_UNSUPPORTED: &str = "Interrupts are not supported in direct tool
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct DirectToolCallOptions {
     /// Whether to record the call in the agent's history (default `true`). `false` runs the tool
     /// without touching the conversation.

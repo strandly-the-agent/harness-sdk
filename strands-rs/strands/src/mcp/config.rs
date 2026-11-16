@@ -21,7 +21,7 @@ use crate::types::json::JsonValue;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct SerializableMcpToolFilters {
     /// When present, only tools matching one of these patterns are exposed.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,7 +40,7 @@ pub struct SerializableMcpToolFilters {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
     /// Command to spawn (stdio).
@@ -87,7 +87,7 @@ pub struct McpServerConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct McpLoadServersOptions {
     /// Servers without an explicit `prefix` use their config key (characters outside
     /// `[A-Za-z0-9_-]` replaced with `_`) as the tool-name prefix, over a default prefix.

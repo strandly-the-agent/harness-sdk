@@ -26,7 +26,7 @@ const TIMEOUT_EXIT_CODE: i32 = 124;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct MakeShellOptions {
     /// The tool name (default `shell`).
     pub name: Option<String>,

@@ -76,7 +76,7 @@ const CONTEXT_WINDOW_OVERFLOW_MESSAGES: [&str; 6] = [
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct BedrockGuardrailRedactionConfig {
     /// Redact the input when blocked (default `true`).
     pub input: Option<bool>,
@@ -137,7 +137,7 @@ impl GuardrailStreamProcessingMode {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct BedrockGuardrailConfig {
     /// The guardrail identifier.
     pub guardrail_identifier: String,
@@ -189,7 +189,7 @@ impl From<bool> for IncludeToolResultStatus {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct BedrockModelConfig {
     /// The Bedrock model id or inference profile (default `global.anthropic.claude-sonnet-4-6`).
     pub model_id: Option<String>,
@@ -356,6 +356,8 @@ pub struct BedrockModelOptions {
     pub api_key: Option<String>,
 }
 
+opaque_builder_debug!(BedrockModelOptionsBuilder, bedrock_model_options_builder);
+
 impl fmt::Debug for BedrockModelOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BedrockModelOptions")
@@ -422,6 +424,8 @@ pub(crate) struct Shared {
     structured_output: StructuredOutputSupport,
     skip_count_tokens_models: Mutex<HashSet<String>>,
 }
+
+opaque_builder_debug!(BedrockModelBuilder, bedrock_model_builder);
 
 #[bon::bon]
 impl BedrockModel {

@@ -21,7 +21,7 @@ pub const DEFAULT_EDIT_DESCRIPTION: &str = "Replace an exact string in a text fi
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct MakeEditOptions {
     /// The tool name (default `edit`).
     pub name: Option<String>,

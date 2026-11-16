@@ -61,7 +61,7 @@ impl From<Skill> for SkillSource {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct AgentSkillsConfig {
     /// The skill sources.
     #[builder(default)]

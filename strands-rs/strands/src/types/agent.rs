@@ -834,6 +834,8 @@ pub struct InvokeOptions {
     pub cancel_signal: Option<CancelSignal>,
 }
 
+opaque_builder_debug!(InvokeOptionsBuilder, invoke_options_builder);
+
 impl InvokeOptions {
     /// Asks this call for structured output of type `T`; read it with
     /// [`AgentResult::structured_output`].
@@ -861,7 +863,7 @@ impl InvokeOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct InvokeLimits {
     /// Maximum turns (one model call plus the tool calls it requests) across the request.
     pub turns: Option<NonZeroU32>,

@@ -162,7 +162,7 @@ fn truncate_result(result: &ToolResultBlock) -> Option<ToolResultBlock> {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct SlidingWindowConversationManagerConfig {
     /// The most messages to keep; 40 by default.
     #[builder(default = 40)]

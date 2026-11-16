@@ -161,7 +161,7 @@ impl<S: ContextStrategy> From<S> for ContextStrategyEntry {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct StashConfig {
     /// The backend; defaults to the agent's storage, then an [`InMemoryStorage`]. A namespaced
     /// view given here is the stash root, shared by every agent given it.
@@ -212,7 +212,7 @@ impl From<StashConfig> for StashOption {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct ContextManagerConfig {
     /// The pipeline, in order; `None` uses the `auto` pipeline. An emergency truncation always
     /// runs last.

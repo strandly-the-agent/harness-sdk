@@ -21,7 +21,7 @@ use super::types::{ExecutionEvent, ExecutionResult, FileInfo};
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct ExecuteOptions {
     /// Maximum execution time; `None` means no timeout.
     pub timeout: Option<Duration>,

@@ -50,6 +50,8 @@ pub struct FileMemoryExtractionConfig {
     pub system_prompt: Option<String>,
 }
 
+opaque_builder_debug!(FileMemoryExtractionConfigBuilder, file_memory_extraction_config_builder);
+
 impl fmt::Debug for FileMemoryExtractionConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FileMemoryExtractionConfig")
@@ -86,6 +88,8 @@ pub struct FileMemoryStoreConfig {
     /// `extraction: true`.
     pub extraction: Option<FileMemoryExtractionConfig>,
 }
+
+opaque_builder_debug!(FileMemoryStoreConfigBuilder, file_memory_store_config_builder);
 
 impl fmt::Debug for FileMemoryStoreConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
