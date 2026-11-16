@@ -417,8 +417,8 @@ fn offloaded_marker(block: &ContentBlock) -> bool {
     let Some(rest) = text.text().strip_prefix("[Offloaded: ~") else {
         return false;
     };
-    let digits = rest.chars().take_while(char::is_ascii_digit).count();
-    digits > 0 && rest[digits..].starts_with(" tokens]")
+    let after = rest.trim_start_matches(|digit: char| digit.is_ascii_digit());
+    after.len() < rest.len() && after.starts_with(" tokens]")
 }
 
 #[test]
@@ -1150,15 +1150,17 @@ async fn requires_both_models_to_support_server_side_summary() {
     }
 }
 
+type Script = fn(&SpyModel);
+
 #[test]
 fn a_failed_server_side_summary_leaves_the_history_unchanged() {
-    let rows: [(&dyn Fn(&SpyModel), &str); 2] = [
+    let rows: [(Script, &str); 2] = [
         (
-            &|model| model.rejects("overloaded"),
+            |model| model.rejects("overloaded"),
             "error=<overloaded> | summarization failed",
         ),
         (
-            &|model| model.resolves(SummarizeResult::new(Vec::new())),
+            |model| model.resolves(SummarizeResult::new(Vec::new())),
             "summary held no text",
         ),
     ];
