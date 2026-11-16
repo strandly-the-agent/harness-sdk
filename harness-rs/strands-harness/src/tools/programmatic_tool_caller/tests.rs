@@ -559,7 +559,9 @@ async fn honors_the_parent_cancel_signal() {
     assert!(matches!(end, RunEnd::Cancelled), "{end:?}");
 }
 
-#[tokio::test(start_paused = true)]
+/// On the real clock: a paused clock advances while a step runs on its own thread, which would
+/// fire the canceller during the first step.
+#[tokio::test]
 async fn cancels_an_in_flight_run_and_makes_no_further_inner_tool_calls() {
     let calls = Arc::new(AtomicUsize::new(0));
     let seen = Arc::clone(&calls);
@@ -891,6 +893,37 @@ async fn a_cancel_does_not_wait_for_a_busy_loop() {
     assert!(matches!(end, RunEnd::Cancelled), "{end:?}");
     assert!(start.elapsed() < Duration::from_secs(1));
     canceller.await.expect("the canceller ran");
+}
+
+/// Not a TS case (review finding correctness-a1): the abandoned step of a cancelled run runs on a
+/// detached thread, so dropping the runtime does not wait for the VM duration limit.
+#[test]
+fn a_cancelled_busy_loop_does_not_hold_the_runtime_open() {
+    let limits = Limits {
+        max_duration: Duration::from_secs(20),
+        ..LIMITS
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let end = runtime.block_on(async {
+        let call: HostCall = Arc::new(|_name, _input| async { Ok(json!("1")) }.boxed());
+        let (signal, handle) = CancelSignal::new();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            handle.cancel(CancelOptions::default());
+        });
+        let code = "while True:\n    pass".to_owned();
+        run_code(code, HashMap::new(), call, limits, None, &signal)
+            .await
+            .1
+    });
+    assert!(matches!(end, RunEnd::Cancelled), "{end:?}");
+    let start = std::time::Instant::now();
+    drop(runtime);
+    assert!(start.elapsed() < Duration::from_secs(5), "{:?}", start.elapsed());
 }
 
 /// Not a TS case: an inner tool that interrupts is refused like a hook's approval request, and

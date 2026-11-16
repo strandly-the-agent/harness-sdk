@@ -1,4 +1,4 @@
-//! Drives one Monty run: interpreter steps on `spawn_blocking`, host functions awaited between them.
+//! Drives one Monty run: interpreter steps on their own threads, host functions awaited between them.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -58,25 +58,29 @@ type Step = Result<RunProgress, MontyException>;
 type Resume = Box<dyn FnOnce(PrintWriter<'_>) -> Step + Send>;
 
 /// Runs one interpreter step off the async threads; the VM's own limits bound how long it takes.
-/// `None` when the parent cancel fired first: the step is left to run into the VM's limits.
+/// `None` when the parent cancel fired first: the step is left to run into the VM's limits on a
+/// detached thread, which nothing joins (a blocking-pool task would hold runtime shutdown).
 async fn step(mut output: Output, cancel: &CancelSignal, run: Resume) -> Option<(Step, Output)> {
-    let stepping = tokio::task::spawn_blocking(move || {
-        let progress = run(PrintWriter::Callback(&mut output));
-        (progress, output)
-    });
+    let (sender, stepping) = tokio::sync::oneshot::channel();
+    let spawned = std::thread::Builder::new()
+        .name("programmatic-tool-caller-step".to_owned())
+        .spawn(move || {
+            let progress = run(PrintWriter::Callback(&mut output));
+            let _ = sender.send((progress, output));
+        });
+    let failed = |error: &dyn std::fmt::Display| {
+        let message = format!("the interpreter step failed: {error}");
+        (Err(MontyException::runtime_error(message)), Output::default())
+    };
+    if let Err(error) = spawned {
+        return Some(failed(&error));
+    }
     let joined = tokio::select! {
         biased;
         () = cancel.cancelled() => return None,
         joined = stepping => joined,
     };
-    Some(joined.unwrap_or_else(|error| {
-        (
-            Err(MontyException::runtime_error(format!(
-                "the interpreter step failed: {error}"
-            ))),
-            Output::default(),
-        )
-    }))
+    Some(joined.unwrap_or_else(|_| failed(&"the step panicked")))
 }
 
 /// Runs `code` with `functions` (guest name to tool name) callable as async functions.
