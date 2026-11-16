@@ -537,3 +537,35 @@ fn carries_the_exa_fallback_onto_a_narrowed_delegate() {
     assert!(matches!(resolved.web_search, WebSearchSetting::Exa));
     assert_eq!(names(&resolved), ["read", "web_search"]);
 }
+
+#[test]
+fn derives_the_keys_from_its_config_schema() {
+    use crate::config::normalize_harness_agent_config;
+
+    let error = |config: strands::JsonValue| match normalize_harness_agent_config(&config) {
+        Ok(_) => String::new(),
+        Err(error) => error.to_string(),
+    };
+    for name in [
+        BuiltinToolName::Read,
+        BuiltinToolName::Shell,
+        BuiltinToolName::WebFetch,
+        BuiltinToolName::ProgrammaticToolCaller,
+        BuiltinToolName::Subagent,
+    ] {
+        let keys = builtin_tool_config_keys(name).expect("a configurable tool");
+        let name = name.as_str();
+        for key in keys {
+            let config = serde_json::json!({ "builtinTools": { name: { (*key): "bogus" } } });
+            assert!(!error(config).contains("has unknown keys"), "{name}.{key}");
+        }
+        let config = serde_json::json!({ "builtinTools": { name: { "bogus": true } } });
+        assert_eq!(
+            error(config),
+            format!(
+                "Invalid agent config:\nbuiltinTools.{name} has unknown keys: bogus. Allowed: {}.",
+                keys.join(", ")
+            )
+        );
+    }
+}
