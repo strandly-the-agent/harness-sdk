@@ -4,6 +4,6 @@ pub mod context_manager;
 
 pub use context_manager::{
     ContextManager, ContextManagerConfig, ContextManagerPreset, ContextManagerStrategy, ContextState,
-    ContextStrategy, ContextStrategyEntry, Offload, OffloadConditions, OffloadTarget, Stash, StashConfig,
-    StashOption, StrategyPresetName,
+    ContextStrategy, ContextStrategyEntry, Offload, OffloadConditions, OffloadTarget, PreviewMode, Stash,
+    StashConfig, StashOption, StrategyPresetName, SummarizeConfig, TruncateConfig,
 };
