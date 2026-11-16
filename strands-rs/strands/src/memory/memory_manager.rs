@@ -84,6 +84,31 @@ struct Inner {
     injection: Option<MemoryInjectionConfig>,
     /// Shared with the extraction coordinator (TS `_tracer`).
     tracer: MemoryTracer,
+    /// How many `add_memory` writes run detached (`wait_for_writes: false`); `flush` waits for
+    /// zero, because a Tokio runtime that stops drops them (Node keeps such a promise alive).
+    detached_writes: tokio::sync::watch::Sender<usize>,
+}
+
+/// Counts one detached write from its creation until it finishes, panics or is dropped.
+struct DetachedWrite(MemoryManager);
+
+impl DetachedWrite {
+    fn new(manager: &MemoryManager) -> Self {
+        manager
+            .inner
+            .detached_writes
+            .send_modify(|count| *count = count.saturating_add(1));
+        Self(manager.clone())
+    }
+}
+
+impl Drop for DetachedWrite {
+    fn drop(&mut self) {
+        self.0
+            .inner
+            .detached_writes
+            .send_modify(|count| *count = count.saturating_sub(1));
+    }
 }
 
 /// Manages one or more memory stores for an agent: the `search_memory` and `add_memory` tools,
@@ -245,6 +270,7 @@ impl MemoryManager {
                 coordinator: Mutex::new(None),
                 injection,
                 tracer: MemoryTracer::default(),
+                detached_writes: tokio::sync::watch::Sender::new(0),
             }),
         })
     }
@@ -367,10 +393,16 @@ impl MemoryManager {
     /// when the agent responds. Call this once at a boundary you control, typically shutdown
     /// ([`Agent::shutdown`](crate::Agent::shutdown) calls it). Calling it after every turn
     /// alongside a periodic trigger defeats the trigger's schedule.
+    ///
+    /// Also waits for `add_memory` writes accepted with `wait_for_writes: false`, which would
+    /// otherwise be dropped when the runtime stops.
     pub async fn flush(&self) {
         if let Some(coordinator) = self.coordinator() {
             coordinator.flush().await;
         }
+        let mut detached = self.inner.detached_writes.subscribe();
+        // The sender lives in `self.inner`, so this can't fail.
+        let _ = detached.wait_for(|count| *count == 0).await;
     }
 
     /// Whether conversation is waiting for a save that [`flush`](Self::flush) would run.
@@ -612,8 +644,9 @@ impl MemoryManager {
         };
         if !wait_for_writes {
             // Detached, so the agent loop isn't blocked; `add_inner` logs each store failure.
-            let manager = self.clone();
+            let write = DetachedWrite::new(self);
             let writes = async move {
+                let manager = &write.0;
                 join_all(
                     entries
                         .iter()

@@ -862,6 +862,24 @@ async fn add_tool_with_wait_for_writes_false_returns_accepted_even_when_a_store_
     assert_eq!(returned(&result), json!({ "accepted": 2 }));
 }
 
+// No TS case: Node keeps a detached promise alive; a Tokio runtime that stops drops the task.
+#[tokio::test]
+async fn flush_waits_for_writes_accepted_with_wait_for_writes_false() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let notes = Arc::new(MockStore {
+        gate: Some(gate.clone()),
+        ..MockStore::writable("notes")
+    });
+    let manager = fire_and_forget(notes.clone());
+    let result = add_tool(&manager, json!({ "entries": ["a"] })).await;
+    assert_eq!(returned(&result), json!({ "accepted": 1 }));
+    let mut flush = std::pin::pin!(manager.flush());
+    assert!(futures::poll!(flush.as_mut()).is_pending());
+    gate.add_permits(1);
+    flush.await;
+    assert_eq!(notes.added(), ["a"]);
+}
+
 // initAgent
 
 #[tokio::test]
