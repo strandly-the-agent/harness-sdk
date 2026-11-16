@@ -606,6 +606,16 @@ async fn a_tool_sharing_a_name_with_a_dropped_caller_is_still_exposed() {
     assert_eq!(text(&run(&mut agent, "print(await lookup_a3())").await), "found");
 }
 
+/// Review finding correctness-a5: a timeout the clock cannot represent does not panic.
+#[tokio::test]
+async fn a_huge_timeout_is_no_deadline() {
+    let call: HostCall = Arc::new(|_name, _input| async { Ok(json!("1")) }.boxed());
+    let (signal, _handle) = CancelSignal::new();
+    let code = "print(1)".to_owned();
+    let (_, end) = run_code(code, HashMap::new(), call, LIMITS, Some(Duration::MAX), &signal).await;
+    assert!(matches!(end, RunEnd::Complete), "{end:?}");
+}
+
 const GATED_CODE: &str =
     "try:\n    print(await shell_like(command='rm -rf /'))\nexcept RuntimeError as e:\n    print('ERR', e)";
 

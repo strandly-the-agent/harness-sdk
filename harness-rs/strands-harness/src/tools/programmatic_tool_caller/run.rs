@@ -95,7 +95,8 @@ pub(crate) async fn run_code(
     if cancel.is_cancelled() {
         return (Output::default(), RunEnd::Cancelled);
     }
-    let deadline = timeout.map(|timeout| Instant::now() + timeout);
+    // A timeout too large for the clock is no deadline.
+    let deadline = timeout.and_then(|timeout| Instant::now().checked_add(timeout));
     let run = match MontyRun::new(code, USER_CODE_FILENAME, Vec::new(), CompileOptions::default()) {
         Ok(run) => run,
         Err(error) => return (Output::default(), RunEnd::Syntax(error)),
