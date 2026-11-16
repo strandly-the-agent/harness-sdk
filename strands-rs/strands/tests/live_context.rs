@@ -442,7 +442,7 @@ async fn live_drop_truncate_and_summarize_keep_message_0_verbatim_and_every_redu
 /// summarizer is its own recording model, so its request count is exact.
 ///
 /// The last assertion (the summary names the tracking number, as TS asserts) depends on the
-/// model's wording and failed in 2 of 32 runs on 2026-11-16: the request held the tool call and
+/// model's wording and failed in 2 of 35 runs on 2026-11-16: the request held the tool call and
 /// its result, but the model summarized the `lookup_order` call as one it should not have made
 /// (the request carries only the `noop` tool spec, as in TS) and left the result out.
 #[tokio::test]
