@@ -15,7 +15,7 @@ use crate::telemetry::tracer::ModelSpanEnd;
 use crate::telemetry::tracer::memory::MemoryTracer;
 use crate::types::messages::{ContentBlock, Message, Role, SystemPrompt, TextBlock};
 
-const DEFAULT_SYSTEM_PROMPT: &str = "You extract durable facts worth remembering across future conversations from a transcript.\n\
+const DEFAULT_SYSTEM_PROMPT: &str = "You extract durable facts worth remembering across future conversations from a transcript.\n\n\
 Each entry is one discrete, self-contained fact (a preference, decision, or stable detail about the user or task). Do not include transient chit-chat, questions, or anything already obvious.";
 
 const OUTPUT_FORMAT: &str = "Return ONLY a JSON array of objects, each: {\"content\": string}. If there is nothing worth remembering, return [].";

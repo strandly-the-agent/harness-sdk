@@ -106,7 +106,7 @@ async fn appends_the_output_format_to_the_default_system_prompt() {
     extract(&model, "x").await;
     assert_eq!(
         system_prompt(&model),
-        "You extract durable facts worth remembering across future conversations from a transcript.\n\
+        "You extract durable facts worth remembering across future conversations from a transcript.\n\n\
          Each entry is one discrete, self-contained fact (a preference, decision, or stable detail about the user or task). Do not include transient chit-chat, questions, or anything already obvious.\n\n\
          Return ONLY a JSON array of objects, each: {\"content\": string}. If there is nothing worth remembering, return []."
     );
