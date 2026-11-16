@@ -308,6 +308,40 @@ async fn a_dropped_call_retries_the_deferred_hooks_it_did_not_finish() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_call_dropped_inside_its_own_after_invocation_hooks_retries_them() {
+    let mut agent = Agent::builder()
+        .model(mock(vec![vec![text("Hello!")]]))
+        .printer(false)
+        .build()
+        .unwrap();
+    let (started, finished) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+    let (hook_started, hook_finished) = (Arc::clone(&started), Arc::clone(&finished));
+    agent.add_async_hook::<AfterInvocationEvent<'static>>(move |_event| {
+        let (started, finished) = (Arc::clone(&hook_started), Arc::clone(&hook_finished));
+        Box::pin(async move {
+            if started.fetch_add(1, Ordering::SeqCst) == 0 {
+                std::future::pending::<()>().await;
+            }
+            finished.fetch_add(1, Ordering::SeqCst);
+        })
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), agent.invoke("one"))
+            .await
+            .is_err()
+    );
+    assert_eq!(started.load(Ordering::SeqCst), 1);
+    assert!(agent.abandoned.is_some());
+    // The turn was complete, so the drop appends no cancel message.
+    assert_eq!(cancel_text(agent.messages()), ["Hello!"]);
+
+    agent.shutdown().await.unwrap();
+
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+    assert!(agent.abandoned.is_none());
+}
+
+#[tokio::test(start_paused = true)]
 async fn the_deferred_hooks_see_a_cancelled_signal_so_background_tasks_do_not_block_the_next_call() {
     let gate = Arc::new(Notify::new());
     let held = Arc::clone(&gate);

@@ -403,8 +403,15 @@ impl Agent {
         state: &InvocationState,
         out: &Emitter,
     ) -> Result<(Option<InvokeArgs>, Vec<ContinuationInput>)> {
+        // Pending while the hooks run, so a drop inside them is retried like `abandoned_hooks`.
+        self.abandoned = Some(AbandonedRun {
+            state: state.clone(),
+            repair: None,
+        });
         let mut event = AfterInvocationEvent::new(&mut self.local, state.clone());
-        hooks.invoke::<AfterInvocationEvent<'static>>(&mut event).await?;
+        let invoked = hooks.invoke::<AfterInvocationEvent<'static>>(&mut event).await;
+        self.abandoned = None;
+        invoked?;
         out.emit(AgentStreamEvent::AfterInvocation((&event).into())).await;
         let inputs = event.take_continuations();
         Ok((event.take_resume(), inputs))
