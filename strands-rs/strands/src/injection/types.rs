@@ -120,12 +120,13 @@ pub struct InjectionConfig {
     pub trigger: Option<InjectionCondition>,
 }
 
-/// Returns the text to fold into the latest user message; `None` or blank text skips the call.
-pub(crate) type RenderContent =
+/// Returns the text to fold into the latest user message; `None` or blank text skips the call
+/// (TS `renderContent`). Build one from an async closure with [`render_content`].
+pub type RenderContent =
     Arc<dyn Fn(InjectionContext) -> BoxFuture<'static, Result<Option<String>>> + Send + Sync>;
 
 /// Boxes an async closure as a [`RenderContent`].
-pub(crate) fn render_content<F, Fut>(render: F) -> RenderContent
+pub fn render_content<F, Fut>(render: F) -> RenderContent
 where
     F: Fn(InjectionContext) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<Option<String>>> + Send + 'static,

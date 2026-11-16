@@ -17,55 +17,79 @@ use crate::types::agent::LocalAgent;
 use crate::types::messages::{ContentBlock, InjectedBlock, Message, Role};
 
 /// Configuration of [`ContextInjector`] (TS `ContextInjectorConfig`).
-#[derive(Clone)]
-#[non_exhaustive]
+///
+/// `render_content` is required, so there is no `Default`: start from the builder, or from
+/// [`ContextInjectorConfig::new`] in a struct literal.
+///
+/// ```
+/// use strands::injection::InjectionTrigger;
+/// use strands::vended_plugins::context_injector::ContextInjectorConfig;
+///
+/// let config = ContextInjectorConfig::builder()
+///     .name("my:clock")
+///     .trigger(InjectionTrigger::EveryTurn)
+///     .render_content(|_context| async { Ok(Some("<now>12:00</now>".to_owned())) })
+///     .build();
+/// assert_eq!(config.name.as_deref(), Some("my:clock"));
+///
+/// let config = ContextInjectorConfig {
+///     name: Some("my:cwd".into()),
+///     ..ContextInjectorConfig::new(|_context| async { Ok(Some("<cwd>/repo</cwd>".to_owned())) })
+/// };
+/// assert!(config.trigger.is_none());
+/// ```
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Clone, bon::Builder)]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct ContextInjectorConfig {
-    name: String,
-    trigger: InjectionCondition,
-    render_content: RenderContent,
-}
-
-impl ContextInjectorConfig {
-    /// A configuration that injects the text `render_content` returns; `None` or blank text
-    /// skips the call, and an error fails open (the model call proceeds without it).
+    /// The plugin name (default `strands:context-injector`). It is stored with every block the
+    /// injector writes, so keep it stable and give each injector its own.
+    pub name: Option<String>,
+    /// When to inject (default [`InjectionTrigger::UserTurn`]): a trigger, or
+    /// [`InjectionCondition::predicate`] for a function of the call.
+    #[builder(into)]
+    pub trigger: Option<InjectionCondition>,
+    /// Returns the text to inject; `None` or blank text skips the call, and an error fails open
+    /// (the model call proceeds without it). Box a closure with
+    /// [`render_content`](crate::injection::render_content).
     ///
     /// The text reaches the model verbatim, so escape any attacker-influenced fields. It is
     /// rendered at most once per user message: a retry or a resume sends the stored text.
+    #[builder(setters(vis = "", name = render_content_boxed))]
+    pub render_content: RenderContent,
+}
+
+impl<S: context_injector_config_builder::State> ContextInjectorConfigBuilder<S> {
+    /// Sets the function that returns the text to inject; see
+    /// [`ContextInjectorConfig::render_content`].
+    pub fn render_content<F, Fut>(
+        self,
+        render: F,
+    ) -> ContextInjectorConfigBuilder<context_injector_config_builder::SetRenderContent<S>>
+    where
+        S::RenderContent: context_injector_config_builder::IsUnset,
+        F: Fn(InjectionContext) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        self.render_content_boxed(render_content(render))
+    }
+}
+
+impl ContextInjectorConfig {
+    /// A configuration with the default name and trigger that injects the text `render` returns.
     pub fn new<F, Fut>(render: F) -> Self
     where
         F: Fn(InjectionContext) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Option<String>>> + Send + 'static,
     {
         Self {
-            name: ContextInjector::DEFAULT_NAME.to_owned(),
-            trigger: InjectionCondition::default(),
+            name: None,
+            trigger: None,
             render_content: render_content(render),
         }
-    }
-
-    /// Sets the plugin name (default `strands:context-injector`). It is stored with every block
-    /// the injector writes, so keep it stable and give each injector its own.
-    #[must_use]
-    pub fn with_name(mut self, name: impl Into<String>) -> Self {
-        self.name = name.into();
-        self
-    }
-
-    /// Sets when to inject (default [`InjectionTrigger::UserTurn`]).
-    #[must_use]
-    pub fn with_trigger(mut self, trigger: impl Into<InjectionCondition>) -> Self {
-        self.trigger = trigger.into();
-        self
-    }
-
-    /// Injects when `predicate` returns `true` for the call.
-    #[must_use]
-    pub fn with_trigger_fn(
-        mut self,
-        predicate: impl Fn(&InjectionContext) -> bool + Send + Sync + 'static,
-    ) -> Self {
-        self.trigger = InjectionCondition::predicate(predicate);
-        self
     }
 }
 
@@ -96,9 +120,20 @@ impl fmt::Debug for ContextInjectorConfig {
 /// let agent = Agent::builder().model(MockMessageModel::new()).plugin(injector).build()?;
 /// # Ok::<(), strands::Error>(())
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ContextInjector {
-    config: ContextInjectorConfig,
+    name: String,
+    trigger: InjectionCondition,
+    render_content: RenderContent,
+}
+
+impl fmt::Debug for ContextInjector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ContextInjector")
+            .field("name", &self.name)
+            .field("trigger", &self.trigger)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ContextInjector {
@@ -108,7 +143,11 @@ impl ContextInjector {
 
     /// An injector with `config`.
     pub fn new(config: ContextInjectorConfig) -> Self {
-        Self { config }
+        Self {
+            name: config.name.unwrap_or_else(|| Self::DEFAULT_NAME.to_owned()),
+            trigger: config.trigger.unwrap_or_default(),
+            render_content: config.render_content,
+        }
     }
 
     /// Writes the rendered text into the latest user message of the conversation and of this
@@ -131,10 +170,10 @@ impl ContextInjector {
             return context;
         };
         let injection_context = InjectionContext::new(context.messages.clone(), context.agent().clone());
-        if !self.config.trigger.fires(&injection_context) {
+        if !self.trigger.fires(&injection_context) {
             return context;
         }
-        let text = match (self.config.render_content)(injection_context).await {
+        let text = match (self.render_content)(injection_context).await {
             Ok(text) => text,
             Err(error) => {
                 tracing::warn!("reason=<{error}> | injection renderContent threw; skipping injection");
@@ -144,7 +183,7 @@ impl ContextInjector {
         let Some(text) = text.filter(|text| !text.trim().is_empty()) else {
             return context;
         };
-        let block = InjectedBlock::new(text, self.config.name.clone());
+        let block = InjectedBlock::new(text, self.name.clone());
         // After the stored content, so text other middleware adds for this call only stays last.
         let position = latest.content().len();
         let written = with_block(latest, &block, position);
@@ -159,7 +198,7 @@ impl ContextInjector {
     }
 
     fn wrote(&self, block: &ContentBlock) -> bool {
-        matches!(block, ContentBlock::Injected(injected) if injected.source() == self.config.name)
+        matches!(block, ContentBlock::Injected(injected) if injected.source() == self.name)
     }
 }
 
@@ -176,7 +215,7 @@ fn with_block(message: &Message, block: &InjectedBlock, position: usize) -> Mess
 #[async_trait]
 impl Plugin for ContextInjector {
     fn name(&self) -> &str {
-        &self.config.name
+        &self.name
     }
 
     async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {

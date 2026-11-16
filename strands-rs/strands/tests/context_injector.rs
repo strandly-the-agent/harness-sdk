@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 use strands::Agent;
+use strands::injection::InjectionCondition;
 use strands::testing::MockMessageModel;
 use strands::types::messages::{ContentBlock, InjectedBlock, TextBlock};
 use strands::vended_plugins::context_injector::{ContextInjector, ContextInjectorConfig, InjectionTrigger};
@@ -28,12 +29,14 @@ fn model(replies: &[&str]) -> Arc<MockMessageModel> {
 #[tokio::test]
 async fn renders_from_app_state_and_keeps_the_block_in_the_conversation() {
     let model = model(&["ok"]);
-    let config = ContextInjectorConfig::new(|context| async move {
-        let theme: Option<String> = context.app_state.get("theme")?;
-        Ok(theme.map(|theme| format!("<theme>{theme}</theme>")))
-    })
-    .with_name("theme")
-    .with_trigger(InjectionTrigger::EveryTurn);
+    let config = ContextInjectorConfig::builder()
+        .name("theme")
+        .trigger(InjectionTrigger::EveryTurn)
+        .render_content(|context| async move {
+            let theme: Option<String> = context.app_state.get("theme")?;
+            Ok(theme.map(|theme| format!("<theme>{theme}</theme>")))
+        })
+        .build();
     let mut agent = Agent::builder()
         .model(Arc::clone(&model))
         .printer(false)
@@ -61,8 +64,12 @@ async fn renders_from_app_state_and_keeps_the_block_in_the_conversation() {
 #[tokio::test]
 async fn a_predicate_trigger_gates_the_injection() {
     let model = model(&["one", "two"]);
-    let config = ContextInjectorConfig::new(|_context| async { Ok(Some("reminder".to_owned())) })
-        .with_trigger_fn(|context| context.messages.len() > 1);
+    let config = ContextInjectorConfig {
+        trigger: Some(InjectionCondition::predicate(|context| {
+            context.messages.len() > 1
+        })),
+        ..ContextInjectorConfig::new(|_context| async { Ok(Some("reminder".to_owned())) })
+    };
     let mut agent = Agent::builder()
         .model(Arc::clone(&model))
         .printer(false)

@@ -38,6 +38,20 @@ fn constant(text: &'static str) -> ContextInjectorConfig {
     ContextInjectorConfig::new(move |_context| async move { Ok(Some(text.to_owned())) })
 }
 
+fn named(config: ContextInjectorConfig, name: &str) -> ContextInjectorConfig {
+    ContextInjectorConfig {
+        name: Some(name.to_owned()),
+        ..config
+    }
+}
+
+fn every_turn(config: ContextInjectorConfig) -> ContextInjectorConfig {
+    ContextInjectorConfig {
+        trigger: Some(InjectionTrigger::EveryTurn.into()),
+        ..config
+    }
+}
+
 fn model_with(turns: &[&str]) -> Arc<MockMessageModel> {
     let model = Arc::new(MockMessageModel::new());
     for turn in turns {
@@ -72,7 +86,7 @@ mod plugin_interface {
 
     #[test]
     fn honors_a_custom_name_so_multiple_injectors_can_be_told_apart() {
-        assert_eq!(ContextInjector::new(constant("x").with_name("now")).name(), "now");
+        assert_eq!(ContextInjector::new(named(constant("x"), "now")).name(), "now");
     }
 
     #[tokio::test]
@@ -133,7 +147,7 @@ mod writing_into_the_conversation {
             .printer(false)
             .maybe_context_manager(context_manager)
             .tools(tools)
-            .plugin(ContextInjector::new(config.with_name("test")))
+            .plugin(ContextInjector::new(named(config, "test")))
             .build()
             .unwrap()
     }
@@ -164,8 +178,8 @@ mod writing_into_the_conversation {
         let config = ContextInjectorConfig::new(move |_context| {
             let todo = *todo.lock().unwrap();
             async move { Ok(Some(format!("<todos>{todo}</todos>"))) }
-        })
-        .with_trigger(InjectionTrigger::EveryTurn);
+        });
+        let config = every_turn(config);
         let model = Arc::new(MockMessageModel::new());
         model.add_turn(vec![ToolUseBlock::new("todo_write", "tool-1", json!({})).into()]);
         model.add_turn(vec![text("done")]);
@@ -221,8 +235,8 @@ mod writing_into_the_conversation {
         let mut agent = Agent::builder()
             .model(model)
             .printer(false)
-            .plugin(ContextInjector::new(constant("likes tea").with_name("memory")))
-            .plugin(ContextInjector::new(constant("cwd: /repo").with_name("env")))
+            .plugin(ContextInjector::new(named(constant("likes tea"), "memory")))
+            .plugin(ContextInjector::new(named(constant("cwd: /repo"), "env")))
             .build()
             .unwrap();
 
@@ -421,10 +435,7 @@ mod writing_into_the_conversation {
     #[tokio::test]
     async fn writes_into_the_result_a_background_task_delivers_before_the_model_call() {
         let model = model_with(&["one", "two"]);
-        let mut agent = setup(
-            &model,
-            constant("reminder").with_trigger(InjectionTrigger::EveryTurn),
-        );
+        let mut agent = setup(&model, every_turn(constant("reminder")));
         agent.invoke("Run work.").await.unwrap();
         agent.add_hook(|event: &mut BeforeModelCallEvent<'_>| {
             let result = ToolResultBlock::new(
@@ -479,7 +490,7 @@ mod writing_into_the_conversation {
             .model(Arc::clone(&model))
             .printer(false)
             .plugin(PerCall)
-            .plugin(ContextInjector::new(constant("reminder").with_name("test")))
+            .plugin(ContextInjector::new(named(constant("reminder"), "test")))
             .build()
             .unwrap();
         retry_on_error(&agent);
