@@ -162,6 +162,48 @@ fn sends_temperature_when_the_previous_api_version_is_pinned_as() {
     assert_eq!(client.last_body(), hello_request(0.2));
 }
 
+/// TS runs this against the previous `@anthropic-ai/sdk` major; in Rust that is the pinned
+/// previous API version.
+#[test]
+fn sends_sampling_params() {
+    let client = Arc::new(MockClient::empty());
+    let config = AnthropicModelConfig {
+        params: json!({ "top_k": 3 }).as_object().cloned(),
+        ..m1_temperature()
+    };
+    let options = pinned(version_headers("anthropic-version", "2023-06-01"), config);
+    collect_ok(&built(&client, options), hello());
+    let mut expected = hello_request(0.2);
+    expected["top_k"] = json!(3);
+    assert_eq!(client.last_body(), expected);
+}
+
+/// The previous-API-version half of `skips_pdf_documents_in_assistant_messages`.
+#[test]
+fn keeps_pdf_documents_in_assistant_messages() {
+    let pdf = ContentBlock::from(DocumentBlock::new("doc.pdf", "pdf", vec![1, 2, 3]));
+    let client = Arc::new(MockClient::empty());
+    let options = pinned(version_headers("anthropic-version", "2023-06-01"), model_id("m1"));
+    let conversation = vec![Message::new(Role::Assistant, vec![pdf])];
+    collect_ok(&built(&client, options), request(conversation));
+    assert_eq!(
+        client.last_body(),
+        json!({
+            "model": "m1",
+            "max_tokens": 64000,
+            "stream": true,
+            "messages": [{
+                "role": "assistant",
+                "content": [{
+                    "type": "document",
+                    "title": "doc.pdf",
+                    "source": { "type": "base64", "media_type": "application/pdf", "data": "AQID" },
+                }],
+            }],
+        })
+    );
+}
+
 #[test]
 fn lets_a_client_config_pin_win_over_a_differently_cased_anthropic_custom_headers_pin() {
     let client = Arc::new(MockClient::empty());
