@@ -7,6 +7,8 @@ pub mod bash;
 pub mod edit;
 pub mod handoff_to_user;
 pub mod http_request;
+#[cfg(feature = "mcp")]
+pub mod mcp_router;
 pub mod notebook;
 mod paths;
 pub mod python_repl;
@@ -25,6 +27,11 @@ pub use handoff_to_user::{
     make_handoff_to_user,
 };
 pub use http_request::{HttpRequestOutput, http_request};
+#[cfg(feature = "mcp")]
+pub use mcp_router::{
+    DEFAULT_MAX_CONNECTIONS, MCP_ROUTER_DESCRIPTION, MakeMcpRouterOptions, McpRouterToolError,
+    make_mcp_router,
+};
 pub use notebook::{MakeNotebookOptions, make_notebook, notebook};
 pub use python_repl::{
     MakePythonReplOptions, PYTHON_REPL_DESCRIPTION, PythonReplError, PythonReplOutput, make_python_repl,
