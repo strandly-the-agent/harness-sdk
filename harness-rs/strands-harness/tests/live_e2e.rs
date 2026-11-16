@@ -302,6 +302,63 @@ async fn live_bedrock_uses_the_file_and_web_tools_the_todos_plugin_and_the_subag
     agent.shutdown().await.expect("the agent shuts down");
 }
 
+/// harness-ts/test/integration/caching.test.ts, `reads grow across turns`: with the default
+/// caching, the cumulative cache reads the model reports are non-zero and grow on every turn.
+/// The environment plugin stays off: it reads the process's working directory.
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_bedrock_cache_reads_grow_across_turns() {
+    if !aws_credentials_available().await {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("temp dir");
+    // Stable and long enough to pass the model's minimum cacheable prefix.
+    let stable_prefix = format!(
+        "{}\n",
+        "You are an automated integration test agent operating under a fixed protocol. ".repeat(8)
+    )
+    .repeat(40);
+    let tools = [
+        BuiltinToolName::Shell,
+        BuiltinToolName::Read,
+        BuiltinToolName::Write,
+        BuiltinToolName::Edit,
+        BuiltinToolName::WebFetch,
+        BuiltinToolName::ProgrammaticToolCaller,
+    ];
+    let mut agent = create_harness(HarnessAgentOptions {
+        instructions: Some(stable_prefix),
+        builtin_plugins: Some(vec![BuiltinPluginName::Todos]),
+        ..bedrock(dir.path(), &tools)
+    })
+    .await
+    .expect("the harness builds");
+    let todo = json!([{
+        "content": "Answer each question",
+        "activeForm": "Answering each question",
+        "status": "in_progress",
+    }]);
+    agent.app_state().set("todos", todo).expect("the todo list");
+
+    let mut reads = Vec::new();
+    for word in ["apple", "banana", "cherry"] {
+        agent
+            .invoke(format!(
+                "{TESTING} Reply with exactly the word: {word}. Nothing else."
+            ))
+            .await
+            .expect("the turn runs");
+        let usage = agent.metrics();
+        reads.push(usage.accumulated_usage().cache_read_input_tokens().unwrap_or(0));
+    }
+    assert!(reads[2] > 0, "the prompt cache was never read back: {reads:?}");
+    assert!(
+        reads.windows(2).all(|pair| pair[1] > pair[0]),
+        "cumulative cache reads did not grow every turn: {reads:?}"
+    );
+    agent.shutdown().await.expect("the agent shuts down");
+}
+
 /// TS case `blocks a denied tool call via interventions`, with the denial given as the answer
 /// to the interrupt.
 #[tokio::test]
