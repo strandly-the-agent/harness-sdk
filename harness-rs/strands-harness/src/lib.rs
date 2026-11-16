@@ -3,6 +3,10 @@
 //! `create_harness` builds a ready-to-run agent with the same defaults as the TypeScript harness
 //! (`@strands-agents/harness`): built-in tools, sessions, context management and memory.
 //!
+//! `create_harness` exports the agent's OpenTelemetry spans when `OTEL_TRACES_EXPORTER` names an
+//! exporter (`otlp`, `console`). Call [`shutdown_telemetry`] before the process exits: the OTLP
+//! exporter batches, and the spans still in the batch are lost otherwise.
+//!
 //! The crate root re-exports every public name, as the TypeScript package's entry point does;
 //! the modules themselves are private.
 
@@ -44,6 +48,7 @@ pub use interventions::{InterventionValue, InterventionsOption};
 pub use models::{supports_thinking, supports_web_search};
 pub use plugins::{EnvironmentContext, EnvironmentContextConfig, TodoItem, TodoStatus, Todos, TodosConfig};
 pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
+pub use telemetry::shutdown_telemetry;
 pub use tools::{
     AgentBuilder, AgentSpec, Choice, ChoiceOption, ContextAxis, ContextMode,
     DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, Fixed, Inherit, InstructionsMode,

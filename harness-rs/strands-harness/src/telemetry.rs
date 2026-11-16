@@ -120,25 +120,43 @@ pub(crate) fn setup_telemetry(env: &EnvLookup) -> Result<()> {
     TELEMETRY.setup(env, warn_once, setup_tracer)
 }
 
-/// Flushes the pending spans and shuts the exporters down, for a process about to exit. The
-/// provider's `shutdown()` blocks until the exporters flush or time out, so it runs on the
-/// blocking pool. Does nothing when setup never wired an exporter.
-#[cfg(feature = "otel")]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "called at exit by the harness's callers, which land separately"
-    )
-)]
-pub(crate) async fn shutdown_telemetry() -> Result<()> {
-    let Some(provider) = TELEMETRY.provider().take() else {
-        return Ok(());
-    };
-    tokio::task::spawn_blocking(move || provider.shutdown())
-        .await
-        .map_err(strands::Error::other)?
-        .map_err(strands::Error::other)?;
+/// Exports the spans still pending and shuts the exporters down. Call it once, before the
+/// process exits.
+///
+/// With `OTEL_TRACES_EXPORTER=otlp`, [`create_harness`](crate::create_harness) wires a batching
+/// exporter, and a process that exits right after an invocation loses the spans still in the
+/// batch. The TypeScript harness flushes them when Node exits; Rust has no exit hook, so the
+/// caller does it:
+///
+/// ```no_run
+/// # async fn run() -> strands_harness::Result<()> {
+/// use strands_harness::{HarnessAgentOptions, create_harness, shutdown_telemetry};
+///
+/// let mut agent = create_harness(HarnessAgentOptions::default()).await?;
+/// agent.invoke("Hello").await?;
+/// shutdown_telemetry().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Does nothing when no exporter was wired (`OTEL_TRACES_EXPORTER` unset or `none`, or a build
+/// without the `otel` feature). Agents that run after it export no spans.
+///
+/// # Errors
+///
+/// An exporter fails to flush or times out.
+pub async fn shutdown_telemetry() -> Result<()> {
+    #[cfg(feature = "otel")]
+    {
+        let Some(provider) = TELEMETRY.provider().take() else {
+            return Ok(());
+        };
+        // `shutdown()` blocks until the exporters flush or time out.
+        tokio::task::spawn_blocking(move || provider.shutdown())
+            .await
+            .map_err(strands::Error::other)?
+            .map_err(strands::Error::other)?;
+    }
     Ok(())
 }
 

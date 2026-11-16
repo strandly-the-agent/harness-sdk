@@ -179,11 +179,15 @@ fn a_run_that_wired_nothing_or_failed_does_not_count_as_configured() {
     );
 }
 
+/// Held by the tests that use the process's telemetry state.
+static PROCESS_STATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// The process-wide entry points, in one test because they share the process's state. An
 /// unsupported name is warned about once and wires nothing, so no tracer provider is
 /// registered in the test process; `shutdown_telemetry` takes the provider setup stored.
 #[tokio::test]
 async fn the_process_wide_setup_warns_once_and_shutdown_takes_the_provider() {
+    let _process = PROCESS_STATE.lock().await;
     let env = selector("h12plug-unsupported");
     let ((), warnings) = WarnRecorder::capture(|| {
         setup_telemetry(&env).unwrap();
@@ -209,6 +213,66 @@ async fn the_process_wide_setup_warns_once_and_shutdown_takes_the_provider() {
     }
     reset_telemetry();
     assert!(TELEMETRY.provider().is_none());
+}
+
+/// Rust-only: TS flushes on `beforeExit` (`strands-ts/src/telemetry/config.ts`); here the caller
+/// does, through `shutdown_telemetry`. The provider batches as the one `setup_tracer` builds for
+/// `otlp` does, over an in-memory exporter.
+#[cfg(feature = "otel")]
+#[tokio::test]
+async fn shutdown_telemetry_exports_the_spans_still_in_the_batch() {
+    use std::sync::{Mutex, PoisonError};
+    use std::time::Duration;
+
+    use strands::telemetry::opentelemetry::trace::{Tracer as _, TracerProvider as _};
+    use strands::telemetry::opentelemetry_sdk::error::OTelSdkResult;
+    use strands::telemetry::opentelemetry_sdk::trace::{
+        BatchConfigBuilder, BatchSpanProcessor, SpanData, SpanExporter,
+    };
+
+    #[derive(Debug, Clone, Default)]
+    struct SpanRecorder(Arc<Mutex<Vec<String>>>);
+
+    impl SpanRecorder {
+        fn names(&self) -> Vec<String> {
+            self.0.lock().unwrap_or_else(PoisonError::into_inner).clone()
+        }
+    }
+
+    impl SpanExporter for SpanRecorder {
+        async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+            let names = batch.into_iter().map(|span| span.name.into_owned());
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .extend(names);
+            Ok(())
+        }
+    }
+
+    let _process = PROCESS_STATE.lock().await;
+    let recorder = SpanRecorder::default();
+    // No scheduled export within the test: only a flush empties the batch.
+    let batch = BatchConfigBuilder::default()
+        .with_scheduled_delay(Duration::from_secs(3600))
+        .build();
+    let provider = Provider::builder()
+        .with_span_processor(
+            BatchSpanProcessor::builder(recorder.clone())
+                .with_batch_config(batch)
+                .build(),
+        )
+        .build();
+    drop(provider.tracer("strands-harness").start("invoke_agent"));
+    *TELEMETRY.provider() = Some(provider);
+    assert_eq!(recorder.names(), Vec::<String>::new());
+
+    shutdown_telemetry().await.unwrap();
+
+    assert_eq!(recorder.names(), ["invoke_agent"]);
+    assert!(TELEMETRY.provider().is_none());
+    // Nothing is left to shut down.
+    shutdown_telemetry().await.unwrap();
 }
 
 #[test]
