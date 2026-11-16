@@ -38,5 +38,6 @@ pub use tools::{
 #[cfg(feature = "mcp")]
 pub use tools::{exa_web_search, make_exa_web_search};
 pub use plugins::{TodoItem, TodoStatus, Todos, TodosConfig};
+pub use interventions::{InterventionValue, InterventionsOption};
 pub use plugins::{EnvironmentContext, EnvironmentContextConfig, TodoItem, TodoStatus, Todos, TodosConfig};
 pub use types::{Effort, WebFetchTransport};
