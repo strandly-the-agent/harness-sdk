@@ -441,6 +441,21 @@
     },
     "throws InterruptError with all collected interrupts after all callbacks run": "collects_interrupt_errors_from_multiple_callbacks_and_invokes_all_of_them"
   },
+  "strands-ts/src/middleware/__tests__/agent-middleware.test.ts": {
+    "throws on unknown phase": {
+      "gap": "can't be written: phases are typed constructors (`input`, `wrap`, `output`)"
+    }
+  },
+  "strands-ts/src/middleware/__tests__/copy-on-input.test.ts": {
+    "modelState is not exposed on the middleware context": {
+      "gap": "holds by type: `InvokeModelContext` has no model-state field"
+    }
+  },
+  "strands-ts/src/middleware/__tests__/custom-stages.test.ts": {
+    "returns a frozen object": {
+      "gap": "doesn't apply: a stage is a type implementing `MiddlewareStage`, not a runtime object"
+    }
+  },
   "strands-ts/src/models/__tests__/anthropic.test.ts": {
     "disables caching for an unknown strategy": {
       "gap": "`CacheStrategy` is a closed enum, so the TS runtime check has nothing to reject"
