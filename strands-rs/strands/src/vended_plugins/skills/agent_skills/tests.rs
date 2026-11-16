@@ -258,12 +258,11 @@ mod plugin_interface {
         let tools = plugin_of(vec![make_skill("s").into()]).get_tools();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name(), "skills");
-        // The model-facing spec against the TS-generated fixture.
-        let expected: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../conformance/fixtures/tools/skills_tool_spec.json"
-        ))
-        .unwrap();
-        assert_eq!(serde_json::to_value(tools[0].tool_spec()).unwrap(), expected);
+        // The model-facing spec against the TS-generated fixture, key order included.
+        assert_eq!(
+            serde_json::to_string(&tools[0].tool_spec()).unwrap(),
+            include_str!("../../../../../conformance/fixtures/tools/skills_tool_spec.json")
+        );
     }
 
     #[tokio::test]

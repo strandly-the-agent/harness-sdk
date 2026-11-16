@@ -39,12 +39,11 @@ fn has_the_correct_tool_name() {
     let tool = create_retrieval_tool(stash(), None);
     assert_eq!(tool.name(), RETRIEVAL_TOOL_NAME);
     assert_eq!(tool.tool_spec().input_schema(), Some(&input_schema()));
-    // The whole model-facing spec against the TS-generated fixture.
-    let expected: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../conformance/fixtures/tools/retrieve_context_spec.json"
-    ))
-    .unwrap();
-    assert_eq!(serde_json::to_value(tool.tool_spec()).unwrap(), expected);
+    // The whole model-facing spec against the TS-generated fixture, key order included.
+    assert_eq!(
+        serde_json::to_string(&tool.tool_spec()).unwrap(),
+        include_str!("../../../../../conformance/fixtures/tools/retrieve_context_spec.json")
+    );
 }
 
 #[tokio::test]

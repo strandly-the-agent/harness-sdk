@@ -87,16 +87,12 @@ fn the_schemas_and_descriptions_match_ts() {
             .contains("Pin sparingly — too many pinned messages")
     );
     assert_eq!(pin_schema()["required"], json!(["select", "action"]));
-    // The three model-facing specs against the TS-generated fixture.
-    let specs: Vec<JsonValue> = tools
-        .iter()
-        .map(|tool| serde_json::to_value(tool.tool_spec()).unwrap())
-        .collect();
-    let expected: Vec<JsonValue> = serde_json::from_str(include_str!(
-        "../../../../../../conformance/fixtures/tools/agentic_context_specs.json"
-    ))
-    .unwrap();
-    assert_eq!(specs, expected);
+    // The three model-facing specs against the TS-generated fixture, key order included.
+    let specs: Vec<_> = tools.iter().map(|tool| tool.tool_spec()).collect();
+    assert_eq!(
+        serde_json::to_string(&specs).unwrap(),
+        include_str!("../../../../../../conformance/fixtures/tools/agentic_context_specs.json")
+    );
 }
 
 #[tokio::test]

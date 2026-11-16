@@ -605,12 +605,11 @@ mod tool_metadata {
                 "additionalProperties": false
             }))
         );
-        // The whole model-facing spec against the TS-generated fixture.
-        let expected: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../conformance/fixtures/tools/mcp_router_spec.json"
-        ))
-        .unwrap();
-        assert_eq!(serde_json::to_value(tool.tool_spec()).unwrap(), expected);
+        // The whole model-facing spec against the TS-generated fixture, key order included.
+        assert_eq!(
+            serde_json::to_string(&tool.tool_spec()).unwrap(),
+            include_str!("../../../../conformance/fixtures/tools/mcp_router_spec.json")
+        );
     }
 
     #[test]

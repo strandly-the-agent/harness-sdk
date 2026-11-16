@@ -550,19 +550,15 @@ mod classifier_mode {
             "{request}"
         );
         assert!(request.contains("Tool: deleteFile"), "{request}");
-        // The structured-output tool and the interrupt are the TS ones (conformance fixtures).
-        let fixture = |text: &str| serde_json::from_str::<JsonValue>(text).unwrap();
+        // The structured-output tool and the interrupt are the TS ones (conformance fixtures),
+        // key order included.
         assert_eq!(
-            serde_json::to_value(&classifier.requests()[0].tool_specs).unwrap(),
-            fixture(include_str!(
-                "../../../../conformance/fixtures/tools/hitl_classifier_specs.json"
-            ))
+            serde_json::to_string(&classifier.requests()[0].tool_specs).unwrap(),
+            include_str!("../../../../conformance/fixtures/tools/hitl_classifier_specs.json")
         );
         assert_eq!(
-            serde_json::to_value(result.interrupts()).unwrap(),
-            fixture(include_str!(
-                "../../../../conformance/fixtures/interrupts/hitl_approval.json"
-            ))
+            serde_json::to_string(result.interrupts()).unwrap(),
+            include_str!("../../../../conformance/fixtures/interrupts/hitl_approval.json")
         );
     }
 
