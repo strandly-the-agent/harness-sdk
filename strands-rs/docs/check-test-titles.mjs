@@ -18,13 +18,18 @@
 // It exits 1 when a case is missing, when matched + declared differs from the row's `ported` count, or
 // when the cases found differ from the row's `total`.
 //
-// snake_case rule: split camelCase words (`_` between a lowercase letter or digit and the uppercase
-// letter after it, so `toJSON` is `to_json` and `structuredOutput` is `structured_output`); lowercase;
-// every run of characters outside `a-z0-9` becomes one `_`; trim `_` from both ends; prefix `_` when
-// the result starts with a digit or is empty. A template-literal title uses its source text, so
-// `${name}` contributes `name`. No truncation: names are exact. The form without the camelCase split
-// (`structuredoutput`) is accepted too, because part of the suite was ported with it; new tests use
-// the split form.
+// snake_case rule, in order:
+//   1. drop `it.each` placeholders: printf ones (`%s`, `%j`, `%p`, `%i`, `%d`, `%o`) and `$name` or
+//      `$a.b` ones (so "maps $name on the retry" is `maps_on_the_retry`);
+//   2. drop apostrophes inside words ("doesn't" is `doesnt`, "caller's" is `callers`);
+//   3. split camelCase words: `_` between a lowercase letter or digit and the uppercase letter after it
+//      (`toJSON` is `to_json`, `structuredOutput` is `structured_output`);
+//   4. lowercase; every run of characters outside `a-z0-9` becomes one `_`; trim `_` from both ends;
+//   5. prefix `_` when the result starts with a digit or is empty.
+// A template-literal title uses its source text, so `${name}` contributes `name`. No truncation: names
+// are exact. The forms that skip step 1, 2 or 3 (`maps_name_on_the_retry`, `doesn_t`,
+// `structuredoutput`) are accepted too, because part of the suite was ported with them; new tests use
+// the full rule.
 //
 // Rust tests: every `fn <name>(` that follows a test attribute (`#[test]`, `#[tokio::test]`,
 // `#[rstest]`, `#[test_case(..)]`, any `#[<path>::test]`) in the files the row's second column names.
@@ -74,7 +79,17 @@ function lowerSnake(text) {
 
 // The accepted Rust names of a title: the canonical one first.
 function snakeCase(title) {
-  return [...new Set([lowerSnake(title.replace(/([a-z0-9])([A-Z])/g, '$1_$2')), lowerSnake(title)])]
+  const steps = [
+    (text) => text.replace(/%[sdifjoOp]|\$[A-Za-z_][\w.]*/g, ' '),
+    (text) => text.replace(/(?<=[A-Za-z])['\u2019](?=[A-Za-z])/g, ''),
+    (text) => text.replace(/([a-z0-9])([A-Z])/g, '$1_$2'),
+  ]
+  const names = []
+  for (let skipped = 0; skipped < 1 << steps.length; skipped++) {
+    const text = steps.reduce((text, step, at) => (skipped & (1 << at) ? text : step(text)), title)
+    names.push(lowerSnake(text))
+  }
+  return [...new Set(names)]
 }
 
 function rootName(node) {

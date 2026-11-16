@@ -12,7 +12,7 @@ The TypeScript test suite is the behavioural spec. Every applicable `it(...)` ca
 ## Naming
 
 - A ported test is named with the snake_case form of the TS `it(...)` title.
-- The snake_case form: split camelCase words (`structuredOutput` is `structured_output`, `toJSON` is `to_json`), lowercase the title, turn every run of characters outside `a-z0-9` into one `_`, trim `_` from both ends, and prefix `_` when the result starts with a digit. `it("doesn't retry 4xx errors")` is `doesn_t_retry_4xx_errors`. Names aren't truncated. An `it.each` case is one test named after its template text.
+- The snake_case form: drop `it.each` placeholders (`%s`, `$name`) and apostrophes inside words, split camelCase words (`structuredOutput` is `structured_output`, `toJSON` is `to_json`), lowercase the title, turn every run of characters outside `a-z0-9` into one `_`, trim `_` from both ends, and prefix `_` when the result starts with a digit. `it("doesn't retry 4xx errors")` is `doesnt_retry_4xx_errors`. Names aren't truncated. An `it.each` case is one test named after its template text.
 - When a title repeats in a spec under different `describe` blocks, each `describe` becomes a `mod` and the tests keep the exact name.
 - A case covered by a differently named test, by a test that merges several cases, or not ported at all is declared in [test-title-map.json](test-title-map.json) (`{ "<spec path>": { "<ts title>": "<rust test name>" | { "gap": "<reason>" } } }`).
 - `node strands-rs/docs/check-test-titles.mjs [--report] [filter...]` checks every in-scope [PARITY.md](PARITY.md) row against these rules and fails on a missing case or a wrong `ported` count. It needs the `typescript` package (run it from a checkout with `node_modules`, or set `NODE_PATH`).
