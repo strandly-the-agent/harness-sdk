@@ -85,12 +85,22 @@ fn parse_exa(text: &str) -> Vec<SearchResult> {
 }
 
 /// How to reach Exa's MCP server (the TS `McpClient` config).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ExaConnection {
     pub(crate) url: &'static str,
     pub(crate) allowed_tools: Vec<&'static str>,
     /// Sent as the `x-api-key` header.
     pub(crate) api_key: Option<String>,
+}
+
+impl std::fmt::Debug for ExaConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExaConnection")
+            .field("url", &self.url)
+            .field("allowed_tools", &self.allowed_tools)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 /// The MCP client operations a search needs; failures carry the error's message.

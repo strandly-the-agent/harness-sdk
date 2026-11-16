@@ -440,3 +440,16 @@ fn the_mcp_client_config_carries_the_url_the_key_header_and_the_tool_filter() {
 
     assert!(super::exa_mcp::config(connection(None)).headers.is_none());
 }
+
+/// Review finding correctness-a8: `Debug` does not print the API key.
+#[test]
+fn debug_redacts_the_api_key() {
+    let connection = ExaConnection {
+        url: "https://example.test",
+        allowed_tools: vec![],
+        api_key: Some("sk-secret".to_owned()),
+    };
+    let printed = format!("{connection:?}");
+    assert!(!printed.contains("sk-secret"), "{printed}");
+    assert!(printed.contains("<redacted>"), "{printed}");
+}

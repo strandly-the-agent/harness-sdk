@@ -42,7 +42,7 @@ use crate::types::{BuiltinToolsConfig, ContextManagerOption, Effort, MemoryConfi
 mod tests;
 
 /// What the `mcp_servers` option accepts: the standard `mcpServers` config.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 #[non_exhaustive]
 pub enum McpServersOption {
     /// Path to a JSON file holding the server map, flat or under an `mcpServers` key.
@@ -50,6 +50,28 @@ pub enum McpServersOption {
     /// The flat map of server name to its config, in the JSON form of the SDK's
     /// `McpServerConfig`.
     Servers(JsonObject),
+}
+
+/// Redacts the values under each server's `env` and `headers`, which can hold expanded secrets.
+impl std::fmt::Debug for McpServersOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Path(path) => f.debug_tuple("Path").field(path).finish(),
+            Self::Servers(servers) => {
+                let mut redacted = servers.clone();
+                for server in redacted.values_mut() {
+                    for key in ["env", "headers"] {
+                        if let Some(strands::JsonValue::Object(values)) = server.get_mut(key) {
+                            for value in values.values_mut() {
+                                *value = "<redacted>".into();
+                            }
+                        }
+                    }
+                }
+                f.debug_tuple("Servers").field(&redacted).finish()
+            }
+        }
+    }
 }
 
 #[cfg(feature = "mcp")]
@@ -788,4 +810,24 @@ fn resolve_background_tasks(configured: Option<BackgroundTasks>, forced: &[Strin
     policy.always.extend(forced.iter().cloned());
     omit_forced(&mut policy.never);
     BackgroundTasks::Config(policy)
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::McpServersOption;
+
+    /// Review finding correctness-a8: `Debug` does not print `env` or `headers` values.
+    #[test]
+    fn debug_redacts_env_and_header_values() {
+        let servers = serde_json::json!({
+            "one": { "command": "run", "env": { "TOKEN": "s3cret" }, "headers": { "x-key": "hunter2" } },
+        });
+        let servers = servers.as_object().cloned().unwrap_or_default();
+        let printed = format!("{:?}", McpServersOption::Servers(servers));
+        assert!(
+            !printed.contains("s3cret") && !printed.contains("hunter2"),
+            "{printed}"
+        );
+        assert!(printed.contains("TOKEN") && printed.contains("run"), "{printed}");
+    }
 }
