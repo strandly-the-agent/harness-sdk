@@ -14,4 +14,6 @@ mod types;
 
 pub(crate) use background_tasks::{BackgroundTaskScheduler, Route};
 
-pub use types::{BackgroundTasks, BackgroundTasksConfig};
+pub use types::{
+    BackgroundTasks, BackgroundTasksConfig, BackgroundTasksConfigBuilder, background_tasks_config_builder,
+};

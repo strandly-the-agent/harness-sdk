@@ -785,6 +785,7 @@ impl From<Vec<InterruptResponseContent>> for InvokeArgs {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct InvokeOptions {
     /// Values for the tools and hooks of this invocation. The agent shares this handle with every
     /// hook event, tool context and the [`AgentResult`], so the caller sees their writes.
@@ -830,6 +831,7 @@ impl InvokeOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct InvokeLimits {
     /// Maximum turns (one model call plus the tool calls it requests) across the request.
     pub turns: Option<NonZeroU32>,
