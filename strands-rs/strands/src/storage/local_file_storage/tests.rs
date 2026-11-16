@@ -260,7 +260,7 @@ async fn returns_keys_sorted_lexicographically() {
 #[tokio::test]
 async fn returns_a_local_file_storage_instance_rooted_at_the_subdirectory() {
     let (_dir, _, storage) = setup();
-    let namespaced = storage.namespace("sub/dir").unwrap();
+    let namespaced = storage.with_namespace("sub/dir").unwrap();
     namespaced.write("file.txt", &[1, 2, 3]).await.unwrap();
     assert!(namespaced.is_namespaced());
     assert_eq!(namespaced.read("file.txt").await.unwrap(), Some(vec![1, 2, 3]));
@@ -270,7 +270,7 @@ async fn returns_a_local_file_storage_instance_rooted_at_the_subdirectory() {
 #[tokio::test]
 async fn isolates_keys_from_the_parent_storage() {
     let (_dir, _, storage) = setup();
-    let namespaced = storage.namespace("isolated").unwrap();
+    let namespaced = storage.with_namespace("isolated").unwrap();
     storage.write("root.txt", &[1]).await.unwrap();
     namespaced.write("child.txt", &[2]).await.unwrap();
     let parent_keys = storage.list("").await.unwrap();
@@ -283,7 +283,7 @@ async fn isolates_keys_from_the_parent_storage() {
 fn exposes_base_dir_pointing_to_the_subdirectory() {
     let (_dir, base_dir, storage) = setup();
     assert_eq!(
-        storage.namespace("nested").unwrap().base_dir(),
+        storage.with_namespace("nested").unwrap().base_dir(),
         format!("{base_dir}/nested")
     );
 }
@@ -305,7 +305,7 @@ async fn indexes_writes_and_delegates_search_to_a_search_strategy_from_config() 
         [format!("{base_dir} a.txt [1]")]
     );
     assert_eq!(
-        configured.search("query").await.unwrap(),
+        configured.search("query").await.unwrap().unwrap(),
         [StorageSearchResult::new("hit.txt", 1.0)]
     );
     assert_eq!(*strategy.searched.lock().unwrap(), [format!("{base_dir} query")]);
@@ -360,8 +360,15 @@ async fn carries_a_search_strategy_from_config_through_for_sandbox_and_namespace
         .for_sandbox(RecordingSandbox::new(false))
         .search("one")
         .await
+        .unwrap()
         .unwrap();
-    configured.namespace("sub").unwrap().search("two").await.unwrap();
+    configured
+        .with_namespace("sub")
+        .unwrap()
+        .search("two")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(
         *strategy.searched.lock().unwrap(),
         [format!("{base_dir} one"), format!("{base_dir}/sub two")]
@@ -395,6 +402,9 @@ fn a_write_dropped_after_its_first_poll_finishes_and_leaves_no_temp_file() {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, ["key.json"]);
-        assert_eq!(storage.read("session/key.json").await.unwrap(), Some(b"data".to_vec()));
+        assert_eq!(
+            storage.read("session/key.json").await.unwrap(),
+            Some(b"data".to_vec())
+        );
     });
 }

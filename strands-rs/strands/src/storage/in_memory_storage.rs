@@ -30,7 +30,7 @@ impl fmt::Debug for InMemoryStorageConfig {
 }
 
 /// Unbounded in-memory [`Storage`] (TS `InMemoryStorage`), for tests and environments without a
-/// disk. Content doesn't survive the process. Clones and [`namespace`](Self::namespace) views
+/// disk. Content doesn't survive the process. Clones and [`with_namespace`](Self::with_namespace) views
 /// share the entries.
 ///
 /// ```
@@ -78,25 +78,13 @@ impl InMemoryStorage {
     /// # Errors
     ///
     /// The prefix has a backslash or a `..` segment.
-    pub fn namespace(&self, prefix: &str) -> Result<Self> {
+    pub fn with_namespace(&self, prefix: &str) -> Result<Self> {
         Ok(Self {
             store: Arc::clone(&self.store),
             prefix: format!("{}{}", self.prefix, namespace_prefix(prefix)?),
             search_strategy: self.search_strategy.clone(),
             namespaced: true,
         })
-    }
-
-    /// The matches for `query` from the configured strategy, else the keyword scan.
-    ///
-    /// # Errors
-    ///
-    /// The strategy failed.
-    pub async fn search(&self, query: &str) -> Result<Vec<StorageSearchResult>> {
-        match &self.search_strategy {
-            Some(strategy) => strategy.search(self, query).await,
-            None => KeywordSearchStrategy.search(self, query).await,
-        }
     }
 
     /// Removes every entry this instance sees (those under its namespace, or all).
@@ -162,11 +150,17 @@ impl Storage for InMemoryStorage {
     }
 
     fn namespace(&self, prefix: &str) -> Option<Result<Arc<dyn Storage>>> {
-        Some(InMemoryStorage::namespace(self, prefix).map(|scoped| Arc::new(scoped) as Arc<dyn Storage>))
+        Some(
+            self.with_namespace(prefix)
+                .map(|scoped| Arc::new(scoped) as Arc<dyn Storage>),
+        )
     }
 
     async fn search(&self, query: &str) -> Option<Result<Vec<StorageSearchResult>>> {
-        Some(InMemoryStorage::search(self, query).await)
+        Some(match &self.search_strategy {
+            Some(strategy) => strategy.search(self, query).await,
+            None => KeywordSearchStrategy.search(self, query).await,
+        })
     }
 
     fn storage_type_name(&self) -> &'static str {

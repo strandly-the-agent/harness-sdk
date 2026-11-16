@@ -101,7 +101,7 @@ async fn does_not_conflict_with_other_storage_users() {
 #[tokio::test]
 async fn uses_the_view_as_the_exact_root() {
     let storage = InMemoryStorage::new();
-    let view: Arc<dyn Storage> = Arc::new(storage.namespace("tenants/t1/research").unwrap());
+    let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("tenants/t1/research").unwrap());
     let stash = Stash::new(view, "sess-1", "agent-a", true).unwrap();
     stash
         .store("tool-1", 0, &bytes(&json!({"text": "test"})))
@@ -116,7 +116,7 @@ async fn uses_the_view_as_the_exact_root() {
 #[tokio::test]
 async fn uses_the_per_agent_root_under_a_view_unless_allowed() {
     let storage = InMemoryStorage::new();
-    let view: Arc<dyn Storage> = Arc::new(storage.namespace("tenant").unwrap());
+    let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("tenant").unwrap());
     let stash = Stash::new(view, "sess-1", "agent-a", false).unwrap();
     stash
         .store("tool-1", 0, &bytes(&json!({"text": "test"})))
@@ -131,7 +131,7 @@ async fn uses_the_per_agent_root_under_a_view_unless_allowed() {
 #[tokio::test]
 async fn lets_agents_in_different_sessions_sharing_a_view_read_each_other_entries() {
     let storage = InMemoryStorage::new();
-    let view = || -> Arc<dyn Storage> { Arc::new(storage.namespace("team").unwrap()) };
+    let view = || -> Arc<dyn Storage> { Arc::new(storage.with_namespace("team").unwrap()) };
     let first = Stash::new(view(), "sess-1", "agent-a", true).unwrap();
     let second = Stash::new(view(), "sess-2", "agent-b", true).unwrap();
     first
@@ -147,7 +147,7 @@ async fn lets_agents_in_different_sessions_sharing_a_view_read_each_other_entrie
 #[tokio::test]
 async fn keeps_a_shared_view_on_clear_session() {
     let storage = InMemoryStorage::new();
-    let view: Arc<dyn Storage> = Arc::new(storage.namespace("team").unwrap());
+    let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("team").unwrap());
     let stash = Stash::new(view, "sess-1", "agent-a", true).unwrap();
     stash
         .store("tool-1", 0, &bytes(&json!({"text": "shared"})))

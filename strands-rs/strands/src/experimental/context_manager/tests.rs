@@ -179,7 +179,10 @@ async fn counts_the_history_in_the_form_the_request_sends() {
         crate::types::messages::Role::User,
         vec![crate::types::messages::SummaryBlock::new("earlier turns").into()],
     );
-    let mut agent = agent_with_model(vec![summary, assistant("ok"), user("next")], Arc::clone(&model) as _);
+    let mut agent = agent_with_model(
+        vec![summary, assistant("ok"), user("next")],
+        Arc::clone(&model) as _,
+    );
     manager_with(strategy).init_agent(&mut agent).await.unwrap();
     before_model_call(&mut agent, None).await;
     let counted = model.counted.lock().unwrap();
@@ -240,7 +243,7 @@ async fn initializes_strategies_with_init_context() {
 #[tokio::test]
 async fn uses_an_explicitly_configured_scoped_stash_storage_as_the_exact_root() {
     let storage = InMemoryStorage::new();
-    let view: Arc<dyn Storage> = Arc::new(storage.namespace("team").unwrap());
+    let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("team").unwrap());
     let config = ContextManagerConfig {
         strategies: None,
         stash: Some(StashOption::Enabled(StashConfig {
@@ -261,7 +264,7 @@ async fn uses_an_explicitly_configured_scoped_stash_storage_as_the_exact_root() 
 #[tokio::test]
 async fn keeps_the_per_agent_root_under_a_scoped_agent_storage() {
     let storage = InMemoryStorage::new();
-    let view: Arc<dyn Storage> = Arc::new(storage.namespace("team").unwrap());
+    let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("team").unwrap());
     let mut agent = agent_with(vec![user("hello")]);
     agent.set_storage(Some(view));
     agent.set_session_id("sess-1".to_owned());
@@ -858,6 +861,8 @@ fn preset_names_round_trip_through_display_and_from_str() {
 fn the_config_builder_takes_a_bool_or_a_stash_config_for_stash() {
     let off = ContextManagerConfig::builder().stash(false).build();
     assert!(matches!(off.stash, Some(StashOption::Disabled)));
-    let on = ContextManagerConfig::builder().stash(StashConfig::default()).build();
+    let on = ContextManagerConfig::builder()
+        .stash(StashConfig::default())
+        .build();
     assert!(matches!(on.stash, Some(StashOption::Enabled(_))));
 }

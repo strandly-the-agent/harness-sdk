@@ -167,7 +167,7 @@ async fn indexes_writes_and_delegates_search_to_a_search_strategy_from_config() 
         [(vec!["a".to_owned()], "a".to_owned(), vec![1])]
     );
     assert_eq!(
-        configured.search("query").await.unwrap(),
+        configured.search("query").await.unwrap().unwrap(),
         [StorageSearchResult::new("hit", 1.0)]
     );
 }
@@ -180,6 +180,7 @@ async fn uses_the_default_keyword_scan_with_an_empty_config() {
         .search("dark")
         .await
         .unwrap()
+        .unwrap()
         .into_iter()
         .map(|result| result.key)
         .collect();
@@ -189,7 +190,7 @@ async fn uses_the_default_keyword_scan_with_an_empty_config() {
 #[tokio::test]
 async fn returns_a_scoped_in_memory_storage_that_shares_entries_with_the_parent() {
     let storage = InMemoryStorage::new();
-    let scoped = storage.namespace("memory/agent").unwrap();
+    let scoped = storage.with_namespace("memory/agent").unwrap();
     scoped.write("notes.md", b"hello").await.unwrap();
     assert!(scoped.is_namespaced());
     assert_eq!(storage.list("").await.unwrap(), ["memory/agent/notes.md"]);
@@ -202,7 +203,7 @@ async fn returns_a_scoped_in_memory_storage_that_shares_entries_with_the_parent(
 #[tokio::test]
 async fn composes_nested_namespaces() {
     let storage = InMemoryStorage::new();
-    let nested = storage.namespace("a").unwrap().namespace("b/").unwrap();
+    let nested = storage.with_namespace("a").unwrap().with_namespace("b/").unwrap();
     nested.write("k", b"v").await.unwrap();
     assert_eq!(storage.list("").await.unwrap(), ["a/b/k"]);
 }
@@ -214,12 +215,13 @@ async fn searches_only_entries_under_the_prefix_and_scores_keys_without_it() {
         .write("other/memory-agent-notes.md", b"unrelated")
         .await
         .unwrap();
-    let scoped = storage.namespace("memory/agent").unwrap();
+    let scoped = storage.with_namespace("memory/agent").unwrap();
     scoped.write("deploy.md", b"blue green deploys").await.unwrap();
     scoped.write("theme.md", b"dark mode").await.unwrap();
     let keys: Vec<String> = scoped
         .search("memory agent deploy")
         .await
+        .unwrap()
         .unwrap()
         .into_iter()
         .map(|result| result.key)
@@ -234,9 +236,9 @@ async fn passes_the_scoped_instance_and_relative_keys_to_the_search_strategy() {
         search_strategy: Some(strategy.clone()),
     });
     parent.write("outside.md", b"x").await.unwrap();
-    let scoped = parent.namespace("memory/agent").unwrap();
+    let scoped = parent.with_namespace("memory/agent").unwrap();
     scoped.write("deploy.md", b"x").await.unwrap();
-    scoped.search("query").await.unwrap();
+    scoped.search("query").await.unwrap().unwrap();
     let indexed = strategy.indexed.lock().unwrap();
     assert_eq!(indexed[1].0, ["deploy.md"]);
     assert_eq!(indexed[1].1, "deploy.md");
@@ -250,7 +252,7 @@ async fn passes_the_scoped_instance_and_relative_keys_to_the_search_strategy() {
 async fn clears_only_entries_under_the_prefix() {
     let storage = InMemoryStorage::new();
     storage.write("keep.md", b"x").await.unwrap();
-    let scoped = storage.namespace("memory").unwrap();
+    let scoped = storage.with_namespace("memory").unwrap();
     scoped.write("drop.md", b"y").await.unwrap();
     scoped.clear();
     assert_eq!(storage.list("").await.unwrap(), ["keep.md"]);

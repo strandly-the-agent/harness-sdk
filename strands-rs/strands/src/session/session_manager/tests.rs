@@ -655,7 +655,7 @@ fn rejects_an_invalid_session_id() {
 async fn a_pre_namespaced_storage_is_used_without_the_session_prefix() {
     let storage = InMemoryStorage::new();
     let sm = SessionManager::new(SessionManagerConfig {
-        storage: Some(Arc::new(storage.namespace("custom").unwrap())),
+        storage: Some(Arc::new(storage.with_namespace("custom").unwrap())),
         session_id: Some("test-session".into()),
         ..Default::default()
     })
@@ -843,7 +843,7 @@ async fn deletes_stash_data_from_custom_stash_storage() {
 #[tokio::test]
 async fn deletes_stash_data_when_storage_is_pre_namespaced() {
     let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
-    let namespaced: Arc<dyn Storage> = Arc::new(InMemoryStorage::new().namespace("my-prefix").unwrap());
+    let namespaced: Arc<dyn Storage> = Arc::new(InMemoryStorage::new().with_namespace("my-prefix").unwrap());
     let sm = manager_on(&root);
     let stash = stash_on(&namespaced, "agent");
     let _agent = initialized_with_stash(&root, &sm, &stash).await;
@@ -857,7 +857,8 @@ async fn deletes_stash_data_when_storage_is_pre_namespaced() {
 
 #[tokio::test]
 async fn does_not_over_delete_when_root_storage_is_pre_namespaced() {
-    let namespaced_root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new().namespace("tenant-a").unwrap());
+    let namespaced_root: Arc<dyn Storage> =
+        Arc::new(InMemoryStorage::new().with_namespace("tenant-a").unwrap());
     let sm = manager_on(&namespaced_root);
     let stash = stash_on(&namespaced_root, "agent");
     let _agent = initialized_with_stash(&namespaced_root, &sm, &stash).await;

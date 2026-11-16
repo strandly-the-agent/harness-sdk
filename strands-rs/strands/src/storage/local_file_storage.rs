@@ -44,7 +44,7 @@ impl fmt::Debug for LocalFileStorageConfig {
 /// use strands::storage::{LocalFileStorage, Storage};
 ///
 /// # async fn run() -> strands::Result<()> {
-/// let sessions = LocalFileStorage::new("./.agent").namespace("sessions")?;
+/// let sessions = LocalFileStorage::new("./.agent").with_namespace("sessions")?;
 /// sessions.write("notes.json", b"[]").await?;
 /// # Ok(()) }
 /// ```
@@ -111,7 +111,7 @@ impl LocalFileStorage {
     /// # Errors
     ///
     /// The prefix has a backslash or a `..` segment.
-    pub fn namespace(&self, prefix: &str) -> Result<Self> {
+    pub fn with_namespace(&self, prefix: &str) -> Result<Self> {
         let normalized = normalize_prefix(prefix)?;
         let base_dir = if normalized.is_empty() {
             self.base_dir.clone()
@@ -124,18 +124,6 @@ impl LocalFileStorage {
             search_strategy: self.search_strategy.clone(),
             namespaced: true,
         })
-    }
-
-    /// The matches for `query` from the configured strategy, else the keyword scan.
-    ///
-    /// # Errors
-    ///
-    /// The strategy or a listing failed.
-    pub async fn search(&self, query: &str) -> Result<Vec<StorageSearchResult>> {
-        match &self.search_strategy {
-            Some(strategy) => strategy.search(self, query).await,
-            None => KeywordSearchStrategy.search(self, query).await,
-        }
     }
 
     fn base(&self) -> &str {
@@ -356,11 +344,17 @@ impl Storage for LocalFileStorage {
     }
 
     fn namespace(&self, prefix: &str) -> Option<Result<Arc<dyn Storage>>> {
-        Some(LocalFileStorage::namespace(self, prefix).map(|scoped| Arc::new(scoped) as Arc<dyn Storage>))
+        Some(
+            self.with_namespace(prefix)
+                .map(|scoped| Arc::new(scoped) as Arc<dyn Storage>),
+        )
     }
 
     async fn search(&self, query: &str) -> Option<Result<Vec<StorageSearchResult>>> {
-        Some(LocalFileStorage::search(self, query).await)
+        Some(match &self.search_strategy {
+            Some(strategy) => strategy.search(self, query).await,
+            None => KeywordSearchStrategy.search(self, query).await,
+        })
     }
 
     fn storage_type_name(&self) -> &'static str {

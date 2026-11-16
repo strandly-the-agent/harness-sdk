@@ -125,7 +125,7 @@ fn file_store(name: &str, storage: Arc<dyn Storage>) -> FileMemoryStore {
 
 fn fixture() -> Fixture {
     let storage = Arc::new(InMemoryStorage::new());
-    let scoped: Arc<dyn Storage> = Arc::new(storage.namespace("memory/test-store").unwrap());
+    let scoped: Arc<dyn Storage> = Arc::new(storage.with_namespace("memory/test-store").unwrap());
     let store = FileMemoryStore::new(
         FileMemoryStoreConfig::builder()
             .name("test-store")
@@ -274,7 +274,7 @@ async fn scopes_distinct_named_stores_so_they_never_collide_on_a_shared_backend(
 #[tokio::test]
 async fn does_not_re_scope_storage_that_is_already_namespaced() {
     let storage = Arc::new(InMemoryStorage::new());
-    let pre_scoped: Arc<dyn Storage> = Arc::new(storage.namespace("memory/scoped").unwrap());
+    let pre_scoped: Arc<dyn Storage> = Arc::new(storage.with_namespace("memory/scoped").unwrap());
     let scoped_store = file_store("scoped", pre_scoped);
     scoped_store.add_entry("User prefers dark mode").await.unwrap();
     assert!(

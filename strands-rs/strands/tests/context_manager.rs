@@ -199,7 +199,7 @@ async fn delete_session_cleans_up_stash_data_with_real_agent() {
 #[tokio::test]
 async fn delete_session_keeps_a_stash_rooted_at_an_explicitly_configured_scoped_view() {
     let storage = InMemoryStorage::new();
-    let view: Arc<dyn Storage> = Arc::new(storage.namespace("team").unwrap());
+    let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("team").unwrap());
     let manager = session_manager(None);
     let config = ContextManagerConfig {
         strategies: None,
@@ -226,7 +226,7 @@ async fn delete_session_keeps_a_stash_rooted_at_an_explicitly_configured_scoped_
 #[tokio::test]
 async fn delete_session_with_a_scoped_agent_storage_removes_only_this_session() {
     let storage = InMemoryStorage::new();
-    let tenant: Arc<dyn Storage> = Arc::new(storage.namespace("tenant").unwrap());
+    let tenant: Arc<dyn Storage> = Arc::new(storage.with_namespace("tenant").unwrap());
     tenant.write("memory/prefs.json", b"{}").await.unwrap();
     let snapshots: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
     let manager = session_manager(Some(snapshots));
