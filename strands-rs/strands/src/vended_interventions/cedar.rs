@@ -193,7 +193,7 @@ struct Loaded {
 /// Authorizes each tool call against Cedar policies (TS `CedarAuthorization`).
 ///
 /// ```
-/// use strands::vended_interventions::{CedarAuthorization, CedarAuthorizationConfig};
+/// use strands::vended_interventions::cedar::{CedarAuthorization, CedarAuthorizationConfig};
 ///
 /// let cedar = CedarAuthorization::new(
 ///     CedarAuthorizationConfig::builder()

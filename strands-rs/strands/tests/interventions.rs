@@ -21,11 +21,14 @@ use strands::testing::MockMessageModel;
 use strands::tools::FunctionTool;
 use strands::types::json::JsonValue;
 use strands::types::messages::{ContentBlock, Role, ToolUseBlock};
-use strands::vended_interventions::{
-    Ask, AskFn, CedarAuthorization, CedarAuthorizationConfig, CedarAuthorizationConfigBuilder, Classifier,
-    ClassifierResult, ContextEnricherInput, HumanInTheLoop, HumanInTheLoopConfig,
-    HumanInTheLoopConfigBuilder, LlmClassifierConfig, LlmClassifierConfigBuilder, ToolDefinition, TypeAndId,
-    cedar_authorization_config_builder, human_in_the_loop_config_builder, llm_classifier_config_builder,
+use strands::vended_interventions::cedar::{
+    CedarAuthorization, CedarAuthorizationConfig, CedarAuthorizationConfigBuilder, ContextEnricherInput,
+    ToolDefinition, TypeAndId, cedar_authorization_config_builder,
+};
+use strands::vended_interventions::hitl::{
+    Ask, AskFn, Classifier, ClassifierResult, HumanInTheLoop, HumanInTheLoopConfig,
+    HumanInTheLoopConfigBuilder, LlmClassifierConfig, LlmClassifierConfigBuilder,
+    human_in_the_loop_config_builder, llm_classifier_config_builder,
 };
 use strands::{Agent, InterruptResponse, StopReason, ToolError};
 

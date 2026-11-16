@@ -1,15 +1,7 @@
 //! Intervention handlers that ship with the SDK (TS `vended-interventions/`).
+//!
+//! Each handler lives in its own module, as the TypeScript SDK has one entry point per handler
+//! and none for the folder.
 
 pub mod cedar;
 pub mod hitl;
-
-pub use cedar::{
-    CedarAuthorization, CedarAuthorizationConfig, CedarAuthorizationConfigBuilder, CedarEntities,
-    ContextEnricher, ContextEnricherInput, PrincipalResolver, ToolDefinition, TypeAndId,
-    cedar_authorization_config_builder,
-};
-pub use hitl::{
-    Ask, AskFn, Classifier, ClassifierResult, HumanInTheLoop, HumanInTheLoopClassifier, HumanInTheLoopConfig,
-    HumanInTheLoopConfigBuilder, LlmClassifierConfig, LlmClassifierConfigBuilder,
-    human_in_the_loop_config_builder, llm_classifier_config_builder,
-};

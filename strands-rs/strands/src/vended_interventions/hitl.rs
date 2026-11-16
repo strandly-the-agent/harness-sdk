@@ -79,7 +79,7 @@ impl Classifier {
     /// from the event before it returns the future, which can't borrow the event.
     ///
     /// ```
-    /// use strands::vended_interventions::{Classifier, ClassifierResult, HumanInTheLoopConfig};
+    /// use strands::vended_interventions::hitl::{Classifier, ClassifierResult, HumanInTheLoopConfig};
     ///
     /// let classifier = Classifier::function(|event| {
     ///     let risky = event.tool_use().name() == "shell";
@@ -168,7 +168,7 @@ impl fmt::Debug for HumanInTheLoopConfig {
 /// Requires human approval before tools run (TS `HumanInTheLoop`).
 ///
 /// ```
-/// use strands::vended_interventions::{HumanInTheLoop, HumanInTheLoopConfig};
+/// use strands::vended_interventions::hitl::{HumanInTheLoop, HumanInTheLoopConfig};
 ///
 /// let hitl = HumanInTheLoop::new(
 ///     HumanInTheLoopConfig::builder()

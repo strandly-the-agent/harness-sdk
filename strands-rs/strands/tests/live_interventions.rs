@@ -32,7 +32,9 @@ use strands::interventions::{
 };
 use strands::types::messages::ToolResultBlock;
 use strands::types::tools::{ToolResultStatus, ToolUse};
-use strands::vended_interventions::{CedarAuthorization, CedarAuthorizationConfig, CedarEntities, TypeAndId};
+use strands::vended_interventions::cedar::{
+    CedarAuthorization, CedarAuthorizationConfig, CedarEntities, TypeAndId,
+};
 use strands::{Agent, InvocationState, InvokeOptions, StopReason, ToolError, tool};
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/cedar");
