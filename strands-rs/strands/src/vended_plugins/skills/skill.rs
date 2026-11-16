@@ -19,7 +19,7 @@ const SKILL_HTTPS_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct SkillConfig {
     /// The skill's unique name: 1-64 lowercase alphanumeric characters or hyphens.
     pub name: String,
@@ -45,9 +45,11 @@ pub struct SkillConfig {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct SkillOptions {
     /// Fail on a name that breaks the naming rules instead of warning.
+    #[builder(default)]
     pub strict: bool,
     /// The skill directory, recorded on the skill and checked against its name. Only
     /// [`Skill::from_content`] reads it.

@@ -7,6 +7,9 @@ mod types;
 mod xml;
 
 pub(crate) use message_injection::{create_injection_middleware, is_user_turn};
-pub use types::{InjectionConfig, InjectionContext, InjectionTrigger};
-pub(crate) use types::{InjectionMiddlewareOptions, RenderContent, Trigger, render_content};
+pub use types::{
+    InjectionCondition, InjectionConfig, InjectionConfigBuilder, InjectionContext, InjectionTrigger,
+    injection_config_builder,
+};
+pub(crate) use types::{InjectionMiddlewareOptions, RenderContent, render_content};
 pub(crate) use xml::{escape_xml_attr, escape_xml_text};

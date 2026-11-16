@@ -199,7 +199,7 @@ fn respects_writable_false_from_config() {
 async fn uses_default_max_search_results_when_not_configured() {
     let Fixture { store, .. } = fixture();
     for index in 0..15 {
-        store.add(&format!("Fact number {index}")).await.unwrap();
+        store.add_entry(&format!("Fact number {index}")).await.unwrap();
     }
     assert_eq!(search(&store, "fact").await.len(), 10);
 }
@@ -215,7 +215,7 @@ async fn respects_max_search_results_from_config() {
     )
     .unwrap();
     for index in 0..5 {
-        custom.add(&format!("Fact number {index}")).await.unwrap();
+        custom.add_entry(&format!("Fact number {index}")).await.unwrap();
     }
     assert_eq!(search(&custom, "fact").await.len(), 2);
 }
@@ -240,7 +240,7 @@ fn defaults_to_no_description_when_omitted() {
 #[tokio::test]
 async fn auto_scopes_keys_under_memory_name_on_the_raw_backend() {
     let Fixture { storage, store, .. } = fixture();
-    store.add("User prefers dark mode").await.unwrap();
+    store.add_entry("User prefers dark mode").await.unwrap();
     assert!(
         storage
             .read("memory/test-store/user-prefers-dark-mode.md")
@@ -256,8 +256,8 @@ async fn scopes_distinct_named_stores_so_they_never_collide_on_a_shared_backend(
     let storage = Arc::new(InMemoryStorage::new());
     let store_a = file_store("store-a", storage.clone());
     let store_b = file_store("store-b", storage.clone());
-    store_a.add("User prefers dark mode").await.unwrap();
-    store_b.add("User prefers light mode").await.unwrap();
+    store_a.add_entry("User prefers dark mode").await.unwrap();
+    store_b.add_entry("User prefers light mode").await.unwrap();
 
     let dark = read_text(&*storage, "memory/store-a/user-prefers-dark-mode.md")
         .await
@@ -276,7 +276,7 @@ async fn does_not_re_scope_storage_that_is_already_namespaced() {
     let storage = Arc::new(InMemoryStorage::new());
     let pre_scoped: Arc<dyn Storage> = Arc::new(storage.namespace("memory/scoped").unwrap());
     let scoped_store = file_store("scoped", pre_scoped);
-    scoped_store.add("User prefers dark mode").await.unwrap();
+    scoped_store.add_entry("User prefers dark mode").await.unwrap();
     assert!(
         storage
             .read("memory/scoped/user-prefers-dark-mode.md")
@@ -298,7 +298,7 @@ async fn does_not_re_scope_storage_that_is_already_namespaced() {
 #[tokio::test]
 async fn writes_plain_markdown_content() {
     let Fixture { scoped, store, .. } = fixture();
-    store.add("User prefers dark mode").await.unwrap();
+    store.add_entry("User prefers dark mode").await.unwrap();
     assert_eq!(
         read_text(&*scoped, "user-prefers-dark-mode.md").await.as_deref(),
         Some("User prefers dark mode")
@@ -309,7 +309,7 @@ async fn writes_plain_markdown_content() {
 async fn derives_filename_from_first_line_of_content() {
     let Fixture { scoped, store, .. } = fixture();
     store
-        .add("The user likes vim keybindings\nMore details here")
+        .add_entry("The user likes vim keybindings\nMore details here")
         .await
         .unwrap();
     assert_eq!(
@@ -322,7 +322,9 @@ async fn derives_filename_from_first_line_of_content() {
 async fn truncates_derived_slug_at_50_characters() {
     let Fixture { scoped, store, .. } = fixture();
     store
-        .add("this is a very long sentence that should be truncated when used as a filename slug for storage")
+        .add_entry(
+            "this is a very long sentence that should be truncated when used as a filename slug for storage",
+        )
         .await
         .unwrap();
     let keys = scoped.list("").await.unwrap();
@@ -334,8 +336,14 @@ async fn truncates_derived_slug_at_50_characters() {
 #[tokio::test]
 async fn appends_new_facts_to_an_existing_entry_with_the_same_slug() {
     let Fixture { scoped, store, .. } = fixture();
-    store.add("Python is great\nFast prototyping").await.unwrap();
-    store.add("Python is great\nBut it has a GIL.").await.unwrap();
+    store
+        .add_entry("Python is great\nFast prototyping")
+        .await
+        .unwrap();
+    store
+        .add_entry("Python is great\nBut it has a GIL.")
+        .await
+        .unwrap();
     assert_eq!(scoped.list("").await.unwrap(), ["python-is-great.md"]);
     assert_eq!(
         read_text(&*scoped, "python-is-great.md").await.as_deref(),
@@ -346,8 +354,11 @@ async fn appends_new_facts_to_an_existing_entry_with_the_same_slug() {
 #[tokio::test]
 async fn does_not_duplicate_content_when_new_entry_has_only_the_heading() {
     let Fixture { scoped, store, .. } = fixture();
-    store.add("Python is great\nFast prototyping").await.unwrap();
-    store.add("Python is great").await.unwrap();
+    store
+        .add_entry("Python is great\nFast prototyping")
+        .await
+        .unwrap();
+    store.add_entry("Python is great").await.unwrap();
     assert_eq!(
         read_text(&*scoped, "python-is-great.md").await.as_deref(),
         Some("Python is great\nFast prototyping")
@@ -357,7 +368,7 @@ async fn does_not_duplicate_content_when_new_entry_has_only_the_heading() {
 #[tokio::test]
 async fn uses_date_now_fallback_when_content_produces_empty_slug() {
     let Fixture { scoped, store, .. } = fixture();
-    store.add("!!!???").await.unwrap();
+    store.add_entry("!!!???").await.unwrap();
     let keys = scoped.list("").await.unwrap();
     assert_eq!(keys.len(), 1);
     let digits = keys[0]
@@ -371,7 +382,7 @@ async fn uses_date_now_fallback_when_content_produces_empty_slug() {
 #[tokio::test]
 async fn slugifies_special_characters_out_of_the_filename() {
     let Fixture { scoped, store, .. } = fixture();
-    store.add("User's #1 testing rule!").await.unwrap();
+    store.add_entry("User's #1 testing rule!").await.unwrap();
     assert_eq!(scoped.list("").await.unwrap(), ["users-1-testing-rule.md"]);
 }
 
@@ -379,7 +390,7 @@ async fn slugifies_special_characters_out_of_the_filename() {
 async fn returns_the_canonical_key() {
     let Fixture { store, .. } = fixture();
     assert_eq!(
-        store.add("User prefers dark mode").await.unwrap(),
+        store.add_entry("User prefers dark mode").await.unwrap(),
         "user-prefers-dark-mode.md"
     );
 }
@@ -387,15 +398,18 @@ async fn returns_the_canonical_key() {
 #[tokio::test]
 async fn returns_the_same_key_on_append() {
     let Fixture { store, .. } = fixture();
-    let first = store.add("Python is great\nFirst fact").await.unwrap();
-    let second = store.add("Python is great\nSecond fact").await.unwrap();
+    let first = store.add_entry("Python is great\nFirst fact").await.unwrap();
+    let second = store.add_entry("Python is great\nSecond fact").await.unwrap();
     assert_eq!(first, second);
 }
 
 #[tokio::test]
 async fn strips_markdown_heading_prefix_from_first_line_before_slugifying() {
     let Fixture { scoped, store, .. } = fixture();
-    store.add("# User preferences\nLikes dark mode").await.unwrap();
+    store
+        .add_entry("# User preferences\nLikes dark mode")
+        .await
+        .unwrap();
     assert_eq!(scoped.list("").await.unwrap(), ["user-preferences.md"]);
     assert_eq!(
         read_text(&*scoped, "user-preferences.md").await.as_deref(),
@@ -406,7 +420,10 @@ async fn strips_markdown_heading_prefix_from_first_line_before_slugifying() {
 #[tokio::test]
 async fn strips_multiple_heading_levels() {
     let Fixture { scoped, store, .. } = fixture();
-    store.add("## Project setup\nTypeScript monorepo").await.unwrap();
+    store
+        .add_entry("## Project setup\nTypeScript monorepo")
+        .await
+        .unwrap();
     assert_eq!(scoped.list("").await.unwrap(), ["project-setup.md"]);
 }
 
@@ -414,7 +431,7 @@ async fn strips_multiple_heading_levels() {
 async fn does_not_produce_trailing_hyphen_when_slug_truncates_at_word_boundary() {
     let Fixture { store, .. } = fixture();
     let key = store
-        .add("aaaa bbbbb ccccc ddddd eeeee fffff ggggg hhhhh iiiii jjjjj")
+        .add_entry("aaaa bbbbb ccccc ddddd eeeee fffff ggggg hhhhh iiiii jjjjj")
         .await
         .unwrap();
     assert!(!key.ends_with("-.md"));
@@ -429,13 +446,16 @@ async fn search_fixture() -> Fixture {
 }
 
 async fn seed(store: &FileMemoryStore) {
-    store.add("User prefers dark mode for all editors").await.unwrap();
     store
-        .add("Testing philosophy: integration first, mock at boundaries")
+        .add_entry("User prefers dark mode for all editors")
         .await
         .unwrap();
     store
-        .add("Deploy process uses blue-green strategy")
+        .add_entry("Testing philosophy: integration first, mock at boundaries")
+        .await
+        .unwrap();
+    store
+        .add_entry("Deploy process uses blue-green strategy")
         .await
         .unwrap();
 }
@@ -492,7 +512,7 @@ async fn respects_max_search_results_option() {
 async fn ranks_results_by_number_of_distinct_matching_tokens() {
     let Fixture { store, .. } = search_fixture().await;
     store
-        .add("covers deploy, testing, and integration boundaries")
+        .add_entry("covers deploy, testing, and integration boundaries")
         .await
         .unwrap();
     let results = search(&store, "deploy testing integration").await;
@@ -543,7 +563,7 @@ async fn delegates_to_a_search_strategy_configured_on_the_storage_backend() {
     });
     let strategy_store = file_store("strategy-store", Arc::new(strategy_storage));
     strategy_store
-        .add("User prefers dark mode for all editors")
+        .add_entry("User prefers dark mode for all editors")
         .await
         .unwrap();
 
@@ -578,7 +598,7 @@ async fn skips_an_unreadable_entry_instead_of_failing_the_search() {
     });
     let store = file_store("test-store", Arc::new(locking));
     seed(&store).await;
-    store.add("Locked note about dark mode").await.unwrap();
+    store.add_entry("Locked note about dark mode").await.unwrap();
     locked.store(true, Ordering::SeqCst);
 
     let results = search(&store, "dark mode").await;
@@ -676,11 +696,11 @@ async fn applies_max_search_results_to_results_from_the_storage_backend() {
     });
     let strategy_store = file_store("strategy-store", Arc::new(strategy_storage));
     strategy_store
-        .add("User prefers dark mode for all editors")
+        .add_entry("User prefers dark mode for all editors")
         .await
         .unwrap();
     strategy_store
-        .add("Deploy process uses blue-green strategy")
+        .add_entry("Deploy process uses blue-green strategy")
         .await
         .unwrap();
 
@@ -740,10 +760,13 @@ async fn includes_existing_topic_headings_in_the_system_prompt() {
         FileMemoryExtractionConfig::default(),
     );
     store
-        .add("User preferences\nPrefers dark mode\nUses vim")
+        .add_entry("User preferences\nPrefers dark mode\nUses vim")
         .await
         .unwrap();
-    store.add("Project setup\nTypeScript monorepo").await.unwrap();
+    store
+        .add_entry("Project setup\nTypeScript monorepo")
+        .await
+        .unwrap();
     let model = mock_model();
 
     extract_with(&store, &model, "I also prefer light themes").await;

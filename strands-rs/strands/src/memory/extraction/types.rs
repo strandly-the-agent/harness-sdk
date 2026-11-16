@@ -7,9 +7,9 @@ use async_trait::async_trait;
 
 use crate::agent::InvocationContext;
 use crate::error::Result;
-use crate::memory::MemoryMetadata;
 use crate::models::model::Model;
 use crate::types::agent::LocalAgent;
+use crate::types::json::JsonObject;
 use crate::types::messages::{ContentBlock, Message};
 
 /// The kind of a content block, by its wire key (TS `MemoryContentBlockType`).
@@ -71,7 +71,8 @@ impl MemoryContentBlockType {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct MemoryMessageFilter {
     /// Block kinds to drop; a message left with no content is dropped whole.
     pub exclude: Vec<MemoryContentBlockType>,
@@ -96,7 +97,7 @@ pub struct ExtractionResult {
     /// The content to store.
     pub content: String,
     /// Metadata stored with it.
-    pub metadata: Option<MemoryMetadata>,
+    pub metadata: Option<JsonObject>,
 }
 
 impl ExtractionResult {
@@ -110,7 +111,7 @@ impl ExtractionResult {
 
     /// Sets the metadata.
     #[must_use]
-    pub fn with_metadata(mut self, metadata: MemoryMetadata) -> Self {
+    pub fn with_metadata(mut self, metadata: JsonObject) -> Self {
         self.metadata = Some(metadata);
         self
     }
@@ -214,6 +215,7 @@ impl fmt::Debug for dyn ExtractionTrigger {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct ExtractionConfig {
     /// When extraction runs (default: an [`IntervalTrigger`](super::IntervalTrigger) every 5
     /// turns).

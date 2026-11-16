@@ -7,15 +7,16 @@ use serde_json::json;
 
 use super::*;
 use crate::Agent;
-use crate::injection::InjectionConfig;
+use crate::injection::InjectionCondition;
+use crate::memory::MemorySetting;
 use crate::memory::test_support::{
     MockStore, assistant, init_agent, mock_agent, tool_result, tool_use, user,
 };
-use crate::memory::{MemoryMetadata, MemorySetting};
 use crate::middleware::InvokeModelStage;
 use crate::test_support::WarnRecorder;
 use crate::testing::MockMessageModel;
 use crate::tools::FunctionTool;
+use crate::types::json::JsonObject;
 use crate::types::messages::{TextBlock, ToolResultBlock, ToolResultContent};
 use crate::types::tools::ToolResultStatus;
 use crate::vended_tools::test_support::{context_for, stream_result};
@@ -152,7 +153,7 @@ fn limit(max_search_results: usize) -> SearchOptions {
     }
 }
 
-fn add_calls(store: &MockStore) -> Vec<(String, Option<MemoryMetadata>)> {
+fn add_calls(store: &MockStore) -> Vec<(String, Option<JsonObject>)> {
     store.add_calls.lock().unwrap().clone()
 }
 
@@ -568,7 +569,7 @@ async fn writes_to_all_writable_stores() {
 async fn passes_metadata_to_stores() {
     let a = writable("a");
     let manager = manager(vec![a.clone()]);
-    let metadata: MemoryMetadata = serde_json::from_value(json!({ "source": "user" })).unwrap();
+    let metadata: JsonObject = serde_json::from_value(json!({ "source": "user" })).unwrap();
     let options = MemoryAddOptions {
         metadata: Some(metadata.clone()),
         stores: None,
@@ -960,7 +961,9 @@ async fn wires_the_registered_middleware_to_the_memory_provide_pipeline_folds_a_
 async fn passes_the_configured_trigger_to_the_injection_middleware() {
     let store = with_entries("s", &["dark mode preferred"]);
     let declined = MemoryInjectionConfig::builder()
-        .trigger(InjectionConfig::new().with_trigger_fn(|context| context.messages.len() > 1))
+        .trigger(InjectionCondition::predicate(|context| {
+            context.messages.len() > 1
+        }))
         .build();
     let model = Arc::new(MockMessageModel::new());
     model.add_turn(vec![TextBlock::new("ok").into()]);
@@ -1132,7 +1135,7 @@ async fn honors_max_entries_and_caps_the_rendered_entries() {
         store.clone(),
         MemoryInjectionConfig {
             max_entries: Some(2),
-            format: Some(Arc::new(|entries| Ok(join_contents(entries, ",")))),
+            format: Some(Arc::new(|context| Ok(join_contents(context.entries, ",")))),
             ..Default::default()
         },
     );
@@ -1175,8 +1178,8 @@ async fn honors_a_custom_format() {
     let manager = injecting(
         with_entries("s", &["A"]),
         MemoryInjectionConfig {
-            format: Some(Arc::new(|entries| {
-                Ok(format!("[{}]", join_contents(entries, "|")))
+            format: Some(Arc::new(|context| {
+                Ok(format!("[{}]", join_contents(context.entries, "|")))
             })),
             ..Default::default()
         },

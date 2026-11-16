@@ -46,89 +46,78 @@ impl InjectionContext {
     }
 }
 
-type TriggerPredicate = Arc<dyn Fn(&InjectionContext) -> bool + Send + Sync>;
-
-/// A resolved trigger: a named policy or a predicate (TS `resolveTrigger`'s input).
+/// When to inject: a named [`InjectionTrigger`] or a predicate over the call (the TS union
+/// `InjectionTrigger | ((context: InjectionContext) => boolean)`).
+///
+/// ```
+/// use strands::injection::{InjectionCondition, InjectionConfig, InjectionTrigger};
+///
+/// let every_turn = InjectionConfig::builder().trigger(InjectionTrigger::EveryTurn).build();
+/// let long_chats = InjectionConfig {
+///     trigger: Some(InjectionCondition::predicate(|context| context.messages.len() > 4)),
+/// };
+/// # let _ = (every_turn, long_chats);
+/// ```
 #[derive(Clone)]
-pub(crate) enum Trigger {
-    Named(InjectionTrigger),
-    Predicate(TriggerPredicate),
+#[non_exhaustive]
+pub enum InjectionCondition {
+    /// A named policy.
+    Trigger(InjectionTrigger),
+    /// Inject when the predicate returns `true` for the call.
+    Predicate(Arc<dyn Fn(&InjectionContext) -> bool + Send + Sync>),
 }
 
-impl Trigger {
-    pub(crate) fn predicate(predicate: impl Fn(&InjectionContext) -> bool + Send + Sync + 'static) -> Self {
+impl InjectionCondition {
+    /// Injects when `predicate` returns `true` for the call.
+    pub fn predicate(predicate: impl Fn(&InjectionContext) -> bool + Send + Sync + 'static) -> Self {
         Self::Predicate(Arc::new(predicate))
     }
 
     /// Whether to inject on this call (the predicate TS `resolveTrigger` returns).
     pub(crate) fn fires(&self, context: &InjectionContext) -> bool {
         match self {
-            Self::Named(InjectionTrigger::UserTurn) => is_user_turn(&context.messages),
-            Self::Named(InjectionTrigger::EveryTurn) => true,
+            Self::Trigger(InjectionTrigger::UserTurn) => is_user_turn(&context.messages),
+            Self::Trigger(InjectionTrigger::EveryTurn) => true,
             Self::Predicate(predicate) => predicate(context),
         }
     }
 }
 
-impl Default for Trigger {
+impl Default for InjectionCondition {
+    /// [`InjectionTrigger::UserTurn`].
     fn default() -> Self {
-        Self::Named(InjectionTrigger::default())
+        Self::Trigger(InjectionTrigger::default())
     }
 }
 
-impl From<InjectionTrigger> for Trigger {
+impl From<InjectionTrigger> for InjectionCondition {
     fn from(trigger: InjectionTrigger) -> Self {
-        Self::Named(trigger)
+        Self::Trigger(trigger)
     }
 }
 
-impl fmt::Debug for Trigger {
+impl fmt::Debug for InjectionCondition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Named(trigger) => trigger.fmt(f),
+            Self::Trigger(trigger) => trigger.fmt(f),
             Self::Predicate(_) => f.write_str("Predicate"),
         }
     }
 }
 
-/// When to inject, common to every injection consumer (TS `InjectionConfig`). It is the
-/// `trigger` of a [`MemoryInjectionConfig`](crate::memory::MemoryInjectionConfig);
-/// [`ContextInjectorConfig`](crate::vended_plugins::context_injector::ContextInjectorConfig)
-/// has the same two setters.
-#[derive(Debug, Clone, Default)]
-#[non_exhaustive]
+/// When to inject, common to every injection consumer (TS `InjectionConfig`).
+/// [`MemoryInjectionConfig`](crate::memory::MemoryInjectionConfig) extends it in TS and has the
+/// same `trigger` field.
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct InjectionConfig {
-    pub(crate) trigger: Trigger,
-}
-
-impl InjectionConfig {
-    /// The default configuration: inject on [`InjectionTrigger::UserTurn`].
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Injects on a named policy.
-    #[must_use]
-    pub fn with_trigger(mut self, trigger: InjectionTrigger) -> Self {
-        self.trigger = trigger.into();
-        self
-    }
-
-    /// Injects when `predicate` returns `true` for the call.
-    #[must_use]
-    pub fn with_trigger_fn(
-        mut self,
-        predicate: impl Fn(&InjectionContext) -> bool + Send + Sync + 'static,
-    ) -> Self {
-        self.trigger = Trigger::predicate(predicate);
-        self
-    }
-}
-
-impl From<InjectionTrigger> for InjectionConfig {
-    fn from(trigger: InjectionTrigger) -> Self {
-        Self::new().with_trigger(trigger)
-    }
+    /// When to inject (default [`InjectionTrigger::UserTurn`]).
+    #[builder(into)]
+    pub trigger: Option<InjectionCondition>,
 }
 
 /// Returns the text to fold into the latest user message; `None` or blank text skips the call.
@@ -147,6 +136,6 @@ where
 /// Options of the injection engine (TS `InjectionMiddlewareOptions`).
 #[derive(Clone)]
 pub(crate) struct InjectionMiddlewareOptions {
-    pub(crate) trigger: Trigger,
+    pub(crate) trigger: InjectionCondition,
     pub(crate) render_content: RenderContent,
 }

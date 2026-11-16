@@ -5,5 +5,10 @@
 mod agent_skills;
 mod skill;
 
-pub use agent_skills::{AgentSkills, AgentSkillsConfig, SkillSource};
-pub use skill::{Skill, SkillConfig, SkillOptions};
+pub use agent_skills::{
+    AgentSkills, AgentSkillsConfig, AgentSkillsConfigBuilder, SkillSource, agent_skills_config_builder,
+};
+pub use skill::{
+    Skill, SkillConfig, SkillConfigBuilder, SkillOptions, SkillOptionsBuilder, skill_config_builder,
+    skill_options_builder,
+};

@@ -26,6 +26,7 @@ const OUTPUT_FORMAT: &str = "Return ONLY a JSON array of objects, each: {\"conte
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct ModelExtractorOptions {
     /// The extracting model; order: this model > `agent.aux_model` > `agent.model`.
     pub model: Option<Arc<dyn Model>>,

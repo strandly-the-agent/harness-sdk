@@ -8,14 +8,19 @@ use std::sync::Arc;
 
 use serde_json::json;
 use strands::Agent;
+use strands::injection::{InjectionCondition, InjectionConfig, InjectionTrigger};
 use strands::memory::{
-    ExtractionTrigger, InvocationTrigger, MemoryAddToolConfig, MemoryEntry, MemoryManager,
-    MemoryManagerConfig, MemorySearchOptions, MemorySetting, MemoryStore, SearchOptions,
+    ExtractionTrigger, IntervalTriggerOptions, InvocationTrigger, MemoryAddToolConfig,
+    MemoryContentBlockType, MemoryEntry, MemoryInjectionConfig, MemoryManager, MemoryManagerConfig,
+    MemoryManagerConfigBuilder, MemoryMessageFilter, MemorySearchOptions, MemorySetting, MemoryStore,
+    SearchOptions, memory_manager_config_builder,
 };
 use strands::storage::{InMemoryStorage, Storage};
 use strands::testing::MockMessageModel;
 use strands::types::messages::{ContentBlock, TextBlock, ToolUseBlock};
-use strands::vended_memory_stores::{FileMemoryExtractionConfig, FileMemoryStore, FileMemoryStoreConfig};
+use strands::vended_memory_stores::file_memory_store::{
+    FileMemoryExtractionConfig, FileMemoryStore, FileMemoryStoreConfig,
+};
 
 fn text(text: &str) -> ContentBlock {
     TextBlock::new(text).into()
@@ -138,7 +143,7 @@ async fn injects_stored_memory_into_the_user_turn_the_model_sees() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = notes(&storage, None);
     store
-        .add("# Editor\nUses dark mode in every editor")
+        .add_entry("# Editor\nUses dark mode in every editor")
         .await
         .unwrap();
     let manager = MemoryManager::new(
@@ -216,4 +221,62 @@ async fn extracts_facts_with_the_agent_model_and_shutdown_waits_for_them() {
     );
     // The conversation is unchanged by the side call.
     assert_eq!(agent.messages().len(), 2);
+}
+
+fn with_add_tool<S>(
+    builder: MemoryManagerConfigBuilder<S>,
+) -> MemoryManagerConfigBuilder<memory_manager_config_builder::SetAddToolConfig<S>>
+where
+    S: memory_manager_config_builder::State,
+    S::AddToolConfig: memory_manager_config_builder::IsUnset,
+{
+    builder.add_tool_config(true)
+}
+
+// No TS case: the builder types of the memory configs can be named outside the crate.
+#[test]
+fn a_helper_can_take_and_return_a_memory_config_builder() {
+    let config = with_add_tool(MemoryManagerConfig::builder().stores(vec![Arc::new(Fixed)])).build();
+    assert!(matches!(config.add_tool_config, Some(MemorySetting::On)));
+    assert_eq!(IntervalTriggerOptions::builder().turns(3).build().turns, 3);
+    let filter = MemoryMessageFilter::builder()
+        .exclude(vec![MemoryContentBlockType::ToolUse])
+        .build();
+    assert_eq!(filter.exclude, [MemoryContentBlockType::ToolUse]);
+    assert_eq!(MemoryManager::NAME, "strands:memory-manager");
+}
+
+// No TS case: the Rust shape of the TS union `InjectionTrigger | predicate`.
+#[test]
+fn an_injection_trigger_is_a_named_policy_or_a_predicate() {
+    let named = InjectionConfig::builder()
+        .trigger(InjectionTrigger::EveryTurn)
+        .build();
+    assert!(matches!(
+        named.trigger,
+        Some(InjectionCondition::Trigger(InjectionTrigger::EveryTurn))
+    ));
+    let memory = MemoryInjectionConfig {
+        trigger: Some(InjectionCondition::predicate(|context| {
+            context.messages.len() > 4
+        })),
+        query: Some(Arc::new(|context| {
+            Ok(Some(format!("{} messages", context.messages.len())))
+        })),
+        format: Some(Arc::new(|context| {
+            Ok(format!("{} entries", context.entries.len()))
+        })),
+        ..Default::default()
+    };
+    assert!(matches!(memory.trigger, Some(InjectionCondition::Predicate(_))));
+    assert!(InjectionConfig::default().trigger.is_none());
+}
+
+// No TS case: the trait method and the inherent method of `FileMemoryStore` have distinct names.
+#[tokio::test]
+async fn the_trait_add_is_callable_on_a_file_memory_store() {
+    let storage = Arc::new(InMemoryStorage::new());
+    let store = notes(&storage, None);
+    store.add("# Editor\nUses vim", None).await.unwrap();
+    assert_eq!(store.add_entry("# Editor\nUses tabs").await.unwrap(), "editor.md");
 }

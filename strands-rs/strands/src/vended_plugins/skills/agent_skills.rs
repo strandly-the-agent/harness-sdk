@@ -22,7 +22,6 @@ use crate::types::json::{JsonObject, JsonValue};
 use crate::types::messages::{SystemContentBlock, SystemPrompt, TextBlock};
 use crate::vended_tools::schema_tool;
 
-const PLUGIN_NAME: &str = "strands:agent-skills";
 const DEFAULT_STATE_KEY: &str = "agent_skills";
 const RESOURCE_DIRS: [&str; 3] = ["scripts", "references", "assets"];
 const DEFAULT_MAX_RESOURCE_FILES: usize = 20;
@@ -63,7 +62,7 @@ impl From<Skill> for SkillSource {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct AgentSkillsConfig {
     /// The skill sources.
     #[builder(default)]
@@ -147,6 +146,9 @@ impl fmt::Debug for AgentSkills {
 }
 
 impl AgentSkills {
+    /// The plugin name (TS `name`).
+    pub const NAME: &'static str = "strands:agent-skills";
+
     /// A plugin with the skills of `config`.
     pub fn new(config: AgentSkillsConfig) -> Self {
         Self::with_fetch(config, reqwest_fetch())
@@ -628,7 +630,7 @@ fn skills_tool(inner: Arc<Inner>) -> impl Tool {
 #[async_trait]
 impl Plugin for AgentSkills {
     fn name(&self) -> &str {
-        PLUGIN_NAME
+        Self::NAME
     }
 
     async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {

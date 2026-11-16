@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use super::*;
 use crate::error::Error;
-use crate::injection::{InjectionTrigger, Trigger, render_content};
+use crate::injection::{InjectionCondition, InjectionTrigger, render_content};
 use crate::test_support::WarnRecorder;
 use crate::testing::MockMessageModel;
 use crate::types::agent::{InvocationState, LocalAgent, ToolAgent};
@@ -201,28 +201,28 @@ mod resolve_trigger {
 
     #[test]
     fn defaults_undefined_to_the_user_turn_policy() {
-        let trigger = Trigger::default();
+        let trigger = InjectionCondition::default();
         assert!(trigger.fires(&injection_ctx(vec![user("ask")])));
         assert!(!trigger.fires(&injection_ctx(vec![tool_result()])));
     }
 
     #[test]
     fn user_turn_uses_is_user_turn() {
-        let trigger = Trigger::from(InjectionTrigger::UserTurn);
+        let trigger = InjectionCondition::from(InjectionTrigger::UserTurn);
         assert!(trigger.fires(&injection_ctx(vec![user("ask")])));
         assert!(!trigger.fires(&injection_ctx(vec![tool_result()])));
     }
 
     #[test]
     fn every_turn_always_fires() {
-        let trigger = Trigger::from(InjectionTrigger::EveryTurn);
+        let trigger = InjectionCondition::from(InjectionTrigger::EveryTurn);
         assert!(trigger.fires(&injection_ctx(Vec::new())));
         assert!(trigger.fires(&injection_ctx(vec![tool_result()])));
     }
 
     #[test]
     fn uses_a_custom_predicate_over_the_context() {
-        let trigger = Trigger::predicate(|context| context.messages.len() >= 2);
+        let trigger = InjectionCondition::predicate(|context| context.messages.len() >= 2);
         assert!(!trigger.fires(&injection_ctx(vec![user("a")])));
         assert!(trigger.fires(&injection_ctx(vec![user("a"), assistant("b")])));
     }
@@ -250,7 +250,7 @@ mod create_injection_middleware {
         ctx_with(mock_agent(), messages)
     }
 
-    fn options(trigger: Trigger, text: Option<&'static str>) -> InjectionMiddlewareOptions {
+    fn options(trigger: InjectionCondition, text: Option<&'static str>) -> InjectionMiddlewareOptions {
         InjectionMiddlewareOptions {
             trigger,
             render_content: render_content(move |_context| async move { Ok(text.map(str::to_owned)) }),
@@ -258,7 +258,7 @@ mod create_injection_middleware {
     }
 
     fn injecting(text: &'static str) -> InjectionMiddlewareOptions {
-        options(Trigger::default(), Some(text))
+        options(InjectionCondition::default(), Some(text))
     }
 
     fn assert_unchanged(result: &InvokeModelContext, input: &[Message]) {
@@ -290,7 +290,7 @@ mod create_injection_middleware {
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
         let recorded = Arc::clone(&seen);
         let opts = InjectionMiddlewareOptions {
-            trigger: Trigger::default(),
+            trigger: InjectionCondition::default(),
             render_content: render_content(move |context| {
                 let recorded = Arc::clone(&recorded);
                 async move {
@@ -312,7 +312,7 @@ mod create_injection_middleware {
         let received = Arc::new(std::sync::Mutex::new(None));
         let recorded = Arc::clone(&received);
         let opts = InjectionMiddlewareOptions {
-            trigger: Trigger::default(),
+            trigger: InjectionCondition::default(),
             render_content: render_content(move |context| {
                 let recorded = Arc::clone(&recorded);
                 async move {
@@ -339,7 +339,7 @@ mod create_injection_middleware {
         let calls = Arc::new(AtomicUsize::new(0));
         let counted = Arc::clone(&calls);
         let opts = InjectionMiddlewareOptions {
-            trigger: Trigger::default(),
+            trigger: InjectionCondition::default(),
             render_content: render_content(move |_context| {
                 counted.fetch_add(1, Ordering::SeqCst);
                 async { Ok(Some("x".to_owned())) }
@@ -381,7 +381,7 @@ mod create_injection_middleware {
     #[test]
     fn fails_open_returns_the_context_unchanged_logs_when_render_content_throws() {
         let opts = InjectionMiddlewareOptions {
-            trigger: Trigger::default(),
+            trigger: InjectionCondition::default(),
             render_content: render_content(|_context| async { Err(Error::other("boom")) }),
         };
         let input = vec![assistant("prior"), user("ask")];

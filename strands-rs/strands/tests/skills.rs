@@ -85,3 +85,25 @@ async fn lists_the_skills_in_the_system_prompt_and_loads_one_through_the_tool() 
     let names: Vec<_> = available.iter().map(Skill::name).collect();
     assert_eq!(names, ["review", "pdf-processing"]);
 }
+
+// No TS case: the flat `vended_plugins` re-exports (TS `vended-plugins/index.ts`), the option
+// builders and the plugin name constants are part of the public surface.
+#[test]
+fn the_vended_plugins_are_re_exported_flat_with_their_names_and_builders() {
+    use strands::vended_plugins::skills::{SkillOptions, SkillOptionsBuilder, skill_options_builder};
+    use strands::vended_plugins::{AgentSkills as Flat, ContextInjector};
+
+    fn strict<S: skill_options_builder::State>(builder: SkillOptionsBuilder<S>) -> SkillOptionsBuilder<S> {
+        builder
+    }
+    let options = strict(SkillOptions::builder().strict(true).path("skills/pdf")).build();
+    assert_eq!(
+        options,
+        SkillOptions {
+            strict: true,
+            path: Some("skills/pdf".to_owned())
+        }
+    );
+    assert_eq!(Flat::NAME, "strands:agent-skills");
+    assert_eq!(ContextInjector::DEFAULT_NAME, "strands:context-injector");
+}

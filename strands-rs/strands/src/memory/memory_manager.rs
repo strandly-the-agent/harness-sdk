@@ -13,8 +13,9 @@ use super::extraction::coordinator::{ExtractionBinding, ExtractionCoordinator};
 use super::extraction::resolve_extraction_config::resolve_extraction_config;
 use super::extraction::{ExtractionFire, ExtractionTriggerContext};
 use super::types::{
-    MemoryAddOptions, MemoryAddToolConfig, MemoryEntry, MemoryInjectionConfig, MemoryManagerConfig,
-    MemorySearchOptions, MemorySetting, MemoryStore, MemoryToolConfig, SearchOptions,
+    MemoryAddOptions, MemoryAddToolConfig, MemoryEntry, MemoryFormatContext, MemoryInjectionConfig,
+    MemoryManagerConfig, MemoryQueryContext, MemorySearchOptions, MemorySetting, MemoryStore,
+    MemoryToolConfig, SearchOptions,
 };
 use crate::JsonValue;
 use crate::error::{Error, Result};
@@ -37,7 +38,7 @@ const ADD_TOOL_DESCRIPTION: &str = "Add facts, preferences, or decisions to long
 
 /// Default maximum results per store when neither the caller nor the store specifies one (TS
 /// `DEFAULT_MAX_SEARCH_RESULTS`).
-pub const DEFAULT_MAX_SEARCH_RESULTS: usize = 3;
+pub(crate) const DEFAULT_MAX_SEARCH_RESULTS: usize = 3;
 
 const DEFAULT_MAX_ENTRIES: usize = 5;
 
@@ -120,10 +121,10 @@ impl Drop for DetachedWrite {
 /// use std::sync::Arc;
 ///
 /// use strands::Agent;
-/// use strands::memory::{MemoryManager, MemoryManagerConfig, MemoryStore};
+/// use strands::memory::{MemoryManager, MemoryManagerConfig};
 /// use strands::storage::InMemoryStorage;
 /// use strands::testing::MockMessageModel;
-/// use strands::vended_memory_stores::{FileMemoryStore, FileMemoryStoreConfig};
+/// use strands::vended_memory_stores::file_memory_store::{FileMemoryStore, FileMemoryStoreConfig};
 ///
 /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
 /// let notes = FileMemoryStore::new(
@@ -134,7 +135,7 @@ impl Drop for DetachedWrite {
 /// )?;
 /// let memory = MemoryManager::new(
 ///     MemoryManagerConfig::builder()
-///         .stores(vec![Arc::new(notes) as Arc<dyn MemoryStore>])
+///         .stores(vec![Arc::new(notes)])
 ///         .add_tool_config(true)
 ///         .build(),
 /// )?;
@@ -169,6 +170,9 @@ impl TryFrom<MemoryManagerConfig> for MemoryManager {
 }
 
 impl MemoryManager {
+    /// The plugin name (TS `name`).
+    pub const NAME: &'static str = "strands:memory-manager";
+
     /// A manager over `config.stores`.
     ///
     /// # Errors
@@ -331,7 +335,7 @@ impl MemoryManager {
         };
         let manager = self.clone();
         agent.add_middleware(create_injection_middleware(InjectionMiddlewareOptions {
-            trigger: config.trigger.clone().unwrap_or_default().trigger,
+            trigger: config.trigger.clone().unwrap_or_default(),
             render_content: render_content(move |context| {
                 let manager = manager.clone();
                 let config = config.clone();
@@ -371,7 +375,7 @@ impl MemoryManager {
             return Ok(None);
         }
         let rendered = match &config.format {
-            Some(format) => span.in_scope(|| format(&entries)),
+            Some(format) => span.in_scope(|| format(&MemoryFormatContext { entries: &entries })),
             None => Ok(default_injection_format(&entries)),
         };
         match rendered {
@@ -717,7 +721,7 @@ fn resolve_add_tool_stores(
 /// text on a user turn, or the most recent assistant text otherwise.
 fn resolve_injection_query(messages: &[Message], config: &MemoryInjectionConfig) -> Option<String> {
     if let Some(query) = &config.query {
-        return query(messages).unwrap_or_else(|error| {
+        return query(&MemoryQueryContext { messages }).unwrap_or_else(|error| {
             tracing::warn!("reason=<{error}> | injection query threw; skipping injection");
             None
         });
@@ -849,7 +853,7 @@ struct AddInput {
 #[async_trait]
 impl Plugin for MemoryManager {
     fn name(&self) -> &str {
-        "strands:memory-manager"
+        Self::NAME
     }
 
     async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {

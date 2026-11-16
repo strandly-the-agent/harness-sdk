@@ -7,14 +7,11 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use super::extraction::ExtractionConfig;
-use crate::JsonValue;
 use crate::error::{Error, Result};
-use crate::injection::InjectionConfig;
+use crate::injection::InjectionCondition;
 use crate::tools::Tool;
+use crate::types::json::JsonObject;
 use crate::types::messages::Message;
-
-/// Metadata on a memory entry (TS `Record<string, JSONValue>`).
-pub type MemoryMetadata = serde_json::Map<String, JsonValue>;
 
 /// A single memory entry retrieved from or stored to a memory store (TS `MemoryEntry`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,7 +26,7 @@ pub struct MemoryEntry {
     pub store_name: Option<String>,
     /// Optional metadata (score, source, id, timestamp).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<MemoryMetadata>,
+    pub metadata: Option<JsonObject>,
 }
 
 impl MemoryEntry {
@@ -51,7 +48,7 @@ impl MemoryEntry {
 
     /// Sets the metadata.
     #[must_use]
-    pub fn with_metadata(mut self, metadata: MemoryMetadata) -> Self {
+    pub fn with_metadata(mut self, metadata: JsonObject) -> Self {
         self.metadata = Some(metadata);
         self
     }
@@ -63,6 +60,7 @@ impl MemoryEntry {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct SearchOptions {
     /// Maximum number of results to return from this store.
     pub max_search_results: Option<usize>,
@@ -91,6 +89,35 @@ impl AddMessagesContext {
 ///
 /// TS marks `add` and `addMessages` optional; a Rust store reports which it implements through
 /// [`supports_add`](Self::supports_add) and [`supports_add_messages`](Self::supports_add_messages).
+///
+/// A read-only store needs a name, `writable` and `search`:
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use strands::memory::{MemoryEntry, MemoryManager, MemoryManagerConfig, MemoryStore, SearchOptions};
+///
+/// struct Glossary;
+///
+/// #[strands::async_trait]
+/// impl MemoryStore for Glossary {
+///     fn name(&self) -> &str {
+///         "glossary"
+///     }
+///
+///     fn writable(&self) -> bool {
+///         false
+///     }
+///
+///     async fn search(&self, query: &str, _options: SearchOptions) -> strands::Result<Vec<MemoryEntry>> {
+///         Ok(vec![MemoryEntry::new(format!("{query}: a term the team uses"))])
+///     }
+/// }
+///
+/// let memory = MemoryManager::new(MemoryManagerConfig::builder().stores(vec![Arc::new(Glossary)]).build())?;
+/// # let _ = memory;
+/// # Ok::<(), strands::Error>(())
+/// ```
 #[async_trait]
 pub trait MemoryStore: Send + Sync + 'static {
     /// Identifier for this store, used to target it in the search and add tools. Must be unique.
@@ -124,7 +151,7 @@ pub trait MemoryStore: Send + Sync + 'static {
     }
 
     /// Stores one entry.
-    async fn add(&self, content: &str, metadata: Option<&MemoryMetadata>) -> Result<()> {
+    async fn add(&self, content: &str, metadata: Option<&JsonObject>) -> Result<()> {
         let _ = (content, metadata);
         Err(Error::other(format!(
             "MemoryStore: store '{}' has no add method",
@@ -172,6 +199,7 @@ impl fmt::Debug for dyn MemoryStore {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct MemorySearchOptions {
     /// Maximum number of results per store.
     pub max_search_results: Option<usize>,
@@ -185,9 +213,10 @@ pub struct MemorySearchOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct MemoryAddOptions {
     /// Metadata stored with the entry.
-    pub metadata: Option<MemoryMetadata>,
+    pub metadata: Option<JsonObject>,
     /// Store names to write to; every writable store when `None`.
     pub stores: Option<Vec<String>>,
 }
@@ -198,6 +227,7 @@ pub struct MemoryAddOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct MemoryToolConfig {
     /// The tool name.
     #[builder(into)]
@@ -213,6 +243,7 @@ pub struct MemoryToolConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct MemoryAddToolConfig {
     /// The tool name (default `add_memory`).
     #[builder(into)]
@@ -227,16 +258,32 @@ pub struct MemoryAddToolConfig {
     pub wait_for_writes: Option<bool>,
 }
 
+/// What a [`MemoryInjectionConfig::query`] callback receives (the TS `{ messages }` argument).
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct MemoryQueryContext<'a> {
+    /// The messages of this model call.
+    pub messages: &'a [Message],
+}
+
+/// What a [`MemoryInjectionConfig::format`] callback receives (the TS `{ entries }` argument).
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct MemoryFormatContext<'a> {
+    /// The retrieved entries, best first.
+    pub entries: &'a [MemoryEntry],
+}
+
 /// Derives the injection search query from the conversation; an error skips injection.
-pub type MemoryQueryFn = Arc<dyn Fn(&[Message]) -> Result<Option<String>> + Send + Sync>;
+pub type MemoryQueryFn = Arc<dyn Fn(&MemoryQueryContext<'_>) -> Result<Option<String>> + Send + Sync>;
 
 /// Renders retrieved entries as the injected text; an error skips injection.
-pub type MemoryFormatFn = Arc<dyn Fn(&[MemoryEntry]) -> Result<String> + Send + Sync>;
+pub type MemoryFormatFn = Arc<dyn Fn(&MemoryFormatContext<'_>) -> Result<String> + Send + Sync>;
 
 /// Memory context injection settings (TS `MemoryInjectionConfig`).
 ///
 /// ```
-/// use strands::injection::{InjectionConfig, InjectionTrigger};
+/// use strands::injection::{InjectionCondition, InjectionTrigger};
 /// use strands::memory::MemoryInjectionConfig;
 ///
 /// let every_turn = MemoryInjectionConfig::builder()
@@ -244,7 +291,7 @@ pub type MemoryFormatFn = Arc<dyn Fn(&[MemoryEntry]) -> Result<String> + Send + 
 ///     .max_entries(3)
 ///     .build();
 /// let long_chats = MemoryInjectionConfig::builder()
-///     .trigger(InjectionConfig::new().with_trigger_fn(|context| context.messages.len() > 4))
+///     .trigger(InjectionCondition::predicate(|context| context.messages.len() > 4))
 ///     .build();
 /// # let _ = (every_turn, long_chats);
 /// ```
@@ -253,12 +300,13 @@ pub type MemoryFormatFn = Arc<dyn Fn(&[MemoryEntry]) -> Result<String> + Send + 
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct MemoryInjectionConfig {
-    /// When to inject: the [`InjectionConfig`] this config extends in TS, which carries a named
+    /// When to inject, the field of the TS `InjectionConfig` this config extends: a named
     /// [`InjectionTrigger`](crate::injection::InjectionTrigger) or a predicate (default
     /// `UserTurn`).
     #[builder(into)]
-    pub trigger: Option<InjectionConfig>,
+    pub trigger: Option<InjectionCondition>,
     /// Maximum entries retrieved and injected (default 5).
     pub max_entries: Option<usize>,
     /// The search query (default: the latest user text on a user turn, else the most recent
@@ -322,6 +370,7 @@ impl From<MemoryInjectionConfig> for MemorySetting<MemoryInjectionConfig> {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct MemoryManagerConfig {
     /// The stores to manage; at least one.
     #[builder(default)]

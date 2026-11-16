@@ -9,21 +9,19 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::error::Result;
+use crate::injection::{InjectionCondition, RenderContent, render_content};
 pub use crate::injection::{InjectionContext, InjectionTrigger};
-use crate::injection::{RenderContent, Trigger, render_content};
 use crate::middleware::{InvokeModelContext, InvokeModelStage, MiddlewareStage};
 use crate::plugins::Plugin;
 use crate::types::agent::LocalAgent;
 use crate::types::messages::{ContentBlock, InjectedBlock, Message, Role};
-
-const DEFAULT_NAME: &str = "strands:context-injector";
 
 /// Configuration of [`ContextInjector`] (TS `ContextInjectorConfig`).
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct ContextInjectorConfig {
     name: String,
-    trigger: Trigger,
+    trigger: InjectionCondition,
     render_content: RenderContent,
 }
 
@@ -39,8 +37,8 @@ impl ContextInjectorConfig {
         Fut: Future<Output = Result<Option<String>>> + Send + 'static,
     {
         Self {
-            name: DEFAULT_NAME.to_owned(),
-            trigger: Trigger::default(),
+            name: ContextInjector::DEFAULT_NAME.to_owned(),
+            trigger: InjectionCondition::default(),
             render_content: render_content(render),
         }
     }
@@ -55,7 +53,7 @@ impl ContextInjectorConfig {
 
     /// Sets when to inject (default [`InjectionTrigger::UserTurn`]).
     #[must_use]
-    pub fn with_trigger(mut self, trigger: InjectionTrigger) -> Self {
+    pub fn with_trigger(mut self, trigger: impl Into<InjectionCondition>) -> Self {
         self.trigger = trigger.into();
         self
     }
@@ -66,7 +64,7 @@ impl ContextInjectorConfig {
         mut self,
         predicate: impl Fn(&InjectionContext) -> bool + Send + Sync + 'static,
     ) -> Self {
-        self.trigger = Trigger::predicate(predicate);
+        self.trigger = InjectionCondition::predicate(predicate);
         self
     }
 }
@@ -104,6 +102,9 @@ pub struct ContextInjector {
 }
 
 impl ContextInjector {
+    /// The plugin name of an injector whose config sets none (TS `DEFAULT_NAME`).
+    pub const DEFAULT_NAME: &'static str = "strands:context-injector";
+
     /// An injector with `config`.
     pub fn new(config: ContextInjectorConfig) -> Self {
         Self { config }

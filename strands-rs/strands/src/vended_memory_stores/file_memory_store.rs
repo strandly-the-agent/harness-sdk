@@ -11,12 +11,13 @@ use async_trait::async_trait;
 use crate::error::Result;
 use crate::memory::{
     ExtractionConfig, ExtractionResult, ExtractionTrigger, Extractor, ExtractorContext, MemoryEntry,
-    MemoryMessageFilter, MemoryMetadata, MemoryStore, ModelExtractor, ModelExtractorOptions, SearchOptions,
+    MemoryMessageFilter, MemoryStore, ModelExtractor, ModelExtractorOptions, SearchOptions,
 };
 use crate::models::model::Model;
 use crate::models::model::js_trim;
 use crate::storage::search::{KeywordSearchStrategy, SearchStrategy};
 use crate::storage::{LocalFileStorage, Storage, StorageSearchResult, namespace, normalize_key};
+use crate::types::json::JsonObject;
 use crate::types::messages::Message;
 
 const DEFAULT_EXTRACTION_GUIDANCE: &str =
@@ -34,6 +35,7 @@ const STORAGE_NAMESPACE: &str = "memory";
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct FileMemoryExtractionConfig {
     /// When extraction runs (default: every 5 turns).
     pub trigger: Option<Vec<Arc<dyn ExtractionTrigger>>>,
@@ -66,6 +68,7 @@ impl fmt::Debug for FileMemoryExtractionConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct FileMemoryStoreConfig {
     /// Identifier for this store; also its storage namespace, `memory/<name>`.
     #[builder(into)]
@@ -183,7 +186,7 @@ impl Extractor for KeyAwareExtractor {
 ///
 /// use strands::memory::MemoryStore;
 /// use strands::storage::InMemoryStorage;
-/// use strands::vended_memory_stores::{FileMemoryStore, FileMemoryStoreConfig};
+/// use strands::vended_memory_stores::file_memory_store::{FileMemoryStore, FileMemoryStoreConfig};
 ///
 /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
 /// let store = FileMemoryStore::new(
@@ -192,7 +195,7 @@ impl Extractor for KeyAwareExtractor {
 ///         .storage(Arc::new(InMemoryStorage::new()))
 ///         .build(),
 /// )?;
-/// let key = store.add("# User preferences\nPrefers dark mode").await?;
+/// let key = store.add_entry("# User preferences\nPrefers dark mode").await?;
 /// assert_eq!(key, "user-preferences.md");
 /// let found = store.search("dark", Default::default()).await?;
 /// assert_eq!(found.len(), 1);
@@ -257,12 +260,13 @@ impl FileMemoryStore {
     }
 
     /// Stores `content` under a key derived from its first line; content for an existing key is
-    /// appended below it without repeating the heading. Returns the key.
+    /// appended below it without repeating the heading. Returns the key (TS `add`, whose
+    /// [`MemoryStore::add`] form returns nothing).
     ///
     /// # Errors
     ///
     /// The backend read or write failed.
-    pub async fn add(&self, content: &str) -> Result<String> {
+    pub async fn add_entry(&self, content: &str) -> Result<String> {
         let slug = slugify(heading(content));
         let key = if slug.is_empty() {
             let now = SystemTime::now()
@@ -333,7 +337,7 @@ impl FileMemoryStore {
             let Some(bytes) = bytes else {
                 continue;
             };
-            let mut metadata = MemoryMetadata::new();
+            let mut metadata = JsonObject::new();
             metadata.insert("path".to_owned(), result.key.into());
             metadata.insert("score".to_owned(), result.score.into());
             entries.push(MemoryEntry::new(js_trim(&decode(&bytes))).with_metadata(metadata));
@@ -397,8 +401,8 @@ impl MemoryStore for FileMemoryStore {
         true
     }
 
-    async fn add(&self, content: &str, _metadata: Option<&MemoryMetadata>) -> Result<()> {
-        Self::add(self, content).await.map(|_| ())
+    async fn add(&self, content: &str, _metadata: Option<&JsonObject>) -> Result<()> {
+        self.add_entry(content).await.map(|_| ())
     }
 }
 

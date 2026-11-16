@@ -5,16 +5,14 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
-use super::{
-    AddMessagesContext, ExtractionConfig, MemoryEntry, MemoryManager, MemoryMetadata, MemoryStore,
-    SearchOptions,
-};
+use super::{AddMessagesContext, ExtractionConfig, MemoryEntry, MemoryManager, MemoryStore, SearchOptions};
 use crate::error::{Error, Result};
 use crate::hooks::{AfterInvocationEvent, MessageAddedEvent};
 use crate::plugins::Plugin;
 use crate::testing::MockMessageModel;
 use crate::tools::Tool;
 use crate::types::agent::{InvocationState, LocalAgent};
+use crate::types::json::JsonObject;
 use crate::types::messages::{ContentBlock, Message, Role, TextBlock, ToolResultBlock, ToolUseBlock};
 use crate::types::tools::ToolResultStatus;
 
@@ -53,7 +51,7 @@ pub(crate) struct MockStore {
     /// When set, every write waits for a permit first.
     pub(crate) gate: Option<Arc<tokio::sync::Semaphore>>,
     pub(crate) search_calls: Mutex<Vec<(String, SearchOptions)>>,
-    pub(crate) add_calls: Mutex<Vec<(String, Option<MemoryMetadata>)>>,
+    pub(crate) add_calls: Mutex<Vec<(String, Option<JsonObject>)>>,
     pub(crate) add_messages_calls: Mutex<Vec<(Vec<Message>, AddMessagesContext)>>,
 }
 
@@ -229,7 +227,7 @@ impl MemoryStore for MockStore {
         matches!(self.sink, Sink::Add | Sink::Both)
     }
 
-    async fn add(&self, content: &str, metadata: Option<&MemoryMetadata>) -> Result<()> {
+    async fn add(&self, content: &str, metadata: Option<&JsonObject>) -> Result<()> {
         let earlier = {
             let mut calls = self.add_calls.lock().unwrap();
             calls.push((content.to_owned(), metadata.cloned()));

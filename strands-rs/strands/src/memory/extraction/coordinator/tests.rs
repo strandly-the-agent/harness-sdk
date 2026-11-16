@@ -17,10 +17,11 @@ use crate::memory::test_support::{
 use crate::memory::{
     ExtractionConfig, ExtractionResult, ExtractionTrigger, Extractor, IntervalTrigger,
     IntervalTriggerOptions, InvocationTrigger, MemoryContentBlockType, MemoryManager, MemoryManagerConfig,
-    MemoryMetadata, MemorySetting,
+    MemorySetting,
 };
 use crate::testing::MockMessageModel;
 use crate::types::agent::LocalAgent;
+use crate::types::json::JsonObject;
 use crate::types::messages::{Role, TextBlock};
 
 fn invocation() -> ExtractionConfig {
@@ -347,7 +348,7 @@ async fn does_not_pass_sequence_numbers_on_the_extractor_route() {
 
 #[tokio::test]
 async fn calls_the_extractor_and_writes_each_entry_via_add() {
-    let metadata: MemoryMetadata = serde_json::from_value(serde_json::json!({ "k": "v" })).unwrap();
+    let metadata: JsonObject = serde_json::from_value(serde_json::json!({ "k": "v" })).unwrap();
     let extractor = FixedExtractor::new(vec![
         ExtractionResult::new("fact one"),
         ExtractionResult::new("fact two").with_metadata(metadata.clone()),
