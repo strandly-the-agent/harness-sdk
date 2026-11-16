@@ -1,1 +1,91 @@
 //! The harness system prompt (TS `prompt.ts`).
+
+/// The model-neutral behavioural contract every harness agent starts from: act once there is
+/// enough to act on, explore before changing things, confirm before anything irreversible, verify
+/// before declaring a task done. Identity and domain belong in the caller's instructions.
+pub const HARNESS_CONTRACT: &str = r#"You are an agent. Keep working until the task is fully resolved before ending your turn. Only stop to ask the user when you are blocked on a decision or information that is genuinely theirs to provide.
+
+# Acting
+ - Once you have enough to act on, act. Do not ask for confirmation of steps you can verify yourself, and do not re-derive facts you have already established.
+ - Explore before you change anything: understand the surrounding context and conventions, then make changes that fit them.
+ - Treat a task as done only when you have verified it, not when it looks plausible. If you cannot verify, say so.
+
+# Tools
+ - Prefer the dedicated tool for a job over improvising with a general one.
+ - Independent tool calls can be issued together in a single turn; run them in parallel rather than serially.
+ - A denied or failed tool call is information: adjust your approach, do not retry it verbatim.
+ - `<system-reminder>` tags in messages and tool results are injected by the harness, not the user.
+
+# Safety
+ - For actions that are hard to reverse or that reach outside the local environment, confirm first unless you have been explicitly told to proceed. Approval in one context does not carry to the next.
+ - Report outcomes faithfully: if something fails, say so with the output; if you skipped a step, say that; when something is done and verified, state it plainly without hedging.
+
+# Context management
+When the conversation grows long, older turns may be summarized and large tool results moved out of the immediate context, with a way to retrieve them. Work as if the full history remains available; you do not need to wrap up early or hand off mid-task."#;
+
+/// Assembles the system prompt: the contract, then `instructions` (when non-empty), then each of
+/// `context_parts`, joined by blank lines.
+pub fn build_system_prompt(instructions: Option<&str>, context_parts: &[&str]) -> String {
+    let mut parts = vec![HARNESS_CONTRACT];
+    parts.extend(instructions.filter(|text| !text.is_empty()));
+    parts.extend(context_parts);
+    parts.join("\n\n")
+}
+
+/// Ports `harness-ts/test/prompt.test.ts`.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn returns_the_contract_only_by_default() {
+        assert_eq!(build_system_prompt(None, &[]), HARNESS_CONTRACT);
+    }
+
+    #[test]
+    fn appends_instructions_after_the_contract() {
+        let prompt = build_system_prompt(Some("You are a SQL assistant."), &[]);
+        assert!(prompt.starts_with(HARNESS_CONTRACT));
+        assert!(prompt.ends_with("You are a SQL assistant."));
+    }
+
+    #[test]
+    fn appends_context_parts_last_in_order() {
+        let prompt = build_system_prompt(Some("domain block"), &["Current time: noon", "Repo: acme"]);
+        let domain = prompt.find("domain block").unwrap();
+        let time = prompt.find("Current time: noon").unwrap();
+        let repo = prompt.find("Repo: acme").unwrap();
+        assert!(domain < time && time < repo);
+    }
+
+    #[test]
+    fn skips_empty_instructions_as_typescript_does() {
+        assert_eq!(
+            build_system_prompt(Some(""), &["ctx"]),
+            format!("{HARNESS_CONTRACT}\n\nctx")
+        );
+    }
+
+    /// `HARNESS_CONTRACT` is byte-identical to the TS constant (read from the monorepo, or from
+    /// the spec checkout under `/tmp/ts-spec`; skipped when neither is present).
+    #[test]
+    fn harness_contract_matches_the_typescript_source() {
+        let candidates = [
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../harness-ts/src/prompt.ts"),
+            "/tmp/ts-spec/harness-ts/src/prompt.ts",
+        ];
+        let Some(source) = candidates
+            .iter()
+            .find_map(|path| std::fs::read_to_string(path).ok())
+        else {
+            eprintln!("harness-ts not present; skipping");
+            return;
+        };
+        let marker = "export const HARNESS_CONTRACT = `";
+        let start = source.find(marker).unwrap() + marker.len();
+        let end = source[start..].find("`\n").unwrap() + start;
+        // Resolve the template-literal escapes the TS source uses: line continuations and \`.
+        let expected = source[start..end].replace("\\\n", "").replace("\\`", "`");
+        assert_eq!(HARNESS_CONTRACT, expected);
+    }
+}
