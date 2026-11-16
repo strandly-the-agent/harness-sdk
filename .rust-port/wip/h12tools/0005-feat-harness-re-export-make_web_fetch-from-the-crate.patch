@@ -1,0 +1,34 @@
+From 63da3f2cdf36fc40bfcb6269b24385e50b88c320 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:05:44 +0000
+Subject: [PATCH 5/7] feat(harness): re-export make_web_fetch from the crate
+ root
+
+---
+ harness-rs/strands-harness/src/lib.rs       | 2 +-
+ harness-rs/strands-harness/src/tools/mod.rs | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/harness-rs/strands-harness/src/lib.rs b/harness-rs/strands-harness/src/lib.rs
+index 437fb596f..441e96f2f 100644
+--- a/harness-rs/strands-harness/src/lib.rs
++++ b/harness-rs/strands-harness/src/lib.rs
+@@ -26,5 +26,5 @@ mod tools;
+ mod types;
+ 
+ pub use error::{HarnessError, Result};
+-pub use tools::{MakeReadOptions, edit, make_read, read, write};
++pub use tools::{MakeReadOptions, MakeWebFetchOptions, edit, make_read, make_web_fetch, read, write};
+ pub use types::{Effort, WebFetchTransport};
+diff --git a/harness-rs/strands-harness/src/tools/mod.rs b/harness-rs/strands-harness/src/tools/mod.rs
+index 168215647..9c4d8ba32 100644
+--- a/harness-rs/strands-harness/src/tools/mod.rs
++++ b/harness-rs/strands-harness/src/tools/mod.rs
+@@ -8,3 +8,4 @@ mod web_fetch;
+ mod web_search;
+ 
+ pub use file_tools::{MakeReadOptions, edit, make_read, read, write};
++pub use web_fetch::{MakeWebFetchOptions, make_web_fetch};
+-- 
+2.39.5
+

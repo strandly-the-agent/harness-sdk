@@ -1,0 +1,40 @@
+From 4512349473a1afe3271ce64b93a94eb574d05183 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:03:18 +0000
+Subject: [PATCH 3/7] feat(harness): re-export the programmatic tool caller
+ names from the crate root
+
+---
+ harness-rs/strands-harness/src/lib.rs       | 4 ++++
+ harness-rs/strands-harness/src/tools/mod.rs | 5 +++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/harness-rs/strands-harness/src/lib.rs b/harness-rs/strands-harness/src/lib.rs
+index cffbcedfd..1b2aaec44 100644
+--- a/harness-rs/strands-harness/src/lib.rs
++++ b/harness-rs/strands-harness/src/lib.rs
+@@ -26,4 +26,8 @@ mod tools;
+ mod types;
+ 
+ pub use error::{HarnessError, Result};
++pub use tools::{
++    DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, MakeProgrammaticToolCallerOptions,
++    make_programmatic_tool_caller, programmatic_tool_caller,
++};
+ pub use types::{Effort, WebFetchTransport};
+diff --git a/harness-rs/strands-harness/src/tools/mod.rs b/harness-rs/strands-harness/src/tools/mod.rs
+index 5e9a6fbb6..ab6467f5a 100644
+--- a/harness-rs/strands-harness/src/tools/mod.rs
++++ b/harness-rs/strands-harness/src/tools/mod.rs
+@@ -6,3 +6,8 @@ mod shell;
+ mod subagent;
+ mod web_fetch;
+ mod web_search;
++
++pub use programmatic_tool_caller::{
++    DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, MakeProgrammaticToolCallerOptions,
++    make_programmatic_tool_caller, programmatic_tool_caller,
++};
+-- 
+2.39.5
+

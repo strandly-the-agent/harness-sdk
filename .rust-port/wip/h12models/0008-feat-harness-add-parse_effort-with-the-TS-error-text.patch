@@ -1,0 +1,189 @@
+From 7b0a33ade596e6912567eae06b93c7e9ccc38ba6 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:11:08 +0000
+Subject: [PATCH 8/9] feat(harness): add parse_effort with the TS error text,
+ doc examples, and the injection-default memory case
+
+---
+ harness-rs/strands-harness/src/error.rs       |  8 ++++
+ harness-rs/strands-harness/src/memory.rs      | 19 ++++++++--
+ harness-rs/strands-harness/src/models.rs      | 38 ++++++++++++++++---
+ .../strands-harness/src/models/tests.rs       | 14 +++++++
+ harness-rs/strands-harness/src/prompt.rs      |  8 ++++
+ 5 files changed, 78 insertions(+), 9 deletions(-)
+
+diff --git a/harness-rs/strands-harness/src/error.rs b/harness-rs/strands-harness/src/error.rs
+index 75998192b..538f0e1d2 100644
+--- a/harness-rs/strands-harness/src/error.rs
++++ b/harness-rs/strands-harness/src/error.rs
+@@ -36,6 +36,14 @@ pub enum HarnessError {
+         /// The supported provider names, comma separated.
+         supported: String,
+     },
++    /// An `effort` value that is none of the levels the harness knows.
++    #[error("Effort {} is not valid. Supported: {supported}.", json_string(.effort))]
++    InvalidEffort {
++        /// The value given.
++        effort: String,
++        /// Every effort level, comma separated.
++        supported: String,
++    },
+     /// The resolved model doesn't take the requested reasoning effort.
+     #[error("Effort {} is not supported by {subject}. {detail}", json_string(.effort))]
+     UnsupportedEffort {
+diff --git a/harness-rs/strands-harness/src/memory.rs b/harness-rs/strands-harness/src/memory.rs
+index 6cca9f1ca..45981816e 100644
+--- a/harness-rs/strands-harness/src/memory.rs
++++ b/harness-rs/strands-harness/src/memory.rs
+@@ -52,12 +52,15 @@ pub(crate) struct ResolveMemoryOptions {
+     expect(dead_code, reason = "used by create_harness, which lands separately")
+ )]
+ pub(crate) fn resolve_memory(options: ResolveMemoryOptions, env: &EnvLookup) -> Result<MemoryManager> {
+-    // No injection override: the SDK's user-turn default is the harness policy.
+-    let config = MemoryManagerConfig {
++    Ok(MemoryManager::new(manager_config(options, env)?)?)
++}
++
++fn manager_config(options: ResolveMemoryOptions, env: &EnvLookup) -> Result<MemoryManagerConfig> {
++    // No injection or tool override: the SDK's defaults are the harness policy.
++    Ok(MemoryManagerConfig {
+         stores: memory_stores(options, env)?,
+         ..Default::default()
+-    };
+-    Ok(MemoryManager::new(config)?)
++    })
+ }
+ 
+ fn memory_stores(options: ResolveMemoryOptions, env: &EnvLookup) -> Result<Vec<Arc<dyn MemoryStore>>> {
+@@ -293,6 +296,14 @@ mod tests {
+         assert_eq!(model.model_id().as_deref(), Some("us.amazon.nova-lite-v1:0"));
+     }
+ 
++    #[test]
++    fn leaves_the_injection_trigger_at_the_sdk_default_fresh_user_asks() {
++        let (_guard, dir) = temp_dir();
++        let config = manager_config(default_options(&dir), &env()).unwrap();
++        assert!(config.injection.is_none());
++        assert!(config.search_tool_config.is_none() && config.add_tool_config.is_none());
++    }
++
+     #[tokio::test]
+     async fn builds_a_recall_only_store_searchable_no_writes_no_extraction_when_writable_is_false() {
+         let (_guard, dir) = temp_dir();
+diff --git a/harness-rs/strands-harness/src/models.rs b/harness-rs/strands-harness/src/models.rs
+index 47e259af7..301566d2b 100644
+--- a/harness-rs/strands-harness/src/models.rs
++++ b/harness-rs/strands-harness/src/models.rs
+@@ -108,11 +108,7 @@ const PROVIDERS: [Provider; 4] = [
+ /// Providers the TS harness has and Rust v0.1 doesn't.
+ const UNSUPPORTED_PROVIDERS: [&str; 3] = ["google", "ollama", "litellm"];
+ 
+-/// Every value the `effort` option accepts.
+-#[expect(
+-    dead_code,
+-    reason = "used by the config normalization, which lands separately"
+-)]
++/// Every value the `effort` option accepts, for validating untyped (JSON) input.
+ pub(crate) const EFFORT_LEVELS: [Effort; 8] = [
+     Effort::Auto,
+     Effort::Off,
+@@ -137,6 +133,24 @@ fn effort_name(effort: Effort) -> &'static str {
+     }
+ }
+ 
++/// The effort named `name`, or TS's error for a value outside [`EFFORT_LEVELS`].
++#[cfg_attr(
++    not(test),
++    expect(
++        dead_code,
++        reason = "used by the config normalization, which lands separately"
++    )
++)]
++pub(crate) fn parse_effort(name: &str) -> Result<Effort> {
++    EFFORT_LEVELS
++        .into_iter()
++        .find(|effort| effort_name(*effort) == name)
++        .ok_or_else(|| HarnessError::InvalidEffort {
++            effort: name.to_owned(),
++            supported: EFFORT_LEVELS.map(effort_name).join(", "),
++        })
++}
++
+ fn provider(name: &str) -> Option<&'static Provider> {
+     PROVIDERS.iter().find(|provider| provider.name == name)
+ }
+@@ -570,6 +584,13 @@ fn router_supports_media(router: &strands::models::routing::ModelRouter) -> bool
+ ///
+ /// A model instance or router is configured by the caller, so this is `true` for one; `None` is
+ /// the default model.
++///
++/// ```
++/// use strands_harness::supports_thinking;
++///
++/// assert!(supports_thinking(Some(&"anthropic/claude-opus-4-6".into())));
++/// assert!(!supports_thinking(Some(&"bedrock/amazon.nova-pro-v1:0".into())));
++/// ```
+ pub fn supports_thinking(model: Option<&ModelSource>) -> bool {
+     let Some(spec) = spec_of(model, DEFAULT_MODEL) else {
+         return true;
+@@ -586,6 +607,13 @@ pub fn supports_thinking(model: Option<&ModelSource>) -> bool {
+ ///
+ /// A model instance or router has an unknown provider, so this is `false` for one; the caller
+ /// configures search on the instance. `None` is the default model.
++///
++/// ```
++/// use strands_harness::supports_web_search;
++///
++/// assert!(supports_web_search(Some(&"openai/gpt-5.6-sol".into())));
++/// assert!(!supports_web_search(None));
++/// ```
+ pub fn supports_web_search(model: Option<&ModelSource>) -> bool {
+     spec_of(model, DEFAULT_MODEL).is_some_and(|spec| {
+         let (provider_name, name) = split_provider(spec);
+diff --git a/harness-rs/strands-harness/src/models/tests.rs b/harness-rs/strands-harness/src/models/tests.rs
+index 1b8c65297..adc2a91c0 100644
+--- a/harness-rs/strands-harness/src/models/tests.rs
++++ b/harness-rs/strands-harness/src/models/tests.rs
+@@ -72,6 +72,20 @@ mod resolve_model {
+         assert!(Arc::ptr_eq(&resolved.default_model(), &fast));
+     }
+ 
++    /// Rust's `Effort` is typed, so the TS check applies where a name is parsed.
++    #[test]
++    fn rejects_an_effort_outside_the_enum_by_name() {
++        assert_eq!(
++            parse_effort("bogus").unwrap_err().to_string(),
++            "Effort \"bogus\" is not valid. Supported: auto, off, minimal, low, medium, high, xhigh, max."
++        );
++        for effort in EFFORT_LEVELS {
++            let name = effort_name(effort);
++            assert_eq!(parse_effort(name).unwrap(), effort);
++            assert_eq!(serde_json::to_value(effort).unwrap(), name);
++        }
++    }
++
+     #[test]
+     fn rejects_an_unknown_provider() {
+         assert_eq!(
+diff --git a/harness-rs/strands-harness/src/prompt.rs b/harness-rs/strands-harness/src/prompt.rs
+index d18e08096..59febedb3 100644
+--- a/harness-rs/strands-harness/src/prompt.rs
++++ b/harness-rs/strands-harness/src/prompt.rs
+@@ -25,6 +25,14 @@ When the conversation grows long, older turns may be summarized and large tool r
+ 
+ /// Assembles the system prompt: the contract, then `instructions` (when non-empty), then each of
+ /// `context_parts`, joined by blank lines.
++///
++/// ```
++/// use strands_harness::{HARNESS_CONTRACT, build_system_prompt};
++///
++/// let prompt = build_system_prompt(Some("You are a SQL assistant."), &["Current time: noon"]);
++/// assert!(prompt.starts_with(HARNESS_CONTRACT));
++/// assert!(prompt.ends_with("You are a SQL assistant.\n\nCurrent time: noon"));
++/// ```
+ pub fn build_system_prompt(instructions: Option<&str>, context_parts: &[&str]) -> String {
+     let mut parts = vec![HARNESS_CONTRACT];
+     parts.extend(instructions.filter(|text| !text.is_empty()));
+-- 
+2.39.5
+

@@ -1,0 +1,2089 @@
+From 1b2a52381b18eb93bba1e0fc6128b547ab3fd36f Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:04:55 +0000
+Subject: [PATCH 4/9] feat(harness): resolve model strings, effort, caching and
+ the web_fetch summarizer model
+
+---
+ harness-rs/strands-harness/src/logging.rs     |   4 -
+ harness-rs/strands-harness/src/models.rs      | 682 +++++++++++++++
+ .../strands-harness/src/models/build.rs       | 227 +++++
+ .../strands-harness/src/models/tests.rs       | 299 +++++++
+ .../src/models/tests/providers.rs             | 805 ++++++++++++++++++
+ harness-rs/strands-harness/src/prompt.rs      |   6 +-
+ 6 files changed, 2016 insertions(+), 7 deletions(-)
+ create mode 100644 harness-rs/strands-harness/src/models/build.rs
+ create mode 100644 harness-rs/strands-harness/src/models/tests.rs
+ create mode 100644 harness-rs/strands-harness/src/models/tests/providers.rs
+
+diff --git a/harness-rs/strands-harness/src/logging.rs b/harness-rs/strands-harness/src/logging.rs
+index 4dd609ff4..df4a95224 100644
+--- a/harness-rs/strands-harness/src/logging.rs
++++ b/harness-rs/strands-harness/src/logging.rs
+@@ -1,8 +1,4 @@
+ //! Warn-once logging (TS `logging.ts`; `configureLogging` is replaced by `tracing` subscribers).
+-#![expect(
+-    dead_code,
+-    reason = "used once the modules that warn land; drop this when they have"
+-)]
+ 
+ use std::collections::HashSet;
+ use std::sync::{LazyLock, Mutex, PoisonError};
+diff --git a/harness-rs/strands-harness/src/models.rs b/harness-rs/strands-harness/src/models.rs
+index b568a35f2..58e66286c 100644
+--- a/harness-rs/strands-harness/src/models.rs
++++ b/harness-rs/strands-harness/src/models.rs
+@@ -1 +1,683 @@
+ //! Model strings, effort and caching (TS `models.ts`).
++//!
++//! A model is a ready instance, a `"provider/name"` string, a bare Bedrock model id, or nothing
++//! for the harness default. `effort` is mapped to each provider's own request fields, and prompt
++//! caching is passed to the provider as an SDK cache config.
++
++use std::sync::{Arc, LazyLock};
++
++use regex::Regex;
++use strands::agent::ModelSource;
++use strands::models::Model;
++
++use crate::defaults::DEFAULT_MODEL;
++use crate::env::EnvLookup;
++use crate::error::{HarnessError, Result};
++use crate::logging::warn_once;
++use crate::types::Effort;
++
++#[cfg(any(feature = "bedrock", feature = "anthropic", feature = "openai"))]
++mod build;
++#[cfg(test)]
++mod tests;
++
++/// Cross-region inference profile prefixes stripped from a Bedrock model id before matching its
++/// provider family.
++const BEDROCK_REGION_PREFIXES: [&str; 6] = ["global.", "apac.", "us.", "eu.", "au.", "jp."];
++const BEDROCK_GPT_PREFIXES: [&str; 4] = [
++    "openai.gpt-5.",
++    "openai.gpt-daybreak-",
++    "openai.gpt-6-",
++    "openai.gpt-6.",
++];
++
++// Reasoning levels each provider's API accepts. `off` is the harness's spelling of a provider's
++// `none` where it has one, and omits the reasoning field elsewhere.
++const ANTHROPIC_LEVELS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
++const OPENAI_LEVELS: &[&str] = &["minimal", "low", "medium", "high", "xhigh", "none"];
++const BEDROCK_GPT_LEVELS: &[&str] = &["none", "low", "medium", "high", "xhigh", "max"];
++// Converse rejects max on GPT-5.4/5.5 and none on GPT-6 Astra/6.1 Sol.
++const BEDROCK_GPT_NO_MAX_LEVELS: &[&str] = &["none", "low", "medium", "high", "xhigh"];
++const BEDROCK_GPT_NO_NONE_LEVELS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
++const BEDROCK_GPT_OSS_LEVELS: &[&str] = &["low", "medium", "high"];
++const BEDROCK_QWEN_LEVELS: &[&str] = &["none", "minimal", "low", "medium", "high", "xhigh", "max"];
++const BEDROCK_XAI_LEVELS: &[&str] = &["low", "medium", "high", "xhigh"];
++const NO_THINKING_LEVELS: &[&str] = &[];
++/// Per-model levels: Gemma 4 on Mantle only reasons at `high`.
++const MODEL_LEVELS: [(&str, &str, &[&str]); 1] = [("bedrock-mantle", "google.gemma-4-", &["none", "high"])];
++
++const ADAPTIVE_THINKING_SINCE: [(&str, (u32, u32)); 3] =
++    [("opus", (4, 6)), ("sonnet", (4, 6)), ("haiku", (5, 5))];
++const EXTENDED_THINKING_SINCE: [(&str, (u32, u32)); 3] =
++    [("opus", (4, 5)), ("sonnet", (4, 5)), ("haiku", (4, 5))];
++/// TS `CLAUDE_ID`; its `(?!\d)` lookahead is the trailing non-digit alternative here.
++static CLAUDE_ID: LazyLock<Option<Regex>> = LazyLock::new(|| {
++    Regex::new(
++        r"claude-(?:([0-9]{1,2})(?:[-.]([0-9]{1,2}))?-)?(opus|sonnet|haiku|fable|mythos)(?:[-.]([0-9]{1,2}))?(?:[-.]([0-9]{1,2}))?(?:[^0-9]|$)",
++    )
++    .ok()
++});
++
++/// Small, fast model per provider for the `web_fetch` summarizer, keyed by the main agent's
++/// provider so the summarizer shares its credentials.
++const WEB_FETCH_MODELS: [(&str, &str); 4] = [
++    ("bedrock", "global.anthropic.claude-haiku-4-5-20251001-v1:0"),
++    ("bedrock-mantle", "openai.gpt-5.6-luna"),
++    ("anthropic", "claude-haiku-4-5-20251001"),
++    ("openai", "gpt-5.6-luna"),
++];
++/// Providers whose endpoint an env var can repoint; such an endpoint serves its own model list.
++const CUSTOM_ENDPOINT_VARS: [(&str, &str); 2] =
++    [("anthropic", "ANTHROPIC_BASE_URL"), ("openai", "OPENAI_BASE_URL")];
++
++struct Provider {
++    name: &'static str,
++    recommended: Option<&'static str>,
++    levels: &'static [&'static str],
++    /// Whether the provider's SDK model takes a native web search tool; Bedrock Converse has none.
++    web_search: bool,
++}
++
++/// The providers of Rust v0.1, in TS `PROVIDERS` order. All of them cache.
++const PROVIDERS: [Provider; 4] = [
++    Provider {
++        name: "bedrock",
++        recommended: Some("high"),
++        levels: ANTHROPIC_LEVELS,
++        web_search: false,
++    },
++    Provider {
++        name: "bedrock-mantle",
++        recommended: Some("high"),
++        levels: OPENAI_LEVELS,
++        web_search: true,
++    },
++    Provider {
++        name: "anthropic",
++        recommended: Some("high"),
++        levels: ANTHROPIC_LEVELS,
++        web_search: true,
++    },
++    Provider {
++        name: "openai",
++        recommended: Some("high"),
++        levels: OPENAI_LEVELS,
++        web_search: true,
++    },
++];
++/// Providers the TS harness has and Rust v0.1 doesn't.
++const UNSUPPORTED_PROVIDERS: [&str; 3] = ["google", "ollama", "litellm"];
++
++/// Every value the `effort` option accepts.
++#[expect(
++    dead_code,
++    reason = "used by the config normalization, which lands separately"
++)]
++pub(crate) const EFFORT_LEVELS: [Effort; 8] = [
++    Effort::Auto,
++    Effort::Off,
++    Effort::Minimal,
++    Effort::Low,
++    Effort::Medium,
++    Effort::High,
++    Effort::Xhigh,
++    Effort::Max,
++];
++
++fn effort_name(effort: Effort) -> &'static str {
++    match effort {
++        Effort::Auto => "auto",
++        Effort::Off => "off",
++        Effort::Minimal => "minimal",
++        Effort::Low => "low",
++        Effort::Medium => "medium",
++        Effort::High => "high",
++        Effort::Xhigh => "xhigh",
++        Effort::Max => "max",
++    }
++}
++
++fn provider(name: &str) -> Option<&'static Provider> {
++    PROVIDERS.iter().find(|provider| provider.name == name)
++}
++
++fn lookup<T: Copy>(table: &[(&str, T)], key: &str) -> Option<T> {
++    table
++        .iter()
++        .find(|(name, _)| *name == key)
++        .map(|(_, value)| *value)
++}
++
++fn at_least(version: (u32, u32), floor: Option<(u32, u32)>) -> bool {
++    floor.is_some_and(|floor| version >= floor)
++}
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++enum ThinkingMode {
++    Adaptive,
++    Extended,
++}
++
++/// How a Claude model thinks: adaptively, with a token budget, or (`None`) not at all. An id
++/// that isn't recognizably Claude is taken as adaptive.
++fn claude_thinking_mode(model_id: &str) -> Option<ThinkingMode> {
++    let Some(captures) = CLAUDE_ID.as_ref().and_then(|id| id.captures(model_id)) else {
++        return Some(ThinkingMode::Adaptive);
++    };
++    let number = |group: usize| {
++        captures
++            .get(group)
++            .and_then(|digits| digits.as_str().parse::<u32>().ok())
++    };
++    let family = captures.get(3).map_or("", |family| family.as_str());
++    let adaptive_since = lookup(&ADAPTIVE_THINKING_SINCE, family);
++    let extended_since = lookup(&EXTENDED_THINKING_SINCE, family);
++    let version = match (number(4), number(1)) {
++        (Some(major), _) => (major, number(5).unwrap_or(0)),
++        (None, Some(lead_major)) => (lead_major, number(2).unwrap_or(0)),
++        (None, None) => {
++            let takes_adaptive = extended_since.is_none() || adaptive_since.is_some();
++            return Some(if takes_adaptive {
++                ThinkingMode::Adaptive
++            } else {
++                ThinkingMode::Extended
++            });
++        }
++    };
++    if extended_since.is_none() || at_least(version, adaptive_since) {
++        return Some(ThinkingMode::Adaptive);
++    }
++    at_least(version, extended_since).then_some(ThinkingMode::Extended)
++}
++
++fn bedrock_family(model_id: &str) -> &str {
++    BEDROCK_REGION_PREFIXES
++        .iter()
++        .find_map(|prefix| model_id.strip_prefix(prefix))
++        .unwrap_or(model_id)
++}
++
++fn is_bedrock_gpt(family: &str) -> bool {
++    BEDROCK_GPT_PREFIXES
++        .iter()
++        .any(|prefix| family.starts_with(prefix))
++}
++
++fn bedrock_levels(model_id: &str) -> &'static [&'static str] {
++    let family = bedrock_family(model_id);
++    if family.starts_with("anthropic.") {
++        return if claude_thinking_mode(family).is_some() {
++            ANTHROPIC_LEVELS
++        } else {
++            NO_THINKING_LEVELS
++        };
++    }
++    if family.starts_with("openai.gpt-5.4") || family.starts_with("openai.gpt-5.5") {
++        return BEDROCK_GPT_NO_MAX_LEVELS;
++    }
++    if family.starts_with("openai.gpt-6-astra") || family.starts_with("openai.gpt-6.1-sol") {
++        return BEDROCK_GPT_NO_NONE_LEVELS;
++    }
++    if is_bedrock_gpt(family) {
++        return BEDROCK_GPT_LEVELS;
++    }
++    if family.starts_with("openai.gpt-oss-") {
++        return BEDROCK_GPT_OSS_LEVELS;
++    }
++    if family.starts_with("qwen.") {
++        return BEDROCK_QWEN_LEVELS;
++    }
++    if family.starts_with("xai.") {
++        return BEDROCK_XAI_LEVELS;
++    }
++    NO_THINKING_LEVELS
++}
++
++/// Maps an `effort` to the level sent to a provider: the provider's `none` (or nothing, omitting
++/// the reasoning field, where it has no such level) for `off`, the recommended level for `auto`,
++/// the level itself when the provider supports it; anything else is an error.
++fn resolve_effort(
++    effort: Effort,
++    recommended: Option<&'static str>,
++    levels: &'static [&'static str],
++    subject: &str,
++) -> Result<Option<&'static str>> {
++    let name = effort_name(effort);
++    match effort {
++        Effort::Off => return Ok(levels.iter().copied().find(|level| *level == "none")),
++        Effort::Auto => return Ok(recommended),
++        _ => {}
++    }
++    if let Some(level) = levels.iter().copied().find(|level| *level == name) {
++        return Ok(Some(level));
++    }
++    let supported: Vec<&str> = levels.iter().copied().filter(|level| *level != "none").collect();
++    let detail = if supported.is_empty() {
++        "It supports no reasoning levels; pass 'auto' or 'off'.".to_owned()
++    } else {
++        format!("Supported levels: {} (or 'auto', 'off').", supported.join(", "))
++    };
++    Err(HarnessError::UnsupportedEffort {
++        effort: name.to_owned(),
++        subject: subject.to_owned(),
++        detail,
++    })
++}
++
++/// The reasoning level for `name` on `provider`, or the error for a level the model doesn't take.
++fn effort_level(provider: &Provider, name: &str, effort: Effort) -> Result<Option<&'static str>> {
++    if provider.name == "bedrock" {
++        let levels = bedrock_levels(name);
++        // Families that take no level get none by default; an explicit level is rejected.
++        let recommended = (!levels.is_empty()).then_some("high");
++        return resolve_effort(effort, recommended, levels, &format!("Bedrock model {name}"));
++    }
++    let (recommended, levels) = if provider.name == "anthropic" && claude_thinking_mode(name).is_none() {
++        (None, NO_THINKING_LEVELS)
++    } else {
++        let levels = MODEL_LEVELS
++            .iter()
++            .find(|(owner, prefix, _)| *owner == provider.name && name.starts_with(prefix))
++            .map_or(provider.levels, |(_, _, levels)| *levels);
++        (provider.recommended, levels)
++    };
++    resolve_effort(effort, recommended, levels, &format!("model {name}"))
++}
++
++/// A bare id is a Bedrock model id.
++fn split_provider(spec: &str) -> (&str, &str) {
++    spec.split_once('/').unwrap_or(("bedrock", spec))
++}
++
++/// The model string of `model`, or `None` for an instance.
++fn spec_of<'a>(model: Option<&'a ModelSource>, default_model: &'a str) -> Option<&'a str> {
++    match model {
++        None => Some(default_model),
++        Some(ModelSource::Id(id)) => Some(id),
++        Some(_) => None,
++    }
++}
++
++/// What [`resolve_model`] applies to a model string besides the string itself.
++#[derive(Debug, Clone, Copy, Default)]
++pub(crate) struct ResolveModelOptions {
++    /// Reasoning effort, mapped to the resolved provider's request fields.
++    pub(crate) effort: Effort,
++    /// Turns on the model's native web search, where it has one.
++    pub(crate) web_search: bool,
++    /// Requests prompt caching.
++    pub(crate) caching: bool,
++    /// Whether `caching` was set by the caller rather than by default.
++    pub(crate) caching_explicit: bool,
++}
++
++/// Resolves the `model` option into a model instance or router.
++///
++/// An instance or router is used as is; `effort` and `caching` don't apply to it, and the harness
++/// warns once when one of them was requested explicitly. A string (or `default_model` when
++/// `model` is `None`) is `provider/name` or a bare Bedrock model id.
++#[cfg_attr(
++    not(test),
++    expect(dead_code, reason = "used by create_harness, which lands separately")
++)]
++pub(crate) fn resolve_model(
++    model: Option<&ModelSource>,
++    default_model: &str,
++    options: ResolveModelOptions,
++    env: &EnvLookup,
++) -> Result<ModelSource> {
++    let instance = match model {
++        None => return resolve_spec(default_model, options, env).map(ModelSource::Model),
++        Some(ModelSource::Id(spec)) => {
++            return resolve_spec(spec, options, env).map(ModelSource::Model);
++        }
++        Some(instance) => instance,
++    };
++    // The instance's provider is unknown, so none of these can be applied; warn and pass it on.
++    if options.effort != Effort::Auto {
++        warn_once(&format!(
++            "effort \"{}\" not applied to a pre-built Model instance or ModelRouter; configure reasoning on the instance",
++            effort_name(options.effort)
++        ));
++    }
++    if options.caching && options.caching_explicit {
++        warn_once(
++            "prompt caching not applied to a pre-built Model instance or ModelRouter; configure it on the instance",
++        );
++    }
++    Ok(instance.clone())
++}
++
++/// A model string, validated: its provider, the provider's model name, and what the model is
++/// built with.
++struct Plan<'a> {
++    provider: &'static Provider,
++    name: &'a str,
++    level: Option<&'static str>,
++    web_search: bool,
++    caching: bool,
++}
++
++fn plan(spec: &str, options: ResolveModelOptions) -> Result<Plan<'_>> {
++    let (provider_name, name) = split_provider(spec);
++    let Some(provider) = provider(provider_name) else {
++        if UNSUPPORTED_PROVIDERS.contains(&provider_name) {
++            return Err(HarnessError::UnsupportedModelProvider {
++                provider: provider_name.to_owned(),
++            });
++        }
++        let mut supported = PROVIDERS.map(|provider| provider.name);
++        supported.sort_unstable();
++        return Err(HarnessError::UnknownModelProvider {
++            provider: provider_name.to_owned(),
++            spec: spec.to_owned(),
++            supported: supported.join(", "),
++        });
++    };
++    let unsupported_caching =
++        provider_name == "bedrock" && bedrock_family(name).starts_with("anthropic.claude-3-haiku-");
++    if options.caching && unsupported_caching {
++        if options.caching_explicit {
++            return Err(HarnessError::CachingUnsupported {
++                model: format!("{provider_name}/{name}"),
++            });
++        }
++        warn_once(&format!(
++            "model=<{provider_name}/{name}> | prompt caching not supported by this model; continuing without it"
++        ));
++    }
++    Ok(Plan {
++        provider,
++        name,
++        level: effort_level(provider, name, options.effort)?,
++        web_search: options.web_search && has_web_search(provider_name, name),
++        caching: options.caching && !unsupported_caching,
++    })
++}
++
++fn resolve_spec(spec: &str, options: ResolveModelOptions, env: &EnvLookup) -> Result<Arc<dyn Model>> {
++    let Plan {
++        provider,
++        name,
++        level,
++        web_search,
++        caching,
++    } = plan(spec, options)?;
++    match provider.name {
++        "bedrock" => bedrock(spec, name, level, caching, env),
++        "anthropic" => anthropic(spec, name, level, web_search, caching, env),
++        "openai" => openai(spec, name, level, web_search, caching, env),
++        _ => bedrock_mantle(spec, name, level, web_search, caching, env),
++    }
++}
++
++#[cfg(not(all(feature = "bedrock", feature = "anthropic", feature = "openai")))]
++fn disabled(spec: &str, feature: &'static str) -> Result<Arc<dyn Model>> {
++    Err(HarnessError::ModelFeatureDisabled {
++        spec: spec.to_owned(),
++        feature,
++    })
++}
++
++#[cfg(feature = "bedrock")]
++fn bedrock(
++    _spec: &str,
++    name: &str,
++    level: Option<&str>,
++    caching: bool,
++    env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    let options = build::bedrock_options(name, level, caching, env);
++    Ok(Arc::new(strands::models::BedrockModel::new(options)))
++}
++
++#[cfg(not(feature = "bedrock"))]
++fn bedrock(
++    spec: &str,
++    _name: &str,
++    _level: Option<&str>,
++    _caching: bool,
++    _env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    disabled(spec, "bedrock")
++}
++
++#[cfg(feature = "anthropic")]
++fn anthropic(
++    _spec: &str,
++    name: &str,
++    level: Option<&str>,
++    web_search: bool,
++    caching: bool,
++    env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    let options = build::anthropic_options(name, level, web_search, caching, env);
++    Ok(Arc::new(strands::models::AnthropicModel::new(options)?))
++}
++
++#[cfg(not(feature = "anthropic"))]
++fn anthropic(
++    spec: &str,
++    _name: &str,
++    _level: Option<&str>,
++    _web_search: bool,
++    _caching: bool,
++    _env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    disabled(spec, "anthropic")
++}
++
++#[cfg(feature = "openai")]
++fn openai(
++    _spec: &str,
++    name: &str,
++    level: Option<&str>,
++    web_search: bool,
++    caching: bool,
++    env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    let options = build::openai_options(name, level, web_search, caching, env);
++    Ok(Arc::new(strands::models::OpenAIModel::new(options)?))
++}
++
++#[cfg(not(feature = "openai"))]
++fn openai(
++    spec: &str,
++    _name: &str,
++    _level: Option<&str>,
++    _web_search: bool,
++    _caching: bool,
++    _env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    disabled(spec, "openai")
++}
++
++#[cfg(all(feature = "openai", feature = "bedrock"))]
++fn bedrock_mantle(
++    _spec: &str,
++    name: &str,
++    level: Option<&str>,
++    web_search: bool,
++    caching: bool,
++    env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    let (options, mantle) = build::bedrock_mantle_options(name, level, web_search, caching, env);
++    let model = strands::models::OpenAIModel::with_bedrock_mantle(options, mantle)?;
++    Ok(Arc::new(model))
++}
++
++/// Bedrock Mantle is served through the OpenAI model with Bedrock credentials, so it needs both.
++#[cfg(not(all(feature = "openai", feature = "bedrock")))]
++fn bedrock_mantle(
++    spec: &str,
++    _name: &str,
++    _level: Option<&str>,
++    _web_search: bool,
++    _caching: bool,
++    _env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    let missing = if cfg!(feature = "openai") {
++        "bedrock"
++    } else {
++        "openai"
++    };
++    disabled(spec, missing)
++}
++
++/// Whether `model` accepts image and document blocks in a tool result.
++///
++/// OpenAI-family models on Bedrock Converse reject both, which fails the whole turn, so `read`
++/// describes those files in text instead. Every candidate of a router has to accept media. An
++/// instance is judged by its model id, as a Bedrock id.
++#[cfg_attr(
++    not(test),
++    expect(dead_code, reason = "used by the read tool, which lands separately")
++)]
++pub(crate) fn supports_media(model: Option<&ModelSource>) -> bool {
++    match model {
++        None => spec_supports_media(DEFAULT_MODEL),
++        Some(ModelSource::Id(spec)) => spec_supports_media(spec),
++        Some(ModelSource::Model(model)) => instance_supports_media(model.as_ref()),
++        Some(ModelSource::Router(router)) => router_supports_media(router),
++        Some(_) => true,
++    }
++}
++
++fn spec_supports_media(spec: &str) -> bool {
++    let (provider_name, name) = split_provider(spec);
++    provider_name != "bedrock" || !bedrock_family(name).starts_with("openai.")
++}
++
++fn instance_supports_media(model: &dyn Model) -> bool {
++    model
++        .model_id()
++        .is_none_or(|id| !bedrock_family(&id).starts_with("openai."))
++}
++
++fn router_supports_media(router: &strands::models::routing::ModelRouter) -> bool {
++    use strands::models::routing::CandidateModel;
++    router
++        .candidates()
++        .iter()
++        .all(|candidate| match candidate.model() {
++            CandidateModel::Model(model) => instance_supports_media(model.as_ref()),
++            CandidateModel::Router(router) => router_supports_media(router),
++            _ => true,
++        })
++}
++
++/// Whether a reasoning effort can be applied to `model`.
++///
++/// A model instance or router is configured by the caller, so this is `true` for one; `None` is
++/// the default model.
++pub fn supports_thinking(model: Option<&ModelSource>) -> bool {
++    let Some(spec) = spec_of(model, DEFAULT_MODEL) else {
++        return true;
++    };
++    let (provider_name, name) = split_provider(spec);
++    match provider_name {
++        "bedrock" => !bedrock_levels(name).is_empty(),
++        "anthropic" => claude_thinking_mode(name).is_some(),
++        _ => provider(provider_name).is_some_and(|provider| !provider.levels.is_empty()),
++    }
++}
++
++/// Whether native web search can be enabled for `model`.
++///
++/// A model instance or router has an unknown provider, so this is `false` for one; the caller
++/// configures search on the instance. `None` is the default model.
++pub fn supports_web_search(model: Option<&ModelSource>) -> bool {
++    spec_of(model, DEFAULT_MODEL).is_some_and(|spec| {
++        let (provider_name, name) = split_provider(spec);
++        has_web_search(provider_name, name)
++    })
++}
++
++fn has_web_search(provider_name: &str, name: &str) -> bool {
++    // Only Mantle's GPT-5, GPT-6 and Daybreak models serve Bedrock Web Search.
++    provider(provider_name).is_some_and(|provider| provider.web_search)
++        && (provider_name != "bedrock-mantle" || is_bedrock_gpt(name))
++}
++
++/// Resolves the model the `web_fetch` summarizer runs on.
++///
++/// An explicit `web_fetch_model` wins. With none set, the small fast model of the main agent's
++/// provider is used, so the summarizer shares its credentials; a main model instance is reused.
++/// On Bedrock the summarizer follows the main model's family, and a family that can't be
++/// identified reuses the main model with a warning. Thinking and caching are never applied.
++#[expect(
++    dead_code,
++    reason = "used by web_fetch and resolve_memory, which land separately"
++)]
++pub(crate) fn resolve_web_fetch_model(
++    main_model: Option<&ModelSource>,
++    web_fetch_model: Option<&ModelSource>,
++    env: &EnvLookup,
++) -> Result<Arc<dyn Model>> {
++    let chosen = web_fetch_model.or(main_model);
++    let main = match chosen {
++        Some(ModelSource::Model(model)) => return Ok(Arc::clone(model)),
++        Some(ModelSource::Router(router)) => return Ok(router.default_model()),
++        Some(ModelSource::Id(spec)) if web_fetch_model.is_some() => return summarizer(spec, env),
++        Some(ModelSource::Id(spec)) => spec,
++        _ => DEFAULT_MODEL,
++    };
++    match web_fetch_spec(main, env)? {
++        Some(small) => summarizer(&small, env),
++        None => summarizer(main, env),
++    }
++}
++
++fn summarizer(spec: &str, env: &EnvLookup) -> Result<Arc<dyn Model>> {
++    let options = ResolveModelOptions {
++        effort: Effort::Off,
++        ..Default::default()
++    };
++    resolve_spec(spec, options, env)
++}
++
++/// The summarizer's model string for the main model string `main`, or `None` to reuse `main`.
++fn web_fetch_spec(main: &str, env: &EnvLookup) -> Result<Option<String>> {
++    let (provider_name, name) = split_provider(main);
++    if provider_name == "bedrock" {
++        let small = bedrock_web_fetch_model(name);
++        if small.is_none() {
++            warn_once(&format!(
++                "model=<{main}> | could not identify the Bedrock model family for the web_fetch summarizer; reusing the main model. Pass builtinTools.web_fetch.model to choose a smaller one."
++            ));
++        }
++        return Ok(small.map(|small| format!("bedrock/{small}")));
++    }
++    let custom_endpoint = lookup(&CUSTOM_ENDPOINT_VARS, provider_name)
++        .filter(|var| env(var).is_some_and(|value| !value.is_empty()));
++    if let Some(base_url_var) = custom_endpoint {
++        warn_once(&format!(
++            "model=<{main}> | {base_url_var} points provider <{provider_name}> at a non-default endpoint, which serves its own model list, so the vended summarizer may not exist there; reusing the main model. Pass builtinTools.web_fetch.model to choose a smaller one."
++        ));
++        return Ok(None);
++    }
++    if let Some(small) = lookup(&WEB_FETCH_MODELS, provider_name) {
++        return Ok(Some(format!("{provider_name}/{small}")));
++    }
++    if UNSUPPORTED_PROVIDERS.contains(&provider_name) {
++        // Resolving the main model reports the provider as unsupported.
++        return Ok(None);
++    }
++    Err(HarnessError::NoWebFetchModel {
++        provider: provider_name.to_owned(),
++    })
++}
++
++/// The small Bedrock summarizer id for a Bedrock main model, following its family: Haiku for
++/// Anthropic, the OpenAI small model (keeping any cross-region prefix) for OpenAI, else `None`.
++fn bedrock_web_fetch_model(name: &str) -> Option<String> {
++    let family = bedrock_family(name);
++    if family.starts_with("anthropic.") {
++        return lookup(&WEB_FETCH_MODELS, "bedrock").map(str::to_owned);
++    }
++    if family.starts_with("openai.") {
++        let prefix = name.strip_suffix(family).unwrap_or_default();
++        return lookup(&WEB_FETCH_MODELS, "openai").map(|small| format!("{prefix}openai.{small}"));
++    }
++    None
++}
+diff --git a/harness-rs/strands-harness/src/models/build.rs b/harness-rs/strands-harness/src/models/build.rs
+new file mode 100644
+index 000000000..fc09f3ad9
+--- /dev/null
++++ b/harness-rs/strands-harness/src/models/build.rs
+@@ -0,0 +1,227 @@
++//! The SDK model options each provider is built from (TS `bedrock`, `anthropic`, `openai` and
++//! `bedrockMantle` in `models.ts`).
++
++use serde_json::json;
++use strands::models::model::{CacheConfig, CacheStrategy};
++use strands::types::json::JsonValue;
++
++use crate::env::EnvLookup;
++
++#[cfg(any(feature = "bedrock", feature = "anthropic"))]
++use super::{ThinkingMode, claude_thinking_mode};
++
++#[cfg(any(feature = "bedrock", feature = "anthropic"))]
++pub(super) const ANTHROPIC_MAX_TOKENS: u64 = 32_000;
++/// Claude's `max_tokens` ceiling by tier, matched as a substring so any Bedrock region or
++/// vendor prefix in front of it doesn't matter.
++#[cfg(any(feature = "bedrock", feature = "anthropic"))]
++const CLAUDE_MAX_TOKENS: [(&str, u64); 4] = [
++    ("claude-opus-", 128_000),
++    ("claude-sonnet-", 128_000),
++    ("claude-haiku-", 128_000),
++    ("claude-fable-", 128_000),
++];
++#[cfg(any(feature = "bedrock", feature = "anthropic"))]
++const CLAUDE_MAX_TOKENS_BY_VERSION: [(&str, u64); 6] = [
++    ("claude-opus-4-5", 64_000),
++    ("claude-opus-4.5", 64_000),
++    ("claude-sonnet-4-5", 64_000),
++    ("claude-sonnet-4.5", 64_000),
++    ("claude-haiku-4-5", 64_000),
++    ("claude-haiku-4.5", 64_000),
++];
++#[cfg(any(feature = "bedrock", feature = "anthropic"))]
++const EXTENDED_THINKING_BUDGETS: [(&str, u64); 5] = [
++    ("low", 2_048),
++    ("medium", 8_192),
++    ("high", 16_384),
++    ("xhigh", 32_768),
++    ("max", 49_152),
++];
++
++#[cfg(any(feature = "bedrock", feature = "anthropic"))]
++pub(super) fn claude_max_tokens(model_id: &str) -> Option<u64> {
++    CLAUDE_MAX_TOKENS_BY_VERSION
++        .iter()
++        .chain(&CLAUDE_MAX_TOKENS)
++        .find(|(needle, _)| model_id.contains(needle))
++        .map(|(_, max_tokens)| *max_tokens)
++}
++
++/// The request fields that turn thinking on for a Claude model: the adaptive block, or the
++/// budgeted block on models from before adaptive thinking.
++#[cfg(any(feature = "bedrock", feature = "anthropic"))]
++fn claude_thinking_block(model_id: &str, effort: &str, max_tokens: u64) -> JsonValue {
++    if claude_thinking_mode(model_id) != Some(ThinkingMode::Extended) {
++        return json!({
++            "thinking": { "type": "adaptive", "display": "summarized" },
++            "output_config": { "effort": effort },
++        });
++    }
++    let budget = super::lookup(&EXTENDED_THINKING_BUDGETS, effort).unwrap_or(16_384);
++    json!({
++        "thinking": { "type": "enabled", "budget_tokens": budget.min(max_tokens.saturating_sub(1)) },
++    })
++}
++
++/// The `auto` strategy places cache points where the model takes them and is a no-op elsewhere.
++fn cache_config(caching: bool) -> Option<CacheConfig> {
++    caching.then(|| CacheConfig {
++        strategy: Some(CacheStrategy::Auto),
++        ..Default::default()
++    })
++}
++
++fn env_value(env: &EnvLookup, name: &str) -> Option<String> {
++    env(name).filter(|value| !value.is_empty())
++}
++
++#[cfg(feature = "bedrock")]
++fn aws_region(env: &EnvLookup) -> Option<String> {
++    env_value(env, "AWS_REGION").or_else(|| env_value(env, "AWS_DEFAULT_REGION"))
++}
++
++#[cfg(feature = "bedrock")]
++fn bedrock_thinking(model_id: &str, effort: Option<&str>) -> Option<JsonValue> {
++    let effort = effort?;
++    let family = super::bedrock_family(model_id);
++    if family.starts_with("anthropic.") {
++        let max_tokens = claude_max_tokens(model_id).unwrap_or(ANTHROPIC_MAX_TOKENS);
++        return Some(claude_thinking_block(family, effort, max_tokens));
++    }
++    if super::is_bedrock_gpt(family) {
++        return Some(json!({ "reasoning": { "effort": effort } }));
++    }
++    let takes_reasoning_effort = ["openai.gpt-oss-", "qwen.", "xai."]
++        .iter()
++        .any(|prefix| family.starts_with(prefix));
++    takes_reasoning_effort.then(|| json!({ "reasoning_effort": effort }))
++}
++
++#[cfg(feature = "bedrock")]
++pub(super) fn bedrock_options(
++    model_id: &str,
++    effort: Option<&str>,
++    caching: bool,
++    env: &EnvLookup,
++) -> strands::models::bedrock::BedrockModelOptions {
++    use strands::models::bedrock::{BedrockModelConfig, BedrockModelOptions};
++    BedrockModelOptions {
++        config: BedrockModelConfig {
++            model_id: Some(model_id.to_owned()),
++            max_tokens: claude_max_tokens(model_id),
++            cache_config: cache_config(caching),
++            additional_request_fields: bedrock_thinking(model_id, effort),
++            ..Default::default()
++        },
++        region: aws_region(env),
++        ..Default::default()
++    }
++}
++
++#[cfg(feature = "anthropic")]
++pub(super) fn anthropic_options(
++    model_id: &str,
++    effort: Option<&str>,
++    web_search: bool,
++    caching: bool,
++    env: &EnvLookup,
++) -> strands::models::anthropic::AnthropicModelOptions {
++    use strands::models::anthropic::{AnthropicClientConfig, AnthropicModelConfig, AnthropicModelOptions};
++    let max_tokens = claude_max_tokens(model_id).unwrap_or(ANTHROPIC_MAX_TOKENS);
++    let params = effort.and_then(
++        |effort| match claude_thinking_block(model_id, effort, max_tokens) {
++            JsonValue::Object(params) => Some(params),
++            _ => None,
++        },
++    );
++    // Claude calls the search directly (not from code execution), so results come back as
++    // citations and the tool works on every Claude model.
++    let anthropic_tools = web_search.then(|| {
++        vec![json!({
++            "type": "web_search_20260318",
++            "name": "web_search",
++            "allowed_callers": ["direct"],
++        })]
++    });
++    AnthropicModelOptions {
++        api_key: env_value(env, "ANTHROPIC_API_KEY"),
++        client_config: AnthropicClientConfig {
++            base_url: env_value(env, "ANTHROPIC_BASE_URL"),
++            ..Default::default()
++        },
++        config: AnthropicModelConfig {
++            model_id: Some(model_id.to_owned()),
++            max_tokens: Some(max_tokens),
++            cache_config: cache_config(caching),
++            params,
++            anthropic_tools,
++            ..Default::default()
++        },
++    }
++}
++
++/// The Responses API merges built-in tools carried in `params` with the agent's function tools.
++#[cfg(feature = "openai")]
++fn openai_config(
++    model_id: &str,
++    effort: Option<&str>,
++    web_search: Option<JsonValue>,
++    caching: bool,
++) -> strands::models::openai::OpenAIModelConfig {
++    let mut params = strands::types::json::JsonObject::new();
++    if let Some(effort) = effort {
++        params.insert("reasoning".to_owned(), json!({ "effort": effort }));
++    }
++    if let Some(tool) = web_search {
++        params.insert("tools".to_owned(), json!([tool]));
++    }
++    strands::models::openai::OpenAIModelConfig {
++        model_id: Some(model_id.to_owned()),
++        // The SDK derives a per-session `prompt_cache_key` from the cache config and places
++        // cache points on the models that take them.
++        cache_config: cache_config(caching),
++        params: (!params.is_empty()).then_some(params),
++        ..Default::default()
++    }
++}
++
++#[cfg(feature = "openai")]
++pub(super) fn openai_options(
++    model_id: &str,
++    effort: Option<&str>,
++    web_search: bool,
++    caching: bool,
++    env: &EnvLookup,
++) -> strands::models::openai::OpenAIModelOptions {
++    use strands::models::openai::{OpenAIClientConfig, OpenAIModelOptions};
++    let search = web_search.then(|| json!({ "type": "web_search" }));
++    OpenAIModelOptions {
++        api_key: env_value(env, "OPENAI_API_KEY").map(Into::into),
++        client_config: OpenAIClientConfig {
++            base_url: env_value(env, "OPENAI_BASE_URL"),
++            ..Default::default()
++        },
++        config: openai_config(model_id, effort, search, caching),
++        ..Default::default()
++    }
++}
++
++#[cfg(all(feature = "openai", feature = "bedrock"))]
++pub(super) fn bedrock_mantle_options(
++    model_id: &str,
++    effort: Option<&str>,
++    web_search: bool,
++    caching: bool,
++    env: &EnvLookup,
++) -> (
++    strands::models::openai::OpenAIModelOptions,
++    strands::models::openai::BedrockMantleConfig,
++) {
++    let search = web_search.then(|| json!({ "type": "web_search", "external_web_access": true }));
++    let mantle = strands::models::openai::BedrockMantleConfig {
++        region: aws_region(env),
++        ..Default::default()
++    };
++    (openai_config(model_id, effort, search, caching).into(), mantle)
++}
+diff --git a/harness-rs/strands-harness/src/models/tests.rs b/harness-rs/strands-harness/src/models/tests.rs
+new file mode 100644
+index 000000000..1b8c65297
+--- /dev/null
++++ b/harness-rs/strands-harness/src/models/tests.rs
+@@ -0,0 +1,299 @@
++//! Ports `harness-ts/test/models.test.ts`: the cases that need no provider feature are here,
++//! the ones that read a provider's model config are in `providers`.
++
++use std::sync::Arc;
++
++use strands::agent::ModelSource;
++use strands::models::Model;
++use strands::models::routing::ModelRouter;
++use strands::testing::MockMessageModel;
++
++use super::*;
++
++#[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
++mod providers;
++
++const DEFAULT: &str = "bedrock/global.anthropic.claude-opus-4-8";
++
++fn spec(spec: &str) -> ModelSource {
++    spec.into()
++}
++
++fn instance() -> ModelSource {
++    let model: Arc<dyn Model> = Arc::new(MockMessageModel::new());
++    model.into()
++}
++
++fn router() -> ModelSource {
++    let fast: Arc<dyn Model> = Arc::new(MockMessageModel::new());
++    ModelRouter::new([fast]).unwrap().into()
++}
++
++fn effort(effort: Effort) -> ResolveModelOptions {
++    ResolveModelOptions {
++        effort,
++        ..Default::default()
++    }
++}
++
++fn plan_error(spec: &str, options: ResolveModelOptions) -> String {
++    match plan(spec, options) {
++        Ok(_) => panic!("{spec} resolved"),
++        Err(error) => error.to_string(),
++    }
++}
++
++mod resolve_model {
++    use super::*;
++
++    fn no_env() -> EnvLookup {
++        Arc::new(|_| None)
++    }
++
++    #[test]
++    fn passes_a_model_instance_through_untouched() {
++        let instance = instance();
++        let resolved = resolve_model(Some(&instance), DEFAULT, effort(Effort::Auto), &no_env()).unwrap();
++        let (ModelSource::Model(given), ModelSource::Model(resolved)) = (&instance, &resolved) else {
++            panic!("not a model");
++        };
++        assert!(Arc::ptr_eq(given, resolved));
++    }
++
++    #[test]
++    fn passes_a_model_router_through_untouched() {
++        let fast: Arc<dyn Model> = Arc::new(MockMessageModel::new());
++        let deep: Arc<dyn Model> = Arc::new(MockMessageModel::new());
++        let router = ModelRouter::new([Arc::clone(&fast), deep]).unwrap();
++        let resolved = resolve_model(Some(&router.into()), DEFAULT, effort(Effort::Auto), &no_env()).unwrap();
++        let ModelSource::Router(resolved) = resolved else {
++            panic!("not a router");
++        };
++        assert!(Arc::ptr_eq(&resolved.default_model(), &fast));
++    }
++
++    #[test]
++    fn rejects_an_unknown_provider() {
++        assert_eq!(
++            plan_error("mistral/whatever", effort(Effort::Auto)),
++            "Unknown model provider \"mistral\" in \"mistral/whatever\". Supported providers: anthropic, bedrock, bedrock-mantle, openai. Pass a Model instance for anything else."
++        );
++    }
++
++    #[test]
++    fn does_not_treat_a_gemini_prefix_as_a_provider() {
++        assert!(
++            plan_error("gemini/gemini-3.5-flash", effort(Effort::Auto))
++                .starts_with("Unknown model provider \"gemini\" in \"gemini/gemini-3.5-flash\".")
++        );
++    }
++
++    /// Rust v0.1 has no Google, Ollama or LiteLLM provider (PROMPT.md section 10).
++    #[test]
++    fn rejects_a_provider_typescript_has_and_rust_does_not() {
++        for provider in ["google", "ollama", "litellm"] {
++            assert_eq!(
++                plan_error(&format!("{provider}/some-model"), effort(Effort::Auto)),
++                format!("model provider \"{provider}\" is not supported in Rust yet")
++            );
++        }
++    }
++
++    #[cfg(not(feature = "anthropic"))]
++    #[test]
++    fn reports_the_cargo_feature_of_a_disabled_provider() {
++        let error = resolve_spec("anthropic/claude-opus-4-8", effort(Effort::Auto), &no_env())
++            .err()
++            .map(|error| error.to_string());
++        assert_eq!(
++            error.as_deref(),
++            Some("model 'anthropic/claude-opus-4-8' requires the strands feature \"anthropic\"")
++        );
++    }
++
++    #[test]
++    fn rejects_a_level_the_provider_does_not_support() {
++        assert_eq!(
++            plan_error("openai/gpt-5.6-sol", effort(Effort::Max)),
++            "Effort \"max\" is not supported by model gpt-5.6-sol. Supported levels: minimal, low, medium, high, xhigh (or 'auto', 'off')."
++        );
++    }
++
++    #[test]
++    fn rejects_a_level_the_model_does_not_support() {
++        assert!(
++            plan_error(
++                "bedrock/global.anthropic.claude-opus-4-8",
++                effort(Effort::Minimal)
++            )
++            .contains("not supported by Bedrock model global.anthropic.claude-opus-4-8")
++        );
++    }
++
++    #[test]
++    fn rejects_explicit_thinking_for_an_unknown_bedrock_family() {
++        assert_eq!(
++            plan_error("bedrock/amazon.nova-pro-v1:0", effort(Effort::High)),
++            "Effort \"high\" is not supported by Bedrock model amazon.nova-pro-v1:0. It supports no reasoning levels; pass 'auto' or 'off'."
++        );
++    }
++
++    #[test]
++    fn rejects_an_unsupported_thinking_level_for_bedrock_mantle() {
++        assert!(
++            plan_error("bedrock-mantle/openai.gpt-oss-120b", effort(Effort::Max))
++                .contains("not supported by model openai.gpt-oss-120b")
++        );
++    }
++
++    #[test]
++    fn rejects_an_explicit_thinking_level_on_a_claude_below_the_thinking_floor() {
++        assert!(
++            plan_error(
++                "bedrock/us.anthropic.claude-3-haiku-20240307-v1:0",
++                effort(Effort::High)
++            )
++            .contains("not supported by Bedrock model")
++        );
++    }
++
++    #[test]
++    fn never_adds_a_native_search_tool_where_the_model_has_none() {
++        for id in [
++            "bedrock-mantle/qwen.qwen3-32b-v1:0",
++            "bedrock-mantle/openai.gpt-oss-120b-1:0",
++            DEFAULT,
++        ] {
++            let options = ResolveModelOptions {
++                effort: Effort::High,
++                web_search: true,
++                ..Default::default()
++            };
++            assert!(!plan(id, options).unwrap().web_search, "{id}");
++        }
++    }
++}
++
++mod supports_thinking {
++    use super::*;
++
++    fn thinks(model: &str) -> bool {
++        supports_thinking(Some(&spec(model)))
++    }
++
++    #[test]
++    fn answers_for_consumers() {
++        assert!(thinks("bedrock/global.anthropic.claude-opus-4-8"));
++        assert!(thinks("bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"));
++        assert!(thinks("anthropic/claude-haiku-4-5-20251001"));
++        assert!(!thinks("bedrock/us.anthropic.claude-3-haiku-20240307-v1:0"));
++        assert!(!thinks("anthropic/claude-3-haiku-20240307"));
++        assert!(!thinks("ollama/llama3"));
++        assert!(supports_thinking(None));
++    }
++
++    #[test]
++    fn is_true_for_a_model_instance() {
++        assert!(supports_thinking(Some(&instance())));
++    }
++
++    #[test]
++    fn is_true_for_a_model_router() {
++        assert!(supports_thinking(Some(&router())));
++    }
++
++    #[test]
++    fn is_false_for_which_takes_no_level() {
++        for model_id in [
++            "amazon.nova-pro-v1:0",
++            "us.amazon.nova-pro-v1:0",
++            "meta.llama3-3-70b-instruct-v1:0",
++            "deepseek.r1-v1:0",
++            "mistral.mistral-large-2407-v1:0",
++        ] {
++            let model = format!("bedrock/{model_id}");
++            assert!(!thinks(&model), "{model}");
++            assert!(plan_error(&model, effort(Effort::High)).contains("not supported by Bedrock model"));
++        }
++    }
++
++    #[test]
++    fn reads_the_dot_separated_version_in_as_thinking() {
++        for (model_id, expected) in [
++            ("claude-opus-4.8", true),
++            ("claude-sonnet-4.6", true),
++            ("claude-opus-4.5", true),
++            ("claude-haiku-4.5", true),
++            ("claude-opus-4.1", false),
++        ] {
++            let model = format!("bedrock/global.anthropic.{model_id}");
++            assert_eq!(thinks(&model), expected, "{model}");
++        }
++    }
++
++    #[test]
++    fn is_true_for_an_unrecognized_claude_family() {
++        assert!(thinks("bedrock/global.anthropic.claude-quasar-6"));
++    }
++}
++
++mod supports_web_search {
++    use super::*;
++
++    fn searches(model: &str) -> bool {
++        supports_web_search(Some(&spec(model)))
++    }
++
++    /// Google is not a provider of Rust v0.1, so its row of the TS case is `false` here.
++    #[test]
++    fn is_true_for_openai_google_and_bedrock_mantle() {
++        assert!(searches("openai/gpt-5.6-sol"));
++        assert!(!searches("google/gemini-3.5-flash"));
++        assert!(searches("bedrock-mantle/openai.gpt-5.6-luna"));
++        assert!(searches("bedrock-mantle/openai.gpt-6-astra"));
++        assert!(searches("bedrock-mantle/openai.gpt-6.1-sol"));
++        assert!(searches("bedrock-mantle/openai.gpt-daybreak-blue-5.6-sol"));
++        assert!(!searches("bedrock-mantle/openai.gpt-oss-120b"));
++        assert!(!searches("bedrock-mantle/qwen.qwen3-32b-v1:0"));
++    }
++
++    #[test]
++    fn is_false_for_bedrock_but_true_for_anthropic_direct() {
++        assert!(!searches("bedrock/global.anthropic.claude-opus-4-8"));
++        assert!(searches("anthropic/claude-opus-4-8"));
++    }
++
++    #[test]
++    fn uses_the_default_model_provider_for_undefined() {
++        assert!(!supports_web_search(None));
++    }
++
++    #[test]
++    fn is_false_for_a_model_instance() {
++        assert!(!supports_web_search(Some(&instance())));
++    }
++
++    #[test]
++    fn is_false_for_a_model_router() {
++        assert!(!supports_web_search(Some(&router())));
++    }
++}
++
++mod supports_media {
++    use super::*;
++
++    #[test]
++    fn is_false_for_openai_family_models_on_bedrock_converse() {
++        assert!(!supports_media(Some(&spec("bedrock/us.openai.gpt-6-astra"))));
++        assert!(!supports_media(Some(&spec("bedrock/openai.gpt-5.6-sol"))));
++    }
++
++    #[test]
++    fn is_true_elsewhere() {
++        assert!(supports_media(Some(&spec(DEFAULT))));
++        assert!(supports_media(Some(&spec("anthropic/claude-haiku-4-5-20251001"))));
++        assert!(supports_media(Some(&spec("bedrock-mantle/openai.gpt-6-astra"))));
++        assert!(supports_media(None));
++        assert!(supports_media(Some(&instance())));
++    }
++}
+diff --git a/harness-rs/strands-harness/src/models/tests/providers.rs b/harness-rs/strands-harness/src/models/tests/providers.rs
+new file mode 100644
+index 000000000..77e89ee3c
+--- /dev/null
++++ b/harness-rs/strands-harness/src/models/tests/providers.rs
+@@ -0,0 +1,805 @@
++//! The cases of `harness-ts/test/models.test.ts` that read the resolved provider config.
++
++use serde_json::json;
++use strands::models::BedrockModel;
++use strands::models::anthropic::AnthropicModelConfig;
++use strands::models::bedrock::{BedrockModelConfig, BedrockModelOptions};
++use strands::models::model::{CacheConfig, CacheStrategy};
++use strands::models::openai::OpenAIModelConfig;
++use strands::types::json::JsonValue;
++
++use super::*;
++use crate::test_support::WarnRecorder;
++
++fn env_of(vars: &'static [(&'static str, &'static str)]) -> EnvLookup {
++    Arc::new(move |name| lookup(vars, name).map(str::to_owned))
++}
++
++/// Fake credentials, so building a model reads nothing from the process environment.
++fn env() -> EnvLookup {
++    env_of(&[
++        ("ANTHROPIC_API_KEY", "test-key"),
++        ("OPENAI_API_KEY", "test-key"),
++        ("AWS_REGION", "us-west-2"),
++    ])
++}
++
++fn options(effort: Effort, web_search: bool, caching: bool, caching_explicit: bool) -> ResolveModelOptions {
++    ResolveModelOptions {
++        effort,
++        web_search,
++        caching,
++        caching_explicit,
++    }
++}
++
++fn bedrock_options(spec: &str, options: ResolveModelOptions, env: &EnvLookup) -> Result<BedrockModelOptions> {
++    let plan = plan(spec, options)?;
++    assert_eq!(plan.provider.name, "bedrock");
++    Ok(build::bedrock_options(plan.name, plan.level, plan.caching, env))
++}
++
++fn bedrock(spec: &str, options: ResolveModelOptions) -> Result<BedrockModelConfig> {
++    bedrock_options(spec, options, &env()).map(|options| options.config)
++}
++
++/// The Bedrock config for `spec` at `effort`.
++fn bedrock_at(spec: &str, level: Effort) -> BedrockModelConfig {
++    bedrock(spec, effort(level)).unwrap()
++}
++
++fn fields(spec: &str, level: Effort) -> Option<JsonValue> {
++    bedrock_at(spec, level).additional_request_fields
++}
++
++fn anthropic(spec: &str, options: ResolveModelOptions) -> Result<AnthropicModelConfig> {
++    let plan = plan(spec, options)?;
++    assert_eq!(plan.provider.name, "anthropic");
++    let options = build::anthropic_options(plan.name, plan.level, plan.web_search, plan.caching, &env());
++    assert_eq!(options.api_key.as_deref(), Some("test-key"));
++    Ok(options.config)
++}
++
++/// The config of an `openai/` or `bedrock-mantle/` model.
++fn openai(spec: &str, options: ResolveModelOptions) -> Result<OpenAIModelConfig> {
++    let plan = plan(spec, options)?;
++    let (name, level, search, caching) = (plan.name, plan.level, plan.web_search, plan.caching);
++    Ok(match plan.provider.name {
++        "openai" => build::openai_options(name, level, search, caching, &env()).config,
++        "bedrock-mantle" => {
++            let (options, mantle) = build::bedrock_mantle_options(name, level, search, caching, &env());
++            assert_eq!(mantle.region.as_deref(), Some("us-west-2"));
++            assert!(options.api_key.is_none());
++            options.config
++        }
++        other => panic!("{spec} resolved to {other}"),
++    })
++}
++
++fn params(config: &OpenAIModelConfig) -> JsonValue {
++    config.params.clone().map_or(JsonValue::Null, JsonValue::Object)
++}
++
++fn anthropic_params(config: &AnthropicModelConfig) -> JsonValue {
++    config.params.clone().map_or(JsonValue::Null, JsonValue::Object)
++}
++
++fn error(result: Result<impl std::fmt::Debug>) -> String {
++    result.unwrap_err().to_string()
++}
++
++fn auto_cache() -> Option<CacheConfig> {
++    Some(CacheConfig {
++        strategy: Some(CacheStrategy::Auto),
++        ..Default::default()
++    })
++}
++
++fn adaptive(level: &str) -> Option<JsonValue> {
++    Some(json!({
++        "thinking": { "type": "adaptive", "display": "summarized" },
++        "output_config": { "effort": level },
++    }))
++}
++
++fn extended(budget: u64) -> JsonValue {
++    json!({ "thinking": { "type": "enabled", "budget_tokens": budget } })
++}
++
++fn reasoning(level: &str) -> Option<JsonValue> {
++    Some(json!({ "reasoning": { "effort": level } }))
++}
++
++fn resolved(model: Option<&ModelSource>, options: ResolveModelOptions) -> ModelSource {
++    resolve_model(model, DEFAULT, options, &env()).unwrap()
++}
++
++fn model_id(source: &ModelSource) -> Option<String> {
++    match source {
++        ModelSource::Model(model) => model.model_id(),
++        other => panic!("not a model: {other:?}"),
++    }
++}
++
++fn same_model(left: &ModelSource, right: &ModelSource) -> bool {
++    match (left, right) {
++        (ModelSource::Model(left), ModelSource::Model(right)) => Arc::ptr_eq(left, right),
++        _ => false,
++    }
++}
++
++fn bedrock_instance(model_id: &str) -> ModelSource {
++    let model: Arc<dyn Model> = Arc::new(BedrockModel::builder().model_id(model_id).build());
++    model.into()
++}
++
++mod resolve_model {
++    use super::*;
++
++    #[test]
++    fn does_not_send_automatic_cache_points_to() {
++        for id in [
++            "anthropic.claude-3-haiku-20240307-v1:0",
++            "us.anthropic.claude-3-haiku-20240307-v1:0",
++        ] {
++            let spec = format!("bedrock/{id}");
++            let config = bedrock(&spec, options(Effort::Auto, false, true, false)).unwrap();
++            assert_eq!(config.cache_config, None);
++            assert_eq!(
++                error(bedrock(&spec, options(Effort::Auto, false, true, true))),
++                format!("Model bedrock/{id} does not support prompt caching. Pass caching: false.")
++            );
++        }
++    }
++
++    #[test]
++    fn uses_aws_default_region_when_aws_region_is_absent_and_gives_aws_region_precedence() {
++        let region = |env: EnvLookup| {
++            bedrock_options(DEFAULT, effort(Effort::Auto), &env)
++                .unwrap()
++                .region
++        };
++        let default_only = env_of(&[("AWS_REGION", ""), ("AWS_DEFAULT_REGION", "us-east-2")]);
++        assert_eq!(region(default_only).as_deref(), Some("us-east-2"));
++        let both = env_of(&[("AWS_REGION", "us-west-2"), ("AWS_DEFAULT_REGION", "us-east-2")]);
++        assert_eq!(region(both).as_deref(), Some("us-west-2"));
++        assert_eq!(region(env_of(&[])), None);
++    }
++
++    #[test]
++    fn resolves_undefined_to_the_default_with_thinking() {
++        let model = resolved(None, effort(Effort::Auto));
++        assert_eq!(
++            model_id(&model).as_deref(),
++            Some("global.anthropic.claude-opus-4-8")
++        );
++        assert_eq!(fields(DEFAULT, Effort::Auto), adaptive("high"));
++    }
++
++    #[test]
++    fn treats_a_bare_string_as_a_bedrock_model_id() {
++        let model = resolved(Some(&spec("my.custom.model-id")), effort(Effort::Auto));
++        assert_eq!(model_id(&model).as_deref(), Some("my.custom.model-id"));
++        let config = bedrock_at("my.custom.model-id", Effort::Auto);
++        assert_eq!(config.model_id.as_deref(), Some("my.custom.model-id"));
++    }
++
++    #[test]
++    fn uses_the_bedrock_model_id_directly() {
++        let config = bedrock_at("bedrock/global.anthropic.claude-opus-4-8", Effort::Auto);
++        assert_eq!(
++            config.model_id.as_deref(),
++            Some("global.anthropic.claude-opus-4-8")
++        );
++    }
++
++    #[test]
++    fn passes_a_bedrock_name_through() {
++        let config = bedrock_at("bedrock/some.other.model", Effort::Auto);
++        assert_eq!(config.model_id.as_deref(), Some("some.other.model"));
++    }
++
++    #[test]
++    fn enables_prompt_caching_for_bedrock_when_requested() {
++        let config = bedrock(DEFAULT, options(Effort::Auto, false, true, false)).unwrap();
++        assert_eq!(config.cache_config, auto_cache());
++    }
++
++    #[test]
++    fn enables_bedrock_caching_even_with_effort_off() {
++        let config = bedrock(DEFAULT, options(Effort::Off, false, true, false)).unwrap();
++        assert_eq!(config.cache_config, auto_cache());
++    }
++
++    #[test]
++    fn does_not_set_cache_config_when_caching_is_off() {
++        assert_eq!(bedrock_at(DEFAULT, Effort::Auto).cache_config, None);
++    }
++
++    #[test]
++    fn leaves_provider_defaults_when_effort_is_off() {
++        assert_eq!(fields(DEFAULT, Effort::Off), None);
++    }
++
++    #[test]
++    fn applies_an_explicit_thinking_level() {
++        assert_eq!(fields(DEFAULT, Effort::Low), adaptive("low"));
++    }
++
++    #[test]
++    fn accepts_a_provider_specific_level() {
++        assert_eq!(fields(DEFAULT, Effort::Max), adaptive("max"));
++    }
++
++    #[test]
++    fn maps_openai_on_bedrock_thinking_to_reasoning_effort() {
++        assert_eq!(
++            fields("bedrock/us.openai.gpt-5.6-luna", Effort::Max),
++            reasoning("max")
++        );
++    }
++
++    #[test]
++    fn uses_the_gpt_oss_bedrock_reasoning_field_and_levels() {
++        assert_eq!(
++            fields("bedrock/openai.gpt-oss-120b-1:0", Effort::Medium),
++            Some(json!({ "reasoning_effort": "medium" }))
++        );
++        assert!(
++            error(bedrock("bedrock/openai.gpt-oss-120b-1:0", effort(Effort::Max)))
++                .contains("not supported by Bedrock model openai.gpt-oss-120b-1:0")
++        );
++    }
++
++    #[test]
++    fn resolves_astra_and_6_1_sol_effort_without_none_for() {
++        for model_id in [
++            "openai.gpt-6-astra",
++            "global.openai.gpt-6-astra",
++            "us.openai.gpt-6-astra",
++            "us.openai.gpt-6.1-sol",
++        ] {
++            let spec = format!("bedrock/{model_id}");
++            for (thinking, level) in [(Effort::Auto, "high"), (Effort::Low, "low"), (Effort::Max, "max")] {
++                assert_eq!(fields(&spec, thinking), reasoning(level), "{spec}");
++            }
++            assert_eq!(fields(&spec, Effort::Off), None);
++            assert!(
++                error(bedrock(&spec, effort(Effort::Minimal)))
++                    .ends_with("Supported levels: low, medium, high, xhigh, max (or 'auto', 'off').")
++            );
++        }
++    }
++
++    #[test]
++    fn resolves_gpt_5_4_5_5_effort_without_max_for() {
++        for model_id in [
++            "openai.gpt-5.4",
++            "us.openai.gpt-5.4",
++            "openai.gpt-5.5",
++            "us.openai.gpt-5.5",
++            "global.openai.gpt-5.5",
++        ] {
++            let spec = format!("bedrock/{model_id}");
++            for (thinking, level) in [
++                (Effort::Auto, "high"),
++                (Effort::Low, "low"),
++                (Effort::Xhigh, "xhigh"),
++                (Effort::Off, "none"),
++            ] {
++                assert_eq!(fields(&spec, thinking), reasoning(level), "{spec}");
++            }
++            for thinking in [Effort::Minimal, Effort::Max] {
++                assert!(
++                    error(bedrock(&spec, effort(thinking)))
++                        .ends_with("Supported levels: low, medium, high, xhigh (or 'auto', 'off').")
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn resolves_every_gpt_5_6_gpt_6_and_daybreak_effort_for() {
++        for model_id in [
++            "openai.gpt-5.6-cyber",
++            "us.openai.gpt-6-sol",
++            "us.openai.gpt-6.1-terra",
++            "openai.gpt-daybreak-blue-5.6-sol",
++            "us.openai.gpt-daybreak-blue-5.6-sol",
++        ] {
++            let spec = format!("bedrock/{model_id}");
++            for (thinking, level) in [
++                (Effort::Auto, "high"),
++                (Effort::Low, "low"),
++                (Effort::Max, "max"),
++                (Effort::Off, "none"),
++            ] {
++                assert_eq!(fields(&spec, thinking), reasoning(level), "{spec}");
++            }
++            assert!(
++                error(bedrock(&spec, effort(Effort::Minimal)))
++                    .ends_with("Supported levels: low, medium, high, xhigh, max (or 'auto', 'off').")
++            );
++        }
++    }
++
++    #[test]
++    fn uses_the_qwen_bedrock_reasoning_field_and_levels() {
++        let field = |level: &str| Some(json!({ "reasoning_effort": level }));
++        assert_eq!(
++            fields("bedrock/qwen.qwen3-32b-v1:0", Effort::Minimal),
++            field("minimal")
++        );
++        assert_eq!(
++            fields("bedrock/us.qwen.qwen3-32b-v1:0", Effort::High),
++            field("high")
++        );
++        assert_eq!(fields("bedrock/qwen.qwen3-32b-v1:0", Effort::Off), field("none"));
++    }
++
++    #[test]
++    fn uses_the_xai_grok_bedrock_reasoning_field_and_levels() {
++        let field = |level: &str| Some(json!({ "reasoning_effort": level }));
++        assert_eq!(fields("bedrock/us.xai.grok-4.6", Effort::Xhigh), field("xhigh"));
++        assert_eq!(fields("bedrock/us.xai.grok-4.6", Effort::Auto), field("high"));
++        assert!(
++            error(bedrock("bedrock/us.xai.grok-4.6", effort(Effort::Max)))
++                .contains("not supported by Bedrock model us.xai.grok-4.6")
++        );
++    }
++
++    #[test]
++    fn does_not_attach_claude_thinking_fields_to_an_unknown_bedrock_family() {
++        assert_eq!(fields("bedrock/amazon.nova-pro-v1:0", Effort::Auto), None);
++    }
++
++    /// The Google rows of the TS case are left out: Rust v0.1 has no Google provider.
++    #[test]
++    fn resolves_the_per_model_levels_for_with_effort() {
++        let gemma = "bedrock-mantle/google.gemma-4-31b";
++        let level = |effort_level| {
++            params(&openai(gemma, effort(effort_level)).unwrap())["reasoning"]["effort"].clone()
++        };
++        assert_eq!(level(Effort::Auto), json!("high"));
++        assert_eq!(level(Effort::Off), json!("none"));
++        assert!(error(openai(gemma, effort(Effort::Low))).ends_with(
++            "not supported by model google.gemma-4-31b. Supported levels: high (or 'auto', 'off')."
++        ));
++    }
++
++    #[test]
++    fn maps_openai_to_reasoning_effort() {
++        let config = openai("openai/gpt-5.6-sol", effort(Effort::Auto)).unwrap();
++        assert_eq!(params(&config), json!({ "reasoning": { "effort": "high" } }));
++    }
++
++    #[test]
++    fn maps_anthropic_to_thinking_and_max_tokens() {
++        let config = anthropic("anthropic/claude-opus-4-8", effort(Effort::Auto)).unwrap();
++        assert_eq!(config.model_id.as_deref(), Some("claude-opus-4-8"));
++        assert_eq!(config.max_tokens, Some(128_000));
++        assert_eq!(Some(anthropic_params(&config)), adaptive("high"));
++    }
++
++    #[test]
++    fn gives_anthropic_haiku_its_own_tier_max_tokens() {
++        let config = anthropic("anthropic/claude-haiku-4-5-20251001", effort(Effort::Auto)).unwrap();
++        assert_eq!(config.max_tokens, Some(64_000));
++    }
++
++    #[test]
++    fn falls_back_to_a_flat_max_tokens_for_an_unrecognized_anthropic_tier() {
++        let config = anthropic("anthropic/claude-mythos-1", effort(Effort::Auto)).unwrap();
++        assert_eq!(config.max_tokens, Some(32_000));
++    }
++
++    #[test]
++    fn gives_a_bedrock_claude_model_tier_max_tokens() {
++        assert_eq!(bedrock_at(DEFAULT, Effort::Auto).max_tokens, Some(128_000));
++    }
++
++    #[test]
++    fn gives_a_bedrock_claude_haiku_model_its_own_tier_max_tokens() {
++        let config = bedrock_at(
++            "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
++            Effort::Auto,
++        );
++        assert_eq!(config.max_tokens, Some(64_000));
++    }
++
++    #[test]
++    fn sends_no_thinking_block_to() {
++        for model_id in [
++            "us.anthropic.claude-opus-4-1-20250805-v1:0",
++            "global.anthropic.claude-sonnet-4-20250514-v1:0",
++            "anthropic.claude-opus-4-20250514-v1:0",
++            "us.anthropic.claude-3-haiku-20240307-v1:0",
++            "us.anthropic.claude-3-sonnet-20240229-v1:0",
++            "anthropic.claude-3-5-sonnet-20241022-v2:0",
++            "anthropic.claude-3.5-sonnet-20241022-v2:0",
++            "anthropic.claude-3-7-sonnet-20250219-v1:0",
++        ] {
++            assert_eq!(
++                fields(&format!("bedrock/{model_id}"), Effort::Auto),
++                None,
++                "{model_id}"
++            );
++        }
++    }
++
++    #[test]
++    fn sends_the_extended_block_to() {
++        for model_id in [
++            "global.anthropic.claude-haiku-4-5-20251001-v1:0",
++            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
++            "anthropic.claude-haiku-4-5-20251001-v1:0",
++            "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
++            "global.anthropic.claude-opus-4-5-20251101-v1:0",
++        ] {
++            let block = fields(&format!("bedrock/{model_id}"), Effort::Auto);
++            assert_eq!(block, Some(extended(16_384)), "{model_id}");
++        }
++    }
++
++    #[test]
++    fn maps_to_a_budget_of_that_the_api_accepts() {
++        for (level, budget) in [
++            (Effort::Low, 2_048),
++            (Effort::Medium, 8_192),
++            (Effort::High, 16_384),
++            (Effort::Xhigh, 32_768),
++            (Effort::Max, 49_152),
++        ] {
++            let config = bedrock_at("bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0", level);
++            assert_eq!(config.additional_request_fields, Some(extended(budget)));
++            assert!(config.max_tokens.is_some_and(|max_tokens| budget < max_tokens));
++        }
++    }
++
++    #[test]
++    fn gives_a_max_tokens_ceiling_of() {
++        for (model_id, max_tokens) in [
++            ("claude-sonnet-4-5-20250929-v1:0", 64_000),
++            ("claude-sonnet-4.5", 64_000),
++            ("claude-sonnet-4-6", 128_000),
++            ("claude-sonnet-4.6", 128_000),
++            ("claude-sonnet-5", 128_000),
++            ("claude-opus-4-5-20251101-v1:0", 64_000),
++            ("claude-opus-4.5", 64_000),
++            ("claude-opus-4-8", 128_000),
++            ("claude-opus-5", 128_000),
++            ("claude-haiku-4-5-20251001-v1:0", 64_000),
++            ("claude-haiku-4.5", 64_000),
++            ("claude-haiku-5-5", 128_000),
++        ] {
++            let config = bedrock_at(&format!("bedrock/global.anthropic.{model_id}"), Effort::Auto);
++            assert_eq!(config.max_tokens, Some(max_tokens), "{model_id}");
++        }
++    }
++
++    #[test]
++    fn clamps_a_version_led_id_against_the_anthropic_direct_fallback() {
++        let config = anthropic("anthropic/claude-4-5-haiku", effort(Effort::Max)).unwrap();
++        assert_eq!(config.max_tokens, Some(32_000));
++        assert_eq!(anthropic_params(&config), extended(31_999));
++    }
++
++    #[test]
++    fn sends_the_adaptive_block_to() {
++        for model_id in [
++            "global.anthropic.claude-opus-4-6-v1",
++            "global.anthropic.claude-sonnet-4-6",
++            "global.anthropic.claude-opus-4-7",
++            "global.anthropic.claude-opus-4-8",
++            "global.anthropic.claude-opus-5",
++            "global.anthropic.claude-sonnet-5",
++            "global.anthropic.claude-haiku-5-5",
++            "au.anthropic.claude-haiku-5-5",
++            "anthropic.claude-haiku-5-5",
++            "global.anthropic.claude-haiku-6",
++            "global.anthropic.claude-fable-5",
++            "global.anthropic.claude-fable-5-1",
++            "anthropic.claude-mythos-preview",
++            "anthropic.claude-mythos-5-1",
++        ] {
++            let block = fields(&format!("bedrock/{model_id}"), Effort::Auto);
++            assert_eq!(block, adaptive("high"), "{model_id}");
++        }
++    }
++
++    #[test]
++    fn sends_extended_thinking_params_to_an_anthropic_direct_haiku_model() {
++        let config = anthropic("anthropic/claude-haiku-4-5-20251001", effort(Effort::Auto)).unwrap();
++        assert_eq!(anthropic_params(&config), extended(16_384));
++    }
++
++    #[test]
++    fn sends_no_thinking_params_to_an_anthropic_direct_claude_below_the_floor() {
++        let config = anthropic("anthropic/claude-3-haiku-20240307", effort(Effort::Auto)).unwrap();
++        assert_eq!(config.params, None);
++    }
++
++    #[test]
++    fn gives_a_bedrock_claude_sonnet_model_tier_max_tokens() {
++        let config = bedrock_at("bedrock/global.anthropic.claude-sonnet-5", Effort::Auto);
++        assert_eq!(config.max_tokens, Some(128_000));
++    }
++
++    #[test]
++    fn gives_a_bedrock_claude_fable_model_tier_max_tokens() {
++        let config = bedrock_at("bedrock/global.anthropic.claude-fable-5", Effort::Auto);
++        assert_eq!(config.max_tokens, Some(128_000));
++    }
++
++    #[test]
++    fn does_not_force_max_tokens_on_a_non_claude_bedrock_model() {
++        assert_eq!(
++            bedrock_at("bedrock/amazon.nova-pro-v1:0", Effort::Auto).max_tokens,
++            None
++        );
++    }
++
++    #[test]
++    fn does_not_force_max_tokens_on_a_legacy_claude_3_bedrock_id() {
++        let config = bedrock_at("bedrock/anthropic.claude-3-haiku-20240307-v1:0", Effort::Auto);
++        assert_eq!(config.max_tokens, None);
++    }
++
++    #[test]
++    fn builds_bedrock_mantle_via_the_openai_provider() {
++        let config = openai("bedrock-mantle/openai.gpt-oss-120b", effort(Effort::Auto)).unwrap();
++        assert_eq!(config.model_id.as_deref(), Some("openai.gpt-oss-120b"));
++        assert_eq!(params(&config), json!({ "reasoning": { "effort": "high" } }));
++        let model = resolved(
++            Some(&spec("bedrock-mantle/openai.gpt-oss-120b")),
++            effort(Effort::Auto),
++        );
++        assert_eq!(model_id(&model).as_deref(), Some("openai.gpt-oss-120b"));
++    }
++
++    #[test]
++    fn adds_the_bedrock_web_search_tool_for_bedrock_mantle_web_search() {
++        let config = openai(
++            "bedrock-mantle/openai.gpt-5.6-luna",
++            options(Effort::Auto, true, false, false),
++        )
++        .unwrap();
++        assert_eq!(
++            params(&config),
++            json!({
++                "reasoning": { "effort": "high" },
++                "tools": [{ "type": "web_search", "external_web_access": true }],
++            })
++        );
++    }
++
++    #[test]
++    fn adds_the_bedrock_web_search_tool_with_effort_off() {
++        let config = openai(
++            "bedrock-mantle/openai.gpt-5.6-luna",
++            options(Effort::Off, true, false, false),
++        )
++        .unwrap();
++        assert_eq!(
++            params(&config),
++            json!({
++                "reasoning": { "effort": "none" },
++                "tools": [{ "type": "web_search", "external_web_access": true }],
++            })
++        );
++    }
++
++    #[test]
++    fn adds_the_bedrock_web_search_tool_on_gpt_6() {
++        let config = openai(
++            "bedrock-mantle/openai.gpt-6-astra",
++            options(Effort::Off, true, false, false),
++        )
++        .unwrap();
++        assert_eq!(
++            params(&config),
++            json!({
++                "reasoning": { "effort": "none" },
++                "tools": [{ "type": "web_search", "external_web_access": true }],
++            })
++        );
++    }
++
++    #[test]
++    fn omits_bedrock_mantle_tools_when_web_search_is_off() {
++        let config = openai("bedrock-mantle/openai.gpt-5.6-luna", effort(Effort::Auto)).unwrap();
++        assert_eq!(params(&config).get("tools"), None);
++    }
++
++    #[test]
++    fn adds_the_openai_web_search_tool_alongside_reasoning() {
++        let config = openai("openai/gpt-5.6-sol", options(Effort::High, true, false, false)).unwrap();
++        assert_eq!(
++            params(&config),
++            json!({ "reasoning": { "effort": "high" }, "tools": [{ "type": "web_search" }] })
++        );
++    }
++
++    #[test]
++    fn adds_the_openai_web_search_tool_with_effort_off() {
++        let config = openai("openai/gpt-5.6-sol", options(Effort::Off, true, false, false)).unwrap();
++        assert_eq!(
++            params(&config),
++            json!({ "reasoning": { "effort": "none" }, "tools": [{ "type": "web_search" }] })
++        );
++    }
++
++    #[test]
++    fn omits_openai_tools_when_web_search_is_off() {
++        let config = openai("openai/gpt-5.6-sol", effort(Effort::High)).unwrap();
++        assert_eq!(params(&config).get("tools"), None);
++    }
++
++    #[test]
++    fn adds_the_anthropic_web_search_server_tool_as_a_direct_call() {
++        let config = anthropic(
++            "anthropic/claude-opus-4-8",
++            options(Effort::High, true, false, false),
++        )
++        .unwrap();
++        assert_eq!(
++            config.anthropic_tools,
++            Some(vec![json!({
++                "type": "web_search_20260318",
++                "name": "web_search",
++                "allowed_callers": ["direct"],
++            })])
++        );
++        assert!(anthropic_params(&config).get("thinking").is_some());
++    }
++
++    #[test]
++    fn omits_anthropic_server_tools_when_web_search_is_off() {
++        let config = anthropic("anthropic/claude-opus-4-8", effort(Effort::High)).unwrap();
++        assert_eq!(config.anthropic_tools, None);
++    }
++
++    #[test]
++    fn never_adds_a_native_search_tool_where_the_model_has_none() {
++        for id in [
++            "bedrock-mantle/qwen.qwen3-32b-v1:0",
++            "bedrock-mantle/openai.gpt-oss-120b-1:0",
++        ] {
++            let config = openai(id, options(Effort::High, true, false, false)).unwrap();
++            assert_eq!(params(&config).get("tools"), None, "{id}");
++        }
++    }
++
++    #[test]
++    fn warns_instead_of_throwing_when_an_effort_level_is_requested_on_a_model_instance() {
++        let instance = bedrock_instance("anything");
++        let (model, warnings) = WarnRecorder::capture(|| resolved(Some(&instance), effort(Effort::High)));
++        assert!(same_model(&model, &instance));
++        assert_eq!(
++            warnings,
++            [
++                "effort \"high\" not applied to a pre-built Model instance or ModelRouter; configure reasoning on the instance"
++            ]
++        );
++    }
++
++    #[test]
++    fn does_not_warn_for_a_model_instance_with_default_effort_and_no_web_search_or_caching() {
++        let instance = bedrock_instance("anything");
++        let (model, warnings) = WarnRecorder::capture(|| resolved(Some(&instance), effort(Effort::Auto)));
++        assert!(same_model(&model, &instance));
++        assert!(warnings.is_empty(), "{warnings:?}");
++    }
++
++    #[test]
++    fn enables_prompt_caching_for_anthropic_direct_when_requested() {
++        let config = anthropic(
++            "anthropic/claude-opus-4-8",
++            options(Effort::Auto, false, true, false),
++        )
++        .unwrap();
++        assert_eq!(config.cache_config, auto_cache());
++    }
++
++    #[test]
++    fn does_not_set_cache_config_for_anthropic_direct_when_caching_is_off() {
++        let config = anthropic("anthropic/claude-opus-4-8", effort(Effort::Auto)).unwrap();
++        assert_eq!(config.cache_config, None);
++    }
++
++    #[test]
++    fn configures_caching_without_changing_reasoning_or_search() {
++        for (spec, model_id, search_tool) in [
++            (
++                "openai/gpt-5.6-sol",
++                "gpt-5.6-sol",
++                json!({ "type": "web_search" }),
++            ),
++            (
++                "bedrock-mantle/openai.gpt-6-luna",
++                "openai.gpt-6-luna",
++                json!({ "type": "web_search", "external_web_access": true }),
++            ),
++        ] {
++            for caching in [true, false] {
++                let config = openai(spec, options(Effort::High, true, caching, false)).unwrap();
++                let mut params = strands::types::json::JsonObject::new();
++                params.insert("reasoning".to_owned(), json!({ "effort": "high" }));
++                params.insert("tools".to_owned(), json!([search_tool]));
++                let expected = OpenAIModelConfig {
++                    model_id: Some(model_id.to_owned()),
++                    cache_config: if caching { auto_cache() } else { None },
++                    params: Some(params),
++                    ..Default::default()
++                };
++                assert_eq!(config, expected, "{spec} caching={caching}");
++            }
++        }
++    }
++
++    #[test]
++    fn warns_instead_of_throwing_when_caching_is_explicitly_requested_on_a_model_instance() {
++        let instance = bedrock_instance("anything");
++        let (model, warnings) =
++            WarnRecorder::capture(|| resolved(Some(&instance), options(Effort::Auto, false, true, true)));
++        assert!(same_model(&model, &instance));
++        assert_eq!(
++            warnings,
++            [
++                "prompt caching not applied to a pre-built Model instance or ModelRouter; configure it on the instance"
++            ]
++        );
++    }
++
++    #[test]
++    fn does_not_warn_when_default_caching_hits_a_model_instance() {
++        let instance = bedrock_instance("anything");
++        let (model, warnings) =
++            WarnRecorder::capture(|| resolved(Some(&instance), options(Effort::Auto, false, true, false)));
++        assert!(same_model(&model, &instance));
++        assert!(warnings.is_empty(), "{warnings:?}");
++    }
++
++    #[test]
++    fn does_not_warn_when_caching_is_supported() {
++        let (config, warnings) = WarnRecorder::capture(|| {
++            openai(
++                "bedrock-mantle/openai.gpt-oss-120b",
++                options(Effort::Auto, false, true, false),
++            )
++        });
++        assert_eq!(config.unwrap().cache_config, auto_cache());
++        assert!(warnings.is_empty(), "{warnings:?}");
++    }
++
++    /// Building reads the API keys and the endpoint through the env seam.
++    #[test]
++    fn builds_each_provider_from_the_env_lookup() {
++        for (spec, id) in [
++            ("anthropic/claude-opus-4-8", "claude-opus-4-8"),
++            ("openai/gpt-5.6-sol", "gpt-5.6-sol"),
++            ("bedrock-mantle/openai.gpt-5.6-luna", "openai.gpt-5.6-luna"),
++            ("us.anthropic.claude-sonnet-4-6", "us.anthropic.claude-sonnet-4-6"),
++        ] {
++            let model = resolved(Some(&super::spec(spec)), effort(Effort::Auto));
++            assert_eq!(model_id(&model).as_deref(), Some(id));
++        }
++        let custom = env_of(&[
++            ("ANTHROPIC_API_KEY", "test-key"),
++            ("ANTHROPIC_BASE_URL", "http://127.0.0.1:1/anthropic"),
++            ("OPENAI_API_KEY", "test-key"),
++            ("OPENAI_BASE_URL", "http://127.0.0.1:1/v1"),
++        ]);
++        let anthropic = build::anthropic_options("claude-opus-4-8", None, false, false, &custom);
++        assert_eq!(
++            anthropic.client_config.base_url.as_deref(),
++            Some("http://127.0.0.1:1/anthropic")
++        );
++        let openai = build::openai_options("gpt-5.6-sol", None, false, false, &custom);
++        assert_eq!(
++            openai.client_config.base_url.as_deref(),
++            Some("http://127.0.0.1:1/v1")
++        );
++        assert!(openai.api_key.is_some());
++    }
++}
+diff --git a/harness-rs/strands-harness/src/prompt.rs b/harness-rs/strands-harness/src/prompt.rs
+index 3ad65a918..d18e08096 100644
+--- a/harness-rs/strands-harness/src/prompt.rs
++++ b/harness-rs/strands-harness/src/prompt.rs
+@@ -82,10 +82,10 @@ mod tests {
+             return;
+         };
+         let marker = "export const HARNESS_CONTRACT = `";
+-        let start = source.find(marker).unwrap() + marker.len();
+-        let end = source[start..].find("`\n").unwrap() + start;
++        let (_, rest) = source.split_once(marker).unwrap();
++        let (literal, _) = rest.split_once("`\n").unwrap();
+         // Resolve the template-literal escapes the TS source uses: line continuations and \`.
+-        let expected = source[start..end].replace("\\\n", "").replace("\\`", "`");
++        let expected = literal.replace("\\\n", "").replace("\\`", "`");
+         assert_eq!(HARNESS_CONTRACT, expected);
+     }
+ }
+-- 
+2.39.5
+

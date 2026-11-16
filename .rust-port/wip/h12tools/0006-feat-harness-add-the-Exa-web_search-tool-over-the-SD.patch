@@ -1,0 +1,918 @@
+From 444762a8f64d06b1227aed5bf7a40038df07e26e Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:10:18 +0000
+Subject: [PATCH 6/7] feat(harness): add the Exa web_search tool over the SDK's
+ MCP client
+
+---
+ harness-rs/strands-harness/src/env.rs         |  12 +-
+ .../strands-harness/src/tools/web_fetch.rs    |  10 +-
+ .../src/tools/web_fetch/tests.rs              |   7 +-
+ .../strands-harness/src/tools/web_search.rs   | 369 ++++++++++++++-
+ .../src/tools/web_search/tests.rs             | 442 ++++++++++++++++++
+ 5 files changed, 828 insertions(+), 12 deletions(-)
+ create mode 100644 harness-rs/strands-harness/src/tools/web_search/tests.rs
+
+diff --git a/harness-rs/strands-harness/src/env.rs b/harness-rs/strands-harness/src/env.rs
+index 8643c23dc..eb37d4c36 100644
+--- a/harness-rs/strands-harness/src/env.rs
++++ b/harness-rs/strands-harness/src/env.rs
+@@ -1,16 +1,20 @@
+ //! The crate's seam for reading the process environment.
+-#![expect(
+-    dead_code,
+-    reason = "used once the modules that read the environment land; drop this when they have"
+-)]
+ 
+ use std::sync::Arc;
+ 
+ /// Looks up an environment variable; tests pass their own lookup instead of mutating the
+ /// process environment.
++#[cfg_attr(
++    all(not(feature = "mcp"), not(test)),
++    expect(dead_code, reason = "used by web_search, whose tool needs the `mcp` feature")
++)]
+ pub(crate) type EnvLookup = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+ 
+ /// The lookup that reads the process environment.
++#[cfg_attr(
++    not(feature = "mcp"),
++    expect(dead_code, reason = "used by web_search, whose tool needs the `mcp` feature")
++)]
+ pub(crate) fn process_env() -> EnvLookup {
+     Arc::new(|name| std::env::var(name).ok())
+ }
+diff --git a/harness-rs/strands-harness/src/tools/web_fetch.rs b/harness-rs/strands-harness/src/tools/web_fetch.rs
+index 5687ff683..84463b417 100644
+--- a/harness-rs/strands-harness/src/tools/web_fetch.rs
++++ b/harness-rs/strands-harness/src/tools/web_fetch.rs
+@@ -173,13 +173,13 @@ fn decode(data: &[u8], content_type: &str) -> String {
+     encoding.decode_with_bom_removal(data).0.into_owned()
+ }
+ 
+-/// The first `MAX_CHARS` UTF-16 code units of `text` (TS `text.slice(0, MAX_CHARS)`); a
+-/// character the cut would split is dropped.
+-fn cap_chars(mut text: String) -> String {
++/// The first `max_units` UTF-16 code units of `text` (TS `text.slice(0, max)`); a character the
++/// cut would split is dropped.
++pub(super) fn cap_chars(mut text: String, max_units: usize) -> String {
+     let mut units = 0;
+     let cut = text.char_indices().find_map(|(index, c)| {
+         units += c.len_utf16();
+-        (units > MAX_CHARS).then_some(index)
++        (units > max_units).then_some(index)
+     });
+     if let Some(index) = cut {
+         text.truncate(index);
+@@ -208,7 +208,7 @@ fn to_text(data: &[u8], content_type: &str, resolved_url: &str, url: &str) -> Fe
+             resolved_url
+         }
+         .to_owned(),
+-        text: cap_chars(text),
++        text: cap_chars(text, MAX_CHARS),
+     }
+ }
+ 
+diff --git a/harness-rs/strands-harness/src/tools/web_fetch/tests.rs b/harness-rs/strands-harness/src/tools/web_fetch/tests.rs
+index 8f299a8e2..58e3408a0 100644
+--- a/harness-rs/strands-harness/src/tools/web_fetch/tests.rs
++++ b/harness-rs/strands-harness/src/tools/web_fetch/tests.rs
+@@ -712,8 +712,11 @@ async fn refetches_once_the_cache_entry_is_15_minutes_old() {
+ 
+ #[test]
+ fn caps_text_at_50_000_utf_16_code_units() {
+-    assert_eq!(super::cap_chars("a".repeat(50_001)).len(), 50_000);
++    assert_eq!(
++        super::cap_chars("a".repeat(50_001), super::MAX_CHARS).len(),
++        50_000
++    );
+     // An astral character is two units; one the cut would split is dropped.
+     let astral = format!("a{}", "😀".repeat(25_000));
+-    assert_eq!(super::cap_chars(astral).chars().count(), 25_000);
++    assert_eq!(super::cap_chars(astral, super::MAX_CHARS).chars().count(), 25_000);
+ }
+diff --git a/harness-rs/strands-harness/src/tools/web_search.rs b/harness-rs/strands-harness/src/tools/web_search.rs
+index a23c265d7..7c2a906c6 100644
+--- a/harness-rs/strands-harness/src/tools/web_search.rs
++++ b/harness-rs/strands-harness/src/tools/web_search.rs
+@@ -1 +1,368 @@
+-//! The Exa `web_search` tool (TS `tools/web-search.ts`).
++//! `web_search`: search the web and return the top results as numbered sources (TS
++//! `tools/web-search.ts`).
++//!
++//! The opt-in Exa tool, backed by Exa's hosted MCP server: a third party that receives the
++//! queries. The keyless free tier covers getting started and `EXA_API_KEY` lifts the rate limit.
++//! The tool and backend are separate so the model-facing contract stays fixed while the search
++//! provider behind it can change.
++#![cfg_attr(
++    all(not(feature = "mcp"), not(test)),
++    expect(
++        dead_code,
++        reason = "the Exa tool is built over the SDK's MCP client, behind the `mcp` feature"
++    )
++)]
++
++use std::sync::{Arc, LazyLock};
++use std::time::Duration;
++
++use async_trait::async_trait;
++use futures::future::BoxFuture;
++use regex::Regex;
++use serde::Deserialize;
++use strands::JsonValue;
++use strands::tools::function_tool::InputValidator;
++use strands::tools::{FunctionTool, ToolContext};
++
++use super::web_fetch::cap_chars;
++use crate::env::EnvLookup;
++
++const EXA_MCP_URL: &str = "https://mcp.exa.ai/mcp";
++const EXA_TOOL: &str = "web_search_exa";
++const TIMEOUT: Duration = Duration::from_secs(30);
++const MAX_RESULTS: i64 = 10;
++const SNIPPET_CHARS: usize = 500;
++const HIGHLIGHTS: &str = "Highlights:";
++
++const DESCRIPTION: &str =
++    "Search the web and return the top results as numbered sources with a short excerpt each.";
++
++/// One search hit.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) struct SearchResult {
++    pub(crate) title: String,
++    pub(crate) url: String,
++    pub(crate) snippet: String,
++}
++
++/// A backend failure with a message the model can act on.
++#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
++#[error("{0}")]
++pub(crate) struct WebSearchError(pub(crate) String);
++
++/// Runs a query for at most the given number of results.
++pub(crate) type SearchBackend =
++    Arc<dyn Fn(String, i64) -> BoxFuture<'static, Result<Vec<SearchResult>, WebSearchError>> + Send + Sync>;
++
++// The line terminators JS `.` does not match.
++static HEAD: LazyLock<Option<Regex>> =
++    LazyLock::new(|| Regex::new(r"^\s*Title: ([^\n\r\u{2028}\u{2029}]*)\r?\nURL: (\S+)").ok());
++static SEPARATOR: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"(?mR)^---\s*$").ok());
++
++fn one_line(text: &str) -> String {
++    text.split_whitespace().collect::<Vec<_>>().join(" ")
++}
++
++/// Splits Exa's `---`-separated `Title:/URL:/.../Highlights:` blocks into results. Only a block
++/// that opens with a `Title:` line directly followed by a `URL:` line counts, so those words
++/// inside a page's highlighted text do not start a source.
++fn parse_exa(text: &str) -> Vec<SearchResult> {
++    let (Some(separator), Some(head)) = (SEPARATOR.as_ref(), HEAD.as_ref()) else {
++        return Vec::new();
++    };
++    separator
++        .split(text)
++        .filter_map(|block| {
++            let head = head.captures(block)?;
++            let highlights = block.split_once(HIGHLIGHTS).map_or("", |(_, rest)| rest);
++            Some(SearchResult {
++                title: head[1].trim().to_owned(),
++                url: head[2].to_owned(),
++                snippet: cap_chars(one_line(highlights), SNIPPET_CHARS),
++            })
++        })
++        .collect()
++}
++
++/// How to reach Exa's MCP server (the TS `McpClient` config).
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) struct ExaConnection {
++    pub(crate) url: &'static str,
++    pub(crate) allowed_tools: Vec<&'static str>,
++    /// Sent as the `x-api-key` header.
++    pub(crate) api_key: Option<String>,
++}
++
++/// The MCP client operations a search needs; failures carry the error's message.
++#[async_trait]
++pub(crate) trait ExaClient: Send + Sync {
++    /// The names of the tools the server offers.
++    async fn list_tools(&self) -> Result<Vec<String>, String>;
++    /// Calls the tool `name` and returns the MCP result (`content`, `isError`).
++    async fn call_tool(&self, name: &str, args: JsonValue, timeout: Duration) -> Result<JsonValue, String>;
++    async fn disconnect(&self) -> Result<(), String>;
++}
++
++/// Makes the MCP client for one search; tests substitute a fake.
++pub(crate) type ExaConnector = Arc<dyn Fn(ExaConnection) -> Result<Box<dyn ExaClient>, String> + Send + Sync>;
++
++#[derive(Deserialize, Default)]
++#[serde(default, rename_all = "camelCase")]
++struct ExaResult {
++    content: Option<Vec<JsonValue>>,
++    is_error: Option<bool>,
++}
++
++async fn exa_request(
++    client: &dyn ExaClient,
++    query: &str,
++    max_results: i64,
++) -> Result<JsonValue, WebSearchError> {
++    let tools = client.list_tools().await.map_err(|reason| {
++        WebSearchError(format!(
++            "could not reach Exa's MCP server at {EXA_MCP_URL} ({reason})"
++        ))
++    })?;
++    if !tools.iter().any(|name| name == EXA_TOOL) {
++        return Err(WebSearchError(format!(
++            "Exa's MCP server does not offer {EXA_TOOL}"
++        )));
++    }
++    let args = serde_json::json!({ "query": query, "numResults": max_results });
++    client
++        .call_tool(EXA_TOOL, args, TIMEOUT)
++        .await
++        .map_err(WebSearchError)
++}
++
++/// One `web_search_exa` call over an MCP client; the session lives only for this call.
++async fn exa_call(
++    connector: &ExaConnector,
++    query: &str,
++    max_results: i64,
++    api_key: Option<String>,
++) -> Result<Vec<SearchResult>, WebSearchError> {
++    let client = connector(ExaConnection {
++        url: EXA_MCP_URL,
++        allowed_tools: vec![EXA_TOOL],
++        api_key,
++    })
++    .map_err(WebSearchError)?;
++    let result = exa_request(client.as_ref(), query, max_results).await;
++    // A teardown error must not discard a result already in hand.
++    let _ = client.disconnect().await;
++    let result: ExaResult = serde_json::from_value(result?).unwrap_or_default();
++    let text = result
++        .content
++        .unwrap_or_default()
++        .iter()
++        .filter_map(|item| item.get("text")?.as_str())
++        .collect::<Vec<_>>()
++        .join("\n");
++    if result.is_error.unwrap_or(false) {
++        return Err(WebSearchError(if text.is_empty() {
++            "Exa reported an error".to_owned()
++        } else {
++            text
++        }));
++    }
++    Ok(parse_exa(&text))
++}
++
++/// The search backend over Exa's hosted MCP server; `api_key` defaults to `EXA_API_KEY`, read
++/// from `env` on every call.
++pub(crate) fn exa_backend(api_key: Option<String>, env: EnvLookup, connector: ExaConnector) -> SearchBackend {
++    Arc::new(move |query, max_results| {
++        let key = api_key
++            .clone()
++            .or_else(|| env("EXA_API_KEY"))
++            .filter(|key| !key.is_empty());
++        let connector = Arc::clone(&connector);
++        Box::pin(async move {
++            let keyless = key.is_none();
++            exa_call(&connector, &query, max_results, key)
++                .await
++                .map_err(|error| {
++                    if keyless {
++                        // The MCP client hides the HTTP status, so a keyless 429 can't be told apart.
++                        WebSearchError(format!(
++                            "{error} (Exa's keyless tier is rate limited; set EXA_API_KEY to lift it.)"
++                        ))
++                    } else {
++                        error
++                    }
++                })
++        })
++    })
++}
++
++#[derive(Deserialize)]
++struct SearchInput {
++    query: String,
++    max_results: Option<i64>,
++}
++
++/// Builds a `web_search` tool that formats `backend`'s results as a numbered `Sources:` list.
++pub(crate) fn search_tool(backend: SearchBackend) -> FunctionTool {
++    let schema = serde_json::json!({
++        "type": "object",
++        "properties": {
++            "query": {
++                "type": "string",
++                "description": "What to search for. A descriptive sentence works better than bare keywords.",
++            },
++            "max_results": {
++                "description": "How many results to return, 1-10.",
++                "type": "integer",
++                "minimum": -9_007_199_254_740_991_i64,
++                "maximum": 9_007_199_254_740_991_i64,
++            },
++        },
++        "required": ["query"],
++        "additionalProperties": false,
++    });
++    let validator = InputValidator::new(&schema);
++    FunctionTool::new(
++        "web_search",
++        DESCRIPTION,
++        move |input: JsonValue, _context: ToolContext| {
++            let parsed = validator.parse::<SearchInput>(input);
++            let backend = Arc::clone(&backend);
++            async move {
++                let input = parsed?;
++                let max_results = input.max_results.unwrap_or(5).clamp(1, MAX_RESULTS);
++                let results = match backend(input.query, max_results).await {
++                    Ok(results) => results,
++                    Err(WebSearchError(message)) => {
++                        // TS `err.message || err.name`.
++                        let reason = if message.is_empty() { "Error" } else { &message };
++                        return Ok(format!("web_search failed: {reason}"));
++                    }
++                };
++                if results.is_empty() {
++                    return Ok("No results.".to_owned());
++                }
++                let mut lines = vec!["Sources:".to_owned()];
++                for (index, result) in results.iter().enumerate() {
++                    lines.push(format!(
++                        "{}. {} — {}",
++                        index + 1,
++                        one_line(&result.title),
++                        result.url
++                    ));
++                    if !result.snippet.is_empty() {
++                        lines.push(format!("   {}", one_line(&result.snippet)));
++                    }
++                }
++                Ok(lines.join("\n"))
++            }
++        },
++    )
++    .with_input_schema(schema)
++}
++
++#[cfg(feature = "mcp")]
++mod exa_mcp {
++    //! The Exa client over the SDK's `McpClient`.
++
++    use std::sync::{Mutex, PoisonError};
++
++    use indexmap::IndexMap;
++    use strands::mcp::{
++        McpCallToolOptions, McpClient, McpClientConfig, McpClientOptions, McpTool, McpToolFilters,
++    };
++    use strands::tools::Tool;
++
++    use super::{Arc, Duration, ExaClient, ExaConnection, ExaConnector, JsonValue, async_trait};
++
++    pub(super) fn config(connection: ExaConnection) -> McpClientConfig {
++        McpClientConfig {
++            url: Some(connection.url.to_owned()),
++            headers: connection
++                .api_key
++                .map(|key| IndexMap::from([("x-api-key".to_owned(), key)])),
++            options: McpClientOptions {
++                tool_filters: Some(McpToolFilters {
++                    allowed: Some(connection.allowed_tools.into_iter().map(Into::into).collect()),
++                    rejected: None,
++                }),
++                ..McpClientOptions::default()
++            },
++            ..McpClientConfig::default()
++        }
++    }
++
++    struct McpExaClient {
++        client: McpClient,
++        tools: Mutex<Vec<McpTool>>,
++    }
++
++    #[async_trait]
++    impl ExaClient for McpExaClient {
++        async fn list_tools(&self) -> Result<Vec<String>, String> {
++            let tools = self
++                .client
++                .list_tools()
++                .await
++                .map_err(|error| error.to_string())?;
++            let names = tools.iter().map(|tool| tool.name().to_owned()).collect();
++            *self.tools.lock().unwrap_or_else(PoisonError::into_inner) = tools;
++            Ok(names)
++        }
++
++        async fn call_tool(
++            &self,
++            name: &str,
++            args: JsonValue,
++            timeout: Duration,
++        ) -> Result<JsonValue, String> {
++            let tool = self
++                .tools
++                .lock()
++                .unwrap_or_else(PoisonError::into_inner)
++                .iter()
++                .find(|tool| tool.name() == name)
++                .cloned()
++                .ok_or_else(|| format!("Exa's MCP server does not offer {name}"))?;
++            let options = McpCallToolOptions {
++                timeout: Some(timeout),
++                ..McpCallToolOptions::default()
++            };
++            self.client
++                .call_tool_with(&tool, args, options)
++                .await
++                .map_err(|error| error.to_string())
++        }
++
++        async fn disconnect(&self) -> Result<(), String> {
++            self.client.disconnect().await.map_err(|error| error.to_string())
++        }
++    }
++
++    /// Connects with the SDK's MCP client.
++    pub(super) fn connector() -> ExaConnector {
++        Arc::new(|connection| {
++            let client = McpClient::new(config(connection)).map_err(|error| error.to_string())?;
++            Ok(Box::new(McpExaClient {
++                client,
++                tools: Mutex::default(),
++            }))
++        })
++    }
++}
++
++/// Builds a `web_search` tool over Exa's hosted search (TS `makeExaWebSearch`). `EXA_API_KEY`,
++/// read on every call, lifts the keyless rate limit.
++#[cfg(feature = "mcp")]
++pub fn make_exa_web_search() -> FunctionTool {
++    search_tool(exa_backend(None, crate::env::process_env(), exa_mcp::connector()))
++}
++
++/// The `web_search` tool served by Exa (TS `exaWebSearch`).
++#[cfg(feature = "mcp")]
++pub fn exa_web_search() -> FunctionTool {
++    make_exa_web_search()
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/harness-rs/strands-harness/src/tools/web_search/tests.rs b/harness-rs/strands-harness/src/tools/web_search/tests.rs
+new file mode 100644
+index 000000000..92ffdc933
+--- /dev/null
++++ b/harness-rs/strands-harness/src/tools/web_search/tests.rs
+@@ -0,0 +1,442 @@
++//! Ported from harness-ts/test/tools/web-search.test.ts
++
++use std::sync::{Arc, Mutex};
++use std::time::Duration;
++
++use async_trait::async_trait;
++use serde_json::json;
++use strands::JsonValue;
++use strands::testing::tool_context;
++use strands::tools::{FunctionTool, Tool};
++use strands::types::tools::ToolUse;
++
++use super::{
++    ExaClient, ExaConnection, ExaConnector, SearchBackend, SearchResult, WebSearchError, exa_backend,
++    search_tool,
++};
++use crate::env::EnvLookup;
++
++const EXA_TEXT: &str = "Title: Web Grounding - Amazon Nova\n\
++URL: https://docs.aws.amazon.com/nova/web-grounding.html\n\
++Published: N/A\n\
++Author: N/A\n\
++Highlights:\n\
++# Web Grounding\n \n\nWeb Grounding enables Amazon Nova to search   the web.\n...\nMore text.\n\
++\n---\n\n\
++Title: Second result\n\
++URL: https://example.com/second\n\
++Published: 2026-01-01\n\
++Highlights:\n\
++Second highlight.\n";
++
++const KEY_HINT: &str = " (Exa's keyless tier is rate limited; set EXA_API_KEY to lift it.)";
++
++/// What the stubbed MCP client saw, and what it answers.
++struct Mock {
++    connections: Mutex<Vec<ExaConnection>>,
++    calls: Mutex<Vec<(String, JsonValue, Duration)>>,
++    disconnects: Mutex<usize>,
++    /// The MCP result, or the message `call_tool` fails with.
++    result: Result<JsonValue, String>,
++    tools: Vec<&'static str>,
++    list_fails: bool,
++    disconnect_fails: bool,
++}
++
++struct MockClient(Arc<Mock>);
++
++#[async_trait]
++impl ExaClient for MockClient {
++    async fn list_tools(&self) -> Result<Vec<String>, String> {
++        if self.0.list_fails {
++            return Err("fetch failed".to_owned());
++        }
++        Ok(self.0.tools.iter().map(|&name| name.to_owned()).collect())
++    }
++
++    async fn call_tool(&self, name: &str, args: JsonValue, timeout: Duration) -> Result<JsonValue, String> {
++        self.0
++            .calls
++            .lock()
++            .unwrap()
++            .push((name.to_owned(), args, timeout));
++        self.0.result.clone()
++    }
++
++    async fn disconnect(&self) -> Result<(), String> {
++        *self.0.disconnects.lock().unwrap() += 1;
++        if self.0.disconnect_fails {
++            return Err("SSE stream disconnected".to_owned());
++        }
++        Ok(())
++    }
++}
++
++impl Mock {
++    fn new(result: Result<JsonValue, &str>) -> Self {
++        Self {
++            connections: Mutex::default(),
++            calls: Mutex::default(),
++            disconnects: Mutex::default(),
++            result: result.map_err(str::to_owned),
++            tools: vec!["web_search_exa"],
++            list_fails: false,
++            disconnect_fails: false,
++        }
++    }
++
++    fn connector(self: &Arc<Self>) -> ExaConnector {
++        let mock = Arc::clone(self);
++        Arc::new(move |connection| {
++            mock.connections.lock().unwrap().push(connection);
++            Ok(Box::new(MockClient(Arc::clone(&mock))))
++        })
++    }
++
++    fn api_keys(&self) -> Vec<Option<String>> {
++        let connections = self.connections.lock().unwrap();
++        connections
++            .iter()
++            .map(|connection| connection.api_key.clone())
++            .collect()
++    }
++
++    fn disconnects(&self) -> usize {
++        *self.disconnects.lock().unwrap()
++    }
++}
++
++/// A stubbed client whose `call_tool` resolves `result`, or fails with it when it is an `Err`.
++fn mock_mcp_client(result: Result<JsonValue, &str>) -> Arc<Mock> {
++    Arc::new(Mock::new(result))
++}
++
++fn text_result(text: &str) -> Result<JsonValue, &'static str> {
++    Ok(json!({ "content": [{ "type": "text", "text": text }] }))
++}
++
++fn env(value: Option<&'static str>) -> EnvLookup {
++    Arc::new(move |name| {
++        assert_eq!(name, "EXA_API_KEY");
++        value.map(str::to_owned)
++    })
++}
++
++/// `exaBackend(key)` over `mock`, with `EXA_API_KEY` unset.
++fn backend(key: &str, mock: &Arc<Mock>) -> SearchBackend {
++    exa_backend(Some(key.to_owned()), env(None), mock.connector())
++}
++
++async fn search(backend: &SearchBackend, max_results: i64) -> Result<Vec<SearchResult>, String> {
++    backend("q".to_owned(), max_results)
++        .await
++        .map_err(|error| error.to_string())
++}
++
++async fn invoke(tool: &FunctionTool, input: JsonValue) -> String {
++    let context = tool_context(ToolUse::new("web_search", "tool-1", input.clone()));
++    let output = tool.invoke(input, context).await.unwrap();
++    output.as_str().unwrap().to_owned()
++}
++
++fn result(title: &str, url: &str, snippet: &str) -> SearchResult {
++    SearchResult {
++        title: title.to_owned(),
++        url: url.to_owned(),
++        snippet: snippet.to_owned(),
++    }
++}
++
++fn fixed(outcome: Result<Vec<SearchResult>, &'static str>) -> SearchBackend {
++    Arc::new(move |_, _| {
++        let outcome = outcome
++            .clone()
++            .map_err(|message| WebSearchError(message.to_owned()));
++        Box::pin(async move { outcome })
++    })
++}
++
++#[tokio::test]
++async fn calls_web_search_exa_over_the_sdk_mcp_client_with_the_key_header_and_parses_the_result_blocks() {
++    let client = mock_mcp_client(text_result(EXA_TEXT));
++    let results = backend("sk-test", &client)("nova grounding".to_owned(), 2)
++        .await
++        .unwrap();
++
++    assert_eq!(
++        *client.connections.lock().unwrap(),
++        [ExaConnection {
++            url: "https://mcp.exa.ai/mcp",
++            allowed_tools: vec!["web_search_exa"],
++            api_key: Some("sk-test".to_owned()),
++        }]
++    );
++    assert_eq!(
++        *client.calls.lock().unwrap(),
++        [(
++            "web_search_exa".to_owned(),
++            json!({ "query": "nova grounding", "numResults": 2 }),
++            Duration::from_secs(30)
++        )]
++    );
++    assert_eq!(client.disconnects(), 1);
++    assert_eq!(
++        results,
++        [
++            result(
++                "Web Grounding - Amazon Nova",
++                "https://docs.aws.amazon.com/nova/web-grounding.html",
++                "# Web Grounding Web Grounding enables Amazon Nova to search the web. ... More text.",
++            ),
++            result("Second result", "https://example.com/second", "Second highlight."),
++        ]
++    );
++}
++
++#[tokio::test]
++async fn reads_the_key_from_exa_api_key_and_omits_the_header_when_unset() {
++    let client = mock_mcp_client(Ok(json!({ "content": [] })));
++    let from_env = exa_backend(None, env(Some("sk-env")), client.connector());
++    assert_eq!(search(&from_env, 1).await, Ok(vec![]));
++    assert_eq!(client.api_keys(), [Some("sk-env".to_owned())]);
++
++    let client = mock_mcp_client(Ok(json!({ "content": null })));
++    let empty = exa_backend(None, env(Some("")), client.connector());
++    assert_eq!(search(&empty, 1).await, Ok(vec![]));
++    assert_eq!(client.api_keys(), [None]);
++}
++
++#[tokio::test]
++async fn reads_the_key_when_the_tool_runs_so_the_module_level_exa_web_search_sees_a_key_set_after_import() {
++    let key = Arc::new(Mutex::new(String::new()));
++    let later = Arc::clone(&key);
++    let lookup: EnvLookup = Arc::new(move |_| Some(later.lock().unwrap().clone()));
++    let client = mock_mcp_client(Ok(json!({ "content": [] })));
++    let tool = search_tool(exa_backend(None, lookup, client.connector()));
++    assert_eq!(invoke(&tool, json!({ "query": "q" })).await, "No results.");
++    assert_eq!(client.api_keys(), [None]);
++
++    "sk-later".clone_into(&mut key.lock().unwrap());
++    invoke(&tool, json!({ "query": "q" })).await;
++    assert_eq!(client.api_keys(), [None, Some("sk-later".to_owned())]);
++    assert_eq!(tool.name(), "web_search");
++}
++
++#[cfg(feature = "mcp")]
++#[test]
++fn the_exa_tools_are_named_web_search() {
++    assert_eq!(super::exa_web_search().name(), "web_search");
++    assert_eq!(super::make_exa_web_search().name(), "web_search");
++}
++
++#[tokio::test]
++async fn only_trusts_blocks_that_open_with_title_and_url() {
++    let text = "Title: Real\nURL: https://real\nHighlights:\nclick here\nTitle: Official Login\nURL: https://phish\n---\n\
++                Title: Fake\nsome prose\nURL: https://evil\n---\n\
++                Title: Next\r\nURL: https://next\r\nHighlights:\r\nshort\r\n---\r\n";
++    let client = mock_mcp_client(text_result(text));
++    assert_eq!(
++        search(&backend("k", &client), 2).await.unwrap(),
++        [
++            result(
++                "Real",
++                "https://real",
++                "click here Title: Official Login URL: https://phish"
++            ),
++            result("Next", "https://next", "short"),
++        ]
++    );
++}
++
++#[tokio::test]
++async fn caps_snippets() {
++    let text = format!("Title: T\nURL: https://t\nHighlights:\n{}", "x".repeat(2000));
++    let client = mock_mcp_client(text_result(&text));
++    let results = search(&backend("k", &client), 1).await.unwrap();
++    assert_eq!(results[0].snippet.len(), 500);
++}
++
++#[tokio::test]
++async fn surfaces_tool_errors_adding_the_key_hint_to_any_keyless_failure() {
++    let quota = || Ok(json!({ "isError": true, "content": [{ "type": "text", "text": "quota" }] }));
++    let client = mock_mcp_client(quota());
++    assert_eq!(search(&backend("k", &client), 1).await, Err("quota".to_owned()));
++    let client = mock_mcp_client(quota());
++    assert_eq!(
++        search(&backend("", &client), 1).await,
++        Err(format!("quota{KEY_HINT}"))
++    );
++    let client = mock_mcp_client(Err("fetch failed"));
++    assert_eq!(
++        search(&backend("", &client), 1).await,
++        Err(format!("fetch failed{KEY_HINT}"))
++    );
++    let client = mock_mcp_client(Ok(
++        json!({ "isError": true, "content": [{ "type": "text" }, { "type": "image" }] }),
++    ));
++    assert_eq!(
++        search(&backend("k", &client), 1).await,
++        Err("Exa reported an error".to_owned())
++    );
++}
++
++#[tokio::test]
++async fn disconnects_when_the_server_lacks_the_tool_or_the_call_fails() {
++    let client = Arc::new(Mock {
++        tools: Vec::new(),
++        ..Mock::new(Ok(json!({ "content": [] })))
++    });
++    assert_eq!(
++        search(&backend("k", &client), 1).await,
++        Err("Exa's MCP server does not offer web_search_exa".to_owned())
++    );
++    assert_eq!(client.disconnects(), 1);
++
++    let client = mock_mcp_client(Err("fetch failed"));
++    assert_eq!(
++        search(&backend("k", &client), 1).await,
++        Err("fetch failed".to_owned())
++    );
++    assert_eq!(client.disconnects(), 1);
++}
++
++#[tokio::test]
++async fn names_the_endpoint_when_the_server_cannot_be_reached() {
++    let client = Arc::new(Mock {
++        list_fails: true,
++        ..Mock::new(Ok(json!({ "content": [] })))
++    });
++    assert_eq!(
++        search(&backend("k", &client), 1).await,
++        Err("could not reach Exa's MCP server at https://mcp.exa.ai/mcp (fetch failed)".to_owned())
++    );
++    assert_eq!(client.disconnects(), 1);
++}
++
++#[tokio::test]
++async fn keeps_the_result_when_teardown_fails() {
++    let client = Arc::new(Mock {
++        disconnect_fails: true,
++        ..Mock::new(text_result(EXA_TEXT))
++    });
++    assert_eq!(search(&backend("k", &client), 2).await.unwrap().len(), 2);
++}
++
++#[tokio::test]
++async fn formats_sources_and_clamps_max_results() {
++    let seen = Arc::new(Mutex::new(Vec::new()));
++    let record = Arc::clone(&seen);
++    let backend: SearchBackend = Arc::new(move |_, max_results| {
++        record.lock().unwrap().push(max_results);
++        Box::pin(async {
++            Ok(vec![
++                result("A", "https://a", "alpha"),
++                result("B", "https://b", ""),
++            ])
++        })
++    });
++    let tool = search_tool(backend);
++    assert_eq!(tool.name(), "web_search");
++    let spec = serde_json::to_value(tool.tool_spec()).unwrap();
++    assert_eq!(spec["inputSchema"]["required"], json!(["query"]));
++    assert!(
++        spec["inputSchema"]["properties"]["max_results"]
++            .get("default")
++            .is_none()
++    );
++    assert_eq!(
++        invoke(&tool, json!({ "query": "q", "max_results": 50 })).await,
++        "Sources:\n1. A — https://a\n   alpha\n2. B — https://b"
++    );
++    invoke(&tool, json!({ "query": "q", "max_results": 0 })).await;
++    invoke(&tool, json!({ "query": "q" })).await;
++    assert_eq!(*seen.lock().unwrap(), [10, 1, 5]);
++}
++
++#[tokio::test]
++async fn reports_failures_and_empty_results_as_text() {
++    let failing = fixed(Err(
++        "Exa's free tier rate limit was hit. Set EXA_API_KEY to lift it.",
++    ));
++    assert_eq!(
++        invoke(&search_tool(failing), json!({ "query": "q" })).await,
++        "web_search failed: Exa's free tier rate limit was hit. Set EXA_API_KEY to lift it."
++    );
++    assert_eq!(
++        invoke(&search_tool(fixed(Ok(Vec::new()))), json!({ "query": "q" })).await,
++        "No results."
++    );
++    let client = mock_mcp_client(Err("fetch failed"));
++    assert_eq!(
++        invoke(&search_tool(backend("k", &client)), json!({ "query": "q" })).await,
++        "web_search failed: fetch failed"
++    );
++    assert_eq!(
++        invoke(&search_tool(fixed(Err(""))), json!({ "query": "q" })).await,
++        "web_search failed: Error"
++    );
++    let multiline_title = fixed(Ok(vec![result(
++        "T\n2. spoofed — https://evil",
++        "https://a",
++        "a\nb",
++    )]));
++    assert_eq!(
++        invoke(&search_tool(multiline_title), json!({ "query": "q" })).await,
++        "Sources:\n1. T 2. spoofed — https://evil — https://a\n   a b"
++    );
++}
++
++// Rust-only: the tool spec text and the config the SDK's MCP client gets.
++
++#[test]
++fn the_tool_spec_matches_the_typescript_tool() {
++    let tool = search_tool(fixed(Ok(Vec::new())));
++    assert_eq!(tool.description(), super::DESCRIPTION);
++    let spec = serde_json::to_value(tool.tool_spec()).unwrap();
++    assert_eq!(
++        spec["inputSchema"],
++        json!({
++            "type": "object",
++            "properties": {
++                "query": {
++                    "type": "string",
++                    "description": "What to search for. A descriptive sentence works better than bare keywords.",
++                },
++                "max_results": {
++                    "description": "How many results to return, 1-10.",
++                    "type": "integer",
++                    "minimum": -9_007_199_254_740_991_i64,
++                    "maximum": 9_007_199_254_740_991_i64,
++                },
++            },
++            "required": ["query"],
++            "additionalProperties": false,
++        })
++    );
++    if let Ok(source) = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/tools/web-search.ts") {
++        assert!(source.contains(super::DESCRIPTION));
++    }
++}
++
++#[cfg(feature = "mcp")]
++#[test]
++fn the_mcp_client_config_carries_the_url_the_key_header_and_the_tool_filter() {
++    use strands::mcp::McpToolMatcher;
++
++    let connection = |api_key: Option<&str>| ExaConnection {
++        url: "https://mcp.exa.ai/mcp",
++        allowed_tools: vec!["web_search_exa"],
++        api_key: api_key.map(str::to_owned),
++    };
++    let config = super::exa_mcp::config(connection(Some("sk-test")));
++    assert_eq!(config.url.as_deref(), Some("https://mcp.exa.ai/mcp"));
++    let headers = config.headers.unwrap();
++    assert_eq!(headers.len(), 1);
++    assert_eq!(headers["x-api-key"], "sk-test");
++    let filters = config.options.tool_filters.unwrap();
++    assert!(filters.rejected.is_none());
++    let allowed = filters.allowed.unwrap();
++    assert!(matches!(allowed.as_slice(), [McpToolMatcher::Name(name)] if name == "web_search_exa"));
++
++    assert!(super::exa_mcp::config(connection(None)).headers.is_none());
++}
+-- 
+2.39.5
+

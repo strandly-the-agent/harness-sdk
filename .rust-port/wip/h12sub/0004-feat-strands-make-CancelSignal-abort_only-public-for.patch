@@ -1,0 +1,26 @@
+From a9154ac75300ddd41dcd17d5a0c5c51b2bb8d85d Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:11:16 +0000
+Subject: [PATCH 4/6] feat(strands): make CancelSignal::abort_only public for
+ the harness subagent tool
+
+---
+ strands-rs/strands/src/cancel.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/strands-rs/strands/src/cancel.rs b/strands-rs/strands/src/cancel.rs
+index 9850f06c0..73705a01a 100644
+--- a/strands-rs/strands/src/cancel.rs
++++ b/strands-rs/strands/src/cancel.rs
+@@ -104,7 +104,7 @@ impl CancelSignal {
+ 
+     /// A signal cancelled when this one is, without its message or deferral; what a sub-agent
+     /// joins (TS forwards only the `AbortSignal`).
+-    pub(crate) fn abort_only(&self) -> Self {
++    pub fn abort_only(&self) -> Self {
+         Self {
+             shared: Arc::new(Shared {
+                 token: self.shared.token.child_token(),
+-- 
+2.39.5
+

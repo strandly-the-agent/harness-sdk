@@ -1,0 +1,137 @@
+From a614e0a3a087a42b4dc3f3f209f3bf962c0a004f Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 17:54:00 +0000
+Subject: [PATCH 1/7] test(harness): spike a monty program calling a host
+ function across an await inside tokio::spawn
+
+---
+ Cargo.lock                                    |  1 +
+ Cargo.toml                                    |  1 +
+ harness-rs/strands-harness/Cargo.toml         |  1 +
+ .../src/tools/programmatic_tool_caller.rs     |  3 +
+ .../tools/programmatic_tool_caller/spike.rs   | 68 +++++++++++++++++++
+ 5 files changed, 74 insertions(+)
+ create mode 100644 harness-rs/strands-harness/src/tools/programmatic_tool_caller/spike.rs
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 722e43264..db3034414 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -4340,6 +4340,7 @@ dependencies = [
+  "indexmap 2.14.2",
+  "jiff",
+  "monty",
++ "monty-types",
+  "schemars 1.2.3",
+  "serde",
+  "serde_json",
+diff --git a/Cargo.toml b/Cargo.toml
+index e57d45d55..3c077e589 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -74,6 +74,7 @@ cedar-policy = "=4.14.0"
+ cedar-policy-mcp-schema-generator = "=0.7.0"
+ mcp-tools-sdk = "0.5.0"
+ monty = "1.5"
++monty-types = "1.5"
+ process-wrap = { version = "10.0.1", default-features = false, features = ["tokio1", "process-group", "kill-on-drop", "job-object"] }
+ 
+ # Macros
+diff --git a/harness-rs/strands-harness/Cargo.toml b/harness-rs/strands-harness/Cargo.toml
+index 69abe49c9..a0fef6a8f 100644
+--- a/harness-rs/strands-harness/Cargo.toml
++++ b/harness-rs/strands-harness/Cargo.toml
+@@ -35,6 +35,7 @@ tracing.workspace = true
+ indexmap.workspace = true
+ jiff.workspace = true
+ monty.workspace = true
++monty-types.workspace = true
+ 
+ [dev-dependencies]
+ tokio = { workspace = true, features = ["full", "test-util"] }
+diff --git a/harness-rs/strands-harness/src/tools/programmatic_tool_caller.rs b/harness-rs/strands-harness/src/tools/programmatic_tool_caller.rs
+index 8faf3678c..a1a04c467 100644
+--- a/harness-rs/strands-harness/src/tools/programmatic_tool_caller.rs
++++ b/harness-rs/strands-harness/src/tools/programmatic_tool_caller.rs
+@@ -1 +1,4 @@
+ //! The `programmatic_tool_caller` tool (TS `tools/programmatic-tool-caller.ts`).
++
++#[cfg(test)]
++mod spike;
+diff --git a/harness-rs/strands-harness/src/tools/programmatic_tool_caller/spike.rs b/harness-rs/strands-harness/src/tools/programmatic_tool_caller/spike.rs
+new file mode 100644
+index 000000000..bb49cf72e
+--- /dev/null
++++ b/harness-rs/strands-harness/src/tools/programmatic_tool_caller/spike.rs
+@@ -0,0 +1,68 @@
++//! Spike: a Monty program calls one host function across an `.await` inside `tokio::spawn`, with
++//! every interpreter step on `spawn_blocking`.
++
++use monty::{MontyRun, RunProgress};
++use monty_types::{
++    CompileOptions, ExtFunctionResult, MontyException, MontyObject, NameLookupResult, PrintWriter, ResourceTracker,
++};
++
++type Step = Result<RunProgress, MontyException>;
++
++async fn step(
++    mut output: String,
++    run: impl FnOnce(PrintWriter<'_>) -> Step + Send + 'static,
++) -> (Step, String) {
++    tokio::task::spawn_blocking(move || {
++        let progress = run(PrintWriter::CollectString(&mut output, None));
++        (progress, output)
++    })
++    .await
++    .expect("the interpreter step panicked")
++}
++
++async fn double(n: i64) -> i64 {
++    tokio::task::yield_now().await;
++    n * 2
++}
++
++#[tokio::test]
++async fn a_monty_program_calls_a_host_function_across_an_await_inside_tokio_spawn() {
++    let task = tokio::spawn(async {
++        let code = "x = await double(n=21)\nprint(x)\nprint(await double(n=x))";
++        let run = MontyRun::new(code.to_owned(), "<spike>", vec![], CompileOptions::default()).expect("the code parses");
++        let (mut progress, mut output) = step(String::new(), move |print| {
++            run.start(vec![], ResourceTracker::default(), print)
++        })
++        .await;
++        let mut pending = Vec::new();
++        loop {
++            let next = match progress.expect("the code runs") {
++                RunProgress::Complete(_) => break,
++                RunProgress::NameLookup(lookup) => {
++                    let answer = if lookup.name == "double" {
++                        NameLookupResult::Value(MontyObject::function("double", None))
++                    } else {
++                        NameLookupResult::Undefined
++                    };
++                    step(output, move |print| lookup.resume(answer, print)).await
++                }
++                RunProgress::FunctionCall(call) => {
++                    let n = call.args.kwarg("n").and_then(|value| value.as_int()).expect("an int n");
++                    pending.push((call.call_id, n));
++                    step(output, move |print| call.resume_pending(print)).await
++                }
++                RunProgress::ResolveFutures(futures) => {
++                    let mut results = Vec::new();
++                    for (call_id, n) in pending.drain(..) {
++                        results.push((call_id, ExtFunctionResult::Return(MontyObject::int(double(n).await))));
++                    }
++                    step(output, move |print| futures.resume(results, print)).await
++                }
++                RunProgress::OsCall(call) => panic!("unexpected OS call: {call:?}"),
++            };
++            (progress, output) = next;
++        }
++        output
++    });
++    assert_eq!(task.await.expect("the task ran"), "42\n84\n");
++}
+-- 
+2.39.5
+

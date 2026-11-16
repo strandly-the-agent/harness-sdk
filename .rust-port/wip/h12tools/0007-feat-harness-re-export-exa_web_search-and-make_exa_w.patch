@@ -1,0 +1,35 @@
+From def48c9f94204670b002b48ea82166c0b5313513 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:10:18 +0000
+Subject: [PATCH 7/7] feat(harness): re-export exa_web_search and
+ make_exa_web_search from the crate root
+
+---
+ harness-rs/strands-harness/src/lib.rs       | 2 ++
+ harness-rs/strands-harness/src/tools/mod.rs | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/harness-rs/strands-harness/src/lib.rs b/harness-rs/strands-harness/src/lib.rs
+index 441e96f2f..63efa7aa2 100644
+--- a/harness-rs/strands-harness/src/lib.rs
++++ b/harness-rs/strands-harness/src/lib.rs
+@@ -27,4 +27,6 @@ mod types;
+ 
+ pub use error::{HarnessError, Result};
+ pub use tools::{MakeReadOptions, MakeWebFetchOptions, edit, make_read, make_web_fetch, read, write};
++#[cfg(feature = "mcp")]
++pub use tools::{exa_web_search, make_exa_web_search};
+ pub use types::{Effort, WebFetchTransport};
+diff --git a/harness-rs/strands-harness/src/tools/mod.rs b/harness-rs/strands-harness/src/tools/mod.rs
+index 9c4d8ba32..2d5261f50 100644
+--- a/harness-rs/strands-harness/src/tools/mod.rs
++++ b/harness-rs/strands-harness/src/tools/mod.rs
+@@ -9,3 +9,5 @@ mod web_search;
+ 
+ pub use file_tools::{MakeReadOptions, edit, make_read, read, write};
+ pub use web_fetch::{MakeWebFetchOptions, make_web_fetch};
++#[cfg(feature = "mcp")]
++pub use web_search::{exa_web_search, make_exa_web_search};
+-- 
+2.39.5
+

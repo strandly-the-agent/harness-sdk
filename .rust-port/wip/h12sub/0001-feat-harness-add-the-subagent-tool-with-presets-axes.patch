@@ -1,0 +1,1193 @@
+From 92904569f8886cbdc2c4951636083f171dc0025a Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 17:59:26 +0000
+Subject: [PATCH 1/6] feat(harness): add the subagent tool with presets, axes,
+ context modes and interrupt resume
+
+---
+ Cargo.lock                                    |   1 +
+ harness-rs/strands-harness/Cargo.toml         |   1 +
+ harness-rs/strands-harness/src/error.rs       |  20 +
+ .../strands-harness/src/tools/subagent.rs     | 537 ++++++++++++++++++
+ .../src/tools/subagent/context.rs             | 165 ++++++
+ .../src/tools/subagent/resolve.rs             | 389 +++++++++++++
+ .../src/tools/subagent/tests.rs               |   1 +
+ 7 files changed, 1114 insertions(+)
+ create mode 100644 harness-rs/strands-harness/src/tools/subagent/context.rs
+ create mode 100644 harness-rs/strands-harness/src/tools/subagent/resolve.rs
+ create mode 100644 harness-rs/strands-harness/src/tools/subagent/tests.rs
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 722e43264..ef7ee16cc 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -4334,6 +4334,7 @@ dependencies = [
+ name = "strands-harness"
+ version = "0.1.0-preview.1"
+ dependencies = [
++ "async-stream",
+  "async-trait",
+  "bon",
+  "futures",
+diff --git a/harness-rs/strands-harness/Cargo.toml b/harness-rs/strands-harness/Cargo.toml
+index 69abe49c9..cefb3d210 100644
+--- a/harness-rs/strands-harness/Cargo.toml
++++ b/harness-rs/strands-harness/Cargo.toml
+@@ -25,6 +25,7 @@ otel = ["strands/otel"]
+ strands.workspace = true
+ tokio = { workspace = true, features = ["rt", "sync", "time", "macros", "fs", "io-util"] }
+ futures.workspace = true
++async-stream.workspace = true
+ async-trait.workspace = true
+ serde.workspace = true
+ serde_json.workspace = true
+diff --git a/harness-rs/strands-harness/src/error.rs b/harness-rs/strands-harness/src/error.rs
+index cbee851d4..abf10b1cc 100644
+--- a/harness-rs/strands-harness/src/error.rs
++++ b/harness-rs/strands-harness/src/error.rs
+@@ -8,6 +8,26 @@ pub enum HarnessError {
+     /// An error of the SDK.
+     #[error(transparent)]
+     Sdk(#[from] strands::Error),
++    /// The `subagent` tool's `tools` axis is a `Choice` with no options.
++    #[error("tools=Choice([]) offers no options; use Fixed([]) for a toolless child, or Inherit().")]
++    SubagentToolsChoiceEmpty,
++    /// The `subagent` tool's `tools` axis is a `Choice` that is not multiple.
++    #[error("tools=Choice(...) must be multiple=true; a subagent selects a subset of tools.")]
++    SubagentToolsChoiceSingle,
++    /// The `subagent` tool's `mcp_servers` axis is a `Choice` with no options.
++    #[error("mcp_servers=Choice([]) offers no options; use Fixed([]) for no servers, or Inherit().")]
++    SubagentMcpServersChoiceEmpty,
++    /// The `subagent` tool's `mcp_servers` axis is a `Choice` that is not multiple.
++    #[error("mcp_servers=Choice(...) must be multiple=true; a subagent selects a subset of servers.")]
++    SubagentMcpServersChoiceSingle,
++    /// The model passed an `agent_type` that names no preset of the `subagent` tool.
++    #[error("Unknown agent_type {value}; valid values: {valid}.")]
++    UnknownAgentType {
++        /// The `agent_type` the model passed, as JSON.
++        value: String,
++        /// The preset names, comma-separated.
++        valid: String,
++    },
+ }
+ 
+ /// The harness result type.
+diff --git a/harness-rs/strands-harness/src/tools/subagent.rs b/harness-rs/strands-harness/src/tools/subagent.rs
+index 8fad71504..c2d4c8e03 100644
+--- a/harness-rs/strands-harness/src/tools/subagent.rs
++++ b/harness-rs/strands-harness/src/tools/subagent.rs
+@@ -1 +1,538 @@
+ //! The `subagent` tool (TS `tools/subagent.ts`).
++//!
++//! Each axis (instructions, tools, MCP servers, model, context) takes an authority mode that
++//! decides whether it becomes a model-facing parameter: [`Fixed`] and [`Inherit`] add none,
++//! [`Open`] adds a free string and [`Choice`] an enum of the offered names. Named presets add an
++//! `agent_type` enum. Children are built through the caller's [`AgentBuilder`].
++
++mod context;
++mod resolve;
++#[cfg(test)]
++mod tests;
++
++use std::collections::HashMap;
++use std::fmt;
++use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
++
++use futures::StreamExt;
++use futures::future::BoxFuture;
++use indexmap::IndexMap;
++use strands::agent::ModelSource;
++use strands::interrupt::{Interrupt, InterruptParams};
++use strands::tools::{ToolStream, ToolStreamEvent, ToolStreamItem};
++use strands::types::messages::{ToolResultBlock, ToolResultContent};
++use strands::types::tools::{ToolResultStatus, ToolSpec};
++pub use strands::vended_tools::subagent::{Choice, ChoiceOption};
++use strands::{
++    Agent, AgentResult, AgentStreamEvent, InterruptResponse, InvokeArgs, InvokeOptions, JsonValue, Message,
++    StopReason, Tool, ToolContext, ToolOutcome,
++};
++
++use crate::defaults::DEFAULT_SUBAGENT_MAX_DEPTH;
++use crate::error::{HarnessError, Result};
++use resolve::Axes;
++
++/// The developer pins the value; the axis contributes no model-facing parameter.
++#[expect(clippy::exhaustive_structs, reason = "TS `Fixed(value)`: a one-field wrapper")]
++#[derive(Debug, Clone, Default, PartialEq, Eq)]
++pub struct Fixed<T>(pub T);
++
++/// The child takes the parent's value; the axis contributes no model-facing parameter.
++#[expect(clippy::exhaustive_structs, reason = "TS `Inherit()`: a marker")]
++#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
++pub struct Inherit;
++
++/// The model writes the value freely; the axis contributes a string parameter.
++#[expect(clippy::exhaustive_structs, reason = "TS `Open()`: a marker")]
++#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
++pub struct Open;
++
++/// How much of the parent conversation the child sees.
++#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "snake_case")]
++#[non_exhaustive]
++pub enum ContextMode {
++    /// A fresh start.
++    #[default]
++    None,
++    /// The parent's history as real turns, tool calls and results included.
++    All,
++    /// The parent's text turns only, rendered as a block before the task.
++    NoTools,
++}
++
++impl ContextMode {
++    /// The wire string.
++    pub fn as_str(self) -> &'static str {
++        match self {
++            Self::None => "none",
++            Self::All => "all",
++            Self::NoTools => "no_tools",
++        }
++    }
++}
++
++/// The context modes, in TS order.
++pub const CONTEXT_MODES: [ContextMode; 3] = [ContextMode::None, ContextMode::All, ContextMode::NoTools];
++
++/// An axis mode for the `instructions` parameter.
++#[derive(Debug, Clone, Default)]
++#[non_exhaustive]
++pub enum InstructionsMode {
++    /// The model writes the system prompt.
++    #[default]
++    Open,
++    /// The model picks one of the offered prompts by name.
++    Choice(Choice<String>),
++    /// The developer's prompt, or none.
++    Fixed(Option<String>),
++}
++
++/// An axis mode for the `tools` parameter.
++#[derive(Debug, Clone, Default)]
++#[non_exhaustive]
++pub enum ToolsMode {
++    /// The parent's tools.
++    #[default]
++    Inherit,
++    /// The model picks a subset of the offered tools by name.
++    Choice(Choice<String>),
++    /// The developer's tool names; `None` inherits the parent's.
++    Fixed(Option<Vec<String>>),
++}
++
++/// An axis mode for the `mcp_servers` parameter.
++pub type McpServersMode = ToolsMode;
++
++/// An axis mode for the `model` parameter.
++#[derive(Debug, Clone, Default)]
++#[non_exhaustive]
++pub enum ModelMode {
++    /// The parent's model.
++    #[default]
++    Inherit,
++    /// The model picks one of the offered models by name.
++    Choice(Choice<ModelSource>),
++    /// The developer's model; `None` inherits the parent's.
++    Fixed(Option<ModelSource>),
++}
++
++/// An axis mode for the `context` parameter.
++#[derive(Debug, Clone)]
++#[non_exhaustive]
++pub enum ContextAxis {
++    /// The developer's context mode.
++    Fixed(ContextMode),
++    /// The model picks one of the offered modes by name.
++    Choice(Choice<ContextMode>),
++}
++
++impl Default for ContextAxis {
++    fn default() -> Self {
++        Self::Fixed(ContextMode::None)
++    }
++}
++
++macro_rules! axis_from {
++    ($axis:ident: $($from:ty => $to:expr),+ $(,)?) => {
++        $(impl From<$from> for $axis {
++            fn from(mode: $from) -> Self {
++                let convert: fn($from) -> Self = $to;
++                convert(mode)
++            }
++        })+
++    };
++}
++
++axis_from!(InstructionsMode: Open => |_| Self::Open, Choice<String> => Self::Choice, Fixed<Option<String>> => |fixed| Self::Fixed(fixed.0));
++axis_from!(ToolsMode: Inherit => |_| Self::Inherit, Choice<String> => Self::Choice, Fixed<Option<Vec<String>>> => |fixed| Self::Fixed(fixed.0));
++axis_from!(ModelMode: Inherit => |_| Self::Inherit, Choice<ModelSource> => Self::Choice, Fixed<Option<ModelSource>> => |fixed| Self::Fixed(fixed.0));
++axis_from!(ContextAxis: Choice<ContextMode> => Self::Choice, Fixed<ContextMode> => |fixed| Self::Fixed(fixed.0));
++
++/// A named role: a partially applied child configuration selected through `agent_type`.
++#[expect(
++    clippy::exhaustive_structs,
++    reason = "config struct: struct-literal construction"
++)]
++#[derive(Debug, Clone, Default, bon::Builder)]
++#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
++pub struct Preset {
++    /// The child's system prompt.
++    pub instructions: Option<String>,
++    /// The child's tool names; `None` inherits the parent's tools.
++    pub tools: Option<Vec<String>>,
++    /// The child's model; `None` inherits the parent's.
++    #[builder(into)]
++    pub model: Option<ModelSource>,
++    /// How much of the parent conversation the child sees.
++    #[builder(default)]
++    pub context: ContextMode,
++    /// Caps the shared context to the last N messages; `None` shares all of it.
++    pub last_messages: Option<i64>,
++    /// What the role is for, shown to the model.
++    #[builder(default)]
++    pub description: String,
++}
++
++/// The options of a [`Preset`] (TS `PresetOptions`): the preset itself, built with
++/// [`Preset::builder`].
++pub type PresetOptions = Preset;
++
++/// The system prompt of the [`GENERALIST`] preset.
++pub const GENERALIST_INSTRUCTIONS: &str = "You are a general-purpose subagent handling a focused subtask on behalf of a parent agent. You run in your own fresh conversation and cannot ask follow-up questions, so work from the task as given, make reasonable assumptions where it is underspecified, and see it through to a verified result. Return a self-contained answer: state what you did, what you found, and anything the parent needs to act on. Your final message is the only thing that returns to the parent, so put the substance there rather than in intermediate steps.";
++
++/// A general-purpose role for a focused subtask.
++pub static GENERALIST: LazyLock<Preset> = LazyLock::new(|| Preset {
++    instructions: Some(GENERALIST_INSTRUCTIONS.to_owned()),
++    description: "a general-purpose agent for a focused subtask that runs in its own context".to_owned(),
++    ..Preset::default()
++});
++
++/// The resolved child configuration handed to the builder: the config and the model's arguments.
++#[expect(
++    clippy::exhaustive_structs,
++    reason = "data struct the builder reads field by field"
++)]
++#[derive(Debug, Clone)]
++pub struct AgentSpec {
++    /// The task the child runs.
++    pub task: String,
++    /// The preset the spec was resolved from.
++    pub agent_type: Option<String>,
++    /// The child's system prompt.
++    pub instructions: Option<String>,
++    /// The child's tool names; `None` inherits the parent's tools.
++    pub tools: Option<Vec<String>>,
++    /// The child's MCP server names; `None` inherits all the parent's servers.
++    pub mcp_servers: Option<Vec<String>>,
++    /// The child's model; `None` inherits the parent's.
++    pub model: Option<ModelSource>,
++    /// How much of the parent conversation the child sees.
++    pub context: ContextMode,
++    /// Caps the shared context to the last N messages; `None` shares all of it.
++    pub last_messages: Option<i64>,
++}
++
++impl AgentSpec {
++    /// A spec for `task` that inherits everything and shares no context.
++    pub fn new(task: impl Into<String>, agent_type: Option<String>) -> Self {
++        Self {
++            task: task.into(),
++            agent_type,
++            instructions: None,
++            tools: None,
++            mcp_servers: None,
++            model: None,
++            context: ContextMode::None,
++            last_messages: None,
++        }
++    }
++}
++
++/// Turns a resolved spec into a child agent, built the way the parent was.
++pub type AgentBuilder = Arc<dyn Fn(AgentSpec) -> BoxFuture<'static, Result<Agent>> + Send + Sync>;
++
++/// Options for [`make_subagent`].
++#[expect(
++    clippy::exhaustive_structs,
++    reason = "config struct: struct-literal construction"
++)]
++#[derive(Clone, bon::Builder)]
++#[builder(on(String, into), state_mod(vis = "pub"))]
++pub struct MakeSubagentOptions {
++    /// Turns a resolved spec into a child agent, built the way the parent was.
++    pub builder: AgentBuilder,
++    /// Named roles selectable through `agent_type`, in the order the model sees them.
++    #[builder(default)]
++    pub presets: IndexMap<String, Preset>,
++    /// The preset used when the model omits `agent_type`. Defaults to the first preset.
++    pub default_preset: Option<String>,
++    /// Authority mode for `instructions`. Defaults to [`Open`].
++    #[builder(into)]
++    pub instructions: Option<InstructionsMode>,
++    /// Authority mode for `tools`. Defaults to a multiple [`Choice`] over `inherited_tools`.
++    #[builder(into)]
++    pub tools: Option<ToolsMode>,
++    /// Authority mode for `mcp_servers`. Defaults to a multiple [`Choice`] over
++    /// `inherited_mcp_servers`, or [`Inherit`] when there are none.
++    #[builder(into)]
++    pub mcp_servers: Option<McpServersMode>,
++    /// Authority mode for `model`. Defaults to [`Inherit`].
++    #[builder(into)]
++    pub model: Option<ModelMode>,
++    /// Authority mode for `context`. Defaults to `Fixed(ContextMode::None)`.
++    #[builder(into)]
++    pub context: Option<ContextAxis>,
++    /// The parent's tool names, used to build the default `tools` choice.
++    #[builder(default)]
++    pub inherited_tools: Vec<String>,
++    /// The parent's MCP server names, used to build the default `mcp_servers` choice.
++    #[builder(default)]
++    pub inherited_mcp_servers: Vec<String>,
++    /// Bounds delegation depth; the tool refuses at 0. Defaults to 2.
++    pub max_depth: Option<u32>,
++    /// The tool name. Defaults to `subagent`.
++    pub name: Option<String>,
++}
++
++impl fmt::Debug for MakeSubagentOptions {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.debug_struct("MakeSubagentOptions")
++            .field("presets", &self.presets)
++            .field("default_preset", &self.default_preset)
++            .field("instructions", &self.instructions)
++            .field("tools", &self.tools)
++            .field("mcp_servers", &self.mcp_servers)
++            .field("model", &self.model)
++            .field("context", &self.context)
++            .field("max_depth", &self.max_depth)
++            .field("name", &self.name)
++            .finish_non_exhaustive()
++    }
++}
++
++// Depth travels on each child's own state, not a build-time parameter.
++const DEPTH_STATE_KEY: &str = "subagentDepth";
++
++const BASE_DESCRIPTION: &str = "Delegate a self-contained task to a subagent that runs in its own context and returns a final report. Reach for this when a subtask would otherwise flood your context with intermediate work and you only need its conclusion. Do not poll for progress or redo its work.";
++
++/// Builds a `subagent` tool whose schema follows the axis modes and the preset map.
++///
++/// `max_depth` bounds delegation depth: each child's remaining budget is stored on its own app
++/// state right after it is built and read back the next time the tool runs on that child. At 0
++/// the tool refuses with an error result instead of building another child.
++///
++/// # Errors
++///
++/// Returns an error when a `tools` or `mcp_servers` [`Choice`] is empty or not multiple.
++pub fn make_subagent(options: MakeSubagentOptions) -> Result<Arc<dyn Tool>> {
++    let default_preset = options
++        .default_preset
++        .or_else(|| options.presets.keys().next().cloned());
++    let tools = match options.tools {
++        None => ToolsMode::Choice(Choice::multiple(options.inherited_tools)),
++        Some(ToolsMode::Choice(choice)) if choice.options.is_empty() => {
++            return Err(HarnessError::SubagentToolsChoiceEmpty);
++        }
++        Some(ToolsMode::Choice(choice)) if !choice.multiple => return Err(HarnessError::SubagentToolsChoiceSingle),
++        Some(tools) => tools,
++    };
++    let mcp_servers = match options.mcp_servers {
++        None if options.inherited_mcp_servers.is_empty() => McpServersMode::Inherit,
++        None => McpServersMode::Choice(Choice::multiple(options.inherited_mcp_servers)),
++        Some(McpServersMode::Choice(choice)) if choice.options.is_empty() => {
++            return Err(HarnessError::SubagentMcpServersChoiceEmpty);
++        }
++        Some(McpServersMode::Choice(choice)) if !choice.multiple => {
++            return Err(HarnessError::SubagentMcpServersChoiceSingle);
++        }
++        Some(mcp_servers) => mcp_servers,
++    };
++    let axes = Axes {
++        presets: options.presets,
++        default_preset,
++        instructions: options.instructions.unwrap_or_default(),
++        tools,
++        mcp_servers,
++        model: options.model.unwrap_or_default(),
++        context: options.context.unwrap_or_default(),
++    };
++    Ok(Arc::new(SubagentTool {
++        name: options.name.unwrap_or_else(|| "subagent".to_owned()),
++        description: axes.describe_roles(BASE_DESCRIPTION),
++        input_schema: axes.schema(),
++        shared: Arc::new(Shared {
++            axes,
++            builder: options.builder,
++            max_depth: options.max_depth.unwrap_or(DEFAULT_SUBAGENT_MAX_DEPTH),
++            pending: Mutex::new(HashMap::new()),
++        }),
++    }))
++}
++
++/// A child that stopped on interrupts, kept until the parent's tool call is re-run with answers.
++struct Pending {
++    child: Agent,
++    interrupts: Vec<Interrupt>,
++}
++
++struct Shared {
++    axes: Axes,
++    builder: AgentBuilder,
++    max_depth: u32,
++    // Children awaiting a resume, keyed by the tool-use id that interrupted.
++    pending: Mutex<HashMap<String, Pending>>,
++}
++
++impl Shared {
++    fn pending(&self) -> MutexGuard<'_, HashMap<String, Pending>> {
++        self.pending.lock().unwrap_or_else(PoisonError::into_inner)
++    }
++
++    /// Resolves the spec, builds the child and stores its depth budget.
++    async fn start(&self, input: &JsonValue, parent: &[Message], depth: f64) -> Result<(Agent, InvokeArgs)> {
++        let spec = self.axes.resolve(input)?;
++        let prompt = context::child_prompt(&spec, parent);
++        let child = (self.builder)(spec).await?;
++        child
++            .app_state()
++            .set(DEPTH_STATE_KEY, resolve::json_number(depth - 1.0))?;
++        Ok((child, prompt))
++    }
++}
++
++/// Streams a fresh child per call and passes its interrupts to the parent for resume.
++struct SubagentTool {
++    name: String,
++    description: String,
++    input_schema: JsonValue,
++    shared: Arc<Shared>,
++}
++
++impl Tool for SubagentTool {
++    fn name(&self) -> &str {
++        &self.name
++    }
++
++    fn description(&self) -> &str {
++        &self.description
++    }
++
++    fn tool_spec(&self) -> ToolSpec {
++        ToolSpec::new(self.name.as_str(), self.description.as_str()).with_input_schema(self.input_schema.clone())
++    }
++
++    fn stream(&self, context: ToolContext) -> ToolStream {
++        let shared = Arc::clone(&self.shared);
++        ToolStream::new(async_stream::stream! {
++            let tool_use_id = context.tool_use().tool_use_id().to_owned();
++            let retained = shared.pending().remove(&tool_use_id);
++            let (mut child, args) = match retained {
++                // Resume: feed the parent's answers to the retained child.
++                Some(Pending { child, interrupts }) => match answers(&context, &interrupts) {
++                    Ok(responses) => (child, InvokeArgs::from(responses)),
++                    Err(unanswered) => {
++                        shared.pending().insert(tool_use_id, Pending { child, interrupts });
++                        yield ToolOutcome::Interrupt(unanswered).into();
++                        return;
++                    }
++                },
++                None => {
++                    let stored = context.agent().app_state().get_value(DEPTH_STATE_KEY);
++                    let depth = resolve::remaining_depth(stored.as_ref(), shared.max_depth);
++                    if depth <= 0.0 {
++                        let text = format!(
++                            "Delegation depth limit reached ({} levels); you cannot delegate further. Complete this task yourself instead of calling subagent again.",
++                            shared.max_depth
++                        );
++                        yield ToolOutcome::Result(error_result(&tool_use_id, text)).into();
++                        return;
++                    }
++                    let parent = Arc::clone(context.agent().messages());
++                    match shared.start(context.tool_use().input(), &parent, depth).await {
++                        Ok(started) => started,
++                        Err(error) => {
++                            yield ToolOutcome::Result(error_result(&tool_use_id, format!("Subagent error: {error}"))).into();
++                            return;
++                        }
++                    }
++                }
++            };
++
++            // The child runs under the parent's cancel signal, invocation state and request.
++            let options = InvokeOptions {
++                invocation_state: context.invocation_state().clone(),
++                invocation_context: context.invocation_context().cloned(),
++                cancel_signal: Some(context.cancel_signal().clone()),
++                ..InvokeOptions::default()
++            };
++            let mut result = None;
++            let mut failure = None;
++            {
++                let mut events = child.stream_with(args, options);
++                while let Some(item) = events.next().await {
++                    match item {
++                        Ok(event) => {
++                            if let AgentStreamEvent::AgentResult(last) = &event {
++                                result = Some(last.clone());
++                            }
++                            let data = serde_json::to_value(&event).unwrap_or_default();
++                            yield ToolStreamItem::Event(ToolStreamEvent::new(data));
++                        }
++                        Err(error) => failure = Some(error),
++                    }
++                }
++            }
++            if let Some(error) = failure {
++                yield ToolOutcome::Result(error_result(&tool_use_id, format!("Subagent error: {error}"))).into();
++                return;
++            }
++            let Some(result) = result else {
++                yield ToolOutcome::Result(error_result(&tool_use_id, "Subagent produced no result.".to_owned())).into();
++                return;
++            };
++            if result.stop_reason() == StopReason::Interrupt && !result.interrupts().is_empty() {
++                // Keep the child for the resume and raise its first unanswered interrupt on the parent.
++                let interrupts = result.interrupts().to_vec();
++                if let Err(unanswered) = answers(&context, &interrupts) {
++                    shared.pending().insert(tool_use_id, Pending { child, interrupts });
++                    yield ToolOutcome::Interrupt(unanswered).into();
++                    return;
++                }
++            }
++            yield ToolOutcome::Result(final_tool_result(&tool_use_id, &result)).into();
++        })
++    }
++}
++
++/// Re-raises each child interrupt on the parent under the child's interrupt id; the parent's
++/// stored responses, or the first interrupt that has none.
++#[expect(
++    clippy::result_large_err,
++    reason = "the interrupt is the value the tool ends with"
++)]
++fn answers(context: &ToolContext, interrupts: &[Interrupt]) -> Result<Vec<InterruptResponse>, Interrupt> {
++    interrupts
++        .iter()
++        .map(|interrupt| {
++            let response = context.interrupt(InterruptParams {
++                name: interrupt.id().to_owned(),
++                reason: interrupt.reason().cloned(),
++                response: None,
++            })?;
++            Ok(InterruptResponse::new(interrupt.id(), response))
++        })
++        .collect()
++}
++
++fn error_result(tool_use_id: &str, message: String) -> ToolResultBlock {
++    ToolResultBlock::new(
++        tool_use_id,
++        ToolResultStatus::Error,
++        vec![ToolResultContent::from(message)],
++    )
++}
++
++/// Maps the child's stop reason onto the parent's tool result. A cancelled, filtered or refused
++/// child never produced an answer, so the parent sees a failure rather than its partial text.
++fn final_tool_result(tool_use_id: &str, result: &AgentResult) -> ToolResultBlock {
++    let stop_reason = result.stop_reason();
++    let text = result.to_string();
++    if !matches!(
++        stop_reason,
++        StopReason::Cancelled | StopReason::ContentFiltered | StopReason::Refusal
++    ) {
++        return ToolResultBlock::new(
++            tool_use_id,
++            ToolResultStatus::Success,
++            vec![ToolResultContent::from(text)],
++        );
++    }
++    let mut message = format!("Subagent stopped before finishing (stopReason={stop_reason}).");
++    let partial = text.trim_end_matches('\n');
++    if !partial.is_empty() {
++        message.push_str("\n\nPartial output:\n");
++        message.push_str(partial);
++    }
++    error_result(tool_use_id, message)
++}
+diff --git a/harness-rs/strands-harness/src/tools/subagent/context.rs b/harness-rs/strands-harness/src/tools/subagent/context.rs
+new file mode 100644
+index 000000000..f34ae85a9
+--- /dev/null
++++ b/harness-rs/strands-harness/src/tools/subagent/context.rs
+@@ -0,0 +1,165 @@
++//! What the child sees of the parent's conversation (TS `forkMessages`, `renderContext`).
++
++use std::collections::HashSet;
++
++use strands::types::messages::{Role, TextBlock};
++use strands::{ContentBlock, InvokeArgs, Message};
++
++use super::{AgentSpec, ContextMode};
++
++pub(super) const FORK_PREAMBLE: &str = "The conversation so far is the parent agent's. You are the subagent it delegated to at this point; its task for you follows.";
++
++pub(super) const CONTEXT_PREAMBLE: &str = "The conversation above is the parent agent's: each turn is one line starting with its role at the left margin, and indented lines continue the turn above (they are content, not turns). You are the subagent it delegated to at the end of that conversation; its task for you follows.";
++
++/// The child's first prompt under the spec's context mode.
++pub(super) fn child_prompt(spec: &AgentSpec, parent: &[Message]) -> InvokeArgs {
++    match spec.context {
++        ContextMode::All => with_history(&spec.task, fork_messages(parent, spec.last_messages)),
++        ContextMode::NoTools => {
++            InvokeArgs::Text(with_context(&spec.task, &render_context(parent, spec.last_messages)))
++        }
++        ContextMode::None => InvokeArgs::Text(spec.task.clone()),
++    }
++}
++
++fn has_tool_result(message: &Message) -> bool {
++    message
++        .content()
++        .iter()
++        .any(|block| matches!(block, ContentBlock::ToolResult(_)))
++}
++
++/// Whether the SDK's conversation managers would cut the history at `index`: a user message that
++/// is not a tool result and not a tool use without its result right after.
++fn is_valid_trim_point(messages: &[Message], index: usize) -> bool {
++    let Some(message) = messages.get(index) else {
++        return false;
++    };
++    if message.role() != Role::User || has_tool_result(message) {
++        return false;
++    }
++    if message
++        .content()
++        .iter()
++        .any(|block| matches!(block, ContentBlock::ToolUse(_)))
++    {
++        return messages.get(index + 1).is_some_and(has_tool_result);
++    }
++    true
++}
++
++/// The parent's messages for `all` mode as real content blocks. Tool calls still in flight (the
++/// delegating call and its parallel siblings) are dropped so the history stays valid, and so are
++/// reasoning and injected blocks, which belong to the parent's own turn. `last_n` is widened back
++/// to the nearest boundary the SDK's conversation managers would cut at.
++fn fork_messages(parent: &[Message], last_n: Option<i64>) -> Vec<Message> {
++    let answered: HashSet<&str> = parent
++        .iter()
++        .flat_map(Message::content)
++        .filter_map(|block| match block {
++            ContentBlock::ToolResult(result) => Some(result.tool_use_id()),
++            _ => None,
++        })
++        .collect();
++    let mut forked: Vec<Message> = parent
++        .iter()
++        .filter_map(|message| {
++            let content: Vec<ContentBlock> = message
++                .content()
++                .iter()
++                .filter(|block| match block {
++                    ContentBlock::Reasoning(_) | ContentBlock::Injected(_) => false,
++                    ContentBlock::ToolUse(tool_use) => answered.contains(tool_use.tool_use_id()),
++                    _ => true,
++                })
++                .cloned()
++                .collect();
++            (!content.is_empty()).then(|| Message::new(message.role(), content))
++        })
++        .collect();
++    if let Some(last_n) = positive(last_n) {
++        let mut start = forked.len().saturating_sub(last_n);
++        while start > 0 && !is_valid_trim_point(&forked, start) {
++            start -= 1;
++        }
++        forked.drain(..start);
++    }
++    forked
++}
++
++fn positive(last_n: Option<i64>) -> Option<usize> {
++    last_n
++        .filter(|count| *count > 0)
++        .map(|count| usize::try_from(count).unwrap_or(usize::MAX))
++}
++
++/// The child's prompt under `all`: the forked history followed by the framed task. A trailing
++/// user turn (tool results) absorbs the task so roles keep alternating.
++fn with_history(task: &str, mut messages: Vec<Message>) -> InvokeArgs {
++    if messages.is_empty() {
++        return InvokeArgs::Text(task.to_owned());
++    }
++    let framed = ContentBlock::from(TextBlock::new(format!("{FORK_PREAMBLE}\n\n{task}")));
++    let mut content = match messages.pop_if(|last| last.role() == Role::User) {
++        Some(last) => last.content().to_vec(),
++        None => Vec::new(),
++    };
++    content.push(framed);
++    messages.push(Message::new(Role::User, content));
++    InvokeArgs::Messages(messages)
++}
++
++/// Just the text blocks of a message (tool blocks dropped), for `no_tools` mode.
++fn plain_text(message: &Message) -> String {
++    let texts: Vec<&str> = message
++        .content()
++        .iter()
++        .filter_map(|block| match block {
++            ContentBlock::Text(text) => Some(text.text()),
++            _ => None,
++        })
++        .collect();
++    texts.join(" ").trim().to_owned()
++}
++
++/// A parent that is itself a subagent opens with its own framed block; re-render only its task.
++fn strip_framing(text: &str) -> &str {
++    let framing_end = format!("</parent_context>\n\n{CONTEXT_PREAMBLE}\n\n");
++    if !text.starts_with("<parent_context>\n") {
++        return text;
++    }
++    match text.split_once(framing_end.as_str()) {
++        Some((_, task)) => task,
++        None => text,
++    }
++}
++
++/// The parent's text turns as a plain-text block for `no_tools` mode, or an empty string when
++/// nothing is shared. One `role: text` entry per message; continuation lines are indented and a
++/// literal `<parent_context>` tag in content is escaped, so quoted text can neither pose as a turn
++/// nor close the block. `last_n` caps the rendered entries.
++fn render_context(parent: &[Message], last_n: Option<i64>) -> String {
++    let mut lines: Vec<String> = parent
++        .iter()
++        .filter_map(|message| {
++            let text = plain_text(message);
++            let text = strip_framing(&text);
++            (!text.is_empty()).then(|| format!("{}: {text}", message.role().as_str()).replace('\n', "\n  "))
++        })
++        .collect();
++    if let Some(last_n) = positive(last_n) {
++        lines.drain(..lines.len().saturating_sub(last_n));
++    }
++    lines
++        .join("\n")
++        .replace("</parent_context>", "<\\/parent_context>")
++        .replace("<parent_context>", "<\\parent_context>")
++}
++
++/// Prepends a rendered context block, and a line framing the child's place in it, to the task.
++fn with_context(task: &str, block: &str) -> String {
++    if block.is_empty() {
++        return task.to_owned();
++    }
++    format!("<parent_context>\n{block}\n</parent_context>\n\n{CONTEXT_PREAMBLE}\n\n{task}")
++}
+diff --git a/harness-rs/strands-harness/src/tools/subagent/resolve.rs b/harness-rs/strands-harness/src/tools/subagent/resolve.rs
+new file mode 100644
+index 000000000..cf2787b36
+--- /dev/null
++++ b/harness-rs/strands-harness/src/tools/subagent/resolve.rs
+@@ -0,0 +1,389 @@
++//! The model-facing schema and the spec resolution of the `subagent` tool (TS `buildSchema`,
++//! `resolveSpec`).
++
++use std::collections::HashSet;
++
++use indexmap::IndexMap;
++use serde_json::{Map, json};
++use strands::JsonValue;
++use strands::agent::ModelSource;
++
++use super::{
++    AgentSpec, Choice, ContextAxis, ContextMode, InstructionsMode, McpServersMode, ModelMode, Preset, ToolsMode,
++};
++use crate::error::{HarnessError, Result};
++
++const INSTRUCTIONS_DESCRIPTION: &str = "A system prompt defining the subagent's role.";
++
++/// What a picked option name resolves to when its option carries no value (TS defaults an
++/// option's `value` to its `name`).
++pub(super) trait AxisValue: Clone {
++    fn from_name(name: &str) -> Self;
++}
++
++impl AxisValue for String {
++    fn from_name(name: &str) -> Self {
++        name.to_owned()
++    }
++}
++
++impl AxisValue for ModelSource {
++    fn from_name(name: &str) -> Self {
++        Self::from(name)
++    }
++}
++
++impl AxisValue for ContextMode {
++    fn from_name(name: &str) -> Self {
++        match name {
++            "all" => Self::All,
++            "no_tools" => Self::NoTools,
++            _ => Self::None,
++        }
++    }
++}
++
++fn has<T>(choice: &Choice<T>, name: &str) -> bool {
++    choice.options.iter().any(|option| option.name == name)
++}
++
++/// The value the picked `name` resolves to.
++fn value_for<T: AxisValue>(choice: &Choice<T>, name: &str) -> T {
++    choice
++        .options
++        .iter()
++        .find(|option| option.name == name)
++        .and_then(|option| option.value.clone())
++        .unwrap_or_else(|| T::from_name(name))
++}
++
++fn values<T: AxisValue>(choice: &Choice<T>) -> Vec<T> {
++    choice
++        .options
++        .iter()
++        .map(|option| value_for(choice, &option.name))
++        .collect()
++}
++
++/// The names the model asked for that the choice offers, each mapped to its value. A scalar is a
++/// one-element list; anything else grants nothing.
++fn pick(choice: &Choice<String>, requested: &JsonValue) -> Vec<String> {
++    let requested = match requested {
++        JsonValue::Array(items) => items.iter().map(js_string).collect(),
++        JsonValue::String(name) => vec![name.clone()],
++        _ => Vec::new(),
++    };
++    requested
++        .iter()
++        .filter(|name| has(choice, name))
++        .map(|name| value_for(choice, name))
++        .collect()
++}
++
++/// A string enum property (an array of enum when the choice is multiple). Per-option descriptions
++/// render into the property's description, since JSON Schema has none per enum value.
++fn choice_prop<T>(choice: &Choice<T>, base: &str) -> JsonValue {
++    let names: Vec<&str> = choice.options.iter().map(|option| option.name.as_str()).collect();
++    let lines: Vec<String> = choice
++        .options
++        .iter()
++        .filter(|option| !option.description.is_empty())
++        .map(|option| format!("- {}: {}", option.name, option.description))
++        .collect();
++    let mut prop = if choice.multiple {
++        json!({"type": "array", "items": {"type": "string", "enum": names}})
++    } else {
++        json!({"type": "string", "enum": names})
++    };
++    let description = match (base.is_empty(), lines.is_empty()) {
++        (_, true) => base.to_owned(),
++        (true, false) => format!("Options:\n{}", lines.join("\n")),
++        (false, false) => format!("{base}\nOptions:\n{}", lines.join("\n")),
++    };
++    if !description.is_empty()
++        && let Some(prop) = prop.as_object_mut()
++    {
++        prop.insert("description".to_owned(), JsonValue::String(description));
++    }
++    prop
++}
++
++/// The axis modes and presets of one `subagent` tool.
++pub(super) struct Axes {
++    pub(super) presets: IndexMap<String, Preset>,
++    pub(super) default_preset: Option<String>,
++    pub(super) instructions: InstructionsMode,
++    pub(super) tools: ToolsMode,
++    pub(super) mcp_servers: McpServersMode,
++    pub(super) model: ModelMode,
++    pub(super) context: ContextAxis,
++}
++
++impl Axes {
++    pub(super) fn describe_roles(&self, base: &str) -> String {
++        if self.presets.is_empty() {
++            return base.to_owned();
++        }
++        let roles: Vec<String> = self
++            .presets
++            .iter()
++            .map(|(name, preset)| {
++                let description = if preset.description.is_empty() {
++                    name
++                } else {
++                    &preset.description
++                };
++                format!("- {name}: {description}")
++            })
++            .collect();
++        format!("{base}\n\nAvailable subagents (agent_type):\n{}", roles.join("\n"))
++    }
++
++    /// Derives the input schema from the axis modes: each axis adds zero or one parameter.
++    pub(super) fn schema(&self) -> JsonValue {
++        let mut props = Map::new();
++        props.insert(
++            "task".to_owned(),
++            json!({
++                "type": "string",
++                "description": "The self-contained task, including all context the subagent needs. It starts from a blank conversation and cannot ask follow-up questions.",
++            }),
++        );
++        if !self.presets.is_empty() {
++            props.insert(
++                "agent_type".to_owned(),
++                json!({
++                    "type": "string",
++                    "enum": self.presets.keys().collect::<Vec<_>>(),
++                    "description": "Which subagent role to use. Omit to use the default.",
++                }),
++            );
++        }
++        match &self.instructions {
++            InstructionsMode::Open => {
++                props.insert(
++                    "instructions".to_owned(),
++                    json!({"type": "string", "description": INSTRUCTIONS_DESCRIPTION}),
++                );
++            }
++            InstructionsMode::Choice(choice) => {
++                props.insert("instructions".to_owned(), choice_prop(choice, INSTRUCTIONS_DESCRIPTION));
++            }
++            InstructionsMode::Fixed(_) => {}
++        }
++        if let ToolsMode::Choice(choice) = &self.tools {
++            props.insert(
++                "tools".to_owned(),
++                choice_prop(
++                    choice,
++                    "Subset of tools to grant the subagent. Fewer is safer; it cannot exceed your own.",
++                ),
++            );
++        }
++        if let McpServersMode::Choice(choice) = &self.mcp_servers {
++            props.insert(
++                "mcp_servers".to_owned(),
++                choice_prop(
++                    choice,
++                    "Subset of MCP servers whose tools to grant the subagent. Fewer is safer; it cannot exceed your own. Omit to grant all of them.",
++                ),
++            );
++        }
++        if let ModelMode::Choice(choice) = &self.model {
++            props.insert(
++                "model".to_owned(),
++                choice_prop(choice, "Which model the subagent runs on."),
++            );
++        }
++        if let ContextAxis::Choice(choice) = &self.context {
++            props.insert(
++                "context".to_owned(),
++                choice_prop(
++                    choice,
++                    "How much of this conversation the subagent sees: 'none' (fresh start), 'all' (full history including tool calls and their results — can be large), 'no_tools' (text turns only — tool calls and their results removed). More context costs more tokens.",
++                ),
++            );
++            if values(choice).iter().any(|mode| *mode != ContextMode::None) {
++                props.insert(
++                    "last_messages".to_owned(),
++                    json!({
++                        "type": "integer",
++                        "description": "Optional: limit the shared context to the last N messages. Omit to share all of the selected context.",
++                    }),
++                );
++            }
++        }
++        json!({"type": "object", "properties": props, "required": ["task"]})
++    }
++
++    /// Combines the model's arguments, the selected preset and the fixed axes into a spec.
++    ///
++    /// Per axis a model-supplied argument wins, then the preset's value, then the axis default.
++    /// An omitted `agent_type` falls back to the default preset.
++    pub(super) fn resolve(&self, input: &JsonValue) -> Result<AgentSpec> {
++        let empty = Map::new();
++        let raw = input.as_object().unwrap_or(&empty);
++        let task = raw
++            .get("task")
++            .map_or_else(|| "undefined".to_owned(), js_string);
++
++        // agent_type is a closed enum.
++        let raw_agent_type = raw.get("agent_type").filter(|value| !value.is_null());
++        let known = raw_agent_type
++            .and_then(JsonValue::as_str)
++            .filter(|name| self.presets.contains_key(*name));
++        if let (Some(value), None) = (raw_agent_type, known) {
++            return Err(HarnessError::UnknownAgentType {
++                value: value.to_string(),
++                valid: self.presets.keys().cloned().collect::<Vec<_>>().join(", "),
++            });
++        }
++        // Ad-hoc instructions (only possible when the axis exposes one) override the default preset.
++        let overriding = !matches!(self.instructions, InstructionsMode::Fixed(_)) && raw.contains_key("instructions");
++        let agent_type = match known {
++            Some(name) => Some(name.to_owned()),
++            None if overriding => None,
++            None => self.default_preset.clone(),
++        };
++        let preset = agent_type
++            .as_deref()
++            .filter(|name| !name.is_empty())
++            .and_then(|name| self.presets.get(name));
++        let mut spec = AgentSpec::new(task, agent_type.clone());
++
++        // instructions: honoured only when the axis exposes one (Open, or a Choice offering the name).
++        let raw_instructions = raw.get("instructions").map(js_string);
++        spec.instructions = match (&self.instructions, raw_instructions) {
++            (InstructionsMode::Open, Some(text)) => Some(text),
++            (InstructionsMode::Choice(choice), Some(name)) if has(choice, &name) => Some(value_for(choice, &name)),
++            (axis, _) => match (preset, axis) {
++                (Some(preset), _) => preset.instructions.clone(),
++                (None, InstructionsMode::Fixed(value)) => value.clone(),
++                (None, _) => None,
++            },
++        };
++
++        // tools: the model picks option names; each maps to the tool name it grants, clamped.
++        let tools_choice = match &self.tools {
++            ToolsMode::Choice(choice) => Some(choice),
++            _ => None,
++        };
++        let preset_tools = preset.and_then(|preset| preset.tools.as_ref());
++        spec.tools = match (raw.get("tools"), tools_choice, preset_tools) {
++            (Some(requested), Some(choice), _) => Some(pick(choice, requested)),
++            (_, Some(choice), Some(preset_tools)) => {
++                let allowed: HashSet<String> = values(choice).into_iter().collect();
++                Some(
++                    preset_tools
++                        .iter()
++                        .filter(|tool| allowed.contains(*tool))
++                        .cloned()
++                        .collect(),
++                )
++            }
++            (_, None, Some(preset_tools)) => Some(preset_tools.clone()),
++            (_, Some(choice), None) if choice.multiple => Some(values(choice)),
++            (_, _, None) => match &self.tools {
++                ToolsMode::Fixed(value) => value.clone(),
++                _ => None,
++            },
++        };
++
++        // mcp_servers: the model picks server names, clamped to the parent's set; omitted grants all.
++        spec.mcp_servers = match (raw.get("mcp_servers"), &self.mcp_servers) {
++            (Some(requested), McpServersMode::Choice(choice)) => Some(pick(choice, requested)),
++            (None, McpServersMode::Choice(choice)) if choice.multiple => Some(values(choice)),
++            (_, McpServersMode::Fixed(value)) => value.clone(),
++            _ => None,
++        };
++
++        // model: the picked name maps back to its value; an off-enum name is ignored.
++        let raw_model = raw.get("model").map(js_string);
++        spec.model = match (&self.model, raw_model) {
++            (ModelMode::Choice(choice), Some(name)) if has(choice, &name) => Some(value_for(choice, &name)),
++            (axis, _) => match (preset.and_then(|preset| preset.model.clone()), axis) {
++                (Some(model), _) => Some(model),
++                (None, ModelMode::Fixed(value)) => value.clone(),
++                (None, _) => None,
++            },
++        };
++
++        // context: honoured only when the Choice offers the name.
++        let raw_context = raw.get("context").map(js_string);
++        match (&self.context, raw_context, preset) {
++            (ContextAxis::Choice(choice), Some(name), _) if has(choice, &name) => {
++                spec.context = value_for(choice, &name);
++            }
++            (_, _, Some(preset)) => {
++                spec.context = preset.context;
++                spec.last_messages = preset.last_messages;
++            }
++            (ContextAxis::Fixed(mode), _, None) => spec.context = *mode,
++            (ContextAxis::Choice(_), _, None) => {}
++        }
++
++        // last_messages: a model-supplied cap wins.
++        if let Some(value) = raw.get("last_messages").filter(|value| !value.is_null()) {
++            spec.last_messages = integer(js_number(value));
++        }
++        Ok(spec)
++    }
++}
++
++/// The depth budget left on the parent: `max_depth` for a parent that never delegated, and 0 for
++/// a stored value that is not a finite number, so it can never slip past the guard.
++pub(super) fn remaining_depth(stored: Option<&JsonValue>, max_depth: u32) -> f64 {
++    match stored {
++        None => f64::from(max_depth),
++        Some(value) => Some(js_number(value))
++            .filter(|depth| depth.is_finite())
++            .unwrap_or(0.0),
++    }
++}
++
++/// `value` as a JSON number, an integer when it has no fraction (as JavaScript serialises it).
++pub(super) fn json_number(value: f64) -> JsonValue {
++    integer(value)
++        .filter(|_| value.fract() == 0.0)
++        .map_or_else(|| json!(value), |whole| json!(whole))
++}
++
++/// JavaScript `Math.trunc` of a finite number; `None` otherwise.
++#[expect(
++    clippy::cast_possible_truncation,
++    reason = "a float-to-int cast saturates, which is the wanted clamp"
++)]
++fn integer(value: f64) -> Option<i64> {
++    value.is_finite().then(|| value.trunc() as i64)
++}
++
++/// JavaScript `Number(value)` for a JSON value (an array or object is not a number here).
++fn js_number(value: &JsonValue) -> f64 {
++    match value {
++        JsonValue::Number(number) => number.as_f64().unwrap_or(f64::NAN),
++        JsonValue::String(text) if text.trim().is_empty() => 0.0,
++        JsonValue::String(text) => text.trim().parse().unwrap_or(f64::NAN),
++        JsonValue::Bool(flag) => f64::from(u8::from(*flag)),
++        JsonValue::Null => 0.0,
++        JsonValue::Array(_) | JsonValue::Object(_) => f64::NAN,
++    }
++}
++
++/// JavaScript `String(value)` for a JSON value.
++fn js_string(value: &JsonValue) -> String {
++    match value {
++        JsonValue::String(text) => text.clone(),
++        JsonValue::Number(number) => match number.as_f64().and_then(integer) {
++            Some(whole) if number.as_f64().is_some_and(|float| float.fract() == 0.0) => whole.to_string(),
++            _ => number.to_string(),
++        },
++        JsonValue::Bool(flag) => flag.to_string(),
++        JsonValue::Null => "null".to_owned(),
++        JsonValue::Array(items) => items
++            .iter()
++            .map(|item| if item.is_null() { String::new() } else { js_string(item) })
++            .collect::<Vec<_>>()
++            .join(","),
++        JsonValue::Object(_) => "[object Object]".to_owned(),
++    }
++}
+diff --git a/harness-rs/strands-harness/src/tools/subagent/tests.rs b/harness-rs/strands-harness/src/tools/subagent/tests.rs
+new file mode 100644
+index 000000000..2e940ec48
+--- /dev/null
++++ b/harness-rs/strands-harness/src/tools/subagent/tests.rs
+@@ -0,0 +1 @@
++//! Tests of the `subagent` tool, ported from harness-ts/test/tools/subagent.test.ts.
+-- 
+2.39.5
+

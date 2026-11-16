@@ -1,0 +1,64 @@
+From cdf7a796d2c453cc2cceaa2288089b8b9c074243 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:12:23 +0000
+Subject: [PATCH 9/9] chore(rust-port): stage the h12models decisions,
+ divergences and parity rows
+
+---
+ .rust-port/staging/h12models/decisions.md   | 17 +++++++++++++++++
+ .rust-port/staging/h12models/divergences.md |  7 +++++++
+ .rust-port/staging/h12models/parity.md      |  4 ++++
+ 3 files changed, 28 insertions(+)
+ create mode 100644 .rust-port/staging/h12models/decisions.md
+ create mode 100644 .rust-port/staging/h12models/divergences.md
+ create mode 100644 .rust-port/staging/h12models/parity.md
+
+diff --git a/.rust-port/staging/h12models/decisions.md b/.rust-port/staging/h12models/decisions.md
+new file mode 100644
+index 000000000..a8b7240fb
+--- /dev/null
++++ b/.rust-port/staging/h12models/decisions.md
+@@ -0,0 +1,17 @@
++**P-830. Harness model resolution takes and returns the SDK's `ModelSource`, and is synchronous.** TS `resolveModel(model: Model | ModelRouter | string | undefined, defaultModel, effort, webSearch, caching, cachingExplicit)` is async only because it imports providers dynamically. Choice: `pub(crate) fn resolve_model(model: Option<&ModelSource>, default_model: &str, options: ResolveModelOptions, env: &EnvLookup) -> Result<ModelSource>` with `ResolveModelOptions { effort, web_search, caching, caching_explicit }` (`Default`: auto, off, off, off); a string resolves to `ModelSource::Model`, an instance or router is cloned through. The public `supports_thinking` and `supports_web_search` take `Option<&ModelSource>` (`None` is the default model); `supports_media`, `resolve_web_fetch_model` and `EFFORT_LEVELS` are `pub(crate)`, as TS doesn't export them from the package entry.
++
++**P-831. Provider table, and the texts for providers Rust doesn't build.** Rust v0.1 has `bedrock`, `bedrock-mantle`, `anthropic` and `openai` (#60). Choice: `google/`, `ollama/` and `litellm/` return `HarnessError::UnsupportedModelProvider` (`model provider "google" is not supported in Rust yet`, section 10); any other prefix returns `UnknownModelProvider` with the TS text, whose `Supported providers:` list names the four Rust providers (TS lists seven). A provider whose cargo feature is off returns `ModelFeatureDisabled` (`model '<spec>' requires the strands feature "<feature>"`) after the caching and effort checks, where TS would build the model; `bedrock-mantle` needs `openai` and `bedrock` and names the missing one (`openai` first). TS's "provider does not support prompt caching" branch is unreachable (only `ollama` lacks caching), so it has no variant.
++
++**P-832. `supports_media` judges a model instance by its model id.** TS returns `false` for a `BedrockModel` instance whose id is in the `openai.` family and `true` for any other instance (`instanceof BedrockModel`). `strands::models::Model` has no downcast, and adding one is a public SDK change. Choice: an instance (and each router candidate, recursively) is judged by `Model::model_id()` read as a Bedrock id: `false` when its family starts with `openai.`, else `true`. The difference from TS is an `OpenAIModel` on Bedrock Mantle given as an instance with an `openai.*` id: TS answers `true`, Rust `false`, so `read` describes media in text for it unless `builtinTools.read.media` overrides. Pending: an SDK accessor would remove the difference.
++
++**P-833. `Effort` is typed; the TS "not valid" text lives in `parse_effort`.** TS `resolveEffort` rejects a value outside `EFFORT_LEVELS` for untyped callers. Choice: `resolve_model` takes the `Effort` enum, and `pub(crate) fn parse_effort(name: &str) -> Result<Effort>` returns `HarnessError::InvalidEffort` with the TS text (`Effort "bogus" is not valid. Supported: auto, off, minimal, low, medium, high, xhigh, max.`) for the config normalization to call.
++
++**P-834. Credentials, endpoints and regions go through the env seam into the SDK options.** TS providers read `process.env` themselves. Choice: the harness reads `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `AWS_REGION` and `AWS_DEFAULT_REGION` through `EnvLookup` and sets `api_key`, `client_config.base_url`, `BedrockModelOptions::region` and `BedrockMantleConfig::region`; an empty value counts as unset (TS `||`), and a value the lookup doesn't have is left to the SDK's own defaults. `resolve_web_fetch_model` reads the repointed-endpoint variables through the same lookup.
++
++**P-835. `resolve_memory` shape.** TS `resolveMemory(options: ResolveMemoryOptions)` takes `stores?: MemoryStore | MemoryStore[]`, `model`, `dir`, `webFetch?: WebFetchConfig`, `writable`. Choice: `pub(crate) fn resolve_memory(options: ResolveMemoryOptions, env: &EnvLookup) -> Result<MemoryManager>` (synchronous) with `ResolveMemoryOptions { stores: Vec<Arc<dyn MemoryStore>>, model: Option<ModelSource>, dir: Option<String>, web_fetch_model: Option<ModelSource>, writable: bool }` and a `bon` builder (`writable` defaults to `true`). `web_fetch_model` is TS `webFetch?.model`, the only field TS reads, so the module doesn't depend on the `web_fetch` track's config type. The read-only view is the SDK's `strands::memory::read_only_view`. The default store is `LocalFileStorage::new(dir).with_namespace("")`, relative to the process working directory as in TS; `create_harness` passes a resolved directory.
++
++**P-836. `HarnessError` variants for model resolution.** `ModelFeatureDisabled { spec, feature }`, `UnsupportedModelProvider { provider }`, `UnknownModelProvider { provider, spec, supported }`, `InvalidEffort { effort, supported }`, `UnsupportedEffort { effort, subject, detail }`, `CachingUnsupported { model }`, `NoWebFetchModel { provider }`; each `Display` is the TS (or section 10) text, with names quoted as `JSON.stringify` does.
++
++**P-837. `regex` is a dependency of `strands-harness`.** It was already a workspace dependency. `CLAUDE_ID` is the TS expression with ASCII digit classes; its `(?!\d)` lookahead, which the `regex` crate doesn't have, is a trailing `(?:[^0-9]|$)`, which matches the same ids and captures the same groups under leftmost-first matching.
++
++**P-838. `build_system_prompt(instructions: Option<&str>, context_parts: &[&str]) -> String`.** Empty instructions are skipped, as TS's truthiness check does.
+diff --git a/.rust-port/staging/h12models/divergences.md b/.rust-port/staging/h12models/divergences.md
+new file mode 100644
+index 000000000..21e2284dc
+--- /dev/null
++++ b/.rust-port/staging/h12models/divergences.md
+@@ -0,0 +1,7 @@
++| Model strings | `google/`, `ollama/` and `litellm/` build Gemini and OpenAI-compatible models | `model provider "google" is not supported in Rust yet` (also `ollama`, `litellm`) | Rust v0.1 has Bedrock, Bedrock Mantle, Anthropic and OpenAI (#60) |
++| Unknown model provider | `Supported providers: anthropic, bedrock, bedrock-mantle, google, litellm, ollama, openai` | `Supported providers: anthropic, bedrock, bedrock-mantle, openai` | the list names what Rust builds (P-831) |
++| Disabled provider | every provider is importable | `model '<spec>' requires the strands feature "<feature>"` when the provider's cargo feature is off | providers are cargo features in Rust |
++| `supports_thinking`, `supports_web_search` on `google/...` | `true` | `false` | Google is not a Rust v0.1 provider |
++| `web_fetch` summarizer for `ollama/`, `litellm/` | warns and reuses the main model | the unsupported-provider error | the main model itself can't be built |
++| `supportsMedia` on a model instance | `false` only for a `BedrockModel` instance with an `openai.` family id | `false` for any instance whose model id has an `openai.` family | `Model` has no downcast (P-832) |
++| `effort` outside the enum | `resolveModel` throws `Effort "x" is not valid. ...` | `Effort` is an enum; the same text comes from parsing a name (`parse_effort`) | typed API (P-833) |
+diff --git a/.rust-port/staging/h12models/parity.md b/.rust-port/staging/h12models/parity.md
+new file mode 100644
+index 000000000..4b00c44f2
+--- /dev/null
++++ b/.rust-port/staging/h12models/parity.md
+@@ -0,0 +1,4 @@
++| `harness-ts/test/memory.test.ts` | `memory::tests::*` | 11/19 | the 8 `createHarness memory` cases (`attaches a memory manager by default`, `attaches no memory manager when memory is disabled`, `treats null as disabled`, `passes a MemoryManager instance given as memory straight through`, `lets a memoryManager escape hatch win over a memory config`, `lets an explicit memoryManager win over the default`, `honors a custom memory dir`, `manages consumer memory stores under the harness policy instead of the default file store`) need `create_harness`, which lands separately. The extraction-model cases assert on the model `resolve_memory` passes to `ModelExtractor`, and the injection case on the manager config, because `MemoryManager` exposes neither |
++| `harness-ts/test/models.test.ts` | `models::tests::*`, `models::tests::providers::*` (the provider-config cases need the `bedrock`, `anthropic` and `openai` features) | 105/111 | Google, Ollama and LiteLLM are not Rust v0.1 providers (#60): `maps google auto to the high thinking level`, `uses the google model id directly`, `adds the google googleSearch built-in tool for web_search`, `omits google built-in tools when web_search is off`, `does not warn when caching is supported for litellm`, `builds litellm with explicit caching and sets no cacheConfig`. For the same reason the Google, Ollama and LiteLLM rows are left out of `resolves the per-model levels for %s with effort %s`, `rejects a level the provider does not support`, `is high on %s` and `sends no reasoning field to %s, where high would be rejected`, and the Google row of `is true for openai, google and bedrock-mantle` asserts `false`. `rejects an effort outside the enum by name` is ported against `parse_effort` (P-833) |
++| `harness-ts/test/openai-cache.test.ts` | | 0/2 | both cases (`it.each` over the OpenAI and Mantle cache layouts) drive `createHarness` end to end; they belong with `create_harness` |
++| `harness-ts/test/prompt.test.ts` | `prompt::tests::*` | 3/3 | |
+-- 
+2.39.5
+

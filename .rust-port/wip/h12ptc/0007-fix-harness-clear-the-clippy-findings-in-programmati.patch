@@ -1,0 +1,112 @@
+From a4d148a3959da0037106530f216e821fe423e8e0 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:13:38 +0000
+Subject: [PATCH 7/7] fix(harness): clear the clippy findings in
+ programmatic_tool_caller
+
+---
+ .../src/tools/programmatic_tool_caller.rs       | 17 +++++------------
+ .../tools/programmatic_tool_caller/output.rs    |  7 ++++---
+ .../src/tools/programmatic_tool_caller/tests.rs | 15 +++++++++------
+ 3 files changed, 18 insertions(+), 21 deletions(-)
+
+diff --git a/harness-rs/strands-harness/src/tools/programmatic_tool_caller.rs b/harness-rs/strands-harness/src/tools/programmatic_tool_caller.rs
+index f059477c1..94a97ff4d 100644
+--- a/harness-rs/strands-harness/src/tools/programmatic_tool_caller.rs
++++ b/harness-rs/strands-harness/src/tools/programmatic_tool_caller.rs
+@@ -67,10 +67,6 @@ per model round-trip, keeping large intermediate results out of the conversation
+     clippy::exhaustive_structs,
+     reason = "config struct: struct-literal construction"
+ )]
+-#[expect(
+-    clippy::option_option,
+-    reason = "TS `timeoutMs?: number | null`: unset is the default, `Some(None)` disables it"
+-)]
+ #[derive(Debug, Clone, Default, bon::Builder)]
+ #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
+ pub struct MakeProgrammaticToolCallerOptions {
+@@ -94,10 +90,6 @@ pub(crate) enum InnerCall {
+     /// A hook asked for an approval nobody has answered; the text is its reason.
+     NeedsApproval(String),
+     /// The call was cancelled before the tool ran.
+-    #[cfg_attr(
+-        not(test),
+-        expect(dead_code, reason = "reported by `ToolAgent::call_tool` once the SDK has it")
+-    )]
+     Cancelled,
+ }
+ 
+@@ -268,10 +260,11 @@ fn unwrap_result(result: &ToolResultBlock) -> JsonValue {
+         return json.json().clone();
+     }
+     let text = extract_text(content);
+-    if content.len() == 1 && (text.starts_with('{') || text.starts_with('[')) {
+-        if let Ok(parsed) = serde_json::from_str(&text) {
+-            return parsed;
+-        }
++    if content.len() == 1
++        && (text.starts_with('{') || text.starts_with('['))
++        && let Ok(parsed) = serde_json::from_str(&text)
++    {
++        return parsed;
+     }
+     JsonValue::String(text)
+ }
+diff --git a/harness-rs/strands-harness/src/tools/programmatic_tool_caller/output.rs b/harness-rs/strands-harness/src/tools/programmatic_tool_caller/output.rs
+index b9a1ac638..9d771f142 100644
+--- a/harness-rs/strands-harness/src/tools/programmatic_tool_caller/output.rs
++++ b/harness-rs/strands-harness/src/tools/programmatic_tool_caller/output.rs
+@@ -65,8 +65,9 @@ impl PrintWriterCallback for Output {
+ }
+ 
+ pub(crate) fn cap(raw: &str, limit: usize) -> String {
+-    match raw.char_indices().nth(limit) {
+-        None => raw.trim().to_owned(),
+-        Some((end, _)) => format!("{}\n[output truncated at {limit} characters]", raw[..end].trim()),
++    if raw.chars().nth(limit).is_none() {
++        return raw.trim().to_owned();
+     }
++    let kept: String = raw.chars().take(limit).collect();
++    format!("{}\n[output truncated at {limit} characters]", kept.trim())
+ }
+diff --git a/harness-rs/strands-harness/src/tools/programmatic_tool_caller/tests.rs b/harness-rs/strands-harness/src/tools/programmatic_tool_caller/tests.rs
+index 73500afe6..05d86eab2 100644
+--- a/harness-rs/strands-harness/src/tools/programmatic_tool_caller/tests.rs
++++ b/harness-rs/strands-harness/src/tools/programmatic_tool_caller/tests.rs
+@@ -432,7 +432,7 @@ async fn truncates_a_syntax_error_that_is_too_long() {
+     assert!(
+         text(&result).starts_with("Error: Syntax error:"),
+         "{}",
+-        &text(&result)[..200]
++        text(&result).chars().take(200).collect::<String>()
+     );
+     assert!(text(&result).len() < 200_100);
+ }
+@@ -749,16 +749,19 @@ fn the_description_matches_the_ts_constant() {
+     else {
+         return;
+     };
+-    let start = source
+-        .find("export const DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION =")
++    let (_, rest) = source
++        .split_once("export const DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION =")
+         .expect("the TS constant exists");
+-    let expected: String = source[start..]
++    let expected: String = rest
+         .lines()
+         .skip(1)
+         .take_while(|line| !line.trim().is_empty())
+         .map(|line| {
+-            let literal = line.trim().trim_end_matches(" +");
+-            &literal[1..literal.len() - 1]
++            // Each line is one quoted literal, with a trailing ` +` on all but the last.
++            let mut literal = line.trim().trim_end_matches(" +").chars();
++            literal.next();
++            literal.next_back();
++            literal.as_str()
+         })
+         .collect();
+     assert_eq!(DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, expected);
+-- 
+2.39.5
+

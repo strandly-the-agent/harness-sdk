@@ -1,0 +1,23 @@
+From 90117bd53c3531e4e6796541de002328ab1f3980 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 17:52:59 +0000
+Subject: [PATCH 2/9] feat(harness): re-export the prompt names from the crate
+ root
+
+---
+ harness-rs/strands-harness/src/lib.rs | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/harness-rs/strands-harness/src/lib.rs b/harness-rs/strands-harness/src/lib.rs
+index cffbcedfd..1674ec143 100644
+--- a/harness-rs/strands-harness/src/lib.rs
++++ b/harness-rs/strands-harness/src/lib.rs
+@@ -26,4 +26,5 @@ mod tools;
+ mod types;
+ 
+ pub use error::{HarnessError, Result};
++pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
+ pub use types::{Effort, WebFetchTransport};
+-- 
+2.39.5
+

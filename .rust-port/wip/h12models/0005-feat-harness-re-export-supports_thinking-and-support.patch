@@ -1,0 +1,24 @@
+From dc5d6400d36e987a52d31589ce36b375a27d009c Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:04:55 +0000
+Subject: [PATCH 5/9] feat(harness): re-export supports_thinking and
+ supports_web_search
+
+---
+ harness-rs/strands-harness/src/lib.rs | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/harness-rs/strands-harness/src/lib.rs b/harness-rs/strands-harness/src/lib.rs
+index 1674ec143..08543b3d0 100644
+--- a/harness-rs/strands-harness/src/lib.rs
++++ b/harness-rs/strands-harness/src/lib.rs
+@@ -26,5 +26,6 @@ mod tools;
+ mod types;
+ 
+ pub use error::{HarnessError, Result};
++pub use models::{supports_thinking, supports_web_search};
+ pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
+ pub use types::{Effort, WebFetchTransport};
+-- 
+2.39.5
+
