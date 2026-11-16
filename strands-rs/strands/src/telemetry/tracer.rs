@@ -845,6 +845,7 @@ fn otel_parts(blocks: &[ContentBlock]) -> Vec<JsonValue> {
                 "id": result.tool_use_id(),
                 "response": result.content(),
             }),
+            ContentBlock::Unknown(_) => json!({"type": "unknownBlock"}),
             other => json!({"type": block_type(other)}),
         })
         .collect()
@@ -858,7 +859,15 @@ fn system_part(block: &SystemContentBlock) -> JsonValue {
             json!({"type": "cache_point", "cacheType": cache_point.cache_type()})
         }
         SystemContentBlock::GuardContent(guard) => {
-            json!({"type": "guard_content", "text": guard.text(), "image": guard.image()})
+            let mut part = json!({"type": "guard_content"});
+            if let Some(text) = guard.text() {
+                part["text"] = json!(text);
+            }
+            if let Some(image) = guard.image() {
+                // TS holds the raw bytes here, which `jsonReplacer` writes as the placeholder.
+                part["image"] = json!({"format": image.format(), "source": {"bytes": "<replaced>"}});
+            }
+            part
         }
     }
 }
@@ -889,3 +898,5 @@ pub(crate) mod memory;
 
 #[cfg(test)]
 mod local_trace_tests;
+#[cfg(test)]
+mod parts_tests;

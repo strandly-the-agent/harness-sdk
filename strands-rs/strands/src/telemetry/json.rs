@@ -2,7 +2,9 @@
 //!
 //! TS replaces values `JSON.stringify` can't write (`bigint`, functions, symbols, raw buffers) with
 //! `"<replaced>"`. Rust values serialize through serde, where binary content is already base64 text
-//! as in TS `toJSON()`, so the placeholder stands for a value whose serializer fails.
+//! as in TS `toJSON()`, so the placeholder stands for a value whose serializer fails. The one raw
+//! buffer TS writes, a guard-content image in the system prompt, gets the placeholder in
+//! `tracer::system_part`.
 
 use serde::Serialize;
 
