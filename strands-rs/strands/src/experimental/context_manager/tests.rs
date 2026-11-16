@@ -108,6 +108,90 @@ async fn before_model_call(agent: &mut LocalAgent, projected: Option<u64>) {
         .unwrap();
 }
 
+/// Records the messages of every `count_tokens` call and fails from call `fail_from` on.
+struct CountProbe {
+    inner: MockMessageModel,
+    counted: Mutex<Vec<Vec<Message>>>,
+    fail_from: usize,
+}
+
+impl CountProbe {
+    fn new(fail_from: usize) -> Arc<Self> {
+        Arc::new(Self {
+            inner: MockMessageModel::new(),
+            counted: Mutex::new(Vec::new()),
+            fail_from,
+        })
+    }
+}
+
+#[async_trait]
+impl Model for CountProbe {
+    fn stream(
+        &self,
+        request: crate::models::model::ModelRequest,
+    ) -> crate::models::model::BoxStream<'static, Result<crate::models::streaming::ModelStreamEvent>> {
+        self.inner.stream(request)
+    }
+
+    fn get_config(&self) -> BaseModelConfig {
+        self.inner.get_config()
+    }
+
+    fn update_config(&self, config: BaseModelConfig) {
+        self.inner.update_config(config);
+    }
+
+    async fn count_tokens(&self, messages: &[Message], _options: CountTokensOptions) -> Result<u64> {
+        let mut counted = self.counted.lock().unwrap();
+        counted.push(messages.to_vec());
+        if counted.len() > self.fail_from {
+            return Err(Error::other("count failed"));
+        }
+        Ok(1)
+    }
+}
+
+// No TS case: the TS `anyActed = true` precedes the recount (`context-manager.ts:229-233`); no
+// TS test fails the recount.
+#[tokio::test]
+async fn retries_an_overflow_when_the_recount_fails_after_a_strategy_acted() {
+    let strategy = Arc::new(Recorder {
+        acted: true,
+        ..Default::default()
+    });
+    let mut agent = agent_with_model(conversation(1), CountProbe::new(1));
+    manager_with(strategy).init_agent(&mut agent).await.unwrap();
+    assert!(overflow(&mut agent).await);
+}
+
+// No TS case: TS counts the whole history through `ModelProxy` (`context-manager.ts:212,232`);
+// no TS test inspects the counted messages.
+#[tokio::test]
+async fn counts_the_history_in_the_form_the_request_sends() {
+    let strategy = Arc::new(Recorder {
+        acted: true,
+        ..Default::default()
+    });
+    let model = CountProbe::new(usize::MAX);
+    let summary = Message::new(
+        crate::types::messages::Role::User,
+        vec![crate::types::messages::SummaryBlock::new("earlier turns").into()],
+    );
+    let mut agent = agent_with_model(vec![summary, assistant("ok"), user("next")], Arc::clone(&model) as _);
+    manager_with(strategy).init_agent(&mut agent).await.unwrap();
+    before_model_call(&mut agent, None).await;
+    let counted = model.counted.lock().unwrap();
+    assert_eq!(counted.len(), 2);
+    for messages in counted.iter() {
+        assert!(
+            matches!(messages[0].content(), [ContentBlock::Text(text)] if text.text() == "earlier turns"),
+            "{:?}",
+            messages[0]
+        );
+    }
+}
+
 #[test]
 fn has_correct_plugin_name() {
     let manager = ContextManager::new(ContextManagerConfig::default()).unwrap();

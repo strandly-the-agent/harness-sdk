@@ -14,6 +14,7 @@ use crate::agent::InvocationContext;
 use crate::error::{Error, Result};
 use crate::hooks::{AfterModelCallEvent, BeforeModelCallEvent, MessageAddedEvent};
 use crate::models::model::CountTokensOptions;
+use crate::models::model_proxy::ModelProxy;
 use crate::plugins::Plugin;
 use crate::storage::{InMemoryStorage, Storage};
 use crate::tools::Tool;
@@ -426,7 +427,7 @@ impl ContextManager {
         let input_tokens = match precomputed_input_tokens {
             Some(tokens) => tokens,
             None => {
-                model
+                ModelProxy::new(&*model)
                     .count_tokens(agent.messages(), CountTokensOptions::default())
                     .await?
             }
@@ -444,24 +445,28 @@ impl ContextManager {
             if strategy.name() == EmergencyTruncateStrategy::NAME && any_acted {
                 state.overflow = false;
             }
-            let outcome = match strategy.apply(&mut state).await {
-                Ok(true) => model
-                    .count_tokens(state.agent.messages(), CountTokensOptions::default())
-                    .await
-                    .map(|tokens| Some(model.estimate_utilization(tokens))),
-                Ok(false) => Ok(None),
-                Err(error) => Err(error),
-            };
-            match outcome {
-                Ok(Some(utilization)) => {
-                    any_acted = true;
-                    state.utilization = utilization;
+            match strategy.apply(&mut state).await {
+                Ok(true) => any_acted = true,
+                Ok(false) => continue,
+                Err(error) => {
+                    tracing::warn!(
+                        "strategy=<{}>, agentId=<{agent_id}>, error=<{error}> | strategy failed, continuing",
+                        strategy.name()
+                    );
+                    continue;
+                }
+            }
+            match ModelProxy::new(&*model)
+                .count_tokens(state.agent.messages(), CountTokensOptions::default())
+                .await
+            {
+                Ok(tokens) => {
+                    state.utilization = model.estimate_utilization(tokens);
                     tracing::debug!(
                         "strategy=<{}>, agentId=<{agent_id}> | strategy applied",
                         strategy.name()
                     );
                 }
-                Ok(None) => {}
                 Err(error) => tracing::warn!(
                     "strategy=<{}>, agentId=<{agent_id}>, error=<{error}> | strategy failed, continuing",
                     strategy.name()

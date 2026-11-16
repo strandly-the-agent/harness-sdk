@@ -13,6 +13,7 @@ use crate::agent::InvocationContext;
 use crate::error::Result;
 use crate::experimental::context_manager::{ContextState, ContextStrategy, Stash};
 use crate::models::model::CountTokensOptions;
+use crate::models::model_proxy::ModelProxy;
 use crate::types::agent::LocalAgent;
 use crate::types::messages::{ContentBlock, Message, Role};
 
@@ -88,7 +89,7 @@ impl ContextStrategy for EmergencyTruncateStrategy {
         }
         if !context.overflow {
             let model = context.agent.model();
-            let tokens = model
+            let tokens = ModelProxy::new(&**model)
                 .count_tokens(context.agent.messages(), CountTokensOptions::default())
                 .await?;
             if model.estimate_utilization(tokens) < 1.0 {
