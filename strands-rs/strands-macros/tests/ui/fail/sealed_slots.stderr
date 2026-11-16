@@ -12,7 +12,7 @@ note: the struct `Slots` is defined here
 ...
   | / hook_events! {
   | |     initialized: InitializedEvent<'static> => InitializedEvent<'a>, reverse: false;
-  | |     before_invocation: BeforeInvocationEvent<'static> => BeforeInvocationEvent<'a>, reverse: false;
+  | |     before_invocation: BeforeInvocationEvent<'static> => BeforeInvocationEvent<'a>, reverse: false, failure: take_failure;
   | |     after_invocation: AfterInvocationEvent<'static> => AfterInvocationEvent<'a>, reverse: true;
 ... |
   | |     after_tools: AfterToolsEvent<'static> => AfterToolsEvent<'a>, reverse: true;
