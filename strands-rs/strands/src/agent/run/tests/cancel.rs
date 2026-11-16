@@ -570,6 +570,43 @@ async fn aborts_the_in_flight_model_stream_and_returns_cancelled() {
     assert!(model_signal.is_cancelled());
 }
 
+/// Streams a message start and then nothing, whatever the cancel signal does.
+struct SilentModel(Arc<Notify>);
+
+impl Model for SilentModel {
+    fn stream(&self, _request: ModelRequest) -> BoxStream<'static, crate::Result<ModelStreamEvent>> {
+        let started = Arc::clone(&self.0);
+        Box::pin(async_stream::stream! {
+            yield Ok(ModelMessageStartEvent::new(Role::Assistant).into());
+            started.notify_one();
+            std::future::pending::<()>().await;
+        })
+    }
+
+    fn get_config(&self) -> BaseModelConfig {
+        BaseModelConfig::default()
+    }
+
+    fn update_config(&self, _config: BaseModelConfig) {}
+}
+
+// No TS case: a TS model that ignores the abort signal keeps the invocation waiting.
+#[tokio::test]
+async fn a_signalled_cancel_stops_an_invocation_whose_model_stream_is_silent() {
+    let started = Arc::new(Notify::new());
+    let mut agent = Agent::builder()
+        .model(SilentModel(Arc::clone(&started)))
+        .printer(false)
+        .build()
+        .unwrap();
+    let handle = agent.cancel_handle();
+    let invocation = tokio::spawn(async move { agent.invoke("Hi").await });
+    started.notified().await;
+    handle.cancel(cancel());
+    let result = invocation.await.unwrap().unwrap();
+    assert_eq!(result.stop_reason(), StopReason::Cancelled);
+}
+
 #[tokio::test]
 async fn allows_a_second_invocation_after_cancellation() {
     let mut agent = test_agent(mock(vec![vec![text("First")], vec![text("Second")]]));

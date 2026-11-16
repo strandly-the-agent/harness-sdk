@@ -1530,7 +1530,14 @@ impl ModelTerminal {
             .stream_aggregated(request, self.invocation_context.clone());
         Box::pin(async_stream::stream! {
             let mut result = None;
-            while let Some(item) = stream.next().await {
+            loop {
+                // A cancel doesn't wait for a silent model: dropping the stream drops the request.
+                let item = tokio::select! {
+                    biased;
+                    item = stream.next() => item,
+                    () = cancel.cancelled() => Some(Err(Error::other(CancelledError))),
+                };
+                let Some(item) = item else { break };
                 let cancelled = cancel.is_cancelled();
                 match item {
                     Ok(AggregatedEvent::Done(done)) => result = Some(*done),
