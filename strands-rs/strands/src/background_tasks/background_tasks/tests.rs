@@ -9,7 +9,7 @@ use crate::agent::Agent;
 use crate::agent::TakeSnapshotOptions;
 use crate::background_tasks::BackgroundTasksConfig;
 use crate::cancel::CancelOptions;
-use crate::hooks::{AfterToolCallEvent, BeforeToolCallEvent};
+use crate::hooks::{AfterModelCallEvent, AfterToolCallEvent, BeforeToolCallEvent};
 use crate::interrupt::InterruptParams;
 use crate::middleware::{ExecuteToolStage, InvokeModelStage, MiddlewareStage};
 use crate::testing::MockMessageModel;
@@ -476,6 +476,66 @@ async fn surfaces_and_resumes_interrupts_from_detached_tools() {
         .await
         .unwrap();
     assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    let found = deliveries(&agent);
+    assert_eq!(found.len(), 1);
+    let delivered = result_for(&agent, found[0].tool_use_id());
+    assert_eq!(delivered.content()[1], ToolResultContent::from("approved:yes"));
+}
+
+// Not in TS, which calls the model on the resume with a history ending in an assistant message
+// and so sends two assistant messages in a row on the call after it.
+#[tokio::test]
+async fn a_task_resumed_after_the_turn_ended_is_delivered_before_the_next_model_call() {
+    let (turn_ended, ended) = tokio::sync::watch::channel(false);
+    let asking = FunctionTool::new(
+        "work",
+        "Ask first.",
+        move |_input: JsonValue, ctx: ToolContext| {
+            let mut ended = ended.clone();
+            async move {
+                ended.wait_for(|ended| *ended).await.ok();
+                let answer = ctx.interrupt(InterruptParams::new("approve"))?;
+                Ok::<_, ToolError>(json!(format!("approved:{}", answer.as_str().unwrap_or_default())))
+            }
+        },
+    );
+    let model = model(vec![
+        vec![call("work", "work-use", json!({"_background_execution": true}))],
+        vec![text("Task admitted.")],
+        vec![text("Delivered.")],
+    ]);
+    let mut agent = agent(&model, vec![asking], agentic(&["work"]));
+    let model_calls = std::sync::atomic::AtomicUsize::new(0);
+    agent.add_hook(move |_: &mut AfterModelCallEvent<'_>| {
+        if model_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+            turn_ended.send_replace(true);
+        }
+    });
+    let interrupted = agent.invoke("Run work.").await.unwrap();
+    assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+    assert_eq!(model.requests().len(), 2);
+    let responses: Vec<_> = interrupted
+        .interrupts()
+        .iter()
+        .map(|interrupt| InterruptResponse::new(interrupt.id(), json!("yes")))
+        .collect();
+    let result = agent.invoke(responses).await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert_eq!(result.to_string(), "Delivered.");
+
+    let requests = model.requests();
+    assert_eq!(requests.len(), 3);
+    let roles: Vec<Role> = requests[2].messages.iter().map(Message::role).collect();
+    assert_eq!(
+        roles,
+        [
+            Role::User,
+            Role::Assistant,
+            Role::User,
+            Role::Assistant,
+            Role::User
+        ]
+    );
     let found = deliveries(&agent);
     assert_eq!(found.len(), 1);
     let delivered = result_for(&agent, found[0].tool_use_id());

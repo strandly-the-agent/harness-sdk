@@ -12,6 +12,7 @@ use super::in_process::engine::system_clock;
 use super::in_process::manager::{ExecuteTool, Manager, ManagerConfig, ToolRun};
 use super::types::{BackgroundTask, BackgroundTasksConfig, Failure, FailureType, TaskStatus, not_found};
 use crate::agent::continuation::ContinuationInput;
+use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
 use crate::hooks::{
     AfterInvocationEvent, BeforeModelCallEvent, HookCallbackOptions, HookOrder, HookRegistry,
@@ -450,11 +451,15 @@ impl BackgroundTaskScheduler {
 
     /// TS `_beforeModelCall`: resumes tasks the caller answered, stops on unanswered task
     /// interrupts, then delivers finished tasks.
-    fn before_model_call(&self, event: &mut BeforeModelCallEvent<'_>) {
+    ///
+    /// Not in TS: when the answers resumed a task after the model had ended its turn, the model
+    /// has nothing new to answer, so this waits for the task as `after_invocation` would have.
+    async fn before_model_call(&self, event: &mut BeforeModelCallEvent<'_>) {
         let Some(attached) = self.attached() else {
             return;
         };
         let responses = attached.interrupt_state.lock().resume_responses.clone();
+        let mut resumed = false;
         if let Some(responses) = responses {
             let input_tasks: Vec<BackgroundTask> = attached
                 .manager
@@ -478,13 +483,15 @@ impl BackgroundTaskScheduler {
                     .map(|content| content.interrupt_response().clone())
                     .filter(|response| ids.contains(&response.interrupt_id()))
                     .collect();
-                if !answers.is_empty()
-                    && let Err(error) = attached.manager.resume(&task.task_id, &answers)
-                {
-                    tracing::warn!(
+                if answers.is_empty() {
+                    continue;
+                }
+                match attached.manager.resume(&task.task_id, &answers) {
+                    Ok(_) => resumed = true,
+                    Err(error) => tracing::warn!(
                         "task_id=<{}>, error=<{error}> | failed to resume background task",
                         task.task_id
-                    );
+                    ),
                 }
             }
             let mut state = attached.interrupt_state.lock();
@@ -492,7 +499,17 @@ impl BackgroundTaskScheduler {
                 state.deactivate();
             }
         }
-        let tasks = self.tasks();
+        let turn_ended = event
+            .agent()
+            .messages()
+            .last()
+            .is_some_and(|last| last.role() == Role::Assistant);
+        let tasks = if resumed && turn_ended {
+            let cancel = event.agent().cancel_signal().clone();
+            self.settled_tasks(&attached, &cancel).await
+        } else {
+            self.tasks()
+        };
         let interrupts: Vec<_> = tasks
             .iter()
             .filter(|task| task.status == TaskStatus::InputRequired)
@@ -516,24 +533,7 @@ impl BackgroundTaskScheduler {
             return;
         }
         let cancel = event.agent().cancel_signal().clone();
-        let mut tasks;
-        loop {
-            let notified = attached.manager.settled_notify().notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-            tasks = self.tasks();
-            let waiting = self.inner.config.wait_for_completion
-                && !cancel.is_cancelled()
-                && !tasks.iter().any(|task| task.status == TaskStatus::InputRequired)
-                && tasks.iter().any(|task| !task.status.is_terminal());
-            if !waiting {
-                break;
-            }
-            tokio::select! {
-                () = &mut notified => {}
-                () = cancel.cancelled() => {}
-            }
-        }
+        let tasks = self.settled_tasks(&attached, &cancel).await;
         if tasks.iter().any(|task| task.status == TaskStatus::InputRequired) {
             if event.resume().is_none() {
                 event.set_resume(Vec::<Message>::new());
@@ -542,6 +542,28 @@ impl BackgroundTaskScheduler {
         }
         if let Some(input) = self.ready_input(&tasks) {
             event.add_continuation(input);
+        }
+    }
+
+    /// The tasks once none is running or one needs input; with `wait_for_completion` off, or
+    /// once `cancel` fires, the tasks as they are.
+    async fn settled_tasks(&self, attached: &Attached, cancel: &CancelSignal) -> Vec<BackgroundTask> {
+        loop {
+            let notified = attached.manager.settled_notify().notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let tasks = self.tasks();
+            let waiting = self.inner.config.wait_for_completion
+                && !cancel.is_cancelled()
+                && !tasks.iter().any(|task| task.status == TaskStatus::InputRequired)
+                && tasks.iter().any(|task| !task.status.is_terminal());
+            if !waiting {
+                return tasks;
+            }
+            tokio::select! {
+                () = &mut notified => {}
+                () = cancel.cancelled() => {}
+            }
         }
     }
 
@@ -638,7 +660,10 @@ impl BackgroundTaskScheduler {
         }));
         let hooks = agent.hooks();
         let scheduler = self.clone();
-        hooks.add_hook(move |event: &mut BeforeModelCallEvent<'_>| scheduler.before_model_call(event));
+        hooks.add_async_hook::<BeforeModelCallEvent<'static>>(move |event| {
+            let scheduler = scheduler.clone();
+            Box::pin(async move { scheduler.before_model_call(event).await })
+        });
         let scheduler = self.clone();
         hooks.add_async_hook::<AfterInvocationEvent<'static>>(move |event| {
             let scheduler = scheduler.clone();
