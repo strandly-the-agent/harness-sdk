@@ -443,6 +443,25 @@
     },
     "throws InterruptError with all collected interrupts after all callbacks run": "collects_interrupt_errors_from_multiple_callbacks_and_invokes_all_of_them"
   },
+  "strands-ts/src/interventions/__tests__/handler.test.ts": {
+    "override detection works via prototype comparison": {
+      "gap": "a Rust trait can't detect overridden default methods (P-411)"
+    }
+  },
+  "strands-ts/src/interventions/__tests__/registry.test.ts": {
+    "only registers hooks for overridden methods": {
+      "gap": "a Rust trait can't detect overridden default methods (P-411); the observable half is asserted in `skips_handlers_that_do_not_override_the_method`"
+    },
+    "transform apply() error is handled via onError policy": {
+      "gap": "a transform closure returns `()` and can't fail"
+    },
+    "transform apply() error with onError=throw propagates": {
+      "gap": "a transform closure returns `()` and can't fail"
+    },
+    "warns when action has no effect on event type": {
+      "gap": "an action its gate would ignore doesn't compile (P-410)"
+    }
+  },
   "strands-ts/src/mcp/__tests__/client.test.ts": {
     "passes args unchanged when context injection fails": {
       "gap": "can't happen: reading the `tracing` span context and the W3C propagator can't fail in Rust"
@@ -766,6 +785,32 @@
     "saves snapshot_latest on redaction when saveLatestOn is %s": "saves_snapshot_latest_on_redaction_when_save_latest_on_is_invocation",
     "*": {
       "gap": "out of scope: the `SessionManager — multi-agent` cases, multi-agent is out of v0.1"
+    }
+  },
+  "strands-ts/src/vended-interventions/hitl/__tests__/hitl.test.ts": {
+    "requires approval when the decision model answers true": {
+      "gap": "the decision-model classifier (`DecisionModel`) is out of v0.1"
+    },
+    "runs the tool when the decision model answers false": {
+      "gap": "the decision-model classifier (`DecisionModel`) is out of v0.1"
+    },
+    "requires approval with the uncertainty reason when the decision model is uncertain": {
+      "gap": "the decision-model classifier (`DecisionModel`) is out of v0.1"
+    },
+    "asks about the tool call with the configured question": {
+      "gap": "the decision-model classifier (`DecisionModel`) is out of v0.1"
+    },
+    "requires approval when the decision model throws": {
+      "gap": "the decision-model classifier (`DecisionModel`) is out of v0.1"
+    },
+    "allowedTools bypasses the decision model": {
+      "gap": "the decision-model classifier (`DecisionModel`) is out of v0.1"
+    },
+    "adds the decision usage to the request total": {
+      "gap": "the decision-model classifier (`DecisionModel`) is out of v0.1"
+    },
+    "works with LLMDecisionModel": {
+      "gap": "the decision-model classifier (`DecisionModel`) is out of v0.1"
     }
   },
   "strands-ts/src/vended-tools/bash/__tests__/bash.test.node.ts": {

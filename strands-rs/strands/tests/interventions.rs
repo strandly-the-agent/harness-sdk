@@ -83,6 +83,7 @@ impl InterventionHandler for Policy {
     }
 }
 
+// No TS case: public-API wiring of a custom handler, as a downstream crate writes it.
 #[tokio::test]
 async fn a_custom_handler_denies_a_tool_and_guides_the_model() {
     let calls = Arc::new(AtomicUsize::new(0));
@@ -111,6 +112,7 @@ async fn a_custom_handler_denies_a_tool_and_guides_the_model() {
     );
 }
 
+// No TS case: the TS duplicate-name case constructs the internal registry; this goes through the builder.
 #[tokio::test]
 async fn duplicate_handler_names_fail_the_build() {
     let error = Agent::builder()
@@ -122,6 +124,7 @@ async fn duplicate_handler_names_fail_the_build() {
     assert_eq!(error.to_string(), "Duplicate intervention handler name: 'policy'");
 }
 
+// No TS case: public-API smoke test of `HumanInTheLoop`; the TS cases are ported in `hitl/tests.rs`.
 #[tokio::test]
 async fn human_in_the_loop_interrupts_and_resumes_with_the_answer() {
     let calls = Arc::new(AtomicUsize::new(0));
@@ -152,6 +155,7 @@ async fn human_in_the_loop_interrupts_and_resumes_with_the_answer() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
+// No TS case: public-API smoke test of `Ask::callback` and trust; the TS cases are ported in `hitl/tests.rs`.
 #[tokio::test]
 async fn human_in_the_loop_asks_inline_and_remembers_trust() {
     let calls = Arc::new(AtomicUsize::new(0));
@@ -188,6 +192,7 @@ async fn human_in_the_loop_asks_inline_and_remembers_trust() {
     );
 }
 
+// No TS case: public-API smoke test of `CedarAuthorization`; the TS cases are ported in `cedar/tests.rs`.
 #[tokio::test]
 async fn cedar_authorization_permits_and_denies_by_policy() {
     let cedar = |policies: &str| {
