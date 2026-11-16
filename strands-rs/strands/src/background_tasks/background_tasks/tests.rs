@@ -514,6 +514,21 @@ mod rust_only {
     use crate::telemetry::AttributeValue;
     use crate::telemetry::tests::recording;
 
+    /// The spec is part of the request prefix a prompt cache shares across the SDKs, so it has
+    /// to equal the TS one byte for byte, key order included.
+    #[test]
+    fn the_manage_tool_spec_serializes_to_the_ts_bytes() {
+        let agent = agent(&model(Vec::new()), vec![work_tool("work")], agentic(&["work"]));
+        let scheduler = agent.background_tasks.as_ref().expect("a scheduler");
+        let [tool] = &scheduler.get_tools()[..] else {
+            panic!("one manage tool")
+        };
+        assert_eq!(
+            serde_json::to_string(&tool.tool_spec()).unwrap(),
+            include_str!("../../../../conformance/fixtures/tools/background_tasks_manage_spec.json")
+        );
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn a_background_tool_span_carries_the_agents_trace_attributes() {
         // With the global recorder installed, a callsite first hit on another test's thread

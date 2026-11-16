@@ -805,10 +805,11 @@ impl Tool for ManageTool {
                     "enum": ["list", "get", "cancel"],
                     "description": "Whether to list, inspect, or cancel background tasks."
                 },
+                // zod puts the description of an optional field first.
                 "taskId": {
+                    "description": "The background task ID returned when the task was dispatched. Required for get and cancel.",
                     "type": "string",
-                    "minLength": 1,
-                    "description": "The background task ID returned when the task was dispatched. Required for get and cancel."
+                    "minLength": 1
                 }
             },
             "required": ["mode"],
