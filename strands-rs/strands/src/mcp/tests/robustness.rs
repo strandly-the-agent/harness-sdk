@@ -377,3 +377,47 @@ async fn a_panicking_tools_changed_callback_leaves_later_refreshes_working() {
     client.refresh_tools().await;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn checks_structured_content_against_the_tool_output_schema() {
+    let mut weather = tool("weather", None);
+    weather.output_schema = Some(Arc::new(server::object(json!({
+        "type": "object",
+        "properties": {"forecast": {"type": "string"}},
+        "required": ["forecast"]
+    }))));
+    let mut listed = TestServer::default().tools.lock().expect("tools").clone();
+    listed.push(weather);
+    let client = TestServer::with_tools(listed).client();
+    let tool = tool_named(&client, "weather").await;
+
+    let good = client
+        .call_tool(&tool, json!({"message": "good"}))
+        .await
+        .expect("valid");
+    assert_eq!(good["structuredContent"], json!({"forecast": "sunny"}));
+
+    let missing = client.call_tool(&tool, json!({})).await.expect_err("missing");
+    assert_eq!(
+        missing.to_string(),
+        "Tool weather has an output schema but did not return structured content"
+    );
+    let Error::Mcp(missing) = missing else {
+        panic!("not an MCP error")
+    };
+    assert_eq!(missing.code(), Some(-32600));
+
+    let bad = client
+        .call_tool(&tool, json!({"message": "bad"}))
+        .await
+        .expect_err("bad");
+    assert!(
+        bad.to_string()
+            .starts_with("Structured content does not match the tool's output schema: data/forecast "),
+        "{bad}"
+    );
+    let Error::Mcp(bad) = bad else {
+        panic!("not an MCP error")
+    };
+    assert_eq!(bad.code(), Some(-32602));
+}

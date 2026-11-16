@@ -65,6 +65,10 @@ impl McpTool {
     pub fn server_name(&self) -> &str {
         &self.server_name
     }
+
+    pub(crate) fn output_schema(&self) -> Option<&JsonValue> {
+        self.spec.output_schema()
+    }
 }
 
 impl fmt::Debug for McpTool {

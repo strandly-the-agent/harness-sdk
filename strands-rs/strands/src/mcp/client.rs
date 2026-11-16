@@ -53,6 +53,10 @@ const REQUEST_STATE_ONLY_LEG_PACING: Duration = Duration::from_millis(250);
 const INPUT_REQUIRED_WITHOUT_INPUT: &str = "Invalid result for tools/call: input_required carries neither inputRequests nor requestState (every input_required result must include at least one of the two)";
 /// The MCP SDK `listChanged.tools.debounceMs`.
 const TOOLS_CHANGED_DEBOUNCE: Duration = Duration::from_millis(300);
+/// JSON-RPC `InvalidRequest`.
+const ERROR_INVALID_REQUEST: i32 = -32600;
+/// JSON-RPC `InvalidParams`.
+const ERROR_INVALID_PARAMS: i32 = -32602;
 const FAILED_TO_CONNECT: &str = "MCP server failed to connect. Call connect(true) to retry.";
 
 /// The connection state of an [`McpClient`] (TS `McpConnectionState`).
@@ -887,6 +891,7 @@ impl McpClient {
             return Err(Error::other(FAILED_TO_CONNECT));
         };
         let arguments = prepare_arguments(args)?;
+        let output_schema = compile_output_schema(tool)?;
         let arguments = if self.inner.options.disable_mcp_instrumentation {
             arguments
         } else {
@@ -906,7 +911,9 @@ impl McpClient {
         let mut round: u32 = 0;
         loop {
             let ServerResult::InputRequiredResult(input) = response else {
-                return call_result(response);
+                let result = call_result(response)?;
+                check_output(tool.server_name(), output_schema.as_ref(), &result)?;
+                return Ok(result);
             };
             if input.input_requests.as_ref().is_none_or(InputRequests::is_empty)
                 && input.request_state.is_none()
@@ -1455,6 +1462,59 @@ fn call_result(response: ServerResult) -> Result<JsonValue> {
         ServerResult::CustomResult(result) => Ok(result.0),
         _ => Err(McpError::sdk("Unexpected response type").into()),
     }
+}
+
+/// The tool's listed `outputSchema`, compiled (the MCP SDK `callTool` output validator).
+fn compile_output_schema(tool: &McpTool) -> Result<Option<jsonschema::Validator>, McpError> {
+    let Some(schema) = tool.output_schema() else {
+        return Ok(None);
+    };
+    jsonschema::validator_for(schema).map(Some).map_err(|error| {
+        let message: String = error.to_string().chars().take(200).collect();
+        McpError::protocol(
+            ERROR_INVALID_PARAMS,
+            format!(
+                "Tool '{}' has an invalid outputSchema: {message}",
+                tool.server_name()
+            ),
+            None,
+        )
+    })
+}
+
+/// The MCP SDK `callTool` check of a result against the tool's output schema; error results
+/// are not checked.
+fn check_output(
+    name: &str,
+    schema: Option<&jsonschema::Validator>,
+    result: &JsonValue,
+) -> Result<(), McpError> {
+    let Some(schema) = schema else { return Ok(()) };
+    if result.get("isError").and_then(JsonValue::as_bool) == Some(true) {
+        return Ok(());
+    }
+    let Some(structured) = result.get("structuredContent") else {
+        return Err(McpError::protocol(
+            ERROR_INVALID_REQUEST,
+            format!("Tool {name} has an output schema but did not return structured content"),
+            None,
+        ));
+    };
+    let errors: Vec<String> = schema
+        .iter_errors(structured)
+        .map(|error| format!("data{} {error}", error.instance_path()))
+        .collect();
+    if errors.is_empty() {
+        return Ok(());
+    }
+    Err(McpError::protocol(
+        ERROR_INVALID_PARAMS,
+        format!(
+            "Structured content does not match the tool's output schema: {}",
+            errors.join(", ")
+        ),
+        None,
+    ))
 }
 
 /// `null` becomes `{}`; anything but an object is rejected (TS `_prepareToolCall`).

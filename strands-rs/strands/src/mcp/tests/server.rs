@@ -254,6 +254,15 @@ async fn run_tool(
             let _sent = context.peer.notify_logging_message(params).await;
             Ok(text("logged"))
         }
+        "weather" => {
+            let mut result = text("sunny");
+            result.structured_content = match argument(request, "message").as_str() {
+                Some("bad") => Some(json!({"forecast": 42})),
+                Some("good") => Some(json!({"forecast": "sunny"})),
+                _ => None,
+            };
+            Ok(result)
+        }
         "change_tools" => {
             let _sent = context.peer.notify_tool_list_changed().await;
             Ok(text("changed"))
