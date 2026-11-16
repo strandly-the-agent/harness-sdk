@@ -26,6 +26,7 @@ const TOOL_DESCRIPTION: &str = "Create and maintain a structured task list for t
 /// The status of a [`TodoItem`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TodoStatus {
     /// Not started.
     Pending,
@@ -46,6 +47,10 @@ impl TodoStatus {
 }
 
 /// One entry of the task list, stored in app state in the TS shape (`activeForm` in camelCase).
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "the TS item shape: struct-literal construction"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TodoItem {
@@ -104,6 +109,10 @@ fn input_schema() -> JsonValue {
 }
 
 /// Configuration of the [`Todos`] plugin (TS `TodosConfig`).
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
 #[builder(on(String, into))]
 pub struct TodosConfig {
