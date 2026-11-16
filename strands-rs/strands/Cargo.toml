@@ -19,7 +19,7 @@ bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-sigv4", "dep
 anthropic = ["dep:eventsource-stream"]
 openai = ["dep:eventsource-stream"]
 mcp = ["dep:rmcp", "dep:eventsource-stream"]
-otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry", "dep:tracing-subscriber", "dep:opentelemetry-otlp"]
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry", "dep:tracing-subscriber", "dep:opentelemetry-otlp", "dep:opentelemetry-stdout"]
 
 [dependencies]
 strands-macros.workspace = true
@@ -64,6 +64,7 @@ opentelemetry_sdk = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
+opentelemetry-stdout = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

@@ -2758,7 +2758,6 @@ dependencies = [
  "prost",
  "reqwest",
  "thiserror 2.0.21",
- "tokio",
 ]
 
 [[package]]
@@ -2770,6 +2769,17 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "prost",
+]
+
+[[package]]
+name = "opentelemetry-stdout"
+version = "0.33.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2afbc6661934787ce79bef1e35d0ffe9d62e945f07f664dc1283ce83292b908a"
+dependencies = [
+ "chrono",
+ "opentelemetry",
+ "opentelemetry_sdk",
 ]
 
 [[package]]
@@ -3486,6 +3496,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2",
@@ -4256,6 +4267,7 @@ dependencies = [
  "mcp-tools-sdk",
  "opentelemetry",
  "opentelemetry-otlp",
+ "opentelemetry-stdout",
  "opentelemetry_sdk",
  "process-wrap",
  "regex",

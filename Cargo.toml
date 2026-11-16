@@ -64,7 +64,8 @@ opentelemetry = "0.33.1"
 opentelemetry_sdk = "0.33.1"
 tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
-opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-client", "trace", "metrics"] }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace", "metrics"] }
+opentelemetry-stdout = { version = "0.33.1", default-features = false, features = ["trace", "metrics"] }
 
 # Policy, scripting and processes
 # Pinned exactly: `cedar-policy-mcp-schema-generator` 0.7.0 depends on `cedar-policy-core =4.14.0`,
