@@ -1,0 +1,9 @@
+Track `h12tools`: harness file tools, shell, web_fetch and web_search. Read `.rust-port/briefs/run4-h12-common.md` first and follow it.
+
+Worktree `/mnt/workspace/wt-h12tools` (branch `wip/h12tools`), `CARGO_TARGET_DIR=/mnt/workspace/.cache/ct-h12tools`, gate output `/mnt/workspace/gates-h12tools`, staging dir `.rust-port/staging/h12tools/`, decisions from P-850 (up to P-869).
+
+You own `harness-rs/strands-harness/src/tools/{file_tools.rs, shell.rs, web_fetch.rs, web_search.rs}` (and `tools/mod.rs` entries for them). Tracker item: "Harness file tools, `shell`, `web_fetch`, `web_search` (native and Exa)".
+
+TS spec: `harness-ts/src/tools/file-tools.ts` (`read`, `makeRead`, `write`, `edit`: the `cat -n` numbering, limits, media placeholders, error strings, all through the sandbox), the harness `shell` (find where harness-ts defines it: `grep -rn shell /tmp/ts-spec/harness-ts/src/builtin-tools.ts /tmp/ts-spec/harness-ts/src/tools/index.ts`; if it only configures the SDK's vended `shell` tool, port that configuration surface and its spec `test/tools/shell.test.ts`), `tools/web-fetch.ts` (`makeWebFetch`, `MakeWebFetchOptions`: curl in the sandbox or direct, allowlist, caps, the 15-minute URL cache, user agent `strands-harness/1.0`, the summarizer model call; stream-cap bodies, never read a whole body and then truncate), `tools/web-search.ts` (`exaWebSearch`, `makeExaWebSearch`: Exa over the SDK's `McpClient` with the TS privacy warning; the native per-provider web search is configured on the model in `models.ts`/`builtin-tools.ts`, which other tracks own: port only what `web-search.ts` contains). Tests: `harness-ts/test/tools/{file-tools,shell,web-fetch,web-search}.test.ts`. Donor: `tools/{file_tools,web_fetch,web_search}.rs`.
+
+`shell_of` (`sandbox.rs`) and `WebFetchTransport` (`types.rs`) exist in the skeleton. Order: file tools (commit), shell, web_fetch, web_search.

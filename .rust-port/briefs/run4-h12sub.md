@@ -1,0 +1,9 @@
+Track `h12sub`: the harness `subagent` tool. Read `.rust-port/briefs/run4-h12-common.md` first and follow it.
+
+Worktree `/mnt/workspace/wt-h12sub` (branch `wip/h12sub`), `CARGO_TARGET_DIR=/mnt/workspace/.cache/ct-h12sub`, gate output `/mnt/workspace/gates-h12sub`, staging dir `.rust-port/staging/h12sub/`, decisions from P-890 (up to P-909).
+
+You own `harness-rs/strands-harness/src/tools/subagent.rs` (split into a directory module if it passes about 600 lines). Tracker item: "`subagent` with presets and axes".
+
+TS spec: `harness-ts/src/tools/subagent.ts` (`makeSubagent`, `MakeSubagentOptions`, `AgentBuilder`, `AgentSpec`, `Fixed`, `Inherit`, `Open`, `Choice`, `Option` (Rust `ChoiceOption`, #71), `Preset`, `PresetOptions`, `GENERALIST`, `GENERALIST_INSTRUCTIONS`, `CONTEXT_MODES`, `ContextMode`, `ContextAxis`, `InstructionsMode`, `ModelMode`, `ToolsMode`, the MCP-servers axis; the context modes `none`, `all` and `no_tools` with verbatim preambles; the depth guard with `DEFAULT_SUBAGENT_MAX_DEPTH` from `defaults.rs`; child interrupts resumed through the public `AgentResult::interrupts` and interrupt-response invoke args; child progress forwarded as full serialized child events; presets in TS order). Test: `harness-ts/test/tools/subagent.test.ts` (53 cases). Donor: `tools/subagent.rs` (an earlier port got PROMPT.md section 11 items 43-48 wrong; follow those items and the pinned TS, not the donor, where they differ).
+
+The tool builds children through an `AgentBuilder` callback the caller supplies (`builtin-tools.ts` supplies the harness one; another track owns that file), so your module needs no `create_harness`: test with builders that return `strands::testing` mock-model agents. Define the Rust `AgentBuilder` as a boxed async closure type (`Arc<dyn Fn(AgentSpec) -> BoxFuture<'static, Result<Agent, HarnessError>> + Send + Sync>` or a small trait; pick one and log it).
