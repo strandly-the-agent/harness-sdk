@@ -290,16 +290,23 @@ impl BashSession {
         let effective = timeout.unwrap_or(self.timeout);
         let sentinel = self.sentinel.clone();
         let deadline = (self.sleeper)(Duration::try_from_secs_f64(effective).unwrap_or(Duration::MAX));
-        let process = self.start()?;
+        self.start()?;
+        // The call owns the process: an error, or a dropped call, kills the session with it.
+        let Some(mut process) = self.process.take() else {
+            return Err(BashSessionError::new("Bash session not properly initialized").into());
+        };
         // The stderr sentinel orders the command's stderr before the result is taken.
         let script = format!("{command}\necho \"{sentinel}\"\necho \"{sentinel}\" >&2\n");
         if let Err(error) = process.stdin.write_all(script.as_bytes()).await {
-            self.stop();
             return Err(BashSessionError::new(format!("Failed to write command: {error}")).into());
         }
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         let (mut out_buf, mut err_buf) = ([0u8; 8192], [0u8; 8192]);
         let mut deadline = std::pin::pin!(deadline);
+        let timed_out = || {
+            let message = format!("Command timed out after {} seconds", js_number(effective));
+            Err(BashTimeoutError::new(message).into())
+        };
         loop {
             let read = tokio::select! {
                 read = process.stdout.read(&mut out_buf) => Read::Stdout(read),
@@ -309,33 +316,28 @@ impl BashSession {
             match read {
                 Read::Stdout(Ok(n)) if n > 0 => {
                     stdout.extend_from_slice(out_buf.get(..n).unwrap_or_default());
-                    if let Some(output) = finished(&stdout, &stderr, &sentinel) {
-                        return Ok(output);
-                    }
                 }
                 Read::Stderr(Ok(n)) if n > 0 => {
                     stderr.extend_from_slice(err_buf.get(..n).unwrap_or_default());
-                    if let Some(output) = finished(&stdout, &stderr, &sentinel) {
-                        return Ok(output);
-                    }
                 }
-                Read::TimedOut => {
-                    self.stop();
-                    let message = format!("Command timed out after {} seconds", js_number(effective));
-                    return Err(BashTimeoutError::new(message).into());
-                }
+                Read::TimedOut => return timed_out(),
                 Read::Stdout(_) | Read::Stderr(_) => {
-                    let code = process
-                        .child
-                        .wait()
-                        .await
+                    // A closed pipe is session death only once bash exits; the timeout stays armed.
+                    let status = tokio::select! {
+                        status = process.child.wait() => status,
+                        () = &mut deadline => return timed_out(),
+                    };
+                    let code = status
                         .ok()
                         .and_then(|status| status.code())
                         .map_or_else(|| "unknown".to_owned(), |code| code.to_string());
-                    self.stop();
                     let message = format!("Bash process exited unexpectedly with code {code}");
                     return Err(BashSessionError::new(message).into());
                 }
+            }
+            if let Some(output) = finished(&stdout, &stderr, &sentinel) {
+                self.process = Some(process);
+                return Ok(output);
             }
         }
     }

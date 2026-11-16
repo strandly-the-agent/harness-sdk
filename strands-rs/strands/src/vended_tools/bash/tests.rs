@@ -459,3 +459,24 @@ async fn creates_session_with_default_timeout_when_not_specified() {
             .contains("default")
     );
 }
+
+#[tokio::test]
+async fn timeout_still_applies_after_the_command_closes_stdout() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tool, ctx) = (tool(&dir), context(None));
+    let input = json!({ "mode": "execute", "command": "exec >&-", "timeout": 0.5 });
+    let call = tokio::time::timeout(Duration::from_secs(10), tool.invoke(input, ctx.clone()));
+    let error = call.await.expect("bash call ignored its timeout").unwrap_err();
+    assert_eq!(error.to_string(), "Command timed out after 0.5 seconds");
+    assert_eq!(execute(&tool, &ctx, "echo \"next\"").await.output, "next");
+}
+
+#[tokio::test]
+async fn dropped_call_does_not_leak_its_output_into_the_next_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tool, ctx) = (tool(&dir), context(None));
+    let input = json!({ "mode": "execute", "command": "sleep 1; echo first" });
+    let dropped = tokio::time::timeout(Duration::from_millis(300), tool.invoke(input, ctx.clone())).await;
+    assert!(dropped.is_err(), "the first call should still be running");
+    assert_eq!(execute(&tool, &ctx, "echo second").await.output, "second");
+}
