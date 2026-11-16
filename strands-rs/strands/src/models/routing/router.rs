@@ -507,7 +507,7 @@ impl ModelRouter {
                     state.candidate = candidate.clone();
                     state.model = model;
                     state.switched_to.push(candidate);
-                    state.switches += 1;
+                    state.switches = state.switches.saturating_add(1);
                     return true;
                 }
                 Err(resolution_error) => {
