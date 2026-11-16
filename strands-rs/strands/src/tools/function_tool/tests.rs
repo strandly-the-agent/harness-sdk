@@ -269,6 +269,29 @@ mod error_handling {
     }
 }
 
+mod optional_input_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn executes_successfully_with_empty_input() {
+        assert_eq!(
+            result_json(&returning(json!({"status": "operational"})), json!({})).await,
+            success(json!([{"json": {"status": "operational"}}]))
+        );
+    }
+
+    #[tokio::test]
+    async fn callback_receives_empty_object_when_no_schema_provided() {
+        let tool = FunctionTool::new("test", "Test tool.", |input, _| async move {
+            Ok::<_, ToolError>(json!({ "received": input }))
+        });
+        assert_eq!(
+            result_json(&tool, json!({})).await,
+            success(json!([{"json": {"received": {}}}]))
+        );
+    }
+}
+
 mod typed {
     use super::*;
 

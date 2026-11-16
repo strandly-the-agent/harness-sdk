@@ -91,7 +91,7 @@ fn json_of(result: &ToolResultBlock) -> &JsonValue {
 }
 
 #[test]
-fn builds_the_tool_spec_from_the_schema() {
+fn builds_tool_spec_from_schema() {
     let tool = tool::<Described>();
     assert_eq!(tool.name(), STRUCTURED_OUTPUT_TOOL_NAME);
     assert_eq!(tool.tool_spec().name(), STRUCTURED_OUTPUT_TOOL_NAME);
@@ -103,14 +103,14 @@ fn builds_the_tool_spec_from_the_schema() {
 }
 
 #[test]
-fn uses_the_base_description_when_the_schema_has_none() {
+fn uses_base_description_when_schema_has_no_description() {
     let tool = tool::<Person>();
     assert!(tool.description().contains("MUST only be invoked"));
     assert!(!tool.description().contains("<description>"));
 }
 
 #[tokio::test]
-async fn returns_success_with_the_validated_json_for_valid_input() {
+async fn returns_success_with_validated_json_for_valid_input() {
     let result = run(&tool::<Person>(), json!({"name": "John", "age": 30})).await;
     assert_eq!(
         result,
@@ -123,7 +123,7 @@ async fn returns_success_with_the_validated_json_for_valid_input() {
 }
 
 #[tokio::test]
-async fn returns_an_error_naming_the_field_for_invalid_input() {
+async fn returns_error_with_zod_error_for_invalid_input() {
     let result = run(&tool::<Person>(), json!({"name": "John", "age": "invalid"})).await;
     assert_eq!(result.status(), &ToolResultStatus::Error);
     assert!(result.error().unwrap().is::<StructuredOutputError>());
@@ -171,7 +171,7 @@ fn assistant(content: Vec<ContentBlock>) -> Message {
 }
 
 #[test]
-fn result_from_text_returns_the_json_object_from_the_text_blocks_ignoring_reasoning() {
+fn returns_the_validated_json_object_from_the_text_blocks_ignoring_reasoning() {
     let message = assistant(vec![
         ReasoningBlock::new().with_text("thinking").into(),
         TextBlock::new("{\"name\": \"John\", ").into(),
@@ -184,7 +184,7 @@ fn result_from_text_returns_the_json_object_from_the_text_blocks_ignoring_reason
 }
 
 #[test]
-fn result_from_text_rejects_text_that_is_not_one_json_object() {
+fn throws_the_no_structured_output_error_for() {
     for text in [
         "John is 30",
         "[{\"name\": \"John\", \"age\": 30}]",
@@ -200,7 +200,7 @@ fn result_from_text_rejects_text_that_is_not_one_json_object() {
 }
 
 #[test]
-fn result_from_text_reports_a_validation_error_for_a_mismatched_object() {
+fn throws_a_validation_error_for_an_object_that_does_not_match_the_schema() {
     let message = assistant(vec![
         TextBlock::new("{\"name\": \"John\", \"age\": \"thirty\"}").into(),
     ]);

@@ -210,6 +210,72 @@
       "gap": "doesn't apply: `#[tool]` without a doc comment is a compile error and `FunctionTool::new` takes the description"
     }
   },
+  "strands-ts/src/tools/__tests__/tool.test.ts": {
+    "accepts %s": "tool_names_follow_the_ts_pattern",
+    "rejects %s (%s)": "tool_names_follow_the_ts_pattern",
+    "has a non-empty toolName": "has_a_valid_tool_spec",
+    "has a non-empty description": "has_a_valid_tool_spec",
+    "has matching toolName and toolSpec.name": "has_a_valid_tool_spec",
+    "has matching description and toolSpec.description": "has_a_valid_tool_spec",
+    "wraps return value in ToolResult": "handles_number_return_values_as_text_content",
+    "deep copies objects to prevent mutation": {
+      "gap": "no Rust form: a tool result holds owned, acyclic JSON values"
+    },
+    "deep copies arrays to prevent mutation": {
+      "gap": "no Rust form: a tool result holds owned, acyclic JSON values"
+    },
+    "wraps resolved value in ToolResult": "handles_number_return_values_as_text_content",
+    "yields ToolStreamEvents then final ToolResult": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "can yield objects as ToolStreamEvents": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "catches synchronous errors": {
+      "gap": "no Rust form: a Rust callback fails only by returning an `Err` from its future (no non-`Error` throws, no stack traces)"
+    },
+    "captures Error object in ToolResult when callback throws Error": "catches_promise_rejections",
+    "wraps non-Error thrown values into Error object": {
+      "gap": "no Rust form: a Rust callback fails only by returning an `Err` from its future (no non-`Error` throws, no stack traces)"
+    },
+    "preserves error stack traces": {
+      "gap": "no Rust form: a Rust callback fails only by returning an `Err` from its future (no non-`Error` throws, no stack traces)"
+    },
+    "captures errors thrown in async generator callbacks": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "catches errors in async generators": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "handles non-Error thrown values": {
+      "gap": "no Rust form: a Rust callback fails only by returning an `Err` from its future (no non-`Error` throws, no stack traces)"
+    },
+    "returns error for circular references": {
+      "gap": "no Rust form: a tool result holds owned, acyclic JSON values"
+    },
+    "silently drops non-serializable values (functions)": {
+      "gap": "no Rust form: a tool result holds owned, acyclic JSON values"
+    },
+    "maintains stable interface signature": {
+      "gap": "no Rust form: `instanceof` and interface-shape checks are compile-time trait bounds"
+    },
+    "stream method accepts correct parameter types": {
+      "gap": "no Rust form: `instanceof` and interface-shape checks are compile-time trait bounds"
+    },
+    "creates instance with data": "tool_stream_event_serializes_like_ts",
+    "creates instance without data": "tool_stream_event_serializes_like_ts",
+    "creates instance with structured data": "tool_stream_event_serializes_like_ts",
+    "passes instanceof Tool check": {
+      "gap": "no Rust form: `instanceof` and interface-shape checks are compile-time trait bounds"
+    },
+    "can be used as type guard": {
+      "gap": "no Rust form: `instanceof` and interface-shape checks are compile-time trait bounds"
+    },
+    "works with async callback": "executes_successfully_with_empty_input",
+    "works with async generator callback": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    }
+  },
   "strands-ts/src/tools/__tests__/zod-tool.test.ts": {
     "tool > optional inputSchema > when inputSchema is z.void() > creates tool with default empty object schema": {
       "gap": "the `z.void()` group has no Rust form (a tool without parameters covers the `undefined` group)"
