@@ -31,6 +31,10 @@
 // are exact. The forms that skip step 1, 2 or 3 (`maps_name_on_the_retry`, `doesn_t`,
 // `structuredoutput`) are accepted too, because part of the suite was ported with them; new tests use
 // the full rule.
+// A Rust name may also carry the titles of the innermost enclosing `describe` blocks in front, by the
+// same rule ("AfterToolsEvent" > "includes message" is `after_tools_event_includes_message`), either
+// in the function name or as its enclosing `mod` names (`mod after_tools_event { fn includes_message`);
+// that is how titles that repeat in a spec are told apart. The most specific name wins.
 //
 // Rust tests: every `fn <name>(` that follows a test attribute (`#[test]`, `#[tokio::test]`,
 // `#[rstest]`, `#[test_case(..)]`, any `#[<path>::test]`) in the files the row's second column names.
@@ -148,18 +152,27 @@ function testNames(file) {
   if (!testNamesCache.has(file)) {
     const names = []
     let attribute = false
+    // The enclosing inline modules, found by indentation (the tree is rustfmt-formatted).
+    let mods = []
     readFileSync(file, 'utf8')
       .split('\n')
       .forEach((line, at) => {
+        const indent = line.search(/\S/)
+        if (indent < 0) return
+        mods = mods.filter((mod) => mod.indent < indent)
+        const mod = /^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*\{/.exec(line)?.[1]
+        if (mod !== undefined) mods.push({ name: mod, indent })
         if (TEST_ATTRIBUTE.test(line)) attribute = true
         const name = FUNCTION.exec(line)?.[1]
         if (name !== undefined) {
-          if (attribute) names.push({ name, file, line: at + 1 })
+          const path = mods.map((mod) => mod.name).filter((mod) => mod !== 'tests')
+          const qualified = path.map((_, from) => [...path.slice(from), name].join('_'))
+          if (attribute) names.push({ name, qualified: [...qualified, name], file, line: at + 1 })
           attribute = false
         }
       })
     // A trybuild case is a whole file.
-    if (/[\\/]tests[\\/]ui[\\/]/.test(file)) names.push({ name: basename(file, '.rs'), file, line: 1 })
+    if (/[\\/]tests[\\/]ui[\\/]/.test(file)) names.push({ name: basename(file, '.rs'), qualified: [basename(file, '.rs')], file, line: 1 })
     testNamesCache.set(file, names)
   }
   return testNamesCache.get(file)
@@ -228,24 +241,45 @@ function check(row) {
   }
   const files = filesOfRow(row.tests)
   const tests = (files.length > 0 ? files : allFiles).flatMap(testNames)
+  // Unmatched tests by name, and by name behind their enclosing `mod` names.
   const available = new Map()
-  for (const { name } of tests) available.set(name, (available.get(name) ?? 0) + 1)
+  for (const test of tests) {
+    for (const name of test.qualified) available.set(name, [...(available.get(name) ?? []), test])
+  }
+  const taken = new Set()
+  const take = (name) => {
+    if (name === undefined) return undefined
+    const test = (available.get(name) ?? []).find((test) => !taken.has(test))
+    if (test !== undefined) taken.add(test)
+    return test
+  }
+  const free = (name) => (available.get(name) ?? []).some((test) => !taken.has(test))
   const declared = new Set()
   const used = new Set()
   const repeats = new Map()
   for (const { title } of found) repeats.set(title, (repeats.get(title) ?? 0) + 1)
-  for (const { title, describes, line } of found) {
-    const names = snakeCase(title)
-    const name = names.find((candidate) => available.get(candidate) > 0)
-    const key = [[...describes, title].join(' > '), title, '*'].find((candidate) => candidate in entries)
-    const entry = key === undefined || (key === '*' && name !== undefined) ? undefined : entries[key]
+  const explicit = (item) => [[...item.describes, item.title].join(' > '), item.title].find((key) => key in entries)
+  // The most specific names are matched first, over the whole spec: the title behind all its `describe`
+  // titles, down to the bare title.
+  const depth = Math.max(0, ...found.map((item) => item.describes.length))
+  for (let skip = 0; skip <= depth; skip++) {
+    for (const item of found) {
+      const from = item.describes.length - (depth - skip)
+      if (item.test !== undefined || explicit(item) !== undefined || from < 0) continue
+      const names = snakeCase([...item.describes.slice(from), item.title].join(' '))
+      item.test = take(names.find(free))
+    }
+  }
+  for (const item of found) {
+    const { title, describes, line } = item
+    const key = explicit(item) ?? (item.test === undefined && '*' in entries ? '*' : undefined)
+    const entry = key === undefined ? undefined : entries[key]
     if (key !== undefined) used.add(key)
     if (entry === undefined) {
-      if (name !== undefined) {
-        available.set(name, available.get(name) - 1)
+      if (item.test !== undefined) {
         result.matched++
       } else {
-        result.missing.push({ key: repeats.get(title) > 1 ? [...describes, title].join(' > ') : title, name: names[0], line })
+        result.missing.push({ key: repeats.get(title) > 1 ? [...describes, title].join(' > ') : title, name: snakeCase(title)[0], line })
       }
     } else if (typeof entry === 'string') {
       declared.add(entry.split('::').pop())
@@ -258,13 +292,7 @@ function check(row) {
     }
   }
   if (files.length > 0) {
-    for (const test of tests) {
-      if (declared.has(test.name)) continue
-      if (available.get(test.name) > 0) {
-        available.set(test.name, available.get(test.name) - 1)
-        result.rustOnly.push(test)
-      }
-    }
+    result.rustOnly = tests.filter((test) => !taken.has(test) && !declared.has(test.name))
   }
   for (const key of Object.keys(entries)) {
     if (!used.has(key)) result.problems.push(`map entry matches no case: "${key}"`)
