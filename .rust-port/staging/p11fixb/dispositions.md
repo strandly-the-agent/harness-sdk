@@ -10,7 +10,7 @@
 | api-6 | Fixed as proposed: the crate docs map `LifecycleObserver` to `InterventionHandler::observe_agent`; P-766 corrects P-684 and records why `SnapshotManifest` and `SnapshotLocation` stay crate-private. `phase11-root-exports.md` is a review file and was not edited; the corrected placement is in P-766 | 1fbf96aee |
 | api-1 | Fixed with the first option: P-607 applied to `vended_interventions` (flat re-exports dropped); builders are never in a flat set (P-761) | bb5ff6342 |
 | api-2 | Fixed as proposed (P-762); the three crate-internal plugins got `pub(crate) const NAME` so one shape holds | 77924cc7b, 06b1f3c78 |
-| api-9 | Fixed as proposed (P-764); `HookCallbackOptions`, `ConstantBackoff` and `IntervalTrigger`, which the finding did not list, follow the same rule | ae7f61f7a, 5d3793d97, bfcdaee6e, 943bd35a3 |
+| api-9 | Fixed as proposed (P-764); `HookCallbackOptions`, `ConstantBackoff` and `IntervalTrigger`, which the finding did not list, follow the same rule | ae7f61f7a, 5d3793d97, bfcdaee6e, 943bd35a3, 90740b63e, b66181bf7 |
 | api-12 | Fixed with the first option: `state_mod(vis = "pub")` on the 62 remaining public `bon` builders, and the builder and its state module re-exported in every module-level `pub use` that names the config (P-767). The crate root and the flat `vended_tools`/`vended_plugins` sets are unchanged (section 8.2, P-761) | da923ebf3, 9673290fb |
 | api-10 | Fixed as proposed with one generic conversion target, `agent::SharedSource<T>` (P-768) | a5161fb28 |
 | api-8 | Fixed as proposed: `BedrockModel::builder()` (`build()` returns the model) and `OpenAIModel::builder()` (`build()` returns `Result`), and the three provider builders have public state modules (P-769) | 2e07b7837 |
