@@ -332,6 +332,12 @@ impl Agent {
             background.assert_can_load_snapshot()?;
         }
         self.local.load_snapshot(snapshot)?;
+        // A dropped stream's cancel message left history with the messages just replaced.
+        if let Some(run) = &mut self.abandoned
+            && snapshot.data().contains_key("messages")
+        {
+            run.clear_repair();
+        }
         if let Some(background) = background
             && snapshot.data().contains_key("state")
         {

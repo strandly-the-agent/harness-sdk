@@ -342,6 +342,72 @@ async fn a_call_dropped_inside_its_own_after_invocation_hooks_retries_them() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_direct_tool_call_runs_the_deferred_hooks_first() {
+    let slow = FunctionTool::new("slow", "never finishes", |_input: JsonValue, _ctx| async move {
+        std::future::pending::<()>().await;
+        Ok::<_, ToolError>("unreachable")
+    });
+    let echo = FunctionTool::new("echo", "echoes", |_input: JsonValue, _ctx| async move {
+        Ok::<_, ToolError>("ok")
+    });
+    let mut agent = Agent::builder()
+        .model(mock(vec![vec![tool_use("slow", "t1", json!({}))]]))
+        .tools([slow, echo])
+        .printer(false)
+        .build()
+        .unwrap();
+    let log = record_hooks(&agent);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), agent.invoke("one"))
+            .await
+            .is_err()
+    );
+
+    agent.tool("echo").invoke(json!({})).await.unwrap();
+
+    assert_eq!(agent.messages().len(), 5);
+    assert_eq!(
+        *log.lock().unwrap(),
+        [
+            "before",
+            "added:one",
+            "added:Cancelled by user",
+            "after",
+            "added:",
+            "added:",
+            "added:agent.tool.echo was called."
+        ]
+    );
+    assert!(agent.abandoned.is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn loading_a_snapshot_with_messages_drops_the_deferred_cancel_message_hook() {
+    let mut agent = Agent::builder()
+        .model(StalledModel)
+        .printer(false)
+        .build()
+        .unwrap();
+    let log = record_hooks(&agent);
+    let snapshot = agent
+        .take_snapshot(&crate::agent::TakeSnapshotOptions::session())
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), agent.invoke("one"))
+            .await
+            .is_err()
+    );
+    assert_eq!(cancel_text(agent.messages()), ["Cancelled by user"]);
+
+    agent.load_snapshot(&snapshot).unwrap();
+    assert!(agent.messages().is_empty());
+    agent.shutdown().await.unwrap();
+
+    // `AfterInvocationEvent` is still owed; the cancel message is no longer in history.
+    assert_eq!(*log.lock().unwrap(), ["before", "added:one", "after"]);
+}
+
+#[tokio::test(start_paused = true)]
 async fn the_deferred_hooks_see_a_cancelled_signal_so_background_tasks_do_not_block_the_next_call() {
     let gate = Arc::new(Notify::new());
     let held = Arc::clone(&gate);

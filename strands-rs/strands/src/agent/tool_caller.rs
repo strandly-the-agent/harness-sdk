@@ -110,6 +110,11 @@ impl<'a> ToolHandle<'a> {
         let Self { agent, name } = self;
         ToolCallStream {
             inner: Box::pin(async_stream::stream! {
+                // The hooks a dropped stream deferred come first, so they see history in order.
+                if let Err(error) = agent.finish_abandoned_run().await {
+                    yield Err(error);
+                    return;
+                }
                 let tool = match agent.local.tool_registry().resolve(&name) {
                     Ok(tool) => Arc::clone(tool),
                     Err(error) => {

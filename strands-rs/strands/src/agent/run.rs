@@ -87,6 +87,13 @@ pub(crate) struct AbandonedRun {
     repair: Option<Message>,
 }
 
+impl AbandonedRun {
+    /// Forgets the cancel message, for a caller that replaced the history it was appended to.
+    pub(crate) fn clear_repair(&mut self) {
+        self.repair = None;
+    }
+}
+
 /// Lives for one invocation; dropped unfinished, it repairs the agent synchronously.
 struct RunGuard<'a> {
     agent: &'a mut Agent,
