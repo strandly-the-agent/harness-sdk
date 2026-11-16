@@ -84,6 +84,38 @@ struct Inner {
 /// memory context injection, and background extraction (TS `MemoryManager`).
 ///
 /// Cloning is cheap and yields a handle to the same manager.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use strands::Agent;
+/// use strands::memory::{MemoryManager, MemoryManagerConfig, MemoryStore};
+/// use strands::storage::InMemoryStorage;
+/// use strands::testing::MockMessageModel;
+/// use strands::vended_memory_stores::{FileMemoryStore, FileMemoryStoreConfig};
+///
+/// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+/// let notes = FileMemoryStore::new(
+///     FileMemoryStoreConfig::builder()
+///         .name("notes")
+///         .storage(Arc::new(InMemoryStorage::new()))
+///         .build(),
+/// )?;
+/// let memory = MemoryManager::new(
+///     MemoryManagerConfig::builder()
+///         .stores(vec![Arc::new(notes) as Arc<dyn MemoryStore>])
+///         .add_tool_config(true)
+///         .build(),
+/// )?;
+/// let mut agent = Agent::builder()
+///     .model(MockMessageModel::new())
+///     .memory_manager(memory)
+///     .build()?;
+/// // The model can now call `search_memory` and `add_memory`.
+/// agent.shutdown().await?;
+/// # Ok::<(), strands::Error>(())
+/// # }).unwrap();
+/// ```
 #[derive(Clone)]
 pub struct MemoryManager {
     inner: Arc<Inner>,

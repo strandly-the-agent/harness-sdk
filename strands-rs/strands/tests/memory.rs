@@ -108,7 +108,11 @@ async fn the_model_adds_and_searches_memory_through_the_agent_tools() {
         Some("# User preferences\nPrefers dark mode")
     );
     let requests = model.requests();
-    let tool_names: Vec<&str> = requests[0].tool_specs.iter().map(|spec| spec.name()).collect();
+    let tool_names: Vec<&str> = requests[0]
+        .tool_specs
+        .iter()
+        .map(strands::types::tools::ToolSpec::name)
+        .collect();
     assert!(tool_names.contains(&"search_memory") && tool_names.contains(&"add_memory"));
     assert_eq!(
         serde_json::to_value(requests[1].messages.last().unwrap().content()).unwrap(),
