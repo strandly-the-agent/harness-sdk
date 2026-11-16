@@ -21,7 +21,7 @@ fn turns(n: u32) -> InvokeLimits {
 }
 
 #[test]
-fn structured_output_failures_count_toward_limiting_parents_but_not_through_an_auxiliary_call() {
+fn counts_toward_limiting_parents_but_not_through_an_auxiliary_call() {
     let request = InvocationContext::new(Some(attempts(2)), None, false);
     let nested = InvocationContext::new(Some(turns(5)), Some(request.clone()), false);
     let auxiliary = InvocationContext::new(None, Some(request.clone()), true);

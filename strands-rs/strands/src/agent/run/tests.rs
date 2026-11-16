@@ -357,7 +357,7 @@ mod invoke {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn runs_tools_with_the_sequential_executor() {
+    async fn runs_tools_sequentially_with_a_sequential_tool_executor_instance() {
         let model = mock(vec![
             vec![
                 tool_use("add", "t1", json!({"a": 1, "b": 1})),
@@ -1339,7 +1339,7 @@ mod hooks {
     }
 
     #[tokio::test]
-    async fn before_tools_cancel_turns_every_call_into_an_error_result() {
+    async fn cancels_all_tools_when_before_tools_event_cancel_is_set_concurrent_mode() {
         for (cancel, expected) in [(None, "Tool cancelled by hook"), (Some("no tools"), "no tools")] {
             let model = mock(vec![
                 vec![tool_use("add", "t1", json!({})), tool_use("add", "t2", json!({}))],

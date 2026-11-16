@@ -272,7 +272,7 @@ mod invocation_context {
     }
 
     #[tokio::test]
-    async fn a_tool_forwarding_only_invocation_state_leaves_the_parent_limit_intact() {
+    async fn leaves_the_parent_limit_intact_and_the_child_uncounted_when_a_hand_written_tool_forwards_invocation_state() {
         let parent_model = relay_model(3);
         let mut parent = Agent::builder()
             .model(Arc::clone(&parent_model))
@@ -288,7 +288,7 @@ mod invocation_context {
     }
 
     #[tokio::test]
-    async fn joins_the_request_when_a_tool_forwards_its_invocation_context() {
+    async fn joins_the_request_when_a_hand_written_tool_forwards_context_invocation_context() {
         let parent_model = relay_model(2);
         let mut parent = Agent::builder()
             .model(Arc::clone(&parent_model))
@@ -306,7 +306,7 @@ mod invocation_context {
     }
 
     #[tokio::test]
-    async fn reports_the_whole_request_usage_while_metrics_cover_this_agent_only() {
+    async fn reports_the_whole_requests_usage_on_the_result_while_metrics_cover_this_agent_only() {
         let inner = {
             let model = Arc::new(MockMessageModel::new());
             model.add_turn_with(vec![text("inner done")], usage(5, 7, 12));
@@ -329,7 +329,7 @@ mod invocation_context {
     }
 
     #[tokio::test]
-    async fn produces_a_well_formed_result_when_an_inherited_limit_is_exhausted_on_entry() {
+    async fn produces_a_well_formed_result_when_an_inherited_limit_is_already_exhausted_on_entry() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(vec![text("should not run")], usage(1, 1, 2));
         let mut agent = Agent::builder()
@@ -353,7 +353,7 @@ mod invocation_context {
     }
 
     #[tokio::test]
-    async fn continues_a_previous_call_limits_and_usage_when_passed_its_context() {
+    async fn continues_a_previous_calls_limits_and_usage_when_passed_its_invocation_context() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(vec![text("first")], usage(1, 1, 2));
         model.add_turn_with(vec![text("second")], usage(1, 1, 2));
@@ -383,7 +383,7 @@ mod invocation_context {
     }
 
     #[tokio::test]
-    async fn counts_only_a_nested_invoke_own_tokens_against_its_own_token_limits() {
+    async fn counts_only_a_nested_invokes_own_tokens_against_its_own_token_limits() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(vec![text("done")], usage(10, 10, 20));
         let mut agent = test_agent(model);
@@ -399,7 +399,7 @@ mod invocation_context {
     }
 
     #[tokio::test]
-    async fn stops_a_nested_invoke_on_the_request_limit_even_when_its_own_is_looser() {
+    async fn stops_a_nested_invoke_on_the_requests_limit_even_when_its_own_limit_is_looser() {
         let model = loop_model(&[(0, 0, 0), (0, 0, 0)]);
         let mut agent = loop_agent(&model);
         let request = InvocationContext::new(Some(limits(Some(2), None, None)), None, false);

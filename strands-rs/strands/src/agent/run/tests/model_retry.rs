@@ -48,7 +48,7 @@ fn ok_text(result: &AgentResult) -> Vec<&str> {
 }
 
 #[tokio::test]
-async fn retries_model_calls_that_fail_with_model_throttled_error() {
+async fn retries_model_calls_that_throw_model_throttled_error() {
     let model = Arc::new(MockMessageModel::new());
     model
         .add_error(throttled("rate limited"))
@@ -86,7 +86,7 @@ async fn interrupts_retry_backoff_on_cancellation_without_another_model_call() {
 }
 
 #[tokio::test]
-async fn does_not_retry_other_errors() {
+async fn does_not_retry_non_throttling_errors() {
     let model = Arc::new(MockMessageModel::new());
     model.add_error(|| Error::other("boom"));
     let (mut agent, delays) = agent_with(&model, |b| b.retry_strategy(strategy(3, 1)));
@@ -95,7 +95,7 @@ async fn does_not_retry_other_errors() {
 }
 
 #[tokio::test]
-async fn installs_a_default_strategy_when_none_is_given() {
+async fn installs_a_default_default_model_retry_strategy_when_none_is_provided() {
     let model = Arc::new(MockMessageModel::new());
     model
         .add_error(throttled("throttled 1"))
@@ -108,7 +108,7 @@ async fn installs_a_default_strategy_when_none_is_given() {
 }
 
 #[tokio::test]
-async fn the_default_strategy_retries_model_network_error() {
+async fn retries_model_calls_that_throw_model_network_error_with_the_default_strategy() {
     let model = Arc::new(MockMessageModel::new());
     model
         .add_error(|| ModelNetworkError::new("Language model stream error: Failed to fetch").into())
@@ -131,7 +131,7 @@ async fn gives_up_once_max_attempts_is_exceeded() {
 }
 
 #[tokio::test]
-async fn an_empty_list_disables_retries() {
+async fn disables_retries_when_retry_strategy_is_an_empty_array() {
     {
         let configure = |b: crate::agent::AgentBuilder| b.no_retry_strategy();
         let model = Arc::new(MockMessageModel::new());
@@ -164,7 +164,7 @@ impl ModelRetryStrategy for NoopRetryStrategy {
 }
 
 #[tokio::test]
-async fn accepts_a_list_of_distinct_strategy_types() {
+async fn accepts_an_array_of_distinct_retry_strategy_types() {
     let model = Arc::new(MockMessageModel::new());
     model.add_error(throttled("throttled")).add_turn(vec![text("ok")]);
     let (mut agent, _delays) = agent_with(&model, |b| {
@@ -174,7 +174,7 @@ async fn accepts_a_list_of_distinct_strategy_types() {
 }
 
 #[tokio::test]
-async fn warns_when_two_strategies_of_one_type_are_given_and_fails_on_first_use() {
+async fn warns_when_two_retry_strategies_of_the_same_type_are_provided() {
     let model = Arc::new(MockMessageModel::new());
     model.add_turn(vec![text("ok")]);
     let (built, warnings) = WarnRecorder::capture(|| {
@@ -198,7 +198,7 @@ async fn warns_when_two_strategies_of_one_type_are_given_and_fails_on_first_use(
 }
 
 #[tokio::test]
-async fn respects_a_user_hook_that_already_set_retry() {
+async fn respects_a_user_hook_that_already_set_retry_true_no_double_wait_no_double_increment() {
     let model = Arc::new(MockMessageModel::new());
     model.add_error(throttled("throttled")).add_turn(vec![text("ok")]);
     let (mut agent, _delays) = agent_with(&model, |b| b.retry_strategy(strategy(2, 10_000)));
@@ -211,7 +211,7 @@ async fn respects_a_user_hook_that_already_set_retry() {
 }
 
 #[tokio::test]
-async fn fails_when_one_instance_is_attached_to_two_agents() {
+async fn throws_if_the_same_instance_is_attached_to_two_agents() {
     let shared: Arc<dyn ModelRetryStrategy> = Arc::new(DefaultModelRetryStrategy::default());
     let build = || {
         Agent::new(crate::AgentConfig {
@@ -237,7 +237,7 @@ async fn fails_when_one_instance_is_attached_to_two_agents() {
 }
 
 #[tokio::test]
-async fn the_strategy_registers_an_after_model_call_hook_at_initialize() {
+async fn registers_an_after_model_call_event_hook() {
     let model = mock(vec![vec![text("ok")]]);
     let mut agent = Agent::builder().model(Arc::clone(&model)).build().unwrap();
     assert!(agent.hooks().is_empty());

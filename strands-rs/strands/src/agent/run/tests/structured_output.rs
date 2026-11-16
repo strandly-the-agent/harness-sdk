@@ -365,7 +365,7 @@ mod attempt_limit {
     }
 
     #[tokio::test]
-    async fn counts_a_nested_invoke_failures_toward_the_request() {
+    async fn counts_a_nested_invokes_structured_output_failures_toward_the_request() {
         let model = mock(vec![
             vec![output_call(json!({}), "tu-1")],
             vec![output_call(json!({}), "tu-2")],

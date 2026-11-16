@@ -17,13 +17,13 @@ fn one_turn() -> Arc<MockMessageModel> {
 }
 
 #[tokio::test]
-async fn the_result_has_an_empty_state_when_none_is_passed() {
+async fn returns_an_empty_object_on_agent_result_when_no_invocation_state_is_passed() {
     let result = test_agent(one_turn()).invoke("Hi").await.unwrap();
     assert!(result.invocation_state().is_empty());
 }
 
 #[tokio::test]
-async fn the_result_carries_the_passed_state_and_the_caller_keeps_the_same_handle() {
+async fn returns_the_passed_invocation_state_on_agent_result() {
     let state = InvocationState::new();
     state.insert(Marker("caller"));
     let options = InvokeOptions {
@@ -37,7 +37,7 @@ async fn the_result_carries_the_passed_state_and_the_caller_keeps_the_same_handl
 }
 
 #[tokio::test]
-async fn mutations_from_before_model_call_reach_after_model_call_and_the_result() {
+async fn propagates_mutations_from_before_model_call_event_to_after_model_call_event_and_agent_result() {
     let mut agent = test_agent(one_turn());
     agent.add_hook(|event: &mut BeforeModelCallEvent<'_>| {
         let next = event
@@ -57,7 +57,7 @@ async fn mutations_from_before_model_call_reach_after_model_call_and_the_result(
 }
 
 #[tokio::test]
-async fn every_lifecycle_event_shares_one_state() {
+async fn shares_the_same_invocation_state_object_across_all_lifecycle_events_in_one_invocation() {
     let mut agent = test_agent(one_turn());
     agent.add_hook(|event: &mut BeforeInvocationEvent<'_>| {
         event.invocation_state().insert(Marker("shared"));
@@ -94,7 +94,7 @@ async fn every_lifecycle_event_shares_one_state() {
 }
 
 #[tokio::test]
-async fn mutations_persist_across_cycles() {
+async fn persists_mutations_across_recursive_agent_loop_cycles_tool_use_scenario() {
     let model = mock(vec![
         vec![tool_use("add", "tool-1", json!({}))],
         vec![text("Done")],
@@ -119,7 +119,7 @@ async fn mutations_persist_across_cycles() {
 }
 
 #[tokio::test]
-async fn tools_get_the_state_and_their_writes_reach_the_result() {
+async fn passes_invocation_state_to_tools_via_tool_context_and_surfaces_mutations_on_the_result() {
     let tool = FunctionTool::new(
         "lookup",
         "reads the user",
@@ -147,7 +147,7 @@ async fn tools_get_the_state_and_their_writes_reach_the_result() {
 }
 
 #[tokio::test]
-async fn state_writes_do_not_touch_app_state() {
+async fn does_not_touch_agent_app_state_when_invocation_state_is_mutated() {
     let mut agent = test_agent(one_turn());
     agent.app_state().set("persistent", "yes").unwrap();
     agent.add_hook(|event: &mut BeforeInvocationEvent<'_>| {
@@ -158,7 +158,7 @@ async fn state_writes_do_not_touch_app_state() {
 }
 
 #[tokio::test]
-async fn the_default_state_does_not_leak_between_invocations() {
+async fn does_not_leak_state_between_invocations_on_the_same_agent_default_bag() {
     let mut agent = test_agent(one_turn());
     agent.add_hook(|event: &mut BeforeInvocationEvent<'_>| {
         assert!(event.invocation_state().get::<Marker>().is_none());
@@ -171,7 +171,7 @@ async fn the_default_state_does_not_leak_between_invocations() {
 }
 
 #[tokio::test]
-async fn an_after_model_call_retry_keeps_the_same_state() {
+async fn preserves_same_invocation_state_reference_across_after_model_call_event_retry() {
     let model = Arc::new(MockMessageModel::new());
     model.add_error(|| ModelError::new("transient").into());
     model.add_turn(vec![text("ok")]);
@@ -196,7 +196,7 @@ async fn an_after_model_call_retry_keeps_the_same_state() {
 }
 
 #[tokio::test]
-async fn an_after_tool_call_retry_keeps_the_same_state() {
+async fn preserves_same_invocation_state_reference_across_after_tool_call_event_retry() {
     let model = mock(vec![
         vec![tool_use("add", "tool-1", json!({}))],
         vec![text("Done")],

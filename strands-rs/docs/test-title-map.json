@@ -87,6 +87,117 @@
       "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
     }
   },
+  "strands-ts/src/agent/__tests__/agent-as-tool.interrupt.test.ts": {
+    "resumes a context-preserving sub-agent with its own session manager after both are rebuilt": {
+      "gap": "waits for session managers on the sub-agent (the row: Phase 6)"
+    }
+  },
+  "strands-ts/src/agent/__tests__/agent-as-tool.test.ts": {
+    "throws when preserveContext is false and agent has a sessionManager": {
+      "gap": "needs a `SessionManager` on the wrapped agent (the row: Phase 6)"
+    },
+    "throws when preserveContext is explicitly false and agent has a sessionManager": {
+      "gap": "needs a `SessionManager` on the wrapped agent (the row: Phase 6)"
+    },
+    "allows preserveContext true with sessionManager": {
+      "gap": "needs a `SessionManager` on the wrapped agent (the row: Phase 6)"
+    }
+  },
+  "strands-ts/src/agent/__tests__/agent-delegation.test.ts": {
+    "does not leak delegation state when a later AfterTools hook throws": {
+      "gap": "needs an `AfterToolsEvent` hook that throws, and hooks can't fail"
+    },
+    "does not stop the loop when a later AfterToolsEvent hook changes the result to error": "does_not_stop_the_loop_when_a_later_after_tool_call_hook_changes_the_result_to_error"
+  },
+  "strands-ts/src/agent/__tests__/agent.concurrent.test.ts": {
+    "uses ConcurrentToolExecutor by default": {
+      "gap": "covered by the `ToolExecutor` doctest in `tools/executors.rs` (no separate test)"
+    },
+    "preserves a supplied tool executor instance": {
+      "gap": "covered by the `ToolExecutor` doctest in `tools/executors.rs` (no separate test)"
+    },
+    "rejects an unknown tool executor string": {
+      "gap": "compile-time: `ToolExecutor` is an enum, there are no string shorthands"
+    },
+    "resolves a string shorthand assigned to toolExecutor": {
+      "gap": "compile-time: `ToolExecutor` is an enum, there are no string shorthands"
+    },
+    "rejects an unknown string assigned to toolExecutor": {
+      "gap": "compile-time: `ToolExecutor` is an enum, there are no string shorthands"
+    },
+    "cancels all tools when agent is cancelled before launch (concurrent mode)": {
+      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
+    },
+    "cooperative mid-flight cancel — tools honor cancelSignal and exit": {
+      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
+    },
+    "isolates unexpected middleware failures to the affected tool": {
+      "gap": "the row: middleware failures land with Phase 4 middleware"
+    },
+    "handles a hallucinated tool name in a batch without affecting siblings": "reports_unknown_tools_and_tools_without_a_result",
+    "AfterToolsEvent.message contains completed results when consumer breaks mid-stream": {
+      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
+    },
+    "pre-launch agent.cancel() during BeforeToolsEvent produces \"Tool execution cancelled\" (concurrent)": {
+      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
+    },
+    "closes in-flight generators and includes fallback results when consumer breaks": {
+      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
+    },
+    "records span and metric telemetry when a tool interrupts": {
+      "gap": "the row: interrupt telemetry lands with Phase 4 interrupts"
+    }
+  },
+  "strands-ts/src/agent/__tests__/agent.invocation-context.test.ts": {
+    "rejects invalid limits before any invocation hook runs": {
+      "gap": "compile error in Rust: limits are `NonZero*`"
+    },
+    "does not throw when the invocationState bag is frozen": {
+      "gap": "no Rust counterpart: the state is a typed handle"
+    },
+    "rejects an invocation context the SDK did not create": {
+      "gap": "compile error in Rust: an invocation context has no public constructor"
+    }
+  },
+  "strands-ts/src/agent/__tests__/agent.invocation-state.test.ts": {
+    "preserves reference identity: caller keeps the same object they passed in": "returns_the_passed_invocation_state_on_agent_result"
+  },
+  "strands-ts/src/agent/__tests__/agent.model-retry.test.ts": {
+    "disables retries when retryStrategy is null": {
+      "gap": "no Rust form: `retry_strategies` takes a list, and the empty list disables retries (`disables_retries_when_retry_strategy_is_an_empty_array`)"
+    }
+  },
+  "strands-ts/src/agent/__tests__/agent.stateful-model.test.ts": {
+    "clears messages before SessionManager snapshots on AfterInvocationEvent": {
+      "gap": "joins with the session manager (the row: Phase 6)"
+    },
+    "discards restored messages when the model is stateful": {
+      "gap": "joins with the session manager (the row: Phase 6)"
+    },
+    "restores messages when the model is stateless": {
+      "gap": "joins with the session manager (the row: Phase 6)"
+    }
+  },
+  "strands-ts/src/agent/__tests__/tool-caller.test.ts": {
+    "throws ConcurrentInvocationError when agent is invoking and recording is enabled": {
+      "gap": "compile-time: `agent.tool(..)` borrows the agent mutably, so a recorded call can't overlap an invocation and there is no `isInvoking`"
+    },
+    "allows direct tool call during invocation when recordDirectToolCall is false": {
+      "gap": "compile-time: `agent.tool(..)` borrows the agent mutably, so a recorded call can't overlap an invocation and there is no `isInvoking`"
+    },
+    "isInvoking is false on a fresh agent": {
+      "gap": "compile-time: `agent.tool(..)` borrows the agent mutably, so a recorded call can't overlap an invocation and there is no `isInvoking`"
+    },
+    "is accessible as a property": {
+      "gap": "tests the TS `Proxy` behind `agent.tool` (same instance, `invoke`/`stream` present), which the compiler checks"
+    },
+    "returns same instance on multiple accesses": {
+      "gap": "tests the TS `Proxy` behind `agent.tool` (same instance, `invoke`/`stream` present), which the compiler checks"
+    },
+    "returns a ToolHandle with invoke and stream methods": {
+      "gap": "tests the TS `Proxy` behind `agent.tool` (same instance, `invoke`/`stream` present), which the compiler checks"
+    }
+  },
   "strands-ts/src/hooks/__tests__/events.test.ts": {
     "allows mutating toolUse fields in-place": {
       "gap": "`ToolUse` fields are private and the event hands out no `&mut ToolUse`; a hook replaces the whole value with `set_tool_use` (`allows_reassigning_tool_use_to_a_new_object`)"
