@@ -4334,6 +4334,7 @@ dependencies = [
 name = "strands-harness"
 version = "0.1.0-preview.1"
 dependencies = [
+ "async-stream",
  "async-trait",
  "bon",
  "futures",

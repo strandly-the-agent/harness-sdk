@@ -74,6 +74,25 @@ pub enum HarnessError {
 /// `text` as TS `JSON.stringify` prints it.
 fn json_string(text: &str) -> String {
     serde_json::Value::from(text).to_string()
+    /// The `subagent` tool's `tools` axis is a `Choice` with no options.
+    #[error("tools=Choice([]) offers no options; use Fixed([]) for a toolless child, or Inherit().")]
+    SubagentToolsChoiceEmpty,
+    /// The `subagent` tool's `tools` axis is a `Choice` that is not multiple.
+    #[error("tools=Choice(...) must be multiple=true; a subagent selects a subset of tools.")]
+    SubagentToolsChoiceSingle,
+    /// The `subagent` tool's `mcp_servers` axis is a `Choice` with no options.
+    #[error("mcp_servers=Choice([]) offers no options; use Fixed([]) for no servers, or Inherit().")]
+    SubagentMcpServersChoiceEmpty,
+    /// The `subagent` tool's `mcp_servers` axis is a `Choice` that is not multiple.
+    #[error("mcp_servers=Choice(...) must be multiple=true; a subagent selects a subset of servers.")]
+    SubagentMcpServersChoiceSingle,
+    /// The model passed an `agent_type` that names no preset of the `subagent` tool.
+    #[error("Unknown agent_type {value}; valid values: {valid}.")]
+    UnknownAgentType {
+        /// The `agent_type` the model passed, as JSON.
+        value: String,
+        /// The preset names, comma-separated.
+        valid: String,
 }
 
 /// The harness result type.

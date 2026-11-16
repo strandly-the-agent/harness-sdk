@@ -25,6 +25,7 @@ otel = ["strands/otel"]
 strands.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros", "fs", "io-util"] }
 futures.workspace = true
+async-stream.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
