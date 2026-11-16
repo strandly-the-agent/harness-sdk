@@ -245,13 +245,10 @@ mod wire {
         assert!(!input.contains("the notes file was read"), "{input}");
     }
 
-    /// An inline stdio server: `${VAR}` expands from the environment, and with no `cwd` the
-    /// server starts in the base directory, where the relative script path resolves. The server
-    /// is a shell loop that answers `initialize` and `tools/list` and refuses every other request.
+    /// A stdio MCP server as a shell loop: it answers `initialize` and `tools/list` (one tool,
+    /// `ping`) and refuses every other request.
     #[cfg(all(unix, feature = "mcp"))]
-    #[tokio::test]
-    async fn an_inline_mcp_server_starts_in_the_base_dir_with_its_placeholders_expanded() {
-        const SERVER: &str = r#"while IFS= read -r line; do
+    const MCP_SERVER: &str = r#"while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   version=$(printf '%s' "$line" | sed -n 's/.*"protocolVersion":"\([^"]*\)".*/\1/p')
   case "$line" in
@@ -264,9 +261,15 @@ mod wire {
   esac
 done
 "#;
+
+    /// An inline stdio server: `${VAR}` expands from the environment, and with no `cwd` the
+    /// server starts in the base directory, where the relative script path resolves.
+    #[cfg(all(unix, feature = "mcp"))]
+    #[tokio::test]
+    async fn an_inline_mcp_server_starts_in_the_base_dir_with_its_placeholders_expanded() {
         let server = ResponsesServer::start(vec![Reply::Text("Done")]).await;
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("server.sh"), SERVER).unwrap();
+        std::fs::write(dir.path().join("server.sh"), MCP_SERVER).unwrap();
         let config = bare(&json!({
             "mcpServers": { "notes": { "command": "sh", "args": ["${SERVER_SCRIPT}"] } },
         }));
@@ -279,5 +282,48 @@ done
 
         let error = build_error(&config, dir.path(), server.env(&[])).await;
         assert!(error.contains("SERVER_SCRIPT"), "{error}");
+    }
+
+    /// A relative `mcpServers` path is read from the base directory, and a relative `cwd` in
+    /// the file resolves there too.
+    #[cfg(all(unix, feature = "mcp"))]
+    #[tokio::test]
+    async fn a_file_backed_mcp_config_is_read_from_the_base_dir() {
+        let server = ResponsesServer::start(vec![Reply::Text("Done")]).await;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("scripts")).unwrap();
+        std::fs::write(dir.path().join("scripts/server.sh"), MCP_SERVER).unwrap();
+        std::fs::write(
+            dir.path().join("mcp.json"),
+            json!({ "mcpServers": { "notes": { "command": "sh", "args": ["${env:SERVER_SCRIPT}"], "cwd": "scripts" } } })
+                .to_string(),
+        )
+        .unwrap();
+        let config = bare(&json!({ "mcpServers": "./mcp.json" }));
+
+        let mut agent = build(&config, dir.path(), server.env(&[("SERVER_SCRIPT", "server.sh")]))
+            .await
+            .unwrap();
+        agent.invoke("Hello").await.unwrap();
+        assert_eq!(tool_names_of(&server.requests()[0]), ["notes_ping"]);
+    }
+
+    /// With no way to ask, the `ask` preset stops the agent at the tool call instead of running it.
+    #[tokio::test]
+    async fn the_ask_preset_interrupts_the_agent_at_a_tool_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let notes = dir.path().join("notes.txt");
+        std::fs::write(&notes, "the notes file was read").unwrap();
+        let server = ResponsesServer::start(vec![Reply::ToolCall {
+            name: "read",
+            arguments: json!({ "path": notes.to_string_lossy() }),
+        }])
+        .await;
+        let config = bare(&json!({ "builtinTools": ["read"], "interventions": "ask" }));
+
+        let mut agent = build(&config, dir.path(), server.env(&[])).await.unwrap();
+        let result = agent.invoke("Read the notes").await.unwrap();
+        assert_eq!(result.stop_reason(), strands::StopReason::Interrupt);
+        assert_eq!(server.requests().len(), 1);
     }
 }
