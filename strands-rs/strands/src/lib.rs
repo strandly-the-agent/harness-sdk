@@ -107,6 +107,7 @@ pub mod conversation_manager;
 pub mod error;
 pub mod experimental;
 pub mod hooks;
+pub mod injection;
 pub mod interrupt;
 mod logging;
 #[cfg(feature = "mcp")]
