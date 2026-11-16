@@ -117,15 +117,15 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 ## [ ] Phase 12: harness
 
 - [ ] `create_harness`, `HarnessAgentOptions`, defaults, sessions layout (#70)
-- [ ] Model strings, effort, caching, provider tables
-- [ ] `HARNESS_CONTRACT` and `build_system_prompt`
+- [x] Model strings, effort, caching, provider tables
+- [x] `HARNESS_CONTRACT` and `build_system_prompt`
 - [ ] Harness file tools, `shell`, `web_fetch`, `web_search` (native and Exa)
 - [ ] `programmatic_tool_caller` on Monty
 - [ ] `subagent` with presets and axes
 - [ ] `Todos` and `EnvironmentContext` plugins
 - [ ] Interventions grammar and `mcp_servers`
-- [ ] Portable `HarnessAgentConfig` parsing and module-reference errors
-- [ ] Telemetry setup from env
+- [x] Portable `HarnessAgentConfig` parsing and module-reference errors
+- [x] Telemetry setup from env
 - [ ] Live end-to-end per provider and cross-SDK session resume
 - [ ] Phase review gate and fixes
 
