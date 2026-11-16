@@ -19,7 +19,9 @@ use strands::hooks::{AfterModelCallEvent, BeforeModelCallEvent, HookCallbackOpti
 use strands::middleware::{InvokeModelContext, InvokeModelStage, MiddlewareError, MiddlewareStage};
 use strands::models::model::Model;
 use strands::models::routing::{
-    ModelRouter, ModelRouterOptions, RoutingCandidate, RoutingContext, RoutingStrategy,
+    ClassifierStrategyOptions, ClassifierStrategyOptionsBuilder, FallbackStrategy, ModelRouter,
+    ModelRouterOptions, ModelRouterOptionsBuilder, RoutingCandidate, RoutingContext, RoutingStrategy,
+    classifier_strategy_options_builder, model_router_options_builder,
 };
 use strands::retry::{
     ConstantBackoff, ConstantBackoffOptions, DefaultModelRetryStrategy, DefaultModelRetryStrategyOptions,
@@ -393,4 +395,39 @@ fn aux_model_rejects_a_model_router() {
         error.to_string(),
         "auxModel must be a Model or a Bedrock model id, not a ModelRouter"
     );
+}
+
+fn with_fallback<S>(
+    builder: ModelRouterOptionsBuilder<S>,
+) -> ModelRouterOptionsBuilder<model_router_options_builder::SetStrategy<S>>
+where
+    S: model_router_options_builder::State,
+    S::Strategy: model_router_options_builder::IsUnset,
+{
+    builder.strategy(FallbackStrategy::new())
+}
+
+fn with_policy<S>(
+    builder: ClassifierStrategyOptionsBuilder<S>,
+) -> ClassifierStrategyOptionsBuilder<classifier_strategy_options_builder::SetRoutingPolicy<S>>
+where
+    S: classifier_strategy_options_builder::State,
+    S::RoutingPolicy: classifier_strategy_options_builder::IsUnset,
+{
+    builder.routing_policy("Prefer the cheapest candidate.")
+}
+
+// No TS case: the option builders are Rust-only; a downstream helper must be able to name them.
+#[test]
+fn a_helper_can_take_and_return_the_routing_option_builders() {
+    let options = with_fallback(ModelRouterOptions::builder().max_switches(2)).build();
+    assert_eq!(options.max_switches, Some(2));
+    assert!(options.strategy.is_some());
+
+    let options = with_policy(ClassifierStrategyOptions::builder().timeout(Duration::from_secs(5))).build();
+    assert_eq!(
+        options.routing_policy.as_deref(),
+        Some("Prefer the cheapest candidate.")
+    );
+    assert_eq!(options.timeout, Some(Duration::from_secs(5)));
 }

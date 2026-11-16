@@ -22,9 +22,15 @@ mod fallback_strategy;
 mod router;
 mod strategy;
 
-pub use classifier_strategy::{ClassifierStrategy, ClassifierStrategyOptions};
+pub use classifier_strategy::{
+    ClassifierStrategy, ClassifierStrategyOptions, ClassifierStrategyOptionsBuilder,
+    classifier_strategy_options_builder,
+};
 pub use fallback_strategy::FallbackStrategy;
-pub use router::{CandidateModel, ModelRouter, ModelRouterOptions, RoutingCandidate};
+pub use router::{
+    CandidateModel, ModelRouter, ModelRouterOptions, ModelRouterOptionsBuilder, RoutingCandidate,
+    model_router_options_builder,
+};
 pub use strategy::{RoutingAttempt, RoutingContext, RoutingException, RoutingStrategy};
 
 #[cfg(test)]

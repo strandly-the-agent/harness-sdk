@@ -228,6 +228,7 @@ impl fmt::Debug for RoutingCandidate {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct ModelRouterOptions {
     /// The strategy responsible for every routing decision (default [`FallbackStrategy`]).
     #[builder(with = |strategy: impl RoutingStrategy| Arc::new(strategy) as Arc<dyn RoutingStrategy>)]
