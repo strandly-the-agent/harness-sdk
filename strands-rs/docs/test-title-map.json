@@ -87,6 +87,32 @@
       "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
     }
   },
+  "strands-ts/src/hooks/__tests__/events.test.ts": {
+    "allows mutating toolUse fields in-place": {
+      "gap": "`ToolUse` fields are private and the event hands out no `&mut ToolUse`; a hook replaces the whole value with `set_tool_use` (`allows_reassigning_tool_use_to_a_new_object`)"
+    },
+    "$name: toJSON() includes all fields except known exclusions": {
+      "gap": "reflects over TS instance keys, which Rust records don't have (their fields are fixed by type)"
+    },
+    "$name: toJSON() never includes agent": {
+      "gap": "reflects over TS instance keys, which Rust records don't have (their fields are fixed by type)"
+    }
+  },
+  "strands-ts/src/hooks/__tests__/registry.test.ts": {
+    "propagates callback errors": {
+      "gap": "Rust hook callbacks return `()` and can't fail"
+    },
+    "stops execution on first non-interrupt error": {
+      "gap": "Rust hook callbacks return `()` and can't fail"
+    },
+    "cleanup function is idempotent": {
+      "gap": "`HookCleanup::remove` takes `self`, so a second call doesn't compile"
+    },
+    "stops on non-interrupt error even when interrupts were collected": {
+      "gap": "Rust hook callbacks return `()` and can't fail"
+    },
+    "throws InterruptError with all collected interrupts after all callbacks run": "collects_interrupt_errors_from_multiple_callbacks_and_invokes_all_of_them"
+  },
   "strands-ts/src/models/__tests__/anthropic.test.ts": {
     "disables caching for an unknown strategy": {
       "gap": "`CacheStrategy` is a closed enum, so the TS runtime check has nothing to reject"
@@ -133,6 +159,19 @@
       "gap": "a `JsonValue` can't be circular"
     }
   },
+  "strands-ts/src/registry/__tests__/tool-registry.test.ts": {
+    "throws ToolValidationError when a name differs only by '-' vs '_'": "throws_tool_validation_error_when_a_name_differs_only_by_dash_vs_underscore",
+    "throws ToolValidationError for a non-string tool name": {
+      "gap": "no Rust form: `Tool::name` and `Tool::description` return `&str`"
+    },
+    "throws ToolValidationError for an invalid description": {
+      "gap": "no Rust form: `Tool::name` and `Tool::description` return `&str`"
+    },
+    "allows a tool with a null or undefined description": {
+      "gap": "no Rust form: `Tool::name` and `Tool::description` return `&str`"
+    },
+    "throws ToolValidationError when a new tool name differs only by '-' vs '_'": "throws_tool_validation_error_when_a_new_tool_name_differs_only_by_dash_vs_underscore"
+  },
   "strands-ts/src/retry/__tests__/backoff-strategy.test.ts": {
     "ConstantBackoff > rejects attempts below 1": {
       "gap": "ruled out by `BackoffContext::attempt: NonZeroU32`"
@@ -150,6 +189,51 @@
   "strands-ts/src/retry/__tests__/default-model-retry-strategy.test.ts": {
     "rejects maxAttempts below 1": {
       "gap": "ruled out by `max_attempts: NonZeroU32`"
+    }
+  },
+  "strands-ts/src/tools/__tests__/structured-output-tool.test.ts": {
+    "returns error result for non-ZodError exceptions": {
+      "gap": "mocks zod's `parse` to throw; Rust validation can't throw"
+    }
+  },
+  "strands-ts/src/tools/__tests__/tool-factory.test.ts": {
+    "creates ZodTool when inputSchema is a Zod type": "generates_the_input_schema_from_the_type",
+    "creates FunctionTool when inputSchema is a plain object": "a_raw_schema_is_sent_unchanged",
+    "creates FunctionTool when inputSchema is omitted": "creates_tool_with_default_empty_object_schema",
+    "handles async generator callback": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "passes instanceof Tool check": {
+      "gap": "`instanceof Tool` is a compile-time trait bound"
+    },
+    "defaults description to empty string": {
+      "gap": "doesn't apply: `#[tool]` without a doc comment is a compile error and `FunctionTool::new` takes the description"
+    }
+  },
+  "strands-ts/src/tools/__tests__/zod-tool.test.ts": {
+    "tool > optional inputSchema > when inputSchema is z.void() > creates tool with default empty object schema": {
+      "gap": "the `z.void()` group has no Rust form (a tool without parameters covers the `undefined` group)"
+    },
+    "handles async generator callback": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "streams async generator callback results": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "tool > optional inputSchema > when inputSchema is undefined > works with async generator callback": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "tool > optional inputSchema > when inputSchema is z.void() > invoke() works with empty object": {
+      "gap": "the `z.void()` group has no Rust form (a tool without parameters covers the `undefined` group)"
+    },
+    "tool > optional inputSchema > when inputSchema is z.void() > stream() works with empty input": {
+      "gap": "the `z.void()` group has no Rust form (a tool without parameters covers the `undefined` group)"
+    },
+    "tool > optional inputSchema > when inputSchema is z.void() > works with async generator callback": {
+      "gap": "TS-only mechanism: async generator callbacks (a streaming tool implements `Tool`)"
+    },
+    "does not throw Zod conversion errors": {
+      "gap": "no Rust form: schemars output always converts"
     }
   },
   "strands-ts/src/types/__tests__/agent.test.ts": {

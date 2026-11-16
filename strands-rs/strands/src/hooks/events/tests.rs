@@ -335,6 +335,15 @@ mod before_model_call_event {
     }
 
     #[test]
+    fn allows_cancel_to_be_set_to_true() {
+        let mut agent = local_agent();
+        let mut event = BeforeModelCallEvent::new(&mut agent, model(), InvocationState::new(), None);
+        assert_eq!(event.cancel(), None);
+        event.set_cancel(Cancel::Requested);
+        assert_eq!(event.cancel(), Some(&Cancel::Requested));
+    }
+
+    #[test]
     fn allows_cancel_to_be_set_to_a_string_message() {
         let mut agent = local_agent();
         let mut event = BeforeModelCallEvent::new(&mut agent, model(), InvocationState::new(), None);
