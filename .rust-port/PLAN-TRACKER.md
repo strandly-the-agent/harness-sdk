@@ -98,18 +98,18 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] `mcp_router` tool
 - [x] Phase review gate and fixes
 
-## [ ] Phase 10: telemetry
+## [x] Phase 10: telemetry
 
 - [x] Spans and attributes with semconv modes
 - [x] Meter counters and histograms
 - [x] `otel` feature exporters and env configuration
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [ ] Phase 11: SDK checkpoint
 
 - [ ] Full gates, MSRV, deny, doctests, all live tests green
-- [ ] Parity sweep complete in `docs/PARITY.md`
-  - [ ] Rename Phase 1-3 tests to the snake_case TS `it(...)` titles and add a mechanical title-mapping check
+- [x] Parity sweep complete in `docs/PARITY.md`
+  - [x] Rename Phase 1-3 tests to the snake_case TS `it(...)` titles and add a mechanical title-mapping check
 - [x] Crate docs, README and examples
 - [ ] Whole-SDK review gate and fixes
 - [ ] Local tag `strands-rs-v0.1.0-preview.1`
