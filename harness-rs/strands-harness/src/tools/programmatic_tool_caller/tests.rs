@@ -824,6 +824,27 @@ async fn plain_before_after_hooks_observe_inner_calls_and_can_replace_the_result
     assert_eq!(recorded(&seen), ["before:shell_like", "after:shell_like"]);
 }
 
+/// Review finding parity-a3: hooks see the TS `ptc_<uuid>` tool-use id on an inner call.
+#[tokio::test]
+async fn inner_calls_carry_a_ptc_tool_use_id() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut agent = agent_of(vec![programmatic_tool_caller(), shell_like(&Arc::default())]);
+    let log = Arc::clone(&seen);
+    let _before = agent.add_hook(move |event: &mut BeforeToolCallEvent| {
+        if event.tool_use().name() == "shell_like" {
+            log.lock()
+                .expect("no poisoned lock")
+                .push(event.tool_use().tool_use_id().to_owned());
+        }
+    });
+    run(&mut agent, "print(await shell_like(command='ls'))").await;
+    let ids = recorded(&seen);
+    assert_eq!(ids.len(), 1);
+    let uuid = ids[0].strip_prefix("ptc_").expect("a ptc_ id");
+    assert_eq!(uuid.len(), 36, "{uuid}");
+    assert_eq!(uuid.matches('-').count(), 4, "{uuid}");
+}
+
 /// Not a TS case: the cancel outcome of an inner call is the TS cancel text.
 #[tokio::test]
 async fn a_cancelled_inner_call_raises_the_cancel_text() {

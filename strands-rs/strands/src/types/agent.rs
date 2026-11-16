@@ -628,6 +628,36 @@ impl ToolAgent {
         input: JsonValue,
         invocation_state: InvocationState,
     ) -> Result<ToolCallOutcome> {
+        let tool_use_id = format!("call_{}", uuid::Uuid::now_v7().simple());
+        self.call_tool_as(name, tool_use_id, input, invocation_state)
+            .await
+    }
+
+    /// [`call_tool`](Self::call_tool) with the tool-use id `<id_prefix><uuid>`, which hooks and
+    /// spans observe.
+    ///
+    /// # Errors
+    ///
+    /// A hook or a middleware handler failed.
+    pub async fn call_tool_with_id_prefix(
+        &self,
+        name: &str,
+        id_prefix: &str,
+        input: JsonValue,
+        invocation_state: InvocationState,
+    ) -> Result<ToolCallOutcome> {
+        let tool_use_id = format!("{id_prefix}{}", uuid::Uuid::now_v7());
+        self.call_tool_as(name, tool_use_id, input, invocation_state)
+            .await
+    }
+
+    async fn call_tool_as(
+        &self,
+        name: &str,
+        tool_use_id: String,
+        input: JsonValue,
+        invocation_state: InvocationState,
+    ) -> Result<ToolCallOutcome> {
         // A throwaway interrupt state, so an interrupt of the inner call never reaches the agent's.
         let mut inner = (*self.inner).clone();
         inner.interrupt_state = InterruptState::default();
@@ -635,7 +665,7 @@ impl ToolAgent {
         let agent = Self {
             inner: Arc::new(inner),
         };
-        let tool_use = ToolUseBlock::new(name, format!("call_{}", uuid::Uuid::now_v7().simple()), input);
+        let tool_use = ToolUseBlock::new(name, tool_use_id, input);
         crate::tools::executors::executor::call_tool(agent, hooks, telemetry, invocation_state, tool_use)
             .await
     }
