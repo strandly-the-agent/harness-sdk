@@ -108,6 +108,8 @@ pub struct ClassifierStrategyOptions {
 /// Nested routers are opaque candidates using only their wrapper evidence.
 ///
 /// ```
+/// use std::sync::Arc;
+///
 /// use strands::models::routing::{ClassifierStrategy, ModelRouter, ModelRouterOptions, RoutingCandidate};
 /// use strands::testing::MockMessageModel;
 /// use strands::Agent;
@@ -118,7 +120,7 @@ pub struct ClassifierStrategyOptions {
 ///         RoutingCandidate::new(fast).with_name("routine").with_description("Short factual requests"),
 ///         RoutingCandidate::new(strong).with_name("complex").with_description("Multi-step design work"),
 ///     ],
-///     ModelRouterOptions::builder().strategy(ClassifierStrategy::new(classifier)).build(),
+///     ModelRouterOptions::builder().strategy(ClassifierStrategy::new(Arc::new(classifier))).build(),
 /// )?;
 /// let agent = Agent::builder().model(router).build()?;
 /// # Ok::<(), strands::Error>(())

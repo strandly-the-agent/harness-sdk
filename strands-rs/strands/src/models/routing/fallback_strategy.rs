@@ -15,7 +15,7 @@ use crate::models::routing::strategy::{RoutingAttempt, RoutingContext, RoutingSt
 ///
 /// let router = ModelRouter::with_options(
 ///     [MockMessageModel::new(), MockMessageModel::new()],
-///     ModelRouterOptions::builder().strategy(FallbackStrategy).build(),
+///     ModelRouterOptions::builder().strategy(FallbackStrategy::new()).build(),
 /// )?;
 /// assert_eq!(router.candidates().len(), 2);
 /// # Ok::<(), strands::Error>(())
