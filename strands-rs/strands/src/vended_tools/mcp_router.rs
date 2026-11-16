@@ -47,7 +47,7 @@ use super::{no_precheck, schema_tool};
 pub const MCP_ROUTER_DESCRIPTION: &str = "Connects to Model Context Protocol (MCP) servers at runtime to discover and invoke their tools. 'connect' opens a connection to a permitted server. 'list_connections' returns all currently open connection IDs. 'list_tools' returns the tools the connected server exposes, including their names and input schemas. 'call_tool' invokes a named tool on a connected server and returns its result. 'disconnect' closes a connection. Multiple servers can be connected simultaneously. Use connection_id to identify which connection to use for list_tools, call_tool, and disconnect.";
 
 /// The default cap on open connections per agent (TS `DEFAULT_MAX_CONNECTIONS`).
-pub const DEFAULT_MAX_CONNECTIONS: usize = 10;
+const DEFAULT_MAX_CONNECTIONS: usize = 10;
 
 /// A router operation failed (TS `McpRouterToolError`).
 #[derive(Debug, thiserror::Error)]
@@ -84,7 +84,7 @@ pub struct MakeMcpRouterOptions {
     /// Allowlisted servers keyed by a developer-chosen name. A server's `tool_filters` decide
     /// which tools `list_tools` returns and `call_tool` accepts. Must not be empty.
     pub servers: IndexMap<String, McpServerConfig>,
-    /// Maximum simultaneous open connections per agent (default [`DEFAULT_MAX_CONNECTIONS`]).
+    /// Maximum simultaneous open connections per agent (default 10).
     pub max_connections: Option<usize>,
 }
 
