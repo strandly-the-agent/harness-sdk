@@ -506,7 +506,7 @@ impl BackgroundTaskScheduler {
             .is_some_and(|last| last.role() == Role::Assistant);
         let tasks = if resumed && turn_ended {
             let cancel = event.agent().cancel_signal().clone();
-            self.settled_tasks(&attached, &cancel).await
+            self.settled_tasks(attached, &cancel).await
         } else {
             self.tasks()
         };
@@ -533,7 +533,7 @@ impl BackgroundTaskScheduler {
             return;
         }
         let cancel = event.agent().cancel_signal().clone();
-        let tasks = self.settled_tasks(&attached, &cancel).await;
+        let tasks = self.settled_tasks(attached, &cancel).await;
         if tasks.iter().any(|task| task.status == TaskStatus::InputRequired) {
             if event.resume().is_none() {
                 event.set_resume(Vec::<Message>::new());
