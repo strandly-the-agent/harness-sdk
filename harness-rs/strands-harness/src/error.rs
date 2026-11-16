@@ -149,6 +149,12 @@ pub enum HarnessError {
         /// Why the value was rejected.
         message: String,
     },
+    /// `agentConfig` keys of a portable config whose values have no JSON form in Rust.
+    #[error("agentConfig keys are not supported in Rust: {}.", keys.join(", "))]
+    UnsupportedAgentConfigKeys {
+        /// The keys, sorted.
+        keys: Vec<String>,
+    },
     /// `HarnessAgentOptions::agent_config` sets a key the harness owns.
     #[error("agent_config.{key} is a harness option: set `{key}` on HarnessAgentOptions instead")]
     PassthroughOption {
