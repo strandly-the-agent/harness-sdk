@@ -1,7 +1,11 @@
 //! Memory spans (TS `Tracer.startMemory*Span`/`endMemory*Span` in `telemetry/tracer.ts`):
 //! `memory.search`, `memory.add`, `memory.inject` and the detached `memory.extract`.
 
+#[cfg(feature = "otel")]
+use opentelemetry::trace::TraceContextExt as _;
 use tracing::Span;
+#[cfg(feature = "otel")]
+use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
 use super::{LocalTracer, end_span, int, keys, now_iso, otel_span};
 use crate::memory::MemoryEntry;
@@ -61,9 +65,6 @@ pub(crate) enum SpanLink {}
 pub(crate) fn current_span_context() -> Option<SpanLink> {
     #[cfg(feature = "otel")]
     {
-        use opentelemetry::trace::TraceContextExt as _;
-        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-
         let span = Span::current();
         if span.is_disabled() {
             return None;
@@ -80,8 +81,6 @@ pub(crate) fn current_span_context() -> Option<SpanLink> {
 fn link_parent(span: &Span, link: Option<SpanLink>) {
     #[cfg(feature = "otel")]
     if let Some(link) = link.filter(SpanLink::is_valid) {
-        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-
         span.record("memory.parent.trace_id", link.trace_id().to_string().as_str());
         span.record("memory.parent.span_id", link.span_id().to_string().as_str());
         span.add_link(link);
