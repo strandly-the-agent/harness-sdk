@@ -1,6 +1,6 @@
 //! Doubles shared by the memory tests: a scriptable store and the hook drivers.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -42,6 +42,10 @@ pub(crate) struct MockStore {
     pub(crate) search_error: Option<String>,
     /// While set, `add` and `add_messages` fail with `write error`.
     pub(crate) failing: AtomicBool,
+    /// The next this many writes fail with `backend down` (TS `mockRejectedValueOnce`).
+    pub(crate) fail_times: AtomicUsize,
+    /// When set, the first `add` waits until a later `add` starts.
+    pub(crate) rendezvous: Option<Arc<tokio::sync::Notify>>,
     /// Runs before each `add`; an error fails that write.
     pub(crate) on_add: Mutex<Option<AddHook>>,
     /// When set, every write waits for a permit first.
@@ -65,6 +69,8 @@ impl MockStore {
             extraction: None,
             search_error: None,
             failing: AtomicBool::new(false),
+            fail_times: AtomicUsize::new(0),
+            rendezvous: None,
             on_add: Mutex::new(None),
             gate: None,
             search_calls: Mutex::default(),
@@ -107,6 +113,30 @@ impl MockStore {
 
     pub(crate) fn set_failing(&self, failing: bool) {
         self.failing.store(failing, Ordering::SeqCst);
+    }
+
+    pub(crate) fn fail_next(&self, times: usize) {
+        self.fail_times.store(times, Ordering::SeqCst);
+    }
+
+    /// Forgets the recorded writes (TS `mockClear`).
+    pub(crate) fn clear_calls(&self) {
+        self.add_calls.lock().unwrap().clear();
+        self.add_messages_calls.lock().unwrap().clear();
+    }
+
+    fn write_outcome(&self) -> Result<()> {
+        let fail_once = self
+            .fail_times
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| left.checked_sub(1))
+            .is_ok();
+        if fail_once {
+            return Err(Error::other("backend down"));
+        }
+        if self.failing.load(Ordering::SeqCst) {
+            return Err(Error::other("write error"));
+        }
+        Ok(())
     }
 
     pub(crate) fn search_count(&self) -> usize {
@@ -191,18 +221,23 @@ impl MemoryStore for MockStore {
     }
 
     async fn add(&self, content: &str, metadata: Option<&MemoryMetadata>) -> Result<()> {
-        self.add_calls
-            .lock()
-            .unwrap()
-            .push((content.to_owned(), metadata.cloned()));
+        let earlier = {
+            let mut calls = self.add_calls.lock().unwrap();
+            calls.push((content.to_owned(), metadata.cloned()));
+            calls.len() - 1
+        };
+        if let Some(rendezvous) = &self.rendezvous {
+            if earlier == 0 {
+                rendezvous.notified().await;
+            } else {
+                rendezvous.notify_one();
+            }
+        }
         self.pass_gate().await;
         if let Some(hook) = self.on_add.lock().unwrap().as_mut() {
             hook(content)?;
         }
-        if self.failing.load(Ordering::SeqCst) {
-            return Err(Error::other("write error"));
-        }
-        Ok(())
+        self.write_outcome()
     }
 
     fn supports_add_messages(&self) -> bool {
@@ -215,10 +250,7 @@ impl MemoryStore for MockStore {
             .unwrap()
             .push((messages.to_vec(), context.clone()));
         self.pass_gate().await;
-        if self.failing.load(Ordering::SeqCst) {
-            return Err(Error::other("write error"));
-        }
-        Ok(())
+        self.write_outcome()
     }
 
     fn get_tools(&self) -> Vec<Arc<dyn Tool>> {

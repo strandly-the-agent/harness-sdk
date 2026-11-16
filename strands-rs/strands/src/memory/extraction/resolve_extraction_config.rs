@@ -40,3 +40,6 @@ pub(crate) fn resolve_extraction_config(
         filter: config.filter.unwrap_or_default(),
     })
 }
+
+#[cfg(test)]
+mod tests;
