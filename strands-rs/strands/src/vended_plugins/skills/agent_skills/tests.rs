@@ -307,6 +307,12 @@ mod system_prompt_injection {
             prompt_text(&agent),
             format!("You are a helpful assistant.\n\n{PDF_XML}")
         );
+        // The prompt strands-ts sent to its model for the same skill (conformance fixture).
+        let requests: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../conformance/fixtures/model_requests/skills_run.json"
+        ))
+        .unwrap();
+        assert_eq!(requests[0]["systemPrompt"], prompt_text(&agent));
     }
 
     #[tokio::test]

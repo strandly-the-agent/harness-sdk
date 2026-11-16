@@ -296,6 +296,9 @@
     "messages/with_metadata.json": {
       "description": "Message with usage, metrics and custom metadata"
     },
+    "model_requests/skills_run.json": {
+      "description": "Model request of an agent with AgentSkills: the `skills` tool spec and the <available_skills> block appended to a string system prompt"
+    },
     "model_requests/structured_output_run.json": {
       "description": "What the model received: the second request carries toolChoice { tool: { name: \"strands_structured_output\" } } and the structured output ToolSpec",
       "_note": "Generator-built record of StreamOptions fields"

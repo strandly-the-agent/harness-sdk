@@ -1699,6 +1699,21 @@ async function vendedShapes(): Promise<void> {
     ],
   })
   emit('tools/skills_tool_spec', skills.getTools()[0].toolSpec, 'The `skills` tool spec of the AgentSkills plugin')
+  const skillsModel = new ScriptedModel([textTurn('Done')])
+  const skillsAgent = new Agent({
+    id: 'skills_agent',
+    model: skillsModel,
+    systemPrompt: 'You are a helpful assistant.',
+    plugins: [new AgentSkills({ skills: [new Skill({ name: 'pdf-skill', description: 'Process PDFs' })] })],
+    printer: false,
+    retryStrategy: null,
+  })
+  await skillsAgent.invoke('Hi')
+  emit(
+    'model_requests/skills_run',
+    skillsModel.requests,
+    'Model request of an agent with AgentSkills: the `skills` tool spec and the <available_skills> block appended to a string system prompt'
+  )
   emit(
     'tools/mcp_router_spec',
     makeMcpRouter({ servers: { mcp: { url: 'https://mcp.example.com/mcp' } } }).toolSpec,
