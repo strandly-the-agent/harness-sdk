@@ -211,11 +211,8 @@ impl Model for DefaultModel {
 }
 
 /// Everything an agent is built from (TS `AgentConfig`); build one with [`Agent::builder`] or a
-/// struct literal and [`Agent::new`].
-///
-/// Keys whose TS behaviour lands with later subsystems (conversation and context managers,
-/// interventions, sessions, memory, sandbox, storage, background tasks and telemetry
-/// attributes) are added with them, so no key is accepted and ignored.
+/// struct literal and [`Agent::new`]. Every TS key has a field except the experimental
+/// `checkpointing`.
 ///
 /// ```
 /// use strands::agent::AgentConfig;
