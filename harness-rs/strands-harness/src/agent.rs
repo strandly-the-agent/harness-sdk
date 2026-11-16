@@ -714,17 +714,26 @@ fn skills_plugin(skills: SkillsOption, seams: &Seams) -> Option<AgentSkills> {
     })
 }
 
-/// The built-in plugins for `names`, skipping one whose name a plugin in `existing` already has.
+/// The built-in plugins for `names`, skipping one a plugin in `existing` stands in for: it has
+/// the same name, or vends the same tools (a consumer's `Todos` under a custom name). A plugin
+/// without tools has no such signal, so the built-in `EnvironmentContext` yields per turn instead.
 fn select_builtin_plugins(names: &[BuiltinPluginName], existing: &[Arc<dyn Plugin>]) -> Vec<Arc<dyn Plugin>> {
+    let specs = |plugin: &Arc<dyn Plugin>| -> Vec<_> {
+        plugin.get_tools().iter().map(|tool| tool.tool_spec()).collect()
+    };
     let mut selected: Vec<Arc<dyn Plugin>> = Vec::new();
     for name in names {
         let plugin: Arc<dyn Plugin> = match name {
             BuiltinPluginName::Todos => Arc::new(Todos::new(TodosConfig::default())),
             BuiltinPluginName::Environment => {
-                Arc::new(EnvironmentContext::new(EnvironmentContextConfig::default()))
+                Arc::new(EnvironmentContext::yielding(EnvironmentContextConfig::default()))
             }
         };
-        if !existing.iter().any(|other| other.name() == plugin.name()) {
+        let tools = specs(&plugin);
+        let present = existing
+            .iter()
+            .any(|other| other.name() == plugin.name() || (!tools.is_empty() && specs(other) == tools));
+        if !present {
             selected.push(plugin);
         }
     }
