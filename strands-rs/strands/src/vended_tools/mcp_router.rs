@@ -499,3 +499,6 @@ fn content_text(content: &ToolResultContent) -> String {
         other => to_js_string(other).unwrap_or_default(),
     }
 }
+
+#[cfg(test)]
+mod tests;

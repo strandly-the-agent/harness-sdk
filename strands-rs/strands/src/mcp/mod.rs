@@ -55,4 +55,4 @@ pub use mcp_tool::McpTool;
 pub use transport::{McpTransport, StdioServerParameters};
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

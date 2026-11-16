@@ -4,7 +4,7 @@
 //! (`tests/server.rs`) over an in-memory pipe.
 
 mod config;
-mod server;
+pub(crate) mod server;
 
 use std::sync::Arc;
 
