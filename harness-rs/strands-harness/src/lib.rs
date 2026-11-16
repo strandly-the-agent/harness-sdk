@@ -38,3 +38,8 @@ pub use tools::{
     make_programmatic_tool_caller, programmatic_tool_caller,
 };
 pub use types::{Effort, WebFetchTransport};
+pub use tools::{
+    AgentBuilder, AgentSpec, CONTEXT_MODES, Choice, ChoiceOption, ContextAxis, ContextMode, Fixed, GENERALIST,
+    GENERALIST_INSTRUCTIONS, Inherit, InstructionsMode, MakeSubagentOptions, McpServersMode, ModelMode, Open, Preset,
+    PresetOptions, ToolsMode, make_subagent,
+};
