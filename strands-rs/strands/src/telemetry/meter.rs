@@ -1,5 +1,5 @@
-//! Local agent metrics (TS `telemetry/meter.ts`): the counters an [`AgentResult`] carries.
-//! OpenTelemetry instruments join in the `otel` feature.
+//! Agent metrics (TS `telemetry/meter.ts`): the counters an [`AgentResult`] carries, and with the
+//! `otel` feature the OpenTelemetry counters and histograms recorded alongside them.
 //!
 //! [`AgentResult`]: crate::AgentResult
 #![deny(clippy::arithmetic_side_effects)]
@@ -10,6 +10,8 @@ use indexmap::IndexMap;
 use serde::{Serialize, Serializer};
 use tokio::time::Instant;
 
+#[cfg(feature = "otel")]
+use self::instruments::Instruments;
 use crate::models::streaming::{Metrics, ModelMetadataEvent, Usage};
 
 /// TS `MAX_INVOCATION_HISTORY`: how many invocations [`AgentMetrics`] keeps.
@@ -208,9 +210,20 @@ impl AgentMetrics {
 #[derive(Debug, Default)]
 pub(crate) struct Meter {
     metrics: AgentMetrics,
+    #[cfg(feature = "otel")]
+    instruments: Instruments,
 }
 
 impl Meter {
+    /// A meter recording to instruments of `meter` instead of the global meter provider's.
+    #[cfg(all(test, feature = "otel"))]
+    pub(crate) fn with_otel_meter(meter: &opentelemetry::metrics::Meter) -> Self {
+        Self {
+            metrics: AgentMetrics::default(),
+            instruments: Instruments::new(meter),
+        }
+    }
+
     pub(crate) fn metrics(&self) -> &AgentMetrics {
         &self.metrics
     }
@@ -221,11 +234,15 @@ impl Meter {
             invocations.remove(0);
         }
         invocations.push(InvocationMetricsData::default());
+        #[cfg(feature = "otel")]
+        self.instruments.invocation_count.add(1, &[]);
     }
 
     /// Starts a cycle; returns its id and start time.
     pub(crate) fn start_cycle(&mut self) -> (String, Instant) {
         self.metrics.cycle_count = self.metrics.cycle_count.saturating_add(1);
+        #[cfg(feature = "otel")]
+        self.instruments.cycle_count.add(1, &[]);
         let cycle_id = format!("cycle-{}", self.metrics.cycle_count);
         if let Some(invocation) = self.metrics.agent_invocations.last_mut() {
             invocation.cycles.push(AgentLoopMetricsData {
@@ -239,6 +256,10 @@ impl Meter {
 
     pub(crate) fn end_cycle(&mut self, start: Instant) {
         let duration = start.elapsed();
+        #[cfg(feature = "otel")]
+        self.instruments
+            .cycle_duration
+            .record(instruments::millis(duration), &[]);
         self.metrics.total_duration = self.metrics.total_duration.saturating_add(duration);
         if let Some(cycle) = self.latest_cycle() {
             cycle.duration = duration;
@@ -254,6 +275,8 @@ impl Meter {
         } else {
             entry.error_count = entry.error_count.saturating_add(1);
         }
+        #[cfg(feature = "otel")]
+        self.instruments.record_tool_call(tool_name, duration, success);
     }
 
     pub(crate) fn update_cycle(&mut self, metadata: Option<&ModelMetadataEvent>) {
@@ -264,6 +287,8 @@ impl Meter {
         if let Some(metrics) = metadata.metrics() {
             let latency_ms = self.metrics.accumulated_metrics.latency_ms();
             self.metrics.accumulated_metrics = Metrics::new(latency_ms.saturating_add(metrics.latency_ms()));
+            #[cfg(feature = "otel")]
+            self.instruments.record_model_metrics(metrics);
         }
     }
 
@@ -272,6 +297,11 @@ impl Meter {
         let prompt = usage.total_prompt_tokens();
         self.metrics.latest_context_size = Some(prompt);
         self.metrics.projected_context_size = Some(prompt.saturating_add(usage.output_tokens()));
+        #[cfg(feature = "otel")]
+        {
+            self.instruments.input_tokens.add(usage.input_tokens(), &[]);
+            self.instruments.output_tokens.add(usage.output_tokens(), &[]);
+        }
         if let Some(invocation) = self.metrics.agent_invocations.last_mut() {
             invocation.usage.accumulate(usage);
         }
@@ -287,3 +317,102 @@ impl Meter {
             .and_then(|invocation| invocation.cycles.last_mut())
     }
 }
+
+/// The OpenTelemetry instruments of TS `Meter`, with the TS names, descriptions and units.
+#[cfg(feature = "otel")]
+mod instruments {
+    use std::time::Duration;
+
+    use opentelemetry::metrics::{Counter, Histogram, Meter};
+    use opentelemetry::{InstrumentationScope, KeyValue, global};
+
+    use crate::models::streaming::Metrics;
+    use crate::telemetry::config::{process_env, service_name};
+
+    #[derive(Debug)]
+    pub(super) struct Instruments {
+        pub(super) cycle_count: Counter<u64>,
+        pub(super) invocation_count: Counter<u64>,
+        pub(super) cycle_duration: Histogram<u64>,
+        tool_call_count: Counter<u64>,
+        tool_error_count: Counter<u64>,
+        tool_duration: Histogram<u64>,
+        pub(super) input_tokens: Counter<u64>,
+        pub(super) output_tokens: Counter<u64>,
+        model_latency: Histogram<u64>,
+        time_to_first_token: Histogram<f64>,
+    }
+
+    /// Instruments of the global meter provider's meter named after the service, as the TS `Meter`
+    /// constructor gets them; they record nothing until a provider is registered (`setup_meter`).
+    impl Default for Instruments {
+        fn default() -> Self {
+            let scope = InstrumentationScope::builder(service_name(&process_env)).build();
+            Self::new(&global::meter_with_scope(scope))
+        }
+    }
+
+    pub(super) fn millis(duration: Duration) -> u64 {
+        u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+    }
+
+    impl Instruments {
+        pub(super) fn new(meter: &Meter) -> Self {
+            let counter = |name: &'static str, description: &'static str| {
+                meter.u64_counter(name).with_description(description).build()
+            };
+            let millis_histogram = |name: &'static str, description: &'static str| {
+                meter
+                    .u64_histogram(name)
+                    .with_description(description)
+                    .with_unit("ms")
+                    .build()
+            };
+            Self {
+                cycle_count: counter("gen_ai.agent.cycle.count", "Number of agent loop cycles executed"),
+                invocation_count: counter("gen_ai.agent.invocation.count", "Number of agent invocations"),
+                cycle_duration: millis_histogram(
+                    "gen_ai.agent.cycle.duration",
+                    "Duration of agent loop cycles in milliseconds",
+                ),
+                tool_call_count: counter("gen_ai.agent.tool.call.count", "Number of tool calls"),
+                tool_error_count: counter("gen_ai.agent.tool.error.count", "Number of failed tool calls"),
+                tool_duration: millis_histogram(
+                    "gen_ai.agent.tool.duration",
+                    "Duration of tool calls in milliseconds",
+                ),
+                input_tokens: counter("gen_ai.agent.tokens.input", "Input tokens consumed"),
+                output_tokens: counter("gen_ai.agent.tokens.output", "Output tokens consumed"),
+                model_latency: millis_histogram(
+                    "gen_ai.agent.model.latency",
+                    "Model invocation latency in milliseconds",
+                ),
+                time_to_first_token: meter
+                    .f64_histogram("gen_ai.server.time_to_first_token")
+                    .with_description("Time to generate first token for successful responses")
+                    .with_unit("s")
+                    .build(),
+            }
+        }
+
+        pub(super) fn record_tool_call(&self, tool_name: &str, duration: Duration, success: bool) {
+            let attributes = [KeyValue::new("gen_ai.tool.name", tool_name.to_owned())];
+            self.tool_call_count.add(1, &attributes);
+            self.tool_duration.record(millis(duration), &attributes);
+            if !success {
+                self.tool_error_count.add(1, &attributes);
+            }
+        }
+
+        pub(super) fn record_model_metrics(&self, metrics: &Metrics) {
+            self.model_latency.record(metrics.latency_ms(), &[]);
+            if let Some(first_byte_ms) = metrics.time_to_first_byte_ms().filter(|ms| *ms > 0) {
+                self.time_to_first_token
+                    .record(Duration::from_millis(first_byte_ms).as_secs_f64(), &[]);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
