@@ -103,6 +103,10 @@ name = "sessions"
 name = "bedrock"
 required-features = ["bedrock"]
 
+[[example]]
+name = "anthropic"
+required-features = ["anthropic"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
