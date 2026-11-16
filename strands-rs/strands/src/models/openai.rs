@@ -627,7 +627,81 @@ impl StreamState {
     }
 }
 
+#[bon::bon]
 impl OpenAIModel {
+    /// A builder over the options and the config fields; `build()` is [`OpenAIModel::new`].
+    ///
+    /// ```no_run
+    /// use strands::models::OpenAIModel;
+    ///
+    /// # fn main() -> strands::Result<()> {
+    /// // The API key comes from `OPENAI_API_KEY`.
+    /// let model = OpenAIModel::builder().model_id("gpt-5.4").build()?;
+    /// let agent = strands::Agent::builder().model(model).build()?;
+    /// # drop(agent);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// `build()` fails as [`OpenAIModel::new`] does.
+    #[builder(builder_type(doc {
+        /// Builds an [`OpenAIModel`]; start with [`OpenAIModel::builder`].
+    }), finish_fn = build, on(String, into), state_mod(vis = "pub"))]
+    pub fn builder(
+        /// See [`OpenAIModelOptions::api`].
+        #[builder(default)]
+        api: OpenAIApi,
+        /// See [`OpenAIModelOptions::api_key`].
+        #[builder(into)]
+        api_key: Option<OpenAIApiKey>,
+        /// See [`OpenAIModelOptions::client_config`].
+        #[builder(default)]
+        client_config: OpenAIClientConfig,
+        /// See [`OpenAIModelConfig::model_id`].
+        model_id: Option<String>,
+        /// See [`OpenAIModelConfig::max_tokens`].
+        max_tokens: Option<u64>,
+        /// See [`OpenAIModelConfig::temperature`].
+        temperature: Option<f64>,
+        /// See [`OpenAIModelConfig::top_p`].
+        top_p: Option<f64>,
+        /// See [`OpenAIModelConfig::context_window_limit`].
+        context_window_limit: Option<u64>,
+        /// See [`OpenAIModelConfig::model_info`].
+        model_info: Option<ModelInfo>,
+        /// See [`OpenAIModelConfig::params`].
+        params: Option<JsonObject>,
+        /// See [`OpenAIModelConfig::cache_config`].
+        cache_config: Option<CacheConfig>,
+        /// See [`OpenAIModelConfig::frequency_penalty`].
+        frequency_penalty: Option<f64>,
+        /// See [`OpenAIModelConfig::presence_penalty`].
+        presence_penalty: Option<f64>,
+        /// See [`OpenAIModelConfig::stateful`].
+        stateful: Option<bool>,
+    ) -> Result<Self> {
+        Self::new(OpenAIModelOptions {
+            api,
+            api_key,
+            client_config,
+            config: OpenAIModelConfig {
+                model_id,
+                max_tokens,
+                temperature,
+                top_p,
+                context_window_limit,
+                model_info,
+                params,
+                cache_config,
+                frequency_penalty,
+                presence_penalty,
+                stateful,
+            },
+        })
+    }
+
     /// Builds a model over the OpenAI API (TS `new OpenAIModel(options)`).
     ///
     /// # Errors

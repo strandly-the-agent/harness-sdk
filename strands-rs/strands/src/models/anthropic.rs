@@ -481,7 +481,7 @@ impl AnthropicModel {
     /// `build()` fails as [`AnthropicModel::new`] does.
     #[builder(builder_type(doc {
         /// Builds an [`AnthropicModel`]; start with [`AnthropicModel::builder`].
-    }), finish_fn = build, on(String, into))]
+    }), finish_fn = build, on(String, into), state_mod(vis = "pub"))]
     pub fn builder(
         /// The API key; defaults to `ANTHROPIC_API_KEY`.
         api_key: Option<String>,

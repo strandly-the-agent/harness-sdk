@@ -423,6 +423,93 @@ pub(crate) struct Shared {
     skip_count_tokens_models: Mutex<HashSet<String>>,
 }
 
+#[bon::bon]
+impl BedrockModel {
+    /// A builder over the options and the config fields; `build()` is [`BedrockModel::new`].
+    ///
+    /// ```
+    /// use strands::models::BedrockModel;
+    ///
+    /// let model = BedrockModel::builder()
+    ///     .model_id("global.anthropic.claude-sonnet-4-6")
+    ///     .region("us-west-2")
+    ///     .build();
+    /// let agent = strands::Agent::builder().model(model).build()?;
+    /// # drop(agent);
+    /// # Ok::<(), strands::Error>(())
+    /// ```
+    #[builder(builder_type(doc {
+        /// Builds a [`BedrockModel`]; start with [`BedrockModel::builder`].
+    }), finish_fn = build, on(String, into), state_mod(vis = "pub"))]
+    pub fn builder(
+        /// See [`BedrockModelOptions::region`].
+        region: Option<String>,
+        /// See [`BedrockModelOptions::client_config`].
+        client_config: Option<aws_config::SdkConfig>,
+        /// See [`BedrockModelOptions::request_timeout`].
+        request_timeout: Option<Duration>,
+        /// See [`BedrockModelOptions::api_key`].
+        api_key: Option<String>,
+        /// See [`BedrockModelConfig::model_id`].
+        model_id: Option<String>,
+        /// See [`BedrockModelConfig::max_tokens`].
+        max_tokens: Option<u64>,
+        /// See [`BedrockModelConfig::temperature`].
+        temperature: Option<f64>,
+        /// See [`BedrockModelConfig::top_p`].
+        top_p: Option<f64>,
+        /// See [`BedrockModelConfig::context_window_limit`].
+        context_window_limit: Option<u64>,
+        /// See [`BedrockModelConfig::model_info`].
+        model_info: Option<ModelInfo>,
+        /// See [`BedrockModelConfig::stop_sequences`].
+        stop_sequences: Option<Vec<String>>,
+        /// See [`BedrockModelConfig::cache_config`].
+        cache_config: Option<BedrockCacheConfig>,
+        /// See [`BedrockModelConfig::additional_request_fields`].
+        additional_request_fields: Option<JsonValue>,
+        /// See [`BedrockModelConfig::additional_response_field_paths`].
+        additional_response_field_paths: Option<Vec<String>>,
+        /// See [`BedrockModelConfig::additional_args`].
+        additional_args: Option<JsonValue>,
+        /// See [`BedrockModelConfig::stream`].
+        stream: Option<bool>,
+        /// See [`BedrockModelConfig::include_tool_result_status`].
+        include_tool_result_status: Option<IncludeToolResultStatus>,
+        /// See [`BedrockModelConfig::guardrail_config`].
+        guardrail_config: Option<BedrockGuardrailConfig>,
+        /// See [`BedrockModelConfig::use_native_token_count`].
+        use_native_token_count: Option<bool>,
+        /// See [`BedrockModelConfig::strict_tools`].
+        strict_tools: Option<bool>,
+    ) -> Self {
+        Self::new(BedrockModelOptions {
+            region,
+            client_config,
+            request_timeout,
+            api_key,
+            config: BedrockModelConfig {
+                model_id,
+                max_tokens,
+                temperature,
+                top_p,
+                context_window_limit,
+                model_info,
+                stop_sequences,
+                cache_config,
+                additional_request_fields,
+                additional_response_field_paths,
+                additional_args,
+                stream,
+                include_tool_result_status,
+                guardrail_config,
+                use_native_token_count,
+                strict_tools,
+            },
+        })
+    }
+}
+
 impl BedrockModel {
     /// A model built from `options` (a [`BedrockModelOptions`] or a [`BedrockModelConfig`]).
     pub fn new(options: impl Into<BedrockModelOptions>) -> Self {
