@@ -110,7 +110,7 @@
   },
   "strands-ts/src/agent/__tests__/agent-delegation.test.ts": {
     "does not leak delegation state when a later AfterTools hook throws": {
-      "gap": "needs an `AfterToolsEvent` hook that throws, and hooks can't fail"
+      "gap": "Rust-inapplicable: hook callbacks return `()`, so a later `AfterToolsEvent` hook can't fail the request after the delegation state is committed"
     },
     "does not stop the loop when a later AfterToolsEvent hook changes the result to error": "does_not_stop_the_loop_when_a_later_after_tool_call_hook_changes_the_result_to_error"
   },

@@ -6,6 +6,7 @@ use futures::StreamExt;
 use serde_json::json;
 
 use crate::agent::{Agent, AgentAsToolOptions, AgentStream};
+use crate::background_tasks::BackgroundTasksConfig;
 use crate::error::ModelError;
 use crate::hooks::{
     AfterToolCallEvent, BeforeToolCallEvent, BeforeToolsEvent, HookCallbackOptions, HookOrder,
@@ -105,15 +106,18 @@ async fn routes_to_the_correct_specialist_and_returns_stop_reason_end_turn() {
     let model = mock(vec![vec![call(
         "TechSupport",
         "call-1",
-        json!({"input": "My wifi does not work"}),
+        json!({"input": "My wifi does not work", "_background_execution": true}),
     )]]);
-    let mut agent = orchestrator(
-        model,
-        vec![
+    let mut agent = Agent::builder()
+        .model(model)
+        .name("Orchestrator")
+        .tools(vec![
             delegate(sub_agent("Billing", "Your balance is $42.")),
             delegate(sub_agent("TechSupport", "Try rebooting your router.")),
-        ],
-    );
+        ])
+        .background_tasks(BackgroundTasksConfig::default())
+        .build()
+        .unwrap();
 
     let result = agent.invoke("My wifi does not work").await.unwrap();
 
