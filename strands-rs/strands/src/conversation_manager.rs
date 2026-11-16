@@ -92,6 +92,15 @@ pub struct ConversationManagerReduceOptions<'a> {
     invocation_context: Option<InvocationContext>,
 }
 
+impl fmt::Debug for ConversationManagerReduceOptions<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConversationManagerReduceOptions")
+            .field("agent_id", &self.agent.id())
+            .field("reactive", &self.error.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 impl<'a> ConversationManagerReduceOptions<'a> {
     pub(crate) fn new(
         agent: &'a mut LocalAgent,

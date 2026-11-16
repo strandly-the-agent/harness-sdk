@@ -49,6 +49,7 @@ pub async fn server_time() -> u64 {
 }
 
 /// A product store.
+#[derive(Debug)]
 pub struct Inventory {
     stock: u32,
 }

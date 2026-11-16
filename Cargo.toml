@@ -92,6 +92,7 @@ hyper-util = { version = "0.1.21", default-features = false, features = ["tokio"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+missing_debug_implementations = "warn"
 unreachable_pub = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 

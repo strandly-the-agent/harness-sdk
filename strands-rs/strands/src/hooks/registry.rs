@@ -145,6 +145,12 @@ mod slot {
         entries: RwLock<Vec<Entry<M>>>,
     }
 
+    impl<M: HookEvent> std::fmt::Debug for Slot<M> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("Slot").finish_non_exhaustive()
+        }
+    }
+
     impl<M: HookEvent> Default for Slot<M> {
         fn default() -> Self {
             Self {
@@ -192,7 +198,7 @@ macro_rules! hook_events {
             use super::*;
 
             /// Per-event callback lists.
-            #[derive(Default)]
+            #[derive(Debug, Default)]
             pub struct Slots {
                 pub(super) next_id: AtomicU64,
                 $( pub(super) $field: Slot<$marker>, )*

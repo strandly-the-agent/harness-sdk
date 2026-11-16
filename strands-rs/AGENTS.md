@@ -76,7 +76,7 @@ These hold across modules; a new type follows them without a new decision.
 
 ### Selected lints
 
-These match `[workspace.lints]` in the root `Cargo.toml`. Rust: `unsafe_code` is forbidden; `missing_docs`, `unreachable_pub` and the `rust_2018_idioms` group warn (errors under `-D warnings`). Clippy runs the `all` group as warnings, plus these lints from outside it, enabled one by one rather than whole groups:
+These match `[workspace.lints]` in the root `Cargo.toml`. Rust: `unsafe_code` is forbidden; `missing_docs`, `missing_debug_implementations`, `unreachable_pub` and the `rust_2018_idioms` group warn (errors under `-D warnings`). Clippy runs the `all` group as warnings, plus these lints from outside it, enabled one by one rather than whole groups:
 
 - Denied: `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable`, `dbg_macro`, `print_stdout`, `print_stderr` (the printer and examples opt out explicitly), `await_holding_lock`, `await_holding_refcell_ref`, `await_holding_invalid_type`, `allow_attributes_without_reason`, `string_slice`, `disallowed_types`, `exhaustive_enums`, `exhaustive_structs`.
 - Warned: `needless_pass_by_value`, `redundant_clone` (a nursery lint), `redundant_closure_for_method_calls`, `semicolon_if_nothing_returned`, `explicit_iter_loop`, `manual_let_else`, `match_same_arms`, `cast_possible_truncation`, `cast_sign_loss`, `cast_lossless`, `cast_possible_wrap`, `cast_precision_loss`, `inefficient_to_string`, `implicit_clone`, `uninlined_format_args`, `doc_markdown`, `missing_errors_doc`, `large_futures`, `indexing_slicing`.
