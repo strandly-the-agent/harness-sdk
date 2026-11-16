@@ -305,6 +305,55 @@ mod select {
         );
         assert_eq!(classifier.requests().len(), 0);
     }
+
+    // No TS case: TS gets `JSON.stringify` number formatting from the language.
+    #[tokio::test]
+    async fn writes_the_routing_context_numbers_as_json_stringify_does() {
+        let classifier = selection_model(0);
+        let candidates = vec![
+            candidate("routine").with_metadata(object(json!({ "cost": 1.0, "big": 1e21, "neg": -0.0 }))),
+            candidate("complex"),
+        ];
+
+        strategy(&classifier)
+            .select(&routing_context(&candidates))
+            .await
+            .unwrap();
+
+        let text = request_text(&classifier);
+        assert!(
+            text.contains(r#""metadata":{"cost":1,"big":1e+21,"neg":0}"#),
+            "{text}"
+        );
+    }
+
+    // No TS case: TS measures the evidence with `JSON.stringify(..).length` (UTF-16 code units).
+    #[tokio::test]
+    async fn measures_candidate_evidence_as_json_stringify_length() {
+        let classifier = selection_model(0);
+        let strategy = strategy_with(
+            &classifier,
+            ClassifierStrategyOptions {
+                max_candidate_chars: NonZeroUsize::new(100),
+                ..Default::default()
+            },
+        );
+        let candidates = vec![
+            candidate("routine").with_metadata(object(
+                json!({ "cost": 1.0, "big": 1e21, "note": "\u{1F600}".repeat(10) }),
+            )),
+            candidate("complex"),
+        ];
+
+        let error = strategy.select(&routing_context(&candidates)).await.unwrap_err();
+
+        assert!(
+            error.to_string().starts_with(
+                "candidate evidence serializes to 209 characters, exceeding maxCandidateChars=100;"
+            ),
+            "{error}"
+        );
+    }
 }
 
 mod request_extraction {
@@ -524,6 +573,17 @@ mod system_prompt_construction {
         assert_eq!(state["candidates"][1]["description"], delimiter_injection);
         assert!(system_prompt.contains("MANDATORY RULES"));
         assert_eq!(state["latestRequest"], malicious_instruction);
+    }
+
+    // No TS case: `String.prototype.trim` strips U+FEFF and keeps U+0085, unlike `str::trim`.
+    #[test]
+    fn trims_the_routing_policy_as_java_script_does() {
+        let rules = routing_question("");
+        assert_eq!(routing_question("\u{feff} \n"), rules);
+        assert_eq!(
+            routing_question("\u{85}"),
+            format!("{rules}\n\nRouting policy: \u{85}")
+        );
     }
 
     #[tokio::test]

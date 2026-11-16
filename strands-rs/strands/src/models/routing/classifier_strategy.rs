@@ -20,7 +20,7 @@ use crate::models::routing::strategy::{RoutingContext, RoutingStrategy};
 use crate::models::streaming::Usage;
 use crate::retry::model_retry_strategy::{Sleeper, tokio_sleeper};
 use crate::tools::structured_output::{INSTRUCTION, STRUCTURED_OUTPUT_TOOL_NAME};
-use crate::types::json::JsonValue;
+use crate::types::json::{JsonValue, to_js_string};
 use crate::types::messages::{
     ContentBlock, GuardContentBlock, Message, Role, StopReason, SystemContentBlock, SystemPrompt, TextBlock,
 };
@@ -48,7 +48,7 @@ const ANSWER_SET_DESCRIPTION: &str = "Answer for each question in the input deci
 
 /// The routing question: the fixed routing rules followed by the routing policy, if any.
 pub(crate) fn routing_question(policy: &str) -> String {
-    if policy.trim().is_empty() {
+    if js_trim(policy).is_empty() {
         ROUTING_RULES.to_owned()
     } else {
         format!("{ROUTING_RULES}\n\nRouting policy: {policy}")
@@ -264,15 +264,14 @@ impl RoutingStrategy for ClassifierStrategy {
         }
         let profiles = build_candidate_profiles(&context.candidates, self.max_candidate_chars)?;
         let keys: Vec<String> = (0..profiles.len()).map(candidate_key).collect();
-        let state = json!({
+        let state = to_js_string(&json!({
             "latestRequest": latest_request_text(&context.messages, self.max_message_chars),
             "agentInstructions": bounded_agent_instructions(
                 context.system_prompt.as_ref(),
                 self.max_agent_instructions_chars,
             ),
             "candidates": profiles,
-        })
-        .to_string();
+        }))?;
         match self.decide_with_timeout(context, &keys, state).await {
             Ok(index) => Ok(context.candidates.get(index).cloned()),
             Err(error) => {
@@ -361,7 +360,8 @@ fn build_candidate_profiles(
         .iter()
         .map(|candidate| profile(None, candidate))
         .collect();
-    let serialized_size = JsonValue::Array(evidence).to_string().chars().count();
+    // TS measures `JSON.stringify(evidence).length`, which counts UTF-16 code units.
+    let serialized_size = to_js_string(&evidence)?.encode_utf16().count();
     if serialized_size > character_limit {
         return Err(Error::other(format!(
             "candidate evidence serializes to {serialized_size} characters, exceeding maxCandidateChars={character_limit}; trim candidate names, descriptions, and metadata, or raise the limit"
