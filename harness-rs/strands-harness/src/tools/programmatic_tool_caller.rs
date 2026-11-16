@@ -9,6 +9,10 @@
 //! access), and its duration and recursion limits stop the code hard. The only way out of the
 //! sandbox is the tool functions handed in here. The interpreter runs in this process, on the
 //! blocking thread pool.
+//!
+//! Inner tool calls go through `ToolAgent::call_tool`, so `interventions` gate them: a denied call
+//! raises a catchable `RuntimeError` in the code, and a call that needs interactive approval is
+//! refused the same way, since a direct call cannot prompt.
 
 mod output;
 mod run;
@@ -25,6 +29,7 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use serde::Deserialize;
 use strands::tools::FunctionTool;
+use strands::types::agent::ToolCallOutcome;
 use strands::types::messages::{ToolResultBlock, ToolResultContent};
 use strands::types::tools::ToolResultStatus;
 use strands::{JsonValue, ToolContext, ToolError};
@@ -102,17 +107,25 @@ pub(crate) type InnerCaller = Arc<
     dyn Fn(ToolContext, String, JsonValue) -> BoxFuture<'static, Result<InnerCall, String>> + Send + Sync,
 >;
 
-/// The inner caller of the tools this module makes.
-///
-/// The SDK has no public way yet to run a registry tool through the agent's hooks from inside a
-/// tool (`ToolAgent::call_tool`), so every inner call is refused rather than run ungated, with
-/// the text TS uses when it cannot reach the hooks.
+/// The inner caller of the tools this module makes: `ToolAgent::call_tool`, which runs the call
+/// the way the executor runs a model-issued one, so `interventions` gate it.
 fn gated_inner_caller() -> InnerCaller {
-    Arc::new(|_parent, name, _input| {
+    Arc::new(|parent: ToolContext, name: String, input: JsonValue| {
         async move {
-            Err(format!(
-                "Cannot reach the agent's hooks to gate the call to '{name}'; refusing to run it ungated."
-            ))
+            let state = parent.invocation_state().clone();
+            match parent.agent().call_tool(&name, input, state).await {
+                Ok(ToolCallOutcome::Result(result)) => Ok(InnerCall::Result(result)),
+                Ok(ToolCallOutcome::Interrupt(interrupt)) => {
+                    Ok(InnerCall::NeedsApproval(match interrupt.reason() {
+                        Some(JsonValue::String(reason)) => reason.clone(),
+                        Some(reason) => reason.to_string(),
+                        None => interrupt.name().to_owned(),
+                    }))
+                }
+                Ok(ToolCallOutcome::Cancelled) => Ok(InnerCall::Cancelled),
+                Ok(other) => Err(format!("unexpected outcome {other:?}")),
+                Err(error) => Err(error.to_string()),
+            }
         }
         .boxed()
     })

@@ -1,55 +1,32 @@
 //! Port of `harness-ts/test/tools/programmatic-tool-caller.test.ts`.
-//!
-//! Inner calls here go through `ungated`, a test-only inner caller that runs the registry tool
-//! directly; the tools the crate hands out refuse inner calls until the SDK can gate them.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures::{FutureExt, StreamExt};
+use futures::FutureExt;
 use serde_json::json;
 use strands::agent::{Agent, DirectToolCallOptions};
+use strands::hooks::{AfterToolCallEvent, BeforeToolCallEvent};
+use strands::interventions::{
+    BeforeToolCallAction, InterventionHandler, OnError, confirm, deny, proceed, transform,
+};
 use strands::testing::MockMessageModel;
-use strands::tools::{FunctionTool, ToolStreamItem};
-use strands::types::messages::{ToolResultBlock, ToolResultContent};
+use strands::tools::FunctionTool;
+use strands::types::messages::{TextBlock, ToolResultBlock, ToolResultContent};
 use strands::types::tools::{ToolResultStatus, ToolUse};
-use strands::{CancelOptions, CancelSignal, JsonValue, ToolContext, ToolError, ToolOutcome, ToolSource};
+use strands::{CancelOptions, CancelSignal, JsonValue, ToolError, ToolSource};
 
 use super::output::Output;
 use super::run::{HostCall, LIMITS, Limits, MAX_CONCURRENT_TOOL_CALLS, RunEnd, run_code};
 use super::{
     DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, InnerCall, InnerCaller, MakeProgrammaticToolCallerOptions,
-    make_programmatic_tool_caller_with, programmatic_tool_caller,
+    gated_inner_caller, make_programmatic_tool_caller_with, programmatic_tool_caller,
 };
 
-/// Runs the registry tool directly, with no hooks.
-fn ungated() -> InnerCaller {
-    Arc::new(|parent: ToolContext, name: String, input: JsonValue| {
-        async move {
-            let tool = Arc::clone(
-                parent
-                    .agent()
-                    .tool_registry()
-                    .resolve(&name)
-                    .map_err(|error| error.to_string())?,
-            );
-            let context = strands::testing::tool_context(ToolUse::new(name, "ptc_test", input));
-            let mut stream = tool.stream(context);
-            while let Some(item) = stream.next().await {
-                if let ToolStreamItem::Outcome(ToolOutcome::Result(result)) = item {
-                    return Ok(InnerCall::Result(result));
-                }
-            }
-            Err("the tool returned no result".to_owned())
-        }
-        .boxed()
-    })
-}
-
 fn caller_with(options: MakeProgrammaticToolCallerOptions) -> FunctionTool {
-    make_programmatic_tool_caller_with(options, ungated(), LIMITS)
+    make_programmatic_tool_caller_with(options, gated_inner_caller(), LIMITS)
 }
 
 fn caller() -> FunctionTool {
@@ -285,8 +262,11 @@ async fn bounds_a_synchronous_busy_loop_via_the_vm_duration_limit() {
         max_duration: Duration::from_millis(300),
         ..LIMITS
     };
-    let quick =
-        make_programmatic_tool_caller_with(MakeProgrammaticToolCallerOptions::default(), ungated(), limits);
+    let quick = make_programmatic_tool_caller_with(
+        MakeProgrammaticToolCallerOptions::default(),
+        gated_inner_caller(),
+        limits,
+    );
     let mut agent = agent_of(vec![quick, calculator()]);
     let start = std::time::Instant::now();
     let result = run(&mut agent, "while True:\n    pass").await;
@@ -567,24 +547,183 @@ fn shell_like(calls: &Arc<Mutex<Vec<String>>>) -> FunctionTool {
     )
 }
 
-/// Seam-level port: the inner caller reports the pending approval that `ToolAgent::call_tool`
-/// will report for a `confirm` intervention.
+struct Gate {
+    name: &'static str,
+    on_error: OnError,
+    action: fn(&BeforeToolCallEvent) -> BeforeToolCallAction,
+}
+
+#[async_trait::async_trait]
+impl InterventionHandler for Gate {
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn on_error(&self) -> OnError {
+        self.on_error
+    }
+
+    async fn before_tool_call(
+        &self,
+        event: &mut BeforeToolCallEvent,
+    ) -> strands::Result<BeforeToolCallAction> {
+        Ok((self.action)(event))
+    }
+}
+
+fn gate(
+    name: &'static str,
+    action: fn(&BeforeToolCallEvent) -> BeforeToolCallAction,
+) -> Arc<dyn InterventionHandler> {
+    Arc::new(Gate {
+        name,
+        on_error: OnError::default(),
+        action,
+    })
+}
+
+fn deny_shell() -> Arc<dyn InterventionHandler> {
+    gate("deny-shell", |event| {
+        if event.tool_use().name() == "shell_like" {
+            deny("shell is off").into()
+        } else {
+            proceed().into()
+        }
+    })
+}
+
+fn gated_agent(calls: &Arc<Mutex<Vec<String>>>, handler: Arc<dyn InterventionHandler>) -> Agent {
+    let tools: Vec<ToolSource> = vec![programmatic_tool_caller().into(), shell_like(calls).into()];
+    Agent::builder()
+        .model(MockMessageModel::new())
+        .tools(tools)
+        .interventions([handler])
+        .build()
+        .expect("the agent builds")
+}
+
+fn recorded(calls: &Arc<Mutex<Vec<String>>>) -> Vec<String> {
+    calls.lock().expect("no poisoned lock").clone()
+}
+
+#[tokio::test]
+async fn deny_blocks_the_inner_call_and_the_tool_never_runs() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let mut agent = gated_agent(&calls, deny_shell());
+    let result = run(&mut agent, GATED_CODE).await;
+    assert!(!is_error(&result));
+    assert!(
+        text(&result).contains("DENIED: shell is off"),
+        "{}",
+        text(&result)
+    );
+    assert!(recorded(&calls).is_empty());
+}
+
 #[tokio::test]
 async fn confirm_refuses_the_inner_call_no_prompt_possible_even_with_on_error_proceed() {
     let calls = Arc::new(Mutex::new(Vec::new()));
-    let asks: InnerCaller = Arc::new(|_parent, _name, _input| {
-        async { Ok(InnerCall::NeedsApproval("Run shell?".to_owned())) }.boxed()
+    let ask = Arc::new(Gate {
+        name: "ask",
+        on_error: OnError::Proceed,
+        action: |event| {
+            if event.tool_use().name() == "shell_like" {
+                confirm("Run shell?").into()
+            } else {
+                proceed().into()
+            }
+        },
     });
-    let gated =
-        make_programmatic_tool_caller_with(MakeProgrammaticToolCallerOptions::default(), asks, LIMITS);
-    let mut agent = agent_of(vec![gated, shell_like(&calls)]);
+    let mut agent = gated_agent(&calls, ask);
     let result = run(&mut agent, GATED_CODE).await;
     assert_eq!(
         text(&result),
         "ERR Failed to execute tool 'shell_like': Tool 'shell_like' needs approval (Run shell?), which \
          programmatic_tool_caller cannot prompt for; call it as a normal tool call instead."
     );
-    assert!(calls.lock().expect("no poisoned lock").is_empty());
+    assert!(recorded(&calls).is_empty());
+}
+
+#[tokio::test]
+async fn transform_rewrites_the_inner_call_input() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let rewrite = gate("rewrite", |_event| {
+        transform(|event: &mut BeforeToolCallEvent| {
+            let rewritten = ToolUse::new(
+                event.tool_use().name(),
+                event.tool_use().tool_use_id(),
+                json!({"command": "safe"}),
+            );
+            event.set_tool_use(rewritten);
+        })
+        .into()
+    });
+    let mut agent = gated_agent(&calls, rewrite);
+    let result = run(&mut agent, GATED_CODE).await;
+    assert_eq!(text(&result), "ran:safe");
+    assert_eq!(recorded(&calls), ["safe"]);
+}
+
+#[tokio::test]
+async fn accepts_an_approval_the_handler_already_collected() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let pre_answered = gate("pre-answered", |event| {
+        if event.tool_use().name() == "shell_like" {
+            confirm("Run shell?").with_response(true).into()
+        } else {
+            proceed().into()
+        }
+    });
+    let mut agent = gated_agent(&calls, pre_answered);
+    let result = run(&mut agent, GATED_CODE).await;
+    assert_eq!(text(&result), "ran:rm -rf /");
+    assert_eq!(recorded(&calls), ["rm -rf /"]);
+}
+
+#[tokio::test]
+async fn fires_after_tool_call_for_a_denied_inner_call_with_the_error_result() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut agent = gated_agent(&Arc::default(), deny_shell());
+    let log = Arc::clone(&seen);
+    let _cleanup = agent.add_hook(move |event: &mut AfterToolCallEvent| {
+        let status = if is_error(event.result()) {
+            "error"
+        } else {
+            "success"
+        };
+        log.lock()
+            .expect("no poisoned lock")
+            .push(format!("{}:{status}", event.tool_use().name()));
+    });
+    run(&mut agent, GATED_CODE).await;
+    assert_eq!(recorded(&seen), ["shell_like:error"]);
+}
+
+#[tokio::test]
+async fn plain_before_after_hooks_observe_inner_calls_and_can_replace_the_result() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut agent = agent_of(vec![programmatic_tool_caller(), shell_like(&Arc::default())]);
+    let log = Arc::clone(&seen);
+    let _before = agent.add_hook(move |event: &mut BeforeToolCallEvent| {
+        log.lock()
+            .expect("no poisoned lock")
+            .push(format!("before:{}", event.tool_use().name()));
+    });
+    let log = Arc::clone(&seen);
+    let _after = agent.add_hook(move |event: &mut AfterToolCallEvent| {
+        log.lock()
+            .expect("no poisoned lock")
+            .push(format!("after:{}", event.tool_use().name()));
+        let replaced = ToolResultBlock::new(
+            event.tool_use().tool_use_id(),
+            ToolResultStatus::Success,
+            vec![ToolResultContent::Text(TextBlock::new("replaced"))],
+        );
+        event.set_result(replaced);
+    });
+    let result = run(&mut agent, "print(await shell_like(command='ls'))").await;
+    assert_eq!(text(&result), "replaced");
+    assert_eq!(recorded(&seen), ["before:shell_like", "after:shell_like"]);
 }
 
 /// Not a TS case: the cancel outcome of an inner call is the TS cancel text.
@@ -601,19 +740,6 @@ async fn a_cancelled_inner_call_raises_the_cancel_text() {
         "ERR Failed to execute tool 'shell_like': programmatic_tool_caller was cancelled; no further tool calls \
          are made."
     );
-}
-
-#[tokio::test]
-async fn refuses_inner_calls_when_the_agent_hooks_cannot_be_reached() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let mut agent = agent_of(vec![programmatic_tool_caller(), shell_like(&calls)]);
-    let result = run(&mut agent, GATED_CODE).await;
-    assert!(
-        text(&result).contains("refusing to run it ungated"),
-        "{}",
-        text(&result)
-    );
-    assert!(calls.lock().expect("no poisoned lock").is_empty());
 }
 
 /// The description is the TS constant, byte for byte.
