@@ -522,6 +522,55 @@ mod model_invoke_span_lifecycle {
         assert_eq!(chats.len(), 2);
         chats.into_iter().for_each(assert_ended_ok);
     }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn model_span_records_post_middleware_context_when_invoke_model_stage_middleware_transforms_input() {
+        use crate::middleware::{InvokeModelStage, MiddlewareStage as _};
+        use crate::models::model::{BaseModelConfig, Model};
+
+        let (recorder, _guard) = recording();
+        let selected = text_model("Selected response");
+        selected.update_config(BaseModelConfig {
+            model_id: Some("selected-model".to_owned()),
+            ..BaseModelConfig::default()
+        });
+        let selected: Arc<dyn Model> = Arc::new(selected);
+        let mut agent = AgentConfig::builder()
+            .model(Arc::new(text_model("Default response")) as Arc<dyn Model>)
+            .system_prompt("Original prompt")
+            .build()
+            .expect("a valid agent");
+        agent.local.telemetry().lock().tracer.set_semconv(semconv(""));
+        agent.add_middleware(InvokeModelStage::input(move |mut context| {
+            let selected = Arc::clone(&selected);
+            async move {
+                context.model = selected;
+                context.system_prompt = Some("Transformed prompt".into());
+                Ok(context)
+            }
+        }));
+        agent.invoke("Hi").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let chat = named(&spans, "chat")[0];
+        assert_eq!(
+            attribute(chat, "gen_ai.request.model").as_deref(),
+            Some("selected-model")
+        );
+        let system = chat
+            .events
+            .iter()
+            .find(|event| event.name == "gen_ai.system.message")
+            .expect("the system prompt event");
+        assert_eq!(
+            system
+                .attributes
+                .iter()
+                .find(|attribute| attribute.key.as_str() == "content")
+                .map(|attribute| attribute.value.to_string())
+                .as_deref(),
+            Some(r#"[{"text":"Transformed prompt"}]"#)
+        );
+    }
 }
 
 mod tool_call_span_lifecycle {
@@ -593,6 +642,46 @@ mod tool_call_span_lifecycle {
         let spans = recorder.spans();
         assert_ended_ok(named(&spans, "execute_tool toolA")[0]);
         assert_ended_ok(named(&spans, "execute_tool toolB")[0]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn creates_overlapping_tool_spans_when_tool_executor_is_concurrent() {
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_turn(vec![
+            tool_use("tool1", "id-1", serde_json::json!({})),
+            tool_use("tool2", "id-2", serde_json::json!({})),
+        ]);
+        model.add_turn(vec![TextBlock::new("Done").into()]);
+        // Each tool waits for the other to start, so neither can end before both started.
+        let both_started = Arc::new(tokio::sync::Barrier::new(2));
+        let waiting_tool = |name: &str, text: &'static str| -> Arc<dyn crate::tools::Tool> {
+            let both_started = Arc::clone(&both_started);
+            Arc::new(stream_tool(name, move |context| {
+                let both_started = Arc::clone(&both_started);
+                ToolStream::from_future(async move {
+                    both_started.wait().await;
+                    text_result(context.tool_use().tool_use_id(), text).into()
+                })
+            }))
+        };
+        let mut agent = AgentConfig::builder()
+            .model(Arc::new(model) as Arc<dyn crate::models::model::Model>)
+            .tools(vec![waiting_tool("tool1", "R1"), waiting_tool("tool2", "R2")])
+            .tool_executor(crate::tools::ConcurrentToolExecutor::new())
+            .build()
+            .expect("a valid agent");
+        agent.invoke("Use tools").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let tools: Vec<_> = ["execute_tool tool1", "execute_tool tool2"]
+            .into_iter()
+            .flat_map(|name| named(&spans, name))
+            .collect();
+        assert_eq!(tools.len(), 2);
+        // Both starts precede both ends: the spans overlap.
+        let last_start = tools.iter().map(|span| span.start_time).max();
+        let first_end = tools.iter().map(|span| span.end_time).min();
+        assert!(last_start <= first_end, "{last_start:?} > {first_end:?}");
     }
 }
 
@@ -856,5 +945,206 @@ mod structured_output_and_telemetry_interaction {
                 ("tool-2".to_owned(), "success".to_owned())
             ]
         );
+    }
+}
+
+mod baggage_propagation {
+    use opentelemetry::baggage::BaggageExt as _;
+    use opentelemetry::trace::{FutureExt as _, TracerProvider as _};
+    use opentelemetry::{Context, KeyValue};
+    use opentelemetry_sdk::trace::SdkTracerProvider;
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    use super::*;
+    use crate::hooks::AfterInvocationEvent;
+    use crate::telemetry::{BaggageKeys, BaggageSpanProcessor};
+
+    type Seen = Arc<std::sync::Mutex<Vec<Option<String>>>>;
+
+    fn tenant() -> Option<String> {
+        entry("tenant.id")
+    }
+
+    fn entry(key: &str) -> Option<String> {
+        Context::current()
+            .baggage()
+            .get(key)
+            .map(|value| value.as_str().to_owned())
+    }
+
+    fn seen_by(seen: &Seen) -> Vec<Option<String>> {
+        seen.lock().expect("the samples").clone()
+    }
+
+    /// An agent that calls `tool` once and then ends its turn.
+    fn tool_agent(tool: Arc<dyn crate::tools::Tool>, baggage: &[(&str, &str)]) -> Agent {
+        let model = MockMessageModel::new();
+        model.add_turn(vec![tool_use(tool.name(), "t1", serde_json::json!({}))]);
+        model.add_turn(vec![TextBlock::new("done").into()]);
+        AgentConfig::builder()
+            .model(Arc::new(model) as Arc<dyn crate::models::model::Model>)
+            .tools(vec![tool])
+            .printer(false)
+            .baggage_attributes(
+                baggage
+                    .iter()
+                    .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+            )
+            .build()
+            .expect("a valid agent")
+    }
+
+    /// A tool that records the `tenant.id` baggage entry it runs under.
+    fn probe(name: &str, seen: &Seen) -> Arc<dyn crate::tools::Tool> {
+        let seen = Arc::clone(seen);
+        Arc::new(mock_tool(name, move |context| {
+            seen.lock().expect("the samples").push(tenant());
+            ToolResultBlock::new(
+                context.tool_use().tool_use_id(),
+                ToolResultStatus::Success,
+                Vec::new(),
+            )
+        }))
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn defaults_to_an_empty_map_and_leaves_the_active_baggage_untouched() {
+        let seen = Seen::default();
+        let mut agent = tool_agent(probe("probe", &seen), &[]);
+        agent.invoke("Hi").await.expect("the run succeeds");
+        // The agent keeps its entries private; the config default is the empty map.
+        assert!(AgentConfig::default().baggage_attributes.is_empty());
+        assert_eq!(seen_by(&seen), [None]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn is_current_inside_tools_and_when_the_agent_span_starts_merged_with_ambient_baggage() {
+        // The baggage span processor copies the baggage active at span start onto the span.
+        let recorder = Recorder::default();
+        let provider = SdkTracerProvider::builder()
+            .with_span_processor(BaggageSpanProcessor::new(BaggageKeys::All))
+            .with_simple_exporter(recorder.clone())
+            .build();
+        let layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("strands-agents"));
+        let _guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(layer));
+
+        let seen: Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>> = Arc::default();
+        let samples = Arc::clone(&seen);
+        let tool = mock_tool("probe", move |context| {
+            samples
+                .lock()
+                .expect("the samples")
+                .push((tenant(), entry("ambient")));
+            ToolResultBlock::new(
+                context.tool_use().tool_use_id(),
+                ToolResultStatus::Success,
+                Vec::new(),
+            )
+        });
+        let mut agent = tool_agent(Arc::new(tool), &[("tenant.id", "acme")]);
+        let ambient = Context::current().with_baggage([KeyValue::new("ambient", "up")]);
+        agent
+            .invoke("Hi")
+            .with_context(ambient)
+            .await
+            .expect("the run succeeds");
+
+        assert_eq!(
+            *seen.lock().expect("the samples"),
+            [(Some("acme".to_owned()), Some("up".to_owned()))]
+        );
+        let spans = recorder.spans();
+        let agent_span = named(&spans, "invoke_agent Strands Agent")[0];
+        assert_eq!(attribute(agent_span, "tenant.id").as_deref(), Some("acme"));
+        assert_eq!(tenant(), None);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn isolates_baggage_between_interleaved_concurrent_agents() {
+        // Each tool samples the baggage before and after yielding to the other agent.
+        let both_sampled = Arc::new(tokio::sync::Barrier::new(2));
+        let sampler = |name: &str, seen: &Seen| -> Arc<dyn crate::tools::Tool> {
+            let seen = Arc::clone(seen);
+            let both_sampled = Arc::clone(&both_sampled);
+            Arc::new(stream_tool(name, move |context| {
+                let seen = Arc::clone(&seen);
+                let both_sampled = Arc::clone(&both_sampled);
+                ToolStream::from_future(async move {
+                    seen.lock().expect("the samples").push(tenant());
+                    both_sampled.wait().await;
+                    seen.lock().expect("the samples").push(tenant());
+                    ToolResultBlock::new(
+                        context.tool_use().tool_use_id(),
+                        ToolResultStatus::Success,
+                        Vec::new(),
+                    )
+                    .into()
+                })
+            }))
+        };
+        let (seen_a, seen_b) = (Seen::default(), Seen::default());
+        let mut a = tool_agent(sampler("tool_a", &seen_a), &[("tenant.id", "acme")]);
+        let mut b = tool_agent(sampler("tool_b", &seen_b), &[("tenant.id", "globex")]);
+        let (result_a, result_b) = tokio::join!(a.invoke("Hi"), b.invoke("Hi"));
+        result_a.expect("agent a succeeds");
+        result_b.expect("agent b succeeds");
+        let twice = |tenant: &str| vec![Some(tenant.to_owned()); 2];
+        assert_eq!(seen_by(&seen_a), twice("acme"));
+        assert_eq!(seen_by(&seen_b), twice("globex"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lets_a_nested_agent_override_baggage_for_its_scope_and_restores_the_outer_value_after() {
+        let seen = Seen::default();
+        let inner = Arc::new(tokio::sync::Mutex::new(tool_agent(
+            probe("inner_probe", &seen),
+            &[("tenant.id", "inner-corp")],
+        )));
+        let samples = Arc::clone(&seen);
+        let outer_probe = stream_tool("outer_probe", move |context| {
+            let samples = Arc::clone(&samples);
+            let inner = Arc::clone(&inner);
+            ToolStream::from_future(async move {
+                samples.lock().expect("the samples").push(tenant());
+                inner
+                    .lock()
+                    .await
+                    .invoke("Hi")
+                    .await
+                    .expect("the inner run succeeds");
+                samples.lock().expect("the samples").push(tenant());
+                ToolResultBlock::new(
+                    context.tool_use().tool_use_id(),
+                    ToolResultStatus::Success,
+                    Vec::new(),
+                )
+                .into()
+            })
+        });
+        let mut outer = tool_agent(Arc::new(outer_probe), &[("tenant.id", "outer-corp")]);
+        outer.invoke("Hi").await.expect("the outer run succeeds");
+        assert_eq!(
+            seen_by(&seen),
+            ["outer-corp", "inner-corp", "outer-corp"].map(|tenant| Some(tenant.to_owned()))
+        );
+    }
+
+    // The TS rows stop the generator with `throw` and with `return`; a Rust consumer drops the
+    // stream, and the hooks the drop skipped run in `shutdown`.
+    #[tokio::test(flavor = "current_thread")]
+    async fn keeps_baggage_current_for_invocation_cleanup_when_the() {
+        let seen = Seen::default();
+        let mut agent = tool_agent(probe("probe", &Seen::default()), &[("tenant.id", "acme")]);
+        let samples = Arc::clone(&seen);
+        agent.add_hook(move |_: &mut AfterInvocationEvent<'_>| {
+            samples.lock().expect("the samples").push(tenant());
+        });
+        // Stop inside the model call so the invocation's cleanup runs `AfterInvocationEvent`.
+        stream_until(&mut agent, |event| {
+            matches!(event, AgentStreamEvent::BeforeModelCall(_))
+        })
+        .await;
+        agent.shutdown().await.expect("the cleanup succeeds");
+        assert_eq!(seen_by(&seen), [Some("acme".to_owned())]);
     }
 }
