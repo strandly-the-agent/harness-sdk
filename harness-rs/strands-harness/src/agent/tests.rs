@@ -8,6 +8,7 @@ use futures::stream::BoxStream;
 use strands::experimental::context_manager::{ContextManager, ContextManagerConfig};
 use strands::interventions::InterventionHandler;
 use strands::models::Model;
+use strands::models::routing::ModelRouter;
 use strands::sandbox::{ExecuteOptions, ExecutionEvent, FileInfo, NotASandboxLocalEnvironment, Sandbox};
 use strands::testing::MockMessageModel;
 use strands::tools::FunctionTool;
@@ -554,6 +555,20 @@ async fn does_not_name_check_non_tool_entries_in_tools() {
     .await
     .unwrap();
     assert!(has_tool(&agent, "sample_tool"));
+}
+
+#[tokio::test]
+async fn attaches_a_model_router_through_the_model_parameter() {
+    let default_model: Arc<dyn Model> = Arc::new(MockMessageModel::new());
+    let deep: Arc<dyn Model> = Arc::new(MockMessageModel::new());
+    let router = ModelRouter::new([Arc::clone(&default_model), deep]).unwrap();
+    let agent = harness(HarnessAgentOptions {
+        model: Some(ModelSource::Router(router)),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert!(Arc::ptr_eq(agent.model(), &default_model));
 }
 
 /// `memory.test.ts`, `createHarness memory`.
