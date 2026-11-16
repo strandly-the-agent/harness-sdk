@@ -1009,3 +1009,68 @@ fn rejects_a_harness_option_set_in_the_agent_config_passthrough() {
         "agent_config.background_tasks is a harness option: set `background_tasks` on HarnessAgentOptions instead"
     );
 }
+
+// No TS case: the derived `Deserialize` of the nested types agrees with the normalization, and
+// the builder's defaults are the TS defaults.
+#[test]
+fn deserializes_the_nested_types_like_the_normalization() {
+    let rows = [
+        json!(["read", "web_search"]),
+        json!({ "*": false, "shell": true, "read": { "media": false }, "write": false, "web_search": "exa" }),
+        json!({ "web_fetch": { "model": { "module": "m", "kind": "model", "foo": [1] }, "transport": "curl" } }),
+        json!({ "web_fetch": { "model": "openai/gpt-5-mini" }, "web_search": false, "subagent": { "maxDepth": 3 } }),
+    ];
+    for builtin_tools in rows {
+        let config = define(&json!({ "builtinTools": builtin_tools }));
+        assert_eq!(
+            serde_json::from_value::<HarnessConfigBuiltinToolsSetting>(builtin_tools.clone()).unwrap(),
+            config.builtin_tools
+        );
+        assert_eq!(
+            serde_json::to_value(&config.builtin_tools).unwrap(),
+            builtin_tools
+        );
+    }
+    assert!(serde_json::from_value::<ShellConfig>(json!({ "model": "x" })).is_err());
+    assert!(serde_json::from_value::<Setting<SessionConfig>>(json!({ "path": "x" })).is_err());
+    assert_eq!(
+        serde_json::from_value::<Setting<SessionConfig>>(json!(false)).unwrap(),
+        Setting::Off
+    );
+
+    let config = HarnessAgentConfig::builder()
+        .name("Reviewer")
+        .session(false)
+        .build();
+    assert_eq!(config, define(&json!({ "name": "Reviewer", "session": false })));
+    assert_eq!(HarnessAgentConfig::default(), define(&json!({})));
+    assert_eq!(
+        serde_json::to_value(HarnessAgentConfig::default()).unwrap(),
+        json!({
+            "name": "Strands harness",
+            "description": "",
+            "instructions": "",
+            "model": "bedrock/global.anthropic.claude-opus-5",
+            "modelModule": null,
+            "effort": "auto",
+            "tools": [],
+            "subagents": [],
+            "mcpServers": {},
+            "builtinTools": ["shell", "read", "write", "edit", "web_fetch", "web_search", "programmatic_tool_caller", "subagent"],
+            "caching": true,
+            "contextManager": "auto",
+            "session": true,
+            "skills": true,
+            "memory": true,
+            "memoryStores": [],
+            "plugins": [],
+            "builtinPlugins": ["todos", "environment"],
+            "interventions": null,
+            "interventionModules": [],
+            "sandbox": null,
+            "agentConfigModules": {},
+            "dependencies": { "typescript": {}, "python": [] },
+            "agentConfig": {},
+        })
+    );
+}

@@ -205,6 +205,7 @@ impl HarnessModuleReference {
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
+#[serde(deny_unknown_fields)]
 pub struct ReadConfig {
     /// Return images and binary documents as viewable media. Defaults to whether the model
     /// accepts them.
@@ -219,6 +220,7 @@ pub struct ReadConfig {
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
+#[serde(deny_unknown_fields)]
 pub struct ShellConfig {
     /// Tool description shown to the model; `None` for the SDK's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -243,6 +245,7 @@ pub enum HarnessConfigModel {
 )]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
+#[serde(deny_unknown_fields)]
 pub struct HarnessConfigWebFetch {
     /// The summarizer model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -266,7 +269,7 @@ fn present<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
 )]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProgrammaticToolCallerConfig {
     /// Names of the agent's other tools the code may call; absent or `null` for all of them.
     #[serde(
@@ -292,7 +295,7 @@ pub struct ProgrammaticToolCallerConfig {
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubagentConfig {
     /// How many levels of delegation a child may itself open. Defaults to 2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -360,6 +363,7 @@ impl From<WebSearchSetting> for WebSearchRepr {
 )]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
+#[serde(deny_unknown_fields)]
 pub struct HarnessConfigBuiltinTools {
     /// The `'*'` key: whether the harness's default tools are the baseline.
     #[serde(rename = "*", default, skip_serializing_if = "Option::is_none")]
@@ -454,6 +458,7 @@ impl Serialize for HarnessConfigContextManager {
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
+#[serde(deny_unknown_fields)]
 pub struct HarnessConfigMemory {
     /// Directory of the default file store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -500,11 +505,16 @@ pub enum HarnessConfigInterventions {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct HarnessDependencies {
     /// npm package names to version ranges.
+    #[serde(default)]
+    #[builder(default)]
     pub typescript: IndexMap<String, String>,
     /// pip requirement lines.
+    #[serde(default)]
+    #[builder(default)]
     pub python: Vec<String>,
 }
 
@@ -516,87 +526,84 @@ pub struct HarnessDependencies {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, bon::Builder)]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessAgentConfig {
     /// The agent's name.
+    #[builder(default = "Strands harness".to_owned())]
     pub name: String,
     /// What the agent is for.
+    #[builder(default)]
     pub description: String,
     /// A domain block appended after the harness contract.
+    #[builder(default)]
     pub instructions: String,
     /// A `"provider/name"` string or a bare Bedrock model id.
+    #[builder(default = DEFAULT_MODEL.to_owned())]
     pub model: String,
     /// A model instance, replacing `model`.
     pub model_module: Option<HarnessModuleReference>,
     /// Reasoning effort.
+    #[builder(default)]
     pub effort: Effort,
     /// Consumer tools.
+    #[builder(default)]
     pub tools: Vec<HarnessModuleReference>,
     /// Specialist agents, each exposed as a tool.
+    #[builder(default)]
     pub subagents: Vec<HarnessModuleReference>,
     /// MCP servers: a file path or the server map.
+    #[builder(default = HarnessConfigMcpServers::Servers(JsonObject::new()))]
     pub mcp_servers: HarnessConfigMcpServers,
     /// Which built-in tools to enable.
+    #[builder(default = HarnessConfigBuiltinToolsSetting::Names(BUILTIN_TOOL_NAMES.to_vec()))]
     pub builtin_tools: HarnessConfigBuiltinToolsSetting,
     /// Prompt caching.
+    #[builder(default = true)]
     pub caching: bool,
     /// SDK context management.
+    #[builder(default)]
     pub context_manager: HarnessConfigContextManager,
     /// Session persistence.
+    #[builder(default, into)]
     pub session: Setting<SessionConfig>,
     /// Agent Skills.
+    #[builder(default = HarnessConfigSkills::Enabled(true))]
     pub skills: HarnessConfigSkills,
     /// Long-term memory.
+    #[builder(default, into)]
     pub memory: Setting<HarnessConfigMemory>,
     /// Stores replacing the default file store.
+    #[builder(default)]
     pub memory_stores: Vec<HarnessModuleReference>,
     /// Consumer plugins.
+    #[builder(default)]
     pub plugins: Vec<HarnessModuleReference>,
     /// The built-in feature plugins to enable.
+    #[builder(default = BUILTIN_PLUGIN_NAMES.to_vec())]
     pub builtin_plugins: Vec<BuiltinPluginName>,
     /// Presets, policy texts or `.cedar` paths gating tool calls.
     pub interventions: Option<HarnessConfigInterventions>,
     /// Intervention handler instances.
+    #[builder(default)]
     pub intervention_modules: Vec<HarnessModuleReference>,
     /// The sandbox.
     pub sandbox: Option<HarnessModuleReference>,
     /// Live values for SDK agent config keys, by key.
+    #[builder(default)]
     pub agent_config_modules: IndexMap<String, HarnessModuleReference>,
     /// Packages the referenced modules need.
+    #[builder(default)]
     pub dependencies: HarnessDependencies,
     /// JSON-compatible SDK agent config fields.
+    #[builder(default)]
     pub agent_config: JsonObject,
 }
 
 impl Default for HarnessAgentConfig {
     fn default() -> Self {
-        Self {
-            name: "Strands harness".to_owned(),
-            description: String::new(),
-            instructions: String::new(),
-            model: DEFAULT_MODEL.to_owned(),
-            model_module: None,
-            effort: Effort::Auto,
-            tools: Vec::new(),
-            subagents: Vec::new(),
-            mcp_servers: HarnessConfigMcpServers::Servers(JsonObject::new()),
-            builtin_tools: HarnessConfigBuiltinToolsSetting::Names(BUILTIN_TOOL_NAMES.to_vec()),
-            caching: true,
-            context_manager: HarnessConfigContextManager::Auto,
-            session: Setting::On,
-            skills: HarnessConfigSkills::Enabled(true),
-            memory: Setting::On,
-            memory_stores: Vec::new(),
-            plugins: Vec::new(),
-            builtin_plugins: BUILTIN_PLUGIN_NAMES.to_vec(),
-            interventions: None,
-            intervention_modules: Vec::new(),
-            sandbox: None,
-            agent_config_modules: IndexMap::new(),
-            dependencies: HarnessDependencies::default(),
-            agent_config: JsonObject::new(),
-        }
+        Self::builder().build()
     }
 }
 

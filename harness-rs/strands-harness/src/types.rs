@@ -170,6 +170,7 @@ pub struct BuiltinToolsConfig {
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
+#[serde(deny_unknown_fields)]
 pub struct SessionConfig {
     /// Identifier of the session's stored state (sanitized to `[a-z0-9_-]`). Defaults to a fresh
     /// random 8-hex id each run; pass a previous run's id to resume it.
