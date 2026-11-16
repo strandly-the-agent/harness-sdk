@@ -1,8 +1,10 @@
-//! Live MCP tests: a Node MCP test server over stdio (`tests/fixtures/mcp/live-mcp-server.mjs`,
-//! a port of strands-ts/test/integ/__fixtures__/test-mcp-server.ts) plus a Bedrock `Agent` (TS
-//! checklist: strands-ts/test/integ/mcp/mcp.test.node.ts).
+//! Live MCP tests: a Node MCP test server over stdio plus a Bedrock `Agent` (TS checklist:
+//! strands-ts/test/integ/mcp/mcp.test.node.ts and mcp-v2.test.node.ts). The servers are
+//! `tests/fixtures/mcp/live-mcp-server.mjs` and `live-mcp-v2-server.mjs`, plain-JavaScript ports
+//! of strands-ts/test/integ/__fixtures__/test-mcp-server.ts and test-mcp-v2-server.ts.
 //!
-//! They need Node and a `node_modules` with `@modelcontextprotocol/sdk` and `zod` (set
+//! They need Node and a `node_modules` with `@modelcontextprotocol/sdk`,
+//! `@modelcontextprotocol/server` and `zod` (set
 //! `STRANDS_TEST_NODE` to the node binary and `STRANDS_TEST_NODE_MODULES` to that directory, as
 //! for `tests/mcp_stdio.rs`) and AWS credentials from the default chain; without either they
 //! skip with a message. Run with `cargo test -p strands --all-features -- --ignored live_`.
@@ -41,6 +43,10 @@ struct NodeServer {
 }
 
 fn node_server() -> Option<NodeServer> {
+    node_server_for("live-mcp-server.mjs")
+}
+
+fn node_server_for(fixture: &str) -> Option<NodeServer> {
     let (Ok(node), Ok(modules)) = (
         std::env::var("STRANDS_TEST_NODE"),
         std::env::var("STRANDS_TEST_NODE_MODULES"),
@@ -49,7 +55,9 @@ fn node_server() -> Option<NodeServer> {
         return None;
     };
     let dir = tempfile::tempdir().expect("temp dir");
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp/live-mcp-server.mjs");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mcp")
+        .join(fixture);
     std::fs::copy(fixture, dir.path().join("server.mjs")).expect("copy fixture");
     #[cfg(unix)]
     std::os::unix::fs::symlink(modules, dir.path().join("node_modules")).expect("link node_modules");
@@ -294,5 +302,118 @@ async fn live_mcp_filtering_prefixing_prompts_and_resources() {
     );
     let read = serde_json::to_value(client.read_resource("test://users/42").await.unwrap()).unwrap();
     assert_eq!(read["contents"][0]["text"], "Data for user 42");
+    client.disconnect().await.unwrap();
+}
+
+/// TS cases (mcp-v2): `negotiates protocol revision 2026-07-28`, `agent can use multiple MCP
+/// tools in a conversation`, `agent handles MCP tool errors gracefully`, over the stdio
+/// transport.
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_mcp_v2_negotiates_protocol_revision_2026_07_28_and_agent_uses_its_tools() {
+    let Some(server) = node_server_for("live-mcp-v2-server.mjs") else {
+        return;
+    };
+    if !credentials_available().await {
+        return;
+    }
+    let client = server.client(McpClientOptions {
+        application_name: Some("test-mcp-stdio".into()),
+        ..Default::default()
+    });
+    client.connect(false).await.unwrap();
+    assert_eq!(
+        client.negotiated_protocol_version().as_deref(),
+        Some("2026-07-28")
+    );
+
+    let mut agent = Agent::builder()
+        .model(bedrock(400))
+        .system_prompt(
+            "You are a helpful assistant. Use the echo tool to echo messages and the calculator tool for math. \
+             If asked to test errors, use the error_tool.",
+        )
+        .tools([client.clone()])
+        .printer(false)
+        .build()
+        .unwrap();
+    let result = agent
+        .invoke("Use the echo tool to say \"Multi-turn test\"")
+        .await
+        .unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    let result = agent
+        .invoke("Now use the calculator tool to add 15 and 27")
+        .await
+        .unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    let messages = trace(&agent);
+    assert!(tool_result_contains(&messages, "echo", "Multi-turn test"));
+    assert!(tool_result_contains(&messages, "calculator", "Result: 42"));
+
+    let result = agent
+        .invoke("Use the error_tool to test error handling.")
+        .await
+        .unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    let messages = trace(&agent);
+    assert!(
+        results_of(&messages, "error_tool")
+            .iter()
+            .any(|result| result["status"] == "error")
+    );
+    agent.shutdown().await.unwrap();
+    client.disconnect().await.unwrap();
+}
+
+/// TS case (mcp-v2): `agent can use MCP tool that requests elicitation with a live model`. The
+/// server asks through an input-required result, which the client answers and retries.
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_mcp_v2_agent_can_use_mcp_tool_that_requests_elicitation() {
+    let Some(server) = node_server_for("live-mcp-v2-server.mjs") else {
+        return;
+    };
+    if !credentials_available().await {
+        return;
+    }
+    let asked = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&asked);
+    let callback: ElicitationCallback = Arc::new(move |_context, _request| {
+        seen.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {
+            let accept: ElicitResult =
+                serde_json::from_value(json!({"action": "accept", "content": {"confirmed": true}}))?;
+            Ok(accept)
+        })
+    });
+    let client = server.client(McpClientOptions {
+        application_name: Some("test-mcp-stdio".into()),
+        elicitation_callback: Some(callback),
+        ..Default::default()
+    });
+    let mut agent = Agent::builder()
+        .model(bedrock(400))
+        .system_prompt(
+            "You are a helpful assistant. Use the confirm_action tool when asked to confirm something.",
+        )
+        .tools([client.clone()])
+        .printer(false)
+        .build()
+        .unwrap();
+    let result = agent
+        .invoke("Use the confirm_action tool to confirm \"deploy to production\"")
+        .await
+        .unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert!(asked.load(Ordering::SeqCst) >= 1);
+    let messages = trace(&agent);
+    assert!(tool_succeeded(&messages, "confirm_action"));
+    assert!(tool_result_contains(
+        &messages,
+        "confirm_action",
+        "confirmed by user"
+    ));
+    agent.shutdown().await.unwrap();
     client.disconnect().await.unwrap();
 }
