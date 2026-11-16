@@ -24,5 +24,5 @@
 - Title check with the staged rows applied: `internal 2/0/0/0`, `memory 18/0/1/0`, `openai-cache 2/0/0/0`, `todos 8/0/1/0`, `environment 11/0/0/0`, `config 29/0/3/0`, `interventions 9/0/2/0`, all `ok`.
 
 ## Gates
-- `GATE_OUT=/mnt/workspace/gates-h12b .rust-port/gates.sh` (default mode) on commit `745a1bf09`: `fmt`, `clippy`, `clippy_nodef`, `test_all`, `test_nodef`, `doc` all 0; 5121 tests passed with all features.
+- `GATE_OUT=/mnt/workspace/gates-h12b .rust-port/gates.sh` (default mode) on commit `393a93097`: `fmt`, `clippy`, `clippy_nodef`, `test_all`, `test_nodef`, `doc` all 0; 5121 tests passed with all features.
 - After the last test was added: `cargo fmt --all --check`, both `cargo clippy -p strands-harness` runs with `-D warnings`, and both `cargo test --locked -p strands-harness` runs (514 lib tests with all features, 413 without default features) pass. `strands-harness --lib` was run six times in a row with no failure.

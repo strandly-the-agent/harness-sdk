@@ -15,10 +15,10 @@ AWS credentials came from the default chain and were used for Bedrock and Bedroc
 
 | Run | Commit | `live_` tests | Ran and passed | Skipped (key missing) | Failed | Exit |
 |---|---|---|---|---|---|---|
-| 1 | `19461dc70` | 13 | 11 | 2 | 0 | 0 |
-| 2 | `19461dc70` | 13 | 11 | 2 | 0 | 0 |
-| 3 | `f1248467b` | 16 | 14 | 2 | 0 | 0 |
-| 4 | `f1248467b` | 16 | 14 | 2 | 0 | 0 |
+| 1 | `7273873c6` | 13 | 11 | 2 | 0 | 0 |
+| 2 | `7273873c6` | 13 | 11 | 2 | 0 | 0 |
+| 3 | `87521c86a` | 16 | 14 | 2 | 0 | 0 |
+| 4 | `87521c86a` | 16 | 14 | 2 | 0 | 0 |
 
 Runs 3 and 4 add the three pending-interrupt tests (`live_bedrock_approves_a_pending_interrupt_from_a_second_agent_on_the_session` and the two `live_cross_sdk_*_approves_an_interrupt_pending_*` tests); the other tests are unchanged from runs 1 and 2. The result columns below read "pass" when the test passed in every run that had it.
 

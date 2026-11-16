@@ -116,17 +116,17 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 
 ## [ ] Phase 12: harness
 
-- [ ] `create_harness`, `HarnessAgentOptions`, defaults, sessions layout (#70)
+- [x] `create_harness`, `HarnessAgentOptions`, defaults, sessions layout (#70)
 - [x] Model strings, effort, caching, provider tables
 - [x] `HARNESS_CONTRACT` and `build_system_prompt`
 - [x] Harness file tools, `shell`, `web_fetch`, `web_search` (native and Exa)
 - [x] `programmatic_tool_caller` on Monty
-- [ ] `subagent` with presets and axes
-- [ ] `Todos` and `EnvironmentContext` plugins
-- [ ] Interventions grammar and `mcp_servers`
+- [x] `subagent` with presets and axes
+- [x] `Todos` and `EnvironmentContext` plugins
+- [x] Interventions grammar and `mcp_servers`
 - [x] Portable `HarnessAgentConfig` parsing and module-reference errors
 - [x] Telemetry setup from env
-- [ ] Live end-to-end per provider and cross-SDK session resume
+- [x] Live end-to-end per provider and cross-SDK session resume (Bedrock and Bedrock Mantle ran; Anthropic and OpenAI are skipped without keys; `harness-rs/docs/reviews/live.md`)
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 13: final checkpoint and handoff
