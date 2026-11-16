@@ -1680,6 +1680,50 @@ function edgeCases(): void {
 }
 
 // ---------------------------------------------------------------------------------------------------
+// Vended plugins, tools and stores: the model-facing tool specs and the files a memory store writes
+// ---------------------------------------------------------------------------------------------------
+
+async function vendedShapes(): Promise<void> {
+  const { AgentSkills, Skill } = await import(`${DIST}/vended-plugins/skills/index.js`)
+  const { makeMcpRouter } = await import(`${DIST}/vended-tools/mcp-router/index.js`)
+  const { createRetrievalTool } = await import(`${DIST}/context-manager/retrieval-tool.js`)
+  const { FileMemoryStore } = await import(`${DIST}/vended-memory-stores/file-memory-store/index.js`)
+
+  const skills = new AgentSkills({
+    skills: [
+      new Skill({
+        name: 'pdf-processing',
+        description: 'Extract text and tables from PDF files',
+        instructions: 'Use pdftotext.',
+      }),
+    ],
+  })
+  emit('tools/skills_tool_spec', skills.getTools()[0].toolSpec, 'The `skills` tool spec of the AgentSkills plugin')
+  emit(
+    'tools/mcp_router_spec',
+    makeMcpRouter({ servers: { mcp: { url: 'https://mcp.example.com/mcp' } } }).toolSpec,
+    'The `mcp_router` tool spec for one allowlisted server named `mcp`'
+  )
+  emit(
+    'tools/retrieve_context_spec',
+    createRetrievalTool(new Stash(new InMemoryStorage(), 'spec-session', 'spec_agent')).toolSpec,
+    'The `retrieve_context` tool spec of the context manager'
+  )
+
+  const storage = new InMemoryStorage()
+  const store = new FileMemoryStore({ name: 'conformance-store', storage })
+  await store.add('User prefers dark mode for all editors')
+  await store.add('Deploy process uses blue-green strategy')
+  const keys = await dumpStorage('memory/file_memory_store', storage, 'File a FileMemoryStore wrote for an added entry')
+  emit(
+    'memory/file_memory_store_keys',
+    keys,
+    'Storage keys a FileMemoryStore named `conformance-store` wrote for two added entries, sorted',
+    'The key list is generator-built; each key is TS output'
+  )
+}
+
+// ---------------------------------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------------------------------
 
@@ -1697,6 +1741,7 @@ hookEventsStandalone()
 await sessions()
 interruptState()
 edgeCases()
+await vendedShapes()
 
 const sortedManifest = Object.fromEntries([...manifest.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
 writeFileSync(

@@ -252,6 +252,16 @@
     "media_formats/video.json": {
       "description": "A VideoBlock for every VideoFormat"
     },
+    "memory/file_memory_store/memory/conformance-store/deploy-process-uses-blue-green-strategy.md": {
+      "description": "File a FileMemoryStore wrote for an added entry (storage key `memory/conformance-store/deploy-process-uses-blue-green-strategy.md`)"
+    },
+    "memory/file_memory_store/memory/conformance-store/user-prefers-dark-mode-for-all-editors.md": {
+      "description": "File a FileMemoryStore wrote for an added entry (storage key `memory/conformance-store/user-prefers-dark-mode-for-all-editors.md`)"
+    },
+    "memory/file_memory_store_keys.json": {
+      "description": "Storage keys a FileMemoryStore named `conformance-store` wrote for two added entries, sorted",
+      "_note": "The key list is generator-built; each key is TS output"
+    },
     "messages/assistant_every_block.json": {
       "description": "One message carrying every content block type, in the order of content_blocks/"
     },
@@ -501,6 +511,15 @@
     },
     "tools/function_tool_spec.json": {
       "description": "FunctionTool.toolSpec with an explicit inputSchema"
+    },
+    "tools/mcp_router_spec.json": {
+      "description": "The `mcp_router` tool spec for one allowlisted server named `mcp`"
+    },
+    "tools/retrieve_context_spec.json": {
+      "description": "The `retrieve_context` tool spec of the context manager"
+    },
+    "tools/skills_tool_spec.json": {
+      "description": "The `skills` tool spec of the AgentSkills plugin"
     },
     "tools/tool_choice_any.json": {
       "description": "ToolChoice any",

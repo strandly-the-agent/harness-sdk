@@ -17,6 +17,7 @@ The generator is deterministic: before strands-ts loads it fixes `Date`, `Date.n
 
 - `fixtures/manifest.json` lists every fixture with a description. An entry with `_note` says which part of the shape the generator chose rather than TS (for example a list the generator assembled, or a record wrapping OpenTelemetry data).
 - `<topic>/<case>.json` holds one object. `<case>.input.json` next to it is the input TS parsed to produce `<case>.json`.
+- `memory/file_memory_store/` mirrors the storage keys a `FileMemoryStore` wrote for two added entries, byte for byte; `memory/file_memory_store_keys.json` lists them.
 - `sessions/<case>/` mirrors the storage keys a `SessionManager` wrote, byte for byte (`session/<sessionId>/scopes/<scope>/<scopeId>/snapshots/...` and the stash under `context/...`).
 
 ## Shapes TS doesn't produce at runtime

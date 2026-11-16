@@ -1,0 +1,1 @@
+Deploy process uses blue-green strategy

@@ -1,0 +1,1 @@
+User prefers dark mode for all editors
