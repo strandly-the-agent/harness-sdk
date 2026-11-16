@@ -500,3 +500,40 @@ fn narrows_the_built_child_to_the_requested_subset_dropping_the_rest() {
     assert!(names(&resolved).contains(&"read"));
     assert!(!names(&resolved).contains(&"shell"));
 }
+
+/// `agent.test.ts` builds the child and finds the Exa tool on it; here the child's options carry
+/// the parent's explicit setting, which the child resolves as the parent did.
+#[test]
+fn carries_the_exa_fallback_onto_a_narrowed_delegate() {
+    let parent = HarnessAgentOptions {
+        model: Some(mock_model()),
+        builtin_tools: Some(
+            BuiltinToolsConfig {
+                web_search: Some(WebSearchSetting::Exa),
+                ..Default::default()
+            }
+            .into(),
+        ),
+        memory: MemoryOption::Off,
+        ..Default::default()
+    };
+    let builtins = resolve_builtin_tools(parent.builtin_tools.as_ref());
+    let mut spec = AgentSpec::new("x", None);
+    spec.tools = Some(vec!["read".to_owned()]);
+
+    let child = child_options(
+        &parent,
+        &builtins,
+        None,
+        &IndexMap::new(),
+        &McpClients::new(),
+        spec,
+        &no_env(),
+    )
+    .unwrap();
+
+    assert!(web_search_explicit(child.builtin_tools.as_ref()));
+    let resolved = resolve_builtin_tools(child.builtin_tools.as_ref());
+    assert!(matches!(resolved.web_search, WebSearchSetting::Exa));
+    assert_eq!(names(&resolved), ["read", "web_search"]);
+}
