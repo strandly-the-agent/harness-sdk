@@ -1128,3 +1128,15 @@ async fn forwards_consumer_plugins_to_the_delegate_so_its_policy_observability_h
     let child = child_options_of(options, &model).await;
     assert!(matches!(child.plugins.as_slice(), [only] if Arc::ptr_eq(only, &plugin)));
 }
+
+#[tokio::test]
+async fn keeps_subagent_for_sub_delegation_and_drops_web_search_resolved_per_model_not_selected() {
+    let agent = harness(mock_options()).await.unwrap();
+    let subagent = agent.tools().find(|tool| tool.name() == "subagent").unwrap();
+    let spec = subagent.tool_spec();
+    let selectable = spec.input_schema().unwrap()["properties"]["tools"]["items"]["enum"]
+        .as_array()
+        .expect("the subagent schema offers a tools enum");
+    assert!(selectable.iter().any(|name| name == "subagent"));
+    assert!(!selectable.iter().any(|name| name == "web_search"));
+}
