@@ -1,8 +1,4 @@
 //! Warn-once logging (TS `logging.ts`; `configureLogging` is replaced by `tracing` subscribers).
-#![expect(
-    dead_code,
-    reason = "used once the modules that warn land; drop this when they have"
-)]
 
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex, PoisonError};

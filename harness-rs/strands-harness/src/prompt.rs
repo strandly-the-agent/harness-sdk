@@ -82,10 +82,10 @@ mod tests {
             return;
         };
         let marker = "export const HARNESS_CONTRACT = `";
-        let start = source.find(marker).unwrap() + marker.len();
-        let end = source[start..].find("`\n").unwrap() + start;
+        let (_, rest) = source.split_once(marker).unwrap();
+        let (literal, _) = rest.split_once("`\n").unwrap();
         // Resolve the template-literal escapes the TS source uses: line continuations and \`.
-        let expected = source[start..end].replace("\\\n", "").replace("\\`", "`");
+        let expected = literal.replace("\\\n", "").replace("\\`", "`");
         assert_eq!(HARNESS_CONTRACT, expected);
     }
 }
