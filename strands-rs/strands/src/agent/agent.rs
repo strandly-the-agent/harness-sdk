@@ -108,8 +108,7 @@ pub struct Agent {
     context_manager: Option<ContextManager>,
     memory_manager: Option<MemoryManager>,
     /// TS `baggageAttributes`.
-    #[cfg(feature = "otel")]
-    baggage_attributes: Arc<[(String, String)]>,
+    baggage_attributes: Arc<indexmap::IndexMap<String, String>>,
     #[cfg(feature = "mcp")]
     mcp_clients: Vec<crate::mcp::McpClient>,
 }
@@ -201,10 +200,7 @@ impl Agent {
             .lock()
             .tracer
             .set_trace_attributes(config.trace_attributes.into_iter().collect());
-        #[cfg(feature = "otel")]
-        {
-            agent.baggage_attributes = config.baggage_attributes.into_iter().collect();
-        }
+        agent.baggage_attributes = Arc::new(config.baggage_attributes);
         local.set_messages(config.messages);
         local.set_system_prompt(config.system_prompt);
         local.set_app_state(StateStore::from_map(config.app_state));
@@ -291,7 +287,6 @@ impl Agent {
             session_manager: None,
             context_manager: None,
             memory_manager: None,
-            #[cfg(feature = "otel")]
             baggage_attributes: Arc::default(),
             #[cfg(feature = "mcp")]
             mcp_clients: Vec::new(),
@@ -509,6 +504,11 @@ impl Agent {
     /// What the agent does.
     pub fn description(&self) -> Option<&str> {
         self.local.description()
+    }
+
+    /// The baggage entries the agent was built with (TS `baggageAttributes`).
+    pub fn baggage_attributes(&self) -> &indexmap::IndexMap<String, String> {
+        &self.baggage_attributes
     }
 
     /// The conversation history.

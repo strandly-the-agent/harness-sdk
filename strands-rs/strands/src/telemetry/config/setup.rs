@@ -37,7 +37,7 @@ use crate::error::{Error, Result};
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct Exporters {
     /// Export over OTLP HTTP.
     #[builder(default)]
@@ -123,7 +123,7 @@ impl SpanProcessor for BaggageSpanProcessor {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct TracerConfig {
     /// A provider the caller built; the exporters and the baggage processor are then ignored.
     pub provider: Option<SdkTracerProvider>,
@@ -140,7 +140,7 @@ pub struct TracerConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MeterConfig {
     /// A provider the caller built; the exporters are then ignored.
     pub provider: Option<SdkMeterProvider>,
@@ -425,7 +425,10 @@ pub(super) fn resource(env: EnvLookup<'_>) -> Resource {
 }
 
 /// Runs `future` with `entries` merged into the active baggage (TS `Agent._withBaggage`).
-pub(crate) async fn with_baggage<F: Future>(entries: &[(String, String)], future: F) -> F::Output {
+pub(crate) async fn with_baggage<F: Future>(
+    entries: &indexmap::IndexMap<String, String>,
+    future: F,
+) -> F::Output {
     if entries.is_empty() {
         return future.await;
     }
