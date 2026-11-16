@@ -1,11 +1,10 @@
-//! Ported from strands-ts/src/conversation-manager/__tests__/token-usage-middleware.test.ts. The
-//! integration cases install the middleware with `add_middleware`; TS installs it through
-//! `contextManager: 'agentic'`, which lands with the context manager (Phase 6).
+//! Ported from strands-ts/src/conversation-manager/__tests__/token-usage-middleware.test.ts
 
 use std::sync::Arc;
 
 use super::*;
 use crate::agent::Agent;
+use crate::experimental::context_manager::ContextManagerPreset;
 use crate::models::model::{BaseModelConfig, Model};
 use crate::models::streaming::Usage;
 use crate::testing::{MockMessageModel, MockTurnOptions};
@@ -202,16 +201,13 @@ mod token_usage_middleware_integration {
         model
     }
 
-    fn agent(model: &Arc<MockMessageModel>, with_middleware: bool) -> Agent {
-        let agent = Agent::builder()
+    fn agent(model: &Arc<MockMessageModel>, agentic: bool) -> Agent {
+        Agent::builder()
             .model(Arc::clone(model))
+            .maybe_context_manager(agentic.then_some(ContextManagerPreset::Agentic))
             .printer(false)
             .build()
-            .unwrap();
-        if with_middleware {
-            agent.add_middleware(token_usage_middleware());
-        }
-        agent
+            .unwrap()
     }
 
     fn last_request_text(model: &MockMessageModel, call: usize) -> String {
