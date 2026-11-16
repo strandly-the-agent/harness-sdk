@@ -2,9 +2,10 @@
 //! strands-ts/src/agent/__tests__/agent-as-tool.interrupt.test.ts.
 
 use super::*;
-use crate::agent::TakeSnapshotOptions;
 use crate::hooks::BeforeInvocationEvent;
 use crate::interrupt::{Interrupt, InterruptParams, InterruptResponse, InterruptSource};
+use crate::session::{SessionManager, SessionManagerConfig};
+use crate::storage::InMemoryStorage;
 use crate::tools::{FunctionTool, ToolError};
 use crate::types::agent::InterruptState;
 
@@ -29,6 +30,26 @@ fn nested(preserve_context: bool) -> Nested {
 
 /// `rebuilt`: a fresh process whose models start at the turn after the interrupted tool call.
 fn nested_with(preserve_context: bool, rebuilt: bool) -> Nested {
+    nested_in_session(preserve_context, rebuilt, None, None)
+}
+
+fn session(storage: &InMemoryStorage) -> SessionManager {
+    SessionManager::new(SessionManagerConfig {
+        storage: Some(Arc::new(storage.clone())),
+        session_id: Some("s1".into()),
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+/// `session_storage` and `sub_session_storage` give the orchestrator and the sub-agent a session
+/// manager on session `s1`.
+fn nested_in_session(
+    preserve_context: bool,
+    rebuilt: bool,
+    session_storage: Option<&InMemoryStorage>,
+    sub_session_storage: Option<&InMemoryStorage>,
+) -> Nested {
     let confirmed = Arc::new(Mutex::new(0));
     let count = Arc::clone(&confirmed);
     let confirm_tool = FunctionTool::new(
@@ -53,9 +74,11 @@ fn nested_with(preserve_context: bool, rebuilt: bool) -> Nested {
     }
     sub_model.add_turn(vec![text("sub done")]);
     let sub = Agent::builder()
+        .id("sub")
         .name("sub")
         .model(Arc::clone(&sub_model))
         .tools([confirm_tool])
+        .maybe_session_manager(sub_session_storage.map(session))
         .build()
         .unwrap();
     let tool = sub.as_tool(AgentAsToolOptions {
@@ -68,8 +91,10 @@ fn nested_with(preserve_context: bool, rebuilt: bool) -> Nested {
     }
     orch_model.add_turn(vec![text("orch done")]);
     let orch = Agent::builder()
+        .id("orch")
         .model(Arc::clone(&orch_model))
         .tools([tool])
+        .maybe_session_manager(session_storage.map(session))
         .build()
         .unwrap();
     Nested {
@@ -208,22 +233,50 @@ fn stores_nothing_for_a_context_preserving_sub_agent_and_warns_when_it_has_no_se
 
 #[tokio::test]
 async fn resumes_after_both_agents_are_rebuilt_from_a_session() {
-    let first = nested(false);
+    let storage = InMemoryStorage::new();
+    let first = nested_in_session(false, false, Some(&storage), None);
     let mut orch = first.orch;
     let interrupted = orch.invoke("Test").await.unwrap();
     assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
-    let snapshot =
-        serde_json::to_string(&orch.take_snapshot(&TakeSnapshotOptions::session()).unwrap()).unwrap();
 
-    let second = nested_with(false, true);
+    let second = nested_in_session(false, true, Some(&storage), None);
     let mut rebuilt = second.orch;
-    rebuilt
-        .load_snapshot(&serde_json::from_str(&snapshot).unwrap())
-        .unwrap();
     let result = rebuilt.invoke(answer(OUTER_ID)).await.unwrap();
     assert_eq!(result.stop_reason(), StopReason::EndTurn);
     assert_eq!(*second.confirmed.lock().unwrap(), 1);
     assert_eq!(*first.confirmed.lock().unwrap(), 0);
+}
+
+#[test]
+fn resumes_a_context_preserving_sub_agent_with_its_own_session_manager_after_both_are_rebuilt() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let storage = InMemoryStorage::new();
+    let (orch, warnings) = crate::test_support::WarnRecorder::capture(|| {
+        runtime.block_on(async {
+            let first = nested_in_session(true, false, Some(&storage), Some(&storage));
+            let mut orch = first.orch;
+            let interrupted = orch.invoke("Test").await.unwrap();
+            assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+            orch
+        })
+    });
+    assert!(orch.local.interrupt_state().lock().context.is_empty());
+    // The sub-agent's session manager can resume it, so the no-session warning stays silent.
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning.contains("no session manager")),
+        "{warnings:?}"
+    );
+
+    let second = nested_in_session(true, true, Some(&storage), Some(&storage));
+    let mut rebuilt = second.orch;
+    let result = runtime.block_on(rebuilt.invoke(answer(OUTER_ID))).unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert_eq!(*second.confirmed.lock().unwrap(), 1);
 }
 
 #[test]

@@ -197,7 +197,20 @@ impl Tool for AgentAsTool {
                     return;
                 }
                 Resume::With(responses) => {
-                    match restore(agent, &parent, &prefix, &tool_use_id) {
+                    // A context-preserving child restores its own turn from its session on
+                    // initialization (TS `ChildAgentAdapter.restore`).
+                    let initialized = match stored_turn(&parent, &tool_use_id) {
+                        Some(_) => Ok(()),
+                        None => agent.initialize().await,
+                    };
+                    let restored = match initialized {
+                        Ok(()) => restore(agent, &parent, &prefix, &tool_use_id),
+                        Err(error) => {
+                            tracing::error!(tool_use_id = %tool_use_id, error = %error, "failed to restore interrupted sub-agent turn");
+                            reraise(&parent, &prefix, &tool_use_id, None)
+                        }
+                    };
+                    match restored {
                         Restored::Ready => {}
                         Restored::Interrupt(interrupt) => {
                             yield ToolOutcome::Interrupt(*interrupt).into();
@@ -252,11 +265,15 @@ impl Tool for AgentAsTool {
                 .as_ref()
                 .filter(|result| failure.is_none() && result.stop_reason() == StopReason::Interrupt && !result.interrupts().is_empty());
             match (interrupted, &result) {
-                (Some(_), _) if preserve_context => tracing::warn!(
-                    tool_name = %name,
-                    tool_use_id = %tool_use_id,
-                    "interrupted sub-agent has preserveContext=true and no session manager, so its interrupt cannot be resumed after a restart"
-                ),
+                (Some(_), _) if preserve_context => {
+                    if agent.session_manager().is_none() {
+                        tracing::warn!(
+                            tool_name = %name,
+                            tool_use_id = %tool_use_id,
+                            "interrupted sub-agent has preserveContext=true and no session manager, so its interrupt cannot be resumed after a restart"
+                        );
+                    }
+                }
                 (Some(_), _) => store_turn(&parent, &tool_use_id, agent),
                 (None, Some(_)) => remove_turn(&parent, &tool_use_id),
                 (None, None) => {}
