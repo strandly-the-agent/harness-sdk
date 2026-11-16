@@ -8,7 +8,7 @@ Results of the harness live tests (`harness-rs/strands-harness/tests/live_e2e.rs
 STRANDS_TEST_NODE=<node binary> \
 STRANDS_TEST_NODE_MODULES=<a node_modules with @modelcontextprotocol/sdk and zod> \
 STRANDS_CROSS_SDK_HARNESS_TS=<a harness-ts checkout with its dependencies installed> \
-  cargo test -p strands-harness --all-features -- --ignored live_ --nocapture > /tmp/h12live_run.txt 2>&1; echo "EXIT: $?"
+  cargo test -p strands-harness --all-features -- --ignored live_ --nocapture > /tmp/harness_live.txt 2>&1; echo "EXIT: $?"
 ```
 
 AWS credentials came from the default chain and were used for Bedrock and Bedrock Mantle model calls only; the tests create, change and delete no AWS resource. `AWS_REGION` was `us-west-2`. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` were not set. Every output file was scanned for key patterns and environment values before it was read: all clean.
