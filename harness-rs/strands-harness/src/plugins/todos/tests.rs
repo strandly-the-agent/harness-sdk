@@ -167,3 +167,72 @@ async fn an_in_progress_item_without_an_active_form_shows_its_content() {
     .await;
     assert_eq!(result, "1 todos remaining\n  [in_progress] Ship");
 }
+
+mod in_a_harness {
+    use strands::agent::ModelSource;
+    use strands::models::Model;
+
+    use super::*;
+    use crate::agent::{
+        HarnessAgentOptions, MemoryOption, Seams, SessionOption, SkillsOption, create_harness_with,
+    };
+
+    async fn harness(plugin: Arc<dyn Plugin>) -> crate::Result<Agent> {
+        let dir = tempfile::tempdir().unwrap();
+        let model: Arc<dyn Model> = Arc::new(MockMessageModel::new());
+        let options = HarnessAgentOptions {
+            model: Some(ModelSource::Model(model)),
+            plugins: vec![plugin],
+            session: SessionOption::Off,
+            memory: MemoryOption::Off,
+            skills: SkillsOption::Off,
+            ..Default::default()
+        };
+        let seams = Seams {
+            base_dir: Some(dir.path().to_owned()),
+            env: Arc::new(|_| None),
+            on_resolve_model: None,
+        };
+        create_harness_with(options, seams).await
+    }
+
+    // No TS case: TS skips the built-in by `instanceof Todos` (`agent.ts` `selectBuiltinPlugins`).
+    #[tokio::test]
+    async fn a_consumer_todos_under_a_custom_name_stands_in_for_the_built_in_one() {
+        let todos = Todos::new(TodosConfig {
+            name: Some("my:todos".to_owned()),
+            state_key: Some("my_todos".to_owned()),
+        });
+        let mut agent = harness(Arc::new(todos)).await.unwrap();
+        agent.initialize().await.unwrap();
+        let specs = agent.tool_registry().tool_specs();
+        assert_eq!(specs.iter().filter(|spec| spec.name() == TOOL_NAME).count(), 1);
+    }
+
+    struct OtherTodos;
+
+    #[async_trait]
+    impl Plugin for OtherTodos {
+        fn name(&self) -> &str {
+            "other:todos"
+        }
+
+        fn get_tools(&self) -> Vec<Arc<dyn Tool>> {
+            vec![Arc::new(FunctionTool::new(
+                TOOL_NAME,
+                "Another list.",
+                |_input: JsonValue, _context| async { Ok::<_, ToolError>(json!("ok")) },
+            ))]
+        }
+    }
+
+    // No TS case: guards the rule above against swallowing the TS collision error.
+    #[tokio::test]
+    async fn another_plugin_with_its_own_todo_write_still_collides_with_the_built_in_one() {
+        let error = harness(Arc::new(OtherTodos)).await.err().unwrap();
+        assert_eq!(
+            error.to_string(),
+            "Tool name \"todo_write\" is registered more than once (from a built-in plugin and plugins). Rename the tool you passed, or drop the built-in via builtinTools / builtinPlugins."
+        );
+    }
+}

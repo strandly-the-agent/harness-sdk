@@ -410,3 +410,69 @@ async fn the_plugin_injects_the_block_on_a_user_turn() {
     assert!(sent.contains("Working directory: /work"), "{sent}");
     assert!(sent.contains("root agents doc"), "{sent}");
 }
+
+mod in_a_harness {
+    use strands::agent::ModelSource;
+    use strands::models::Model;
+    use strands::testing::MockMessageModel;
+    use strands::types::messages::TextBlock;
+
+    use super::*;
+    use crate::agent::{
+        HarnessAgentOptions, MemoryOption, Seams, SessionOption, SkillsOption, create_harness_with,
+    };
+
+    /// The `<environment>` blocks of the first model request of a harness with `plugins`.
+    async fn environment_blocks(plugins: Vec<Arc<dyn Plugin>>) -> usize {
+        let dir = tempfile::tempdir().unwrap();
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn(vec![TextBlock::new("done").into()]);
+        let as_model: Arc<dyn Model> = model.clone();
+        let mut options = HarnessAgentOptions {
+            model: Some(ModelSource::Model(as_model)),
+            plugins,
+            session: SessionOption::Off,
+            memory: MemoryOption::Off,
+            skills: SkillsOption::Off,
+            ..Default::default()
+        };
+        options.agent_config.printer = Some(false);
+        let seams = Seams {
+            base_dir: Some(dir.path().to_owned()),
+            env: Arc::new(|_| None),
+            on_resolve_model: None,
+        };
+        let mut agent = create_harness_with(options, seams).await.unwrap();
+        agent.invoke("go").await.unwrap();
+        let wire = serde_json::to_string(&model.requests()[0].messages).unwrap();
+        wire.matches("<environment>").count()
+    }
+
+    fn named(name: &str) -> Arc<dyn Plugin> {
+        Arc::new(EnvironmentContext::new(EnvironmentContextConfig {
+            name: Some(name.to_owned()),
+        }))
+    }
+
+    // No TS case: TS skips the built-in by `instanceof EnvironmentContext` (`agent.ts`
+    // `selectBuiltinPlugins`).
+    #[tokio::test]
+    async fn a_consumer_environment_context_under_a_custom_name_leaves_one_environment_block() {
+        assert_eq!(environment_blocks(vec![named("my:env")]).await, 1);
+    }
+
+    // No TS case: the built-in instance yields only to a block that is there.
+    #[tokio::test]
+    async fn the_built_in_environment_context_injects_when_the_consumer_has_none() {
+        assert_eq!(environment_blocks(Vec::new()).await, 1);
+    }
+
+    // No TS case: only the harness's own instance yields, as in TS.
+    #[tokio::test]
+    async fn two_consumer_environment_contexts_each_inject_their_block() {
+        assert_eq!(
+            environment_blocks(vec![named("one:env"), named("two:env")]).await,
+            2
+        );
+    }
+}
