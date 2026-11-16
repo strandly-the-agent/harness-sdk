@@ -679,3 +679,66 @@ async fn loads_mcp_servers_through_the_sdk_resilient_and_prefixed_by_server_name
         .collect();
     assert_eq!(names, ["web"]);
 }
+
+/// Runs the harness agent's `subagent` tool once, with a child that answers `done` on the shared
+/// mock model; returns the tool names and system prompt the child sent to the model.
+async fn delegate(options: HarnessAgentOptions, model: &Arc<MockMessageModel>) -> (Vec<String>, String) {
+    use futures::StreamExt;
+    use strands::testing::tool_context;
+    use strands::tools::ToolStreamItem;
+    use strands::types::messages::TextBlock;
+    use strands::types::tools::ToolUse;
+
+    let agent = harness(options).await.unwrap();
+    let subagent = Arc::clone(agent.tools().find(|tool| tool.name() == "subagent").unwrap());
+    model.add_turn(vec![TextBlock::new("done").into()]);
+    let input = serde_json::json!({ "task": "x" });
+    let mut stream = subagent.stream(tool_context(ToolUse::new("subagent", "t1", input)));
+    let mut outcome = None;
+    while let Some(item) = stream.next().await {
+        if let ToolStreamItem::Outcome(last) = item {
+            outcome = Some(last);
+        }
+    }
+    assert!(format!("{outcome:?}").contains("done"), "{outcome:?}");
+    let request = model.requests().pop().unwrap();
+    let tools = request.tool_specs.iter().map(|spec| spec.name().to_owned()).collect();
+    (tools, format!("{:?}", request.system_prompt))
+}
+
+fn shared_mock() -> (Arc<MockMessageModel>, HarnessAgentOptions) {
+    let model = Arc::new(MockMessageModel::new());
+    let source: Arc<dyn Model> = Arc::clone(&model) as Arc<dyn Model>;
+    let options = HarnessAgentOptions {
+        model: Some(ModelSource::Model(source)),
+        ..Default::default()
+    };
+    (model, options)
+}
+
+#[tokio::test]
+async fn hands_the_built_child_every_consumer_tool_when_the_model_does_not_narrow() {
+    let (model, mut options) = shared_mock();
+    options.tools = vec![consumer_tool("sample_tool")];
+    let (tools, _) = delegate(options, &model).await;
+    assert!(tools.iter().any(|name| name == "sample_tool"), "{tools:?}");
+}
+
+#[tokio::test]
+async fn keeps_its_own_subagent_tool_so_a_delegate_can_sub_delegate() {
+    let (model, options) = shared_mock();
+    let (tools, prompt) = delegate(options, &model).await;
+    for name in ["subagent", "read", "shell"] {
+        assert!(tools.iter().any(|tool| tool == name), "{name} missing from {tools:?}");
+    }
+    assert!(prompt.contains("general-purpose subagent"), "{prompt}");
+}
+
+#[tokio::test]
+async fn gives_the_built_child_only_the_built_ins_the_parent_enabled() {
+    let (model, mut options) = shared_mock();
+    options.builtin_tools = names(&[BuiltinToolName::Read, BuiltinToolName::Subagent]);
+    let (tools, _) = delegate(options, &model).await;
+    assert!(tools.iter().any(|name| name == "read"), "{tools:?}");
+    assert!(!tools.iter().any(|name| name == "shell"), "{tools:?}");
+}
