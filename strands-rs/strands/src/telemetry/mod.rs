@@ -11,7 +11,7 @@
 //! use strands::{Agent, Error};
 //!
 //! let exporters = Exporters::builder().otlp(true).build();
-//! let tracer_provider = setup_tracer(TracerConfig::builder().exporters(exporters).build())?;
+//! let tracer_provider = setup_tracer(TracerConfig::builder().exporters(exporters.clone()).build())?;
 //! let meter_provider = setup_meter(MeterConfig::builder().exporters(exporters).build())?;
 //!
 //! let mut agent = Agent::builder().build()?;
