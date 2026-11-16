@@ -324,7 +324,7 @@ mod writing_into_the_conversation {
         let strategy = Offload::summarize(OffloadTarget::All, SummarizeConfig::default())
             .unwrap()
             .when(OffloadConditions {
-                threshold: Some(20.0),
+                threshold: Some(20),
                 utilization: None,
                 preserve_recent: None,
             })

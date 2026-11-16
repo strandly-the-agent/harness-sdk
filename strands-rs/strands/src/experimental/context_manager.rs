@@ -45,8 +45,8 @@ use presets::resolve_strategies;
 use retrieval_tool::{create_retrieval_tool, track_retrieval_tool_use_ids};
 use strategies::offload::EmergencyTruncateStrategy;
 
-const AUTO_TRUNCATE_THRESHOLD: f64 = 1_500.0;
-const AGENTIC_TRUNCATE_THRESHOLD: f64 = 8_000.0;
+const AUTO_TRUNCATE_THRESHOLD: u64 = 1_500;
+const AGENTIC_TRUNCATE_THRESHOLD: u64 = 8_000;
 const TRUNCATE_PREVIEW_TOKENS: u64 = 750;
 const AUTO_SUMMARIZE_UTILIZATION: f64 = 0.85;
 const MAX_OVERFLOW_RETRIES: u32 = 3;
@@ -328,7 +328,7 @@ impl fmt::Debug for ContextManager {
     }
 }
 
-fn truncate_tool_results(threshold: f64) -> Result<Arc<dyn ContextStrategy>> {
+fn truncate_tool_results(threshold: u64) -> Result<Arc<dyn ContextStrategy>> {
     let config = TruncateConfig {
         preview_tokens: Some(TRUNCATE_PREVIEW_TOKENS),
         preview: None,

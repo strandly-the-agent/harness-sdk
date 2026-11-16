@@ -15,7 +15,6 @@ use crate::experimental::context_manager::stash::{STASHED, format_stash_refs};
 use crate::experimental::context_manager::{ContextState, ContextStrategy, Stash};
 use crate::types::agent::LocalAgent;
 use crate::types::messages::{ContentBlock, Message, TextBlock, ToolResultBlock, ToolResultContent};
-use crate::vended_tools::js_number;
 
 /// Replaces large blocks with a head and tail preview (TS `TruncateStrategy`); with a
 /// `utilization` condition it removes whole messages instead.
@@ -33,12 +32,11 @@ impl TruncateStrategy {
     ) -> Result<Self> {
         let base = OffloadBase::new(target, conditions)?;
         let preview_tokens = config.preview_tokens();
-        if let Some(threshold) = conditions.threshold.filter(|threshold| threshold.is_finite())
-            && threshold <= as_f64(preview_tokens)
+        if let Some(threshold) = conditions.threshold
+            && threshold <= preview_tokens
         {
             return Err(Error::other(format!(
-                "threshold ({}) must be greater than previewTokens ({preview_tokens}) to ensure truncation converges",
-                js_number(threshold)
+                "threshold ({threshold}) must be greater than previewTokens ({preview_tokens}) to ensure truncation converges"
             )));
         }
         Ok(Self { base, config })
@@ -52,11 +50,6 @@ impl TruncateStrategy {
     pub fn when(self, conditions: OffloadConditions) -> Result<Self> {
         Self::new(self.base.target, self.config, conditions)
     }
-}
-
-#[expect(clippy::cast_precision_loss, reason = "TS compares to a JS number")]
-fn as_f64(tokens: u64) -> f64 {
-    tokens as f64
 }
 
 /// `block` with `[Stashed] <refs>` appended to its first text item (TS `appendStashRefs`).

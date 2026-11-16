@@ -21,7 +21,7 @@ use crate::experimental::context_manager::methods::truncate::TruncateConfig;
 /// use strands::experimental::context_manager::{Offload, OffloadConditions, OffloadTarget, TruncateConfig};
 ///
 /// let strategy = Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default())?
-///     .when(OffloadConditions { threshold: Some(2500.0), ..Default::default() })?;
+///     .when(OffloadConditions { threshold: Some(2500), ..Default::default() })?;
 /// # let _ = strategy;
 /// # Ok::<(), strands::Error>(())
 /// ```

@@ -12,7 +12,7 @@ use crate::types::messages::{ContentBlock, InjectedBlock, Message, Role, TextBlo
 use crate::types::tools::ToolResultStatus;
 
 fn conditions(
-    threshold: Option<f64>,
+    threshold: Option<u64>,
     utilization: Option<f64>,
     preserve_recent: Option<f64>,
 ) -> OffloadConditions {
@@ -71,7 +71,7 @@ fn creates_a_strategy_with_correct_name() {
 fn creates_a_strategy_with_when_conditions() {
     let strategy = Offload::truncate(OffloadTarget::ToolResults, preview(500))
         .unwrap()
-        .when(conditions(Some(1000.0), None, None))
+        .when(conditions(Some(1000), None, None))
         .unwrap();
     assert_eq!(strategy.name(), "offload:truncate");
 }
@@ -79,7 +79,7 @@ fn creates_a_strategy_with_when_conditions() {
 #[test]
 fn rejects_a_threshold_at_or_below_the_preview_size() {
     let error = truncate(OffloadTarget::ToolResults)
-        .when(conditions(Some(1000.0), None, None))
+        .when(conditions(Some(1000), None, None))
         .unwrap_err();
     assert_eq!(
         error.to_string(),
@@ -103,7 +103,7 @@ async fn truncates_large_tool_results() {
 #[tokio::test]
 async fn does_not_truncate_results_below_threshold() {
     let strategy = truncate(OffloadTarget::ToolResults)
-        .when(conditions(Some(2500.0), None, None))
+        .when(conditions(Some(2500), None, None))
         .unwrap();
     let (acted, _) = apply(
         &strategy,
@@ -452,7 +452,7 @@ async fn offload_truncate_truncates_all_large_content() {
 #[tokio::test]
 async fn offload_truncate_with_threshold_skips_small_content() {
     let strategy = truncate(OffloadTarget::All)
-        .when(conditions(Some(2500.0), None, None))
+        .when(conditions(Some(2500), None, None))
         .unwrap();
     let (acted, _) = apply(&strategy, vec![assistant("small")], 0.5, false).await;
     assert!(!acted);
@@ -464,7 +464,7 @@ async fn leaves_injected_text_in_place() {
     let message = Message::new(Role::User, vec![TextBlock::new("ask").into(), injected.clone()]);
     let strategy = Offload::truncate(OffloadTarget::All, preview(50))
         .unwrap()
-        .when(conditions(Some(100.0), None, None))
+        .when(conditions(Some(100), None, None))
         .unwrap();
     let (acted, messages) = apply(&strategy, vec![message], 0.5, false).await;
     assert!(!acted);

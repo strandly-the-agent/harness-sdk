@@ -37,8 +37,8 @@ pub enum OffloadTarget {
     Tools(Vec<String>),
 }
 
-/// When an offload strategy acts (TS `OffloadConditions`). Non-finite values are ignored and
-/// negative ones count as zero, as in TS.
+/// When an offload strategy acts (TS `OffloadConditions`). Non-finite `utilization` and
+/// `preserve_recent` values are ignored and negative ones count as zero, as in TS.
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
@@ -46,7 +46,7 @@ pub enum OffloadTarget {
 #[derive(Debug, Clone, Copy, Default, PartialEq, bon::Builder)]
 pub struct OffloadConditions {
     /// Offload only blocks above this many tokens.
-    pub threshold: Option<f64>,
+    pub threshold: Option<u64>,
     /// Act only at or above this context utilization, removing whole messages.
     pub utilization: Option<f64>,
     /// Keep this many recent matching messages; a value in (0, 1) is a fraction of them.
@@ -133,7 +133,7 @@ fn resolve_tool_filter(target: &OffloadTarget) -> ToolFilter {
 #[derive(Debug)]
 pub(crate) struct OffloadBase {
     pub(crate) target: OffloadTarget,
-    pub(crate) threshold: Option<f64>,
+    pub(crate) threshold: Option<u64>,
     pub(crate) utilization: Option<f64>,
     pub(crate) preserve_recent: f64,
     filter: ToolFilter,
@@ -155,7 +155,7 @@ impl OffloadBase {
         let filter = resolve_tool_filter(&target);
         Self {
             target,
-            threshold: finite(conditions.threshold),
+            threshold: conditions.threshold,
             utilization: finite(conditions.utilization),
             preserve_recent: finite(conditions.preserve_recent).unwrap_or(0.0),
             filter,
@@ -316,12 +316,8 @@ fn preserved_count(preserve_recent: f64, matching: usize) -> usize {
     }
 }
 
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "TS compares token counts to a JS number"
-)]
-pub(crate) fn exceeds(tokens: u64, threshold: f64) -> bool {
-    tokens as f64 > threshold
+pub(crate) fn exceeds(tokens: u64, threshold: u64) -> bool {
+    tokens > threshold
 }
 
 /// The token count of one block as its own message.
@@ -569,7 +565,7 @@ pub(crate) async fn transform_blocks<O: Offloader + ?Sized>(
     invocation_context: Option<&InvocationContext>,
 ) -> Result<bool> {
     let base = offloader.base();
-    let threshold = base.threshold.unwrap_or(0.0);
+    let threshold = base.threshold.unwrap_or(0);
     let Some(message) = agent.messages().get(index).cloned() else {
         return Ok(false);
     };

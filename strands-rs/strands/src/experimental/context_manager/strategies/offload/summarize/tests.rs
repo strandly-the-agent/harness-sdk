@@ -291,7 +291,7 @@ fn warned(warnings: &[String], text: &str) -> bool {
 }
 
 fn conditions(
-    threshold: Option<f64>,
+    threshold: Option<u64>,
     utilization: Option<f64>,
     preserve_recent: Option<f64>,
 ) -> OffloadConditions {
@@ -319,7 +319,7 @@ fn per_block() -> SummarizeStrategy {
 fn per_block_with(config: SummarizeConfig) -> SummarizeStrategy {
     Offload::summarize(OffloadTarget::ToolResults, config)
         .unwrap()
-        .when(conditions(Some(100.0), None, None))
+        .when(conditions(Some(100), None, None))
         .unwrap()
 }
 
@@ -438,7 +438,7 @@ fn creates_a_strategy_with_when_conditions() {
 async fn returns_false_when_blocks_are_below_threshold() {
     let (mut agent, _) = plain_agent(vec![tool_result("tool-123", "short result")]);
     let strategy = summarize(OffloadTarget::ToolResults)
-        .when(conditions(Some(2500.0), None, None))
+        .when(conditions(Some(2500), None, None))
         .unwrap();
     assert!(!apply(&strategy, &mut agent, 0.9).await);
 }
@@ -586,7 +586,7 @@ async fn offloads_a_video_block_without_summarizing_it() {
     };
     let strategy = Offload::summarize(OffloadTarget::All, config)
         .unwrap()
-        .when(conditions(Some(10.0), None, None))
+        .when(conditions(Some(10), None, None))
         .unwrap();
 
     assert!(apply(&strategy, &mut agent, 0.9).await);
@@ -609,7 +609,7 @@ fn offloads_a_media_block_when_its_summarization_fails() {
     };
     let strategy = Offload::summarize(OffloadTarget::All, config)
         .unwrap()
-        .when(conditions(Some(10.0), None, None))
+        .when(conditions(Some(10), None, None))
         .unwrap();
 
     let (result, warnings) = capture_warnings(apply(&strategy, &mut agent, 0.9));
@@ -801,7 +801,7 @@ async fn sends_only_the_replaced_messages_when_a_threshold_skips_some() {
         if big { 5000 } else { 10 }
     });
     let strategy = summarize(OffloadTarget::All)
-        .when(conditions(Some(100.0), Some(0.8), None))
+        .when(conditions(Some(100), Some(0.8), None))
         .unwrap();
 
     assert!(apply(&strategy, &mut agent, 0.9).await);

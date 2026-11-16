@@ -72,7 +72,7 @@ impl FromStr for StrategyPresetName {
 }
 
 fn conditions(
-    threshold: Option<f64>,
+    threshold: Option<u64>,
     utilization: Option<f64>,
     preserve_recent: Option<f64>,
 ) -> OffloadConditions {
@@ -101,7 +101,7 @@ pub(crate) fn resolve_preset(name: StrategyPresetName) -> Result<Vec<Arc<dyn Con
                     preview: None,
                 },
             )?
-            .when(conditions(Some(2500.0), None, None))?,
+            .when(conditions(Some(2500), None, None))?,
         ),
         StrategyPresetName::OverflowProtection => Arc::new(
             Offload::truncate(OffloadTarget::All, TruncateConfig::default())?.when(conditions(
