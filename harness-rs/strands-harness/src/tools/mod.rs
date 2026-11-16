@@ -15,3 +15,7 @@ pub(crate) use shell::make_shell;
 pub use web_fetch::{MakeWebFetchOptions, make_web_fetch};
 #[cfg(feature = "mcp")]
 pub use web_search::{exa_web_search, make_exa_web_search};
+pub use programmatic_tool_caller::{
+    DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, MakeProgrammaticToolCallerOptions,
+    make_programmatic_tool_caller, programmatic_tool_caller,
+};

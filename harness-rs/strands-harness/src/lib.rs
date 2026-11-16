@@ -33,4 +33,8 @@ pub use tools::{MakeReadOptions, MakeWebFetchOptions, edit, make_read, make_web_
 pub use tools::{MakeWebFetchOptions, edit, make_web_fetch, read, write};
 #[cfg(feature = "mcp")]
 pub use tools::{exa_web_search, make_exa_web_search};
+pub use tools::{
+    DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, MakeProgrammaticToolCallerOptions,
+    make_programmatic_tool_caller, programmatic_tool_caller,
+};
 pub use types::{Effort, WebFetchTransport};
