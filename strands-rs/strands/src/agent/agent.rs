@@ -30,7 +30,9 @@ use crate::retry::model_retry_strategy::{
 };
 use crate::retry::{DefaultModelRetryStrategy, ModelRetryStrategy};
 use crate::sandbox::{AgentSandbox, Sandbox};
+use crate::session::SessionManager;
 use crate::state_store::StateStore;
+use crate::storage::Storage;
 use crate::telemetry::AgentMetrics;
 use crate::tools::{StructuredOutputSchema, Tool, ToolExecutor, ToolRegistry, ToolSource};
 use crate::types::agent::{AgentResult, AgentStreamEvent, InvokeArgs, InvokeOptions, LocalAgent};
@@ -89,6 +91,7 @@ pub struct Agent {
     pub(crate) deferred_continuations: Vec<ContinuationInput>,
     /// The background tasks plugin, when the config enables it.
     pub(crate) background_tasks: Option<BackgroundTaskScheduler>,
+    session_manager: Option<SessionManager>,
     #[cfg(feature = "mcp")]
     mcp_clients: Vec<crate::mcp::McpClient>,
 }
@@ -138,6 +141,7 @@ impl Agent {
             agent.mcp_clients = config.tools.iter().flat_map(ToolSource::mcp_clients).collect();
         }
         local.set_sandbox(AgentSandbox::from_source(config.sandbox));
+        local.set_storage(config.storage);
         let tools = config.tools.into_iter().flat_map(ToolSource::into_tools);
         local.tool_registry_mut().add_all(tools)?;
         agent.tool_executor = config.tool_executor.unwrap_or_default();
@@ -150,6 +154,7 @@ impl Agent {
             agent.retry_strategies = strategies;
         }
         agent.plugins = config.plugins;
+        agent.session_manager = config.session_manager;
         agent.background_tasks = config
             .background_tasks
             .and_then(BackgroundTasks::into_config)
@@ -182,6 +187,7 @@ impl Agent {
             abandoned: None,
             deferred_continuations: Vec::new(),
             background_tasks: None,
+            session_manager: None,
             #[cfg(feature = "mcp")]
             mcp_clients: Vec::new(),
         }
@@ -252,6 +258,10 @@ impl Agent {
             .background_tasks
             .clone()
             .map(|scheduler| Arc::new(scheduler) as Arc<dyn Plugin>);
+        let session = self
+            .session_manager
+            .clone()
+            .map(|manager| Arc::new(manager) as Arc<dyn Plugin>);
         let model: Arc<dyn Plugin> = Arc::new(ModelLifecycle::new(Arc::clone(self.local.model())));
         let conversation_manager: Arc<dyn Plugin> =
             Arc::new(ConversationManagerPlugin(Arc::clone(&self.conversation_manager)));
@@ -260,6 +270,7 @@ impl Agent {
             .chain(self.plugins.iter().cloned())
             .chain(background)
             .chain(delegation)
+            .chain(session)
             .chain([model])
             .collect()
     }
@@ -402,6 +413,16 @@ impl Agent {
     /// Replaces the auxiliary model; `None` falls back to the agent's model.
     pub fn set_aux_model(&mut self, aux_model: Option<Arc<dyn Model>>) {
         self.local.set_aux_model(aux_model);
+    }
+
+    /// The default storage for agent subsystems (TS `storage`), when configured.
+    pub fn storage(&self) -> Option<&Arc<dyn Storage>> {
+        self.local.storage()
+    }
+
+    /// The session manager (TS `sessionManager`), when configured.
+    pub fn session_manager(&self) -> Option<&SessionManager> {
+        self.session_manager.as_ref()
     }
 
     /// The app state.

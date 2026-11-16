@@ -19,6 +19,8 @@ use crate::models::streaming::ModelStreamEvent;
 use crate::plugins::Plugin;
 use crate::retry::ModelRetryStrategy;
 use crate::sandbox::SandboxSource;
+use crate::session::SessionManager;
+use crate::storage::Storage;
 use crate::tools::{StructuredOutputSchema, ToolExecutor, ToolSource};
 use crate::types::json::JsonObject;
 use crate::types::messages::{Message, SystemPrompt};
@@ -255,6 +257,11 @@ pub struct AgentConfig {
     /// [`SandboxSource::Off`] opts out.
     #[builder(into)]
     pub sandbox: Option<SandboxSource>,
+    /// The default storage for agent subsystems (TS `storage`); a session manager without its
+    /// own storage uses it.
+    pub storage: Option<Arc<dyn Storage>>,
+    /// Saves and restores the agent's session (TS `sessionManager`).
+    pub session_manager: Option<SessionManager>,
 }
 
 impl<S: agent_builder::State> AgentBuilder<S> {

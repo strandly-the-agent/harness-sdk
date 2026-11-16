@@ -133,7 +133,6 @@ fn js_cmp(a: &str, b: &str) -> Ordering {
 }
 
 /// A generic prefixed view over `storage` (TS `namespace`); composes by nesting prefixes.
-#[cfg_attr(not(test), expect(dead_code, reason = "the session manager lands next"))]
 pub(crate) fn namespace(storage: Arc<dyn Storage>, prefix: &str) -> Result<Arc<dyn Storage>> {
     let prefix = namespace_prefix(prefix)?;
     Ok(Arc::new(NamespacedStorage {
@@ -141,15 +140,12 @@ pub(crate) fn namespace(storage: Arc<dyn Storage>, prefix: &str) -> Result<Arc<d
         prefix,
     }))
 }
-
-#[cfg_attr(not(test), expect(dead_code, reason = "the session manager lands next"))]
 struct NamespacedStorage {
     inner: Arc<dyn Storage>,
     prefix: String,
 }
 
 impl NamespacedStorage {
-    #[cfg_attr(not(test), expect(dead_code, reason = "the session manager lands next"))]
     fn strip<'a>(&self, key: &'a str) -> &'a str {
         key.strip_prefix(self.prefix.as_str()).unwrap_or(key)
     }

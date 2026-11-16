@@ -208,6 +208,7 @@ pub struct LocalAgent {
     invocation_context: Option<InvocationContext>,
     telemetry: LocalTelemetry,
     sandbox: AgentSandbox,
+    storage: Option<Arc<dyn crate::storage::Storage>>,
 }
 
 impl LocalAgent {
@@ -235,6 +236,7 @@ impl LocalAgent {
             invocation_context: None,
             telemetry: LocalTelemetry::default(),
             sandbox: AgentSandbox::default(),
+            storage: None,
         }
     }
 
@@ -329,6 +331,15 @@ impl LocalAgent {
 
     pub(crate) fn set_sandbox(&mut self, sandbox: AgentSandbox) {
         self.sandbox = sandbox;
+    }
+
+    /// The default storage for agent subsystems (TS `storage`), when configured.
+    pub fn storage(&self) -> Option<&Arc<dyn crate::storage::Storage>> {
+        self.storage.as_ref()
+    }
+
+    pub(crate) fn set_storage(&mut self, storage: Option<Arc<dyn crate::storage::Storage>>) {
+        self.storage = storage;
     }
 
     /// The metrics accumulated over the agent's invocations (TS `metrics`), including the
