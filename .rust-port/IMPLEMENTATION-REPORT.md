@@ -378,6 +378,7 @@ TODO(lead): Phase 12 review dispositions (the findings of the three-reviewer gat
 
 - Branch: `feat/rust-sdk`, pushed to the fork remote as `feat/rust-sdk-run-20261115`. Nothing was pushed to `strands-agents/harness-sdk`, and no PR or issue was opened.
 - Base (the pin): `7296caba7` on `main`.
+- Paths: at `ba501ced3` the diff from the base touches `strands-rs/`, `harness-rs/`, `.rust-port/`, the root `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` and the root `AGENTS.md`. Nothing under `strands-ts/`, `harness-ts/`, `strands-py/`, `harness-py/`, `strands-cli/` or `site/` was changed.
 - First commit: `3a67c206f` ("chore(rust-port): create the run folder").
 - Last commit: TODO(lead): last commit
 - Commit count (`git log --oneline 7296caba7..HEAD | wc -l`): TODO(lead): commit count
