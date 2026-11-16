@@ -16,7 +16,7 @@ use super::engine::{Clock, Engine, EngineOptions, ExecutionContext, Outcome, Tas
 use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
 use crate::interrupt::state::InterruptStateData;
-use crate::interrupt::{InterruptResponse, InterruptSource};
+use crate::interrupt::{InterruptResponse, InterruptSource, interrupt_error_message};
 use crate::middleware::MiddlewareError;
 use crate::tools::Tool;
 use crate::types::agent::{InterruptState, InvocationState, ToolAgent};
@@ -294,7 +294,9 @@ async fn run_task(
                 .id()
                 .starts_with(&format!("{source}:{}:", context.task_id));
             if !owned {
-                return Err(Error::other(format!("Interrupt raised: {}", interrupt.name())));
+                return Err(Error::other(interrupt_error_message(std::slice::from_ref(
+                    &*interrupt,
+                ))));
             }
             let mut data = state.lock();
             data.interrupts

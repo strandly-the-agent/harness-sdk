@@ -140,6 +140,17 @@ pub struct Interrupt {
     source: InterruptSource,
 }
 
+/// The message of TS `InterruptError`: what an interrupted cycle span and a background task report.
+pub(crate) fn interrupt_error_message(interrupts: &[Interrupt]) -> String {
+    match interrupts {
+        [interrupt] => format!("Interrupt raised: {}", interrupt.name()),
+        all => {
+            let names: Vec<&str> = all.iter().map(Interrupt::name).collect();
+            format!("{} interrupts raised: {}", all.len(), names.join(", "))
+        }
+    }
+}
+
 fn default_source() -> InterruptSource {
     InterruptSource::Hook
 }
@@ -430,6 +441,30 @@ mod tests {
         fn omits_undefined_reason_response_from_to_json() {
             let json = serde_json::to_value(Interrupt::new("int-1", "test")).unwrap();
             assert_eq!(json, json!({"id": "int-1", "name": "test", "source": "hook"}));
+        }
+    }
+
+    /// TS `InterruptError` is not a Rust type; its message is [`interrupt_error_message`].
+    mod interrupt_error {
+        use super::*;
+
+        #[test]
+        fn creates_catchable_error_with_single_interrupt() {
+            let interrupt = Interrupt::new("int-1", "confirm_delete");
+            assert_eq!(
+                interrupt_error_message(&[interrupt]),
+                "Interrupt raised: confirm_delete"
+            );
+        }
+
+        #[test]
+        fn creates_error_with_multiple_interrupts() {
+            let a = Interrupt::new("int-1", "security_check");
+            let b = Interrupt::new("int-2", "budget_check");
+            assert_eq!(
+                interrupt_error_message(&[a, b]),
+                "2 interrupts raised: security_check, budget_check"
+            );
         }
     }
 
