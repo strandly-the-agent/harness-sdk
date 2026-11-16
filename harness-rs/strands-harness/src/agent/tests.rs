@@ -1,11 +1,17 @@
-//! Ports `harness-ts/test/agent.test.ts`.
+//! Ports `harness-ts/test/agent.test.ts`. Where TS builds on the default Bedrock model, these
+//! cases pass a `MockMessageModel` instance unless the case is about the model string.
 
 use std::sync::Arc;
 
 use strands::models::Model;
 use strands::testing::MockMessageModel;
+use strands::tools::FunctionTool;
+use strands::types::messages::SystemPrompt;
+use strands::{JsonValue, ToolError};
 
 use super::*;
+use crate::prompt::HARNESS_CONTRACT;
+use crate::types::Setting;
 
 fn seams(dir: &tempfile::TempDir) -> Seams {
     Seams {
@@ -22,8 +28,56 @@ fn mock_options() -> HarnessAgentOptions {
     }
 }
 
+/// Builds in a fresh temporary base directory.
+async fn harness(options: HarnessAgentOptions) -> Result<Agent> {
+    let dir = tempfile::tempdir().unwrap();
+    create_harness_with(options, seams(&dir)).await
+}
+
+async fn error_of(options: HarnessAgentOptions) -> String {
+    match harness(options).await {
+        Ok(_) => panic!("expected create_harness to fail"),
+        Err(error) => error.to_string(),
+    }
+}
+
 fn tool_names(agent: &Agent) -> Vec<String> {
     agent.tools().map(|tool| tool.name().to_owned()).collect()
+}
+
+fn has_tool(agent: &Agent, name: &str) -> bool {
+    agent.tools().any(|tool| tool.name() == name)
+}
+
+fn consumer_tool(name: &str) -> ToolSource {
+    let tool = FunctionTool::new(
+        name,
+        format!("A consumer tool that collides with nothing unless named so: {name}."),
+        |_input: JsonValue, _context| async move { Ok::<_, ToolError>("ok".to_owned()) },
+    );
+    ToolSource::Tool(Arc::new(tool))
+}
+
+fn names(names: &[BuiltinToolName]) -> Option<BuiltinToolsOption> {
+    Some(BuiltinToolsOption::Names(names.to_vec()))
+}
+
+fn session(id: &str) -> SessionOption {
+    SessionOption::Config(SessionConfig {
+        id: Some(id.to_owned()),
+        dir: None,
+    })
+}
+
+fn policy(tasks: BackgroundTasks) -> BackgroundTasksConfig {
+    match tasks {
+        BackgroundTasks::Config(config) => config,
+        other => panic!("expected a policy, got {other:?}"),
+    }
+}
+
+fn strings(names: &[&str]) -> Vec<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
 }
 
 #[test]
@@ -34,23 +88,454 @@ fn create_harness_returns_a_send_future() {
 }
 
 #[tokio::test]
-async fn builds_an_agent_with_the_default_tools_on_a_model_instance() {
-    let dir = tempfile::tempdir().unwrap();
-    let agent = create_harness_with(mock_options(), seams(&dir)).await.unwrap();
-    let names = tool_names(&agent);
-    for name in [
-        "shell",
-        "read",
-        "write",
-        "edit",
-        "web_fetch",
-        "programmatic_tool_caller",
-        "subagent",
-    ] {
+async fn builds_an_agent_with_the_default_configuration() {
+    let agent = harness(mock_options()).await.unwrap();
+    for name in ["shell", "read", "write", "edit", "web_fetch"] {
         assert!(
-            names.iter().any(|tool| tool == name),
-            "{name} missing from {names:?}"
+            has_tool(&agent, name),
+            "{name} missing from {:?}",
+            tool_names(&agent)
         );
     }
-    assert!(!names.iter().any(|tool| tool == "web_search"), "{names:?}");
+    assert_eq!(agent.system_prompt(), Some(&SystemPrompt::from(HARNESS_CONTRACT)));
+    assert!(agent.context_manager().is_some());
+}
+
+#[test]
+fn backgrounds_the_subagent_and_leaves_other_compatible_tools_agent_selectable() {
+    let policy = policy(resolve_background_tasks(None, &strings(&["subagent"])));
+    assert_eq!(policy.agentic, Some(strings(&["*"])));
+    assert_eq!(policy.always, ["subagent"]);
+    assert!(policy.never.is_empty());
+}
+
+#[test]
+fn treats_background_tasks_true_the_same_as_the_default() {
+    let forced = strings(&["subagent"]);
+    assert_eq!(
+        resolve_background_tasks(Some(BackgroundTasks::Enabled(true)), &forced),
+        resolve_background_tasks(None, &forced)
+    );
+}
+
+#[test]
+fn keeps_the_subagent_backgrounded_under_a_custom_policy() {
+    let configured = BackgroundTasksConfig {
+        always: strings(&["sample_tool", "subagent"]),
+        never: strings(&["*", "subagent"]),
+        wait_for_completion: false,
+        ..Default::default()
+    };
+    let policy = policy(resolve_background_tasks(
+        Some(configured.into()),
+        &strings(&["subagent"]),
+    ));
+    assert_eq!(policy.always, ["sample_tool", "subagent"]);
+    assert_eq!(policy.never, ["*"]);
+    assert_eq!(policy.agentic, None);
+    assert!(!policy.wait_for_completion);
+}
+
+#[test]
+fn disables_background_tasks_when_requested() {
+    assert_eq!(
+        resolve_background_tasks(Some(BackgroundTasks::Enabled(false)), &strings(&["subagent"])),
+        BackgroundTasks::Enabled(false)
+    );
+}
+
+#[tokio::test]
+async fn appends_instructions_after_the_contract() {
+    let agent = harness(HarnessAgentOptions {
+        instructions: Some("You are a migration assistant.".to_owned()),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    let expected = build_system_prompt(Some("You are a migration assistant."), &[]);
+    assert!(expected.starts_with(HARNESS_CONTRACT) && expected.ends_with("You are a migration assistant."));
+    assert_eq!(agent.system_prompt(), Some(&SystemPrompt::from(expected)));
+}
+
+#[tokio::test]
+async fn lets_an_explicit_system_prompt_win_over_instructions() {
+    let mut options = mock_options();
+    options.instructions = Some("ignored".to_owned());
+    options.agent_config.system_prompt = Some("my own prompt".into());
+    let agent = harness(options).await.unwrap();
+    assert_eq!(agent.system_prompt(), Some(&SystemPrompt::from("my own prompt")));
+}
+
+#[tokio::test]
+async fn adds_consumer_tools_alongside_the_built_ins() {
+    let agent = harness(HarnessAgentOptions {
+        tools: vec![consumer_tool("sample_tool")],
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    for name in ["shell", "read", "sample_tool"] {
+        assert!(has_tool(&agent, name), "{name}");
+    }
+}
+
+#[tokio::test]
+async fn enables_the_subagent_delegation_tool_by_default() {
+    assert!(has_tool(&harness(mock_options()).await.unwrap(), "subagent"));
+}
+
+#[tokio::test]
+async fn disables_the_subagent_tool_when_dropped_from_builtin_tools() {
+    let agent = harness(HarnessAgentOptions {
+        builtin_tools: names(&[BuiltinToolName::Read]),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(!has_tool(&agent, "subagent"));
+}
+
+#[tokio::test]
+async fn selects_a_subset_of_built_in_tools() {
+    let agent = harness(HarnessAgentOptions {
+        builtin_tools: names(&[BuiltinToolName::Read]),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(has_tool(&agent, "read"));
+    assert!(!has_tool(&agent, "shell"));
+}
+
+#[tokio::test]
+async fn edits_the_defaults_with_a_builtin_tools_mapping() {
+    let mapping = BuiltinToolsConfig {
+        subagent: Some(Setting::Off),
+        ..Default::default()
+    };
+    let agent = harness(HarnessAgentOptions {
+        builtin_tools: Some(mapping.into()),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(!has_tool(&agent, "subagent"));
+    for name in ["shell", "read", "write", "edit", "web_fetch"] {
+        assert!(has_tool(&agent, name), "{name}");
+    }
+}
+
+#[tokio::test]
+async fn starts_from_nothing_when_the_builtin_tools_mapping_sets_star_to_false() {
+    let mapping = BuiltinToolsConfig {
+        all: Some(false),
+        read: Some(Setting::On),
+        web_fetch: Some(Setting::Config(Default::default())),
+        ..Default::default()
+    };
+    let agent = harness(HarnessAgentOptions {
+        builtin_tools: Some(mapping.into()),
+        memory: MemoryOption::Off,
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    let mut names = tool_names(&agent);
+    names.retain(|name| name != "todo_write");
+    names.sort();
+    assert_eq!(names, ["read", "web_fetch"]);
+}
+
+#[tokio::test]
+async fn disables_built_in_tools_with_an_empty_list() {
+    let agent = harness(HarnessAgentOptions {
+        builtin_tools: names(&[]),
+        tools: vec![consumer_tool("sample_tool")],
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(!has_tool(&agent, "shell") && !has_tool(&agent, "read"));
+    assert!(has_tool(&agent, "sample_tool"));
+}
+
+#[tokio::test]
+async fn throws_when_web_search_is_explicitly_selected_on_an_unsupported_provider() {
+    let listed = HarnessAgentOptions {
+        builtin_tools: names(&[BuiltinToolName::Read, BuiltinToolName::WebSearch]),
+        ..mock_options()
+    };
+    assert!(error_of(listed).await.contains("has no built-in web search"));
+    let mapping = BuiltinToolsConfig {
+        web_search: Some(WebSearchSetting::On),
+        ..Default::default()
+    };
+    let mapped = HarnessAgentOptions {
+        builtin_tools: Some(mapping.into()),
+        ..mock_options()
+    };
+    assert!(error_of(mapped).await.contains("has no built-in web search"));
+}
+
+#[tokio::test]
+async fn disables_context_management_when_falsy() {
+    let agent = harness(HarnessAgentOptions {
+        context_manager: Some(ContextManagerStrategy::Off),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(agent.context_manager().is_none());
+}
+
+#[tokio::test]
+async fn uses_the_default_strategy_when_context_manager_is_auto() {
+    let agent = harness(HarnessAgentOptions {
+        context_manager: Some(ContextManagerStrategy::Preset(ContextManagerPreset::Auto)),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(agent.context_manager().is_some());
+}
+
+#[tokio::test]
+async fn wires_a_session_manager_on_by_default_with_a_random_id() {
+    let agent = harness(mock_options()).await.unwrap();
+    assert!(agent.session_manager().is_some());
+    let id = agent.session_id();
+    assert!(
+        id.len() == 8 && id.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        "{id}"
+    );
+}
+
+#[tokio::test]
+async fn mints_distinct_ids_for_two_default_agents() {
+    let first = harness(mock_options()).await.unwrap();
+    let second = harness(mock_options()).await.unwrap();
+    assert_ne!(first.session_id(), second.session_id());
+}
+
+#[tokio::test]
+async fn builds_no_session_manager_when_the_session_is_disabled() {
+    let agent = harness(HarnessAgentOptions {
+        session: SessionOption::Off,
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(agent.session_manager().is_none());
+}
+
+#[tokio::test]
+async fn passes_a_session_manager_instance_given_as_session_straight_through() {
+    let supplied = SessionManager::new(SessionManagerConfig {
+        session_id: Some("mine".to_owned()),
+        ..Default::default()
+    })
+    .unwrap();
+    let agent = harness(HarnessAgentOptions {
+        session: supplied.into(),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert_eq!(agent.session_id(), "mine");
+}
+
+#[tokio::test]
+async fn prefers_an_explicitly_supplied_session_manager() {
+    let supplied = SessionManager::new(SessionManagerConfig {
+        session_id: Some("mine".to_owned()),
+        ..Default::default()
+    })
+    .unwrap();
+    let mut options = mock_options();
+    options.session = session("ignored");
+    options.agent_config.session_manager = Some(supplied);
+    assert_eq!(harness(options).await.unwrap().session_id(), "mine");
+}
+
+#[tokio::test]
+async fn wires_a_session_manager_when_a_session_id_is_given() {
+    let agent = harness(HarnessAgentOptions {
+        session: session("user-42"),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert_eq!(agent.session_id(), "user-42");
+}
+
+#[tokio::test]
+async fn rejects_an_empty_session_id() {
+    for id in ["", "   "] {
+        let options = HarnessAgentOptions {
+            session: session(id),
+            ..mock_options()
+        };
+        assert_eq!(error_of(options).await, "session.id must be a non-empty string.");
+    }
+}
+
+#[tokio::test]
+async fn sanitizes_the_session_id() {
+    let agent = harness(HarnessAgentOptions {
+        session: session("azrn:studio:us-west-2:session/abc"),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert_eq!(agent.session_id(), "azrn-studio-us-west-2-session-abc");
+}
+
+#[tokio::test]
+async fn lowercases_the_session_id() {
+    let agent = harness(HarnessAgentOptions {
+        session: session("MyProj.v2"),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert_eq!(agent.session_id(), "myproj-v2");
+}
+
+#[tokio::test]
+async fn rejects_a_built_in_tool_colliding_with_a_consumer_tool() {
+    let options = HarnessAgentOptions {
+        tools: vec![consumer_tool("read")],
+        ..mock_options()
+    };
+    assert_eq!(
+        error_of(options).await,
+        "Tool name \"read\" is registered more than once (from a built-in tool and tools). Rename the tool you passed, or drop the built-in via builtinTools / builtinPlugins."
+    );
+}
+
+#[tokio::test]
+async fn rejects_a_built_in_plugin_tool_colliding_with_a_consumer_tool() {
+    let options = HarnessAgentOptions {
+        builtin_plugins: Some(vec![BuiltinPluginName::Todos]),
+        tools: vec![consumer_tool("todo_write")],
+        ..mock_options()
+    };
+    assert!(error_of(options).await.starts_with(
+        "Tool name \"todo_write\" is registered more than once (from tools and a built-in plugin)"
+    ));
+}
+
+#[tokio::test]
+async fn frees_a_built_in_plugin_tool_name_when_the_plugin_is_dropped() {
+    let agent = harness(HarnessAgentOptions {
+        builtin_plugins: Some(Vec::new()),
+        tools: vec![consumer_tool("todo_write")],
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(has_tool(&agent, "todo_write"));
+}
+
+#[tokio::test]
+async fn rejects_the_built_in_subagent_tool_colliding_with_a_consumer_tool() {
+    let options = HarnessAgentOptions {
+        tools: vec![consumer_tool("subagent")],
+        ..mock_options()
+    };
+    assert!(
+        error_of(options).await.starts_with(
+            "Tool name \"subagent\" is registered more than once (from a built-in tool and tools)"
+        )
+    );
+}
+
+#[tokio::test]
+async fn rejects_a_consumer_tool_colliding_with_the_memory_search_tool() {
+    let options = HarnessAgentOptions {
+        tools: vec![consumer_tool("search_memory")],
+        ..mock_options()
+    };
+    assert!(
+        error_of(options)
+            .await
+            .starts_with("Tool name \"search_memory\" is registered more than once (from tools and memory)")
+    );
+}
+
+#[tokio::test]
+async fn rejects_the_same_consumer_tool_listed_twice() {
+    let options = HarnessAgentOptions {
+        tools: vec![consumer_tool("sample_tool"), consumer_tool("sample_tool")],
+        ..mock_options()
+    };
+    assert!(
+        error_of(options)
+            .await
+            .starts_with("Tool name \"sample_tool\" is registered more than once (from tools)")
+    );
+}
+
+#[tokio::test]
+async fn does_not_mention_built_ins_in_a_consumer_only_collision_remedy() {
+    let options = HarnessAgentOptions {
+        tools: vec![consumer_tool("sample_tool"), consumer_tool("sample_tool")],
+        ..mock_options()
+    };
+    let error = error_of(options).await;
+    assert!(
+        error.contains("unique name") && !error.contains("built-in"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn treats_a_dash_vs_underscore_near_collision_as_a_collision() {
+    let options = HarnessAgentOptions {
+        tools: vec![consumer_tool("web-fetch")],
+        ..mock_options()
+    };
+    assert!(error_of(options).await.contains("registered more than once"));
+}
+
+#[tokio::test]
+async fn frees_the_name_for_a_consumer_tool_once_the_built_in_is_dropped() {
+    let agent = harness(HarnessAgentOptions {
+        builtin_tools: names(&[
+            BuiltinToolName::Shell,
+            BuiltinToolName::Write,
+            BuiltinToolName::Edit,
+        ]),
+        tools: vec![consumer_tool("read")],
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    let read = agent.tools().find(|tool| tool.name() == "read").unwrap();
+    assert!(
+        read.tool_spec()
+            .description()
+            .contains("consumer tool that collides")
+    );
+}
+
+#[tokio::test]
+async fn does_not_name_check_non_tool_entries_in_tools() {
+    let agent = harness(HarnessAgentOptions {
+        tools: vec![ToolSource::List(vec![consumer_tool("sample_tool")])],
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(has_tool(&agent, "sample_tool"));
+}
+
+#[tokio::test]
+async fn rejects_a_harness_owned_key_on_agent_config() {
+    let mut options = mock_options();
+    options.agent_config.tools = vec![consumer_tool("sample_tool")];
+    assert_eq!(
+        error_of(options).await,
+        "agent_config.tools is a harness option: set `tools` on HarnessAgentOptions instead"
+    );
 }
