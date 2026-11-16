@@ -223,6 +223,32 @@ async fn delete_session_keeps_a_stash_rooted_at_an_explicitly_configured_scoped_
     assert_eq!(storage.list("team/").await.unwrap(), ["team/tool-1_0"]);
 }
 
+#[tokio::test]
+async fn delete_session_with_a_scoped_agent_storage_removes_only_this_session() {
+    let storage = InMemoryStorage::new();
+    let tenant: Arc<dyn Storage> = Arc::new(storage.namespace("tenant").unwrap());
+    tenant.write("memory/prefs.json", b"{}").await.unwrap();
+    let snapshots: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let manager = session_manager(Some(snapshots));
+    let mut agent = Agent::builder()
+        .model(model())
+        .printer(false)
+        .storage(Arc::clone(&tenant))
+        .context_manager(ContextManagerConfig::default())
+        .session_manager(manager.clone())
+        .build()
+        .unwrap();
+    agent.initialize().await.unwrap();
+    let stash = agent.context_manager().unwrap().stash().unwrap().clone();
+    stash.store("tool-1", 0, b"{}").await.unwrap();
+    let prefix = format!("context/test-session/scopes/agent/{}/", agent.id());
+    assert!(!tenant.list(&prefix).await.unwrap().is_empty());
+
+    manager.delete_session().await.unwrap();
+
+    assert_eq!(storage.list("").await.unwrap(), ["tenant/memory/prefs.json"]);
+}
+
 fn big_output_tool(output: String) -> FunctionTool {
     FunctionTool::new(
         "fetch",

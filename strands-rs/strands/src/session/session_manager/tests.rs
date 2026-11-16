@@ -7,12 +7,14 @@ use serde_json::json;
 use super::{
     ListSnapshotIdsOptions, SaveLatestStrategy, SessionManager, SessionManagerConfig, SnapshotTriggerCallback,
 };
-use crate::Agent;
+use crate::experimental::Stash;
 use crate::models::streaming::ModelStreamEvent;
 use crate::storage::{InMemoryStorage, Storage};
 use crate::test_support::WarnRecorder;
 use crate::testing::{MockMessageModel, TestModelProvider};
+use crate::types::agent::LocalAgent;
 use crate::types::messages::{Message, Role, TextBlock};
+use crate::{Agent, JsonValue};
 
 const LATEST: &str = "session/test-session/scopes/agent/test-agent/snapshots/snapshot_latest.json";
 const HISTORY: &str = "session/test-session/scopes/agent/test-agent/snapshots/immutable_history/";
@@ -636,4 +638,220 @@ async fn a_corrupted_latest_snapshot_fails_initialize() {
 async fn saves_snapshot_latest_on_redaction_when_save_latest_on_is_message() {
     let writes = latest_writes(SaveLatestStrategy::Message, true).await;
     assert!(writes.contains(&write(1, REDACTED)));
+}
+
+const STASH_AGENT_LATEST: &str = "session/test-session/scopes/agent/agent/snapshots/snapshot_latest.json";
+
+fn stash_on(storage: &Arc<dyn Storage>, agent_id: &str) -> Stash {
+    Stash::new(Arc::clone(storage), "test-session", agent_id, false).unwrap()
+}
+
+/// The TS `createAgentWithStash`: an agent view whose context manager stash is on `storage`.
+fn agent_with_stash(storage: &InMemoryStorage) -> (LocalAgent, Stash) {
+    let stash = stash_on(&(Arc::new(storage.clone()) as Arc<dyn Storage>), "agent");
+    let mut agent = LocalAgent::new(Arc::new(MockMessageModel::new()));
+    agent.set_context_stash(Some(stash.clone()));
+    (agent, stash)
+}
+
+/// Saves a latest snapshot of an agent without a stash, then sets its `data.stash` to `stash`.
+async fn snapshot_with_stash(snapshots: &InMemoryStorage, sm: &SessionManager, stash: Option<JsonValue>) {
+    let agent = LocalAgent::new(Arc::new(MockMessageModel::new()));
+    sm.save_snapshot(&agent, true).await.unwrap();
+    let Some(stash) = stash else {
+        return;
+    };
+    let bytes = snapshots.read(STASH_AGENT_LATEST).await.unwrap().unwrap();
+    let mut snapshot: JsonValue = serde_json::from_slice(&bytes).unwrap();
+    snapshot["data"]["stash"] = stash;
+    let bytes = serde_json::to_vec(&snapshot).unwrap();
+    snapshots.write(STASH_AGENT_LATEST, &bytes).await.unwrap();
+}
+
+/// The TS `createMockAgentWithHooks` with a stash: an initialized agent on `storage` whose
+/// context manager stash is `stash`.
+async fn initialized_with_stash(storage: &Arc<dyn Storage>, sm: &SessionManager, stash: &Stash) -> Agent {
+    let mut agent = Agent::builder()
+        .model(MockMessageModel::new())
+        .printer(false)
+        .storage(Arc::clone(storage))
+        .session_manager(sm.clone())
+        .build()
+        .unwrap();
+    agent.local.set_context_stash(Some(stash.clone()));
+    agent.initialize().await.unwrap();
+    agent
+}
+
+fn manager_on(storage: &Arc<dyn Storage>) -> SessionManager {
+    SessionManager::new(SessionManagerConfig {
+        storage: Some(Arc::clone(storage)),
+        session_id: Some("test-session".into()),
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+#[tokio::test]
+async fn restores_stash_data_from_snapshot() {
+    let snapshots = InMemoryStorage::new();
+    let sm = manager(&snapshots, SaveLatestStrategy::Invocation);
+    let (agent, stash) = agent_with_stash(&InMemoryStorage::new());
+    stash.store("tool-1", 0, br#"{"text":"hello"}"#).await.unwrap();
+    stash.store("tool-2", 0, br#"{"text":"world"}"#).await.unwrap();
+    sm.save_snapshot(&agent, true).await.unwrap();
+
+    let (mut fresh_agent, fresh_stash) = agent_with_stash(&InMemoryStorage::new());
+    let restored = sm.restore_snapshot(&mut fresh_agent, None).await.unwrap();
+
+    assert!(restored);
+    assert_eq!(
+        fresh_stash.retrieve("tool-1_0").await.unwrap(),
+        Some(json!({"text": "hello"}))
+    );
+    assert_eq!(
+        fresh_stash.retrieve("tool-2_0").await.unwrap(),
+        Some(json!({"text": "world"}))
+    );
+}
+
+#[tokio::test]
+async fn skips_stash_restore_when_location_is_external() {
+    let snapshots = InMemoryStorage::new();
+    let sm = manager(&snapshots, SaveLatestStrategy::Invocation);
+    snapshot_with_stash(&snapshots, &sm, Some(json!({"location": "external"}))).await;
+
+    let (mut agent, stash) = agent_with_stash(&InMemoryStorage::new());
+    let restored = sm.restore_snapshot(&mut agent, None).await.unwrap();
+
+    assert!(restored);
+    assert!(stash.list().await.unwrap().is_empty());
+}
+
+#[test]
+fn warns_when_stash_storage_type_changed_since_snapshot() {
+    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let snapshots = InMemoryStorage::new();
+    let sm = manager(&snapshots, SaveLatestStrategy::Invocation);
+    let saved = json!({"location": "external", "storageType": "S3Storage"});
+    runtime.block_on(snapshot_with_stash(&snapshots, &sm, Some(saved)));
+
+    let (mut agent, _) = agent_with_stash(&InMemoryStorage::new());
+    let (restored, warnings) =
+        WarnRecorder::capture(|| runtime.block_on(sm.restore_snapshot(&mut agent, None)));
+
+    assert!(restored.unwrap());
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.contains("stash storage type changed since snapshot was created")),
+        "{warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn handles_snapshot_without_stash_data() {
+    let snapshots = InMemoryStorage::new();
+    let sm = manager(&snapshots, SaveLatestStrategy::Invocation);
+    snapshot_with_stash(&snapshots, &sm, None).await;
+
+    let (mut agent, _) = agent_with_stash(&InMemoryStorage::new());
+
+    assert!(sm.restore_snapshot(&mut agent, None).await.unwrap());
+}
+
+#[tokio::test]
+async fn deletes_stash_data_via_stash_reference() {
+    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let sm = manager_on(&root);
+    let stash = stash_on(&root, "agent");
+    let _agent = initialized_with_stash(&root, &sm, &stash).await;
+    stash.store("tool-1", 0, br#""data1""#).await.unwrap();
+    stash.store("tool-2", 0, br#""data2""#).await.unwrap();
+    assert_eq!(stash.list().await.unwrap().len(), 2);
+
+    sm.delete_session().await.unwrap();
+
+    assert!(stash.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn deletes_stash_data_from_custom_stash_storage() {
+    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let custom: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let sm = manager_on(&root);
+    let stash = stash_on(&custom, "agent");
+    let _agent = initialized_with_stash(&root, &sm, &stash).await;
+    stash.store("tool-1", 0, br#""data1""#).await.unwrap();
+    assert_eq!(stash.list().await.unwrap().len(), 1);
+
+    sm.delete_session().await.unwrap();
+
+    assert!(stash.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn deletes_stash_data_when_storage_is_pre_namespaced() {
+    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let namespaced: Arc<dyn Storage> = Arc::new(InMemoryStorage::new().namespace("my-prefix").unwrap());
+    let sm = manager_on(&root);
+    let stash = stash_on(&namespaced, "agent");
+    let _agent = initialized_with_stash(&root, &sm, &stash).await;
+    stash.store("tool-1", 0, br#""data1""#).await.unwrap();
+    assert_eq!(stash.list().await.unwrap().len(), 1);
+
+    sm.delete_session().await.unwrap();
+
+    assert!(stash.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn does_not_over_delete_when_root_storage_is_pre_namespaced() {
+    let namespaced_root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new().namespace("tenant-a").unwrap());
+    let sm = manager_on(&namespaced_root);
+    let stash = stash_on(&namespaced_root, "agent");
+    let _agent = initialized_with_stash(&namespaced_root, &sm, &stash).await;
+    stash.store("tool-1", 0, br#""data1""#).await.unwrap();
+    namespaced_root
+        .write("other-data/important", b"keep-me")
+        .await
+        .unwrap();
+
+    sm.delete_session().await.unwrap();
+
+    assert!(stash.list().await.unwrap().is_empty());
+    assert_eq!(
+        namespaced_root.read("other-data/important").await.unwrap(),
+        Some(b"keep-me".to_vec())
+    );
+}
+
+#[tokio::test]
+async fn clear_session_cleans_up_stash_data_from_other_agents_in_the_session() {
+    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let sm = manager_on(&root);
+    let stash_a = stash_on(&root, "agent-a");
+    let stash_b = stash_on(&root, "agent-b");
+    let _agent = initialized_with_stash(&root, &sm, &stash_a).await;
+    stash_a.store("tool-1", 0, br#""from-a""#).await.unwrap();
+    stash_b.store("tool-2", 0, br#""from-b""#).await.unwrap();
+
+    sm.delete_session().await.unwrap();
+
+    assert!(stash_a.list().await.unwrap().is_empty());
+    assert!(stash_b.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn succeeds_when_no_stash_is_available() {
+    let sm = manager(&InMemoryStorage::new(), SaveLatestStrategy::Invocation);
+    let mut agent = Agent::builder()
+        .model(MockMessageModel::new())
+        .printer(false)
+        .session_manager(sm.clone())
+        .build()
+        .unwrap();
+    agent.initialize().await.unwrap();
+
+    sm.delete_session().await.unwrap();
 }
