@@ -26,7 +26,7 @@ use crate::hooks::{
     EventKind, Hook, HookCallbackOptions, HookCleanup, HookEvent, HookRegistry, InitializedEvent,
     IntoSyncHook,
 };
-use crate::interventions::InterventionRegistry;
+use crate::interventions::{InterventionHandler, InterventionRegistry};
 use crate::memory::MemoryManager;
 use crate::middleware::{Middleware, MiddlewareCleanup, MiddlewareRegistry, MiddlewareStage};
 use crate::models::model::Model;
@@ -83,6 +83,7 @@ pub struct Agent {
     /// The user's plugins (TS `plugins`), registered between the retry strategies and the
     /// built-ins that follow them.
     plugins: Vec<Arc<dyn Plugin>>,
+    interventions: Vec<Arc<dyn InterventionHandler>>,
     conversation_manager: Arc<dyn ConversationManager>,
     plugin_registry: PluginRegistry,
     /// The router configured as the model (TS `_modelRouter`).
@@ -232,7 +233,9 @@ impl Agent {
             warn_on_duplicate_types(&strategies);
             agent.retry_strategies = strategies;
         }
-        InterventionRegistry::new(config.interventions, agent.local.hooks())?;
+        agent.interventions = InterventionRegistry::new(config.interventions, agent.local.hooks())?
+            .handlers()
+            .to_vec();
         agent.plugins = config.plugins;
         agent.model_router = model_router;
         if let Some(manager) = &config.session_manager {
@@ -265,6 +268,7 @@ impl Agent {
             retry_strategies: vec![Arc::new(DefaultModelRetryStrategy::default())],
             retry_sleeper: tokio_sleeper(),
             plugins: Vec::new(),
+            interventions: Vec::new(),
             conversation_manager,
             plugin_registry: PluginRegistry::default(),
             model_router: None,
@@ -303,8 +307,7 @@ impl Agent {
         if self.initialized {
             return Ok(());
         }
-        // TS lists MCP tools and registers sandbox tools before the plugins, and runs
-        // intervention observers after them; those steps join here with their subsystems.
+        // TS order: MCP tools, sandbox tools, plugins, intervention observers, `InitializedEvent`.
         #[cfg(feature = "mcp")]
         {
             let hooks = self.local.hooks().clone();
@@ -322,6 +325,9 @@ impl Agent {
         }
         let plugins = self.registration_order();
         self.plugin_registry.initialize(plugins, &mut self.local).await?;
+        for handler in &self.interventions {
+            handler.observe_agent(&mut self.local).await?;
+        }
         let hooks = self.local.hooks().clone();
         let mut event = InitializedEvent::new(&mut self.local);
         hooks.invoke::<InitializedEvent<'static>>(&mut event).await?;

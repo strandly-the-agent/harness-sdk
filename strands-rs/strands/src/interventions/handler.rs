@@ -10,6 +10,7 @@ use crate::error::Result;
 use crate::hooks::{
     AfterModelCallEvent, AfterToolCallEvent, BeforeInvocationEvent, BeforeModelCallEvent, BeforeToolCallEvent,
 };
+use crate::types::agent::LocalAgent;
 
 /// What the registry does when a handler method fails (TS `OnError`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -57,6 +58,16 @@ pub trait InterventionHandler: Send + Sync + 'static {
     /// What to do when one of this handler's methods fails.
     fn on_error(&self) -> OnError {
         OnError::Throw
+    }
+
+    /// Runs once when the agent initializes, after the plugins and before `InitializedEvent`
+    /// (TS `LifecycleObserver.observeAgent`): the place to subscribe to other hook events.
+    ///
+    /// # Errors
+    ///
+    /// Whatever the handler reports; the agent's initialization fails with it.
+    async fn observe_agent(&self, _agent: &mut LocalAgent) -> Result<()> {
+        Ok(())
     }
 
     /// Runs before an invocation starts.

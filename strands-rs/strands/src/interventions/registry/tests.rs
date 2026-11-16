@@ -787,6 +787,66 @@ mod agent_integration {
         assert_eq!(*order.lock().unwrap(), ["plugin", "intervention"]);
     }
 
+    // No TS case: TS tests `observeAgent` through the steering handler only, which is out of v0.1.
+    #[tokio::test]
+    async fn observe_agent_runs_once_after_the_plugins_and_before_initialized_event() {
+        struct Observer(Arc<Mutex<Vec<&'static str>>>);
+
+        #[async_trait]
+        impl InterventionHandler for Observer {
+            fn name(&self) -> &str {
+                "observer"
+            }
+
+            async fn observe_agent(&self, agent: &mut LocalAgent) -> Result<()> {
+                self.0.lock().unwrap().push("observe");
+                let log = Arc::clone(&self.0);
+                agent.hooks().add_hook(move |_event: &mut BeforeToolCallEvent| {
+                    log.lock().unwrap().push("observer hook")
+                });
+                Ok(())
+            }
+        }
+
+        struct Recorder(Arc<Mutex<Vec<&'static str>>>);
+
+        #[async_trait]
+        impl crate::plugins::Plugin for Recorder {
+            fn name(&self) -> &str {
+                "recorder"
+            }
+
+            async fn init_agent(self: Arc<Self>, _agent: &mut LocalAgent) -> Result<()> {
+                self.0.lock().unwrap().push("plugin");
+                Ok(())
+            }
+        }
+
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let tool = mock_tool("testTool", |context| {
+            text_result(context.tool_use().tool_use_id(), "result")
+        });
+        let mut agent = Agent::builder()
+            .model(tool_turns("testTool"))
+            .tools([tool])
+            .intervention(Observer(Arc::clone(&order)))
+            .plugin(Recorder(Arc::clone(&order)))
+            .printer(false)
+            .build()
+            .unwrap();
+        let log = Arc::clone(&order);
+        agent.add_hook(move |_event: &mut crate::hooks::InitializedEvent<'_>| {
+            log.lock().unwrap().push("initialized")
+        });
+        assert!(order.lock().unwrap().is_empty());
+        agent.initialize().await.unwrap();
+        agent.invoke("Test").await.unwrap();
+        assert_eq!(
+            *order.lock().unwrap(),
+            ["plugin", "observe", "initialized", "observer hook"]
+        );
+    }
+
     // No TS case: TS covers `onError: 'throw'` at the registry only; this pins the agent-level end
     // (the invocation fails at the failing gate, with no further model call).
     #[tokio::test]

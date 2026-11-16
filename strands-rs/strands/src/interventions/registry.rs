@@ -66,7 +66,6 @@ impl InterventionRegistry {
     }
 
     /// The handlers in registration order.
-    #[cfg(test)]
     pub(crate) fn handlers(&self) -> &[Arc<dyn InterventionHandler>] {
         &self.handlers
     }
