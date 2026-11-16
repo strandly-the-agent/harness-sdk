@@ -11,7 +11,9 @@ use crate::JsonValue;
 use crate::error::{Error, Result};
 use crate::models::model::{AggregatedEvent, Model, ModelRequest};
 use crate::models::model_proxy::ModelProxy;
-use crate::types::messages::{ContentBlock, Message, Role, TextBlock};
+use crate::telemetry::tracer::ModelSpanEnd;
+use crate::telemetry::tracer::memory::MemoryTracer;
+use crate::types::messages::{ContentBlock, Message, Role, SystemPrompt, TextBlock};
 
 const DEFAULT_SYSTEM_PROMPT: &str = "You extract durable facts worth remembering across future conversations from a transcript.\n\
 Each entry is one discrete, self-contained fact (a preference, decision, or stable detail about the user or task). Do not include transient chit-chat, questions, or anything already obvious.";
@@ -92,30 +94,63 @@ impl Extractor for ModelExtractor {
         // One user turn, so the system prompt governs extraction instead of the model continuing
         // the raw roles.
         let transcript = messages.iter().map(render_message).collect::<Vec<_>>().join("\n");
+        let prompt_messages = vec![Message::new(
+            Role::User,
+            vec![
+                TextBlock::new(format!(
+                    "Extract facts from the following transcript:\n\n{transcript}"
+                ))
+                .into(),
+            ],
+        )];
+        let system_prompt = SystemPrompt::from(self.system_prompt.as_str());
+        let mut tracer = context.tracer.as_ref().map(MemoryTracer::model_tracer);
+        if let Some(tracer) = tracer.as_mut() {
+            tracer.start_model(
+                &prompt_messages,
+                model.model_id().as_deref(),
+                Some(&system_prompt),
+            );
+        }
         let request = ModelRequest::builder()
-            .messages(vec![Message::new(
-                Role::User,
-                vec![
-                    TextBlock::new(format!(
-                        "Extract facts from the following transcript:\n\n{transcript}"
-                    ))
-                    .into(),
-                ],
-            )])
-            .system_prompt(self.system_prompt.as_str())
+            .messages(prompt_messages)
+            .system_prompt(system_prompt)
             .build();
         let mut stream =
             ModelProxy::new(&**model).stream_aggregated(request, context.invocation_context.clone());
-        let mut reply = None;
+        let mut result = None;
         while let Some(item) = stream.next().await {
-            if let AggregatedEvent::Done(result) = item? {
-                reply = Some(result.into_message());
-                break;
+            match item {
+                Ok(AggregatedEvent::Done(done)) => {
+                    result = Some(done);
+                    break;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    if let Some(tracer) = tracer.as_mut() {
+                        tracer.end_model(&ModelSpanEnd::failed(&error));
+                    }
+                    return Err(error);
+                }
             }
         }
-        let Some(reply) = reply else {
-            return Err(Error::other("ModelExtractor: model returned no response"));
+        let Some(result) = result else {
+            let error = Error::other("ModelExtractor: model returned no response");
+            if let Some(tracer) = tracer.as_mut() {
+                tracer.end_model(&ModelSpanEnd::failed(&error));
+            }
+            return Err(error);
         };
+        if let Some(tracer) = tracer.as_mut() {
+            tracer.end_model(&ModelSpanEnd {
+                output: Some(result.message()),
+                stop_reason: Some(result.stop_reason().as_str()),
+                usage: result.metadata().and_then(|metadata| metadata.usage()),
+                metrics: result.metadata().and_then(|metadata| metadata.metrics()),
+                error: None,
+            });
+        }
+        let reply = result.into_message();
         let text: String = reply.content().iter().map(block_text).collect();
         Ok(parse_entries(
             text.trim(),

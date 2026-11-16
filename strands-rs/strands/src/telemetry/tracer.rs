@@ -884,5 +884,7 @@ fn stable_format(blocks: &[ContentBlock]) -> Vec<JsonValue> {
         .collect()
 }
 
+pub(crate) mod memory;
+
 #[cfg(test)]
 mod local_trace_tests;

@@ -1,5 +1,6 @@
 //! Ports `memory/extraction/__tests__/extraction.test.ts`.
 
+use crate::telemetry::tracer::memory::MemoryTracer;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -82,6 +83,7 @@ fn coordinator(stores: &[&Arc<MockStore>]) -> ExtractionCoordinator {
     ExtractionCoordinator::new(
         stores.iter().map(|store| binding(store)).collect(),
         Arc::new(MockMessageModel::new()),
+        MemoryTracer::default(),
     )
 }
 

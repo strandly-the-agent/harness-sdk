@@ -27,7 +27,7 @@ use crate::types::tools::ToolResultStatus;
 use crate::{Agent, AgentConfig};
 
 #[derive(Debug, Clone, Default)]
-struct Recorder(Arc<Mutex<Vec<SpanData>>>);
+pub(crate) struct Recorder(Arc<Mutex<Vec<SpanData>>>);
 
 impl SpanExporter for Recorder {
     async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
@@ -40,13 +40,13 @@ impl SpanExporter for Recorder {
 }
 
 impl Recorder {
-    fn spans(&self) -> Vec<SpanData> {
+    pub(crate) fn spans(&self) -> Vec<SpanData> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 }
 
 /// A thread-local subscriber exporting every span to the returned recorder.
-fn recording() -> (Recorder, tracing::subscriber::DefaultGuard) {
+pub(crate) fn recording() -> (Recorder, tracing::subscriber::DefaultGuard) {
     let recorder = Recorder::default();
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(recorder.clone())
@@ -115,6 +115,19 @@ fn recorded(spans: &[SpanData]) -> Vec<JsonValue> {
             })
         })
         .collect()
+}
+
+/// [`recorded`] with each span's `status`: `"UNSET"`, `"OK"` or `{"error": <description>}`.
+pub(crate) fn recorded_with_status(spans: &[SpanData]) -> Vec<JsonValue> {
+    let mut json = recorded(spans);
+    for (span, data) in json.iter_mut().zip(spans) {
+        span["status"] = match &data.status {
+            Status::Unset => json!("UNSET"),
+            Status::Ok => json!("OK"),
+            Status::Error { description } => json!({ "error": description.as_ref() }),
+        };
+    }
+    json
 }
 
 /// The fixture's spans without `kind`, `status` and the attributes [`skipped`] drops.

@@ -2,8 +2,6 @@
 //! test drives `LocalTracer` directly and reads the spans the recording exporter received, where
 //! TS reads a mocked span.
 
-use opentelemetry::trace::Status;
-
 use super::*;
 use crate::models::streaming::Metrics;
 use crate::telemetry::tracer::{AgentSpanStart, LocalTracer, ModelSpanEnd};
@@ -39,16 +37,7 @@ fn traced(opt_in: &'static str, f: impl FnOnce(&mut LocalTracer)) -> Vec<JsonVal
     let mut tracer = LocalTracer::new(semconv(opt_in));
     f(&mut tracer);
     drop(tracer);
-    let spans = recorder.spans();
-    let mut json = recorded(&spans);
-    for (span, data) in json.iter_mut().zip(&spans) {
-        span["status"] = match &data.status {
-            Status::Unset => json!("UNSET"),
-            Status::Ok => json!("OK"),
-            Status::Error { description } => json!({ "error": description.as_ref() }),
-        };
-    }
-    json
+    recorded_with_status(&recorder.spans())
 }
 
 fn events<'a>(span: &'a JsonValue, name: &str) -> Vec<&'a JsonValue> {
@@ -314,7 +303,7 @@ mod start_model_invoke_span {
     fn creates_span_with_chat_operation_name_and_model_id() {
         let messages = hello();
         let spans = traced("", |tracer| {
-            tracer.start_model(&messages, Some("model-123"), None)
+            tracer.start_model(&messages, Some("model-123"), None);
         });
         assert_eq!(spans[0]["name"], "chat");
         assert_eq!(spans[0]["attributes"]["gen_ai.operation.name"], "chat");
@@ -759,7 +748,7 @@ mod system_prompt_on_chat_spans {
     fn chat(opt_in: &'static str, system_prompt: Option<&SystemPrompt>) -> JsonValue {
         let messages = hello();
         let mut spans = traced(opt_in, |tracer| {
-            tracer.start_model(&messages, None, system_prompt)
+            tracer.start_model(&messages, None, system_prompt);
         });
         spans.remove(0)
     }
@@ -888,5 +877,230 @@ mod error_resilience {
             tracer.end_cycle(Some("test"));
         });
         assert!(spans.is_empty());
+    }
+}
+
+mod memory_spans {
+    use opentelemetry::trace::{SpanContext, TraceContextExt as _};
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+    use super::*;
+    use crate::memory::MemoryEntry;
+    use crate::telemetry::tracer::memory::{ExtractSpanStart, MemoryTracer};
+
+    /// Runs `f` on a memory tracer under the opt-in value; returns the spans in end order.
+    fn traced(opt_in: &'static str, f: impl FnOnce(&MemoryTracer)) -> Vec<JsonValue> {
+        let (recorder, _guard) = recording();
+        f(&MemoryTracer::new(semconv(opt_in)));
+        recorded_with_status(&recorder.spans())
+    }
+
+    fn stores(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    fn extract_start(agent_span_context: Option<SpanContext>) -> ExtractSpanStart<'static> {
+        ExtractSpanStart {
+            store_name: "personal",
+            message_count: 3,
+            filtered_count: 1,
+            agent_span_context,
+        }
+    }
+
+    #[test]
+    fn start_memory_search_span_sets_attributes_and_records_the_query_as_an_event() {
+        let spans = traced("", |tracer| {
+            drop(tracer.start_search("dark mode preference", &stores(&["personal", "team"]), Some(5)));
+        });
+        assert_eq!(spans[0]["name"], "memory.search");
+        let attributes = &spans[0]["attributes"];
+        assert_eq!(attributes["gen_ai.operation.name"], "memory.search");
+        assert_eq!(attributes["memory.store.names"], r#"["personal","team"]"#);
+        assert_eq!(attributes["memory.store.count"], 2);
+        assert_eq!(attributes["memory.max_search_results"], 5);
+        let query = events(&spans[0], "memory.query");
+        assert_eq!(query[0]["attributes"]["content"], "dark mode preference");
+    }
+
+    #[test]
+    fn end_memory_search_span_records_result_failure_counts_and_the_entries_event() {
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("score".to_owned(), json!(0.9));
+        let entry = MemoryEntry::new("likes dark mode")
+            .with_store_name("personal")
+            .with_metadata(metadata);
+        let spans = traced("", |tracer| {
+            let span = tracer.start_search("q", &stores(&["personal"]), None);
+            tracer.end_search(&span, &[entry], 1, None);
+        });
+        assert_eq!(spans[0]["attributes"]["memory.result.count"], 1);
+        assert_eq!(spans[0]["attributes"]["memory.store.failure_count"], 1);
+        let results = events(&spans[0], "memory.results");
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            event_json(results[0], "content"),
+            json!([{ "content": "likes dark mode", "storeName": "personal", "metadata": { "score": 0.9 } }])
+        );
+        assert_eq!(spans[0]["status"], "OK");
+    }
+
+    #[test]
+    fn end_memory_search_span_records_error_and_skips_the_results_event() {
+        let spans = traced("", |tracer| {
+            let span = tracer.start_search("q", &stores(&["personal"]), None);
+            tracer.end_search(&span, &[], 0, Some("store not found"));
+        });
+        assert_eq!(spans[0]["status"], json!({ "error": "store not found" }));
+        assert!(events(&spans[0], "memory.results").is_empty());
+    }
+
+    #[test]
+    fn start_memory_add_span_records_content_as_an_event() {
+        let spans = traced("", |tracer| {
+            drop(tracer.start_add("remember dark mode", &stores(&["personal"]), false));
+        });
+        assert_eq!(spans[0]["name"], "memory.add");
+        assert_eq!(spans[0]["attributes"]["gen_ai.operation.name"], "memory.add");
+        assert_eq!(spans[0]["attributes"]["memory.store.count"], 1);
+        let content = events(&spans[0], "memory.content");
+        assert_eq!(content[0]["attributes"]["content"], "remember dark mode");
+    }
+
+    #[test]
+    fn end_memory_add_span_records_the_store_failure_count_and_error() {
+        let spans = traced("", |tracer| {
+            let span = tracer.start_add("c", &stores(&["personal"]), false);
+            tracer.end_add(&span, 2, Some("writes failed"));
+        });
+        assert_eq!(spans[0]["attributes"]["memory.store.failure_count"], 2);
+        assert_eq!(spans[0]["status"], json!({ "error": "writes failed" }));
+    }
+
+    #[test]
+    fn memory_inject_span_start_sets_max_entries_end_records_injected_and_entry_count() {
+        let spans = traced("", |tracer| {
+            let span = tracer.start_inject(Some(5));
+            tracer.end_inject(&span, true, 3, false);
+        });
+        assert_eq!(spans[0]["name"], "memory.inject");
+        let attributes = &spans[0]["attributes"];
+        assert_eq!(attributes["memory.max_entries"], 5);
+        assert_eq!(attributes["memory.injected"], true);
+        assert_eq!(attributes["memory.entry.count"], 3);
+        assert!(attributes.get("memory.inject.format_error").is_none());
+    }
+
+    #[test]
+    fn end_memory_inject_span_fails_open_on_a_format_error_ok_status_flag_set() {
+        let spans = traced("", |tracer| {
+            let span = tracer.start_inject(None);
+            tracer.end_inject(&span, false, 0, true);
+        });
+        assert_eq!(spans[0]["attributes"]["memory.injected"], false);
+        assert_eq!(spans[0]["attributes"]["memory.inject.format_error"], true);
+        assert_eq!(spans[0]["status"], "OK");
+    }
+
+    #[test]
+    fn start_memory_extract_span_is_a_root_span_force_root_no_parent_context() {
+        let spans = traced("", |tracer| {
+            let caller = tracing::info_span!("caller");
+            caller.in_scope(|| drop(tracer.start_extract(extract_start(None))));
+        });
+        let extract = &spans[0];
+        assert_eq!(extract["name"], "memory.extract");
+        assert_eq!(extract["parent"], JsonValue::Null);
+        assert_eq!(extract["attributes"]["memory.store.name"], "personal");
+        assert_eq!(extract["attributes"]["memory.message.count"], 3);
+        assert_eq!(extract["attributes"]["memory.message.filtered_count"], 1);
+    }
+
+    #[test]
+    fn start_memory_extract_span_attaches_a_valid_agent_span_context_as_a_link() {
+        let (recorder, _guard) = recording();
+        let tracer = MemoryTracer::new(semconv(""));
+        let agent = tracing::info_span!("agent");
+        let agent_context = agent.context().span().span_context().clone();
+        assert!(agent_context.is_valid());
+        drop(tracer.start_extract(extract_start(Some(agent_context.clone()))));
+        drop(agent);
+
+        let spans = recorder.spans();
+        let extract = spans.iter().find(|span| span.name == "memory.extract").unwrap();
+        assert_eq!(extract.links.len(), 1);
+        assert_eq!(extract.links[0].span_context, agent_context);
+        let attributes = attributes_json(&extract.attributes);
+        assert_eq!(
+            attributes["memory.parent.trace_id"],
+            agent_context.trace_id().to_string()
+        );
+        assert_eq!(
+            attributes["memory.parent.span_id"],
+            agent_context.span_id().to_string()
+        );
+    }
+
+    #[test]
+    fn start_memory_extract_span_skips_the_link_and_parent_ids_for_an_invalid_agent_span_context() {
+        let (recorder, _guard) = recording();
+        let tracer = MemoryTracer::new(semconv(""));
+        drop(tracer.start_extract(extract_start(Some(SpanContext::empty_context()))));
+
+        let spans = recorder.spans();
+        assert!(spans[0].links.is_empty());
+        let attributes = attributes_json(&spans[0].attributes);
+        assert!(attributes.get("memory.parent.trace_id").is_none());
+        assert!(attributes.get("memory.parent.span_id").is_none());
+    }
+
+    #[test]
+    fn end_memory_extract_span_records_the_entry_count_on_success() {
+        let spans = traced("", |tracer| {
+            let span = tracer.start_extract(extract_start(None));
+            tracer.end_extract(&span, Some(4), None);
+        });
+        assert_eq!(spans[0]["attributes"]["memory.entry.count"], 4);
+        assert_eq!(spans[0]["status"], "OK");
+    }
+
+    #[test]
+    fn end_memory_extract_span_records_error_failures_are_swallowed_by_the_coordinator() {
+        let spans = traced("", |tracer| {
+            let span = tracer.start_extract(extract_start(None));
+            tracer.end_extract(&span, None, Some("backend down"));
+        });
+        assert_eq!(spans[0]["status"], json!({ "error": "backend down" }));
+        assert!(spans[0]["attributes"].get("memory.entry.count").is_none());
+    }
+
+    #[test]
+    fn memory_span_methods_handle_a_null_span_gracefully() {
+        let spans = traced("", |tracer| {
+            let none = tracing::Span::none();
+            tracer.end_search(&none, &[], 0, None);
+            tracer.end_add(&none, 0, None);
+            tracer.end_inject(&none, false, 0, false);
+            tracer.end_extract(&none, None, None);
+        });
+        assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn records_the_memory_search_query_as_a_span_attribute_and_skips_the_event_when_opted_in() {
+        let spans = traced("gen_ai_span_attributes_only", |tracer| {
+            drop(tracer.start_search("dark mode preference", &stores(&["personal"]), None));
+        });
+        assert_eq!(spans[0]["attributes"]["content"], "dark mode preference");
+        assert!(events(&spans[0], "memory.query").is_empty());
+    }
+
+    #[test]
+    fn records_the_memory_add_content_as_a_span_attribute_and_skips_the_event_when_opted_in() {
+        let spans = traced("gen_ai_span_attributes_only", |tracer| {
+            drop(tracer.start_add("remember dark mode", &stores(&["personal"]), false));
+        });
+        assert_eq!(spans[0]["attributes"]["content"], "remember dark mode");
+        assert!(events(&spans[0], "memory.content").is_empty());
     }
 }

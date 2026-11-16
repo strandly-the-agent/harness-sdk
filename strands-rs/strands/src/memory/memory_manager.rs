@@ -24,6 +24,7 @@ use crate::injection::{
     render_content,
 };
 use crate::plugins::Plugin;
+use crate::telemetry::tracer::memory::MemoryTracer;
 use crate::tools::function_tool::InputValidator;
 use crate::tools::{Tool, ToolContext, ToolError};
 use crate::types::agent::LocalAgent;
@@ -81,6 +82,8 @@ struct Inner {
     extraction_stores: Vec<ExtractionBinding>,
     coordinator: Mutex<Option<ExtractionCoordinator>>,
     injection: Option<MemoryInjectionConfig>,
+    /// Shared with the extraction coordinator (TS `_tracer`).
+    tracer: MemoryTracer,
 }
 
 /// Manages one or more memory stores for an agent: the `search_memory` and `add_memory` tools,
@@ -241,6 +244,7 @@ impl MemoryManager {
                 extraction_stores,
                 coordinator: Mutex::new(None),
                 injection,
+                tracer: MemoryTracer::default(),
             }),
         })
     }
@@ -268,6 +272,7 @@ impl MemoryManager {
         let coordinator = ExtractionCoordinator::new(
             self.inner.extraction_stores.clone(),
             Arc::clone(agent.aux_model()),
+            self.inner.tracer.clone(),
         );
         *self
             .inner
@@ -315,28 +320,45 @@ impl MemoryManager {
         config: &MemoryInjectionConfig,
     ) -> Result<Option<String>> {
         let max_results = config.max_entries.unwrap_or(DEFAULT_MAX_ENTRIES);
+        let tracer = &self.inner.tracer;
+        let span = tracer.start_inject(Some(max_results));
         let Some(query) = resolve_injection_query(messages, config).filter(|query| !query.trim().is_empty())
         else {
+            tracer.end_inject(&span, false, 0, false);
             return Ok(None);
         };
         let options = MemorySearchOptions {
             max_search_results: Some(max_results),
             stores: None,
         };
-        let mut entries = self.search(&query, options).await?;
+        let found = self.search(&query, options).instrument(span.clone()).await;
+        let mut entries = match found {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracer.end_inject(&span, false, 0, false);
+                return Err(error);
+            }
+        };
         entries.truncate(max_results);
         if entries.is_empty() {
+            tracer.end_inject(&span, false, 0, false);
             return Ok(None);
         }
         let rendered = match &config.format {
-            Some(format) => format(&entries),
+            Some(format) => span.in_scope(|| format(&entries)),
             None => Ok(default_injection_format(&entries)),
         };
-        Ok(rendered
-            .inspect_err(|error| {
+        match rendered {
+            Ok(rendered) => {
+                tracer.end_inject(&span, true, entries.len(), false);
+                Ok(Some(rendered))
+            }
+            Err(error) => {
                 tracing::warn!("reason=<{error}> | injection format threw; skipping injection");
-            })
-            .ok())
+                tracer.end_inject(&span, false, 0, true);
+                Ok(None)
+            }
+        }
     }
 
     /// Saves any conversation not yet stored in memory and waits for it to finish (TS `flush`).
@@ -370,12 +392,25 @@ impl MemoryManager {
             options.max_search_results,
             options.stores
         );
-        let targets: Vec<&Arc<dyn MemoryStore>> = match &options.stores {
+        let tracer = &self.inner.tracer;
+        let span_store_names = options
+            .stores
+            .clone()
+            .unwrap_or_else(|| store_names(&self.inner.stores));
+        let span = tracer.start_search(query, &span_store_names, options.max_search_results);
+        let resolved: Result<Vec<&Arc<dyn MemoryStore>>> = match &options.stores {
             Some(names) => unique(names)
                 .into_iter()
                 .map(|name| self.find_store(name))
-                .collect::<Result<_>>()?,
-            None => self.inner.stores.iter().collect(),
+                .collect(),
+            None => Ok(self.inner.stores.iter().collect()),
+        };
+        let targets = match resolved {
+            Ok(targets) => targets,
+            Err(error) => {
+                tracer.end_search(&span, &[], 0, Some(&error.to_string()));
+                return Err(error);
+            }
         };
         let settled = join_all(targets.iter().map(|store| {
             let max_search_results = options
@@ -391,16 +426,21 @@ impl MemoryManager {
         }))
         .await;
         let mut results = Vec::new();
+        let mut store_failure_count: usize = 0;
         for (store, outcome) in targets.iter().zip(settled) {
             let store_name = store.name();
             match outcome {
                 Ok(entries) => {
                     results.extend(entries.into_iter().map(|entry| entry.with_store_name(store_name)));
                 }
-                Err(error) => tracing::warn!("store=<{store_name}>, reason=<{error}> | store search failed"),
+                Err(error) => {
+                    store_failure_count = store_failure_count.saturating_add(1);
+                    tracing::warn!("store=<{store_name}>, reason=<{error}> | store search failed");
+                }
             }
         }
         tracing::debug!("results=<{}> | search complete", results.len());
+        tracer.end_search(&span, &results, store_failure_count, None);
         Ok(results)
     }
 
@@ -411,7 +451,7 @@ impl MemoryManager {
     /// A named store is missing or read-only, no writable store matched, or a store write failed
     /// (`MemoryManager: store writes failed: <names>`).
     pub async fn add(&self, content: &str, options: MemoryAddOptions) -> Result<()> {
-        self.add_inner(content, &options)
+        self.add_inner(content, &options, false)
             .await
             .map_err(AddFailure::into_error)
     }
@@ -420,8 +460,21 @@ impl MemoryManager {
         &self,
         content: &str,
         options: &MemoryAddOptions,
+        detached: bool,
     ) -> std::result::Result<(), AddFailure> {
-        let targets = self.resolve_add_targets(options).map_err(AddFailure::Rejected)?;
+        let tracer = &self.inner.tracer;
+        let span_store_names = options
+            .stores
+            .clone()
+            .unwrap_or_else(|| store_names(&self.inner.add_stores));
+        let span = tracer.start_add(content, &span_store_names, detached);
+        let targets = match self.resolve_add_targets(options) {
+            Ok(targets) => targets,
+            Err(error) => {
+                tracer.end_add(&span, 0, Some(&error.to_string()));
+                return Err(AddFailure::Rejected(error));
+            }
+        };
         let settled = join_all(
             targets
                 .iter()
@@ -439,8 +492,11 @@ impl MemoryManager {
             }
         }
         if names.is_empty() {
+            tracer.end_add(&span, 0, None);
             Ok(())
         } else {
+            let message = format!("MemoryManager: store writes failed: {}", names.join(", "));
+            tracer.end_add(&span, names.len(), Some(&message));
             Err(AddFailure::Stores { names, reasons })
         }
     }
@@ -558,14 +614,24 @@ impl MemoryManager {
             // Detached, so the agent loop isn't blocked; `add_inner` logs each store failure.
             let manager = self.clone();
             let writes = async move {
-                join_all(entries.iter().map(|content| manager.add_inner(content, &options))).await;
+                join_all(
+                    entries
+                        .iter()
+                        .map(|content| manager.add_inner(content, &options, true)),
+                )
+                .await;
             };
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 drop(runtime.spawn(writes.in_current_span()));
             }
             return Ok(serde_json::json!({ "accepted": total }));
         }
-        let settled = join_all(entries.iter().map(|content| self.add_inner(content, &options))).await;
+        let settled = join_all(
+            entries
+                .iter()
+                .map(|content| self.add_inner(content, &options, false)),
+        )
+        .await;
         let failures: Vec<AddFailure> = settled.into_iter().filter_map(std::result::Result::err).collect();
         if failures.is_empty() {
             return Ok(serde_json::json!({ "stored": total }));
@@ -779,3 +845,5 @@ impl Plugin for MemoryManager {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tracing_tests;

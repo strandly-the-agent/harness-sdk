@@ -124,6 +124,8 @@ pub struct ExtractorContext {
     pub default_model: Option<Arc<dyn Model>>,
     /// The request this extraction belongs to, for usage accounting.
     pub invocation_context: Option<InvocationContext>,
+    /// Wraps the extractor's model call in a `chat` span under the extraction span (TS `tracer`).
+    pub(crate) tracer: Option<crate::telemetry::tracer::memory::MemoryTracer>,
 }
 
 impl ExtractorContext {
@@ -132,6 +134,7 @@ impl ExtractorContext {
         Self {
             default_model,
             invocation_context: None,
+            tracer: None,
         }
     }
 }

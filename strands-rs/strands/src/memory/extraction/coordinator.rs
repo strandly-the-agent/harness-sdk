@@ -14,6 +14,7 @@ use crate::agent::InvocationContext;
 use crate::error::{Error, Result};
 use crate::memory::{AddMessagesContext, MemoryStore};
 use crate::models::model::Model;
+use crate::telemetry::tracer::memory::{ExtractSpanStart, MemoryTracer, SpanLink, current_span_context};
 use crate::types::messages::Message;
 
 /// A store with its resolved extraction config (TS `ExtractionBinding`).
@@ -58,6 +59,8 @@ struct State {
 struct Inner {
     bindings: Vec<ExtractionBinding>,
     default_model: Arc<dyn Model>,
+    /// Shared with the memory manager (TS `_tracer`).
+    tracer: MemoryTracer,
     state: Mutex<State>,
 }
 
@@ -94,7 +97,11 @@ fn filter_messages(buffered: &[BufferedMessage], filter: &MemoryMessageFilter) -
 }
 
 impl ExtractionCoordinator {
-    pub(crate) fn new(bindings: Vec<ExtractionBinding>, default_model: Arc<dyn Model>) -> Self {
+    pub(crate) fn new(
+        bindings: Vec<ExtractionBinding>,
+        default_model: Arc<dyn Model>,
+        tracer: MemoryTracer,
+    ) -> Self {
         let state = State {
             stores: bindings.iter().map(|_| StoreState::default()).collect(),
             ..State::default()
@@ -103,6 +110,7 @@ impl ExtractionCoordinator {
             inner: Arc::new(Inner {
                 bindings,
                 default_model,
+                tracer,
                 state: Mutex::new(state),
             }),
         }
@@ -136,10 +144,18 @@ impl ExtractionCoordinator {
         if !self.should_attempt(index) {
             return futures::future::ready(()).boxed();
         }
-        self.enqueue(index, invocation_context).boxed()
+        // Captured now: this runs inside the live agent span (through the trigger hook), and the
+        // save runs detached, after that span may have ended.
+        let link = current_span_context();
+        self.enqueue(index, link, invocation_context).boxed()
     }
 
-    fn enqueue(&self, index: usize, invocation_context: Option<InvocationContext>) -> Chain {
+    fn enqueue(
+        &self,
+        index: usize,
+        link: Option<SpanLink>,
+        invocation_context: Option<InvocationContext>,
+    ) -> Chain {
         let mut state = self.lock();
         let previous = state.stores.get(index).and_then(|store| store.chain.clone());
         let this = self.clone();
@@ -147,7 +163,7 @@ impl ExtractionCoordinator {
             if let Some(previous) = previous {
                 previous.await;
             }
-            this.extract(index, invocation_context).await;
+            this.extract(index, link, invocation_context).await;
         }
         .boxed()
         .shared();
@@ -179,7 +195,7 @@ impl ExtractionCoordinator {
     /// start meanwhile (TS `flush`).
     pub(crate) async fn flush(&self) {
         for index in 0..self.inner.bindings.len() {
-            drop(self.enqueue(index, None));
+            drop(self.enqueue(index, None, None));
         }
         loop {
             let (generation, in_flight) = {
@@ -198,7 +214,12 @@ impl ExtractionCoordinator {
         }
     }
 
-    async fn extract(&self, index: usize, invocation_context: Option<InvocationContext>) {
+    async fn extract(
+        &self,
+        index: usize,
+        link: Option<SpanLink>,
+        invocation_context: Option<InvocationContext>,
+    ) {
         let Some(binding) = self.inner.bindings.get(index) else {
             return;
         };
@@ -224,15 +245,29 @@ impl ExtractionCoordinator {
         let filtered = filter_messages(&fresh, &binding.config.filter);
         // A turn filtered down to nothing never reaches the backend, so it leaves the failure
         // streak alone.
+        let tracer = &self.inner.tracer;
+        let span = tracer.start_extract(ExtractSpanStart {
+            store_name: binding.store.name(),
+            message_count: filtered.len(),
+            filtered_count: fresh.len().saturating_sub(filtered.len()),
+            agent_span_context: link,
+        });
         let outcome = if filtered.is_empty() {
             None
         } else {
-            Some(self.write(binding, &filtered, invocation_context).await)
+            let write = self.write(binding, &filtered, invocation_context);
+            Some(write.instrument(span.clone()).await)
         };
+        match &outcome {
+            None => tracer.end_extract(&span, Some(0), None),
+            Some(Ok(entry_count)) => tracer.end_extract(&span, Some(*entry_count), None),
+            Some(Err(error)) => tracer.end_extract(&span, None, Some(&error.to_string())),
+        }
+        drop(span);
         let mut state = self.lock();
         if let Some(store) = state.stores.get_mut(index) {
             match outcome {
-                Some(Ok(())) => {
+                Some(Ok(_)) => {
                     store.consecutive_failures = 0;
                     store.backoff_counter = 0;
                 }
@@ -264,15 +299,17 @@ impl ExtractionCoordinator {
         binding: &ExtractionBinding,
         buffered: &[BufferedMessage],
         invocation_context: Option<InvocationContext>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let messages: Vec<Message> = buffered.iter().map(|buffered| buffered.message.clone()).collect();
         let Some(extractor) = &binding.config.extractor else {
             let context = AddMessagesContext::new(buffered.iter().map(|buffered| buffered.seq).collect());
-            return binding.store.add_messages(&messages, &context).await;
+            binding.store.add_messages(&messages, &context).await?;
+            return Ok(messages.len());
         };
         let context = ExtractorContext {
             default_model: Some(Arc::clone(&self.inner.default_model)),
             invocation_context: InvocationContext::auxiliary(invocation_context.as_ref()),
+            tracer: Some(self.inner.tracer.clone()),
         };
         let entries = extractor.extract(&messages, &context).await?;
         let settled = join_all(
@@ -288,7 +325,7 @@ impl ExtractionCoordinator {
                 entries.len()
             )));
         }
-        Ok(())
+        Ok(entries.len())
     }
 }
 

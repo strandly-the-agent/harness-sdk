@@ -158,8 +158,8 @@ async fn extracts_without_a_tracer_in_context_standalone_use() {
     assert_eq!(extract(&model, "x").await, [ExtractionResult::new("fact")]);
 }
 
-/// The span half of TS "ends the model-invoke span with an error when the model throws" waits
-/// for telemetry; the error still propagates.
+/// The error half of TS "ends the model-invoke span with an error when the model throws"; the
+/// span half is `ends_the_model_invoke_span_with_an_error_when_the_model_throws`.
 #[tokio::test]
 async fn propagates_the_error_when_the_model_throws() {
     let model = Arc::new(MockMessageModel::new());
@@ -196,6 +196,7 @@ async fn adds_the_extraction_usage_to_the_request_total_even_when_the_request_li
     let context = ExtractorContext {
         default_model: None,
         invocation_context: Some(invocation_context.clone()),
+        tracer: None,
     };
 
     let entries = extractor.extract(&[user_turn("x")], &context).await.unwrap();
@@ -204,4 +205,60 @@ async fn adds_the_extraction_usage_to_the_request_total_even_when_the_request_li
     let usage = invocation_context.usage();
     assert_eq!(usage.turns_taken(), 5);
     assert_eq!(usage.tokens(), &Usage::new(4, 5, 9));
+}
+
+#[cfg(feature = "otel")]
+mod model_invoke_span {
+    use serde_json::json;
+
+    use super::*;
+    use crate::telemetry::tests::{recorded_with_status, recording};
+    use crate::telemetry::tracer::memory::MemoryTracer;
+
+    fn traced_context() -> ExtractorContext {
+        ExtractorContext {
+            tracer: Some(MemoryTracer::default()),
+            ..ExtractorContext::default()
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn wraps_the_model_call_in_a_model_invoke_span_when_a_tracer_is_supplied() {
+        let (recorder, _guard) = recording();
+        let model = replying(r#"[{"content": "fact"}]"#);
+        let entries = extractor_for(&model)
+            .extract(&[user_turn("x")], &traced_context())
+            .await
+            .unwrap();
+        assert_eq!(entries, [ExtractionResult::new("fact")]);
+
+        let spans = recorded_with_status(&recorder.spans());
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0]["name"], "chat");
+        assert_eq!(spans[0]["status"], "OK");
+        let events = spans[0]["events"].as_array().unwrap();
+        // The output message is recorded as the choice event.
+        assert!(events.iter().any(|event| event["name"] == "gen_ai.choice"));
+        assert!(
+            events
+                .iter()
+                .any(|event| event["name"] == "gen_ai.system.message")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_the_model_invoke_span_with_an_error_when_the_model_throws() {
+        let (recorder, _guard) = recording();
+        let model = Arc::new(MockMessageModel::new());
+        model.add_error(|| Error::other("model down"));
+        let error = extractor_for(&model)
+            .extract(&[user_turn("x")], &traced_context())
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "model down");
+
+        let spans = recorded_with_status(&recorder.spans());
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0]["status"], json!({ "error": "model down" }));
+    }
 }
