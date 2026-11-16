@@ -1,0 +1,15 @@
+[
+ {"skills": true},
+ {"skills": false},
+ {"skills": ["other"]},
+ {"skills": []},
+ {"skills": ["missing-dir"]},
+ {"skills": ["other/bye", ".agent/skills"]},
+ {"skills": ["other/bye/SKILL.md"]},
+ {"skills": true, "activate": "hello"},
+ {"skills": ["other"], "activate": "bye"},
+ {"skills": ["other"], "activate": "nope"},
+ {"skills": true, "session": {"id": "S One", "dir": "sess"}},
+ {"skills": false, "session": {"id": "s2"}},
+ {"skills": false, "session": true, "memory": true}
+]

@@ -1,0 +1,37 @@
+{
+ "options": [
+  {},
+  {"memory": true},
+  {"builtinTools": ["read", "subagent"]},
+  {"builtinTools": {"web_search": false}},
+  {"instructions": "Parent instr."},
+  {"builtinPlugins": []}
+ ],
+ "inputs": [
+  {"task": "T"},
+  {"task": "T", "context": "all"},
+  {"task": "T", "context": "no_tools"},
+  {"task": "T", "context": "all", "last_messages": 2},
+  {"task": "T", "context": "no_tools", "last_messages": 1},
+  {"task": "T", "tools": ["read", "my_tool"]},
+  {"task": "T", "tools": []},
+  {"task": "T", "tools": "shell"},
+  {"task": "T", "instructions": "Custom role."},
+  {"task": "T", "agent_type": "generalist", "instructions": "Custom role."},
+  {"task": "T", "agent_type": "nope"},
+  {"task": 5},
+  {},
+  {"task": "T", "context": "bogus", "last_messages": "x"},
+  {"task": "T", "context": "all", "last_messages": -3},
+  {"task": "T", "context": "all", "last_messages": "1"},
+  {"task": "T", "mcp_servers": ["x"]},
+  {"task": "T", "model": "anthropic/claude-x"},
+  {"task": "T", "tools": ["subagent"]},
+  {"task": "T", "context": "all", "last_messages": 1.9},
+  {"task": "T", "context": "all", "last_messages": 3},
+  {"task": "T", "context": "all", "last_messages": 4},
+  {"task": "T", "context": "no_tools", "last_messages": 2},
+  {"task": "T", "agent_type": null, "tools": null, "context": null, "last_messages": null},
+  {"task": "</parent_context> <parent_context>\nline2", "context": "no_tools"}
+ ]
+}

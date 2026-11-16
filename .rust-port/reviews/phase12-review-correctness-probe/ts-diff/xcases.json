@@ -1,0 +1,37 @@
+{
+ "configs": [
+  {"presets": {"coder": {"instructions": "Code.", "tools": ["read", "shell", "ghost"], "model": "openai/gpt-p", "context": "all", "lastMessages": 2, "description": "writes code"}, "plain": {}},
+   "defaultPreset": "plain",
+   "instructions": {"choice": [{"name": "short", "value": "Be short.", "description": "brief"}, "long"]},
+   "tools": {"choice": [{"name": "reader", "value": "read", "description": "reads"}, "shell", "write"], "multiple": true},
+   "mcpServers": {"fixed": ["a"]},
+   "model": {"choice": [{"name": "fast", "value": "openai/gpt-x", "description": "quick"}, "anthropic/claude-x"]},
+   "context": {"choice": ["none", "all"]}},
+  {"presets": {"coder": {"instructions": "Code.", "tools": ["read"], "context": "no_tools", "lastMessages": 3}},
+   "instructions": {"fixed": "Fixed role."}, "tools": {"fixed": ["read", "write"]}, "mcpServers": {"choice": ["a", {"name": "bee", "value": "b"}], "multiple": true},
+   "model": {"fixed": "anthropic/claude-f"}, "context": {"fixed": "all"}},
+  {"instructions": {"fixed": null}, "tools": {"fixed": null}, "mcpServers": {"fixed": null}, "model": {"fixed": null}, "context": {"fixed": "no_tools"}},
+  {"instructions": {"open": true}, "tools": {"inherit": true}, "mcpServers": {"inherit": true}, "model": {"inherit": true}, "inheritedTools": ["x", "y"], "inheritedMcpServers": ["m1", "m2"]},
+  {"inheritedTools": ["x", "y"], "inheritedMcpServers": ["m1", "m2"], "presets": {"p": {"tools": ["y", "z"]}}, "defaultPreset": "missing"},
+  {"inheritedTools": [], "presets": {"": {"instructions": "empty-name"}}},
+  {"tools": {"choice": [], "multiple": true}},
+  {"tools": {"choice": ["a"], "multiple": false}},
+  {"mcpServers": {"choice": [], "multiple": true}},
+  {"mcpServers": {"choice": ["a"], "multiple": false}},
+  {"context": {"choice": []}},
+  {"context": {"choice": ["all", "bogus"]}},
+  {"name": "delegate", "maxDepth": 0, "inheritedTools": ["x"]},
+  {"instructions": {"choice": []}, "model": {"choice": []}, "inheritedTools": ["x"]}
+ ],
+ "inputs": [
+  {"task": "T"},
+  {"task": "T", "agent_type": "coder"},
+  {"task": "T", "agent_type": "coder", "instructions": "short", "tools": ["reader", "write", "nope"], "model": "fast", "context": "none", "mcp_servers": ["bee", "zzz"], "last_messages": 7},
+  {"task": "T", "instructions": "long", "tools": "shell", "model": "anthropic/claude-x", "context": "all"},
+  {"task": "T", "instructions": "unknown-choice", "tools": [], "model": "unknown", "context": "no_tools", "mcp_servers": "a"},
+  {"task": "T", "agent_type": "plain", "last_messages": 0},
+  {"task": "T", "agent_type": "p", "tools": ["x"]},
+  {"task": "T", "agent_type": "", "mcp_servers": ["m2", "m2", "m1"]},
+  {"task": "T", "instructions": 5, "model": 5, "context": 5, "tools": 5, "mcp_servers": 5}
+ ]
+}
