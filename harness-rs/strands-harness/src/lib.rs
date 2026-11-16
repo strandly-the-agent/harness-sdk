@@ -30,6 +30,7 @@ pub use models::{supports_thinking, supports_web_search};
 pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
 pub use tools::{MakeReadOptions, edit, make_read, read, write};
 pub use tools::{MakeReadOptions, MakeWebFetchOptions, edit, make_read, make_web_fetch, read, write};
+pub use tools::{MakeWebFetchOptions, edit, make_web_fetch, read, write};
 #[cfg(feature = "mcp")]
 pub use tools::{exa_web_search, make_exa_web_search};
 pub use types::{Effort, WebFetchTransport};

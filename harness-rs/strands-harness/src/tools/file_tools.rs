@@ -149,14 +149,10 @@ fn js_slice(len: usize, start: f64, end: f64) -> (usize, usize) {
 }
 
 /// Options for [`make_read`] (TS `MakeReadOptions`).
-#[expect(
-    clippy::exhaustive_structs,
-    reason = "config struct: struct-literal construction"
-)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
-pub struct MakeReadOptions {
+pub(crate) struct MakeReadOptions {
     /// Return images and binary documents as viewable media. Defaults to true.
-    pub media: Option<bool>,
+    pub(crate) media: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -275,7 +271,7 @@ where
 ///
 /// Pass `media: Some(false)` for a model that rejects image and document blocks, and `read`
 /// describes those files in text instead.
-pub fn make_read(options: MakeReadOptions) -> FunctionTool {
+pub(crate) fn make_read(options: MakeReadOptions) -> FunctionTool {
     let media = options.media.unwrap_or(true);
     schema_tool(
         "read",
