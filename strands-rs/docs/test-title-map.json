@@ -115,7 +115,6 @@
     "rejects an unknown string assigned to toolExecutor": {
       "gap": "compile-time: `ToolExecutor` is an enum, there are no string shorthands"
     },
-    "handles a hallucinated tool name in a batch without affecting siblings": "reports_unknown_tools_and_tools_without_a_result",
     "AfterToolsEvent.message contains completed results when consumer breaks mid-stream": {
       "gap": "Rust-inapplicable: a consumer break is a dropped `AgentStream`, which aborts the tool tasks before the tool-use turn is appended, so no `AfterToolsEvent` runs (`drop_guard::dropping_mid_tool_aborts_the_tool_and_keeps_history_re_invokable` covers the Rust shape)"
     },
@@ -132,7 +131,6 @@
     },
     "uses messages replaced by a hook": "before_invocation_can_rewrite_or_drop_the_input",
     "uses an empty replacement from a hook": "before_invocation_can_rewrite_or_drop_the_input",
-    "allows adding hooks after agent creation via addHook": "message_added_fires_for_the_input_and_the_response",
     "fires tool hooks during tool execution": "the_agent_loop_reproduces_the_ts_tool_run",
     "fires AfterToolCallEvent with error when tool fails": "after_tool_call_sees_a_failing_tool_and_its_result_replacement_reaches_history",
     "is yielded in the stream and dispatched to hooks": "fire_in_ts_order_during_invoke_and_initialized_fires_once",
@@ -142,15 +140,12 @@
     "retries model call when hook sets retry": "after_model_call_retry_re_calls_the_model_without_duplicating_input",
     "does not retry when retry is not set": "a_model_error_without_retry_propagates_after_after_invocation_fires",
     "retries model call on success when hook requests it": "after_model_call_retry_on_success_and_attempt_counts",
-    "retries tool call when hook sets retry": "retries_the_tool_when_an_after_hook_asks",
     "does not retry a tool call after agent cancellation": "does_not_retry_a_tool_call_after_agent_cancellation",
     "does not retry a hook-cancelled tool after agent cancellation": "does_not_retry_a_hook_cancelled_tool_after_agent_cancellation",
-    "does not retry tool call when retry is not set": "retries_the_tool_when_an_after_hook_asks",
     "fires BeforeToolCallEvent on each retry": "retries_the_tool_when_an_after_hook_asks",
     "retries tool call on success when hook requests it": "retries_the_tool_when_an_after_hook_asks",
     "cancels individual tool call with default message when cancel is true": "a_before_hook_cancel_skips_the_tool",
     "cancels individual tool call with custom message when cancel is a string": "a_before_hook_cancel_skips_the_tool",
-    "cancels only specific tools when BeforeToolCallEvent selectively cancels": "a_before_hook_cancel_skips_the_tool",
     "cancels all tools with default message when BeforeToolsEvent.cancel is true": "cancels_all_tools_when_before_tools_event_cancel_is_set_concurrent_mode",
     "cancels all tools with custom message when BeforeToolsEvent.cancel is a string": "cancels_all_tools_when_before_tools_event_cancel_is_set_concurrent_mode",
     "cancels all tools in a batch via BeforeToolsEvent with correct toolUseIds": "cancels_all_tools_when_before_tools_event_cancel_is_set_concurrent_mode",
@@ -166,7 +161,6 @@
     "cancels invocation with custom message when cancel is a string": "before_invocation_cancel_skips_the_model_and_the_input",
     "does not append user message when invocation is cancelled": "before_invocation_cancel_skips_the_model_and_the_input",
     "emits AfterInvocationEvent when invocation is cancelled": "before_invocation_cancel_skips_the_model_and_the_input",
-    "cancels model call with default message when cancel is true": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
     "cancels model call with custom message when cancel is a string": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
     "emits AfterModelCallEvent when model call is cancelled": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
     "does not emit ModelMessageEvent when model call is cancelled": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
@@ -309,15 +303,10 @@
     "consumes stream events internally": "returns_correct_stop_reason_and_last_message",
     "both methods produce same result with tool use": "invoke_and_stream_produce_same_final_result",
     "returns array of messages": "defaults_match_ts",
-    "reflects conversation history after invoke": "creates_user_message_with_single_text_block",
     "assigns a durable tracking id to every recorded message": "messages_are_appended_in_order_and_keep_their_tracking_ids",
     "fires AfterInvocationEvent when consumer breaks from stream and allows reinvocation": "dropping_mid_tool_aborts_the_tool_and_keeps_history_re_invokable",
     "successfully switches between different model providers": "allows_model_change_to_persist_across_invocations",
     "rejects a ModelRouter": "aux_model_rejects_a_model_router",
-    "flushes the memory manager when shutdown is called directly": "agent_shutdown_flushes_memory",
-    "flushes the memory manager when an `await using` scope exits": {
-      "gap": "TS-only: `await using` disposal; Rust has no async drop, so `Agent::shutdown` is called explicitly (`agent_shutdown_flushes_memory`)"
-    },
     "flushes even when the scope exits via a thrown error": {
       "gap": "TS-only: `await using` disposal; Rust has no async drop, so `Agent::shutdown` is called explicitly (`agent_shutdown_flushes_memory`)"
     }
@@ -1050,6 +1039,9 @@
     },
     "completes successfully when startToolCallSpan returns null": {
       "gap": "Not applicable: the `LocalTracer` start methods return no nullable span; a disabled `tracing` span makes every later call a no-op (`memory_span_methods_handle_a_null_span_gracefully` and the `error_resilience` tests cover the tracer side)"
+    },
+    "closes cycle telemetry once when an error is thrown after the cycle already closed": {
+      "gap": "TS-only: the case makes `agent.messages.push` throw for the end-turn message after the cycle closed; a Rust message append is a `Vec::push` that cannot fail and a `MessageAddedEvent` callback cannot fail the invocation, so no error can follow the clean close on that path"
     }
   },
   "strands-ts/src/telemetry/__tests__/config.test.node.ts": {
