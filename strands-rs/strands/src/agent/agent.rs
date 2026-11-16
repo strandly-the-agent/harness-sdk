@@ -8,7 +8,7 @@ use futures::future::BoxFuture;
 
 use crate::agent::agent_delegation::{AGENT_DELEGATION_NAME, AgentDelegation};
 use crate::agent::agent_metadata::AgentMetadata;
-use crate::agent::config::{AgentBuilder, AgentConfig, ModelSource, default_model};
+use crate::agent::config::{AgentBuilder, AgentConfig, MemoryManagerSource, ModelSource, default_model};
 use crate::agent::continuation::ContinuationInput;
 use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
 use crate::agent::run::AbandonedRun;
@@ -26,6 +26,7 @@ use crate::hooks::{
     EventKind, Hook, HookCallbackOptions, HookCleanup, HookEvent, HookRegistry, InitializedEvent,
     IntoSyncHook,
 };
+use crate::memory::MemoryManager;
 use crate::middleware::{Middleware, MiddlewareCleanup, MiddlewareRegistry, MiddlewareStage};
 use crate::models::model::Model;
 use crate::plugins::{ModelLifecycle, Plugin, PluginRegistry};
@@ -97,6 +98,7 @@ pub struct Agent {
     pub(crate) background_tasks: Option<BackgroundTaskScheduler>,
     session_manager: Option<SessionManager>,
     context_manager: Option<Arc<ContextManager>>,
+    memory_manager: Option<MemoryManager>,
     #[cfg(feature = "mcp")]
     mcp_clients: Vec<crate::mcp::McpClient>,
 }
@@ -159,6 +161,10 @@ impl Agent {
             .map(ContextManager::from_strategy)
             .transpose()?
             .flatten();
+        agent.memory_manager = config
+            .memory_manager
+            .map(MemoryManagerSource::into_manager)
+            .transpose()?;
         let local = &mut agent.local;
         local.set_aux_model(config.aux_model.map(ModelSource::into_model).transpose()?);
         if let Some(id) = config.id {
@@ -238,6 +244,7 @@ impl Agent {
             background_tasks: None,
             session_manager: None,
             context_manager: None,
+            memory_manager: None,
             #[cfg(feature = "mcp")]
             mcp_clients: Vec::new(),
         }
@@ -312,6 +319,10 @@ impl Agent {
             .context_manager
             .clone()
             .map(|manager| manager as Arc<dyn Plugin>);
+        let memory = self
+            .memory_manager
+            .clone()
+            .map(|manager| Arc::new(manager) as Arc<dyn Plugin>);
         let session = self
             .session_manager
             .clone()
@@ -324,6 +335,7 @@ impl Agent {
             .chain(self.plugins.iter().cloned())
             .chain(background)
             .chain(delegation)
+            .chain(memory)
             .chain(context_manager)
             .chain(session)
             .chain([model])
@@ -374,7 +386,8 @@ impl Agent {
         })
     }
 
-    /// Finishes the agent's pending work; a no-op when there is none (TS `shutdown`).
+    /// Finishes the agent's pending work, then saves conversation not yet stored in memory; a
+    /// no-op when there is none (TS `shutdown`).
     ///
     /// A dropped [`AgentStream`] repairs history at once and leaves the hooks it skipped
     /// (`AfterInvocationEvent`, and `MessageAddedEvent` for the cancel message it appended) to
@@ -384,7 +397,11 @@ impl Agent {
     ///
     /// Pending work failed.
     pub async fn shutdown(&mut self) -> Result<()> {
-        self.finish_abandoned_run().await
+        let finished = self.finish_abandoned_run().await;
+        if let Some(memory_manager) = &self.memory_manager {
+            memory_manager.flush().await;
+        }
+        finished
     }
 
     /// A cloneable handle that cancels whichever invocation of this agent is running (TS
@@ -467,6 +484,11 @@ impl Agent {
     /// The default storage for agent subsystems (TS `storage`), when configured.
     pub fn storage(&self) -> Option<&Arc<dyn Storage>> {
         self.local.storage()
+    }
+
+    /// The memory manager (TS `memoryManager`), when one is configured.
+    pub fn memory_manager(&self) -> Option<&MemoryManager> {
+        self.memory_manager.as_ref()
     }
 
     /// The context manager (TS `contextManager`), when one is configured.

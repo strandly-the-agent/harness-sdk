@@ -16,7 +16,7 @@ mod tool_caller;
 
 pub use agent::Agent;
 pub use agent_as_tool::{AgentAsTool, AgentAsToolOptions};
-pub use config::{AgentBuilder, AgentConfig, ModelSource, agent_builder};
+pub use config::{AgentBuilder, AgentConfig, MemoryManagerSource, ModelSource, agent_builder};
 pub use invocation_context::{InvocationContext, InvocationContextUsage};
 pub use snapshot::{SnapshotField, SnapshotPreset, TakeSnapshotOptions};
 pub use stream::AgentStream;

@@ -10,6 +10,7 @@ use crate::error::Result;
 #[cfg(not(feature = "bedrock"))]
 use crate::error::{DefaultNotConfiguredError, Error};
 use crate::experimental::context_manager::ContextManagerStrategy;
+use crate::memory::{MemoryManager, MemoryManagerConfig};
 #[cfg(feature = "bedrock")]
 use crate::models::bedrock::{BedrockModel, BedrockModelConfig};
 use crate::models::model::Model;
@@ -42,6 +43,37 @@ pub enum ModelSource {
     Model(Arc<dyn Model>),
     /// A Bedrock model id; creates a `BedrockModel`.
     Id(String),
+}
+
+/// What [`AgentConfig::memory_manager`] accepts (TS `MemoryManager | MemoryManagerConfig`).
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum MemoryManagerSource {
+    /// A manager instance, used as is.
+    Manager(MemoryManager),
+    /// A config; the agent builds the manager from it.
+    Config(MemoryManagerConfig),
+}
+
+impl From<MemoryManager> for MemoryManagerSource {
+    fn from(manager: MemoryManager) -> Self {
+        Self::Manager(manager)
+    }
+}
+
+impl From<MemoryManagerConfig> for MemoryManagerSource {
+    fn from(config: MemoryManagerConfig) -> Self {
+        Self::Config(config)
+    }
+}
+
+impl MemoryManagerSource {
+    pub(crate) fn into_manager(self) -> Result<MemoryManager> {
+        match self {
+            Self::Manager(manager) => Ok(manager),
+            Self::Config(config) => MemoryManager::new(config),
+        }
+    }
 }
 
 impl From<Arc<dyn Model>> for ModelSource {
@@ -268,6 +300,9 @@ pub struct AgentConfig {
     /// default sliding window.
     #[builder(into)]
     pub context_manager: Option<ContextManagerStrategy>,
+    /// Cross-session memory (TS `memoryManager`): a [`MemoryManager`] or the config for one.
+    #[builder(into)]
+    pub memory_manager: Option<MemoryManagerSource>,
 }
 
 impl<S: agent_builder::State> AgentBuilder<S> {
