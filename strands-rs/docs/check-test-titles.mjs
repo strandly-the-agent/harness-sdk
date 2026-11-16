@@ -3,7 +3,9 @@
 // Usage: node strands-rs/docs/check-test-titles.mjs [--root <repo>] [--ts <spec root>] [--report] [filter...]
 //   --root    repository root (default: two directories above this script)
 //   --ts      TS source root the PARITY.md spec paths point into (default: <root>/strands-ts/src)
-//   --report  also print each missing title with the Rust name it expects
+//   --report  also print each missing title with the Rust name it expects, and the Rust tests of the
+//             row's files that no case matched (Rust-only tests, or tests still to rename)
+//   --parity  the PARITY.md to check (default: <root>/strands-rs/docs/PARITY.md)
 //   filter    only check rows whose spec path contains one of these substrings
 // Needs the `typescript` package: run it from a checkout with `node_modules`, or set `NODE_PATH`.
 //
@@ -16,9 +18,13 @@
 // It exits 1 when a case is missing, when matched + declared differs from the row's `ported` count, or
 // when the cases found differ from the row's `total`.
 //
-// snake_case rule: lowercase the title; every run of characters outside `a-z0-9` becomes one `_`; trim
-// `_` from both ends; prefix `_` when the result starts with a digit or is empty. A template-literal
-// title uses its source text, so `${name}` contributes `name`. No truncation: names are exact.
+// snake_case rule: split camelCase words (`_` between a lowercase letter or digit and the uppercase
+// letter after it, so `toJSON` is `to_json` and `structuredOutput` is `structured_output`); lowercase;
+// every run of characters outside `a-z0-9` becomes one `_`; trim `_` from both ends; prefix `_` when
+// the result starts with a digit or is empty. A template-literal title uses its source text, so
+// `${name}` contributes `name`. No truncation: names are exact. The form without the camelCase split
+// (`structuredoutput`) is accepted too, because part of the suite was ported with it; new tests use
+// the split form.
 //
 // Rust tests: every `fn <name>(` that follows a test attribute (`#[test]`, `#[tokio::test]`,
 // `#[rstest]`, `#[test_case(..)]`, any `#[<path>::test]`) in the files the row's second column names.
@@ -35,7 +41,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // `require` rather than `import`, so that `NODE_PATH` can supply the package.
@@ -54,15 +60,21 @@ const option = (name) => {
 }
 const root = resolve(option('--root') ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..'))
 const tsRoot = resolve(option('--ts') ?? join(root, 'strands-ts', 'src'))
+const parityPath = resolve(option('--parity') ?? join(root, 'strands-rs/docs/PARITY.md'))
 const report = args.includes('--report')
 const filters = args.filter((arg) => arg !== '--report')
 
-export function snakeCase(title) {
-  const name = title
+function lowerSnake(text) {
+  const name = text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
   return /^[a-z]/.test(name) ? name : `_${name}`
+}
+
+// The accepted Rust names of a title: the canonical one first.
+function snakeCase(title) {
+  return [...new Set([lowerSnake(title.replace(/([a-z0-9])([A-Z])/g, '$1_$2')), lowerSnake(title)])]
 }
 
 function rootName(node) {
@@ -120,16 +132,18 @@ function testNames(file) {
   if (!testNamesCache.has(file)) {
     const names = []
     let attribute = false
-    for (const line of readFileSync(file, 'utf8').split('\n')) {
-      if (TEST_ATTRIBUTE.test(line)) attribute = true
-      const name = FUNCTION.exec(line)?.[1]
-      if (name !== undefined) {
-        if (attribute) names.push(name)
-        attribute = false
-      }
-    }
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .forEach((line, at) => {
+        if (TEST_ATTRIBUTE.test(line)) attribute = true
+        const name = FUNCTION.exec(line)?.[1]
+        if (name !== undefined) {
+          if (attribute) names.push({ name, file, line: at + 1 })
+          attribute = false
+        }
+      })
     // A trybuild case is a whole file.
-    if (/[\\/]tests[\\/]ui[\\/]/.test(file)) names.push(basename(file, '.rs'))
+    if (/[\\/]tests[\\/]ui[\\/]/.test(file)) names.push({ name: basename(file, '.rs'), file, line: 1 })
     testNamesCache.set(file, names)
   }
   return testNamesCache.get(file)
@@ -164,7 +178,7 @@ function filesOfRow(cell) {
 }
 
 function rows() {
-  const lines = readFileSync(join(root, 'strands-rs/docs/PARITY.md'), 'utf8').split('\n')
+  const lines = readFileSync(parityPath, 'utf8').split('\n')
   const start = lines.indexOf('## In scope')
   const end = lines.findIndex((line, at) => at > start && line.startsWith('## '))
   return lines.slice(start, end < 0 ? undefined : end).flatMap((line) => {
@@ -180,10 +194,10 @@ function rows() {
 const mapPath = join(root, 'strands-rs/docs/test-title-map.json')
 const titleMap = existsSync(mapPath) ? JSON.parse(readFileSync(mapPath, 'utf8')) : {}
 const allFiles = rustFiles(join(root, 'strands-rs'))
-const allNames = new Set(allFiles.flatMap(testNames))
+const allNames = new Set(allFiles.flatMap(testNames).map((test) => test.name))
 
 function check(row) {
-  const result = { matched: 0, declared: 0, gap: 0, missing: [], problems: [] }
+  const result = { matched: 0, declared: 0, gap: 0, missing: [], problems: [], rustOnly: [] }
   const path = join(tsRoot, row.spec.replace(/^strands-ts\/src\//, ''))
   if (!existsSync(path)) {
     result.problems.push('spec file not found')
@@ -197,30 +211,41 @@ function check(row) {
     return result
   }
   const files = filesOfRow(row.tests)
+  const tests = (files.length > 0 ? files : allFiles).flatMap(testNames)
   const available = new Map()
-  for (const name of (files.length > 0 ? files : allFiles).flatMap(testNames)) {
-    available.set(name, (available.get(name) ?? 0) + 1)
-  }
+  for (const { name } of tests) available.set(name, (available.get(name) ?? 0) + 1)
+  const declared = new Set()
   const used = new Set()
   for (const { title, describes, line } of found) {
-    const name = snakeCase(title)
+    const names = snakeCase(title)
+    const name = names.find((candidate) => available.get(candidate) > 0)
     const key = [[...describes, title].join(' > '), title, '*'].find((candidate) => candidate in entries)
-    const entry = key === undefined || (key === '*' && available.get(name) > 0) ? undefined : entries[key]
+    const entry = key === undefined || (key === '*' && name !== undefined) ? undefined : entries[key]
     if (key !== undefined) used.add(key)
     if (entry === undefined) {
-      if (available.get(name) > 0) {
+      if (name !== undefined) {
         available.set(name, available.get(name) - 1)
         result.matched++
       } else {
-        result.missing.push({ title, name, line })
+        result.missing.push({ title, name: names[0], line })
       }
     } else if (typeof entry === 'string') {
+      declared.add(entry.split('::').pop())
       if (allNames.has(entry.split('::').pop())) result.declared++
       else result.problems.push(`map names an unknown Rust test: ${entry}`)
     } else if (typeof entry?.gap === 'string' && entry.gap !== '') {
       result.gap++
     } else {
       result.problems.push(`map entry for "${key}" is neither a test name nor a gap`)
+    }
+  }
+  if (files.length > 0) {
+    for (const test of tests) {
+      if (declared.has(test.name)) continue
+      if (available.get(test.name) > 0) {
+        available.set(test.name, available.get(test.name) - 1)
+        result.rustOnly.push(test)
+      }
     }
   }
   for (const key of Object.keys(entries)) {
@@ -244,6 +269,7 @@ for (const row of rows()) {
   for (const problem of result.problems) console.log(`       ${problem}`)
   if (report) {
     for (const { title, name, line } of result.missing) console.log(`       :${line} ${JSON.stringify(title)} -> ${name}`)
+    for (const { name, file, line } of result.rustOnly) console.log(`       rust-only: ${name} (${relative(root, file)}:${line})`)
   }
   const segments = row.spec.split('/')
   const area = segments[2] === '__tests__' ? '(root)' : segments[2]
