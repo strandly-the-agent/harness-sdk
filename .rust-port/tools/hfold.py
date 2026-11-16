@@ -18,12 +18,14 @@ div = [clean(l) for l in rd(f'{d}/divergences.md').splitlines() if l.startswith(
 if div:
     p = 'harness-rs/docs/DIVERGENCES.md'
     lines = open(p).read().rstrip('\n').split('\n')
+    seen = set()
     for r in div:
         hits = [i for i, l in enumerate(lines) if l.startswith('|') and key(l) == key(r)]
-        if hits: lines[hits[0]] = r; print('replaced divergence:', key(r))
+        if hits and key(r) not in seen: lines[hits[0]] = r; print("replaced divergence:", key(r))
         else:
             last = max(i for i, l in enumerate(lines) if l.startswith('|'))
             lines.insert(last + 1, r)
+        seen.add(key(r))
     open(p, 'w').write('\n'.join(lines) + '\n')
 rows = [l for l in rd(f'{d}/parity.md').splitlines() if l.startswith('| `')]
 if rows:
