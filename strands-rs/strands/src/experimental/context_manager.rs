@@ -271,7 +271,7 @@ pub enum ContextManagerStrategy {
     /// A custom pipeline.
     Config(ContextManagerConfig),
     /// A prepared manager; one manager binds to one agent.
-    Manager(Arc<ContextManager>),
+    Manager(ContextManager),
     /// No context management and no default conversation manager (TS `false`).
     Off,
 }
@@ -290,12 +290,6 @@ impl From<ContextManagerConfig> for ContextManagerStrategy {
 
 impl From<ContextManager> for ContextManagerStrategy {
     fn from(manager: ContextManager) -> Self {
-        Self::Manager(Arc::new(manager))
-    }
-}
-
-impl From<Arc<ContextManager>> for ContextManagerStrategy {
-    fn from(manager: Arc<ContextManager>) -> Self {
         Self::Manager(manager)
     }
 }
@@ -311,7 +305,8 @@ enum StashStorage {
 /// plugin through the agent's `context_manager` key.
 ///
 /// Before each model call and on context overflow it runs its strategies in order, ending with
-/// an emergency truncation. Overflow recovery retries the model call up to three times.
+/// an emergency truncation. Overflow recovery retries the model call up to three times. Clones
+/// share state.
 ///
 /// ```
 /// use strands::Agent;
@@ -341,7 +336,12 @@ enum StashStorage {
 /// assert_eq!(agent.context_manager().unwrap().strategy_names()[0], "offload:drop");
 /// # Ok::<(), strands::Error>(())
 /// ```
+#[derive(Clone)]
 pub struct ContextManager {
+    inner: Arc<Inner>,
+}
+
+struct Inner {
     strategies: Vec<Arc<dyn ContextStrategy>>,
     stash_storage: StashStorage,
     enable_retrieval_tool: bool,
@@ -355,7 +355,7 @@ impl fmt::Debug for ContextManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ContextManager")
             .field("strategies", &self.strategy_names())
-            .field("stash", &self.stash.get().is_some())
+            .field("stash", &self.inner.stash.get().is_some())
             .finish_non_exhaustive()
     }
 }
@@ -412,13 +412,15 @@ impl ContextManager {
             ),
         };
         Ok(Self {
-            strategies,
-            stash_storage,
-            enable_retrieval_tool,
-            retrieval_tool_use_ids: Arc::default(),
-            stash: OnceLock::new(),
-            retrieval_tool: OnceLock::new(),
-            overflow_retries: AtomicU32::new(0),
+            inner: Arc::new(Inner {
+                strategies,
+                stash_storage,
+                enable_retrieval_tool,
+                retrieval_tool_use_ids: Arc::default(),
+                stash: OnceLock::new(),
+                retrieval_tool: OnceLock::new(),
+                overflow_retries: AtomicU32::new(0),
+            }),
         })
     }
 
@@ -446,29 +448,33 @@ impl ContextManager {
     /// # Errors
     ///
     /// A strategy failed to build.
-    pub fn from_strategy(strategy: ContextManagerStrategy) -> Result<Option<Arc<Self>>> {
+    pub fn from_strategy(strategy: ContextManagerStrategy) -> Result<Option<Self>> {
         Ok(match strategy {
             ContextManagerStrategy::Off => None,
             ContextManagerStrategy::Manager(manager) => Some(manager),
-            ContextManagerStrategy::Preset(preset) => Some(Arc::new(Self::from_preset(preset)?)),
-            ContextManagerStrategy::Config(config) => Some(Arc::new(Self::new(config)?)),
+            ContextManagerStrategy::Preset(preset) => Some(Self::from_preset(preset)?),
+            ContextManagerStrategy::Config(config) => Some(Self::new(config)?),
         })
     }
 
     /// The strategy names in run order, ending with the emergency truncation.
     pub fn strategy_names(&self) -> Vec<&str> {
-        self.strategies.iter().map(|strategy| strategy.name()).collect()
+        self.inner
+            .strategies
+            .iter()
+            .map(|strategy| strategy.name())
+            .collect()
     }
 
     /// The stash, once the manager is attached to an agent with the stash enabled.
     pub fn stash(&self) -> Option<&Stash> {
-        self.stash.get()
+        self.inner.stash.get()
     }
 
     /// Whether the stash outlives the process, so session snapshots needn't embed it (TS
     /// `stashIsDurable`).
     pub fn stash_is_durable(&self) -> bool {
-        self.stash.get().is_some_and(Stash::is_durable)
+        self.inner.stash.get().is_some_and(Stash::is_durable)
     }
 
     async fn run_strategies(
@@ -492,11 +498,11 @@ impl ContextManager {
             agent,
             utilization: model.estimate_utilization(input_tokens),
             overflow,
-            stash: self.stash.get().cloned(),
+            stash: self.inner.stash.get().cloned(),
             invocation_context: InvocationContext::auxiliary(invocation_context),
         };
         let mut any_acted = false;
-        for strategy in &self.strategies {
+        for strategy in &self.inner.strategies {
             if strategy.name() == EmergencyTruncateStrategy::NAME && any_acted {
                 state.overflow = false;
             }
@@ -532,7 +538,7 @@ impl ContextManager {
     }
 
     async fn init_stash(&self, agent: &LocalAgent) -> Result<Option<Stash>> {
-        let (storage, custom) = match &self.stash_storage {
+        let (storage, custom) = match &self.inner.stash_storage {
             StashStorage::Disabled => return Ok(None),
             StashStorage::Custom(storage) => (Arc::clone(storage), true),
             StashStorage::Default => (
@@ -544,7 +550,7 @@ impl ContextManager {
             ),
         };
         let stash = Stash::new(storage, agent.session_id(), agent.id(), custom)?;
-        let stash = self.stash.get_or_init(|| stash).clone();
+        let stash = self.inner.stash.get_or_init(|| stash).clone();
         for message in agent.messages() {
             self.store(&stash, message).await;
         }
@@ -554,6 +560,7 @@ impl ContextManager {
     async fn store(&self, stash: &Stash, message: &Message) {
         let skip = {
             let mut skip = self
+                .inner
                 .retrieval_tool_use_ids
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
@@ -583,7 +590,7 @@ impl Plugin for ContextManager {
                     Box::pin(async move { manager.store(&stash, event.message()).await })
                 });
         }
-        for strategy in &self.strategies {
+        for strategy in &self.inner.strategies {
             Arc::clone(strategy).init(agent, stash.clone());
         }
         agent.set_context_stash(stash);
@@ -610,13 +617,13 @@ impl Plugin for ContextManager {
                 let manager = Arc::clone(&manager);
                 Box::pin(async move {
                     if !matches!(event.error(), Some(Error::ContextWindowOverflow(_))) {
-                        manager.overflow_retries.store(0, Ordering::Relaxed);
+                        manager.inner.overflow_retries.store(0, Ordering::Relaxed);
                         return;
                     }
                     let agent_id = event.agent().id().to_owned();
-                    if manager.overflow_retries.load(Ordering::Relaxed) >= MAX_OVERFLOW_RETRIES {
+                    if manager.inner.overflow_retries.load(Ordering::Relaxed) >= MAX_OVERFLOW_RETRIES {
                         tracing::warn!("agentId=<{agent_id}> | overflow retry limit reached, giving up");
-                        manager.overflow_retries.store(0, Ordering::Relaxed);
+                        manager.inner.overflow_retries.store(0, Ordering::Relaxed);
                         return;
                     }
                     let context = event.invocation_context().cloned();
@@ -636,7 +643,7 @@ impl Plugin for ContextManager {
                         tracing::warn!("agentId=<{agent_id}> | no strategy made progress, skipping retry");
                         return;
                     }
-                    manager.overflow_retries.fetch_add(1, Ordering::Relaxed);
+                    manager.inner.overflow_retries.fetch_add(1, Ordering::Relaxed);
                     event.set_retry(true);
                 })
             });
@@ -644,13 +651,14 @@ impl Plugin for ContextManager {
     }
 
     fn get_tools(&self) -> Vec<Arc<dyn Tool>> {
-        if !self.enable_retrieval_tool {
+        if !self.inner.enable_retrieval_tool {
             return Vec::new();
         }
-        let Some(stash) = self.stash.get() else {
+        let Some(stash) = self.inner.stash.get() else {
             return Vec::new();
         };
         let tool = self
+            .inner
             .retrieval_tool
             .get_or_init(|| Arc::new(create_retrieval_tool(stash.clone(), None)));
         vec![Arc::clone(tool)]

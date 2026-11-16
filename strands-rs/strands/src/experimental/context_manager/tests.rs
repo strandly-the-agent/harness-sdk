@@ -222,10 +222,10 @@ fn accepts_custom_strategies() {
 #[test]
 fn returns_a_context_manager_instance_as_is() {
     let manager = manager_with(Arc::new(Recorder::default()));
-    let resolved = ContextManager::from_strategy(Arc::clone(&manager).into())
+    let resolved = ContextManager::from_strategy(ContextManager::clone(&manager).into())
         .unwrap()
         .unwrap();
-    assert!(Arc::ptr_eq(&resolved, &manager));
+    assert!(Arc::ptr_eq(&resolved.inner, &manager.inner));
 }
 
 #[tokio::test]
@@ -649,8 +649,11 @@ fn uses_user_provided_conversation_manager() {
 #[test]
 fn uses_the_instance_as_is() {
     let manager = manager_with(Arc::new(Recorder::default()));
-    let agent = Agent::new(agent_config(Some(Arc::clone(&manager).into()))).unwrap();
-    assert!(Arc::ptr_eq(agent.context_manager().unwrap(), &manager));
+    let agent = Agent::new(agent_config(Some(ContextManager::clone(&manager).into()))).unwrap();
+    assert!(Arc::ptr_eq(
+        &agent.context_manager().unwrap().inner,
+        &manager.inner
+    ));
     assert_eq!(
         conversation_manager_name(&agent),
         "strands:null-conversation-manager"

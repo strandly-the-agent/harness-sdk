@@ -30,9 +30,9 @@ mod when_agentic {
 
 #[tokio::test]
 async fn registers_the_instance_as_a_plugin() {
-    let manager = Arc::new(ContextManager::new(ContextManagerConfig::default()).unwrap());
+    let manager = ContextManager::new(ContextManagerConfig::default()).unwrap();
     let mut agent = Agent::new(AgentConfig {
-        context_manager: Some(Arc::clone(&manager).into()),
+        context_manager: Some(manager.clone().into()),
         ..agent_config()
     })
     .unwrap();
@@ -45,8 +45,6 @@ async fn registers_the_instance_as_a_plugin() {
         .filter(|plugin| plugin.name() == ContextManager::NAME)
         .collect();
     assert_eq!(registered.len(), 1);
-    assert!(std::ptr::addr_eq(
-        Arc::as_ptr(&registered[0]),
-        Arc::as_ptr(&manager)
-    ));
+    // The registered plugin is a clone of the handle: initialising it bound the caller's instance.
+    assert!(manager.stash().is_some());
 }

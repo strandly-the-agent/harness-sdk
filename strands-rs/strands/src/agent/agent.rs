@@ -102,7 +102,7 @@ pub struct Agent {
     /// The background tasks plugin, when the config enables it.
     pub(crate) background_tasks: Option<BackgroundTaskScheduler>,
     session_manager: Option<SessionManager>,
-    context_manager: Option<Arc<ContextManager>>,
+    context_manager: Option<ContextManager>,
     memory_manager: Option<MemoryManager>,
     /// TS `baggageAttributes`.
     #[cfg(feature = "otel")]
@@ -358,7 +358,7 @@ impl Agent {
         let context_manager = self
             .context_manager
             .clone()
-            .map(|manager| manager as Arc<dyn Plugin>);
+            .map(|manager| Arc::new(manager) as Arc<dyn Plugin>);
         let memory = self
             .memory_manager
             .clone()
@@ -546,7 +546,7 @@ impl Agent {
     }
 
     /// The context manager (TS `contextManager`), when one is configured.
-    pub fn context_manager(&self) -> Option<&Arc<ContextManager>> {
+    pub fn context_manager(&self) -> Option<&ContextManager> {
         self.context_manager.as_ref()
     }
 
