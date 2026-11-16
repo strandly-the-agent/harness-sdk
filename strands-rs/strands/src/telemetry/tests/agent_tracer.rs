@@ -1029,13 +1029,14 @@ mod baggage_propagation {
         let layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("strands-agents"));
         let _guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(layer));
 
-        let seen: Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>> = Arc::default();
+        // The tool records the `tenant.id` entry, then the `ambient` one.
+        let seen = Seen::default();
         let samples = Arc::clone(&seen);
         let tool = mock_tool("probe", move |context| {
             samples
                 .lock()
                 .expect("the samples")
-                .push((tenant(), entry("ambient")));
+                .extend([tenant(), entry("ambient")]);
             ToolResultBlock::new(
                 context.tool_use().tool_use_id(),
                 ToolResultStatus::Success,
@@ -1050,10 +1051,7 @@ mod baggage_propagation {
             .await
             .expect("the run succeeds");
 
-        assert_eq!(
-            *seen.lock().expect("the samples"),
-            [(Some("acme".to_owned()), Some("up".to_owned()))]
-        );
+        assert_eq!(seen_by(&seen), [Some("acme".to_owned()), Some("up".to_owned())]);
         let spans = recorder.spans();
         let agent_span = named(&spans, "invoke_agent Strands Agent")[0];
         assert_eq!(attribute(agent_span, "tenant.id").as_deref(), Some("acme"));
