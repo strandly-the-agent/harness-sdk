@@ -19,10 +19,17 @@ fn grouped(value: u64) -> String {
     out
 }
 
-/// `used / limit` as a percentage with one decimal, ties rounded up like TS `toFixed(1)`.
+/// `used / limit` as a percentage with one decimal, like TS `toFixed(1)` on the `f64`.
+#[expect(clippy::cast_precision_loss, reason = "TS divides the same f64 values")]
 fn percent(used: u64, limit: u64) -> String {
-    let tenths = (u128::from(used) * 2000 + u128::from(limit)) / (2 * u128::from(limit));
-    format!("{}.{}", tenths / 10, tenths % 10)
+    let value = used as f64 / limit as f64 * 100.0;
+    // `{:.1}` rounds an exact tie (an odd multiple of 0.25) to even; `toFixed` rounds it up.
+    let quarters = value * 4.0;
+    if quarters.fract() == 0.0 && quarters % 2.0 == 1.0 {
+        format!("{:.1}", value + 0.05)
+    } else {
+        format!("{value:.1}")
+    }
 }
 
 /// Appends a `<context-status>` block to the last message of the call's copy, when the projected

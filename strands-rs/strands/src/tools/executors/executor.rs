@@ -195,6 +195,7 @@ impl Batch {
                     event.selected_tool().cloned(),
                     event
                         .cancel()
+                        .filter(|cancel| cancel.cancels())
                         .map(|cancel| cancel.message().unwrap_or("Tool cancelled by hook").to_owned()),
                 );
                 (

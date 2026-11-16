@@ -175,6 +175,7 @@ mod create_token_usage_middleware {
     #[test]
     fn rounds_percent_ties_up_like_to_fixed() {
         assert_eq!(percent(1, 400), "0.3");
+        assert_eq!(percent(300, 200_000), "0.1");
         assert_eq!(percent(0, 1000), "0.0");
         assert_eq!(grouped(1_234_567), "1,234,567");
         assert_eq!(grouped(999), "999");

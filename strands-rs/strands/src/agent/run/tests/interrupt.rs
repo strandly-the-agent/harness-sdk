@@ -241,6 +241,43 @@ mod before_tools_hook {
     }
 
     #[tokio::test]
+    async fn collects_interrupts_from_multiple_before_tools_event_hooks() {
+        let model = mock(vec![
+            vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))],
+            vec![text("Should not reach this")],
+        ]);
+        let mut agent = tool_agent(&model);
+        agent.add_hook(|event: &mut BeforeToolsEvent<'_>| {
+            event.interrupt(InterruptParams {
+                name: "approval_a".into(),
+                reason: Some(json!("First approval")),
+                ..Default::default()
+            });
+        });
+        agent.add_hook(|event: &mut BeforeToolsEvent<'_>| {
+            event.interrupt(InterruptParams {
+                name: "approval_b".into(),
+                reason: Some(json!("Second approval")),
+                ..Default::default()
+            });
+        });
+        let result = agent.invoke("Test").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        let collected: Vec<(&str, Option<&JsonValue>)> = result
+            .interrupts()
+            .iter()
+            .map(|interrupt| (interrupt.name(), interrupt.reason()))
+            .collect();
+        assert_eq!(
+            collected,
+            [
+                ("approval_a", Some(&json!("First approval"))),
+                ("approval_b", Some(&json!("Second approval")))
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn interrupts_again_on_cycle_2_after_resuming_from_cycle_1() {
         let model = mock(vec![
             vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))],
@@ -586,6 +623,47 @@ mod concurrent {
             serde_json::to_value(&pending.completed_tool_results["tool-a"]).unwrap(),
             json!({"toolResult": {"toolUseId": "tool-a", "status": "success", "content": [{"text": "A done"}]}})
         );
+    }
+
+    #[tokio::test]
+    async fn handles_before_tool_call_event_interrupt_in_concurrent_mode() {
+        let model = mock(vec![
+            vec![
+                tool_use("toolA", "tool-a", json!({})),
+                tool_use("toolB", "tool-b", json!({})),
+            ],
+            vec![text("Done")],
+        ]);
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools(tool_list![
+                logging_tool("toolA", &log),
+                logging_tool("toolB", &log)
+            ])
+            .tool_executor(crate::tools::ConcurrentToolExecutor::new())
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.add_hook(|event: &mut BeforeToolCallEvent| {
+            if event.tool_use().name() == "toolB" {
+                event.interrupt(InterruptParams {
+                    name: "approve_b".into(),
+                    reason: Some(json!("Approve B?")),
+                    ..Default::default()
+                });
+            }
+        });
+        let result = agent.invoke("Go").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        let [interrupt] = result.interrupts() else {
+            panic!("one interrupt")
+        };
+        assert_eq!(
+            (interrupt.name(), interrupt.reason(), interrupt.source()),
+            ("approve_b", Some(&json!("Approve B?")), &InterruptSource::Hook)
+        );
+        assert_eq!(*log.lock().unwrap(), ["toolA"]);
     }
 
     #[tokio::test]

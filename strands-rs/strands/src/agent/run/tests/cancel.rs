@@ -92,9 +92,9 @@ fn assert_no_orphaned_tool_use(messages: &[Message]) {
 #[test]
 fn is_a_no_op_and_cancel_signal_is_not_aborted() {
     let agent = test_agent(mock(vec![vec![text("Hello")]]));
-    assert!(!agent.cancel_signal().is_cancelled());
+    assert!(!agent.local.cancel_signal().is_cancelled());
     agent.cancel_handle().cancel(cancel());
-    assert!(!agent.cancel_signal().is_cancelled());
+    assert!(!agent.local.cancel_signal().is_cancelled());
     assert!(!agent.cancel_handle().is_cancelled());
 }
 
@@ -403,7 +403,7 @@ async fn leaves_cancel_signal_readable_on_agent_result_event_and_resets_it_after
     }
     assert_eq!(aborted_on_result, Some(true));
     assert_eq!(*on_hook.lock().unwrap(), Some(true));
-    assert!(!agent.cancel_signal().is_cancelled());
+    assert!(!agent.local.cancel_signal().is_cancelled());
     assert!(!handle.is_cancelled());
 }
 
@@ -452,7 +452,7 @@ async fn does_not_leak_a_deferred_cancel_into_the_next_invocation() {
     let second = agent.invoke("Go again").await.unwrap();
     assert_eq!(second.stop_reason(), StopReason::EndTurn);
     assert_eq!(texts(second.last_message()), ["All done"]);
-    assert!(!agent.cancel_signal().is_cancelled());
+    assert!(!agent.local.cancel_signal().is_cancelled());
 }
 
 #[tokio::test]
@@ -759,5 +759,31 @@ mod hook_retry {
         assert_eq!(result.stop_reason(), StopReason::Cancelled);
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+// No TS case: TS tests `cancel` for truthiness, so `''` doesn't cancel (executor.ts:145, agent.ts:2797).
+#[tokio::test]
+async fn an_empty_hook_cancel_message_does_not_cancel() {
+    use crate::hooks::{BeforeToolCallEvent, BeforeToolsEvent};
+
+    for before_tools in [false, true] {
+        let model = tool_turns();
+        let mut agent = tool_agent(&model);
+        if before_tools {
+            agent.add_hook(|event: &mut BeforeToolsEvent<'_>| event.set_cancel(""));
+        } else {
+            agent.add_hook(|event: &mut BeforeToolCallEvent| event.set_cancel(""));
+        }
+        let result = agent.invoke("Go").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        let ContentBlock::ToolResult(tool_result) = &agent.messages()[2].content()[0] else {
+            panic!("a tool result")
+        };
+        assert_eq!(
+            *tool_result.status(),
+            ToolResultStatus::Success,
+            "before_tools={before_tools}"
+        );
     }
 }

@@ -56,6 +56,11 @@ pub enum Cancel {
 }
 
 impl Cancel {
+    /// `false` for an empty message: TS tests `cancel` for truthiness, so `''` doesn't cancel.
+    pub(crate) fn cancels(&self) -> bool {
+        !matches!(self, Self::Message(message) if message.is_empty())
+    }
+
     /// The custom message, if any.
     pub fn message(&self) -> Option<&str> {
         match self {
@@ -254,7 +259,7 @@ impl<'a> BeforeInvocationEvent<'a> {
     }
 
     pub(crate) fn into_parts(self) -> (Vec<Message>, Option<Cancel>) {
-        (self.messages, self.cancel)
+        (self.messages, self.cancel.filter(Cancel::cancels))
     }
 }
 
@@ -632,7 +637,7 @@ impl<'a> BeforeModelCallEvent<'a> {
     }
 
     pub(crate) fn take_cancel(&mut self) -> Option<Cancel> {
-        self.cancel.take()
+        self.cancel.take().filter(Cancel::cancels)
     }
 }
 
@@ -1018,7 +1023,7 @@ impl<'a> BeforeToolsEvent<'a> {
     }
 
     pub(crate) fn take_cancel(&mut self) -> Option<Cancel> {
-        self.cancel.take()
+        self.cancel.take().filter(Cancel::cancels)
     }
 }
 

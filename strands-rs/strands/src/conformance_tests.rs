@@ -998,7 +998,30 @@ fn scripted(turns: Vec<Vec<crate::models::streaming::ModelStreamEvent>>) -> Scri
     }
 }
 
-/// The TS `interruptRun` scenario: the snapshots while the interrupt is pending, at
+/// The agent's stream for one invocation, as JSON without tracking ids.
+async fn stream_events(
+    agent: &mut crate::agent::Agent,
+    args: impl Into<crate::types::agent::InvokeArgs>,
+) -> Vec<JsonValue> {
+    use futures::StreamExt;
+
+    let mut stream = agent.stream(args);
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        let mut event = serde_json::to_value(event.unwrap()).unwrap();
+        without_tracking_ids(&mut event);
+        events.push(event);
+    }
+    events
+}
+
+fn assert_stream_matches(events: &[JsonValue], fixture: &str) {
+    let mut expected: Vec<JsonValue> = parse(fixture);
+    expected.iter_mut().for_each(without_tracking_ids);
+    assert_eq!(events, expected.as_slice(), "{fixture}");
+}
+
+/// The TS `interruptRun` scenario: the stream of both invocations, the snapshots while the interrupt is pending, at
 /// `BeforeInvocationEvent` of the resume with a `null` answer, and after the resumed run.
 #[tokio::test]
 async fn the_agent_loop_reproduces_the_ts_interrupt_run_snapshots() {
@@ -1025,7 +1048,13 @@ async fn the_agent_loop_reproduces_the_ts_interrupt_run_snapshots() {
         |input: JsonValue, _ctx| async move {
             Ok::<_, ToolError>(json!({"city": input["city"], "forecast": "sunny", "high": 21}))
         },
-    );
+    )
+    .with_input_schema(json!({
+        "type": "object",
+        "properties": {"city": {"type": "string", "description": "City name"}},
+        "required": ["city"],
+        "additionalProperties": false
+    }));
     let model = scripted(vec![
         tool_use_turn(&[
             ("confirm_tool", "tooluse_confirm_1", json!({})),
@@ -1039,7 +1068,8 @@ async fn the_agent_loop_reproduces_the_ts_interrupt_run_snapshots() {
         .tools(crate::tool_list![confirm, weather])
         .build()
         .unwrap();
-    let first = agent.invoke("Do the risky thing").await.unwrap();
+    let first = stream_events(&mut agent, "Do the risky thing").await;
+    assert_stream_matches(&first, "agent_stream_events/interrupt_run.json");
     let session = TakeSnapshotOptions::session();
     assert_snapshot_matches(
         &agent.take_snapshot(&session).unwrap(),
@@ -1058,11 +1088,12 @@ async fn the_agent_loop_reproduces_the_ts_interrupt_run_snapshots() {
             .get_or_insert_with(|| event.agent().take_snapshot(&interrupts).unwrap());
     });
     let responses: Vec<InterruptResponse> = first
-        .interrupts()
         .iter()
-        .map(|interrupt| InterruptResponse::new(interrupt.id(), JsonValue::Null))
+        .filter(|event| event["type"] == "interruptEvent")
+        .map(|event| InterruptResponse::new(event["interrupt"]["id"].as_str().unwrap(), JsonValue::Null))
         .collect();
-    agent.invoke(responses).await.unwrap();
+    let second = stream_events(&mut agent, responses).await;
+    assert_stream_matches(&second, "agent_stream_events/interrupt_resume_run.json");
     let resumed = resumed.lock().unwrap().take().unwrap();
     assert_snapshot_matches(&resumed, "snapshots/agent_resuming_interrupt_null_response.json");
     assert_snapshot_matches(
