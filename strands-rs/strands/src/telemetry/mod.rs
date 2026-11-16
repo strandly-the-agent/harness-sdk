@@ -1,6 +1,49 @@
 //! Telemetry (TS `src/telemetry/`): the local metrics and traces every [`AgentResult`] carries,
 //! and with the `otel` feature the OpenTelemetry setup functions.
 //!
+//! With `otel`, `setup_tracer` and `setup_meter` register the providers, and the agents built
+//! afterwards export their spans and metrics:
+//!
+//! ```no_run
+//! # #[cfg(feature = "otel")]
+//! # async fn run() -> strands::Result<()> {
+//! use strands::telemetry::{Exporters, MeterConfig, TracerConfig, setup_meter, setup_tracer};
+//! use strands::{Agent, Error};
+//!
+//! let exporters = Exporters::builder().otlp(true).build();
+//! let tracer_provider = setup_tracer(TracerConfig::builder().exporters(exporters).build())?;
+//! let meter_provider = setup_meter(MeterConfig::builder().exporters(exporters).build())?;
+//!
+//! let mut agent = Agent::builder().build()?;
+//! agent.invoke("Hello").await?;
+//!
+//! // Flush what is pending before the process exits.
+//! tracer_provider.shutdown().map_err(Error::other)?;
+//! meter_provider.shutdown().map_err(Error::other)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! An application with its own OpenTelemetry provider registers it and adds `tracing_layer` to
+//! its `tracing` subscriber; the agent's metrics go to the global meter provider:
+//!
+//! ```no_run
+//! # #[cfg(feature = "otel")]
+//! # fn run() {
+//! use strands::telemetry::opentelemetry::global;
+//! use strands::telemetry::opentelemetry_sdk::trace::SdkTracerProvider;
+//! use strands::telemetry::tracing_subscriber::layer::SubscriberExt as _;
+//! use strands::telemetry::tracing_subscriber::util::SubscriberInitExt as _;
+//! use strands::telemetry::{tracing_layer, tracing_subscriber};
+//!
+//! let provider = SdkTracerProvider::builder().build();
+//! global::set_tracer_provider(provider.clone());
+//! tracing_subscriber::registry().with(tracing_layer(&provider)).init();
+//! # }
+//! ```
+//!
+//! The crate logs through `tracing` as well; install any subscriber to see its warnings.
+//!
 //! [`AgentResult`]: crate::AgentResult
 
 mod config;

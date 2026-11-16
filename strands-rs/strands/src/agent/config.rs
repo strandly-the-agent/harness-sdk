@@ -298,6 +298,18 @@ pub struct AgentConfig {
     pub id: Option<String>,
     /// Attributes merged into every span of the agent (TS `traceAttributes`); exported with the
     /// `otel` feature.
+    ///
+    /// ```no_run
+    /// use strands::Agent;
+    /// use strands::telemetry::AttributeValue;
+    ///
+    /// # fn run() -> strands::Result<()> {
+    /// let agent = Agent::builder()
+    ///     .trace_attributes([("session.id".to_owned(), AttributeValue::from("abc"))])
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[builder(default, with = FromIterator::from_iter)]
     pub trace_attributes: indexmap::IndexMap<String, crate::telemetry::AttributeValue>,
     /// OpenTelemetry baggage entries merged into the active baggage for every invocation (TS

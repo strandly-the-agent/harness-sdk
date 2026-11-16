@@ -168,6 +168,26 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
 /// global subscriber, add [`tracing_layer`] to it instead. Call `shutdown()` on the returned
 /// provider before the process exits to flush pending spans.
 ///
+/// A process has one global `tracing` subscriber. An application with its own (for example
+/// `tracing_subscriber::fmt::init()`) installs it first, with [`tracing_layer`] added; installing
+/// one after `setup_tracer` fails.
+///
+/// ```no_run
+/// use strands::telemetry::{Exporters, TracerConfig, setup_tracer};
+/// use strands::{Agent, Error};
+///
+/// # async fn run() -> strands::Result<()> {
+/// let exporters = Exporters::builder().console(true).build();
+/// let provider = setup_tracer(TracerConfig::builder().exporters(exporters).build())?;
+///
+/// let mut agent = Agent::builder().build()?;
+/// agent.invoke("Hello").await?; // the agent's spans are printed
+///
+/// provider.shutdown().map_err(Error::other)?;
+/// # Ok(())
+/// # }
+/// ```
+///
 /// # Errors
 ///
 /// The OTLP exporter can't be built.
@@ -194,6 +214,19 @@ pub fn setup_tracer(config: TracerConfig) -> Result<SdkTracerProvider> {
 /// The layer adds none of its own attributes (source location, thread, target, busy and idle
 /// time). It exports every span and event the subscriber lets through; filter it
 /// (`tracing_subscriber::Layer::with_filter`) to export less.
+///
+/// ```no_run
+/// use strands::telemetry::opentelemetry::global;
+/// use strands::telemetry::opentelemetry_sdk::trace::SdkTracerProvider;
+/// use strands::telemetry::tracing_subscriber::layer::SubscriberExt as _;
+/// use strands::telemetry::tracing_subscriber::util::SubscriberInitExt as _;
+/// use strands::telemetry::{tracing_layer, tracing_subscriber};
+///
+/// // A provider the application owns, and its own subscriber with the agent's spans added.
+/// let provider = SdkTracerProvider::builder().build();
+/// global::set_tracer_provider(provider.clone());
+/// tracing_subscriber::registry().with(tracing_layer(&provider)).init();
+/// ```
 pub fn tracing_layer<S>(provider: &SdkTracerProvider) -> OpenTelemetryLayer<S, SdkTracer>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
@@ -217,6 +250,16 @@ pub(super) fn subscriber(provider: &SdkTracerProvider) -> impl Subscriber + Send
 /// A tracer of the global tracer provider, named after the service (TS `getTracer`), for custom
 /// spans. Its spans are recorded once a provider is registered ([`setup_tracer`] or the
 /// application's own).
+///
+/// ```no_run
+/// use strands::telemetry::get_tracer;
+/// use strands::telemetry::opentelemetry::KeyValue;
+/// use strands::telemetry::opentelemetry::trace::{Span as _, Tracer as _};
+///
+/// let mut span = get_tracer().start("my-custom-operation");
+/// span.set_attribute(KeyValue::new("custom.key", "value"));
+/// span.end();
+/// ```
 pub fn get_tracer() -> global::BoxedTracer {
     global::tracer(service_name(&process_env))
 }
@@ -224,6 +267,13 @@ pub fn get_tracer() -> global::BoxedTracer {
 /// A meter of the global meter provider, named after the service (TS `getMeter`), for custom
 /// instruments. They record once a provider is registered ([`setup_meter`] or the application's
 /// own).
+///
+/// ```no_run
+/// use strands::telemetry::get_meter;
+///
+/// let counter = get_meter().u64_counter("my.custom.counter").build();
+/// counter.add(1, &[]);
+/// ```
 pub fn get_meter() -> opentelemetry::metrics::Meter {
     global::meter_with_scope(InstrumentationScope::builder(service_name(&process_env)).build())
 }
@@ -280,6 +330,22 @@ pub(super) fn setup_tracer_in(
 /// metrics to (TS `setupMeter`). Later calls return the first provider.
 ///
 /// Call `shutdown()` on the returned provider before the process exits to flush pending metrics.
+///
+/// ```no_run
+/// use strands::telemetry::{Exporters, MeterConfig, setup_meter};
+/// use strands::{Agent, Error};
+///
+/// # async fn run() -> strands::Result<()> {
+/// let exporters = Exporters::builder().otlp(true).build();
+/// let provider = setup_meter(MeterConfig::builder().exporters(exporters).build())?;
+///
+/// let mut agent = Agent::builder().build()?; // records to the provider's instruments
+/// agent.invoke("Hello").await?;
+///
+/// provider.shutdown().map_err(Error::other)?;
+/// # Ok(())
+/// # }
+/// ```
 ///
 /// # Errors
 ///
