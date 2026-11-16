@@ -388,7 +388,7 @@ pub(crate) mod state {
     }
 }
 
-/// Ported from strands-ts/src/__tests__/interrupt.test.ts (the type and serialization parts).
+/// Ported from strands-ts/src/__tests__/interrupt.test.ts.
 #[cfg(test)]
 mod tests {
     use indexmap::IndexMap;
@@ -726,6 +726,333 @@ mod tests {
                     .source()
                     .is_some_and(<dyn std::error::Error>::is::<serde_json::Error>)
             );
+        }
+    }
+
+    /// The `InterruptState` and `interruptFromAgent` cases; TS `getOrCreateInterrupt` and
+    /// `interruptFromAgent` are one call here, `InterruptState::interrupt`.
+    mod interrupt_state {
+        use super::*;
+        use crate::types::agent::InterruptState;
+
+        /// TS `getOrCreateInterrupt` with the default `hook` source; returns the stored interrupt.
+        fn get_or_create(
+            state: &InterruptState,
+            id: &str,
+            name: &str,
+            reason: Option<JsonValue>,
+            response: Option<JsonValue>,
+        ) -> Interrupt {
+            let params = InterruptParams {
+                name: name.to_owned(),
+                reason,
+                response,
+            };
+            let _ = state.interrupt(id.to_owned(), params, InterruptSource::Hook);
+            stored(state, id)
+        }
+
+        fn stored(state: &InterruptState, id: &str) -> Interrupt {
+            state.lock().interrupts[id].clone()
+        }
+
+        fn respond(state: &InterruptState, id: &str, response: JsonValue) {
+            state
+                .lock()
+                .interrupts
+                .get_mut(id)
+                .unwrap()
+                .set_response(response);
+        }
+
+        fn activate(state: &InterruptState) {
+            state.lock().activated = true;
+        }
+
+        fn tool_params(reason: Option<JsonValue>, response: Option<JsonValue>) -> InterruptParams {
+            InterruptParams {
+                name: "confirm".to_owned(),
+                reason,
+                response,
+            }
+        }
+
+        mod get_or_create_interrupt {
+            use super::*;
+
+            #[test]
+            fn creates_new_interrupt_and_stores_it() {
+                let state = InterruptState::default();
+
+                let interrupt = get_or_create(&state, "int-1", "test", Some(json!("reason")), None);
+
+                assert_eq!(
+                    serde_json::to_value(&interrupt).unwrap(),
+                    json!({"id": "int-1", "name": "test", "reason": "reason", "source": "hook"})
+                );
+                let listed: Vec<Interrupt> = state.lock().interrupts.values().cloned().collect();
+                assert_eq!(listed, [interrupt]);
+            }
+
+            #[test]
+            fn returns_existing_interrupt_by_id_without_overwriting() {
+                let state = InterruptState::default();
+                get_or_create(&state, "int-1", "test", Some(json!("reason")), None);
+                respond(&state, "int-1", json!("user response"));
+
+                let second = get_or_create(
+                    &state,
+                    "int-1",
+                    "different",
+                    Some(json!("different reason")),
+                    None,
+                );
+
+                assert_eq!(second.name(), "test");
+                assert_eq!(second.reason(), Some(&json!("reason")));
+                assert_eq!(second.response(), Some(&json!("user response")));
+                assert_eq!(state.lock().interrupts.len(), 1);
+            }
+
+            #[test]
+            fn creates_separate_interrupts_for_different_ids_with_same_name() {
+                let state = InterruptState::default();
+                activate(&state);
+                get_or_create(
+                    &state,
+                    "tool:tool-1:0:confirm",
+                    "confirm",
+                    Some(json!("reason")),
+                    None,
+                );
+                respond(&state, "tool:tool-1:0:confirm", json!({"approved": true}));
+
+                let second = get_or_create(
+                    &state,
+                    "tool:tool-2:0:confirm",
+                    "confirm",
+                    Some(json!("reason")),
+                    None,
+                );
+
+                assert_eq!(second.id(), "tool:tool-2:0:confirm");
+                assert_eq!(second.response(), None);
+                assert_eq!(state.lock().interrupts.len(), 2);
+            }
+
+            #[test]
+            fn creates_interrupt_with_preemptive_response() {
+                let state = InterruptState::default();
+
+                let interrupt = get_or_create(
+                    &state,
+                    "int-1",
+                    "confirm",
+                    Some(json!("reason")),
+                    Some(json!("pre-approved")),
+                );
+
+                assert_eq!(
+                    serde_json::to_value(&interrupt).unwrap(),
+                    json!({
+                        "id": "int-1",
+                        "name": "confirm",
+                        "reason": "reason",
+                        "response": "pre-approved",
+                        "source": "hook",
+                    })
+                );
+            }
+
+            #[test]
+            fn ignores_preemptive_response_when_interrupt_already_exists() {
+                let state = InterruptState::default();
+                get_or_create(&state, "int-1", "confirm", Some(json!("reason")), None);
+                respond(&state, "int-1", json!("user response"));
+
+                let second = get_or_create(
+                    &state,
+                    "int-1",
+                    "confirm",
+                    Some(json!("reason")),
+                    Some(json!("preemptive")),
+                );
+
+                assert_eq!(
+                    serde_json::to_value(&second).unwrap(),
+                    json!({
+                        "id": "int-1",
+                        "name": "confirm",
+                        "reason": "reason",
+                        "response": "user response",
+                        "source": "hook",
+                    })
+                );
+            }
+        }
+
+        mod activate_deactivate {
+            use super::*;
+
+            #[test]
+            fn deactivate_clears_all_state() {
+                let state = InterruptState::default();
+                get_or_create(&state, "int-1", "test", None, None);
+                activate(&state);
+                assert!(state.lock().activated);
+
+                state.lock().deactivate();
+
+                assert_eq!(*state.lock(), InterruptStateData::default());
+                assert!(state.lock().interrupts.is_empty());
+                assert_eq!(state.lock().resume_responses, None);
+                assert!(!state.lock().activated);
+            }
+        }
+
+        mod resume {
+            use super::*;
+
+            #[test]
+            fn does_nothing_when_not_activated() {
+                let state = InterruptState::default();
+                get_or_create(&state, "int-1", "test", None, None);
+
+                state
+                    .lock()
+                    .resume(&[InterruptResponse::new("int-1", json!("yes"))])
+                    .unwrap();
+
+                assert_eq!(stored(&state, "int-1").response(), None);
+            }
+
+            #[test]
+            fn populates_interrupt_responses_and_stores_resume_responses_when_activated() {
+                let state = InterruptState::default();
+                get_or_create(&state, "int-1", "first", None, None);
+                get_or_create(&state, "int-2", "second", None, None);
+                activate(&state);
+                let responses = [
+                    InterruptResponse::new("int-1", json!("response1")),
+                    InterruptResponse::new("int-2", json!({"complex": "data"})),
+                ];
+
+                state.lock().resume(&responses).unwrap();
+
+                assert_eq!(stored(&state, "int-1").response(), Some(&json!("response1")));
+                assert_eq!(
+                    stored(&state, "int-2").response(),
+                    Some(&json!({"complex": "data"}))
+                );
+                let expected: Vec<InterruptResponseContent> = responses
+                    .into_iter()
+                    .map(InterruptResponseContent::from)
+                    .collect();
+                assert_eq!(state.lock().resume_responses, Some(expected));
+            }
+
+            #[test]
+            fn throws_error_for_unknown_interrupt_id() {
+                let state = InterruptState::default();
+                get_or_create(&state, "int-1", "test", None, None);
+                activate(&state);
+
+                let error = state
+                    .lock()
+                    .resume(&[InterruptResponse::new("unknown", json!("yes"))])
+                    .unwrap_err();
+
+                assert_eq!(error.to_string(), "interrupt_id=<unknown> | no interrupt found");
+            }
+        }
+
+        mod get_pending_execution {
+            use super::*;
+
+            #[test]
+            fn returns_undefined_when_the_interrupt_state_is_not_activated() {
+                let state = InterruptState::default();
+                state.lock().pending_tool_execution = Some(pending_tool_execution());
+
+                assert_eq!(state.lock().pending_execution(), None);
+            }
+
+            #[test]
+            fn returns_the_reconstructed_pending_execution_when_the_interrupt_state_is_activated() {
+                let state = InterruptState::default();
+                activate(&state);
+                state.lock().pending_tool_execution = Some(pending_tool_execution());
+
+                let pending = state.lock().pending_execution().unwrap();
+
+                assert_eq!(pending, pending_tool_execution());
+                assert_eq!(
+                    pending.completed_tool_results.keys().collect::<Vec<_>>(),
+                    ["tool-b"]
+                );
+            }
+        }
+
+        mod interrupt_from_agent {
+            use super::*;
+
+            #[test]
+            fn returns_preemptive_response_immediately_without_throwing() {
+                let state = InterruptState::default();
+
+                let result = state.interrupt(
+                    "test-id".to_owned(),
+                    tool_params(Some(json!("need approval")), Some(json!("pre-approved"))),
+                    InterruptSource::Tool,
+                );
+
+                assert_eq!(result.unwrap(), json!("pre-approved"));
+                assert_eq!(
+                    serde_json::to_value(stored(&state, "test-id")).unwrap(),
+                    json!({
+                        "id": "test-id",
+                        "name": "confirm",
+                        "reason": "need approval",
+                        "response": "pre-approved",
+                        "source": "tool",
+                    })
+                );
+            }
+
+            #[test]
+            fn returns_resume_response_over_preemptive_response_for_existing_interrupt() {
+                let state = InterruptState::default();
+                get_or_create(&state, "test-id", "confirm", Some(json!("need approval")), None);
+                respond(&state, "test-id", json!("user-provided"));
+
+                let result = state.interrupt(
+                    "test-id".to_owned(),
+                    tool_params(Some(json!("need approval")), Some(json!("preemptive"))),
+                    InterruptSource::Tool,
+                );
+
+                assert_eq!(result.unwrap(), json!("user-provided"));
+                let interrupt = stored(&state, "test-id");
+                assert_eq!(interrupt.name(), "confirm");
+                assert_eq!(interrupt.reason(), Some(&json!("need approval")));
+                assert_eq!(interrupt.response(), Some(&json!("user-provided")));
+            }
+
+            #[test]
+            fn does_not_interrupt_when_preemptive_response_is_null() {
+                let state = InterruptState::default();
+
+                let result = state.interrupt(
+                    "test-id".to_owned(),
+                    tool_params(None, Some(JsonValue::Null)),
+                    InterruptSource::Tool,
+                );
+
+                assert_eq!(result.unwrap(), JsonValue::Null);
+                let interrupt = stored(&state, "test-id");
+                assert_eq!(interrupt.name(), "confirm");
+                assert_eq!(interrupt.response(), Some(&JsonValue::Null));
+            }
         }
     }
 }
