@@ -81,6 +81,10 @@ required-features = ["bedrock"]
 name = "tools"
 required-features = ["bedrock"]
 
+[[example]]
+name = "streaming"
+required-features = ["bedrock"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
