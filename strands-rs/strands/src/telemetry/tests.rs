@@ -465,3 +465,5 @@ async fn baggage_attributes_are_merged_into_the_active_baggage_for_every_span() 
         assert_eq!(attributes["ambient"], "kept", "{}", span.name);
     }
 }
+
+mod tracer_methods;
