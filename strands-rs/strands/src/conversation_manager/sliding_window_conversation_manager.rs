@@ -140,6 +140,23 @@ fn truncate_result(result: &ToolResultBlock) -> Option<ToolResultBlock> {
 }
 
 /// Configuration of [`SlidingWindowConversationManager`] (TS `SlidingWindowConversationManagerConfig`).
+///
+/// # Examples
+///
+/// ```
+/// use strands::conversation_manager::{
+///     SlidingWindowConversationManager, SlidingWindowConversationManagerConfig,
+/// };
+/// use strands::testing::MockMessageModel;
+/// use strands::Agent;
+///
+/// let config = SlidingWindowConversationManagerConfig::builder().window_size(20).pin_first(1).build();
+/// let agent = Agent::builder()
+///     .model(MockMessageModel::new())
+///     .conversation_manager(SlidingWindowConversationManager::new(config)?)
+///     .build()?;
+/// # Ok::<(), strands::Error>(())
+/// ```
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"

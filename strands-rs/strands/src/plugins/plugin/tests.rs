@@ -308,6 +308,37 @@ mod registry {
         assert_eq!(plugin.calls.load(Ordering::SeqCst), 1);
     }
 
+    // No TS case: TS callers share one rejected promise, so they all see the same error object.
+    #[tokio::test]
+    async fn every_initialization_attempt_reports_the_same_error_name_text_and_source() {
+        struct Overflows;
+
+        #[async_trait]
+        impl Plugin for Overflows {
+            fn name(&self) -> &str {
+                "overflows"
+            }
+
+            async fn init_agent(self: Arc<Self>, _agent: &mut LocalAgent) -> Result<()> {
+                Err(crate::error::ContextWindowOverflowError::new("too long").into())
+            }
+        }
+
+        let mut registry = PluginRegistry::default();
+        let mut agent = local_agent();
+        for _ in 0..2 {
+            let error = registry
+                .initialize(vec![Arc::new(Overflows)], &mut agent)
+                .await
+                .unwrap_err();
+            assert_eq!(error.name(), "ContextWindowOverflowError");
+            assert_eq!(error.to_string(), "too long");
+            let original =
+                std::error::Error::source(&error).and_then(|source| source.downcast_ref::<Error>());
+            assert!(matches!(original, Some(Error::ContextWindowOverflow(_))));
+        }
+    }
+
     // No TS case: a TS `initAgent` await can't be dropped.
     #[tokio::test]
     async fn a_dropped_initialize_resumes_at_the_interrupted_plugin() {

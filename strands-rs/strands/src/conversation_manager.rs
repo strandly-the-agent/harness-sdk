@@ -139,6 +139,38 @@ impl<'a> ConversationManagerReduceOptions<'a> {
 /// calls [`reduce`](Self::reduce) on a context overflow and retries the call when it returns
 /// `true`, and a `BeforeModelCallEvent` hook that calls it without an error when the projected
 /// input reaches [`compression_threshold`](Self::compression_threshold).
+///
+/// # Examples
+///
+/// ```
+/// use strands::conversation_manager::{ConversationManager, ConversationManagerReduceOptions};
+/// use strands::testing::MockMessageModel;
+/// use strands::Agent;
+///
+/// struct Last10MessagesManager;
+///
+/// #[strands::async_trait]
+/// impl ConversationManager for Last10MessagesManager {
+///     fn name(&self) -> &str {
+///         "my:last-10-messages"
+///     }
+///
+///     async fn reduce(&self, mut options: ConversationManagerReduceOptions<'_>) -> strands::Result<bool> {
+///         let messages = options.agent_mut().messages_mut();
+///         if messages.len() <= 10 {
+///             return Ok(false);
+///         }
+///         messages.drain(..messages.len() - 10);
+///         Ok(true)
+///     }
+/// }
+///
+/// let agent = Agent::builder()
+///     .model(MockMessageModel::new())
+///     .conversation_manager(Last10MessagesManager)
+///     .build()?;
+/// # Ok::<(), strands::Error>(())
+/// ```
 #[async_trait]
 pub trait ConversationManager: Send + Sync + 'static {
     /// The plugin name, unique among the agent's plugins.

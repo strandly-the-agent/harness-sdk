@@ -7,4 +7,4 @@ mod registry;
 
 pub(crate) use model_plugin::ModelLifecycle;
 pub use plugin::Plugin;
-pub(crate) use registry::PluginRegistry;
+pub(crate) use registry::{PluginRegistry, ReplayedError};

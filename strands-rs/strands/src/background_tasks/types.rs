@@ -12,6 +12,21 @@ use crate::types::json::JsonValue;
 ///
 /// Tools are selected by registered name; `"*"` selects every tool. A tool is in at most one of
 /// `agentic`, `always` and `never`.
+///
+/// # Examples
+///
+/// ```
+/// use strands::background_tasks::BackgroundTasksConfig;
+/// use strands::testing::MockMessageModel;
+/// use strands::Agent;
+///
+/// let config = BackgroundTasksConfig::builder()
+///     .always(vec!["slow_search".to_owned()])
+///     .max_concurrency(2)
+///     .build();
+/// let agent = Agent::builder().model(MockMessageModel::new()).background_tasks(config).build()?;
+/// # Ok::<(), strands::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 #[expect(
     clippy::exhaustive_structs,

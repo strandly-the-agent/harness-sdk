@@ -14,7 +14,29 @@ pub(crate) struct PluginRegistry {
     next: usize,
     /// The first failure, returned again by every later `initialize` (TS keeps the rejected
     /// promise).
-    failure: Option<String>,
+    failure: Option<Arc<Error>>,
+}
+
+/// A stored failure returned again: the same text and `Error::name()`, the original as `source()`.
+#[derive(Debug)]
+pub(crate) struct ReplayedError(Arc<Error>);
+
+impl ReplayedError {
+    pub(crate) fn name(&self) -> &'static str {
+        self.0.name()
+    }
+}
+
+impl std::fmt::Display for ReplayedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for ReplayedError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&*self.0)
+    }
 }
 
 impl PluginRegistry {
@@ -26,12 +48,13 @@ impl PluginRegistry {
         agent: &mut LocalAgent,
     ) -> Result<()> {
         if let Some(failure) = &self.failure {
-            return Err(Error::other(failure.clone()));
+            return Err(Error::other(ReplayedError(Arc::clone(failure))));
         }
         for plugin in plugins.into_iter().skip(self.next) {
             if let Err(error) = self.add_and_init(plugin, agent).await {
-                self.failure = Some(error.to_string());
-                return Err(error);
+                let error = Arc::new(error);
+                self.failure = Some(Arc::clone(&error));
+                return Err(Error::other(ReplayedError(error)));
             }
             self.next += 1;
         }

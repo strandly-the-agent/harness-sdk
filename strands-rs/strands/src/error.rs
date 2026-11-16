@@ -387,7 +387,8 @@ impl Error {
         Self::Other(error.into())
     }
 
-    /// The TS `error.name` of this error; `"Error"` for [`Error::Other`].
+    /// The TS `error.name` of this error; `"Error"` for [`Error::Other`], except that a plugin
+    /// initialization failure returned again keeps the name of the original error.
     pub fn name(&self) -> &'static str {
         match self {
             Self::Model(_) => ModelError::NAME,
@@ -408,7 +409,9 @@ impl Error {
             Self::SandboxPermission(_) => SandboxPermissionError::NAME,
             #[cfg(feature = "mcp")]
             Self::Mcp(error) => error.name(),
-            Self::Other(_) => "Error",
+            Self::Other(error) => error
+                .downcast_ref::<crate::plugins::ReplayedError>()
+                .map_or("Error", crate::plugins::ReplayedError::name),
         }
     }
 
