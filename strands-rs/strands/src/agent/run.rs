@@ -447,7 +447,7 @@ impl Agent {
         self.start_agent_span(&input.messages);
         if let Some(tool) = &structured.tool {
             if let Err(error) = self.local.tool_registry_mut().add(Arc::new(tool.clone())) {
-                let outcome = Err(error.into());
+                let outcome = Err(error);
                 self.end_agent_span(&outcome);
                 return outcome;
             }

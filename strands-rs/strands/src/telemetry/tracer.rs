@@ -897,15 +897,17 @@ fn system_part(block: &SystemContentBlock) -> JsonValue {
             json!({"type": "cache_point", "cacheType": cache_point.cache_type()})
         }
         SystemContentBlock::GuardContent(guard) => {
-            let mut part = json!({"type": "guard_content"});
+            let mut part = serde_json::Map::new();
+            part.insert("type".to_owned(), json!("guard_content"));
             if let Some(text) = guard.text() {
-                part["text"] = json!(text);
+                part.insert("text".to_owned(), json!(text));
             }
             if let Some(image) = guard.image() {
                 // TS holds the raw bytes here, which `jsonReplacer` writes as the placeholder.
-                part["image"] = json!({"format": image.format(), "source": {"bytes": "<replaced>"}});
+                let image = json!({"format": image.format(), "source": {"bytes": "<replaced>"}});
+                part.insert("image".to_owned(), image);
             }
-            part
+            JsonValue::Object(part)
         }
     }
 }
