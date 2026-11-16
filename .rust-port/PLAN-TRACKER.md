@@ -42,7 +42,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Direct tool calls, `as_tool`, agents as tools, printer
 - [x] Phase review gate and fixes
 
-## [ ] Phase 4: interrupts, cancellation, lifecycle, plugins and middleware
+## [x] Phase 4: interrupts, cancellation, lifecycle, plugins and middleware
 
 - [x] Interrupts and resume with `pendingToolExecution`
 - [x] `CancelHandle`, `CancelOptions`, `CancelSignal`, TS cancel semantics
@@ -52,7 +52,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Middleware stages and phases
 - [x] Background tasks
 - [x] Conversation managers (trait, Null, SlidingWindow, Summarizing)
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [x] Phase 5: providers
 
@@ -89,14 +89,14 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] `web_fetch` and `subagent`
 - [x] Phase review gate and fixes
 
-## [ ] Phase 9: MCP
+## [x] Phase 9: MCP
 
 - [x] `McpClient` stdio and streamable HTTP
 - [x] Custom legacy SSE transport
 - [x] Filters, prefixes, auth, elicitation, prompts, resources, list-changed, progress, logging, trace context
 - [x] `load_servers` config loading
 - [x] `mcp_router` tool
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [ ] Phase 10: telemetry
 

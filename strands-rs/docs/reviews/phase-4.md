@@ -15,6 +15,8 @@ Three independent reviewers (correctness, API bar-raiser, parity validator) revi
 | api-1 | Fixed: both configs are exhaustive config structs with the standard `#[expect]`; struct-literal cases added to `tests/api_surface.rs` (P-102) | 08c1d879d |
 | api-2 | Fixed: `Agent::cancel_signal` removed (P-100, amends P-90's name list); crate tests read `agent.local.cancel_signal()` | 08c1d879d |
 | api-3 | Kept the name, recorded the repurposing in the P-15 name map (P-101), as the review allows: the TS class is crate-internal in Rust and the public type is what a user writes at `backgroundTasks` | 08c1d879d |
-| api-4 | Open: the replayed failure is still `Error::Other` with the text only. Proposed shape: keep `Arc<Error>`, replay through a private wrapper whose `source()` is the original, and have `Error::name()` return the original's name | - |
-| api-5 | Open: no doc examples added on `ConversationManager`, `SlidingWindowConversationManagerConfig` or `BackgroundTasksConfig` | - |
+| api-4 | Fixed: the registry keeps the failure as `Arc<Error>` and every attempt, the first included, returns it through a private wrapper: same text, same `Error::name()`, the original as `source()`. Test `plugins::plugin::tests::registry::every_initialization_attempt_reports_the_same_error_name_text_and_source` (P-340) | a5bca5b46 |
+| api-5 | Fixed: doc examples on `ConversationManager` (the TS `Last10MessagesManager` example), `SlidingWindowConversationManagerConfig` and `BackgroundTasksConfig` | a5bca5b46 |
 | api-6 | Fixed: `SlidingWindowConversationManagerConfig` derives `Clone` only (P-102); `SlidingWindowConversationManager::new` carries a `needless_pass_by_value` expectation | 08c1d879d |
+
+After the last fixes, `.rust-port/gates.sh full` passed at `a5bca5b46` (all steps, 3455 tests with all features).
