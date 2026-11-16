@@ -1,0 +1,5 @@
+error: the `#[tool(context)]` parameter is `&ToolContext` or `ToolContext`
+ --> tests/ui/fail/mut_context.rs:5:33
+  |
+5 | fn mutate(#[tool(context)] ctx: &mut strands::ToolContext) -> String {
+  |                                 ^

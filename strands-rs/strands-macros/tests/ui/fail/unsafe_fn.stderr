@@ -1,0 +1,5 @@
+error: #[tool] functions can't be unsafe
+ --> tests/ui/fail/unsafe_fn.rs:5:1
+  |
+5 | unsafe fn peek(address: u64) -> u64 {
+  | ^^^^^^

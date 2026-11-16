@@ -164,6 +164,14 @@ fn read_param(arg: &mut FnArg, receiver: Receiver) -> syn::Result<Option<Param>>
         }
     }
     if is_context {
+        if let Type::Reference(reference) = &*typed.ty
+            && reference.mutability.is_some()
+        {
+            return Err(syn::Error::new(
+                typed.ty.span(),
+                "the `#[tool(context)]` parameter is `&ToolContext` or `ToolContext`",
+            ));
+        }
         return Ok(Some(Param::Context {
             by_ref: matches!(*typed.ty, Type::Reference(_)),
         }));

@@ -1,0 +1,5 @@
+error: #[tools] needs at least one #[tool] method
+ --> tests/ui/fail/tools_without_tool.rs:6:6
+  |
+6 | impl Store {
+  |      ^^^^^

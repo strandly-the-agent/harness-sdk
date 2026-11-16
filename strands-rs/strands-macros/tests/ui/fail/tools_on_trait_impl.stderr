@@ -1,0 +1,5 @@
+error: #[tools] goes on an inherent impl block
+  --> tests/ui/fail/tools_on_trait_impl.rs:10:6
+   |
+10 | impl Count for Store {
+   |      ^^^^^

@@ -1,0 +1,5 @@
+error: Unknown field: `description`. Available values: `crate`, `name`
+ --> tests/ui/fail/unknown_tool_argument.rs:4:8
+  |
+4 | #[tool(description = "Echo the text.")]
+  |        ^^^^^^^^^^^

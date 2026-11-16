@@ -1,0 +1,5 @@
+error: expected #[tool(context)]
+ --> tests/ui/fail/bare_tool_on_param.rs:5:9
+  |
+5 | fn bare(#[tool] ctx: &strands::ToolContext) -> String {
+  |         ^

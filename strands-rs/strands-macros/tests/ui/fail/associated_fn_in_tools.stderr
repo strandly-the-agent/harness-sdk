@@ -1,0 +1,5 @@
+error: #[tool] methods in #[tools] take `&self`
+ --> tests/ui/fail/associated_fn_in_tools.rs:9:8
+  |
+9 |     fn count() -> u32 {
+  |        ^^^^^

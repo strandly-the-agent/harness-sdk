@@ -1,0 +1,5 @@
+error: #[tool] functions can't be generic: the input schema is derived from concrete types
+ --> tests/ui/fail/impl_trait_param.rs:5:16
+  |
+5 | fn show(value: impl std::fmt::Display) -> String {
+  |                ^^^^

@@ -1,0 +1,5 @@
+error: #[tools] impl blocks can't be generic
+ --> tests/ui/fail/generic_tools_impl.rs:6:5
+  |
+6 | impl<T: Send + Sync + 'static> Store<T> {
+  |     ^

@@ -1,0 +1,5 @@
+error: #[tool] parameters must be owned types: they are deserialized from the tool input
+ --> tests/ui/fail/borrowed_param.rs:5:19
+  |
+5 | fn measure(input: &str) -> usize {
+  |                   ^
