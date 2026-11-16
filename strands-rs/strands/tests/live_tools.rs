@@ -4,7 +4,7 @@
 //! final wording; these assert on the trace (tool name, parsed input, tool-result content) and
 //! on the state the tools write.
 //!
-//! The http_request test asks for a URL served by a localhost server the test starts, where TS
+//! The `http_request` test asks for a URL served by a localhost server the test starts, where TS
 //! calls Open-Meteo: the tool path is the same and the result content is exact.
 //!
 //! The bash tool runs model-chosen commands on the host with the process environment; the

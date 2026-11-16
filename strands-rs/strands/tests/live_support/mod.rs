@@ -14,6 +14,7 @@ pub(crate) const MODEL_ID: &str = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 pub(crate) const REGION: &str = "us-west-2";
 
 /// Whether the default AWS credential chain resolves; prints the skip message when it does not.
+#[allow(clippy::print_stderr, reason = "the skip message")]
 pub(crate) async fn credentials_available() -> bool {
     let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
     let Some(provider) = config.credentials_provider() else {
