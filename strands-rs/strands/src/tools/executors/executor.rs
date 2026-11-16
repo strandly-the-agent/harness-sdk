@@ -165,7 +165,12 @@ impl Batch {
             sender,
             background: self.background.clone(),
         };
-        self.tasks.spawn(task.run(tool_use).in_current_span());
+        let run = task.run(tool_use).in_current_span();
+        // The task keeps the caller's OpenTelemetry context, so the agent's baggage is current
+        // inside tools with or without a `tracing` subscriber.
+        #[cfg(feature = "otel")]
+        let run = opentelemetry::trace::FutureExt::with_context(run, opentelemetry::Context::current());
+        self.tasks.spawn(run);
     }
 
     /// Runs the hooks for a task message; returns the event to yield and the deferred answer.
