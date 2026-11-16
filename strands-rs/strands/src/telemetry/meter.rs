@@ -258,7 +258,7 @@ impl Meter {
         (cycle_id, started)
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "otel"))]
     pub(crate) fn has_open_cycle(&self) -> bool {
         self.open_cycle.is_some()
     }
