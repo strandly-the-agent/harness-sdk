@@ -81,13 +81,13 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [ ] `ModelRouter` with `FallbackStrategy` and `ClassifierStrategy`
 - [ ] Phase review gate and fixes
 
-## [ ] Phase 8: sandbox and vended tools
+## [x] Phase 8: sandbox and vended tools
 
 - [x] `Sandbox` trait, protocol, errors, default local sandbox (POSIX and PowerShell)
 - [x] `shell`, `read`, `write`, `edit`, `bash`
 - [x] `python_repl`, `notebook`, `http_request`, `sleep`, `stop`, `handoff_to_user`
 - [x] `web_fetch` and `subagent`
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [ ] Phase 9: MCP
 
