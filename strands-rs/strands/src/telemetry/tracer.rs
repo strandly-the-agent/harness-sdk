@@ -843,7 +843,7 @@ fn content_enabled() -> bool {
 }
 
 /// TS `_endSpan`: the end time, then the status (and the exception event on an error).
-fn end_span(span: &Span, error: Option<&str>) {
+pub(crate) fn end_span(span: &Span, error: Option<&str>) {
     if span.is_disabled() {
         return;
     }
