@@ -1,5 +1,6 @@
 //! Agent configuration (TS `AgentConfig` in `agent/agent.ts`) and the model a config names.
 
+use std::fmt;
 use std::sync::Arc;
 #[cfg(not(feature = "bedrock"))]
 use std::sync::{Mutex, PoisonError};
@@ -80,6 +81,68 @@ impl MemoryManagerSource {
         }
     }
 }
+
+/// What the builder's single-value setters accept for a shared slot ([`AgentBuilder::plugin`],
+/// [`AgentBuilder::intervention`], [`AgentBuilder::conversation_manager`],
+/// [`AgentBuilder::retry_strategy`]): a value, an `Arc` of it, or an `Arc<dyn Trait>`.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use strands::Agent;
+/// use strands::conversation_manager::NullConversationManager;
+/// use strands::testing::MockMessageModel;
+///
+/// let manager = Arc::new(NullConversationManager::new());
+/// let agent = Agent::builder()
+///     .model(MockMessageModel::new())
+///     .conversation_manager(Arc::clone(&manager))
+///     .build()?;
+/// # drop(agent);
+/// # Ok::<(), strands::Error>(())
+/// ```
+pub struct SharedSource<T: ?Sized>(Arc<T>);
+
+impl<T: ?Sized> SharedSource<T> {
+    pub(crate) fn into_arc(self) -> Arc<T> {
+        self.0
+    }
+}
+
+impl<T: ?Sized> fmt::Debug for SharedSource<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SharedSource").finish_non_exhaustive()
+    }
+}
+
+macro_rules! shared_source {
+    ($($trait:ident),+) => {$(
+        impl From<Arc<dyn $trait>> for SharedSource<dyn $trait> {
+            fn from(value: Arc<dyn $trait>) -> Self {
+                Self(value)
+            }
+        }
+
+        impl<T: $trait> From<T> for SharedSource<dyn $trait> {
+            fn from(value: T) -> Self {
+                Self(Arc::new(value))
+            }
+        }
+
+        impl<T: $trait> From<Arc<T>> for SharedSource<dyn $trait> {
+            fn from(value: Arc<T>) -> Self {
+                Self(value)
+            }
+        }
+    )+};
+}
+
+shared_source!(
+    Plugin,
+    InterventionHandler,
+    ConversationManager,
+    ModelRetryStrategy
+);
 
 impl From<Arc<dyn Model>> for ModelSource {
     fn from(model: Arc<dyn Model>) -> Self {
@@ -361,23 +424,24 @@ impl<S: agent_builder::State> AgentBuilder<S> {
         self
     }
 
-    /// Adds a model retry strategy; the first call replaces the default one.
-    pub fn retry_strategy(mut self, strategy: impl ModelRetryStrategy) -> Self {
+    /// Adds a model retry strategy (a value, an `Arc` of one, or an `Arc<dyn ModelRetryStrategy>`);
+    /// the first call replaces the default one.
+    pub fn retry_strategy(mut self, strategy: impl Into<SharedSource<dyn ModelRetryStrategy>>) -> Self {
         self.retry_strategy
             .get_or_insert_with(Vec::new)
-            .push(Arc::new(strategy));
+            .push(strategy.into().into_arc());
         self
     }
 
-    /// Adds a plugin.
-    pub fn plugin(mut self, plugin: impl Plugin) -> Self {
-        self.plugins.push(Arc::new(plugin));
+    /// Adds a plugin: a value, an `Arc` of one, or an `Arc<dyn Plugin>`.
+    pub fn plugin(mut self, plugin: impl Into<SharedSource<dyn Plugin>>) -> Self {
+        self.plugins.push(plugin.into().into_arc());
         self
     }
 
-    /// Adds an intervention handler.
-    pub fn intervention(mut self, handler: impl InterventionHandler) -> Self {
-        self.interventions.push(Arc::new(handler));
+    /// Adds an intervention handler: a value, an `Arc` of one, or an `Arc<dyn InterventionHandler>`.
+    pub fn intervention(mut self, handler: impl Into<SharedSource<dyn InterventionHandler>>) -> Self {
+        self.interventions.push(handler.into().into_arc());
         self
     }
 
@@ -393,9 +457,10 @@ impl<S: agent_builder::State> AgentBuilder<S> {
         self
     }
 
-    /// Sets the conversation manager.
-    pub fn conversation_manager(mut self, manager: impl ConversationManager) -> Self {
-        self.conversation_manager = Some(Arc::new(manager));
+    /// Sets the conversation manager: a value, an `Arc` of one, or an
+    /// `Arc<dyn ConversationManager>`.
+    pub fn conversation_manager(mut self, manager: impl Into<SharedSource<dyn ConversationManager>>) -> Self {
+        self.conversation_manager = Some(manager.into().into_arc());
         self
     }
 
