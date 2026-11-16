@@ -32,14 +32,6 @@
     "exports error classes": "every_error_class_builds_from_constructors",
     "can instantiate exported streaming event classes": "exports_streaming_event_classes_as_values_not_just_types"
   },
-  "strands-ts/src/__tests__/interrupt.test.ts": {
-    "creates catchable error with single interrupt": {
-      "gap": "TS-only: `InterruptError`; interrupts aren't errors in Rust"
-    },
-    "creates error with multiple interrupts": {
-      "gap": "TS-only: `InterruptError`; interrupts aren't errors in Rust"
-    }
-  },
   "strands-ts/src/__tests__/state-store.test.ts": {
     "throws error for function in initial state": {
       "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
@@ -456,12 +448,6 @@
   "strands-ts/src/models/__tests__/anthropic.test.ts": {
     "disables caching for an unknown strategy": {
       "gap": "`CacheStrategy` is a closed enum, so the TS runtime check has nothing to reject"
-    },
-    "sends sampling params": {
-      "gap": "runs only against the previous `@anthropic-ai/sdk` major, whose API version Rust doesn't send"
-    },
-    "keeps PDF documents in assistant messages": {
-      "gap": "runs only against the previous `@anthropic-ai/sdk` major, whose API version Rust doesn't send"
     }
   },
   "strands-ts/src/models/__tests__/bedrock.test.ts": {
@@ -594,18 +580,13 @@
     "rejects a host filesystem strategy passed with a sandbox in config": {
       "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
     },
-    "accepts a sandbox-safe strategy passed with a sandbox": {
-      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
-    },
     "rejects at runtime a strategy typed as SearchStrategy that declares requiresHostFs": {
       "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
     },
     "drops a host filesystem strategy in forSandbox and falls back to keyword search": {
       "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
     },
-    "keeps a sandbox-safe strategy in forSandbox": {
-      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
-    }
+    "keeps a sandbox-safe strategy in forSandbox": "carries_a_search_strategy_from_config_through_for_sandbox_and_namespace"
   },
   "strands-ts/src/tools/__tests__/structured-output-tool.test.ts": {
     "returns error result for non-ZodError exceptions": {
@@ -999,19 +980,7 @@
     },
     "parses multiple comma-separated opt-in values": "parses_the_comma_separated_opt_in_values",
     "handles whitespace in opt-in values": "parses_the_comma_separated_opt_in_values",
-    "defaults to stable conventions when env var is empty": "uses_the_stable_conventions_by_default",
-    "returns undefined when no span is active": {
-      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
-    },
-    "returns undefined for a non-recording active span": {
-      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
-    },
-    "returns undefined for a recording span with an invalid (all-zeros) context": {
-      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
-    },
-    "returns the context for a recording span with a valid context": {
-      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form; the valid path is covered by `the_extract_span_links_the_span_that_scheduled_it`"
-    }
+    "defaults to stable conventions when env var is empty": "uses_the_stable_conventions_by_default"
   },
   "strands-ts/src/memory/__tests__/memory-tracing.test.ts": {
     "ends the inject span and rethrows when search throws": {
