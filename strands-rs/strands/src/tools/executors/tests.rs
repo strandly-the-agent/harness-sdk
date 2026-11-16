@@ -829,3 +829,122 @@ const _: () = {
     assert_send_sync::<ToolExecutor>();
     assert_send_sync::<ToolExecutionInput>();
 };
+
+/// A tool that fails its first `failures` calls with `message`, then returns `Success`.
+fn failing_tool(name: &'static str, failures: usize, message: &'static str) -> (Arc<dyn Tool>, Arc<AtomicUsize>) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let tool_calls = Arc::clone(&calls);
+    let tool = FunctionTool::new(name, "test tool", move |_input, _context| {
+        let call = tool_calls.fetch_add(1, Ordering::SeqCst);
+        async move {
+            if call < failures {
+                Err(ToolError::msg(message))
+            } else {
+                Ok("Success")
+            }
+        }
+    });
+    (Arc::new(tool), calls)
+}
+
+// `agent.hook.test.ts`: a failed call is retried when the hook sees `event.error` and asks.
+#[tokio::test]
+async fn retries_tool_call_when_hook_sets_retry() {
+    for executor in [ToolExecutor::default(), SequentialToolExecutor::new().into()] {
+        let (tool, tool_calls) = failing_tool("retryableTool", 1, "First attempt failed");
+        let fixture = fixture(vec![tool]);
+        let hook_calls = Arc::new(AtomicUsize::new(0));
+        let calls = Arc::clone(&hook_calls);
+        fixture.hooks.add_hook(move |event: &mut AfterToolCallEvent| {
+            if calls.fetch_add(1, Ordering::SeqCst) == 0 && event.error().is_some() {
+                event.set_retry(true);
+            }
+        });
+
+        let (_, batch) = run(executor, fixture.input(vec![tool_use("retryableTool", "tool-1")])).await;
+
+        assert_eq!(batch.results, [success("tool-1", "Success")]);
+        assert_eq!(tool_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(hook_calls.load(Ordering::SeqCst), 2);
+    }
+}
+
+// `agent.hook.test.ts`: a failed call runs once when no hook asks for a retry.
+#[tokio::test]
+async fn does_not_retry_tool_call_when_retry_is_not_set() {
+    for executor in [ToolExecutor::default(), SequentialToolExecutor::new().into()] {
+        let (tool, tool_calls) = failing_tool("failingTool", usize::MAX, "Tool failed");
+        let fixture = fixture(vec![tool]);
+
+        let (labels, batch) = run(executor, fixture.input(vec![tool_use("failingTool", "tool-1")])).await;
+
+        assert_eq!(batch.results, [error("tool-1", "Error: Tool failed")]);
+        assert_eq!(tool_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(labels, ["before:tool-1", "after:tool-1", "result:tool-1"]);
+    }
+}
+
+// `agent.hook.test.ts`: the cancelled tool never runs and its sibling still succeeds.
+#[tokio::test]
+async fn cancels_only_specific_tools_when_before_tool_call_event_selectively_cancels() {
+    for executor in [ToolExecutor::default(), SequentialToolExecutor::new().into()] {
+        let executed: Arc<Mutex<Vec<&str>>> = Arc::default();
+        let recording_tool = |name: &'static str, text: &'static str| -> Arc<dyn Tool> {
+            let executed = Arc::clone(&executed);
+            Arc::new(FunctionTool::new(name, "test tool", move |_input, _context| {
+                executed.lock().unwrap().push(name);
+                async move { Ok::<_, ToolError>(text) }
+            }))
+        };
+        let fixture = fixture(vec![
+            recording_tool("allowedTool", "Allowed"),
+            recording_tool("blockedTool", "Blocked"),
+        ]);
+        fixture.hooks.add_hook(|event: &mut BeforeToolCallEvent| {
+            if event.tool_use().name() == "blockedTool" {
+                event.set_cancel("This tool is blocked");
+            }
+        });
+        let after: Arc<Mutex<Vec<ToolResultBlock>>> = Arc::default();
+        let results = Arc::clone(&after);
+        fixture.hooks.add_hook(move |event: &mut AfterToolCallEvent| {
+            results.lock().unwrap().push(event.result().clone());
+        });
+
+        let (_, batch) = run(
+            executor,
+            fixture.input(vec![tool_use("allowedTool", "tool-1"), tool_use("blockedTool", "tool-2")]),
+        )
+        .await;
+
+        let expected = [
+            success("tool-1", "Allowed"),
+            error("tool-2", "This tool is blocked"),
+        ];
+        assert_eq!(*executed.lock().unwrap(), ["allowedTool"]);
+        assert_eq!(batch.results, expected);
+        let mut after = after.lock().unwrap().clone();
+        after.sort_by(|a, b| a.tool_use_id().cmp(b.tool_use_id()));
+        assert_eq!(after, expected);
+    }
+}
+
+// `agent.concurrent.test.ts`: an unknown tool name fails alone, in source order.
+#[tokio::test]
+async fn handles_a_hallucinated_tool_name_in_a_batch_without_affecting_siblings() {
+    let fixture = fixture(vec![text_tool("toolA", "ran")]);
+
+    let (_, batch) = run(
+        ConcurrentToolExecutor::new(),
+        fixture.input(vec![tool_use("toolA", "a"), tool_use("unknownTool", "b")]),
+    )
+    .await;
+
+    assert_eq!(
+        batch.results,
+        [
+            success("a", "ran"),
+            error("b", "Tool 'unknownTool' not found in registry"),
+        ]
+    );
+}

@@ -677,6 +677,21 @@ mod input {
     }
 
     #[tokio::test]
+    async fn reflects_conversation_history_after_invoke() {
+        let mut agent = test_agent(mock(vec![vec![text("Response")]]));
+        agent.invoke("Hello").await.unwrap();
+        let history: Vec<_> = agent
+            .messages()
+            .iter()
+            .map(|message| (message.role(), texts(message)))
+            .collect();
+        assert_eq!(
+            history,
+            [(Role::User, vec!["Hello"]), (Role::Assistant, vec!["Response"])]
+        );
+    }
+
+    #[tokio::test]
     async fn content_blocks_become_one_user_message() {
         let mut agent = test_agent(mock(vec![vec![text("ok")]]));
         agent.invoke(vec![text("a"), text("b")]).await.unwrap();
@@ -1469,6 +1484,55 @@ mod hooks {
             assert_eq!(agent.messages().len(), 1);
             assert_eq!(texts(&agent.messages()[0]), [expected]);
         }
+    }
+
+    #[tokio::test]
+    async fn cancels_model_call_with_default_message_when_cancel_is_true() {
+        let model = mock(vec![vec![text("Hello")]]);
+        let mut agent = test_agent(model.clone());
+        agent.add_hook(|event: &mut BeforeModelCallEvent<'_>| {
+            event.set_cancel(crate::hooks::Cancel::Requested);
+        });
+        let result = agent.invoke("Test").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert_eq!(
+            result.last_message().content(),
+            [text("model call denied by hook")]
+        );
+        assert!(model.requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn allows_adding_hooks_after_agent_creation_via_add_hook() {
+        let mut agent = test_agent(mock(vec![vec![text("Hello")]]));
+        let invocations: Arc<Mutex<Vec<String>>> = Arc::default();
+        let record = Arc::clone(&invocations);
+        agent.add_hook(move |event: &mut BeforeInvocationEvent<'_>| {
+            let messages: Vec<_> = event
+                .messages()
+                .iter()
+                .map(|message| (message.role(), texts(message)))
+                .collect();
+            record.lock().unwrap().push(format!(
+                "before: messages={messages:?}, empty state={}",
+                event.invocation_state().is_empty()
+            ));
+        });
+        let record = Arc::clone(&invocations);
+        agent.add_hook(move |event: &mut AfterInvocationEvent<'_>| {
+            record.lock().unwrap().push(format!(
+                "after: empty state={}",
+                event.invocation_state().is_empty()
+            ));
+        });
+        agent.invoke("Hi").await.unwrap();
+        assert_eq!(
+            *invocations.lock().unwrap(),
+            [
+                r#"before: messages=[(User, ["Hi"])], empty state=true"#,
+                "after: empty state=true"
+            ]
+        );
     }
 
     #[tokio::test]
