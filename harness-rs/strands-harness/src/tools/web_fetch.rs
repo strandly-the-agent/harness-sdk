@@ -30,6 +30,7 @@ const TIMEOUT_SECONDS: u64 = 30;
 const MAX_BYTES: usize = 5 * 1024 * 1024;
 const MAX_CHARS: usize = 50_000;
 const CACHE_TTL: Duration = Duration::from_secs(15 * 60);
+const MAX_CACHE_ENTRIES: usize = 64;
 // The characters RFC 3986 allows anywhere in a URL; anything else (whitespace, quotes, control
 // characters, non-ASCII) is rejected before the URL reaches a shell or a socket.
 const URL_PUNCTUATION: &str = "-._~:/?#[]@!$&'()*+,;=%";
@@ -335,6 +336,20 @@ struct CacheEntry {
     fetched: Fetched,
 }
 
+/// Caches `fetched` for `url`, dropping expired entries and, at the cap, the soonest to expire.
+fn remember(cache: &mut HashMap<String, CacheEntry>, url: String, fetched: Fetched, now: Instant) {
+    cache.retain(|_, entry| entry.expires > now);
+    while cache.len() >= MAX_CACHE_ENTRIES {
+        let oldest = cache.iter().min_by_key(|(_, entry)| entry.expires);
+        let Some(oldest) = oldest.map(|(url, _)| url.clone()) else {
+            break;
+        };
+        cache.remove(&oldest);
+    }
+    let expires = now + CACHE_TTL;
+    cache.insert(url, CacheEntry { expires, fetched });
+}
+
 struct WebFetch {
     model: Arc<dyn Model>,
     transport: WebFetchTransport,
@@ -383,14 +398,9 @@ impl WebFetch {
                     Ok(fetched) => fetched,
                     Err(message) => return Ok(format!("Failed to fetch {}: {message}", input.url).into()),
                 };
-                let entry = CacheEntry {
-                    expires: Instant::now() + CACHE_TTL,
-                    fetched: fetched.clone(),
-                };
-                self.cache
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .insert(input.url.clone(), entry);
+                let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+                remember(&mut cache, input.url.clone(), fetched.clone(), Instant::now());
+                drop(cache);
                 fetched
             }
         };

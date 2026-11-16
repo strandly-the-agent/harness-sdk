@@ -793,3 +793,24 @@ fn validate_url_gives_the_typescript_reason_for_each_malformed_form() {
         Ok("HTTPS://EXAMPLE.com")
     );
 }
+
+/// Review finding correctness-a7: the URL cache drops expired entries and is capped.
+#[test]
+fn the_url_cache_drops_expired_entries_and_is_capped() {
+    let page = || super::Fetched {
+        resolved_url: String::new(),
+        text: String::new(),
+    };
+    let start = tokio::time::Instant::now();
+    let mut cache = std::collections::HashMap::new();
+    super::remember(&mut cache, "old".to_owned(), page(), start);
+    let later = start + super::CACHE_TTL;
+    super::remember(&mut cache, "new".to_owned(), page(), later);
+    assert_eq!(cache.keys().collect::<Vec<_>>(), ["new"]);
+    for index in 0..super::MAX_CACHE_ENTRIES {
+        let now = later + std::time::Duration::from_secs(1 + index as u64);
+        super::remember(&mut cache, format!("page-{index}"), page(), now);
+    }
+    assert_eq!(cache.len(), super::MAX_CACHE_ENTRIES);
+    assert!(!cache.contains_key("new"));
+}
