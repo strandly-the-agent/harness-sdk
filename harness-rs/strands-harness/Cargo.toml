@@ -36,6 +36,9 @@ indexmap.workspace = true
 jiff.workspace = true
 monty.workspace = true
 regex.workspace = true
+reqwest.workspace = true
+base64.workspace = true
+encoding_rs.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

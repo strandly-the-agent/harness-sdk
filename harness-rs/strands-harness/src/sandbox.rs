@@ -1,8 +1,4 @@
 //! Sandbox helpers shared by the harness tools and plugins (TS `sandbox.ts`).
-#![expect(
-    dead_code,
-    reason = "used once web_fetch and the environment plugin land; drop this when they have"
-)]
 
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
