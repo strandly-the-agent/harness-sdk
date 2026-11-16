@@ -146,20 +146,24 @@ impl LocalFileStorage {
         format!("{}/{key}", self.base())
     }
 
+    /// Writes a temp file and renames it over `path` in one blocking task, which runs to the end
+    /// (and removes its temp file on failure) even when the caller is dropped mid-write.
     async fn write_host(path: &str, data: &[u8]) -> std::io::Result<()> {
-        if let Some(parent) = Path::new(path).parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        let tmp_path = format!("{path}{TMP_MARKER}_{}", uuid::Uuid::now_v7());
-        let result = async {
-            tokio::fs::write(&tmp_path, data).await?;
-            tokio::fs::rename(&tmp_path, path).await
-        }
-        .await;
-        if result.is_err() {
-            let _ = tokio::fs::remove_file(&tmp_path).await;
-        }
-        result
+        let path = path.to_owned();
+        let data = data.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Some(parent) = Path::new(&path).parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let tmp_path = format!("{path}{TMP_MARKER}_{}", uuid::Uuid::now_v7());
+            let result = std::fs::write(&tmp_path, &data).and_then(|()| std::fs::rename(&tmp_path, &path));
+            if result.is_err() {
+                let _ = std::fs::remove_file(&tmp_path);
+            }
+            result
+        })
+        .await
+        .map_err(std::io::Error::other)?
     }
 
     async fn list_host(dir: String, key_prefix: String) -> Result<Vec<String>> {

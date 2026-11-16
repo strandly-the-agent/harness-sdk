@@ -374,3 +374,27 @@ fn the_base_dir_defaults_to_dot_strands_and_collapses_slashes() {
     assert_eq!(LocalFileStorage::new("/tmp//a///b/").base_dir(), "/tmp/a/b");
     assert_eq!(LocalFileStorage::new("/").base_dir(), "/");
 }
+
+// No TS case: a dropped future is Rust-only; the temp write and the rename are one blocking task.
+#[test]
+fn a_write_dropped_after_its_first_poll_finishes_and_leaves_no_temp_file() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (_dir, base_dir, storage) = setup();
+        {
+            let mut write = Box::pin(storage.write("session/key.json", b"data"));
+            assert!(futures::poll!(write.as_mut()).is_pending());
+        }
+        // The only blocking thread runs this after the dropped write's task.
+        tokio::task::spawn_blocking(|| ()).await.unwrap();
+        let names: Vec<String> = std::fs::read_dir(format!("{base_dir}/session"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["key.json"]);
+        assert_eq!(storage.read("session/key.json").await.unwrap(), Some(b"data".to_vec()));
+    });
+}
