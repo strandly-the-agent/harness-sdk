@@ -17,6 +17,7 @@ async fn build(config: &JsonValue, base_dir: &Path, env: EnvLookup) -> Result<Ag
     let seams = Seams {
         base_dir: Some(base_dir.to_owned()),
         env,
+        on_resolve_model: None,
     };
     create_harness_with(options, seams).await
 }

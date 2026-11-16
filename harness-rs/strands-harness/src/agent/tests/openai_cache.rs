@@ -314,6 +314,7 @@ async fn keeps_durable_checkpoints_ahead_of_changing_todos_environment_and_tool_
     let seams = Seams {
         base_dir: Some(dir.path().to_owned()),
         env: server.env(&[]),
+        on_resolve_model: None,
     };
     // No `caching` option: the default opts a model that takes cache points in.
     let mut agent = create_harness_with(options, seams).await.unwrap();
@@ -475,6 +476,7 @@ async fn sends_the_session_cache_key_for_when_caching_is() {
             let seams = Seams {
                 base_dir: Some(dir.path().to_owned()),
                 env: server.env(&[]),
+                on_resolve_model: None,
             };
             let mut agent = create_harness_with(options, seams).await.unwrap();
             agent.invoke("Hello").await.unwrap();
