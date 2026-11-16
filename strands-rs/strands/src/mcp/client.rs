@@ -374,6 +374,31 @@ pub(crate) struct ProgressRoutes {
 
 const EARLY_PROGRESS_LIMIT: usize = 4096;
 
+/// A `tools/call` round between its send and its response. Dropping it removes the progress
+/// route, and tells the server to cancel a request that is still open (a dropped call future).
+struct OpenCall<'a> {
+    inner: &'a Inner,
+    peer: &'a Peer<RoleClient>,
+    /// The request id until the call has its response or has sent its own cancel.
+    id: Option<rmcp::model::RequestId>,
+    token: ProgressToken,
+}
+
+impl Drop for OpenCall<'_> {
+    fn drop(&mut self) {
+        lock(&self.inner.progress).routes.remove(&self.token);
+        let Some(id) = self.id.take() else { return };
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let peer = self.peer.clone();
+        runtime.spawn(async move {
+            let params = rmcp::model::CancelledNotificationParam::new(Some(id), None);
+            let _sent = peer.notify_cancelled(params).await;
+        });
+    }
+}
+
 /// Counts one call as registering until dropped; the held notifications go when none is left.
 struct Registering<'a>(&'a Mutex<ProgressRoutes>);
 
@@ -1041,10 +1066,15 @@ impl McpClient {
         }
         let registering = Registering::new(&self.inner.progress);
         let handle = peer.send_request_with_option(request, request_options).await?;
-        let id = handle.id.clone();
-        let token = handle.progress_token.clone();
+        let mut open = OpenCall {
+            inner: &self.inner,
+            peer,
+            id: Some(handle.id.clone()),
+            token: handle.progress_token.clone(),
+        };
         if let Some(callback) = progress {
-            self.inner.register_progress(token.clone(), Arc::clone(callback));
+            self.inner
+                .register_progress(open.token.clone(), Arc::clone(callback));
         }
         drop(registering);
         let response = match &options.cancel_signal {
@@ -1053,14 +1083,15 @@ impl McpClient {
                 tokio::select! {
                     response = handle.await_response() => response,
                     () = signal.cancelled() => {
-                        lock(&self.inner.progress).routes.remove(&token);
-                        notify_cancelled(peer, id, signal).await;
+                        if let Some(id) = open.id.take() {
+                            notify_cancelled(peer, id, signal).await;
+                        }
                         return Err(abort_error(signal));
                     }
                 }
             }
         };
-        lock(&self.inner.progress).routes.remove(&token);
+        open.id = None;
         Ok(response?)
     }
 

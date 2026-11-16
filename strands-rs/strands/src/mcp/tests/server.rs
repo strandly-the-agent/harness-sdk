@@ -34,6 +34,8 @@ pub(crate) struct TestServer {
     pub(crate) instructions: Option<String>,
     pub(crate) list_calls: Arc<AtomicUsize>,
     pub(crate) calls: Arc<Mutex<Vec<CallToolRequestParams>>>,
+    /// The `slow` calls the client cancelled.
+    pub(crate) cancelled: Arc<AtomicUsize>,
     /// `expires_in` of the tokens the HTTP test server's `/token` endpoint grants.
     pub(crate) token_lifetime_secs: u64,
 }
@@ -77,6 +79,7 @@ impl Default for TestServer {
             instructions: Some("Use the echo tool.".to_owned()),
             list_calls: Arc::default(),
             calls: Arc::default(),
+            cancelled: Arc::default(),
             token_lifetime_secs: 3600,
         }
     }
@@ -338,6 +341,11 @@ impl ServerHandler for TestServer {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         self.calls.lock().expect("calls").push(request.clone());
+        if request.name == "slow" {
+            context.ct.cancelled().await;
+            self.cancelled.fetch_add(1, Ordering::SeqCst);
+            return Ok(text("cancelled").into());
+        }
         if request.name == "elicit_mrtr" {
             return Ok(input_required(&request));
         }

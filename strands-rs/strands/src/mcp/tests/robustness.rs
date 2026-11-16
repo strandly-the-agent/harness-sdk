@@ -480,3 +480,50 @@ async fn agent_shutdown_does_not_disconnect_the_mcp_client() {
     };
     assert_eq!(*result.status(), crate::types::tools::ToolResultStatus::Success);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_dropped_call_cancels_the_request_and_frees_its_progress_route() {
+    let server = TestServer::default();
+    let client = server.client();
+    let slow = tool_named(&client, "slow").await;
+    let callback: McpProgressCallback = Arc::new(|_| {});
+    for round in 1..=3 {
+        let options = McpCallToolOptions {
+            progress_callback: Some(Arc::clone(&callback)),
+            ..Default::default()
+        };
+        let mut call = Box::pin(client.call_tool_with(&slow, json!({}), options));
+        tokio::select! {
+            biased;
+            _ = &mut call => panic!("the slow tool answered"),
+            () = server::eventually(|| server.calls.lock().expect("calls").len() == round) => {}
+        }
+        drop(call);
+        server::eventually(|| server.cancelled.load(Ordering::SeqCst) == round).await;
+    }
+    assert_eq!(Arc::strong_count(&callback), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_dropped_invocation_cancels_its_mcp_tool_call() {
+    let server = TestServer::default();
+    let client = server.client();
+    let model = MockMessageModel::new();
+    model.add_turn(vec![ContentBlock::from(ToolUseBlock::new("slow", "t1", json!({})))]);
+    model.add_turn(vec![TextBlock::new("done").into()]);
+    let mut agent = Agent::builder()
+        .model(model)
+        .tools(vec![ToolSource::from(client.clone())])
+        .printer(false)
+        .build()
+        .expect("agent");
+    {
+        let mut turn = Box::pin(agent.invoke("go"));
+        tokio::select! {
+            biased;
+            _ = &mut turn => panic!("the slow tool answered"),
+            () = server::eventually(|| !server.calls.lock().expect("calls").is_empty()) => {}
+        }
+    }
+    server::eventually(|| server.cancelled.load(Ordering::SeqCst) == 1).await;
+}
