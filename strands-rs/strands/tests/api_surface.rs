@@ -4,7 +4,9 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
-use strands::agent::{AgentBuilder, AgentMetadata, AgentMetadataBuilder, agent_builder, agent_metadata_builder};
+use strands::agent::{
+    AgentBuilder, AgentMetadata, AgentMetadataBuilder, agent_builder, agent_metadata_builder,
+};
 use strands::experimental::context_manager::{
     ContextManagerConfig, ContextManagerConfigBuilder, OffloadConditions, OffloadConditionsBuilder,
     StashConfig, StashConfigBuilder, SummarizeConfig, SummarizeConfigBuilder, TruncateConfig,
@@ -424,7 +426,10 @@ fn a_model_impl_and_ordered_maps_need_only_strands_paths() {
 #[test]
 fn builders_implement_debug() {
     let agent = format!("{:?}", Agent::builder().name("worker"));
-    assert!(agent.starts_with("AgentBuilder") && agent.contains("worker"), "{agent}");
+    assert!(
+        agent.starts_with("AgentBuilder") && agent.contains("worker"),
+        "{agent}"
+    );
     let _ = format!(
         "{:?}",
         (
@@ -437,17 +442,26 @@ fn builders_implement_debug() {
     );
     // A builder whose members hold callbacks, trait objects or keys prints its name only.
     assert_eq!(
-        format!("{:?}", strands::session::SessionManagerConfig::builder().session_id("s")),
+        format!(
+            "{:?}",
+            strands::session::SessionManagerConfig::builder().session_id("s")
+        ),
         "SessionManagerConfigBuilder { .. }"
     );
     #[cfg(feature = "openai")]
     assert_eq!(
-        format!("{:?}", strands::models::OpenAIModel::builder().api_key("test-key")),
+        format!(
+            "{:?}",
+            strands::models::OpenAIModel::builder().api_key("test-key")
+        ),
         "OpenAIModelBuilder { .. }"
     );
     #[cfg(feature = "anthropic")]
     assert_eq!(
-        format!("{:?}", strands::models::AnthropicModel::builder().api_key("test-key")),
+        format!(
+            "{:?}",
+            strands::models::AnthropicModel::builder().api_key("test-key")
+        ),
         "AnthropicModelBuilder { .. }"
     );
 }

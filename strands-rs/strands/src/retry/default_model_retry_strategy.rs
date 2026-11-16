@@ -40,7 +40,10 @@ pub struct DefaultModelRetryStrategyOptions {
     pub is_retryable: Option<RetryablePredicate>,
 }
 
-opaque_builder_debug!(DefaultModelRetryStrategyOptionsBuilder, default_model_retry_strategy_options_builder);
+opaque_builder_debug!(
+    DefaultModelRetryStrategyOptionsBuilder,
+    default_model_retry_strategy_options_builder
+);
 
 impl Default for DefaultModelRetryStrategyOptions {
     fn default() -> Self {

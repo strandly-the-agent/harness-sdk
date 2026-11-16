@@ -50,7 +50,10 @@ pub struct FileMemoryExtractionConfig {
     pub system_prompt: Option<String>,
 }
 
-opaque_builder_debug!(FileMemoryExtractionConfigBuilder, file_memory_extraction_config_builder);
+opaque_builder_debug!(
+    FileMemoryExtractionConfigBuilder,
+    file_memory_extraction_config_builder
+);
 
 impl fmt::Debug for FileMemoryExtractionConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
