@@ -1148,7 +1148,7 @@ mod baggage_propagation {
     }
 }
 
-/// Rust-only: TS has no tracer case for an interrupted cycle. The text is TS `InterruptError`'s.
+// No TS case: TS has no tracer case for an interrupted cycle. The text is TS `InterruptError`'s.
 #[tokio::test(flavor = "current_thread")]
 async fn ends_the_cycle_span_with_the_interrupt_error_when_a_before_tool_call_hook_interrupts() {
     let model = MockMessageModel::new();
@@ -1174,7 +1174,8 @@ async fn ends_the_cycle_span_with_the_interrupt_error_when_a_before_tool_call_ho
     assert_eq!(cycles[0].status, Status::error("Interrupt raised: confirm_tool"));
 }
 
-/// PROMPT.md section 10: a nested agent's span parents under the tool span that runs it.
+// No TS case: TS has no tracer case for a nested agent, whose span parents under the tool span
+// that runs it.
 #[tokio::test(flavor = "current_thread")]
 async fn nested_agent_spans_parent_under_the_tool_span_that_runs_the_agent() {
     let child_model = MockMessageModel::new();

@@ -506,8 +506,8 @@ async fn cannot_load_a_snapshot_while_background_tasks_are_still_tracked() {
     );
 }
 
-/// Rust-only: the run's own tracer carries the agent's `trace_attributes` (TS
-/// `tracer: new Tracer(config?.traceAttributes)` in `agent/agent.ts`).
+// No TS case: the run's own tracer carries the agent's `trace_attributes` (TS
+// `tracer: new Tracer(config?.traceAttributes)` in `agent/agent.ts`).
 #[cfg(feature = "otel")]
 mod rust_only {
     use super::*;

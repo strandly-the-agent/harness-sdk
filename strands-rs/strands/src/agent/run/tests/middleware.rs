@@ -1369,8 +1369,8 @@ mod phases {
     }
 }
 
-/// Rust-only (DIVERGENCES.md, "A stage stream that ends without a result"): a TS generator
-/// always returns, a Rust stream can end without its result item.
+// No TS case: a TS generator always returns, a Rust stream can end without its result item
+// (DIVERGENCES.md, "A stage stream that ends without a result").
 mod chain_without_result {
     use super::*;
 

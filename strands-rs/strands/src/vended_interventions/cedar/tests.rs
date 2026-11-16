@@ -139,8 +139,8 @@ fn inline(policies: &str) -> CedarAuthorizationConfig {
 mod real_cedar_evaluation {
     use super::*;
 
-    /// Rust-only: the tool results the model receives for a permitted and a forbidden call equal
-    /// the ones of the TS run in the conformance fixture `model_requests/cedar_run.json`.
+    // No TS case: the tool results the model receives for a permitted and a forbidden call equal
+    // the ones of the TS run in the conformance fixture `model_requests/cedar_run.json`.
     #[tokio::test]
     async fn the_model_receives_the_ts_results_for_a_permitted_and_a_forbidden_call() {
         let model = Arc::new(MockMessageModel::new());
