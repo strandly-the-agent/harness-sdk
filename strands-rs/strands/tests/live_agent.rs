@@ -26,6 +26,8 @@ use strands::agent::AgentAsToolOptions;
 use strands::hooks::BeforeToolCallEvent;
 use strands::interrupt::InterruptParams;
 use strands::models::bedrock::{BedrockModel, BedrockModelConfig, BedrockModelOptions};
+use strands::types::media::{DocumentBlock, DocumentSource, ImageBlock};
+use strands::types::messages::{ContentBlock, TextBlock};
 use strands::{Agent, AgentResult, CancelOptions, StopReason, ToolContext, ToolError, tool};
 
 /// Performs basic arithmetic operations. Always use this tool for math.
@@ -164,6 +166,41 @@ async fn live_maintains_message_history_and_conversation_context() {
         .collect();
     assert_eq!(roles, ["user", "assistant", "user", "assistant"]);
     assert!(last_assistant_text(&messages).contains("alice"));
+    agent.shutdown().await.unwrap();
+}
+
+/// TS cases: `handles multiple media blocks in single request` and `accepts ContentBlock[]
+/// input`. There is no tool in this exchange, so the evidence that both blocks reached the model
+/// is its answer: the animal named only in the document and the colour of the image.
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_handles_multiple_media_blocks_in_single_request() {
+    if !credentials_available().await {
+        return;
+    }
+    let image = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/yellow.png")).unwrap();
+    let content: Vec<ContentBlock> = vec![
+        DocumentBlock::new(
+            "test-document",
+            "txt",
+            DocumentSource::Text("The animal described here is a ZEBRA.".into()),
+        )
+        .into(),
+        ImageBlock::new("png", image).into(),
+        TextBlock::new("What animal is in the document and what color is the image? Answer briefly.").into(),
+    ];
+    let mut agent = Agent::builder()
+        .model(bedrock(300))
+        .printer(false)
+        .build()
+        .unwrap();
+    let result = agent.invoke(content).await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert!(result.metrics().accumulated_usage().input_tokens() > 0);
+    let messages = trace(&agent);
+    assert_eq!(messages[0]["content"].as_array().unwrap().len(), 3);
+    let answer = last_assistant_text(&messages);
+    assert!(answer.contains("zebra") && answer.contains("yellow"), "{answer}");
     agent.shutdown().await.unwrap();
 }
 
