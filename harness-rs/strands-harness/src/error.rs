@@ -69,11 +69,6 @@ pub enum HarnessError {
         /// The provider prefix of the main model string.
         provider: String,
     },
-}
-
-/// `text` as TS `JSON.stringify` prints it.
-fn json_string(text: &str) -> String {
-    serde_json::Value::from(text).to_string()
     /// The `subagent` tool's `tools` axis is a `Choice` with no options.
     #[error("tools=Choice([]) offers no options; use Fixed([]) for a toolless child, or Inherit().")]
     SubagentToolsChoiceEmpty,
@@ -93,6 +88,12 @@ fn json_string(text: &str) -> String {
         value: String,
         /// The preset names, comma-separated.
         valid: String,
+    },
+}
+
+/// `text` as TS `JSON.stringify` prints it.
+fn json_string(text: &str) -> String {
+    serde_json::Value::from(text).to_string()
 }
 
 /// The harness result type.

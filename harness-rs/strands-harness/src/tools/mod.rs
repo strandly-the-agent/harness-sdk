@@ -10,16 +10,17 @@ mod web_search;
 #[expect(unused_imports, reason = "used by builtin_tools, which lands separately")]
 pub(crate) use file_tools::{MakeReadOptions, make_read};
 pub use file_tools::{edit, read, write};
-#[expect(unused_imports, reason = "used by builtin_tools, which lands separately")]
-pub(crate) use shell::make_shell;
-pub use web_fetch::{MakeWebFetchOptions, make_web_fetch};
-#[cfg(feature = "mcp")]
-pub use web_search::{exa_web_search, make_exa_web_search};
 pub use programmatic_tool_caller::{
     DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, MakeProgrammaticToolCallerOptions,
     make_programmatic_tool_caller, programmatic_tool_caller,
+};
+#[expect(unused_imports, reason = "used by builtin_tools, which lands separately")]
+pub(crate) use shell::make_shell;
 pub use subagent::{
     AgentBuilder, AgentSpec, CONTEXT_MODES, Choice, ChoiceOption, ContextAxis, ContextMode, Fixed,
     GENERALIST, GENERALIST_INSTRUCTIONS, Inherit, InstructionsMode, MakeSubagentOptions, McpServersMode,
     ModelMode, Open, Preset, PresetOptions, ToolsMode, make_subagent,
 };
+pub use web_fetch::{MakeWebFetchOptions, make_web_fetch};
+#[cfg(feature = "mcp")]
+pub use web_search::{exa_web_search, make_exa_web_search};
