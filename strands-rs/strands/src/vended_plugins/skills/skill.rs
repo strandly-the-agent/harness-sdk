@@ -548,14 +548,12 @@ impl BlockScalar {
         } else {
             content.join("\n")
         };
-        match self.chomp {
-            Some('-') => {}
-            Some(_) => {
-                text.push_str(&"\n".repeat(trailing_blank.saturating_add(usize::from(!content.is_empty()))))
-            }
-            None if content.is_empty() => {}
-            None => text.push('\n'),
-        }
+        let final_breaks = match self.chomp {
+            Some('-') => 0,
+            Some(_) => trailing_blank.saturating_add(usize::from(!content.is_empty())),
+            None => usize::from(!content.is_empty()),
+        };
+        text.push_str(&"\n".repeat(final_breaks));
         JsonValue::String(text)
     }
 }
@@ -572,13 +570,14 @@ fn fold_lines(lines: &[&str]) -> String {
             continue;
         }
         let indented = |line: &str| line.starts_with([' ', '\t']);
-        match previous {
-            None => text.push_str(&"\n".repeat(blank)),
-            Some(previous) if indented(previous) || indented(line) => {
-                text.push_str(&"\n".repeat(blank.saturating_add(1)));
-            }
-            Some(_) if blank == 0 => text.push(' '),
-            Some(_) => text.push_str(&"\n".repeat(blank)),
+        let breaks = match previous {
+            Some(previous) if indented(previous) || indented(line) => blank.saturating_add(1),
+            _ => blank,
+        };
+        if breaks == 0 && previous.is_some() {
+            text.push(' ');
+        } else {
+            text.push_str(&"\n".repeat(breaks));
         }
         text.push_str(line);
         previous = Some(line);
