@@ -477,7 +477,7 @@ async fn baggage_attributes_are_merged_into_the_active_baggage_for_every_span() 
     let mut agent = AgentConfig::builder()
         .model(Arc::new(model) as Arc<dyn crate::models::model::Model>)
         .tools(vec![weather_tool()])
-        .baggage_attributes([("tenant.id".to_owned(), "acme".to_owned())].into())
+        .baggage_attributes([("tenant.id".to_owned(), "acme".to_owned())])
         .build()
         .expect("a valid agent");
     agent.invoke("Weather in Porto?").await.expect("the run succeeds");

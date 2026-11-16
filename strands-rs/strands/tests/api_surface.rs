@@ -20,6 +20,7 @@ use strands::storage::{
     InMemoryStorageConfig, InMemoryStorageConfigBuilder, LocalFileStorageConfig,
     LocalFileStorageConfigBuilder, in_memory_storage_config_builder, local_file_storage_config_builder,
 };
+use strands::telemetry::AttributeValue;
 use strands::testing::MockMessageModel;
 use strands::tools::{FunctionTool, ToolSource};
 use strands::types::agent::InvokeLimits;
@@ -239,4 +240,15 @@ fn a_helper_can_name_the_storage_session_and_context_manager_config_builders() {
     let _: ContextManagerConfigBuilder<context_manager_config_builder::Empty> =
         ContextManagerConfig::builder();
     let _: StashConfigBuilder<stash_config_builder::Empty> = StashConfig::builder();
+}
+
+#[test]
+fn trace_and_baggage_attributes_take_plain_pairs() {
+    let agent = Agent::builder()
+        .model(model(&[]))
+        .trace_attributes([("session.id".to_owned(), AttributeValue::from("abc"))])
+        .baggage_attributes([("tenant".to_owned(), "a".to_owned())])
+        .printer(false)
+        .build();
+    assert!(agent.is_ok());
 }

@@ -132,14 +132,10 @@ async fn live_telemetry_records_the_span_hierarchy_attributes_and_usage_of_a_too
         .name("telemetry_agent")
         .system_prompt("Use the time_tool to answer time questions.")
         .tools([TimeTool])
-        .trace_attributes(
-            [(
-                "deployment.tier".to_owned(),
-                AttributeValue::Str("live-test".into()),
-            )]
-            .into_iter()
-            .collect(),
-        )
+        .trace_attributes([(
+            "deployment.tier".to_owned(),
+            AttributeValue::Str("live-test".into()),
+        )])
         .printer(false)
         .build()
         .unwrap();
