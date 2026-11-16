@@ -18,6 +18,8 @@ use strands::types::json::{JsonObject, JsonValue};
 
 pub(crate) use self::normalize::normalize_harness_agent_config;
 pub use self::options::harness_agent_options_from_config;
+#[cfg(test)]
+pub(crate) use self::options::options_from_config;
 use crate::defaults::DEFAULT_MODEL;
 use crate::error::Result;
 use crate::types::{Effort, SessionConfig, Setting, WebFetchTransport};
