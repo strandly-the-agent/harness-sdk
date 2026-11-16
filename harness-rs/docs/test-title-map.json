@@ -67,22 +67,7 @@
   },
   "harness-ts/test/memory.test.ts": {
     "treats null as disabled": {
-      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
-    },
-    "passes a MemoryManager instance given as memory straight through": {
-      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
-    },
-    "lets a memoryManager escape hatch win over a memory config": {
-      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
-    },
-    "lets an explicit memoryManager win over the default": {
-      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
-    },
-    "honors a custom memory dir": {
-      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
-    },
-    "manages consumer memory stores under the harness policy instead of the default file store": {
-      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+      "gap": "TS-only: the typed `MemoryOption` has no null; `Off` is its only disabled value, covered by `attaches_no_memory_manager_when_memory_is_disabled` (P-1072)"
     }
   },
   "harness-ts/test/models.test.ts": {
@@ -103,6 +88,11 @@
     },
     "builds litellm with explicit caching and sets no cacheConfig": {
       "gap": "TS-only: Google, Ollama and LiteLLM are not Rust v0.1 providers (#60)"
+    }
+  },
+  "harness-ts/test/plugins/todos.test.ts": {
+    "throws on an unknown built-in plugin name": {
+      "gap": "TS-only: `builtin_plugins` is a list of the `BuiltinPluginName` enum, which cannot hold an unknown name; a portable config with one fails in `normalize_harness_agent_config` (P-1073)"
     }
   },
   "harness-ts/test/tools/programmatic-tool-caller.test.ts": {
