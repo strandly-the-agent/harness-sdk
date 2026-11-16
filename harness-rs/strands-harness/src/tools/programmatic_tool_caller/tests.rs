@@ -826,3 +826,44 @@ fn the_description_matches_the_ts_constant() {
         .collect();
     assert_eq!(DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, expected);
 }
+
+/// Not a TS case: memory that grows in small steps is bounded too, not only one large allocation.
+#[tokio::test]
+async fn stops_memory_that_grows_in_small_steps() {
+    let limits = Limits {
+        max_memory: 1024 * 1024,
+        max_duration: Duration::from_secs(20),
+        ..LIMITS
+    };
+    let call: HostCall = Arc::new(|_name, _input| async { Ok(json!("1")) }.boxed());
+    let (signal, _handle) = CancelSignal::new();
+    let code = "x = []\nwhile True:\n    x.append('a' * 1000)".to_owned();
+    let (_, end) = run_code(code, HashMap::new(), call, limits, None, &signal).await;
+    let RunEnd::Runtime(error) = end else {
+        panic!("expected a runtime error, got {end:?}");
+    };
+    assert!(error.to_string().contains("MemoryError"), "{error}");
+}
+
+/// Not a TS case: the suspension budget ends the run even when the code catches every exception.
+#[tokio::test]
+async fn stops_at_the_suspension_limit_past_the_code_s_exception_handlers() {
+    let limits = Limits {
+        max_suspensions: 20,
+        ..LIMITS
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&calls);
+    let call: HostCall = Arc::new(move |_name, _input| {
+        seen.fetch_add(1, Ordering::SeqCst);
+        async { Ok(json!("ok")) }.boxed()
+    });
+    let (signal, _handle) = CancelSignal::new();
+    let code = "while True:\n    try:\n        await bump()\n    except Exception:\n        pass".to_owned();
+    let (_, end) = run_code(code, functions(&["bump"]), call, limits, None, &signal).await;
+    let RunEnd::Runtime(error) = end else {
+        panic!("expected a runtime error, got {end:?}");
+    };
+    assert!(error.to_string().contains("suspension limit exceeded"), "{error}");
+    assert!(calls.load(Ordering::SeqCst) <= 20);
+}
