@@ -4,9 +4,11 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use futures::stream::BoxStream;
 use strands::experimental::context_manager::{ContextManager, ContextManagerConfig};
 use strands::interventions::InterventionHandler;
 use strands::models::Model;
+use strands::sandbox::{ExecuteOptions, ExecutionEvent, FileInfo, NotASandboxLocalEnvironment, Sandbox};
 use strands::testing::MockMessageModel;
 use strands::tools::FunctionTool;
 use strands::types::agent::LocalAgent;
@@ -552,6 +554,82 @@ async fn does_not_name_check_non_tool_entries_in_tools() {
     .await
     .unwrap();
     assert!(has_tool(&agent, "sample_tool"));
+}
+
+/// The local environment, vending two tools as `DockerSandbox` does in TS.
+struct VendingSandbox(NotASandboxLocalEnvironment);
+
+#[strands::async_trait]
+impl Sandbox for VendingSandbox {
+    fn execute_streaming<'a>(
+        &'a self,
+        command: &'a str,
+        options: ExecuteOptions,
+    ) -> BoxStream<'a, strands::Result<ExecutionEvent>> {
+        self.0.execute_streaming(command, options)
+    }
+
+    fn execute_code_streaming<'a>(
+        &'a self,
+        code: &'a str,
+        language: &'a str,
+        options: ExecuteOptions,
+    ) -> BoxStream<'a, strands::Result<ExecutionEvent>> {
+        self.0.execute_code_streaming(code, language, options)
+    }
+
+    async fn read_file(&self, path: &str) -> strands::Result<Vec<u8>> {
+        self.0.read_file(path).await
+    }
+
+    async fn write_file(&self, path: &str, content: &[u8]) -> strands::Result<()> {
+        self.0.write_file(path, content).await
+    }
+
+    async fn remove_file(&self, path: &str) -> strands::Result<()> {
+        self.0.remove_file(path).await
+    }
+
+    async fn list_files(&self, path: &str) -> strands::Result<Vec<FileInfo>> {
+        self.0.list_files(path).await
+    }
+
+    fn get_tools(&self) -> Vec<Arc<dyn Tool>> {
+        ["sandbox_shell", "sandbox_file_editor"]
+            .into_iter()
+            .map(|name| -> Arc<dyn Tool> {
+                Arc::new(FunctionTool::new(
+                    name,
+                    "A tool the sandbox vends.",
+                    |_input: JsonValue, _context| async move { Ok::<_, ToolError>("ok".to_owned()) },
+                ))
+            })
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn drops_sandbox_vended_tools() {
+    let sandbox = || SandboxSource::new(VendingSandbox(NotASandboxLocalEnvironment::new()));
+    // The SDK alone registers what the sandbox vends.
+    let mut plain = Agent::new(AgentConfig {
+        model: mock_options().model,
+        sandbox: Some(sandbox()),
+        ..Default::default()
+    })
+    .unwrap();
+    plain.initialize().await.unwrap();
+    assert!(has_tool(&plain, "sandbox_shell"));
+
+    let mut options = mock_options();
+    options.agent_config.sandbox = Some(sandbox());
+    let mut agent = harness(options).await.unwrap();
+    agent.initialize().await.unwrap();
+    for name in ["shell", "read", "write", "edit"] {
+        assert!(has_tool(&agent, name), "{name}");
+    }
+    assert!(!has_tool(&agent, "sandbox_shell"));
+    assert!(!has_tool(&agent, "sandbox_file_editor"));
 }
 
 /// An intervention handler that records the agent's initialization reaching it.
