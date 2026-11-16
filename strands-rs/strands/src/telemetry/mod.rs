@@ -17,6 +17,15 @@ pub use config::setup::{
     BaggageKeyPredicate, BaggageKeys, BaggageSpanProcessor, Exporters, MeterConfig, TracerConfig,
     get_meter, get_tracer, setup_meter, setup_tracer, tracing_layer,
 };
+#[cfg(feature = "otel")]
+pub use opentelemetry;
+#[cfg(feature = "otel")]
+pub use opentelemetry_sdk;
+#[cfg(feature = "otel")]
+pub use tracing_opentelemetry;
+#[cfg(feature = "otel")]
+pub use tracing_subscriber;
+
 pub use meter::{AgentLoopMetricsData, AgentMetrics, InvocationMetricsData, ToolMetricsData};
 pub use tracer::{AgentTrace, AttributeValue};
 
