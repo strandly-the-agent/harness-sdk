@@ -13,6 +13,8 @@
 2. `drops sandbox-vended tools`: done (`VendingSandbox` in `agent/tests.rs`).
 3. `internal.test.ts` (2): not started; the crate has no `internal` module, so the first case needs a decision on how Rust exposes the CLI plumbing (`pub mod internal` re-exporting `normalize_harness_agent_config`, `resolve_model`, `resolve_memory`, `resolve_interventions`, `resolve_builtin_tools`, `enabled_builtin_tools`, `builtin_tool_config`), and the second is a compile-time property. `memory.test.ts`: 2 of the 8 `createHarness memory` cases are ported in `agent/tests.rs` (their `test-title-map.json` entries removed); 6 left, cheapest `honors a custom memory dir` and the two `MemoryManager` instance cases. `agent-generalist-memory.test.ts`: 1 case left (`forwards the parent memory stores ...`).
 4. `harness_agent_options_from_config` end to end into `create_harness` (tracker item): not started; `config::options::options_from_config` already yields `HarnessAgentOptions`.
+   - `loads skills from multiple directories` and `keeps missing directories when multiple are given`: `AgentSkills` has no source accessor, and `get_available_skills(None)` returns only skills given directly or by URL (path sources load through the agent's sandbox at init), so these need an initialized agent that holds the plugin `skills_plugin` returned, then `get_available_skills(Some(agent id))`.
+   - No decision numbers were used by `h12core2` (P-964..P-979 are all free).
 5. The full gate script (`.rust-port/gates.sh`) was not run; only the per-crate steps were.
 
 ## Design choices the next implementer must keep
