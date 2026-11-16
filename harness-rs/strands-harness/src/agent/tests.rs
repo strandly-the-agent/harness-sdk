@@ -539,3 +539,143 @@ async fn rejects_a_harness_owned_key_on_agent_config() {
         "agent_config.tools is a harness option: set `tools` on HarnessAgentOptions instead"
     );
 }
+
+#[tokio::test]
+async fn keeps_the_stash_in_memory_without_a_session() {
+    let agent = harness(HarnessAgentOptions {
+        session: SessionOption::Off,
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(agent.storage().is_none());
+}
+
+#[tokio::test]
+async fn keeps_the_stash_in_memory_with_a_session_manager_instance_as_the_session() {
+    let supplied = SessionManager::new(SessionManagerConfig::default()).unwrap();
+    let agent = harness(HarnessAgentOptions {
+        session: supplied.into(),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(agent.storage().is_none());
+}
+
+#[tokio::test]
+async fn keeps_the_stash_in_memory_with_an_explicit_session_manager() {
+    let mut options = mock_options();
+    options.agent_config.session_manager = Some(SessionManager::new(SessionManagerConfig::default()).unwrap());
+    assert!(harness(options).await.unwrap().storage().is_none());
+}
+
+#[tokio::test]
+async fn backs_the_stash_with_an_explicit_storage() {
+    let storage: Arc<dyn Storage> = Arc::new(strands::storage::InMemoryStorage::new(Default::default()));
+    let mut options = mock_options();
+    options.agent_config.storage = Some(Arc::clone(&storage));
+    let agent = harness(options).await.unwrap();
+    assert!(Arc::ptr_eq(agent.storage().unwrap(), &storage));
+}
+
+#[tokio::test]
+async fn keeps_the_stash_in_the_sessions_own_folder_by_default() {
+    let agent = harness(mock_options()).await.unwrap();
+    assert!(agent.storage().is_some());
+}
+
+fn write_skill(dir: &Path, name: &str) {
+    let folder = dir.join(name);
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: test skill\n---\nbody\n"),
+    )
+    .unwrap();
+}
+
+fn path_source(path: &Path) -> SkillSource {
+    SkillSource::Path(path.to_string_lossy().into_owned())
+}
+
+#[test]
+fn loads_skills_from_the_skills_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    write_skill(dir.path(), "hello");
+    let skills = SkillsOption::Sources(vec![path_source(dir.path())]);
+    assert!(skills_plugin(skills, &seams(&dir)).is_some());
+}
+
+#[test]
+fn passes_an_explicit_missing_skills_path_through_to_the_plugin() {
+    let dir = tempfile::tempdir().unwrap();
+    let skills = SkillsOption::Sources(vec![path_source(&dir.path().join("absent"))]);
+    assert!(skills_plugin(skills, &seams(&dir)).is_some());
+}
+
+#[test]
+fn skips_the_default_skills_directory_when_it_is_absent() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(skills_plugin(SkillsOption::On, &seams(&dir)).is_none());
+}
+
+#[test]
+fn loads_the_default_skills_directory_when_it_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    write_skill(&dir.path().join(DEFAULT_SKILLS_DIR), "hello");
+    assert!(skills_plugin(SkillsOption::On, &seams(&dir)).is_some());
+}
+
+#[test]
+fn disables_skills_when_skills_is_null() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(skills_plugin(SkillsOption::Off, &seams(&dir)).is_none());
+}
+
+#[test]
+fn disables_skills_when_skills_is_an_empty_array() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(skills_plugin(SkillsOption::Sources(Vec::new()), &seams(&dir)).is_none());
+}
+
+#[test]
+fn does_not_double_add_a_skills_plugin_supplied_via_plugins() {
+    let existing: Arc<dyn Plugin> = Arc::new(AgentSkills::new(AgentSkillsConfig::default()));
+    assert!(has_skills(&[existing]));
+    assert!(!has_skills(&select_builtin_plugins(&BUILTIN_PLUGIN_NAMES, &[])));
+}
+
+#[test]
+fn select_builtin_plugins_skips_a_built_in_the_caller_already_supplied() {
+    let todos: Arc<dyn Plugin> = Arc::new(Todos::new(TodosConfig::default()));
+    let selected = select_builtin_plugins(&BUILTIN_PLUGIN_NAMES, &[Arc::clone(&todos)]);
+    assert_eq!(selected.len(), 1);
+    assert_ne!(selected.first().unwrap().name(), todos.name());
+}
+
+#[tokio::test]
+async fn does_not_touch_mcp_when_no_servers_are_given() {
+    assert!(load_mcp_servers(None).await.unwrap().is_empty());
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn loads_mcp_servers_through_the_sdk_resilient_and_prefixed_by_server_name() {
+    let servers = serde_json::json!({
+        "web": { "command": "definitely-not-run", "args": [] },
+        "broken": {},
+    });
+    let JsonValue::Object(servers) = servers else {
+        panic!("an object literal");
+    };
+    let loaded = load_mcp_servers(Some(McpServersOption::Servers(servers))).await.unwrap();
+    let names: Vec<_> = loaded
+        .iter()
+        .map(|source| match source {
+            ToolSource::McpClient(client) => client.client_name().to_owned(),
+            _ => panic!("load_mcp_servers yields clients only"),
+        })
+        .collect();
+    assert_eq!(names, ["web"]);
+}
