@@ -46,8 +46,8 @@ pub use rmcp;
 
 pub use client::{
     DEFAULT_CLIENT_NAME, McpAuthProvider, McpCallToolOptions, McpClient, McpClientConfig,
-    McpClientCredentials, McpClientOptions, McpConnectionState, McpListOptions, McpListToolsOptions,
-    McpLogHandler, McpProgress, McpProgressCallback, McpToolsChangedCallback,
+    McpClientCredentials, McpClientOptions, McpConnectOptions, McpConnectionState, McpListOptions,
+    McpListToolsOptions, McpLogHandler, McpProgress, McpProgressCallback, McpToolsChangedCallback,
 };
 pub use config::{McpLoadServersOptions, McpServerConfig, McpServers, SerializableMcpToolFilters};
 pub use elicitation::{ElicitationCallback, ElicitationContext};

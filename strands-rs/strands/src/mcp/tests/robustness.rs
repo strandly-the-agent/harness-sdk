@@ -129,18 +129,9 @@ async fn lists_no_prompts_or_resources_from_a_server_without_those_capabilities(
         ..Default::default()
     })
     .expect("client");
-    let prompts = client
-        .list_prompts(McpListOptions::default())
-        .await
-        .expect("prompts");
-    let resources = client
-        .list_resources(McpListOptions::default())
-        .await
-        .expect("resources");
-    let templates = client
-        .list_resource_templates(McpListOptions::default())
-        .await
-        .expect("templates");
+    let prompts = client.list_prompts().await.expect("prompts");
+    let resources = client.list_resources().await.expect("resources");
+    let templates = client.list_resource_templates().await.expect("templates");
     assert!(prompts.prompts.is_empty());
     assert!(resources.resources.is_empty());
     assert!(templates.resource_templates.is_empty());

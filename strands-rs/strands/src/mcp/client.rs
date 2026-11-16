@@ -254,6 +254,17 @@ impl fmt::Debug for McpCallToolOptions {
     }
 }
 
+/// Options for [`McpClient::connect_with`] (TS `connect`'s `options`).
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "config struct: struct-literal construction"
+)]
+#[derive(Debug, Clone, Default, bon::Builder)]
+pub struct McpConnectOptions {
+    /// Stops waiting for the connection when cancelled.
+    pub cancel_signal: Option<CancelSignal>,
+}
+
 /// Overrides for [`McpClient::list_tools_with`] (TS `McpListToolsOptions`). An unset field uses
 /// the client's value; `Some("")` or empty filters disable it.
 #[expect(
@@ -493,16 +504,21 @@ impl McpClient {
     /// The connection attempt failed (without `continue_on_error`), or the client was
     /// disconnected while connecting.
     pub async fn connect(&self, reconnect: bool) -> Result<()> {
-        self.connect_with(reconnect, None).await
+        self.connect_with(reconnect, McpConnectOptions::default()).await
     }
 
-    /// [`connect`](Self::connect) that stops waiting when `signal` is cancelled. The shared
-    /// attempt keeps running for other callers.
+    /// [`connect`](Self::connect) with options; it stops waiting when the options' cancel signal
+    /// fires, while the shared attempt keeps running for other callers.
     ///
     /// # Errors
     ///
-    /// As [`connect`](Self::connect), or `signal` was cancelled.
-    pub async fn connect_with(&self, reconnect: bool, signal: Option<&CancelSignal>) -> Result<()> {
+    /// As [`connect`](Self::connect), or the cancel signal fired.
+    pub async fn connect_with(&self, reconnect: bool, options: McpConnectOptions) -> Result<()> {
+        self.connect_signalled(reconnect, options.cancel_signal.as_ref())
+            .await
+    }
+
+    async fn connect_signalled(&self, reconnect: bool, signal: Option<&CancelSignal>) -> Result<()> {
         if let Some(signal) = signal.filter(|signal| signal.is_cancelled()) {
             return Err(abort_error(signal));
         }
@@ -718,13 +734,22 @@ impl McpClient {
         );
     }
 
-    /// The server's prompts (TS `listPrompts`).
+    /// The server's prompts, every page aggregated (TS `listPrompts`).
     ///
     /// # Errors
     ///
     /// The connection failed earlier under `continue_on_error` (call `connect(true)`), or the
     /// request failed, or pagination passed `list_max_pages`.
-    pub async fn list_prompts(&self, options: McpListOptions) -> Result<ListPromptsResult> {
+    pub async fn list_prompts(&self) -> Result<ListPromptsResult> {
+        self.list_prompts_with(McpListOptions::default()).await
+    }
+
+    /// [`list_prompts`](Self::list_prompts) with pagination options.
+    ///
+    /// # Errors
+    ///
+    /// As [`list_prompts`](Self::list_prompts).
+    pub async fn list_prompts_with(&self, options: McpListOptions) -> Result<ListPromptsResult> {
         let peer = self.connected_or_throw().await?;
         Ok(self
             .list_paged(
@@ -764,12 +789,21 @@ impl McpClient {
         }
     }
 
-    /// The server's resources (TS `listResources`).
+    /// The server's resources, every page aggregated (TS `listResources`).
     ///
     /// # Errors
     ///
     /// As [`list_prompts`](Self::list_prompts).
-    pub async fn list_resources(&self, options: McpListOptions) -> Result<ListResourcesResult> {
+    pub async fn list_resources(&self) -> Result<ListResourcesResult> {
+        self.list_resources_with(McpListOptions::default()).await
+    }
+
+    /// [`list_resources`](Self::list_resources) with pagination options.
+    ///
+    /// # Errors
+    ///
+    /// As [`list_prompts`](Self::list_prompts).
+    pub async fn list_resources_with(&self, options: McpListOptions) -> Result<ListResourcesResult> {
         let peer = self.connected_or_throw().await?;
         Ok(self
             .list_paged(
@@ -784,12 +818,21 @@ impl McpClient {
             .await?)
     }
 
-    /// The server's resource templates (TS `listResourceTemplates`).
+    /// The server's resource templates, every page aggregated (TS `listResourceTemplates`).
     ///
     /// # Errors
     ///
     /// As [`list_prompts`](Self::list_prompts).
-    pub async fn list_resource_templates(
+    pub async fn list_resource_templates(&self) -> Result<ListResourceTemplatesResult> {
+        self.list_resource_templates_with(McpListOptions::default()).await
+    }
+
+    /// [`list_resource_templates`](Self::list_resource_templates) with pagination options.
+    ///
+    /// # Errors
+    ///
+    /// As [`list_prompts`](Self::list_prompts).
+    pub async fn list_resource_templates_with(
         &self,
         options: McpListOptions,
     ) -> Result<ListResourceTemplatesResult> {
@@ -889,7 +932,7 @@ impl McpClient {
             assert_positive_duration(timeout, "MCP call timeout")?;
         }
         let signal = options.cancel_signal.as_ref();
-        self.connect_with(false, signal).await?;
+        self.connect_signalled(false, signal).await?;
         let Some(peer) = self.connected_peer()? else {
             return Err(Error::other(FAILED_TO_CONNECT));
         };

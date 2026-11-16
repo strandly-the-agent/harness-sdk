@@ -118,7 +118,12 @@ mod mcp_client {
             async move { client.connect(false).await }
         });
         server::eventually(|| gate.attempts() == 1).await;
-        let second = client.connect_with(false, Some(&signal));
+        let second = client.connect_with(
+            false,
+            McpConnectOptions {
+                cancel_signal: Some(signal.clone()),
+            },
+        );
         cancel_with(&handle, "caller left");
         let error = second.await.expect_err("aborted");
         assert_eq!(error.to_string(), "caller left");
@@ -134,7 +139,16 @@ mod mcp_client {
         let (signal, handle) = cancel("creator left");
         let creator = tokio::spawn({
             let client = client.clone();
-            async move { client.connect_with(false, Some(&signal)).await }
+            async move {
+                client
+                    .connect_with(
+                        false,
+                        McpConnectOptions {
+                            cancel_signal: Some(signal.clone()),
+                        },
+                    )
+                    .await
+            }
         });
         server::eventually(|| gate.attempts() == 1).await;
         cancel_with(&handle, "creator left");
@@ -171,7 +185,16 @@ mod mcp_client {
         let (signal, handle) = cancel("creator left");
         let creator = tokio::spawn({
             let client = client.clone();
-            async move { client.connect_with(false, Some(&signal)).await }
+            async move {
+                client
+                    .connect_with(
+                        false,
+                        McpConnectOptions {
+                            cancel_signal: Some(signal.clone()),
+                        },
+                    )
+                    .await
+            }
         });
         server::eventually(|| gate.attempts() == 1).await;
         cancel_with(&handle, "creator left");
@@ -199,7 +222,12 @@ mod mcp_client {
         let (signal, handle) = cancel("already cancelled");
         cancel_with(&handle, "already cancelled");
         let error = client
-            .connect_with(false, Some(&signal))
+            .connect_with(
+                false,
+                McpConnectOptions {
+                    cancel_signal: Some(signal.clone()),
+                },
+            )
             .await
             .expect_err("aborted");
         assert_eq!(error.to_string(), "already cancelled");
@@ -1971,7 +1999,7 @@ mod prompts_and_resources {
     #[tokio::test]
     async fn connects_lazily_and_lists_prompts_with_the_raw_result_returned() {
         let client = TestServer::default().client();
-        let result = client.list_prompts(options(None)).await.expect("prompts");
+        let result = client.list_prompts_with(options(None)).await.expect("prompts");
         let names: Vec<&str> = result.prompts.iter().map(|prompt| prompt.name.as_str()).collect();
         assert_eq!(names, ["greeting", "farewell"]);
         assert!(result.next_cursor.is_none());
@@ -1980,7 +2008,10 @@ mod prompts_and_resources {
     #[tokio::test]
     async fn fetches_a_single_prompts_page_when_pagination_token_is_set() {
         let client = TestServer::default().client();
-        let result = client.list_prompts(options(Some("p2"))).await.expect("prompts");
+        let result = client
+            .list_prompts_with(options(Some("p2")))
+            .await
+            .expect("prompts");
         assert_eq!(result.prompts.len(), 1);
         assert_eq!(result.prompts[0].name, "farewell");
     }
@@ -2012,7 +2043,10 @@ mod prompts_and_resources {
     #[tokio::test]
     async fn lists_resources_with_the_raw_result_returned() {
         let client = TestServer::default().client();
-        let result = client.list_resources(options(None)).await.expect("resources");
+        let result = client
+            .list_resources_with(options(None))
+            .await
+            .expect("resources");
         let uris: Vec<&str> = result
             .resources
             .iter()
@@ -2025,7 +2059,7 @@ mod prompts_and_resources {
     async fn fetches_a_single_resources_page_when_pagination_token_is_set() {
         let client = TestServer::default().client();
         let result = client
-            .list_resources(options(Some("r2")))
+            .list_resources_with(options(Some("r2")))
             .await
             .expect("resources");
         assert_eq!(result.resources.len(), 1);
@@ -2045,7 +2079,7 @@ mod prompts_and_resources {
     async fn lists_resource_templates_with_pagination() {
         let client = TestServer::default().client();
         let result = client
-            .list_resource_templates(options(None))
+            .list_resource_templates_with(options(None))
             .await
             .expect("templates");
         assert_eq!(result.resource_templates[0].uri_template, "test://users/{id}");
@@ -2056,7 +2090,7 @@ mod prompts_and_resources {
         let gate = Gate::default();
         gate.fail();
         let client = gated_client(&gate, true);
-        let error = client.list_prompts(options(None)).await.expect_err("failed");
+        let error = client.list_prompts_with(options(None)).await.expect_err("failed");
         assert_eq!(
             error.to_string(),
             "MCP server failed to connect. Call connect(true) to retry."
