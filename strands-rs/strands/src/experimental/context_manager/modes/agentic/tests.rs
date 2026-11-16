@@ -88,7 +88,7 @@ fn the_schemas_and_descriptions_match_ts() {
     );
     assert_eq!(pin_schema()["required"], json!(["select", "action"]));
     // The three model-facing specs against the TS-generated fixture, key order included.
-    let specs: Vec<_> = tools.iter().map(|tool| tool.tool_spec()).collect();
+    let specs: Vec<_> = tools.iter().map(Tool::tool_spec).collect();
     assert_eq!(
         serde_json::to_string(&specs).unwrap(),
         include_str!("../../../../../../conformance/fixtures/tools/agentic_context_specs.json")
