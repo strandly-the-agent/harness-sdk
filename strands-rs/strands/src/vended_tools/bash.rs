@@ -12,6 +12,7 @@ use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
+use tokio_util::sync::CancellationToken;
 
 use crate::JsonValue;
 use crate::retry::model_retry_strategy::{Sleeper, tokio_sleeper};
@@ -139,7 +140,13 @@ pub(crate) fn bash_with(cwd: Option<PathBuf>, sleeper: Sleeper) -> FunctionTool 
     )
 }
 
-type SharedSession = Arc<tokio::sync::Mutex<BashSession>>;
+/// One agent's session. `stopped` is outside the lock a running command holds, so `restart` can
+/// end that command (TS `stop()` kills the process at once).
+#[derive(Clone)]
+struct SharedSession {
+    session: Arc<tokio::sync::Mutex<BashSession>>,
+    stopped: CancellationToken,
+}
 
 /// Sessions keyed by agent (TS keeps them in a `WeakMap` keyed by the agent).
 struct Sessions {
@@ -153,9 +160,9 @@ impl Sessions {
         let owner = context.agent().agent_sandbox().owner();
         match input.mode {
             Mode::Restart => {
-                let old = self.replace(owner, DEFAULT_TIMEOUT_SECS);
-                if let Some(old) = old {
-                    old.lock().await.stop();
+                // An idle process is killed when the replaced session is dropped here.
+                if let Some(old) = self.replace(owner, DEFAULT_TIMEOUT_SECS) {
+                    old.stopped.cancel();
                 }
                 Ok("Bash session restarted".into())
             }
@@ -163,8 +170,9 @@ impl Sessions {
                 let Some(command) = input.command.filter(|command| !command.is_empty()) else {
                     return Err(ToolError::msg("command is required when mode is \"execute\""));
                 };
-                let session = self.get_or_create(owner, input.timeout.unwrap_or(DEFAULT_TIMEOUT_SECS));
-                let output = Box::pin(session.lock().await.run(&command, input.timeout)).await?;
+                let shared = self.get_or_create(owner, input.timeout.unwrap_or(DEFAULT_TIMEOUT_SECS));
+                let mut session = shared.session.lock().await;
+                let output = Box::pin(session.run(&command, input.timeout)).await?;
                 Ok(serde_json::to_value(output)?)
             }
         }
@@ -182,10 +190,10 @@ impl Sessions {
             .iter()
             .find(|(agent, _)| agent.as_ptr() == Arc::as_ptr(owner))
         {
-            return Arc::clone(session);
+            return session.clone();
         }
-        let session = Arc::new(tokio::sync::Mutex::new(self.new_session(timeout)));
-        entries.push((Arc::downgrade(owner), Arc::clone(&session)));
+        let session = self.new_session(timeout);
+        entries.push((Arc::downgrade(owner), session.clone()));
         session
     }
 
@@ -196,19 +204,24 @@ impl Sessions {
             .iter()
             .position(|(agent, _)| agent.as_ptr() == Arc::as_ptr(owner))
             .map(|index| entries.remove(index).1);
-        let session = Arc::new(tokio::sync::Mutex::new(self.new_session(timeout)));
-        entries.push((Arc::downgrade(owner), session));
+        entries.push((Arc::downgrade(owner), self.new_session(timeout)));
         old
     }
 
-    fn new_session(&self, timeout: f64) -> BashSession {
+    fn new_session(&self, timeout: f64) -> SharedSession {
         let id = uuid::Uuid::now_v7().simple().to_string();
-        BashSession {
+        let stopped = CancellationToken::new();
+        let session = BashSession {
             process: None,
             timeout,
             sentinel: format!("__BASH_DONE_{id}__"),
             cwd: self.cwd.clone(),
             sleeper: Arc::clone(&self.sleeper),
+            stopped: stopped.clone(),
+        };
+        SharedSession {
+            session: Arc::new(tokio::sync::Mutex::new(session)),
+            stopped,
         }
     }
 }
@@ -232,12 +245,20 @@ struct BashSession {
     sentinel: String,
     cwd: Option<PathBuf>,
     sleeper: Sleeper,
+    /// Cancelled when `restart` replaces this session.
+    stopped: CancellationToken,
 }
 
 enum Read {
     Stdout(std::io::Result<usize>),
     Stderr(std::io::Result<usize>),
     TimedOut,
+    Stopped,
+}
+
+/// What a command sees when its process is killed under it (TS `onClose(null)`).
+fn stopped_error() -> ToolError {
+    BashSessionError::new("Bash process exited unexpectedly with code unknown").into()
 }
 
 impl BashSession {
@@ -282,14 +303,14 @@ impl BashSession {
         }))
     }
 
-    fn stop(&mut self) {
-        self.process = None;
-    }
-
     async fn run(&mut self, command: &str, timeout: Option<f64>) -> Result<BashOutput, ToolError> {
         let effective = timeout.unwrap_or(self.timeout);
         let sentinel = self.sentinel.clone();
         let deadline = (self.sleeper)(Duration::try_from_secs_f64(effective).unwrap_or(Duration::MAX));
+        let stopped = self.stopped.clone();
+        if stopped.is_cancelled() {
+            return Err(stopped_error());
+        }
         self.start()?;
         // The call owns the process: an error, or a dropped call, kills the session with it.
         let Some(mut process) = self.process.take() else {
@@ -312,6 +333,7 @@ impl BashSession {
                 read = process.stdout.read(&mut out_buf) => Read::Stdout(read),
                 read = process.stderr.read(&mut err_buf) => Read::Stderr(read),
                 () = &mut deadline => Read::TimedOut,
+                () = stopped.cancelled() => Read::Stopped,
             };
             match read {
                 Read::Stdout(Ok(n)) if n > 0 => {
@@ -321,11 +343,13 @@ impl BashSession {
                     stderr.extend_from_slice(err_buf.get(..n).unwrap_or_default());
                 }
                 Read::TimedOut => return timed_out(),
+                Read::Stopped => return Err(stopped_error()),
                 Read::Stdout(_) | Read::Stderr(_) => {
                     // A closed pipe is session death only once bash exits; the timeout stays armed.
                     let status = tokio::select! {
                         status = process.child.wait() => status,
                         () = &mut deadline => return timed_out(),
+                        () = stopped.cancelled() => return Err(stopped_error()),
                     };
                     let code = status
                         .ok()

@@ -493,3 +493,35 @@ async fn dropped_call_does_not_leak_its_output_into_the_next_call() {
     assert!(dropped.is_err(), "the first call should still be running");
     assert_eq!(execute(&tool, &ctx, "echo second").await.output, "second");
 }
+
+#[tokio::test]
+async fn restart_stops_a_running_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tool, ctx) = (tool(&dir), context(None));
+    execute(&tool, &ctx, "RESTART_TEST=set").await;
+    let running = tool.invoke(json!({ "mode": "execute", "command": "sleep 5" }), ctx.clone());
+    let queued = tool.invoke(
+        json!({ "mode": "execute", "command": "echo queued" }),
+        ctx.clone(),
+    );
+    let restart = tool.invoke(json!({ "mode": "restart" }), ctx.clone());
+    let started = std::time::Instant::now();
+
+    let (running, queued, restart) = tokio::join!(running, queued, restart);
+
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "restart waited for the command"
+    );
+    assert_eq!(restart.unwrap(), json!("Bash session restarted"));
+    let killed = "Bash process exited unexpectedly with code unknown";
+    assert_eq!(running.unwrap_err().to_string(), killed);
+    // A call queued on the replaced session fails with it, as its TS listeners would.
+    assert_eq!(queued.unwrap_err().to_string(), killed);
+    assert_eq!(
+        execute(&tool, &ctx, "echo \"${RESTART_TEST:-empty}\"")
+            .await
+            .output,
+        "empty"
+    );
+}
