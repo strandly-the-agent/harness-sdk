@@ -658,8 +658,14 @@ const OUT_OF_SCOPE: &str = "none of the requested memory stores are available";
 #[tokio::test]
 async fn search_tool_queries_all_stores_when_model_omits_stores() {
     let (personal, team, manager) = personal_and_team();
-    let result = search_tool(&manager, json!({ "query": "q" })).await;
+    search_tool(&manager, json!({ "query": "q" })).await;
     assert_eq!((personal.search_count(), team.search_count()), (1, 1));
+}
+
+#[tokio::test]
+async fn search_tool_result_attributes_each_entry_to_its_source_store() {
+    let (_personal, _team, manager) = personal_and_team();
+    let result = search_tool(&manager, json!({ "query": "q" })).await;
     assert_eq!(
         returned(&result),
         json!({ "$value": [
