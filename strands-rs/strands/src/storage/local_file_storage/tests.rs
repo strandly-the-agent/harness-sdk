@@ -354,7 +354,6 @@ async fn accepts_a_sandbox_safe_strategy_passed_with_a_sandbox() {
         LocalFileStorageConfig {
             sandbox: Some(RecordingSandbox::new(false)),
             search_strategy: Some(strategy.clone()),
-            ..Default::default()
         },
     );
     configured.search("query").await.unwrap().unwrap();
