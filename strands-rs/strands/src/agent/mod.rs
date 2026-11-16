@@ -7,6 +7,7 @@ mod agent_delegation;
 pub(crate) mod agent_metadata;
 mod config;
 pub(crate) mod continuation;
+#[doc(hidden)]
 pub mod invocation_context;
 pub(crate) mod printer;
 mod run;
@@ -18,7 +19,7 @@ pub use agent::Agent;
 pub use agent_as_tool::{
     AgentAsTool, AgentAsToolOptions, AgentAsToolOptionsBuilder, agent_as_tool_options_builder,
 };
-pub use agent_metadata::AgentMetadata;
+pub use agent_metadata::{AgentMetadata, AgentMetadataBuilder, agent_metadata_builder};
 pub use config::{AgentBuilder, AgentConfig, MemoryManagerSource, ModelSource, SharedSource, agent_builder};
 #[doc(inline)]
 pub use invocation_context::{InvocationContext, InvocationContextUsage};

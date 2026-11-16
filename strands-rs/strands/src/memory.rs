@@ -5,6 +5,7 @@
 //! [`crate::injection`], re-exported here as TS `memory/index.ts` does, with the
 //! [`InjectionCondition`] a `trigger` field holds.
 
+#[doc(hidden)]
 pub mod extraction;
 mod memory_manager;
 mod read_only;
@@ -12,7 +13,11 @@ mod read_only;
 pub(crate) mod test_support;
 mod types;
 
-pub use crate::injection::{InjectionCondition, InjectionConfig, InjectionContext, InjectionTrigger};
+#[doc(inline)]
+pub use crate::injection::{
+    InjectionCondition, InjectionConfig, InjectionConfigBuilder, InjectionContext, InjectionTrigger,
+    injection_config_builder,
+};
 #[doc(inline)]
 pub use extraction::{
     ExtractionConfig, ExtractionConfigBuilder, ExtractionFire, ExtractionResult, ExtractionTrigger,
