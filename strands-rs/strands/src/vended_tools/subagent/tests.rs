@@ -1414,7 +1414,9 @@ mod default_builder {
     use crate::interventions::{BeforeToolCallAction, InterventionHandler, deny};
     use crate::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest};
     use crate::models::streaming::ModelStreamEvent;
+    use crate::sandbox::Sandbox;
     use crate::telemetry::AttributeValue;
+    use crate::vended_tools::test_support::ExplodingSandbox;
 
     struct DenyToolCalls;
 
@@ -1452,10 +1454,14 @@ mod default_builder {
         }
     }
 
-    fn read_tool() -> FunctionTool {
-        FunctionTool::new("read", "Reads.", |_input: JsonValue, _ctx| async move {
+    fn mock_tool(name: &str) -> FunctionTool {
+        FunctionTool::new(name, "Mock tool.", |_input: JsonValue, _ctx| async move {
             Ok::<_, ToolError>(json!("ok"))
         })
+    }
+
+    fn read_tool() -> FunctionTool {
+        mock_tool("read")
     }
 
     fn child_of(parent: &Agent, spec: &AgentSpec) -> Agent {
@@ -1469,6 +1475,121 @@ mod default_builder {
             .list()
             .map(|tool| tool.name())
             .collect()
+    }
+
+    #[cfg(feature = "mcp")]
+    #[tokio::test]
+    async fn selects_mcp_tools_by_name_like_any_other_parent_tool_tools() {
+        use crate::mcp::tests::server::{TestServer, tool};
+
+        let server = TestServer::with_tools(vec![tool("gh_issue", Some("Open an issue."))]);
+        let [mcp_tool] = <[_; 1]>::try_from(server.client().list_tools().await.unwrap()).unwrap();
+        let mcp_tool: Arc<dyn Tool> = Arc::new(mcp_tool);
+        let parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .tools(crate::tool_list![read_tool(), Arc::clone(&mcp_tool)])
+            .printer(false)
+            .build()
+            .unwrap();
+
+        for (tools, expected) in [
+            (None, vec!["read", "gh_issue"]),
+            (Some(vec!["gh_issue"]), vec!["gh_issue"]),
+        ] {
+            let spec = AgentSpec {
+                tools: tools.map(|names| names.into_iter().map(str::to_owned).collect()),
+                ..AgentSpec::default()
+            };
+
+            let child = child_of(&parent, &spec);
+
+            assert_eq!(tool_names(&child), expected);
+            let inherited = child.local.tool_registry().get("gh_issue").unwrap();
+            assert!(Arc::ptr_eq(inherited, &mcp_tool));
+        }
+    }
+
+    #[test]
+    fn builds_a_child_agent_that_inherits_the_parent_model_and_takes_spec_name_as_its_name_and_id() {
+        let parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .printer(false)
+            .build()
+            .unwrap();
+        let spec = AgentSpec {
+            name: Some("worker".to_owned()),
+            ..AgentSpec::default()
+        };
+
+        let child = child_of(&parent, &spec);
+
+        assert!(Arc::ptr_eq(child.model(), parent.model()));
+        assert_eq!(child.name(), "worker");
+        assert_eq!(child.id(), "worker");
+    }
+
+    #[test]
+    fn inherits_all_parent_tools_when_spec_tools_is_undefined() {
+        let parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .tools([read_tool(), mock_tool("shell")])
+            .printer(false)
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            tool_names(&child_of(&parent, &AgentSpec::default())),
+            ["read", "shell"]
+        );
+    }
+
+    #[test]
+    fn resolves_only_matching_tools_and_warns_about_unknown_tools() {
+        let parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .tools([read_tool(), mock_tool("shell")])
+            .printer(false)
+            .build()
+            .unwrap();
+        let spec = AgentSpec {
+            tools: Some(vec!["read".to_owned(), "nonexistent".to_owned()]),
+            ..AgentSpec::default()
+        };
+
+        let (child, warnings) = WarnRecorder::capture(|| child_of(&parent, &spec));
+
+        assert_eq!(tool_names(&child), ["read"]);
+        assert_eq!(
+            warnings,
+            ["subagent requested tool but parent does not own it, skipping"]
+        );
+    }
+
+    // No TS case: TS filters the parent's context manager tools out before the `spec.tools`
+    // lookup (multiagent/spec.ts:464-479), so naming one warns and skips like an unknown tool.
+    #[tokio::test]
+    async fn skips_a_parent_context_manager_tool_named_in_spec_tools() {
+        let mut parent = Agent::builder()
+            .model(MockMessageModel::new())
+            .tools([read_tool()])
+            .printer(false)
+            .context_manager(ContextManagerPreset::Auto)
+            .build()
+            .unwrap();
+        parent.initialize().await.unwrap();
+        assert_eq!(tool_names(&parent), ["read", "retrieve_context"]);
+        let spec = AgentSpec {
+            tools: Some(vec!["read".to_owned(), "retrieve_context".to_owned()]),
+            ..AgentSpec::default()
+        };
+
+        let (child, warnings) = WarnRecorder::capture(|| child_of(&parent, &spec));
+
+        assert_eq!(tool_names(&child), ["read"]);
+        assert_eq!(
+            warnings,
+            ["subagent requested tool but parent does not own it, skipping"]
+        );
     }
 
     #[tokio::test]
@@ -1527,15 +1648,18 @@ mod default_builder {
     #[test]
     fn propagates_the_parents_sandbox_trace_attributes_and_printer_setting_printer() {
         for printer in [true, false] {
+            let sandbox: Arc<dyn Sandbox> = Arc::new(ExplodingSandbox);
             let parent = Agent::builder()
                 .model(MockMessageModel::new())
                 .printer(printer)
+                .sandbox(Arc::clone(&sandbox))
                 .trace_attributes([("team".to_owned(), AttributeValue::from("infra"))])
                 .build()
                 .unwrap();
 
             let child = child_of(&parent, &AgentSpec::default());
 
+            assert!(Arc::ptr_eq(&child.sandbox().unwrap(), &sandbox));
             assert_eq!(
                 child.local.telemetry().lock().tracer.trace_attributes(),
                 [("team".to_owned(), AttributeValue::from("infra"))]
