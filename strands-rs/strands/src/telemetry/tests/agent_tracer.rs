@@ -751,4 +751,110 @@ mod structured_output_and_telemetry_interaction {
         assert!(is_error(named(&spans, "invoke_agent Strands Agent")[0]));
         assert!(is_error(named(&spans, "execute_agent_loop_cycle")[0]));
     }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_agent_span_with_error_when_model_refuses_structured_output_tool_after_forcing() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(text_model("I refuse"), Vec::new());
+        let error = agent
+            .invoke_with("Test", options())
+            .await
+            .expect_err("the model never calls the tool");
+        assert!(matches!(error, crate::Error::StructuredOutput(_)), "{error:?}");
+        let spans = recorder.spans();
+        let agent_span = named(&spans, "invoke_agent Strands Agent")[0];
+        assert_eq!(agent_span.status, Status::error(error.to_string()));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_cycle_span_with_error_on_structured_output_error() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(text_model("I refuse"), Vec::new());
+        let error = agent
+            .invoke_with("Test", options())
+            .await
+            .expect_err("the model never calls the tool");
+        assert!(matches!(error, crate::Error::StructuredOutput(_)), "{error:?}");
+        // Cycle 1 ends cleanly and forces the tool; cycle 2 fails.
+        let spans = recorder.spans();
+        let cycle = |id: &str| {
+            *named(&spans, "execute_agent_loop_cycle")
+                .iter()
+                .find(|cycle| attribute(cycle, "agent_loop.cycle_id").as_deref() == Some(id))
+                .expect("the cycle span")
+        };
+        assert_eq!(named(&spans, "execute_agent_loop_cycle").len(), 2);
+        assert_ended_ok(cycle("cycle-1"));
+        assert_eq!(cycle("cycle-2").status, Status::error(error.to_string()));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn creates_correct_spans_for_validation_retry_cycle() {
+        #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+        struct Person {
+            #[expect(dead_code, reason = "only the schema is used")]
+            name: String,
+            #[expect(dead_code, reason = "only the schema is used")]
+            age: f64,
+        }
+
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_turn(vec![tool_use(
+            STRUCTURED_OUTPUT_TOOL_NAME,
+            "tool-1",
+            serde_json::json!({"name": "John", "age": "not-a-number"}),
+        )]);
+        model.add_turn(vec![tool_use(
+            STRUCTURED_OUTPUT_TOOL_NAME,
+            "tool-2",
+            serde_json::json!({"name": "John", "age": 30}),
+        )]);
+        let mut agent = plain_agent(model, Vec::new());
+        agent
+            .invoke_with(
+                "Test",
+                InvokeOptions::default().structured_output_schema::<Person>(),
+            )
+            .await
+            .expect("the second call validates");
+        let spans = recorder.spans();
+
+        // Two cycles: the invalid tool use, then the valid one with the early exit.
+        let cycles = named(&spans, "execute_agent_loop_cycle");
+        let ids: Vec<_> = cycles
+            .iter()
+            .map(|cycle| {
+                assert_ended_ok(cycle);
+                attribute(cycle, "agent_loop.cycle_id").expect("a cycle id")
+            })
+            .collect();
+        assert_eq!(ids, ["cycle-1", "cycle-2"]);
+
+        // One model call per cycle, each ended with its assistant message.
+        let chats = named(&spans, "chat");
+        assert_eq!(chats.len(), 2);
+        for chat in chats {
+            assert_ended_ok(chat);
+            assert!(chat.events.iter().any(|event| event.name == "gen_ai.choice"));
+        }
+
+        // Two tool calls: the first fails validation, the second succeeds.
+        let tools: Vec<_> = named(&spans, "execute_tool strands_structured_output")
+            .into_iter()
+            .map(|tool| {
+                (
+                    attribute(tool, "gen_ai.tool.call.id").expect("a tool use id"),
+                    attribute(tool, "gen_ai.tool.status").expect("a status"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            tools,
+            [
+                ("tool-1".to_owned(), "error".to_owned()),
+                ("tool-2".to_owned(), "success".to_owned())
+            ]
+        );
+    }
 }
