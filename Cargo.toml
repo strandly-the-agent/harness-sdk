@@ -3,7 +3,7 @@ resolver = "3"
 members = ["strands-rs/strands", "strands-rs/strands-macros", "harness-rs/strands-harness"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.0-preview.1"
 edition = "2024"
 rust-version = "1.96"
 license = "Apache-2.0"
@@ -12,9 +12,9 @@ homepage = "https://strandsagents.com"
 authors = ["Strands Agents"]
 
 [workspace.dependencies]
-strands = { path = "strands-rs/strands", version = "=0.1.0", default-features = false }
-strands-macros = { path = "strands-rs/strands-macros", version = "=0.1.0" }
-strands-harness = { path = "harness-rs/strands-harness", version = "=0.1.0", default-features = false }
+strands = { path = "strands-rs/strands", version = "=0.1.0-preview.1", default-features = false }
+strands-macros = { path = "strands-rs/strands-macros", version = "=0.1.0-preview.1" }
+strands-harness = { path = "harness-rs/strands-harness", version = "=0.1.0-preview.1", default-features = false }
 
 # Async
 tokio = { version = "1.54", default-features = false }
