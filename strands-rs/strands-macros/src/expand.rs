@@ -63,11 +63,12 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
         ));
     }
     let self_ty = item.self_ty.clone();
+    let list_span = args.list.as_ref().map(darling::util::SpannedValue::span);
     let list_ident = match &args.list {
         Some(name) => syn::parse_str::<syn::Ident>(name).map_err(|_| {
             syn::Error::new(
-                self_ty.span(),
-                format!("#[tools(list = \"{name}\")] needs a method name"),
+                name.span(),
+                format!("#[tools(list = \"{}\")] needs a method name", name.as_str()),
             )
         })?,
         None => format_ident!("tools"),
@@ -111,6 +112,14 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
             ));
         }
         let constructor = format_ident!("{}_tool", method_ident.unraw());
+        if let Some(span) = list_span.filter(|_| constructor == list_ident) {
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "#[tools] generates `{constructor}` for the `{method_ident}` tool: name the list something else"
+                ),
+            ));
+        }
         if let Some(clash) = method_idents.iter().find(|ident| **ident == constructor) {
             return Err(syn::Error::new(
                 clash.span(),

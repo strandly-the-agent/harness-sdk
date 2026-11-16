@@ -80,7 +80,8 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///   first one; each `<method>_tool` has its method's visibility.
 /// - Every block generates the list method, so a type has one `#[tools]` block, or each further
 ///   block renames its list: `#[tools(list = "admin_tools")]`. A `#[tool]` method can't have
-///   the list method's name, and `<method>_tool` can't be the name of another method of the block.
+///   the list method's name, and `<method>_tool` can't be the name of another method of the block
+///   or of the list.
 /// - A `#[tool]` method under `#[cfg(..)]` takes its tool, its constructor and its `tools()`
 ///   entry with it.
 /// - `strands::tools` is both a module and this attribute. In a crate with its own `tools`

@@ -1,0 +1,5 @@
+error: #[tools] generates `count_tool` for the `count` tool: name the list something else
+ --> tests/ui/fail/list_name_is_a_constructor.rs:5:16
+  |
+5 | #[tools(list = "count_tool")]
+  |                ^^^^^^^^^^^^

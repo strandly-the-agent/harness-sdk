@@ -26,7 +26,7 @@ pub(crate) struct ToolsArgs {
     #[darling(rename = "crate")]
     pub(crate) krate: Option<syn::Path>,
     /// The name of the generated list method (default `tools`).
-    pub(crate) list: Option<String>,
+    pub(crate) list: Option<darling::util::SpannedValue<String>>,
 }
 
 /// The `strands` crate path: `krate`, or `::strands`.

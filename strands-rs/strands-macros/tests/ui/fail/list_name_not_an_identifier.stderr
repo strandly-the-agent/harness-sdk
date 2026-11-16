@@ -1,0 +1,5 @@
+error: #[tools(list = "my tools")] needs a method name
+ --> tests/ui/fail/list_name_not_an_identifier.rs:5:16
+  |
+5 | #[tools(list = "my tools")]
+  |                ^^^^^^^^^^
