@@ -69,6 +69,105 @@ fn files_in(dir: &str) -> Vec<String> {
     out
 }
 
+/// Fixtures whose path a test builds from parts instead of spelling it out, with the test that
+/// reads them. Every other fixture has to appear by its path in a source file of this crate, or
+/// sit in a directory this file walks with `files_in`.
+const READ_BY_BUILT_PATH: &[(&str, &str)] = &[
+    (
+        "edge_cases/base64_",
+        "conformance_tests::base64_is_decoded_leniently_and_re_encoded_canonically",
+    ),
+    (
+        "telemetry/spans_stable.json",
+        "telemetry::tests::spans_match_the_stable_conformance_fixture",
+    ),
+    (
+        "telemetry/spans_latest_experimental.json",
+        "telemetry::tests::spans_match_the_latest_experimental_conformance_fixture",
+    ),
+    (
+        "telemetry/agent_metrics.json",
+        "telemetry::tests::conformance_run::agent_metrics_match_the_conformance_fixture",
+    ),
+    (
+        "telemetry/agent_traces.json",
+        "telemetry::tests::conformance_run::agent_traces_match_the_conformance_fixture",
+    ),
+    (
+        "telemetry/metric_points.json",
+        "telemetry::tests::conformance_run::metric_points_match_the_conformance_fixture",
+    ),
+    ("stash/", "session::conformance_tests (`stash_fixture`)"),
+    (
+        "memory/",
+        "vended_memory_stores::file_memory_store::tests (the conformance store case)",
+    ),
+];
+
+/// Fixtures of features outside v0.1 (multi-agent orchestration): the graph session's manifest.
+/// Its snapshot and the `snapshots/multi_agent_*` files still round-trip as plain snapshots.
+const OUT_OF_SCOPE: &[&str] = &[
+    "sessions/multi_agent_graph/session/graph-session/scopes/multiAgent/article_graph/snapshots/manifest.json",
+];
+
+/// A fixture no test reads would pin nothing, so every `manifest.json` entry has to be claimed.
+#[test]
+fn every_fixture_in_the_manifest_is_read_by_a_test() {
+    fn sources(dir: &Path, out: &mut String) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                sources(&path, out);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                out.push_str(&std::fs::read_to_string(&path).unwrap());
+            }
+        }
+    }
+    let mut source = String::new();
+    sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut source);
+
+    let manifest: JsonValue = parse("manifest.json");
+    let mut listed: Vec<&String> = manifest["fixtures"].as_object().unwrap().keys().collect();
+    listed.sort();
+    let json_on_disk = files_in("");
+    let mut listed_json: Vec<&str> = listed
+        .iter()
+        .map(|path| path.as_str())
+        .filter(|path| path.ends_with(".json"))
+        .chain(["manifest.json"])
+        .collect();
+    listed_json.sort_unstable();
+    assert_eq!(
+        listed_json, json_on_disk,
+        "manifest.json lists the JSON files on disk"
+    );
+
+    let unread: Vec<&&String> = listed
+        .iter()
+        .filter(|path| {
+            let top = path.split('/').next().unwrap();
+            !(OUT_OF_SCOPE.contains(&path.as_str())
+                || source.contains(path.as_str())
+                || source.contains(&format!("files_in(\"{top}\")"))
+                || READ_BY_BUILT_PATH
+                    .iter()
+                    .any(|(prefix, _)| path.starts_with(prefix)))
+        })
+        .collect();
+    assert_eq!(unread, Vec::<&&String>::new(), "fixtures no test reads");
+
+    for claim in READ_BY_BUILT_PATH
+        .iter()
+        .map(|(prefix, _)| prefix)
+        .chain(OUT_OF_SCOPE)
+    {
+        assert!(
+            listed.iter().any(|path| path.starts_with(claim)),
+            "stale claim {claim}"
+        );
+    }
+}
+
 #[test]
 fn content_blocks_round_trip_byte_identically() {
     let files = files_in("content_blocks");
@@ -482,20 +581,8 @@ fn model_stream_events_round_trip_byte_identically() {
 fn model_requests_carry_the_fields_the_ts_model_received() {
     use crate::models::model::ModelRequest;
 
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Recorded {
-        messages: Vec<Message>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        tool_specs: Vec<ToolSpec>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        system_prompt: Option<SystemPrompt>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tool_choice: Option<ToolChoice>,
-    }
-
     for path in files_in("model_requests") {
-        let recorded: Vec<Recorded> = assert_round_trip(&path);
+        let recorded: Vec<RecordedRequest> = assert_round_trip(&path);
         for call in recorded {
             let request = ModelRequest {
                 messages: call.messages,
@@ -700,17 +787,50 @@ fn hook_events_serialize_byte_identically() {
     }
 }
 
-/// Replays scripted model turns, one per call.
+/// The request fields the generator's `ScriptedModel` records (`model_requests/*.json`).
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordedRequest {
+    messages: Vec<Message>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tool_specs: Vec<ToolSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    system_prompt: Option<SystemPrompt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<ToolChoice>,
+}
+
+type Requests = std::sync::Arc<std::sync::Mutex<Vec<RecordedRequest>>>;
+
+/// Replays scripted model turns, one per call, and records what each call received.
+#[derive(Default)]
 struct ScriptedModel {
     turns: std::sync::Mutex<std::collections::VecDeque<Vec<crate::models::streaming::ModelStreamEvent>>>,
+    requests: Requests,
+}
+
+/// Compares the requests the Rust loop sent with what the TS model received, tracking ids aside.
+fn assert_requests_match(requests: &Requests, fixture: &str) {
+    fn normalize(mut value: JsonValue) -> JsonValue {
+        without_tracking_ids(&mut value);
+        value
+    }
+    let sent = serde_json::to_value(&*requests.lock().unwrap()).unwrap();
+    assert_eq!(js(&normalize(sent)), js(&normalize(parse(fixture))), "{fixture}");
 }
 
 impl crate::models::model::Model for ScriptedModel {
     fn stream(
         &self,
-        _request: crate::models::model::ModelRequest,
+        request: crate::models::model::ModelRequest,
     ) -> crate::models::model::BoxStream<'static, crate::Result<crate::models::streaming::ModelStreamEvent>>
     {
+        self.requests.lock().unwrap().push(RecordedRequest {
+            messages: request.messages,
+            tool_specs: request.tool_specs,
+            system_prompt: request.system_prompt,
+            tool_choice: request.tool_choice,
+        });
         let turn = self.turns.lock().unwrap().pop_front().expect("a scripted turn");
         Box::pin(futures::stream::iter(turn.into_iter().map(Ok)))
     }
@@ -720,6 +840,22 @@ impl crate::models::model::Model for ScriptedModel {
     }
 
     fn update_config(&self, _config: crate::models::model::BaseModelConfig) {}
+}
+
+/// The model turns of a recorded agent stream: its model events, split after each metadata event.
+fn model_turns_of(entries: &[JsonValue]) -> Vec<Vec<crate::models::streaming::ModelStreamEvent>> {
+    let mut turns = Vec::new();
+    let mut turn = Vec::new();
+    for entry in entries
+        .iter()
+        .filter(|entry| entry["type"] == "modelStreamUpdateEvent")
+    {
+        turn.push(serde_json::from_value(entry["event"].clone()).unwrap());
+        if entry["event"]["type"] == "modelMetadataEvent" {
+            turns.push(std::mem::take(&mut turn));
+        }
+    }
+    turns
 }
 
 fn without_tracking_ids(value: &mut JsonValue) {
@@ -772,20 +908,7 @@ async fn the_agent_loop_reproduces_the_ts_tool_run() {
     }
 
     let entries: Vec<JsonValue> = parse("agent_stream_events/tool_run.json");
-    let mut turns = std::collections::VecDeque::new();
-    let mut turn = Vec::new();
-    for entry in entries
-        .iter()
-        .filter(|entry| entry["type"] == "modelStreamUpdateEvent")
-    {
-        let event: crate::models::streaming::ModelStreamEvent =
-            serde_json::from_value(entry["event"].clone()).unwrap();
-        let ends_turn = entry["event"]["type"] == "modelMetadataEvent";
-        turn.push(event);
-        if ends_turn {
-            turns.push_back(std::mem::take(&mut turn));
-        }
-    }
+    let turns = model_turns_of(&entries);
     let media_result: ToolResultBlock = entries
         .iter()
         .find(|entry| entry["type"] == "afterToolCallEvent" && entry["toolUse"]["name"] == "fetch_media")
@@ -810,6 +933,7 @@ async fn the_agent_loop_reproduces_the_ts_tool_run() {
         "Always fails.",
         |_input: JsonValue, _ctx| async move { Err::<JsonValue, _>(ToolError::msg("flaky_tool exploded")) },
     );
+    let requests = Requests::default();
     let mut app_state = JsonObject::new();
     app_state.insert("user".into(), json!({"id": "u-1", "tier": "pro"}));
     app_state.insert("counter".into(), json!(3));
@@ -821,7 +945,10 @@ async fn the_agent_loop_reproduces_the_ts_tool_run() {
     let mut agent = Agent::builder()
         .name("weather_agent")
         .id("weather_agent")
-        .model(ScriptedModel { turns: turns.into() })
+        .model(ScriptedModel {
+            turns: std::sync::Mutex::new(turns.into()),
+            requests: std::sync::Arc::clone(&requests),
+        })
         .tools(crate::tool_list![weather, MediaTool(media_result), flaky])
         .system_prompt(system_prompt)
         .app_state(app_state)
@@ -831,10 +958,15 @@ async fn the_agent_loop_reproduces_the_ts_tool_run() {
     recorder.register(agent.hooks());
 
     let mut written = Vec::new();
+    let mut result = None;
     {
         let mut stream = agent.stream("What is the weather in Seattle?");
         while let Some(event) = stream.next().await {
-            let mut event = serde_json::to_value(event.unwrap()).unwrap();
+            let event = event.unwrap();
+            if let AgentStreamEvent::AgentResult(agent_result) = &event {
+                result = Some(agent_result.clone());
+            }
+            let mut event = serde_json::to_value(event).unwrap();
             without_tracking_ids(&mut event);
             written.push(event);
         }
@@ -892,6 +1024,30 @@ async fn the_agent_loop_reproduces_the_ts_tool_run() {
     order_batch.sort_unstable();
     assert_eq!(fired_batch, order_batch);
 
+    assert_requests_match(&requests, "model_requests/tool_run.json");
+    let result = result.expect("an agent result event");
+    assert_result_matches(&result, "agent_results/tool_run.json");
+    // Cycle and tool durations are measured, so they are compared as zero.
+    let timeless = |mut metrics: JsonValue| {
+        metrics["totalDuration"] = json!(0);
+        for invocation in metrics["agentInvocations"].as_array_mut().unwrap() {
+            for cycle in invocation["cycles"].as_array_mut().unwrap() {
+                cycle["duration"] = json!(0);
+            }
+        }
+        // Tools run on their own tasks (section 8.8), so the order they finish in isn't TS's.
+        let tools = metrics["toolMetrics"].as_object_mut().unwrap();
+        tools.sort_keys();
+        for tool in tools.values_mut() {
+            tool["totalTime"] = json!(0);
+        }
+        metrics
+    };
+    assert_eq!(
+        js(&timeless(serde_json::to_value(result.metrics()).unwrap())),
+        js(&timeless(parse("agent_results/tool_run_metrics.json")))
+    );
+
     use crate::agent::{SnapshotField, SnapshotPreset, TakeSnapshotOptions};
     let session = TakeSnapshotOptions::session();
     assert_snapshot_matches(
@@ -922,9 +1078,7 @@ async fn the_agent_loop_reproduces_the_ts_tool_run() {
 
     let mut bare = Agent::builder()
         .id("bare_agent")
-        .model(ScriptedModel {
-            turns: Default::default(),
-        })
+        .model(ScriptedModel::default())
         .build()
         .unwrap();
     assert_snapshot_matches(
@@ -939,6 +1093,20 @@ async fn the_agent_loop_reproduces_the_ts_tool_run() {
     assert_snapshot_matches(
         &bare.take_snapshot(&prompt).unwrap(),
         "snapshots/agent_system_prompt_string.json",
+    );
+}
+
+/// Compares a result the Rust agent returned with the TS `AgentResult.toJSON()` fixture, tracking
+/// ids aside.
+fn assert_result_matches(result: &impl Serialize, path: &str) {
+    let normalize = |mut value: JsonValue| {
+        without_tracking_ids(&mut value);
+        value
+    };
+    assert_eq!(
+        js(&normalize(serde_json::to_value(result).unwrap())),
+        js(&normalize(parse(path))),
+        "{path}"
     );
 }
 
@@ -1002,6 +1170,7 @@ fn scripted_turn(events: &JsonValue) -> Vec<crate::models::streaming::ModelStrea
 fn scripted(turns: Vec<Vec<crate::models::streaming::ModelStreamEvent>>) -> ScriptedModel {
     ScriptedModel {
         turns: std::sync::Mutex::new(turns.into()),
+        requests: Requests::default(),
     }
 }
 
@@ -1026,6 +1195,42 @@ fn assert_stream_matches(events: &[JsonValue], fixture: &str) {
     let mut expected: Vec<JsonValue> = parse(fixture);
     expected.iter_mut().for_each(without_tracking_ids);
     assert_eq!(events, expected.as_slice(), "{fixture}");
+}
+
+/// The TS `structuredOutputRun` scenario: the stream, the result and the two model requests (the
+/// generated `strands_structured_output` spec, then the forced tool choice after the text turn).
+#[tokio::test]
+async fn the_agent_loop_reproduces_the_ts_structured_output_run() {
+    use crate::tools::StructuredOutputSchema;
+
+    #[derive(serde::Deserialize, schemars::JsonSchema)]
+    #[expect(dead_code, reason = "schema-only test type")]
+    struct Weather {
+        /// City name
+        city: String,
+        temperature: f64,
+        rain: bool,
+    }
+
+    let entries: Vec<JsonValue> = parse("agent_stream_events/structured_output_run.json");
+    let model = scripted(model_turns_of(&entries));
+    let requests = std::sync::Arc::clone(&model.requests);
+    let mut agent = crate::agent::Agent::builder()
+        .id("structured_agent")
+        .model(model)
+        .no_retry_strategy()
+        .structured_output_schema(StructuredOutputSchema::of::<Weather>())
+        .build()
+        .unwrap();
+
+    let events = stream_events(&mut agent, "Weather in Oslo as JSON").await;
+
+    assert_stream_matches(&events, "agent_stream_events/structured_output_run.json");
+    assert_result_matches(
+        &events.last().unwrap()["result"],
+        "agent_results/structured_output.json",
+    );
+    assert_requests_match(&requests, "model_requests/structured_output_run.json");
 }
 
 /// The TS `interruptRun` scenario: the stream of both invocations, the snapshots while the interrupt is pending, at
@@ -1077,6 +1282,7 @@ async fn the_agent_loop_reproduces_the_ts_interrupt_run_snapshots() {
         .unwrap();
     let first = stream_events(&mut agent, "Do the risky thing").await;
     assert_stream_matches(&first, "agent_stream_events/interrupt_run.json");
+    assert_result_matches(&first.last().unwrap()["result"], "agent_results/interrupt.json");
     let session = TakeSnapshotOptions::session();
     assert_snapshot_matches(
         &agent.take_snapshot(&session).unwrap(),
@@ -1101,6 +1307,10 @@ async fn the_agent_loop_reproduces_the_ts_interrupt_run_snapshots() {
         .collect();
     let second = stream_events(&mut agent, responses).await;
     assert_stream_matches(&second, "agent_stream_events/interrupt_resume_run.json");
+    assert_result_matches(
+        &second.last().unwrap()["result"],
+        "agent_results/interrupt_resumed.json",
+    );
     let resumed = resumed.lock().unwrap().take().unwrap();
     assert_snapshot_matches(&resumed, "snapshots/agent_resuming_interrupt_null_response.json");
     assert_snapshot_matches(
@@ -1178,6 +1388,7 @@ async fn the_agent_loop_reproduces_the_ts_sub_agent_interrupt_snapshots() {
         .collect();
     let result = parent.invoke(responses).await.unwrap();
     assert_eq!(result.to_string(), "Parent done.");
+    assert_result_matches(&result, "agent_results/sub_agent_interrupt_resumed.json");
     // TS `InterruptState.toJSON` shares `context` with the live state, so the fixture shows the
     // turn the resumed tool deleted afterwards (ts-bugs.md); Rust's snapshot is a copy.
     let mut resumed = serde_json::to_value(resumed.lock().unwrap().take().unwrap()).unwrap();
