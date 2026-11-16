@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
-use strands::agent::{AgentBuilder, agent_builder};
+use strands::agent::{AgentBuilder, AgentMetadata, AgentMetadataBuilder, agent_builder, agent_metadata_builder};
 use strands::experimental::context_manager::{
     ContextManagerConfig, ContextManagerConfigBuilder, OffloadConditions, OffloadConditionsBuilder,
     StashConfig, StashConfigBuilder, SummarizeConfig, SummarizeConfigBuilder, TruncateConfig,
@@ -240,6 +240,9 @@ fn a_helper_can_name_the_storage_session_and_context_manager_config_builders() {
     let _: ContextManagerConfigBuilder<context_manager_config_builder::Empty> =
         ContextManagerConfig::builder();
     let _: StashConfigBuilder<stash_config_builder::Empty> = StashConfig::builder();
+    let _: AgentMetadataBuilder<agent_metadata_builder::Empty> = AgentMetadata::builder();
+    let _: strands::memory::InjectionConfigBuilder<strands::memory::injection_config_builder::Empty> =
+        strands::memory::InjectionConfig::builder();
 }
 
 fn in_invoke<S: strands::types::agent::invoke_options_builder::State>(
@@ -307,7 +310,21 @@ fn the_bedrock_model_has_a_builder_with_a_nameable_state() {
 #[cfg(feature = "openai")]
 #[test]
 fn the_openai_model_has_a_builder() -> strands::Result<()> {
-    let model = strands::models::OpenAIModel::builder()
+    use strands::models::openai::{
+        OpenAIClientConfig, OpenAIClientConfigBuilder, OpenAIModelBuilder, OpenAIModelConfig,
+        OpenAIModelConfigBuilder, OpenAIModelOptions, OpenAIModelOptionsBuilder,
+        openai_client_config_builder, openai_model_builder, openai_model_config_builder,
+        openai_model_options_builder,
+    };
+
+    fn in_model<S: openai_model_builder::State>(builder: OpenAIModelBuilder<S>) -> OpenAIModelBuilder<S> {
+        builder
+    }
+    let _: OpenAIModelConfigBuilder<openai_model_config_builder::Empty> = OpenAIModelConfig::builder();
+    let _: OpenAIModelOptionsBuilder<openai_model_options_builder::Empty> = OpenAIModelOptions::builder();
+    let _: OpenAIClientConfigBuilder<openai_client_config_builder::Empty> = OpenAIClientConfig::builder();
+
+    let model = in_model(strands::models::OpenAIModel::builder())
         .api_key("test-key")
         .model_id("gpt-5.4")
         .build()?;
@@ -376,6 +393,13 @@ fn types_with_a_fixed_name_expose_it_as_a_constant() {
             "offload:summarize",
         ]
     );
+
+    use strands::memory::{ExtractionTrigger, IntervalTrigger, IntervalTriggerOptions, InvocationTrigger};
+    assert_eq!(InvocationTrigger::new().name(), InvocationTrigger::NAME);
+    assert_eq!(InvocationTrigger::NAME, "invocation");
+    let interval = IntervalTrigger::new(IntervalTriggerOptions { turns: 2 }).unwrap();
+    assert_eq!(interval.name(), IntervalTrigger::NAME);
+    assert_eq!(IntervalTrigger::NAME, "interval");
 }
 
 #[test]
@@ -395,6 +419,52 @@ fn a_model_impl_and_ordered_maps_need_only_strands_paths() {
         ..Default::default()
     };
     assert_eq!(config.baggage_attributes.len(), 1);
+}
+
+#[test]
+fn builders_implement_debug() {
+    let agent = format!("{:?}", Agent::builder().name("worker"));
+    assert!(agent.starts_with("AgentBuilder") && agent.contains("worker"), "{agent}");
+    let _ = format!(
+        "{:?}",
+        (
+            strands::memory::MemoryManagerConfig::builder(),
+            strands::hooks::HookCallbackOptions::builder(),
+            strands::retry::ExponentialBackoffOptions::builder(),
+            strands::models::ModelRequest::builder(),
+            strands::agent::TakeSnapshotOptions::builder(),
+        )
+    );
+    // A builder whose members hold callbacks, trait objects or keys prints its name only.
+    assert_eq!(
+        format!("{:?}", strands::session::SessionManagerConfig::builder().session_id("s")),
+        "SessionManagerConfigBuilder { .. }"
+    );
+    #[cfg(feature = "openai")]
+    assert_eq!(
+        format!("{:?}", strands::models::OpenAIModel::builder().api_key("test-key")),
+        "OpenAIModelBuilder { .. }"
+    );
+    #[cfg(feature = "anthropic")]
+    assert_eq!(
+        format!("{:?}", strands::models::AnthropicModel::builder().api_key("test-key")),
+        "AnthropicModelBuilder { .. }"
+    );
+}
+
+#[test]
+fn the_agent_exposes_its_baggage_attributes() -> strands::Result<()> {
+    let agent = Agent::builder()
+        .model(model(&[]))
+        .baggage_attributes([("tenant".to_owned(), "a".to_owned())])
+        .build()?;
+    assert_eq!(
+        agent.baggage_attributes().iter().collect::<Vec<_>>(),
+        [(&"tenant".to_owned(), &"a".to_owned())]
+    );
+    let bare = Agent::builder().model(model(&[])).build()?;
+    assert!(bare.baggage_attributes().is_empty());
+    Ok(())
 }
 
 #[test]
