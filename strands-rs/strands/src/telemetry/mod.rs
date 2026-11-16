@@ -16,7 +16,7 @@ pub(crate) use config::setup::with_baggage;
 #[cfg(feature = "otel")]
 pub use config::setup::{
     BaggageKeyPredicate, BaggageKeys, BaggageSpanProcessor, Exporters, MeterConfig, TracerConfig,
-    setup_meter, setup_tracer, tracing_layer,
+    get_meter, get_tracer, setup_meter, setup_tracer, tracing_layer,
 };
 pub use meter::{AgentLoopMetricsData, AgentMetrics, InvocationMetricsData, ToolMetricsData};
 pub use tracer::{AgentTrace, AttributeValue};

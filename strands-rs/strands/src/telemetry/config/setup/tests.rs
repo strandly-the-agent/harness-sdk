@@ -510,3 +510,25 @@ mod setup_tracer_baggage_processor {
         assert!(!format!("{provider:?}").contains("BaggageSpanProcessor"));
     }
 }
+
+mod get_tracer_and_get_meter {
+    use opentelemetry::trace::TraceContextExt as _;
+
+    use super::*;
+    use crate::telemetry::{get_meter, get_tracer};
+
+    // No TS case: `getTracer` has no unit case in `config.test*.ts`. No test registers a global
+    // provider, so the tracer is the no-op one TS documents.
+    #[test]
+    fn get_tracer_returns_a_tracer_of_the_global_provider() {
+        let span = get_tracer().start("probe");
+        let context = Context::current_with_span(span);
+        assert!(!context.span().span_context().is_valid());
+    }
+
+    // No TS case: `getMeter` has no unit case in `config.test*.ts`.
+    #[test]
+    fn get_meter_returns_a_meter_of_the_global_provider() {
+        get_meter().u64_counter("probe").build().add(1, &[]);
+    }
+}

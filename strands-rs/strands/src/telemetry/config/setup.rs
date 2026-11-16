@@ -9,7 +9,7 @@ use std::time::Duration;
 use opentelemetry::baggage::{Baggage, BaggageExt as _};
 use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry::trace::{FutureExt as _, Span as _, TracerProvider as _};
-use opentelemetry::{Context, KeyValue, global};
+use opentelemetry::{Context, InstrumentationScope, KeyValue, global};
 use opentelemetry_otlp::WithExportConfig as _;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::OTelSdkResult;
@@ -185,6 +185,20 @@ where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
     tracing_opentelemetry::layer().with_tracer(provider.tracer(service_name(&process_env)))
+}
+
+/// A tracer of the global tracer provider, named after the service (TS `getTracer`), for custom
+/// spans. Its spans are recorded once a provider is registered ([`setup_tracer`] or the
+/// application's own).
+pub fn get_tracer() -> global::BoxedTracer {
+    global::tracer(service_name(&process_env))
+}
+
+/// A meter of the global meter provider, named after the service (TS `getMeter`), for custom
+/// instruments. They record once a provider is registered ([`setup_meter`] or the application's
+/// own).
+pub fn get_meter() -> opentelemetry::metrics::Meter {
+    global::meter_with_scope(InstrumentationScope::builder(service_name(&process_env)).build())
 }
 
 pub(super) fn setup_tracer_in(
