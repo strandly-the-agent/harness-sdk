@@ -57,3 +57,6 @@ impl ShellCache {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+#[cfg(test)]
+mod tests;
