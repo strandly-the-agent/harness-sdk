@@ -36,7 +36,7 @@ pub enum SkillSource {
     /// `SKILL.md` file), or an `https://` URL of a `SKILL.md`.
     Path(String),
     /// A skill.
-    Skill(Skill),
+    Skill(Box<Skill>),
 }
 
 impl From<&str> for SkillSource {
@@ -53,7 +53,7 @@ impl From<String> for SkillSource {
 
 impl From<Skill> for SkillSource {
     fn from(skill: Skill) -> Self {
-        Self::Skill(skill)
+        Self::Skill(Box::new(skill))
     }
 }
 
@@ -196,7 +196,7 @@ fn resolve_skills(sources: Vec<SkillSource>) -> Resolved {
     let source_count = sources.len();
     for source in sources {
         match source {
-            SkillSource::Skill(skill) => insert_skill(&mut resolved.skills, skill),
+            SkillSource::Skill(skill) => insert_skill(&mut resolved.skills, *skill),
             SkillSource::Path(url) if url.starts_with("https://") => resolved.pending_urls.push(url),
             SkillSource::Path(path) => resolved.skill_paths.push(path),
         }
@@ -266,7 +266,7 @@ impl Inner {
             match result {
                 Ok(skill) => insert_skill(&mut resolved.skills, skill),
                 Err(error) => {
-                    tracing::warn!("url=<{url}> | failed to load skill from URL: {}", thrown(&error))
+                    tracing::warn!("url=<{url}> | failed to load skill from URL: {}", thrown(&error));
                 }
             }
         }
@@ -324,7 +324,7 @@ impl Inner {
     async fn load_skill_path(&self, sandbox: &dyn Sandbox, skill_path: &str, skills: &mut Skills) {
         let Ok(entries) = sandbox.list_files(skill_path).await else {
             if skill_path.to_lowercase().ends_with("skill.md") {
-                let skill_dir = skill_path.rfind('/').map_or(".", |slash| &skill_path[..slash]);
+                let skill_dir = skill_path.rsplit_once('/').map_or(".", |(dir, _)| dir);
                 self.load_skill(sandbox, skill_dir, skill_path, skills).await;
             } else {
                 tracing::warn!("path=<{skill_path}> | skill source does not exist or is not a valid path");

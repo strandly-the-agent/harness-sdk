@@ -150,7 +150,9 @@ impl ContextInjector {
             *last = written;
         }
         context.agent().replace_messages(history);
-        context.messages[index] = with_block(&context.messages[index], &block, position);
+        if let Some(message) = context.messages.get_mut(index) {
+            *message = with_block(message, &block, position);
+        }
         context
     }
 

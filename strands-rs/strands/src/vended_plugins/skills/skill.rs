@@ -359,7 +359,10 @@ fn parse_frontmatter(content: &str) -> Result<(JsonObject, String)> {
     let mut offset = 0;
     let mut closing = None;
     for line in rest.split_inclusive('\n') {
-        if offset > 0 && line.starts_with("---") && line[3..].trim().is_empty() {
+        let closes = line
+            .strip_prefix("---")
+            .is_some_and(|after| after.trim().is_empty());
+        if offset > 0 && closes {
             closing = Some((offset, offset + line.len()));
             break;
         }
@@ -368,8 +371,8 @@ fn parse_frontmatter(content: &str) -> Result<(JsonObject, String)> {
     let Some((start, end)) = closing else {
         return Err(Error::other("SKILL.md frontmatter missing closing --- delimiter"));
     };
-    let frontmatter = parse_yaml_mapping(rest[..start].trim());
-    Ok((frontmatter, rest[end..].trim().to_owned()))
+    let frontmatter = parse_yaml_mapping(rest.get(..start).unwrap_or_default().trim());
+    Ok((frontmatter, rest.get(end..).unwrap_or_default().trim().to_owned()))
 }
 
 /// Whether `line` is at the top level of the mapping: not indented, not blank, not a comment.
@@ -380,16 +383,11 @@ fn is_top_level(line: &str) -> bool {
 /// Splits `key: value`; the colon must end the line or precede whitespace.
 fn split_entry(line: &str) -> Option<(&str, &str)> {
     let line = line.trim();
-    let mut search = 0;
-    while let Some(found) = line[search..].find(':') {
-        let colon = search + found;
-        let after = &line[colon + 1..];
-        if after.is_empty() || after.starts_with(char::is_whitespace) {
-            return Some((line[..colon].trim(), after.trim()));
-        }
-        search = colon + 1;
-    }
-    None
+    line.match_indices(':').find_map(|(colon, _)| {
+        let (key, after) = line.split_at_checked(colon)?;
+        let after = after.strip_prefix(':')?;
+        (after.is_empty() || after.starts_with(char::is_whitespace)).then(|| (key.trim(), after.trim()))
+    })
 }
 
 /// Parses the YAML subset a `SKILL.md` frontmatter uses: a mapping of scalars, flow sequences,
@@ -397,11 +395,8 @@ fn split_entry(line: &str) -> Option<(&str, &str)> {
 /// a value holding a colon needs no quoting.
 fn parse_yaml_mapping(text: &str) -> JsonObject {
     let mut mapping = JsonObject::new();
-    let lines: Vec<&str> = text.lines().collect();
-    let mut index = 0;
-    while index < lines.len() {
-        let line = lines[index];
-        index += 1;
+    let mut lines = text.lines().peekable();
+    while let Some(line) = lines.next() {
         if !is_top_level(line) {
             continue;
         }
@@ -414,18 +409,20 @@ fn parse_yaml_mapping(text: &str) -> JsonObject {
         }
         let mut items = Vec::new();
         let mut nested = JsonObject::new();
-        while let Some(next) = lines.get(index) {
+        while let Some(next) = lines.peek() {
             let inner = next.trim();
-            let is_item = inner == "-" || inner.starts_with("- ");
-            if is_top_level(next) && !is_item {
+            let item = inner
+                .strip_prefix('-')
+                .filter(|rest| rest.is_empty() || rest.starts_with(' '));
+            if is_top_level(next) && item.is_none() {
                 break;
             }
-            index += 1;
+            lines.next();
             if inner.is_empty() || inner.starts_with('#') {
                 continue;
             }
-            if is_item {
-                items.push(parse_scalar(inner[1..].trim()));
+            if let Some(item) = item {
+                items.push(parse_scalar(item));
             } else if let Some((key, value)) = split_entry(inner) {
                 nested.insert(unquote_key(key), parse_scalar(value));
             }
@@ -477,7 +474,7 @@ fn parse_scalar(raw: &str) -> JsonValue {
         return JsonValue::Array(items.map(parse_scalar).collect());
     }
     // A plain scalar ends at a ` #` comment.
-    let raw = raw.find(" #").map_or(raw, |comment| raw[..comment].trim_end());
+    let raw = raw.split_once(" #").map_or(raw, |(value, _)| value.trim_end());
     match raw {
         "" | "~" | "null" | "Null" | "NULL" => JsonValue::Null,
         "true" | "True" | "TRUE" => JsonValue::Bool(true),

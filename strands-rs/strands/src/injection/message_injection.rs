@@ -66,13 +66,17 @@ pub(crate) struct Folded {
 /// Appends `text` as a text block to the most recent user message, which keeps its tracking id
 /// and metadata (TS `foldIntoLastUserMessage`). Without a user message nothing changes.
 pub(crate) fn fold_into_last_user_message(mut messages: Vec<Message>, text: &str) -> Folded {
-    let Some(index) = messages.iter().rposition(|message| message.role() == Role::User) else {
+    let last_index = messages.len().saturating_sub(1);
+    let found = messages
+        .iter_mut()
+        .enumerate()
+        .rfind(|(_, message)| message.role() == Role::User);
+    let Some((index, target)) = found else {
         return Folded {
             messages,
             appended: 0,
         };
     };
-    let target = &messages[index];
     // Some providers concatenate adjacent text blocks, which would run this onto the user's words.
     let separator = if !target.content().is_empty() && !text.starts_with('\n') {
         "\n\n"
@@ -85,8 +89,8 @@ pub(crate) fn fold_into_last_user_message(mut messages: Vec<Message>, text: &str
     if let Some(metadata) = target.metadata() {
         folded = folded.with_metadata(metadata.clone());
     }
-    let appended = usize::from(index == messages.len() - 1);
-    messages[index] = folded;
+    *target = folded;
+    let appended = usize::from(index == last_index);
     Folded { messages, appended }
 }
 

@@ -329,8 +329,10 @@ mod writing_into_the_conversation {
                 preserve_recent: None,
             })
             .unwrap();
-        let mut context_manager = ContextManagerConfig::default();
-        context_manager.strategies = Some(vec![strategy.into()]);
+        let context_manager = ContextManagerConfig {
+            strategies: Some(vec![strategy.into()]),
+            ..ContextManagerConfig::default()
+        };
         let text_to_render = rendered.clone();
         let config = ContextInjectorConfig::new(move |_context| {
             let text = text_to_render.clone();
