@@ -57,3 +57,15 @@ strands-ts/src/agent/__tests__/agent.concurrent.test.ts	strands-rs/strands/src/t
 strands-ts/src/agent/__tests__/agent.concurrent.test.ts	strands-rs/strands/src/agent/run/tests.rs	before_tools_cancel_turns_every_call_into_an_error_result	cancels_all_tools_when_before_tools_event_cancel_is_set_concurrent_mode
 strands-ts/src/agent/__tests__/agent.concurrent.test.ts	strands-rs/strands/src/tools/executors/tests.rs	a_panicking_tool_becomes_an_error_result	handles_a_throwing_tool_without_affecting_siblings
 strands-ts/src/agent/__tests__/agent.concurrent.test.ts	strands-rs/strands/src/tools/executors/tests.rs	concurrent_returns_results_in_tool_use_order	preserves_source_order_of_tool_results_in_after_tools_event_message
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests.rs	after_invocation_fires_on_every_invocation	fires_hooks_for_each_invoke_call
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	halts_the_loop_with_the_default_message	halts_the_loop_when_end_turn_is_true_with_default_message
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	halts_with_a_custom_message	halts_the_loop_with_custom_assistant_message_when_end_turn_is_a_string
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	halts_with_content_blocks	halts_with_content_blocks_when_end_turn_is_a_content_block_array
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	appends_the_tool_results_and_the_end_message_to_history	appends_tool_results_and_default_end_turn_message_to_conversation_history
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	halts_with_concurrent_tools	halts_the_loop_with_concurrent_tool_execution
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	the_stream_carries_after_tools_and_one_result	emits_after_tools_event_with_end_turn_via_stream
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	halts_when_set_on_a_cancelled_tools_event	halts_even_when_set_on_a_cancelled_tools_after_tools_event
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	does_not_resume_when_resume_is_unset	does_not_resume_when_resume_is_left_undefined
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	ignores_resume_when_the_invocation_errors	does_not_resume_when_the_invocation_errors
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	the_first_registered_hook_wins_when_several_set_resume	first_registered_hook_wins_when_multiple_hooks_set_resume
+strands-ts/src/agent/__tests__/agent.hook.test.ts	strands-rs/strands/src/agent/run/tests/end_turn_resume.rs	emits_one_agent_result_and_one_after_invocation_per_pass	emits_only_one_agent_result_event_for_a_resumed_chain

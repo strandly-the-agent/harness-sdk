@@ -148,6 +148,68 @@
       "gap": "the row: interrupt telemetry lands with Phase 4 interrupts"
     }
   },
+  "strands-ts/src/agent/__tests__/agent.hook.test.ts": {
+    "fires hooks during invoke": "fire_in_ts_order_during_invoke_and_initialized_fires_once",
+    "fires hooks during stream": "fire_in_ts_order_during_invoke_and_initialized_fires_once",
+    "uses messages mutated in place by a hook": "before_invocation_can_rewrite_or_drop_the_input",
+    "does not mutate a caller-owned message array": {
+      "gap": "holds by ownership: `invoke` takes its input by value, so there is no caller-owned array to mutate"
+    },
+    "uses messages replaced by a hook": "before_invocation_can_rewrite_or_drop_the_input",
+    "uses an empty replacement from a hook": "before_invocation_can_rewrite_or_drop_the_input",
+    "allows adding hooks after agent creation via addHook": "message_added_fires_for_the_input_and_the_response",
+    "fires tool hooks during tool execution": "the_agent_loop_reproduces_the_ts_tool_run",
+    "fires AfterToolCallEvent with error when tool fails": "after_tool_call_sees_a_failing_tool_and_its_result_replacement_reaches_history",
+    "is yielded in the stream and dispatched to hooks": "fire_in_ts_order_during_invoke_and_initialized_fires_once",
+    "fires for initial user input": "message_added_fires_for_the_input_and_the_response",
+    "does not duplicate user messages on error retry": "after_model_call_retry_re_calls_the_model_without_duplicating_input",
+    "does not duplicate user messages on success retry": "after_model_call_retry_on_success_and_attempt_counts",
+    "retries model call when hook sets retry": "after_model_call_retry_re_calls_the_model_without_duplicating_input",
+    "does not retry when retry is not set": "a_model_error_without_retry_propagates_after_after_invocation_fires",
+    "retries model call on success when hook requests it": "after_model_call_retry_on_success_and_attempt_counts",
+    "retries tool call when hook sets retry": "retries_the_tool_when_an_after_hook_asks",
+    "does not retry a tool call after agent cancellation": "does_not_retry_a_tool_call_after_agent_cancellation",
+    "does not retry a hook-cancelled tool after agent cancellation": "does_not_retry_a_hook_cancelled_tool_after_agent_cancellation",
+    "does not retry tool call when retry is not set": "retries_the_tool_when_an_after_hook_asks",
+    "fires BeforeToolCallEvent on each retry": "retries_the_tool_when_an_after_hook_asks",
+    "retries tool call on success when hook requests it": "retries_the_tool_when_an_after_hook_asks",
+    "cancels individual tool call with default message when cancel is true": "a_before_hook_cancel_skips_the_tool",
+    "cancels individual tool call with custom message when cancel is a string": "a_before_hook_cancel_skips_the_tool",
+    "cancels only specific tools when BeforeToolCallEvent selectively cancels": "a_before_hook_cancel_skips_the_tool",
+    "cancels all tools with default message when BeforeToolsEvent.cancel is true": "cancels_all_tools_when_before_tools_event_cancel_is_set_concurrent_mode",
+    "cancels all tools with custom message when BeforeToolsEvent.cancel is a string": "cancels_all_tools_when_before_tools_event_cancel_is_set_concurrent_mode",
+    "cancels all tools in a batch via BeforeToolsEvent with correct toolUseIds": "cancels_all_tools_when_before_tools_event_cancel_is_set_concurrent_mode",
+    "emits cancel events correctly via stream()": "a_before_hook_cancel_skips_the_tool",
+    "allows hooks to replace result on AfterToolCallEvent": "after_tool_call_sees_a_failing_tool_and_its_result_replacement_reaches_history",
+    "does not halt when endTurn is false (default)": "does_not_halt_by_default_or_for_an_empty_string_or_list",
+    "treats empty string endTurn as falsy (does not halt)": "does_not_halt_by_default_or_for_an_empty_string_or_list",
+    "treats empty array endTurn as falsy (does not halt)": "does_not_halt_by_default_or_for_an_empty_string_or_list",
+    "shallow-copies the endTurn array so later mutation does not affect history": {
+      "gap": "holds by ownership: `EndTurn` is moved into the event"
+    },
+    "cancels invocation with default message when cancel is true": "before_invocation_cancel_skips_the_model_and_the_input",
+    "cancels invocation with custom message when cancel is a string": "before_invocation_cancel_skips_the_model_and_the_input",
+    "does not append user message when invocation is cancelled": "before_invocation_cancel_skips_the_model_and_the_input",
+    "emits AfterInvocationEvent when invocation is cancelled": "before_invocation_cancel_skips_the_model_and_the_input",
+    "cancels model call with default message when cancel is true": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
+    "cancels model call with custom message when cancel is a string": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
+    "emits AfterModelCallEvent when model call is cancelled": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
+    "does not emit ModelMessageEvent when model call is cancelled": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
+    "allows retry after cancel on model call": "before_model_call_cancel_ends_the_turn_and_can_be_retried",
+    "invokes the replacement tool instead of the registry tool": "a_before_hook_can_rename_or_replace_the_tool",
+    "Agent Hooks Integration > BeforeToolCallEvent selectedTool > works with concurrent tool executor": "a_before_hook_can_rename_or_replace_the_tool",
+    "passes mutated input to the tool": "tools_see_the_hooked_input_and_the_execution_signal",
+    "re-resolves the tool when hook renames toolUse.name": "a_before_hook_can_rename_or_replace_the_tool",
+    "Agent Hooks Integration > BeforeToolCallEvent toolUse mutation > works with concurrent tool executor": "a_before_hook_can_rename_or_replace_the_tool",
+    "propagates mutated result into the conversation message": "after_tool_call_sees_a_failing_tool_and_its_result_replacement_reaches_history",
+    "propagates mutated result into AfterToolsEvent": "after_tools_sees_a_result_replaced_by_after_tool_call",
+    "ignores resume set during an erroring invocation": "does_not_resume_when_the_invocation_errors",
+    "receives lifecycle events when registered via plugins config": "receives_lifecycle_events_when_registered_via_plugins_config",
+    "receives no events when passed via non-existent hooks config field": {
+      "gap": "can't be written: `AgentConfig` has no `hooks` field and unknown keys don't compile"
+    },
+    "keeps a plugin initialization failure fail-closed across retries": "keeps_a_plugin_initialization_failure_fail_closed_across_retries"
+  },
   "strands-ts/src/agent/__tests__/agent.invocation-context.test.ts": {
     "rejects invalid limits before any invocation hook runs": {
       "gap": "compile error in Rust: limits are `NonZero*`"

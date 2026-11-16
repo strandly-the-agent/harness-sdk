@@ -1376,7 +1376,7 @@ mod hooks {
     }
 
     #[tokio::test]
-    async fn after_invocation_fires_on_every_invocation() {
+    async fn fires_hooks_for_each_invoke_call() {
         let mut agent = test_agent(mock(vec![vec![text("Hello")]]));
         let count = Arc::new(Mutex::new(0));
         let record = Arc::clone(&count);

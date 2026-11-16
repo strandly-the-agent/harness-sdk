@@ -41,7 +41,7 @@ mod end_turn {
     use super::*;
 
     #[tokio::test]
-    async fn halts_the_loop_with_the_default_message() {
+    async fn halts_the_loop_when_end_turn_is_true_with_default_message() {
         let (mut agent, model) = single_tool_setup();
         end_turn_with(&mut agent, EndTurn::Requested);
         let result = agent.invoke("Test").await.unwrap();
@@ -52,7 +52,7 @@ mod end_turn {
     }
 
     #[tokio::test]
-    async fn halts_with_a_custom_message() {
+    async fn halts_the_loop_with_custom_assistant_message_when_end_turn_is_a_string() {
         let (mut agent, model) = single_tool_setup();
         end_turn_with(&mut agent, "Stopping here".into());
         let result = agent.invoke("Test").await.unwrap();
@@ -78,7 +78,7 @@ mod end_turn {
     }
 
     #[tokio::test]
-    async fn halts_with_content_blocks() {
+    async fn halts_with_content_blocks_when_end_turn_is_a_content_block_array() {
         let (mut agent, _model) = single_tool_setup();
         end_turn_with(&mut agent, vec![text("Block one"), text("Block two")].into());
         let result = agent.invoke("Test").await.unwrap();
@@ -86,7 +86,7 @@ mod end_turn {
     }
 
     #[tokio::test]
-    async fn appends_the_tool_results_and_the_end_message_to_history() {
+    async fn appends_tool_results_and_default_end_turn_message_to_conversation_history() {
         let (mut agent, _model) = single_tool_setup();
         end_turn_with(&mut agent, EndTurn::Requested);
         agent.invoke("Test").await.unwrap();
@@ -104,7 +104,7 @@ mod end_turn {
     }
 
     #[tokio::test]
-    async fn halts_with_concurrent_tools() {
+    async fn halts_the_loop_with_concurrent_tool_execution() {
         let model = mock(vec![
             vec![
                 tool_use("add", "tool-1", json!({})),
@@ -124,7 +124,7 @@ mod end_turn {
     }
 
     #[tokio::test]
-    async fn the_stream_carries_after_tools_and_one_result() {
+    async fn emits_after_tools_event_with_end_turn_via_stream() {
         let (mut agent, _model) = single_tool_setup();
         end_turn_with(&mut agent, EndTurn::Requested);
         let events = collect(agent.stream("Test")).await;
@@ -145,7 +145,7 @@ mod end_turn {
     }
 
     #[tokio::test]
-    async fn halts_when_set_on_a_cancelled_tools_event() {
+    async fn halts_even_when_set_on_a_cancelled_tools_after_tools_event() {
         let (mut agent, model) = single_tool_setup();
         agent.add_hook(|event: &mut BeforeToolsEvent<'_>| event.set_cancel(crate::hooks::Cancel::Requested));
         end_turn_with(&mut agent, EndTurn::Requested);
@@ -294,7 +294,7 @@ mod resume {
     }
 
     #[tokio::test]
-    async fn does_not_resume_when_resume_is_unset() {
+    async fn does_not_resume_when_resume_is_left_undefined() {
         let mut agent = test_agent(mock(vec![vec![text("only")]]));
         let count = resume_on(&mut agent, vec![]);
         agent.invoke("hi").await.unwrap();
@@ -302,7 +302,7 @@ mod resume {
     }
 
     #[tokio::test]
-    async fn ignores_resume_when_the_invocation_errors() {
+    async fn does_not_resume_when_the_invocation_errors() {
         let model = Arc::new(MockMessageModel::new());
         model.add_error(|| ModelError::new("boom").into());
         let mut agent = test_agent(model);
@@ -316,7 +316,7 @@ mod resume {
     }
 
     #[tokio::test]
-    async fn the_first_registered_hook_wins_when_several_set_resume() {
+    async fn first_registered_hook_wins_when_multiple_hooks_set_resume() {
         let mut agent = test_agent(mock(vec![vec![text("first")], vec![text("second")]]));
         let passes = Arc::new(Mutex::new(0));
         let counter = Arc::clone(&passes);
@@ -334,7 +334,7 @@ mod resume {
     }
 
     #[tokio::test]
-    async fn emits_one_agent_result_and_one_after_invocation_per_pass() {
+    async fn emits_only_one_agent_result_event_for_a_resumed_chain() {
         let mut agent = test_agent(mock(vec![vec![text("first")], vec![text("second")]]));
         resume_on(&mut agent, vec![(1, "follow-up")]);
         let results = Arc::new(Mutex::new(0));
