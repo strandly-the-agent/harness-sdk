@@ -1,0 +1,75 @@
+{
+  "strands-ts/src/__tests__/errors.test.ts": {
+    "returns true for a TypeError with message %j": {
+      "gap": "TS-only: `isFetchNetworkError` inspects JS `TypeError` messages; providers map transport failures"
+    },
+    "returns false for a TypeError with another message": {
+      "gap": "TS-only: `isFetchNetworkError` inspects JS `TypeError` messages; providers map transport failures"
+    },
+    "returns false for a non-TypeError with a network failure message": {
+      "gap": "TS-only: `isFetchNetworkError` inspects JS `TypeError` messages; providers map transport failures"
+    },
+    "returns the same Error instance": {
+      "gap": "TS-only: `normalizeError` wraps non-`Error` throwables, which Rust doesn't have"
+    },
+    "wraps it in an Error": {
+      "gap": "TS-only: `normalizeError` wraps non-`Error` throwables, which Rust doesn't have"
+    },
+    "normalizeError > when given a number > converts it to string and wraps in Error": {
+      "gap": "TS-only: `normalizeError` wraps non-`Error` throwables, which Rust doesn't have"
+    },
+    "normalizeError > when given an object > converts it to string and wraps in Error": {
+      "gap": "TS-only: `normalizeError` wraps non-`Error` throwables, which Rust doesn't have"
+    },
+    "normalizeError > when given null > converts it to string and wraps in Error": {
+      "gap": "TS-only: `normalizeError` wraps non-`Error` throwables, which Rust doesn't have"
+    },
+    "normalizeError > when given undefined > converts it to string and wraps in Error": {
+      "gap": "TS-only: `normalizeError` wraps non-`Error` throwables, which Rust doesn't have"
+    }
+  },
+  "strands-ts/src/types/__tests__/agent.test.ts": {
+    "returns the text content": "to_string_joins_text_blocks_with_newlines",
+    "AgentResult > toString > when content has multiple TextBlocks > returns all text joined with newlines": "to_string_joins_text_blocks_with_newlines",
+    "returns the reasoning text with prefix": "to_string_prefixes_and_indents_reasoning_and_skips_empty_reasoning",
+    "returns empty string (reasoning block is skipped)": "to_string_prefixes_and_indents_reasoning_and_skips_empty_reasoning",
+    "AgentResult > toString > when content has mixed TextBlock and ReasoningBlock > returns all text joined with newlines": "to_string_prefixes_and_indents_reasoning_and_skips_empty_reasoning",
+    "AgentResult > toString > when content has only non-text blocks > returns empty string": "to_string_skips_non_text_blocks",
+    "returns only text from TextBlock and ReasoningBlock": "to_string_skips_non_text_blocks",
+    "returns JSON-stringified interrupts, taking priority over text content": "to_string_prefers_interrupts_then_structured_output",
+    "falls through when interrupts array is empty": "to_string_prefers_interrupts_then_structured_output",
+    "returns JSON-stringified structured output, taking priority over text content": "to_string_prefers_interrupts_then_structured_output",
+    "returns interrupts, taking priority over structuredOutput": "to_string_prefers_interrupts_then_structured_output",
+    "works with String() conversion": "to_string_prefers_interrupts_then_structured_output",
+    "works with template literals": "to_string_prefers_interrupts_then_structured_output",
+    "returns latestContextSize from metrics": "context_sizes_come_from_the_metrics",
+    "returns undefined when metrics has no latestContextSize": "context_sizes_come_from_the_metrics",
+    "returns undefined when no metrics are available": "context_sizes_come_from_the_metrics",
+    "returns projectedContextSize from metrics": "context_sizes_come_from_the_metrics",
+    "returns undefined when metrics has no projectedContextSize": "context_sizes_come_from_the_metrics",
+    "excludes traces and metrics from serialization": "to_json_excludes_traces_metrics_and_interrupts_but_keeps_them_readable",
+    "is automatically used by JSON.stringify()": "to_json_excludes_traces_metrics_and_interrupts_but_keeps_them_readable",
+    "preserves traces and metrics as accessible properties": "to_json_excludes_traces_metrics_and_interrupts_but_keeps_them_readable",
+    "prevents bloated API responses when forwarding result directly": "to_json_excludes_traces_metrics_and_interrupts_but_keeps_them_readable",
+    "defaults checkpoint to undefined": {
+      "gap": "out of scope: checkpointing is out of v0.1"
+    },
+    "accepts a checkpoint": {
+      "gap": "out of scope: checkpointing is out of v0.1"
+    },
+    "includes the serialized checkpoint in toJSON when present": {
+      "gap": "out of scope: checkpointing is out of v0.1"
+    },
+    "omits checkpoint from toJSON when absent": {
+      "gap": "out of scope: checkpointing is out of v0.1"
+    }
+  },
+  "strands-ts/src/types/__tests__/messages.test.ts": {
+    "keeps an InjectedBlock passed inside message data an InjectedBlock": {
+      "gap": "TS-only: class instances inside plain data"
+    },
+    "returns them unchanged": {
+      "gap": "TS-only: class instances inside plain data"
+    }
+  }
+}

@@ -249,7 +249,7 @@ mod agent_result {
     }
 
     #[test]
-    fn to_string_of_empty_content_is_empty() {
+    fn returns_empty_string() {
         assert_eq!(with_content(vec![]).to_string(), "");
     }
 
@@ -297,7 +297,7 @@ mod agent_result {
     }
 
     #[test]
-    fn to_string_concatenates_citation_content() {
+    fn concatenates_generated_content_text_from_citations() {
         let citations = CitationsBlock::new(
             vec![],
             vec![
