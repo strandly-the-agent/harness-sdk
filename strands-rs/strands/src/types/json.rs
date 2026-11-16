@@ -29,6 +29,15 @@ pub(crate) fn to_js_string<T: Serialize + ?Sized>(value: &T) -> serde_json::Resu
     Ok(String::from_utf8_lossy(&buffer).into_owned())
 }
 
+/// Serializes `value` exactly as `JSON.stringify(value, null, 2)` would.
+pub(crate) fn to_js_string_pretty<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<String> {
+    let mut buffer = Vec::new();
+    let formatter = JsPrettyFormatter(serde_json::ser::PrettyFormatter::new());
+    let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
+    value.serialize(&mut serializer)?;
+    Ok(String::from_utf8_lossy(&buffer).into_owned())
+}
+
 /// Parses JSON written by TS, replacing lone UTF-16 surrogate escapes (`\ud83d`) with U+FFFD.
 ///
 /// `JSON.stringify` writes lone surrogates as escapes, which Rust strings can't hold. Nesting
@@ -117,6 +126,55 @@ impl serde_json::ser::Formatter for JsFormatter {
     }
 }
 
+/// `serde_json`'s two-space layout with JS number formatting.
+struct JsPrettyFormatter(serde_json::ser::PrettyFormatter<'static>);
+
+impl serde_json::ser::Formatter for JsPrettyFormatter {
+    fn write_f64<W: ?Sized + io::Write>(&mut self, writer: &mut W, value: f64) -> io::Result<()> {
+        JsFormatter.write_f64(writer, value)
+    }
+
+    fn write_f32<W: ?Sized + io::Write>(&mut self, writer: &mut W, value: f32) -> io::Result<()> {
+        JsFormatter.write_f32(writer, value)
+    }
+
+    fn begin_array<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        self.0.begin_array(writer)
+    }
+
+    fn end_array<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        self.0.end_array(writer)
+    }
+
+    fn begin_array_value<W: ?Sized + io::Write>(&mut self, writer: &mut W, first: bool) -> io::Result<()> {
+        self.0.begin_array_value(writer, first)
+    }
+
+    fn end_array_value<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        self.0.end_array_value(writer)
+    }
+
+    fn begin_object<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        self.0.begin_object(writer)
+    }
+
+    fn end_object<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        self.0.end_object(writer)
+    }
+
+    fn begin_object_key<W: ?Sized + io::Write>(&mut self, writer: &mut W, first: bool) -> io::Result<()> {
+        self.0.begin_object_key(writer, first)
+    }
+
+    fn begin_object_value<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        self.0.begin_object_value(writer)
+    }
+
+    fn end_object_value<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        self.0.end_object_value(writer)
+    }
+}
+
 /// Formats a number like JS `Number.prototype.toString` (ECMA-262 `Number::toString`).
 fn js_number(value: f64) -> String {
     if !value.is_finite() {
@@ -164,6 +222,19 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    // No TS case: `JSON.stringify(value, null, 2)` is a JS built-in.
+    #[test]
+    fn to_js_string_pretty_matches_json_stringify_with_two_spaces() {
+        let value: JsonValue = serde_json::from_str(
+            r#"{"n":1.0,"neg":-0.0,"x":100000000000000000000,"a":[],"o":{},"l":[1.5,"s"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            to_js_string_pretty(&value).unwrap(),
+            "{\n  \"n\": 1,\n  \"neg\": 0,\n  \"x\": 100000000000000000000,\n  \"a\": [],\n  \"o\": {},\n  \"l\": [\n    1.5,\n    \"s\"\n  ]\n}"
+        );
+    }
 
     #[test]
     fn js_number_matches_number_to_string() {
