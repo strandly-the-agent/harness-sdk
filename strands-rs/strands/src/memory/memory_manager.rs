@@ -352,7 +352,7 @@ impl MemoryManager {
             let store_name = store.name();
             match outcome {
                 Ok(entries) => {
-                    results.extend(entries.into_iter().map(|entry| entry.with_store_name(store_name)))
+                    results.extend(entries.into_iter().map(|entry| entry.with_store_name(store_name)));
                 }
                 Err(error) => tracing::warn!("store=<{store_name}>, reason=<{error}> | store search failed"),
             }

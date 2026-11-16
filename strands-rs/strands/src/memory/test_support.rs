@@ -126,10 +126,11 @@ impl MockStore {
     }
 
     fn write_outcome(&self) -> Result<()> {
-        let fail_once = self
-            .fail_times
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| left.checked_sub(1))
-            .is_ok();
+        let left = self.fail_times.load(Ordering::SeqCst);
+        let fail_once = left > 0;
+        if fail_once {
+            self.fail_times.store(left - 1, Ordering::SeqCst);
+        }
         if fail_once {
             return Err(Error::other("backend down"));
         }

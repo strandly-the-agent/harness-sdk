@@ -51,7 +51,7 @@ async fn parses_a_json_array_of_entries_from_the_model_response() {
         ]
     );
     assert_eq!(
-        serde_json::to_value(&model.requests()[0].messages[0].content()).unwrap(),
+        serde_json::to_value(model.requests()[0].messages[0].content()).unwrap(),
         serde_json::json!([{
             "text": "Extract facts from the following transcript:\n\nuser: I like dark mode and live in Berlin",
         }])
