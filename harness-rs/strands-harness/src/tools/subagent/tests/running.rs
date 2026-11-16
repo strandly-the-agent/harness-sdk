@@ -22,7 +22,7 @@ async fn stopped(reply: &str, stop_reason: StopReason) -> (ToolResultBlock, Suba
     (result, tool)
 }
 
-async fn drive_at_depth(max_depth: u32, stored: Option<i64>) -> (ToolOutcome, Arc<Built>) {
+async fn drive_at_depth(max_depth: u32, stored: Option<JsonValue>) -> (ToolOutcome, Arc<Built>) {
     let (mut options, built) = generalist_over(&replying("done", StopReason::EndTurn));
     options.max_depth = Some(max_depth);
     let tool = make_subagent(options).unwrap();
@@ -39,7 +39,7 @@ fn child_depth(built: &Built) -> Option<JsonValue> {
 
 #[tokio::test]
 async fn refuses_once_the_budget_is_exhausted_without_building_a_child() {
-    let (outcome, built) = drive_at_depth(2, Some(0)).await;
+    let (outcome, built) = drive_at_depth(2, Some(json!(0))).await;
     let ToolOutcome::Result(result) = outcome else {
         panic!("expected a result");
     };
@@ -53,8 +53,20 @@ async fn refuses_once_the_budget_is_exhausted_without_building_a_child() {
 }
 
 #[tokio::test]
+async fn fails_closed_on_a_stored_depth_that_is_not_a_number() {
+    for stored in [json!("deep"), json!({"depth": 2}), json!([2, 2])] {
+        let (outcome, built) = drive_at_depth(2, Some(stored)).await;
+        let ToolOutcome::Result(result) = outcome else {
+            panic!("expected a result");
+        };
+        assert_eq!(result.status(), &ToolResultStatus::Error);
+        assert!(built.specs.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn decrements_the_budget_onto_the_childs_own_state() {
-    let (_, built) = drive_at_depth(3, Some(2)).await;
+    let (_, built) = drive_at_depth(3, Some(json!(2))).await;
     assert_eq!(child_depth(&built), Some(json!(1)));
 }
 
