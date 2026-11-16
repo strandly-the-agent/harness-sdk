@@ -1,7 +1,7 @@
 From 2607d0f997d207e13abea3bbe2ca0cbcdb6b93f2 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 01:56:54 +0000
-Subject: [PATCH 3/3] test(strands): port the stash and retrieve_context cases
+Subject: [PATCH 3/5] test(strands): port the stash and retrieve_context cases
 
 ---
  .../context_manager/retrieval_tool/tests.rs   | 182 ++++++++++++-

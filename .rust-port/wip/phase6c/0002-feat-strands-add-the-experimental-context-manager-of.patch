@@ -1,7 +1,7 @@
 From cf02503f99fd883f98a07ce36aba1059912282e9 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 01:50:57 +0000
-Subject: [PATCH 2/3] feat(strands): add the experimental context manager
+Subject: [PATCH 2/5] feat(strands): add the experimental context manager
  offload strategies and presets
 
 ---
