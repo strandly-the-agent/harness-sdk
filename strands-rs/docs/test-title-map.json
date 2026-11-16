@@ -30,15 +30,6 @@
   },
   "strands-ts/src/__tests__/index.test.ts": {
     "exports error classes": "every_error_class_builds_from_constructors",
-    "exports BedrockModel": {
-      "gap": "the row: `BedrockModel` exports land with Phase 5"
-    },
-    "can instantiate BedrockModel": {
-      "gap": "the row: `BedrockModel` exports land with Phase 5"
-    },
-    "exports all required types": {
-      "gap": "the row: the required types (Bedrock, background tasks) land with Phases 5 and 6"
-    },
     "can instantiate exported streaming event classes": "exports_streaming_event_classes_as_values_not_just_types"
   },
   "strands-ts/src/__tests__/interrupt.test.ts": {
