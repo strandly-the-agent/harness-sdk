@@ -46,7 +46,7 @@ pub struct IntervalTriggerOptions {
 }
 
 /// Fires every `turns` invocations (TS `IntervalTrigger`).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct IntervalTrigger {
     turns: u64,

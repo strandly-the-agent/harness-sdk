@@ -59,7 +59,7 @@ impl From<i32> for HookOrder {
 }
 
 /// Options for registering a hook callback (TS `HookCallbackOptions`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bon::Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, bon::Builder)]
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"

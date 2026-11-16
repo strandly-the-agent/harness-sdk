@@ -107,7 +107,7 @@ impl Default for ConstantBackoffOptions {
 /// let context = BackoffContext::new(NonZeroU32::MIN);
 /// assert_eq!(backoff.next_delay(&context), Duration::from_millis(250));
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstantBackoff {
     delay: Duration,
 }

@@ -78,17 +78,17 @@ impl InterventionRegistry {
             order: HookOrder::INTERVENTION_OUTPUT,
         };
         let this = self.clone();
-        hooks.add_async_hook_with::<BeforeInvocationEvent<'static>>(input, move |event| {
+        hooks.add_async_hook_with::<BeforeInvocationEvent<'static>>(input.clone(), move |event| {
             let this = this.clone();
             Box::pin(async move { this.on_before_invocation(event).await })
         });
         let this = self.clone();
-        hooks.add_async_hook_with::<BeforeToolCallEvent>(input, move |event| {
+        hooks.add_async_hook_with::<BeforeToolCallEvent>(input.clone(), move |event| {
             let this = this.clone();
             Box::pin(async move { this.on_before_tool_call(event).await })
         });
         let this = self.clone();
-        hooks.add_async_hook_with::<AfterToolCallEvent>(output, move |event| {
+        hooks.add_async_hook_with::<AfterToolCallEvent>(output.clone(), move |event| {
             let this = this.clone();
             Box::pin(async move { this.on_after_tool_call(event).await })
         });
