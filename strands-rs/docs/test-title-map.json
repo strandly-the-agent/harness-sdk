@@ -957,5 +957,82 @@
     "returns false for binary types": {
       "gap": "no Rust counterpart: `retrieve_context` only calls `isSearchableContent('text/plain')`, which is always true, so Rust has no content-type check"
     }
+  },
+  "strands-ts/src/telemetry/__tests__/json.test.ts": {
+    "handles Date objects nested in objects": "handles_date_objects",
+    "replaces BigInt values": {
+      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
+    },
+    "replaces symbols": {
+      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
+    },
+    "replaces ArrayBuffer values": {
+      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
+    },
+    "replaces Uint8Array values": {
+      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
+    },
+    "handles mixed content in arrays": {
+      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
+    },
+    "handles mixed content in nested objects": {
+      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
+    }
+  },
+  "strands-ts/src/telemetry/__tests__/local-trace.test.ts": {
+    "accepts a custom startTime": {
+      "gap": "TS-only: the Rust `AgentTrace` has no start-time option, a trace always starts at the current time"
+    }
+  },
+  "strands-ts/src/telemetry/__tests__/meter.test.ts": {
+    "reconstructs equivalent AgentMetrics from serialized data": {
+      "gap": "Not applicable: `AgentMetrics` is serialize-only (P-487)"
+    }
+  },
+  "strands-ts/src/telemetry/__tests__/tracer.test.node.ts": {
+    "reads service name from OTEL_SERVICE_NAME env var": "should_use_strands_agents_as_default_service_name",
+    "defaults service name to strands-agents": "should_use_strands_agents_as_default_service_name",
+    "merges constructor-level and call-level trace attributes": {
+      "gap": "Out of v0.1: the call-level `traceAttributes` option is used by multi-agent node spans only; Rust has constructor-level attributes"
+    },
+    "executes callback directly when span is null": {
+      "gap": "TS-only: `withSpanContext` has no Rust counterpart, `tracing` carries the context (`Span::in_scope`, `.instrument`)"
+    },
+    "executes callback within span context when span is provided": {
+      "gap": "TS-only: `withSpanContext` has no Rust counterpart, `tracing` carries the context (`Span::in_scope`, `.instrument`)"
+    },
+    "propagates return value from callback": {
+      "gap": "TS-only: `withSpanContext` has no Rust counterpart, `tracing` carries the context (`Span::in_scope`, `.instrument`)"
+    },
+    "sets langfuse.observation.type on agent span when OTEL_EXPORTER_OTLP_ENDPOINT contains langfuse": "detects_langfuse_from_the_base_url_and_the_otlp_endpoints",
+    "sets langfuse.observation.type when OTEL_EXPORTER_OTLP_TRACES_ENDPOINT contains langfuse": "detects_langfuse_from_the_base_url_and_the_otlp_endpoints",
+    "sets langfuse.observation.type when LANGFUSE_BASE_URL is set": "detects_langfuse_from_the_base_url_and_the_otlp_endpoints",
+    "does not set langfuse.observation.type when no langfuse env vars are set": "detects_langfuse_from_the_base_url_and_the_otlp_endpoints",
+    "returns null when $method throws internally": {
+      "gap": "Not applicable: starting a `tracing` span can't fail"
+    },
+    "parses multiple comma-separated opt-in values": "parses_the_comma_separated_opt_in_values",
+    "handles whitespace in opt-in values": "parses_the_comma_separated_opt_in_values",
+    "defaults to stable conventions when env var is empty": "uses_the_stable_conventions_by_default",
+    "returns undefined when no span is active": {
+      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
+    },
+    "returns undefined for a non-recording active span": {
+      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
+    },
+    "returns undefined for a recording span with an invalid (all-zeros) context": {
+      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
+    },
+    "returns the context for a recording span with a valid context": {
+      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form; the valid path is covered by `the_extract_span_links_the_span_that_scheduled_it`"
+    }
+  },
+  "strands-ts/src/memory/__tests__/memory-tracing.test.ts": {
+    "ends the inject span and rethrows when search throws": {
+      "gap": "Not applicable: the injection search names no stores, so `MemoryManager::search` can't fail there; TS reaches the path only by mocking `search`"
+    },
+    "a span-end failure does not throw nor mark the save as failed": {
+      "gap": "Not applicable: recording on a `tracing` span can't fail"
+    }
   }
 }
