@@ -609,6 +609,9 @@ pub enum ToolCallOutcome {
     Interrupt(Interrupt),
     /// The agent was cancelled before the call started; the tool did not run.
     Cancelled,
+    /// A `BeforeToolCallEvent` hook cancelled the call; the tool did not run. The error result
+    /// carries the cancel message, after the `AfterToolCallEvent` hooks.
+    HookCancelled(ToolResultBlock),
 }
 
 impl ToolAgent {

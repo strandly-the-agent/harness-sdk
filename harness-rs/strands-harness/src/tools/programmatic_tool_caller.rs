@@ -116,6 +116,8 @@ fn gated_inner_caller() -> InnerCaller {
                     }))
                 }
                 Ok(ToolCallOutcome::Cancelled) => Ok(InnerCall::Cancelled),
+                // TS `gateInnerCall` throws the refusal, so it gets the `Failed to execute` prefix.
+                Ok(ToolCallOutcome::HookCancelled(result)) => Err(extract_text(result.content())),
                 Ok(other) => Err(format!("unexpected outcome {other:?}")),
                 Err(error) => Err(error.to_string()),
             }

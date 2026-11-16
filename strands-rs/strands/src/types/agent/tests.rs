@@ -479,8 +479,11 @@ mod call_tool {
             .await
             .unwrap();
 
+        let ToolCallOutcome::HookCancelled(result) = outcome else {
+            panic!("expected a hook cancel, got {outcome:?}");
+        };
         assert_eq!(
-            result_of(outcome),
+            result_of(ToolCallOutcome::Result(result)),
             json!({"status": "error", "content": [{"text": "not allowed"}]})
         );
         assert!(ran.lock().unwrap().is_empty());
@@ -553,9 +556,10 @@ mod call_tool {
         let ran = Arc::default();
         let agent = agent_with_echo(&ran);
         let _cleanup = agent.add_middleware(ExecuteToolStage::wrap(|_context, _next| {
-            Box::pin(futures::stream::iter([Err(
-                crate::Error::other("middleware failed").into()
-            )]))
+            Box::pin(futures::stream::iter([Err(crate::Error::other(
+                "middleware failed",
+            )
+            .into())]))
         }));
 
         let error = agent

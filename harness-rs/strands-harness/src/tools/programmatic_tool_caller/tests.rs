@@ -675,10 +675,9 @@ async fn deny_blocks_the_inner_call_and_the_tool_never_runs() {
     let mut agent = gated_agent(&calls, deny_shell());
     let result = run(&mut agent, GATED_CODE).await;
     assert!(!is_error(&result));
-    assert!(
-        text(&result).contains("DENIED: shell is off"),
-        "{}",
-        text(&result)
+    assert_eq!(
+        text(&result),
+        "ERR Failed to execute tool 'shell_like': DENIED: shell is off"
     );
     assert!(recorded(&calls).is_empty());
 }

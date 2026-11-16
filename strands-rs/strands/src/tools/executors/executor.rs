@@ -291,11 +291,19 @@ pub(crate) async fn call_tool(
     let execute = task.execute(&tool_use);
     tokio::pin!(execute);
     let mut interrupts = Vec::new();
+    let mut hook_cancelled = false;
+    let finished = |result, hook_cancelled| {
+        if hook_cancelled {
+            ToolCallOutcome::HookCancelled(result)
+        } else {
+            ToolCallOutcome::Result(result)
+        }
+    };
     loop {
         let message = tokio::select! {
             outcome = &mut execute => {
                 return match (outcome, interrupts.into_iter().next()) {
-                    (Some(ToolOutcome::Result(result)), _) => Ok(ToolCallOutcome::Result(result)),
+                    (Some(ToolOutcome::Result(result)), _) => Ok(finished(result, hook_cancelled)),
                     (Some(ToolOutcome::Interrupt(interrupt)), _) | (None, Some(interrupt)) => {
                         Ok(ToolCallOutcome::Interrupt(interrupt))
                     }
@@ -317,6 +325,7 @@ pub(crate) async fn call_tool(
                         .cancel()
                         .filter(|cancel| cancel.cancels())
                         .map(|cancel| cancel.message().unwrap_or("Tool cancelled by hook").to_owned());
+                    hook_cancelled = cancel.is_some();
                     drop(reply.send(Some((
                         event.tool_use().clone(),
                         event.selected_tool().cloned(),
@@ -334,7 +343,7 @@ pub(crate) async fn call_tool(
             }
             TaskMessage::Interrupted(interrupt) => interrupts.push(interrupt),
             TaskMessage::Failed(_, error) => return Err(error),
-            TaskMessage::Done(result) => return Ok(ToolCallOutcome::Result(result)),
+            TaskMessage::Done(result) => return Ok(finished(result, hook_cancelled)),
         }
     }
 }
