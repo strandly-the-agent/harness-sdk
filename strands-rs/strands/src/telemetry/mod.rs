@@ -10,7 +10,6 @@ pub mod tracer;
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-pub use config::DEFAULT_SERVICE_NAME;
 #[cfg(feature = "otel")]
 pub(crate) use config::setup::with_baggage;
 #[cfg(feature = "otel")]

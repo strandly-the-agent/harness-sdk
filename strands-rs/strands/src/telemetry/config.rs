@@ -12,7 +12,7 @@ pub(crate) fn process_env(name: &str) -> Option<String> {
 }
 
 /// The service name when `OTEL_SERVICE_NAME` is unset; also the tracer and meter scope name.
-pub const DEFAULT_SERVICE_NAME: &str = "strands-agents";
+const DEFAULT_SERVICE_NAME: &str = "strands-agents";
 
 fn non_empty(env: EnvLookup<'_>, name: &str) -> Option<String> {
     env(name).filter(|value| !value.is_empty())
@@ -89,10 +89,11 @@ pub(crate) fn resource_attributes(env: EnvLookup<'_>) -> Vec<(String, String)> {
         ("telemetry.sdk.name".to_owned(), "opentelemetry".to_owned()),
         ("telemetry.sdk.language".to_owned(), "rust".to_owned()),
     ];
-    let mut set = |key: String, value: String| match attributes.iter_mut().find(|(existing, _)| *existing == key) {
-        Some(existing) => existing.1 = value,
-        None => attributes.push((key, value)),
-    };
+    let mut set =
+        |key: String, value: String| match attributes.iter_mut().find(|(existing, _)| *existing == key) {
+            Some(existing) => existing.1 = value,
+            None => attributes.push((key, value)),
+        };
     let detected = env("OTEL_RESOURCE_ATTRIBUTES").unwrap_or_default();
     for (key, value) in detected_attributes(&detected).unwrap_or_default() {
         set(key, value);
@@ -213,7 +214,10 @@ mod tests {
 
     #[test]
     fn resource_attributes_are_percent_decoded() {
-        let env = env_of(&[("OTEL_RESOURCE_ATTRIBUTES", "te%61m=a%20b%2Cc%3Dd, caf%C3%A9 = 1 ,,")]);
+        let env = env_of(&[(
+            "OTEL_RESOURCE_ATTRIBUTES",
+            "te%61m=a%20b%2Cc%3Dd, caf%C3%A9 = 1 ,,",
+        )]);
         let attributes = resource_attributes(&env);
         let get = |key: &str| attributes.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
         assert_eq!(get("team"), Some("a b,c=d"));
@@ -237,7 +241,13 @@ mod tests {
             let keys: Vec<&str> = attributes.iter().map(|(key, _)| key.as_str()).collect();
             assert_eq!(
                 keys,
-                ["service.name", "service.namespace", "deployment.environment", "telemetry.sdk.name", "telemetry.sdk.language"],
+                [
+                    "service.name",
+                    "service.namespace",
+                    "deployment.environment",
+                    "telemetry.sdk.name",
+                    "telemetry.sdk.language"
+                ],
                 "{raw}"
             );
         }
