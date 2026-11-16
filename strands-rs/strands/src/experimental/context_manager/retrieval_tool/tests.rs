@@ -158,6 +158,7 @@ async fn returns_error_when_searching_non_text_content() {
     );
 }
 
+// No TS case: pins the `[truncated]` cap of a full-content read at a small budget.
 #[tokio::test]
 async fn caps_full_content_at_the_result_budget() {
     let (stash, reference) = stash_with_text(&"y".repeat(50)).await;
@@ -168,6 +169,7 @@ async fn caps_full_content_at_the_result_budget() {
     assert_eq!(result, json!("{\"text\":\"yyyyyyyyyyy\n\n[truncated]"));
 }
 
+// No TS case: a call without `reference` fails input validation before the tool runs.
 #[tokio::test]
 async fn rejects_input_outside_the_schema() {
     let tool = create_retrieval_tool(stash(), None);

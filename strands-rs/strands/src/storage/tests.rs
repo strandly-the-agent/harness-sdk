@@ -88,6 +88,7 @@ fn does_not_have_namespaced_symbol_on_raw_storage() {
     assert!(!backend.is_namespaced());
 }
 
+// No TS case: pins the logged divergence from the TS trailing-slash prefix bug (docs/DIVERGENCES.md).
 #[tokio::test]
 async fn a_trailing_slash_prefix_lists_whole_keys() {
     let backend = InMemoryStorage::new();
@@ -96,6 +97,7 @@ async fn a_trailing_slash_prefix_lists_whole_keys() {
     assert_eq!(namespaced.list("").await.unwrap(), ["key"]);
 }
 
+// No TS case: pins that a generic view keeps the ephemeral marker and searches only its prefix.
 #[tokio::test]
 async fn the_view_keeps_the_ephemeral_marker_and_filters_search() {
     let (backend, namespaced) = setup();
@@ -107,6 +109,7 @@ async fn the_view_keeps_the_ephemeral_marker_and_filters_search() {
     assert_eq!(keys, ["theme.md"]);
 }
 
+// No TS case: pins `normalize_key` and `normalize_prefix` directly, with the TS error texts.
 #[test]
 fn keys_are_normalized_with_the_ts_error_texts() {
     use super::{normalize_key, normalize_prefix};

@@ -76,6 +76,7 @@ fn creates_a_strategy_with_when_conditions() {
     assert_eq!(strategy.name(), "offload:truncate");
 }
 
+// No TS case: pins the TS error text of `TruncateStrategy` for `threshold <= previewTokens`.
 #[test]
 fn rejects_a_threshold_at_or_below_the_preview_size() {
     let error = truncate(OffloadTarget::ToolResults)
@@ -217,6 +218,7 @@ async fn formats_preview_counts_the_same_regardless_of_the_host_locale() {
     assert!(preview.contains("[... 999,600 chars elided ...]"));
 }
 
+// No TS case: pins the `head` and `tail` preview modes end to end.
 #[tokio::test]
 async fn head_and_tail_previews_keep_one_end() {
     let text = format!("{}{}", "A".repeat(5000), "B".repeat(5000));
@@ -299,6 +301,7 @@ async fn offload_truncate_with_string_target_skips_non_matching_tools() {
     assert!(!acted);
 }
 
+// No TS case: pins a `!name` exclude entry in a tool target.
 #[tokio::test]
 async fn an_exclude_target_matches_every_other_tool() {
     let strategy = truncate(OffloadTarget::Tools(vec!["!bash".into()]));
@@ -814,6 +817,7 @@ async fn keeps_message_0_verbatim_when_text_only() {
     }
 }
 
+// No TS case: pins that a JSON tool-result item is truncated as its JSON text.
 #[test]
 fn tool_result_json_items_truncate_as_their_json() {
     let block = crate::types::messages::ToolResultBlock::new(

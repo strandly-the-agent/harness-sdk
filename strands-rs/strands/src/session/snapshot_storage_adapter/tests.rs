@@ -376,6 +376,7 @@ async fn throws_session_error_on_corrupted_json() {
     );
 }
 
+// No TS case: pins the id parsed from a `snapshot_<id>.json` key.
 #[test]
 fn snapshot_ids_follow_the_ts_key_pattern() {
     use super::snapshot_id_of;

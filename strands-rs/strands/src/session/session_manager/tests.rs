@@ -636,6 +636,7 @@ async fn saves_snapshot_latest_on_redaction_when_save_latest_on_is_invocation() 
     assert_eq!(writes, [write(1, REDACTED), write(2, REDACTED)]);
 }
 
+// No TS case: pins the TS error text for an invalid session id.
 #[test]
 fn rejects_an_invalid_session_id() {
     let error = SessionManager::new(SessionManagerConfig {
@@ -651,6 +652,7 @@ fn rejects_an_invalid_session_id() {
     assert_eq!(default.session_id(), "default-session");
 }
 
+// No TS case: pins that a namespaced storage is used as the session root.
 #[tokio::test]
 async fn a_pre_namespaced_storage_is_used_without_the_session_prefix() {
     let storage = InMemoryStorage::new();
@@ -667,6 +669,7 @@ async fn a_pre_namespaced_storage_is_used_without_the_session_prefix() {
     );
 }
 
+// No TS case: pins the error for a latest snapshot that is not JSON.
 #[tokio::test]
 async fn a_corrupted_latest_snapshot_fails_initialize() {
     let storage = InMemoryStorage::new();
@@ -684,6 +687,7 @@ async fn a_corrupted_latest_snapshot_fails_initialize() {
     );
 }
 
+// No TS case: the `message` row of the TS `it.each` redaction case.
 #[tokio::test]
 async fn saves_snapshot_latest_on_redaction_when_save_latest_on_is_message() {
     let writes = latest_writes(SaveLatestStrategy::Message, true).await;

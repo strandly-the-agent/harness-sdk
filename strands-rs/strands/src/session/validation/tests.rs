@@ -84,6 +84,7 @@ fn when_id_is_empty_string_throws_error() {
     );
 }
 
+// No TS case: pins that empty and uppercase identifiers are rejected.
 #[test]
 fn an_empty_identifier_is_rejected() {
     assert!(validate_identifier("").is_err());

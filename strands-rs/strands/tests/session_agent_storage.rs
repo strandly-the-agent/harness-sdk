@@ -88,6 +88,7 @@ fn returns_undefined_when_no_storage_configured() {
     assert!(agent.storage().is_none());
 }
 
+// No TS case: end-to-end resume of a session by a second agent, and `Agent::session_manager()`.
 #[tokio::test]
 async fn a_second_agent_resumes_the_session_and_the_manager_is_exposed() {
     let storage: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());

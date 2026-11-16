@@ -375,6 +375,7 @@ async fn carries_a_search_strategy_from_config_through_for_sandbox_and_namespace
     );
 }
 
+// No TS case: pins the default base directory and its normalization.
 #[test]
 fn the_base_dir_defaults_to_dot_strands_and_collapses_slashes() {
     assert_eq!(LocalFileStorage::default().base_dir(), "./.strands");

@@ -201,6 +201,7 @@ async fn reads_entries_in_concurrent_batches_of_at_most_8() {
     assert_eq!(storage.max_in_flight.load(Ordering::SeqCst), 8);
 }
 
+// No TS case: pins the hand-written port of the TS `stripExtension` lookbehind.
 #[test]
 fn strip_extension_follows_the_ts_pattern() {
     use super::strip_extension;

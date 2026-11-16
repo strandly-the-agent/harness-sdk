@@ -157,6 +157,7 @@ async fn keeps_a_shared_view_on_clear_session() {
     assert_eq!(Storage::list(&storage, "").await.unwrap(), ["team/tool-1_0"]);
 }
 
+// No TS case: pins that `clear_session` deletes the whole session prefix and nothing else.
 #[tokio::test]
 async fn clear_session_deletes_every_agent_of_the_session() {
     let storage = Arc::new(InMemoryStorage::new());
@@ -232,6 +233,7 @@ async fn skips_a_text_placeholder_and_keeps_other_blocks() {
     );
 }
 
+// No TS case: pins the `storageType` names Rust records in place of TS `constructor.name`.
 #[test]
 fn records_the_ts_storage_class_names() {
     let memory = Stash::new(Arc::new(InMemoryStorage::new()), "s", "a", false).unwrap();

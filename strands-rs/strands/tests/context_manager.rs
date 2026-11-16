@@ -302,6 +302,7 @@ fn tool_result_text(message: &strands::Message) -> String {
     }
 }
 
+// No TS case: the end-to-end form of the unit test of the same name.
 #[tokio::test]
 async fn does_not_offload_retrieve_context_tool_results_when_stash_is_active() {
     let big = "z".repeat(20_000);
@@ -325,6 +326,7 @@ async fn does_not_offload_retrieve_context_tool_results_when_stash_is_active() {
     assert!(retrieved.contains(&"z".repeat(1000)) && !retrieved.contains("[Truncated:"));
 }
 
+// No TS case: end-to-end overflow recovery through a real agent loop.
 #[tokio::test]
 async fn retries_the_model_call_after_reducing_an_overflowing_context() {
     let model = Arc::new(MockMessageModel::new());
@@ -361,6 +363,7 @@ async fn retries_the_model_call_after_reducing_an_overflowing_context() {
     assert!(summarized);
 }
 
+// No TS case: end-to-end run of the agentic tools through a real agent loop.
 #[tokio::test]
 async fn agentic_tools_rewrite_history_after_the_tool_batch() {
     let model = Arc::new(MockMessageModel::new());

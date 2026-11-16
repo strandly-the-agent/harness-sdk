@@ -476,6 +476,7 @@ async fn does_not_register_retrieve_context_when_stash_is_disabled() {
     assert!(manager.stash().is_none());
 }
 
+// No TS case: pins `StashConfig::retrieval_tool = false` (stash kept, no `retrieve_context`).
 #[tokio::test]
 async fn keeps_the_stash_without_the_tool_when_retrieval_tool_is_false() {
     let config = ContextManagerConfig {
@@ -578,6 +579,7 @@ fn when_auto_registers_context_manager_as_a_plugin() {
     assert!(plugin_names(&agent).contains(&ContextManager::NAME.to_owned()));
 }
 
+// No TS case: pins the plugin registration order of TS `agent.ts`.
 #[test]
 fn registers_context_manager_before_the_session_manager() {
     let mut config = agent_config(Some(ContextManagerPreset::Auto.into()));

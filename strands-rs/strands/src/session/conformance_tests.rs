@@ -107,6 +107,7 @@ fn normalized(mut value: Value) -> Value {
     value
 }
 
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn rust_restores_the_ts_session_and_takes_the_same_snapshot() {
     let (storage, _) = ts_session("agent_history").await;
@@ -133,6 +134,7 @@ async fn rust_restores_the_ts_session_and_takes_the_same_snapshot() {
     assert_eq!(json!(ids), read_fixture("agent_history_snapshot_ids.json"));
 }
 
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn rust_reads_and_rewrites_every_ts_session_file_byte_for_byte() {
     let (storage, keys) = ts_session("agent_history").await;
@@ -159,6 +161,7 @@ async fn rust_reads_and_rewrites_every_ts_session_file_byte_for_byte() {
     }
 }
 
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn the_default_manifest_matches_the_ts_shape() {
     let adapter =
@@ -173,6 +176,7 @@ async fn the_default_manifest_matches_the_ts_shape() {
 
 /// The TS `sessions/agent_history` run in Rust: the same keys, and snapshots equal apart from
 /// creation times, tracking ids and model metadata.
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn a_rust_run_writes_the_ts_session_layout() {
     let storage = InMemoryStorage::new();
@@ -224,6 +228,7 @@ async fn a_rust_run_writes_the_ts_session_layout() {
     }
 }
 
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn local_file_storage_reads_the_ts_external_stash_session_files() {
     let root = fixtures().join("local_file_external_stash");
@@ -248,6 +253,7 @@ async fn local_file_storage_reads_the_ts_external_stash_session_files() {
     );
 }
 
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn rust_rewrites_the_ts_external_stash_entries_byte_for_byte() {
     let (ts_storage, keys) = ts_session("local_file_external_stash").await;
@@ -287,6 +293,7 @@ fn stash_fixture(name: &str) -> String {
     std::fs::read_to_string(path).unwrap().trim().to_owned()
 }
 
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn stash_take_snapshot_matches_the_ts_fixture() {
     let message = Message::new(
@@ -330,6 +337,7 @@ async fn stash_take_snapshot_matches_the_ts_fixture() {
     );
 }
 
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[test]
 fn the_backends_report_the_ts_storage_type_names() {
     let names: Value = serde_json::from_str(&stash_fixture("storage_type_names.json")).unwrap();
@@ -353,6 +361,7 @@ fn without_tracking_id(key: &str) -> String {
     }
 }
 
+// No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn a_rust_run_writes_the_ts_inline_stash_session() {
     let storage = InMemoryStorage::new();

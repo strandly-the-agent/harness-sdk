@@ -258,6 +258,7 @@ async fn clears_only_entries_under_the_prefix() {
     assert_eq!(storage.list("").await.unwrap(), ["keep.md"]);
 }
 
+// No TS case: pins the Rust form of the TS `EPHEMERAL` marker.
 #[test]
 fn in_memory_storage_is_ephemeral() {
     let storage = InMemoryStorage::new();
