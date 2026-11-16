@@ -52,7 +52,7 @@ pub enum MemoryManagerSource {
     /// A manager instance, used as is.
     Manager(MemoryManager),
     /// A config; the agent builds the manager from it.
-    Config(MemoryManagerConfig),
+    Config(Box<MemoryManagerConfig>),
 }
 
 impl From<MemoryManager> for MemoryManagerSource {
@@ -63,7 +63,7 @@ impl From<MemoryManager> for MemoryManagerSource {
 
 impl From<MemoryManagerConfig> for MemoryManagerSource {
     fn from(config: MemoryManagerConfig) -> Self {
-        Self::Config(config)
+        Self::Config(Box::new(config))
     }
 }
 
@@ -71,7 +71,7 @@ impl MemoryManagerSource {
     pub(crate) fn into_manager(self) -> Result<MemoryManager> {
         match self {
             Self::Manager(manager) => Ok(manager),
-            Self::Config(config) => MemoryManager::new(config),
+            Self::Config(config) => MemoryManager::new(*config),
         }
     }
 }
