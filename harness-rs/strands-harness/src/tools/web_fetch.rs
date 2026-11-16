@@ -408,7 +408,7 @@ pub fn make_web_fetch(options: MakeWebFetchOptions) -> FunctionTool {
         "type": "object",
         "properties": {
             "url": { "type": "string", "description": "The http(s) URL to fetch." },
-            "prompt": { "type": "string", "description": PROMPT_DESCRIPTION },
+            "prompt": { "description": PROMPT_DESCRIPTION, "type": "string" },
         },
         "required": ["url"],
         "additionalProperties": false,

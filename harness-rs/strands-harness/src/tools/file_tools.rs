@@ -167,13 +167,14 @@ fn read_input_schema() -> JsonValue {
         "type": "object",
         "properties": {
             "path": { "type": "string", "description": "Absolute path to the file." },
+            // Optional properties: `description` first, as zod serializes `.optional().describe(..)`.
             "offset": {
-                "type": "number",
                 "description": "1-indexed line to start from. Defaults to the first line. Text files only.",
+                "type": "number",
             },
             "limit": {
-                "type": "number",
                 "description": "Maximum number of lines to return. Defaults to 2000. Text files only.",
+                "type": "number",
             },
         },
         "required": ["path"],
