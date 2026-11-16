@@ -1003,5 +1003,16 @@
     "requires a model when no context agent": {
       "gap": "TS-only: a `ToolContext` always has an agent with a model"
     }
+  },
+  "strands-ts/src/vended-plugins/context-offloader/__tests__/search.test.ts": {
+    "returns true for text/* types": {
+      "gap": "no Rust counterpart: `retrieve_context` only calls `isSearchableContent('text/plain')`, which is always true, so Rust has no content-type check"
+    },
+    "returns true for application/json": {
+      "gap": "no Rust counterpart: `retrieve_context` only calls `isSearchableContent('text/plain')`, which is always true, so Rust has no content-type check"
+    },
+    "returns false for binary types": {
+      "gap": "no Rust counterpart: `retrieve_context` only calls `isSearchableContent('text/plain')`, which is always true, so Rust has no content-type check"
+    }
   }
 }

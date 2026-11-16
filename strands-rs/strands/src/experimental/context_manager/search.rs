@@ -164,3 +164,6 @@ pub(crate) fn search_content(
         None => search_by_line_range(&lines, scope.0, scope.1, max_chars),
     }
 }
+
+#[cfg(test)]
+mod tests;
