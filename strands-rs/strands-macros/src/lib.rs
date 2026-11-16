@@ -1,6 +1,11 @@
 //! Procedural macros for the Strands Agents Rust SDK.
 //!
-//! Use them through the `strands` crate (`strands::tool`, `strands::tools`), not directly.
+//! - [`macro@tool`] turns a function into a tool.
+//! - [`macro@tools`] turns the `#[tool]` methods of an impl block into tools that share the
+//!   value's state.
+//!
+//! Use them through the `strands` crate (`strands::tool`, `strands::tools`), not directly: the
+//! generated code names `strands` types.
 
 mod args;
 mod expand;
