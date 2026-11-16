@@ -104,7 +104,7 @@ impl OpenAIApi {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(name = openai_model_config_builder, vis = "pub"))]
 pub struct OpenAIModelConfig {
     /// The model id; defaults to `gpt-5.4`, which may change between versions.
     pub model_id: Option<String>,
@@ -245,7 +245,7 @@ impl From<String> for OpenAIApiKey {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"))]
+#[builder(on(String, into), state_mod(name = openai_client_config_builder, vis = "pub"))]
 pub struct OpenAIClientConfig {
     /// The API base URL; defaults to `OPENAI_BASE_URL`, else `https://api.openai.com/v1`.
     pub base_url: Option<String>,
@@ -290,7 +290,7 @@ impl fmt::Debug for OpenAIClientConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
-#[builder(state_mod(vis = "pub"))]
+#[builder(state_mod(name = openai_model_options_builder, vis = "pub"))]
 pub struct OpenAIModelOptions {
     /// The API; defaults to the Responses API.
     #[builder(default)]
@@ -648,7 +648,7 @@ impl OpenAIModel {
     /// `build()` fails as [`OpenAIModel::new`] does.
     #[builder(builder_type(doc {
         /// Builds an [`OpenAIModel`]; start with [`OpenAIModel::builder`].
-    }), finish_fn = build, on(String, into), state_mod(vis = "pub"))]
+    }), finish_fn = build, on(String, into), state_mod(name = openai_model_builder, vis = "pub"))]
     pub fn builder(
         /// See [`OpenAIModelOptions::api`].
         #[builder(default)]
