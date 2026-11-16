@@ -131,6 +131,29 @@ async fn duplicate_handler_names_fail_the_build() {
     assert_eq!(error.to_string(), "Duplicate intervention handler name: 'policy'");
 }
 
+// No TS case: TS tests read the private `_interventionRegistry.handlers`; Rust has the accessor.
+#[test]
+fn the_agent_lists_its_intervention_handlers_in_registration_order() {
+    let bare = Agent::builder()
+        .model(Arc::new(MockMessageModel::new()))
+        .printer(false)
+        .build()
+        .unwrap();
+    assert_eq!(bare.interventions().len(), 0);
+
+    let hitl: Arc<dyn InterventionHandler> = Arc::new(HumanInTheLoop::new(HumanInTheLoopConfig::default()));
+    let agent = Agent::builder()
+        .model(Arc::new(MockMessageModel::new()))
+        .intervention(Policy)
+        .interventions([Arc::clone(&hitl)])
+        .printer(false)
+        .build()
+        .unwrap();
+    let names: Vec<&str> = agent.interventions().map(|handler| handler.name()).collect();
+    assert_eq!(names, ["policy", HumanInTheLoop::NAME]);
+    assert!(Arc::ptr_eq(agent.interventions().last().unwrap(), &hitl));
+}
+
 // No TS case: public-API smoke test of `HumanInTheLoop`; the TS cases are ported in `hitl/tests.rs`.
 #[tokio::test]
 async fn human_in_the_loop_interrupts_and_resumes_with_the_answer() {

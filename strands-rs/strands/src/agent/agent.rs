@@ -608,6 +608,11 @@ impl Agent {
         self.local.tool_registry().list()
     }
 
+    /// The intervention handlers (TS `interventions`), in registration order.
+    pub fn interventions(&self) -> impl ExactSizeIterator<Item = &Arc<dyn InterventionHandler>> {
+        self.interventions.iter()
+    }
+
     /// The tool registry.
     pub fn tool_registry(&self) -> &ToolRegistry {
         self.local.tool_registry()
