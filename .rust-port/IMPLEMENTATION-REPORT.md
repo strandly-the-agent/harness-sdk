@@ -76,7 +76,7 @@ The harness features `bedrock`, `anthropic`, `openai`, `mcp` and `otel` each for
 
 ### CI
 
-Six workflow files for the Rust workspace are staged in `.rust-port/ci-workflows/` (`ci.yml`, `strands-rs-pr-and-push.yml`, `strands-rs-test-lint.yml`, `harness-rs-pr-and-push.yml`, `harness-rs-test-lint.yml`, `rust-security-audit.yml`). They are not under `.github/workflows/` because the token that persists the branch cannot write there (P-13), so none of them has run.
+Six workflow files for the Rust workspace are staged in `.rust-port/ci-workflows/` (`ci.yml`, `strands-rs-pr-and-push.yml`, `strands-rs-test-lint.yml`, `harness-rs-pr-and-push.yml`, `harness-rs-test-lint.yml`, `rust-security-audit.yml`). They are not under `.github/workflows/` because the token that persists the branch cannot write there (P-13). They were checked with PyYAML and actionlint, and none of them has run.
 
 ## Test counts and parity coverage
 
@@ -322,4 +322,54 @@ TODO(lead): Phase 12 review dispositions (add the TS bugs the Phase 12 review ga
 
 ## Known gaps
 
+### Out of v0.1 by design
+
+PROMPT.md section 5.2 lists what was not built: Graph, Swarm and A2A with their vended tools; bidirectional streaming; the `ContextOffloader` plugin, GoalLoop, steering and checkpointing; decision models and the decision-model classifier; Docker, SSH and OS-level sandboxes; S3 storage, vector search, embeddings and the Bedrock Knowledge Base memory store; MCP tasks; the Google, Vercel, Ollama and LiteLLM providers; module references in portable harness config (they produce an "unsupported" error); everything TS marks `@deprecated`; `configureLogging`; a Rust CLI; the docs-site Rust tabs; and parity automation. `FOLLOW-UPS.md` carries one line for each.
+
+### Tests and live coverage
+
+- 322 TS test cases of in-scope SDK specs are recorded as gaps with reasons (see "SDK parity" above). The harness figure is under the harness parity marker.
+- No Anthropic or OpenAI request was sent: the 13 live tests of those two providers are written and skip without their keys. The Bedrock API-key path, guardrails and audio have no live run either, and the other uncovered cases are listed under "Live results".
+- One live test depends on the model's wording and failed in 2 of 35 runs (see "Live results").
+- The six CI workflows were checked with PyYAML and actionlint (P-13) and have never run, because they cannot be pushed under `.github/workflows/` from this environment.
+- The tag `strands-rs-v0.1.0-preview.1` is local only; tags were not pushed. In a fresh clone it has to be recreated on `fa45de4be`.
+- Rust code is not scored by the repository's `pr-metrics` complexity script; no adapter was written because a new CI binary could not be validated here (P-12).
+
+### Review findings that were not fixed as proposed
+
+Every phase closed with three reviewers (correctness, API, parity) and a disposition for each finding in `strands-rs/docs/reviews/phase-N.md`. The dispositions that are not a plain fix, with their reasons:
+
+- Phase 0, API 9, and Phase 7, api-3: `cedar-policy` is a non-optional dependency with an exact version requirement. Not applied, because PROMPT.md section 8.1 makes it non-optional and names five features; recorded for the owner (P-26, P-646). The documentation part of api-3 was done.
+- Phase 2, Correctness 5: learned structured-output support is kept per provider instance, to avoid process-global mutable state; recorded as a divergence (P-53).
+- Phase 2, API 3: `update_config` cannot clear a field; documented (`None` keeps the current value) and recorded as a divergence.
+- Phase 3, API 17: TS `toolUsage` and `accumulatedData` are mapped to existing accessors; recorded as a divergence.
+- Phase 4, api-3: the name `BackgroundTasks` is kept for the config-key union and recorded in the name map (P-101).
+- Phase 5, correctness-4: `eventsource-stream` stays the SSE decoder, so an Anthropic `event: error` frame with no data is dropped; recorded as a divergence (P-211).
+- Phase 5, api-7: `CacheTtl` and `BedrockCacheTtl` keep Rust acronym casing, because PROMPT.md names `CacheTtl` (P-216).
+- Phase 6, correctness-6: fixed in part. The stash reads entries nested up to 500 levels. The proposed "skip and log an unreadable entry in `take_snapshot`" was not applied, because TS `takeSnapshot` rejects in that case and section 7.4 forbids Rust-only behaviour.
+- Phase 7, correctness (gates run on the paused pass and again on resume): no code change; Rust does the same as TS and the case is in the TS bug list.
+- Phase 9, api-7: `client_version`, `negotiated_protocol_version` and `McpTool::server_name` are kept as small accessors, each with its reason (P-259).
+- Phase 10, correctness-5: fixed in the documentation (a provider `shutdown()` blocks and belongs in `spawn_blocking`). Left open there: the harness exit path has to do the same. At `ba501ced3` the harness has `shutdown_telemetry` (P-923) and nothing calls it.
+- Phase 11, api-b4 and api-c8: the file modules of six families are `#[doc(hidden)]` and not private; pending for the owner (P-815, P-1023).
+- Phase 11, root exports: `SnapshotManifest` and `SnapshotLocation` stay crate-private, out of v0.1 with `SnapshotStorage` (P-766).
+
+The first review of the harness leaf modules (`phase12a`, 16 findings) has every finding fixed at `ba501ced3` (`.rust-port/handoff/phase12a-dispositions.md`).
+
+TODO(lead): Phase 12 review dispositions (the findings of the three-reviewer gate over the whole harness that were not fixed, with reasons, from `harness-rs/docs/reviews/phase-12.md`)
+
+### Where a binding decision and the evidence disagreed
+
+- Skipped because it conflicted with a binding decision: a default-on `cedar` feature, and a feature around Cedar schema generation (P-26, P-646; section 8.1 fixes the dependency as non-optional and the feature list at five).
+- Applied against the prompt text, each logged for review: the Cedar pin moved to `cedar-policy = "=4.14.0"` because the schema generator crate requires it (P-416); the token estimate counts UTF-16 code units where section 7.3 says `char` (P-43); `EnvironmentContext` probes the platform through the sandbox where section 11 item 40 says the native platform (P-913).
+- Followed the design where TS differs: `sandbox: false` fails with `DefaultNotConfiguredError` (P-264), and there is no process-global default sandbox (P-263).
+
 ## Branch and commits
+
+- Branch: `feat/rust-sdk`, pushed to the fork remote as `feat/rust-sdk-run-20261115`. Nothing was pushed to `strands-agents/harness-sdk`, and no PR or issue was opened.
+- Base (the pin): `7296caba7` on `main`.
+- First commit: `3a67c206f` ("chore(rust-port): create the run folder").
+- Last commit: TODO(lead): last commit
+- Commit count (`git log --oneline 7296caba7..HEAD | wc -l`): TODO(lead): commit count
+- Tagged commit: `fa45de4be` ("chore(strands): set the crate versions to 0.1.0-preview.1"), the 609th commit after the base, carries the annotated local tag `strands-rs-v0.1.0-preview.1`.
+
+When this draft was written, the worktree branch `wip/p13` was at `ba501ced3`, 739 commits after the base, with the harness test, live and review tracks still on their own branches.
