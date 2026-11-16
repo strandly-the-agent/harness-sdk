@@ -1,0 +1,1 @@
+[{"id":"hook:beforeToolCall:tool-1:strands:human-in-the-loop","name":"strands:human-in-the-loop","reason":"Approve \"deleteFile\" — destructive operation?\n  Input: {\"path\":\"/data\"}","source":"hook"}]

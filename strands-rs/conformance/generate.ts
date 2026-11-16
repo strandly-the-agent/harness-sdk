@@ -1721,6 +1721,47 @@ async function vendedShapes(): Promise<void> {
     'Storage keys a FileMemoryStore named `conformance-store` wrote for two added entries, sorted',
     'The key list is generator-built; each key is TS output'
   )
+
+  // Human in the loop: the classifier's structured output tool and the approval interrupt it raises.
+  const { HumanInTheLoop } = await import(`${DIST}/vended-interventions/hitl/index.js`)
+  const classifier = new ScriptedModel([
+    toolUseTurn([
+      {
+        name: 'strands_structured_output',
+        toolUseId: 'inner-1',
+        input: { requiresApproval: true, reason: 'destructive operation' },
+      },
+    ]),
+  ])
+  const hitlAgent = new Agent({
+    id: 'hitl_agent',
+    model: new ScriptedModel([
+      toolUseTurn([{ name: 'deleteFile', toolUseId: 'tool-1', input: { path: '/data' } }]),
+      textTurn('Done'),
+    ]),
+    tools: [
+      new FunctionTool({
+        name: 'deleteFile',
+        description: 'Delete a file.',
+        inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+        callback: () => 'deleted',
+      }),
+    ],
+    interventions: [new HumanInTheLoop({ classifier: { model: classifier } })],
+    printer: false,
+    retryStrategy: null,
+  })
+  const hitlResult = await hitlAgent.invoke('Delete the file')
+  emit(
+    'tools/hitl_classifier_specs',
+    classifier.requests[0]!.toolSpecs,
+    'Tool specs the HumanInTheLoop risk classifier sends to its model'
+  )
+  emit(
+    'interrupts/hitl_approval',
+    hitlResult.interrupts,
+    'AgentResult.interrupts after HumanInTheLoop asked for approval of a tool call the classifier flagged'
+  )
 }
 
 // ---------------------------------------------------------------------------------------------------

@@ -211,6 +211,9 @@
     "interrupts/agent_result_interrupts.json": {
       "description": "AgentResult.interrupts (Interrupt.toJSON) after a tool interrupt"
     },
+    "interrupts/hitl_approval.json": {
+      "description": "AgentResult.interrupts after HumanInTheLoop asked for approval of a tool call the classifier flagged"
+    },
     "interrupts/response_content_null.json": {
       "description": "InterruptResponseContent.toJSON() with a null response"
     },
@@ -511,6 +514,9 @@
     },
     "tools/function_tool_spec.json": {
       "description": "FunctionTool.toolSpec with an explicit inputSchema"
+    },
+    "tools/hitl_classifier_specs.json": {
+      "description": "Tool specs the HumanInTheLoop risk classifier sends to its model"
     },
     "tools/mcp_router_spec.json": {
       "description": "The `mcp_router` tool spec for one allowlisted server named `mcp`"
