@@ -95,7 +95,8 @@ pub struct Agent {
     pub(crate) printer: Option<SharedPrinter>,
     /// Set between `BeforeInvocationEvent` and `AfterInvocationEvent` of a pass.
     pub(crate) in_pass: bool,
-    /// Hooks a dropped stream skipped; the next `invoke`, `stream` or `shutdown` runs them.
+    /// Hooks a dropped stream skipped; the next `invoke`, `stream`, direct tool call or
+    /// `shutdown` runs them.
     pub(crate) abandoned: Option<AbandonedRun>,
     /// Follow-up input a pass that stopped on an interrupt deferred to the next finished pass.
     pub(crate) deferred_continuations: Vec<ContinuationInput>,
@@ -444,9 +445,10 @@ impl Agent {
     ///
     /// A dropped [`AgentStream`] repairs history at once and leaves the hooks it skipped
     /// (`AfterInvocationEvent`, and `MessageAddedEvent` for the cancel message it appended) to
-    /// the next `invoke`, `stream` or `shutdown`. Call this before dropping such an agent, and
-    /// before dropping an agent whose memory manager extracts in the background: Rust has no
-    /// async drop (TS `await using`), so a dropped agent only logs a warning about unsaved work.
+    /// the next `invoke`, `stream`, direct tool call or `shutdown`. Call this before dropping
+    /// such an agent, and before dropping an agent whose memory manager extracts in the
+    /// background: Rust has no async drop (TS `await using`), so a dropped agent only logs a
+    /// warning about unsaved work.
     ///
     /// # Errors
     ///
