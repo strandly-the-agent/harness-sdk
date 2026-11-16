@@ -15,8 +15,12 @@ use strands_harness::{
     SessionOption, SkillsOption,
 };
 
-/// The small model the TS harness integration tests use (`INTEG_MODEL`).
-pub(crate) const BEDROCK_MODEL: &str = "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0";
+/// The small model the TS harness integration tests use (`INTEG_MODEL`), with thinking off as
+/// there.
+pub(crate) const BEDROCK_MODEL: (&str, Effort) = (
+    "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    Effort::Off,
+);
 
 /// The TS integration tests' system prompt for a single-purpose turn (`TESTING`).
 pub(crate) const TESTING: &str =
@@ -36,18 +40,18 @@ pub(crate) async fn aws_credentials_available() -> bool {
     resolved
 }
 
-/// The TS `buildAgent` defaults (thinking off, no plugins) with skills and memory off too, so
+/// The TS `buildAgent` defaults (no plugins) with skills and memory off too, so
 /// nothing is read from or written to the process's working directory, and the session kept
 /// under `<dir>/.agent/sessions`: the default `./.agent/sessions` of a process running in `dir`.
 pub(crate) fn options(
-    model: &str,
+    (model, effort): (&str, Effort),
     dir: &Path,
     session_id: &str,
     tools: &[BuiltinToolName],
 ) -> HarnessAgentOptions {
     HarnessAgentOptions {
         model: Some(model.into()),
-        effort: Effort::Off,
+        effort,
         builtin_tools: Some(BuiltinToolsOption::Names(tools.to_vec())),
         builtin_plugins: Some(Vec::new()),
         skills: SkillsOption::Off,

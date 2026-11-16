@@ -32,18 +32,19 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use strands::StopReason;
-use strands_harness::{BuiltinToolName, HarnessAgentOptions, McpServersOption, create_harness};
+use strands_harness::{BuiltinToolName, Effort, HarnessAgentOptions, McpServersOption, create_harness};
 
 use live_support::{
     BEDROCK_MODEL, TESTING, approve_until_done, aws_credentials_available, options, session_dir,
     tool_attempted, tool_result_contains, tool_succeeded, tool_uses, trace,
 };
 
-/// Served in `us-east-1`, the region the TS integration fixtures use for Bedrock Mantle; the
-/// harness takes the region from `AWS_REGION`.
-const MANTLE_MODEL: &str = "bedrock-mantle/openai.gpt-oss-120b";
-const ANTHROPIC_MODEL: &str = "anthropic/claude-haiku-4-5";
-const OPENAI_MODEL: &str = "openai/gpt-5.4-mini";
+/// In the region of `AWS_REGION`. Effort is `low` rather than `off`: `off` is sent as
+/// `reasoning.effort: "none"` on Bedrock Mantle, as in TS, and this model answers that with
+/// `server_error`.
+const MANTLE_MODEL: (&str, Effort) = ("bedrock-mantle/openai.gpt-oss-120b", Effort::Low);
+const ANTHROPIC_MODEL: (&str, Effort) = ("anthropic/claude-haiku-4-5", Effort::Off);
+const OPENAI_MODEL: (&str, Effort) = ("openai/gpt-5.4-mini", Effort::Off);
 
 const MARKER: &str = "MARMALADE-4271";
 
@@ -79,7 +80,7 @@ fn echo_server(dir: &Path) -> Option<McpServersOption> {
 /// One provider's run: two gated tool calls (the built-in `write` and the MCP `fixture_echo`)
 /// approved through interrupts, then a second agent on the same session id that reads the file
 /// whose path only the stored conversation names.
-async fn tools_interrupts_and_session_resume(model: &str) {
+async fn tools_interrupts_and_session_resume(model: (&str, Effort)) {
     let dir = tempfile::tempdir().expect("temp dir");
     let Some(mcp_servers) = echo_server(dir.path()) else {
         return;
