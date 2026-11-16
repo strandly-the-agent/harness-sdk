@@ -1280,7 +1280,7 @@ mod filters_and_prefixes {
     }
 
     #[tokio::test]
-    async fn throws_an_actionable_error_with_continue_on_error_undefined() {
+    async fn throws_an_actionable_error_with_continue_on_error() {
         throws_an_actionable_error(false).await;
     }
 

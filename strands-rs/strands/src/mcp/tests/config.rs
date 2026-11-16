@@ -383,7 +383,7 @@ mod file_config_loading {
     }
 
     #[tokio::test]
-    async fn expands_tilde_to_home_directory() {
+    async fn expands_to_home_directory() {
         let home = tempfile::tempdir().expect("home");
         tokio::fs::create_dir_all(home.path().join("config"))
             .await

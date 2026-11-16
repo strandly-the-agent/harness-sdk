@@ -449,6 +449,34 @@
     },
     "throws InterruptError with all collected interrupts after all callbacks run": "collects_interrupt_errors_from_multiple_callbacks_and_invokes_all_of_them"
   },
+  "strands-ts/src/mcp/__tests__/client.test.ts": {
+    "passes args unchanged when context injection fails": {
+      "gap": "can't happen: reading the `tracing` span context and the W3C propagator can't fail in Rust"
+    },
+    "keeps the connection shared after its creator aborts (continueOnError=%s)": "keeps_the_connection_shared_after_its_creator_aborts_continue_on_error_false",
+    "logs a warning when an async progressCallback rejects": {
+      "gap": "TS-only: progress callbacks are synchronous `Fn`; the panic case is `logs_a_warning_when_the_progress_callback_throws`"
+    },
+    "still lists tools when tasksConfig is set": {
+      "gap": "out of scope: MCP tasks are out of v0.1"
+    },
+    "supports Symbol.asyncDispose for await using pattern": "dropping_the_last_handle_closes_the_connection",
+    "registers elicitation handler before connecting when callback is provided": "elicitation_handler_returns_accepted_result_with_content_and_exposes_the_abort_signal_at_mcp_req_signal",
+    "elicitation handler returns $action result": "elicitation_handler_returns_decline_result",
+    "logs warning and preserves registry when listTools fails during refresh (%s)": "logs_warning_and_preserves_registry_when_list_tools_fails_during_refresh_request",
+    "reads a resource by URL instance": {
+      "gap": "TS-only: Rust takes the url as a string"
+    },
+    "accepts URL instance for url field": {
+      "gap": "TS-only: Rust takes the url as a string"
+    },
+    "passes headers as requestInit to transport": "lists_and_calls_tools_over_streamable_http_with_headers"
+  },
+  "strands-ts/src/mcp/__tests__/config.test.node.ts": {
+    "lets requestTimeout take precedence over the deprecated ttl alias": {
+      "gap": "out of scope: `tasksConfig` belongs to MCP tasks, out of v0.1; an entry with `tasksConfig` fails (P-237, P-250)"
+    }
+  },
   "strands-ts/src/middleware/__tests__/agent-middleware.test.ts": {
     "throws on unknown phase": {
       "gap": "can't be written: phases are typed constructors (`input`, `wrap`, `output`)"
