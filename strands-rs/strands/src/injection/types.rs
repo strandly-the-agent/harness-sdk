@@ -122,6 +122,12 @@ impl InjectionConfig {
     }
 }
 
+impl From<InjectionTrigger> for InjectionConfig {
+    fn from(trigger: InjectionTrigger) -> Self {
+        Self::new().with_trigger(trigger)
+    }
+}
+
 /// Returns the text to fold into the latest user message; `None` or blank text skips the call.
 pub(crate) type RenderContent =
     Arc<dyn Fn(InjectionContext) -> BoxFuture<'static, Result<Option<String>>> + Send + Sync>;

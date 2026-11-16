@@ -7,6 +7,7 @@ use serde_json::json;
 
 use super::*;
 use crate::Agent;
+use crate::injection::InjectionConfig;
 use crate::memory::test_support::{
     MockStore, assistant, init_agent, mock_agent, tool_result, tool_use, user,
 };
@@ -931,6 +932,41 @@ async fn wires_the_registered_middleware_to_the_memory_provide_pipeline_folds_a_
     assert_eq!(
         serde_json::to_value(agent.messages()[2].content()).unwrap(),
         json!([{ "text": "what is my plan" }])
+    );
+}
+
+/// The configured trigger reaches the shared injection engine: a predicate that declines skips
+/// the search and the fold.
+#[tokio::test]
+async fn passes_the_configured_trigger_to_the_injection_middleware() {
+    let store = with_entries("s", &["dark mode preferred"]);
+    let declined = MemoryInjectionConfig::builder()
+        .trigger(InjectionConfig::new().with_trigger_fn(|context| context.messages.len() > 1))
+        .build();
+    let model = Arc::new(MockMessageModel::new());
+    model.add_turn(vec![TextBlock::new("ok").into()]);
+    model.add_turn(vec![TextBlock::new("ok").into()]);
+    let mut agent = Agent::builder()
+        .model(model.clone())
+        .memory_manager(injecting(store.clone(), declined))
+        .printer(false)
+        .build()
+        .unwrap();
+
+    agent.invoke("first").await.unwrap();
+    assert_eq!(
+        serde_json::to_value(model.requests()[0].messages[0].content()).unwrap(),
+        json!([{ "text": "first" }])
+    );
+    assert!(search_calls(&store).is_empty());
+
+    agent.invoke("second").await.unwrap();
+    assert_eq!(
+        serde_json::to_value(model.requests()[1].messages[2].content()).unwrap(),
+        json!([
+            { "text": "second" },
+            { "text": "\n\n<memory>\n<entry source=\"s\">dark mode preferred</entry>\n</memory>" },
+        ])
     );
 }
 

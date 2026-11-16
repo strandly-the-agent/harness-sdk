@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use super::extraction::ExtractionConfig;
-use super::injection::InjectionTrigger;
 use crate::JsonValue;
 use crate::error::{Error, Result};
+use crate::injection::InjectionConfig;
 use crate::tools::Tool;
 use crate::types::messages::Message;
 
@@ -240,8 +240,11 @@ pub type MemoryFormatFn = Arc<dyn Fn(&[MemoryEntry]) -> Result<String> + Send + 
 )]
 #[derive(Clone, Default, bon::Builder)]
 pub struct MemoryInjectionConfig {
-    /// When to inject (default: [`InjectionTrigger::UserTurn`]).
-    pub trigger: Option<InjectionTrigger>,
+    /// When to inject: the [`InjectionConfig`] this config extends in TS, which carries a named
+    /// [`InjectionTrigger`](crate::injection::InjectionTrigger) or a predicate (default
+    /// `UserTurn`).
+    #[builder(into)]
+    pub trigger: Option<InjectionConfig>,
     /// Maximum entries retrieved and injected (default 5).
     pub max_entries: Option<usize>,
     /// The search query (default: the latest user text on a user turn, else the most recent

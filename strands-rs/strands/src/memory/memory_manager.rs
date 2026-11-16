@@ -12,7 +12,6 @@ use tracing::Instrument;
 use super::extraction::coordinator::{ExtractionBinding, ExtractionCoordinator};
 use super::extraction::resolve_extraction_config::resolve_extraction_config;
 use super::extraction::{ExtractionFire, ExtractionTriggerContext};
-use super::injection::{create_injection_middleware, escape_xml_attr, escape_xml_text, is_user_turn};
 use super::types::{
     MemoryAddOptions, MemoryAddToolConfig, MemoryEntry, MemoryInjectionConfig, MemoryManagerConfig,
     MemorySearchOptions, MemorySetting, MemoryStore, MemoryToolConfig, SearchOptions,
@@ -20,6 +19,10 @@ use super::types::{
 use crate::JsonValue;
 use crate::error::{Error, Result};
 use crate::hooks::MessageAddedEvent;
+use crate::injection::{
+    InjectionMiddlewareOptions, create_injection_middleware, escape_xml_attr, escape_xml_text, is_user_turn,
+    render_content,
+};
 use crate::plugins::Plugin;
 use crate::tools::function_tool::InputValidator;
 use crate::tools::{Tool, ToolContext, ToolError};
@@ -294,14 +297,14 @@ impl MemoryManager {
             return;
         };
         let manager = self.clone();
-        agent.add_middleware(create_injection_middleware(
-            config.trigger.clone(),
-            move |messages| {
+        agent.add_middleware(create_injection_middleware(InjectionMiddlewareOptions {
+            trigger: config.trigger.clone().unwrap_or_default().trigger,
+            render_content: render_content(move |context| {
                 let manager = manager.clone();
                 let config = config.clone();
-                async move { manager.provide_memory_context(&messages, &config).await }
-            },
-        ));
+                async move { manager.provide_memory_context(&context.messages, &config).await }
+            }),
+        }));
     }
 
     async fn provide_memory_context(
