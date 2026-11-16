@@ -165,9 +165,29 @@ pub enum HarnessError {
         target: String,
     },
 
-    /// `web_search: 'exa'` was set in a build without the `mcp` feature, which the Exa tool needs.
-    #[error("web_search: 'exa' requires the strands-harness feature \"mcp\"")]
-    ExaFeatureDisabled,
+    /// An option was set that needs a cargo feature this build lacks.
+    #[error("{option} requires the strands-harness feature \"{feature}\"")]
+    FeatureDisabled {
+        /// The option, as the caller wrote it.
+        option: &'static str,
+        /// The missing feature.
+        feature: &'static str,
+    },
+
+    /// `session.id` was empty or whitespace.
+    #[error("session.id must be a non-empty string.")]
+    EmptySessionId,
+
+    /// Two tools would register under one name (`-` and `_` are equal).
+    #[error("Tool name {} is registered more than once (from {sources}). {remedy}", json_quote(.name))]
+    ToolNameCollision {
+        /// The second tool's name.
+        name: String,
+        /// Where the two tools came from.
+        sources: String,
+        /// What to do about it.
+        remedy: &'static str,
+    },
 }
 
 /// `text` as a JSON string literal, as TS `JSON.stringify` writes it.

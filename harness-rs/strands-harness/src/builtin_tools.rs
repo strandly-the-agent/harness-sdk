@@ -154,7 +154,10 @@ pub(crate) fn web_search_mode(
         WebSearchSetting::Off => return Ok(None),
         WebSearchSetting::Exa => {
             if cfg!(not(feature = "mcp")) {
-                return Err(HarnessError::ExaFeatureDisabled);
+                return Err(HarnessError::FeatureDisabled {
+                    option: "web_search: 'exa'",
+                    feature: "mcp",
+                });
             }
             warn_once(
                 "web_search is opted into Exa (exa.ai), a third-party service: every search query leaves your environment and is subject to Exa's privacy policy (https://exa.ai/privacy-policy).",
