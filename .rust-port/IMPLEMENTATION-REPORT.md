@@ -179,6 +179,84 @@ TODO(lead): harness live results
 
 ## Pending decisions for review
 
+`.rust-port/DECISIONS-pending.md` holds 485 entries at `ba501ced3`, numbered P-1 to P-1111 with gaps between the ranges that parallel tracks reserved. Each entry gives the context, the options, the choice, the TS reference and the files. Later entries amend or supersede earlier ones and say so in their titles.
+
+### Entries marked as owner decisions
+
+These entries end with a question the run left open.
+
+- P-1023 (with P-815): module shape. The file modules `hooks::{events, registry, types}`, `interventions::{actions, handler}`, the four `retry` file modules, `telemetry::{meter, tracer}`, `memory::extraction`, `agent::invocation_context` and `tools::{executors, structured_output}` are public but `#[doc(hidden)]`, and every item in them is also in the parent's flat re-export. The reviewer's judgement is that the hidden file-stem paths are acceptable while the crate is unpublished and become a semver commitment to the file layout in a published 0.1.0. The open call is whether they become `pub(crate)` before publishing, and whether the families that keep two documented paths by decision (`tools::{tool, registry, function_tool}`, `models::{model, streaming}`, the provider modules) should drop one.
+- P-26 and P-646 (with P-5 and P-416): Cedar as a non-optional dependency. `cedar-policy` is compiled into every `strands` build, where TS makes the Cedar packages optional peers, and `strands` carries the exact requirement `cedar-policy = "=4.14.0"` that the schema generator crate sets, so a downstream crate cannot use another 4.x patch until the generator republishes. A default-on `cedar` feature, or a feature around schema generation, would change the five-feature list of PROMPT.md section 8.1, so neither was applied. Moving Cedar behind a feature after 0.1 would break `default-features = false` users.
+- P-832: the harness `supports_media` judges a model instance by its model id, because `Model` has no downcast. An `OpenAIModel` on Bedrock Mantle passed as an instance with an `openai.*` id gets `false` where TS answers `true`, so `read` describes media in text for it unless `builtinTools.read.media` overrides. An SDK accessor would remove the difference.
+- P-873 and P-991: programmatic tool callers are recognised by name, because the `Tool` trait has no identity or downcast. A live caller anywhere in the process hides a same-named ordinary tool from every caller. Matching by identity needs a marker or downcast on the SDK `Tool`.
+- P-913: `EnvironmentContext` probes the platform and working directory through the sandbox, as TS at the pin does and as its tests assert. PROMPT.md section 11 item 40 says to use the native platform (`std::env::consts::OS`). The port follows TS; only the date is native.
+- P-938: the portable config bridge applies a fixed list of `agentConfig` keys; any other key is dropped with one warning. The open call is whether an unsupported key should be an error.
+- P-958: built-in plugins are recognised by `name()`, because `dyn Plugin` has no downcast. A consumer `Todos` built with a custom name is not recognised, and a second default one is added. An `as_any` on `Plugin` would restore the TS rule; that is an SDK change.
+
+P-993 (three subagent constants public at the harness crate root) was closed by P-1110, which made them crate-internal as in harness-ts.
+
+### Entries that change behaviour or public API the most
+
+- P-49 and P-412: hook callbacks return `()` and cannot fail. TS callbacks may throw. Interrupts are recorded on the event (`BeforeToolCallEvent::interrupt`, `BeforeToolsEvent::interrupt`) and the registry runs every callback. An intervention handler with `on_error: throw` fails the event through a crate-internal channel, so the fail-closed default holds. Every user-written hook has a different shape from TS because of this.
+- P-91 (with P-98, P-740, P-792): dropping an `AgentStream` is the Rust form of cancelling. A drop guard repairs the agent synchronously, the hooks the dropped stream skipped are deferred to the next use, `Agent::shutdown()` stands in for TS `await using`, and a drop with pending work logs a warning. This is behaviour TS does not have in this form.
+- P-68: `Agent::builder().build()` is synchronous and loads no AWS configuration; the default `BedrockModel` is built on the first model call. A missing `bedrock` feature therefore fails at the first call, not at construction.
+- P-63: a panicking tool becomes an error result that still goes through `AfterToolCallEvent` hooks and retries, with a warning logged.
+- P-57: `#[tool]` on a function without a doc comment is a compile error. In TS a tool without a description fails when it is added to an agent.
+- P-16 and P-38: TS string unions that accept any string at runtime are `#[non_exhaustive]` enums with an `Other` variant (`StopReason`, the media formats, `ToolResultStatus` and others); struct-shaped variants are `#[non_exhaustive]` with constructors. This fixes the matching and construction style of the public types.
+- P-43: the token estimate counts UTF-16 code units, as TS `text.length` does, where PROMPT.md section 7.3 says to count by `char`. The estimates are numbers that thresholds compare across SDKs.
+- P-212: Bedrock Mantle is the constructor `OpenAIModel::with_bedrock_mantle(options, config)`, not an options field, so turning the `bedrock` feature on does not break struct literals written against `openai` alone.
+- P-263 and P-264: there is no process-global default sandbox; each agent builds its own `NotASandboxLocalEnvironment`, which is public. `sandbox: SandboxSource::Off` fails with `DefaultNotConfiguredError` when a tool needs a sandbox, where TS on Node treats `false` like an unset key and runs on the host.
+- P-237: MCP has no `TasksConfig`; a 60 second default applies to every request and a per-call timeout also caps the total.
+- P-318 and P-384: two parsers differ from the TS libraries. `retrieve_context` patterns compile with the `regex` crate (no backreferences or lookaround), and `SKILL.md` frontmatter is read by a YAML subset parser with no YAML dependency (extended by P-603).
+- P-411: when any intervention handler is configured, all five gates are registered and every handler is called, because a Rust trait cannot tell an overridden default method. The outcome is the same; the callback count differs.
+- P-456: `ClassifierStrategy` takes a plain `Model` and makes the one classification call itself, because decision models are out of v0.1.
+- P-480 (with P-481 to P-497): agent spans are `tracing` spans exported through `tracing-opentelemetry`, where TS starts OpenTelemetry spans directly. P-487 keeps `AgentMetrics` serialize-only.
+- P-644: Cedar is evaluated through `cedar_policy::ffi` with the JSON that TS sends, which gives the same answers and error texts as the WASM build.
+- P-681: `Agent::as_tool` returns a `Result`, so the TS session-manager validation has a place to fail.
+- P-799: a signalled cancel no longer waits for the next item of a silent model stream.
+- P-1000: the interrupts of a tool batch leave the cycle as an error, so the cycle span ends as it does in TS.
+- P-870, P-871, P-891, P-990 and P-992: public SDK additions made for the harness: `ToolAgent::call_tool`, `ToolCallOutcome` (with `HookCancelled`), `InvocationState::detached()`, `CancelSignal::abort_only` and a tool-use id on inner programmatic calls.
+- P-930 to P-933: the shape of `HarnessAgentOptions`: one enum per polymorphic TS option and `Setting<C>` in place of TS `ToolConfig<K>`.
+- P-923: `shutdown_telemetry` in the harness has no TS counterpart; without it the batch exporter's pending spans are lost at process exit.
+
+### The rest, by area
+
+| Area | Entries |
+|---|---|
+| Run mechanics, workspace, dependencies, lints, CI staging | P-1 to P-13, P-27, P-28 |
+| Types, wire format and errors | P-14 to P-26, P-30 to P-39 |
+| Model abstraction, streaming and retry | P-29, P-40 to P-47, P-52 to P-56 |
+| Hooks, tools, macros and the agent loop | P-48 to P-51, P-57 to P-89 |
+| Interrupt resume, cancellation, lifecycle, plugins, middleware, background tasks, conversation managers | P-90 to P-102 |
+| Bedrock provider | P-150 to P-161 |
+| Anthropic provider | P-180 to P-188 |
+| OpenAI provider and Bedrock Mantle | P-200 to P-207 |
+| Provider review fixes | P-208 to P-220 |
+| MCP and `mcp_router` | P-230 to P-259, P-341 |
+| Sandbox and vended tools | P-260 to P-286 |
+| Storage and sessions | P-300 to P-304 |
+| Context manager | P-310 to P-322, P-620 to P-626 |
+| Memory, injection and skills | P-350 to P-358, P-380 to P-386, P-390 to P-394, P-600 to P-609 |
+| A plugin initialization failure (P-340) and a compile-fail test case (P-342) | P-340, P-342 |
+| Interventions, human-in-the-loop and Cedar | P-410 to P-416, P-640 to P-649 |
+| Model routing | P-450 to P-457, P-660, P-661 |
+| Telemetry | P-480 to P-497, P-700 to P-704, P-720 to P-728 |
+| Crate docs and examples | P-520 to P-525 |
+| Parity sweep and the title checker | P-540 to P-544, P-580 to P-586, P-683 |
+| Live tests | P-560, P-561 |
+| Whole-SDK review fixes | P-680 to P-684, P-740 to P-745, P-760 to P-772, P-790 to P-804, P-810 to P-818, P-1000 to P-1005, P-1020 to P-1027, P-1040 to P-1042 |
+| Harness model strings and prompt | P-830 to P-838 |
+| Harness file tools, shell, `web_fetch` and `web_search` | P-850 to P-856 |
+| Harness `programmatic_tool_caller` | P-870 to P-876 |
+| Harness `subagent` | P-890 to P-900 |
+| Harness plugins, interventions and telemetry | P-910 to P-926 |
+| Harness options and portable config | P-930 to P-941 |
+| `create_harness` and the built-in tools | P-950 to P-963 |
+| Harness test infrastructure | P-980 to P-983 |
+| Harness leaf-module review | P-990 to P-993, P-1110, P-1111 |
+
+TODO(lead): Phase 12 review dispositions (add the decision entries the Phase 12 review gate produces to the harness rows above)
+
 ## Divergences
 
 ## TS bugs
