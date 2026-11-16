@@ -20,34 +20,48 @@ pub mod subagent;
 pub mod web_fetch;
 pub mod write;
 
+#[doc(inline)]
 pub use bash::{BashOutput, BashSessionError, BashTimeoutError, bash};
+#[doc(inline)]
 pub use edit::{DEFAULT_EDIT_DESCRIPTION, MakeEditOptions, edit, make_edit};
+#[doc(inline)]
 pub use handoff_to_user::{
     HANDOFF_INTERRUPT_NAME, MakeHandoffToUserOptions, handoff_to_user, make_handoff_to_user,
 };
+#[doc(inline)]
 pub use http_request::{HttpRequestOutput, http_request};
+#[doc(inline)]
 #[cfg(feature = "mcp")]
 pub use mcp_router::{MCP_ROUTER_DESCRIPTION, MakeMcpRouterOptions, McpRouterToolError, make_mcp_router};
+#[doc(inline)]
 pub use notebook::{MakeNotebookOptions, make_notebook, notebook};
+#[doc(inline)]
 pub use python_repl::{
     MakePythonReplOptions, PYTHON_REPL_DESCRIPTION, PythonReplError, PythonReplOutput, make_python_repl,
     python_repl,
 };
+#[doc(inline)]
 pub use read::{DEFAULT_READ_DESCRIPTION, MakeReadOptions, make_read, read};
+#[doc(inline)]
 pub use shell::{
     MakeShellOptions, SANDBOX_SHELL_DESCRIPTION, ShellExecutionError, ShellOutput, ShellTimeoutError,
     make_shell,
 };
+#[doc(inline)]
 pub use sleep::{DEFAULT_MAX_DURATION, MakeSleepOptions, SLEEP_DESCRIPTION, make_sleep, sleep};
+#[doc(inline)]
 pub use stop::{
     DEFAULT_MAX_STOP_MESSAGE_LENGTH, DEFAULT_STOP_DESCRIPTION, DEFAULT_STOP_MESSAGE, MakeStopOptions,
     make_stop, stop,
 };
+#[doc(inline)]
 pub use subagent::{
     DEFAULT_SUBAGENT_DESCRIPTION, DEFAULT_SUBAGENT_MAX_DEPTH, GENERALIST_DESCRIPTION,
     GENERALIST_INSTRUCTIONS, MakeSubagentOptions, SubagentTool, generalist, make_subagent, subagent,
 };
+#[doc(inline)]
 pub use web_fetch::{MakeWebFetchOptions, WebFetchMode, make_web_fetch, web_fetch};
+#[doc(inline)]
 pub use write::{DEFAULT_WRITE_DESCRIPTION, MakeWriteOptions, make_write, write};
 
 use std::future::Future;

@@ -2,6 +2,7 @@
 
 pub mod context_manager;
 
+#[doc(inline)]
 pub use context_manager::{
     ContextManager, ContextManagerConfig, ContextManagerPreset, ContextManagerStrategy, ContextState,
     ContextStrategy, ContextStrategyEntry, Offload, OffloadConditions, OffloadTarget, PreviewMode, Stash,

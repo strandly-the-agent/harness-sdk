@@ -18,6 +18,7 @@ pub use local_file_storage::{
     LocalFileStorage, LocalFileStorageConfig, LocalFileStorageConfigBuilder,
     local_file_storage_config_builder,
 };
+#[doc(inline)]
 pub use search::StorageSearchResult;
 
 use crate::error::{Result, StorageError};

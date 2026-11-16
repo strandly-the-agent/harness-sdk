@@ -36,6 +36,7 @@ mod test_support;
 pub use methods::truncate::{PreviewMode, TruncateConfig, TruncateConfigBuilder, truncate_config_builder};
 pub use presets::StrategyPresetName;
 pub use stash::Stash;
+#[doc(inline)]
 pub use strategies::offload::{
     DropStrategy, Offload, OffloadConditions, OffloadConditionsBuilder, OffloadTarget, SummarizeConfig,
     SummarizeConfigBuilder, SummarizeStrategy, TruncateStrategy, offload_conditions_builder,
