@@ -88,6 +88,10 @@ required-features = ["bedrock"]
 [[example]]
 name = "hooks"
 
+[[example]]
+name = "structured_output"
+required-features = ["bedrock"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
