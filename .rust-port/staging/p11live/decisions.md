@@ -1,0 +1,7 @@
+## P-560: `models/openai/mantle-routing.test.node.ts` has no Rust live test yet (p11live, 2026-11-16)
+
+- Trigger: the Live checklist row is marked `live`. The TS spec lists every Mantle model (`GET /v1/models` with a minted bearer token), then probes each on `/v1` and `/openai/v1` to check `resolveMantleBasePath`.
+- Finding: the Rust counterparts `resolve_mantle_base_path`, `mantle_api_key_setter` and `create_token` (`strands/src/models/openai/mantle.rs:110,131,289`) are `pub(crate)`. TS imports them through an internal path (`$/sdk/models/openai/mantle.js`), so this is not a public-API gap, but an integration test under `strands/tests/` cannot list the models or mint the token. A hardcoded model list would not test what the spec tests (new model families).
+- Decision taken by this track: no test written; the row stays uncovered and says so. Not done: widening the public API or adding files under `src/` (outside this track's paths; only a minimal bug fix is allowed there).
+- Options for the lead: (1) an in-crate `#[ignore = "live bedrock"] live_*` test beside `mantle.rs` (reaches `pub(crate)`; adds a test file and one `mod` line under `src/`); (2) a `#[doc(hidden)]` re-export for tests.
+- Partial evidence that exists: `tests/mantle_live.rs` calls `openai.gpt-oss-120b` and `openai.gpt-6.1-sol` in `us-east-1` on the chat and responses surfaces through the resolved base path. That covers two model ids, not the catalogue.
