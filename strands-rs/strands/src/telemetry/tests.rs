@@ -422,3 +422,46 @@ async fn dual_emits_cache_usage_under_both_the_semconv_names_and_the_deprecated_
         }
     }
 }
+
+/// TS `agent.ts` `_withBaggage`: the agent's `baggage_attributes` join the active baggage for the
+/// whole invocation, so a baggage span processor stamps them on every span, spawned tools included.
+#[tokio::test(flavor = "current_thread")]
+async fn baggage_attributes_are_merged_into_the_active_baggage_for_every_span() {
+    use opentelemetry::baggage::BaggageExt as _;
+
+    use super::{BaggageKeys, BaggageSpanProcessor};
+
+    let recorder = Recorder::default();
+    let provider = SdkTracerProvider::builder()
+        .with_span_processor(BaggageSpanProcessor::new(BaggageKeys::All))
+        .with_simple_exporter(recorder.clone())
+        .build();
+    let layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("strands-agents"));
+    let _subscriber = tracing::subscriber::set_default(tracing_subscriber::registry().with(layer));
+    let _ambient =
+        opentelemetry::Context::current_with_baggage([opentelemetry::KeyValue::new("ambient", "kept")])
+            .attach();
+
+    let model = MockMessageModel::new();
+    model.add_turn_with(
+        vec![tool_use("get_weather", "tooluse_tel_3", json!({"city": "Porto"}))],
+        usage_turn(30, 14),
+    );
+    model.add_turn_with(vec![TextBlock::new("Porto is sunny.").into()], usage_turn(12, 5));
+    let mut agent = AgentConfig::builder()
+        .model(Arc::new(model) as Arc<dyn crate::models::model::Model>)
+        .tools(vec![weather_tool()])
+        .baggage_attributes([("tenant.id".to_owned(), "acme".to_owned())].into())
+        .build()
+        .expect("a valid agent");
+    agent.invoke("Weather in Porto?").await.expect("the run succeeds");
+
+    let spans = recorder.spans();
+    let names: Vec<&str> = spans.iter().map(|span| span.name.as_ref()).collect();
+    assert_eq!(names.len(), 6, "{names:?}");
+    for span in &spans {
+        let attributes = attributes_json(&span.attributes);
+        assert_eq!(attributes["tenant.id"], "acme", "{}", span.name);
+        assert_eq!(attributes["ambient"], "kept", "{}", span.name);
+    }
+}

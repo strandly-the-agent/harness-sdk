@@ -303,6 +303,10 @@ pub struct AgentConfig {
     /// `otel` feature.
     #[builder(default)]
     pub trace_attributes: indexmap::IndexMap<String, crate::telemetry::AttributeValue>,
+    /// OpenTelemetry baggage entries merged into the active baggage for every invocation (TS
+    /// `baggageAttributes`); attached with the `otel` feature.
+    #[builder(default)]
+    pub baggage_attributes: indexmap::IndexMap<String, String>,
     /// How the tool calls of one model turn run (default concurrent).
     #[builder(into)]
     pub tool_executor: Option<ToolExecutor>,

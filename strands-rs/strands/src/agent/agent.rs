@@ -103,6 +103,9 @@ pub struct Agent {
     session_manager: Option<SessionManager>,
     context_manager: Option<Arc<ContextManager>>,
     memory_manager: Option<MemoryManager>,
+    /// TS `baggageAttributes`.
+    #[cfg(feature = "otel")]
+    baggage_attributes: Arc<[(String, String)]>,
     #[cfg(feature = "mcp")]
     mcp_clients: Vec<crate::mcp::McpClient>,
 }
@@ -194,6 +197,10 @@ impl Agent {
             .lock()
             .tracer
             .set_trace_attributes(config.trace_attributes.into_iter().collect());
+        #[cfg(feature = "otel")]
+        {
+            agent.baggage_attributes = config.baggage_attributes.into_iter().collect();
+        }
         local.set_messages(config.messages);
         local.set_system_prompt(config.system_prompt);
         local.set_app_state(StateStore::from_map(config.app_state));
@@ -271,6 +278,8 @@ impl Agent {
             session_manager: None,
             context_manager: None,
             memory_manager: None,
+            #[cfg(feature = "otel")]
+            baggage_attributes: Arc::default(),
             #[cfg(feature = "mcp")]
             mcp_clients: Vec::new(),
         }
@@ -412,7 +421,13 @@ impl Agent {
     /// [`stream`](Self::stream) with per-invocation options.
     pub fn stream_with(&mut self, args: impl Into<InvokeArgs>, options: InvokeOptions) -> AgentStream<'_> {
         let args = args.into();
+        #[cfg(feature = "otel")]
+        let baggage = Arc::clone(&self.baggage_attributes);
         AgentStream::new(self.printer.clone(), move |emitter| async move {
+            #[cfg(feature = "otel")]
+            return crate::telemetry::with_baggage(&baggage, Box::pin(self.run(args, options, &emitter)))
+                .await;
+            #[cfg(not(feature = "otel"))]
             self.run(args, options, &emitter).await
         })
     }
