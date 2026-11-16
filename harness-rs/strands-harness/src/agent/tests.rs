@@ -566,7 +566,8 @@ async fn keeps_the_stash_in_memory_with_a_session_manager_instance_as_the_sessio
 #[tokio::test]
 async fn keeps_the_stash_in_memory_with_an_explicit_session_manager() {
     let mut options = mock_options();
-    options.agent_config.session_manager = Some(SessionManager::new(SessionManagerConfig::default()).unwrap());
+    options.agent_config.session_manager =
+        Some(SessionManager::new(SessionManagerConfig::default()).unwrap());
     assert!(harness(options).await.unwrap().storage().is_none());
 }
 
@@ -669,7 +670,9 @@ async fn loads_mcp_servers_through_the_sdk_resilient_and_prefixed_by_server_name
     let JsonValue::Object(servers) = servers else {
         panic!("an object literal");
     };
-    let loaded = load_mcp_servers(Some(McpServersOption::Servers(servers))).await.unwrap();
+    let loaded = load_mcp_servers(Some(McpServersOption::Servers(servers)))
+        .await
+        .unwrap();
     let names: Vec<_> = loaded
         .iter()
         .map(|source| match source {
@@ -702,7 +705,11 @@ async fn delegate(options: HarnessAgentOptions, model: &Arc<MockMessageModel>) -
     }
     assert!(format!("{outcome:?}").contains("done"), "{outcome:?}");
     let request = model.requests().pop().unwrap();
-    let tools = request.tool_specs.iter().map(|spec| spec.name().to_owned()).collect();
+    let tools = request
+        .tool_specs
+        .iter()
+        .map(|spec| spec.name().to_owned())
+        .collect();
     (tools, format!("{:?}", request.system_prompt))
 }
 
@@ -729,7 +736,10 @@ async fn keeps_its_own_subagent_tool_so_a_delegate_can_sub_delegate() {
     let (model, options) = shared_mock();
     let (tools, prompt) = delegate(options, &model).await;
     for name in ["subagent", "read", "shell"] {
-        assert!(tools.iter().any(|tool| tool == name), "{name} missing from {tools:?}");
+        assert!(
+            tools.iter().any(|tool| tool == name),
+            "{name} missing from {tools:?}"
+        );
     }
     assert!(prompt.contains("general-purpose subagent"), "{prompt}");
 }
@@ -741,4 +751,62 @@ async fn gives_the_built_child_only_the_built_ins_the_parent_enabled() {
     let (tools, _) = delegate(options, &model).await;
     assert!(tools.iter().any(|name| name == "read"), "{tools:?}");
     assert!(!tools.iter().any(|name| name == "shell"), "{tools:?}");
+}
+
+/// Builds with an environment that has a dummy key for every provider.
+#[cfg(any(feature = "openai", feature = "anthropic"))]
+async fn harness_with_keys(options: HarnessAgentOptions) -> Result<Agent> {
+    let dir = tempfile::tempdir().unwrap();
+    let seams = Seams {
+        base_dir: Some(dir.path().to_owned()),
+        env: Arc::new(|name| name.ends_with("_API_KEY").then(|| "test-key".to_owned())),
+    };
+    create_harness_with(options, seams).await
+}
+
+#[cfg(feature = "openai")]
+#[tokio::test]
+async fn does_not_register_web_search_as_a_tool() {
+    let agent = harness_with_keys(HarnessAgentOptions {
+        model: Some(ModelSource::Id("openai/gpt-5.6-sol".to_owned())),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert!(!has_tool(&agent, "web_search"));
+}
+
+#[cfg(feature = "anthropic")]
+#[tokio::test]
+async fn enables_web_search_when_explicitly_selected_on_a_supported_provider() {
+    let agent = harness_with_keys(HarnessAgentOptions {
+        model: Some(ModelSource::Id("anthropic/claude-opus-4-8".to_owned())),
+        builtin_tools: names(&[BuiltinToolName::Read, BuiltinToolName::WebSearch]),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert!(has_tool(&agent, "read"));
+    assert!(!has_tool(&agent, "web_search"));
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn serves_the_exa_fallback_on_a_model_instance() {
+    let mapping = BuiltinToolsConfig {
+        web_search: Some(WebSearchSetting::Exa),
+        ..Default::default()
+    };
+    let agent = harness(HarnessAgentOptions {
+        builtin_tools: Some(mapping.into()),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(has_tool(&agent, "web_search"));
+}
+
+#[tokio::test]
+async fn leaves_a_default_web_search_off_on_a_model_instance() {
+    assert!(!has_tool(&harness(mock_options()).await.unwrap(), "web_search"));
 }
