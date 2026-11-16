@@ -354,14 +354,8 @@
     "counts a failed attempt on a turn that pauses at a checkpoint": {
       "gap": "out of scope: checkpointing is out of v0.1"
     },
-    "does not count valid output that history offloading rewrites": {
-      "gap": "the row: context-manager offloading lands with Phase 6 (the `disabled` row of the table is ported)"
-    },
     "reports $stopReason before the attempt limit": "reports_other_limits_before_the_attempt_limit",
     "preserves validated structured output with $mode": "preserves_validated_structured_output_without_context_management",
-    "continues offloading ordinary tool results": {
-      "gap": "the row: context-manager offloading lands with Phase 6 (the `disabled` row of the table is ported)"
-    },
     "forces structured output tool when model does not use it": "forces_the_tool_when_the_model_does_not_use_it_without_sending_an_assistant_ended_conversation",
     "does not send assistant-ended conversation when forcing structured output retry": "forces_the_tool_when_the_model_does_not_use_it_without_sending_an_assistant_ended_conversation",
     "throws MaxTokensError when maxTokens reached before structured output": "fails_with_max_tokens_before_structured_output_and_cleans_up_the_tool",
@@ -372,9 +366,6 @@
     "preserves the durable tracking id when redacting": "redacts_a_text_user_message_and_keeps_its_tracking_id",
     "does not redact when last message is not from user": "skips_a_last_message_not_from_the_user_and_an_empty_history",
     "handles empty messages array gracefully": "skips_a_last_message_not_from_the_user_and_an_empty_history",
-    "sends an injected block to the model as text and keeps it in agent.messages": {
-      "gap": "the row: injected blocks are provider formatting"
-    },
     "replaces invalid tool-use names with INVALID_TOOL_NAME before calling model": "invalid_tool_names_and_empty_assistant_messages_are_fixed_only_in_the_request",
     "preserves reasoningSignature on replaced tool-use blocks": "invalid_tool_names_and_empty_assistant_messages_are_fixed_only_in_the_request",
     "leaves valid names untouched": "invalid_tool_names_and_empty_assistant_messages_are_fixed_only_in_the_request",
@@ -386,35 +377,8 @@
     "normalizeToolUseNames > limits > when a limit key is unrecognized > rejects %s with TypeError": {
       "gap": "compile error in Rust: limits are `NonZero*` fields of a struct"
     },
-    "returns a stable 8-character string when no session manager is attached": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
-    "returns different IDs for different agent instances": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
-    "delegates to sessionManager when attached": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
-    "forwards the session id to the model when a session manager is attached": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
-    "sends no agent metadata when no session manager is attached": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
-    "routes each agent on its own session when one model is shared across sessions": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
-    "flushes the memory manager when shutdown is called directly": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
-    "flushes the memory manager when an `await using` scope exits": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
     "flushes even when the scope exits via a thrown error": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
-    },
-    "is a no-op when no memory manager is configured": {
-      "gap": "the row: `sessionId`, `agentMetadata` and the `shutdown` flush land with Phase 6"
+      "gap": "Rust has no async disposal: an agent dropped by an early return cannot flush; it logs the drop warning instead (`dropping_an_agent_with_unsaved_memory_warns`, P-391)"
     },
     "consumes stream events internally": "returns_correct_stop_reason_and_last_message",
     "collects local traces for completed cycles when error occurs mid-run": {
@@ -708,6 +672,13 @@
     },
     "returns them unchanged": {
       "gap": "TS-only: class instances inside plain data"
+    }
+  },
+  "strands-ts/src/session/__tests__/session-manager.test.ts": {
+    "SessionManager > AfterInvocationEvent handling > saves snapshot_latest when saveLatestOn is message": "after_invocation_saves_snapshot_latest_when_save_latest_on_is_message",
+    "saves snapshot_latest on redaction when saveLatestOn is %s": "saves_snapshot_latest_on_redaction_when_save_latest_on_is_invocation",
+    "*": {
+      "gap": "out of scope: the `SessionManager — multi-agent` cases, multi-agent is out of v0.1"
     }
   }
 }
