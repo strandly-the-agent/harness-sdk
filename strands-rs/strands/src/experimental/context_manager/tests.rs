@@ -568,3 +568,177 @@ fn uses_the_instance_as_is() {
         "strands:null-conversation-manager"
     );
 }
+
+fn memory_stash() -> Stash {
+    Stash::new(
+        Arc::new(InMemoryStorage::new()),
+        "test-session",
+        "test-agent",
+        false,
+    )
+    .unwrap()
+}
+
+async fn offload_with_stash(
+    strategy: &dyn ContextStrategy,
+    messages: Vec<Message>,
+    stash: Option<&Stash>,
+) -> (bool, Vec<Message>) {
+    if let Some(stash) = stash {
+        for message in &messages {
+            stash.store_message(message, None).await;
+        }
+    }
+    let model = Arc::new(test_support::JsonCountingModel(MockMessageModel::new()));
+    let mut agent = agent_with_model(messages, model);
+    let mut state = ContextState::new(&mut agent, 0.5);
+    state.stash = stash.cloned();
+    let acted = strategy.apply(&mut state).await.unwrap();
+    (acted, agent.messages().to_vec())
+}
+
+fn image_result(id: &str, format: crate::mime::ImageFormat, with_text: bool) -> Message {
+    let image =
+        crate::types::media::ImageBlock::new(format, crate::types::media::ImageSource::Bytes(vec![1, 2, 3]));
+    let mut content: Vec<crate::types::messages::ToolResultContent> = Vec::new();
+    if with_text {
+        content.push(crate::types::messages::TextBlock::new("description of image").into());
+    }
+    content.push(image.into());
+    let block = crate::types::messages::ToolResultBlock::new(
+        id,
+        crate::types::tools::ToolResultStatus::Success,
+        content,
+    );
+    Message::new(crate::types::messages::Role::User, vec![block.into()])
+}
+
+#[tokio::test]
+async fn does_not_stash_when_no_stash_is_configured() {
+    let strategy = Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default()).unwrap();
+    let (_, messages) = offload_with_stash(
+        &strategy,
+        vec![tool_result("tu-1", &test_support::large_text())],
+        None,
+    )
+    .await;
+    assert!(!first_text(&messages[0]).contains("[Stashed]"));
+}
+
+#[tokio::test]
+async fn persists_original_content_to_stash_before_truncating() {
+    let stash = memory_stash();
+    let large = test_support::large_text();
+    let strategy = Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default()).unwrap();
+    let (acted, messages) =
+        offload_with_stash(&strategy, vec![tool_result("tu-1", &large)], Some(&stash)).await;
+    assert!(acted);
+    assert_eq!(
+        stash.retrieve("tu-1_0").await.unwrap(),
+        Some(serde_json::json!({ "text": large }))
+    );
+    assert!(first_text(&messages[0]).ends_with("\n\n[Stashed] [ref: tu-1_0]"));
+}
+
+#[tokio::test]
+async fn persists_original_content_before_dropping() {
+    let stash = memory_stash();
+    let large = test_support::large_text();
+    let strategy = Offload::drop(OffloadTarget::ToolResults).unwrap();
+    let (acted, _) = offload_with_stash(&strategy, vec![tool_result("tu-1", &large)], Some(&stash)).await;
+    assert!(acted);
+    assert_eq!(stash.list().await.unwrap().len(), 1);
+    assert_eq!(
+        stash.retrieve("tu-1_0").await.unwrap(),
+        Some(serde_json::json!({ "text": large }))
+    );
+}
+
+#[tokio::test]
+async fn includes_stash_reference_in_the_drop_marker() {
+    let stash = memory_stash();
+    let strategy = Offload::drop(OffloadTarget::ToolResults).unwrap();
+    let (_, messages) =
+        offload_with_stash(&strategy, vec![tool_result("tu-1", "result")], Some(&stash)).await;
+    assert_eq!(first_text(&messages[0]), "[Dropped] [ref: tu-1_0]");
+}
+
+#[tokio::test]
+async fn stashes_image_content_from_tool_results() {
+    let stash = memory_stash();
+    let strategy = Offload::drop(OffloadTarget::ToolResults).unwrap();
+    let message = image_result("tu-img", crate::mime::ImageFormat::Png, false);
+    let (acted, _) = offload_with_stash(&strategy, vec![message], Some(&stash)).await;
+    assert!(acted);
+    let data = stash.retrieve("tu-img_0").await.unwrap().unwrap();
+    assert_eq!(data["image"]["format"], "png");
+    assert!(data["image"]["source"]["bytes"].is_string());
+}
+
+#[tokio::test]
+async fn stashes_each_block_independently_when_mixed_content() {
+    let stash = memory_stash();
+    let strategy = Offload::drop(OffloadTarget::ToolResults).unwrap();
+    let message = image_result("tu-mix", crate::mime::ImageFormat::Jpeg, true);
+    offload_with_stash(&strategy, vec![message], Some(&stash)).await;
+    assert_eq!(stash.list().await.unwrap().len(), 2);
+    assert_eq!(
+        stash.retrieve("tu-mix_0").await.unwrap(),
+        Some(serde_json::json!({"text": "description of image"}))
+    );
+    assert_eq!(
+        stash.retrieve("tu-mix_1").await.unwrap().unwrap()["image"]["format"],
+        "jpeg"
+    );
+}
+
+#[tokio::test]
+async fn persists_tool_result_content_on_message_arrival() {
+    let stash = memory_stash();
+    let large = test_support::large_text();
+    stash.store_message(&tool_result("tu-1", &large), None).await;
+    assert_eq!(stash.list().await.unwrap().len(), 1);
+    assert_eq!(
+        stash.retrieve("tu-1_0").await.unwrap(),
+        Some(serde_json::json!({ "text": large }))
+    );
+}
+
+#[tokio::test]
+async fn persists_text_blocks_from_assistant_messages_on_arrival() {
+    let stash = memory_stash();
+    let message = assistant("assistant reasoning text");
+    stash.store_message(&message, None).await;
+    let key = format!("{}_0", message.tracking_id());
+    assert_eq!(stash.list().await.unwrap(), std::slice::from_ref(&key));
+    assert_eq!(
+        stash.retrieve(&key).await.unwrap(),
+        Some(serde_json::json!({"text": "assistant reasoning text"}))
+    );
+}
+
+fn retrieval_exchange(text: &str) -> Vec<Message> {
+    vec![
+        user("task"),
+        test_support::tool_use("tu-r", RETRIEVAL_TOOL_NAME),
+        tool_result("tu-r", text),
+    ]
+}
+
+#[tokio::test]
+async fn does_not_offload_retrieve_context_tool_results_when_stash_is_active() {
+    let large = test_support::large_text();
+    let strategy = Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default()).unwrap();
+    let (acted, messages) =
+        offload_with_stash(&strategy, retrieval_exchange(&large), Some(&memory_stash())).await;
+    assert!(!acted);
+    assert_eq!(first_text(&messages[2]), large);
+}
+
+#[tokio::test]
+async fn offloads_retrieve_context_results_when_no_stash() {
+    let strategy = Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default()).unwrap();
+    let (acted, _) =
+        offload_with_stash(&strategy, retrieval_exchange(&test_support::large_text()), None).await;
+    assert!(acted);
+}

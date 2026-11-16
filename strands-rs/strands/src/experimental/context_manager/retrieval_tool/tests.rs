@@ -179,3 +179,47 @@ async fn rejects_input_outside_the_schema() {
     .await;
     assert_eq!(*result.status(), crate::types::tools::ToolResultStatus::Error);
 }
+
+async fn retrieved_through_tool(data: &JsonValue) -> crate::types::messages::ToolResultBlock {
+    let stash = stash();
+    let reference = stash
+        .store("tool-x", 0, &serde_json::to_vec(data).unwrap())
+        .await
+        .unwrap();
+    let tool = create_retrieval_tool(stash, None);
+    let agent = crate::vended_tools::test_support::agent_with(None);
+    stream_result(
+        &tool,
+        context_for(&agent, RETRIEVAL_TOOL_NAME, json!({ "reference": reference })),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn restores_image_blocks_as_image_block_instances() {
+    let result =
+        retrieved_through_tool(&json!({"image": {"format": "png", "source": {"bytes": "AQID"}}})).await;
+    let [ToolResultContent::Image(image)] = result.content() else {
+        panic!("expected an image: {:?}", result.content());
+    };
+    assert_eq!(image.format().as_str(), "png");
+}
+
+#[tokio::test]
+async fn returns_text_content_normally_not_treated_as_media() {
+    let result = retrieved_through_tool(&json!({"text": "hello world"})).await;
+    let [ToolResultContent::Text(text)] = result.content() else {
+        panic!("expected text: {:?}", result.content());
+    };
+    assert_eq!(text.text(), "hello world");
+}
+
+#[tokio::test]
+async fn restores_document_blocks_as_document_block_instances() {
+    let data = json!({"document": {"name": "report", "format": "pdf", "source": {"bytes": "JVBERi0="}}});
+    let result = retrieved_through_tool(&data).await;
+    let [ToolResultContent::Document(document)] = result.content() else {
+        panic!("expected a document: {:?}", result.content());
+    };
+    assert_eq!(document.format().as_str(), "pdf");
+}

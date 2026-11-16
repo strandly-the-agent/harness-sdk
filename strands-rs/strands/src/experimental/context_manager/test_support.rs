@@ -79,3 +79,36 @@ pub(crate) fn first_text(message: &Message) -> &str {
 pub(crate) fn alternates(messages: &[Message]) -> bool {
     messages.windows(2).all(|pair| pair[0].role() != pair[1].role())
 }
+
+/// A model whose token count is the TS test heuristic (`ceil(JSON length / 2)` for non-text).
+pub(crate) struct JsonCountingModel(pub(crate) MockMessageModel);
+
+#[async_trait::async_trait]
+impl Model for JsonCountingModel {
+    fn stream(
+        &self,
+        request: crate::models::model::ModelRequest,
+    ) -> crate::models::model::BoxStream<
+        'static,
+        crate::error::Result<crate::models::streaming::ModelStreamEvent>,
+    > {
+        self.0.stream(request)
+    }
+
+    fn get_config(&self) -> crate::models::model::BaseModelConfig {
+        self.0.get_config()
+    }
+
+    fn update_config(&self, config: crate::models::model::BaseModelConfig) {
+        self.0.update_config(config);
+    }
+
+    async fn count_tokens(
+        &self,
+        messages: &[Message],
+        _options: crate::models::model::CountTokensOptions,
+    ) -> crate::error::Result<u64> {
+        let json = serde_json::to_string(messages).unwrap_or_default();
+        Ok(json.len().div_ceil(2) as u64)
+    }
+}
