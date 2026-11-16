@@ -359,6 +359,10 @@ impl Storage for LocalFileStorage {
         Some(LocalFileStorage::search(self, query).await)
     }
 
+    fn storage_type_name(&self) -> &'static str {
+        "LocalFileStorage"
+    }
+
     fn is_namespaced(&self) -> bool {
         self.namespaced
     }

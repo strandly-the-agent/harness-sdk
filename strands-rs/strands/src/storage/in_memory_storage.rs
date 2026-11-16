@@ -169,6 +169,10 @@ impl Storage for InMemoryStorage {
         Some(InMemoryStorage::search(self, query).await)
     }
 
+    fn storage_type_name(&self) -> &'static str {
+        "InMemoryStorage"
+    }
+
     fn is_namespaced(&self) -> bool {
         self.namespaced
     }
