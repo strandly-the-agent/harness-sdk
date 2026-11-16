@@ -36,8 +36,8 @@ use strands::StopReason;
 use strands::testing::tool_context;
 use strands::types::tools::ToolUse;
 use strands_harness::{
-    BuiltinPluginName, BuiltinToolName, Effort, HarnessAgentOptions, McpServersOption, SessionConfig,
-    SessionOption, create_harness, exa_web_search,
+    BuiltinPluginName, BuiltinToolName, Effort, HarnessAgentOptions, McpServersOption, MemoryConfig,
+    MemoryOption, SessionConfig, SessionOption, create_harness, exa_web_search,
 };
 
 use live_support::{
@@ -439,6 +439,55 @@ async fn live_bedrock_persists_a_session_with_a_minted_id() {
         "{id}"
     );
     assert!(holds_file(&minted[0], "snapshot_latest.json"));
+}
+
+/// TS case `persists memory across agents (fresh conversation, no session)`: a second agent
+/// that shares only the memory directory is given the fact the first one distilled. Extraction
+/// runs on an interval, so `flush` forces the write.
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_bedrock_persists_memory_across_agents() {
+    if !aws_credentials_available().await {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("temp dir");
+    let memory_dir = dir.path().join("memory");
+    let with_memory = || HarnessAgentOptions {
+        memory: MemoryOption::Config(MemoryConfig {
+            dir: Some(memory_dir.to_string_lossy().into_owned()),
+            stores: None,
+        }),
+        ..bedrock(dir.path(), &[])
+    };
+    let mut first = create_harness(with_memory()).await.expect("the harness builds");
+    first
+        .invoke(format!(
+            "{TESTING} Remember this durable fact about me: my favorite fruit is TANGERINE."
+        ))
+        .await
+        .expect("the first turn runs");
+    first.memory_manager().expect("memory is on").flush().await;
+    let distilled: String = memory_dir
+        .read_dir()
+        .expect("the memory dir")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "md"))
+        .map(|path| std::fs::read_to_string(path).expect("a memory file"))
+        .collect();
+    assert!(distilled.contains("TANGERINE"), "no memory file holds the fact");
+    first.shutdown().await.expect("the first agent shuts down");
+
+    let mut second = create_harness(with_memory())
+        .await
+        .expect("the second harness builds");
+    let result = second
+        .invoke(format!("{TESTING} What is my favorite fruit?"))
+        .await
+        .expect("the second turn runs");
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    // The question does not name the fruit: it reaches the conversation from the memory files.
+    assert!(json!(trace(&second)).to_string().contains("TANGERINE"));
+    second.shutdown().await.expect("the second agent shuts down");
 }
 
 fn holds_file(dir: &Path, name: &str) -> bool {
