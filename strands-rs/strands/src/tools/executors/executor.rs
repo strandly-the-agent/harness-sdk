@@ -299,7 +299,11 @@ pub(crate) async fn call_tool(
                     (Some(ToolOutcome::Interrupt(interrupt)), _) | (None, Some(interrupt)) => {
                         Ok(ToolCallOutcome::Interrupt(interrupt))
                     }
-                    (None, None) => Err(Error::other("the tool call ended without a result")),
+                    // `execute` queues its failure and returns in the same poll.
+                    (None, None) => Err(match receiver.try_recv() {
+                        Ok(TaskMessage::Failed(_, error)) => error,
+                        _ => Error::other("the tool call ended without a result"),
+                    }),
                 };
             }
             Some(message) = receiver.recv() => message,

@@ -544,4 +544,27 @@ mod call_tool {
         };
         assert_eq!(*result.status(), ToolResultStatus::Error);
     }
+
+    /// Review finding correctness-a2: the middleware's own error, not "ended without a result".
+    #[tokio::test]
+    async fn a_failing_execute_tool_middleware_surfaces_its_error() {
+        use crate::middleware::ExecuteToolStage;
+
+        let ran = Arc::default();
+        let agent = agent_with_echo(&ran);
+        let _cleanup = agent.add_middleware(ExecuteToolStage::wrap(|_context, _next| {
+            Box::pin(futures::stream::iter([Err(
+                crate::Error::other("middleware failed").into()
+            )]))
+        }));
+
+        let error = agent
+            .tool_agent()
+            .call_tool("echo", json!({}), InvocationState::new())
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("middleware failed"), "{error}");
+        assert!(ran.lock().unwrap().is_empty());
+    }
 }
