@@ -127,6 +127,7 @@ pub mod telemetry;
 pub mod testing;
 pub mod tools;
 pub mod types;
+pub mod vended_memory_stores;
 pub mod vended_plugins;
 pub mod vended_tools;
 
