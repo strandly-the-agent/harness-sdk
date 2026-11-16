@@ -112,6 +112,11 @@ impl ExtractionCoordinator {
         self.inner.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Whether a message is buffered that some store hasn't saved.
+    pub(crate) fn has_unsaved(&self) -> bool {
+        !self.lock().pending.is_empty()
+    }
+
     /// Buffers a message the agent added.
     pub(crate) fn record(&self, message: Message) {
         let mut state = self.lock();

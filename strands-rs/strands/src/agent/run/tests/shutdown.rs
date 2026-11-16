@@ -5,6 +5,10 @@
 use super::*;
 use crate::memory::test_support::{MockStore, Sink};
 use crate::memory::{ExtractionConfig, MemoryManager, MemoryManagerConfig, MemoryStore};
+use crate::test_support::WarnRecorder;
+
+const UNSAVED: &str =
+    "agent dropped with conversation not yet saved to memory; call shutdown().await before dropping it";
 
 fn extracting_store() -> Arc<MockStore> {
     Arc::new(MockStore::extracting(
@@ -60,4 +64,34 @@ async fn is_a_no_op_when_no_memory_manager_is_configured() {
     agent.invoke("Test prompt").await.unwrap();
 
     agent.shutdown().await.unwrap();
+}
+
+/// TS `flushes even when the scope exits via a thrown error` relies on `await using`; a Rust
+/// agent dropped on an early return can't flush, so it warns.
+#[tokio::test]
+async fn dropping_an_agent_with_unsaved_memory_warns() {
+    let store = extracting_store();
+    let mut agent = agent_with_memory(&store);
+    agent.invoke("Test prompt").await.unwrap();
+
+    let ((), warnings) = WarnRecorder::capture(|| drop(agent));
+
+    assert_eq!(warnings, [UNSAVED]);
+    assert_eq!(store.add_messages_count(), 0);
+}
+
+#[tokio::test]
+async fn dropping_an_agent_after_shutdown_or_without_extraction_is_silent() {
+    let store = extracting_store();
+    let mut flushed = agent_with_memory(&store);
+    flushed.invoke("Test prompt").await.unwrap();
+    flushed.shutdown().await.unwrap();
+    let search_only = Arc::new(MockStore::new("notes"));
+    let mut recall = agent_with_memory(&search_only);
+    recall.invoke("Test prompt").await.unwrap();
+    let never_run = agent_with_memory(&extracting_store());
+
+    let ((), warnings) = WarnRecorder::capture(|| drop((flushed, recall, never_run)));
+
+    assert_eq!(warnings, Vec::<String>::new());
 }

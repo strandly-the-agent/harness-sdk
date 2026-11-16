@@ -422,7 +422,9 @@ impl Agent {
     ///
     /// A dropped [`AgentStream`] repairs history at once and leaves the hooks it skipped
     /// (`AfterInvocationEvent`, and `MessageAddedEvent` for the cancel message it appended) to
-    /// the next `invoke`, `stream` or `shutdown`. Call this before dropping such an agent.
+    /// the next `invoke`, `stream` or `shutdown`. Call this before dropping such an agent, and
+    /// before dropping an agent whose memory manager extracts in the background: Rust has no
+    /// async drop (TS `await using`), so a dropped agent only logs a warning about unsaved work.
     ///
     /// # Errors
     ///
@@ -705,6 +707,16 @@ impl Drop for Agent {
             tracing::warn!(
                 agent_id = %self.local.id(),
                 "agent dropped with hooks pending from a dropped stream; call shutdown().await before dropping it"
+            );
+        }
+        if self
+            .memory_manager
+            .as_ref()
+            .is_some_and(MemoryManager::has_unsaved)
+        {
+            tracing::warn!(
+                agent_id = %self.local.id(),
+                "agent dropped with conversation not yet saved to memory; call shutdown().await before dropping it"
             );
         }
     }

@@ -349,6 +349,12 @@ impl MemoryManager {
         }
     }
 
+    /// Whether conversation is waiting for a save that [`flush`](Self::flush) would run.
+    pub(crate) fn has_unsaved(&self) -> bool {
+        self.coordinator()
+            .is_some_and(|coordinator| coordinator.has_unsaved())
+    }
+
     /// Searches the stores (all of them, or `options.stores`) concurrently and merges the
     /// results in store order, each tagged with its store's name. A failing store is logged and
     /// skipped.
