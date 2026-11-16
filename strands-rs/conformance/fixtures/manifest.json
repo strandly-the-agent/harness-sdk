@@ -296,6 +296,9 @@
     "messages/with_metadata.json": {
       "description": "Message with usage, metrics and custom metadata"
     },
+    "model_requests/cedar_run.json": {
+      "description": "Model requests of an agent with CedarAuthorization: the second carries the result of the permitted tool and the denial of the forbidden one"
+    },
     "model_requests/skills_run.json": {
       "description": "Model request of an agent with AgentSkills: the `skills` tool spec and the <available_skills> block appended to a string system prompt"
     },
@@ -515,6 +518,12 @@
     "tools/agentic_context_specs.json": {
       "description": "Tool specs of the agentic context tools: summarize_context, truncate_context, pin_context",
       "_note": "The list is generator-built; each spec is TS output"
+    },
+    "tools/background_tasks_manage_spec.json": {
+      "description": "The `strands_manage_background_task` tool spec of the background tasks plugin"
+    },
+    "tools/classifier_answer_spec.json": {
+      "description": "Tool specs the ClassifierStrategy sends to its model for two candidates under the default routing policy"
     },
     "tools/function_tool_default_schema.json": {
       "description": "FunctionTool.toolSpec when no inputSchema is given (the TS default schema)"

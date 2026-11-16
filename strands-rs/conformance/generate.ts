@@ -1784,6 +1784,90 @@ async function vendedShapes(): Promise<void> {
     hitlResult.interrupts,
     'AgentResult.interrupts after HumanInTheLoop asked for approval of a tool call the classifier flagged'
   )
+
+  // Model routing: the answer tool the classifier strategy forces on its model.
+  const { ClassifierStrategy, ModelRouter, RoutingCandidate } = await import(`${DIST}/models/routing/index.js`)
+  const routingClassifier = new ScriptedModel([
+    toolUseTurn([{ name: 'strands_structured_output', toolUseId: 'classification', input: { candidate: { answer: 'c0' } } }]),
+  ])
+  const strategy = new ClassifierStrategy(routingClassifier)
+  const router = new ModelRouter(
+    ['routine', 'complex'].map(
+      (name) =>
+        new RoutingCandidate({
+          model: new ScriptedModel([textTurn(name)]),
+          name,
+          description: `Model suitable for ${name} requests.`,
+        })
+    ),
+    { strategy }
+  )
+  await strategy.select({
+    messages: [new Message({ role: 'user', content: [new TextBlock('Plan a safe migration')] })],
+    systemPrompt: 'Be precise',
+    toolSpecs: [],
+    candidates: router.candidates,
+    invocationState: {},
+    attempts: [],
+  })
+  emit(
+    'tools/classifier_answer_spec',
+    routingClassifier.requests[0]!.toolSpecs,
+    'Tool specs the ClassifierStrategy sends to its model for two candidates under the default routing policy'
+  )
+
+  // Cedar: what the model receives for a permitted and a forbidden tool call.
+  const { CedarAuthorization } = await import(`${DIST}/vended-interventions/cedar/index.js`)
+  const cedarTool = (name: string, property: string): InstanceType<typeof FunctionTool> =>
+    new FunctionTool({
+      name,
+      description: `Runs ${name}.`,
+      inputSchema: { type: 'object', properties: { [property]: { type: 'string' } }, required: [property] },
+      callback: () => `${name} ran`,
+    })
+  const cedarModel = new ScriptedModel([
+    toolUseTurn([
+      { name: 'search', toolUseId: 'tooluse_cedar_1', input: { query: 'cats' } },
+      { name: 'delete', toolUseId: 'tooluse_cedar_2', input: { id: '1' } },
+    ]),
+    textTurn('Done'),
+  ])
+  const cedarAgent = new Agent({
+    id: 'cedar_agent',
+    model: cedarModel,
+    tools: [cedarTool('search', 'query'), cedarTool('delete', 'id')],
+    interventions: [
+      new CedarAuthorization({
+        policies:
+          'permit(principal, action == Action::"search", resource);\n' +
+          'permit(principal, action == Action::"delete", resource);\n' +
+          'forbid(principal, action == Action::"delete", resource) when { context.input.id == "1" };',
+      }),
+    ],
+    printer: false,
+    retryStrategy: null,
+  })
+  await cedarAgent.invoke('Search, then delete')
+  emit(
+    'model_requests/cedar_run',
+    cedarModel.requests,
+    'Model requests of an agent with CedarAuthorization: the second carries the result of the permitted tool and the denial of the forbidden one'
+  )
+
+  // Background tasks: the manage tool the plugin registers.
+  const backgroundAgent = new Agent({
+    id: 'background_agent',
+    model: new ScriptedModel([]),
+    printer: false,
+    retryStrategy: null,
+    backgroundTasks: true,
+  })
+  await backgroundAgent.initialize()
+  emit(
+    'tools/background_tasks_manage_spec',
+    backgroundAgent.toolRegistry.list().find((tool) => tool.name === 'strands_manage_background_task')!.toolSpec,
+    'The `strands_manage_background_task` tool spec of the background tasks plugin'
+  )
 }
 
 // ---------------------------------------------------------------------------------------------------

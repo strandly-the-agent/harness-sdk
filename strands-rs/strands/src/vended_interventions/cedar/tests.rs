@@ -139,6 +139,46 @@ fn inline(policies: &str) -> CedarAuthorizationConfig {
 mod real_cedar_evaluation {
     use super::*;
 
+    /// Rust-only: the tool results the model receives for a permitted and a forbidden call equal
+    /// the ones of the TS run in the conformance fixture `model_requests/cedar_run.json`.
+    #[tokio::test]
+    async fn the_model_receives_the_ts_results_for_a_permitted_and_a_forbidden_call() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn(vec![
+            ToolUseBlock::new("search", "tooluse_cedar_1", json!({ "query": "cats" })).into(),
+            ToolUseBlock::new("delete", "tooluse_cedar_2", json!({ "id": "1" })).into(),
+        ]);
+        model.add_turn(vec![ContentBlock::Text(TextBlock::new("Done"))]);
+        let tool = |name: &'static str| {
+            mock_tool(name, move |context| {
+                text_result(context.tool_use().tool_use_id(), &format!("{name} ran"))
+            })
+        };
+        let policies = concat!(
+            "permit(principal, action == Action::\"search\", resource);\n",
+            "permit(principal, action == Action::\"delete\", resource);\n",
+            "forbid(principal, action == Action::\"delete\", resource) when { context.input.id == \"1\" };",
+        );
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([tool("search"), tool("delete")])
+            .intervention(cedar(inline(policies)))
+            .printer(false)
+            .build()
+            .unwrap();
+
+        agent.invoke("Search, then delete").await.unwrap();
+
+        let fixture: JsonValue = serde_json::from_str(include_str!(
+            "../../../../conformance/fixtures/model_requests/cedar_run.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(model.requests()[1].messages[2].content()).unwrap(),
+            fixture[1]["messages"][2]["content"]
+        );
+    }
+
     #[tokio::test]
     async fn allows_permitted_tool_calls() {
         let (result, executed) = run_agent(

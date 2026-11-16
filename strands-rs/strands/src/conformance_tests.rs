@@ -521,6 +521,8 @@ fn tool_specs_and_choices_round_trip_byte_identically() {
     ] {
         assert_round_trip::<ToolSpec>(path);
     }
+    assert_round_trip::<ToolSpec>("tools/background_tasks_manage_spec.json");
+    assert_round_trip::<Vec<ToolSpec>>("tools/classifier_answer_spec.json");
     assert_round_trip::<Vec<ToolSpec>>("tools/hitl_classifier_specs.json");
     assert_round_trip::<Vec<ToolSpec>>("tools/agentic_context_specs.json");
     assert_eq!(

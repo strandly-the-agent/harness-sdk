@@ -602,6 +602,10 @@ mod system_prompt_construction {
             .unwrap();
 
         assert_eq!(
+            serde_json::to_string(&classifier.requests()[0].tool_specs).unwrap(),
+            include_str!("../../../../../conformance/fixtures/tools/classifier_answer_spec.json")
+        );
+        assert_eq!(
             serde_json::to_value(&classifier.requests()[0].tool_specs[0]).unwrap(),
             json!({
                 "name": "strands_structured_output",
