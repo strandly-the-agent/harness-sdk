@@ -50,3 +50,5 @@ Every user-visible behaviour difference from the TypeScript harness, with the re
 | `agent.ts` `createHarness` | Built-in plugins and an existing `AgentSkills` are recognised by plugin name, not type (P-958). |
 | `agent.ts` `createHarness` | `caching: 'auto'` passed explicitly behaves as not passed (warns, never errors) (P-957). |
 | `agent.ts` `createHarness` | `mcp_servers` without the `mcp` feature is an error (P-961). |
+| `web_fetch` URL cache | One tool instance keeps one page per URL for 15 minutes, without a bound, and serves it to every agent that shares the tool | At most 64 live entries; an entry fetched through a sandbox (the `curl` transport) is served only to agents on that sandbox | A long-lived tool must not grow without bound, and a page fetched under one sandbox's network controls must not reach an agent on another |
+| JS `trim` | `String.prototype.trim` | The same character set at every site that mirrors a TS `.trim()` (U+FEFF trimmed, U+0085 kept) | Byte-observable text matches TS |
