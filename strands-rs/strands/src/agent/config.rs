@@ -11,6 +11,7 @@ use crate::error::Result;
 use crate::error::{DefaultNotConfiguredError, Error};
 use crate::experimental::context_manager::ContextManagerStrategy;
 use crate::memory::{MemoryManager, MemoryManagerConfig};
+use crate::interventions::InterventionHandler;
 #[cfg(feature = "bedrock")]
 use crate::models::bedrock::{BedrockModel, BedrockModelConfig};
 use crate::models::model::Model;
@@ -238,6 +239,10 @@ pub struct AgentConfig {
     /// `.plugin(..)` and `.plugins(..)` extend the list.
     #[builder(field)]
     pub plugins: Vec<Arc<dyn Plugin>>,
+    /// Intervention handlers, evaluated in order at each lifecycle gate; names must be unique.
+    /// The builder's `.intervention(..)` and `.interventions(..)` extend the list.
+    #[builder(field)]
+    pub interventions: Vec<Arc<dyn InterventionHandler>>,
     /// How the history is kept within the context window (default
     /// [`SlidingWindowConversationManager`](crate::conversation_manager::SlidingWindowConversationManager)
     /// with a window of 40). A stateful model rejects it and uses
@@ -325,6 +330,18 @@ impl<S: agent_builder::State> AgentBuilder<S> {
     /// Adds a plugin.
     pub fn plugin(mut self, plugin: impl Plugin) -> Self {
         self.plugins.push(Arc::new(plugin));
+        self
+    }
+
+    /// Adds an intervention handler.
+    pub fn intervention(mut self, handler: impl InterventionHandler) -> Self {
+        self.interventions.push(Arc::new(handler));
+        self
+    }
+
+    /// Adds intervention handlers the caller keeps handles to; calling it again extends the list.
+    pub fn interventions(mut self, handlers: impl IntoIterator<Item = Arc<dyn InterventionHandler>>) -> Self {
+        self.interventions.extend(handlers);
         self
     }
 

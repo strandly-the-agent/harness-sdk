@@ -27,6 +27,7 @@ use crate::hooks::{
     IntoSyncHook,
 };
 use crate::memory::MemoryManager;
+use crate::interventions::InterventionRegistry;
 use crate::middleware::{Middleware, MiddlewareCleanup, MiddlewareRegistry, MiddlewareStage};
 use crate::models::model::Model;
 use crate::plugins::{ModelLifecycle, Plugin, PluginRegistry};
@@ -202,6 +203,7 @@ impl Agent {
             warn_on_duplicate_types(&strategies);
             agent.retry_strategies = strategies;
         }
+        InterventionRegistry::new(config.interventions, agent.local.hooks())?;
         agent.plugins = config.plugins;
         if let Some(manager) = &config.session_manager {
             agent.local.set_session_id(manager.session_id().to_owned());

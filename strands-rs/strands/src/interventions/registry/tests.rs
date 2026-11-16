@@ -720,6 +720,82 @@ mod conflict_resolution {
     }
 }
 
+mod agent_integration {
+    use super::*;
+
+    fn tool_turns(tool: &str) -> Arc<MockMessageModel> {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn(vec![ContentBlock::ToolUse(
+            crate::types::messages::ToolUseBlock::new(tool, "tool-1", json!({})),
+        )]);
+        model.add_turn(vec![ContentBlock::Text(TextBlock::new("Done"))]);
+        model
+    }
+
+    #[tokio::test]
+    async fn deny_on_before_tool_call_prevents_tool_execution() {
+        let executed = Arc::new(Mutex::new(false));
+        let flag = Arc::clone(&executed);
+        let tool = mock_tool("blockedTool", move |context| {
+            *flag.lock().unwrap() = true;
+            text_result(context.tool_use().tool_use_id(), "should not reach here")
+        });
+        let mut agent = Agent::builder()
+            .model(tool_turns("blockedTool"))
+            .tools([tool])
+            .interventions([tool_handler("block-all", |_| {
+                Ok(deny("blocked by intervention").into())
+            })])
+            .printer(false)
+            .build()
+            .unwrap();
+        let result = agent.invoke("Test").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        assert!(!*executed.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn interventions_run_before_plugins_hook_order_interventions_default() {
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&order);
+        let tracker = tool_handler("order-tracker", move |_| {
+            log.lock().unwrap().push("intervention");
+            Ok(proceed().into())
+        });
+        let tool = mock_tool("testTool", |context| {
+            text_result(context.tool_use().tool_use_id(), "result")
+        });
+        let mut agent = Agent::builder()
+            .model(tool_turns("testTool"))
+            .tools([tool])
+            .interventions([tracker])
+            .printer(false)
+            .build()
+            .unwrap();
+        let log = Arc::clone(&order);
+        agent.add_hook(move |_event: &mut BeforeToolCallEvent| log.lock().unwrap().push("plugin"));
+        agent.invoke("Test").await.unwrap();
+        assert_eq!(*order.lock().unwrap(), ["plugin", "intervention"]);
+    }
+
+    /// Rust-only: `on_error: throw` fails the invocation with the handler's error.
+    #[tokio::test]
+    async fn on_error_throw_fails_the_invocation() {
+        let tool = mock_tool("testTool", |context| {
+            text_result(context.tool_use().tool_use_id(), "result")
+        });
+        let mut agent = Agent::builder()
+            .model(tool_turns("testTool"))
+            .tools([tool])
+            .interventions([throwing_handler("throwing-handler", OnError::Throw)])
+            .printer(false)
+            .build()
+            .unwrap();
+        let error = agent.invoke("Test").await.unwrap_err();
+        assert!(error.to_string().contains("handler crashed"), "{error}");
+    }
+}
+
 mod edge_cases {
     use super::*;
 
