@@ -148,8 +148,9 @@ impl AgentTrace {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum AttributeValue {
-    /// A string.
-    String(String),
+    /// A string. Not named `String`: a public item with that name in a direct dependency makes
+    /// rustc print `std::string::String` in every diagnostic of the depending crate.
+    Str(String),
     /// A boolean.
     Bool(bool),
     /// An integer.
@@ -177,7 +178,7 @@ macro_rules! attribute_value_from {
 }
 
 attribute_value_from! {
-    &str => String, String => String, bool => Bool, i64 => Int, i32 => Int, u32 => Int, f64 => Float,
+    &str => Str, String => Str, bool => Bool, i64 => Int, i32 => Int, u32 => Int, f64 => Float,
     Vec<String> => StringArray, Vec<bool> => BoolArray, Vec<i64> => IntArray, Vec<f64> => FloatArray,
 }
 
@@ -257,7 +258,7 @@ mod otel_span {
 
     pub(super) fn value(value: &AttributeValue) -> Value {
         match value.clone() {
-            AttributeValue::String(value) => value.into(),
+            AttributeValue::Str(value) => value.into(),
             AttributeValue::Bool(value) => value.into(),
             AttributeValue::Int(value) => value.into(),
             AttributeValue::Float(value) => value.into(),
