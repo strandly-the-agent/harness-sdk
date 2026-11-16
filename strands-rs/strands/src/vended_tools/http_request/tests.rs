@@ -177,6 +177,20 @@ async fn converts_response_headers_to_plain_object() {
 }
 
 #[tokio::test]
+async fn joins_repeated_headers_but_keeps_the_last_set_cookie() {
+    let headers = vec![
+        ("set-cookie", "a=1"),
+        ("set-cookie", "b=2"),
+        ("x-y", "1"),
+        ("x-y", "2"),
+    ];
+    let (url, _) = server(Some(("200 OK", headers, "{}".to_owned()))).await;
+    let result = invoke(json!({ "method": "GET", "url": url })).await.unwrap();
+    assert_eq!(result.headers["set-cookie"], "b=2");
+    assert_eq!(result.headers["x-y"], "1, 2");
+}
+
+#[tokio::test]
 async fn succeeds_for_2xx_status_codes() {
     let (url, _) = server(Some(("201 Created", vec![], "{}".to_owned()))).await;
     assert_eq!(

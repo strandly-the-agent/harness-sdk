@@ -1,0 +1,1 @@
+| Dropping a pending `bash` call | No equivalent: a pending run can't be dropped | The session is killed with the dropped call; the next call starts a fresh session (variables and directory reset), as after a timeout | A dropped future can't finish reading its command's output, and keeping the session would hand that output to the next call (P-283) |

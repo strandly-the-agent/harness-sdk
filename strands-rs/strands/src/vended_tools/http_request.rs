@@ -120,8 +120,13 @@ async fn send(client: &reqwest::Client, input: HttpRequestInput) -> Result<HttpR
     let mut headers = BTreeMap::<String, String>::new();
     for (name, value) in response.headers() {
         let value = String::from_utf8_lossy(value.as_bytes()).into_owned();
-        headers
-            .entry(name.as_str().to_owned())
+        let entry = headers.entry(name.as_str().to_owned());
+        // fetch `Headers` iteration (TS) yields each `set-cookie` on its own, so the last one wins.
+        if name == reqwest::header::SET_COOKIE {
+            *entry.or_default() = value;
+            continue;
+        }
+        entry
             .and_modify(|joined| {
                 joined.push_str(", ");
                 joined.push_str(&value);

@@ -1,0 +1,12 @@
+| finding | disposition | commit |
+|---|---|---|
+| correctness-1 | Fixed: on EOF of either pipe, `run` races `child.wait()` against the call's deadline, so `exec >&-` ends with `Command timed out after <t> seconds` and the session is killed (P-283). Regression test `vended_tools::bash::tests::timeout_still_applies_after_the_command_closes_stdout` (fails without the fix: still running after 10 s) | 6ec9b2342 |
+| correctness-2 | Fixed: `run` owns the process for the call and returns it to the session only after both sentinels arrive, so a dropped call drops (kills) the process and the next call starts a fresh session (P-283; divergence row). Regression test `vended_tools::bash::tests::dropped_call_does_not_leak_its_output_into_the_next_call` (fails without the fix: `"first"` instead of `"second"`) | 6ec9b2342 |
+| api-1 | Fixed: added `SLEEP_DESCRIPTION` (re-exported), made `sleep_description` `pub(crate)`, test `sleep_description_constant_matches_the_default_maximum` (P-284) | 602bf5c5b |
+| api-2 | Fixed: web_fetch `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_CONTENT_CHARS`, `WEB_FETCH_DESCRIPTION_MARKDOWN`, `WEB_FETCH_DESCRIPTION_AGENTIC` are `pub(crate)` and no longer re-exported (P-284) | 602bf5c5b |
+| api-3 | Fixed: `DEFAULT_HANDOFF_TO_USER_DESCRIPTION` is `pub(crate)` and no longer re-exported (P-284) | 602bf5c5b |
+| api-4 | Fixed: `generalist`, `GENERALIST_DESCRIPTION`, `GENERALIST_INSTRUCTIONS` re-exported from `strands::vended_tools` (P-284) | 602bf5c5b |
+| api-5 | Fixed: `mod posix_shell;` (private); the items stay at `strands::sandbox::*` (P-284) | 602bf5c5b |
+| api-6 | Fixed: `impl<S: Sandbox> From<S>` and `From<Arc<S>>` for `SandboxSource`; `tests/vended_tools.rs` now passes `.sandbox(Arc::clone(&sandbox))`; `strands::sandbox` module doctest covers `.sandbox(NotASandboxLocalEnvironment::new())` and `SandboxSource::Off`. `agent/config.rs` needed no change (P-285) | 602bf5c5b |
+| parity-1 | Fixed in staging: corrected PARITY.md row (`22/27`, five PowerShell runtime cases, the case-insensitive override ported as `overrides_a_host_variable_whose_name_differs_only_by_case`) in `.rust-port/staging/phase8fix/parity.md` for the lead to apply | see parity commit |
+| parity-2 | Fixed, matching TS: a later `set-cookie` replaces the earlier one; other repeated headers are still joined with `, ` (P-286). Test `vended_tools::http_request::tests::joins_repeated_headers_but_keeps_the_last_set_cookie` (fails without the fix: `"a=1, b=2"`) | see parity commit |
