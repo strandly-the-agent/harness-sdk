@@ -96,6 +96,9 @@ required-features = ["bedrock"]
 name = "mcp"
 required-features = ["mcp", "bedrock"]
 
+[[example]]
+name = "sessions"
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
