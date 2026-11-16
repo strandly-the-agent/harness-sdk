@@ -1126,3 +1126,68 @@ fn holds_a_subagent_max_depth_above_u32_max_as_u32_max() {
         );
     }
 }
+
+const SECRET: &str = "s3cret-value";
+
+/// Server maps, flat and under an `mcpServers` key, with the secret wherever one can sit.
+fn server_maps_with_secrets() -> [JsonObject; 2] {
+    let servers = json!({
+        "stdio": { "command": "run", "env": { "TOKEN": SECRET } },
+        "http": {
+            "url": "https://example.com/mcp",
+            "headers": { "x-key": SECRET },
+            "auth": { "clientId": "client-id", "clientSecret": SECRET, "scopes": ["read"] },
+        },
+        "malformed": { "command": "run", "env": SECRET, "headers": [SECRET], "auth": SECRET },
+    });
+    [servers.clone(), json!({ "mcpServers": servers })].map(|servers| match servers {
+        JsonValue::Object(servers) => servers,
+        other => panic!("{other} is not a map"),
+    })
+}
+
+// Rust-only: `Debug` output ends up in logs.
+#[test]
+fn debug_of_a_portable_config_redacts_the_secrets_of_its_mcp_servers() {
+    for servers in server_maps_with_secrets() {
+        let config = define(&json!({ "mcpServers": servers, "agentConfig": { "mcpServers": servers } }));
+        for output in [format!("{config:?}"), format!("{config:#?}")] {
+            assert!(!output.contains(SECRET), "{output}");
+            assert_eq!(output.matches("<redacted>").count(), 12, "{output}");
+            for kept in ["client-id", "read", "https://example.com/mcp", "TOKEN", "x-key"] {
+                assert!(output.contains(kept), "{kept} missing in {output}");
+            }
+        }
+
+        let builder = HarnessAgentConfig::builder()
+            .mcp_servers(config.mcp_servers.clone())
+            .agent_config(config.agent_config.clone());
+        assert_eq!(format!("{builder:?}"), "HarnessAgentConfigBuilder { .. }");
+        let HarnessConfigMcpServers::Servers(map) = &config.mcp_servers else {
+            panic!("mcpServers is {:?}", config.mcp_servers);
+        };
+        assert_eq!(*map, servers, "the config itself is untouched");
+    }
+}
+
+// Rust-only: `Debug` output ends up in logs.
+#[test]
+fn debug_of_the_options_redacts_the_secrets_of_their_mcp_servers() {
+    for servers in server_maps_with_secrets() {
+        let options = HarnessAgentOptions {
+            mcp_servers: Some(McpServersOption::Servers(servers.clone())),
+            ..Default::default()
+        };
+        let builder = HarnessAgentOptions::builder().mcp_servers(McpServersOption::Servers(servers));
+        for output in [
+            format!("{options:?}"),
+            format!("{options:#?}"),
+            format!("{builder:?}"),
+            format!("{builder:#?}"),
+        ] {
+            assert!(!output.contains(SECRET), "{output}");
+            assert_eq!(output.matches("<redacted>").count(), 6, "{output}");
+            assert!(output.contains("client-id"), "{output}");
+        }
+    }
+}

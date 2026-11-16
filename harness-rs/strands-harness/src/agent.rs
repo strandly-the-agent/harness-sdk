@@ -26,7 +26,9 @@ use crate::builtin_tools::{
     BuildAgent, WebSearchMode, build_builtin_tools, builtin_tool_config, enabled_builtin_tools,
     resolve_builtin_tools, select_builtin_tools, web_search_explicit, web_search_mode,
 };
-use crate::config::{BUILTIN_PLUGIN_NAMES, BuiltinPluginName, BuiltinToolName, WebSearchSetting};
+use crate::config::{
+    BUILTIN_PLUGIN_NAMES, BuiltinPluginName, BuiltinToolName, WebSearchSetting, redact_mcp_servers,
+};
 use crate::defaults::{DEFAULT_MEMORY_DIR, DEFAULT_MODEL, DEFAULT_SESSION_DIR, DEFAULT_SKILLS_DIR};
 use crate::env::{EnvLookup, process_env};
 use crate::error::{HarnessError, Result};
@@ -53,24 +55,16 @@ pub enum McpServersOption {
     Servers(JsonObject),
 }
 
-/// Redacts the values under each server's `env` and `headers`, which can hold expanded secrets.
+/// Prints the server map with the values under `env`, `headers` and `auth` redacted: they can
+/// hold secrets.
 impl std::fmt::Debug for McpServersOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Path(path) => f.debug_tuple("Path").field(path).finish(),
-            Self::Servers(servers) => {
-                let mut redacted = servers.clone();
-                for server in redacted.values_mut() {
-                    for key in ["env", "headers"] {
-                        if let Some(strands::JsonValue::Object(values)) = server.get_mut(key) {
-                            for value in values.values_mut() {
-                                *value = "<redacted>".into();
-                            }
-                        }
-                    }
-                }
-                f.debug_tuple("Servers").field(&redacted).finish()
-            }
+            Self::Servers(servers) => f
+                .debug_tuple("Servers")
+                .field(&redact_mcp_servers(servers))
+                .finish(),
         }
     }
 }

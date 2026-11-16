@@ -10,6 +10,7 @@ mod options;
 #[cfg(test)]
 mod tests;
 
+use std::fmt;
 use std::sync::LazyLock;
 
 use indexmap::IndexMap;
@@ -513,7 +514,7 @@ pub struct HarnessConfigMemory {
 }
 
 /// The `mcpServers` value of a portable config.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum HarnessConfigMcpServers {
@@ -521,6 +522,50 @@ pub enum HarnessConfigMcpServers {
     Path(String),
     /// The server map, flat or under an `mcpServers` key.
     Servers(JsonObject),
+}
+
+/// Prints the server map through `redact_mcp_servers`.
+impl fmt::Debug for HarnessConfigMcpServers {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path(path) => f.debug_tuple("Path").field(path).finish(),
+            Self::Servers(servers) => f
+                .debug_tuple("Servers")
+                .field(&redact_mcp_servers(servers))
+                .finish(),
+        }
+    }
+}
+
+const REDACTED: &str = "<redacted>";
+
+/// `servers` with the values that can hold a secret replaced: what is under each server's `env`
+/// and `headers`, and everything in its `auth` but the client id and the scopes. Covers the flat
+/// map and the map under an `mcpServers` key.
+pub(crate) fn redact_mcp_servers(servers: &JsonObject) -> JsonObject {
+    let mut redacted = servers.clone();
+    for (name, server) in &mut redacted {
+        let JsonValue::Object(server) = server else {
+            continue;
+        };
+        for (key, value) in server.iter_mut() {
+            match (key.as_str(), value) {
+                ("env" | "headers", JsonValue::Object(values)) => {
+                    values.values_mut().for_each(|value| *value = REDACTED.into());
+                }
+                ("auth", JsonValue::Object(values)) => values
+                    .iter_mut()
+                    .filter(|(key, _)| !matches!(key.as_str(), "clientId" | "scopes"))
+                    .for_each(|(_, value)| *value = REDACTED.into()),
+                ("env" | "headers" | "auth", value) => *value = REDACTED.into(),
+                _ => {}
+            }
+        }
+        if name == "mcpServers" {
+            *server = redact_mcp_servers(server);
+        }
+    }
+    redacted
 }
 
 /// The `skills` value of a portable config.
@@ -573,8 +618,8 @@ pub struct HarnessDependencies {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, PartialEq, Serialize, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, bon::Builder)]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessAgentConfig {
     /// The agent's name.
@@ -646,6 +691,77 @@ pub struct HarnessAgentConfig {
     /// JSON-compatible SDK agent config fields.
     #[builder(default)]
     pub agent_config: JsonObject,
+}
+
+/// Prints the MCP server maps, the `mcpServers` one of `agent_config` included, through
+/// `redact_mcp_servers`.
+impl fmt::Debug for HarnessAgentConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            name,
+            description,
+            instructions,
+            model,
+            model_module,
+            effort,
+            tools,
+            subagents,
+            mcp_servers,
+            builtin_tools,
+            caching,
+            context_manager,
+            session,
+            skills,
+            memory,
+            memory_stores,
+            plugins,
+            builtin_plugins,
+            interventions,
+            intervention_modules,
+            sandbox,
+            agent_config_modules,
+            dependencies,
+            agent_config,
+        } = self;
+        let mut agent_config = agent_config.clone();
+        if let Some(JsonValue::Object(servers)) = agent_config.get_mut("mcpServers") {
+            *servers = redact_mcp_servers(servers);
+        }
+        f.debug_struct("HarnessAgentConfig")
+            .field("name", name)
+            .field("description", description)
+            .field("instructions", instructions)
+            .field("model", model)
+            .field("model_module", model_module)
+            .field("effort", effort)
+            .field("tools", tools)
+            .field("subagents", subagents)
+            .field("mcp_servers", mcp_servers)
+            .field("builtin_tools", builtin_tools)
+            .field("caching", caching)
+            .field("context_manager", context_manager)
+            .field("session", session)
+            .field("skills", skills)
+            .field("memory", memory)
+            .field("memory_stores", memory_stores)
+            .field("plugins", plugins)
+            .field("builtin_plugins", builtin_plugins)
+            .field("interventions", interventions)
+            .field("intervention_modules", intervention_modules)
+            .field("sandbox", sandbox)
+            .field("agent_config_modules", agent_config_modules)
+            .field("dependencies", dependencies)
+            .field("agent_config", &agent_config)
+            .finish()
+    }
+}
+
+/// Opaque: a builder holds the same server maps before they reach the redacting `Debug`.
+impl<S: harness_agent_config_builder::State> fmt::Debug for HarnessAgentConfigBuilder<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HarnessAgentConfigBuilder")
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for HarnessAgentConfig {
