@@ -550,6 +550,29 @@ mod classifier_mode {
             "{request}"
         );
         assert!(request.contains("Tool: deleteFile"), "{request}");
+        // The structured-output tool is the TS one: no description from the Rust type.
+        assert_eq!(
+            serde_json::to_value(&classifier.requests()[0].tool_specs).unwrap(),
+            json!([{
+                "name": "strands_structured_output",
+                "description": "This tool MUST only be invoked as the last and final tool before returning the completed result to the caller.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "requiresApproval": {
+                            "type": "boolean",
+                            "description": "Whether this tool call requires human approval before executing",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Brief reason (under 10 words) why approval is or is not required",
+                        },
+                    },
+                    "required": ["requiresApproval", "reason"],
+                    "additionalProperties": false,
+                },
+            }])
+        );
     }
 
     #[tokio::test]
@@ -654,7 +677,7 @@ mod classifier_mode {
         );
     }
 
-    /// Rust-only: a failing classifier asks for approval (TS covers it with the decision model).
+    // No TS case: TS tests a failing classifier with the decision model only, which is out of v0.1.
     #[tokio::test]
     async fn requires_approval_when_the_classifier_fails() {
         let failed = Arc::new(AtomicBool::new(false));
@@ -727,5 +750,144 @@ mod classifier_mode {
                 (5, 12, 3, 15)
             );
         }
+    }
+}
+
+/// Rust-only cases for what TS gets from the JS runtime.
+mod rust_only {
+    use super::*;
+    use crate::test_support::WarnRecorder;
+
+    /// The tool input as a model streams it: floats that `JSON.parse` would hold as integers.
+    fn float_input() -> JsonValue {
+        serde_json::from_str(r#"{"n":1.0,"big":1e21,"small":1.5e-7,"neg":-0.0,"x":100000000000000000000}"#)
+            .unwrap()
+    }
+
+    async fn before_tool_call(hitl: &HumanInTheLoop, tool: &str, input: JsonValue) -> BeforeToolCallAction {
+        let agent = LocalAgent::new(Arc::new(MockMessageModel::new()));
+        let mut event = BeforeToolCallEvent::new(
+            agent.tool_agent(),
+            ToolUse::new(tool, "tool-1", input),
+            None,
+            InvocationState::new(),
+        );
+        hitl.before_tool_call(&mut event).await.unwrap()
+    }
+
+    // No TS case: `JSON.stringify` formats the numbers in TS.
+    #[tokio::test]
+    async fn the_approval_prompt_writes_numbers_as_json_stringify_does() {
+        let hitl = HumanInTheLoop::new(config());
+        let BeforeToolCallAction::Confirm(confirm) = before_tool_call(&hitl, "deploy", float_input()).await
+        else {
+            panic!("expected a confirm");
+        };
+        assert_eq!(
+            confirm.prompt,
+            "Approve \"deploy\"?\n  Input: {\"n\":1,\"big\":1e+21,\"small\":1.5e-7,\"neg\":0,\"x\":100000000000000000000}"
+        );
+    }
+
+    // No TS case: `JSON.stringify(input, null, 2)` formats the numbers in TS.
+    #[tokio::test]
+    async fn the_llm_classifier_prompt_writes_numbers_as_json_stringify_does() {
+        let classifier = classifier_model(false, "safe");
+        let hitl = HumanInTheLoop::new(HumanInTheLoopConfig {
+            classifier: Some(Classifier::Llm(LlmClassifierConfig {
+                model: Some(Arc::clone(&classifier) as Arc<dyn crate::models::model::Model>),
+                system_prompt: None,
+            })),
+            ..config()
+        });
+        let input = serde_json::from_str(r#"{"n":1.0,"neg":-0.0,"x":100000000000000000000}"#).unwrap();
+        before_tool_call(&hitl, "deploy", input).await;
+        let messages = serde_json::to_value(&classifier.requests()[0].messages).unwrap();
+        assert_eq!(
+            messages[0]["content"][0]["text"],
+            "Should this tool call require human approval?\n\nTool: deploy\nInput: {\n  \"n\": 1,\n  \"neg\": 0,\n  \"x\": 100000000000000000000\n}"
+        );
+    }
+
+    // No TS case: `String.prototype.trim` strips U+FEFF and keeps U+0085, unlike `str::trim`.
+    #[test]
+    fn a_trust_answer_is_trimmed_as_js_trims() {
+        assert!(is_trust_response(&json!("\u{feff} Trust \n")));
+        assert!(!is_trust_response(&json!("t\u{85}")));
+    }
+
+    // No TS case: TS passes the error to the logger as a second argument; here it is a field.
+    #[test]
+    fn a_failing_classifier_warns_with_the_ts_message() {
+        let hitl = HumanInTheLoop::new(HumanInTheLoopConfig {
+            classifier: Some(Classifier::function(|_event| async { Err(Error::other("boom")) })),
+            ..config()
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let (action, warnings) =
+            WarnRecorder::capture(|| runtime.block_on(before_tool_call(&hitl, "deploy", json!({}))));
+        assert!(matches!(action, BeforeToolCallAction::Confirm(_)));
+        assert_eq!(
+            warnings,
+            ["tool=<deploy> | classifier failed, defaulting to approval required"]
+        );
+    }
+
+    fn line(text: &str) -> StdinRead {
+        let (answer, read) = oneshot::channel();
+        answer.send(Ok(text.to_owned())).unwrap();
+        read
+    }
+
+    // No TS case: a TS prompt can't be dropped while it waits for stdin.
+    #[tokio::test]
+    async fn a_dropped_prompt_leaves_its_read_for_the_next_prompt() {
+        let queue = tokio::sync::Mutex::new(None);
+        let (answer, read) = oneshot::channel();
+        let shown = AtomicUsize::new(0);
+        let show = || {
+            shown.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+
+        // The first prompt starts a read and is dropped before the human answers.
+        let first = ask_in_turn(&queue, show, move || read);
+        assert!(futures::poll!(Box::pin(first)).is_pending());
+        // The second prompt adopts that read: one line, one answer, no second reader.
+        let second = ask_in_turn(&queue, show, || {
+            panic!("a second read would swallow the next answer")
+        });
+        let mut second = Box::pin(second);
+        assert!(futures::poll!(&mut second).is_pending());
+        answer.send(Ok("n\n".to_owned())).unwrap();
+        assert_eq!(second.await.unwrap(), "n\n");
+
+        assert_eq!(shown.load(Ordering::SeqCst), 2);
+        // The read is used up: the next prompt starts its own.
+        assert_eq!(ask_in_turn(&queue, show, || line("y\n")).await.unwrap(), "y\n");
+    }
+
+    // No TS case: TS queues per handler on one event loop; here stdin is shared by threads.
+    #[tokio::test]
+    async fn a_prompt_waits_for_the_one_before_it() {
+        let queue = tokio::sync::Mutex::new(None);
+        let (answer, read) = oneshot::channel();
+        let shown = Mutex::new(Vec::new());
+        let show = |name: &'static str| {
+            let shown = &shown;
+            move || {
+                shown.lock().unwrap().push(name);
+                Ok(())
+            }
+        };
+        let mut first = Box::pin(ask_in_turn(&queue, show("first"), move || read));
+        let mut second = Box::pin(ask_in_turn(&queue, show("second"), || line("no\n")));
+        assert!(futures::poll!(&mut first).is_pending());
+        assert!(futures::poll!(&mut second).is_pending());
+        assert_eq!(*shown.lock().unwrap(), ["first"]);
+        answer.send(Ok("yes\n".to_owned())).unwrap();
+        assert_eq!(first.await.unwrap(), "yes\n");
+        assert_eq!(second.await.unwrap(), "no\n");
+        assert_eq!(*shown.lock().unwrap(), ["first", "second"]);
     }
 }

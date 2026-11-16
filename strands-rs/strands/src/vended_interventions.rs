@@ -7,8 +7,8 @@ pub use cedar::{
     CedarAuthorization, CedarAuthorizationConfig, CedarEntities, ContextEnricher, ContextEnricherInput,
     PrincipalResolver, ToolDefinition, TypeAndId,
 };
-
 pub use hitl::{
-    Ask, Classifier, ClassifierResult, HumanInTheLoop, HumanInTheLoopClassifier, HumanInTheLoopConfig,
-    LlmClassifierConfig, create_llm_risk_classifier,
+    Ask, AskFn, Classifier, ClassifierResult, HumanInTheLoop, HumanInTheLoopClassifier, HumanInTheLoopConfig,
+    HumanInTheLoopConfigBuilder, LlmClassifierConfig, LlmClassifierConfigBuilder,
+    human_in_the_loop_config_builder, llm_classifier_config_builder,
 };

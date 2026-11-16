@@ -4,24 +4,27 @@ mod classifier;
 
 use std::collections::HashSet;
 use std::fmt;
-use std::io::{BufRead, Write};
+use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 
+use classifier::create_llm_risk_classifier;
 pub use classifier::{
-    ClassifierResult, HumanInTheLoopClassifier, LlmClassifierConfig, create_llm_risk_classifier,
+    ClassifierResult, HumanInTheLoopClassifier, LlmClassifierConfig, LlmClassifierConfigBuilder,
+    llm_classifier_config_builder,
 };
+use tokio::sync::oneshot;
 
 use crate::error::{Error, Result};
 use crate::hooks::BeforeToolCallEvent;
-use crate::interventions::actions::Evaluate;
 use crate::interventions::{
-    BeforeToolCallAction, InterventionHandler, confirm, default_evaluate, deny, proceed,
+    BeforeToolCallAction, Evaluate, InterventionHandler, confirm, default_evaluate, deny, proceed,
 };
+use crate::models::model::js_trim;
 use crate::state_store::StateStore;
-use crate::types::json::JsonValue;
+use crate::types::json::{JsonValue, to_js_string};
 
 const TRUSTED_TOOLS_KEY: &str = "hitl:trustedTools";
 
@@ -62,13 +65,35 @@ impl fmt::Debug for Ask {
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum Classifier {
-    /// `true` is the built-in LLM risk classifier on the agent's auxiliary model; `false` is
-    /// no classifier.
+    /// `true` is the built-in LLM risk classifier with its defaults (model order:
+    /// `agent.aux_model > agent.model`); `false` is no classifier.
     Enabled(bool),
     /// The built-in LLM risk classifier with this configuration.
     Llm(LlmClassifierConfig),
     /// A custom classifier.
     Function(HumanInTheLoopClassifier),
+}
+
+impl Classifier {
+    /// A [`Classifier::Function`] from an async function. The function reads what it needs
+    /// from the event before it returns the future, which can't borrow the event.
+    ///
+    /// ```
+    /// use strands::vended_interventions::{Classifier, ClassifierResult, HumanInTheLoopConfig};
+    ///
+    /// let classifier = Classifier::function(|event| {
+    ///     let risky = event.tool_use().name() == "shell";
+    ///     async move { Ok(ClassifierResult::new(risky)) }
+    /// });
+    /// let config = HumanInTheLoopConfig::builder().classifier(classifier).build();
+    /// ```
+    pub fn function<F, Fut>(classify: F) -> Self
+    where
+        F: Fn(&BeforeToolCallEvent) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<ClassifierResult>> + Send + 'static,
+    {
+        Self::Function(Arc::new(move |event| Box::pin(classify(event))))
+    }
 }
 
 impl From<bool> for Classifier {
@@ -101,6 +126,7 @@ impl fmt::Debug for Classifier {
 
 /// Configuration of [`HumanInTheLoop`] (TS `HumanInTheLoopConfig`).
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
@@ -120,7 +146,7 @@ pub struct HumanInTheLoopConfig {
     /// Replaces the `t`/`trust` check.
     #[builder(with = |evaluate: impl Fn(&JsonValue) -> bool + Send + Sync + 'static| Arc::new(evaluate) as Evaluate)]
     pub evaluate_trust: Option<Evaluate>,
-    /// Replaces [`default_evaluate`] for approvals.
+    /// Replaces the default approval check (`true`, `y` or `yes` approves).
     #[builder(with = |evaluate: impl Fn(&JsonValue) -> bool + Send + Sync + 'static| Arc::new(evaluate) as Evaluate)]
     pub evaluate: Option<Evaluate>,
     /// Collects the answer inline. Without it the agent pauses with an interrupt and resumes
@@ -232,7 +258,8 @@ impl HumanInTheLoop {
             Ok(result) => result,
             Err(error) => {
                 tracing::warn!(
-                    "tool=<{}> | classifier failed, defaulting to approval required: {error}",
+                    error = %error,
+                    "tool=<{}> | classifier failed, defaulting to approval required",
                     event.tool_use().name()
                 );
                 ClassifierResult::new(true)
@@ -266,7 +293,7 @@ impl InterventionHandler for HumanInTheLoop {
             Some(reason) if !reason.is_empty() => format!(" — {reason}"),
             _ => String::new(),
         };
-        let input = serde_json::to_string(event.tool_use().input()).map_err(Error::other)?;
+        let input = to_js_string(event.tool_use().input()).map_err(Error::other)?;
         let prompt = format!("Approve \"{tool_name}\"{reason}?\n  Input: {input}");
         let can_trust = self.enable_trust && !self.allowed_tools.contains(&format!("!{tool_name}"));
         let app_state = event.agent().app_state().clone();
@@ -309,7 +336,7 @@ impl InterventionHandler for HumanInTheLoop {
 fn is_trust_response(response: &JsonValue) -> bool {
     response
         .as_str()
-        .is_some_and(|text| matches!(text.to_lowercase().trim(), "t" | "trust"))
+        .is_some_and(|text| matches!(js_trim(&text.to_lowercase()), "t" | "trust"))
 }
 
 /// The tools trusted for this session; a malformed stored value reads as none.
@@ -328,32 +355,63 @@ fn trust_tool(app_state: &StateStore, tool_name: &str) {
     }
     trusted.push(tool_name.to_owned());
     if let Err(error) = app_state.set(TRUSTED_TOOLS_KEY, trusted) {
-        tracing::warn!("tool=<{tool_name}> | failed to store the trusted tool: {error}");
+        tracing::warn!(error = %error, "tool=<{tool_name}> | failed to store the trusted tool");
     }
 }
+
+type StdinRead = oneshot::Receiver<io::Result<String>>;
+
+/// The stdin read in flight. Stdin is per process, so every [`Ask::Stdio`] handler queues
+/// here, and a read whose prompt was dropped stays for the next prompt to adopt.
+static STDIN_READ: tokio::sync::Mutex<Option<StdinRead>> = tokio::sync::Mutex::const_new(None);
 
 /// Prompts on the terminal, one question at a time (TS `createStdioAsk`).
 fn stdio_ask(include_trust: bool) -> AskFn {
     let options = if include_trust { "(y/n/t)" } else { "(y/n)" };
-    let queue = Arc::new(tokio::sync::Mutex::new(()));
     Arc::new(move |prompt| {
-        let queue = Arc::clone(&queue);
         Box::pin(async move {
-            let _turn = queue.lock().await;
-            let answer = tokio::task::spawn_blocking(move || -> std::io::Result<String> {
-                let mut stdout = std::io::stdout().lock();
+            let show = || {
+                let mut stdout = io::stdout().lock();
                 write!(stdout, "{prompt} {options}: ")?;
-                stdout.flush()?;
-                let mut answer = String::new();
-                std::io::stdin().lock().read_line(&mut answer)?;
-                Ok(answer)
-            })
-            .await
-            .map_err(Error::other)?
-            .map_err(Error::other)?;
-            Ok(Some(JsonValue::String(answer.trim().to_owned())))
+                stdout.flush()
+            };
+            let answer = ask_in_turn(&STDIN_READ, show, read_stdin_line).await?;
+            Ok(Some(JsonValue::String(js_trim(&answer).to_owned())))
         })
     })
+}
+
+/// Waits for its turn, shows the prompt and returns the next line `read` delivers. Nothing
+/// but the queue is held while waiting for the line.
+async fn ask_in_turn(
+    queue: &tokio::sync::Mutex<Option<StdinRead>>,
+    show: impl FnOnce() -> io::Result<()>,
+    read: impl FnOnce() -> StdinRead,
+) -> Result<String> {
+    let mut pending = queue.lock().await;
+    show().map_err(Error::other)?;
+    let answer = pending.get_or_insert_with(read).await;
+    *pending = None;
+    answer.map_err(Error::other)?.map_err(Error::other)
+}
+
+/// Reads one line of stdin on its own thread, so neither a dropped prompt nor the runtime's
+/// shutdown waits for the human.
+fn read_stdin_line() -> StdinRead {
+    let (answer, read) = oneshot::channel();
+    let reader = move || {
+        let mut line = String::new();
+        let result = io::stdin().lock().read_line(&mut line).map(|_| line);
+        // The prompt may be gone; the next one starts its own read.
+        drop(answer.send(result));
+    };
+    // If the thread can't start, `answer` is dropped and the prompt fails with a receive error.
+    drop(
+        std::thread::Builder::new()
+            .name("strands-hitl-stdin".to_owned())
+            .spawn(reader),
+    );
+    read
 }
 
 #[cfg(test)]

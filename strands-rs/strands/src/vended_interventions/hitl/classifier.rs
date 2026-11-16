@@ -14,6 +14,7 @@ use crate::hooks::BeforeToolCallEvent;
 use crate::models::model::Model;
 use crate::tools::structured_output::StructuredOutputSchema;
 use crate::types::agent::InvokeOptions;
+use crate::types::json::to_js_string_pretty;
 
 /// A classifier's verdict on one tool call (TS `ClassifierResult`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +50,7 @@ pub type HumanInTheLoopClassifier =
 
 /// Configuration of the built-in LLM risk classifier (TS `LlmClassifierConfig`).
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
@@ -57,7 +59,7 @@ pub struct LlmClassifierConfig {
     /// Replaces the built-in risk-evaluation prompt.
     #[builder(into)]
     pub system_prompt: Option<String>,
-    /// The model that classifies; the agent's auxiliary model when unset.
+    /// The classifying model; order: this model > `agent.aux_model` > `agent.model`.
     pub model: Option<Arc<dyn Model>>,
 }
 
@@ -70,7 +72,7 @@ impl fmt::Debug for LlmClassifierConfig {
     }
 }
 
-/// TS `RISK_DECISION`.
+// TS `RISK_DECISION`. A doc comment here would become the schema description, which TS doesn't send.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct RiskDecision {
@@ -108,9 +110,9 @@ Evaluate the tool name and its input arguments. Consider what could go wrong if 
 Keep your reason under 10 words — it is shown to a human in a CLI prompt.";
 
 /// The built-in classifier (TS `createLlmRiskClassifier`): asks a model, with structured
-/// output, whether the tool call is risky. It runs on `config.model`, else on the agent's
-/// auxiliary model, in an auxiliary invocation context so its usage counts toward the request.
-pub fn create_llm_risk_classifier(config: LlmClassifierConfig) -> HumanInTheLoopClassifier {
+/// output, whether the tool call is risky. Model order: `config.model > agent.aux_model >
+/// agent.model`; it runs in an auxiliary invocation context so its usage counts toward the request.
+pub(crate) fn create_llm_risk_classifier(config: LlmClassifierConfig) -> HumanInTheLoopClassifier {
     let system_prompt = config
         .system_prompt
         .unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.to_owned());
@@ -147,6 +149,6 @@ pub fn create_llm_risk_classifier(config: LlmClassifierConfig) -> HumanInTheLoop
 }
 
 fn format_tool_call(event: &BeforeToolCallEvent) -> String {
-    let input = serde_json::to_string_pretty(event.tool_use().input()).unwrap_or_default();
+    let input = to_js_string_pretty(event.tool_use().input()).unwrap_or_default();
     format!("Tool: {}\nInput: {input}", event.tool_use().name())
 }
