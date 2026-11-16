@@ -286,7 +286,7 @@ async fn retries_the_tool_when_an_after_hook_asks() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn concurrent_returns_results_in_tool_use_order() {
+async fn preserves_source_order_of_tool_results_in_after_tools_event_message() {
     // `slow` finishes last although it was requested first.
     let gate = Arc::new(Notify::new());
     let (slow_gate, fast_gate) = (Arc::clone(&gate), Arc::clone(&gate));
@@ -340,7 +340,7 @@ fn progress_tool(name: &'static str) -> Arc<dyn Tool> {
 }
 
 #[tokio::test]
-async fn concurrent_keeps_the_event_order_of_each_tool() {
+async fn preserves_per_tool_event_ordering_while_interleaving_across_tools() {
     let fixture = fixture(vec![progress_tool("a"), progress_tool("b")]);
 
     let (labels, _) = run(
@@ -459,7 +459,7 @@ async fn sequential_stops_at_an_interrupt() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_panicking_tool_becomes_an_error_result() {
+async fn handles_a_throwing_tool_without_affecting_siblings() {
     #[expect(clippy::unused_async, reason = "the tool body must be a future")]
     async fn explode() -> Result<&'static str, ToolError> {
         panic!("boom")
@@ -710,7 +710,7 @@ async fn a_before_hook_can_rename_or_replace_the_tool() {
 }
 
 #[tokio::test]
-async fn an_after_hook_result_keeps_the_model_issued_id() {
+async fn uses_replacement_tool_input_while_preserving_the_model_issued_tool_use_id() {
     let fixture = fixture(vec![text_tool("a", "original")]);
     fixture.hooks.add_hook(|event: &mut AfterToolCallEvent| {
         event.set_result(success("someone-else", "replaced"));
