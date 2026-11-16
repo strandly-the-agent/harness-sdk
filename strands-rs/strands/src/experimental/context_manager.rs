@@ -312,6 +312,35 @@ enum StashStorage {
 ///
 /// Before each model call and on context overflow it runs its strategies in order, ending with
 /// an emergency truncation. Overflow recovery retries the model call up to three times.
+///
+/// ```
+/// use strands::Agent;
+/// use strands::experimental::context_manager::{
+///     ContextManagerConfig, ContextManagerPreset, Offload, OffloadConditions, OffloadTarget,
+/// };
+/// use strands::testing::MockMessageModel;
+///
+/// // A preset pipeline:
+/// let agent = Agent::builder()
+///     .model(MockMessageModel::new())
+///     .context_manager(ContextManagerPreset::Auto)
+///     .build()?;
+/// assert!(agent.context_manager().is_some());
+///
+/// // Or your own strategies, in order:
+/// let drop_old_results = Offload::drop(OffloadTarget::ToolResults)?
+///     .when(OffloadConditions { utilization: Some(0.8), ..Default::default() })?;
+/// let config = ContextManagerConfig::builder()
+///     .strategies(vec![drop_old_results.into()])
+///     .stash(false)
+///     .build();
+/// let agent = Agent::builder()
+///     .model(MockMessageModel::new())
+///     .context_manager(config)
+///     .build()?;
+/// assert_eq!(agent.context_manager().unwrap().strategy_names()[0], "offload:drop");
+/// # Ok::<(), strands::Error>(())
+/// ```
 pub struct ContextManager {
     strategies: Vec<Arc<dyn ContextStrategy>>,
     stash_storage: StashStorage,

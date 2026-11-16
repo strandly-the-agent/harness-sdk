@@ -146,6 +146,26 @@ impl SnapshotTarget for LocalAgent {}
 /// assert_eq!(manager.session_id(), "user-123");
 /// # Ok::<(), strands::Error>(())
 /// ```
+///
+/// Without its own storage the manager saves to the agent's:
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use strands::Agent;
+/// use strands::session::{SessionManager, SessionManagerConfig};
+/// use strands::storage::LocalFileStorage;
+/// use strands::testing::MockMessageModel;
+///
+/// let manager = SessionManager::new(SessionManagerConfig::builder().session_id("user-123").build())?;
+/// let agent = Agent::builder()
+///     .model(MockMessageModel::new())
+///     .storage(Arc::new(LocalFileStorage::new("./.agent")))
+///     .session_manager(manager)
+///     .build()?;
+/// assert_eq!(agent.session_manager().map(SessionManager::session_id), Some("user-123"));
+/// # Ok::<(), strands::Error>(())
+/// ```
 #[derive(Clone)]
 pub struct SessionManager {
     inner: Arc<Inner>,

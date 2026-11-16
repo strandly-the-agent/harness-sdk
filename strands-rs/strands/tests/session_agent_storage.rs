@@ -1,5 +1,5 @@
 //! Ported from strands-ts/src/agent/__tests__/agent.storage.test.ts (the session manager and
-//! `agent.storage` cases; the context-manager cases wait for the context manager).
+//! `agent.storage` cases; the context-manager cases are in `tests/context_manager.rs`).
 
 use std::sync::Arc;
 
@@ -29,7 +29,7 @@ async fn session_manager_resolves_storage_from_agent_when_not_explicitly_provide
     let mut agent = Agent::builder()
         .model(model())
         .printer(false)
-        .storage(Arc::new(storage.clone()) as Arc<dyn Storage>)
+        .storage(Arc::new(storage.clone()))
         .session_manager(session_manager(None).unwrap())
         .build()
         .unwrap();
@@ -44,7 +44,7 @@ async fn explicit_session_manager_storage_overrides_agent_storage() {
     let mut agent = Agent::builder()
         .model(model())
         .printer(false)
-        .storage(Arc::new(agent_storage.clone()) as Arc<dyn Storage>)
+        .storage(Arc::new(agent_storage.clone()))
         .session_manager(session_manager(Some(Arc::new(session_storage.clone()))).unwrap())
         .build()
         .unwrap();
