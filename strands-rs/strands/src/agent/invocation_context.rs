@@ -87,10 +87,6 @@ impl InvocationContext {
 
     /// The context for an auxiliary call made for `parent` (TS
     /// `createAuxiliaryInvocationContext`): its tokens add to the request, no limits apply.
-    #[allow(
-        dead_code,
-        reason = "used by auxiliary model calls (context managers, routing)"
-    )]
     pub(crate) fn auxiliary(parent: Option<&InvocationContext>) -> Option<Self> {
         parent.map(|parent| Self::new(None, Some(parent.clone()), true))
     }

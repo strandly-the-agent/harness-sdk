@@ -69,6 +69,18 @@ impl MessageMetadata {
         Self::default()
     }
 
+    pub(crate) fn set_custom(&mut self, custom: Option<JsonObject>) {
+        self.custom = custom;
+    }
+
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by the agentic `pin_context` tool (Phase 6)")
+    )]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.usage.is_none() && self.metrics.is_none() && self.custom.is_none()
+    }
+
     /// Sets the token usage of the model response.
     #[must_use]
     pub fn with_usage(mut self, usage: Usage) -> Self {

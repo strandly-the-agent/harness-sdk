@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::{Mutex, PoisonError};
 
 use crate::background_tasks::BackgroundTasks;
+use crate::conversation_manager::ConversationManager;
 use crate::error::Result;
 #[cfg(not(feature = "bedrock"))]
 use crate::error::{DefaultNotConfiguredError, Error};
@@ -202,6 +203,12 @@ pub struct AgentConfig {
     /// `.plugin(..)` and `.plugins(..)` extend the list.
     #[builder(field)]
     pub plugins: Vec<Arc<dyn Plugin>>,
+    /// How the history is kept within the context window (default
+    /// [`SlidingWindowConversationManager`](crate::conversation_manager::SlidingWindowConversationManager)
+    /// with a window of 40). A stateful model rejects it and uses
+    /// [`NullConversationManager`](crate::conversation_manager::NullConversationManager).
+    #[builder(field)]
+    pub conversation_manager: Option<Arc<dyn ConversationManager>>,
     /// The model (default: a `BedrockModel` with the default model id, resolved on first use).
     #[builder(into)]
     pub model: Option<ModelSource>,
@@ -276,6 +283,12 @@ impl<S: agent_builder::State> AgentBuilder<S> {
     /// Adds plugins the caller keeps handles to; calling it again extends the list.
     pub fn plugins(mut self, plugins: impl IntoIterator<Item = Arc<dyn Plugin>>) -> Self {
         self.plugins.extend(plugins);
+        self
+    }
+
+    /// Sets the conversation manager.
+    pub fn conversation_manager(mut self, manager: impl ConversationManager) -> Self {
+        self.conversation_manager = Some(Arc::new(manager));
         self
     }
 

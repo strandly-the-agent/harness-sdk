@@ -1407,4 +1407,5 @@ mod limits;
 mod middleware;
 mod middleware_interrupts;
 mod model_retry;
+mod stateful_model;
 mod structured_output;

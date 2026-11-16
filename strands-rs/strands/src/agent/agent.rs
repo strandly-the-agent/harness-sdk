@@ -14,6 +14,9 @@ use crate::agent::run::AbandonedRun;
 use crate::agent::stream::AgentStream;
 use crate::background_tasks::{BackgroundTaskScheduler, BackgroundTasks};
 use crate::cancel::{CancelHandle, CancelSignal};
+use crate::conversation_manager::{
+    ConversationManager, ConversationManagerPlugin, NullConversationManager, SlidingWindowConversationManager,
+};
 use crate::error::{Error, Result};
 use crate::hooks::{
     EventKind, Hook, HookCallbackOptions, HookCleanup, HookEvent, HookRegistry, InitializedEvent,
@@ -71,6 +74,7 @@ pub struct Agent {
     /// The user's plugins (TS `plugins`), registered between the retry strategies and the
     /// built-ins that follow them.
     plugins: Vec<Arc<dyn Plugin>>,
+    conversation_manager: Arc<dyn ConversationManager>,
     plugin_registry: PluginRegistry,
     /// This agent's identity for the retry strategies' attach-once check.
     attach_token: Arc<()>,
@@ -89,6 +93,8 @@ pub struct Agent {
     mcp_clients: Vec<crate::mcp::McpClient>,
 }
 
+const STATEFUL_MANAGER_UNSUPPORTED: &str = "contextManager and conversationManager cannot be used with a stateful model. The model manages conversation state server-side.";
+
 impl Agent {
     /// A builder over every [`AgentConfig`] key; `.build()?` returns the agent.
     pub fn builder() -> AgentBuilder {
@@ -99,14 +105,21 @@ impl Agent {
     ///
     /// # Errors
     ///
-    /// A tool fails registration (invalid or duplicate name, empty description), or a model is a
-    /// model id string that this build can't resolve.
+    /// A tool fails registration (invalid or duplicate name, empty description), a model is a
+    /// model id string that this build can't resolve, or a conversation manager is set for a
+    /// stateful model.
     pub fn new(config: AgentConfig) -> Result<Self> {
         let model = match config.model {
             Some(source) => source.into_model()?,
             None => default_model(),
         };
+        if model.stateful() && config.conversation_manager.is_some() {
+            return Err(Error::other(STATEFUL_MANAGER_UNSUPPORTED));
+        }
         let mut agent = Self::with_model(model);
+        if let Some(manager) = config.conversation_manager {
+            agent.conversation_manager = manager;
+        }
         let local = &mut agent.local;
         local.set_aux_model(config.aux_model.map(ModelSource::into_model).transpose()?);
         if let Some(id) = config.id {
@@ -147,6 +160,11 @@ impl Agent {
 
     /// An agent over `model` with every other key at its default.
     pub(crate) fn with_model(model: Arc<dyn Model>) -> Self {
+        let conversation_manager: Arc<dyn ConversationManager> = if model.stateful() {
+            Arc::new(NullConversationManager)
+        } else {
+            Arc::new(SlidingWindowConversationManager::default())
+        };
         Self {
             local: LocalAgent::new(model),
             tool_executor: ToolExecutor::default(),
@@ -155,6 +173,7 @@ impl Agent {
             retry_strategies: vec![Arc::new(DefaultModelRetryStrategy::default())],
             retry_sleeper: tokio_sleeper(),
             plugins: Vec::new(),
+            conversation_manager,
             plugin_registry: PluginRegistry::default(),
             attach_token: Arc::new(()),
             initialized: false,
@@ -166,6 +185,11 @@ impl Agent {
             #[cfg(feature = "mcp")]
             mcp_clients: Vec::new(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn conversation_manager(&self) -> &Arc<dyn ConversationManager> {
+        &self.conversation_manager
     }
 
     /// Runs one-time setup and fires `InitializedEvent`; idempotent. The first
@@ -229,7 +253,10 @@ impl Agent {
             .clone()
             .map(|scheduler| Arc::new(scheduler) as Arc<dyn Plugin>);
         let model: Arc<dyn Plugin> = Arc::new(ModelLifecycle::new(Arc::clone(self.local.model())));
-        retry
+        let conversation_manager: Arc<dyn Plugin> =
+            Arc::new(ConversationManagerPlugin(Arc::clone(&self.conversation_manager)));
+        std::iter::once(conversation_manager)
+            .chain(retry)
             .chain(self.plugins.iter().cloned())
             .chain(background)
             .chain(delegation)

@@ -103,6 +103,7 @@ mod open_enum;
 pub mod agent;
 pub mod background_tasks;
 pub mod cancel;
+pub mod conversation_manager;
 pub mod error;
 pub mod hooks;
 pub mod interrupt;

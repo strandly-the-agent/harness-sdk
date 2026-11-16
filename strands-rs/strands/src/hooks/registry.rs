@@ -363,6 +363,11 @@ impl HookRegistry {
         !M::slot(&self.slots).callbacks().is_empty()
     }
 
+    #[cfg(test)]
+    pub(crate) fn callback_count<M: HookEvent>(&self) -> usize {
+        M::slot(&self.slots).callbacks().len()
+    }
+
     fn insert<M: HookEvent>(&self, order: HookOrder, callback: Callback<M>) -> HookCleanup {
         let id = self.slots.next_id.fetch_add(1, Ordering::Relaxed);
         M::slot(&self.slots).insert(Entry { id, order, callback });

@@ -245,5 +245,7 @@ async fn the_strategy_registers_an_after_model_call_hook_at_initialize() {
     assert!(!agent.hooks().is_empty());
     let mut disabled = Agent::builder().model(model).no_retry_strategy().build().unwrap();
     disabled.initialize().await.unwrap();
-    assert!(!disabled.hooks().has_callbacks::<AfterModelCallEvent<'static>>());
+    // The conversation manager's overflow hook is the one left.
+    let count = |agent: &Agent| agent.hooks().callback_count::<AfterModelCallEvent<'static>>();
+    assert_eq!(count(&disabled) + 1, count(&agent));
 }
