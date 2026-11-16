@@ -1193,3 +1193,31 @@ mod memory_spans {
         assert!(events(&spans[0], "memory.content").is_empty());
     }
 }
+
+/// Rust-only: TS builds one attribute map per span, so a key is exported once.
+#[test]
+fn a_trace_attribute_replaces_a_start_attribute_and_an_end_attribute_replaces_it() {
+    let (recorder, _guard) = recording();
+    let mut tracer = LocalTracer::new(semconv(""));
+    tracer.set_trace_attributes(vec![
+        ("gen_ai.agent.name".to_owned(), "override".into()),
+        ("gen_ai.operation.name".to_owned(), "custom_op".into()),
+        ("gen_ai.usage.total_tokens".to_owned(), 999.into()),
+    ]);
+    tracer.start_agent(&agent_start(&hello()));
+    tracer.end_agent(None, None, &Usage::new(1, 2, 3), None);
+    drop(tracer);
+
+    let spans = recorder.spans();
+    let values = |key: &str| -> Vec<String> {
+        spans[0]
+            .attributes
+            .iter()
+            .filter(|attribute| attribute.key.as_str() == key)
+            .map(|attribute| attribute.value.to_string())
+            .collect()
+    };
+    assert_eq!(values("gen_ai.agent.name"), ["override"]);
+    assert_eq!(values("gen_ai.operation.name"), ["custom_op"]);
+    assert_eq!(values("gen_ai.usage.total_tokens"), ["3"]);
+}
