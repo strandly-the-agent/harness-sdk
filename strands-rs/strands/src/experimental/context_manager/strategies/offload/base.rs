@@ -152,6 +152,10 @@ impl OffloadBase {
     }
 
     /// A base for a target known to be valid.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "takes the conditions by value as the strategies do"
+    )]
     pub(crate) fn unchecked(target: OffloadTarget, conditions: OffloadConditions) -> Self {
         let filter = resolve_tool_filter(&target);
         Self {

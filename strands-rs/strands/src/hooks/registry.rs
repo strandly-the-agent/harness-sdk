@@ -314,6 +314,10 @@ impl HookRegistry {
     }
 
     /// [`Self::add_hook`] with options.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "takes its options by value like every other options parameter"
+    )]
     pub fn add_hook_with<M: HookEvent, F: IntoSyncHook<M>>(
         &self,
         options: HookCallbackOptions,
@@ -335,6 +339,10 @@ impl HookRegistry {
     }
 
     /// [`Self::add_async_hook`] with options.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "takes its options by value like every other options parameter"
+    )]
     pub fn add_async_hook_with<E: EventKind>(
         &self,
         options: HookCallbackOptions,
@@ -355,6 +363,10 @@ impl HookRegistry {
     }
 
     /// [`Self::add_hook_impl`] with options.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "takes its options by value like every other options parameter"
+    )]
     pub fn add_hook_impl_with<E: EventKind>(
         &self,
         options: HookCallbackOptions,

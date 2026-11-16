@@ -184,7 +184,7 @@ impl McpClient {
     ) -> Result<Vec<Self>> {
         let lookup = process_env();
         let servers = load_servers_object(servers.into(), &lookup).await?;
-        let resolved = resolve_server_configs(servers, &defaults, options, &lookup)?;
+        let resolved = resolve_server_configs(servers, &defaults, &options, &lookup)?;
         let mut clients = Vec::new();
         for server in resolved {
             let continue_on_error = server.options.continue_on_error;
@@ -263,10 +263,9 @@ fn expand_home(path: &Path, lookup: &EnvLookup) -> PathBuf {
 pub(crate) fn resolve_server_configs(
     servers: IndexMap<String, JsonValue>,
     defaults: &McpClientOptions,
-    options: McpLoadServersOptions,
+    options: &McpLoadServersOptions,
     lookup: &EnvLookup,
 ) -> Result<Vec<ResolvedServer>> {
-    let options = &options;
     let mut resolved = Vec::new();
     for (name, entry) in servers {
         let kind = match &entry {

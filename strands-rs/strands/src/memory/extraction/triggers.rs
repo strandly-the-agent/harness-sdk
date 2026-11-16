@@ -58,6 +58,10 @@ impl IntervalTrigger {
     /// # Errors
     ///
     /// `turns` is 0.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "takes its options by value like every other options parameter"
+    )]
     pub fn new(options: IntervalTriggerOptions) -> Result<Self> {
         if options.turns < 1 {
             return Err(Error::other(format!(

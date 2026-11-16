@@ -121,6 +121,10 @@ impl Default for ConstantBackoff {
 
 impl ConstantBackoff {
     /// A constant backoff with these options.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "takes its options by value like every other options parameter"
+    )]
     pub fn new(options: ConstantBackoffOptions) -> Self {
         Self { delay: options.delay }
     }

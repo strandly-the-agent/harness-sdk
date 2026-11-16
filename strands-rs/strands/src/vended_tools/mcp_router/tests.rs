@@ -678,7 +678,7 @@ mod config_loaded_servers {
                 let resolved = resolve_server_configs(
                     servers,
                     &McpClientOptions::default(),
-                    McpLoadServersOptions::default(),
+                    &McpLoadServersOptions::default(),
                     &lookup,
                 )?;
                 Ok(resolved

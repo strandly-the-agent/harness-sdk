@@ -23,6 +23,10 @@ fn env() -> EnvLookup {
     fixed_env(&[("PATH", "/usr/bin"), ("HOME", "/home/user")])
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "call sites pass fresh option values"
+)]
 fn resolve_with(
     servers: serde_json::Value,
     defaults: &McpClientOptions,
@@ -33,7 +37,7 @@ fn resolve_with(
         serde_json::Value::Object(map) => map.into_iter().collect(),
         _ => IndexMap::new(),
     };
-    resolve_server_configs(map, defaults, options, lookup)
+    resolve_server_configs(map, defaults, &options, lookup)
 }
 
 fn resolve(servers: serde_json::Value) -> crate::Result<Vec<ResolvedServer>> {
