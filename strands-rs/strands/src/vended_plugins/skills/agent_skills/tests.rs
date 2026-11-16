@@ -258,25 +258,12 @@ mod plugin_interface {
         let tools = plugin_of(vec![make_skill("s").into()]).get_tools();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name(), "skills");
-        assert_eq!(
-            serde_json::to_value(tools[0].tool_spec()).unwrap(),
-            json!({
-                "name": "skills",
-                "description": "Activate a skill to load its full instructions. Use this tool to load the complete instructions for a skill listed in the available_skills section of your system prompt.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "skill_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "description": "Name of the skill to activate",
-                        },
-                    },
-                    "required": ["skill_name"],
-                    "additionalProperties": false,
-                },
-            })
-        );
+        // The model-facing spec against the TS-generated fixture.
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../conformance/fixtures/tools/skills_tool_spec.json"
+        ))
+        .unwrap();
+        assert_eq!(serde_json::to_value(tools[0].tool_spec()).unwrap(), expected);
     }
 
     #[tokio::test]

@@ -305,6 +305,33 @@ async fn writes_plain_markdown_content() {
     );
 }
 
+// No TS case: the keys and bytes strands-ts wrote for the same two entries (the conformance
+// fixtures under `memory/`).
+#[tokio::test]
+async fn writes_the_keys_and_bytes_of_the_ts_store() {
+    let storage = Arc::new(InMemoryStorage::new());
+    let store = file_store("conformance-store", storage.clone());
+    store
+        .add_entry("User prefers dark mode for all editors")
+        .await
+        .unwrap();
+    store
+        .add_entry("Deploy process uses blue-green strategy")
+        .await
+        .unwrap();
+
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../conformance/fixtures/memory");
+    let keys = std::fs::read_to_string(fixtures.join("file_memory_store_keys.json")).unwrap();
+    let keys: Vec<String> = serde_json::from_str(&keys).unwrap();
+    let mut written = storage.list("").await.unwrap();
+    written.sort();
+    assert_eq!(written, keys);
+    for key in keys {
+        let expected = std::fs::read(fixtures.join("file_memory_store").join(&key)).unwrap();
+        assert_eq!(storage.read(&key).await.unwrap(), Some(expected), "{key}");
+    }
+}
+
 #[tokio::test]
 async fn derives_filename_from_first_line_of_content() {
     let Fixture { scoped, store, .. } = fixture();
