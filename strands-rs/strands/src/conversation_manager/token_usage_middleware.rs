@@ -1,6 +1,6 @@
 //! The token-usage middleware (TS `createTokenUsageMiddleware` in
 //! `context-manager/modes/agentic/agentic-context.ts`): tells the model how much of its context
-//! window the call uses. The agentic context manager installs it (Phase 6).
+//! window the call uses. The agentic context manager installs it.
 
 use crate::middleware::{InvokeModelContext, InvokeModelStage, Middleware, MiddlewareStage};
 use crate::models::model_info::DEFAULT_CONTEXT_WINDOW_LIMIT;

@@ -1,7 +1,7 @@
-//! Tests for the tool executors (TS `tools/executors/`). The agent-free cases of
-//! strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts are ported; the
-//! middleware case waits for middleware (Phase 4). The rest cover the section 8.8 executor
-//! contract: result order, per-tool event order, sibling interrupts, panics, drop and hooks.
+//! Tests for the tool executors (TS `tools/executors/`). The cases of
+//! strands-ts/src/tools/executors/__tests__/executor.cancel-signal.test.ts are in
+//! `cancel_signal`. The rest cover the section 8.8 executor contract: result order, per-tool
+//! event order, sibling interrupts, panics, drop and hooks.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
