@@ -659,7 +659,9 @@ impl MemoryManager {
                 .await;
             };
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                drop(runtime.spawn(writes.in_current_span()));
+                // Without the caller's span (the `execute_tool` span), which would stay open
+                // until the writes end; the detached `memory.add` spans are roots.
+                drop(runtime.spawn(writes));
             }
             return Ok(serde_json::json!({ "accepted": total }));
         }

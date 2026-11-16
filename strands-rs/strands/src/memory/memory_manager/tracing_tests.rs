@@ -400,8 +400,6 @@ mod extraction_coordinator {
         let save = caller.in_scope(|| coordinator.process(0, None));
         save.await;
         drop(caller);
-        // The spawned driver of the save holds the caller span until it is polled once more.
-        tokio::task::yield_now().await;
 
         let spans = recorder.spans();
         let caller = spans
@@ -427,5 +425,20 @@ mod extraction_coordinator {
             attributes["memory.parent.span_id"],
             caller.span_context.span_id().to_string()
         );
+    }
+
+    /// Rust-only: the detached driver of a save doesn't keep the span that scheduled it open.
+    #[tokio::test(flavor = "current_thread")]
+    async fn the_callers_span_is_exported_before_the_detached_save_runs() {
+        let (recorder, _guard) = recording();
+        let store = passthrough_store();
+        let coordinator = coordinator(&store);
+        coordinator.record(user("remember dark mode"));
+        let caller = tracing::info_span!("caller");
+        drop(caller.in_scope(|| coordinator.process(0, None)));
+        drop(caller);
+
+        let names: Vec<_> = recorder.spans().iter().map(|span| span.name.to_string()).collect();
+        assert_eq!(names, ["caller"]);
     }
 }

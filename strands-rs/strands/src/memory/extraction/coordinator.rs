@@ -173,9 +173,11 @@ impl ExtractionCoordinator {
         }
         state.generation = state.generation.wrapping_add(1);
         drop(state);
-        // Driven off the caller's task, so a lifecycle hook never waits on a save.
+        // Driven off the caller's task, so a lifecycle hook never waits on a save. Spawned without
+        // the caller's span: a held `tracing` handle would keep it and its parents unexported until
+        // the save ends, and `memory.extract` is a root span linked to the caller anyway.
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            drop(runtime.spawn(next.clone().in_current_span()));
+            drop(runtime.spawn(next.clone()));
         }
         next
     }
