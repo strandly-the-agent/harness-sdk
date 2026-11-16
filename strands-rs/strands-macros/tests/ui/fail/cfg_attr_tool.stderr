@@ -1,0 +1,5 @@
+error: #[tools] can't see a #[tool] inside #[cfg_attr]: put #[cfg(..)] on the method and write #[tool] on its own
+  --> tests/ui/fail/cfg_attr_tool.rs:14:5
+   |
+14 |     #[cfg_attr(all(), tool)]
+   |     ^

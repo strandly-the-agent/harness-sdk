@@ -87,6 +87,12 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
             continue;
         };
         let Some(index) = method.attrs.iter().position(is_tool_attr) else {
+            if let Some(attr) = method.attrs.iter().find(|attr| is_cfg_attr_tool(attr)) {
+                return Err(syn::Error::new(
+                    attr.span(),
+                    "#[tools] can't see a #[tool] inside #[cfg_attr]: put #[cfg(..)] on the method and write #[tool] on its own",
+                ));
+            }
             continue;
         };
         let attr = method.attrs.remove(index);
@@ -317,6 +323,21 @@ fn is_tool_attr(attr: &Attribute) -> bool {
         .segments
         .last()
         .is_some_and(|last| last.ident == "tool")
+}
+
+/// Whether `attr` is a `#[cfg_attr(.., tool)]` or `#[cfg_attr(.., tool(..))]`.
+fn is_cfg_attr_tool(attr: &Attribute) -> bool {
+    attr.path().is_ident("cfg_attr")
+        && attr
+            .parse_args_with(syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated)
+            .is_ok_and(|metas| {
+                metas.iter().skip(1).any(|meta| {
+                    meta.path()
+                        .segments
+                        .last()
+                        .is_some_and(|last| last.ident == "tool")
+                })
+            })
 }
 
 /// `get_weather` becomes `GetWeather`.
