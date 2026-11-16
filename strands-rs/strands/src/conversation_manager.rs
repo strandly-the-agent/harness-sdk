@@ -20,6 +20,7 @@ pub(crate) mod compression;
 mod null_conversation_manager;
 mod sliding_window_conversation_manager;
 mod summarizing_conversation_manager;
+pub(crate) mod token_usage_middleware;
 
 pub use null_conversation_manager::NullConversationManager;
 pub use sliding_window_conversation_manager::{
