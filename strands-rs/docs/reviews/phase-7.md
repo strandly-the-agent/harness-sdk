@@ -39,3 +39,5 @@ Three independent reviewers (correctness, API bar-raiser, parity validator) revi
 | parity-15 | Fixed for my files: `// No TS case:` on `interventions/registry/tests.rs` (`on_error_throw_fails_the_invocation`), the five tests of `tests/interventions.rs`, the five of `cedar/tests.rs` and `hitl/tests.rs:659`; every test added by this track carries one. For the lead: `tests/model_routing.rs:381` is p7fixb's | 004b0bba4, a81d6aea4, 9e2f470b3, 373ae6233 |
 | parity-15 | Fixed (routing part): `aux_model_rejects_a_model_router` in `strands/tests/model_routing.rs` carries `// No TS case:`; the Rust-only tests added by this track carry it too. The other listed files are `p7fixa`'s | `6da8b7dec` |
 | correctness, last bullet (gates run on the paused pass and again on resume) | Staged for `.rust-port/ts-bugs.md` (`staging/p7fixa/ts-bugs.md`, second entry); Rust does the same as TS, no code change | 06ee8d2cd |
+
+After the fixes, `.rust-port/gates.sh full` passed at `7aee8c9b3` (all steps, 4433 tests with all features, 67 ignored live tests).

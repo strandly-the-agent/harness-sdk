@@ -63,7 +63,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Live tests for Bedrock, Mantle, Anthropic, OpenAI (Bedrock and Mantle run green; Anthropic and OpenAI skip without keys, see `strands-rs/docs/reviews/live.md`)
 - [x] Phase review gate and fixes
 
-## [ ] Phase 6: storage, sessions, context and memory
+## [x] Phase 6: storage, sessions, context and memory
 
 - [x] `Storage`, `InMemoryStorage`, `LocalFileStorage`, namespaces, `KeywordSearchStrategy`
 - [x] `SessionManager` with TS layout and cross-SDK fixtures
@@ -71,15 +71,15 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] `ContextInjector` and injection with `InjectedBlock`
 - [x] `MemoryManager`, `MemoryStore`, `FileMemoryStore`, `ModelExtractor`
 - [x] `AgentSkills` and `Skill`
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
-## [ ] Phase 7: interventions and routing
+## [x] Phase 7: interventions and routing
 
 - [x] `InterventionHandler` and registry
 - [x] `HumanInTheLoop` with classifiers
 - [x] `CedarAuthorization`
 - [x] `ModelRouter` with `FallbackStrategy` and `ClassifierStrategy`
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [x] Phase 8: sandbox and vended tools
 
