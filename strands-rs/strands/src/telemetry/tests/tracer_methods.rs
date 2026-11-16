@@ -1164,14 +1164,20 @@ mod memory_spans {
         assert!(events(&spans[0], "memory.query").is_empty());
     }
 
-    /// Rust-only: TS writes the query and then the results to the same `content` attribute, so the
-    /// span ends with the results alone.
+    // No TS case: TS writes the query and then the results to the same `content` attribute, so the
+    // span ends with the results alone.
     #[test]
     fn a_memory_search_span_ends_with_one_content_attribute_when_opted_in() {
         let (recorder, _guard) = recording();
         let tracer = MemoryTracer::new(semconv("gen_ai_span_attributes_only"));
         let span = tracer.start_search("dark mode", &stores(&["personal"]), None);
-        tracer.end_search(&span, "dark mode", &[MemoryEntry::new("likes dark mode")], 0, None);
+        tracer.end_search(
+            &span,
+            "dark mode",
+            &[MemoryEntry::new("likes dark mode")],
+            0,
+            None,
+        );
         drop(span);
         let spans = recorder.spans();
         let contents: Vec<String> = spans[0]
@@ -1194,7 +1200,7 @@ mod memory_spans {
     }
 }
 
-/// Rust-only: TS builds one attribute map per span, so a key is exported once.
+// No TS case: TS builds one attribute map per span, so a key is exported once.
 #[test]
 fn a_trace_attribute_replaces_a_start_attribute_and_an_end_attribute_replaces_it() {
     let (recorder, _guard) = recording();

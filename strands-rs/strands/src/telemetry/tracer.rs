@@ -419,7 +419,11 @@ impl LocalTracer {
         if !span.is_disabled() {
             self.record_common(&span, "invoke_agent");
             self.record_start(&span, keys::AGENT_NAME, start.agent_name);
-            if !self.trace_attributes.iter().any(|(key, _)| key == keys::SPAN_NAME) {
+            if !self
+                .trace_attributes
+                .iter()
+                .any(|(key, _)| key == keys::SPAN_NAME)
+            {
                 otel_span::set_attribute(&span, keys::SPAN_NAME, &name.as_str().into());
             }
             if !start.agent_id.is_empty() {

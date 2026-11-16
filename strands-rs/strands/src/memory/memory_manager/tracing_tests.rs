@@ -427,7 +427,7 @@ mod extraction_coordinator {
         );
     }
 
-    /// Rust-only: the detached driver of a save doesn't keep the span that scheduled it open.
+    // No TS case: the detached driver of a save doesn't keep the span that scheduled it open.
     #[tokio::test(flavor = "current_thread")]
     async fn the_callers_span_is_exported_before_the_detached_save_runs() {
         let (recorder, _guard) = recording();
@@ -438,7 +438,11 @@ mod extraction_coordinator {
         drop(caller.in_scope(|| coordinator.process(0, None)));
         drop(caller);
 
-        let names: Vec<_> = recorder.spans().iter().map(|span| span.name.to_string()).collect();
+        let names: Vec<_> = recorder
+            .spans()
+            .iter()
+            .map(|span| span.name.to_string())
+            .collect();
         assert_eq!(names, ["caller"]);
     }
 }
