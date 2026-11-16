@@ -42,3 +42,6 @@ Every user-visible behaviour difference from the TypeScript harness, with the re
 | `harness_agent_options_from_config` | Async; `~` from `os.homedir()` | Synchronous; `~` from `HOME`, then `USERPROFILE` | Nothing to await without module loading; no home-directory dependency |
 | Portable config: `subagent.maxDepth` | Any non-negative safe integer | A value above `u32::MAX` is `must be a non-negative integer.` | The depth is a `u32` |
 | Shell probe cache | One module-wide `WeakMap`: a sandbox is probed (`echo "${PSEdition}"`) once per process | Each tool or plugin that asks owns a `ShellCache`: a sandbox is probed once per consumer | No process-global state; the answer is the same (P-980) |
+| `builtin-tools.ts` `mcpClientsByClientName` | The unnamed-client warning says `application_name` where TS says `applicationName` (P-953). |
+| `builtin-tools.ts` `webSearchMode` | `web_search: 'exa'` without the `mcp` feature is `HarnessError::FeatureDisabled` (P-951). |
+| `agent.ts` `createHarness` | `mcp_servers` without the `mcp` feature is an error (P-961). |
