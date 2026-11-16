@@ -1,0 +1,95 @@
+From cb3ee2efd0f445833f3022c3962e0c8e7acb9504 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:06:23 +0000
+Subject: [PATCH 07/11] test(strands): mark the Rust-only telemetry tests with
+ the No TS case comment
+
+---
+ .../src/memory/memory_manager/tracing_tests.rs     |  8 ++++++--
+ .../strands/src/telemetry/tests/tracer_methods.rs  | 14 ++++++++++----
+ strands-rs/strands/src/telemetry/tracer.rs         |  6 +++++-
+ 3 files changed, 21 insertions(+), 7 deletions(-)
+
+diff --git a/strands-rs/strands/src/memory/memory_manager/tracing_tests.rs b/strands-rs/strands/src/memory/memory_manager/tracing_tests.rs
+index ca10f8a6c..1d2ba7df3 100644
+--- a/strands-rs/strands/src/memory/memory_manager/tracing_tests.rs
++++ b/strands-rs/strands/src/memory/memory_manager/tracing_tests.rs
+@@ -427,7 +427,7 @@ mod extraction_coordinator {
+         );
+     }
+ 
+-    /// Rust-only: the detached driver of a save doesn't keep the span that scheduled it open.
++    // No TS case: the detached driver of a save doesn't keep the span that scheduled it open.
+     #[tokio::test(flavor = "current_thread")]
+     async fn the_callers_span_is_exported_before_the_detached_save_runs() {
+         let (recorder, _guard) = recording();
+@@ -438,7 +438,11 @@ mod extraction_coordinator {
+         drop(caller.in_scope(|| coordinator.process(0, None)));
+         drop(caller);
+ 
+-        let names: Vec<_> = recorder.spans().iter().map(|span| span.name.to_string()).collect();
++        let names: Vec<_> = recorder
++            .spans()
++            .iter()
++            .map(|span| span.name.to_string())
++            .collect();
+         assert_eq!(names, ["caller"]);
+     }
+ }
+diff --git a/strands-rs/strands/src/telemetry/tests/tracer_methods.rs b/strands-rs/strands/src/telemetry/tests/tracer_methods.rs
+index e32ea669c..d3c3c0896 100644
+--- a/strands-rs/strands/src/telemetry/tests/tracer_methods.rs
++++ b/strands-rs/strands/src/telemetry/tests/tracer_methods.rs
+@@ -1164,14 +1164,20 @@ mod memory_spans {
+         assert!(events(&spans[0], "memory.query").is_empty());
+     }
+ 
+-    /// Rust-only: TS writes the query and then the results to the same `content` attribute, so the
+-    /// span ends with the results alone.
++    // No TS case: TS writes the query and then the results to the same `content` attribute, so the
++    // span ends with the results alone.
+     #[test]
+     fn a_memory_search_span_ends_with_one_content_attribute_when_opted_in() {
+         let (recorder, _guard) = recording();
+         let tracer = MemoryTracer::new(semconv("gen_ai_span_attributes_only"));
+         let span = tracer.start_search("dark mode", &stores(&["personal"]), None);
+-        tracer.end_search(&span, "dark mode", &[MemoryEntry::new("likes dark mode")], 0, None);
++        tracer.end_search(
++            &span,
++            "dark mode",
++            &[MemoryEntry::new("likes dark mode")],
++            0,
++            None,
++        );
+         drop(span);
+         let spans = recorder.spans();
+         let contents: Vec<String> = spans[0]
+@@ -1194,7 +1200,7 @@ mod memory_spans {
+     }
+ }
+ 
+-/// Rust-only: TS builds one attribute map per span, so a key is exported once.
++// No TS case: TS builds one attribute map per span, so a key is exported once.
+ #[test]
+ fn a_trace_attribute_replaces_a_start_attribute_and_an_end_attribute_replaces_it() {
+     let (recorder, _guard) = recording();
+diff --git a/strands-rs/strands/src/telemetry/tracer.rs b/strands-rs/strands/src/telemetry/tracer.rs
+index 80fda083d..ae74165c0 100644
+--- a/strands-rs/strands/src/telemetry/tracer.rs
++++ b/strands-rs/strands/src/telemetry/tracer.rs
+@@ -419,7 +419,11 @@ impl LocalTracer {
+         if !span.is_disabled() {
+             self.record_common(&span, "invoke_agent");
+             self.record_start(&span, keys::AGENT_NAME, start.agent_name);
+-            if !self.trace_attributes.iter().any(|(key, _)| key == keys::SPAN_NAME) {
++            if !self
++                .trace_attributes
++                .iter()
++                .any(|(key, _)| key == keys::SPAN_NAME)
++            {
+                 otel_span::set_attribute(&span, keys::SPAN_NAME, &name.as_str().into());
+             }
+             if !start.agent_id.is_empty() {
+-- 
+2.39.5
+

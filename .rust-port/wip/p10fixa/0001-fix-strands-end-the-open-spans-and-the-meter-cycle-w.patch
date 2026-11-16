@@ -1,0 +1,340 @@
+From bc69a8fdd9abc34bf1b4a3af6b0a4c256e0c43e4 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 10:58:47 +0000
+Subject: [PATCH 01/11] fix(strands): end the open spans and the meter cycle
+ when the agent stream is dropped
+
+---
+ .rust-port/staging/p10fixa/dispositions.md    |   6 +
+ strands-rs/strands/src/agent/run.rs           |   9 ++
+ strands-rs/strands/src/telemetry/meter.rs     |  19 ++-
+ strands-rs/strands/src/telemetry/tests.rs     |   1 +
+ .../src/telemetry/tests/agent_tracer.rs       | 147 ++++++++++++++++++
+ .../strands/src/tools/executors/executor.rs   |  51 +++++-
+ 6 files changed, 224 insertions(+), 9 deletions(-)
+ create mode 100644 .rust-port/staging/p10fixa/dispositions.md
+ create mode 100644 strands-rs/strands/src/telemetry/tests/agent_tracer.rs
+
+diff --git a/.rust-port/staging/p10fixa/dispositions.md b/.rust-port/staging/p10fixa/dispositions.md
+new file mode 100644
+index 000000000..9304fc814
+--- /dev/null
++++ b/.rust-port/staging/p10fixa/dispositions.md
+@@ -0,0 +1,6 @@
++# p10fixa dispositions
++
++| Finding | Disposition | Commit |
++| --- | --- | --- |
++| correctness-1 | Fixed: `Agent::abandon` ends the open model span, the meter cycle (`Meter::end_open_cycle`), the cycle span and the agent span (OK status, end time, accumulated usage), and `ToolTerminal::stream` holds an `OpenToolSpan` guard that ends the `execute_tool` span and the tool metric when the stream or its task is dropped. Tests `telemetry::tests::agent_tracer::{ends_the_loop_span_once_when_the_public_stream_iterator_is_closed_mid_cycle, ends_the_loop_span_once_when_the_consumer_cancels_and_breaks_during_model_streaming, ends_the_model_invoke_span_once_when_the_consumer_breaks_mid_model_response, a_dropped_stream_ends_the_span_of_the_running_tool}`. No drop guard was added to `ModelTerminal::stream`: the model span lives in `LocalTracer` and `abandon` ends it. | this commit |
++| parity-2 | Fixed: same change as correctness-1 (three of the four TS cases ported; `closes cycle telemetry for every started cycle when the consumer breaks during tool execution` not ported: a dropped Rust stream stops the run, it doesn't drain it). | this commit |
+diff --git a/strands-rs/strands/src/agent/run.rs b/strands-rs/strands/src/agent/run.rs
+index 3107bc463..31becb028 100644
+--- a/strands-rs/strands/src/agent/run.rs
++++ b/strands-rs/strands/src/agent/run.rs
+@@ -209,6 +209,15 @@ impl Agent {
+             self.structured_output_registered = false;
+         }
+         self.local.cancel(CancelOptions::default());
++        {
++            // TS closes the open spans in its `finally` blocks when the consumer closes the iterator.
++            let mut telemetry = self.local.telemetry().lock();
++            telemetry.tracer.end_model(&ModelSpanEnd::default());
++            telemetry.meter.end_open_cycle();
++            telemetry.tracer.end_cycle(None);
++            let usage = *telemetry.meter.metrics().accumulated_usage();
++            telemetry.tracer.end_agent(None, None, &usage, None);
++        }
+         let in_pass = std::mem::take(&mut self.in_pass);
+         let paused = self.local.interrupt_state().lock().activated;
+         let open_turn = self
+diff --git a/strands-rs/strands/src/telemetry/meter.rs b/strands-rs/strands/src/telemetry/meter.rs
+index fd9cd5357..be532b8fb 100644
+--- a/strands-rs/strands/src/telemetry/meter.rs
++++ b/strands-rs/strands/src/telemetry/meter.rs
+@@ -210,6 +210,7 @@ impl AgentMetrics {
+ #[derive(Debug, Default)]
+ pub(crate) struct Meter {
+     metrics: AgentMetrics,
++    open_cycle: Option<Instant>,
+     #[cfg(feature = "otel")]
+     instruments: Instruments,
+ }
+@@ -220,6 +221,7 @@ impl Meter {
+     pub(crate) fn with_otel_meter(meter: &opentelemetry::metrics::Meter) -> Self {
+         Self {
+             metrics: AgentMetrics::default(),
++            open_cycle: None,
+             instruments: Instruments::new(meter),
+         }
+     }
+@@ -251,10 +253,25 @@ impl Meter {
+                 usage: Usage::default(),
+             });
+         }
+-        (cycle_id, Instant::now())
++        let started = Instant::now();
++        self.open_cycle = Some(started);
++        (cycle_id, started)
++    }
++
++    #[cfg(test)]
++    pub(crate) fn has_open_cycle(&self) -> bool {
++        self.open_cycle.is_some()
++    }
++
++    /// Ends the cycle a dropped invocation left open, if any.
++    pub(crate) fn end_open_cycle(&mut self) {
++        if let Some(started) = self.open_cycle {
++            self.end_cycle(started);
++        }
+     }
+ 
+     pub(crate) fn end_cycle(&mut self, start: Instant) {
++        self.open_cycle = None;
+         let duration = start.elapsed();
+         #[cfg(feature = "otel")]
+         self.instruments
+diff --git a/strands-rs/strands/src/telemetry/tests.rs b/strands-rs/strands/src/telemetry/tests.rs
+index 3875ee2a7..132bdcfc3 100644
+--- a/strands-rs/strands/src/telemetry/tests.rs
++++ b/strands-rs/strands/src/telemetry/tests.rs
+@@ -479,4 +479,5 @@ async fn baggage_attributes_are_merged_into_the_active_baggage_for_every_span()
+     }
+ }
+ 
++mod agent_tracer;
+ mod tracer_methods;
+diff --git a/strands-rs/strands/src/telemetry/tests/agent_tracer.rs b/strands-rs/strands/src/telemetry/tests/agent_tracer.rs
+new file mode 100644
+index 000000000..f91a39cd7
+--- /dev/null
++++ b/strands-rs/strands/src/telemetry/tests/agent_tracer.rs
+@@ -0,0 +1,147 @@
++//! Ports of `strands-ts/src/agent/__tests__/agent.tracer.test.node.ts`: the spans an `Agent` opens
++//! and closes, read from an in-memory exporter where TS reads a mocked `Tracer`.
++
++use std::sync::Arc;
++
++use futures::StreamExt;
++use opentelemetry::trace::Status;
++use opentelemetry_sdk::trace::SpanData;
++use tokio::sync::Notify;
++
++use super::{Recorder, agent_of, recording, semconv, tool_use};
++use crate::Agent;
++use crate::test_support::stream_tool;
++use crate::testing::MockMessageModel;
++use crate::tools::{ToolOutcome, ToolStream};
++use crate::types::agent::AgentStreamEvent;
++use crate::types::messages::TextBlock;
++
++fn text_agent() -> Agent {
++    let model = MockMessageModel::new();
++    model.add_turn(vec![TextBlock::new("Done").into()]);
++    agent_of(model, Vec::new(), semconv(""))
++}
++
++/// Streams `prompt` until `stop` matches an event, then drops the stream.
++async fn stream_until(agent: &mut Agent, stop: impl Fn(&AgentStreamEvent) -> bool) {
++    let mut stream = agent.stream("Hi");
++    while let Some(event) = stream.next().await {
++        if stop(&event.expect("an event")) {
++            break;
++        }
++    }
++}
++
++fn named<'a>(spans: &'a [SpanData], name: &str) -> Vec<&'a SpanData> {
++    spans.iter().filter(|span| span.name == name).collect()
++}
++
++/// The span ended through the tracer: OK status and the end-time attribute.
++fn assert_ended_ok(span: &SpanData) {
++    assert_eq!(span.status, Status::Ok, "{}", span.name);
++    assert!(
++        span.attributes
++            .iter()
++            .any(|attribute| attribute.key.as_str() == "gen_ai.event.end_time"),
++        "{} has no end time",
++        span.name
++    );
++}
++
++fn assert_closed(agent: &Agent, recorder: &Recorder, chats: usize) {
++    let spans = recorder.spans();
++    assert_eq!(named(&spans, "chat").len(), chats);
++    let cycles = named(&spans, "execute_agent_loop_cycle");
++    assert_eq!(cycles.len(), 1);
++    assert_ended_ok(cycles[0]);
++    let agents = named(&spans, "invoke_agent telemetry_agent");
++    assert_eq!(agents.len(), 1);
++    assert_ended_ok(agents[0]);
++    assert!(!agent.local.telemetry().lock().meter.has_open_cycle());
++    assert_eq!(
++        agent
++            .metrics()
++            .latest_agent_invocation()
++            .map(|i| i.cycles().len()),
++        Some(1)
++    );
++}
++
++#[tokio::test(flavor = "current_thread")]
++async fn ends_the_loop_span_once_when_the_public_stream_iterator_is_closed_mid_cycle() {
++    let (recorder, _guard) = recording();
++    let mut agent = text_agent();
++    stream_until(&mut agent, |event| {
++        matches!(event, AgentStreamEvent::MessageAdded(_))
++    })
++    .await;
++    assert_closed(&agent, &recorder, 0);
++}
++
++#[tokio::test(flavor = "current_thread")]
++async fn ends_the_loop_span_once_when_the_consumer_cancels_and_breaks_during_model_streaming() {
++    let (recorder, _guard) = recording();
++    let mut agent = text_agent();
++    let cancel = agent.cancel_handle();
++    stream_until(&mut agent, |event| {
++        let update = matches!(event, AgentStreamEvent::ModelStreamUpdate(_));
++        if update {
++            cancel.cancel(crate::cancel::CancelOptions::default());
++        }
++        update
++    })
++    .await;
++    assert_closed(&agent, &recorder, 1);
++}
++
++#[tokio::test(flavor = "current_thread")]
++async fn ends_the_model_invoke_span_once_when_the_consumer_breaks_mid_model_response() {
++    let (recorder, _guard) = recording();
++    let mut agent = text_agent();
++    stream_until(&mut agent, |event| {
++        matches!(event, AgentStreamEvent::ModelStreamUpdate(_))
++    })
++    .await;
++    assert_closed(&agent, &recorder, 1);
++    assert_ended_ok(named(&recorder.spans(), "chat")[0]);
++}
++
++/// Rust-only: a dropped stream aborts the running tool, whose span and metric still end.
++#[tokio::test(flavor = "current_thread")]
++async fn a_dropped_stream_ends_the_span_of_the_running_tool() {
++    let (recorder, _guard) = recording();
++    let model = MockMessageModel::new();
++    model.add_turn(vec![tool_use("hang", "tool-1", serde_json::json!({}))]);
++    let started = Arc::new(Notify::new());
++    let tool_started = Arc::clone(&started);
++    let hang = stream_tool("hang", move |_context| {
++        let started = Arc::clone(&tool_started);
++        ToolStream::from_future(async move {
++            started.notify_one();
++            std::future::pending::<ToolOutcome>().await
++        })
++    });
++    let mut agent = agent_of(model, vec![Arc::new(hang)], semconv(""));
++    {
++        let mut stream = agent.stream("Hi");
++        loop {
++            tokio::select! {
++                biased;
++                () = started.notified() => break,
++                event = stream.next() => { event.expect("the stream is open").expect("an event"); }
++            }
++        }
++    }
++    for _ in 0..10 {
++        tokio::task::yield_now().await;
++    }
++    assert_closed(&agent, &recorder, 1);
++    let spans = recorder.spans();
++    assert_ended_ok(named(&spans, "execute_tool hang")[0]);
++    let metrics = agent.metrics();
++    let (_, tool) = metrics
++        .tool_metrics()
++        .find(|(name, _)| *name == "hang")
++        .expect("the tool metric");
++    assert_eq!((tool.call_count(), tool.success_count()), (1, 0));
++}
+diff --git a/strands-rs/strands/src/tools/executors/executor.rs b/strands-rs/strands/src/tools/executors/executor.rs
+index 75152aff6..8c28bbbfe 100644
+--- a/strands-rs/strands/src/tools/executors/executor.rs
++++ b/strands-rs/strands/src/tools/executors/executor.rs
+@@ -581,7 +581,14 @@ impl ToolTerminal {
+             let ExecuteToolContext { tool, tool_use, invocation_state, .. } = context;
+             let tool_use_id = tool_use.tool_use_id().to_owned();
+             let span = telemetry.lock().tracer.start_tool(&tool_use);
+-            let started = Instant::now();
++            let mut open_span = OpenToolSpan {
++                telemetry,
++                span: span.clone(),
++                tool_use_id: tool_use_id.clone(),
++                tool_name: tool_use.name().to_owned(),
++                started: Instant::now(),
++                ended: false,
++            };
+             let mut outcome = None;
+             match tool {
+                 None => {
+@@ -618,15 +625,13 @@ impl ToolTerminal {
+                 error_text_result(&tool_use_id, text).into()
+             });
+             let success = matches!(&outcome, ToolOutcome::Result(result) if *result.status() == ToolResultStatus::Success);
+-            {
+-                let mut telemetry = telemetry.lock();
+-                let result = match &outcome {
++            open_span.end(
++                match &outcome {
+                     ToolOutcome::Result(result) => Some(result),
+                     ToolOutcome::Interrupt(_) => None,
+-                };
+-                telemetry.tracer.end_tool(&tool_use_id, &span, result);
+-                telemetry.meter.end_tool_call(tool_use.name(), started.elapsed(), success);
+-            }
++                },
++                success,
++            );
+             match outcome {
+                 ToolOutcome::Interrupt(interrupt) => yield Err(interrupt.into()),
+                 ToolOutcome::Result(result) => yield Ok(MiddlewareItem::Result(ExecuteToolResult::new(result))),
+@@ -635,6 +640,36 @@ impl ToolTerminal {
+     }
+ }
+ 
++/// The `execute_tool` span of a running tool. Dropped unended (the stream was dropped or its task
++/// aborted), it ends the span and the tool metric without a result, as the TS `finally` does.
++struct OpenToolSpan {
++    telemetry: LocalTelemetry,
++    span: tracing::Span,
++    tool_use_id: String,
++    tool_name: String,
++    started: Instant,
++    ended: bool,
++}
++
++impl OpenToolSpan {
++    fn end(&mut self, result: Option<&ToolResultBlock>, success: bool) {
++        if std::mem::replace(&mut self.ended, true) {
++            return;
++        }
++        let mut telemetry = self.telemetry.lock();
++        telemetry.tracer.end_tool(&self.tool_use_id, &self.span, result);
++        telemetry
++            .meter
++            .end_tool_call(&self.tool_name, self.started.elapsed(), success);
++    }
++}
++
++impl Drop for OpenToolSpan {
++    fn drop(&mut self) {
++        self.end(None, false);
++    }
++}
++
+ /// The error result of a tool or handler that panicked.
+ #[expect(
+     clippy::disallowed_types,
+-- 
+2.39.5
+

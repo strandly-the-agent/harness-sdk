@@ -1,0 +1,91 @@
+From 5786f9420c25990009da83e2aec3638f46bd29ed Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:08:12 +0000
+Subject: [PATCH 12/16] docs(strands): correct the stale telemetry notes and
+ stage the logging and memory-span divergence rows (api-9)
+
+---
+ .rust-port/staging/p10fixb/decisions.md    | 2 ++
+ .rust-port/staging/p10fixb/dispositions.md | 2 ++
+ .rust-port/staging/p10fixb/divergences.md  | 8 ++++++++
+ .rust-port/staging/p10fixb/parity.md       | 1 +
+ strands-rs/docs/reviews/live.md            | 2 +-
+ strands-rs/strands/tests/live_telemetry.rs | 5 +++--
+ 6 files changed, 17 insertions(+), 3 deletions(-)
+ create mode 100644 .rust-port/staging/p10fixb/parity.md
+
+diff --git a/.rust-port/staging/p10fixb/decisions.md b/.rust-port/staging/p10fixb/decisions.md
+index 4b4616b10..e5b1fdfaa 100644
+--- a/.rust-port/staging/p10fixb/decisions.md
++++ b/.rust-port/staging/p10fixb/decisions.md
+@@ -11,3 +11,5 @@
+ **P-725. `telemetry` re-exports the OpenTelemetry crates of its API.** Under `otel`: `pub use {opentelemetry, opentelemetry_sdk, tracing_opentelemetry, tracing_subscriber}`. `TracerConfig::provider`, the return types of `setup_tracer`, `setup_meter`, `get_tracer`, `get_meter` and `tracing_layer` and the `SpanProcessor` trait `BaggageSpanProcessor` implements come from these 0.x crates, so an application names them through `strands::telemetry::..` and always gets the versions `strands` resolved, as `mcp` and the provider modules do for theirs. Review finding api-4.
+ 
+ **P-726. The telemetry config builders are nameable, and `Exporters` has one.** `telemetry` re-exports `TracerConfigBuilder`, `MeterConfigBuilder`, `ExportersBuilder` and their state modules `tracer_config_builder`, `meter_config_builder`, `exporters_builder` (`state_mod(vis = "pub")`), so a downstream helper can take and return a builder, as with `AgentBuilder`/`agent_builder`. `Exporters` derives `bon::Builder` with `#[builder(default)]` fields (decision #65: public fields, `Default` and a builder): `Exporters::builder().otlp(true).build()`. Review finding api-6.
++
++**P-727. Correction to P-495: `ExtractorContext::tracer` being crate-internal is the plain mapping, not a divergence.** TS marks `ExtractorContext.tracer` `@internal` (`memory/extraction/types.ts:61-64`), so `pub(crate) tracer` maps it directly; the staged `DIVERGENCES.md` replacement for the `Memory spans` row drops the tracer half and keeps only the missing `memory.extractor` attribute (P-494). A `Logging` row is staged as well: TS `configureLogging`/`Logger` have no Rust counterpart because the crate logs through `tracing`. Review finding api-9.
+diff --git a/.rust-port/staging/p10fixb/dispositions.md b/.rust-port/staging/p10fixb/dispositions.md
+index 29cecd3bd..4c4ba4866 100644
+--- a/.rust-port/staging/p10fixb/dispositions.md
++++ b/.rust-port/staging/p10fixb/dispositions.md
+@@ -14,3 +14,5 @@
+ | api-4 | Fixed: `telemetry` re-exports `opentelemetry`, `opentelemetry_sdk`, `tracing_opentelemetry` and `tracing_subscriber` under `otel` (P-725); test `tests/api_surface.rs::otel::the_opentelemetry_crates_of_the_api_are_re_exported` (lands with the api-6 commit, which adds the `otel` test module) | this commit |
+ | api-6 | Fixed: the three builders and their state modules are public and re-exported from `telemetry`; `Exporters` derives `bon::Builder` (P-726); test `tests/api_surface.rs::otel::a_helper_can_take_and_return_the_telemetry_config_builders` (does not compile without the fix) | this commit |
+ | api-7 | Fixed: the `setup_tracer` rustdoc states the subscriber ordering rule; compile-checked doc examples on `setup_tracer`, `setup_meter`, `tracing_layer`, `get_tracer`, `get_meter` and `AgentConfig::trace_attributes`; the two TS module examples (OTLP setup, own provider) are in the `telemetry` module doc, guarded for builds without `otel`. The `lib.rs` module-table row already names the OpenTelemetry setup at this tip, so it is unchanged. `cargo test --doc` passes for the eight new examples | this commit |
++| api-9 | Fixed: (a) the "not in this tree yet" notes in `tests/live_telemetry.rs` and `docs/reviews/live.md` are rewritten, and a replacement `PARITY.md` row for `strands-ts/test/integ/telemetry.test.node.ts` is staged; (b) staged `DIVERGENCES.md` replacement of the `Memory spans` row without the tracer half, and P-727 corrects P-495; (c) staged `DIVERGENCES.md` `Logging` row. The module doc of `telemetry` now says the crate logs through `tracing` (api-7 commit) | this commit |
++| api-11 | For the lead (p10fixa owns `telemetry/tracer/memory.rs`): move the two `otel`-only bodies of `current_span_context` and `link_parent` into the `otel_span` module pair of `tracer.rs` (`current_context`, `add_link`) with no-op twins, or import at the top under `#[cfg(feature = "otel")]`. No `pub` item is involved, so there is no signature edit for this track | not changed |
+diff --git a/.rust-port/staging/p10fixb/divergences.md b/.rust-port/staging/p10fixb/divergences.md
+index 5676bd331..78d8c2dcf 100644
+--- a/.rust-port/staging/p10fixb/divergences.md
++++ b/.rust-port/staging/p10fixb/divergences.md
+@@ -1,3 +1,11 @@
+ Replaces the row `Extra span attributes`:
+ 
+ | Spans exported besides the agent's | Only spans started through the OpenTelemetry tracer; `logger` calls never reach a span | `tracing` spans at `INFO` and above that the application opens are exported too (they parent under the agent's); with an application-built subscriber, `tracing_layer` exports whatever that subscriber lets through, log lines as span events included, unless the application filters the layer. The layer adds no attributes of its own | `tracing` is the span API of the Rust crate; `setup_tracer` filters its own subscriber to spans at `INFO` and above (P-721) |
++
++Replaces the row `Memory spans`:
++
++| Memory spans | `memory.extract` records `memory.extractor` (the extractor's class name) | No `memory.extractor` attribute | A trait object has no class name (P-494) |
++
++New row:
++
++| Logging | `configureLogging(logger)` and the `Logger` interface, exported from the package root; the default logger prints warnings and errors to the console | No `configure_logging` and no `Logger`: the crate logs through `tracing` events, each with one `message` field in the TS text format, and prints nothing until the application installs a subscriber. The subscriber `setup_tracer` installs exports spans only, so it prints no log lines either | `tracing` is the logging facade of Rust libraries; a second logger hook would duplicate it |
+diff --git a/.rust-port/staging/p10fixb/parity.md b/.rust-port/staging/p10fixb/parity.md
+new file mode 100644
+index 000000000..2b1116c67
+--- /dev/null
++++ b/.rust-port/staging/p10fixb/parity.md
+@@ -0,0 +1 @@
++| `strands-ts/test/integ/telemetry.test.node.ts` | live, partial: `tests/live_telemetry.rs::live_telemetry_records_the_span_hierarchy_attributes_and_usage_of_a_tool_invocation`, `live_telemetry_records_error_status_when_the_model_call_fails` (span hierarchy, agent, model and tool span attributes, custom trace attributes, OK and error status, accumulated and per-call usage). Not covered: the `getTracer` and `register()` cases and `Metrics Integration` (not ported live: `setup_tracer`, `setup_meter`, `get_tracer` and `get_meter` register or read process-global providers and are covered by `strands::telemetry::config::setup::tests` against recording exporters), span events and timing attributes, the tool-error and mid-loop error cases, `stream()` hierarchy, and the concurrent-agents cases |
+diff --git a/strands-rs/docs/reviews/live.md b/strands-rs/docs/reviews/live.md
+index ccfae44eb..48721fb54 100644
+--- a/strands-rs/docs/reviews/live.md
++++ b/strands-rs/docs/reviews/live.md
+@@ -51,7 +51,7 @@ No SDK bug was found by this sweep, and nothing under `src/` was changed.
+ - `agent.cancel.test.ts`: the timer and `AbortSignal.timeout()` cases.
+ - `interventions.test.ts`: the cases listed in the staged parity row; only the Bedrock provider.
+ - `mcp/*.test.node.ts`: the Streamable HTTP transport variants (stdio only), and the filtering and prefixing cases against the v2 server.
+-- `telemetry.test.node.ts`: the `getTracer`, `register()` and `Metrics Integration` cases (their Rust API is being built by another track), span events and timing attributes, tool-error and mid-loop error spans, `stream()`, concurrent agents.
++- `telemetry.test.node.ts`: the `getTracer`, `register()` and `Metrics Integration` cases (not ported live: `setup_tracer`, `setup_meter`, `get_tracer` and `get_meter` are covered by unit tests against recording exporters), span events and timing attributes, tool-error and mid-loop error spans, `stream()`, concurrent agents.
+ - `context-manager-summarize-tool-calls.test.ts`: the OpenAI and Anthropic cases.
+ - Bedrock API-key (bearer) authentication (no Bedrock API key in this environment), guardrails (need a guardrail resource; creating one is not allowed), audio.
+ - Everything in `anthropic_live.rs` and `openai_live.rs` (keys missing).
+diff --git a/strands-rs/strands/tests/live_telemetry.rs b/strands-rs/strands/tests/live_telemetry.rs
+index 6fccca593..d5b2c0330 100644
+--- a/strands-rs/strands/tests/live_telemetry.rs
++++ b/strands-rs/strands/tests/live_telemetry.rs
+@@ -2,8 +2,9 @@
+ //! strands-ts/test/integ/telemetry.test.node.ts): the spans of a real invocation, read through
+ //! a recording span exporter. Covered: the span hierarchy, span attributes, custom trace
+ //! attributes, status and usage. Not covered here: the `getTracer`/`register()` cases and the
+-//! `Metrics Integration` cases, whose Rust API (`setup_tracer`, the meter) is not in this tree
+-//! yet, and the concurrent-agents cases.
++//! `Metrics Integration` cases (`setup_tracer`, `setup_meter`, `get_tracer` and `get_meter`
++//! register or read process-global providers; `telemetry::config::setup::tests` covers them
++//! against recording exporters), and the concurrent-agents cases.
+ //!
+ //! The subscriber is thread-local (`tracing::subscriber::set_default`), so the tests run on the
+ //! current-thread runtime and share no global state. They use the default AWS credential chain
+-- 
+2.39.5
+

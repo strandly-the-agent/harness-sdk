@@ -1,0 +1,121 @@
+From e180ceb8d7e0cb8b2cd808275e6ce9d4b3c2628c Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:09:45 +0000
+Subject: [PATCH 09/11] test(strands): declare the telemetry and memory-tracing
+ title gaps in the title map
+
+---
+ .rust-port/staging/p10fixa/dispositions.md |  1 +
+ .rust-port/staging/p10fixa/parity.md       |  3 +
+ strands-rs/docs/test-title-map.json        | 77 ++++++++++++++++++++++
+ 3 files changed, 81 insertions(+)
+ create mode 100644 .rust-port/staging/p10fixa/parity.md
+
+diff --git a/.rust-port/staging/p10fixa/dispositions.md b/.rust-port/staging/p10fixa/dispositions.md
+index b6edf99bf..0dccc0e2c 100644
+--- a/.rust-port/staging/p10fixa/dispositions.md
++++ b/.rust-port/staging/p10fixa/dispositions.md
+@@ -15,3 +15,4 @@
+ | correctness-7 | For the lead: not fixed. `execute_background` gets a `ToolAgent`, which has no telemetry handle, so the agent's `trace_attributes` have to travel `Agent` -> `background_tasks::ToolRun` -> `BackgroundToolRun` (`types/agent.rs`, `background_tasks/`, outside this track). Recommended: add `trace_attributes: Vec<(String, AttributeValue)>` to `ToolRun` and `BackgroundToolRun`, filled where the scheduler builds the run from the agent (a new `LocalTracer::trace_attributes()` getter), and call `telemetry.lock().tracer.set_trace_attributes(..)` on the run's `LocalTelemetry` in `tools/executors/executor.rs` before the `ToolTerminal` is built; extend the DIVERGENCES row at `docs/DIVERGENCES.md:79` until then. | - |
+ | parity-14 | Fixed (staged row): `Local trace ids` in `.rust-port/staging/p10fixa/divergences.md`, with the rows for the behaviour changes of correctness-1, correctness-3, correctness-6 and parity-5. | this commit |
+ | api-11 | Fixed: the two `otel`-only extension-trait imports of `telemetry/tracer/memory.rs` are at the top of the file under `#[cfg(feature = "otel")]`. No behaviour change. | this commit |
++| parity-10 | Fixed for this track's specs: `docs/test-title-map.json` has the entries for `telemetry/json`, `local-trace`, `meter`, `tracer.test.node` and `memory/memory-tracing`; the checker prints `ok` for the last four, and for `json.test.ts` once the staged row (`9/15`, `.rust-port/staging/p10fixa/parity.md`) replaces the PARITY.md row. `config.test.node.ts` (:37, :252, :268) is p10fixb's spec and is left to it. | this commit |
+diff --git a/.rust-port/staging/p10fixa/parity.md b/.rust-port/staging/p10fixa/parity.md
+new file mode 100644
+index 000000000..2e191e048
+--- /dev/null
++++ b/.rust-port/staging/p10fixa/parity.md
+@@ -0,0 +1,3 @@
++# p10fixa staged PARITY.md rows (full replacements)
++
++| `strands-ts/src/telemetry/__tests__/json.test.ts` | `strands::telemetry::json::tests` | 9/15 | 6 not applicable: `bigint`, symbol, `ArrayBuffer`, `Uint8Array` and the two mixed-content cases have no typed Rust value (P-484); `replaces functions` stands for the failing-serializer path; `handles Date objects nested in objects` is covered by `handles_date_objects` |
+diff --git a/strands-rs/docs/test-title-map.json b/strands-rs/docs/test-title-map.json
+index 18878c2a5..2e91a9b7b 100644
+--- a/strands-rs/docs/test-title-map.json
++++ b/strands-rs/docs/test-title-map.json
+@@ -867,5 +867,82 @@
+     "requires a model when no context agent": {
+       "gap": "TS-only: a `ToolContext` always has an agent with a model"
+     }
++  },
++  "strands-ts/src/telemetry/__tests__/json.test.ts": {
++    "handles Date objects nested in objects": "handles_date_objects",
++    "replaces BigInt values": {
++      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
++    },
++    "replaces symbols": {
++      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
++    },
++    "replaces ArrayBuffer values": {
++      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
++    },
++    "replaces Uint8Array values": {
++      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
++    },
++    "handles mixed content in arrays": {
++      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
++    },
++    "handles mixed content in nested objects": {
++      "gap": "TS-only: the value has no typed Rust counterpart, serde writes every Rust value or fails as a whole (P-484); `replaces_functions` covers the failing-serializer path"
++    }
++  },
++  "strands-ts/src/telemetry/__tests__/local-trace.test.ts": {
++    "accepts a custom startTime": {
++      "gap": "TS-only: the Rust `AgentTrace` has no start-time option, a trace always starts at the current time"
++    }
++  },
++  "strands-ts/src/telemetry/__tests__/meter.test.ts": {
++    "reconstructs equivalent AgentMetrics from serialized data": {
++      "gap": "Not applicable: `AgentMetrics` is serialize-only (P-487)"
++    }
++  },
++  "strands-ts/src/telemetry/__tests__/tracer.test.node.ts": {
++    "reads service name from OTEL_SERVICE_NAME env var": "should_use_strands_agents_as_default_service_name",
++    "defaults service name to strands-agents": "should_use_strands_agents_as_default_service_name",
++    "merges constructor-level and call-level trace attributes": {
++      "gap": "Out of v0.1: the call-level `traceAttributes` option is used by multi-agent node spans only; Rust has constructor-level attributes"
++    },
++    "executes callback directly when span is null": {
++      "gap": "TS-only: `withSpanContext` has no Rust counterpart, `tracing` carries the context (`Span::in_scope`, `.instrument`)"
++    },
++    "executes callback within span context when span is provided": {
++      "gap": "TS-only: `withSpanContext` has no Rust counterpart, `tracing` carries the context (`Span::in_scope`, `.instrument`)"
++    },
++    "propagates return value from callback": {
++      "gap": "TS-only: `withSpanContext` has no Rust counterpart, `tracing` carries the context (`Span::in_scope`, `.instrument`)"
++    },
++    "sets langfuse.observation.type on agent span when OTEL_EXPORTER_OTLP_ENDPOINT contains langfuse": "detects_langfuse_from_the_base_url_and_the_otlp_endpoints",
++    "sets langfuse.observation.type when OTEL_EXPORTER_OTLP_TRACES_ENDPOINT contains langfuse": "detects_langfuse_from_the_base_url_and_the_otlp_endpoints",
++    "sets langfuse.observation.type when LANGFUSE_BASE_URL is set": "detects_langfuse_from_the_base_url_and_the_otlp_endpoints",
++    "does not set langfuse.observation.type when no langfuse env vars are set": "detects_langfuse_from_the_base_url_and_the_otlp_endpoints",
++    "returns null when $method throws internally": {
++      "gap": "Not applicable: starting a `tracing` span can't fail"
++    },
++    "parses multiple comma-separated opt-in values": "parses_the_comma_separated_opt_in_values",
++    "handles whitespace in opt-in values": "parses_the_comma_separated_opt_in_values",
++    "defaults to stable conventions when env var is empty": "uses_the_stable_conventions_by_default",
++    "returns undefined when no span is active": {
++      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
++    },
++    "returns undefined for a non-recording active span": {
++      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
++    },
++    "returns undefined for a recording span with an invalid (all-zeros) context": {
++      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form"
++    },
++    "returns the context for a recording span with a valid context": {
++      "gap": "TS-only: `tracer::memory::current_span_context` reads the current `tracing` span, which has no mockable non-recording or all-zero form; the valid path is covered by `the_extract_span_links_the_span_that_scheduled_it`"
++    }
++  },
++  "strands-ts/src/memory/__tests__/memory-tracing.test.ts": {
++    "ends the inject span and rethrows when search throws": {
++      "gap": "Not applicable: the injection search names no stores, so `MemoryManager::search` can't fail there; TS reaches the path only by mocking `search`"
++    },
++    "a span-end failure does not throw nor mark the save as failed": {
++      "gap": "Not applicable: recording on a `tracing` span can't fail"
++    }
+   }
+ }
+-- 
+2.39.5
+

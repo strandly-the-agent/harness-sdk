@@ -1,0 +1,192 @@
+From 97cd2b1ddb09d5599f1599333c28af37be53a7d5 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:03:05 +0000
+Subject: [PATCH 05/11] fix(strands): export a span attribute once when a trace
+ attribute has the same key
+
+---
+ .rust-port/staging/p10fixa/dispositions.md    |  2 +
+ .../src/telemetry/tests/tracer_methods.rs     | 28 +++++++++
+ strands-rs/strands/src/telemetry/tracer.rs    | 62 ++++++++++++++-----
+ 3 files changed, 78 insertions(+), 14 deletions(-)
+
+diff --git a/.rust-port/staging/p10fixa/dispositions.md b/.rust-port/staging/p10fixa/dispositions.md
+index 9a4697764..66fc4417a 100644
+--- a/.rust-port/staging/p10fixa/dispositions.md
++++ b/.rust-port/staging/p10fixa/dispositions.md
+@@ -8,3 +8,5 @@
+ | parity-7 | Fixed: `system_part` writes only the present member of a guard-content block and the image as `{"format", "source": {"bytes": "<replaced>"}}`; the `telemetry/json.rs` module doc names the exception. Tests `telemetry::tracer::parts_tests::{a_guard_content_system_block_has_no_null_member, a_guard_content_image_in_system_instructions_has_its_bytes_replaced}`. | this commit |
+ | correctness-3 | Fixed: the detached extraction driver (`memory/extraction/coordinator.rs`) and the detached add (`memory/memory_manager.rs`) are spawned without the caller's span; both `memory.extract` and the detached `memory.add` are root spans already (TS `forceRoot`), so nothing was parented through the handle. Test `memory::memory_manager::tracing_tests::*::the_callers_span_is_exported_before_the_detached_save_runs`; the yield in `the_extract_span_links_the_span_that_scheduled_it` is gone. Rule 42d not edited (shared doc): the lead may note that detached drivers are spawned bare. | this commit |
+ | parity-5 | Fixed: under `gen_ai_span_attributes_only`/Langfuse `start_search` no longer sets `content`; `end_search` (new `query` parameter) sets it once: the results, or the query when the search failed. Tests `telemetry::tests::tracer_methods::memory_spans::{a_memory_search_span_ends_with_one_content_attribute_when_opted_in, records_the_memory_search_query_as_a_span_attribute_and_skips_the_event_when_opted_in}` (the second now ends the span with an error). A search span dropped without `end_search` has no `content`. | this commit |
++| correctness-6 | Fixed: `LocalTracer::record_start` skips a start attribute (operation, provider, agent name/id, model, tools, tool definitions, system prompt, cycle id, tool name/call id, `name`) when a trace attribute has its key, and `record_trace_attributes` skips the keys a span sets after its start (`keys::SET_AFTER_START`: start/end time, usage, request duration, tool status/arguments/result, Langfuse type, `otel.status_*`), so each key is exported once with the TS winner. Test `telemetry::tests::tracer_methods::a_trace_attribute_replaces_a_start_attribute_and_an_end_attribute_replaces_it`. Known gap: a trace attribute named like a set-after-start key is dropped also on a span that never sets that key (TS keeps it there). | this commit |
++| parity-4 | Fixed: same change as correctness-6. | this commit |
+diff --git a/strands-rs/strands/src/telemetry/tests/tracer_methods.rs b/strands-rs/strands/src/telemetry/tests/tracer_methods.rs
+index 663ae85af..e32ea669c 100644
+--- a/strands-rs/strands/src/telemetry/tests/tracer_methods.rs
++++ b/strands-rs/strands/src/telemetry/tests/tracer_methods.rs
+@@ -1193,3 +1193,31 @@ mod memory_spans {
+         assert!(events(&spans[0], "memory.content").is_empty());
+     }
+ }
++
++/// Rust-only: TS builds one attribute map per span, so a key is exported once.
++#[test]
++fn a_trace_attribute_replaces_a_start_attribute_and_an_end_attribute_replaces_it() {
++    let (recorder, _guard) = recording();
++    let mut tracer = LocalTracer::new(semconv(""));
++    tracer.set_trace_attributes(vec![
++        ("gen_ai.agent.name".to_owned(), "override".into()),
++        ("gen_ai.operation.name".to_owned(), "custom_op".into()),
++        ("gen_ai.usage.total_tokens".to_owned(), 999.into()),
++    ]);
++    tracer.start_agent(&agent_start(&hello()));
++    tracer.end_agent(None, None, &Usage::new(1, 2, 3), None);
++    drop(tracer);
++
++    let spans = recorder.spans();
++    let values = |key: &str| -> Vec<String> {
++        spans[0]
++            .attributes
++            .iter()
++            .filter(|attribute| attribute.key.as_str() == key)
++            .map(|attribute| attribute.value.to_string())
++            .collect()
++    };
++    assert_eq!(values("gen_ai.agent.name"), ["override"]);
++    assert_eq!(values("gen_ai.operation.name"), ["custom_op"]);
++    assert_eq!(values("gen_ai.usage.total_tokens"), ["3"]);
++}
+diff --git a/strands-rs/strands/src/telemetry/tracer.rs b/strands-rs/strands/src/telemetry/tracer.rs
+index bc4bc6ba2..80fda083d 100644
+--- a/strands-rs/strands/src/telemetry/tracer.rs
++++ b/strands-rs/strands/src/telemetry/tracer.rs
+@@ -219,6 +219,27 @@ pub(crate) mod keys {
+     pub(crate) const OPERATION_DETAILS_EVENT: &str = "gen_ai.client.inference.operation.details";
+     pub(crate) const STATUS_CODE: &str = "otel.status_code";
+     pub(crate) const STATUS_DESCRIPTION: &str = "otel.status_description";
++    /// The keys a span sets after it started.
++    pub(crate) const SET_AFTER_START: &[&str] = &[
++        START_TIME,
++        END_TIME,
++        TOOL_STATUS,
++        TOOL_CALL_ARGUMENTS,
++        TOOL_CALL_RESULT,
++        USAGE_PROMPT_TOKENS,
++        USAGE_INPUT_TOKENS,
++        USAGE_COMPLETION_TOKENS,
++        USAGE_OUTPUT_TOKENS,
++        USAGE_TOTAL_TOKENS,
++        USAGE_CACHE_READ,
++        USAGE_CACHE_READ_LEGACY,
++        USAGE_CACHE_CREATION,
++        USAGE_CACHE_WRITE_LEGACY,
++        SERVER_REQUEST_DURATION,
++        LANGFUSE_OBSERVATION_TYPE,
++        STATUS_CODE,
++        STATUS_DESCRIPTION,
++    ];
+ }
+ 
+ /// Opens a `tracing` span whose OpenTelemetry name is `$otel_name`, under `$parent` or else the
+@@ -397,26 +418,28 @@ impl LocalTracer {
+         let span = agent_span!(None::<&Span>, "invoke_agent", name.as_str());
+         if !span.is_disabled() {
+             self.record_common(&span, "invoke_agent");
+-            span.record(keys::AGENT_NAME, start.agent_name);
+-            otel_span::set_attribute(&span, keys::SPAN_NAME, &name.as_str().into());
++            self.record_start(&span, keys::AGENT_NAME, start.agent_name);
++            if !self.trace_attributes.iter().any(|(key, _)| key == keys::SPAN_NAME) {
++                otel_span::set_attribute(&span, keys::SPAN_NAME, &name.as_str().into());
++            }
+             if !start.agent_id.is_empty() {
+-                span.record(keys::AGENT_ID, start.agent_id);
++                self.record_start(&span, keys::AGENT_ID, start.agent_id);
+             }
+             if let Some(model_id) = start.model_id.as_deref().filter(|id| !id.is_empty()) {
+-                span.record(keys::REQUEST_MODEL, model_id);
++                self.record_start(&span, keys::REQUEST_MODEL, model_id);
+             }
+             if !start.tool_names.is_empty() {
+-                span.record(keys::AGENT_TOOLS, to_json(&start.tool_names).as_str());
++                self.record_start(&span, keys::AGENT_TOOLS, to_json(&start.tool_names).as_str());
+             }
+             if let Some(tools_config) = start
+                 .tools_config
+                 .as_ref()
+                 .filter(|_| self.semconv.tool_definitions)
+             {
+-                span.record(keys::TOOL_DEFINITIONS, to_json(tools_config).as_str());
++                self.record_start(&span, keys::TOOL_DEFINITIONS, to_json(tools_config).as_str());
+             }
+             if let Some(system_prompt) = start.system_prompt {
+-                span.record(keys::SYSTEM_PROMPT, to_json(system_prompt).as_str());
++                self.record_start(&span, keys::SYSTEM_PROMPT, to_json(system_prompt).as_str());
+             }
+             self.record_trace_attributes(&span);
+             self.add_message_events(&span, start.messages);
+@@ -466,7 +489,7 @@ impl LocalTracer {
+             "execute_agent_loop_cycle"
+         );
+         if !span.is_disabled() {
+-            span.record(keys::CYCLE_ID, cycle_id);
++            self.record_start(&span, keys::CYCLE_ID, cycle_id);
+             self.record_trace_attributes(&span);
+             span.record(keys::START_TIME, now_iso().as_str());
+             self.add_message_events(&span, messages);
+@@ -502,7 +525,7 @@ impl LocalTracer {
+         if !span.is_disabled() {
+             self.record_common(&span, "chat");
+             if let Some(model_id) = model_id.filter(|id| !id.is_empty()) {
+-                span.record(keys::REQUEST_MODEL, model_id);
++                self.record_start(&span, keys::REQUEST_MODEL, model_id);
+             }
+             self.record_trace_attributes(&span);
+             self.add_system_prompt_event(&span, system_prompt);
+@@ -561,8 +584,8 @@ impl LocalTracer {
+             return span;
+         }
+         self.record_common(&span, "execute_tool");
+-        span.record(keys::TOOL_NAME, tool_name);
+-        span.record(keys::TOOL_CALL_ID, tool_use_id);
++        self.record_start(&span, keys::TOOL_NAME, tool_name);
++        self.record_start(&span, keys::TOOL_CALL_ID, tool_use_id);
+         self.record_trace_attributes(&span);
+         if self.semconv.latest {
+             span.record(keys::TOOL_CALL_ARGUMENTS, to_json(tool_use.input()).as_str());
+@@ -639,19 +662,30 @@ impl LocalTracer {
+ 
+     /// TS `_getCommonAttributes`, then the start time `_startSpan` stamps.
+     fn record_common(&self, span: &Span, operation: &str) {
+-        span.record(keys::OPERATION_NAME, operation);
++        self.record_start(span, keys::OPERATION_NAME, operation);
+         let provider_key = if self.semconv.latest {
+             keys::PROVIDER_NAME
+         } else {
+             keys::SYSTEM
+         };
+-        span.record(provider_key, self.semconv.service_name.as_str());
++        self.record_start(span, provider_key, self.semconv.service_name.as_str());
+         span.record(keys::START_TIME, now_iso().as_str());
+     }
+ 
++    /// Records an attribute a span starts with, unless a trace attribute of the same key replaces
++    /// it (TS spreads the trace attributes over the start attributes).
++    fn record_start<V: tracing::Value>(&self, span: &Span, key: &'static str, value: V) {
++        if !self.trace_attributes.iter().any(|(name, _)| name == key) {
++            span.record(key, value);
++        }
++    }
++
++    /// The trace attributes, except the keys the span sets after its start, which replace them in TS.
+     fn record_trace_attributes(&self, span: &Span) {
+         for (key, value) in &self.trace_attributes {
+-            otel_span::set_attribute(span, key, value);
++            if !keys::SET_AFTER_START.contains(&key.as_str()) {
++                otel_span::set_attribute(span, key, value);
++            }
+         }
+     }
+ 
+-- 
+2.39.5
+

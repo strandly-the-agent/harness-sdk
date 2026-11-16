@@ -1,0 +1,207 @@
+From 0d8f4032d701d3338108539dec40964257d0f507 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:07:50 +0000
+Subject: [PATCH 11/16] docs(strands): add doc examples for the telemetry setup
+ and state the subscriber ordering rule (api-7)
+
+---
+ .rust-port/staging/p10fixb/dispositions.md    |  1 +
+ strands-rs/strands/src/agent/config.rs        | 12 ++++
+ .../strands/src/telemetry/config/setup.rs     | 66 +++++++++++++++++++
+ strands-rs/strands/src/telemetry/mod.rs       | 43 ++++++++++++
+ 4 files changed, 122 insertions(+)
+
+diff --git a/.rust-port/staging/p10fixb/dispositions.md b/.rust-port/staging/p10fixb/dispositions.md
+index a21fc6031..29cecd3bd 100644
+--- a/.rust-port/staging/p10fixb/dispositions.md
++++ b/.rust-port/staging/p10fixb/dispositions.md
+@@ -13,3 +13,4 @@
+ | api-8 | Fixed: `DEFAULT_SERVICE_NAME` is a private `const` of `telemetry/config.rs` (its only user) and the `telemetry` re-export is gone (P-724); no behaviour change, so no new test | this commit |
+ | api-4 | Fixed: `telemetry` re-exports `opentelemetry`, `opentelemetry_sdk`, `tracing_opentelemetry` and `tracing_subscriber` under `otel` (P-725); test `tests/api_surface.rs::otel::the_opentelemetry_crates_of_the_api_are_re_exported` (lands with the api-6 commit, which adds the `otel` test module) | this commit |
+ | api-6 | Fixed: the three builders and their state modules are public and re-exported from `telemetry`; `Exporters` derives `bon::Builder` (P-726); test `tests/api_surface.rs::otel::a_helper_can_take_and_return_the_telemetry_config_builders` (does not compile without the fix) | this commit |
++| api-7 | Fixed: the `setup_tracer` rustdoc states the subscriber ordering rule; compile-checked doc examples on `setup_tracer`, `setup_meter`, `tracing_layer`, `get_tracer`, `get_meter` and `AgentConfig::trace_attributes`; the two TS module examples (OTLP setup, own provider) are in the `telemetry` module doc, guarded for builds without `otel`. The `lib.rs` module-table row already names the OpenTelemetry setup at this tip, so it is unchanged. `cargo test --doc` passes for the eight new examples | this commit |
+diff --git a/strands-rs/strands/src/agent/config.rs b/strands-rs/strands/src/agent/config.rs
+index 07fdb21f7..b58fbb2ec 100644
+--- a/strands-rs/strands/src/agent/config.rs
++++ b/strands-rs/strands/src/agent/config.rs
+@@ -301,6 +301,18 @@ pub struct AgentConfig {
+     pub id: Option<String>,
+     /// Attributes merged into every span of the agent (TS `traceAttributes`); exported with the
+     /// `otel` feature.
++    ///
++    /// ```no_run
++    /// use strands::Agent;
++    /// use strands::telemetry::AttributeValue;
++    ///
++    /// # fn run() -> strands::Result<()> {
++    /// let agent = Agent::builder()
++    ///     .trace_attributes([("session.id".to_owned(), AttributeValue::from("abc"))])
++    ///     .build()?;
++    /// # Ok(())
++    /// # }
++    /// ```
+     #[builder(default, with = FromIterator::from_iter)]
+     pub trace_attributes: indexmap::IndexMap<String, crate::telemetry::AttributeValue>,
+     /// OpenTelemetry baggage entries merged into the active baggage for every invocation (TS
+diff --git a/strands-rs/strands/src/telemetry/config/setup.rs b/strands-rs/strands/src/telemetry/config/setup.rs
+index 62c3f23ae..00dc31f43 100644
+--- a/strands-rs/strands/src/telemetry/config/setup.rs
++++ b/strands-rs/strands/src/telemetry/config/setup.rs
+@@ -168,6 +168,26 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
+ /// global subscriber, add [`tracing_layer`] to it instead. Call `shutdown()` on the returned
+ /// provider before the process exits to flush pending spans.
+ ///
++/// A process has one global `tracing` subscriber. An application with its own (for example
++/// `tracing_subscriber::fmt::init()`) installs it first, with [`tracing_layer`] added; installing
++/// one after `setup_tracer` fails.
++///
++/// ```no_run
++/// use strands::telemetry::{Exporters, TracerConfig, setup_tracer};
++/// use strands::{Agent, Error};
++///
++/// # async fn run() -> strands::Result<()> {
++/// let exporters = Exporters::builder().console(true).build();
++/// let provider = setup_tracer(TracerConfig::builder().exporters(exporters).build())?;
++///
++/// let mut agent = Agent::builder().build()?;
++/// agent.invoke("Hello").await?; // the agent's spans are printed
++///
++/// provider.shutdown().map_err(Error::other)?;
++/// # Ok(())
++/// # }
++/// ```
++///
+ /// # Errors
+ ///
+ /// The OTLP exporter can't be built.
+@@ -194,6 +214,19 @@ pub fn setup_tracer(config: TracerConfig) -> Result<SdkTracerProvider> {
+ /// The layer adds none of its own attributes (source location, thread, target, busy and idle
+ /// time). It exports every span and event the subscriber lets through; filter it
+ /// (`tracing_subscriber::Layer::with_filter`) to export less.
++///
++/// ```no_run
++/// use strands::telemetry::opentelemetry::global;
++/// use strands::telemetry::opentelemetry_sdk::trace::SdkTracerProvider;
++/// use strands::telemetry::tracing_subscriber::layer::SubscriberExt as _;
++/// use strands::telemetry::tracing_subscriber::util::SubscriberInitExt as _;
++/// use strands::telemetry::{tracing_layer, tracing_subscriber};
++///
++/// // A provider the application owns, and its own subscriber with the agent's spans added.
++/// let provider = SdkTracerProvider::builder().build();
++/// global::set_tracer_provider(provider.clone());
++/// tracing_subscriber::registry().with(tracing_layer(&provider)).init();
++/// ```
+ pub fn tracing_layer<S>(provider: &SdkTracerProvider) -> OpenTelemetryLayer<S, SdkTracer>
+ where
+     S: Subscriber + for<'span> LookupSpan<'span>,
+@@ -217,6 +250,16 @@ pub(super) fn subscriber(provider: &SdkTracerProvider) -> impl Subscriber + Send
+ /// A tracer of the global tracer provider, named after the service (TS `getTracer`), for custom
+ /// spans. Its spans are recorded once a provider is registered ([`setup_tracer`] or the
+ /// application's own).
++///
++/// ```no_run
++/// use strands::telemetry::get_tracer;
++/// use strands::telemetry::opentelemetry::KeyValue;
++/// use strands::telemetry::opentelemetry::trace::{Span as _, Tracer as _};
++///
++/// let mut span = get_tracer().start("my-custom-operation");
++/// span.set_attribute(KeyValue::new("custom.key", "value"));
++/// span.end();
++/// ```
+ pub fn get_tracer() -> global::BoxedTracer {
+     global::tracer(service_name(&process_env))
+ }
+@@ -224,6 +267,13 @@ pub fn get_tracer() -> global::BoxedTracer {
+ /// A meter of the global meter provider, named after the service (TS `getMeter`), for custom
+ /// instruments. They record once a provider is registered ([`setup_meter`] or the application's
+ /// own).
++///
++/// ```no_run
++/// use strands::telemetry::get_meter;
++///
++/// let counter = get_meter().u64_counter("my.custom.counter").build();
++/// counter.add(1, &[]);
++/// ```
+ pub fn get_meter() -> opentelemetry::metrics::Meter {
+     global::meter_with_scope(InstrumentationScope::builder(service_name(&process_env)).build())
+ }
+@@ -281,6 +331,22 @@ pub(super) fn setup_tracer_in(
+ ///
+ /// Call `shutdown()` on the returned provider before the process exits to flush pending metrics.
+ ///
++/// ```no_run
++/// use strands::telemetry::{Exporters, MeterConfig, setup_meter};
++/// use strands::{Agent, Error};
++///
++/// # async fn run() -> strands::Result<()> {
++/// let exporters = Exporters::builder().otlp(true).build();
++/// let provider = setup_meter(MeterConfig::builder().exporters(exporters).build())?;
++///
++/// let mut agent = Agent::builder().build()?; // records to the provider's instruments
++/// agent.invoke("Hello").await?;
++///
++/// provider.shutdown().map_err(Error::other)?;
++/// # Ok(())
++/// # }
++/// ```
++///
+ /// # Errors
+ ///
+ /// The OTLP exporter can't be built.
+diff --git a/strands-rs/strands/src/telemetry/mod.rs b/strands-rs/strands/src/telemetry/mod.rs
+index 446e4dc32..7605fe089 100644
+--- a/strands-rs/strands/src/telemetry/mod.rs
++++ b/strands-rs/strands/src/telemetry/mod.rs
+@@ -1,6 +1,49 @@
+ //! Telemetry (TS `src/telemetry/`): the local metrics and traces every [`AgentResult`] carries,
+ //! and with the `otel` feature the OpenTelemetry setup functions.
+ //!
++//! With `otel`, `setup_tracer` and `setup_meter` register the providers, and the agents built
++//! afterwards export their spans and metrics:
++//!
++//! ```no_run
++//! # #[cfg(feature = "otel")]
++//! # async fn run() -> strands::Result<()> {
++//! use strands::telemetry::{Exporters, MeterConfig, TracerConfig, setup_meter, setup_tracer};
++//! use strands::{Agent, Error};
++//!
++//! let exporters = Exporters::builder().otlp(true).build();
++//! let tracer_provider = setup_tracer(TracerConfig::builder().exporters(exporters).build())?;
++//! let meter_provider = setup_meter(MeterConfig::builder().exporters(exporters).build())?;
++//!
++//! let mut agent = Agent::builder().build()?;
++//! agent.invoke("Hello").await?;
++//!
++//! // Flush what is pending before the process exits.
++//! tracer_provider.shutdown().map_err(Error::other)?;
++//! meter_provider.shutdown().map_err(Error::other)?;
++//! # Ok(())
++//! # }
++//! ```
++//!
++//! An application with its own OpenTelemetry provider registers it and adds `tracing_layer` to
++//! its `tracing` subscriber; the agent's metrics go to the global meter provider:
++//!
++//! ```no_run
++//! # #[cfg(feature = "otel")]
++//! # fn run() {
++//! use strands::telemetry::opentelemetry::global;
++//! use strands::telemetry::opentelemetry_sdk::trace::SdkTracerProvider;
++//! use strands::telemetry::tracing_subscriber::layer::SubscriberExt as _;
++//! use strands::telemetry::tracing_subscriber::util::SubscriberInitExt as _;
++//! use strands::telemetry::{tracing_layer, tracing_subscriber};
++//!
++//! let provider = SdkTracerProvider::builder().build();
++//! global::set_tracer_provider(provider.clone());
++//! tracing_subscriber::registry().with(tracing_layer(&provider)).init();
++//! # }
++//! ```
++//!
++//! The crate logs through `tracing` as well; install any subscriber to see its warnings.
++//!
+ //! [`AgentResult`]: crate::AgentResult
+ 
+ mod config;
+-- 
+2.39.5
+

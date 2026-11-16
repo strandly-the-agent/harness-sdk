@@ -1,0 +1,150 @@
+From 6a41dcb3f68b8ae27aabc268b7dd0e9906dbea52 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:05:23 +0000
+Subject: [PATCH 10/16] fix(strands): re-export the telemetry config builders
+ and give Exporters a builder (api-6)
+
+---
+ .rust-port/staging/p10fixb/decisions.md       |  2 +
+ .rust-port/staging/p10fixb/dispositions.md    |  1 +
+ .../strands/src/telemetry/config/setup.rs     |  7 ++-
+ strands-rs/strands/src/telemetry/mod.rs       |  5 +-
+ strands-rs/strands/tests/api_surface.rs       | 54 +++++++++++++++++++
+ 5 files changed, 66 insertions(+), 3 deletions(-)
+
+diff --git a/.rust-port/staging/p10fixb/decisions.md b/.rust-port/staging/p10fixb/decisions.md
+index dbcf40292..4b4616b10 100644
+--- a/.rust-port/staging/p10fixb/decisions.md
++++ b/.rust-port/staging/p10fixb/decisions.md
+@@ -9,3 +9,5 @@
+ **P-724. `DEFAULT_SERVICE_NAME` is private.** TS keeps it a module-private `const` (`telemetry/utils.ts:5`); nothing outside `telemetry/config.rs` used the Rust constant, so it is a private `const` there and `telemetry` no longer re-exports it. This amends P-482. Review finding api-8.
+ 
+ **P-725. `telemetry` re-exports the OpenTelemetry crates of its API.** Under `otel`: `pub use {opentelemetry, opentelemetry_sdk, tracing_opentelemetry, tracing_subscriber}`. `TracerConfig::provider`, the return types of `setup_tracer`, `setup_meter`, `get_tracer`, `get_meter` and `tracing_layer` and the `SpanProcessor` trait `BaggageSpanProcessor` implements come from these 0.x crates, so an application names them through `strands::telemetry::..` and always gets the versions `strands` resolved, as `mcp` and the provider modules do for theirs. Review finding api-4.
++
++**P-726. The telemetry config builders are nameable, and `Exporters` has one.** `telemetry` re-exports `TracerConfigBuilder`, `MeterConfigBuilder`, `ExportersBuilder` and their state modules `tracer_config_builder`, `meter_config_builder`, `exporters_builder` (`state_mod(vis = "pub")`), so a downstream helper can take and return a builder, as with `AgentBuilder`/`agent_builder`. `Exporters` derives `bon::Builder` with `#[builder(default)]` fields (decision #65: public fields, `Default` and a builder): `Exporters::builder().otlp(true).build()`. Review finding api-6.
+diff --git a/.rust-port/staging/p10fixb/dispositions.md b/.rust-port/staging/p10fixb/dispositions.md
+index b0df4108c..a21fc6031 100644
+--- a/.rust-port/staging/p10fixb/dispositions.md
++++ b/.rust-port/staging/p10fixb/dispositions.md
+@@ -12,3 +12,4 @@
+ | api-5 | Fixed: both setters are `#[builder(default, with = FromIterator::from_iter)]` (P-723); callers in `telemetry/tests.rs` and `tests/live_telemetry.rs` updated; test `tests/api_surface.rs::trace_and_baggage_attributes_take_plain_pairs` (does not compile without the fix) | this commit |
+ | api-8 | Fixed: `DEFAULT_SERVICE_NAME` is a private `const` of `telemetry/config.rs` (its only user) and the `telemetry` re-export is gone (P-724); no behaviour change, so no new test | this commit |
+ | api-4 | Fixed: `telemetry` re-exports `opentelemetry`, `opentelemetry_sdk`, `tracing_opentelemetry` and `tracing_subscriber` under `otel` (P-725); test `tests/api_surface.rs::otel::the_opentelemetry_crates_of_the_api_are_re_exported` (lands with the api-6 commit, which adds the `otel` test module) | this commit |
++| api-6 | Fixed: the three builders and their state modules are public and re-exported from `telemetry`; `Exporters` derives `bon::Builder` (P-726); test `tests/api_surface.rs::otel::a_helper_can_take_and_return_the_telemetry_config_builders` (does not compile without the fix) | this commit |
+diff --git a/strands-rs/strands/src/telemetry/config/setup.rs b/strands-rs/strands/src/telemetry/config/setup.rs
+index ec4beb1dd..62c3f23ae 100644
+--- a/strands-rs/strands/src/telemetry/config/setup.rs
++++ b/strands-rs/strands/src/telemetry/config/setup.rs
+@@ -36,11 +36,14 @@ use crate::error::{Error, Result};
+     clippy::exhaustive_structs,
+     reason = "config struct: struct-literal construction"
+ )]
+-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
++#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
++#[builder(state_mod(vis = "pub"))]
+ pub struct Exporters {
+     /// Export over OTLP HTTP.
++    #[builder(default)]
+     pub otlp: bool,
+     /// Print to standard output.
++    #[builder(default)]
+     pub console: bool,
+ }
+ 
+@@ -120,6 +123,7 @@ impl SpanProcessor for BaggageSpanProcessor {
+     reason = "config struct: struct-literal construction"
+ )]
+ #[derive(Debug, Clone, Default, bon::Builder)]
++#[builder(state_mod(vis = "pub"))]
+ pub struct TracerConfig {
+     /// A provider the caller built; the exporters and the baggage processor are then ignored.
+     pub provider: Option<SdkTracerProvider>,
+@@ -136,6 +140,7 @@ pub struct TracerConfig {
+     reason = "config struct: struct-literal construction"
+ )]
+ #[derive(Debug, Clone, Default, bon::Builder)]
++#[builder(state_mod(vis = "pub"))]
+ pub struct MeterConfig {
+     /// A provider the caller built; the exporters are then ignored.
+     pub provider: Option<SdkMeterProvider>,
+diff --git a/strands-rs/strands/src/telemetry/mod.rs b/strands-rs/strands/src/telemetry/mod.rs
+index d936a31ed..446e4dc32 100644
+--- a/strands-rs/strands/src/telemetry/mod.rs
++++ b/strands-rs/strands/src/telemetry/mod.rs
+@@ -14,8 +14,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+ pub(crate) use config::setup::with_baggage;
+ #[cfg(feature = "otel")]
+ pub use config::setup::{
+-    BaggageKeyPredicate, BaggageKeys, BaggageSpanProcessor, Exporters, MeterConfig, TracerConfig,
+-    get_meter, get_tracer, setup_meter, setup_tracer, tracing_layer,
++    BaggageKeyPredicate, BaggageKeys, BaggageSpanProcessor, Exporters, ExportersBuilder, MeterConfig,
++    MeterConfigBuilder, TracerConfig, TracerConfigBuilder, exporters_builder, get_meter, get_tracer,
++    meter_config_builder, setup_meter, setup_tracer, tracer_config_builder, tracing_layer,
+ };
+ #[cfg(feature = "otel")]
+ pub use opentelemetry;
+diff --git a/strands-rs/strands/tests/api_surface.rs b/strands-rs/strands/tests/api_surface.rs
+index 313c924e5..704a460bb 100644
+--- a/strands-rs/strands/tests/api_surface.rs
++++ b/strands-rs/strands/tests/api_surface.rs
+@@ -214,3 +214,57 @@ fn trace_and_baggage_attributes_take_plain_pairs() {
+         .build();
+     assert!(agent.is_ok());
+ }
++
++#[cfg(feature = "otel")]
++mod otel {
++    use strands::telemetry::{
++        Exporters, MeterConfig, MeterConfigBuilder, TracerConfig, TracerConfigBuilder, get_tracer,
++        meter_config_builder, opentelemetry, opentelemetry_sdk, tracer_config_builder, tracing_layer,
++        tracing_opentelemetry, tracing_subscriber,
++    };
++
++    fn traces_to_console<S: tracer_config_builder::State>(
++        builder: TracerConfigBuilder<S>,
++    ) -> TracerConfigBuilder<tracer_config_builder::SetExporters<S>>
++    where
++        S::Exporters: tracer_config_builder::IsUnset,
++    {
++        builder.exporters(Exporters::builder().console(true).build())
++    }
++
++    fn metrics_to_console<S: meter_config_builder::State>(
++        builder: MeterConfigBuilder<S>,
++    ) -> MeterConfigBuilder<meter_config_builder::SetExporters<S>>
++    where
++        S::Exporters: meter_config_builder::IsUnset,
++    {
++        builder.exporters(Exporters::builder().console(true).build())
++    }
++
++    #[test]
++    fn a_helper_can_take_and_return_the_telemetry_config_builders() {
++        let console = Exporters {
++            otlp: false,
++            console: true,
++        };
++        assert_eq!(
++            traces_to_console(TracerConfig::builder()).build().exporters,
++            console
++        );
++        assert_eq!(
++            metrics_to_console(MeterConfig::builder()).build().exporters,
++            console
++        );
++    }
++
++    #[test]
++    fn the_opentelemetry_crates_of_the_api_are_re_exported() {
++        use tracing_subscriber::layer::SubscriberExt as _;
++
++        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
++        let layer: tracing_opentelemetry::OpenTelemetryLayer<_, opentelemetry_sdk::trace::SdkTracer> =
++            tracing_layer(&provider);
++        let _subscriber = tracing_subscriber::registry().with(layer);
++        let _tracer: opentelemetry::global::BoxedTracer = get_tracer();
++    }
++}
+-- 
+2.39.5
+

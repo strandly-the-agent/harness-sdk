@@ -1,0 +1,102 @@
+From b70d438d2b49b694e564ed237428e6d3f4ada6b7 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:05:23 +0000
+Subject: [PATCH 08/16] fix(strands): make DEFAULT_SERVICE_NAME private (api-8)
+
+---
+ .rust-port/staging/p10fixb/decisions.md    |  2 ++
+ .rust-port/staging/p10fixb/dispositions.md |  1 +
+ strands-rs/strands/src/telemetry/config.rs | 24 +++++++++++++++-------
+ strands-rs/strands/src/telemetry/mod.rs    |  1 -
+ 4 files changed, 20 insertions(+), 8 deletions(-)
+
+diff --git a/.rust-port/staging/p10fixb/decisions.md b/.rust-port/staging/p10fixb/decisions.md
+index f397a0d65..6e4230b1d 100644
+--- a/.rust-port/staging/p10fixb/decisions.md
++++ b/.rust-port/staging/p10fixb/decisions.md
+@@ -5,3 +5,5 @@
+ **P-722. `setup_tracer` with a custom provider leaves the global propagator alone.** TS returns right after `trace.setGlobalTracerProvider(customProvider)` (`telemetry/config.ts:191-199`) and documents that the caller owns the propagator setup; Rust now sets the W3C trace-context and baggage propagators only for a provider it builds. The global tracer provider and the `tracing` subscriber are still registered in both branches (the subscriber is what carries the agent's spans to the provider; it has no TS counterpart). This amends P-488. Files: `strands-rs/strands/src/telemetry/config/setup.rs`. Review finding api-3.
+ 
+ **P-723. `AgentBuilder::trace_attributes` and `baggage_attributes` take any iterator of pairs.** Both fields stay `indexmap::IndexMap` (insertion order is the export order), and the builder setters are `#[builder(default, with = FromIterator::from_iter)]`, so `.trace_attributes([("session.id".to_owned(), AttributeValue::from("abc"))])` compiles without an `indexmap` dependency and a map is still accepted. Callers that passed `[..].into()` or `.into_iter().collect()` pass the array. Files: `strands-rs/strands/src/agent/config.rs`. Review finding api-5.
++
++**P-724. `DEFAULT_SERVICE_NAME` is private.** TS keeps it a module-private `const` (`telemetry/utils.ts:5`); nothing outside `telemetry/config.rs` used the Rust constant, so it is a private `const` there and `telemetry` no longer re-exports it. This amends P-482. Review finding api-8.
+diff --git a/.rust-port/staging/p10fixb/dispositions.md b/.rust-port/staging/p10fixb/dispositions.md
+index 0549a7253..182ac8249 100644
+--- a/.rust-port/staging/p10fixb/dispositions.md
++++ b/.rust-port/staging/p10fixb/dispositions.md
+@@ -10,3 +10,4 @@
+ | api-3 | Fixed: the global propagator is set only when `setup_tracer` builds the provider (the registration seam gets a `built` flag), rustdoc says so (P-722); test `registers_the_global_propagator_only_for_a_provider_it_builds` (the seam's flag; the process-global propagator itself is not touched by unit tests) | this commit |
+ | api-10 | Fixed: `tracing-opentelemetry = { version = "0.34", default-features = false }`; `tracing-log` leaves `Cargo.lock`; `cargo check -p strands --all-features --tests` and the telemetry tests pass | this commit |
+ | api-5 | Fixed: both setters are `#[builder(default, with = FromIterator::from_iter)]` (P-723); callers in `telemetry/tests.rs` and `tests/live_telemetry.rs` updated; test `tests/api_surface.rs::trace_and_baggage_attributes_take_plain_pairs` (does not compile without the fix) | this commit |
++| api-8 | Fixed: `DEFAULT_SERVICE_NAME` is a private `const` of `telemetry/config.rs` (its only user) and the `telemetry` re-export is gone (P-724); no behaviour change, so no new test | this commit |
+diff --git a/strands-rs/strands/src/telemetry/config.rs b/strands-rs/strands/src/telemetry/config.rs
+index 1edd10520..136ec25e7 100644
+--- a/strands-rs/strands/src/telemetry/config.rs
++++ b/strands-rs/strands/src/telemetry/config.rs
+@@ -12,7 +12,7 @@ pub(crate) fn process_env(name: &str) -> Option<String> {
+ }
+ 
+ /// The service name when `OTEL_SERVICE_NAME` is unset; also the tracer and meter scope name.
+-pub const DEFAULT_SERVICE_NAME: &str = "strands-agents";
++const DEFAULT_SERVICE_NAME: &str = "strands-agents";
+ 
+ fn non_empty(env: EnvLookup<'_>, name: &str) -> Option<String> {
+     env(name).filter(|value| !value.is_empty())
+@@ -89,10 +89,11 @@ pub(crate) fn resource_attributes(env: EnvLookup<'_>) -> Vec<(String, String)> {
+         ("telemetry.sdk.name".to_owned(), "opentelemetry".to_owned()),
+         ("telemetry.sdk.language".to_owned(), "rust".to_owned()),
+     ];
+-    let mut set = |key: String, value: String| match attributes.iter_mut().find(|(existing, _)| *existing == key) {
+-        Some(existing) => existing.1 = value,
+-        None => attributes.push((key, value)),
+-    };
++    let mut set =
++        |key: String, value: String| match attributes.iter_mut().find(|(existing, _)| *existing == key) {
++            Some(existing) => existing.1 = value,
++            None => attributes.push((key, value)),
++        };
+     let detected = env("OTEL_RESOURCE_ATTRIBUTES").unwrap_or_default();
+     for (key, value) in detected_attributes(&detected).unwrap_or_default() {
+         set(key, value);
+@@ -213,7 +214,10 @@ mod tests {
+ 
+     #[test]
+     fn resource_attributes_are_percent_decoded() {
+-        let env = env_of(&[("OTEL_RESOURCE_ATTRIBUTES", "te%61m=a%20b%2Cc%3Dd, caf%C3%A9 = 1 ,,")]);
++        let env = env_of(&[(
++            "OTEL_RESOURCE_ATTRIBUTES",
++            "te%61m=a%20b%2Cc%3Dd, caf%C3%A9 = 1 ,,",
++        )]);
+         let attributes = resource_attributes(&env);
+         let get = |key: &str| attributes.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+         assert_eq!(get("team"), Some("a b,c=d"));
+@@ -237,7 +241,13 @@ mod tests {
+             let keys: Vec<&str> = attributes.iter().map(|(key, _)| key.as_str()).collect();
+             assert_eq!(
+                 keys,
+-                ["service.name", "service.namespace", "deployment.environment", "telemetry.sdk.name", "telemetry.sdk.language"],
++                [
++                    "service.name",
++                    "service.namespace",
++                    "deployment.environment",
++                    "telemetry.sdk.name",
++                    "telemetry.sdk.language"
++                ],
+                 "{raw}"
+             );
+         }
+diff --git a/strands-rs/strands/src/telemetry/mod.rs b/strands-rs/strands/src/telemetry/mod.rs
+index cd1ef1557..7ace0d2d6 100644
+--- a/strands-rs/strands/src/telemetry/mod.rs
++++ b/strands-rs/strands/src/telemetry/mod.rs
+@@ -10,7 +10,6 @@ pub mod tracer;
+ 
+ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+ 
+-pub use config::DEFAULT_SERVICE_NAME;
+ #[cfg(feature = "otel")]
+ pub(crate) use config::setup::with_baggage;
+ #[cfg(feature = "otel")]
+-- 
+2.39.5
+

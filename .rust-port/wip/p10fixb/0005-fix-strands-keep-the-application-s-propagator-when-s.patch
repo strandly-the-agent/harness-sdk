@@ -1,0 +1,141 @@
+From 130d96bd158cea2b6d2e494f15a2771344ad7bfc Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 10:59:25 +0000
+Subject: [PATCH 05/16] fix(strands): keep the application's propagator when
+ setup_tracer gets a custom provider (api-3)
+
+---
+ .rust-port/staging/p10fixb/decisions.md       |  2 ++
+ .rust-port/staging/p10fixb/dispositions.md    |  1 +
+ .../strands/src/telemetry/config/setup.rs     | 20 ++++++++++-------
+ .../src/telemetry/config/setup/tests.rs       | 22 +++++++++++++++++--
+ 4 files changed, 35 insertions(+), 10 deletions(-)
+
+diff --git a/.rust-port/staging/p10fixb/decisions.md b/.rust-port/staging/p10fixb/decisions.md
+index 2acbe7dc6..2d195ce7f 100644
+--- a/.rust-port/staging/p10fixb/decisions.md
++++ b/.rust-port/staging/p10fixb/decisions.md
+@@ -1,3 +1,5 @@
+ **P-720. `telemetry::get_tracer` and `telemetry::get_meter` (TS `getTracer`, `getMeter`).** Under `otel`, `get_tracer() -> opentelemetry::global::BoxedTracer` is `global::tracer(service_name)` and `get_meter() -> opentelemetry::metrics::Meter` is the global provider's meter scoped to the service name, the same scope the agent's own instruments use. Both are no-ops until a provider is registered, as in TS. A span started from `get_tracer()` inside an agent's `tracing` span parents under it once `setup_tracer` (or the application's own `tracing_layer`) is installed (the API review's `get_tracer_feasible.rs`). Files: `strands-rs/strands/src/telemetry/config/setup.rs`, `telemetry/mod.rs`. Review finding api-1.
+ 
+ **P-721. What the `setup_tracer` subscriber exports.** `tracing_layer` turns off the layer's own attributes (`with_location(false)`, `with_threads(false)`, `with_tracked_inactivity(false)`, `with_target(false)`), so an agent span carries only the attributes TS sets, on both the `setup_tracer` path and an application's own subscriber. The subscriber `setup_tracer` installs adds a per-layer filter, `metadata.is_span() && level <= INFO`: the agent's spans are `info_span!`, the `debug`/`trace` spans of dependencies (HTTP and AWS clients) are not exported, and `tracing` log lines don't become span events or set a span's error status, as TS `logger` calls never do. The SDK's own span events are unaffected (they go through `OpenTelemetrySpanExt::add_event`). An application that wants more builds its own subscriber with `tracing_layer`, which carries no filter. Files: `strands-rs/strands/src/telemetry/config/setup.rs`. Review finding api-2.
++
++**P-722. `setup_tracer` with a custom provider leaves the global propagator alone.** TS returns right after `trace.setGlobalTracerProvider(customProvider)` (`telemetry/config.ts:191-199`) and documents that the caller owns the propagator setup; Rust now sets the W3C trace-context and baggage propagators only for a provider it builds. The global tracer provider and the `tracing` subscriber are still registered in both branches (the subscriber is what carries the agent's spans to the provider; it has no TS counterpart). This amends P-488. Files: `strands-rs/strands/src/telemetry/config/setup.rs`. Review finding api-3.
+diff --git a/.rust-port/staging/p10fixb/dispositions.md b/.rust-port/staging/p10fixb/dispositions.md
+index 36791bbff..b487f0183 100644
+--- a/.rust-port/staging/p10fixb/dispositions.md
++++ b/.rust-port/staging/p10fixb/dispositions.md
+@@ -7,3 +7,4 @@
+ | parity-12 | Fixed with api-1 (`get_tracer`, `get_meter`, P-720); the names follow the TS exports rather than the `tracer()`/`meter()` the finding suggests | same commit as api-1 |
+ | parity-8 | Fixed: `resource_attributes` reads `OTEL_RESOURCE_ATTRIBUTES` as the `@opentelemetry/resources` `envDetector` does: percent-decoded keys and values, the whole variable ignored when an entry is not exactly `key=value`, has an empty key, doesn't decode or is over 255 UTF-16 units, and a non-blank `OTEL_SERVICE_NAME` re-applied after the pairs. Expectations checked against the real detector under node. Tests `otel_service_name_wins_over_a_service_name_resource_attribute`, `resource_attributes_are_percent_decoded`, `a_malformed_resource_attributes_variable_is_ignored_as_a_whole` | this commit |
+ | api-2 | Fixed: `tracing_layer` turns off the layer's location, thread, inactivity and target attributes; the subscriber `setup_tracer` installs filters the layer to spans at `INFO` and above (span-only, so log lines don't become span events either) (P-721); staged `DIVERGENCES.md` replacement row; test `exports_info_spans_without_layer_attributes_debug_spans_or_log_lines` | this commit |
++| api-3 | Fixed: the global propagator is set only when `setup_tracer` builds the provider (the registration seam gets a `built` flag), rustdoc says so (P-722); test `registers_the_global_propagator_only_for_a_provider_it_builds` (the seam's flag; the process-global propagator itself is not touched by unit tests) | this commit |
+diff --git a/strands-rs/strands/src/telemetry/config/setup.rs b/strands-rs/strands/src/telemetry/config/setup.rs
+index c472d3f05..ec4beb1dd 100644
+--- a/strands-rs/strands/src/telemetry/config/setup.rs
++++ b/strands-rs/strands/src/telemetry/config/setup.rs
+@@ -156,7 +156,8 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
+ /// The provider carries the resource attributes of the environment (`OTEL_SERVICE_NAME`,
+ /// `OTEL_SERVICE_NAMESPACE`, `OTEL_DEPLOYMENT_ENVIRONMENT`, `OTEL_RESOURCE_ATTRIBUTES`). It
+ /// becomes the global OpenTelemetry tracer provider, the W3C trace-context and baggage
+-/// propagators become the global propagator, and a `tracing` subscriber with
++/// propagators become the global propagator (not with a custom [`TracerConfig::provider`]: its
++/// owner sets up propagation, as in TS), and a `tracing` subscriber with
+ /// [`tracing_layer`] becomes the global default; it exports spans at `INFO` and above (the
+ /// agent's and the application's own) and no log lines. Where the application already has a
+ /// global subscriber, add [`tracing_layer`] to it instead. Call `shutdown()` on the returned
+@@ -166,12 +167,14 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
+ ///
+ /// The OTLP exporter can't be built.
+ pub fn setup_tracer(config: TracerConfig) -> Result<SdkTracerProvider> {
+-    setup_tracer_in(&TRACER_PROVIDER, config, &process_env, |provider| {
++    setup_tracer_in(&TRACER_PROVIDER, config, &process_env, |provider, built| {
+         global::set_tracer_provider(provider.clone());
+-        global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
+-            Box::new(TraceContextPropagator::new()),
+-            Box::new(BaggagePropagator::new()),
+-        ]));
++        if built {
++            global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
++                Box::new(TraceContextPropagator::new()),
++                Box::new(BaggagePropagator::new()),
++            ]));
++        }
+         if tracing::subscriber::set_global_default(subscriber(provider)).is_err() {
+             tracing::warn!(
+                 "a global tracing subscriber is already set | add telemetry::tracing_layer to it to export agent spans"
+@@ -224,13 +227,14 @@ pub(super) fn setup_tracer_in(
+     slot: &Slot<SdkTracerProvider>,
+     config: TracerConfig,
+     env: EnvLookup<'_>,
+-    register: impl FnOnce(&SdkTracerProvider),
++    register: impl FnOnce(&SdkTracerProvider, bool),
+ ) -> Result<SdkTracerProvider> {
+     let mut slot = slot.lock().unwrap_or_else(PoisonError::into_inner);
+     if let Some(provider) = slot.as_ref() {
+         tracing::warn!("tracer provider already initialized, returning existing provider");
+         return Ok(provider.clone());
+     }
++    let built = config.provider.is_none();
+     let provider = match config.provider {
+         Some(provider) => {
+             if config.baggage_processor.is_some() {
+@@ -262,7 +266,7 @@ pub(super) fn setup_tracer_in(
+             builder.build()
+         }
+     };
+-    register(&provider);
++    register(&provider, built);
+     *slot = Some(provider.clone());
+     Ok(provider)
+ }
+diff --git a/strands-rs/strands/src/telemetry/config/setup/tests.rs b/strands-rs/strands/src/telemetry/config/setup/tests.rs
+index a8fe45da8..2c2a0c353 100644
+--- a/strands-rs/strands/src/telemetry/config/setup/tests.rs
++++ b/strands-rs/strands/src/telemetry/config/setup/tests.rs
+@@ -41,7 +41,7 @@ fn env_of(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Op
+ }
+ 
+ fn setup_tracer(slot: &Slot<SdkTracerProvider>, config: TracerConfig) -> SdkTracerProvider {
+-    setup_tracer_in(slot, config, &no_env, |_| {}).expect("a tracer provider")
++    setup_tracer_in(slot, config, &no_env, |_, _| {}).expect("a tracer provider")
+ }
+ 
+ fn setup_meter(slot: &Slot<SdkMeterProvider>, config: MeterConfig) -> SdkMeterProvider {
+@@ -186,6 +186,24 @@ mod setup_tracer {
+         assert_eq!(recorder.names(), ["custom"]);
+     }
+ 
++    // No TS case: TS returns right after `trace.setGlobalTracerProvider(customProvider)`
++    // (`telemetry/config.ts:191-199`), so only a provider the SDK builds brings the propagators.
++    #[test]
++    fn registers_the_global_propagator_only_for_a_provider_it_builds() {
++        let registered_as_built = |config: TracerConfig| {
++            let mut seen = None;
++            setup_tracer_in(&Slot::default(), config, &no_env, |_, built| seen = Some(built))
++                .expect("a tracer provider");
++            seen
++        };
++        let custom = TracerConfig {
++            provider: Some(SdkTracerProvider::builder().build()),
++            ..TracerConfig::default()
++        };
++        assert_eq!(registered_as_built(custom), Some(false));
++        assert_eq!(registered_as_built(TracerConfig::default()), Some(true));
++    }
++
+     /// The processors of the provider `exporters` builds, by their debug names.
+     fn processors(exporters: Exporters) -> (bool, bool) {
+         let config = TracerConfig {
+@@ -332,7 +350,7 @@ mod setup_tracer {
+             },
+             ..TracerConfig::default()
+         };
+-        let provider = setup_tracer_in(&Slot::default(), config, &env, |_| {}).expect("a tracer provider");
++        let provider = setup_tracer_in(&Slot::default(), config, &env, |_, _| {}).expect("a tracer provider");
+         emit_span(&provider, "probe");
+         let _ = provider.force_flush();
+ 
+-- 
+2.39.5
+

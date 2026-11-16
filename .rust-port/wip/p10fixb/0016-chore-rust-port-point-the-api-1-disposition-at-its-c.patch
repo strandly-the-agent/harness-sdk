@@ -1,0 +1,26 @@
+From 9f34926766e6a365413d7186ea24d9d1b0d5af43 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:18:03 +0000
+Subject: [PATCH 16/16] chore(rust-port): point the api-1 disposition at its
+ commit
+
+---
+ .rust-port/staging/p10fixb/dispositions.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/.rust-port/staging/p10fixb/dispositions.md b/.rust-port/staging/p10fixb/dispositions.md
+index 92aee9d39..db9455e0f 100644
+--- a/.rust-port/staging/p10fixb/dispositions.md
++++ b/.rust-port/staging/p10fixb/dispositions.md
+@@ -2,7 +2,7 @@
+ 
+ | Finding | Disposition | Commit |
+ |---|---|---|
+-| api-1 | Fixed: `telemetry::get_tracer()` and `telemetry::get_meter()` added under `otel` and re-exported (P-720); tests `get_tracer_returns_a_tracer_of_the_global_provider`, `get_meter_returns_a_meter_of_the_global_provider`. The stale "being built by another track" notes in `PARITY.md:290` and `reviews/live.md:54` are handled under api-9 | this commit |
++| api-1 | Fixed: `telemetry::get_tracer()` and `telemetry::get_meter()` added under `otel` and re-exported (P-720); tests `get_tracer_returns_a_tracer_of_the_global_provider`, `get_meter_returns_a_meter_of_the_global_provider`. The stale "being built by another track" notes in `PARITY.md:290` and `reviews/live.md:54` are handled under api-9 | `68f86deb6` |
+ | parity-10 (the `telemetry/config*` part) | Fixed: `test-title-map.json` gains the `config.test.node.ts` key (gaps for `:37` and `:268`, `:252` declared as `stamps_baggage_selected_by_true_onto_spans`); the checker prints `ok` for both `telemetry/__tests__/config*` rows (`15/1/2/0`, `6/0/0/0`). The `json`, `local-trace`, `meter`, `tracer.node` and `memory-tracing` entries belong to p10fixa's files | this commit |
+ | parity-12 | Fixed with api-1 (`get_tracer`, `get_meter`, P-720); the names follow the TS exports rather than the `tracer()`/`meter()` the finding suggests | same commit as api-1 |
+ | parity-8 | Fixed: `resource_attributes` reads `OTEL_RESOURCE_ATTRIBUTES` as the `@opentelemetry/resources` `envDetector` does: percent-decoded keys and values, the whole variable ignored when an entry is not exactly `key=value`, has an empty key, doesn't decode or is over 255 UTF-16 units, and a non-blank `OTEL_SERVICE_NAME` re-applied after the pairs. Expectations checked against the real detector under node. Tests `otel_service_name_wins_over_a_service_name_resource_attribute`, `resource_attributes_are_percent_decoded`, `a_malformed_resource_attributes_variable_is_ignored_as_a_whole` | this commit |
+-- 
+2.39.5
+
