@@ -92,6 +92,10 @@ name = "hooks"
 name = "structured_output"
 required-features = ["bedrock"]
 
+[[example]]
+name = "mcp"
+required-features = ["mcp", "bedrock"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
