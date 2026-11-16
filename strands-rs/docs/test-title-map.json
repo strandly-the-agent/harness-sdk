@@ -28,6 +28,65 @@
       "gap": "TS-only: `normalizeError` wraps non-`Error` throwables, which Rust doesn't have"
     }
   },
+  "strands-ts/src/__tests__/state-store.test.ts": {
+    "throws error for function in initial state": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error for symbol in initial state": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error for undefined in initial state": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error for nested function in initial state": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error for function in array in initial state": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error when key is null or undefined": {
+      "gap": "JS runtime case Rust types rule out (a key is always a string)"
+    },
+    "throws error for symbol in value": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error for nested function in value": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error for function in array": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error for top-level symbol values": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "throws error for top-level undefined values": {
+      "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"
+    },
+    "supports typed usage with generic state interface": {
+      "gap": "TS type-level only"
+    },
+    "can be accessed via serializeStateSerializable helper": {
+      "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
+    },
+    "can be accessed via loadStateSerializable helper": {
+      "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
+    },
+    "returns true for StateStore instances": {
+      "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
+    },
+    "returns false for plain objects": {
+      "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
+    },
+    "returns false for null": {
+      "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
+    },
+    "returns false for objects with only one symbol method": {
+      "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
+    },
+    "returns true for objects implementing both symbol methods": {
+      "gap": "TS-only mechanism (serializable-symbol helpers and `isStateSerializable`)"
+    }
+  },
   "strands-ts/src/types/__tests__/agent.test.ts": {
     "returns the text content": "to_string_joins_text_blocks_with_newlines",
     "AgentResult > toString > when content has multiple TextBlocks > returns all text joined with newlines": "to_string_joins_text_blocks_with_newlines",
