@@ -1202,6 +1202,8 @@ async fn keeps_missing_directories_when_multiple_are_given() {
 mod delegates;
 #[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
 mod factories;
+#[cfg(feature = "mcp")]
+mod mcp_delegates;
 #[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
 mod provider_models;
 mod sessions;

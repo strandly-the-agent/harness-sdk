@@ -45,6 +45,8 @@ monty-types.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile.workspace = true
+# The in-process MCP server of the delegate tests.
+rmcp = { workspace = true, features = ["server"] }
 
 [package.metadata.docs.rs]
 all-features = true
