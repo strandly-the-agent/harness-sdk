@@ -278,6 +278,10 @@ impl ToolContext {
 /// [`ToolContext::interrupt`] returns, so a tool can't swallow an interrupt by accident. A failure
 /// becomes an error result (`Error: <message>`); an interrupt becomes [`ToolOutcome::Interrupt`].
 ///
+/// A boxed error ([`BoxError`], `anyhow::Error`) is not a `std::error::Error`, so `?` can't
+/// convert it: write `.map_err(ToolError::from_boxed)?`. [`ToolError::downcast_ref`] reads a
+/// typed error back.
+///
 /// ```
 /// use strands::ToolError;
 ///
@@ -315,6 +319,38 @@ impl ToolError {
     pub fn msg(message: impl fmt::Display) -> Self {
         Self {
             kind: ToolErrorKind::Failed(Box::new(MessageError(message.to_string()))),
+        }
+    }
+
+    /// A failure from a boxed error, or from anything that converts into one, such as
+    /// `anyhow::Error`. The error stays the source, so [`downcast_ref`](Self::downcast_ref) finds
+    /// it.
+    ///
+    /// ```
+    /// use strands::{ToolError, error::BoxError};
+    ///
+    /// fn helper(input: &str) -> Result<u32, BoxError> {
+    ///     Ok(input.parse::<u32>()?)
+    /// }
+    /// fn tool(input: &str) -> Result<u32, ToolError> {
+    ///     let number = helper(input).map_err(ToolError::from_boxed)?;
+    ///     Ok(number * 2)
+    /// }
+    /// let error = tool("x").unwrap_err();
+    /// assert!(error.downcast_ref::<std::num::ParseIntError>().is_some());
+    /// ```
+    pub fn from_boxed(error: impl Into<BoxError>) -> Self {
+        Self {
+            kind: ToolErrorKind::Failed(error.into()),
+        }
+    }
+
+    /// The failure as an `E`, when the tool failed with one; `None` for an interrupt or another
+    /// error type.
+    pub fn downcast_ref<E: std::error::Error + 'static>(&self) -> Option<&E> {
+        match &self.kind {
+            ToolErrorKind::Failed(error) => error.downcast_ref::<E>(),
+            ToolErrorKind::Interrupt(_) => None,
         }
     }
 

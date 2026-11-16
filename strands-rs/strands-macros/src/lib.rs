@@ -36,7 +36,9 @@ use crate::args::{ToolArgs, ToolsArgs};
 ///   or by value).
 /// - The return type is `Result<T, E>` with `T: Serialize` and `E: Into<ToolError>`, or any
 ///   serializable value. An `Err` becomes an error result, and `ctx.interrupt(..)?` ends the tool
-///   with an interrupt.
+///   with an interrupt. Every `std::error::Error` converts; a boxed error or `anyhow::Error`
+///   does not, so return `Result<T, ToolError>` and write
+///   `.map_err(ToolError::from_boxed)?`.
 /// - An `async fn` runs on the tool task; a sync fn runs on a blocking thread.
 ///
 /// ```
