@@ -20,7 +20,7 @@ use crate::types::json::JsonValue;
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 pub struct SerializableMcpToolFilters {
     /// When present, only tools matching one of these patterns are exposed.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -28,33 +28,6 @@ pub struct SerializableMcpToolFilters {
     /// Tools matching one of these patterns are excluded, even when also allowed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejected: Option<Vec<String>>,
-}
-
-/// Client credentials in a config file (TS `McpClientCredentials`).
-#[expect(
-    clippy::exhaustive_structs,
-    reason = "config struct: struct-literal construction"
-)]
-#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpServerCredentials {
-    /// The client id.
-    pub client_id: String,
-    /// The client secret.
-    pub client_secret: String,
-    /// Scopes to request.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scopes: Option<Vec<String>>,
-}
-
-impl std::fmt::Debug for McpServerCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("McpServerCredentials")
-            .field("client_id", &self.client_id)
-            .field("client_secret", &"<redacted>")
-            .field("scopes", &self.scopes)
-            .finish()
-    }
 }
 
 /// One server entry (TS `McpServerConfig`). String fields support `${VAR}` and `${env:VAR}`.
@@ -65,7 +38,8 @@ impl std::fmt::Debug for McpServerCredentials {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[builder(on(String, into))]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
     /// Command to spawn (stdio).
@@ -91,7 +65,7 @@ pub struct McpServerConfig {
     pub transport: Option<String>,
     /// Client credentials (Streamable HTTP only).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth: Option<McpServerCredentials>,
+    pub auth: Option<McpClientCredentials>,
     /// Prefix for agent-facing tool names.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
@@ -104,10 +78,6 @@ pub struct McpServerConfig {
     /// Skip this server's config and connection failures with warnings.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub continue_on_error: Option<bool>,
-    /// MCP task settings (TS `tasksConfig`); MCP tasks are not supported in Rust yet, so a
-    /// present value fails this server.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tasks_config: Option<JsonValue>,
 }
 
 /// How [`McpClient::load_servers`] translates entries (TS `McpLoadServersOptions`).
@@ -115,10 +85,11 @@ pub struct McpServerConfig {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
 pub struct McpLoadServersOptions {
     /// Servers without an explicit `prefix` use their config key (characters outside
     /// `[A-Za-z0-9_-]` replaced with `_`) as the tool-name prefix, over a default prefix.
+    #[builder(default)]
     pub prefix_with_server_name: bool,
 }
 
@@ -335,12 +306,14 @@ fn resolve_server(
     options: McpLoadServersOptions,
     lookup: &EnvLookup,
 ) -> Result<ResolvedServer> {
-    let server: McpServerConfig = serde_json::from_value(entry)?;
-    if server.tasks_config.is_some() {
+    // MCP tasks are not supported yet, so a `tasksConfig` (TS `McpServerConfig.tasksConfig`) fails
+    // the entry.
+    if entry.get("tasksConfig").is_some() {
         return Err(Error::other(
             "MCP tasks (\"tasksConfig\") are not supported in Rust yet",
         ));
     }
+    let server: McpServerConfig = serde_json::from_value(entry)?;
     if server.command.is_some() && server.url.is_some() && server.transport.is_none() {
         return Err(Error::other(
             "Server config has both \"command\" and \"url\" — set \"transport\" explicitly or remove one",

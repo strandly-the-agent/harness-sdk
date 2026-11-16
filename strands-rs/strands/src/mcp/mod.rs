@@ -24,7 +24,8 @@
 //! ```
 //!
 //! The MCP wire types (results, capabilities, elicitation and logging payloads) are `rmcp`'s,
-//! re-exported as [`rmcp`], as the TS client exposes the MCP SDK types.
+//! re-exported as [`rmcp`], as the TS client exposes the MCP SDK types. [`regex`] (for
+//! [`McpToolMatcher::Pattern`]) and [`reqwest`] (for [`McpAuthProvider`]) are re-exported too.
 
 pub(crate) mod agent_tools;
 mod auth;
@@ -39,6 +40,8 @@ mod sse;
 pub(crate) mod trace;
 pub(crate) mod transport;
 
+pub use regex;
+pub use reqwest;
 pub use rmcp;
 
 pub use client::{
@@ -46,9 +49,7 @@ pub use client::{
     McpClientCredentials, McpClientOptions, McpConnectionState, McpListOptions, McpListToolsOptions,
     McpLogHandler, McpProgress, McpProgressCallback, McpToolsChangedCallback,
 };
-pub use config::{
-    McpLoadServersOptions, McpServerConfig, McpServerCredentials, McpServers, SerializableMcpToolFilters,
-};
+pub use config::{McpLoadServersOptions, McpServerConfig, McpServers, SerializableMcpToolFilters};
 pub use elicitation::{ElicitationCallback, ElicitationContext};
 pub use error::{McpError, McpErrorKind};
 pub use filters::{McpToolFilterCallback, McpToolFilters, McpToolMatcher};

@@ -421,3 +421,23 @@ async fn checks_structured_content_against_the_tool_output_schema() {
     };
     assert_eq!(bad.code(), Some(-32602));
 }
+
+#[test]
+fn a_config_entry_reads_auth_as_client_credentials() {
+    let config: McpServerConfig = serde_json::from_value(json!({
+        "url": "https://example.com/mcp",
+        "auth": {"clientId": "id", "clientSecret": "secret", "scopes": ["a"]}
+    }))
+    .expect("config");
+    let expected = McpClientCredentials::builder()
+        .client_id("id")
+        .client_secret("secret")
+        .scopes(vec!["a".to_owned()])
+        .build();
+    assert_eq!(config.auth.as_ref(), Some(&expected));
+    assert!(!format!("{expected:?}").contains("secret\""));
+    assert_eq!(
+        serde_json::to_value(&expected).expect("json"),
+        json!({"clientId": "id", "clientSecret": "secret", "scopes": ["a"]})
+    );
+}

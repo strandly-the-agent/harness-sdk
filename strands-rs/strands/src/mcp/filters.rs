@@ -76,7 +76,7 @@ impl fmt::Debug for McpToolMatcher {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, bon::Builder)]
 pub struct McpToolFilters {
     /// When set, only tools matching one of these are exposed.
     pub allowed: Option<Vec<McpToolMatcher>>,

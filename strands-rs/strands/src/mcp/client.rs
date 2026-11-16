@@ -109,13 +109,16 @@ pub type McpAuthProvider = rmcp::transport::AuthClient<reqwest::Client>;
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, bon::Builder)]
+#[builder(on(String, into))]
+#[serde(rename_all = "camelCase")]
 pub struct McpClientCredentials {
     /// The client id.
     pub client_id: String,
     /// The client secret.
     pub client_secret: String,
     /// Scopes to request.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scopes: Option<Vec<String>>,
 }
 
