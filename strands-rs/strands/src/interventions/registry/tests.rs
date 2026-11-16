@@ -384,9 +384,9 @@ mod confirm_action {
         assert!(called.lock().unwrap().is_empty());
     }
 
-    /// TS `approve/deny on resume`: `response %j → cancel=%j`.
+    /// The `it.each` table of TS `approve/deny on resume`.
     #[tokio::test]
-    async fn approve_deny_on_resume() {
+    async fn response_cancel() {
         let denied = Some("CONFIRMATION_FAILED: approve this action?");
         let cases = [
             (json!(true), None),
@@ -787,14 +787,16 @@ mod agent_integration {
         assert_eq!(*order.lock().unwrap(), ["plugin", "intervention"]);
     }
 
-    /// Rust-only: `on_error: throw` fails the invocation with the handler's error.
+    // No TS case: TS covers `onError: 'throw'` at the registry only; this pins the agent-level end
+    // (the invocation fails at the failing gate, with no further model call).
     #[tokio::test]
     async fn on_error_throw_fails_the_invocation() {
         let tool = mock_tool("testTool", |context| {
             text_result(context.tool_use().tool_use_id(), "result")
         });
+        let model = tool_turns("testTool");
         let mut agent = Agent::builder()
-            .model(tool_turns("testTool"))
+            .model(Arc::clone(&model))
             .tools([tool])
             .interventions([throwing_handler("throwing-handler", OnError::Throw)])
             .printer(false)
@@ -802,6 +804,19 @@ mod agent_integration {
             .unwrap();
         let error = agent.invoke("Test").await.unwrap_err();
         assert!(error.to_string().contains("handler crashed"), "{error}");
+        // The invocation stops at the failing gate: TS goes on to a second model call while it
+        // cleans up, and keeps that turn.
+        assert_eq!(model.call_count(), 1);
+        let roles: Vec<Role> = agent.messages().iter().map(Message::role).collect();
+        assert_eq!(roles, [Role::User]);
+    }
+
+    // No TS case: `String.prototype.trim` strips U+FEFF and keeps U+0085, unlike `str::trim`.
+    #[test]
+    fn the_default_evaluate_trims_as_js_trims() {
+        assert!(default_evaluate(&json!("\u{feff}y")));
+        assert!(default_evaluate(&json!(" YES\n")));
+        assert!(!default_evaluate(&json!("y\u{85}")));
     }
 }
 

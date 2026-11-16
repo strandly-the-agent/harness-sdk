@@ -11,14 +11,15 @@ use crate::hooks::{
     AfterModelCallEvent, AfterToolCallEvent, BeforeInvocationEvent, BeforeModelCallEvent,
     BeforeToolCallEvent, HookEvent, IntoSyncHook,
 };
+use crate::models::model::js_trim;
 use crate::types::json::JsonValue;
 
 /// The default `evaluate` of [`Confirm`] (TS `defaultEvaluate`): `true`, or `y`/`yes` in any
 /// case with surrounding whitespace ignored.
-pub fn default_evaluate(response: &JsonValue) -> bool {
+pub(crate) fn default_evaluate(response: &JsonValue) -> bool {
     match response {
         JsonValue::Bool(approved) => *approved,
-        JsonValue::String(text) => matches!(text.to_lowercase().trim(), "y" | "yes"),
+        JsonValue::String(text) => matches!(js_trim(&text.to_lowercase()), "y" | "yes"),
         _ => false,
     }
 }
@@ -80,7 +81,8 @@ pub struct Confirm {
     pub reason: Option<String>,
     /// A response collected ahead of time, so the agent doesn't pause.
     pub response: Option<JsonValue>,
-    /// Decides whether the response approves; [`default_evaluate`] when unset.
+    /// Decides whether the response approves. When unset, `true` and `y`/`yes` (any case,
+    /// surrounding whitespace ignored) approve.
     pub evaluate: Option<Evaluate>,
 }
 
@@ -99,7 +101,7 @@ impl Confirm {
         self
     }
 
-    /// Replaces [`default_evaluate`].
+    /// Replaces the default check (`true`, `y` or `yes` approves).
     #[must_use]
     pub fn with_evaluate(mut self, evaluate: impl Fn(&JsonValue) -> bool + Send + Sync + 'static) -> Self {
         self.evaluate = Some(Arc::new(evaluate));
@@ -162,7 +164,7 @@ pub fn guide(feedback: impl Into<String>) -> Guide {
     }
 }
 
-/// [`Confirm`] with `prompt` and [`default_evaluate`] (TS `confirm`).
+/// [`Confirm`] with `prompt` and the default check: `true`, `y` or `yes` approves (TS `confirm`).
 pub fn confirm(prompt: impl Into<String>) -> Confirm {
     Confirm {
         prompt: prompt.into(),
@@ -202,6 +204,15 @@ macro_rules! gate_actions {
                 )*
             }
 
+            impl $name {
+                /// The TS `type` of the action.
+                pub(crate) fn type_name(&self) -> &'static str {
+                    match self {
+                        $( Self::$variant(_) => gate_actions!(@name $variant), )*
+                    }
+                }
+            }
+
             $(
                 impl From<gate_actions!(@ty $variant, $marker)> for $name {
                     fn from(action: gate_actions!(@ty $variant, $marker)) -> Self {
@@ -211,6 +222,11 @@ macro_rules! gate_actions {
             )*
         )*
     };
+    (@name Proceed) => { "proceed" };
+    (@name Deny) => { "deny" };
+    (@name Guide) => { "guide" };
+    (@name Confirm) => { "confirm" };
+    (@name Transform) => { "transform" };
     (@ty Transform, $marker:ty) => { Transform<$marker> };
     (@ty $variant:ident, $marker:ty) => { $variant };
 }

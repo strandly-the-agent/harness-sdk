@@ -34,7 +34,7 @@ enum Outcome {
 /// guidance accumulates across handlers and is applied at the end; a transform is applied at
 /// once, so later handlers see the change.
 #[derive(Clone)]
-pub struct InterventionRegistry {
+pub(crate) struct InterventionRegistry {
     handlers: Arc<[Arc<dyn InterventionHandler>]>,
 }
 
@@ -45,7 +45,7 @@ impl InterventionRegistry {
     /// # Errors
     ///
     /// Two handlers share a name.
-    pub fn new(handlers: Vec<Arc<dyn InterventionHandler>>, hooks: &HookRegistry) -> Result<Self> {
+    pub(crate) fn new(handlers: Vec<Arc<dyn InterventionHandler>>, hooks: &HookRegistry) -> Result<Self> {
         let mut seen: Vec<&str> = Vec::new();
         for handler in &handlers {
             let name = handler.name();
@@ -66,7 +66,8 @@ impl InterventionRegistry {
     }
 
     /// The handlers in registration order.
-    pub fn handlers(&self) -> &[Arc<dyn InterventionHandler>] {
+    #[cfg(test)]
+    pub(crate) fn handlers(&self) -> &[Arc<dyn InterventionHandler>] {
         &self.handlers
     }
 
@@ -142,13 +143,23 @@ macro_rules! dispatch {
                     return;
                 }
                 let outcome = match result {
-                    Ok(action) => $apply(event, action, name),
+                    Ok(action) => {
+                        tracing::debug!(
+                            "handler=<{name}>, event=<{}> | returned {}",
+                            $label,
+                            action.type_name()
+                        );
+                        $apply(event, action, name)
+                    }
                     Err(error) => match handler.on_error() {
                         OnError::Throw => {
                             event.fail(error);
                             return;
                         }
-                        OnError::Deny => deny(event, name, format!("Handler threw: {error}")),
+                        OnError::Deny => {
+                            tracing::debug!("handler=<{name}>, event=<{}> | returned deny", $label);
+                            deny(event, name, format!("Handler threw: {error}"))
+                        }
                         OnError::Proceed => Outcome::Continue,
                     },
                 };
