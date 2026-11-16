@@ -1034,5 +1034,22 @@
     "a span-end failure does not throw nor mark the save as failed": {
       "gap": "Not applicable: recording on a `tracing` span can't fail"
     }
+  },
+  "strands-ts/src/agent/__tests__/agent.tracer.test.node.ts": {
+    "closes cycle telemetry for every started cycle when the consumer breaks during tool execution": {
+      "gap": "Divergence: a dropped Rust stream stops the run instead of draining it, so no later cycle starts; `a_dropped_stream_ends_the_span_of_the_running_tool` covers the spans that are open at the drop"
+    },
+    "completes successfully when startAgentSpan returns null": {
+      "gap": "Not applicable: the `LocalTracer` start methods return no nullable span; a disabled `tracing` span makes every later call a no-op (`memory_span_methods_handle_a_null_span_gracefully` and the `error_resilience` tests cover the tracer side)"
+    },
+    "completes successfully when startAgentLoopSpan returns null": {
+      "gap": "Not applicable: the `LocalTracer` start methods return no nullable span; a disabled `tracing` span makes every later call a no-op (`memory_span_methods_handle_a_null_span_gracefully` and the `error_resilience` tests cover the tracer side)"
+    },
+    "completes successfully when startModelInvokeSpan returns null": {
+      "gap": "Not applicable: the `LocalTracer` start methods return no nullable span; a disabled `tracing` span makes every later call a no-op (`memory_span_methods_handle_a_null_span_gracefully` and the `error_resilience` tests cover the tracer side)"
+    },
+    "completes successfully when startToolCallSpan returns null": {
+      "gap": "Not applicable: the `LocalTracer` start methods return no nullable span; a disabled `tracing` span makes every later call a no-op (`memory_span_methods_handle_a_null_span_gracefully` and the `error_resilience` tests cover the tracer side)"
+    }
   }
 }

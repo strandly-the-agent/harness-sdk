@@ -8,13 +8,14 @@ use opentelemetry::trace::Status;
 use opentelemetry_sdk::trace::SpanData;
 use tokio::sync::Notify;
 
-use super::{Recorder, agent_of, recording, semconv, tool_use};
-use crate::Agent;
-use crate::test_support::stream_tool;
-use crate::testing::MockMessageModel;
+use super::{Recorder, agent_of, recording, semconv, tool_use, usage_turn};
+use crate::test_support::{mock_tool, stream_tool, text_result};
+use crate::testing::{MockMessageModel, MockTurnOptions};
 use crate::tools::{ToolOutcome, ToolStream};
 use crate::types::agent::AgentStreamEvent;
-use crate::types::messages::TextBlock;
+use crate::types::messages::{StopReason, TextBlock, ToolResultBlock, ToolResultContent};
+use crate::types::tools::ToolResultStatus;
+use crate::{Agent, AgentConfig};
 
 fn text_agent() -> Agent {
     let model = MockMessageModel::new();
@@ -202,4 +203,444 @@ async fn ends_the_loop_span_with_an_error_when_the_invocation_is_cancelled_mid_m
         1
     );
     assert_ended_ok(named(&spans, "invoke_agent telemetry_agent")[0]);
+}
+
+fn plain_agent(model: MockMessageModel, tools: Vec<Arc<dyn crate::tools::Tool>>) -> Agent {
+    let agent = AgentConfig::builder()
+        .model(Arc::new(model) as Arc<dyn crate::models::model::Model>)
+        .tools(tools)
+        .build()
+        .expect("a valid agent");
+    agent.local.telemetry().lock().tracer.set_semconv(semconv(""));
+    agent
+}
+
+fn text_model(text: &str) -> MockMessageModel {
+    let model = MockMessageModel::new();
+    model.add_turn(vec![TextBlock::new(text).into()]);
+    model
+}
+
+fn max_tokens_model() -> MockMessageModel {
+    let model = MockMessageModel::new();
+    model.add_turn_with(
+        vec![TextBlock::new("Partial").into()],
+        MockTurnOptions::builder()
+            .stop_reason(StopReason::MaxTokens)
+            .build(),
+    );
+    model
+}
+
+/// One `testTool` call (`tool-1`), then the text `Done`.
+fn tool_then_text_model() -> MockMessageModel {
+    let model = MockMessageModel::new();
+    model.add_turn(vec![tool_use(
+        "testTool",
+        "tool-1",
+        serde_json::json!({"key": "val"}),
+    )]);
+    model.add_turn(vec![TextBlock::new("Done").into()]);
+    model
+}
+
+fn test_tool(name: &str) -> Arc<dyn crate::tools::Tool> {
+    Arc::new(mock_tool(name, |context| {
+        text_result(context.tool_use().tool_use_id(), "Result")
+    }))
+}
+
+fn attribute(span: &SpanData, key: &str) -> Option<String> {
+    span.attributes
+        .iter()
+        .find(|attribute| attribute.key.as_str() == key)
+        .map(|attribute| attribute.value.to_string())
+}
+
+fn is_error(span: &SpanData) -> bool {
+    matches!(span.status, Status::Error { .. })
+}
+
+mod constructor {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn initializes_tracer_with_trace_attributes_from_config() {
+        let (recorder, _guard) = recording();
+        let mut agent = AgentConfig::builder()
+            .model(Arc::new(text_model("Hello")) as Arc<dyn crate::models::model::Model>)
+            .trace_attributes([("custom.attr".to_owned(), "value".into())].into_iter().collect())
+            .build()
+            .expect("a valid agent");
+        agent.invoke("Hi").await.expect("the run succeeds");
+        for span in recorder.spans() {
+            assert_eq!(
+                attribute(&span, "custom.attr").as_deref(),
+                Some("value"),
+                "{}",
+                span.name
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn initializes_tracer_without_trace_attributes_when_not_provided() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(text_model("Hello"), Vec::new());
+        agent.invoke("Hi").await.expect("the run succeeds");
+        for span in recorder.spans() {
+            assert_eq!(attribute(&span, "custom.attr"), None, "{}", span.name);
+        }
+    }
+}
+
+mod name_and_id {
+    use super::*;
+
+    #[test]
+    fn defaults_name_to_strands_agent() {
+        assert_eq!(
+            plain_agent(text_model("Hello"), Vec::new()).name(),
+            "Strands Agent"
+        );
+    }
+
+    #[test]
+    fn defaults_id_to_agent() {
+        assert_eq!(plain_agent(text_model("Hello"), Vec::new()).id(), "agent");
+    }
+
+    #[test]
+    fn uses_provided_name() {
+        assert_eq!(
+            agent_of(text_model("Hello"), Vec::new(), semconv("")).name(),
+            "telemetry_agent"
+        );
+    }
+
+    #[test]
+    fn uses_provided_id() {
+        assert_eq!(
+            agent_of(text_model("Hello"), Vec::new(), semconv("")).id(),
+            "telemetry_agent"
+        );
+    }
+}
+
+mod agent_span_lifecycle {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn starts_and_ends_agent_span_on_successful_invocation() {
+        let (recorder, _guard) = recording();
+        let mut agent = agent_of(text_model("Hello"), Vec::new(), semconv(""));
+        agent.invoke("Hi").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let agents = named(&spans, "invoke_agent telemetry_agent");
+        assert_eq!(agents.len(), 1);
+        assert_eq!(
+            attribute(agents[0], "gen_ai.agent.name").as_deref(),
+            Some("telemetry_agent")
+        );
+        assert_eq!(
+            attribute(agents[0], "gen_ai.agent.id").as_deref(),
+            Some("telemetry_agent")
+        );
+        assert_eq!(
+            attribute(agents[0], "gen_ai.request.model").as_deref(),
+            Some("test-model")
+        );
+        assert_ended_ok(agents[0]);
+        let choice = agents[0]
+            .events
+            .iter()
+            .find(|event| event.name == "gen_ai.choice")
+            .expect("the response event");
+        assert!(
+            choice
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key.as_str() == "finish_reason"
+                    && attribute.value.as_str() == "endTurn")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_agent_span_with_error_when_invocation_fails() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(max_tokens_model(), Vec::new());
+        agent.invoke("Hi").await.expect_err("the run fails on max tokens");
+        let spans = recorder.spans();
+        let agents = named(&spans, "invoke_agent Strands Agent");
+        assert_eq!(agents.len(), 1);
+        assert!(is_error(agents[0]));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn includes_system_prompt_in_agent_span_when_configured() {
+        let (recorder, _guard) = recording();
+        let mut agent = agent_of(text_model("Hello"), Vec::new(), semconv(""));
+        agent.invoke("Hi").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let agent_span = named(&spans, "invoke_agent telemetry_agent")[0];
+        assert_eq!(
+            attribute(agent_span, "system_prompt").as_deref(),
+            Some("\"You report the weather.\"")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn includes_empty_string_system_prompt_in_agent_span() {
+        let (recorder, _guard) = recording();
+        let mut agent = AgentConfig::builder()
+            .model(Arc::new(text_model("Hello")) as Arc<dyn crate::models::model::Model>)
+            .system_prompt("")
+            .build()
+            .expect("a valid agent");
+        agent.invoke("Hi").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let agent_span = named(&spans, "invoke_agent Strands Agent")[0];
+        assert_eq!(attribute(agent_span, "system_prompt").as_deref(), Some("\"\""));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn omits_system_prompt_from_agent_span_when_not_configured() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(text_model("Hello"), Vec::new());
+        agent.invoke("Hi").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        assert_eq!(
+            attribute(named(&spans, "invoke_agent Strands Agent")[0], "system_prompt"),
+            None
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn includes_tools_in_agent_span() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(text_model("Hello"), vec![test_tool("myTool")]);
+        agent.invoke("Hi").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        assert_eq!(
+            attribute(
+                named(&spans, "invoke_agent Strands Agent")[0],
+                "gen_ai.agent.tools"
+            )
+            .as_deref(),
+            Some("[\"myTool\"]")
+        );
+    }
+}
+
+mod agent_loop_span_lifecycle {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn starts_and_ends_loop_span_for_each_cycle() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(text_model("Done"), Vec::new());
+        agent.invoke("Hi").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let cycles = named(&spans, "execute_agent_loop_cycle");
+        assert_eq!(cycles.len(), 1);
+        assert_eq!(
+            attribute(cycles[0], "agent_loop.cycle_id").as_deref(),
+            Some("cycle-1")
+        );
+        assert_ended_ok(cycles[0]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn creates_multiple_loop_spans_for_multi_cycle_invocations() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(tool_then_text_model(), vec![test_tool("testTool")]);
+        agent.invoke("Use tool").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let mut ids: Vec<_> = named(&spans, "execute_agent_loop_cycle")
+            .into_iter()
+            .map(|cycle| {
+                assert_ended_ok(cycle);
+                attribute(cycle, "agent_loop.cycle_id").expect("a cycle id")
+            })
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["cycle-1", "cycle-2"]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_loop_span_with_error_when_cycle_fails() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(max_tokens_model(), Vec::new());
+        agent.invoke("Hi").await.expect_err("the run fails on max tokens");
+        let spans = recorder.spans();
+        let cycles = named(&spans, "execute_agent_loop_cycle");
+        assert_eq!(cycles.len(), 1);
+        assert!(is_error(cycles[0]));
+    }
+}
+
+mod model_invoke_span_lifecycle {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn starts_and_ends_model_span_on_successful_model_call() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(text_model("Hello"), Vec::new());
+        agent.invoke("Hi").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let chats = named(&spans, "chat");
+        assert_eq!(chats.len(), 1);
+        assert_eq!(
+            attribute(chats[0], "gen_ai.request.model").as_deref(),
+            Some("test-model")
+        );
+        assert_ended_ok(chats[0]);
+        assert!(chats[0].events.iter().any(|event| event.name == "gen_ai.choice"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_model_span_with_error_when_model_call_fails() {
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_error(|| crate::Error::other("model exploded"));
+        let mut agent = plain_agent(model, Vec::new());
+        agent.invoke("Hi").await.expect_err("the model call fails");
+        let spans = recorder.spans();
+        let chats = named(&spans, "chat");
+        assert_eq!(chats.len(), 1);
+        assert!(is_error(chats[0]));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn creates_model_span_for_each_model_call_in_multi_cycle_invocation() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(tool_then_text_model(), vec![test_tool("testTool")]);
+        agent.invoke("Use tool").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let chats = named(&spans, "chat");
+        assert_eq!(chats.len(), 2);
+        chats.into_iter().for_each(assert_ended_ok);
+    }
+}
+
+mod tool_call_span_lifecycle {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn starts_and_ends_tool_span_for_each_tool_execution() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(tool_then_text_model(), vec![test_tool("testTool")]);
+        agent.invoke("Use tool").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let tools = named(&spans, "execute_tool testTool");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(
+            attribute(tools[0], "gen_ai.tool.name").as_deref(),
+            Some("testTool")
+        );
+        assert_eq!(
+            attribute(tools[0], "gen_ai.tool.call.id").as_deref(),
+            Some("tool-1")
+        );
+        assert_eq!(
+            attribute(tools[0], "gen_ai.tool.status").as_deref(),
+            Some("success")
+        );
+        assert_ended_ok(tools[0]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_tool_span_with_error_when_tool_is_not_found() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(tool_then_text_model(), Vec::new());
+        agent.invoke("Use tool").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let tool = named(&spans, "execute_tool testTool")[0];
+        assert_eq!(attribute(tool, "gen_ai.tool.status").as_deref(), Some("error"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_tool_span_with_error_when_tool_throws() {
+        let (recorder, _guard) = recording();
+        let failing = mock_tool("testTool", |context| {
+            ToolResultBlock::new(
+                context.tool_use().tool_use_id(),
+                ToolResultStatus::Error,
+                vec![ToolResultContent::Text(TextBlock::new("Tool failed"))],
+            )
+            .with_error("Tool failed")
+        });
+        let mut agent = plain_agent(tool_then_text_model(), vec![Arc::new(failing)]);
+        agent.invoke("Use tool").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let tool = named(&spans, "execute_tool testTool")[0];
+        assert_eq!(attribute(tool, "gen_ai.tool.status").as_deref(), Some("error"));
+        assert_eq!(tool.status, Status::error("Tool failed"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn creates_spans_for_multiple_tool_calls_in_a_single_turn() {
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_turn(vec![
+            tool_use("toolA", "tool-1", serde_json::json!({})),
+            tool_use("toolB", "tool-2", serde_json::json!({})),
+        ]);
+        model.add_turn(vec![TextBlock::new("Done").into()]);
+        let mut agent = plain_agent(model, vec![test_tool("toolA"), test_tool("toolB")]);
+        agent.invoke("Use tools").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        assert_ended_ok(named(&spans, "execute_tool toolA")[0]);
+        assert_ended_ok(named(&spans, "execute_tool toolB")[0]);
+    }
+}
+
+mod token_usage_accumulation {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn passes_accumulated_usage_to_end_agent_span() {
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_turn_with(
+            vec![tool_use("testTool", "tool-1", serde_json::json!({}))],
+            usage_turn(10, 5),
+        );
+        model.add_turn_with(vec![TextBlock::new("Done").into()], usage_turn(20, 10));
+        let mut agent = plain_agent(model, vec![test_tool("testTool")]);
+        agent.invoke("Use tool").await.expect("the run succeeds");
+        let spans = recorder.spans();
+        let agent_span = named(&spans, "invoke_agent Strands Agent")[0];
+        assert_eq!(
+            attribute(agent_span, "gen_ai.usage.input_tokens").as_deref(),
+            Some("30")
+        );
+        assert_eq!(
+            attribute(agent_span, "gen_ai.usage.output_tokens").as_deref(),
+            Some("15")
+        );
+        assert_eq!(
+            attribute(agent_span, "gen_ai.usage.total_tokens").as_deref(),
+            Some("45")
+        );
+    }
+}
+
+mod span_context_hierarchy {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn resets_accumulated_usage_on_each_invocation() {
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_turn_with(vec![TextBlock::new("First").into()], usage_turn(10, 5));
+        model.add_turn_with(vec![TextBlock::new("Second").into()], usage_turn(20, 10));
+        let mut agent = plain_agent(model, Vec::new());
+        agent.invoke("First").await.expect("the first run succeeds");
+        agent.invoke("Second").await.expect("the second run succeeds");
+        let spans = recorder.spans();
+        let agents = named(&spans, "invoke_agent Strands Agent");
+        assert_eq!(agents.len(), 2);
+        agents.into_iter().for_each(assert_ended_ok);
+    }
 }
