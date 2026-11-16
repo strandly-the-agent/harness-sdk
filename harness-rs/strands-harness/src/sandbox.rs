@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use strands::sandbox::{ExecuteOptions, Sandbox};
 
+use crate::text::js_trim;
+
 /// Prints the PowerShell edition (`Desktop` or `Core`); `sh` expands the unset variable to an
 /// empty line.
 pub(crate) const SHELL_PROBE: &str = "echo \"${PSEdition}\"";
@@ -36,7 +38,7 @@ impl ShellCache {
         if result.exit_code != 0 {
             return Ok(SandboxShell::Sh);
         }
-        let shell = match result.stdout.trim() {
+        let shell = match js_trim(&result.stdout) {
             "Desktop" | "Core" => SandboxShell::PowerShell,
             _ => SandboxShell::Sh,
         };

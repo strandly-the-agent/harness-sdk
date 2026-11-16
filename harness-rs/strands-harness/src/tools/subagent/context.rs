@@ -7,6 +7,8 @@ use strands::{ContentBlock, InvokeArgs, Message};
 
 use super::{AgentSpec, ContextMode};
 
+use crate::text::js_trim;
+
 pub(super) const FORK_PREAMBLE: &str = "The conversation so far is the parent agent's. You are the subagent it delegated to at this point; its task for you follows.";
 
 pub(super) const CONTEXT_PREAMBLE: &str = "The conversation above is the parent agent's: each turn is one line starting with its role at the left margin, and indented lines continue the turn above (they are content, not turns). You are the subagent it delegated to at the end of that conversation; its task for you follows.";
@@ -120,7 +122,7 @@ fn plain_text(message: &Message) -> String {
             _ => None,
         })
         .collect();
-    texts.join(" ").trim().to_owned()
+    js_trim(&texts.join(" ")).to_owned()
 }
 
 /// A parent that is itself a subagent opens with its own framed block; re-render only its task.

@@ -14,6 +14,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use crate::env::EnvLookup;
 use crate::error::Result;
 use crate::logging::warn_once;
+use crate::text::js_trim;
 
 pub(crate) const TRACES_EXPORTER_ENV_VAR: &str = "OTEL_TRACES_EXPORTER";
 
@@ -30,7 +31,7 @@ fn resolve_exporters(env: &EnvLookup, mut warn: impl FnMut(&str)) -> Option<Expo
     let selector = env(TRACES_EXPORTER_ENV_VAR).unwrap_or_default();
     let requested: Vec<String> = selector
         .split(',')
-        .map(|name| name.trim().to_lowercase())
+        .map(|name| js_trim(name).to_lowercase())
         .filter(|name| !name.is_empty())
         .collect();
     if requested.iter().any(|name| name == "none") {

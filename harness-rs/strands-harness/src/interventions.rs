@@ -25,6 +25,7 @@ use strands::vended_interventions::hitl::{
 };
 
 use crate::error::{HarnessError, Result};
+use crate::text::js_trim;
 
 /// How a preset collects approval (TS `InterventionAsk`): the SDK's stdio prompt or a callback.
 /// Without one, a gated tool call interrupts the agent and the caller resumes it.
@@ -139,18 +140,6 @@ impl<V: Into<InterventionValue>, const N: usize> From<[V; N]> for InterventionsO
     fn from(values: [V; N]) -> Self {
         Self::Many(values.into_iter().map(Into::into).collect())
     }
-}
-
-/// JS `String.prototype.trim`: its white space and line terminators, which differ from Rust's
-/// `char::is_whitespace` (U+FEFF is trimmed, U+0085 is not).
-fn js_trim(text: &str) -> &str {
-    text.trim_matches(|character| {
-        matches!(
-            character,
-            '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
-                ..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
-        )
-    })
 }
 
 /// What a string value of the option means.

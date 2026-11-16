@@ -24,6 +24,7 @@ use crate::env::{EnvLookup, process_env};
 use crate::error::{HarnessError, Result};
 use crate::interventions::{InterventionValue, InterventionsOption};
 use crate::logging::warn_once;
+use crate::text::js_trim;
 use crate::types::{BuiltinToolsConfig, MemoryConfig, SessionConfig, Setting, WebFetchConfig};
 
 /// Maps a portable config to the options `create_harness` takes. Directory options resolve
@@ -269,7 +270,7 @@ fn interventions(
     let mut values = texts
         .into_iter()
         .map(|text| {
-            let policy = text.trim();
+            let policy = js_trim(&text);
             if policy.ends_with(".cedar") {
                 resolve_path(policy, base_dir, env).map(InterventionValue::Text)
             } else {

@@ -26,6 +26,7 @@ use strands::tools::{FunctionTool, ToolContext};
 
 use super::web_fetch::cap_chars;
 use crate::env::EnvLookup;
+use crate::text::js_trim;
 
 const EXA_MCP_URL: &str = "https://mcp.exa.ai/mcp";
 const EXA_TOOL: &str = "web_search_exa";
@@ -76,7 +77,7 @@ fn parse_exa(text: &str) -> Vec<SearchResult> {
             let head = head.captures(block)?;
             let highlights = block.split_once(HIGHLIGHTS).map_or("", |(_, rest)| rest);
             Some(SearchResult {
-                title: head[1].trim().to_owned(),
+                title: js_trim(&head[1]).to_owned(),
                 url: head[2].to_owned(),
                 snippet: cap_chars(one_line(highlights), SNIPPET_CHARS),
             })

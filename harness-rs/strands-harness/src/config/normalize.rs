@@ -13,6 +13,7 @@ use super::{
 };
 use crate::error::{HarnessError, Result, json_quote};
 use crate::logging::warn_once;
+use crate::text::js_trim;
 use crate::types::{Effort, SessionConfig, Setting, WebFetchTransport};
 
 pub(super) const READ_KEYS: &[&str] = &["media"];
@@ -269,7 +270,7 @@ impl Issues {
     }
 
     fn non_empty_string(&mut self, path: &str, value: &JsonValue) -> Option<String> {
-        let string = value.as_str().filter(|text| !text.trim().is_empty());
+        let string = value.as_str().filter(|text| !js_trim(text).is_empty());
         if string.is_none() {
             self.push(path, NON_EMPTY_STRING);
         }
@@ -695,7 +696,7 @@ impl Issues {
 
     /// Reports an empty record key under the record; the entry's value is then not checked.
     fn valid_key(&mut self, path: &str, key: &str) -> bool {
-        let valid = !key.trim().is_empty();
+        let valid = !js_trim(key).is_empty();
         if !valid {
             self.push(
                 path,

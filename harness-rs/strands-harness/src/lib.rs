@@ -22,6 +22,7 @@ mod sandbox;
 mod telemetry;
 #[cfg(test)]
 mod test_support;
+mod text;
 mod tools;
 mod types;
 

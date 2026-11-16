@@ -6,7 +6,7 @@
 //! [`WebFetchTransport::Direct`] fetches from the harness process instead.
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError, Weak};
 use std::time::Duration;
 
 use base64::Engine;
@@ -23,6 +23,7 @@ use strands::tools::{FunctionTool, ToolContext, ToolError};
 use tokio::time::Instant;
 
 use crate::sandbox::{SandboxShell, ShellCache};
+use crate::text::js_trim;
 use crate::types::WebFetchTransport;
 
 const USER_AGENT: &str = "strands-harness/1.0";
@@ -64,11 +65,6 @@ fn replace_all(pattern: &Pattern, text: &str, with: &str) -> String {
         Some(pattern) => pattern.replace_all(text, with).into_owned(),
         None => text.to_owned(),
     }
-}
-
-/// JS `String.prototype.trim`, which also strips the byte-order mark.
-fn js_trim(value: &str) -> &str {
-    value.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
 }
 
 fn html_to_text(html: &str) -> String {
@@ -333,11 +329,32 @@ struct WebFetchInput {
 
 struct CacheEntry {
     expires: Instant,
+    /// The sandbox the page was fetched through; `None` for the `direct` transport.
+    sandbox: Option<Weak<dyn Sandbox>>,
     fetched: Fetched,
 }
 
+impl CacheEntry {
+    /// Whether the entry is live and was fetched through `sandbox`, so one sandbox's fetch is
+    /// never served to an agent on another.
+    fn serves(&self, sandbox: Option<&Arc<dyn Sandbox>>, now: Instant) -> bool {
+        let same_sandbox = match (&self.sandbox, sandbox) {
+            (None, None) => true,
+            (Some(known), Some(sandbox)) => std::ptr::addr_eq(known.as_ptr(), Arc::as_ptr(sandbox)),
+            _ => false,
+        };
+        same_sandbox && self.expires > now
+    }
+}
+
 /// Caches `fetched` for `url`, dropping expired entries and, at the cap, the soonest to expire.
-fn remember(cache: &mut HashMap<String, CacheEntry>, url: String, fetched: Fetched, now: Instant) {
+fn remember(
+    cache: &mut HashMap<String, CacheEntry>,
+    url: String,
+    sandbox: Option<&Arc<dyn Sandbox>>,
+    fetched: Fetched,
+    now: Instant,
+) {
     cache.retain(|_, entry| entry.expires > now);
     while cache.len() >= MAX_CACHE_ENTRIES {
         let oldest = cache.iter().min_by_key(|(_, entry)| entry.expires);
@@ -346,8 +363,12 @@ fn remember(cache: &mut HashMap<String, CacheEntry>, url: String, fetched: Fetch
         };
         cache.remove(&oldest);
     }
-    let expires = now + CACHE_TTL;
-    cache.insert(url, CacheEntry { expires, fetched });
+    let entry = CacheEntry {
+        expires: now + CACHE_TTL,
+        sandbox: sandbox.map(Arc::downgrade),
+        fetched,
+    };
+    cache.insert(url, entry);
 }
 
 struct WebFetch {
@@ -371,38 +392,57 @@ impl WebFetch {
         Ok(self.client.get_or_init(|| client))
     }
 
-    fn cached(&self, url: &str) -> Option<Fetched> {
+    fn cached(&self, url: &str, sandbox: Option<&Arc<dyn Sandbox>>) -> Option<Fetched> {
         let cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         cache
             .get(url)
-            .filter(|entry| entry.expires > Instant::now())
+            .filter(|entry| entry.serves(sandbox, Instant::now()))
             .map(|entry| entry.fetched.clone())
     }
 
-    async fn fetch(&self, url: &str, context: &ToolContext) -> Result<Fetched, String> {
-        let url = validate_url(url)?;
+    /// The sandbox a fetch goes through, which scopes its cache entry; `direct` uses none.
+    fn sandbox(&self, context: &ToolContext) -> Result<Option<Arc<dyn Sandbox>>, String> {
         match self.transport {
-            WebFetchTransport::Direct => fetch_direct(self.client()?, url).await,
-            WebFetchTransport::Curl => {
-                let sandbox = context.agent().sandbox().map_err(|error| error.to_string())?;
-                fetch_curl(&self.shells, &sandbox, url).await
-            }
+            WebFetchTransport::Direct => Ok(None),
+            WebFetchTransport::Curl => context
+                .agent()
+                .sandbox()
+                .map(Some)
+                .map_err(|error| error.to_string()),
         }
     }
 
+    async fn fetch(&self, url: &str, sandbox: Option<&Arc<dyn Sandbox>>) -> Result<Fetched, String> {
+        let url = validate_url(url)?;
+        match sandbox {
+            None => fetch_direct(self.client()?, url).await,
+            Some(sandbox) => fetch_curl(&self.shells, sandbox, url).await,
+        }
+    }
+
+    /// The page behind `url`, from the cache or fetched and remembered.
+    async fn page(&self, url: &str, context: &ToolContext) -> Result<Fetched, String> {
+        let sandbox = self.sandbox(context)?;
+        if let Some(fetched) = self.cached(url, sandbox.as_ref()) {
+            return Ok(fetched);
+        }
+        let fetched = self.fetch(url, sandbox.as_ref()).await?;
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        remember(
+            &mut cache,
+            url.to_owned(),
+            sandbox.as_ref(),
+            fetched.clone(),
+            Instant::now(),
+        );
+        drop(cache);
+        Ok(fetched)
+    }
+
     async fn run(&self, input: WebFetchInput, context: ToolContext) -> Result<JsonValue, ToolError> {
-        let fetched = match self.cached(&input.url) {
-            Some(fetched) => fetched,
-            None => {
-                let fetched = match self.fetch(&input.url, &context).await {
-                    Ok(fetched) => fetched,
-                    Err(message) => return Ok(format!("Failed to fetch {}: {message}", input.url).into()),
-                };
-                let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-                remember(&mut cache, input.url.clone(), fetched.clone(), Instant::now());
-                drop(cache);
-                fetched
-            }
+        let fetched = match self.page(&input.url, &context).await {
+            Ok(fetched) => fetched,
+            Err(message) => return Ok(format!("Failed to fetch {}: {message}", input.url).into()),
         };
         let Fetched { resolved_url, text } = fetched;
         let Some(prompt) = input.prompt.filter(|prompt| !js_trim(prompt).is_empty()) else {

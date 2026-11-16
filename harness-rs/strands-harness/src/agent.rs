@@ -36,6 +36,7 @@ use crate::models::{ResolveModelOptions, resolve_model};
 use crate::plugins::{EnvironmentContext, EnvironmentContextConfig, Todos, TodosConfig};
 use crate::prompt::build_system_prompt;
 use crate::telemetry::setup_telemetry;
+use crate::text::js_trim;
 use crate::types::{BuiltinToolsConfig, ContextManagerOption, Effort, MemoryConfig, SessionConfig};
 
 #[cfg(test)]
@@ -493,7 +494,7 @@ fn create_harness_from(
                         SessionOption::Config(config) => config,
                         _ => SessionConfig::default(),
                     };
-                    if config.id.as_deref().is_some_and(|id| id.trim().is_empty()) {
+                    if config.id.as_deref().is_some_and(|id| js_trim(id).is_empty()) {
                         return Err(HarnessError::EmptySessionId);
                     }
                     let dir = seams.path(config.dir.as_deref().unwrap_or(DEFAULT_SESSION_DIR));
@@ -653,8 +654,7 @@ async fn load_mcp_servers(servers: Option<McpServersOption>) -> Result<Vec<ToolS
 }
 
 fn sanitize_session_id(session_id: &str) -> String {
-    let sanitized: String = session_id
-        .trim()
+    let sanitized: String = js_trim(session_id)
         .to_lowercase()
         .chars()
         .map(|c| {

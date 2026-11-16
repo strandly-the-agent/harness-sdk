@@ -13,6 +13,7 @@ use super::{
     ToolsMode,
 };
 use crate::error::{HarnessError, Result};
+use crate::text::js_trim;
 
 const INSTRUCTIONS_DESCRIPTION: &str = "A system prompt defining the subagent's role.";
 
@@ -369,8 +370,8 @@ fn integer(value: f64) -> Option<i64> {
 fn js_number(value: &JsonValue) -> f64 {
     match value {
         JsonValue::Number(number) => number.as_f64().unwrap_or(f64::NAN),
-        JsonValue::String(text) if text.trim().is_empty() => 0.0,
-        JsonValue::String(text) => text.trim().parse().unwrap_or(f64::NAN),
+        JsonValue::String(text) if js_trim(text).is_empty() => 0.0,
+        JsonValue::String(text) => js_trim(text).parse().unwrap_or(f64::NAN),
         JsonValue::Bool(flag) => f64::from(u8::from(*flag)),
         JsonValue::Null => 0.0,
         JsonValue::Array(_) | JsonValue::Object(_) => f64::NAN,

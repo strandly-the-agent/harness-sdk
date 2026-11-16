@@ -803,14 +803,38 @@ fn the_url_cache_drops_expired_entries_and_is_capped() {
     };
     let start = tokio::time::Instant::now();
     let mut cache = std::collections::HashMap::new();
-    super::remember(&mut cache, "old".to_owned(), page(), start);
+    super::remember(&mut cache, "old".to_owned(), None, page(), start);
     let later = start + super::CACHE_TTL;
-    super::remember(&mut cache, "new".to_owned(), page(), later);
+    super::remember(&mut cache, "new".to_owned(), None, page(), later);
     assert_eq!(cache.keys().collect::<Vec<_>>(), ["new"]);
     for index in 0..super::MAX_CACHE_ENTRIES {
         let now = later + std::time::Duration::from_secs(1 + index as u64);
-        super::remember(&mut cache, format!("page-{index}"), page(), now);
+        super::remember(&mut cache, format!("page-{index}"), None, page(), now);
     }
     assert_eq!(cache.len(), super::MAX_CACHE_ENTRIES);
     assert!(!cache.contains_key("new"));
+}
+
+/// Review finding correctness-a7: a tool shared by agents on different sandboxes fetches the
+/// page through each sandbox instead of serving one sandbox's copy to the other.
+#[tokio::test]
+async fn does_not_serve_a_page_cached_through_one_sandbox_to_another() {
+    let first = FakeSandbox::new(page("from the first sandbox", "text/plain"));
+    let second = FakeSandbox::new(page("from the second sandbox", "text/plain"));
+    let tool = web_fetch(&model());
+    let input = || json!({ "url": "https://example.com/shared" });
+    assert_eq!(
+        invoke(&tool, input(), first.clone()).await,
+        "from the first sandbox"
+    );
+    assert_eq!(
+        invoke(&tool, input(), second.clone()).await,
+        "from the second sandbox"
+    );
+    assert_eq!(
+        invoke(&tool, input(), second.clone()).await,
+        "from the second sandbox"
+    );
+    assert_eq!(first.commands().len(), 2);
+    assert_eq!(second.commands().len(), 2);
 }

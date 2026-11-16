@@ -4,6 +4,8 @@ use std::borrow::Cow;
 
 use monty_types::{MontyException, PrintWriterCallback};
 
+use crate::text::js_trim;
+
 /// Cap on the text returned to the model; a runaway `print` should not blow up the context window.
 pub(crate) const MAX_OUTPUT_CHARS: usize = 200_000;
 
@@ -66,8 +68,8 @@ impl PrintWriterCallback for Output {
 
 pub(crate) fn cap(raw: &str, limit: usize) -> String {
     if raw.chars().nth(limit).is_none() {
-        return raw.trim().to_owned();
+        return js_trim(raw).to_owned();
     }
     let kept: String = raw.chars().take(limit).collect();
-    format!("{}\n[output truncated at {limit} characters]", kept.trim())
+    format!("{}\n[output truncated at {limit} characters]", js_trim(&kept))
 }

@@ -23,6 +23,7 @@ use strands::vended_plugins::context_injector::{ContextInjector, ContextInjector
 use tokio::sync::OnceCell;
 
 use crate::sandbox::{SandboxShell, ShellCache};
+use crate::text::js_trim;
 
 const DEFAULT_NAME: &str = "strands:environment";
 
@@ -221,7 +222,7 @@ async fn gather(sandbox: Option<&Arc<dyn Sandbox>>, shells: &ShellCache) -> Gath
 /// The first line a command prints, or `None` when it fails or prints nothing.
 async fn probe(sandbox: &dyn Sandbox, command: &str) -> Option<String> {
     let result = sandbox.execute(command, ExecuteOptions::default()).await.ok()?;
-    let out = result.stdout.trim();
+    let out = js_trim(&result.stdout);
     if result.exit_code != 0 || out.is_empty() {
         return None;
     }
