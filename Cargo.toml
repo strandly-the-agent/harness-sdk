@@ -74,6 +74,7 @@ cedar-policy = "=4.14.0"
 cedar-policy-mcp-schema-generator = "=0.7.0"
 mcp-tools-sdk = "0.5.0"
 monty = "1.5"
+monty-types = "1.5"
 process-wrap = { version = "10.0.1", default-features = false, features = ["tokio1", "process-group", "kill-on-drop", "job-object"] }
 
 # Macros
