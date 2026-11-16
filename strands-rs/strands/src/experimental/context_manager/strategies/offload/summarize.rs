@@ -266,7 +266,6 @@ impl SummarizeStrategy {
             } else {
                 None
             },
-            ..Default::default()
         }
     }
 
@@ -596,3 +595,6 @@ impl ContextStrategy for SummarizeStrategy {
         apply_offload(self, context).await
     }
 }
+
+#[cfg(test)]
+mod tests;
