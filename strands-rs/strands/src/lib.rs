@@ -2,10 +2,13 @@
 //!
 //! Strands is a model-driven SDK for building AI agents: an agent is a model, a system prompt and a
 //! list of tools, and the model's own reasoning decides which tools to call. This crate mirrors the
-//! TypeScript SDK (`@strands-agents/sdk`) concept for concept, re-cased for Rust.
+//! TypeScript SDK (`@strands-agents/sdk`) concept for concept, re-cased for Rust, and reads and
+//! writes the same JSON for messages, sessions and snapshots.
 //!
-//! An agent with one tool, invoked and then streamed (it needs a configured default model, so this
-//! example is only compiled):
+//! # Quick start
+//!
+//! An agent with one tool, invoked and then streamed. Without a `model`, an agent uses Amazon
+//! Bedrock with the default AWS credential chain, so this example is compiled but not run:
 //!
 //! ```no_run
 //! use futures::StreamExt;
@@ -25,6 +28,7 @@
 //!     let mut agent = Agent::builder() // default model: Bedrock
 //!         .system_prompt("You are a concise assistant.")
 //!         .tools([GetWeather])
+//!         .printer(false) // this example prints the output itself
 //!         .build()?;
 //!
 //!     let result = agent.invoke("What's the weather in Seattle?").await?;
@@ -33,18 +37,164 @@
 //!     {
 //!         let mut stream = agent.stream("And in Lisbon?");
 //!         while let Some(event) = stream.next().await {
-//!             if let AgentStreamEvent::ModelStreamUpdate(update) = event? {
-//!                 if let Some(text) = update.text_delta() {
-//!                     print!("{text}");
-//!                 }
+//!             if let AgentStreamEvent::ModelStreamUpdate(update) = event?
+//!                 && let Some(text) = update.text_delta()
+//!             {
+//!                 print!("{text}");
 //!             }
 //!         }
+//!         println!();
 //!     }
 //!     agent.shutdown().await
 //! }
 //! ```
 //!
-//! Messages serialize to the same wire JSON as TS:
+//! [`Agent::stream`] borrows the agent, so the stream is scoped (or dropped) before the agent is
+//! used again. [`Agent::shutdown`] stands in for TS `await using`: it finishes the agent's pending
+//! work, such as the hooks a dropped stream skipped.
+//!
+//! An agent can also be built from an [`AgentConfig`] literal, which has a field for every
+//! option:
+//!
+//! ```
+//! use strands::testing::MockMessageModel;
+//! use strands::types::messages::TextBlock;
+//! use strands::{Agent, AgentConfig, StopReason};
+//!
+//! # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+//! // A scripted model, so this runs offline; any provider goes here.
+//! let model = MockMessageModel::new();
+//! model.add_turn(vec![TextBlock::new("Hello!").into()]);
+//!
+//! let mut agent = Agent::new(AgentConfig {
+//!     model: Some(model.into()),
+//!     system_prompt: Some("You are a concise assistant.".into()),
+//!     printer: Some(false),
+//!     ..Default::default()
+//! })?;
+//! let result = agent.invoke("Hi").await?;
+//! assert_eq!(result.stop_reason(), StopReason::EndTurn);
+//! assert_eq!(result.to_string(), "Hello!");
+//! # Ok::<(), strands::Error>(())
+//! # }).unwrap();
+//! ```
+//!
+//! # Modules
+//!
+//! The modules follow the TypeScript SDK's source folders.
+//!
+//! | Module | Contents |
+//! |---|---|
+//! | [`agent`] | [`Agent`], its builder and [`AgentConfig`], [`AgentStream`], direct tool calls, snapshots, agents as tools |
+//! | [`models`] | The [`Model`](models::model::Model) trait, stream events, model info, and the providers: `BedrockModel`, `AnthropicModel`, `OpenAIModel` (each behind its feature) |
+//! | [`tools`](mod@tools) | The [`Tool`] trait, [`ToolContext`], [`FunctionTool`](tools::FunctionTool), the [`ToolRegistry`](tools::ToolRegistry), executors and structured output; [`tool`](macro@tool) and [`tools`](macro@tools) are the macros |
+//! | [`hooks`] | Typed callbacks on the agent's lifecycle events, with [`HookOrder`](hooks::HookOrder) and removal |
+//! | [`plugins`] | The [`Plugin`](plugins::Plugin) trait: named extensions that register hooks and tools |
+//! | [`middleware`] | Handlers around a stage of the agent loop, such as the model call or a tool call |
+//! | [`interrupt`] | Pausing an agent for a human answer and resuming it |
+//! | [`cancel`] | [`CancelSignal`], [`CancelHandle`] and [`CancelOptions`] |
+//! | [`conversation_manager`] | Keeping the history inside the context window: sliding window, summarizing, or none |
+//! | [`session`] | The [`SessionManager`](session::SessionManager): saving and restoring agents as snapshots |
+//! | [`storage`] | The [`Storage`](storage::Storage) trait with in-memory and local file backends |
+//! | [`sandbox`] | Where an agent's commands, code and file operations run |
+//! | [`vended_tools`] | Tools that ship with the SDK: shell, file editing, HTTP, notebooks, subagents and more |
+//! | `mcp` | The Model Context Protocol client, `McpClient` (behind the `mcp` feature) |
+//! | [`retry`] | Model retry strategies and backoffs |
+//! | [`background_tasks`] | Tools that run as tasks while the agent continues |
+//! | [`state_store`] | [`StateStore`], the JSON key-value state of an agent |
+//! | [`telemetry`] | The metrics and traces every [`AgentResult`] carries |
+//! | [`types`] | Messages, content blocks, media, citations, tool types, snapshots, and JSON helpers |
+//! | [`error`] | [`Error`], [`Result`] and the error types behind each variant |
+//! | [`experimental`] | APIs that may change in any release, such as the context manager |
+//! | [`testing`] | Test doubles for code built on Strands, such as a scripted model |
+//!
+//! More modules are part of this release: `injection` (messages injected into a running
+//! conversation), `memory` (long-term memory stores and the memory manager), `interventions` and
+//! `vended_interventions` (human-in-the-loop approval, steering and Cedar authorization),
+//! `vended_plugins` (context injection, skills and other plugins that ship with the SDK) and
+//! `models::routing` (a model router with fallback and classifier strategies).
+//!
+//! The most used types are re-exported from the crate root.
+//!
+//! # Cargo features
+//!
+//! | Feature | Default | Enables |
+//! |---|---|---|
+//! | `bedrock` | yes | The Amazon Bedrock provider (`models::BedrockModel`), which is also the default model of an agent built without one |
+//! | `anthropic` | no | The Anthropic provider (`models::AnthropicModel`) |
+//! | `openai` | no | The OpenAI provider (`models::OpenAIModel`) for the Responses and Chat Completions APIs; with `bedrock`, also Amazon Bedrock Mantle |
+//! | `mcp` | no | The Model Context Protocol client (`mcp::McpClient`) over stdio, Streamable HTTP and HTTP+SSE |
+//! | `otel` | no | OpenTelemetry export of the SDK's spans and metrics |
+//!
+//! Without `bedrock`, an agent needs an explicit `model`.
+//!
+//! # Coming from the TypeScript SDK
+//!
+//! | TypeScript | Rust |
+//! |---|---|
+//! | `new Agent({...})` | [`Agent::builder`] or [`Agent::new`] with an [`AgentConfig`] |
+//! | `agent.invoke(args, options?)` | [`Agent::invoke`], [`Agent::invoke_with`] |
+//! | `agent.stream(args, options?)` | [`Agent::stream`], [`Agent::stream_with`]; the items are `Result<AgentStreamEvent>` |
+//! | `agent.cancel(options?)` | [`Agent::cancel_handle`] then [`CancelHandle::cancel`], or [`InvokeOptions::cancel_signal`] |
+//! | `agent.addHook(Event, callback, { order })` | [`Agent::add_hook`], [`Agent::add_async_hook`], [`Agent::add_hook_impl`], and their `_with` forms for an order; each returns a [`HookCleanup`](hooks::HookCleanup) |
+//! | `tool({ name, inputSchema, callback })` | [`tool`](macro@tool) on a function, [`tools`](macro@tools) on an impl block, or [`FunctionTool`](tools::FunctionTool) |
+//! | `Tool.stream()` async generator | [`Tool::stream`], a stream that ends in a [`ToolOutcome`] |
+//! | `context.interrupt(params)` | [`ToolContext::interrupt`], which returns the response on resume |
+//! | `agent.tool.<name>.invoke(input)` | [`Agent::tool`] then `invoke(input)` |
+//! | `AbortSignal` | [`CancelSignal`] |
+//! | Zod schemas | `serde` and `schemars` types |
+//! | `Record<string, JSONValue>` state | [`StateStore`], a JSON map with typed `get` and `set` |
+//! | `Record<string, unknown>` invocation state | [`InvocationState`], a typed extensions map |
+//! | Optional peer dependencies | Cargo features |
+//! | `@strands-agents/sdk/experimental` | [`experimental`] |
+//! | `await using` | [`Agent::shutdown`] |
+//!
+//! # Interrupts
+//!
+//! A tool (or a hook) pauses the agent with an interrupt; the result then stops with
+//! [`StopReason::Interrupt`] and the caller resumes by invoking the agent with the answers:
+//!
+//! ```
+//! use serde_json::json;
+//! use strands::testing::MockMessageModel;
+//! use strands::types::messages::{TextBlock, ToolUseBlock};
+//! use strands::{Agent, InterruptResponse, StopReason, ToolContext, ToolError, tool};
+//!
+//! /// Delete a file.
+//! #[tool]
+//! async fn delete_file(
+//!     #[tool(context)] ctx: &ToolContext,
+//!     /// The path to delete.
+//!     path: String,
+//! ) -> Result<String, ToolError> {
+//!     // The first run ends the tool here; the run after the resume gets the answer.
+//!     let answer = ctx.interrupt("confirm".into())?;
+//!     Ok(if answer == "yes" { format!("deleted {path}") } else { "kept".to_owned() })
+//! }
+//!
+//! # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+//! let model = MockMessageModel::new();
+//! model.add_turn(vec![ToolUseBlock::new("delete_file", "tool-1", json!({"path": "a.txt"})).into()]);
+//! model.add_turn(vec![TextBlock::new("Done.").into()]);
+//! let mut agent = Agent::builder().model(model).tools([DeleteFile]).printer(false).build()?;
+//!
+//! let mut result = agent.invoke("Delete a.txt").await?;
+//! while result.stop_reason() == StopReason::Interrupt {
+//!     let answers: Vec<InterruptResponse> = result
+//!         .interrupts()
+//!         .iter()
+//!         .map(|interrupt| InterruptResponse::new(interrupt.id(), json!("yes")))
+//!         .collect();
+//!     result = agent.invoke(answers).await?;
+//! }
+//! assert_eq!(result.to_string(), "Done.");
+//! # Ok::<(), strands::Error>(())
+//! # }).unwrap();
+//! ```
+//!
+//! # Wire compatibility
+//!
+//! //! Messages serialize to the same wire JSON as TS:
 //!
 //! ```
 //! use serde_json::json;
@@ -72,14 +222,6 @@
 //! );
 //! # Ok::<(), strands::Error>(())
 //! ```
-//!
-//! # Cargo features
-//!
-//! - `bedrock` (default): the Amazon Bedrock model provider and the default model.
-//! - `anthropic`: the Anthropic model provider.
-//! - `openai`: the OpenAI model provider; with `bedrock`, also Bedrock Mantle.
-//! - `mcp`: the Model Context Protocol client.
-//! - `otel`: OpenTelemetry export.
 //!
 //! # Panics and unwinding
 //!
