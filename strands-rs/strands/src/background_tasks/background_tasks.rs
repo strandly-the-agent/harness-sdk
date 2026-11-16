@@ -21,6 +21,7 @@ use crate::interrupt::{Interrupt, InterruptResponse};
 use crate::middleware::{InvokeModelStage, MiddlewareStage};
 use crate::plugins::Plugin;
 use crate::state_store::StateStore;
+use crate::telemetry::AttributeValue;
 use crate::tools::executors::executor::{
     BackgroundToolRun, ToolGuard, error_text_result, execute_background,
 };
@@ -650,7 +651,11 @@ impl BackgroundTaskScheduler {
         );
     }
 
-    fn manager(&self, hooks: HookRegistry) -> Result<Manager> {
+    fn manager(
+        &self,
+        hooks: HookRegistry,
+        trace_attributes: Vec<(String, AttributeValue)>,
+    ) -> Result<Manager> {
         let guarding = self.clone();
         let guard: ToolGuard = Arc::new(move |tool| guarding.assert_tool_can_run(tool));
         let execute: ExecuteTool = Arc::new(move |run: ToolRun| {
@@ -662,6 +667,7 @@ impl BackgroundTaskScheduler {
                 invocation_state: run.invocation_state,
                 task_id: run.task_id,
                 guard: Some(Arc::clone(&guard)),
+                trace_attributes: trace_attributes.clone(),
             }))
         });
         let updated = self.clone();
@@ -707,7 +713,8 @@ impl Plugin for BackgroundTaskScheduler {
                 )));
             }
         }
-        let manager = self.manager(agent.hooks().clone())?;
+        let trace_attributes = agent.telemetry().lock().tracer.trace_attributes().to_vec();
+        let manager = self.manager(agent.hooks().clone(), trace_attributes)?;
         let attached = Attached {
             manager,
             app_state: agent.app_state().clone(),

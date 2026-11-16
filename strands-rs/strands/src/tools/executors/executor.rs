@@ -29,7 +29,7 @@ use crate::middleware::{
     ExecuteToolContext, ExecuteToolResult, ExecuteToolStage, MiddlewareError, MiddlewareInterrupt,
     MiddlewareItem, MiddlewareStream,
 };
-use crate::telemetry::LocalTelemetry;
+use crate::telemetry::{AttributeValue, LocalTelemetry};
 use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStreamItem};
 use crate::types::agent::{AgentStreamEvent, InvocationState, ToolAgent, ToolStreamUpdateEventData};
 use crate::types::messages::{Message, ToolResultBlock, ToolUseBlock};
@@ -469,6 +469,8 @@ pub(crate) struct BackgroundToolRun {
     pub(crate) invocation_state: InvocationState,
     pub(crate) task_id: String,
     pub(crate) guard: Option<ToolGuard>,
+    /// The agent's `trace_attributes`, for the run's own tracer (TS `new Tracer(traceAttributes)`).
+    pub(crate) trace_attributes: Vec<(String, AttributeValue)>,
 }
 
 /// Runs a background tool call through the `ExecuteToolStage` chain and `AfterToolCallEvent`,
@@ -490,9 +492,14 @@ pub(crate) async fn execute_background(
             run.invocation_state.clone(),
             interrupt,
         );
+        let telemetry = LocalTelemetry::default();
+        telemetry
+            .lock()
+            .tracer
+            .set_trace_attributes(run.trace_attributes.clone());
         let terminal = ToolTerminal {
             agent: run.agent.clone(),
-            telemetry: LocalTelemetry::default(),
+            telemetry,
             preset: None,
             interrupt_scope: Some(run.task_id.clone()),
             guard: run.guard.clone(),

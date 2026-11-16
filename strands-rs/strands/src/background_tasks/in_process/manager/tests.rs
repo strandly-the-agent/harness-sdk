@@ -29,6 +29,7 @@ fn manager() -> Manager {
             invocation_state: run.invocation_state,
             task_id: run.task_id,
             guard: None,
+            trace_attributes: Vec::new(),
         }))
     });
     Manager::new(

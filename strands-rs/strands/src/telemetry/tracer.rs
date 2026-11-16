@@ -400,6 +400,10 @@ impl LocalTracer {
         self.trace_attributes = attributes;
     }
 
+    pub(crate) fn trace_attributes(&self) -> &[(String, AttributeValue)] {
+        &self.trace_attributes
+    }
+
     pub(crate) fn traces(&self) -> &[AgentTrace] {
         &self.traces
     }

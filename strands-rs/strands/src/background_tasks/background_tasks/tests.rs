@@ -505,3 +505,46 @@ async fn cannot_load_a_snapshot_while_background_tasks_are_still_tracked() {
         "Cannot load a snapshot while background tasks are still tracked"
     );
 }
+
+/// Rust-only: the run's own tracer carries the agent's `trace_attributes` (TS
+/// `tracer: new Tracer(config?.traceAttributes)` in `agent/agent.ts`).
+#[cfg(feature = "otel")]
+mod rust_only {
+    use super::*;
+    use crate::telemetry::AttributeValue;
+    use crate::telemetry::tests::recording;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_background_tool_span_carries_the_agents_trace_attributes() {
+        // With the global recorder installed, a callsite first hit on another test's thread
+        // can't cache `Interest::never` while this test's scoped subscriber is the only one.
+        let ((recorder, _guard), _) = crate::test_support::WarnRecorder::capture(recording);
+        let input = json!({"value": "x", "_background_execution": true});
+        let model = model(vec![vec![call("work", "work-use", input)], vec![text("Done.")]]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools(vec![work_tool("work")])
+            .background_tasks(agentic(&["work"]))
+            .trace_attributes([("custom.attr".to_owned(), AttributeValue::from("value"))])
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.invoke("Run work.").await.unwrap();
+        agent.shutdown().await.unwrap();
+
+        let spans = recorder.spans();
+        let tool_spans: Vec<_> = spans
+            .iter()
+            .filter(|span| span.name == "execute_tool work")
+            .collect();
+        assert_eq!(tool_spans.len(), 1);
+        for span in tool_spans {
+            let custom = span
+                .attributes
+                .iter()
+                .find(|attribute| attribute.key.as_str() == "custom.attr")
+                .map(|attribute| attribute.value.to_string());
+            assert_eq!(custom.as_deref(), Some("value"));
+        }
+    }
+}
