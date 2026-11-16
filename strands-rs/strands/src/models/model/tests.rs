@@ -1281,10 +1281,9 @@ mod info {
         assert!(provider.estimate_utilization(0).abs() < f64::EPSILON);
     }
 
-    /// Ported from strands-ts/src/models/__tests__/server-side-summary-capability.test.ts (the
-    /// model part of `stores its summary as text`; the agent part is Phase 6).
+    /// The model half of `stores its summary as text`: the default `summarize` names no provider.
     #[tokio::test]
-    async fn stores_its_summary_as_text() {
+    async fn a_custom_provider_summary_names_no_provider() {
         let provider = TestModelProvider::from_events(
             serde_json::from_value(serde_json::json!([
                 {"type": "modelMessageStartEvent", "role": "assistant"},
@@ -1310,5 +1309,81 @@ mod info {
         };
         assert_eq!(summary.text(), "a summary");
         assert_eq!(summary.provider(), None);
+    }
+
+    /// Ported from strands-ts/src/models/__tests__/server-side-summary-capability.test.ts
+    #[tokio::test]
+    async fn stores_its_summary_as_text() {
+        use std::sync::Arc;
+
+        use crate::agent::Agent;
+        use crate::experimental::context_manager::strategies::offload::{
+            Offload, OffloadConditions, OffloadTarget, SummarizeConfig,
+        };
+        use crate::experimental::context_manager::{ContextState, ContextStrategy};
+        use crate::testing::MockMessageModel;
+
+        fn message(role: Role, text: &str) -> Message {
+            Message::new(role, vec![TextBlock::new(text).into()])
+        }
+
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn(vec![TextBlock::new("a summary").into()]);
+        model.add_turn(vec![TextBlock::new("a summary").into()]);
+        model.update_config(BaseModelConfig::builder().model_id("claude-sonnet-5-5").build());
+        assert_eq!(
+            model.model_info().capabilities.unwrap().server_side_summary,
+            Some(true)
+        );
+        let messages = vec![
+            message(Role::User, "task"),
+            message(Role::Assistant, "old1"),
+            message(Role::User, "old2"),
+            message(Role::Assistant, "old3"),
+            message(Role::User, "recent"),
+        ];
+        let tokens = model
+            .count_tokens(&messages[1..4], CountTokensOptions::default())
+            .await
+            .unwrap();
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .messages(messages)
+            .printer(false)
+            .build()
+            .unwrap();
+        let strategy = Offload::summarize(OffloadTarget::All, SummarizeConfig::default())
+            .unwrap()
+            .when(OffloadConditions {
+                threshold: None,
+                utilization: Some(0.8),
+                preserve_recent: Some(1.0),
+            })
+            .unwrap();
+
+        let mut state = ContextState::new(&mut agent.local, 0.9);
+        assert!(strategy.apply(&mut state).await.unwrap());
+        agent.invoke("next").await.unwrap();
+
+        let marker = format!("[Summarized: 3 messages, ~{tokens} tokens]\n\na summary");
+        let first_three: Vec<serde_json::Value> = agent.messages()[..3]
+            .iter()
+            .map(|message| serde_json::json!({"role": message.role(), "content": message.content()}))
+            .collect();
+        assert_eq!(
+            serde_json::Value::from(first_three),
+            serde_json::json!([
+                {"role": "user", "content": [{"text": "task"}]},
+                {"role": "assistant", "content": [{"text": marker}]},
+                {"role": "user", "content": [{"text": "recent"}]},
+            ])
+        );
+        let sent_summary = model
+            .requests()
+            .iter()
+            .flat_map(|request| &request.messages)
+            .flat_map(Message::content)
+            .any(|block| matches!(block, ContentBlock::Summary(_)));
+        assert!(!sent_summary);
     }
 }
