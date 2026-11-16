@@ -18,6 +18,7 @@ pub use agent::Agent;
 pub use agent_as_tool::{AgentAsTool, AgentAsToolOptions};
 pub use config::{AgentBuilder, AgentConfig, MemoryManagerSource, ModelSource, agent_builder};
 pub use invocation_context::{InvocationContext, InvocationContextUsage};
+pub(crate) use run::CancelledError;
 pub use snapshot::{SnapshotField, SnapshotPreset, TakeSnapshotOptions};
 pub use stream::AgentStream;
 pub use tool_caller::{DirectToolCallOptions, ToolCallStream, ToolHandle};

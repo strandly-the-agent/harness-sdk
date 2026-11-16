@@ -59,7 +59,7 @@ const BLANK_TEXT_PLACEHOLDER: &str = "[blank text]";
 /// TS `CancelledError`: what `AfterModelCallEvent` hooks see when a cancel stops a model call.
 #[derive(Debug, thiserror::Error)]
 #[error("Agent invocation cancelled")]
-struct CancelledError;
+pub(crate) struct CancelledError;
 
 /// Why a loop step stopped before finishing.
 enum Stop {

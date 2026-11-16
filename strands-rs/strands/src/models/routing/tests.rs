@@ -2,3 +2,4 @@
 
 mod classifier_strategy;
 mod fallback_strategy;
+mod router;

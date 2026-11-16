@@ -2,13 +2,25 @@
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
+use async_trait::async_trait;
+use futures::future::BoxFuture;
+
+use crate::agent::{CancelledError, InvocationContext};
 use crate::error::{Error, Result};
+use crate::hooks::{
+    AfterInvocationEvent, AfterModelCallEvent, BeforeInvocationEvent, HookCallbackOptions, HookOrder,
+};
+use crate::middleware::{InvokeModelContext, InvokeModelStage, MiddlewareError, MiddlewareStage};
 use crate::models::model::Model;
 use crate::models::routing::fallback_strategy::FallbackStrategy;
-use crate::models::routing::strategy::RoutingStrategy;
+use crate::models::routing::strategy::{RoutingAttempt, RoutingContext, RoutingStrategy};
+use crate::plugins::Plugin;
+use crate::types::agent::{InvocationState, LocalAgent};
 use crate::types::json::JsonObject;
+use crate::types::messages::{Message, SystemPrompt};
+use crate::types::tools::ToolSpec;
 
 /// What a [`RoutingCandidate`] routes to: a concrete model or an opaque nested router.
 #[derive(Clone)]
@@ -224,6 +236,350 @@ pub struct ModelRouterOptions {
     pub max_switches: Option<u32>,
 }
 
+impl ModelRouter {
+    /// Attaches this router as `agent`'s configured model (TS `attachToAgent`): registers the
+    /// selection middleware and the routing and cleanup hooks, once per agent.
+    pub(crate) fn attach_to_agent(&self, agent: &LocalAgent) {
+        let owner = agent.agent_sandbox().owner();
+        {
+            let mut agents = self.agents();
+            agents.retain(|attached| attached.agent.strong_count() > 0);
+            if agents.iter().any(|attached| attached.is(owner)) {
+                return;
+            }
+            agents.push(AttachedAgent {
+                agent: Arc::downgrade(owner),
+                state: None,
+            });
+        }
+
+        let router = self.clone();
+        // Dropping a cleanup keeps its registration.
+        let _ = agent.add_middleware(InvokeModelStage::input(move |context| {
+            let router = router.clone();
+            async move { router.selection_middleware(context).await }
+        }));
+        let hooks = agent.hooks();
+        let router = self.clone();
+        let _ = hooks.add_async_hook_with::<AfterModelCallEvent<'static>>(
+            HookCallbackOptions {
+                order: HookOrder::MODEL_ROUTING,
+            },
+            move |event| {
+                let router = router.clone();
+                Box::pin(async move { router.on_model_result(event).await })
+            },
+        );
+        let router = self.clone();
+        let _ = hooks.add_hook_with(
+            HookCallbackOptions {
+                order: HookOrder::SDK_LAST,
+            },
+            move |event: &mut AfterInvocationEvent<'_>| router.clear_state(event.agent()),
+        );
+        let router = self.clone();
+        let _ = hooks.add_hook_with(
+            HookCallbackOptions {
+                order: HookOrder::SDK_FIRST,
+            },
+            move |event: &mut BeforeInvocationEvent<'_>| router.clear_state(event.agent()),
+        );
+    }
+
+    /// The model routed for `agent`'s current invocation (TS `getRoutedModel`); `None` before
+    /// the opening selection.
+    pub(crate) fn routed_model(&self, agent: &LocalAgent) -> Option<Arc<dyn Model>> {
+        self.state(agent.agent_sandbox().owner()).map(|state| state.model)
+    }
+
+    fn agents(&self) -> MutexGuard<'_, Vec<AttachedAgent>> {
+        self.inner.agents.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn is_attached(&self, owner: &Arc<()>) -> bool {
+        self.agents().iter().any(|attached| attached.is(owner))
+    }
+
+    fn state(&self, owner: &Arc<()>) -> Option<RoutingState> {
+        self.agents()
+            .iter()
+            .find(|attached| attached.is(owner))
+            .and_then(|attached| attached.state.clone())
+    }
+
+    fn set_state(&self, owner: &Arc<()>, state: Option<RoutingState>) {
+        if let Some(attached) = self.agents().iter_mut().find(|attached| attached.is(owner)) {
+            attached.state = state;
+        }
+    }
+
+    /// Drops `agent`'s routing state so it never spans invocations.
+    fn clear_state(&self, agent: &LocalAgent) {
+        self.set_state(agent.agent_sandbox().owner(), None);
+    }
+
+    /// Applies the invocation's selection to the model call, opening one on the first call.
+    async fn selection_middleware(
+        &self,
+        mut context: InvokeModelContext,
+    ) -> std::result::Result<InvokeModelContext, MiddlewareError> {
+        let owner = Arc::clone(context.agent().agent_sandbox().owner());
+        let state = match self.state(&owner) {
+            Some(state) => state,
+            None => {
+                let routing_context = self.routing_context(
+                    context.messages.clone(),
+                    context.system_prompt.clone(),
+                    context.tool_specs.clone(),
+                    context.invocation_state.clone(),
+                    context.invocation_context(),
+                    Vec::new(),
+                );
+                let (candidate, model) = self.open(&routing_context).await?;
+                let state = RoutingState::new(candidate, model);
+                self.set_state(&owner, Some(state.clone()));
+                state
+            }
+        };
+        context.model = state.model;
+        Ok(context)
+    }
+
+    /// Chooses and resolves the candidate to start on. A decline serves the default model; a
+    /// strategy error and a candidate that will not resolve both propagate.
+    async fn open(&self, context: &RoutingContext) -> Result<(RoutingCandidate, Arc<dyn Model>)> {
+        let strategy = self.inner.strategy.name();
+        let Some(candidate) = self.ask(context).await? else {
+            let model = self.default_model();
+            // The constructor rejects an empty candidate list.
+            let fallback = self.inner.candidates.first().cloned().ok_or_else(|| {
+                Error::other("ModelRouter requires at least one candidate model")
+            })?;
+            tracing::info!(
+                "strategy=<{strategy}>, candidate=<{}>, model=<{}> | strategy declined the opening choice, using the default model",
+                fallback.label(),
+                model_label(&model)
+            );
+            return Ok((fallback, model));
+        };
+        let model = self.resolve(&candidate, context).await?;
+        tracing::info!(
+            "strategy=<{strategy}>, candidate=<{}>, model=<{}> | candidate selected",
+            candidate.label(),
+            model_label(&model)
+        );
+        Ok((candidate, model))
+    }
+
+    /// Asks the strategy for a candidate; one that isn't among `context.candidates` is an error.
+    async fn ask(&self, context: &RoutingContext) -> Result<Option<RoutingCandidate>> {
+        let candidate = self.inner.strategy.select(context).await?;
+        match candidate {
+            Some(candidate) if !context.candidates.contains(&candidate) => Err(Error::other(
+                "strategy.select must return a candidate from context.candidates",
+            )),
+            candidate => Ok(candidate),
+        }
+    }
+
+    /// Resolves a candidate to a concrete model. A nested router is asked with its own
+    /// candidates and no attempts, so it contributes one candidate and never advances.
+    fn resolve<'a>(
+        &'a self,
+        candidate: &'a RoutingCandidate,
+        context: &'a RoutingContext,
+    ) -> BoxFuture<'a, Result<Arc<dyn Model>>> {
+        Box::pin(async move {
+            let nested = match candidate.model() {
+                CandidateModel::Model(model) => return Ok(Arc::clone(model)),
+                CandidateModel::Router(nested) => nested,
+            };
+            let nested_context = nested.routing_context(
+                context.messages.clone(),
+                context.system_prompt.clone(),
+                context.tool_specs.clone(),
+                context.invocation_state.clone(),
+                context.invocation_context.as_ref(),
+                Vec::new(),
+            );
+            match nested.ask(&nested_context).await? {
+                None => Ok(nested.default_model()),
+                Some(selected) => nested.resolve(&selected, &nested_context).await,
+            }
+        })
+    }
+
+    /// Records the outcome and, after an unclaimed failure, applies the strategy's next choice.
+    async fn on_model_result(&self, event: &mut AfterModelCallEvent<'_>) {
+        let owner = Arc::clone(event.agent().agent_sandbox().owner());
+        let Some(mut state) = self.state(&owner) else {
+            return;
+        };
+        let error = event.error();
+        if error.is_some_and(is_cancelled) {
+            return;
+        }
+        if event.stop_data().is_some() {
+            state.attempts.push(RoutingAttempt::success(state.candidate.clone()));
+            // The candidate that succeeded opens the next round, counting as used.
+            state.switched_to = vec![state.candidate.clone()];
+            self.set_state(&owner, Some(state));
+            return;
+        }
+        let Some(error) = error.filter(|_| !event.retry()) else {
+            return;
+        };
+
+        state
+            .attempts
+            .push(RoutingAttempt::failure(state.candidate.clone(), error));
+        match self.inner.max_switches {
+            Some(max_switches) if state.switches >= max_switches => tracing::warn!(
+                "maxSwitches=<{max_switches}> | switch cap reached, leaving the error to surface"
+            ),
+            _ => {
+                if self.advance(event, &mut state, error).await {
+                    event.set_retry(true);
+                }
+            }
+        }
+        self.set_state(&owner, Some(state));
+    }
+
+    /// Switches to the strategy's next candidate, returning whether the call should be retried.
+    ///
+    /// A strategy that fails, declines or names a candidate the round already used leaves the
+    /// model's error to surface. A candidate that will not resolve takes its slot in the round
+    /// and the strategy is asked once more, so the round stays bounded by the candidate count.
+    async fn advance(
+        &self,
+        event: &mut AfterModelCallEvent<'_>,
+        state: &mut RoutingState,
+        error: &Error,
+    ) -> bool {
+        loop {
+            let agent = event.agent();
+            let context = self.routing_context(
+                agent.messages().to_vec(),
+                agent.system_prompt().cloned(),
+                agent.tool_registry().tool_specs(),
+                event.invocation_state().clone(),
+                event.invocation_context(),
+                state.attempts.clone(),
+            );
+
+            // A model error is already pending, so a broken answer must not replace it.
+            let candidate = match self.ask(&context).await {
+                Ok(Some(candidate)) => candidate,
+                Ok(None) => return false,
+                Err(error) => {
+                    tracing::warn!(
+                        "strategy=<{}>, error=<{}> | routing failed, leaving the error to surface",
+                        self.inner.strategy.name(),
+                        error_label(&error)
+                    );
+                    return false;
+                }
+            };
+            // A round uses each candidate at most once, so a strategy that cycles cannot keep
+            // resetting the retry budget.
+            if state.switched_to.contains(&candidate) {
+                tracing::info!(
+                    "candidate=<{}> | already used this round, leaving the error to surface",
+                    candidate.label()
+                );
+                return false;
+            }
+
+            match self.resolve(&candidate, &context).await {
+                Ok(model) => {
+                    tracing::info!(
+                        "from_candidate=<{}>, to_candidate=<{}>, error=<{}> | model call failed, switching candidate",
+                        state.candidate.label(),
+                        candidate.label(),
+                        error.name()
+                    );
+                    state.candidate = candidate.clone();
+                    state.model = model;
+                    state.switched_to.push(candidate);
+                    state.switches += 1;
+                    return true;
+                }
+                Err(resolution_error) => {
+                    tracing::warn!(
+                        "candidate=<{}>, error=<{}> | candidate could not be resolved, asking again",
+                        candidate.label(),
+                        error_label(&resolution_error)
+                    );
+                    // Recorded so a strategy reading attempts stops offering it, and slot-burned
+                    // so termination does not depend on the strategy doing that.
+                    state
+                        .attempts
+                        .push(RoutingAttempt::failure(candidate.clone(), &resolution_error));
+                    state.switched_to.push(candidate);
+                }
+            }
+        }
+    }
+
+    /// A [`RoutingContext`] over this router's candidates.
+    fn routing_context(
+        &self,
+        messages: Vec<Message>,
+        system_prompt: Option<SystemPrompt>,
+        tool_specs: Vec<ToolSpec>,
+        invocation_state: InvocationState,
+        invocation_context: Option<&InvocationContext>,
+        attempts: Vec<RoutingAttempt>,
+    ) -> RoutingContext {
+        let mut context = RoutingContext::new(self.inner.candidates.iter().cloned())
+            .with_messages(messages)
+            .with_tool_specs(tool_specs)
+            .with_invocation_state(invocation_state)
+            .with_attempts(attempts);
+        context.system_prompt = system_prompt;
+        context.invocation_context = InvocationContext::auxiliary(invocation_context);
+        context
+    }
+}
+
+impl AttachedAgent {
+    fn is(&self, owner: &Arc<()>) -> bool {
+        std::ptr::eq(self.agent.as_ptr(), Arc::as_ptr(owner))
+    }
+}
+
+#[async_trait]
+impl Plugin for ModelRouter {
+    fn name(&self) -> &str {
+        Self::NAME
+    }
+
+    /// Does nothing for the agent this router is the model of, which the agent attached when
+    /// it was built.
+    ///
+    /// # Errors
+    ///
+    /// The router was passed as an ordinary plugin rather than as the model.
+    async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {
+        if self.is_attached(agent.agent_sandbox().owner()) {
+            Ok(())
+        } else {
+            Err(Error::other(NOT_THE_MODEL))
+        }
+    }
+}
+
+/// Whether `error` is the cancel of the invocation (TS `CancelledError`).
+fn is_cancelled(error: &Error) -> bool {
+    matches!(error, Error::Other(source) if source.is::<CancelledError>())
+}
+
+/// An error as TS logs it (`String(error)`): its name, then its message.
+fn error_label(error: &Error) -> String {
+    format!("{}: {error}", error.name())
+}
+
 impl fmt::Debug for ModelRouterOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModelRouterOptions")
@@ -238,7 +594,40 @@ pub(super) struct RouterInner {
     pub(super) default_model: Arc<dyn Model>,
     pub(super) strategy: Arc<dyn RoutingStrategy>,
     pub(super) max_switches: Option<u32>,
+    /// The agents this router is the model of, each with its invocation's routing state (TS
+    /// keeps the state in the invocation state under an agent/router key).
+    agents: Mutex<Vec<AttachedAgent>>,
 }
+
+struct AttachedAgent {
+    agent: Weak<()>,
+    state: Option<RoutingState>,
+}
+
+/// One invocation's candidate, attempt history and switch accounting.
+#[derive(Clone)]
+struct RoutingState {
+    candidate: RoutingCandidate,
+    model: Arc<dyn Model>,
+    attempts: Vec<RoutingAttempt>,
+    /// The candidates used in the current failure round; the opening candidate counts as used.
+    switched_to: Vec<RoutingCandidate>,
+    switches: u32,
+}
+
+impl RoutingState {
+    fn new(candidate: RoutingCandidate, model: Arc<dyn Model>) -> Self {
+        Self {
+            switched_to: vec![candidate.clone()],
+            candidate,
+            model,
+            attempts: Vec::new(),
+            switches: 0,
+        }
+    }
+}
+
+const NOT_THE_MODEL: &str = "ModelRouter must be passed through Agent({ model }), not plugins";
 
 /// Routes each agent invocation among a fixed set of candidate models (TS `ModelRouter`).
 ///
@@ -300,6 +689,7 @@ impl ModelRouter {
                 default_model,
                 strategy: options.strategy.unwrap_or_else(|| Arc::new(FallbackStrategy)),
                 max_switches: options.max_switches,
+                agents: Mutex::default(),
             }),
         })
     }
