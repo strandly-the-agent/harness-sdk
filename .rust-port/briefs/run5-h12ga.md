@@ -1,0 +1,13 @@
+Track `h12ga`: fix Phase 12 API review findings on the options, builders and typed values. Read `.rust-port/briefs/run5-fix-common.md` first and follow it.
+
+Worktree `/mnt/workspace/wt-h12ga` (branch `wip/h12ga`), `CARGO_TARGET_DIR=/tmp/ct-h12ga`, staging dir `.rust-port/staging/h12ga/`, decisions P-1150 to P-1164.
+
+Report to read: `.rust-port/reviews/phase12-review-api-bar-raiser.md` (probes in `.rust-port/reviews/phase12-review-api-bar-raiser-probe/`). Your findings:
+- `api-1`: the PROMPT.md section 13 harness snippet must compile (`McpServersOption` from `&str`/`String`/a JSON object map; `SkillsOption` from `SkillSource`). Add the conversions and check every other TS union member of `HarnessAgentOptions` has its conversion.
+- `api-2`: the `bon` builders and their state modules are not nameable and four lack `Debug`. Follow the rule in `strands-rs/AGENTS.md` (which `harness-rs/AGENTS.md` applies unchanged); the harness has no public module, so decide between crate-root re-exports and one public `builders` module, log it, and make rustdoc render the setters.
+- `api-3`: `Effort` has no `FromStr`/`Display`/`as_str`; `parse_effort` is dead and `HarnessError::InvalidEffort` has no producer; two effort tables. One table, a public parser, and the `DIVERGENCES.md` row corrected (stage the replacement row). The parity report's `parity-3` (`/mnt/workspace/reviews/phase12-review-parity-validator.md`) is the same defect seen from the test side: make the mapped test exercise reachable code.
+- `api-11`: the portable sub-config types derive `Deserialize` with rules that differ from the normalizer.
+- `api-20`: `ProgrammaticToolCallerConfig` exposes the JSON encoding as the Rust type (`Option<Option<f64>>` seconds, `Option<Option<Vec<String>>>`); section 7.3 wants `Duration` and `Option<T>` for unlimited.
+- `api-21`: the options builder does not take tools and plugins the way the SDK builder does (decision #32, section 11 item 42: `.tools(..)` extends).
+
+You own `harness-rs/strands-harness/src/agent.rs` (the option types and their builders; not `create_harness`'s body beyond what a type change forces), `src/types.rs`, `src/lib.rs` (re-export lists), `src/models.rs` (effort parsing only), `src/config.rs` and `src/config/` (api-11 and what api-3 and api-20 force). Other tracks at the same time: `h12gb` owns `src/error.rs`, `src/tools/subagent*`, `src/plugins/todos.rs` item types, `Cargo.toml` files and the SDK `types/agent.rs`; `h12gc` owns docs, READMEs, `AGENTS.md`, crate-level rustdoc text and new files under `tests/`. Attribute lines (`#[builder(..)]`, `derive`) you add on config structs in files another track owns are fine: keep each to that line.

@@ -1,0 +1,15 @@
+Track `h12gb`: fix Phase 12 API review findings on errors, the subagent tool types, the SDK `ToolAgent` addition and housekeeping. Read `.rust-port/briefs/run5-fix-common.md` first and follow it.
+
+Worktree `/mnt/workspace/wt-h12gb` (branch `wip/h12gb`), `CARGO_TARGET_DIR=/mnt/workspace/.cache/ct-h12gb`, staging dir `.rust-port/staging/h12gb/`, decisions P-1165 to P-1179.
+
+Report to read: `.rust-port/reviews/phase12-review-api-bar-raiser.md` (probes in `.rust-port/reviews/phase12-review-api-bar-raiser-probe/`). Your findings:
+- `api-5`: the SDK has two public `ToolAgent` methods for one job (`call_tool`, `call_tool_with_id_prefix`). Keep one (section 7.4: the narrowest public API), document the id that hooks and spans see, update the harness caller in `tools/programmatic_tool_caller.rs` and the decision log (P-992).
+- `api-8`: `AgentSpec` and `TodoItem` against decision #65.
+- `api-9`: `HarnessError` fields that are strings where a type or a source exists.
+- `api-12`: fixed-length array constants over `#[non_exhaustive]` enums.
+- `api-13`: two unused tokio features and a manifest warning on every command (`unused workspace dependency strands-harness`; keep `cargo package` working for the three crates: check `cargo package --list -p strands-harness --allow-dirty` still works).
+- `api-16`: stale `expect(dead_code)` with "lands separately" reasons, the dead internals behind them, and review-finding ids in test comments (section 7.6: no issue references in tests). The parity report's `parity-4` (`/mnt/workspace/reviews/phase12-review-parity-validator.md`) covers the same ground, including four default constants that are never read: wire them to their TS use or delete them. Leave `parse_effort`/`InvalidEffort` (track `h12ga`) and `shutdown_telemetry` (already fixed on the branch) alone.
+- `api-18`: `ModelFeatureDisabled` names a feature of the `strands` crate. The text `model 'anthropic/...' requires the strands feature "anthropic"` is fixed by PROMPT.md section 10, so the message stays byte-identical; make the rustdoc of the variant and of the model option say that `strands-harness` forwards the feature of the same name, stage a decision entry that records the reviewer's point for the owner, and change no text.
+- `api-19`: `make_subagent`: the TS call shapes for `Fixed(..)` and for the builder callback need wrapping the caller has to discover.
+
+You own `harness-rs/strands-harness/src/error.rs` (and the call sites a field type change forces, in any file: keep those edits to the changed expressions), `src/tools/subagent.rs`, `src/tools/subagent/`, `src/tools/programmatic_tool_caller*`, the item types of `src/plugins/todos.rs`, `harness-rs/strands-harness/Cargo.toml`, the root `Cargo.toml`, and in the SDK `strands-rs/strands/src/types/agent.rs` and `tools/executors/` with their tests. Other tracks at the same time: `h12ga` owns `agent.rs` option types, `types.rs`, `lib.rs` re-exports, `models.rs` effort parsing, `config*`; `h12gc` owns docs, READMEs, `AGENTS.md`, crate-level rustdoc text and new files under `tests/`.

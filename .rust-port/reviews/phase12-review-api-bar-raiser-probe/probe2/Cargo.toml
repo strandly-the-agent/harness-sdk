@@ -1,0 +1,12 @@
+[package]
+name = "review12-api-probe2"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+strands-harness = { path = "/mnt/workspace/review-h12/harness-rs/strands-harness", default-features = false }
+strands = { path = "/mnt/workspace/review-h12/strands-rs/strands", default-features = false, features = ["anthropic"] }
+tokio = { version = "1.54", features = ["full"] }
+
+[workspace]
