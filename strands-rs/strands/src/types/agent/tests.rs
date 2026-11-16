@@ -48,6 +48,18 @@ fn invocation_state_stores_one_value_per_type_and_clones_share_it() {
 }
 
 #[test]
+fn a_detached_invocation_state_copies_the_values_and_stops_sharing() {
+    let state = InvocationState::new();
+    state.insert("alice");
+    let copy = state.detached();
+    copy.insert(7_u8);
+    copy.insert("bob");
+    assert_eq!(copy.get::<&str>(), Some("bob"));
+    assert_eq!(state.get::<&str>(), Some("alice"));
+    assert_eq!(state.get::<u8>(), None);
+}
+
+#[test]
 fn local_agent_defaults_match_ts() {
     let agent = local_agent();
     assert_eq!(agent.id(), "agent");

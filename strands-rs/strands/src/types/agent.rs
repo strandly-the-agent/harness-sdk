@@ -56,6 +56,19 @@ impl InvocationState {
         Self::default()
     }
 
+    /// A copy with its own storage: later changes to either one don't reach the other.
+    #[must_use]
+    pub fn detached(&self) -> Self {
+        let extensions = self
+            .extensions
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Self {
+            extensions: Arc::new(RwLock::new(extensions)),
+        }
+    }
+
     /// Stores `value`, returning the previous value of the same type.
     pub fn insert<T: Clone + Send + Sync + 'static>(&self, value: T) -> Option<T> {
         self.extensions
