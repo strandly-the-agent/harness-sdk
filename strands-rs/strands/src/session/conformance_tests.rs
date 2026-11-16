@@ -8,12 +8,18 @@ use serde_json::{Value, json};
 
 use super::snapshot_storage_adapter::{SnapshotLocation, SnapshotManifest, SnapshotStorageAdapter};
 use super::{ListSnapshotIdsOptions, SessionManager, SessionManagerConfig};
-use crate::Agent;
 use crate::agent::TakeSnapshotOptions;
+use crate::experimental::context_manager::{ContextManagerConfig, Stash};
 use crate::storage::{InMemoryStorage, LocalFileStorage, Storage, namespace};
 use crate::testing::MockMessageModel;
-use crate::types::messages::TextBlock;
+use crate::tools::FunctionTool;
+use crate::types::media::{ImageBlock, ImageFormat};
+use crate::types::messages::{
+    CachePointBlock, JsonBlock, Message, Role, TextBlock, ToolResultBlock, ToolUseBlock,
+};
 use crate::types::snapshot::{Scope, Snapshot};
+use crate::types::tools::ToolResultStatus;
+use crate::{Agent, ToolError};
 
 const SESSION: &str = "conformance-session";
 const AGENT: &str = "session_agent";
@@ -240,4 +246,167 @@ async fn local_file_storage_reads_the_ts_external_stash_session_files() {
         snapshot.data()["stash"],
         json!({"location": "external", "storageType": "LocalFileStorage"})
     );
+}
+
+#[tokio::test]
+async fn rust_rewrites_the_ts_external_stash_entries_byte_for_byte() {
+    let (ts_storage, keys) = ts_session("local_file_external_stash").await;
+    let ts_stash = Stash::new(
+        Arc::new(ts_storage.clone()),
+        "file-stash-session",
+        "file_stash_agent",
+        false,
+    )
+    .unwrap();
+    let rust_storage = InMemoryStorage::new();
+    let rust_stash = Stash::new(
+        Arc::new(rust_storage.clone()),
+        "file-stash-session",
+        "file_stash_agent",
+        false,
+    )
+    .unwrap();
+    rust_stash
+        .load_snapshot(&ts_stash.take_snapshot().await.unwrap())
+        .await
+        .unwrap();
+    let stash_keys: Vec<&String> = keys.iter().filter(|key| key.starts_with("context/")).collect();
+    assert_eq!(stash_keys.len(), 6);
+    assert_eq!(rust_storage.list("").await.unwrap().len(), 6);
+    for key in stash_keys {
+        assert_eq!(
+            rust_storage.read(key).await.unwrap(),
+            ts_storage.read(key).await.unwrap(),
+            "{key}"
+        );
+    }
+}
+
+fn stash_fixture(name: &str) -> String {
+    let path = fixtures().join("../stash").join(name);
+    std::fs::read_to_string(path).unwrap().trim().to_owned()
+}
+
+#[tokio::test]
+async fn stash_take_snapshot_matches_the_ts_fixture() {
+    let message = Message::new(
+        Role::User,
+        vec![
+            TextBlock::new("stash me").into(),
+            ImageBlock::new(
+                ImageFormat::Png,
+                vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+            )
+            .into(),
+            CachePointBlock::new().into(),
+        ],
+    )
+    .with_tracking_id("tracking-stash-1");
+    let tool_result = Message::new(
+        Role::User,
+        vec![
+            ToolResultBlock::new(
+                "tooluse_stash_3",
+                ToolResultStatus::Success,
+                vec![TextBlock::new("a").into(), JsonBlock::new(json!({"b": 2})).into()],
+            )
+            .into(),
+        ],
+    )
+    .with_tracking_id("tracking-stash-2");
+    let stash = Stash::new(
+        Arc::new(InMemoryStorage::new()),
+        "stash-session",
+        "stash_agent",
+        false,
+    )
+    .unwrap();
+    stash.store_message(&message, None).await;
+    stash.store_message(&tool_result, None).await;
+    let snapshot = Value::Object(stash.take_snapshot().await.unwrap());
+    assert_eq!(
+        serde_json::to_string(&snapshot).unwrap(),
+        stash_fixture("inline_entries.json")
+    );
+}
+
+#[test]
+fn the_backends_report_the_ts_storage_type_names() {
+    let names: Value = serde_json::from_str(&stash_fixture("storage_type_names.json")).unwrap();
+    assert_eq!(
+        json!({
+            "InMemoryStorage": InMemoryStorage::new().storage_type_name(),
+            "LocalFileStorage": LocalFileStorage::new("unused").storage_type_name(),
+        }),
+        names
+    );
+}
+
+/// A stash key with its generated tracking id replaced, since ids differ between runs.
+fn without_tracking_id(key: &str) -> String {
+    let (dir, name) = key.rsplit_once('/').unwrap_or(("", key));
+    let bytes = name.as_bytes();
+    if name.len() > 36 && bytes[8] == b'-' && bytes[13] == b'-' {
+        format!("{dir}/<id>{}", &name[36..])
+    } else {
+        key.to_owned()
+    }
+}
+
+#[tokio::test]
+async fn a_rust_run_writes_the_ts_inline_stash_session() {
+    let storage = InMemoryStorage::new();
+    let model = MockMessageModel::new();
+    model.add_turn(vec![
+        ToolUseBlock::new("get_weather", "tooluse_stash_1", json!({"city": "Bergen"})).into(),
+    ]);
+    model.add_turn(vec![TextBlock::new("Bergen is rainy.").into()]);
+    let weather = FunctionTool::new("get_weather", "Weather.", |_input: Value, _context| async move {
+        Ok::<_, ToolError>(json!({"city": "Bergen", "forecast": "sunny", "high": 21}))
+    });
+    let mut agent = Agent::builder()
+        .id("inline_stash_agent")
+        .model(model)
+        .tools([weather])
+        .printer(false)
+        .storage(Arc::new(storage.clone()))
+        .session_manager(
+            SessionManager::new(SessionManagerConfig {
+                session_id: Some("inline-stash-session".into()),
+                ..Default::default()
+            })
+            .unwrap(),
+        )
+        .context_manager(ContextManagerConfig::default())
+        .build()
+        .unwrap();
+    agent.invoke("Weather in Bergen?").await.unwrap();
+
+    let normalized = |keys: Vec<String>| {
+        let mut keys: Vec<String> = keys.iter().map(|key| without_tracking_id(key)).collect();
+        keys.sort();
+        keys
+    };
+    let (ts_storage, ts_keys) = ts_session("inline_stash").await;
+    assert_eq!(normalized(storage.list("").await.unwrap()), normalized(ts_keys));
+
+    let key = "session/inline-stash-session/scopes/agent/inline_stash_agent/snapshots/snapshot_latest.json";
+    let read = |bytes: Option<Vec<u8>>| serde_json::from_slice::<Value>(&bytes.unwrap()).unwrap();
+    let rust = read(storage.read(key).await.unwrap());
+    let ts = read(ts_storage.read(key).await.unwrap());
+    let entries = |snapshot: &Value| {
+        let mut entries: Vec<String> = snapshot["data"]["stash"]["entries"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| format!("{}={value}", without_tracking_id(key)))
+            .collect();
+        entries.sort();
+        entries
+    };
+    assert_eq!(rust["data"]["stash"]["location"], ts["data"]["stash"]["location"]);
+    assert_eq!(entries(&rust), entries(&ts));
+    let keys = |value: &Value| -> Vec<String> { value.as_object().unwrap().keys().cloned().collect() };
+    assert_eq!(keys(&rust), keys(&ts));
+    assert_eq!(keys(&rust["data"]), keys(&ts["data"]));
 }
