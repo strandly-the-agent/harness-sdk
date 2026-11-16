@@ -712,8 +712,11 @@ async fn refetches_once_the_cache_entry_is_15_minutes_old() {
 
 #[test]
 fn caps_text_at_50_000_utf_16_code_units() {
-    assert_eq!(super::cap_chars("a".repeat(50_001)).len(), 50_000);
+    assert_eq!(
+        super::cap_chars("a".repeat(50_001), super::MAX_CHARS).len(),
+        50_000
+    );
     // An astral character is two units; one the cut would split is dropped.
     let astral = format!("a{}", "😀".repeat(25_000));
-    assert_eq!(super::cap_chars(astral).chars().count(), 25_000);
+    assert_eq!(super::cap_chars(astral, super::MAX_CHARS).chars().count(), 25_000);
 }

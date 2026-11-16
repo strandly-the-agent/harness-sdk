@@ -173,13 +173,13 @@ fn decode(data: &[u8], content_type: &str) -> String {
     encoding.decode_with_bom_removal(data).0.into_owned()
 }
 
-/// The first `MAX_CHARS` UTF-16 code units of `text` (TS `text.slice(0, MAX_CHARS)`); a
-/// character the cut would split is dropped.
-fn cap_chars(mut text: String) -> String {
+/// The first `max_units` UTF-16 code units of `text` (TS `text.slice(0, max)`); a character the
+/// cut would split is dropped.
+pub(super) fn cap_chars(mut text: String, max_units: usize) -> String {
     let mut units = 0;
     let cut = text.char_indices().find_map(|(index, c)| {
         units += c.len_utf16();
-        (units > MAX_CHARS).then_some(index)
+        (units > max_units).then_some(index)
     });
     if let Some(index) = cut {
         text.truncate(index);
@@ -208,7 +208,7 @@ fn to_text(data: &[u8], content_type: &str, resolved_url: &str, url: &str) -> Fe
             resolved_url
         }
         .to_owned(),
-        text: cap_chars(text),
+        text: cap_chars(text, MAX_CHARS),
     }
 }
 
