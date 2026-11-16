@@ -683,3 +683,88 @@ mod constructor {
         assert_eq!(error.to_string(), "timeoutMs must be finite and greater than zero");
     }
 }
+
+mod agent_integration {
+    use super::*;
+    use crate::Agent;
+    use crate::models::routing::ModelRouterOptions;
+
+    fn classifier_router(candidates: Vec<RoutingCandidate>, classifier: &Arc<MockMessageModel>) -> ModelRouter {
+        ModelRouter::with_options(
+            candidates,
+            ModelRouterOptions::builder().strategy(strategy(classifier)).build(),
+        )
+        .unwrap()
+    }
+
+    fn last_text(result: &crate::AgentResult) -> String {
+        match &result.last_message().content()[0] {
+            ContentBlock::Text(text) => text.text().to_owned(),
+            other => panic!("expected a text block, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn serves_candidate_zero_when_classification_fails() {
+        let classifier = Arc::new(MockMessageModel::new());
+        classifier.add_error(|| Error::other("classifier unavailable"));
+        let router = classifier_router(vec![candidate("default"), candidate("other")], &classifier);
+        let mut agent = Agent::builder()
+            .model(router)
+            .no_retry_strategy()
+            .printer(false)
+            .build()
+            .unwrap();
+
+        let result = agent.invoke("hello").await.unwrap();
+
+        assert_eq!(last_text(&result), "default");
+        assert_eq!(classifier.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn surfaces_a_selected_model_failure_without_switching() {
+        let classifier = selection_model(0);
+        let failing = MockMessageModel::new();
+        failing.add_error(|| Error::other("selected model failed"));
+        let candidates = vec![
+            RoutingCandidate::new(failing)
+                .with_description("Selected model.")
+                .with_metadata(object(json!({ "modelId": "failing" }))),
+            candidate("healthy").with_metadata(object(json!({ "modelId": "healthy" }))),
+        ];
+        let mut agent = Agent::builder()
+            .model(classifier_router(candidates, &classifier))
+            .no_retry_strategy()
+            .printer(false)
+            .build()
+            .unwrap();
+
+        let error = agent.invoke("hello").await.unwrap_err();
+
+        assert_eq!(error.to_string(), "selected model failed");
+        assert_eq!(classifier.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn selects_an_opaque_nested_router() {
+        let classifier = selection_model(0);
+        let nested = ModelRouter::new([response_model("nested")]).unwrap();
+        let candidates = vec![
+            RoutingCandidate::new(nested)
+                .with_description("Specialized reasoning model group.")
+                .with_metadata(object(json!({ "modelId": "reasoning-group", "supportsReasoning": true }))),
+            candidate("other").with_metadata(object(json!({ "modelId": "other" }))),
+        ];
+        let mut agent = Agent::builder()
+            .model(classifier_router(candidates, &classifier))
+            .printer(false)
+            .build()
+            .unwrap();
+
+        let result = agent.invoke("hello").await.unwrap();
+
+        assert_eq!(last_text(&result), "nested");
+        assert_eq!(classifier.requests().len(), 1);
+    }
+}
