@@ -209,6 +209,8 @@ pub struct LocalAgent {
     telemetry: LocalTelemetry,
     sandbox: AgentSandbox,
     storage: Option<Arc<dyn crate::storage::Storage>>,
+    session_id: String,
+    context_stash: Option<crate::experimental::Stash>,
 }
 
 impl LocalAgent {
@@ -237,6 +239,8 @@ impl LocalAgent {
             telemetry: LocalTelemetry::default(),
             sandbox: AgentSandbox::default(),
             storage: None,
+            session_id: uuid::Uuid::now_v7().simple().to_string().split_off(24),
+            context_stash: None,
         }
     }
 
@@ -340,6 +344,25 @@ impl LocalAgent {
 
     pub(crate) fn set_storage(&mut self, storage: Option<Arc<dyn crate::storage::Storage>>) {
         self.storage = storage;
+    }
+
+    /// The session id (TS `sessionId`): the session manager's, else a random 8-character id.
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    pub(crate) fn set_session_id(&mut self, session_id: String) {
+        self.session_id = session_id;
+    }
+
+    /// The context manager's stash, once attached (TS `agent.contextManager?.stash`).
+    #[expect(dead_code, reason = "read by the session manager")]
+    pub(crate) fn context_stash(&self) -> Option<&crate::experimental::Stash> {
+        self.context_stash.as_ref()
+    }
+
+    pub(crate) fn set_context_stash(&mut self, stash: Option<crate::experimental::Stash>) {
+        self.context_stash = stash;
     }
 
     /// The metrics accumulated over the agent's invocations (TS `metrics`), including the

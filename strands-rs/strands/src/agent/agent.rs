@@ -154,6 +154,9 @@ impl Agent {
             agent.retry_strategies = strategies;
         }
         agent.plugins = config.plugins;
+        if let Some(manager) = &config.session_manager {
+            agent.local.set_session_id(manager.session_id().to_owned());
+        }
         agent.session_manager = config.session_manager;
         agent.background_tasks = config
             .background_tasks

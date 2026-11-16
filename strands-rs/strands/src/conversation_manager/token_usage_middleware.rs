@@ -7,7 +7,7 @@ use crate::models::model_info::DEFAULT_CONTEXT_WINDOW_LIMIT;
 use crate::types::messages::{Message, Role, TextBlock};
 
 /// `value` with en-US thousands separators (TS `toLocaleString('en-US')`).
-fn grouped(value: u64) -> String {
+pub(crate) fn grouped(value: u64) -> String {
     let digits = value.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, digit) in digits.chars().enumerate() {

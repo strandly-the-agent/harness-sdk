@@ -59,6 +59,15 @@ pub trait Storage: Send + Sync + 'static {
     fn is_ephemeral(&self) -> bool {
         false
     }
+
+    /// The name TS's `constructor.name` gives this backend, recorded as the stash
+    /// `storageType`; defaults to the Rust type name without its path.
+    #[doc(hidden)]
+    fn storage_type_name(&self) -> &'static str {
+        let name = std::any::type_name::<Self>();
+        let base = name.split('<').next().unwrap_or(name);
+        base.rsplit("::").next().unwrap_or(base)
+    }
 }
 
 impl fmt::Debug for dyn Storage {
@@ -197,6 +206,11 @@ impl Storage for NamespacedStorage {
 
     fn is_ephemeral(&self) -> bool {
         self.inner.is_ephemeral()
+    }
+
+    // TS's generic view is an object literal.
+    fn storage_type_name(&self) -> &'static str {
+        "Object"
     }
 }
 

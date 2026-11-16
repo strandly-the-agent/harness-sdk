@@ -105,6 +105,7 @@ pub mod background_tasks;
 pub mod cancel;
 pub mod conversation_manager;
 pub mod error;
+pub mod experimental;
 pub mod hooks;
 pub mod interrupt;
 mod logging;
