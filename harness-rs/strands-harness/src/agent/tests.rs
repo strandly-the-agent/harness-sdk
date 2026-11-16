@@ -810,3 +810,45 @@ async fn serves_the_exa_fallback_on_a_model_instance() {
 async fn leaves_a_default_web_search_off_on_a_model_instance() {
     assert!(!has_tool(&harness(mock_options()).await.unwrap(), "web_search"));
 }
+
+#[tokio::test]
+async fn persists_the_session_under_the_session_dir_in_a_folder_named_by_its_id() {
+    use strands::types::messages::TextBlock;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (model, mut options) = shared_mock();
+    model.add_turn(vec![TextBlock::new("noted").into()]);
+    options.session = session("checkpoint");
+    options.builtin_tools = names(&[]);
+    options.builtin_plugins = Some(Vec::new());
+    options.context_manager = Some(ContextManagerStrategy::Off);
+    options.memory = MemoryOption::Off;
+    let mut agent = create_harness_with(options, seams(&dir)).await.unwrap();
+    agent.invoke("Remember the checkpoint").await.unwrap();
+
+    let folder = dir.path().join(DEFAULT_SESSION_DIR).join("checkpoint");
+    assert!(folder.is_dir(), "{folder:?} missing");
+    let sessions: Vec<_> = std::fs::read_dir(dir.path().join(DEFAULT_SESSION_DIR))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(sessions, ["checkpoint"]);
+}
+
+#[tokio::test]
+async fn configures_the_shell_tool_description() {
+    let mapping = BuiltinToolsConfig {
+        shell: Some(Setting::Config(crate::config::ShellConfig {
+            description: Some("Run a command in the sandbox.".to_owned()),
+        })),
+        ..Default::default()
+    };
+    let agent = harness(HarnessAgentOptions {
+        builtin_tools: Some(mapping.into()),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    let shell = agent.tools().find(|tool| tool.name() == "shell").unwrap();
+    assert_eq!(shell.tool_spec().description(), "Run a command in the sandbox.");
+}
