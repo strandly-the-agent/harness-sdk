@@ -432,3 +432,51 @@ fn a_config_entry_reads_auth_as_client_credentials() {
         json!({"clientId": "id", "clientSecret": "secret", "scopes": ["a"]})
     );
 }
+
+// No TS case (PROMPT section 10, lifecycle): `shutdown()` finishes the agent's own work and
+// leaves the MCP clients the caller owns connected.
+#[tokio::test(start_paused = true)]
+async fn agent_shutdown_does_not_disconnect_the_mcp_client() {
+    fn echo_agent(client: &McpClient) -> Agent {
+        let model = MockMessageModel::new();
+        model.add_turn(vec![ContentBlock::from(ToolUseBlock::new(
+            "echo",
+            "t1",
+            json!({"message": "hello"}),
+        ))]);
+        model.add_turn(vec![TextBlock::new("done").into()]);
+        Agent::builder()
+            .model(model)
+            .tools(vec![ToolSource::from(client.clone())])
+            .printer(false)
+            .build()
+            .expect("agent")
+    }
+
+    let server = TestServer::default();
+    let client = server.client();
+    let mut first = echo_agent(&client);
+    first.invoke("go").await.expect("turn");
+    let peer = client.peer().expect("peer");
+
+    first.shutdown().await.expect("shutdown");
+
+    assert_eq!(client.connection_state(), McpConnectionState::Connected);
+    assert!(!peer.is_transport_closed());
+    // A second agent lists and calls the tools over the connection the first one used.
+    let mut second = echo_agent(&client);
+    second.invoke("go").await.expect("turn");
+    let echoed: Vec<String> = server
+        .calls
+        .lock()
+        .expect("calls")
+        .iter()
+        .map(|call| call.name.to_string())
+        .collect();
+    assert_eq!(echoed, ["echo", "echo"]);
+    let result = second.messages()[2].content()[0].clone();
+    let ContentBlock::ToolResult(result) = result else {
+        panic!("expected a tool result, got {result:?}");
+    };
+    assert_eq!(*result.status(), crate::types::tools::ToolResultStatus::Success);
+}
