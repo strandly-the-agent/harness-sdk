@@ -1617,6 +1617,39 @@ mod hooks {
         let result = agent.invoke("Hi").await.unwrap();
         assert_eq!(result.to_string(), "💭 Reasoning:\n   think\nanswer");
     }
+
+    /// Rust-only: TS reads the registry when it builds the model call, after the hooks
+    /// (`_invokeModelWithMiddleware`); no TS case pins it.
+    #[tokio::test]
+    async fn a_registry_change_in_a_before_model_call_hook_reaches_that_calls_tool_specs() {
+        let model = mock(vec![vec![text("Done")]]);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([add_tool()])
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.add_hook(|event: &mut BeforeModelCallEvent<'_>| {
+            let late = FunctionTool::new(
+                "late",
+                "Registered by a hook.",
+                |_input: JsonValue, _ctx| async move { Ok::<_, ToolError>("late") },
+            );
+            let registry = event.agent_mut().tool_registry_mut();
+            registry.remove("add");
+            registry.add(Arc::new(late)).unwrap();
+        });
+
+        agent.invoke("Test").await.unwrap();
+
+        let requests = model.requests();
+        let names: Vec<&str> = requests[0]
+            .tool_specs
+            .iter()
+            .map(crate::types::tools::ToolSpec::name)
+            .collect();
+        assert_eq!(names, ["late"]);
+    }
 }
 
 /// Ported from strands-ts/src/agent/__tests__/agent.concurrent.test.ts (agent-level cases).

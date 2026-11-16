@@ -859,15 +859,7 @@ impl Agent {
             }
 
             let outcome = self
-                .invoke_model_with_middleware(
-                    &model,
-                    tool_specs.clone(),
-                    forcing.clone(),
-                    projected,
-                    state,
-                    hooks,
-                    out,
-                )
+                .invoke_model_with_middleware(&model, forcing.clone(), projected, state, hooks, out)
                 .await;
             let routed = self.routed_model().unwrap_or_else(|| Arc::clone(&model));
             match outcome {
@@ -938,11 +930,9 @@ impl Agent {
     /// Runs one model call through the `InvokeModelStage` chain (TS
     /// `_invokeModelWithMiddleware`), firing hooks on the events the chain yields. Returns the
     /// model the terminal invoked, or `model` when the chain answered without it.
-    #[expect(clippy::too_many_arguments, reason = "the call's inputs, all from the loop")]
     async fn invoke_model_with_middleware(
         &mut self,
         model: &Arc<dyn Model>,
-        tool_specs: Vec<ToolSpec>,
         forcing: Forcing,
         projected: Option<u64>,
         state: &InvocationState,
@@ -955,7 +945,9 @@ impl Agent {
             Arc::clone(model),
             self.local.messages().to_vec(),
             self.local.system_prompt().cloned(),
-            tool_specs,
+            // Read here, after the `BeforeModelCallEvent` hooks, as TS does: a tool a hook
+            // registers or removes is in this call's request.
+            self.local.tool_registry().tool_specs(),
             forcing.tool_choice,
             state.clone(),
             projected,
