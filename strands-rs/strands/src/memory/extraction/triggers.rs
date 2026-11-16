@@ -12,6 +12,9 @@ use crate::hooks::{AfterInvocationEvent, HookCallbackOptions, HookOrder};
 pub struct InvocationTrigger;
 
 impl InvocationTrigger {
+    /// The trigger name (TS `InvocationTrigger.name`).
+    pub const NAME: &'static str = "invocation";
+
     /// The trigger.
     pub fn new() -> Self {
         Self
@@ -20,7 +23,7 @@ impl InvocationTrigger {
 
 impl ExtractionTrigger for InvocationTrigger {
     fn name(&self) -> &str {
-        "invocation"
+        Self::NAME
     }
 
     fn attach(&self, context: ExtractionTriggerContext<'_>) {
@@ -53,6 +56,9 @@ pub struct IntervalTrigger {
 }
 
 impl IntervalTrigger {
+    /// The trigger name (TS `IntervalTrigger.name`).
+    pub const NAME: &'static str = "interval";
+
     /// A trigger firing every `options.turns` invocations.
     ///
     /// # Errors
@@ -80,7 +86,7 @@ impl IntervalTrigger {
 
 impl ExtractionTrigger for IntervalTrigger {
     fn name(&self) -> &str {
-        "interval"
+        Self::NAME
     }
 
     fn attach(&self, context: ExtractionTriggerContext<'_>) {
