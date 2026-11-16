@@ -2017,7 +2017,7 @@ mod tools_list_changed {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 
-    // Not in TS, where the second agent's `onToolsChanged` replaces the first's.
+    // No TS case: in TS the second agent's `onToolsChanged` replaces the first's (a TS bug).
     #[tokio::test(start_paused = true)]
     async fn an_agent_still_replaces_its_mcp_tools_after_another_agent_used_the_same_client() {
         let server = TestServer::default();
@@ -2032,6 +2032,7 @@ mod tools_list_changed {
         assert!(parent.tool_registry().get("echo").is_none());
     }
 
+    // No TS case: TS keeps one `onToolsChanged`, the last agent's.
     #[tokio::test(start_paused = true)]
     async fn every_agent_on_a_client_and_its_on_tools_changed_callback_see_a_list_change() {
         let server = TestServer::default();
@@ -2051,6 +2052,7 @@ mod tools_list_changed {
         assert_eq!(calls.lock().expect("calls").len(), 1);
     }
 
+    // No TS case: the per-agent queues are Rust's.
     #[tokio::test]
     async fn a_dropped_agent_is_no_longer_queued_for_tools_list_changes() {
         let client = TestServer::default().client();

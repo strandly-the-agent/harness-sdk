@@ -482,8 +482,8 @@ async fn surfaces_and_resumes_interrupts_from_detached_tools() {
     assert_eq!(delivered.content()[1], ToolResultContent::from("approved:yes"));
 }
 
-// Not in TS, which calls the model on the resume with a history ending in an assistant message
-// and so sends two assistant messages in a row on the call after it.
+// No TS case: TS calls the model on the resume with a history ending in an assistant message
+// and sends two assistant messages in a row on the call after it (a TS bug).
 #[tokio::test]
 async fn a_task_resumed_after_the_turn_ended_is_delivered_before_the_next_model_call() {
     let (turn_ended, ended) = tokio::sync::watch::channel(false);
