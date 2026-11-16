@@ -12,10 +12,15 @@ use std::sync::Arc;
 
 use crate::agent::{Agent, AgentAsTool, AgentAsToolOptions};
 
+#[doc(inline)]
 pub use executors::{ConcurrentToolExecutor, SequentialToolExecutor, ToolExecutor};
+#[doc(inline)]
 pub use function_tool::FunctionTool;
+#[doc(inline)]
 pub use registry::ToolRegistry;
+#[doc(inline)]
 pub use structured_output::{STRUCTURED_OUTPUT_TOOL_NAME, StructuredOutputSchema};
+#[doc(inline)]
 pub use tool::{Tool, ToolContext, ToolError, ToolOutcome, ToolStream, ToolStreamEvent, ToolStreamItem};
 
 /// Something `.tools(..)` accepts: a tool, an agent (as a tool), an MCP client or a list of

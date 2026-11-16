@@ -238,7 +238,7 @@ async fn live_cache_hit() {
     let request = || ModelRequest {
         messages: vec![user(&context)],
         system_prompt: Some("You are a helpful assistant. Reply with one word.".into()),
-        agent_metadata: Some(strands::agent::agent_metadata::AgentMetadata {
+        agent_metadata: Some(strands::agent::AgentMetadata {
             session_id: Some("rust-live-cache".into()),
         }),
         ..Default::default()

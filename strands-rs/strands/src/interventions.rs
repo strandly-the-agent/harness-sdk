@@ -6,10 +6,12 @@ pub mod handler;
 pub(crate) mod registry;
 
 pub(crate) use actions::default_evaluate;
+#[doc(inline)]
 pub use actions::{
     AfterModelCallAction, AfterToolCallAction, BeforeInvocationAction, BeforeModelCallAction,
     BeforeToolCallAction, Confirm, Deny, Evaluate, Guide, Proceed, Transform, confirm, deny, guide, proceed,
     transform,
 };
+#[doc(inline)]
 pub use handler::{InterventionHandler, OnError};
 pub(crate) use registry::InterventionRegistry;

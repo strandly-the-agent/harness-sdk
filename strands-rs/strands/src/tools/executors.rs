@@ -1,8 +1,8 @@
 //! Tool executors (TS `tools/executors/`): how the tool calls of one model turn run.
 
-pub mod concurrent;
+mod concurrent;
 pub(crate) mod executor;
-pub mod sequential;
+mod sequential;
 
 pub use concurrent::ConcurrentToolExecutor;
 pub use sequential::SequentialToolExecutor;

@@ -74,7 +74,9 @@ pub use tracing_opentelemetry;
 #[cfg(feature = "otel")]
 pub use tracing_subscriber;
 
+#[doc(inline)]
 pub use meter::{AgentLoopMetricsData, AgentMetrics, InvocationMetricsData, ToolMetricsData};
+#[doc(inline)]
 pub use tracer::{AgentTrace, AttributeValue};
 
 /// The agent's meter and local tracer, shared with the tool tasks of a batch.

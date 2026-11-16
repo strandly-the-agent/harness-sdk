@@ -13,6 +13,7 @@ pub(crate) mod test_support;
 mod types;
 
 pub use crate::injection::{InjectionCondition, InjectionConfig, InjectionContext, InjectionTrigger};
+#[doc(inline)]
 pub use extraction::{
     ExtractionConfig, ExtractionConfigBuilder, ExtractionFire, ExtractionResult, ExtractionTrigger,
     ExtractionTriggerContext, Extractor, ExtractorContext, IntervalTrigger, IntervalTriggerOptions,

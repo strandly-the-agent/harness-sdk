@@ -13,7 +13,7 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use strands::agent::agent_metadata::AgentMetadata;
+use strands::agent::AgentMetadata;
 use strands::error::ModelThrottledError;
 use strands::hooks::{AfterModelCallEvent, BeforeModelCallEvent, HookCallbackOptions, HookOrder};
 use strands::middleware::{InvokeModelContext, InvokeModelStage, MiddlewareError, MiddlewareStage};

@@ -317,20 +317,32 @@ mod conformance_tests;
 #[cfg(test)]
 mod test_support;
 
+#[doc(inline)]
 pub use agent::{Agent, AgentConfig, AgentStream};
 pub use async_trait::async_trait;
+#[doc(inline)]
 pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
+#[doc(inline)]
 pub use error::{Error, Result};
 pub use indexmap;
+pub use schemars;
+#[doc(inline)]
 pub use interrupt::InterruptResponse;
 #[cfg(feature = "bedrock")]
+#[doc(inline)]
 pub use models::bedrock::{
     BedrockCacheConfig, BedrockCacheTtl, BedrockGuardrailConfig, BedrockGuardrailRedactionConfig,
     BedrockModel, BedrockModelConfig, BedrockModelOptions,
 };
+#[doc(inline)]
 pub use state_store::StateStore;
+#[doc(inline)]
 pub use strands_macros::{tool, tools};
+#[doc(inline)]
 pub use tools::{Tool, ToolContext, ToolError, ToolOutcome, ToolSource};
+#[doc(inline)]
 pub use types::agent::{AgentResult, AgentStreamEvent, InvocationState, InvokeArgs, InvokeOptions};
+#[doc(inline)]
 pub use types::json::JsonValue;
+#[doc(inline)]
 pub use types::messages::{ContentBlock, Message, StopReason};
