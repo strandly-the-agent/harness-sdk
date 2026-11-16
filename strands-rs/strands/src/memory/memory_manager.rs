@@ -25,6 +25,7 @@ use crate::injection::{
     render_content,
 };
 use crate::plugins::Plugin;
+use crate::telemetry::tracer::end_span;
 use crate::telemetry::tracer::memory::MemoryTracer;
 use crate::tools::function_tool::InputValidator;
 use crate::tools::{Tool, ToolContext, ToolError};
@@ -72,6 +73,41 @@ impl AddFailure {
 fn unique(names: &[String]) -> Vec<&String> {
     let mut seen = HashSet::new();
     names.iter().filter(|name| seen.insert(name.as_str())).collect()
+}
+
+/// A memory span from its start to its `end_*` call. Dropped unended (the invocation was dropped
+/// while a store call was in flight), it still ends the span, as the TS `finally` does.
+struct OpenSpan {
+    span: tracing::Span,
+    ended: bool,
+}
+
+impl OpenSpan {
+    fn new(span: tracing::Span) -> Self {
+        Self { span, ended: false }
+    }
+
+    /// The span, for the `end_*` call that ends it.
+    fn end(&mut self) -> &tracing::Span {
+        self.ended = true;
+        &self.span
+    }
+}
+
+impl std::ops::Deref for OpenSpan {
+    type Target = tracing::Span;
+
+    fn deref(&self) -> &tracing::Span {
+        &self.span
+    }
+}
+
+impl Drop for OpenSpan {
+    fn drop(&mut self) {
+        if !self.ended {
+            end_span(&self.span, None);
+        }
+    }
 }
 
 struct Inner {
@@ -351,27 +387,27 @@ impl MemoryManager {
     ) -> Result<Option<String>> {
         let max_results = config.max_entries.unwrap_or(DEFAULT_MAX_ENTRIES);
         let tracer = &self.inner.tracer;
-        let span = tracer.start_inject(Some(max_results));
+        let mut span = OpenSpan::new(tracer.start_inject(Some(max_results)));
         let Some(query) = resolve_injection_query(messages, config).filter(|query| !query.trim().is_empty())
         else {
-            tracer.end_inject(&span, false, 0, false);
+            tracer.end_inject(span.end(), false, 0, false);
             return Ok(None);
         };
         let options = MemorySearchOptions {
             max_search_results: Some(max_results),
             stores: None,
         };
-        let found = self.search(&query, options).instrument(span.clone()).await;
+        let found = self.search(&query, options).instrument(span.span.clone()).await;
         let mut entries = match found {
             Ok(entries) => entries,
             Err(error) => {
-                tracer.end_inject(&span, false, 0, false);
+                tracer.end_inject(span.end(), false, 0, false);
                 return Err(error);
             }
         };
         entries.truncate(max_results);
         if entries.is_empty() {
-            tracer.end_inject(&span, false, 0, false);
+            tracer.end_inject(span.end(), false, 0, false);
             return Ok(None);
         }
         let rendered = match &config.format {
@@ -380,12 +416,12 @@ impl MemoryManager {
         };
         match rendered {
             Ok(rendered) => {
-                tracer.end_inject(&span, true, entries.len(), false);
+                tracer.end_inject(span.end(), true, entries.len(), false);
                 Ok(Some(rendered))
             }
             Err(error) => {
                 tracing::warn!("reason=<{error}> | injection format threw; skipping injection");
-                tracer.end_inject(&span, false, 0, true);
+                tracer.end_inject(span.end(), false, 0, true);
                 Ok(None)
             }
         }
@@ -433,7 +469,7 @@ impl MemoryManager {
             .stores
             .clone()
             .unwrap_or_else(|| store_names(&self.inner.stores));
-        let span = tracer.start_search(query, &span_store_names, options.max_search_results);
+        let mut span = OpenSpan::new(tracer.start_search(query, &span_store_names, options.max_search_results));
         let resolved: Result<Vec<&Arc<dyn MemoryStore>>> = match &options.stores {
             Some(names) => unique(names)
                 .into_iter()
@@ -444,7 +480,7 @@ impl MemoryManager {
         let targets = match resolved {
             Ok(targets) => targets,
             Err(error) => {
-                tracer.end_search(&span, query, &[], 0, Some(&error.to_string()));
+                tracer.end_search(span.end(), query, &[], 0, Some(&error.to_string()));
                 return Err(error);
             }
         };
@@ -476,7 +512,7 @@ impl MemoryManager {
             }
         }
         tracing::debug!("results=<{}> | search complete", results.len());
-        tracer.end_search(&span, query, &results, store_failure_count, None);
+        tracer.end_search(span.end(), query, &results, store_failure_count, None);
         Ok(results)
     }
 
@@ -503,11 +539,11 @@ impl MemoryManager {
             .stores
             .clone()
             .unwrap_or_else(|| store_names(&self.inner.add_stores));
-        let span = tracer.start_add(content, &span_store_names, detached);
+        let mut span = OpenSpan::new(tracer.start_add(content, &span_store_names, detached));
         let targets = match self.resolve_add_targets(options) {
             Ok(targets) => targets,
             Err(error) => {
-                tracer.end_add(&span, 0, Some(&error.to_string()));
+                tracer.end_add(span.end(), 0, Some(&error.to_string()));
                 return Err(AddFailure::Rejected(error));
             }
         };
@@ -528,11 +564,11 @@ impl MemoryManager {
             }
         }
         if names.is_empty() {
-            tracer.end_add(&span, 0, None);
+            tracer.end_add(span.end(), 0, None);
             Ok(())
         } else {
             let message = format!("MemoryManager: store writes failed: {}", names.join(", "));
-            tracer.end_add(&span, names.len(), Some(&message));
+            tracer.end_add(span.end(), names.len(), Some(&message));
             Err(AddFailure::Stores { names, reasons })
         }
     }

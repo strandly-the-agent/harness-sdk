@@ -178,6 +178,21 @@ mod add {
         assert_eq!(adds[0]["parent"], "caller");
         assert_eq!(adds[1]["parent"], JsonValue::Null);
     }
+
+    // No TS case: a TS consumer break can't stop an awaited store call, so TS always ends the span.
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_add_dropped_during_the_write_ends_the_add_span() {
+        let (recorder, _guard) = recording();
+        let mut store = MockStore::writable("personal");
+        store.gate = Some(Arc::new(tokio::sync::Semaphore::new(0)));
+        let manager = manager(vec![store]);
+        let mut pending = Box::pin(manager.add("remember this", MemoryAddOptions::default()));
+        assert!(futures::poll!(&mut pending).is_pending());
+        drop(pending);
+
+        let spans = recorded_with_status(&recorder.spans());
+        assert_eq!(named(&spans, "memory.add")[0]["status"], "OK");
+    }
 }
 
 mod injection {
@@ -185,6 +200,44 @@ mod injection {
 
     fn inject_span(spans: &[JsonValue]) -> &JsonValue {
         named(spans, "memory.inject")[0]
+    }
+
+    /// A store whose `search` never answers.
+    struct SilentStore;
+
+    #[async_trait]
+    impl MemoryStore for SilentStore {
+        fn name(&self) -> &str {
+            "silent"
+        }
+
+        fn writable(&self) -> bool {
+            false
+        }
+
+        async fn search(&self, _: &str, _: SearchOptions) -> Result<Vec<MemoryEntry>> {
+            std::future::pending().await
+        }
+    }
+
+    // No TS case: a TS consumer break can't stop an awaited store call, so TS always ends the spans.
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_injection_dropped_during_the_search_ends_the_inject_and_search_spans() {
+        let (recorder, _guard) = recording();
+        let manager = MemoryManager::new(MemoryManagerConfig {
+            stores: vec![Arc::new(SilentStore)],
+            injection: Some(MemorySetting::Off),
+            ..Default::default()
+        })
+        .expect("a manager");
+        let (messages, config) = ([user("hi")], MemoryInjectionConfig::default());
+        let mut pending = Box::pin(manager.provide_memory_context(&messages, &config));
+        assert!(futures::poll!(&mut pending).is_pending());
+        drop(pending);
+
+        let spans = recorded_with_status(&recorder.spans());
+        assert_eq!(named(&spans, "memory.search")[0]["status"], "OK");
+        assert_eq!(inject_span(&spans)["status"], "OK");
     }
 
     #[tokio::test(flavor = "current_thread")]
