@@ -5,7 +5,9 @@
 use super::*;
 use crate::models::streaming::Metrics;
 use crate::telemetry::tracer::{AgentSpanStart, LocalTracer, ModelSpanEnd};
-use crate::types::messages::{Message, Role, SystemPrompt};
+use crate::types::messages::{
+    CachePointBlock, InjectedBlock, Message, Role, SummaryBlock, SystemContentBlock, SystemPrompt,
+};
 use crate::types::tools::ToolUse;
 
 const LATEST: &str = "gen_ai_latest_experimental";
@@ -780,6 +782,41 @@ mod system_prompt_on_chat_spans {
         );
     }
 
+    fn cached_system_prompt() -> SystemPrompt {
+        SystemPrompt::from(vec![
+            SystemContentBlock::text("You are helpful"),
+            SystemContentBlock::CachePoint(CachePointBlock::new()),
+        ])
+    }
+
+    #[test]
+    fn handles_system_content_block_array_with_cache_points_in_latest_conventions() {
+        let span = chat(LATEST, Some(&cached_system_prompt()));
+        let details = events(&span, "gen_ai.client.inference.operation.details");
+        let instructions = details
+            .iter()
+            .find(|event| event["attributes"].get("gen_ai.system_instructions").is_some())
+            .expect("a system instructions event");
+        assert_eq!(
+            event_json(instructions, "gen_ai.system_instructions"),
+            json!([
+                { "type": "text", "content": "You are helpful" },
+                { "type": "cache_point", "cacheType": "default" },
+            ])
+        );
+    }
+
+    #[test]
+    fn serializes_system_content_block_array_in_stable_conventions() {
+        let span = chat("", Some(&cached_system_prompt()));
+        let system = events(&span, "gen_ai.system.message");
+        assert_eq!(system.len(), 1);
+        assert_eq!(
+            event_json(system[0], "content"),
+            json!([{ "text": "You are helpful" }, { "cachePoint": { "cacheType": "default" } }])
+        );
+    }
+
     #[test]
     fn does_not_emit_system_prompt_event_when_system_prompt_is_undefined() {
         let span = chat("", None);
@@ -853,6 +890,37 @@ mod message_event_formatting {
         let part = first_input_part(vec![ContentBlock::ToolResult(result)], Role::User);
         assert_eq!(part["type"], "tool_call_response");
         assert_eq!(part["id"], "tu-1");
+    }
+
+    fn chat_input_parts(content: Vec<ContentBlock>, role: Role) -> JsonValue {
+        let messages = vec![Message::new(role, content)];
+        let spans = traced(LATEST, |tracer| tracer.start_model(&messages, None, None));
+        let details = events(&spans[0], "gen_ai.client.inference.operation.details");
+        event_json(details[0], "gen_ai.input.messages")[0]["parts"].clone()
+    }
+
+    #[test]
+    fn maps_injected_blocks_to_text_parts_in_latest_conventions() {
+        let content = vec![
+            TextBlock::new("Hi").into(),
+            ContentBlock::Injected(InjectedBlock::new("cwd: /repo", "env")),
+        ];
+        assert_eq!(
+            chat_input_parts(content, Role::User),
+            json!([
+                { "type": "text", "content": "Hi" },
+                { "type": "text", "content": "cwd: /repo" },
+            ])
+        );
+    }
+
+    #[test]
+    fn maps_summary_blocks_to_text_parts_in_latest_conventions() {
+        let summary = SummaryBlock::new("compacted").with_provider("anthropic");
+        assert_eq!(
+            chat_input_parts(vec![ContentBlock::Summary(summary)], Role::Assistant),
+            json!([{ "type": "text", "content": "compacted" }])
+        );
     }
 
     #[test]
