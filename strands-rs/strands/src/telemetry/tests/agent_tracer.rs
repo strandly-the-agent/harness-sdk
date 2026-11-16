@@ -1147,3 +1147,79 @@ mod baggage_propagation {
         assert_eq!(seen_by(&seen), [Some("acme".to_owned())]);
     }
 }
+
+/// Rust-only: TS has no tracer case for an interrupted cycle. The text is TS `InterruptError`'s.
+#[tokio::test(flavor = "current_thread")]
+async fn ends_the_cycle_span_with_the_interrupt_error_when_a_before_tool_call_hook_interrupts() {
+    let model = MockMessageModel::new();
+    model.add_turn(vec![tool_use("get_weather", "tool-1", serde_json::json!({}))]);
+    let mut agent = agent_of(
+        model,
+        vec![Arc::new(mock_tool("get_weather", |context| {
+            text_result(context.tool_use().tool_use_id(), "ok")
+        }))],
+        semconv(""),
+    );
+    agent.add_hook(|event: &mut crate::hooks::BeforeToolCallEvent| {
+        event.interrupt(crate::interrupt::InterruptParams::new("confirm_tool"));
+    });
+    let (recorder, _guard) = recording();
+
+    let result = agent.invoke("Hi").await.expect("an interrupted result");
+
+    assert_eq!(result.stop_reason(), StopReason::Interrupt);
+    let spans = recorder.spans();
+    let cycles = named(&spans, "execute_agent_loop_cycle");
+    assert_eq!(cycles.len(), 1);
+    assert_eq!(cycles[0].status, Status::error("Interrupt raised: confirm_tool"));
+}
+
+/// PROMPT.md section 10: a nested agent's span parents under the tool span that runs it.
+#[tokio::test(flavor = "current_thread")]
+async fn nested_agent_spans_parent_under_the_tool_span_that_runs_the_agent() {
+    let child_model = MockMessageModel::new();
+    child_model.add_turn(vec![TextBlock::new("child done").into()]);
+    let child = AgentConfig::builder()
+        .model(Arc::new(child_model) as Arc<dyn crate::models::model::Model>)
+        .name("child")
+        .id("child")
+        .build()
+        .expect("a valid agent");
+    let child_tool = child
+        .as_tool(crate::agent::AgentAsToolOptions::default())
+        .expect("an agent tool");
+    let parent_model = MockMessageModel::new();
+    parent_model.add_turn(vec![tool_use(
+        "child",
+        "tool-1",
+        serde_json::json!({"input": "go"}),
+    )]);
+    parent_model.add_turn(vec![TextBlock::new("Done").into()]);
+    let mut parent = agent_of(parent_model, vec![Arc::new(child_tool)], semconv(""));
+    let (recorder, _guard) = recording();
+
+    parent.invoke("Hi").await.expect("the run succeeds");
+
+    let spans = recorder.spans();
+    let [child_span] = named(&spans, "invoke_agent child")[..] else {
+        panic!("one child agent span")
+    };
+    let [tool_span] = named(&spans, "execute_tool child")[..] else {
+        panic!("one tool span")
+    };
+    let [parent_span] = named(&spans, "invoke_agent telemetry_agent")[..] else {
+        panic!("one parent agent span")
+    };
+    assert_eq!(child_span.parent_span_id, tool_span.span_context.span_id());
+    assert_eq!(
+        child_span.span_context.trace_id(),
+        parent_span.span_context.trace_id()
+    );
+    let cycle_ids: Vec<_> = named(&spans, "execute_agent_loop_cycle")
+        .iter()
+        .filter(|cycle| cycle.parent_span_id == parent_span.span_context.span_id())
+        .map(|cycle| cycle.span_context.span_id())
+        .collect();
+    assert!(cycle_ids.contains(&tool_span.parent_span_id));
+    assert_eq!(parent_span.parent_span_id, opentelemetry::trace::SpanId::INVALID);
+}
