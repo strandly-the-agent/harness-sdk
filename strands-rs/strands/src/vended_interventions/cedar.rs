@@ -336,7 +336,7 @@ impl CedarAuthorization {
         &self,
         principal: &TypeAndId,
         tool_name: &str,
-        context: JsonObject,
+        context: &JsonObject,
     ) -> std::result::Result<Option<String>, String> {
         let loaded = self.loaded.lock().unwrap_or_else(PoisonError::into_inner);
         let call = json!({
@@ -348,19 +348,17 @@ impl CedarAuthorization {
             "entities": loaded.entities,
         });
         let answer = ffi::is_authorized_json(as_js_numbers(&call)?).map_err(|error| error.to_string())?;
-        if answer["type"] == "failure" {
-            return Err(messages(&answer["errors"]).join(", "));
+        if let Some(errors) = failure(&answer) {
+            return Err(errors);
         }
-        let response = &answer["response"];
-        if response["decision"] == "allow" {
+        if answer.pointer("/response/decision").and_then(JsonValue::as_str) == Some("allow") {
             return Ok(None);
         }
-        let diagnostics = &response["diagnostics"];
-        let reasons = diagnostics["reason"].as_array().into_iter().flatten();
-        let errors = diagnostics["errors"].as_array().into_iter().flatten();
-        let details: Vec<&str> = reasons
-            .filter_map(JsonValue::as_str)
-            .chain(errors.filter_map(|error| error["error"]["message"].as_str()))
+        let details: Vec<&str> = texts(answer.pointer("/response/diagnostics/reason"), "")
+            .chain(texts(
+                answer.pointer("/response/diagnostics/errors"),
+                "/error/message",
+            ))
             .filter(|detail| !detail.is_empty())
             .collect();
         Ok(Some(if details.is_empty() {
@@ -426,7 +424,7 @@ impl InterventionHandler for CedarAuthorization {
         context.insert("input".to_owned(), tool_input.clone());
         context.insert("session".to_owned(), JsonValue::Object(session));
 
-        let denied = match self.authorize(&principal, tool_name, context) {
+        let denied = match self.authorize(&principal, tool_name, &context) {
             Ok(None) => return Ok(proceed().into()),
             Ok(Some(reason)) => reason,
             Err(error) => format!("Cedar evaluation failed: {error}"),
@@ -512,37 +510,47 @@ fn as_js_numbers(value: &JsonValue) -> std::result::Result<JsonValue, String> {
     serde_json::from_str(&text).map_err(|error| error.to_string())
 }
 
-/// The `message` of each error of a `cedar_policy::ffi` answer.
-fn messages(errors: &JsonValue) -> Vec<&str> {
-    let errors = errors.as_array().into_iter().flatten();
-    errors.filter_map(|error| error["message"].as_str()).collect()
+/// The strings at `pointer` in each element of the array `list`; none when it isn't an array.
+fn texts<'a>(list: Option<&'a JsonValue>, pointer: &'a str) -> impl Iterator<Item = &'a str> {
+    let items = list.and_then(JsonValue::as_array).into_iter().flatten();
+    items.filter_map(move |item| item.pointer(pointer)?.as_str())
+}
+
+/// The error messages of a `cedar_policy::ffi` answer that is a failure, joined as TS joins them.
+fn failure(answer: &JsonValue) -> Option<String> {
+    let failed = answer.get("type").and_then(JsonValue::as_str) == Some("failure");
+    failed.then(|| {
+        texts(answer.get("errors"), "/message")
+            .collect::<Vec<_>>()
+            .join(", ")
+    })
 }
 
 fn validate_policies(policies: &str, schema: Option<&str>, auto_generated: bool) -> Result<()> {
     let policy_set = json!({ "staticPolicies": policies });
     let parsed = ffi::check_parse_policy_set_json(policy_set.clone()).map_err(Error::other)?;
-    if parsed["type"] == "failure" {
-        return Err(Error::other(format!(
-            "Invalid Cedar policy: {}",
-            messages(&parsed["errors"]).join(", ")
-        )));
+    if let Some(errors) = failure(&parsed) {
+        return Err(Error::other(format!("Invalid Cedar policy: {errors}")));
     }
     let Some(schema) = schema.filter(|schema| !schema.is_empty()) else {
         return Ok(());
     };
     let validated =
         ffi::validate_json(json!({ "schema": schema, "policies": policy_set })).map_err(Error::other)?;
-    if validated["type"] == "failure" {
-        return Err(Error::other(format!(
-            "Cedar policy validation failed: {}",
-            messages(&validated["errors"]).join(", ")
-        )));
+    if let Some(errors) = failure(&validated) {
+        return Err(Error::other(format!("Cedar policy validation failed: {errors}")));
     }
-    let errors: Vec<String> = validated["validationErrors"]
-        .as_array()
+    let errors: Vec<String> = validated
+        .get("validationErrors")
+        .and_then(JsonValue::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|error| Some((error["policyId"].as_str()?, error["error"]["message"].as_str()?)))
+        .filter_map(|error| {
+            Some((
+                error.get("policyId")?.as_str()?,
+                error.pointer("/error/message")?.as_str()?,
+            ))
+        })
         // A generated schema knows the tool inputs, not the session fields the handler adds,
         // so only typos in tool names count.
         .filter(|(_, message)| !auto_generated || ACTION_ERRORS.iter().any(|needle| message.contains(needle)))

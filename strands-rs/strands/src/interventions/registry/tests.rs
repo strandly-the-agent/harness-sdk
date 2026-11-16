@@ -802,7 +802,7 @@ mod agent_integration {
                 self.0.lock().unwrap().push("observe");
                 let log = Arc::clone(&self.0);
                 agent.hooks().add_hook(move |_event: &mut BeforeToolCallEvent| {
-                    log.lock().unwrap().push("observer hook")
+                    log.lock().unwrap().push("observer hook");
                 });
                 Ok(())
             }
@@ -836,7 +836,7 @@ mod agent_integration {
             .unwrap();
         let log = Arc::clone(&order);
         agent.add_hook(move |_event: &mut crate::hooks::InitializedEvent<'_>| {
-            log.lock().unwrap().push("initialized")
+            log.lock().unwrap().push("initialized");
         });
         assert!(order.lock().unwrap().is_empty());
         agent.initialize().await.unwrap();
