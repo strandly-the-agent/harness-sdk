@@ -432,8 +432,14 @@ fn tool_specs_match_the_typescript_tools() {
     assert_eq!(edit().tool_spec().description(), super::EDIT_DESCRIPTION);
     let source = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/tools/file-tools.ts");
     if let Ok(source) = source {
-        for needle in [super::WRITE_DESCRIPTION, super::EDIT_DESCRIPTION] {
-            assert!(source.contains(needle), "{needle}");
+        // The TS source splits the read description over several concatenated literals.
+        let flattened = regex::Regex::new(r"' \+\s*'").unwrap().replace_all(&source, "");
+        for needle in [
+            super::READ_DESCRIPTION,
+            super::WRITE_DESCRIPTION,
+            super::EDIT_DESCRIPTION,
+        ] {
+            assert!(flattened.contains(needle), "{needle}");
         }
     }
 }

@@ -318,7 +318,6 @@ async fn fetch_direct(client: &reqwest::Client, url: &str) -> Result<Fetched, St
 #[derive(Debug, Clone, bon::Builder)]
 pub struct MakeWebFetchOptions {
     /// The summarizer that answers the prompt over the fetched page.
-    #[builder(into)]
     pub model: Arc<dyn Model>,
     /// [`WebFetchTransport::Curl`] runs inside the agent's sandbox (the default);
     /// [`WebFetchTransport::Direct`] fetches from the harness process.
@@ -357,7 +356,7 @@ impl WebFetch {
         let url = validate_url(url)?;
         match self.transport {
             WebFetchTransport::Direct => fetch_direct(&self.client, url).await,
-            _ => {
+            WebFetchTransport::Curl => {
                 let sandbox = context.agent().sandbox().map_err(|error| error.to_string())?;
                 fetch_curl(&self.shells, &sandbox, url).await
             }

@@ -175,7 +175,7 @@ fn web_fetch(model: &Arc<MockMessageModel>) -> FunctionTool {
 fn direct(model: &Arc<MockMessageModel>) -> FunctionTool {
     make_web_fetch(
         MakeWebFetchOptions::builder()
-            .model(model.clone() as Arc<dyn strands::models::model::Model>)
+            .model(model.clone())
             .transport(WebFetchTransport::Direct)
             .build(),
     )
@@ -615,6 +615,53 @@ async fn caches_the_fetched_page_within_the_ttl() {
     assert_eq!(invoke_calls(&model).len(), 2);
 }
 
+/// The local environment with `TMPDIR` set to a directory of its own, so the leftover check
+/// doesn't see the scratch files of other test processes.
+struct ScratchSandbox {
+    local: NotASandboxLocalEnvironment,
+    tmpdir: String,
+}
+
+#[async_trait]
+impl Sandbox for ScratchSandbox {
+    fn execute_streaming<'a>(
+        &'a self,
+        command: &'a str,
+        mut options: ExecuteOptions,
+    ) -> BoxStream<'a, strands::Result<ExecutionEvent>> {
+        options
+            .env
+            .get_or_insert_default()
+            .insert("TMPDIR".to_owned(), self.tmpdir.clone());
+        self.local.execute_streaming(command, options)
+    }
+
+    fn execute_code_streaming<'a>(
+        &'a self,
+        code: &'a str,
+        language: &'a str,
+        options: ExecuteOptions,
+    ) -> BoxStream<'a, strands::Result<ExecutionEvent>> {
+        self.local.execute_code_streaming(code, language, options)
+    }
+
+    async fn read_file(&self, path: &str) -> strands::Result<Vec<u8>> {
+        self.local.read_file(path).await
+    }
+
+    async fn write_file(&self, path: &str, content: &[u8]) -> strands::Result<()> {
+        self.local.write_file(path, content).await
+    }
+
+    async fn remove_file(&self, path: &str) -> strands::Result<()> {
+        self.local.remove_file(path).await
+    }
+
+    async fn list_files(&self, path: &str) -> strands::Result<Vec<FileInfo>> {
+        self.local.list_files(path).await
+    }
+}
+
 #[tokio::test]
 async fn fetches_end_to_end_through_the_local_environment_sandbox() {
     const PAGE: &str = "<html><body><script>x</script><p>Hello <b>wörld</b></p></body></html>";
@@ -632,7 +679,11 @@ async fn fetches_end_to_end_through_the_local_environment_sandbox() {
         _ => Reply::new("200 OK", Some("text/html; charset=utf-8"), PAGE),
     })
     .await;
-    let sandbox: Arc<dyn Sandbox> = Arc::new(NotASandboxLocalEnvironment::new());
+    let scratch = tempfile::tempdir().unwrap();
+    let sandbox: Arc<dyn Sandbox> = Arc::new(ScratchSandbox {
+        local: NotASandboxLocalEnvironment::new(),
+        tmpdir: scratch.path().to_str().unwrap().to_owned(),
+    });
     let tool = web_fetch(&model());
     let fetch = |path: &str| invoke(&tool, json!({ "url": format!("{base}{path}") }), sandbox.clone());
 
@@ -640,6 +691,7 @@ async fn fetches_end_to_end_through_the_local_environment_sandbox() {
     assert_eq!(fetch("/big").await, "日".repeat(50_000));
     assert_eq!(fetch("/huge").await, "x".repeat(50_000));
     assert_eq!(fetch("/notype").await, "a < b");
+    // The scratch directory the tool derives, which this sandbox points at a directory of its own.
     let leftovers = "ls \"${TMPDIR:-/tmp}\" | grep -c strands-web-fetch";
     let listed = sandbox
         .execute(leftovers, ExecuteOptions::default())
@@ -719,4 +771,25 @@ fn caps_text_at_50_000_utf_16_code_units() {
     // An astral character is two units; one the cut would split is dropped.
     let astral = format!("a{}", "😀".repeat(25_000));
     assert_eq!(super::cap_chars(astral, super::MAX_CHARS).chars().count(), 25_000);
+}
+
+#[test]
+fn validate_url_gives_the_typescript_reason_for_each_malformed_form() {
+    let reason = |url: &str| super::validate_url(url).unwrap_err();
+    assert_eq!(
+        reason("https://"),
+        "web_fetch could not parse the URL \"https://\"."
+    );
+    assert_eq!(
+        reason("https://[::1"),
+        "web_fetch could not parse the URL \"https://[::1\"."
+    );
+    assert_eq!(
+        reason("http:example.com"),
+        "web_fetch URL has no host: \"http:example.com\"."
+    );
+    assert_eq!(
+        super::validate_url("HTTPS://EXAMPLE.com"),
+        Ok("HTTPS://EXAMPLE.com")
+    );
 }
