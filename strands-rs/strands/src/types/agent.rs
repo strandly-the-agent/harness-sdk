@@ -10,6 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::{Serialize, Serializer};
 
 use crate::agent::InvocationContext;
+use crate::agent::agent_metadata::AgentMetadata;
 use crate::cancel::{CancelHandle, CancelOptions, CancelSignal};
 use crate::error::{Result, StructuredOutputError};
 use crate::hooks::HookRegistry;
@@ -210,6 +211,7 @@ pub struct LocalAgent {
     sandbox: AgentSandbox,
     storage: Option<Arc<dyn crate::storage::Storage>>,
     session_id: String,
+    agent_metadata: Option<AgentMetadata>,
     context_stash: Option<crate::experimental::Stash>,
 }
 
@@ -240,6 +242,7 @@ impl LocalAgent {
             sandbox: AgentSandbox::default(),
             storage: None,
             session_id: uuid::Uuid::now_v7().simple().to_string().split_off(24),
+            agent_metadata: None,
             context_stash: None,
         }
     }
@@ -353,6 +356,16 @@ impl LocalAgent {
 
     pub(crate) fn set_session_id(&mut self, session_id: String) {
         self.session_id = session_id;
+    }
+
+    /// What the agent tells its model about itself (TS `agentMetadata`): the session id, only
+    /// with a session manager attached.
+    pub fn agent_metadata(&self) -> Option<&AgentMetadata> {
+        self.agent_metadata.as_ref()
+    }
+
+    pub(crate) fn set_agent_metadata(&mut self, agent_metadata: Option<AgentMetadata>) {
+        self.agent_metadata = agent_metadata;
     }
 
     /// The context manager's stash, once attached (TS `agent.contextManager?.stash`).

@@ -7,6 +7,7 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 
 use crate::agent::agent_delegation::{AGENT_DELEGATION_NAME, AgentDelegation};
+use crate::agent::agent_metadata::AgentMetadata;
 use crate::agent::config::{AgentBuilder, AgentConfig, ModelSource, default_model};
 use crate::agent::continuation::ContinuationInput;
 use crate::agent::printer::{AgentPrinter, SharedPrinter, stdout_appender};
@@ -198,6 +199,9 @@ impl Agent {
         agent.plugins = config.plugins;
         if let Some(manager) = &config.session_manager {
             agent.local.set_session_id(manager.session_id().to_owned());
+            agent.local.set_agent_metadata(Some(AgentMetadata {
+                session_id: Some(manager.session_id().to_owned()),
+            }));
         }
         agent.session_manager = config.session_manager;
         agent.background_tasks = config

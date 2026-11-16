@@ -255,6 +255,7 @@ impl SummarizeStrategy {
         SummarizeOptions {
             instructions,
             cancel_signal: Some(agent.cancel_signal().clone()),
+            agent_metadata: agent.agent_metadata().cloned(),
             tool_specs: if replay {
                 agent.tool_registry().tool_specs()
             } else {
