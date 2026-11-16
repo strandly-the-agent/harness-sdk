@@ -22,6 +22,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
+    clippy::indexing_slicing,
     clippy::print_stderr,
     reason = "test code"
 )]
@@ -83,7 +84,7 @@ fn echo_server(dir: &Path) -> Option<McpServersOption> {
         return None;
     }
     let Value::Object(servers) = json!({ "fixture": { "command": node, "args": [server] } }) else {
-        unreachable!("an object literal");
+        panic!("an object literal");
     };
     Some(McpServersOption::Servers(servers))
 }
