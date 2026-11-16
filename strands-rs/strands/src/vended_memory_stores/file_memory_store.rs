@@ -192,7 +192,7 @@ impl Extractor for KeyAwareExtractor {
 /// let store = FileMemoryStore::new(
 ///     FileMemoryStoreConfig::builder()
 ///         .name("notes")
-///         .storage(Arc::new(InMemoryStorage::new()))
+///         .storage(Arc::new(InMemoryStorage::default()))
 ///         .build(),
 /// )?;
 /// let key = store.add_entry("# User preferences\nPrefers dark mode").await?;

@@ -242,7 +242,7 @@ async fn initializes_strategies_with_init_context() {
 
 #[tokio::test]
 async fn uses_an_explicitly_configured_scoped_stash_storage_as_the_exact_root() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("team").unwrap());
     let config = ContextManagerConfig {
         strategies: None,
@@ -263,7 +263,7 @@ async fn uses_an_explicitly_configured_scoped_stash_storage_as_the_exact_root() 
 
 #[tokio::test]
 async fn keeps_the_per_agent_root_under_a_scoped_agent_storage() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("team").unwrap());
     let mut agent = agent_with(vec![user("hello")]);
     agent.set_storage(Some(view));
@@ -706,7 +706,7 @@ fn uses_the_instance_as_is() {
 
 fn memory_stash() -> Stash {
     Stash::new(
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         "test-session",
         "test-agent",
         false,

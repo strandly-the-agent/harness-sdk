@@ -151,7 +151,7 @@ impl SnapshotTarget for LocalAgent {}
 /// use strands::storage::InMemoryStorage;
 ///
 /// let manager = SessionManager::new(SessionManagerConfig {
-///     storage: Some(Arc::new(InMemoryStorage::new())),
+///     storage: Some(Arc::new(InMemoryStorage::default())),
 ///     session_id: Some("user-123".into()),
 ///     ..Default::default()
 /// })?;

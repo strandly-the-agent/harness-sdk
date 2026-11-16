@@ -355,7 +355,7 @@ async fn forwards_the_agent_metadata_to_the_routed_alternate() {
     let alternate = response_model("alternate");
     let session_manager = SessionManager::new(SessionManagerConfig {
         session_id: Some("routed".to_owned()),
-        storage: Some(Arc::new(InMemoryStorage::new())),
+        storage: Some(Arc::new(InMemoryStorage::default())),
         ..Default::default()
     })
     .unwrap();

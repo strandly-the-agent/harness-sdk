@@ -12,7 +12,7 @@ use crate::vended_tools::test_support::{context_for, stream_result};
 
 fn stash() -> Stash {
     Stash::new(
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         "test-session",
         "test-agent",
         false,

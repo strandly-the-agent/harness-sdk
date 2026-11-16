@@ -40,7 +40,7 @@ const STOP_WORDS: &[&str] = &[
 /// use strands::storage::{InMemoryStorage, Storage};
 ///
 /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
-/// let storage = InMemoryStorage::new();
+/// let storage = InMemoryStorage::default();
 /// storage.write("notes/theme.md", b"dark mode toggle").await?;
 /// let results = KeywordSearchStrategy.search(&storage, "dark mode").await?;
 /// assert_eq!(results[0].key, "notes/theme.md");

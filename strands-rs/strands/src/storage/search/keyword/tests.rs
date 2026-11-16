@@ -20,7 +20,7 @@ fn keys(results: &[StorageSearchResult]) -> Vec<&str> {
 
 #[tokio::test]
 async fn returns_matching_entries_scored_by_token_overlap() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage
         .write("notes/dark-mode.md", b"enable dark mode in settings")
         .await
@@ -36,7 +36,7 @@ async fn returns_matching_entries_scored_by_token_overlap() {
 
 #[tokio::test]
 async fn returns_the_stored_bytes_with_each_result() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let data = b"enable dark mode in settings".to_vec();
     storage.write("notes/dark-mode.md", &data).await.unwrap();
     assert_eq!(
@@ -80,7 +80,7 @@ impl Storage for Instrumented {
 
 fn instrumented() -> Arc<Instrumented> {
     Arc::new(Instrumented {
-        inner: InMemoryStorage::new(),
+        inner: InMemoryStorage::default(),
         in_flight: AtomicUsize::new(0),
         max_in_flight: AtomicUsize::new(0),
     })
@@ -100,28 +100,28 @@ async fn skips_entries_whose_read_throws() {
 
 #[tokio::test]
 async fn returns_empty_array_for_empty_query() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage.write("key", b"content").await.unwrap();
     assert!(search(&storage, "").await.is_empty());
 }
 
 #[tokio::test]
 async fn returns_empty_array_for_whitespace_only_query() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage.write("key", b"content").await.unwrap();
     assert!(search(&storage, "   ").await.is_empty());
 }
 
 #[tokio::test]
 async fn matches_case_insensitively() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage.write("note.md", b"Dark Mode Toggle").await.unwrap();
     assert_eq!(search(&storage, "dark mode").await.len(), 1);
 }
 
 #[tokio::test]
 async fn includes_the_key_in_the_scoring_text() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage
         .write("dark-mode.md", b"some unrelated body")
         .await
@@ -131,7 +131,7 @@ async fn includes_the_key_in_the_scoring_text() {
 
 #[tokio::test]
 async fn ranks_results_by_score_descending() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage.write("a.md", b"dark").await.unwrap();
     storage.write("b.md", b"dark mode toggle feature").await.unwrap();
     let results = search(&storage, "dark mode").await;
@@ -141,7 +141,7 @@ async fn ranks_results_by_score_descending() {
 
 #[tokio::test]
 async fn returns_empty_array_when_no_content_matches() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage
         .write("note.md", b"completely unrelated content")
         .await
@@ -151,7 +151,7 @@ async fn returns_empty_array_when_no_content_matches() {
 
 #[tokio::test]
 async fn ignores_stop_words_in_the_query() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage
         .write("deploy.md", b"the deploy process runs nightly")
         .await
@@ -168,14 +168,14 @@ async fn ignores_stop_words_in_the_query() {
 
 #[tokio::test]
 async fn returns_empty_array_for_a_query_made_only_of_stop_words() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage.write("note.md", b"what is the plan").await.unwrap();
     assert!(search(&storage, "what is the").await.is_empty());
 }
 
 #[tokio::test]
 async fn does_not_score_the_file_extension_of_the_key() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage
         .write("release-notes.md", b"ship on fridays")
         .await

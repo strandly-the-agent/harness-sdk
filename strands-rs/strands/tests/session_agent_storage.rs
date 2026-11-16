@@ -25,7 +25,7 @@ fn session_manager(storage: Option<Arc<dyn Storage>>) -> strands::Result<Session
 
 #[tokio::test]
 async fn session_manager_resolves_storage_from_agent_when_not_explicitly_provided() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let mut agent = Agent::builder()
         .model(model())
         .printer(false)
@@ -39,8 +39,8 @@ async fn session_manager_resolves_storage_from_agent_when_not_explicitly_provide
 
 #[tokio::test]
 async fn explicit_session_manager_storage_overrides_agent_storage() {
-    let agent_storage = InMemoryStorage::new();
-    let session_storage = InMemoryStorage::new();
+    let agent_storage = InMemoryStorage::default();
+    let session_storage = InMemoryStorage::default();
     let mut agent = Agent::builder()
         .model(model())
         .printer(false)
@@ -72,7 +72,7 @@ async fn throws_when_session_manager_has_no_storage_and_agent_has_no_storage() {
 
 #[test]
 fn returns_the_configured_storage() {
-    let storage: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let storage: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
     let agent = Agent::builder()
         .model(model())
         .printer(false)
@@ -91,7 +91,7 @@ fn returns_undefined_when_no_storage_configured() {
 // No TS case: end-to-end resume of a session by a second agent, and `Agent::session_manager()`.
 #[tokio::test]
 async fn a_second_agent_resumes_the_session_and_the_manager_is_exposed() {
-    let storage: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let storage: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
     let manager = session_manager(Some(Arc::clone(&storage))).unwrap();
     let mut first = Agent::builder()
         .model(model())

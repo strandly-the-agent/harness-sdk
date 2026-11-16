@@ -38,7 +38,7 @@ impl fmt::Debug for InMemoryStorageConfig {
 /// use strands::storage::{InMemoryStorage, Storage};
 ///
 /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
-/// let storage = InMemoryStorage::new();
+/// let storage = InMemoryStorage::default();
 /// storage.write("memory/notes.json", b"[]").await?;
 /// assert_eq!(storage.read("memory/notes.json").await?, Some(b"[]".to_vec()));
 /// # Ok::<(), strands::Error>(()) }).unwrap();
@@ -60,13 +60,9 @@ impl fmt::Debug for InMemoryStorage {
 }
 
 impl InMemoryStorage {
-    /// Empty storage with the keyword search.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Empty storage with `config`.
-    pub fn with_config(config: InMemoryStorageConfig) -> Self {
+    /// Empty storage with `config` (TS `new InMemoryStorage(config?)`). `InMemoryStorage::default()`
+    /// is the empty storage with the keyword search.
+    pub fn new(config: InMemoryStorageConfig) -> Self {
         Self {
             search_strategy: config.search_strategy,
             ..Self::default()

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use super::{InMemoryStorage, Storage, namespace};
 
 fn setup() -> (InMemoryStorage, Arc<dyn Storage>) {
-    let backend = InMemoryStorage::new();
+    let backend = InMemoryStorage::default();
     let namespaced = namespace(Arc::new(backend.clone()), "prefix").unwrap();
     (backend, namespaced)
 }
@@ -61,7 +61,7 @@ async fn lists_keys_with_sub_prefix() {
 
 #[tokio::test]
 async fn composes_nested_namespaces() {
-    let backend = InMemoryStorage::new();
+    let backend = InMemoryStorage::default();
     let outer = namespace(Arc::new(backend.clone()), "prefix").unwrap();
     let nested = namespace(outer, "sub").unwrap();
     nested.write("key", &[9]).await.unwrap();
@@ -70,7 +70,7 @@ async fn composes_nested_namespaces() {
 
 #[tokio::test]
 async fn handles_empty_namespace_as_no_op_prefix() {
-    let backend = InMemoryStorage::new();
+    let backend = InMemoryStorage::default();
     let empty = namespace(Arc::new(backend.clone()), "").unwrap();
     empty.write("key", &[7]).await.unwrap();
     assert_eq!(backend.read("key").await.unwrap(), Some(vec![7]));
@@ -91,7 +91,7 @@ fn does_not_have_namespaced_symbol_on_raw_storage() {
 // No TS case: pins the logged divergence from the TS trailing-slash prefix bug (docs/DIVERGENCES.md).
 #[tokio::test]
 async fn a_trailing_slash_prefix_lists_whole_keys() {
-    let backend = InMemoryStorage::new();
+    let backend = InMemoryStorage::default();
     let namespaced = namespace(Arc::new(backend.clone()), "prefix/").unwrap();
     namespaced.write("key", &[1]).await.unwrap();
     assert_eq!(namespaced.list("").await.unwrap(), ["key"]);

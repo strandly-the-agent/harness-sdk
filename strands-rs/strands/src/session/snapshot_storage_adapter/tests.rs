@@ -43,7 +43,7 @@ fn uuid_v7(index: u32) -> String {
 }
 
 fn setup() -> (InMemoryStorage, SnapshotStorageAdapter) {
-    let backend = InMemoryStorage::new();
+    let backend = InMemoryStorage::default();
     let adapter = SnapshotStorageAdapter::new(namespace(Arc::new(backend.clone()), "session").unwrap());
     (backend, adapter)
 }
@@ -290,7 +290,7 @@ async fn rejects_snapshot_id_with_forward_slash_traversal() {
 
 #[tokio::test]
 async fn uses_the_namespace_provided_to_the_adapter() {
-    let backend = InMemoryStorage::new();
+    let backend = InMemoryStorage::default();
     let custom = SnapshotStorageAdapter::new(namespace(Arc::new(backend.clone()), "custom/prefix").unwrap());
     save(&custom, "test-session", &uuid_v7(1), true).await;
     assert!(backend.list("session/").await.unwrap().is_empty());

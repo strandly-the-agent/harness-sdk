@@ -124,7 +124,7 @@ fn file_store(name: &str, storage: Arc<dyn Storage>) -> FileMemoryStore {
 }
 
 fn fixture() -> Fixture {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let scoped: Arc<dyn Storage> = Arc::new(storage.with_namespace("memory/test-store").unwrap());
     let store = FileMemoryStore::new(
         FileMemoryStoreConfig::builder()
@@ -187,7 +187,7 @@ fn respects_writable_false_from_config() {
     let read_only = FileMemoryStore::new(
         FileMemoryStoreConfig::builder()
             .name("readonly")
-            .storage(Arc::new(InMemoryStorage::new()))
+            .storage(Arc::new(InMemoryStorage::default()))
             .writable(false)
             .build(),
     )
@@ -209,7 +209,7 @@ async fn respects_max_search_results_from_config() {
     let custom = FileMemoryStore::new(
         FileMemoryStoreConfig::builder()
             .name("custom")
-            .storage(Arc::new(InMemoryStorage::new()))
+            .storage(Arc::new(InMemoryStorage::default()))
             .max_search_results(2)
             .build(),
     )
@@ -224,7 +224,7 @@ async fn respects_max_search_results_from_config() {
 fn resolves_extraction_true_to_an_extraction_config_with_model_extractor() {
     let store = extraction_store(
         "ext",
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         FileMemoryExtractionConfig::default(),
     );
     assert!(store.extraction().unwrap().extractor.is_some());
@@ -233,7 +233,7 @@ fn resolves_extraction_true_to_an_extraction_config_with_model_extractor() {
 
 #[test]
 fn defaults_to_no_description_when_omitted() {
-    let minimal = file_store("minimal", Arc::new(InMemoryStorage::new()));
+    let minimal = file_store("minimal", Arc::new(InMemoryStorage::default()));
     assert_eq!(minimal.description(), None);
 }
 
@@ -253,7 +253,7 @@ async fn auto_scopes_keys_under_memory_name_on_the_raw_backend() {
 
 #[tokio::test]
 async fn scopes_distinct_named_stores_so_they_never_collide_on_a_shared_backend() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let store_a = file_store("store-a", storage.clone());
     let store_b = file_store("store-b", storage.clone());
     store_a.add_entry("User prefers dark mode").await.unwrap();
@@ -273,7 +273,7 @@ async fn scopes_distinct_named_stores_so_they_never_collide_on_a_shared_backend(
 
 #[tokio::test]
 async fn does_not_re_scope_storage_that_is_already_namespaced() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let pre_scoped: Arc<dyn Storage> = Arc::new(storage.with_namespace("memory/scoped").unwrap());
     let scoped_store = file_store("scoped", pre_scoped);
     scoped_store.add_entry("User prefers dark mode").await.unwrap();
@@ -309,7 +309,7 @@ async fn writes_plain_markdown_content() {
 // fixtures under `memory/`).
 #[tokio::test]
 async fn writes_the_keys_and_bytes_of_the_ts_store() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let store = file_store("conformance-store", storage.clone());
     store
         .add_entry("User prefers dark mode for all editors")
@@ -585,7 +585,7 @@ async fn delegates_to_a_search_strategy_configured_on_the_storage_backend() {
         "user-prefers-dark-mode-for-all-editors.md",
         0.9,
     )]);
-    let strategy_storage = InMemoryStorage::with_config(InMemoryStorageConfig {
+    let strategy_storage = InMemoryStorage::new(InMemoryStorageConfig {
         search_strategy: Some(strategy.clone()),
     });
     let strategy_store = file_store("strategy-store", Arc::new(strategy_storage));
@@ -617,7 +617,7 @@ async fn delegates_to_a_search_strategy_configured_on_the_storage_backend() {
 async fn skips_an_unreadable_entry_instead_of_failing_the_search() {
     let locked = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let fails = locked.clone();
-    let locking = StubStorage::over(Arc::new(InMemoryStorage::new()), move |key| {
+    let locking = StubStorage::over(Arc::new(InMemoryStorage::default()), move |key| {
         if fails.load(Ordering::SeqCst) && key.contains("/locked-") {
             return Err(Error::other(format!("Failed to read '{key}' from local storage")));
         }
@@ -711,7 +711,7 @@ fn logs_which_search_path_it_resolved() {
 
 #[tokio::test]
 async fn reads_each_entry_once_with_the_default_keyword_search() {
-    let counting = Arc::new(StubStorage::over(Arc::new(InMemoryStorage::new()), |_| Ok(None)));
+    let counting = Arc::new(StubStorage::over(Arc::new(InMemoryStorage::default()), |_| Ok(None)));
     let store = file_store("test-store", counting.clone());
     seed(&store).await;
     counting.reads.store(0, Ordering::SeqCst);
@@ -744,7 +744,7 @@ async fn applies_max_search_results_to_results_from_the_storage_backend() {
         StorageSearchResult::new("user-prefers-dark-mode-for-all-editors.md", 2.0),
         StorageSearchResult::new("deploy-process-uses-blue-green-strategy.md", 1.0),
     ]);
-    let strategy_storage = InMemoryStorage::with_config(InMemoryStorageConfig {
+    let strategy_storage = InMemoryStorage::new(InMemoryStorageConfig {
         search_strategy: Some(strategy),
     });
     let strategy_store = file_store("strategy-store", Arc::new(strategy_storage));
@@ -809,7 +809,7 @@ async fn extract_with(store: &FileMemoryStore, default_model: &Arc<MockMessageMo
 async fn includes_existing_topic_headings_in_the_system_prompt() {
     let store = extraction_store(
         "ext-test",
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         FileMemoryExtractionConfig::default(),
     );
     store
@@ -836,7 +836,7 @@ async fn includes_existing_topic_headings_in_the_system_prompt() {
 async fn does_not_include_existing_topics_section_when_store_is_empty() {
     let store = extraction_store(
         "ext-empty",
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         FileMemoryExtractionConfig::default(),
     );
     let model = mock_model();
@@ -852,7 +852,7 @@ async fn uses_the_configured_model_over_the_context_default_model() {
     let context_default_model = mock_model();
     let store = extraction_store(
         "ext-model",
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         FileMemoryExtractionConfig {
             model: Some(configured_model.clone()),
             ..Default::default()
@@ -870,7 +870,7 @@ async fn falls_back_to_the_context_default_model_when_no_model_is_configured() {
     let context_default_model = mock_model();
     let store = extraction_store(
         "ext-fallback",
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         FileMemoryExtractionConfig::default(),
     );
 
@@ -883,7 +883,7 @@ async fn falls_back_to_the_context_default_model_when_no_model_is_configured() {
 async fn builds_the_system_prompt_on_the_key_aware_heading_instruction() {
     let store = extraction_store(
         "ext-prompt",
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         FileMemoryExtractionConfig::default(),
     );
     let model = mock_model();
@@ -903,7 +903,7 @@ async fn builds_the_system_prompt_on_the_key_aware_heading_instruction() {
 async fn overrides_the_framing_with_a_custom_system_prompt_but_keeps_the_output_contract() {
     let store = extraction_store(
         "ext-custom-prompt",
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         FileMemoryExtractionConfig {
             system_prompt: Some("Extract only trading preferences and risk tolerance.".to_owned()),
             ..Default::default()
@@ -929,7 +929,7 @@ async fn uses_a_supplied_extractor_verbatim_ignoring_model_and_system_prompt() {
     }));
     let store = extraction_store(
         "ext-custom",
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         FileMemoryExtractionConfig {
             extractor: Some(custom_extractor.clone()),
             model: Some(mock_model()),

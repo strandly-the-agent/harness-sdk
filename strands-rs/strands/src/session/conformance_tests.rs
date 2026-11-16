@@ -53,7 +53,7 @@ fn files(root: &Path) -> Vec<String> {
 /// An in-memory storage holding every file of a TS-written session fixture under its key.
 async fn ts_session(case: &str) -> (InMemoryStorage, Vec<String>) {
     let root = fixtures().join(case);
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let keys = files(&root);
     for key in &keys {
         storage
@@ -139,7 +139,7 @@ async fn rust_restores_the_ts_session_and_takes_the_same_snapshot() {
 async fn rust_reads_and_rewrites_every_ts_session_file_byte_for_byte() {
     let (storage, keys) = ts_session("agent_history").await;
     let source = SnapshotStorageAdapter::new(namespace(Arc::new(storage.clone()), "session").unwrap());
-    let copy = InMemoryStorage::new();
+    let copy = InMemoryStorage::default();
     let target = SnapshotStorageAdapter::new(namespace(Arc::new(copy.clone()), "session").unwrap());
     let loc = location();
     let latest = source.load_snapshot(&loc, None).await.unwrap().unwrap();
@@ -165,7 +165,7 @@ async fn rust_reads_and_rewrites_every_ts_session_file_byte_for_byte() {
 #[tokio::test]
 async fn the_default_manifest_matches_the_ts_shape() {
     let adapter =
-        SnapshotStorageAdapter::new(namespace(Arc::new(InMemoryStorage::new()), "session").unwrap());
+        SnapshotStorageAdapter::new(namespace(Arc::new(InMemoryStorage::default()), "session").unwrap());
     let mut never_saved = location();
     never_saved.scope_id = "never_saved".into();
     let manifest: SnapshotManifest = adapter.load_manifest(&never_saved).await.unwrap();
@@ -179,7 +179,7 @@ async fn the_default_manifest_matches_the_ts_shape() {
 // No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn a_rust_run_writes_the_ts_session_layout() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let model = MockMessageModel::new();
     model.add_turn(vec![TextBlock::new("First answer.").into()]);
     model.add_turn(vec![TextBlock::new("Second answer.").into()]);
@@ -264,7 +264,7 @@ async fn rust_rewrites_the_ts_external_stash_entries_byte_for_byte() {
         false,
     )
     .unwrap();
-    let rust_storage = InMemoryStorage::new();
+    let rust_storage = InMemoryStorage::default();
     let rust_stash = Stash::new(
         Arc::new(rust_storage.clone()),
         "file-stash-session",
@@ -322,7 +322,7 @@ async fn stash_take_snapshot_matches_the_ts_fixture() {
     )
     .with_tracking_id("tracking-stash-2");
     let stash = Stash::new(
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         "stash-session",
         "stash_agent",
         false,
@@ -343,7 +343,7 @@ fn the_backends_report_the_ts_storage_type_names() {
     let names: Value = serde_json::from_str(&stash_fixture("storage_type_names.json")).unwrap();
     assert_eq!(
         json!({
-            "InMemoryStorage": InMemoryStorage::new().storage_type_name(),
+            "InMemoryStorage": InMemoryStorage::default().storage_type_name(),
             "LocalFileStorage": LocalFileStorage::new("unused").storage_type_name(),
         }),
         names
@@ -365,7 +365,7 @@ fn without_tracking_id(key: &str) -> String {
 // No TS case: checks a fixture strands-ts wrote (cross-SDK conformance).
 #[tokio::test]
 async fn a_rust_run_writes_the_ts_inline_stash_session() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let model = MockMessageModel::new();
     model.add_turn(vec![
         ToolUseBlock::new("get_weather", "tooluse_stash_1", json!({"city": "Bergen"})).into(),

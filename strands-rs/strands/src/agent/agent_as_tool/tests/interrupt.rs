@@ -235,7 +235,7 @@ fn stores_nothing_for_a_context_preserving_sub_agent_and_warns_when_it_has_no_se
 
 #[tokio::test]
 async fn resumes_after_both_agents_are_rebuilt_from_a_session() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let first = nested_in_session(false, false, Some(&storage), None);
     let mut orch = first.orch;
     let interrupted = orch.invoke("Test").await.unwrap();
@@ -255,7 +255,7 @@ fn resumes_a_context_preserving_sub_agent_with_its_own_session_manager_after_bot
         .enable_all()
         .build()
         .unwrap();
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let (orch, warnings) = crate::test_support::WarnRecorder::capture(|| {
         runtime.block_on(async {
             let first = nested_in_session(true, false, Some(&storage), Some(&storage));

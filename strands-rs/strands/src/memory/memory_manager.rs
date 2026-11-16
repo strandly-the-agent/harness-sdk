@@ -166,7 +166,7 @@ impl Drop for DetachedWrite {
 /// let notes = FileMemoryStore::new(
 ///     FileMemoryStoreConfig::builder()
 ///         .name("notes")
-///         .storage(Arc::new(InMemoryStorage::new()))
+///         .storage(Arc::new(InMemoryStorage::default()))
 ///         .build(),
 /// )?;
 /// let memory = MemoryManager::new(

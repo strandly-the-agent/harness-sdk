@@ -160,7 +160,7 @@ mod invocation {
 
     #[tokio::test]
     async fn clears_messages_before_session_manager_snapshots_on_after_invocation_event() {
-        let storage = InMemoryStorage::new();
+        let storage = InMemoryStorage::default();
         let model = StatefulMockModel::new(&["resp_1"], &["reply"]);
         let mut agent = Agent::builder()
             .id("agent-1")
@@ -246,7 +246,7 @@ mod session_manager_restore_guard {
 
     /// TS `setupStorageWithMessages`: a stored latest snapshot holding one user message.
     async fn setup_storage_with_messages(agent_id: &str, session_id: &str) -> InMemoryStorage {
-        let storage = InMemoryStorage::new();
+        let storage = InMemoryStorage::default();
         let snapshot = json!({
             "scope": "agent",
             "schemaVersion": SNAPSHOT_SCHEMA_VERSION,

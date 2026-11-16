@@ -545,7 +545,7 @@ impl ContextManager {
                 agent
                     .storage()
                     .cloned()
-                    .unwrap_or_else(|| Arc::new(InMemoryStorage::new()) as Arc<dyn Storage>),
+                    .unwrap_or_else(|| Arc::new(InMemoryStorage::default()) as Arc<dyn Storage>),
                 false,
             ),
         };

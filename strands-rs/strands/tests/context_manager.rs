@@ -59,7 +59,7 @@ async fn snapshot_data(storage: &dyn Storage) -> JsonValue {
 
 #[tokio::test]
 async fn auto_created_context_manager_uses_agent_storage_when_provided() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let mut agent = Agent::builder()
         .model(model())
         .printer(false)
@@ -96,7 +96,7 @@ async fn auto_created_context_manager_uses_in_memory_storage_when_no_agent_stora
 
 #[tokio::test]
 async fn includes_stash_data_in_the_snapshot() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let manager = session_manager(None);
     let mut agent = agent(&storage, manager.clone());
     agent.initialize().await.unwrap();
@@ -111,7 +111,7 @@ async fn includes_stash_data_in_the_snapshot() {
 
 #[tokio::test]
 async fn omits_stash_key_when_agent_has_no_context_manager() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let manager = session_manager(None);
     let mut agent = Agent::builder()
         .model(model())
@@ -127,7 +127,7 @@ async fn omits_stash_key_when_agent_has_no_context_manager() {
 
 #[tokio::test]
 async fn omits_stash_key_when_stash_is_empty() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let manager = session_manager(None);
     let mut agent = agent(&storage, manager.clone());
     agent.initialize().await.unwrap();
@@ -159,8 +159,8 @@ async fn writes_external_ref_when_storage_is_durable() {
 
 #[tokio::test]
 async fn round_trips_stash_data_through_save_and_restore_with_real_agent() {
-    let storage = InMemoryStorage::new();
-    let snapshots: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let storage = InMemoryStorage::default();
+    let snapshots: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
     let manager = session_manager(Some(Arc::clone(&snapshots)));
     let mut first = agent(&storage, manager.clone());
     first.initialize().await.unwrap();
@@ -169,7 +169,7 @@ async fn round_trips_stash_data_through_save_and_restore_with_real_agent() {
     stash.store("tool-2", 0, br#"{"text":"world"}"#).await.unwrap();
     manager.save_snapshot(&first, true).await.unwrap();
 
-    let fresh_storage = InMemoryStorage::new();
+    let fresh_storage = InMemoryStorage::default();
     let mut fresh = agent(&fresh_storage, session_manager(Some(snapshots)));
     fresh.initialize().await.unwrap();
     let fresh_stash = fresh.context_manager().unwrap().stash().unwrap();
@@ -185,7 +185,7 @@ async fn round_trips_stash_data_through_save_and_restore_with_real_agent() {
 
 #[tokio::test]
 async fn delete_session_cleans_up_stash_data_with_real_agent() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let manager = session_manager(None);
     let mut agent = agent(&storage, manager.clone());
     agent.initialize().await.unwrap();
@@ -198,7 +198,7 @@ async fn delete_session_cleans_up_stash_data_with_real_agent() {
 
 #[tokio::test]
 async fn delete_session_keeps_a_stash_rooted_at_an_explicitly_configured_scoped_view() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("team").unwrap());
     let manager = session_manager(None);
     let config = ContextManagerConfig {
@@ -225,10 +225,10 @@ async fn delete_session_keeps_a_stash_rooted_at_an_explicitly_configured_scoped_
 
 #[tokio::test]
 async fn delete_session_with_a_scoped_agent_storage_removes_only_this_session() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let tenant: Arc<dyn Storage> = Arc::new(storage.with_namespace("tenant").unwrap());
     tenant.write("memory/prefs.json", b"{}").await.unwrap();
-    let snapshots: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let snapshots: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
     let manager = session_manager(Some(snapshots));
     let mut agent = Agent::builder()
         .model(model())

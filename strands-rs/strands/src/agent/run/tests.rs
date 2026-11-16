@@ -1112,7 +1112,7 @@ mod agent_metadata {
     fn agent_on(model: &Arc<MockMessageModel>, session_id: &str) -> Agent {
         let session_manager = SessionManager::new(SessionManagerConfig {
             session_id: Some(session_id.into()),
-            storage: Some(Arc::new(InMemoryStorage::new())),
+            storage: Some(Arc::new(InMemoryStorage::default())),
             ..Default::default()
         })
         .unwrap();

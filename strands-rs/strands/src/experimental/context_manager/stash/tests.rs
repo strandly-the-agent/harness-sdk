@@ -12,7 +12,7 @@ use crate::types::tools::ToolResultStatus;
 
 fn stash() -> Stash {
     Stash::new(
-        Arc::new(InMemoryStorage::new()),
+        Arc::new(InMemoryStorage::default()),
         "test-session",
         "test-agent",
         false,
@@ -86,7 +86,7 @@ async fn removes_a_stashed_entry() {
 
 #[tokio::test]
 async fn does_not_conflict_with_other_storage_users() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let stash = Stash::new(storage.clone(), "test-session", "test-agent", false).unwrap();
     stash
         .store("tool-1", 0, &bytes(&json!("stash data")))
@@ -100,7 +100,7 @@ async fn does_not_conflict_with_other_storage_users() {
 
 #[tokio::test]
 async fn uses_the_view_as_the_exact_root() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("tenants/t1/research").unwrap());
     let stash = Stash::new(view, "sess-1", "agent-a", true).unwrap();
     stash
@@ -115,7 +115,7 @@ async fn uses_the_view_as_the_exact_root() {
 
 #[tokio::test]
 async fn uses_the_per_agent_root_under_a_view_unless_allowed() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("tenant").unwrap());
     let stash = Stash::new(view, "sess-1", "agent-a", false).unwrap();
     stash
@@ -130,7 +130,7 @@ async fn uses_the_per_agent_root_under_a_view_unless_allowed() {
 
 #[tokio::test]
 async fn lets_agents_in_different_sessions_sharing_a_view_read_each_other_entries() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let view = || -> Arc<dyn Storage> { Arc::new(storage.with_namespace("team").unwrap()) };
     let first = Stash::new(view(), "sess-1", "agent-a", true).unwrap();
     let second = Stash::new(view(), "sess-2", "agent-b", true).unwrap();
@@ -146,7 +146,7 @@ async fn lets_agents_in_different_sessions_sharing_a_view_read_each_other_entrie
 
 #[tokio::test]
 async fn keeps_a_shared_view_on_clear_session() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let view: Arc<dyn Storage> = Arc::new(storage.with_namespace("team").unwrap());
     let stash = Stash::new(view, "sess-1", "agent-a", true).unwrap();
     stash
@@ -160,7 +160,7 @@ async fn keeps_a_shared_view_on_clear_session() {
 // No TS case: pins that `clear_session` deletes the whole session prefix and nothing else.
 #[tokio::test]
 async fn clear_session_deletes_every_agent_of_the_session() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let first = Stash::new(storage.clone(), "sess-1", "agent-a", false).unwrap();
     let second = Stash::new(storage.clone(), "sess-1", "agent-b", false).unwrap();
     let other = Stash::new(storage.clone(), "sess-2", "agent-a", false).unwrap();
@@ -236,10 +236,10 @@ async fn skips_a_text_placeholder_and_keeps_other_blocks() {
 // No TS case: pins the `storageType` names Rust records in place of TS `constructor.name`.
 #[test]
 fn records_the_ts_storage_class_names() {
-    let memory = Stash::new(Arc::new(InMemoryStorage::new()), "s", "a", false).unwrap();
+    let memory = Stash::new(Arc::new(InMemoryStorage::default()), "s", "a", false).unwrap();
     assert_eq!(memory.storage_type_name(), "InMemoryStorage");
     assert!(!memory.is_durable());
-    let generic = crate::storage::namespace(Arc::new(InMemoryStorage::new()), "x").unwrap();
+    let generic = crate::storage::namespace(Arc::new(InMemoryStorage::default()), "x").unwrap();
     assert_eq!(
         Stash::new(generic, "s", "a", false).unwrap().storage_type_name(),
         "Object"

@@ -361,7 +361,7 @@ mod session_manager_validation {
 
     fn session_agent() -> Agent {
         let session_manager = SessionManager::new(SessionManagerConfig {
-            storage: Some(Arc::new(InMemoryStorage::new())),
+            storage: Some(Arc::new(InMemoryStorage::default())),
             ..Default::default()
         })
         .unwrap();

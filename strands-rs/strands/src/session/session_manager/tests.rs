@@ -83,7 +83,7 @@ async fn latest_messages(storage: &InMemoryStorage) -> usize {
 
 #[tokio::test]
 async fn defaults_save_latest_on_to_invocation() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = SessionManager::new(SessionManagerConfig {
         storage: Some(Arc::new(storage.clone())),
         session_id: Some("test-default".into()),
@@ -103,7 +103,7 @@ async fn defaults_save_latest_on_to_invocation() {
 
 #[tokio::test]
 async fn saves_snapshot_latest_when_is_latest_is_true() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     sm.save_snapshot(&plain_agent(), true).await.unwrap();
     assert_eq!(storage.list("").await.unwrap(), [LATEST]);
@@ -111,7 +111,7 @@ async fn saves_snapshot_latest_when_is_latest_is_true() {
 
 #[tokio::test]
 async fn saves_immutable_snapshot_when_is_latest_is_false() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     sm.save_snapshot(&plain_agent(), false).await.unwrap();
     let keys = history_keys(&storage).await;
@@ -126,7 +126,7 @@ async fn saves_immutable_snapshot_when_is_latest_is_false() {
 
 #[tokio::test]
 async fn allocates_unique_snapshot_ids() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let agent = plain_agent();
     sm.save_snapshot(&agent, false).await.unwrap();
@@ -141,7 +141,7 @@ async fn allocates_unique_snapshot_ids() {
 
 #[tokio::test]
 async fn returns_empty_array_when_no_snapshots_exist() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let ids = sm
         .list_snapshot_ids(&plain_agent(), ListSnapshotIdsOptions::default())
@@ -152,7 +152,7 @@ async fn returns_empty_array_when_no_snapshots_exist() {
 
 #[tokio::test]
 async fn returns_snapshot_ids_for_the_target_agent() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let agent = plain_agent();
     let other = Agent::builder()
@@ -172,7 +172,7 @@ async fn returns_snapshot_ids_for_the_target_agent() {
 
 #[tokio::test]
 async fn does_not_return_latest_snapshot_id() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let agent = plain_agent();
     sm.save_snapshot(&agent, true).await.unwrap();
@@ -185,7 +185,7 @@ async fn does_not_return_latest_snapshot_id() {
 
 #[tokio::test]
 async fn forwards_limit_parameter() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let agent = plain_agent();
     for _ in 0..3 {
@@ -200,7 +200,7 @@ async fn forwards_limit_parameter() {
 
 #[tokio::test]
 async fn forwards_start_after_parameter() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let agent = plain_agent();
     for _ in 0..3 {
@@ -219,7 +219,7 @@ async fn forwards_start_after_parameter() {
 
 #[tokio::test]
 async fn restores_snapshot_latest_when_no_snapshot_id_provided() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     sm.save_snapshot(&plain_agent(), true).await.unwrap();
     let mut fresh = Agent::builder()
@@ -234,7 +234,7 @@ async fn restores_snapshot_latest_when_no_snapshot_id_provided() {
 
 #[tokio::test]
 async fn restores_specific_snapshot_by_id() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let mut agent = plain_agent();
     sm.save_snapshot(&agent, false).await.unwrap();
@@ -250,14 +250,14 @@ async fn restores_specific_snapshot_by_id() {
 
 #[tokio::test]
 async fn returns_false_when_snapshot_not_found() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     assert!(!sm.restore_snapshot(&mut plain_agent(), None).await.unwrap());
 }
 
 #[tokio::test]
 async fn loads_snapshot_latest_on_initialization() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     sm.save_snapshot(&plain_agent(), true).await.unwrap();
     let mut agent = agent(MockMessageModel::new(), &sm);
@@ -267,7 +267,7 @@ async fn loads_snapshot_latest_on_initialization() {
 
 #[tokio::test]
 async fn handles_missing_snapshot_gracefully() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let mut agent = agent(MockMessageModel::new(), &sm);
     agent.initialize().await.unwrap();
@@ -283,7 +283,7 @@ fn initialize_capturing_warnings(agent: &mut Agent) -> Vec<String> {
 
 #[test]
 fn warns_when_snapshot_restore_overwrites_existing_messages() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
     runtime.block_on(sm.save_snapshot(&plain_agent(), true)).unwrap();
@@ -310,7 +310,7 @@ fn warns_when_snapshot_restore_overwrites_existing_messages() {
 
 #[test]
 fn does_not_warn_when_restoring_into_agent_with_no_messages() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
     runtime.block_on(sm.save_snapshot(&plain_agent(), true)).unwrap();
@@ -332,7 +332,7 @@ async fn does_not_save_when_save_latest_on_is_invocation() {
 
 #[tokio::test]
 async fn saves_snapshot_latest_when_save_latest_on_is_invocation() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let mut agent = agent(model(&["Hi"]), &sm);
     agent.invoke("Hello").await.unwrap();
@@ -349,7 +349,7 @@ async fn after_invocation_saves_snapshot_latest_when_save_latest_on_is_message()
 
 #[tokio::test]
 async fn does_not_save_snapshot_latest_when_save_latest_on_is_trigger() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Trigger);
     let mut agent = agent(model(&["Hi"]), &sm);
     agent.invoke("Hello").await.unwrap();
@@ -358,7 +358,7 @@ async fn does_not_save_snapshot_latest_when_save_latest_on_is_trigger() {
 
 #[tokio::test]
 async fn creates_immutable_snapshot_when_trigger_returns_true() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = with_trigger(&storage, Arc::new(|_| true));
     let mut agent = agent(model(&["Hi"]), &sm);
     agent.invoke("Hello").await.unwrap();
@@ -367,7 +367,7 @@ async fn creates_immutable_snapshot_when_trigger_returns_true() {
 
 #[tokio::test]
 async fn does_not_create_immutable_snapshot_when_trigger_returns_false() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = with_trigger(&storage, Arc::new(|_| false));
     let mut agent = agent(model(&["Hi"]), &sm);
     agent.invoke("Hello").await.unwrap();
@@ -377,7 +377,7 @@ async fn does_not_create_immutable_snapshot_when_trigger_returns_false() {
 
 #[tokio::test]
 async fn provides_agent_data_to_trigger() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&seen);
     let sm = with_trigger(
@@ -397,7 +397,7 @@ async fn provides_agent_data_to_trigger() {
 
 #[tokio::test]
 async fn saves_both_immutable_and_latest_when_trigger_fires() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = SessionManager::new(SessionManagerConfig {
         storage: Some(Arc::new(storage.clone())),
         session_id: Some("test-session".into()),
@@ -417,7 +417,7 @@ async fn saves_both_immutable_and_latest_when_trigger_fires() {
 
 #[tokio::test]
 async fn trigger_based_on_message_count_via_agent_data() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = with_trigger(
         &storage,
         Arc::new(|params| params.agent_data.messages().len() >= 4),
@@ -431,7 +431,7 @@ async fn trigger_based_on_message_count_via_agent_data() {
 
 #[tokio::test]
 async fn trigger_based_on_agent_state_via_agent_data() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = with_trigger(
         &storage,
         Arc::new(|params| params.agent_data.app_state().get_value("checkpoint") == Some(json!(true))),
@@ -446,7 +446,7 @@ async fn trigger_based_on_agent_state_via_agent_data() {
 
 #[tokio::test]
 async fn handles_complete_session_lifecycle() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let mut first = agent(model(&["Hi"]), &sm);
     first.invoke("Hello").await.unwrap();
@@ -459,7 +459,7 @@ async fn handles_complete_session_lifecycle() {
 
 #[tokio::test]
 async fn supports_resuming_from_immutable_snapshot() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = with_trigger(&storage, Arc::new(|_| true));
     let mut agent = agent(model(&["One", "Two"]), &sm);
     agent.invoke("First").await.unwrap();
@@ -655,7 +655,7 @@ fn rejects_an_invalid_session_id() {
 // No TS case: pins that a namespaced storage is used as the session root.
 #[tokio::test]
 async fn a_pre_namespaced_storage_is_used_without_the_session_prefix() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     let sm = SessionManager::new(SessionManagerConfig {
         storage: Some(Arc::new(storage.with_namespace("custom").unwrap())),
         session_id: Some("test-session".into()),
@@ -672,7 +672,7 @@ async fn a_pre_namespaced_storage_is_used_without_the_session_prefix() {
 // No TS case: pins the error for a latest snapshot that is not JSON.
 #[tokio::test]
 async fn a_corrupted_latest_snapshot_fails_initialize() {
-    let storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::default();
     storage.write(LATEST, b"not valid json{{{").await.unwrap();
     let sm = manager(&storage, SaveLatestStrategy::Invocation);
     let mut agent = agent(model(&["Hi"]), &sm);
@@ -748,14 +748,14 @@ fn manager_on(storage: &Arc<dyn Storage>) -> SessionManager {
 
 #[tokio::test]
 async fn restores_stash_data_from_snapshot() {
-    let snapshots = InMemoryStorage::new();
+    let snapshots = InMemoryStorage::default();
     let sm = manager(&snapshots, SaveLatestStrategy::Invocation);
-    let (agent, stash) = agent_with_stash(&InMemoryStorage::new());
+    let (agent, stash) = agent_with_stash(&InMemoryStorage::default());
     stash.store("tool-1", 0, br#"{"text":"hello"}"#).await.unwrap();
     stash.store("tool-2", 0, br#"{"text":"world"}"#).await.unwrap();
     sm.save_snapshot(&agent, true).await.unwrap();
 
-    let (mut fresh_agent, fresh_stash) = agent_with_stash(&InMemoryStorage::new());
+    let (mut fresh_agent, fresh_stash) = agent_with_stash(&InMemoryStorage::default());
     let restored = sm.restore_snapshot(&mut fresh_agent, None).await.unwrap();
 
     assert!(restored);
@@ -771,11 +771,11 @@ async fn restores_stash_data_from_snapshot() {
 
 #[tokio::test]
 async fn skips_stash_restore_when_location_is_external() {
-    let snapshots = InMemoryStorage::new();
+    let snapshots = InMemoryStorage::default();
     let sm = manager(&snapshots, SaveLatestStrategy::Invocation);
     snapshot_with_stash(&snapshots, &sm, Some(json!({"location": "external"}))).await;
 
-    let (mut agent, stash) = agent_with_stash(&InMemoryStorage::new());
+    let (mut agent, stash) = agent_with_stash(&InMemoryStorage::default());
     let restored = sm.restore_snapshot(&mut agent, None).await.unwrap();
 
     assert!(restored);
@@ -785,12 +785,12 @@ async fn skips_stash_restore_when_location_is_external() {
 #[test]
 fn warns_when_stash_storage_type_changed_since_snapshot() {
     let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
-    let snapshots = InMemoryStorage::new();
+    let snapshots = InMemoryStorage::default();
     let sm = manager(&snapshots, SaveLatestStrategy::Invocation);
     let saved = json!({"location": "external", "storageType": "S3Storage"});
     runtime.block_on(snapshot_with_stash(&snapshots, &sm, Some(saved)));
 
-    let (mut agent, _) = agent_with_stash(&InMemoryStorage::new());
+    let (mut agent, _) = agent_with_stash(&InMemoryStorage::default());
     let (restored, warnings) =
         WarnRecorder::capture(|| runtime.block_on(sm.restore_snapshot(&mut agent, None)));
 
@@ -805,18 +805,18 @@ fn warns_when_stash_storage_type_changed_since_snapshot() {
 
 #[tokio::test]
 async fn handles_snapshot_without_stash_data() {
-    let snapshots = InMemoryStorage::new();
+    let snapshots = InMemoryStorage::default();
     let sm = manager(&snapshots, SaveLatestStrategy::Invocation);
     snapshot_with_stash(&snapshots, &sm, None).await;
 
-    let (mut agent, _) = agent_with_stash(&InMemoryStorage::new());
+    let (mut agent, _) = agent_with_stash(&InMemoryStorage::default());
 
     assert!(sm.restore_snapshot(&mut agent, None).await.unwrap());
 }
 
 #[tokio::test]
 async fn deletes_stash_data_via_stash_reference() {
-    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
     let sm = manager_on(&root);
     let stash = stash_on(&root, "agent");
     let _agent = initialized_with_stash(&root, &sm, &stash).await;
@@ -831,8 +831,8 @@ async fn deletes_stash_data_via_stash_reference() {
 
 #[tokio::test]
 async fn deletes_stash_data_from_custom_stash_storage() {
-    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
-    let custom: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
+    let custom: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
     let sm = manager_on(&root);
     let stash = stash_on(&custom, "agent");
     let _agent = initialized_with_stash(&root, &sm, &stash).await;
@@ -846,8 +846,8 @@ async fn deletes_stash_data_from_custom_stash_storage() {
 
 #[tokio::test]
 async fn deletes_stash_data_when_storage_is_pre_namespaced() {
-    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
-    let namespaced: Arc<dyn Storage> = Arc::new(InMemoryStorage::new().with_namespace("my-prefix").unwrap());
+    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
+    let namespaced: Arc<dyn Storage> = Arc::new(InMemoryStorage::default().with_namespace("my-prefix").unwrap());
     let sm = manager_on(&root);
     let stash = stash_on(&namespaced, "agent");
     let _agent = initialized_with_stash(&root, &sm, &stash).await;
@@ -862,7 +862,7 @@ async fn deletes_stash_data_when_storage_is_pre_namespaced() {
 #[tokio::test]
 async fn does_not_over_delete_when_root_storage_is_pre_namespaced() {
     let namespaced_root: Arc<dyn Storage> =
-        Arc::new(InMemoryStorage::new().with_namespace("tenant-a").unwrap());
+        Arc::new(InMemoryStorage::default().with_namespace("tenant-a").unwrap());
     let sm = manager_on(&namespaced_root);
     let stash = stash_on(&namespaced_root, "agent");
     let _agent = initialized_with_stash(&namespaced_root, &sm, &stash).await;
@@ -883,7 +883,7 @@ async fn does_not_over_delete_when_root_storage_is_pre_namespaced() {
 
 #[tokio::test]
 async fn clear_session_cleans_up_stash_data_from_other_agents_in_the_session() {
-    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::new());
+    let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
     let sm = manager_on(&root);
     let stash_a = stash_on(&root, "agent-a");
     let stash_b = stash_on(&root, "agent-b");
@@ -899,7 +899,7 @@ async fn clear_session_cleans_up_stash_data_from_other_agents_in_the_session() {
 
 #[tokio::test]
 async fn succeeds_when_no_stash_is_available() {
-    let sm = manager(&InMemoryStorage::new(), SaveLatestStrategy::Invocation);
+    let sm = manager(&InMemoryStorage::default(), SaveLatestStrategy::Invocation);
     let mut agent = Agent::builder()
         .model(MockMessageModel::new())
         .printer(false)
@@ -935,7 +935,7 @@ mod rust_only {
                 Ok::<_, ToolError>(json!("released"))
             }
         });
-        let sm = manager(&InMemoryStorage::new(), SaveLatestStrategy::Invocation);
+        let sm = manager(&InMemoryStorage::default(), SaveLatestStrategy::Invocation);
         let mut agent = Agent::builder()
             .id("test-agent")
             .model(model)

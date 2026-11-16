@@ -79,7 +79,7 @@ impl MemoryStore for Fixed {
 
 #[tokio::test]
 async fn the_model_adds_and_searches_memory_through_the_agent_tools() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let manager = MemoryManager::new(
         MemoryManagerConfig::builder()
             .stores(vec![notes(&storage, None) as Arc<dyn MemoryStore>])
@@ -140,7 +140,7 @@ async fn the_model_adds_and_searches_memory_through_the_agent_tools() {
 
 #[tokio::test]
 async fn injects_stored_memory_into_the_user_turn_the_model_sees() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let store = notes(&storage, None);
     store
         .add_entry("# Editor\nUses dark mode in every editor")
@@ -184,7 +184,7 @@ async fn injects_stored_memory_into_the_user_turn_the_model_sees() {
 
 #[tokio::test]
 async fn extracts_facts_with_the_agent_model_and_shutdown_waits_for_them() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let extraction = FileMemoryExtractionConfig {
         trigger: Some(vec![
             Arc::new(InvocationTrigger::new()) as Arc<dyn ExtractionTrigger>
@@ -275,7 +275,7 @@ fn an_injection_trigger_is_a_named_policy_or_a_predicate() {
 // No TS case: the trait method and the inherent method of `FileMemoryStore` have distinct names.
 #[tokio::test]
 async fn the_trait_add_is_callable_on_a_file_memory_store() {
-    let storage = Arc::new(InMemoryStorage::new());
+    let storage = Arc::new(InMemoryStorage::default());
     let store = notes(&storage, None);
     store.add("# Editor\nUses vim", None).await.unwrap();
     assert_eq!(store.add_entry("# Editor\nUses tabs").await.unwrap(), "editor.md");
