@@ -4,15 +4,16 @@ use async_stream::try_stream;
 use tokio::sync::mpsc;
 
 use super::executor::{
-    Batch, CHANNEL_CAPACITY, ToolBatch, ToolExecutionInput, ToolExecutorItem, ToolExecutorStream,
-    error_text_result,
+    Batch, CHANNEL_CAPACITY, TaskMessage, ToolBatch, ToolExecutionInput, ToolExecutorItem,
+    ToolExecutorStream, error_text_result,
 };
 
 /// Runs the tool calls of a turn concurrently (TS `ConcurrentToolExecutor`); the default.
 ///
 /// Each call runs on its own task. Events of one call arrive in order; events of different calls
 /// interleave. When a call raises an interrupt, its siblings still finish before the interrupt
-/// stops the invocation. A panicking tool becomes an error result.
+/// stops the invocation. A panicking tool becomes an error result, and so does a call whose
+/// `ExecuteToolStage` middleware fails.
 ///
 /// ```
 /// use strands::tools::executors::{ConcurrentToolExecutor, ToolExecutor};
@@ -42,6 +43,13 @@ impl ConcurrentToolExecutor {
             drop(sender);
 
             while let Some(message) = receiver.recv().await {
+                // A failure belongs to one tool call and must not stop its siblings.
+                let message = match message {
+                    TaskMessage::Failed(tool_use_id, error) => TaskMessage::Done(
+                        error_text_result(&tool_use_id, error.to_string()).with_error(error),
+                    ),
+                    message => message,
+                };
                 if let Some((event, reply)) = batch.handle(message).await? {
                     yield ToolExecutorItem::Event(event);
                     reply.send();

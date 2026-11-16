@@ -1558,10 +1558,17 @@ mod hooks {
 /// Ported from strands-ts/src/agent/__tests__/agent.concurrent.test.ts (agent-level cases).
 mod concurrent {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
-    use crate::hooks::BeforeToolCallEvent;
-    use crate::tools::ToolExecutor;
+    use tokio::sync::Notify;
+
+    use crate::cancel::CancelOptions;
+    use crate::hooks::{AfterToolsEvent, BeforeToolCallEvent};
+    use crate::interrupt::InterruptParams;
+    use crate::middleware::{ExecuteToolStage, MiddlewareStage};
+    use crate::test_support::{mock_tool, text_result};
+    use crate::tools::{ConcurrentToolExecutor, ToolContext, ToolExecutor};
 
     type Log = Arc<Mutex<Vec<String>>>;
 
@@ -1591,6 +1598,22 @@ mod concurrent {
             ],
             vec![text("Done")],
         ])
+    }
+
+    #[test]
+    fn uses_concurrent_tool_executor_by_default() {
+        let agent = Agent::builder().model(mock(Vec::new())).build().unwrap();
+        assert!(matches!(agent.tool_executor(), ToolExecutor::Concurrent(_)));
+    }
+
+    #[test]
+    fn preserves_a_supplied_tool_executor_instance() {
+        let agent = Agent::builder()
+            .model(mock(Vec::new()))
+            .tool_executor(SequentialToolExecutor::new())
+            .build()
+            .unwrap();
+        assert!(matches!(agent.tool_executor(), ToolExecutor::Sequential(_)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -1660,6 +1683,211 @@ mod concurrent {
         let before_calls = before_calls.lock().unwrap();
         assert_eq!(before_calls.iter().filter(|name| *name == "toolA").count(), 2);
         assert_eq!(before_calls.iter().filter(|name| *name == "toolB").count(), 1);
+    }
+
+    /// TS `GatedTool`: waits until it is released or cancelled, and records what it saw.
+    #[derive(Clone, Default)]
+    struct GatedTool {
+        started: Arc<AtomicBool>,
+        cancelled: Arc<AtomicBool>,
+        entered: Arc<Notify>,
+        release: Arc<Notify>,
+    }
+
+    impl GatedTool {
+        fn tool(&self, name: &'static str) -> FunctionTool {
+            let gate = self.clone();
+            FunctionTool::new(name, "Gated tool", move |_input: JsonValue, ctx: ToolContext| {
+                let gate = gate.clone();
+                async move {
+                    gate.started.store(true, Ordering::SeqCst);
+                    gate.entered.notify_one();
+                    tokio::select! {
+                        () = gate.release.notified() => {}
+                        () = ctx.cancel_signal().cancelled() => gate.cancelled.store(true, Ordering::SeqCst),
+                    }
+                    Ok::<_, ToolError>(format!("{name} done"))
+                }
+            })
+        }
+    }
+
+    fn gated_agent(tool_a: &GatedTool, tool_b: &GatedTool) -> Agent {
+        Agent::builder()
+            .model(two_tool_turn())
+            .tools([tool_a.tool("toolA"), tool_b.tool("toolB")])
+            .tool_executor(ConcurrentToolExecutor::new())
+            .printer(false)
+            .build()
+            .unwrap()
+    }
+
+    /// Records the message of the last `AfterToolsEvent`.
+    fn after_tools_message(agent: &Agent) -> Arc<Mutex<Option<Message>>> {
+        let seen = Arc::new(Mutex::new(None));
+        let slot = Arc::clone(&seen);
+        agent.add_hook(move |event: &mut AfterToolsEvent<'_>| {
+            *slot.lock().unwrap() = Some(event.message().clone());
+        });
+        seen
+    }
+
+    #[tokio::test]
+    async fn cancels_all_tools_when_agent_is_cancelled_before_launch_concurrent_mode() {
+        let (tool_a, tool_b) = (GatedTool::default(), GatedTool::default());
+        let mut agent = gated_agent(&tool_a, &tool_b);
+        agent.add_hook(|event: &mut BeforeToolsEvent<'_>| event.agent().cancel(CancelOptions::default()));
+
+        agent.invoke("Go").await.unwrap();
+
+        assert!(!tool_a.started.load(Ordering::SeqCst));
+        assert!(!tool_b.started.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn cooperative_mid_flight_cancel_tools_honor_cancel_signal_and_exit() {
+        let (tool_a, tool_b) = (GatedTool::default(), GatedTool::default());
+        let mut agent = gated_agent(&tool_a, &tool_b);
+        // Cancel once both tools have entered their gates.
+        let handle = agent.cancel_handle();
+        let (entered_a, entered_b) = (Arc::clone(&tool_a.entered), Arc::clone(&tool_b.entered));
+        let canceller = tokio::spawn(async move {
+            entered_a.notified().await;
+            entered_b.notified().await;
+            handle.cancel(CancelOptions::default());
+        });
+
+        agent.invoke("Go").await.unwrap();
+        canceller.await.unwrap();
+
+        assert!(tool_a.cancelled.load(Ordering::SeqCst));
+        assert!(tool_b.cancelled.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn isolates_unexpected_middleware_failures_to_the_affected_tool() {
+        let model = mock(vec![
+            vec![
+                tool_use("tool", "failed-tool", json!({})),
+                tool_use("tool", "successful-tool", json!({})),
+            ],
+            vec![text("Done")],
+        ]);
+        let tool = mock_tool("tool", |context| {
+            let id = context.tool_use().tool_use_id();
+            text_result(id, &format!("completed:{id}"))
+        });
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([tool])
+            .tool_executor(ConcurrentToolExecutor::new())
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.add_middleware(ExecuteToolStage::wrap(|context, next| {
+            if context.tool_use.tool_use_id() == "failed-tool" {
+                return Box::pin(futures::stream::iter([Err(
+                    Error::other("middleware failed").into()
+                )]));
+            }
+            next.run(context)
+        }));
+        let seen = after_tools_message(&agent);
+
+        let result = agent.invoke("Go").await.unwrap();
+
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+        let message = seen.lock().unwrap().take().unwrap();
+        let results: Vec<(JsonValue, Option<String>)> = message
+            .content()
+            .iter()
+            .map(|block| match block {
+                ContentBlock::ToolResult(result) => (
+                    serde_json::to_value(result).unwrap(),
+                    result.error().map(ToString::to_string),
+                ),
+                other => panic!("expected a tool result, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            results,
+            [
+                (
+                    json!({"toolUseId": "failed-tool", "status": "error", "content": [{"text": "middleware failed"}]}),
+                    Some("middleware failed".to_owned())
+                ),
+                (
+                    json!({
+                        "toolUseId": "successful-tool",
+                        "status": "success",
+                        "content": [{"text": "completed:successful-tool"}]
+                    }),
+                    None
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn pre_launch_agent_cancel_during_before_tools_event_produces_tool_execution_cancelled_concurrent()
+    {
+        let (tool_a, tool_b) = (GatedTool::default(), GatedTool::default());
+        let mut agent = gated_agent(&tool_a, &tool_b);
+        agent.add_hook(|event: &mut BeforeToolsEvent<'_>| event.agent().cancel(CancelOptions::default()));
+        let seen = after_tools_message(&agent);
+
+        agent.invoke("Go").await.unwrap();
+
+        assert!(!tool_a.started.load(Ordering::SeqCst));
+        assert!(!tool_b.started.load(Ordering::SeqCst));
+        let message = seen.lock().unwrap().take().unwrap();
+        assert_eq!(
+            serde_json::to_value(message.content()).unwrap(),
+            json!([
+                {"toolResult": {"toolUseId": "a1", "status": "error", "content": [{"text": "Tool execution cancelled"}]}},
+                {"toolResult": {"toolUseId": "b1", "status": "error", "content": [{"text": "Tool execution cancelled"}]}},
+            ])
+        );
+    }
+
+    /// TS spies on `Tracer.endToolCallSpan`; the tool's local trace ending is the Rust reading.
+    #[tokio::test]
+    async fn records_span_and_metric_telemetry_when_a_tool_interrupts() {
+        let model = mock(vec![vec![tool_use("approvalTool", "tool-1", json!({}))]]);
+        let tool = FunctionTool::new(
+            "approvalTool",
+            "Asks for approval.",
+            |_input: JsonValue, ctx: ToolContext| async move {
+                ctx.interrupt(InterruptParams {
+                    name: "approve".into(),
+                    reason: Some(json!("Approve this tool call?")),
+                    ..Default::default()
+                })?;
+                Ok::<_, ToolError>("approved")
+            },
+        );
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([tool])
+            .printer(false)
+            .build()
+            .unwrap();
+
+        let result = agent.invoke("Go").await.unwrap();
+
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        let tool_trace = result.traces()[0]
+            .children()
+            .iter()
+            .find(|trace| trace.name() == "Tool: approvalTool")
+            .expect("the tool call has a trace");
+        assert!(tool_trace.end_time().is_some());
+        let metrics = agent.metrics();
+        let tool = metrics.tool_metric("approvalTool").unwrap();
+        assert_eq!(
+            (tool.call_count(), tool.success_count(), tool.error_count()),
+            (1, 0, 1)
+        );
     }
 }
 

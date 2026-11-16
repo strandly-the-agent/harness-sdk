@@ -228,7 +228,8 @@ pub enum MiddlewareItem<E, R> {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum MiddlewareError {
-    /// A failure, which ends the invocation (or, under cancellation, its cancel).
+    /// A failure, which ends the invocation (or, under cancellation, its cancel). A failed tool
+    /// call under the concurrent executor becomes that call's error result instead.
     #[error(transparent)]
     Failed(#[from] Error),
     /// An interrupt, which stops the agent with stop reason `interrupt`.

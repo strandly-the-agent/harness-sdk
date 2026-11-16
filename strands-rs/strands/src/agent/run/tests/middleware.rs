@@ -912,10 +912,18 @@ mod execute_tool_stage {
         assert!(entries(&log).is_empty());
     }
 
+    /// The sequential executor rethrows; the concurrent one keeps the failure to its tool call
+    /// (`concurrent::isolates_unexpected_middleware_failures_to_the_affected_tool`).
     #[tokio::test]
     async fn a_failing_handler_fails_the_invocation() {
         let model = tool_then_done("testTool", json!({}));
-        let mut agent = agent_with_tool(&model, ok_tool("testTool", "ok"));
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([ok_tool("testTool", "ok")])
+            .tool_executor(SequentialToolExecutor::new())
+            .printer(false)
+            .build()
+            .unwrap();
         agent.add_middleware(ExecuteToolStage::wrap(|_, _| {
             Box::pin(stream::iter([Err(Error::other("middleware exploded").into())]))
         }));

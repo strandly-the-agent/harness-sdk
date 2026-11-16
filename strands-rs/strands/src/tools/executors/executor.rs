@@ -103,8 +103,9 @@ pub(crate) enum TaskMessage {
     Update(AgentStreamEvent, oneshot::Sender<()>),
     After(AfterToolCallEvent, oneshot::Sender<AfterReply>),
     Interrupted(Interrupt),
-    /// A middleware handler failed; the batch fails with it.
-    Failed(Error),
+    /// A middleware handler failed the call with this tool use id. The sequential executor fails
+    /// the batch with it; the concurrent one turns it into the call's error result.
+    Failed(String, Error),
     Done(ToolResultBlock),
 }
 
@@ -220,7 +221,7 @@ impl Batch {
                 self.interrupts.push(interrupt);
                 return Ok(None);
             }
-            TaskMessage::Failed(error) => return Err(error),
+            TaskMessage::Failed(_, error) => return Err(error),
             TaskMessage::Done(result) => {
                 self.results
                     .insert(result.tool_use_id().to_owned(), result.clone());
@@ -336,7 +337,8 @@ impl ToolTask {
                     return Some(ToolOutcome::Interrupt(*interrupt));
                 }
                 Err(MiddlewareError::Failed(error)) => {
-                    self.send(TaskMessage::Failed(error)).await?;
+                    self.send(TaskMessage::Failed(block.tool_use_id().to_owned(), error))
+                        .await?;
                     return None;
                 }
             };

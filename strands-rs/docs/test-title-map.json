@@ -115,12 +115,6 @@
     "does not stop the loop when a later AfterToolsEvent hook changes the result to error": "does_not_stop_the_loop_when_a_later_after_tool_call_hook_changes_the_result_to_error"
   },
   "strands-ts/src/agent/__tests__/agent.concurrent.test.ts": {
-    "uses ConcurrentToolExecutor by default": {
-      "gap": "covered by the `ToolExecutor` doctest in `tools/executors.rs` (no separate test)"
-    },
-    "preserves a supplied tool executor instance": {
-      "gap": "covered by the `ToolExecutor` doctest in `tools/executors.rs` (no separate test)"
-    },
     "rejects an unknown tool executor string": {
       "gap": "compile-time: `ToolExecutor` is an enum, there are no string shorthands"
     },
@@ -130,27 +124,12 @@
     "rejects an unknown string assigned to toolExecutor": {
       "gap": "compile-time: `ToolExecutor` is an enum, there are no string shorthands"
     },
-    "cancels all tools when agent is cancelled before launch (concurrent mode)": {
-      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
-    },
-    "cooperative mid-flight cancel — tools honor cancelSignal and exit": {
-      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
-    },
-    "isolates unexpected middleware failures to the affected tool": {
-      "gap": "the row: middleware failures land with Phase 4 middleware"
-    },
     "handles a hallucinated tool name in a batch without affecting siblings": "reports_unknown_tools_and_tools_without_a_result",
     "AfterToolsEvent.message contains completed results when consumer breaks mid-stream": {
-      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
-    },
-    "pre-launch agent.cancel() during BeforeToolsEvent produces \"Tool execution cancelled\" (concurrent)": {
-      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
+      "gap": "Rust-inapplicable: a consumer break is a dropped `AgentStream`, which aborts the tool tasks before the tool-use turn is appended, so no `AfterToolsEvent` runs (`drop_guard::dropping_mid_tool_aborts_the_tool_and_keeps_history_re_invokable` covers the Rust shape)"
     },
     "closes in-flight generators and includes fallback results when consumer breaks": {
-      "gap": "the row: agent cancel and consumer-break cases land with Phase 4 cancellation and the drop guard"
-    },
-    "records span and metric telemetry when a tool interrupts": {
-      "gap": "the row: interrupt telemetry lands with Phase 4 interrupts"
+      "gap": "Rust-inapplicable: a consumer break is a dropped `AgentStream`, which aborts the tool tasks before the tool-use turn is appended, so no `AfterToolsEvent` runs (`drop_guard::dropping_mid_tool_aborts_the_tool_and_keeps_history_re_invokable` covers the Rust shape)"
     }
   },
   "strands-ts/src/agent/__tests__/agent.hook.test.ts": {
