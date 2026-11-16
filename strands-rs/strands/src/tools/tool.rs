@@ -284,7 +284,7 @@ impl ToolContext {
 ///
 /// A boxed error ([`BoxError`], `anyhow::Error`) is not a `std::error::Error`, so `?` can't
 /// convert it: write `.map_err(ToolError::from_boxed)?`. [`ToolError::downcast_ref`] reads a
-/// typed error back.
+/// typed error back from a [`BoxError`] that holds it.
 ///
 /// ```
 /// use strands::ToolError;
@@ -327,8 +327,10 @@ impl ToolError {
     }
 
     /// A failure from a boxed error, or from anything that converts into one, such as
-    /// `anyhow::Error`. The error stays the source, so [`downcast_ref`](Self::downcast_ref) finds
-    /// it.
+    /// `anyhow::Error`. A [`BoxError`] that holds the error itself stays the source, so
+    /// [`downcast_ref`](Self::downcast_ref) finds it. An `anyhow::Error` converts into a box of
+    /// anyhow's own wrapper, which can't be downcast: downcast it before converting, or pass
+    /// `error.reallocate_into_boxed_dyn_error_without_backtrace()`.
     ///
     /// ```
     /// use strands::{ToolError, error::BoxError};
@@ -349,8 +351,8 @@ impl ToolError {
         }
     }
 
-    /// The failure as an `E`, when the tool failed with one; `None` for an interrupt or another
-    /// error type.
+    /// The failure as an `E`, when the tool failed with one; `None` for an interrupt, another
+    /// error type, or an `anyhow::Error` passed to [`from_boxed`](Self::from_boxed) as is.
     pub fn downcast_ref<E: std::error::Error + 'static>(&self) -> Option<&E> {
         match &self.kind {
             ToolErrorKind::Failed(error) => error.downcast_ref::<E>(),
