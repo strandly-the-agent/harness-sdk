@@ -141,6 +141,8 @@
 //! | `agent.stream(args, options?)` | [`Agent::stream`], [`Agent::stream_with`]; the items are `Result<AgentStreamEvent>` |
 //! | `agent.cancel(options?)` | [`Agent::cancel_handle`] then [`CancelHandle::cancel`], or [`InvokeOptions::cancel_signal`] |
 //! | `agent.addHook(Event, callback, { order })` | [`Agent::add_hook`], [`Agent::add_async_hook`], [`Agent::add_hook_impl`], and their `_with` forms for an order; each returns a [`HookCleanup`](hooks::HookCleanup) |
+//! | `event.agent` (`LocalAgent`) | `event.agent()` and `event.agent_mut()` on sequential events, a [`LocalAgent`](types::agent::LocalAgent); `event.agent()` on per-tool events, a [`ToolAgent`](types::agent::ToolAgent) |
+//! | `LifecycleObserver.observeAgent(agent)` | [`InterventionHandler::observe_agent`](interventions::InterventionHandler::observe_agent), a provided method of the handler trait |
 //! | `tool({ name, inputSchema, callback })` | [`tool`](macro@tool) on a function, [`tools`](macro@tools) on an impl block, or [`FunctionTool`](tools::FunctionTool) |
 //! | `Tool.stream()` async generator | [`Tool::stream`], a stream that ends in a [`ToolOutcome`] |
 //! | `context.interrupt(params)` | [`ToolContext::interrupt`], which returns the response on resume |
