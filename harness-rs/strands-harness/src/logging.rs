@@ -25,3 +25,16 @@ pub(crate) fn warned(message: &str) -> bool {
         .unwrap_or_else(PoisonError::into_inner)
         .contains(message)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warned_reports_a_message_once_warn_once_has_logged_it() {
+        let message = "logging test: a message no other test logs";
+        assert!(!warned(message));
+        warn_once(message);
+        assert!(warned(message));
+    }
+}

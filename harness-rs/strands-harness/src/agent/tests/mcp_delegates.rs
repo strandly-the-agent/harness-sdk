@@ -47,9 +47,10 @@ impl ServerHandler for EchoServer {
         echo.name = Cow::Borrowed("echo");
         echo.description = Some(Cow::Borrowed("Echoes the message."));
         echo.input_schema = Arc::new(schema);
-        let mut result = ListToolsResult::default();
-        result.tools = vec![echo];
-        Ok(result)
+        Ok(ListToolsResult {
+            tools: vec![echo],
+            ..Default::default()
+        })
     }
 }
 

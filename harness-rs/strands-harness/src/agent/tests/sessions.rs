@@ -30,7 +30,7 @@ async fn persists_messages_before_the_invocation_finishes() {
 
     let mut agent = create_harness_with(options.clone(), seams(&dir)).await.unwrap();
     let restored_messages = Arc::new(Mutex::new(None));
-    agent.add_async_hook::<BeforeModelCallEvent>({
+    agent.add_async_hook::<BeforeModelCallEvent<'_>>({
         let (seams, restored_messages) = (seams(&dir), Arc::clone(&restored_messages));
         move |_event| {
             let (options, seams) = (options.clone(), seams.clone());

@@ -744,12 +744,10 @@ mod resolve_model {
         let (model, warnings) =
             WarnRecorder::capture(|| resolved(Some(&instance), options(Effort::Auto, false, true, true)));
         assert!(same_model(&model, &instance));
-        assert_eq!(
-            warnings,
-            [
-                "prompt caching not applied to a pre-built Model instance or ModelRouter; configure it on the instance"
-            ]
-        );
+        // Logged once per process: by this call, or earlier by a `create_harness` case.
+        let message = "prompt caching not applied to a pre-built Model instance or ModelRouter; configure it on the instance";
+        assert!(crate::logging::warned(message));
+        assert!(warnings.iter().all(|warning| warning == message), "{warnings:?}");
     }
 
     #[test]

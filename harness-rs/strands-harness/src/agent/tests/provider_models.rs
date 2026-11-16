@@ -21,6 +21,7 @@ use crate::logging::warned;
 use crate::models::{build, plan};
 use crate::test_support::WarnRecorder;
 
+#[cfg(feature = "mcp")]
 const EXA_WARNING: &str = "web_search is opted into Exa (exa.ai), a third-party service: every search query leaves your environment and is subject to Exa's privacy policy (https://exa.ai/privacy-policy).";
 const INSTANCE_CACHING_WARNING: &str =
     "prompt caching not applied to a pre-built Model instance or ModelRouter; configure it on the instance";
