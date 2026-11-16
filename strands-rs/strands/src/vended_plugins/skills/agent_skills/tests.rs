@@ -681,6 +681,60 @@ mod url_skill_resolution {
         AgentSkills::with_fetch(AgentSkillsConfig::builder().skills(skills).build(), fetch)
     }
 
+    // No TS case: a JS promise can't be dropped mid-fetch; a Rust future can.
+    #[tokio::test]
+    async fn a_fetch_dropped_midway_is_retried_by_the_next_call() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let fetch = skill_fetch(move |_url| {
+            let first = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+            async move {
+                if first {
+                    std::future::pending::<()>().await;
+                }
+                Ok(FetchReply {
+                    ok: true,
+                    status: 200,
+                    status_text: "OK".to_owned(),
+                    body: SAMPLE_CONTENT.to_owned(),
+                })
+            }
+        });
+        let plugin = url_plugin(vec!["https://example.com/SKILL.md".into()], fetch);
+        {
+            let mut dropped = std::pin::pin!(plugin.get_available_skills(None));
+            assert!(futures::poll!(dropped.as_mut()).is_pending());
+        }
+        assert_eq!(names(&plugin.get_available_skills(None).await), ["url-skill"]);
+    }
+
+    // No TS case: TS inserts fetch results into the map of the `_resolveSkills` call that started
+    // them; this pins the same outcome for the shared Rust state.
+    #[tokio::test]
+    async fn a_set_replaced_during_a_fetch_does_not_receive_the_old_sets_url_skills() {
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        let fetch = {
+            let gate = gate.clone();
+            skill_fetch(move |_url| {
+                let gate = gate.clone();
+                async move {
+                    gate.acquire().await.unwrap().forget();
+                    Ok(FetchReply {
+                        ok: true,
+                        status: 200,
+                        status_text: "OK".to_owned(),
+                        body: SAMPLE_CONTENT.to_owned(),
+                    })
+                }
+            })
+        };
+        let plugin = url_plugin(vec!["https://example.com/SKILL.md".into()], fetch);
+        let mut first = std::pin::pin!(plugin.get_available_skills(None));
+        assert!(futures::poll!(first.as_mut()).is_pending());
+        plugin.set_available_skills(Vec::new());
+        gate.add_permits(1);
+        assert!(first.await.is_empty());
+    }
+
     #[tokio::test]
     async fn resolves_a_url_string_as_a_skill_source() {
         let plugin = url_plugin(vec!["https://example.com/SKILL.md".into()], fetch_success());

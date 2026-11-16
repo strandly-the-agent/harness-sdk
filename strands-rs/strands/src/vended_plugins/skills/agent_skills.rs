@@ -83,6 +83,8 @@ struct Resolved {
     skills: Skills,
     skill_paths: Vec<String>,
     pending_urls: Vec<String>,
+    /// Bumped by `set_available_skills`, so a fetch started for a replaced set is dropped.
+    generation: u64,
     /// The skills of each initialized agent, by agent id: the shared ones and those loaded from
     /// its sandbox.
     agent_skills: HashMap<String, Skills>,
@@ -174,7 +176,12 @@ impl AgentSkills {
     /// Replaces the skills; every agent loads its path sources again on its next invocation (TS
     /// `setAvailableSkills`).
     pub fn set_available_skills(&self, skills: Vec<SkillSource>) {
-        *self.inner.lock() = resolve_skills(skills);
+        let mut resolved = self.inner.lock();
+        let generation = resolved.generation.wrapping_add(1);
+        *resolved = Resolved {
+            generation,
+            ..resolve_skills(skills)
+        };
     }
 
     /// The names of the skills activated on the agent with `app_state`, least recent first (TS
@@ -249,31 +256,44 @@ impl Inner {
     /// Fetches the URL sources that are still pending (TS awaits `_ready`).
     async fn ready(&self) {
         let _resolving = self.resolving.lock().await;
-        let urls = std::mem::take(&mut self.lock().pending_urls);
-        if urls.is_empty() {
-            return;
-        }
-        let options = SkillOptions {
-            strict: self.strict,
-            path: None,
-        };
-        let fetches = urls
-            .iter()
-            .map(|url| Skill::from_url_with(url, &options, &self.fetch));
-        let results = futures::future::join_all(fetches).await;
-        let mut resolved = self.lock();
-        for (url, result) in urls.iter().zip(results) {
-            match result {
-                Ok(skill) => insert_skill(&mut resolved.skills, skill),
-                Err(error) => {
-                    tracing::warn!("url=<{url}> | failed to load skill from URL: {}", thrown(&error));
+        loop {
+            // The URLs stay pending until their results are stored: this future can be dropped
+            // mid-fetch, and a later call must fetch them again.
+            let (generation, urls) = {
+                let resolved = self.lock();
+                (resolved.generation, resolved.pending_urls.clone())
+            };
+            if urls.is_empty() {
+                return;
+            }
+            let options = SkillOptions {
+                strict: self.strict,
+                path: None,
+            };
+            let fetches = urls
+                .iter()
+                .map(|url| Skill::from_url_with(url, &options, &self.fetch));
+            let results = futures::future::join_all(fetches).await;
+            let mut resolved = self.lock();
+            if resolved.generation != generation {
+                // `set_available_skills` replaced the set meanwhile; these belong to the old one.
+                continue;
+            }
+            resolved.pending_urls.clear();
+            for (url, result) in urls.iter().zip(results) {
+                match result {
+                    Ok(skill) => insert_skill(&mut resolved.skills, skill),
+                    Err(error) => {
+                        tracing::warn!("url=<{url}> | failed to load skill from URL: {}", thrown(&error));
+                    }
                 }
             }
+            tracing::debug!(
+                "resolved_count=<{}> | skills resolved (including async)",
+                resolved.skills.len()
+            );
+            return;
         }
-        tracing::debug!(
-            "resolved_count=<{}> | skills resolved (including async)",
-            resolved.skills.len()
-        );
     }
 
     fn skills_for(&self, agent_id: Option<&str>) -> Skills {
