@@ -51,7 +51,7 @@ No SDK bug was found by this sweep, and nothing under `src/` was changed.
 - `agent.cancel.test.ts`: the timer and `AbortSignal.timeout()` cases.
 - `interventions.test.ts`: the cases listed in the staged parity row; only the Bedrock provider.
 - `mcp/*.test.node.ts`: the Streamable HTTP transport variants (stdio only), and the filtering and prefixing cases against the v2 server.
-- `telemetry.test.node.ts`: the `getTracer`, `register()` and `Metrics Integration` cases (their Rust API is being built by another track), span events and timing attributes, tool-error and mid-loop error spans, `stream()`, concurrent agents.
+- `telemetry.test.node.ts`: the `getTracer`, `register()` and `Metrics Integration` cases (not ported live: `setup_tracer`, `setup_meter`, `get_tracer` and `get_meter` are covered by unit tests against recording exporters), span events and timing attributes, tool-error and mid-loop error spans, `stream()`, concurrent agents.
 - `context-manager-summarize-tool-calls.test.ts`: the OpenAI and Anthropic cases.
 - Bedrock API-key (bearer) authentication (no Bedrock API key in this environment), guardrails (need a guardrail resource; creating one is not allowed), audio.
 - Everything in `anthropic_live.rs` and `openai_live.rs` (keys missing).

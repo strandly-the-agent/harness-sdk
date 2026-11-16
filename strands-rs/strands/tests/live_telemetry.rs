@@ -2,8 +2,9 @@
 //! strands-ts/test/integ/telemetry.test.node.ts): the spans of a real invocation, read through
 //! a recording span exporter. Covered: the span hierarchy, span attributes, custom trace
 //! attributes, status and usage. Not covered here: the `getTracer`/`register()` cases and the
-//! `Metrics Integration` cases, whose Rust API (`setup_tracer`, the meter) is not in this tree
-//! yet, and the concurrent-agents cases.
+//! `Metrics Integration` cases (`setup_tracer`, `setup_meter`, `get_tracer` and `get_meter`
+//! register or read process-global providers; `telemetry::config::setup::tests` covers them
+//! against recording exporters), and the concurrent-agents cases.
 //!
 //! The subscriber is thread-local (`tracing::subscriber::set_default`), so the tests run on the
 //! current-thread runtime and share no global state. They use the default AWS credential chain
