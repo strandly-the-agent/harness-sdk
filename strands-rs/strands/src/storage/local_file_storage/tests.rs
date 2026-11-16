@@ -346,6 +346,22 @@ async fn treats_sandbox_path_not_found_error_from_the_sandbox_as_a_missing_key()
 }
 
 #[tokio::test]
+async fn accepts_a_sandbox_safe_strategy_passed_with_a_sandbox() {
+    let (_dir, base_dir, _) = setup();
+    let strategy = Arc::new(FakeStrategy::default());
+    let configured = LocalFileStorage::with_config(
+        base_dir.clone(),
+        LocalFileStorageConfig {
+            sandbox: Some(RecordingSandbox::new(false)),
+            search_strategy: Some(strategy.clone()),
+            ..Default::default()
+        },
+    );
+    configured.search("query").await.unwrap().unwrap();
+    assert_eq!(*strategy.searched.lock().unwrap(), [format!("{base_dir} query")]);
+}
+
+#[tokio::test]
 async fn carries_a_search_strategy_from_config_through_for_sandbox_and_namespace() {
     let (_dir, base_dir, _) = setup();
     let strategy = Arc::new(FakeStrategy::default());
