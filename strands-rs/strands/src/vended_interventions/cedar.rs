@@ -6,6 +6,10 @@
 //! (`cedar_policy::ffi`) of the `cedar-policy` crate the WASM build is made from, with the same
 //! JSON, so decisions and error texts are the engine's own. The schema comes from
 //! `cedar-policy-mcp-schema-generator`.
+//!
+//! The generator pins its Cedar core exactly, so `strands` depends on `cedar-policy = "=4.14.0"`
+//! (the engine version of the TS build). A crate that also depends on `cedar-policy` must accept
+//! that version until the generator moves.
 
 mod schema_generator;
 
