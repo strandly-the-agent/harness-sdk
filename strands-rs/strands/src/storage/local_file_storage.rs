@@ -21,6 +21,7 @@ const TMP_MARKER: &str = ".__strands_tmp";
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct LocalFileStorageConfig {
     /// Routes every read, write, delete and listing through this sandbox instead of the host.
     pub sandbox: Option<Arc<dyn Sandbox>>,

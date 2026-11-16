@@ -44,6 +44,7 @@ pub enum OffloadTarget {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct OffloadConditions {
     /// Offload only blocks above this many tokens.
     pub threshold: Option<u64>,

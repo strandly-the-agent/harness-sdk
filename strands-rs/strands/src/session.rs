@@ -6,8 +6,9 @@ mod snapshot_storage_adapter;
 mod validation;
 
 pub use session_manager::{
-    ListSnapshotIdsOptions, SaveLatestStrategy, SessionManager, SessionManagerConfig, SnapshotTarget,
-    SnapshotTriggerCallback, SnapshotTriggerParams,
+    ListSnapshotIdsOptions, ListSnapshotIdsOptionsBuilder, SaveLatestStrategy, SessionManager,
+    SessionManagerConfig, SessionManagerConfigBuilder, SnapshotTarget, SnapshotTriggerCallback,
+    SnapshotTriggerParams, list_snapshot_ids_options_builder, session_manager_config_builder,
 };
 
 #[cfg(test)]

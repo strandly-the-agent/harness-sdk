@@ -33,12 +33,13 @@ pub mod strategies;
 #[cfg(test)]
 mod test_support;
 
-pub use methods::truncate::{PreviewMode, TruncateConfig};
+pub use methods::truncate::{PreviewMode, TruncateConfig, TruncateConfigBuilder, truncate_config_builder};
 pub use presets::StrategyPresetName;
 pub use stash::Stash;
 pub use strategies::offload::{
-    DropStrategy, Offload, OffloadConditions, OffloadTarget, SummarizeConfig, SummarizeStrategy,
-    TruncateStrategy,
+    DropStrategy, Offload, OffloadConditions, OffloadConditionsBuilder, OffloadTarget, SummarizeConfig,
+    SummarizeConfigBuilder, SummarizeStrategy, TruncateStrategy, offload_conditions_builder,
+    summarize_config_builder,
 };
 
 use presets::resolve_strategies;
@@ -159,6 +160,7 @@ impl<S: ContextStrategy> From<S> for ContextStrategyEntry {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct StashConfig {
     /// The backend; defaults to the agent's storage, then an [`InMemoryStorage`]. A namespaced
     /// view given here is the stash root, shared by every agent given it.
@@ -209,6 +211,7 @@ impl From<StashConfig> for StashOption {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct ContextManagerConfig {
     /// The pipeline, in order; `None` uses the `auto` pipeline. An emergency truncation always
     /// runs last.

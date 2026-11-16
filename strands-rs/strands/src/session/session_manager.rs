@@ -51,7 +51,7 @@ pub type SnapshotTriggerCallback = Arc<dyn Fn(&SnapshotTriggerParams<'_>) -> boo
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct SessionManagerConfig {
     /// Where snapshots go; defaults to the agent's `storage`. Unless it is already a namespaced
     /// view, keys go under `session/`.
@@ -82,7 +82,7 @@ impl fmt::Debug for SessionManagerConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct ListSnapshotIdsOptions {
     /// At most this many ids.
     pub limit: Option<usize>,

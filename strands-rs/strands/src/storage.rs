@@ -11,8 +11,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-pub use in_memory_storage::{InMemoryStorage, InMemoryStorageConfig};
-pub use local_file_storage::{LocalFileStorage, LocalFileStorageConfig};
+pub use in_memory_storage::{
+    InMemoryStorage, InMemoryStorageConfig, InMemoryStorageConfigBuilder, in_memory_storage_config_builder,
+};
+pub use local_file_storage::{
+    LocalFileStorage, LocalFileStorageConfig, LocalFileStorageConfigBuilder,
+    local_file_storage_config_builder,
+};
 pub use search::StorageSearchResult;
 
 use crate::error::{Result, StorageError};

@@ -16,6 +16,7 @@ use crate::error::Result;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct InMemoryStorageConfig {
     /// Indexes every write and answers `search` instead of the keyword scan.
     pub search_strategy: Option<Arc<dyn SearchStrategy<InMemoryStorage>>>,

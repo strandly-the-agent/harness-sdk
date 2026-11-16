@@ -27,6 +27,7 @@ pub enum PreviewMode {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct TruncateConfig {
     /// Tokens of preview text to keep (default 1,000).
     pub preview_tokens: Option<u64>,

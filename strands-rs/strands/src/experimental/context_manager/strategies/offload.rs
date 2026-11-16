@@ -6,10 +6,10 @@ mod emergency;
 mod summarize;
 mod truncate;
 
-pub use base::{OffloadConditions, OffloadTarget};
+pub use base::{OffloadConditions, OffloadConditionsBuilder, OffloadTarget, offload_conditions_builder};
 pub use drop::DropStrategy;
 pub(crate) use emergency::EmergencyTruncateStrategy;
-pub use summarize::{SummarizeConfig, SummarizeStrategy};
+pub use summarize::{SummarizeConfig, SummarizeConfigBuilder, SummarizeStrategy, summarize_config_builder};
 pub use truncate::TruncateStrategy;
 
 use crate::error::Result;

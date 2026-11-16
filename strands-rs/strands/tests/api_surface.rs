@@ -5,7 +5,21 @@ use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
 use strands::agent::{AgentBuilder, agent_builder};
+use strands::experimental::context_manager::{
+    ContextManagerConfig, ContextManagerConfigBuilder, OffloadConditions, OffloadConditionsBuilder,
+    StashConfig, StashConfigBuilder, SummarizeConfig, SummarizeConfigBuilder, TruncateConfig,
+    TruncateConfigBuilder, context_manager_config_builder, offload_conditions_builder, stash_config_builder,
+    summarize_config_builder, truncate_config_builder,
+};
 use strands::hooks::{AfterInvocationEvent, AfterModelCallEvent, BeforeInvocationEvent, Hook};
+use strands::session::{
+    ListSnapshotIdsOptions, ListSnapshotIdsOptionsBuilder, SessionManagerConfig, SessionManagerConfigBuilder,
+    list_snapshot_ids_options_builder, session_manager_config_builder,
+};
+use strands::storage::{
+    InMemoryStorageConfig, InMemoryStorageConfigBuilder, LocalFileStorageConfig,
+    LocalFileStorageConfigBuilder, in_memory_storage_config_builder, local_file_storage_config_builder,
+};
 use strands::testing::MockMessageModel;
 use strands::tools::{FunctionTool, ToolSource};
 use strands::types::agent::InvokeLimits;
@@ -201,4 +215,28 @@ async fn a_downstream_crate_configures_and_implements_conversation_managers() {
         .build()
         .unwrap();
     assert_eq!(agent.invoke("hi").await.unwrap().to_string(), "ok");
+}
+
+fn in_session<S: session_manager_config_builder::State>(
+    builder: SessionManagerConfigBuilder<S>,
+) -> SessionManagerConfigBuilder<S> {
+    builder
+}
+
+#[test]
+fn a_helper_can_name_the_storage_session_and_context_manager_config_builders() {
+    let config = in_session(SessionManagerConfig::builder().session_id("s")).build();
+    assert_eq!(config.session_id.as_deref(), Some("s"));
+    let _: ListSnapshotIdsOptionsBuilder<list_snapshot_ids_options_builder::Empty> =
+        ListSnapshotIdsOptions::builder();
+    let _: InMemoryStorageConfigBuilder<in_memory_storage_config_builder::Empty> =
+        InMemoryStorageConfig::builder();
+    let _: LocalFileStorageConfigBuilder<local_file_storage_config_builder::Empty> =
+        LocalFileStorageConfig::builder();
+    let _: OffloadConditionsBuilder<offload_conditions_builder::Empty> = OffloadConditions::builder();
+    let _: SummarizeConfigBuilder<summarize_config_builder::Empty> = SummarizeConfig::builder();
+    let _: TruncateConfigBuilder<truncate_config_builder::Empty> = TruncateConfig::builder();
+    let _: ContextManagerConfigBuilder<context_manager_config_builder::Empty> =
+        ContextManagerConfig::builder();
+    let _: StashConfigBuilder<stash_config_builder::Empty> = StashConfig::builder();
 }
