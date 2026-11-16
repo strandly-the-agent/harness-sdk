@@ -1,0 +1,34 @@
+# Phase 9 review: API bar-raiser (commit c04b26898)
+
+Verified at c04b26898 in a detached worktree. Builds: `cargo check -p strands --no-default-features --features mcp --all-targets` ok; `--no-default-features --all-targets` ok; clippy `-D warnings` (mcp only) ok; `cargo doc -D warnings` with and without `mcp` ok; doctests (mcp only): 60 passed, including `mcp/mod.rs` and `vended_tools/mcp_router.rs`. Logs: /tmp/review9_api-bar-raiser_build.txt, /tmp/review9_api-bar-raiser_doc_nomcp.txt.
+
+1. `strands-rs/strands/src/mcp/filters.rs:23,55` and `strands-rs/strands/src/mcp/client.rs:96`: `regex` and `reqwest` appear in public signatures but aren't re-exported. `McpToolMatcher::Pattern(Regex)` and `From<Regex>` mean callers need their own `regex` dependency. `McpAuthProvider = rmcp::transport::AuthClient<reqwest::Client>` can only be built with a `reqwest::Client` from exactly the 0.13 line that rmcp uses. Evidence: `grep -rn 'pub use (regex|reqwest)' src` finds nothing, and rmcp 3.10.0 doesn't re-export reqwest either. P-217 ("Dependency crates in public signatures are re-exported", for `aws_config`, `aws_sdk_bedrockruntime`, `aws_credential_types` and `http`) sets the rule, and P-231 covers only `rmcp`. Fix: `pub use regex;` and `pub use reqwest;` in `src/mcp/mod.rs`, logged as an amendment to P-217/P-231.
+
+2. `strands-rs/strands/src/mcp/config.rs:40,94`: `McpServerCredentials` is a made-up second copy of `McpClientCredentials` (`client.rs:104`), with the same three fields and the same redacting `Debug`. TS uses a single type: `strands-ts/src/mcp/config.ts:38` `auth?: McpClientCredentials`. Fix: derive `Serialize`/`Deserialize` with `rename_all = "camelCase"` and `skip_serializing_if` on `McpClientCredentials`, type `McpServerConfig::auth` as `Option<McpClientCredentials>`, drop `McpServerCredentials` from `mod.rs:49`, and update P-250.
+
+3. Several config structs have no builder, which breaks #65 ("exhaustive, with public fields, `Default` and a `bon` builder", PROMPT.md section 7.5). The six are `McpClientCredentials` (`client.rs:103`), `McpToolFilters` (`filters.rs:79`), `SerializableMcpToolFilters` (`config.rs:23`), `McpServerCredentials` (`config.rs:38`), `McpServerConfig` (`config.rs:68`) and `McpLoadServersOptions` (`config.rs:118`). Across the crate, 56 non-test `exhaustive_structs` config structs derive `bon::Builder` and 9 don't; 6 of those 9 are these MCP ones. The other config structs in this phase (`McpClientOptions`, `McpClientConfig`, `McpCallToolOptions`, `McpListToolsOptions`, `McpListOptions`, `StdioServerParameters`, `MakeMcpRouterOptions`) do have one. Fix: add `bon::Builder` (with `#[builder(on(String, into))]` where there are string fields) to all six.
+
+4. `strands-rs/strands/src/mcp/config.rs:110`: `pub tasks_config: Option<JsonValue>` is public API for an out-of-scope feature, and its only effect is to make the entry fail (`config.rs:339`). When MCP tasks land, the field's type has to change to a typed `TasksConfig`, which is a breaking change to an exhaustive struct. The rejection doesn't need the field, because `resolve_server` gets the raw entry as `JsonValue` (`config.rs:333,338`). Fix: remove the field and reject with `entry.get("tasksConfig").is_some()` before `serde_json::from_value`, keeping the same TS error text and the DIVERGENCES row at line 91.
+
+5. `strands-rs/strands/src/mcp/client.rs:684,723,737` vs `client.rs:520,534`: the list methods are shaped inconsistently on one type. `list_tools()` / `list_tools_with(options)` follow the crate's `x` / `x_with` pattern (`invoke` / `invoke_with`, `call_tool` / `call_tool_with`, `connect` / `connect_with`), but `list_prompts`, `list_resources` and `list_resource_templates` always need a `McpListOptions` argument. So the smallest call is `client.list_prompts(McpListOptions::default())`, where TS has `listPrompts()` with `options?` optional (`strands-ts/src/mcp/client.ts:789,819,848`). Fix: make `list_prompts()`, `list_resources()` and `list_resource_templates()` take no arguments, add `*_with(McpListOptions)` variants, and log the change in P-248.
+
+6. `strands-rs/strands/src/mcp/client.rs:475`: `connect_with(&self, reconnect: bool, signal: Option<&CancelSignal>)` hard-codes TS's options object (`client.ts:569` `options?: { signal?: AbortSignal }`) as a positional `Option`. Any new connect option would then break the signature. The sibling `_with` methods take options structs (`McpCallToolOptions`, `McpListToolsOptions`). Fix: make it `connect_with(reconnect, McpConnectOptions { cancel_signal: Option<CancelSignal> })`, a config struct with `Default` and a builder, and log the new name in P-235.
+
+7. Three public accessors that TS doesn't have are missing from the decisions log, against PROMPT.md section 7.1 ("Any other invented or changed name gets a pending-decision entry"):
+   - `McpClient::client_version()` at `client.rs:407`. TS has only `clientName`, at `client.ts:531`.
+   - `McpClient::negotiated_protocol_version()` at `client.rs:449`. In TS this is only reachable as `client.getNegotiatedProtocolVersion()` through the `client` getter, which Rust already exposes as `peer()`.
+   - `McpTool::server_name()` at `mcp_tool.rs:65`. TS keeps the server name in a private `WeakMap`, `client.ts:389`.
+
+   `grep -c` for each name in `.rust-port/DECISIONS-pending.md` and `strands-rs/docs/DIVERGENCES.md` returns 0. In `src/`, the first two are used only by tests (`mcp/tests.rs:79,82,849,928,947,992,1696`, `tests/mcp_stdio.rs:88`). Fix: either log all three in a P-23x entry, or make `client_version` and `negotiated_protocol_version` `pub(crate)` and have the tests read `peer().and_then(|p| p.peer_info())`.
+
+8. `.rust-port/DECISIONS-pending.md:252` (P-233) says "`McpTransport::sse(..)` (P-238)", but the SSE transport decision is P-241 (line 268); P-238 is the agent wiring. Fix: change the cross-reference to P-241.
+
+Checked and not reported: the client identity (`DEFAULT_CLIENT_NAME = "strands-agents-rs-sdk"`, `CARGO_PKG_VERSION` used when the name is unset or empty, `client.rs:42,371-380`, matching P-230 and DIVERGENCES line 82). Also checked with no problem found:
+- `Error` and `ToolSource` are `#[non_exhaustive]`, so their cfg-gated `Mcp` / `McpClient` variants are not a semver hazard.
+- No `Any`, downcasting or tokio types in MCP public signatures.
+- Every other non-public module is `pub(crate)`.
+- `strands::mcp` exports match the TS `mcp/index.ts` barrel, minus the task types.
+- The `mcp_router` exports match `vended-tools/mcp-router/index.ts`; `McpRouterInput` is private per P-251, and I agree with that.
+- `MCP_ROUTER_DESCRIPTION` is byte-identical to `types.ts:4-12`.
+
+Verdict: accept with conditions. Fix 1-4 (public dependencies, the duplicate type, #65 builders, the `tasks_config` semver trap) before closing the gate; 5-8 are small API-shape and logging fixes.
