@@ -4336,6 +4336,8 @@ version = "0.1.0-preview.1"
 dependencies = [
  "async-stream",
  "async-trait",
+ "aws-config",
+ "aws-credential-types",
  "base64 0.23.1",
  "bon",
  "encoding_rs",

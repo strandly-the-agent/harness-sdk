@@ -47,6 +47,8 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile.workspace = true
 # The in-process MCP server of the delegate tests.
 rmcp = { workspace = true, features = ["server"] }
+aws-config.workspace = true
+aws-credential-types.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
