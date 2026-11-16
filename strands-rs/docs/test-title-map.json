@@ -44,6 +44,14 @@
     },
     "can instantiate exported streaming event classes": "exports_streaming_event_classes_as_values_not_just_types"
   },
+  "strands-ts/src/__tests__/interrupt.test.ts": {
+    "creates catchable error with single interrupt": {
+      "gap": "TS-only: `InterruptError`; interrupts aren't errors in Rust"
+    },
+    "creates error with multiple interrupts": {
+      "gap": "TS-only: `InterruptError`; interrupts aren't errors in Rust"
+    }
+  },
   "strands-ts/src/__tests__/state-store.test.ts": {
     "throws error for function in initial state": {
       "gap": "JS runtime case Rust types rule out (functions, symbols and `undefined` aren't values of a `Serialize` type)"

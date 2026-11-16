@@ -670,7 +670,7 @@ mod tests {
         }
 
         #[test]
-        fn throws_session_error_when_the_restored_pending_tool_execution_is_malformed() {
+        fn throws_session_error_when_the_restored_pending_tool_execution_has() {
             let pending = pending_json();
             let mut user = pending.clone();
             user["assistantMessageData"]["role"] = json!("user");
