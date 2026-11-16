@@ -86,7 +86,7 @@
 //! | Module | Contents |
 //! |---|---|
 //! | [`agent`] | [`Agent`], its builder and [`AgentConfig`], [`AgentStream`], direct tool calls, snapshots, agents as tools |
-//! | [`models`] | The [`Model`](models::model::Model) trait, stream events, model info, the providers `BedrockModel`, `AnthropicModel`, `OpenAIModel` (each behind its feature), and the model router in [`models::routing`] |
+//! | [`models`] | The [`Model`](models::Model) trait, stream events, model info, the providers `BedrockModel`, `AnthropicModel`, `OpenAIModel` (each behind its feature), and the model router in [`models::routing`] |
 //! | [`tools`](mod@tools) | The [`Tool`] trait, [`ToolContext`], [`FunctionTool`](tools::FunctionTool), the [`ToolRegistry`](tools::ToolRegistry), executors and structured output; [`tool`](macro@tool) and [`tools`](macro@tools) are the macros |
 //! | [`hooks`] | Typed callbacks on the agent's lifecycle events, with [`HookOrder`](hooks::HookOrder) and removal |
 //! | [`plugins`] | The [`Plugin`](plugins::Plugin) trait: named extensions that register hooks and tools |

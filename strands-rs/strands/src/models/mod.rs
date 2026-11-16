@@ -22,5 +22,7 @@ pub mod summarize;
 pub use self::anthropic::AnthropicModel;
 #[cfg(feature = "bedrock")]
 pub use self::bedrock::BedrockModel;
+pub use self::model::{BaseModelConfig, BoxStream, Model, ModelRequest};
 #[cfg(feature = "openai")]
 pub use self::openai::OpenAIModel;
+pub use self::streaming::ModelStreamEvent;
