@@ -1104,6 +1104,7 @@ impl McpClient {
                     response = handle.await_response() => response,
                     () = signal.cancelled() => {
                         if let Some(id) = open.id.take() {
+                            lock(&self.inner.progress).routes.remove(&open.token);
                             notify_cancelled(peer, id, signal).await;
                         }
                         return Err(abort_error(signal));
