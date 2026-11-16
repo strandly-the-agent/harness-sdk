@@ -54,24 +54,29 @@ pub(crate) enum RunEnd {
 
 type Step = Result<RunProgress, MontyException>;
 
+/// The next interpreter step: resumes the suspended run with the host's answer.
+type Resume = Box<dyn FnOnce(PrintWriter<'_>) -> Step + Send>;
+
 /// Runs one interpreter step off the async threads; the VM's own limits bound how long it takes.
-async fn step(
-    mut output: Output,
-    run: impl FnOnce(PrintWriter<'_>) -> Step + Send + 'static,
-) -> (Step, Output) {
-    let joined = tokio::task::spawn_blocking(move || {
+/// `None` when the parent cancel fired first: the step is left to run into the VM's limits.
+async fn step(mut output: Output, cancel: &CancelSignal, run: Resume) -> Option<(Step, Output)> {
+    let stepping = tokio::task::spawn_blocking(move || {
         let progress = run(PrintWriter::Callback(&mut output));
         (progress, output)
-    })
-    .await;
-    joined.unwrap_or_else(|error| {
+    });
+    let joined = tokio::select! {
+        biased;
+        () = cancel.cancelled() => return None,
+        joined = stepping => joined,
+    };
+    Some(joined.unwrap_or_else(|error| {
         (
             Err(MontyException::runtime_error(format!(
                 "the interpreter step failed: {error}"
             ))),
             Output::default(),
         )
-    })
+    }))
 }
 
 /// Runs `code` with `functions` (guest name to tool name) callable as async functions.
@@ -91,8 +96,10 @@ pub(crate) async fn run_code(
         Ok(run) => run,
         Err(error) => return (Output::default(), RunEnd::Syntax(error)),
     };
+    // Guest compute alone cannot outlast the wall-clock ceiling either.
+    let max_duration = timeout.map_or(limits.max_duration, |timeout| timeout.min(limits.max_duration));
     let tracker = ResourceTracker::new(ResourceLimits {
-        max_feed_duration: Some(limits.max_duration),
+        max_feed_duration: Some(max_duration),
         max_memory: Some(limits.max_memory),
         max_suspensions: limits.max_suspensions,
         ..ResourceLimits::default()
@@ -100,21 +107,22 @@ pub(crate) async fn run_code(
     let slots = Arc::new(Semaphore::new(MAX_CONCURRENT_TOOL_CALLS));
     let mut pending = FuturesUnordered::new();
     let mut suspensions = 0_usize;
-    let (mut progress, mut output) = step(Output::default(), move |print| {
-        run.start(Vec::new(), tracker, print)
-    })
-    .await;
+    let mut output = Output::default();
+    let mut resume: Resume = Box::new(move |print| run.start(Vec::new(), tracker, print));
     loop {
+        let Some((progress, printed)) = step(output, cancel, resume).await else {
+            return (Output::default(), RunEnd::Cancelled);
+        };
+        output = printed;
+        let timed_out = deadline.is_some_and(|deadline| Instant::now() >= deadline);
         let suspended = match progress {
             Ok(RunProgress::Complete(_)) => return (output, RunEnd::Complete),
+            Ok(_) | Err(_) if timed_out => return (output, RunEnd::TimedOut),
             Ok(suspended) => suspended,
             Err(error) => return (output, RunEnd::Runtime(error)),
         };
         if cancel.is_cancelled() {
             return (output, RunEnd::Cancelled);
-        }
-        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            return (output, RunEnd::TimedOut);
         }
         suspensions += 1;
         let over_budget = (suspensions > limits.max_suspensions).then(|| {
@@ -123,19 +131,15 @@ pub(crate) async fn run_code(
                 limits.max_suspensions
             ))
         });
-        (progress, output) = match (suspended, over_budget) {
+        resume = match (suspended, over_budget) {
             (RunProgress::Complete(_), _) => return (output, RunEnd::Complete),
-            (RunProgress::FunctionCall(call), Some(error)) => {
-                step(output, move |print| call.abort(error, print)).await
-            }
+            (RunProgress::FunctionCall(call), Some(error)) => Box::new(move |print| call.abort(error, print)),
             (RunProgress::NameLookup(lookup), Some(error)) => {
-                step(output, move |print| lookup.abort(error, print)).await
+                Box::new(move |print| lookup.abort(error, print))
             }
-            (RunProgress::OsCall(call), Some(error)) => {
-                step(output, move |print| call.abort(error, print)).await
-            }
+            (RunProgress::OsCall(call), Some(error)) => Box::new(move |print| call.abort(error, print)),
             (RunProgress::ResolveFutures(futures), Some(error)) => {
-                step(output, move |print| futures.abort(error, print)).await
+                Box::new(move |print| futures.abort(error, print))
             }
             (RunProgress::NameLookup(lookup), None) => {
                 let answer = match functions.get(&lookup.name) {
@@ -144,7 +148,7 @@ pub(crate) async fn run_code(
                     }
                     None => NameLookupResult::Undefined,
                 };
-                step(output, move |print| lookup.resume(answer, print)).await
+                Box::new(move |print| lookup.resume(answer, print))
             }
             (RunProgress::FunctionCall(function), None) => {
                 // A call names the function either as the code wrote it or, for a function object
@@ -154,13 +158,21 @@ pub(crate) async fn run_code(
                     .get(called)
                     .or_else(|| functions.values().find(|tool_name| *tool_name == called))
                     .cloned();
-                let Some(name) = exposed else {
-                    let answer = ExtFunctionResult::NotFound(called.clone());
-                    (progress, output) = step(output, move |print| function.resume(answer, print)).await;
-                    continue;
-                };
-                match keyword_input(&function.args) {
-                    Some(input) => {
+                match (exposed, keyword_input(&function.args)) {
+                    (None, _) => {
+                        let answer = ExtFunctionResult::NotFound(called.clone());
+                        Box::new(move |print| function.resume(answer, print))
+                    }
+                    (Some(name), None) => {
+                        let error = MontyException::new(
+                            ExcType::TypeError,
+                            Some(format!(
+                                "{name}() takes keyword arguments only, e.g. {name}(key=value)"
+                            )),
+                        );
+                        Box::new(move |print| function.resume(error, print))
+                    }
+                    (Some(name), Some(input)) => {
                         let (call, slots, call_id) =
                             (Arc::clone(&call), Arc::clone(&slots), function.call_id);
                         pending.push(
@@ -170,23 +182,14 @@ pub(crate) async fn run_code(
                             }
                             .boxed(),
                         );
-                        step(output, move |print| function.resume_pending(print)).await
-                    }
-                    None => {
-                        let error = MontyException::new(
-                            ExcType::TypeError,
-                            Some(format!(
-                                "{name}() takes keyword arguments only, e.g. {name}(key=value)"
-                            )),
-                        );
-                        step(output, move |print| function.resume(error, print)).await
+                        Box::new(move |print| function.resume_pending(print))
                     }
                 }
             }
             (RunProgress::OsCall(call), None) => {
                 // No host operation is implemented: files, the environment and the network don't exist.
                 let answer = call.function_call.no_handler_result();
-                step(output, move |print| call.resume(answer, print)).await
+                Box::new(move |print| call.resume(answer, print))
             }
             (RunProgress::ResolveFutures(futures), None) => {
                 let first = tokio::select! {
@@ -197,7 +200,7 @@ pub(crate) async fn run_code(
                 };
                 let Some(first) = first else {
                     let error = MontyException::runtime_error("awaited a host call that is not in flight");
-                    (progress, output) = step(output, move |print| futures.abort(error, print)).await;
+                    resume = Box::new(move |print| futures.abort(error, print));
                     continue;
                 };
                 let mut results = vec![first];
@@ -208,7 +211,7 @@ pub(crate) async fn run_code(
                     .into_iter()
                     .map(|(call_id, result)| (call_id, host_result(result)))
                     .collect();
-                step(output, move |print| futures.resume(results, print)).await
+                Box::new(move |print| futures.resume(results, print))
             }
         };
     }

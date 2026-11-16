@@ -867,3 +867,27 @@ async fn stops_at_the_suspension_limit_past_the_code_s_exception_handlers() {
     assert!(error.to_string().contains("suspension limit exceeded"), "{error}");
     assert!(calls.load(Ordering::SeqCst) <= 20);
 }
+
+/// Not a TS case as such (TS kills the worker process): a cancel does not wait for guest compute.
+/// The abandoned step runs into the VM duration limit, 2 seconds here.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancel_does_not_wait_for_a_busy_loop() {
+    let limits = Limits {
+        max_duration: Duration::from_secs(2),
+        ..LIMITS
+    };
+    let call: HostCall = Arc::new(|_name, _input| async { Ok(json!("1")) }.boxed());
+    let (signal, handle) = CancelSignal::new();
+    let canceller = tokio::spawn(async move {
+        for _ in 0..200 {
+            tokio::task::yield_now().await;
+        }
+        handle.cancel(CancelOptions::default());
+    });
+    let start = std::time::Instant::now();
+    let code = "while True:\n    pass".to_owned();
+    let (_, end) = run_code(code, HashMap::new(), call, limits, None, &signal).await;
+    assert!(matches!(end, RunEnd::Cancelled), "{end:?}");
+    assert!(start.elapsed() < Duration::from_secs(1));
+    canceller.await.expect("the canceller ran");
+}
