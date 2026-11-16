@@ -1,7 +1,7 @@
 //! Connection lifetime, concurrency and auth behaviour beyond the ported TS cases.
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use serde_json::json;
@@ -526,4 +526,49 @@ async fn a_dropped_invocation_cancels_its_mcp_tool_call() {
         }
     }
     server::eventually(|| server.cancelled.load(Ordering::SeqCst) == 1).await;
+}
+
+// No TS case: TS decides to connect without yielding, so two callers can't both start.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_first_calls_open_one_connection() {
+    let server = TestServer::default();
+    for round in 0..300 {
+        let opened = Arc::new(AtomicUsize::new(0));
+        let transport = McpTransport::from_factory({
+            let (opened, server) = (Arc::clone(&opened), server.clone());
+            move || {
+                opened.fetch_add(1, Ordering::SeqCst);
+                server.pipe()
+            }
+        });
+        let client = McpClient::new(McpClientConfig {
+            transport: Some(transport),
+            ..Default::default()
+        })
+        .expect("client");
+        // The callers spin on the flag, so all four reach `connect` within the same few steps.
+        let (ready, go) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicBool::new(false)));
+        let calls: Vec<_> = (0..4)
+            .map(|_| {
+                let (client, ready, go) = (client.clone(), Arc::clone(&ready), Arc::clone(&go));
+                tokio::spawn(async move {
+                    ready.fetch_add(1, Ordering::SeqCst);
+                    while !go.load(Ordering::Acquire) {
+                        tokio::task::yield_now().await;
+                    }
+                    client.list_tools().await.map(|tools| tools.len())
+                })
+            })
+            .collect();
+        while ready.load(Ordering::SeqCst) < 4 {
+            tokio::task::yield_now().await;
+        }
+        go.store(true, Ordering::Release);
+        for call in calls {
+            let listed = call.await.expect("task").map_err(|error| error.to_string());
+            assert_eq!(listed, Ok(9), "round {round}");
+        }
+        assert_eq!(opened.load(Ordering::SeqCst), 1, "round {round}");
+        client.disconnect().await.expect("disconnect");
+    }
 }

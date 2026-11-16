@@ -307,13 +307,21 @@ pub struct McpClient {
 
 type SharedConnect = Shared<BoxFuture<'static, Result<(), McpError>>>;
 
+/// The connection attempt in flight.
+struct ConnectAttempt {
+    id: u64,
+    /// The connection generation the attempt started in.
+    generation: u64,
+    pending: SharedConnect,
+}
+
 pub(crate) struct Inner {
     name: String,
     version: String,
     pub(crate) options: McpClientOptions,
     transport: McpTransport,
     state: Mutex<Conn>,
-    connecting: Mutex<Option<(u64, SharedConnect)>>,
+    connecting: Mutex<Option<ConnectAttempt>>,
     connect_ids: AtomicU64,
     generation: AtomicU64,
     /// Names from the last listing that used the client's own prefix and filters.
@@ -573,21 +581,23 @@ impl McpClient {
             return Err(abort_error(signal));
         }
         let generation = self.inner.generation();
-        if let Some(pending) = self.inner.pending_connect() {
-            if let Err(error) = race(pending, signal).await
-                && (!reconnect || signal.is_some_and(CancelSignal::is_cancelled))
-            {
-                return Err(error);
+        let pending = if reconnect {
+            if let Some(pending) = self.inner.pending_connect() {
+                if let Err(error) = race(pending, signal).await
+                    && signal.is_some_and(CancelSignal::is_cancelled)
+                {
+                    return Err(error);
+                }
+                self.inner.assert_current(generation)?;
             }
-            self.inner.assert_current(generation)?;
-            if !reconnect {
-                return Ok(());
+            let mut connecting = self.inner.connecting();
+            Inner::start_connect(&self.inner, &mut connecting, true)
+        } else {
+            match Inner::join_or_start_connect(&self.inner) {
+                Some(pending) => pending,
+                None => return Ok(()),
             }
-        }
-        if !reconnect && !matches!(*self.inner.state(), Conn::Disconnected) {
-            return Ok(());
-        }
-        let pending = Inner::start_connect(&self.inner, reconnect);
+        };
         race(pending, signal).await?;
         self.inner.assert_current(generation)?;
         Ok(())
@@ -605,7 +615,14 @@ impl McpClient {
             self.inner.tools_changed.fetch_add(1, Ordering::SeqCst);
             std::mem::replace(&mut *state, Conn::Disconnected)
         };
-        *self.inner.connecting() = None;
+        {
+            // An attempt a concurrent `connect` started after the bump belongs to the new generation.
+            let current = self.inner.generation();
+            let mut connecting = self.inner.connecting();
+            if connecting.as_ref().is_some_and(|attempt| attempt.generation < current) {
+                *connecting = None;
+            }
+        }
         if let Conn::Connected(running) = previous {
             let _closed = running.cancel().await;
         }
@@ -1172,7 +1189,7 @@ impl Inner {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn connecting(&self) -> MutexGuard<'_, Option<(u64, SharedConnect)>> {
+    fn connecting(&self) -> MutexGuard<'_, Option<ConnectAttempt>> {
         self.connecting.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -1207,13 +1224,26 @@ impl Inner {
     }
 
     fn pending_connect(&self) -> Option<SharedConnect> {
-        self.connecting().as_ref().map(|(_, pending)| pending.clone())
+        self.connecting().as_ref().map(|attempt| attempt.pending.clone())
+    }
+
+    /// The attempt a first use waits for: the one in flight, or a new one when the client is
+    /// disconnected. `None` when there is nothing to wait for. One `connecting` critical section
+    /// decides, so callers on different threads share one attempt (TS decides without yielding).
+    fn join_or_start_connect(inner: &Arc<Self>) -> Option<SharedConnect> {
+        let mut connecting = inner.connecting();
+        if let Some(attempt) = connecting.as_ref() {
+            return Some(attempt.pending.clone());
+        }
+        if !matches!(*inner.state(), Conn::Disconnected) {
+            return None;
+        }
+        Some(Self::start_connect(inner, &mut connecting, false))
     }
 
     /// Starts a shared connection attempt. It runs on its own task, so it completes even when
     /// every waiter stops waiting, and clears itself from `connecting` when it settles.
-    fn start_connect(inner: &Arc<Self>, reconnect: bool) -> SharedConnect {
-        let mut connecting = inner.connecting();
+    fn start_connect(inner: &Arc<Self>, connecting: &mut Option<ConnectAttempt>, reconnect: bool) -> SharedConnect {
         let id = inner.connect_ids.fetch_add(1, Ordering::SeqCst);
         let generation = inner.generation();
         let task_inner = Arc::clone(inner);
@@ -1221,7 +1251,7 @@ impl Inner {
             async move {
                 let result = establish(&task_inner, reconnect, generation).await;
                 let mut connecting = task_inner.connecting();
-                if connecting.as_ref().is_some_and(|(current, _)| *current == id) {
+                if connecting.as_ref().is_some_and(|attempt| attempt.id == id) {
                     *connecting = None;
                 }
                 result
@@ -1234,7 +1264,11 @@ impl Inner {
         }
         .boxed()
         .shared();
-        *connecting = Some((id, pending.clone()));
+        *connecting = Some(ConnectAttempt {
+            id,
+            generation,
+            pending: pending.clone(),
+        });
         pending
     }
 
