@@ -94,6 +94,11 @@ pub enum HarnessError {
 /// `text` as TS `JSON.stringify` prints it.
 fn json_string(text: &str) -> String {
     serde_json::Value::from(text).to_string()
+    /// Two entries of the `interventions` option resolved to handlers with the same name.
+        "Two interventions share the handler name '{name}', but an agent registers at most one per name. Layer different kinds (e.g. a Cedar policy plus one human-approval preset), not two of the same kind."
+    InterventionNameCollision {
+        /// The shared handler name.
+        name: String,
 }
 
 /// The harness result type.
