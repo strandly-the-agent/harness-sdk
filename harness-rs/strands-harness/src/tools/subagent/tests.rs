@@ -171,8 +171,7 @@ fn keys(props: &JsonValue) -> Vec<&str> {
 
 fn error_text(options: MakeSubagentOptions) -> String {
     make_subagent(options)
-        .err()
-        .expect("construction fails")
+        .expect_err("construction fails")
         .to_string()
 }
 
@@ -181,7 +180,11 @@ fn prompt(context_axis: ContextAxis, input: JsonValue, parent: &[Message]) -> In
     let (mut options, _) = options();
     options.context = Some(context_axis);
     let tool = SubagentTool::new(options).unwrap();
-    let spec = tool.shared.axes.resolve(&input).unwrap();
+    let spec = tool
+        .shared
+        .axes
+        .resolve(context(input).tool_use().input())
+        .unwrap();
     child_prompt(&spec, parent)
 }
 

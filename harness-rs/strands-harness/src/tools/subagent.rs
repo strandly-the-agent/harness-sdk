@@ -448,11 +448,11 @@ impl Tool for SubagentTool {
                 }
             };
 
-            // The child runs under the parent's cancel signal, invocation state and request.
+            // The child joins the parent's abort (not its cancel message or deferral) and shares its
+            // invocation state. As in TS it runs as a request of its own.
             let options = InvokeOptions {
                 invocation_state: context.invocation_state().clone(),
-                invocation_context: context.invocation_context().cloned(),
-                cancel_signal: Some(context.cancel_signal().clone()),
+                cancel_signal: Some(context.cancel_signal().abort_only()),
                 ..InvokeOptions::default()
             };
             let mut result = None;

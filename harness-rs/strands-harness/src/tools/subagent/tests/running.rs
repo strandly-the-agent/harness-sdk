@@ -215,3 +215,88 @@ async fn propagates_a_child_interrupt_through_tool_context_interrupt_and_resumes
     assert_eq!(tool_result.status(), &ToolResultStatus::Success);
     assert_eq!(result_text(tool_result), "resumed answer");
 }
+
+#[tokio::test]
+async fn the_child_joins_the_parents_abort() {
+    // The child's tool cancels the parent; the child's own signal follows.
+    let parent_handle = Arc::new(Mutex::new(None::<strands::CancelHandle>));
+    let seen = Arc::new(Mutex::new(None));
+    let (handle, record) = (Arc::clone(&parent_handle), Arc::clone(&seen));
+    let stopper = FunctionTool::new(
+        "stopper",
+        "cancels the parent",
+        move |_input: JsonValue, ctx: ToolContext| {
+            let (handle, record) = (Arc::clone(&handle), Arc::clone(&record));
+            async move {
+                if let Some(handle) = handle.lock().unwrap().as_ref() {
+                    handle.cancel(strands::CancelOptions::default());
+                }
+                *record.lock().unwrap() = Some(ctx.cancel_signal().is_cancelled());
+                Ok::<_, ToolError>("ok")
+            }
+        },
+    );
+    let child_model = Arc::new(MockMessageModel::new());
+    child_model.add_turn(vec![tool_use("stopper", "c1", json!({}))]);
+    child_model.add_turn(vec![text("never said")]);
+    let child = Agent::builder()
+        .model(Arc::clone(&child_model))
+        .tools([stopper])
+        .build()
+        .unwrap();
+    let options = MakeSubagentOptions::builder().builder(builder_of(child)).build();
+    let parent_model = Arc::new(MockMessageModel::new());
+    parent_model.add_turn(vec![tool_use("subagent", "t1", json!({"task": "x"}))]);
+    parent_model.add_turn(vec![text("parent done")]);
+    let mut parent = Agent::builder()
+        .model(parent_model)
+        .tools([make_subagent(options).unwrap()])
+        .build()
+        .unwrap();
+    *parent_handle.lock().unwrap() = Some(parent.cancel_handle());
+
+    let result = parent.invoke("go").await.unwrap();
+    assert_eq!(result.stop_reason(), StopReason::Cancelled);
+    assert_eq!(*seen.lock().unwrap(), Some(true));
+    assert_eq!(child_model.call_count(), 1);
+}
+
+#[tokio::test]
+async fn the_child_model_sees_the_parents_history_under_context_all() {
+    // End to end through a real parent: the delegating call is still in flight, so the child's
+    // history is the parent's earlier turns followed by the framed task.
+    let child_model = replying("child done", StopReason::EndTurn);
+    let (builder, _) = builder_over(&child_model);
+    let options = MakeSubagentOptions::builder()
+        .builder(builder)
+        .context(none_or("all"))
+        .build();
+    let parent_model = Arc::new(MockMessageModel::new());
+    parent_model.add_turn(vec![text("hello")]);
+    parent_model.add_turn(vec![tool_use(
+        "subagent",
+        "t1",
+        json!({"task": "do X", "context": "all"}),
+    )]);
+    parent_model.add_turn(vec![text("parent done")]);
+    let mut parent = Agent::builder()
+        .model(parent_model)
+        .tools([make_subagent(options).unwrap()])
+        .build()
+        .unwrap();
+    parent.invoke("hi").await.unwrap();
+    parent.invoke("delegate").await.unwrap();
+
+    let requests = child_model.requests();
+    let [request] = requests.as_slice() else {
+        panic!("expected one child model call, got {}", requests.len());
+    };
+    assert_eq!(
+        shape_of(&request.messages),
+        shape_of(&[
+            user(vec![text("hi")]),
+            assistant(vec![text("hello")]),
+            user(vec![text("delegate"), framed("do X")]),
+        ])
+    );
+}

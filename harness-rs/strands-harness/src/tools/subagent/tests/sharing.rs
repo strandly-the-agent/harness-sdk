@@ -43,7 +43,7 @@ fn forks_the_parents_messages_as_real_turns_under_context_all() {
         json!({"task": "fix it", "context": "all"}),
         &messages,
     );
-    let mut expected = messages.clone();
+    let mut expected = messages;
     expected.push(user(vec![framed("fix it")]));
     assert_eq!(shape(&prompt), shape_of(&expected));
     assert_eq!(
