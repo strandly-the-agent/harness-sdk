@@ -14,8 +14,12 @@ use crate::models::streaming::{
     ReasoningContentDelta, TextDelta, ToolUseInputDelta, ToolUseStart, Usage,
 };
 use crate::retry::model_retry_strategy::{Sleeper, tokio_sleeper};
+use crate::sandbox::{AgentSandbox, Sandbox, SandboxSource};
+use crate::tools::ToolContext;
+use crate::types::agent::{InvocationState, LocalAgent};
 use crate::types::json::to_js_string;
 use crate::types::messages::{ContentBlock, ReasoningBlock, Role, StopReason};
+use crate::types::tools::ToolUse;
 
 mod hook_recorder;
 
@@ -41,6 +45,42 @@ pub use hook_recorder::HookRecorder;
 /// ```
 pub fn test_agent(model: Arc<dyn Model>) -> crate::Agent {
     crate::Agent::with_model(model)
+}
+
+/// A [`ToolContext`] for `tool_use`, for calling a tool on its own in a test
+/// ([`FunctionTool::invoke`](crate::tools::FunctionTool::invoke), [`Tool::stream`](crate::Tool::stream));
+/// TS makes the context optional for that. The context belongs to a fresh agent over a
+/// [`MockMessageModel`], with the default sandbox and an empty invocation state.
+///
+/// ```
+/// use strands::testing::tool_context;
+/// use strands::types::tools::ToolUse;
+/// use strands::JsonValue;
+/// use strands::tools::FunctionTool;
+///
+/// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+/// let double = FunctionTool::new("double", "Doubles a number.", |input: JsonValue, _context| async move {
+///     Ok(input["n"].as_i64().unwrap_or(0) * 2)
+/// });
+/// let input = serde_json::json!({"n": 21});
+/// let context = tool_context(ToolUse::new("double", "tool-1", input.clone()));
+/// assert_eq!(double.invoke(input, context).await?, 42);
+/// # Ok::<(), strands::ToolError>(())
+/// # }).unwrap();
+/// ```
+pub fn tool_context(tool_use: ToolUse) -> ToolContext {
+    context_over(tool_use, None)
+}
+
+/// [`tool_context`] whose agent runs in `sandbox`, for tools that execute commands or touch files.
+pub fn tool_context_with_sandbox(tool_use: ToolUse, sandbox: Arc<dyn Sandbox>) -> ToolContext {
+    context_over(tool_use, Some(sandbox))
+}
+
+fn context_over(tool_use: ToolUse, sandbox: Option<Arc<dyn Sandbox>>) -> ToolContext {
+    let mut agent = LocalAgent::new(Arc::new(MockMessageModel::new()));
+    agent.set_sandbox(AgentSandbox::from_source(sandbox.map(SandboxSource::from)));
+    ToolContext::new(tool_use, agent.tool_agent(), InvocationState::new())
 }
 
 type EventGenerator = Arc<dyn Fn() -> BoxStream<'static, Result<ModelStreamEvent>> + Send + Sync>;

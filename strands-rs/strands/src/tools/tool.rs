@@ -23,6 +23,10 @@ use crate::types::tools::{ToolResultStatus, ToolSpec, ToolUse};
 /// Tools are shared as `Arc<dyn Tool>`. [`Tool::stream`] returns a `'static` stream that may emit
 /// progress events and ends with exactly one [`ToolOutcome`]. A failing tool ends with an
 /// error-status result, never an `Err`.
+///
+/// To run one tool through an agent's hooks, interventions and middleware, call
+/// `agent.tool("name").invoke(input)`; to call [`Tool::stream`] on its own in a test, build the
+/// context with [`testing::tool_context`](crate::testing::tool_context).
 pub trait Tool: Send + Sync + 'static {
     /// The model-facing tool name.
     fn name(&self) -> &str;

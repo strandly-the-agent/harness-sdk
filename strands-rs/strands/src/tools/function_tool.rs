@@ -100,6 +100,9 @@ impl FunctionTool {
 
     /// Runs the handler on `input` and returns its JSON value (TS `invoke`).
     ///
+    /// Outside a running tool, [`testing::tool_context`](crate::testing::tool_context) builds the
+    /// context.
+    ///
     /// # Errors
     ///
     /// Returns the handler's error, including a validation failure for typed tools.
