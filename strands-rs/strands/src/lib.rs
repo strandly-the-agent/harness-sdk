@@ -166,6 +166,10 @@
 //! | `@strands-agents/sdk/experimental` | [`experimental`] |
 //! | `await using` | [`Agent::shutdown`] |
 //!
+//! `strands::tools` is both a module and the [`tools`](macro@tools) attribute, so
+//! `use strands::tools;` imports both. In a crate with its own `tools` module, write
+//! `#[strands::tools]` instead of importing it.
+//!
 //! # Interrupts
 //!
 //! A tool (or a hook) pauses the agent with an interrupt; the result then stops with
@@ -211,7 +215,7 @@
 //!
 //! # Wire compatibility
 //!
-//! //! Messages serialize to the same wire JSON as TS:
+//! Messages serialize to the same wire JSON as TS:
 //!
 //! ```
 //! use serde_json::json;

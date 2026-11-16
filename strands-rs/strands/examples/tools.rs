@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 use strands::tools::FunctionTool;
-use strands::{Agent, ToolContext, ToolError, tool, tool_list, tools};
+use strands::{Agent, ToolContext, ToolError, tool, tool_list};
 
 /// Convert a price in US dollars to euros.
 #[tool]
@@ -31,7 +31,9 @@ struct Inventory {
     stock: HashMap<String, u32>,
 }
 
-#[tools]
+// `strands::tools` is a module as well as this attribute; the path form leaves the name free for
+// a `tools` module of your own.
+#[strands::tools]
 impl Inventory {
     /// Look up how many units of a product are in stock.
     #[tool]

@@ -7,7 +7,7 @@ The TypeScript test suite is the behavioural spec. Every applicable `it(...)` ca
 - Unit tests live beside the code in `#[cfg(test)] mod tests` (or `src/**/tests.rs`).
 - Cross-module behaviour goes in `strands-rs/strands/tests/`.
 - Macro tests live in `strands-rs/strands-macros/tests/` and use `trybuild` for pass and compile-fail cases.
-- `strands::testing` is a public module with test doubles: `MockModel` (scripted turns: text, tool use, reasoning, errors including throttles, delays through an injected sleeper; records every `ModelRequest`), a lower-level scripted `ModelStreamEvent` provider, `HookRecorder` (records the order events fired), and `test_agent(..)` helpers.
+- `strands::testing` is a public module with test doubles: `MockMessageModel` (scripted turns: text, tool use, reasoning, errors including throttles, a per-turn delay on the tokio timer; records every `ModelRequest`), `TestModelProvider` (scripted `ModelStreamEvent`s), `HookRecorder` (records the order events fired), `test_agent(..)`, and `tool_context(..)` for calling a tool without an agent run.
 
 ## Naming
 
