@@ -26,4 +26,5 @@ mod tools;
 mod types;
 
 pub use error::{HarnessError, Result};
+pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
 pub use types::{Effort, WebFetchTransport};
