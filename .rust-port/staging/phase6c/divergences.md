@@ -1,4 +1,0 @@
-| Context manager truncation previews | Counted and sliced in UTF-16 code units | Counted and sliced in characters | Rust strings are UTF-8; a preview never splits a surrogate pair. ASCII output is identical |
-| Agentic context tools in one tool batch | The tools splice `agent.messages` while the batch runs | The edit is applied when the batch's tools finish; tools running concurrently in the batch see the history from before the batch | Tools see a `ToolAgent` snapshot; the resulting history is the same once the batch ends |
-| Context manager token counting failure | The hook throws and the model call fails | Logged as `context reduction failed`; the call proceeds | Hooks can't return errors |
-| `retrieve_context` patterns | JavaScript `RegExp` syntax | `regex` crate syntax (no backreferences or lookaround); invalid patterns match literally in both | Rust has no JavaScript regex engine |
