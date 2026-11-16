@@ -2,3 +2,5 @@
 
 mod environment;
 mod todos;
+
+pub use todos::{TodoItem, TodoStatus, Todos, TodosConfig};
