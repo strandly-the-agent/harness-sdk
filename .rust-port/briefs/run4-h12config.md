@@ -1,6 +1,6 @@
 Track `h12config`: harness option types and the portable config. Read `.rust-port/briefs/run4-h12-common.md` first and follow it.
 
-Worktree `/mnt/workspace/wt-h12config` (branch `wip/h12config`), `CARGO_TARGET_DIR=/mnt/workspace/.cache/ct-h12config`, gate output `/mnt/workspace/gates-h12config`, staging dir `.rust-port/staging/h12config/`, decisions from P-930 (up to P-949).
+Worktree `/mnt/workspace/wt-h12config` (branch `wip/h12config`), `CARGO_TARGET_DIR=/tmp/ct-h12config`, gate output `/mnt/workspace/gates-h12config`, staging dir `.rust-port/staging/h12config/`, decisions from P-930 (up to P-949).
 
 You own `harness-rs/strands-harness/src/types.rs` (the lead's skeleton has `Effort` and `WebFetchTransport`; extend it), `config.rs` (split into a directory module if it passes about 600 lines), and the option types of `agent.rs` (`HarnessAgentOptions` as an exhaustive struct with public fields, `Default` and a `bon` builder; not `create_harness`, which a later track writes in the same file below your types). Tracker item: "Portable `HarnessAgentConfig` parsing and module-reference errors", and the types half of "`create_harness`, `HarnessAgentOptions`, defaults, sessions layout".
 

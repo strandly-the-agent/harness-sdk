@@ -1,6 +1,6 @@
 Track `h12sub`: the harness `subagent` tool. Read `.rust-port/briefs/run4-h12-common.md` first and follow it.
 
-Worktree `/mnt/workspace/wt-h12sub` (branch `wip/h12sub`), `CARGO_TARGET_DIR=/mnt/workspace/.cache/ct-h12sub`, gate output `/mnt/workspace/gates-h12sub`, staging dir `.rust-port/staging/h12sub/`, decisions from P-890 (up to P-909).
+Worktree `/mnt/workspace/wt-h12sub` (branch `wip/h12sub`), `CARGO_TARGET_DIR=/tmp/ct-h12sub`, gate output `/mnt/workspace/gates-h12sub`, staging dir `.rust-port/staging/h12sub/`, decisions from P-890 (up to P-909).
 
 You own `harness-rs/strands-harness/src/tools/subagent.rs` (split into a directory module if it passes about 600 lines). Tracker item: "`subagent` with presets and axes".
 

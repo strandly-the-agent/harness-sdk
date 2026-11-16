@@ -1,6 +1,6 @@
 Track `h12plug`: harness plugins, interventions grammar and telemetry setup. Read `.rust-port/briefs/run4-h12-common.md` first and follow it.
 
-Worktree `/mnt/workspace/wt-h12plug` (branch `wip/h12plug`), `CARGO_TARGET_DIR=/mnt/workspace/.cache/ct-h12plug`, gate output `/mnt/workspace/gates-h12plug`, staging dir `.rust-port/staging/h12plug/`, decisions from P-910 (up to P-929).
+Worktree `/mnt/workspace/wt-h12plug` (branch `wip/h12plug`), `CARGO_TARGET_DIR=/tmp/ct-h12plug`, gate output `/mnt/workspace/gates-h12plug`, staging dir `.rust-port/staging/h12plug/`, decisions from P-910 (up to P-929).
 
 You own `harness-rs/strands-harness/src/plugins/{todos.rs, environment.rs}`, `interventions.rs`, `telemetry.rs`. Tracker items: "`Todos` and `EnvironmentContext` plugins", the grammar half of "Interventions grammar and `mcp_servers`", and "Telemetry setup from env".
 
