@@ -64,7 +64,7 @@ async fn main() -> Result<(), strands::Error> {
 }
 ```
 
-This is [`examples/basic.rs`](strands/examples/basic.rs). An agent built without a model uses Amazon Bedrock, with AWS credentials and the region from the default chain (environment, profile, instance role). To use another provider, enable its feature and pass a model:
+This is [`examples/basic.rs`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/basic.rs). An agent built without a model uses Amazon Bedrock, with AWS credentials and the region from the default chain (environment, profile, instance role). To use another provider, enable its feature and pass a model:
 
 ```rust
 use strands::models::AnthropicModel;
@@ -85,7 +85,7 @@ let mut agent = Agent::builder().model(model).build()?;
 | `otel` | no | OpenTelemetry export |
 
 ```toml
-strands = { path = "..", default-features = false, features = ["anthropic", "mcp"] }
+strands = { path = "../harness-sdk/strands-rs/strands", default-features = false, features = ["anthropic", "mcp"] }
 ```
 
 ## Examples
@@ -94,27 +94,27 @@ Run an example from the repository root with `cargo run -p strands --example <na
 
 | Example | Shows | Needs |
 |---|---|---|
-| [`basic`](strands/examples/basic.rs) | A tool, `invoke`, `stream` and `shutdown` | AWS credentials |
-| [`tools`](strands/examples/tools.rs) | `#[tool]`, `#[tools]`, `FunctionTool`, tool context, a direct tool call | AWS credentials |
-| [`streaming`](strands/examples/streaming.rs) | Handling stream events: text, tool calls, the final result | AWS credentials |
-| [`hooks`](strands/examples/hooks.rs) | Sync, ordered and async hooks, hook removal, cancellation | Nothing (scripted model) |
-| [`structured_output`](strands/examples/structured_output.rs) | A typed answer validated against a schema | AWS credentials |
-| [`mcp`](strands/examples/mcp.rs) | Tools from an MCP server over stdio | `--features mcp`, AWS credentials, `uvx` |
-| [`sessions`](strands/examples/sessions.rs) | Saving and restoring a conversation | Nothing (scripted model) |
-| [`bedrock`](strands/examples/bedrock.rs) | Configuring `BedrockModel` | AWS credentials |
-| [`anthropic`](strands/examples/anthropic.rs) | Configuring `AnthropicModel` | `--features anthropic`, `ANTHROPIC_API_KEY` |
-| [`openai`](strands/examples/openai.rs) | Configuring `OpenAIModel` | `--features openai`, `OPENAI_API_KEY` |
+| [`basic`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/basic.rs) | A tool, `invoke`, `stream` and `shutdown` | AWS credentials |
+| [`tools`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/tools.rs) | `#[tool]`, `#[tools]`, `FunctionTool`, tool context, a direct tool call | AWS credentials |
+| [`streaming`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/streaming.rs) | Handling stream events: text, tool calls, the final result | AWS credentials |
+| [`hooks`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/hooks.rs) | Sync, ordered and async hooks, hook removal, cancellation | Nothing (scripted model) |
+| [`structured_output`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/structured_output.rs) | A typed answer validated against a schema | AWS credentials |
+| [`mcp`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/mcp.rs) | Tools from an MCP server over stdio | `--features mcp`, AWS credentials, `uvx` |
+| [`sessions`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/sessions.rs) | Saving and restoring a conversation | Nothing (scripted model) |
+| [`bedrock`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/bedrock.rs) | Configuring `BedrockModel` | AWS credentials |
+| [`anthropic`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/anthropic.rs) | Configuring `AnthropicModel` | `--features anthropic`, `ANTHROPIC_API_KEY` |
+| [`openai`](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/strands/examples/openai.rs) | Configuring `OpenAIModel` | `--features openai`, `OPENAI_API_KEY` |
 
 ## Crates
 
-- [`strands`](strands): the SDK.
-- [`strands-macros`](strands-macros): `#[tool]` and `#[tools]`, re-exported from `strands`.
+- [`strands`](https://github.com/strands-agents/harness-sdk/tree/main/strands-rs/strands): the SDK.
+- [`strands-macros`](https://github.com/strands-agents/harness-sdk/tree/main/strands-rs/strands-macros): `#[tool]` and `#[tools]`, re-exported from `strands`.
 
 ## Documentation
 
 - API reference: `cargo doc -p strands --all-features --open`. The crate page has a module overview and a table that maps TypeScript SDK names to Rust.
-- [docs/PARITY.md](docs/PARITY.md): which TypeScript SDK tests have a Rust counterpart.
-- [docs/DIVERGENCES.md](docs/DIVERGENCES.md): where the Rust SDK deliberately differs from the TypeScript SDK.
-- [docs/TESTING.md](docs/TESTING.md): how the crate is tested.
-- [AGENTS.md](AGENTS.md): layout, code rules and gates for contributors.
+- [docs/PARITY.md](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/docs/PARITY.md): which TypeScript SDK tests have a Rust counterpart.
+- [docs/DIVERGENCES.md](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/docs/DIVERGENCES.md): where the Rust SDK deliberately differs from the TypeScript SDK.
+- [docs/TESTING.md](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/docs/TESTING.md): how the crate is tested.
+- [AGENTS.md](https://github.com/strands-agents/harness-sdk/blob/main/strands-rs/AGENTS.md): layout, code rules and gates for contributors.
 - [Strands Agents documentation](https://strandsagents.com): concepts shared by all the SDKs.
