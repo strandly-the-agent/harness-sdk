@@ -4340,6 +4340,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "monty",
+ "regex",
  "schemars 1.2.3",
  "serde",
  "serde_json",

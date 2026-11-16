@@ -35,6 +35,7 @@ tracing.workspace = true
 indexmap.workspace = true
 jiff.workspace = true
 monty.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
