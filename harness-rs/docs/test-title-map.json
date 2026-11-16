@@ -1,4 +1,23 @@
 {
+  "harness-ts/test/config.test.ts": {
+    "loads the project ESM export for %s instead of a package from the harness": {
+      "gap": "TS-only: Node module resolution and loading; module references return the unsupported error in Rust (#31)"
+    },
+    "rejects a package missing from the project even when the harness has it installed": {
+      "gap": "TS-only: Node module resolution and loading; module references return the unsupported error in Rust (#31)"
+    },
+    "loads TypeScript helper imports and shares the host SDK across project dependencies": {
+      "gap": "TS-only: Node module resolution and loading; module references return the unsupported error in Rust (#31)"
+    }
+  },
+  "harness-ts/test/interventions.test.ts": {
+    "reports a clear error when the optional Cedar dependency is unavailable": {
+      "gap": "TS-only: Cedar is compiled into the Rust SDK, not an optional dependency (P-919)"
+    },
+    "throws on an invalid value": {
+      "gap": "TS-only: the typed option cannot hold a value that is neither text nor a handler (P-919)"
+    }
+  },
   "harness-ts/test/memory.test.ts": {
     "attaches a memory manager by default": {
       "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
