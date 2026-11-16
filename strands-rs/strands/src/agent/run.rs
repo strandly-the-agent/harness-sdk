@@ -22,7 +22,7 @@ use crate::hooks::{
     BeforeModelCallEvent, BeforeToolsEvent, ContentBlockEvent, EndTurn, HookRegistry, InterruptEvent,
     MessageAddedEvent, ModelMessageEvent, ModelStopData, ModelStreamUpdateEvent, ToolResultEvent,
 };
-use crate::interrupt::Interrupt;
+use crate::interrupt::{Interrupt, interrupt_error_message};
 use crate::middleware::ended_without_result;
 use crate::middleware::{
     AgentStreamContext, AgentStreamResult, AgentStreamStage, InvokeModelContext, InvokeModelResult,
@@ -66,7 +66,7 @@ pub(crate) struct CancelledError;
 enum Stop {
     /// A cancel checkpoint saw the invocation's signal (TS `CancelledError`).
     Cancelled,
-    /// Middleware raised an interrupt outside a tool batch.
+    /// A hook, a tool or middleware raised interrupts (TS `InterruptError`).
     Interrupted(Vec<Interrupt>),
     Failed(Error),
 }
@@ -523,13 +523,7 @@ impl Agent {
                 let error = match &cycle {
                     Err(Stop::Failed(error)) => Some(error.to_string()),
                     Err(Stop::Cancelled) => Some(CancelledError.to_string()),
-                    Err(Stop::Interrupted(interrupts)) => Some(match interrupts.as_slice() {
-                        [interrupt] => format!("Interrupt raised: {}", interrupt.name()),
-                        all => {
-                            let names: Vec<&str> = all.iter().map(Interrupt::name).collect();
-                            format!("{} interrupts raised: {}", all.len(), names.join(", "))
-                        }
-                    }),
+                    Err(Stop::Interrupted(interrupts)) => Some(interrupt_error_message(interrupts)),
                     Ok(_) => None,
                 };
                 telemetry.tracer.end_cycle(error.as_deref());
@@ -539,7 +533,8 @@ impl Agent {
                 Ok(Cycle::Done(result)) => return Ok(self.with_telemetry(*result)),
                 Err(Stop::Cancelled) => return self.cancelled_at_checkpoint(state, hooks, out).await,
                 Err(Stop::Interrupted(interrupts)) => {
-                    return self.interrupted(interrupts, state, hooks, out).await;
+                    let result = self.interrupted(interrupts, state, hooks, out).await?;
+                    return Ok(self.with_telemetry(result));
                 }
                 Err(Stop::Failed(error)) => return Err(error),
             }
@@ -681,8 +676,8 @@ impl Agent {
             .execute_tools(&assistant, completed, state, hooks, out)
             .await?;
         if !tools.interrupts.is_empty() {
-            let result = self.interrupted(tools.interrupts, state, hooks, out).await?;
-            return Ok(Cycle::Done(Box::new(result)));
+            // TS throws the batch's `InterruptError` out of the cycle, which closes its span with it.
+            return Err(Stop::Interrupted(tools.interrupts));
         }
         // A skipped resume keeps its pending batch; the next cycle's checkpoint stops the loop.
         if tools.skipped
