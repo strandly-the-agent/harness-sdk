@@ -915,6 +915,39 @@ impl AgentResult {
 
     /// The structured output, deserialized into `T`.
     ///
+    /// ```
+    /// use serde_json::json;
+    /// use strands::testing::MockMessageModel;
+    /// use strands::tools::STRUCTURED_OUTPUT_TOOL_NAME;
+    /// use strands::types::messages::ToolUseBlock;
+    /// use strands::{Agent, InvokeOptions};
+    ///
+    /// #[derive(serde::Deserialize, schemars::JsonSchema)]
+    /// struct Summary {
+    ///     title: String,
+    ///     points: Vec<String>,
+    /// }
+    ///
+    /// # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+    /// // A scripted model that answers through the structured output tool, as a real one does.
+    /// let model = MockMessageModel::new();
+    /// let answer = json!({"title": "Thread", "points": ["one", "two"]});
+    /// model.add_turn(vec![ToolUseBlock::new(STRUCTURED_OUTPUT_TOOL_NAME, "tool-1", answer).into()]);
+    /// let mut agent = Agent::builder().model(model).printer(false).build()?;
+    ///
+    /// let summary: Summary = agent
+    ///     .invoke_with(
+    ///         "Summarize this thread",
+    ///         InvokeOptions::default().structured_output_schema::<Summary>(),
+    ///     )
+    ///     .await?
+    ///     .structured_output()?;
+    /// assert_eq!(summary.title, "Thread");
+    /// assert_eq!(summary.points, ["one", "two"]);
+    /// # Ok::<(), strands::Error>(())
+    /// # }).unwrap();
+    /// ```
+    ///
     /// # Errors
     ///
     /// [`StructuredOutputError`] when the invocation produced no structured output or it doesn't

@@ -637,7 +637,28 @@ impl Agent {
         self.local.hooks().add_hook_with(options, callback)
     }
 
-    /// Registers an async hook callback for event type `E`.
+    /// Registers an async hook callback for event type `E`. The callback returns a boxed future
+    /// that may hold the event across awaits.
+    ///
+    /// ```
+    /// use strands::hooks::AfterToolCallEvent;
+    /// use strands::testing::MockMessageModel;
+    /// use strands::types::tools::ToolUse;
+    /// use strands::Agent;
+    ///
+    /// async fn audit_log(tool_use: &ToolUse) {
+    ///     // Write to an audit trail.
+    ///     # let _ = tool_use;
+    /// }
+    ///
+    /// let agent = Agent::builder().model(MockMessageModel::new()).build()?;
+    /// agent.add_async_hook::<AfterToolCallEvent>(|event| {
+    ///     Box::pin(async move {
+    ///         audit_log(event.tool_use()).await;
+    ///     })
+    /// });
+    /// # Ok::<(), strands::Error>(())
+    /// ```
     pub fn add_async_hook<E: EventKind>(
         &self,
         callback: impl for<'a, 'b> Fn(&'b mut <E::Kind as HookEvent>::Event<'a>) -> BoxFuture<'b, ()>
