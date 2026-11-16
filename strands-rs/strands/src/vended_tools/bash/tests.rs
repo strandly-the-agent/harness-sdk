@@ -388,27 +388,40 @@ async fn starts_in_process_cwd() {
 }
 
 #[test]
-fn has_correct_tool_name_description_and_tool_spec() {
+fn has_correct_tool_name() {
+    assert_eq!(bash().name(), "bash");
+}
+
+#[test]
+fn has_description() {
+    assert_eq!(bash().description(), DEFAULT_DESCRIPTION);
+}
+
+#[test]
+fn has_tool_spec() {
     let tool = bash();
-    assert_eq!(tool.name(), "bash");
-    assert_eq!(tool.description(), DEFAULT_DESCRIPTION);
     assert_eq!(tool.tool_spec().name(), "bash");
     assert_eq!(tool.tool_spec().input_schema(), Some(&bash_input_schema()));
 }
 
 #[test]
-fn bash_timeout_error_and_bash_session_error_have_correct_properties() {
+fn bash_timeout_error_has_correct_properties() {
     let timeout = BashTimeoutError::new("timeout message");
     assert_eq!(
         (BashTimeoutError::NAME, timeout.to_string().as_str()),
         ("BashTimeoutError", "timeout message")
     );
+    let _: &dyn std::error::Error = &timeout;
+}
+
+#[test]
+fn bash_session_error_has_correct_properties() {
     let session = BashSessionError::new("session error message");
     assert_eq!(
         (BashSessionError::NAME, session.to_string().as_str()),
         ("BashSessionError", "session error message")
     );
-    let _: &dyn std::error::Error = &timeout;
+    let _: &dyn std::error::Error = &session;
 }
 
 #[tokio::test]

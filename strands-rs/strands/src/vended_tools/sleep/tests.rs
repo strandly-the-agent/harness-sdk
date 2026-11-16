@@ -131,7 +131,7 @@ async fn rejects_synchronously_when_the_signal_is_already_aborted() {
 }
 
 #[tokio::test]
-async fn returns_the_expected_message_after_a_short_sleep() {
+async fn returns_the_expected_message_after_a_real_short_sleep() {
     let result = tool()
         .invoke(json!({ "duration": 0.05 }), context(None))
         .await
@@ -149,7 +149,7 @@ async fn accepts_zero_duration() {
 }
 
 #[tokio::test]
-async fn drives_the_sleeper_with_the_requested_duration() {
+async fn drives_set_timeout_with_the_requested_duration_in_ms() {
     let (sleeper, delays) = recording_sleeper();
     let tool = make_sleep_with(MakeSleepOptions::default(), sleeper).unwrap();
     let result = tool

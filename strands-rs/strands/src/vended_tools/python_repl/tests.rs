@@ -115,7 +115,7 @@ async fn wraps_sandbox_error_as_python_repl_error() {
 }
 
 #[tokio::test]
-async fn reports_failure_via_error_and_non_zero_exit() {
+async fn reports_failure_of_via_error_and_non_zero_exit() {
     let dir = tempfile::tempdir().unwrap();
     for (code, expected) in [
         ("raise ValueError('bad')", "ValueError: bad"),

@@ -376,9 +376,6 @@
     "normalizeToolUseNames > limits > when a limit key is unrecognized > rejects %s with TypeError": {
       "gap": "compile error in Rust: limits are `NonZero*` fields of a struct"
     },
-    "flushes even when the scope exits via a thrown error": {
-      "gap": "Rust has no async disposal: an agent dropped by an early return cannot flush; it logs the drop warning instead (`dropping_an_agent_with_unsaved_memory_warns`, P-391)"
-    },
     "consumes stream events internally": "returns_correct_stop_reason_and_last_message",
     "both methods produce same result with tool use": "invoke_and_stream_produce_same_final_result",
     "returns array of messages": "defaults_match_ts",
@@ -750,6 +747,125 @@
     "saves snapshot_latest on redaction when saveLatestOn is %s": "saves_snapshot_latest_on_redaction_when_save_latest_on_is_invocation",
     "*": {
       "gap": "out of scope: the `SessionManager — multi-agent` cases, multi-agent is out of v0.1"
+    }
+  },
+  "strands-ts/src/vended-tools/bash/__tests__/bash.test.node.ts": {
+    "requires context for bash operations": {
+      "gap": "TS-only: a Rust tool always runs with a `ToolContext`"
+    },
+    "exports bash tool from index": "has_correct_tool_name",
+    "exports error classes from index": "bash_timeout_error_has_correct_properties",
+    "cleans up on beforeExit event": {
+      "gap": "TS-only: Rust installs no process handlers, sessions die with the tool (P-270)"
+    },
+    "cleans up on exit event": {
+      "gap": "TS-only: Rust installs no process handlers, sessions die with the tool (P-270)"
+    },
+    "cleans up on SIGINT": {
+      "gap": "TS-only: Rust installs no process handlers, sessions die with the tool (P-270)"
+    }
+  },
+  "strands-ts/src/vended-tools/handoff-to-user/__tests__/handoff-to-user.test.ts": {
+    "throws when invoked without a tool context": {
+      "gap": "TS-only: a Rust tool always runs with a `ToolContext`"
+    }
+  },
+  "strands-ts/src/vended-tools/notebook/__tests__/notebook.test.ts": {
+    "requires context": {
+      "gap": "TS-only: a Rust tool always runs with a `ToolContext`"
+    },
+    "throws when maxNotebookSizeBytes is a float": {
+      "gap": "not representable: the limit is a `usize`"
+    }
+  },
+  "strands-ts/src/vended-tools/python-repl/__tests__/python-repl.test.node.ts": {
+    "requires a tool context": {
+      "gap": "TS-only: a Rust tool always runs with a `ToolContext`"
+    }
+  },
+  "strands-ts/src/vended-tools/read/__tests__/read.test.node.ts": {
+    "bound sandbox does not require context": {
+      "gap": "TS-only: a Rust tool always runs with a `ToolContext`"
+    },
+    "unbound sandbox requires context": {
+      "gap": "TS-only: a Rust tool always runs with a `ToolContext`"
+    }
+  },
+  "strands-ts/src/vended-tools/shell/__tests__/shell.test.node.ts": {
+    "timeout error still matches the pre-rename BashTimeoutError": {
+      "gap": "TS-only: TS class inheritance, no Rust equivalent"
+    },
+    "ShellExecutionError still matches the pre-rename BashSessionError": {
+      "gap": "TS-only: TS class inheritance, no Rust equivalent"
+    },
+    "keeps the pre-rename tool name": {
+      "gap": "deprecated: the `makeBash` alias isn't ported (decision #24)"
+    },
+    "matches makeShell apart from the name": {
+      "gap": "deprecated: the `makeBash` alias isn't ported (decision #24)"
+    },
+    "an explicit name still wins": {
+      "gap": "deprecated: the `makeBash` alias isn't ported (decision #24)"
+    },
+    "still exposes every shell name": {
+      "gap": "deprecated: the pre-rename bash import path isn't ported (decision #24)"
+    }
+  },
+  "strands-ts/src/vended-tools/sleep/__tests__/sleep.test.ts": {
+    "rejects NaN durations": {
+      "gap": "not representable: JSON can't carry NaN or ±Infinity, so they never reach the tool"
+    },
+    "rejects positive infinity": {
+      "gap": "not representable: JSON can't carry NaN or ±Infinity, so they never reach the tool"
+    },
+    "rejects negative infinity": {
+      "gap": "not representable: JSON can't carry NaN or ±Infinity, so they never reach the tool"
+    },
+    "rejects negative maxDuration": {
+      "gap": "not representable in a `Duration` (zero is tested)"
+    },
+    "rejects NaN maxDuration": {
+      "gap": "not representable in a `Duration` (zero is tested)"
+    },
+    "rejects Infinity maxDuration": {
+      "gap": "not representable in a `Duration` (zero is tested)"
+    },
+    "rejects non-numeric maxDuration": {
+      "gap": "not representable in a `Duration` (zero is tested)"
+    },
+    "works without a context by skipping the cancel wiring": {
+      "gap": "TS-only: a Rust tool always runs with a `ToolContext`"
+    }
+  },
+  "strands-ts/src/vended-tools/stop/__tests__/stop.test.ts": {
+    "throws when invoked without a tool context": {
+      "gap": "TS-only: a Rust tool always runs with a `ToolContext`"
+    }
+  },
+  "strands-ts/src/vended-tools/subagent/__tests__/subagent.test.ts": {
+    "subagent tool > tool metadata > %s": "omits_last_messages_when_the_only_context_option_is_none",
+    "subagent tool > resolution > %s": "maps_tools_choice_option_names_to_values",
+    "%s for 'all'": "appends_a_user_turn_when_the_last_forked_message_is_from_the_assistant_for_all",
+    "%s for 'no_tools'": "renders_text_turns_as_a_framed_block_for_no_tools",
+    "subagent tool > depth tracking > %s": "sets_the_child_depth",
+    "rethrows child interrupts as-is when the parent has no interrupt state": {
+      "gap": "TS-only: a Rust `ToolAgent` always carries the parent's interrupt state"
+    }
+  },
+  "strands-ts/src/vended-tools/web-fetch/__tests__/extract.test.ts": {
+    "returns original input on conversion failure": {
+      "gap": "TS-only: it passes `null`; a Rust `&str` can't be null and `htmd` has no failure reachable from a string"
+    }
+  },
+  "strands-ts/src/vended-tools/web-fetch/__tests__/web-fetch.test.ts": {
+    "rejects non-finite maxBytes": {
+      "gap": "not representable: the limits are `usize`, so NaN and ±Infinity can't be written (zero is tested)"
+    },
+    "rejects non-finite maxContentChars": {
+      "gap": "not representable: the limits are `usize`, so NaN and ±Infinity can't be written (zero is tested)"
+    },
+    "requires a model when no context agent": {
+      "gap": "TS-only: a `ToolContext` always has an agent with a model"
     }
   }
 }

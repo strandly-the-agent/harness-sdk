@@ -431,7 +431,7 @@ async fn rejects_non_positive_limit() {
 }
 
 #[tokio::test]
-async fn rejects_non_integer_offset_or_limit() {
+async fn offset_limit_must_be_integers_rejects() {
     let dir = tempfile::tempdir().unwrap();
     let path = file(dir.path(), "f.txt", b"one\ntwo\n");
     for window in [json!({ "offset": 1.5 }), json!({ "limit": 2.5 })] {

@@ -134,7 +134,7 @@ async fn reads_empty_notebook() {
 }
 
 #[tokio::test]
-async fn throws_error_for_non_existent_notebook_on_read() {
+async fn read_operation_throws_error_for_non_existent_notebook() {
     let ctx = fresh(json!({}));
     assert_eq!(
         err(&notebook(), &ctx, json!({ "mode": "read", "name": "missing" })).await,
@@ -261,7 +261,7 @@ async fn throws_error_if_old_string_not_found() {
 }
 
 #[tokio::test]
-async fn throws_error_for_non_existent_notebook_on_replace() {
+async fn write_operation_string_replacement_throws_error_for_non_existent_notebook() {
     let ctx = fresh(json!({}));
     let input = json!({ "mode": "write", "name": "missing", "oldStr": "Old", "newStr": "New" });
     assert_eq!(
@@ -429,7 +429,7 @@ async fn clears_custom_notebook() {
 }
 
 #[tokio::test]
-async fn throws_error_for_non_existent_notebook_on_clear() {
+async fn clear_operation_throws_error_for_non_existent_notebook() {
     let ctx = fresh(json!({}));
     assert_eq!(
         err(&notebook(), &ctx, json!({ "mode": "clear", "name": "missing" })).await,

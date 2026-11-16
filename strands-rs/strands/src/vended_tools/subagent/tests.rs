@@ -1340,7 +1340,7 @@ mod with_real_agents {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn delegates_two_levels_deep() {
+    async fn delegates_two_levels_deep_from_a_parent_with_an_auto_context_manager() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn(vec![tool_use(
             "subagent",
@@ -1355,6 +1355,7 @@ mod with_real_agents {
             .model(Arc::clone(&model))
             .tools([subagent()])
             .printer(false)
+            .context_manager(crate::experimental::context_manager::ContextManagerPreset::Auto)
             .build()
             .unwrap();
 
