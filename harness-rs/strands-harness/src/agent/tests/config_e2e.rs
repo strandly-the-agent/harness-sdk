@@ -21,6 +21,13 @@ async fn build(config: &JsonValue, base_dir: &Path, env: EnvLookup) -> Result<Ag
     create_harness_with(options, seams).await
 }
 
+async fn build_error(config: &JsonValue, base_dir: &Path, env: EnvLookup) -> String {
+    match build(config, base_dir, env).await {
+        Ok(_) => panic!("{config} built an agent"),
+        Err(error) => error.to_string(),
+    }
+}
+
 #[tokio::test]
 async fn a_module_reference_anywhere_fails_with_the_unsupported_error() {
     let reference = |kind: &str| json!({ "kind": kind, "module": "./values.ts", "export": "value", "language": "typescript" });
@@ -37,12 +44,8 @@ async fn a_module_reference_anywhere_fails_with_the_unsupported_error() {
     ];
     let dir = tempfile::tempdir().unwrap();
     for config in configs {
-        let error = match build(&config, dir.path(), Arc::new(|_| None)).await {
-            Ok(_) => panic!("{config} built an agent"),
-            Err(error) => error,
-        };
         assert_eq!(
-            error.to_string(),
+            build_error(&config, dir.path(), Arc::new(|_| None)).await,
             "module references are not supported in Rust yet (language \"typescript\")",
             "{config}"
         );
@@ -130,7 +133,7 @@ mod wire {
     }
 
     /// The options a config sets to their non-default side, and nothing else switched on.
-    fn bare(extra: JsonValue) -> JsonValue {
+    fn bare(extra: &JsonValue) -> JsonValue {
         let mut config = json!({
             "model": "openai/gpt-6-sol",
             "builtinTools": [],
@@ -152,7 +155,7 @@ mod wire {
     async fn a_builtin_tools_mapping_and_the_switched_off_features_reach_the_agent() {
         let server = ResponsesServer::start(vec![Reply::Text("Done")]).await;
         let dir = tempfile::tempdir().unwrap();
-        let config = bare(json!({
+        let config = bare(&json!({
             "caching": false,
             "builtinTools": { "*": false, "read": true, "shell": { "description": "Runs one command." } },
         }));
@@ -219,7 +222,7 @@ mod wire {
             arguments: json!({ "path": notes.to_string_lossy() }),
         };
         let config =
-            |interventions: &str| bare(json!({ "builtinTools": ["read"], "interventions": interventions }));
+            |interventions: &str| bare(&json!({ "builtinTools": ["read"], "interventions": interventions }));
 
         let server = ResponsesServer::start(vec![read_notes.clone(), Reply::Text("Done")]).await;
         let mut agent = build(&config("off"), dir.path(), server.env(&[])).await.unwrap();
@@ -264,7 +267,7 @@ done
         let server = ResponsesServer::start(vec![Reply::Text("Done")]).await;
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("server.sh"), SERVER).unwrap();
-        let config = bare(json!({
+        let config = bare(&json!({
             "mcpServers": { "notes": { "command": "sh", "args": ["${SERVER_SCRIPT}"] } },
         }));
 
@@ -274,10 +277,7 @@ done
         agent.invoke("Hello").await.unwrap();
         assert_eq!(tool_names_of(&server.requests()[0]), ["notes_ping"]);
 
-        let error = match build(&config, dir.path(), server.env(&[])).await {
-            Ok(_) => panic!("built with SERVER_SCRIPT unset"),
-            Err(error) => error.to_string(),
-        };
+        let error = build_error(&config, dir.path(), server.env(&[])).await;
         assert!(error.contains("SERVER_SCRIPT"), "{error}");
     }
 }
