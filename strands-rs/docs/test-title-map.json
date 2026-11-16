@@ -1051,5 +1051,14 @@
     "completes successfully when startToolCallSpan returns null": {
       "gap": "Not applicable: the `LocalTracer` start methods return no nullable span; a disabled `tracing` span makes every later call a no-op (`memory_span_methods_handle_a_null_span_gracefully` and the `error_resilience` tests cover the tracer side)"
     }
+  },
+  "strands-ts/src/telemetry/__tests__/config.test.node.ts": {
+    "should use NodeTracerProvider by default for async context support": {
+      "gap": "Node-only: Rust has one provider type, `SdkTracerProvider`, and `tracing` carries the span context across awaits"
+    },
+    "stamps baggage selected by %s onto spans": "stamps_baggage_selected_by_true_onto_spans",
+    "throws when its package is absent without breaking the other Node.js defaults": {
+      "gap": "Node-only: the baggage span processor is built into the crate, so there is no optional package to miss"
+    }
   }
 }
