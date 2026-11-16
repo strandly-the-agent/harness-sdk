@@ -155,6 +155,19 @@ pub enum HarnessError {
         /// The `AgentConfig` field.
         key: &'static str,
     },
+
+    /// `web_search` was asked for by name on a model without native web search.
+    #[error(
+        "{target} has no built-in web search. Pass builtinTools: {{ web_search: 'exa' }} to search through Exa (a third party), or remove 'web_search' from builtinTools. See https://strandsagents.com/docs/user-guide/harness/tools/web-access/#web_search"
+    )]
+    NoWebSearch {
+        /// The model, as the message names it.
+        target: String,
+    },
+
+    /// `web_search: 'exa'` was set in a build without the `mcp` feature, which the Exa tool needs.
+    #[error("web_search: 'exa' requires the strands-harness feature \"mcp\"")]
+    ExaFeatureDisabled,
 }
 
 /// `text` as a JSON string literal, as TS `JSON.stringify` writes it.

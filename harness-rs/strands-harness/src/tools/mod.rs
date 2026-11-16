@@ -7,14 +7,12 @@ mod subagent;
 mod web_fetch;
 mod web_search;
 
-#[expect(unused_imports, reason = "used by builtin_tools, which lands separately")]
 pub(crate) use file_tools::{MakeReadOptions, make_read};
 pub use file_tools::{edit, read, write};
 pub use programmatic_tool_caller::{
     DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, MakeProgrammaticToolCallerOptions,
     make_programmatic_tool_caller, programmatic_tool_caller,
 };
-#[expect(unused_imports, reason = "used by builtin_tools, which lands separately")]
 pub(crate) use shell::make_shell;
 pub use subagent::{
     AgentBuilder, AgentSpec, CONTEXT_MODES, Choice, ChoiceOption, ContextAxis, ContextMode, Fixed,

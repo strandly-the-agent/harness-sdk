@@ -401,9 +401,12 @@ pub struct HarnessConfigBuiltinTools {
 }
 
 /// The config keys `name` accepts, or `None` for a bool-only tool.
-#[expect(
-    dead_code,
-    reason = "used by the built-in tool resolution, which lands separately"
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "TS reads it in resolveBuiltinTools; the typed option needs it only in tests"
+    )
 )]
 pub(crate) fn builtin_tool_config_keys(name: BuiltinToolName) -> Option<&'static [&'static str]> {
     match name {
