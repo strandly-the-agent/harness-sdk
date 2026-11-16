@@ -21,8 +21,8 @@ mod spike;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
 use futures::FutureExt;
@@ -42,8 +42,11 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_millis(900_000);
 
 const CANCELLED: &str = "programmatic_tool_caller was cancelled; no further tool calls are made.";
 
-/// The names of every caller made by this module; none is ever exposed to another's code.
-static INSTANCES: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+/// The name of every live caller made by this module; none is ever exposed to another's code.
+/// The `Weak` dies with the caller's handler, so a dropped caller stops reserving its name.
+static INSTANCES: LazyLock<Mutex<Instances>> = LazyLock::new(Mutex::default);
+
+type Instances = Vec<(String, Weak<()>)>;
 
 /// The description of the default `programmatic_tool_caller` tool.
 pub const DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION: &str = "Execute Python code that orchestrates the agent's other tools, each exposed as an async function \
@@ -158,11 +161,14 @@ pub(crate) fn make_programmatic_tool_caller_with(
     let name = name.unwrap_or_else(|| "programmatic_tool_caller".to_owned());
     let description = description.unwrap_or_else(|| DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION.to_owned());
     let timeout = timeout.unwrap_or(Some(DEFAULT_TIMEOUT));
-    INSTANCES
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(name.clone());
+    let alive = Arc::new(());
+    {
+        let mut instances = INSTANCES.lock().unwrap_or_else(PoisonError::into_inner);
+        instances.retain(|(_, alive)| alive.strong_count() > 0);
+        instances.push((name.clone(), Arc::downgrade(&alive)));
+    }
     let handler = move |input: Input, context: ToolContext| {
+        let _alive = &alive;
         let (allowed_tools, inner) = (allowed_tools.clone(), Arc::clone(&inner));
         async move {
             let available = resolve_available_tools(&context, allowed_tools.as_deref());
@@ -280,7 +286,11 @@ fn resolve_available_tools(context: &ToolContext, allowed_tools: Option<&[String
         .tool_registry()
         .list()
         .map(|tool| tool.name().to_owned())
-        .filter(|name| !instances.contains(name))
+        .filter(|name| {
+            !instances
+                .iter()
+                .any(|(caller, alive)| caller == name && alive.strong_count() > 0)
+        })
         .filter(|name| allowed_tools.is_none_or(|allowed| allowed.contains(name)))
         .collect()
 }

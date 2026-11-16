@@ -591,6 +591,21 @@ async fn cancels_an_in_flight_run_and_makes_no_further_inner_tool_calls() {
     assert_eq!(calls.load(Ordering::SeqCst), made);
 }
 
+/// Review finding correctness-a3: a dropped caller no longer reserves its name (TS `WeakSet`).
+#[tokio::test]
+async fn a_tool_sharing_a_name_with_a_dropped_caller_is_still_exposed() {
+    drop(caller_with(
+        MakeProgrammaticToolCallerOptions::builder()
+            .name("lookup_a3")
+            .build(),
+    ));
+    let lookup = FunctionTool::new("lookup_a3", "Looks up.", |_input: JsonValue, _context| async {
+        Ok("found")
+    });
+    let mut agent = agent_with(vec![lookup]);
+    assert_eq!(text(&run(&mut agent, "print(await lookup_a3())").await), "found");
+}
+
 const GATED_CODE: &str =
     "try:\n    print(await shell_like(command='rm -rf /'))\nexcept RuntimeError as e:\n    print('ERR', e)";
 
