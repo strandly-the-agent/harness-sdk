@@ -13,7 +13,7 @@ use executor::{ToolExecutionInput, ToolExecutorStream};
 /// `'concurrent'`/`'sequential'` shorthand). Defaults to [`ConcurrentToolExecutor`].
 ///
 /// ```
-/// use strands::tools::executors::{SequentialToolExecutor, ToolExecutor};
+/// use strands::tools::{SequentialToolExecutor, ToolExecutor};
 ///
 /// let executor = ToolExecutor::from(SequentialToolExecutor::new());
 /// assert!(matches!(executor, ToolExecutor::Sequential(_)));

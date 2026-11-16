@@ -1,7 +1,10 @@
 //! Hooks (TS `src/hooks/`): typed callbacks on agent lifecycle events.
 
+#[doc(hidden)]
 pub mod events;
+#[doc(hidden)]
 pub mod registry;
+#[doc(hidden)]
 pub mod types;
 
 #[doc(inline)]

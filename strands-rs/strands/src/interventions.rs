@@ -1,7 +1,9 @@
 //! Interventions (TS `src/interventions/`): policy handlers that gate the agent's lifecycle
 //! events and answer with typed actions.
 
+#[doc(hidden)]
 pub mod actions;
+#[doc(hidden)]
 pub mod handler;
 pub(crate) mod registry;
 

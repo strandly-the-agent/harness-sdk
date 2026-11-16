@@ -15,7 +15,7 @@ use super::executor::{
 /// don't run.
 ///
 /// ```
-/// use strands::tools::executors::{SequentialToolExecutor, ToolExecutor};
+/// use strands::tools::{SequentialToolExecutor, ToolExecutor};
 ///
 /// let executor: ToolExecutor = SequentialToolExecutor::new().into();
 /// # let _ = executor;

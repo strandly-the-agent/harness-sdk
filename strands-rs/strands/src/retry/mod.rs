@@ -1,8 +1,12 @@
 //! Retry strategies and backoffs (TS `src/retry/`).
 
+#[doc(hidden)]
 pub mod backoff_strategy;
+#[doc(hidden)]
 pub mod default_model_retry_strategy;
+#[doc(hidden)]
 pub mod model_retry_strategy;
+#[doc(hidden)]
 pub mod retry_strategy;
 
 #[doc(inline)]

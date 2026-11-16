@@ -52,7 +52,9 @@
 
 mod config;
 mod json;
+#[doc(hidden)]
 pub mod meter;
+#[doc(hidden)]
 pub mod tracer;
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

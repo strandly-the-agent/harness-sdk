@@ -16,7 +16,7 @@ use super::executor::{
 /// `ExecuteToolStage` middleware fails.
 ///
 /// ```
-/// use strands::tools::executors::{ConcurrentToolExecutor, ToolExecutor};
+/// use strands::tools::{ConcurrentToolExecutor, ToolExecutor};
 ///
 /// assert_eq!(ToolExecutor::from(ConcurrentToolExecutor::new()), ToolExecutor::default());
 /// ```

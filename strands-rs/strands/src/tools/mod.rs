@@ -1,10 +1,12 @@
 //! Tools (TS `src/tools/` and `src/registry/`).
 
+#[doc(hidden)]
 pub mod executors;
 pub mod function_tool;
 pub(crate) mod macro_support;
 pub mod registry;
 pub(crate) mod schema;
+#[doc(hidden)]
 pub mod structured_output;
 pub mod tool;
 
