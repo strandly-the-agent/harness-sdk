@@ -104,7 +104,7 @@ impl CancelSignal {
 
     /// A signal cancelled when this one is, without its message or deferral; what a sub-agent
     /// joins (TS forwards only the `AbortSignal`).
-    pub(crate) fn abort_only(&self) -> Self {
+    pub fn abort_only(&self) -> Self {
         Self {
             shared: Arc::new(Shared {
                 token: self.shared.token.child_token(),
