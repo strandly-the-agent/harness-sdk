@@ -337,7 +337,7 @@ PROMPT.md section 5.2 lists what was not built: Graph, Swarm and A2A with their 
 
 ### Review findings that were not fixed as proposed
 
-Every phase closed with three reviewers (correctness, API, parity) and a disposition for each finding in `strands-rs/docs/reviews/phase-N.md`. The dispositions that are not a plain fix, with their reasons:
+Phases 0 to 11 each closed with three independent reviewers (correctness, API, parity) and a disposition for each finding in `strands-rs/docs/reviews/phase-N.md`. The dispositions that are not a plain fix, with their reasons:
 
 - Phase 0, API 9, and Phase 7, api-3: `cedar-policy` is a non-optional dependency with an exact version requirement. Not applied, because PROMPT.md section 8.1 makes it non-optional and names five features; recorded for the owner (P-26, P-646). The documentation part of api-3 was done.
 - Phase 2, Correctness 5: learned structured-output support is kept per provider instance, to avoid process-global mutable state; recorded as a divergence (P-53).
