@@ -89,18 +89,52 @@ pub(crate) fn resource_attributes(env: EnvLookup<'_>) -> Vec<(String, String)> {
         ("telemetry.sdk.name".to_owned(), "opentelemetry".to_owned()),
         ("telemetry.sdk.language".to_owned(), "rust".to_owned()),
     ];
+    let mut set = |key: String, value: String| match attributes.iter_mut().find(|(existing, _)| *existing == key) {
+        Some(existing) => existing.1 = value,
+        None => attributes.push((key, value)),
+    };
     let detected = env("OTEL_RESOURCE_ATTRIBUTES").unwrap_or_default();
-    for (key, value) in detected.split(',').filter_map(|pair| pair.split_once('=')) {
-        let (key, value) = (key.trim(), value.trim());
-        if key.is_empty() {
-            continue;
-        }
-        match attributes.iter_mut().find(|(existing, _)| existing == key) {
-            Some(existing) => existing.1 = value.to_owned(),
-            None => attributes.push((key.to_owned(), value.to_owned())),
-        }
+    for (key, value) in detected_attributes(&detected).unwrap_or_default() {
+        set(key, value);
+    }
+    // The detector applies `OTEL_SERVICE_NAME` after the pairs, so it wins over a `service.name` pair.
+    if let Some(name) = env("OTEL_SERVICE_NAME").filter(|name| !name.trim().is_empty()) {
+        set("service.name".to_owned(), name);
     }
     attributes
+}
+
+/// The pairs of `OTEL_RESOURCE_ATTRIBUTES` as the `@opentelemetry/resources` `envDetector` reads
+/// them: percent-decoded, and `None` (the whole variable is ignored) when an entry is not exactly
+/// `key=value`, has an empty key, doesn't decode or is longer than 255 UTF-16 units.
+fn detected_attributes(raw: &str) -> Option<Vec<(String, String)>> {
+    const MAX_LENGTH: usize = 255;
+    raw.split(',')
+        .filter(|entry| !entry.trim().is_empty())
+        .map(|entry| {
+            let (key, value) = entry.split_once('=').filter(|(_, value)| !value.contains('='))?;
+            let (key, value) = (percent_decode(key.trim())?, percent_decode(value.trim())?);
+            let fits = |text: &str| text.encode_utf16().count() <= MAX_LENGTH;
+            (!key.is_empty() && fits(&key) && fits(&value)).then_some((key, value))
+        })
+        .collect()
+}
+
+/// JS `decodeURIComponent`: `None` for a `%` without two hex digits or bytes that aren't UTF-8.
+fn percent_decode(text: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(text.len());
+    let mut rest = text.as_bytes();
+    while let Some((&byte, tail)) = rest.split_first() {
+        if byte == b'%' {
+            let hex = std::str::from_utf8(tail.get(..2)?).ok()?;
+            bytes.push(u8::from_str_radix(hex, 16).ok()?);
+            rest = tail.get(2..)?;
+        } else {
+            bytes.push(byte);
+            rest = tail;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 #[cfg(test)]
@@ -161,6 +195,52 @@ mod tests {
         assert_eq!(get("service.namespace"), Some("team"));
         assert_eq!(get("deployment.environment"), Some("prod"));
         assert_eq!(get("host.name"), Some("box"));
+    }
+
+    // No TS case: the three cases below pin what `envDetector` of `@opentelemetry/resources` does
+    // with `OTEL_RESOURCE_ATTRIBUTES`, which TS `getOtelResource` spreads over the defaults.
+    #[test]
+    fn otel_service_name_wins_over_a_service_name_resource_attribute() {
+        let env = env_of(&[
+            ("OTEL_SERVICE_NAME", "svc-env"),
+            ("OTEL_RESOURCE_ATTRIBUTES", "service.name=svc-attr,team=a"),
+        ]);
+        let attributes = resource_attributes(&env);
+        let get = |key: &str| attributes.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        assert_eq!(get("service.name"), Some("svc-env"));
+        assert_eq!(get("team"), Some("a"));
+    }
+
+    #[test]
+    fn resource_attributes_are_percent_decoded() {
+        let env = env_of(&[("OTEL_RESOURCE_ATTRIBUTES", "te%61m=a%20b%2Cc%3Dd, caf%C3%A9 = 1 ,,")]);
+        let attributes = resource_attributes(&env);
+        let get = |key: &str| attributes.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        assert_eq!(get("team"), Some("a b,c=d"));
+        assert_eq!(get("café"), Some("1"));
+    }
+
+    #[test]
+    fn a_malformed_resource_attributes_variable_is_ignored_as_a_whole() {
+        let long = format!("env=prod,key={}", "v".repeat(256));
+        let malformed = [
+            "team=a=b,env=prod",
+            "env=prod,novalue",
+            "=x,env=prod",
+            "env=prod,team=%zz",
+            "env=prod,team=%ff",
+            long.as_str(),
+        ];
+        for raw in malformed {
+            let env = |name: &str| (name == "OTEL_RESOURCE_ATTRIBUTES").then(|| raw.to_owned());
+            let attributes = resource_attributes(&env);
+            let keys: Vec<&str> = attributes.iter().map(|(key, _)| key.as_str()).collect();
+            assert_eq!(
+                keys,
+                ["service.name", "service.namespace", "deployment.environment", "telemetry.sdk.name", "telemetry.sdk.language"],
+                "{raw}"
+            );
+        }
     }
 
     #[test]
