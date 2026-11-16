@@ -481,7 +481,7 @@ async fn agent_shutdown_does_not_disconnect_the_mcp_client() {
     assert_eq!(*result.status(), crate::types::tools::ToolResultStatus::Success);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_dropped_call_cancels_the_request_and_frees_its_progress_route() {
     let server = TestServer::default();
     let client = server.client();
@@ -504,7 +504,7 @@ async fn a_dropped_call_cancels_the_request_and_frees_its_progress_route() {
     assert_eq!(Arc::strong_count(&callback), 1);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_dropped_invocation_cancels_its_mcp_tool_call() {
     let server = TestServer::default();
     let client = server.client();
