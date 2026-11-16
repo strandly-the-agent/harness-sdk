@@ -9,6 +9,7 @@ use futures::FutureExt;
 use serde_json::json;
 use strands::agent::{Agent, DirectToolCallOptions};
 use strands::hooks::{AfterToolCallEvent, BeforeToolCallEvent};
+use strands::interrupt::InterruptParams;
 use strands::interventions::{
     BeforeToolCallAction, InterventionHandler, OnError, confirm, deny, proceed, transform,
 };
@@ -890,4 +891,30 @@ async fn a_cancel_does_not_wait_for_a_busy_loop() {
     assert!(matches!(end, RunEnd::Cancelled), "{end:?}");
     assert!(start.elapsed() < Duration::from_secs(1));
     canceller.await.expect("the canceller ran");
+}
+
+/// Not a TS case: an inner tool that interrupts is refused like a hook's approval request, and
+/// the interrupt never reaches the agent.
+#[tokio::test]
+async fn a_tool_that_interrupts_is_refused_like_an_approval_request() {
+    let asks = FunctionTool::new(
+        "asks",
+        "Asks for input.",
+        |_input, context: ToolContext| async move {
+            let answer = context.interrupt(InterruptParams {
+                reason: Some(json!("Need a name")),
+                ..InterruptParams::new("name")
+            })?;
+            Ok::<_, ToolError>(answer.to_string())
+        },
+    );
+    let mut agent = agent_of(vec![programmatic_tool_caller(), asks]);
+    let code = "try:\n    await asks()\nexcept RuntimeError as e:\n    print('ERR', e)";
+    let result = run(&mut agent, code).await;
+    assert!(!is_error(&result));
+    assert_eq!(
+        text(&result),
+        "ERR Failed to execute tool 'asks': Tool 'asks' needs approval (Need a name), which \
+         programmatic_tool_caller cannot prompt for; call it as a normal tool call instead."
+    );
 }
