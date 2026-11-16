@@ -1,15 +1,19 @@
 // Checks that every TS test case of an in-scope PARITY.md row has a Rust test named after it.
 //
-// Usage: node strands-rs/docs/check-test-titles.mjs [--root <repo>] [--ts <spec root>] [--report] [filter...]
+// Usage: node strands-rs/docs/check-test-titles.mjs [--root <repo>] [--parity <file>] [--ts <spec root>]
+//          [--report] [filter...]
 //   --root    repository root (default: two directories above this script)
-//   --ts      TS source root the PARITY.md spec paths point into (default: <root>/strands-ts/src)
+//   --ts      TS root the PARITY.md spec paths point into (default: <root>/strands-ts/src, or
+//             <root>/harness-ts/test for the harness)
 //   --report  also print each missing case (its map key and the Rust name it expects), and the Rust tests of the
 //             row's files that no case matched (Rust-only tests, or tests still to rename)
-//   --parity  the PARITY.md to check (default: <root>/strands-rs/docs/PARITY.md)
+//   --parity  the PARITY.md to check (default: <root>/strands-rs/docs/PARITY.md). Its folder picks the suite
+//             (see SUITES): `--parity harness-rs/docs/PARITY.md` checks the harness, with the map
+//             `harness-rs/docs/test-title-map.json` and the Rust tests under `harness-rs/`.
 //   filter    only check rows whose spec path contains one of these substrings
 // Needs the `typescript` package: run it from a checkout with `node_modules`, or set `NODE_PATH`.
 //
-// For each row of the "In scope" table in strands-rs/docs/PARITY.md it lists the spec's cases (the calls
+// For each row of the "In scope" table in the PARITY.md it lists the spec's cases (the calls
 // count-ts-cases.mjs counts; an `it.each` case counts once, by its template text) and sorts each into:
 //   matched   a Rust test function has the snake_case name of the title
 //   declared  test-title-map.json names the Rust test that covers the case
@@ -41,13 +45,14 @@
 // `crate::a::b` resolves to the longest existing prefix (`a/b.rs`, `a/b/mod.rs`, and everything under
 // `a/b/` when the whole path resolves); a file or directory path is taken as is; a trybuild case file
 // counts as a test named after its stem. A row that names no file is checked against all of
-// `strands-rs/`. A title that repeats in a spec (under different `describe` blocks) needs as many Rust
-// tests with that name, each in its own `mod`.
+// the suite's Rust folder (`strands-rs/` or `harness-rs/`). A title that repeats in a spec (under different
+// `describe` blocks) needs as many Rust tests with that name, each in its own `mod`.
 //
 // test-title-map.json: { "<spec path>": { "<ts title>": "<rust test name>" | { "gap": "<reason>" } } }
 // The key is the title as written, or the `describe` titles and the title joined with " > " when the
 // bare title repeats. The key "*" applies to every title of the spec that nothing else covers. A Rust
-// test name is the function name, optionally with leading `mod::` segments; it must exist in strands-rs.
+// test name is the function name, optionally with leading `mod::` segments; it must exist in the suite's Rust
+// folder.
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -59,7 +64,14 @@ const ts = createRequire(import.meta.url)('typescript')
 
 const ROOTS = new Set(['it', 'test'])
 const FACTORIES = new Set(['each', 'for', 'skipIf', 'runIf'])
-const CRATES = { strands: 'strands-rs/strands/src', strands_macros: 'strands-rs/strands-macros/src' }
+// Per Rust folder: the prefix of its PARITY.md spec paths, and its crates' source folders.
+const SUITES = {
+  'strands-rs': {
+    specs: 'strands-ts/src/',
+    crates: { strands: 'strands-rs/strands/src', strands_macros: 'strands-rs/strands-macros/src' },
+  },
+  'harness-rs': { specs: 'harness-ts/test/', crates: { strands_harness: 'harness-rs/strands-harness/src' } },
+}
 const TEST_ATTRIBUTE = /^\s*#\[\s*(?:\w+::)*(?:test|rstest|test_case)\b/
 const FUNCTION = /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(?:r#)?(\w+)\s*[(<]/
 
@@ -69,8 +81,15 @@ const option = (name) => {
   return at < 0 ? undefined : args.splice(at, 2)[1]
 }
 const root = resolve(option('--root') ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..'))
-const tsRoot = resolve(option('--ts') ?? join(root, 'strands-ts', 'src'))
 const parityPath = resolve(option('--parity') ?? join(root, 'strands-rs/docs/PARITY.md'))
+const docs = dirname(parityPath)
+const rustDir = relative(root, dirname(docs)).replaceAll('\\', '/')
+const suite = SUITES[rustDir]
+if (suite === undefined) {
+  console.error(`no suite for ${parityPath}: expected <root>/{${Object.keys(SUITES).join(',')}}/docs/PARITY.md`)
+  process.exit(2)
+}
+const tsRoot = resolve(option('--ts') ?? join(root, suite.specs))
 const report = args.includes('--report')
 const filters = args.filter((arg) => arg !== '--report')
 
@@ -187,9 +206,9 @@ function expandBraces(token) {
 
 function filesOfToken(token) {
   const segments = token.split('::')
-  const crate = CRATES[segments[0]]
+  const crate = suite.crates[segments[0]]
   if (crate === undefined) {
-    return [join(root, token), join(root, 'strands-rs', token)].flatMap(rustFiles)
+    return [join(root, token), join(root, rustDir, token)].flatMap(rustFiles)
   }
   for (let length = segments.length; length > 1; length--) {
     const base = join(root, crate, ...segments.slice(1, length))
@@ -212,22 +231,22 @@ function rows() {
   const end = lines.findIndex((line, at) => at > start && line.startsWith('## '))
   return lines.slice(start, end < 0 ? undefined : end).flatMap((line) => {
     const cells = line.split('|').map((cell) => cell.trim())
-    const spec = /^`(strands-ts\/src\/[^`]+)`$/.exec(cells[1] ?? '')?.[1]
+    const spec = /^`([^`]+)`$/.exec(cells[1] ?? '')?.[1]
     const counts = /^(\d+)\/(\d+)$/.exec(cells[3] ?? '')
-    if (spec === undefined || counts === null) return []
+    if (spec === undefined || !spec.startsWith(suite.specs) || counts === null) return []
     const gaps = cells.slice(4, -1).join('|').trim()
     return [{ spec, tests: cells[2], ported: Number(counts[1]), total: Number(counts[2]), gaps }]
   })
 }
 
-const mapPath = join(root, 'strands-rs/docs/test-title-map.json')
+const mapPath = join(docs, 'test-title-map.json')
 const titleMap = existsSync(mapPath) ? JSON.parse(readFileSync(mapPath, 'utf8')) : {}
-const allFiles = rustFiles(join(root, 'strands-rs'))
+const allFiles = rustFiles(join(root, rustDir))
 const allNames = new Set(allFiles.flatMap(testNames).map((test) => test.name))
 
 function check(row) {
   const result = { matched: 0, declared: 0, gap: 0, missing: [], problems: [], rustOnly: [] }
-  const path = join(tsRoot, row.spec.replace(/^strands-ts\/src\//, ''))
+  const path = join(tsRoot, row.spec.slice(suite.specs.length))
   if (!existsSync(path)) {
     result.problems.push('spec file not found')
     return result
@@ -317,8 +336,8 @@ for (const row of rows()) {
     for (const { key, name, line } of result.missing) console.log(`       :${line} ${JSON.stringify(key)} -> ${name}`)
     for (const { name, file, line } of result.rustOnly) console.log(`       rust-only: ${name} (${relative(root, file)}:${line})`)
   }
-  const segments = row.spec.split('/')
-  const area = segments[2] === '__tests__' ? '(root)' : segments[2]
+  const segments = row.spec.slice(suite.specs.length).split('/')
+  const area = segments.length === 1 || segments[0] === '__tests__' ? '(root)' : segments[0]
   const total = totals.get(area) ?? { counts: [0, 0, 0, 0], specs: 0, failed: 0 }
   counts.forEach((count, at) => (total.counts[at] += count))
   total.specs++

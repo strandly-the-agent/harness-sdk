@@ -36,3 +36,11 @@ The workspace gates in [strands-rs/AGENTS.md](../strands-rs/AGENTS.md#gates) cov
 ## Testing
 
 Port every applicable `it(...)` case from `harness-ts/test/`, named after its snake_case title; [docs/PARITY.md](docs/PARITY.md) tracks coverage and [docs/DIVERGENCES.md](docs/DIVERGENCES.md) lists differences. Live tests are `#[ignore = "live <provider>"]` and named `live_*`; see [strands-rs/docs/TESTING.md](../strands-rs/docs/TESTING.md#live-tests).
+
+The title checker verifies every In scope row of [docs/PARITY.md](docs/PARITY.md) against the Rust test names, with the naming rules of [strands-rs/docs/TESTING.md](../strands-rs/docs/TESTING.md) and the declared mappings and gaps in [docs/test-title-map.json](docs/test-title-map.json). Run it from the repository root (it needs the `typescript` package: a checkout with `node_modules`, or `NODE_PATH`):
+
+```bash
+node strands-rs/docs/check-test-titles.mjs --parity harness-rs/docs/PARITY.md [--report] [filter...]
+```
+
+The `programmatic_tool_caller` MCP cases (`tests/programmatic_tool_caller_mcp.rs`) run a Node MCP server: set `STRANDS_TEST_NODE` to the node binary and `STRANDS_TEST_NODE_MODULES` to a `node_modules` with `@modelcontextprotocol/sdk` and `zod`; without them the cases skip with a message.

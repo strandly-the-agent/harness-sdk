@@ -1,0 +1,63 @@
+{
+  "harness-ts/test/memory.test.ts": {
+    "attaches a memory manager by default": {
+      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+    },
+    "attaches no memory manager when memory is disabled": {
+      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+    },
+    "treats null as disabled": {
+      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+    },
+    "passes a MemoryManager instance given as memory straight through": {
+      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+    },
+    "lets a memoryManager escape hatch win over a memory config": {
+      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+    },
+    "lets an explicit memoryManager win over the default": {
+      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+    },
+    "honors a custom memory dir": {
+      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+    },
+    "manages consumer memory stores under the harness policy instead of the default file store": {
+      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
+    }
+  },
+  "harness-ts/test/models.test.ts": {
+    "maps google auto to the high thinking level": {
+      "gap": "TS-only: Google, Ollama and LiteLLM are not Rust v0.1 providers (#60)"
+    },
+    "uses the google model id directly": {
+      "gap": "TS-only: Google, Ollama and LiteLLM are not Rust v0.1 providers (#60)"
+    },
+    "adds the google googleSearch built-in tool for web_search": {
+      "gap": "TS-only: Google, Ollama and LiteLLM are not Rust v0.1 providers (#60)"
+    },
+    "omits google built-in tools when web_search is off": {
+      "gap": "TS-only: Google, Ollama and LiteLLM are not Rust v0.1 providers (#60)"
+    },
+    "does not warn when caching is supported for litellm": {
+      "gap": "TS-only: Google, Ollama and LiteLLM are not Rust v0.1 providers (#60)"
+    },
+    "builds litellm with explicit caching and sets no cacheConfig": {
+      "gap": "TS-only: Google, Ollama and LiteLLM are not Rust v0.1 providers (#60)"
+    }
+  },
+  "harness-ts/test/tools/programmatic-tool-caller.test.ts": {
+    "refuses inner calls when the agent hooks cannot be reached": {
+      "gap": "TS-only: `ToolAgent::call_tool` always reaches the hooks, so the state cannot be built"
+    }
+  },
+  "harness-ts/test/tools/subagent.test.ts": {
+    "surfaces an error when the child produces no result": {
+      "gap": "TS-only: a Rust `Agent` stream always ends with a result or an error, so a child without a result cannot be built (P-898)"
+    }
+  },
+  "harness-ts/test/tools/web-fetch.test.ts": {
+    "rejects an unknown transport": {
+      "gap": "TS-only: `WebFetchTransport` is an enum, so an unknown transport does not compile"
+    }
+  }
+}
