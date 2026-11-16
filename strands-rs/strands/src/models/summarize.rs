@@ -159,7 +159,20 @@ async fn read_reply<M: Model + ?Sized>(
         usage: Usage::default(),
     };
     let mut stream = ModelProxy::new(model).stream_aggregated(request, None);
-    while let Some(item) = stream.next().await {
+    loop {
+        // A cancel doesn't wait for a silent model: dropping the stream drops the request.
+        let item = match cancel_signal {
+            None => stream.next().await,
+            Some(signal) => tokio::select! {
+                biased;
+                item = stream.next() => item,
+                () = signal.cancelled() => {
+                    reply.stop_reason = Some(StopReason::Cancelled);
+                    break;
+                }
+            },
+        };
+        let Some(item) = item else { break };
         match item {
             Ok(AggregatedEvent::Done(result)) => {
                 reply.stop_reason = Some(result.stop_reason().clone());

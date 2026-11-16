@@ -256,6 +256,23 @@ async fn returns_an_empty_summary_when_the_stream_throws_after_a_cancel() {
     assert_eq!(result, empty(Usage::default()));
 }
 
+// No TS case: a TS `for await` over a silent stream ends when the provider honours the signal.
+#[tokio::test]
+async fn returns_an_empty_summary_when_cancelled_while_the_stream_is_silent() {
+    let (signal, handle) = CancelSignal::new();
+    let model = TestModelProvider::with_event_generator(move || {
+        let handle = handle.clone();
+        Box::pin(async_stream::stream! {
+            yield Ok(ModelMessageStartEvent::new(Role::Assistant).into());
+            handle.cancel(CancelOptions::default());
+            std::future::pending::<()>().await;
+        })
+    });
+    let options = SummarizeOptions::builder().cancel_signal(signal).build();
+    let result = model.summarize(hi(), options).await.unwrap();
+    assert_eq!(result, empty(Usage::default()));
+}
+
 #[tokio::test]
 async fn keeps_a_reply_that_stopped_at_a_limit() {
     for stop_reason in [StopReason::MaxTokens, StopReason::StopSequence] {
