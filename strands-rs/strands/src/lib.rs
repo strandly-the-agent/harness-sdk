@@ -337,7 +337,6 @@ pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 #[doc(inline)]
 pub use error::{Error, Result};
 pub use indexmap;
-pub use schemars;
 #[doc(inline)]
 pub use interrupt::InterruptResponse;
 #[cfg(feature = "bedrock")]
@@ -346,6 +345,7 @@ pub use models::bedrock::{
     BedrockCacheConfig, BedrockCacheTtl, BedrockGuardrailConfig, BedrockGuardrailRedactionConfig,
     BedrockModel, BedrockModelConfig, BedrockModelOptions,
 };
+pub use schemars;
 #[doc(inline)]
 pub use state_store::StateStore;
 #[doc(inline)]

@@ -15,10 +15,10 @@ mod stream;
 mod tool_caller;
 
 pub use agent::Agent;
-pub use agent_metadata::AgentMetadata;
 pub use agent_as_tool::{
     AgentAsTool, AgentAsToolOptions, AgentAsToolOptionsBuilder, agent_as_tool_options_builder,
 };
+pub use agent_metadata::AgentMetadata;
 pub use config::{AgentBuilder, AgentConfig, MemoryManagerSource, ModelSource, SharedSource, agent_builder};
 #[doc(inline)]
 pub use invocation_context::{InvocationContext, InvocationContextUsage};

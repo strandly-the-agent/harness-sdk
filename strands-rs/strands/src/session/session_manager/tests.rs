@@ -847,7 +847,8 @@ async fn deletes_stash_data_from_custom_stash_storage() {
 #[tokio::test]
 async fn deletes_stash_data_when_storage_is_pre_namespaced() {
     let root: Arc<dyn Storage> = Arc::new(InMemoryStorage::default());
-    let namespaced: Arc<dyn Storage> = Arc::new(InMemoryStorage::default().with_namespace("my-prefix").unwrap());
+    let namespaced: Arc<dyn Storage> =
+        Arc::new(InMemoryStorage::default().with_namespace("my-prefix").unwrap());
     let sm = manager_on(&root);
     let stash = stash_on(&namespaced, "agent");
     let _agent = initialized_with_stash(&root, &sm, &stash).await;

@@ -15,8 +15,8 @@ pub(crate) fn tool_fn(args: ToolArgs, mut item: ItemFn) -> syn::Result<TokenStre
     let tool = signature::read(&item.attrs, &mut item.sig, args, Receiver::None)?;
     item.attrs.extend(lint_allows(&tool));
     let fn_ident = &tool.ident;
-    let mut struct_ident =
-        syn::parse_str::<syn::Ident>(&pascal_case(&fn_ident.unraw().to_string())).map_err(|_| {
+    let mut struct_ident = syn::parse_str::<syn::Ident>(&pascal_case(&fn_ident.unraw().to_string()))
+        .map_err(|_| {
             syn::Error::new(
                 fn_ident.span(),
                 format!("#[tool] can't derive a struct name from `{fn_ident}`: start the name with a letter"),
@@ -108,7 +108,9 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
         if let Some(clash) = method_idents.iter().find(|ident| **ident == constructor) {
             return Err(syn::Error::new(
                 clash.span(),
-                format!("#[tools] generates `{constructor}` for the `{method_ident}` tool: rename this method"),
+                format!(
+                    "#[tools] generates `{constructor}` for the `{method_ident}` tool: rename this method"
+                ),
             ));
         }
         // `#[tools]` expands before the compiler strips cfg'd methods, so the generated items

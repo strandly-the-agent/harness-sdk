@@ -118,7 +118,10 @@ async fn rejects_empty_keys() {
 
 #[tokio::test]
 async fn rejects_keys_with_segments() {
-    let error = InMemoryStorage::default().write("a/../b", &[1]).await.unwrap_err();
+    let error = InMemoryStorage::default()
+        .write("a/../b", &[1])
+        .await
+        .unwrap_err();
     assert_eq!(error.name(), "StorageError");
 }
 

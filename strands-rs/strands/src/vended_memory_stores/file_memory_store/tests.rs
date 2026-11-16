@@ -711,7 +711,9 @@ fn logs_which_search_path_it_resolved() {
 
 #[tokio::test]
 async fn reads_each_entry_once_with_the_default_keyword_search() {
-    let counting = Arc::new(StubStorage::over(Arc::new(InMemoryStorage::default()), |_| Ok(None)));
+    let counting = Arc::new(StubStorage::over(Arc::new(InMemoryStorage::default()), |_| {
+        Ok(None)
+    }));
     let store = file_store("test-store", counting.clone());
     seed(&store).await;
     counting.reads.store(0, Ordering::SeqCst);
