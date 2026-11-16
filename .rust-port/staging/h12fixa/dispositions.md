@@ -8,7 +8,7 @@
 | parity-a2 | Fixed: `description` before `type` in `read`'s `offset` and `limit` and `web_fetch`'s `prompt`; `optional_read_properties_serialize_the_description_first` asserts on the serialized string. No string test for `web_fetch` yet (not reached). | 5b2ae29a3 |
 | correctness-a3 | Fixed, P-873 narrowed (P-991): `INSTANCES` holds `(name, Weak<()>)` pairs whose `Arc<()>` lives in the caller's handler, pruned when a caller is made, so a dropped caller stops reserving its name (TS `WeakSet<Tool>`, `programmatic-tool-caller.ts:56,373,574`). A live caller still hides a same-named ordinary tool process-wide: identity on the SDK `Tool` was not added. Test `a_tool_sharing_a_name_with_a_dropped_caller_is_still_exposed`. | beb3d718b |
 | correctness-a4 | Not reached | |
-| correctness-a5 | Fixed: the deadline is `Instant::now().checked_add(timeout)`, and a timeout the clock cannot represent is no deadline; test `a_huge_timeout_is_no_deadline` (drives `run_code`, not the public options path). Fixed ahead of correctness-a4 because it was the smallest remaining. | the commit after cc7d80707 (`fix(harness): a huge programmatic_tool_caller timeout ...`) |
+| correctness-a5 | Fixed: the deadline is `Instant::now().checked_add(timeout)`, and a timeout the clock cannot represent is no deadline; test `a_huge_timeout_is_no_deadline` (drives `run_code`, not the public options path). Fixed ahead of correctness-a4 because it was the smallest remaining. | c43c33f88 |
 | correctness-a6 | Not reached | |
 | correctness-a7 | Not reached | |
 | correctness-a8 | Not reached | |
