@@ -129,7 +129,7 @@ mod constructor {
         assert_eq!(config.region(), Some(&Region::new("eu-west-1")));
         assert_eq!(
             config.app_name().map(AppName::as_ref),
-            Some("strands-agents-rust-sdk")
+            Some("strands-agents-rs-sdk")
         );
         assert_eq!(read_timeout(&config), Some(Duration::from_secs(120)));
     }

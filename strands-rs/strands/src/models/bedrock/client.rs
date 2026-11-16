@@ -23,7 +23,7 @@ pub(crate) fn process_env() -> EnvLookup {
     Arc::new(|name| std::env::var(name).ok())
 }
 
-const APP_NAME: &str = "strands-agents-rust-sdk";
+const APP_NAME: &str = "strands-agents-rs-sdk";
 
 /// The client half of [`BedrockModelOptions`].
 #[derive(Clone, Default)]
