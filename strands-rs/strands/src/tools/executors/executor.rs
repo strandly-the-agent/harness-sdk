@@ -583,7 +583,14 @@ impl ToolTerminal {
             let ExecuteToolContext { tool, tool_use, invocation_state, .. } = context;
             let tool_use_id = tool_use.tool_use_id().to_owned();
             let span = telemetry.lock().tracer.start_tool(&tool_use);
-            let started = Instant::now();
+            let mut open_span = OpenToolSpan {
+                telemetry,
+                span: span.clone(),
+                tool_use_id: tool_use_id.clone(),
+                tool_name: tool_use.name().to_owned(),
+                started: Instant::now(),
+                ended: false,
+            };
             let mut outcome = None;
             match tool {
                 None => {
@@ -620,20 +627,48 @@ impl ToolTerminal {
                 error_text_result(&tool_use_id, text).into()
             });
             let success = matches!(&outcome, ToolOutcome::Result(result) if *result.status() == ToolResultStatus::Success);
-            {
-                let mut telemetry = telemetry.lock();
-                let result = match &outcome {
+            open_span.end(
+                match &outcome {
                     ToolOutcome::Result(result) => Some(result),
                     ToolOutcome::Interrupt(_) => None,
-                };
-                telemetry.tracer.end_tool(&tool_use_id, &span, result);
-                telemetry.meter.end_tool_call(tool_use.name(), started.elapsed(), success);
-            }
+                },
+                success,
+            );
             match outcome {
                 ToolOutcome::Interrupt(interrupt) => yield Err(interrupt.into()),
                 ToolOutcome::Result(result) => yield Ok(MiddlewareItem::Result(ExecuteToolResult::new(result))),
             }
         })
+    }
+}
+
+/// The `execute_tool` span of a running tool. Dropped unended (the stream was dropped or its task
+/// aborted), it ends the span and the tool metric without a result, as the TS `finally` does.
+struct OpenToolSpan {
+    telemetry: LocalTelemetry,
+    span: tracing::Span,
+    tool_use_id: String,
+    tool_name: String,
+    started: Instant,
+    ended: bool,
+}
+
+impl OpenToolSpan {
+    fn end(&mut self, result: Option<&ToolResultBlock>, success: bool) {
+        if std::mem::replace(&mut self.ended, true) {
+            return;
+        }
+        let mut telemetry = self.telemetry.lock();
+        telemetry.tracer.end_tool(&self.tool_use_id, &self.span, result);
+        telemetry
+            .meter
+            .end_tool_call(&self.tool_name, self.started.elapsed(), success);
+    }
+}
+
+impl Drop for OpenToolSpan {
+    fn drop(&mut self) {
+        self.end(None, false);
     }
 }
 

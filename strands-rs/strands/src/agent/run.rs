@@ -209,6 +209,15 @@ impl Agent {
             self.structured_output_registered = false;
         }
         self.local.cancel(CancelOptions::default());
+        {
+            // TS closes the open spans in its `finally` blocks when the consumer closes the iterator.
+            let mut telemetry = self.local.telemetry().lock();
+            telemetry.tracer.end_model(&ModelSpanEnd::default());
+            telemetry.meter.end_open_cycle();
+            telemetry.tracer.end_cycle(None);
+            let usage = *telemetry.meter.metrics().accumulated_usage();
+            telemetry.tracer.end_agent(None, None, &usage, None);
+        }
         let in_pass = std::mem::take(&mut self.in_pass);
         let paused = self.local.interrupt_state().lock().activated;
         let open_turn = self

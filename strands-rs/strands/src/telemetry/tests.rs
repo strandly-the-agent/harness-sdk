@@ -479,4 +479,5 @@ async fn baggage_attributes_are_merged_into_the_active_baggage_for_every_span() 
     }
 }
 
+mod agent_tracer;
 mod tracer_methods;

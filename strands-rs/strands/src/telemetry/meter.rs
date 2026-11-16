@@ -210,6 +210,7 @@ impl AgentMetrics {
 #[derive(Debug, Default)]
 pub(crate) struct Meter {
     metrics: AgentMetrics,
+    open_cycle: Option<Instant>,
     #[cfg(feature = "otel")]
     instruments: Instruments,
 }
@@ -220,6 +221,7 @@ impl Meter {
     pub(crate) fn with_otel_meter(meter: &opentelemetry::metrics::Meter) -> Self {
         Self {
             metrics: AgentMetrics::default(),
+            open_cycle: None,
             instruments: Instruments::new(meter),
         }
     }
@@ -251,10 +253,25 @@ impl Meter {
                 usage: Usage::default(),
             });
         }
-        (cycle_id, Instant::now())
+        let started = Instant::now();
+        self.open_cycle = Some(started);
+        (cycle_id, started)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_open_cycle(&self) -> bool {
+        self.open_cycle.is_some()
+    }
+
+    /// Ends the cycle a dropped invocation left open, if any.
+    pub(crate) fn end_open_cycle(&mut self) {
+        if let Some(started) = self.open_cycle {
+            self.end_cycle(started);
+        }
     }
 
     pub(crate) fn end_cycle(&mut self, start: Instant) {
+        self.open_cycle = None;
         let duration = start.elapsed();
         #[cfg(feature = "otel")]
         self.instruments
