@@ -40,6 +40,8 @@ use crate::args::{ToolArgs, ToolsArgs};
 ///   does not, so return `Result<T, ToolError>` and write
 ///   `.map_err(ToolError::from_boxed)?`.
 /// - An `async fn` runs on the tool task; a sync fn runs on a blocking thread.
+/// - The generated struct is the tool: pass it to `Agent::builder().tool(GetWeather)`, or
+///   several of different types as `.tools(strands::tool_list![GetWeather, GetTime])`.
 ///
 /// ```
 /// use strands::tool;

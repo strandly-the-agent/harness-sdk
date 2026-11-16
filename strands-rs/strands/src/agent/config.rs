@@ -416,9 +416,38 @@ pub struct AgentConfig {
 }
 
 impl<S: agent_builder::State> AgentBuilder<S> {
+    /// Adds one tool: a tool value, an `Arc<dyn Tool>`, or a nested list. Tools of different
+    /// types chain without a macro.
+    ///
+    /// ```
+    /// use strands::{Agent, tool};
+    ///
+    /// /// Get the weather for a city.
+    /// #[tool]
+    /// fn get_weather(city: String) -> String {
+    ///     format!("Sunny in {city}")
+    /// }
+    ///
+    /// /// Get the time in a city.
+    /// #[tool]
+    /// fn get_time(city: String) -> String {
+    ///     format!("Noon in {city}")
+    /// }
+    ///
+    /// let agent = Agent::builder().tool(GetWeather).tool(GetTime).build()?;
+    /// assert_eq!(agent.tool_registry().len(), 2);
+    /// # Ok::<(), strands::Error>(())
+    /// ```
+    pub fn tool(mut self, tool: impl Into<ToolSource>) -> Self {
+        self.tools.push(tool.into());
+        self
+    }
+
     /// Adds tools; calling it again extends the list rather than replacing it.
     ///
-    /// Mixed tool types need [`tool_list!`](crate::tool_list) or [`ToolSource::from`].
+    /// The items of one call share a type: for tools of different types use
+    /// [`tool_list!`](crate::tool_list) (`.tools(tool_list![GetWeather, GetTime])`), [`tool`](Self::tool)
+    /// once per tool, or [`ToolSource::from`].
     pub fn tools(mut self, tools: impl IntoIterator<Item = impl Into<ToolSource>>) -> Self {
         self.tools.extend(tools.into_iter().map(Into::into));
         self

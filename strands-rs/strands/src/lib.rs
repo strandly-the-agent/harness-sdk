@@ -53,6 +53,10 @@
 //! used again. [`Agent::shutdown`] stands in for TS `await using`: it finishes the agent's pending
 //! work, such as the hooks a dropped stream skipped.
 //!
+//! An array holds tools of one type. For a second tool, chain
+//! [`.tool(GetWeather).tool(GetTime)`](agent::AgentBuilder::tool), or pass one list with
+//! [`tool_list!`]: `.tools(tool_list![GetWeather, GetTime])`.
+//!
 //! An agent can also be built from an [`AgentConfig`] literal, which has a field for every
 //! option:
 //!
@@ -150,7 +154,7 @@
 //! | `RoutingCandidateOptions` | [`RoutingCandidate::new`](models::routing::RoutingCandidate::new) with `with_name`, `with_description` and `with_metadata` |
 //! | `MemoryStoreConfig` | The `name`, `description`, `max_search_results`, `writable` and `extraction` methods of [`MemoryStore`](memory::MemoryStore) |
 //! | `OffloadStrategyBuilder` | The `when(conditions)` method of each strategy [`Offload`](experimental::context_manager::Offload) returns |
-//! | `tool({ name, inputSchema, callback })` | [`tool`](macro@tool) on a function, [`tools`](macro@tools) on an impl block, or [`FunctionTool`](tools::FunctionTool) |
+//! | `tool({ name, inputSchema, callback })` | [`tool`](macro@tool) on a function, [`tools`](macro@tools) on an impl block, or [`FunctionTool`](tools::FunctionTool); [`tool_list!`] collects tools of different types for `.tools(..)` |
 //! | `Tool.stream()` async generator | [`Tool::stream`], a stream that ends in a [`ToolOutcome`] |
 //! | `context.interrupt(params)` | [`ToolContext::interrupt`], which returns the response on resume |
 //! | `agent.tool.<name>.invoke(input)` | [`Agent::tool`] then `invoke(input)` |

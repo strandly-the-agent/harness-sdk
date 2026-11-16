@@ -76,6 +76,8 @@ let model = AnthropicModel::builder().model_id("claude-sonnet-4-6").build()?;
 let mut agent = Agent::builder().model(model).build()?;
 ```
 
+An array holds tools of one type. For a second tool, chain `.tool(GetWeather).tool(GetTime)` or pass `.tools(tool_list![GetWeather, GetTime])`.
+
 ## Features
 
 | Feature | Default | Enables |
