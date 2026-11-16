@@ -23,6 +23,7 @@ use crate::types::messages::Message;
 mod methods {
     pub(crate) mod truncate;
 }
+pub(crate) mod modes;
 mod presets;
 mod retrieval_tool;
 mod search;

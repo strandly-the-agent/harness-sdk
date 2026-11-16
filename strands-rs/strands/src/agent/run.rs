@@ -1048,8 +1048,9 @@ impl Agent {
                 results.push(result);
             }
         } else {
+            let tool_agent = self.local.tool_agent();
             let input = ToolExecutionInput {
-                agent: self.local.tool_agent(),
+                agent: tool_agent.clone(),
                 hooks: hooks.clone(),
                 tool_uses,
                 invocation_state: state.clone(),
@@ -1074,6 +1075,9 @@ impl Agent {
                         break;
                     }
                 }
+            }
+            if let Some(messages) = tool_agent.take_history_edit() {
+                self.local.set_messages(messages);
             }
         }
 

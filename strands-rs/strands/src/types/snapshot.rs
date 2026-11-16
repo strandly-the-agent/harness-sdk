@@ -79,6 +79,10 @@ impl Snapshot {
         &self.data
     }
 
+    pub(crate) fn data_mut(&mut self) -> &mut JsonObject {
+        &mut self.data
+    }
+
     /// Application-owned data.
     pub fn app_data(&self) -> &JsonObject {
         &self.app_data

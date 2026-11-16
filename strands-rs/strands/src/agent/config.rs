@@ -9,6 +9,7 @@ use crate::conversation_manager::ConversationManager;
 use crate::error::Result;
 #[cfg(not(feature = "bedrock"))]
 use crate::error::{DefaultNotConfiguredError, Error};
+use crate::experimental::context_manager::ContextManagerStrategy;
 #[cfg(feature = "bedrock")]
 use crate::models::bedrock::{BedrockModel, BedrockModelConfig};
 use crate::models::model::Model;
@@ -262,6 +263,11 @@ pub struct AgentConfig {
     pub storage: Option<Arc<dyn Storage>>,
     /// Saves and restores the agent's session (TS `sessionManager`).
     pub session_manager: Option<SessionManager>,
+    /// Strategy-driven context management (TS `contextManager`, experimental). Any value but
+    /// [`ContextManagerStrategy::Off`] replaces the conversation manager; `Off` also drops the
+    /// default sliding window.
+    #[builder(into)]
+    pub context_manager: Option<ContextManagerStrategy>,
 }
 
 impl<S: agent_builder::State> AgentBuilder<S> {

@@ -356,7 +356,6 @@ impl LocalAgent {
     }
 
     /// The context manager's stash, once attached (TS `agent.contextManager?.stash`).
-    #[expect(dead_code, reason = "read by the session manager")]
     pub(crate) fn context_stash(&self) -> Option<&crate::experimental::Stash> {
         self.context_stash.as_ref()
     }
@@ -499,6 +498,7 @@ impl LocalAgent {
                 interrupt_state: self.interrupt_state.clone(),
                 invocation_context: self.invocation_context.clone(),
                 sandbox: self.sandbox.clone(),
+                history_edit: Arc::default(),
             }),
         }
     }
@@ -541,9 +541,40 @@ struct ToolAgentInner {
     middleware: MiddlewareRegistry,
     invocation_context: Option<InvocationContext>,
     sandbox: AgentSandbox,
+    history_edit: Arc<Mutex<Option<Vec<Message>>>>,
 }
 
 impl ToolAgent {
+    /// The history as the batch's tools left it: the latest [`replace_messages`] or the snapshot.
+    ///
+    /// [`replace_messages`]: Self::replace_messages
+    pub(crate) fn current_messages(&self) -> Vec<Message> {
+        let edit = self
+            .inner
+            .history_edit
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        edit.clone().unwrap_or_else(|| self.inner.messages.to_vec())
+    }
+
+    /// Replaces the agent's history once the tool batch ends (the agentic context tools; TS tools
+    /// mutate `agent.messages` in place).
+    pub(crate) fn replace_messages(&self, messages: Vec<Message>) {
+        *self
+            .inner
+            .history_edit
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(messages);
+    }
+
+    pub(crate) fn take_history_edit(&self) -> Option<Vec<Message>> {
+        self.inner
+            .history_edit
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
+
     /// The agent id.
     pub fn id(&self) -> &str {
         &self.inner.id

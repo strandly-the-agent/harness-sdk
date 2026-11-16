@@ -14,10 +14,13 @@ use crate::agent::run::AbandonedRun;
 use crate::agent::stream::AgentStream;
 use crate::background_tasks::{BackgroundTaskScheduler, BackgroundTasks};
 use crate::cancel::CancelHandle;
+use crate::conversation_manager::token_usage_middleware::token_usage_middleware;
 use crate::conversation_manager::{
     ConversationManager, ConversationManagerPlugin, NullConversationManager, SlidingWindowConversationManager,
 };
 use crate::error::{Error, Result};
+use crate::experimental::context_manager::modes::agentic::agentic_tools;
+use crate::experimental::context_manager::{ContextManager, ContextManagerPreset, ContextManagerStrategy};
 use crate::hooks::{
     EventKind, Hook, HookCallbackOptions, HookCleanup, HookEvent, HookRegistry, InitializedEvent,
     IntoSyncHook,
@@ -92,11 +95,31 @@ pub struct Agent {
     /// The background tasks plugin, when the config enables it.
     pub(crate) background_tasks: Option<BackgroundTaskScheduler>,
     session_manager: Option<SessionManager>,
+    context_manager: Option<Arc<ContextManager>>,
     #[cfg(feature = "mcp")]
     mcp_clients: Vec<crate::mcp::McpClient>,
 }
 
 const STATEFUL_MANAGER_UNSUPPORTED: &str = "contextManager and conversationManager cannot be used with a stateful model. The model manages conversation state server-side.";
+
+/// The conversation manager next to `context_manager` (TS `resolveConversationManager`): a
+/// context manager owns overflow recovery, so it replaces any conversation manager.
+fn resolve_conversation_manager(
+    context_manager: Option<&ContextManagerStrategy>,
+    configured: Option<Arc<dyn ConversationManager>>,
+    default: Arc<dyn ConversationManager>,
+) -> Arc<dyn ConversationManager> {
+    match context_manager {
+        None => configured.unwrap_or(default),
+        Some(ContextManagerStrategy::Off) => configured.unwrap_or_else(|| Arc::new(NullConversationManager)),
+        Some(_) => {
+            if configured.is_some() {
+                tracing::warn!("contextManager is set, ignoring co-provided conversationManager");
+            }
+            Arc::new(NullConversationManager)
+        }
+    }
+}
 
 impl Agent {
     /// A builder over every [`AgentConfig`] key; `.build()?` returns the agent.
@@ -116,13 +139,25 @@ impl Agent {
             Some(source) => source.into_model()?,
             None => default_model(),
         };
-        if model.stateful() && config.conversation_manager.is_some() {
+        let context_manager_set = !matches!(config.context_manager, None | Some(ContextManagerStrategy::Off));
+        if model.stateful() && (config.conversation_manager.is_some() || context_manager_set) {
             return Err(Error::other(STATEFUL_MANAGER_UNSUPPORTED));
         }
+        let agentic = matches!(
+            config.context_manager,
+            Some(ContextManagerStrategy::Preset(ContextManagerPreset::Agentic))
+        );
         let mut agent = Self::with_model(model);
-        if let Some(manager) = config.conversation_manager {
-            agent.conversation_manager = manager;
-        }
+        agent.conversation_manager = resolve_conversation_manager(
+            config.context_manager.as_ref(),
+            config.conversation_manager,
+            Arc::clone(&agent.conversation_manager),
+        );
+        agent.context_manager = config
+            .context_manager
+            .map(ContextManager::from_strategy)
+            .transpose()?
+            .flatten();
         let local = &mut agent.local;
         local.set_aux_model(config.aux_model.map(ModelSource::into_model).transpose()?);
         if let Some(id) = config.id {
@@ -144,6 +179,13 @@ impl Agent {
         local.set_storage(config.storage);
         let tools = config.tools.into_iter().flat_map(ToolSource::into_tools);
         local.tool_registry_mut().add_all(tools)?;
+        if agentic {
+            let tools = agentic_tools()
+                .into_iter()
+                .map(|tool| Arc::new(tool) as Arc<dyn Tool>);
+            local.tool_registry_mut().add_all(tools)?;
+            local.add_middleware(token_usage_middleware());
+        }
         agent.tool_executor = config.tool_executor.unwrap_or_default();
         agent.structured_output_schema = config.structured_output_schema;
         if config.printer.unwrap_or(true) {
@@ -191,6 +233,7 @@ impl Agent {
             deferred_continuations: Vec::new(),
             background_tasks: None,
             session_manager: None,
+            context_manager: None,
             #[cfg(feature = "mcp")]
             mcp_clients: Vec::new(),
         }
@@ -244,7 +287,7 @@ impl Agent {
     /// manager, retry strategies, user plugins, background tasks, delegation (unless a user
     /// plugin has its name), memory, context manager, session manager, then the model plugin.
     /// The router, managers and background tasks join with their subsystems.
-    fn registration_order(&self) -> Vec<Arc<dyn Plugin>> {
+    pub(crate) fn registration_order(&self) -> Vec<Arc<dyn Plugin>> {
         let retry = self.retry_strategies.iter().map(|strategy| -> Arc<dyn Plugin> {
             Arc::new(RetryStrategyInstaller {
                 strategy: Arc::clone(strategy),
@@ -261,6 +304,10 @@ impl Agent {
             .background_tasks
             .clone()
             .map(|scheduler| Arc::new(scheduler) as Arc<dyn Plugin>);
+        let context_manager = self
+            .context_manager
+            .clone()
+            .map(|manager| manager as Arc<dyn Plugin>);
         let session = self
             .session_manager
             .clone()
@@ -273,6 +320,7 @@ impl Agent {
             .chain(self.plugins.iter().cloned())
             .chain(background)
             .chain(delegation)
+            .chain(context_manager)
             .chain(session)
             .chain([model])
             .collect()
@@ -415,6 +463,11 @@ impl Agent {
     /// The default storage for agent subsystems (TS `storage`), when configured.
     pub fn storage(&self) -> Option<&Arc<dyn Storage>> {
         self.local.storage()
+    }
+
+    /// The context manager (TS `contextManager`), when one is configured.
+    pub fn context_manager(&self) -> Option<&Arc<ContextManager>> {
+        self.context_manager.as_ref()
     }
 
     /// The session manager (TS `sessionManager`), when configured.

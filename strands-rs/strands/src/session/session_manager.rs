@@ -9,11 +9,13 @@ use super::snapshot_storage_adapter::{SnapshotLocation, SnapshotStorageAdapter};
 use super::validation::validate_identifier;
 use crate::agent::{Agent, TakeSnapshotOptions};
 use crate::error::{Error, Result};
+use crate::experimental::Stash;
 use crate::hooks::{AfterInvocationEvent, AfterModelCallEvent, MessageAddedEvent};
 use crate::plugins::Plugin;
 use crate::storage::{Storage, namespace};
 use crate::types::agent::LocalAgent;
-use crate::types::snapshot::Scope;
+use crate::types::json::JsonValue;
+use crate::types::snapshot::{Scope, Snapshot};
 
 const DEFAULT_SESSION_ID: &str = "default-session";
 const NO_STORAGE_MESSAGE: &str = "SessionManager requires a storage backend. Provide storage in SessionManagerConfig or set storage on the Agent.";
@@ -153,6 +155,7 @@ struct Inner {
     adapter: Mutex<Option<SnapshotStorageAdapter>>,
     save_latest_on: SaveLatestStrategy,
     snapshot_trigger: Option<SnapshotTriggerCallback>,
+    agent_stash: Mutex<Option<Stash>>,
 }
 
 impl fmt::Debug for SessionManager {
@@ -194,6 +197,7 @@ impl SessionManager {
                 adapter: Mutex::new(adapter),
                 save_latest_on: config.save_latest_on,
                 snapshot_trigger: config.snapshot_trigger,
+                agent_stash: Mutex::new(None),
             }),
         })
     }
@@ -252,8 +256,40 @@ impl SessionManager {
     ///
     /// No storage is configured, or a delete failed.
     pub async fn delete_session(&self) -> Result<()> {
-        self.inner.adapter()?.delete_session(&self.inner.session_id).await
+        self.inner
+            .adapter()?
+            .delete_session(&self.inner.session_id)
+            .await?;
+        let stash = self
+            .inner
+            .agent_stash
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        match stash {
+            Some(stash) => stash.clear_session().await,
+            None => Ok(()),
+        }
     }
+}
+
+/// Records the context manager's stash in `snapshot` (TS `_includeStashData`): a durable stash
+/// by its storage type, an ephemeral one inline.
+async fn include_stash_data(agent: &LocalAgent, snapshot: &mut Snapshot) -> Result<()> {
+    let Some(stash) = agent.context_stash() else {
+        return Ok(());
+    };
+    if stash.is_durable() {
+        let data = serde_json::json!({"location": "external", "storageType": stash.storage_type_name()});
+        snapshot.data_mut().insert("stash".to_owned(), data);
+        return Ok(());
+    }
+    let entries = stash.take_snapshot().await?;
+    if !entries.is_empty() {
+        let data = serde_json::json!({"location": "inline", "entries": entries});
+        snapshot.data_mut().insert("stash".to_owned(), data);
+    }
+    Ok(())
 }
 
 impl Inner {
@@ -274,7 +310,8 @@ impl Inner {
     }
 
     async fn save_snapshot(&self, agent: &LocalAgent, is_latest: bool) -> Result<()> {
-        let snapshot = agent.take_snapshot(&TakeSnapshotOptions::session())?;
+        let mut snapshot = agent.take_snapshot(&TakeSnapshotOptions::session())?;
+        include_stash_data(agent, &mut snapshot).await?;
         let snapshot_id = if is_latest {
             "latest".to_owned()
         } else {
@@ -286,7 +323,8 @@ impl Inner {
     }
 
     async fn save_immutable_and_latest(&self, agent: &LocalAgent) -> Result<()> {
-        let snapshot = agent.take_snapshot(&TakeSnapshotOptions::session())?;
+        let mut snapshot = agent.take_snapshot(&TakeSnapshotOptions::session())?;
+        include_stash_data(agent, &mut snapshot).await?;
         let snapshot_id = uuid::Uuid::now_v7().to_string();
         let adapter = self.adapter()?;
         let location = self.location(agent);
@@ -303,7 +341,36 @@ impl Inner {
             return Ok(false);
         };
         agent.load_snapshot(&snapshot)?;
+        self.restore_stash_data(agent, &snapshot).await?;
         Ok(true)
+    }
+
+    /// TS `_restoreStashData`.
+    async fn restore_stash_data(&self, agent: &LocalAgent, snapshot: &Snapshot) -> Result<()> {
+        let (Some(data), Some(stash)) = (snapshot.data().get("stash"), agent.context_stash()) else {
+            return Ok(());
+        };
+        match data.get("location").and_then(JsonValue::as_str) {
+            Some("external") => {
+                let saved = data
+                    .get("storageType")
+                    .and_then(JsonValue::as_str)
+                    .unwrap_or_default();
+                let current = stash.storage_type_name();
+                if !saved.is_empty() && !current.is_empty() && saved != current {
+                    tracing::warn!(
+                        "session_id=<{}>, snapshot_storage=<{saved}>, current_storage=<{current}> | stash storage type changed since snapshot was created, stash data may be inaccessible",
+                        self.session_id
+                    );
+                }
+                Ok(())
+            }
+            Some("inline") => match data.get("entries").and_then(JsonValue::as_object) {
+                Some(entries) => stash.load_snapshot(entries).await,
+                None => Ok(()),
+            },
+            _ => Ok(()),
+        }
     }
 
     /// TS `_onAgentInitialized`.
@@ -371,6 +438,7 @@ impl Plugin for SessionManager {
                 .ok_or_else(|| Error::other(NO_STORAGE_MESSAGE))?;
             *inner.adapter.lock().unwrap_or_else(PoisonError::into_inner) = Some(resolve_adapter(storage)?);
         }
+        *inner.agent_stash.lock().unwrap_or_else(PoisonError::into_inner) = agent.context_stash().cloned();
         inner.restore_on_initialize(agent).await?;
         let hooks = agent.hooks();
         if inner.save_latest_on == SaveLatestStrategy::Message {
