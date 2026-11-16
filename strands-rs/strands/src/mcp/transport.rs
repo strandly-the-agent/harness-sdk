@@ -80,7 +80,7 @@ pub(crate) fn process_env() -> EnvLookup {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct StdioServerParameters {
     /// The executable to run.
     pub command: String,

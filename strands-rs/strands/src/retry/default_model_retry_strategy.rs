@@ -28,6 +28,7 @@ pub type RetryablePredicate = Arc<dyn Fn(&Error) -> bool + Send + Sync>;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct DefaultModelRetryStrategyOptions {
     /// Total model attempts per call, the first included. Default 6.
     #[builder(default = DEFAULT_MAX_ATTEMPTS)]

@@ -69,7 +69,7 @@ pub enum WebFetchMode {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakeWebFetchOptions {
     /// The tool name (default `web_fetch`).
     pub name: Option<String>,

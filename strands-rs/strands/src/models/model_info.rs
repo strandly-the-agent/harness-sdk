@@ -23,6 +23,7 @@ open_enum! {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCapabilities {
     /// The provider keeps the conversation server-side.
@@ -51,6 +52,7 @@ pub struct ModelCapabilities {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 #[serde(rename_all = "camelCase")]
 pub struct ModelLimits {
     /// The context window in tokens.
@@ -77,6 +79,7 @@ pub struct ModelLimits {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
     /// What the model can do.

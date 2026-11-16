@@ -11,4 +11,6 @@ pub use events::{
     ModelStopData, ModelStreamUpdateEvent, Redaction, ToolResultEvent, ToolStreamUpdateEvent,
 };
 pub use registry::{EventKind, Hook, HookEvent, HookRegistry, IntoSyncHook};
-pub use types::{HookCallbackOptions, HookCleanup, HookOrder};
+pub use types::{
+    HookCallbackOptions, HookCallbackOptionsBuilder, HookCleanup, HookOrder, hook_callback_options_builder,
+};

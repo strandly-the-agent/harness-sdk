@@ -47,7 +47,7 @@ use self::client::{
 use self::errors::{OpenAIErrorKind, classify_openai_error};
 use self::formatting::warn_managed_params;
 #[cfg(feature = "bedrock")]
-pub use self::mantle::BedrockMantleConfig;
+pub use self::mantle::{BedrockMantleConfig, BedrockMantleConfigBuilder, bedrock_mantle_config_builder};
 use self::responses::{ResponsesStream, format_responses_request};
 use crate::cancel::CancelSignal;
 use crate::error::{
@@ -104,7 +104,7 @@ impl OpenAIApi {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct OpenAIModelConfig {
     /// The model id; defaults to `gpt-5.4`, which may change between versions.
     pub model_id: Option<String>,
@@ -245,7 +245,7 @@ impl From<String> for OpenAIApiKey {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct OpenAIClientConfig {
     /// The API base URL; defaults to `OPENAI_BASE_URL`, else `https://api.openai.com/v1`.
     pub base_url: Option<String>,
@@ -290,6 +290,7 @@ impl fmt::Debug for OpenAIClientConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct OpenAIModelOptions {
     /// The API; defaults to the Responses API.
     #[builder(default)]

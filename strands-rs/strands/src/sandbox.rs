@@ -26,7 +26,7 @@ mod types;
 
 use std::sync::Arc;
 
-pub use base::{ExecuteOptions, Sandbox};
+pub use base::{ExecuteOptions, ExecuteOptionsBuilder, Sandbox, execute_options_builder};
 pub use constants::LANGUAGE_PATTERN;
 pub(crate) use constants::is_valid_language;
 pub use not_a_sandbox_local_environment::NotASandboxLocalEnvironment;

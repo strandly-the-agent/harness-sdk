@@ -20,7 +20,7 @@ pub(crate) const DEFAULT_HANDOFF_TO_USER_DESCRIPTION: &str = "Ask the user a que
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakeHandoffToUserOptions {
     /// The tool name (default `handoff_to_user`).
     pub name: Option<String>,

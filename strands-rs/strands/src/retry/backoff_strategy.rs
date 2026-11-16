@@ -83,6 +83,7 @@ const DEFAULT_MAX: Duration = Duration::from_secs(30);
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct ConstantBackoffOptions {
     /// The delay for every retry (TS `delayMs`). Default 1 s.
     #[builder(default = DEFAULT_DELAY)]
@@ -137,6 +138,7 @@ impl BackoffStrategy for ConstantBackoff {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct LinearBackoffOptions {
     /// The delay grows as `base * attempt` (TS `baseMs`). Default 1 s.
     #[builder(default = DEFAULT_DELAY)]
@@ -210,6 +212,7 @@ impl BackoffStrategy for LinearBackoff {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, PartialEq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct ExponentialBackoffOptions {
     /// The delay grows as `base * multiplier^(attempt - 1)` (TS `baseMs`). Default 1 s.
     #[builder(default = DEFAULT_DELAY)]

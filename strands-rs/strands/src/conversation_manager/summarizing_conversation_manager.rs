@@ -23,6 +23,7 @@ use crate::types::agent::LocalAgent;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct SummarizingConversationManagerConfig {
     /// The model that writes summaries; the agent's `aux_model` (by default its model) otherwise.
     pub model: Option<Arc<dyn Model>>,

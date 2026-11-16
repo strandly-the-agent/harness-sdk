@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct CancelOptions {
     /// Final assistant message for the cancelled invocation. Last write wins; `None` keeps a
     /// previously stored message.

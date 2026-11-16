@@ -38,7 +38,7 @@ pub(crate) const DELEGATION_DESCRIPTION_SUFFIX: &str = " Calling this tool will 
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct AgentAsToolOptions {
     /// The tool name the parent's model sees; defaults to the agent's name. It must match
     /// `[a-zA-Z0-9_-]{1,64}`, which registration checks.

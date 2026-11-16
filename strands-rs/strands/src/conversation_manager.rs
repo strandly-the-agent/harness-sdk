@@ -25,9 +25,11 @@ pub(crate) mod token_usage_middleware;
 pub use null_conversation_manager::NullConversationManager;
 pub use sliding_window_conversation_manager::{
     SlidingWindowConversationManager, SlidingWindowConversationManagerConfig,
+    SlidingWindowConversationManagerConfigBuilder, sliding_window_conversation_manager_config_builder,
 };
 pub use summarizing_conversation_manager::{
     SummarizingConversationManager, SummarizingConversationManagerConfig,
+    SummarizingConversationManagerConfigBuilder, summarizing_conversation_manager_config_builder,
 };
 
 #[cfg(test)]

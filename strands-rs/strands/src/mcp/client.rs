@@ -110,7 +110,7 @@ pub type McpAuthProvider = rmcp::transport::AuthClient<reqwest::Client>;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 #[serde(rename_all = "camelCase")]
 pub struct McpClientCredentials {
     /// The client id.
@@ -138,7 +138,7 @@ impl fmt::Debug for McpClientCredentials {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct McpClientOptions {
     /// The client name sent in the handshake; defaults to `strands-agents-rs-sdk`.
     pub application_name: Option<String>,
@@ -192,7 +192,7 @@ impl fmt::Debug for McpClientOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct McpClientConfig {
     /// A transport recipe. Mutually exclusive with `url`.
     pub transport: Option<McpTransport>,
@@ -234,6 +234,7 @@ impl fmt::Debug for McpClientConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct McpCallToolOptions {
     /// Cancels the in-flight request.
     pub cancel_signal: Option<CancelSignal>,
@@ -260,6 +261,7 @@ impl fmt::Debug for McpCallToolOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct McpConnectOptions {
     /// Stops waiting for the connection when cancelled.
     pub cancel_signal: Option<CancelSignal>,
@@ -272,7 +274,7 @@ pub struct McpConnectOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct McpListToolsOptions {
     /// The prefix for this listing.
     pub prefix: Option<String>,
@@ -286,7 +288,7 @@ pub struct McpListToolsOptions {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct McpListOptions {
     /// Fetch the single page after this cursor; without it, every page is aggregated.
     pub pagination_token: Option<String>,

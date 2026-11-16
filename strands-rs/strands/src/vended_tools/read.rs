@@ -45,7 +45,7 @@ const PDF: &[u8] = b"%PDF-";
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakeReadOptions {
     /// Return images and binary documents as media (default `true`); with `false` they are
     /// described in text, for models that reject media blocks.

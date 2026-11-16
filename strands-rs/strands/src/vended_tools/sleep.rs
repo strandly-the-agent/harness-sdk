@@ -35,7 +35,7 @@ pub(crate) fn sleep_description(max_duration: Duration) -> String {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakeSleepOptions {
     /// The longest sleep the model may request (default [`DEFAULT_MAX_DURATION`]).
     pub max_duration: Option<Duration>,

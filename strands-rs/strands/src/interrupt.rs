@@ -9,7 +9,7 @@ use crate::types::json::{JsonValue, present_null};
 
 /// Parameters for raising an interrupt (TS `InterruptParams`).
 #[derive(Debug, Clone, PartialEq, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"

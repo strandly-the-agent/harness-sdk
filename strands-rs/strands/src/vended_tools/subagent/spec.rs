@@ -196,7 +196,7 @@ impl Default for ContextAxis {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct Preset {
     /// The child's system prompt.
     pub instructions: Option<String>,

@@ -15,10 +15,18 @@ mod stream;
 mod tool_caller;
 
 pub use agent::Agent;
-pub use agent_as_tool::{AgentAsTool, AgentAsToolOptions};
+pub use agent_as_tool::{
+    AgentAsTool, AgentAsToolOptions, AgentAsToolOptionsBuilder, agent_as_tool_options_builder,
+};
 pub use config::{AgentBuilder, AgentConfig, MemoryManagerSource, ModelSource, agent_builder};
 pub use invocation_context::{InvocationContext, InvocationContextUsage};
 pub(crate) use run::CancelledError;
-pub use snapshot::{SnapshotField, SnapshotPreset, TakeSnapshotOptions};
+pub use snapshot::{
+    SnapshotField, SnapshotPreset, TakeSnapshotOptions, TakeSnapshotOptionsBuilder,
+    take_snapshot_options_builder,
+};
 pub use stream::AgentStream;
-pub use tool_caller::{DirectToolCallOptions, ToolCallStream, ToolHandle};
+pub use tool_caller::{
+    DirectToolCallOptions, DirectToolCallOptionsBuilder, ToolCallStream, ToolHandle,
+    direct_tool_call_options_builder,
+};

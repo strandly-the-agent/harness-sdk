@@ -28,7 +28,10 @@ fn tool_metrics(calls: u64, successes: u64, errors: u64, total_time: Duration) -
 }
 
 fn tools(metrics: &AgentMetrics) -> Vec<(&str, ToolMetricsData)> {
-    metrics.tool_metrics().map(|(name, data)| (name, data.clone())).collect()
+    metrics
+        .tool_metrics()
+        .map(|(name, data)| (name, data.clone()))
+        .collect()
 }
 
 fn cycle(cycle_id: &str, duration_ms: u64, usage: Usage) -> AgentLoopMetricsData {

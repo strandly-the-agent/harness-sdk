@@ -75,7 +75,7 @@ impl McpRouterToolError {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakeMcpRouterOptions {
     /// The tool name (default `mcp_router`).
     pub name: Option<String>,

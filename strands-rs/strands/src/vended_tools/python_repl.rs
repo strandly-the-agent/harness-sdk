@@ -27,7 +27,7 @@ const TIMEOUT_EXIT_CODE: i32 = 124;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakePythonReplOptions {
     /// The tool name (default `python_repl`).
     pub name: Option<String>,

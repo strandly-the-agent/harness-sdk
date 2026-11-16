@@ -45,16 +45,29 @@ pub use reqwest;
 pub use rmcp;
 
 pub use client::{
-    DEFAULT_CLIENT_NAME, McpAuthProvider, McpCallToolOptions, McpClient, McpClientConfig,
-    McpClientCredentials, McpClientOptions, McpConnectOptions, McpConnectionState, McpListOptions,
-    McpListToolsOptions, McpLogHandler, McpProgress, McpProgressCallback, McpToolsChangedCallback,
+    DEFAULT_CLIENT_NAME, McpAuthProvider, McpCallToolOptions, McpCallToolOptionsBuilder, McpClient,
+    McpClientConfig, McpClientConfigBuilder, McpClientCredentials, McpClientCredentialsBuilder,
+    McpClientOptions, McpClientOptionsBuilder, McpConnectOptions, McpConnectOptionsBuilder,
+    McpConnectionState, McpListOptions, McpListOptionsBuilder, McpListToolsOptions,
+    McpListToolsOptionsBuilder, McpLogHandler, McpProgress, McpProgressCallback, McpToolsChangedCallback,
+    mcp_call_tool_options_builder, mcp_client_config_builder, mcp_client_credentials_builder,
+    mcp_client_options_builder, mcp_connect_options_builder, mcp_list_options_builder,
+    mcp_list_tools_options_builder,
 };
-pub use config::{McpLoadServersOptions, McpServerConfig, McpServers, SerializableMcpToolFilters};
+pub use config::{
+    McpLoadServersOptions, McpLoadServersOptionsBuilder, McpServerConfig, McpServerConfigBuilder, McpServers,
+    SerializableMcpToolFilters, SerializableMcpToolFiltersBuilder, mcp_load_servers_options_builder,
+    mcp_server_config_builder, serializable_mcp_tool_filters_builder,
+};
 pub use elicitation::{ElicitationCallback, ElicitationContext};
 pub use error::{McpError, McpErrorKind};
-pub use filters::{McpToolFilterCallback, McpToolFilters, McpToolMatcher};
+pub use filters::{
+    McpToolFilterCallback, McpToolFilters, McpToolFiltersBuilder, McpToolMatcher, mcp_tool_filters_builder,
+};
 pub use mcp_tool::McpTool;
-pub use transport::{McpTransport, StdioServerParameters};
+pub use transport::{
+    McpTransport, StdioServerParameters, StdioServerParametersBuilder, stdio_server_parameters_builder,
+};
 
 #[cfg(test)]
 pub(crate) mod tests;

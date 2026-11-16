@@ -34,7 +34,7 @@ pub type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct BaseModelConfig {
     /// The provider's model id.
     pub model_id: Option<String>,
@@ -96,6 +96,7 @@ pub(crate) fn replace_if_set<T>(slot: &mut Option<T>, value: Option<T>) {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct ModelRequest {
     /// The conversation to send.
     #[builder(default)]
@@ -129,6 +130,7 @@ pub struct ModelRequest {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct CountTokensOptions {
     /// The system prompt to count.
     #[builder(into)]
@@ -184,6 +186,7 @@ pub enum CacheKey {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
+#[builder(state_mod(vis = "pub"))]
 pub struct CacheConfig {
     /// How cache points are placed.
     pub strategy: Option<CacheStrategy>,

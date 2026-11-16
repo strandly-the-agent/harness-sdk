@@ -21,7 +21,7 @@ const DEFAULT_NAME: &str = "default";
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakeNotebookOptions {
     /// The tool name (default `notebook`).
     pub name: Option<String>,

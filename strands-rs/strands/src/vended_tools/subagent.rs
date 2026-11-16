@@ -10,7 +10,7 @@ mod spec;
 
 pub use spec::{
     AgentBuilder, AgentSpec, Choice, ChoiceOption, ContextAxis, InstructionsAxis, ModelAxis, Preset,
-    ToolsAxis,
+    PresetBuilder, ToolsAxis, preset_builder,
 };
 
 use std::fmt;
@@ -97,7 +97,7 @@ pub fn generalist() -> Preset {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakeSubagentOptions {
     /// Turns a resolved spec into a child agent; called again with the same spec when an
     /// interrupted child resumes. Defaults to a builder inheriting the calling agent's model,

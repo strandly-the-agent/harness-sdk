@@ -93,7 +93,7 @@ const CUSTOM_HEADERS_ENV: &str = "ANTHROPIC_CUSTOM_HEADERS";
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct AnthropicModelConfig {
     /// The model id; defaults to `claude-sonnet-4-6`, which may change between versions.
     pub model_id: Option<String>,
@@ -207,7 +207,7 @@ impl AnthropicModelConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, PartialEq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct AnthropicClientConfig {
     /// The API base URL; defaults to `ANTHROPIC_BASE_URL`, else `https://api.anthropic.com`.
     pub base_url: Option<String>,
@@ -244,7 +244,7 @@ impl fmt::Debug for AnthropicClientConfig {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct AnthropicModelOptions {
     /// The API key; defaults to `ANTHROPIC_API_KEY`.
     pub api_key: Option<String>,
