@@ -48,21 +48,21 @@
   },
   "harness-ts/test/config.test.ts": {
     "loads the project ESM export for %s instead of a package from the harness": {
-      "gap": "TS-only: Node module resolution and loading; module references return the unsupported error in Rust (#31)"
+      "gap": "TS-only: resolves a package through the project `node_modules` and its `exports` map and imports it; Rust loads no modules, a module reference is the unsupported error (#31), asserted for every reference position by `loads_executable_values_through_declared_module_references`"
     },
     "rejects a package missing from the project even when the harness has it installed": {
-      "gap": "TS-only: Node module resolution and loading; module references return the unsupported error in Rust (#31)"
+      "gap": "TS-only: Node package resolution scoped to the project root; Rust rejects the same `agentConfigModules` reference before any lookup, with the unsupported-module-reference error (#31)"
     },
     "loads TypeScript helper imports and shares the host SDK across project dependencies": {
-      "gap": "TS-only: Node module resolution and loading; module references return the unsupported error in Rust (#31)"
+      "gap": "TS-only: imports a TypeScript module with relative helper imports and checks it shares the host `@strands-agents/sdk` classes; Rust loads no modules (#31)"
     }
   },
   "harness-ts/test/interventions.test.ts": {
     "reports a clear error when the optional Cedar dependency is unavailable": {
-      "gap": "TS-only: Cedar is compiled into the Rust SDK, not an optional dependency (P-919)"
+      "gap": "TS-only: `cedar-policy` is an unconditional dependency of the `strands` crate (no feature gates it), so there is no install without it on which the loader could fail (P-919)"
     },
     "throws on an invalid value": {
-      "gap": "TS-only: the typed option cannot hold a value that is neither text nor a handler (P-919)"
+      "gap": "TS-only: `InterventionsOption` holds only text or a handler, so a value that is neither cannot be passed; a portable config with one (`\"interventions\": 1`) fails in `normalize_harness_agent_config` (P-919)"
     }
   },
   "harness-ts/test/memory.test.ts": {
