@@ -450,6 +450,20 @@ impl Serialize for HarnessConfigContextManager {
     }
 }
 
+impl<'de> Deserialize<'de> for HarnessConfigContextManager {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        match JsonValue::deserialize(deserializer)? {
+            JsonValue::String(text) if text == "auto" => Ok(Self::Auto),
+            JsonValue::String(text) if text == "agentic" => Ok(Self::Agentic),
+            JsonValue::String(text) if text == "off" => Ok(Self::Off),
+            JsonValue::Bool(false) => Ok(Self::Off),
+            _ => Err(serde::de::Error::custom(
+                "must be one of: auto, agentic, off, false.",
+            )),
+        }
+    }
+}
+
 /// JSON form of [`MemoryConfig`](crate::MemoryConfig): stores are declared separately as
 /// `memoryStores` module references.
 #[expect(

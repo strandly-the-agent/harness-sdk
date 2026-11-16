@@ -1038,6 +1038,19 @@ fn deserializes_the_nested_types_like_the_normalization() {
         Setting::Off
     );
 
+    for (value, expected) in [
+        (json!("auto"), HarnessConfigContextManager::Auto),
+        (json!("agentic"), HarnessConfigContextManager::Agentic),
+        (json!("off"), HarnessConfigContextManager::Off),
+        (json!(false), HarnessConfigContextManager::Off),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<HarnessConfigContextManager>(value).unwrap(),
+            expected
+        );
+    }
+    assert!(serde_json::from_value::<HarnessConfigContextManager>(json!(true)).is_err());
+
     let config = HarnessAgentConfig::builder()
         .name("Reviewer")
         .session(false)
