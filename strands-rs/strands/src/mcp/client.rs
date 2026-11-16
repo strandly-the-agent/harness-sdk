@@ -619,7 +619,10 @@ impl McpClient {
             // An attempt a concurrent `connect` started after the bump belongs to the new generation.
             let current = self.inner.generation();
             let mut connecting = self.inner.connecting();
-            if connecting.as_ref().is_some_and(|attempt| attempt.generation < current) {
+            if connecting
+                .as_ref()
+                .is_some_and(|attempt| attempt.generation < current)
+            {
                 *connecting = None;
             }
         }
@@ -1243,7 +1246,11 @@ impl Inner {
 
     /// Starts a shared connection attempt. It runs on its own task, so it completes even when
     /// every waiter stops waiting, and clears itself from `connecting` when it settles.
-    fn start_connect(inner: &Arc<Self>, connecting: &mut Option<ConnectAttempt>, reconnect: bool) -> SharedConnect {
+    fn start_connect(
+        inner: &Arc<Self>,
+        connecting: &mut Option<ConnectAttempt>,
+        reconnect: bool,
+    ) -> SharedConnect {
         let id = inner.connect_ids.fetch_add(1, Ordering::SeqCst);
         let generation = inner.generation();
         let task_inner = Arc::clone(inner);

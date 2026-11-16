@@ -1334,7 +1334,8 @@ mod tests {
     #[test]
     fn an_error_without_a_modeled_message_reads_as_its_source_chain() {
         let reply = HttpResponse::new(500.try_into().unwrap(), SdkBody::from("<html>secret</html>"));
-        let unhandled = SdkError::service_error(ConverseStreamError::unhandled("unexpected token '<'"), reply);
+        let unhandled =
+            SdkError::service_error(ConverseStreamError::unhandled("unexpected token '<'"), reply);
         let classified = classify(unhandled);
         assert_eq!(
             classified.message,

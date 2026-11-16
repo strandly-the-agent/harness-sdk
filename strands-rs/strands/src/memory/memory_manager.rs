@@ -469,7 +469,8 @@ impl MemoryManager {
             .stores
             .clone()
             .unwrap_or_else(|| store_names(&self.inner.stores));
-        let mut span = OpenSpan::new(tracer.start_search(query, &span_store_names, options.max_search_results));
+        let mut span =
+            OpenSpan::new(tracer.start_search(query, &span_store_names, options.max_search_results));
         let resolved: Result<Vec<&Arc<dyn MemoryStore>>> = match &options.stores {
             Some(names) => unique(names)
                 .into_iter()
