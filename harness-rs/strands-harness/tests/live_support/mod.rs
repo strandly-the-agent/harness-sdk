@@ -122,9 +122,13 @@ pub(crate) fn tool_result_contains(trace: &[Value], name: &str, needle: &str) ->
         .any(|result| result["content"].to_string().contains(needle))
 }
 
-/// Approves every interrupt until the agent stops for another reason; returns the final result
-/// and the interrupts answered on the way.
-pub(crate) async fn approve_until_done(agent: &mut Agent, mut result: AgentResult) -> (AgentResult, usize) {
+/// Answers every interrupt with `answer` until the agent stops for another reason; returns the
+/// final result and the number of interrupts answered on the way.
+pub(crate) async fn answer_until_done(
+    agent: &mut Agent,
+    mut result: AgentResult,
+    answer: Value,
+) -> (AgentResult, usize) {
     let mut answered = 0;
     for _ in 0..10 {
         if result.stop_reason() != StopReason::Interrupt {
@@ -133,7 +137,7 @@ pub(crate) async fn approve_until_done(agent: &mut Agent, mut result: AgentResul
         let responses: Vec<InterruptResponse> = result
             .interrupts()
             .iter()
-            .map(|interrupt| InterruptResponse::new(interrupt.id(), Value::from("yes")))
+            .map(|interrupt| InterruptResponse::new(interrupt.id(), answer.clone()))
             .collect();
         answered += responses.len();
         result = agent.invoke(responses).await.expect("the resume succeeds");
