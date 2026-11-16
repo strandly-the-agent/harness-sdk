@@ -172,6 +172,16 @@
       "gap": "the row: interrupt telemetry lands with Phase 4 interrupts"
     }
   },
+  "strands-ts/src/agent/__tests__/agent.context-manager.test.ts": {
+    "Agent contextManager > when undefined (default) > does not set contextManager": "uses_sliding_window_conversation_manager",
+    "Agent contextManager > when \"auto\" > uses NullConversationManager": "uses_null_conversation_manager_with_auto",
+    "Agent contextManager > when \"auto\" > creates a ContextManager instance": "uses_null_conversation_manager_with_auto",
+    "Agent contextManager > when \"auto\" > registers ContextManager as a plugin": "uses_null_conversation_manager_with_auto",
+    "Agent contextManager > when \"agentic\" > uses NullConversationManager": "ignores_user_provided_conversation_manager",
+    "Agent contextManager > when false > does not set contextManager": "uses_null_conversation_manager_when_no_conversation_manager_provided",
+    "Agent contextManager > when ContextManagerConfig object > uses NullConversationManager": "uses_null_conversation_manager_with_a_config_object",
+    "Agent contextManager > when ContextManagerConfig object > registers ContextManager as a plugin": "uses_null_conversation_manager_with_a_config_object"
+  },
   "strands-ts/src/agent/__tests__/agent.hook.test.ts": {
     "fires hooks during invoke": "fire_in_ts_order_during_invoke_and_initialized_fires_once",
     "fires hooks during stream": "fire_in_ts_order_during_invoke_and_initialized_fires_once",
@@ -234,6 +244,14 @@
     },
     "keeps a plugin initialization failure fail-closed across retries": "keeps_a_plugin_initialization_failure_fail_closed_across_retries"
   },
+  "strands-ts/src/agent/__tests__/agent.interrupt.test.ts": {
+    "throws error when interrupt() called on event with non-Agent implementation": {
+      "gap": "TS-only: hook events are typed and always carry the agent's interrupt state, so `interrupt()` on a non-`Agent` implementation can't be written"
+    },
+    "throws TypeError when interrupt responses are mixed with other content blocks": {
+      "gap": "TS-only: `InvokeArgs::InterruptResponses` is typed, so mixing interrupt responses with other content blocks doesn't compile"
+    }
+  },
   "strands-ts/src/agent/__tests__/agent.invocation-context.test.ts": {
     "rejects invalid limits before any invocation hook runs": {
       "gap": "compile error in Rust: limits are `NonZero*`"
@@ -272,9 +290,6 @@
       "gap": "compile-time: the `AsyncGenerator` type cases"
     },
     "handles tool execution flow": "the_agent_loop_reproduces_the_ts_tool_run",
-    "fires AfterInvocationEvent when consumer breaks from stream and allows reinvocation": {
-      "gap": "the row: the consumer-break case lands with Phase 4"
-    },
     "returns Promise<AgentResult>": "returns_correct_stop_reason_and_last_message",
     "stores cycleId in trace metadata": "stores_the_cycle_id_and_tool_metadata_in_the_traces",
     "stores tool metadata in trace children": "stores_the_cycle_id_and_tool_metadata_in_the_traces",
@@ -316,9 +331,6 @@
     "allows systemPrompt to be set after initialization": "allows_system_prompt_to_be_changed_between_turns",
     "returns default BedrockModel when no model provided": "a_model_id_string_builds_a_bedrock_model_and_no_model_means_the_default_one",
     "updates the model instance": "allows_model_change_to_persist_across_invocations",
-    "successfully switches between different model providers": {
-      "gap": "the row: string and `BedrockModel` model ids land with Phase 5"
-    },
     "preserves a caller-supplied id on input messages": "messages_are_appended_in_order_and_keep_their_tracking_ids",
     "creates single user message with single TextBlock": "content_blocks_become_one_user_message",
     "creates single user message with multiple blocks": "content_blocks_become_one_user_message",
@@ -334,31 +346,10 @@
     },
     "defaults to model": "defaults_match_ts",
     "uses the configured auxModel": "stores_the_configured_keys",
-    "creates BedrockModel from a string model id": {
-      "gap": "the row: string and `BedrockModel` model ids land with Phase 5"
-    },
-    "rejects a ModelRouter": {
-      "gap": "the row: `ModelRouter` lands with Phase 7"
-    },
-    "is reassignable at runtime": {
-      "gap": "applies (`Agent::set_aux_model`) but is not ported yet: this pass only renames tests in `agent/`"
-    },
     "creates BedrockModel with specified modelId": "a_model_id_string_builds_a_bedrock_model_and_no_model_means_the_default_one",
     "creates BedrockModel with custom model ID": "a_model_id_string_builds_a_bedrock_model_and_no_model_means_the_default_one",
-    "uses provided BedrockModel instance": {
-      "gap": "the row: string and `BedrockModel` model ids land with Phase 5"
-    },
     "creates default BedrockModel": "a_model_id_string_builds_a_bedrock_model_and_no_model_means_the_default_one",
-    "string model behaves identically to explicit BedrockModel with same modelId": {
-      "gap": "the row: string and `BedrockModel` model ids land with Phase 5"
-    },
     "retries failed attempts until the limit: $name": "retries_failed_attempts_until_the_limit_with_no_output_tool_calls",
-    "preserves the attempt budget across a hook resume": {
-      "gap": "the row: structured output across an interrupt resume lands with Phase 4"
-    },
-    "counts a forced response that calls another tool before an interrupt": {
-      "gap": "the row: structured output across an interrupt resume lands with Phase 4"
-    },
     "counts a failed attempt on a turn that pauses at a checkpoint": {
       "gap": "out of scope: checkpointing is out of v0.1"
     },
@@ -389,19 +380,20 @@
       "gap": "Rust has no async disposal: an agent dropped by an early return cannot flush; it logs the drop warning instead (`dropping_an_agent_with_unsaved_memory_warns`, P-391)"
     },
     "consumes stream events internally": "returns_correct_stop_reason_and_last_message",
-    "collects local traces for completed cycles when error occurs mid-run": {
-      "gap": "applies but is not ported yet: this pass only renames tests in `agent/`"
-    },
     "both methods produce same result with tool use": "invoke_and_stream_produce_same_final_result",
     "returns array of messages": "defaults_match_ts",
     "reflects conversation history after invoke": "creates_user_message_with_single_text_block",
-    "accepts array of class instances": {
-      "gap": "applies but is not ported yet: this pass only renames tests in `agent/`"
+    "assigns a durable tracking id to every recorded message": "messages_are_appended_in_order_and_keep_their_tracking_ids",
+    "fires AfterInvocationEvent when consumer breaks from stream and allows reinvocation": "dropping_mid_tool_aborts_the_tool_and_keeps_history_re_invokable",
+    "successfully switches between different model providers": "allows_model_change_to_persist_across_invocations",
+    "rejects a ModelRouter": "aux_model_rejects_a_model_router",
+    "flushes the memory manager when shutdown is called directly": "agent_shutdown_flushes_memory",
+    "flushes the memory manager when an `await using` scope exits": {
+      "gap": "TS-only: `await using` disposal; Rust has no async drop, so `Agent::shutdown` is called explicitly (`agent_shutdown_flushes_memory`)"
     },
-    "returns the configured model instance": {
-      "gap": "applies but is not ported yet: this pass only renames tests in `agent/`"
-    },
-    "assigns a durable tracking id to every recorded message": "messages_are_appended_in_order_and_keep_their_tracking_ids"
+    "flushes even when the scope exits via a thrown error": {
+      "gap": "TS-only: `await using` disposal; Rust has no async drop, so `Agent::shutdown` is called explicitly (`agent_shutdown_flushes_memory`)"
+    }
   },
   "strands-ts/src/agent/__tests__/tool-caller.test.ts": {
     "throws ConcurrentInvocationError when agent is invoking and recording is enabled": {

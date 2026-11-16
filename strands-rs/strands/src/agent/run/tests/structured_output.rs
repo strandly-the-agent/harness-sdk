@@ -365,6 +365,86 @@ mod attempt_limit {
     }
 
     #[tokio::test]
+    async fn preserves_the_attempt_budget_across_a_hook_resume() {
+        use crate::hooks::InterruptEvent;
+        use crate::interrupt::{InterruptParams, InterruptResponse};
+
+        let model = Arc::new(MockMessageModel::new());
+        for attempt in 0..6 {
+            model.add_turn(vec![output_call(json!({}), &format!("output-{attempt}"))]);
+        }
+        let mut agent = schema_agent::<Plan>(&model);
+        let resume_input = Arc::new(Mutex::new(None::<Vec<InterruptResponse>>));
+
+        let calls = Arc::clone(&model);
+        agent.add_hook(move |event: &mut BeforeToolsEvent<'_>| {
+            if calls.call_count() == 3 {
+                event.interrupt(InterruptParams::new("approve"));
+            }
+        });
+        let pending = Arc::clone(&resume_input);
+        agent.add_hook(move |event: &mut InterruptEvent<'_>| {
+            *pending.lock().unwrap() = Some(vec![InterruptResponse::new(
+                event.interrupt().id(),
+                json!("approved"),
+            )]);
+        });
+        let pending = Arc::clone(&resume_input);
+        agent.add_hook(move |event: &mut AfterInvocationEvent<'_>| {
+            if let Some(responses) = pending.lock().unwrap().take() {
+                event.set_resume(responses);
+            }
+        });
+
+        let result = agent.invoke_with("Plan a review", attempts(3)).await.unwrap();
+
+        assert_eq!(result.stop_reason(), StopReason::LimitStructuredOutputAttempts);
+        assert_eq!(result.structured_output_value(), None);
+        assert_eq!(model.call_count(), 3);
+    }
+
+    #[tokio::test]
+    async fn counts_a_forced_response_that_calls_another_tool_before_an_interrupt() {
+        use crate::interrupt::{InterruptParams, InterruptResponse};
+
+        let lookup = FunctionTool::new("lookup", "Looks up.", |_input: JsonValue, _ctx| async {
+            Ok::<_, ToolError>("found")
+        });
+        let model = Arc::new(MockMessageModel::new());
+        model
+            .add_turn(vec![text(TEXT_REPLY)])
+            .add_turn(vec![tool_use("lookup", "lookup", json!({}))])
+            .add_error(unexpected);
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([lookup])
+            .structured_output_schema(StructuredOutputSchema::of::<Plan>())
+            .build()
+            .unwrap();
+        agent.add_hook(|event: &mut BeforeToolsEvent<'_>| {
+            event.interrupt(InterruptParams::new("approve"));
+        });
+
+        let paused = agent.invoke_with("Plan a review", attempts(1)).await.unwrap();
+        let responses: Vec<InterruptResponse> = paused
+            .interrupts()
+            .iter()
+            .map(|interrupt| InterruptResponse::new(interrupt.id(), json!("approved")))
+            .collect();
+        let options = InvokeOptions {
+            invocation_context: paused.invocation_context().cloned(),
+            ..InvokeOptions::default()
+        };
+        let result = agent.invoke_with(responses, options).await.unwrap();
+
+        assert_eq!(
+            [paused.stop_reason(), result.stop_reason()],
+            [StopReason::Interrupt, StopReason::LimitStructuredOutputAttempts]
+        );
+        assert_eq!(model.call_count(), 2);
+    }
+
+    #[tokio::test]
     async fn counts_a_nested_invokes_structured_output_failures_toward_the_request() {
         let model = mock(vec![
             vec![output_call(json!({}), "tu-1")],

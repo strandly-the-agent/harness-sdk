@@ -118,8 +118,40 @@ async fn returns_stop_reason_interrupt_when_tool_calls_interrupt() {
     assert!(log.lock().unwrap().is_empty());
 }
 
-mod before_tool_call_hook {
+mod interrupt_from_before_tool_call_event_hook {
     use super::*;
+
+    #[tokio::test]
+    async fn returns_stop_reason_interrupt_when_hook_calls_interrupt() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![tool_use("testTool", "tool-1", json!({}))],
+            vec![text("Should not reach this")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([logging_tool("testTool", &log)])
+            .build()
+            .unwrap();
+        agent.add_hook(|event: &mut BeforeToolCallEvent| {
+            if event.tool_use().name() == "testTool" {
+                event.interrupt(InterruptParams {
+                    name: "confirm_tool".into(),
+                    reason: Some(json!("Confirm tool execution?")),
+                    ..Default::default()
+                });
+            }
+        });
+
+        let result = agent.invoke("Test").await.unwrap();
+
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        let [interrupt] = result.interrupts() else {
+            panic!("one interrupt")
+        };
+        assert_eq!(interrupt.name(), "confirm_tool");
+        assert_eq!(interrupt.reason(), Some(&json!("Confirm tool execution?")));
+    }
 
     #[tokio::test]
     async fn stores_pending_state_and_resumes_correctly_after_interrupt() {
@@ -217,7 +249,7 @@ mod before_tool_call_hook {
     }
 }
 
-mod before_tools_hook {
+mod interrupt_from_before_tools_event_hook {
     use super::*;
 
     #[tokio::test]
@@ -278,7 +310,7 @@ mod before_tools_hook {
     }
 
     #[tokio::test]
-    async fn interrupts_again_on_cycle_2_after_resuming_from_cycle_1() {
+    async fn interrupts_again_on_cycle_2_after_resuming_from_cycle_1_before_tools_event() {
         let model = mock(vec![
             vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))],
             vec![tool_use("add", "tool-2", json!({"a": 3, "b": 4}))],
@@ -440,7 +472,7 @@ mod resume {
     }
 
     #[tokio::test]
-    async fn throws_when_sending_a_new_message_while_in_interrupted_state() {
+    async fn throws_type_error_when_sending_a_new_message_while_in_interrupted_state() {
         let log = Arc::new(Mutex::new(Vec::new()));
         let model = mock(vec![vec![tool_use("confirmTool", "tool-1", json!({}))]]);
         let mut agent = Agent::builder()
@@ -474,6 +506,75 @@ mod resume {
     }
 
     #[tokio::test]
+    async fn allows_pure_interrupt_response_arrays_without_error() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![tool_use("confirmTool", "tool-1", json!({}))],
+            vec![text("Done")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([asking_tool("confirmTool", "confirm", &log)])
+            .build()
+            .unwrap();
+
+        let interrupted = agent.invoke("Test").await.unwrap();
+        assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+
+        let result = agent
+            .invoke(vec![InterruptResponse::new(
+                interrupted.interrupts()[0].id(),
+                json!("approved"),
+            )])
+            .await
+            .unwrap();
+        assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    }
+
+    #[tokio::test]
+    async fn collects_interrupts_from_multiple_before_tool_call_event_hooks() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![tool_use("testTool", "tool-1", json!({}))],
+            vec![text("Should not reach this")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([logging_tool("testTool", &log)])
+            .build()
+            .unwrap();
+        for (name, reason) in [
+            ("security_check", "Security review required"),
+            ("budget_check", "Budget approval required"),
+        ] {
+            agent.add_hook(move |event: &mut BeforeToolCallEvent| {
+                event.interrupt(InterruptParams {
+                    name: name.into(),
+                    reason: Some(json!(reason)),
+                    ..Default::default()
+                });
+            });
+        }
+
+        let result = agent.invoke("Test").await.unwrap();
+
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        let mut collected: Vec<(&str, Option<&JsonValue>)> = result
+            .interrupts()
+            .iter()
+            .map(|interrupt| (interrupt.name(), interrupt.reason()))
+            .collect();
+        collected.sort_by_key(|(name, _)| *name);
+        assert_eq!(
+            collected,
+            [
+                ("budget_check", Some(&json!("Budget approval required"))),
+                ("security_check", Some(&json!("Security review required")))
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn resumes_correctly_after_multiple_interrupts_are_answered() {
         let model = mock(vec![
             vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))],
@@ -503,30 +604,40 @@ mod resume {
 mod event_contract {
     use super::*;
 
-    #[tokio::test]
-    async fn does_not_fire_after_tool_call_event_when_a_hook_or_tool_interrupts() {
+    /// Runs a tool that asks for confirmation, behind an approval hook when `hook` is set, and
+    /// counts the `AfterToolCallEvent`s of the interrupted invocation.
+    async fn after_tool_call_events_of_an_interrupt(hook: bool) -> usize {
         let log = Arc::new(Mutex::new(Vec::new()));
-        for hook in [true, false] {
-            let model = mock(vec![vec![tool_use("confirmTool", "tool-1", json!({}))]]);
-            let mut agent = Agent::builder()
-                .model(model)
-                .tools([asking_tool("confirmTool", "confirm", &log)])
-                .build()
-                .unwrap();
-            if hook {
-                approve_hook(&mut agent, "confirmTool");
-            }
-            let fired = Arc::new(Mutex::new(0));
-            let count = Arc::clone(&fired);
-            agent.add_hook(move |_: &mut AfterToolCallEvent| *count.lock().unwrap() += 1);
-            let result = agent.invoke("Go").await.unwrap();
-            assert_eq!(result.stop_reason(), StopReason::Interrupt);
-            assert_eq!(*fired.lock().unwrap(), 0);
+        let model = mock(vec![vec![tool_use("confirmTool", "tool-1", json!({}))]]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([asking_tool("confirmTool", "confirm", &log)])
+            .build()
+            .unwrap();
+        if hook {
+            approve_hook(&mut agent, "confirmTool");
         }
+        let fired = Arc::new(Mutex::new(0));
+        let count = Arc::clone(&fired);
+        agent.add_hook(move |_: &mut AfterToolCallEvent| *count.lock().unwrap() += 1);
+        let result = agent.invoke("Go").await.unwrap();
+        assert_eq!(result.stop_reason(), StopReason::Interrupt);
+        let fired = *fired.lock().unwrap();
+        fired
     }
 
     #[tokio::test]
-    async fn yields_one_interrupt_event_per_interrupt_tagged_with_source() {
+    async fn does_not_fire_after_tool_call_event_when_before_tool_call_event_interrupt_triggers() {
+        assert_eq!(after_tool_call_events_of_an_interrupt(true).await, 0);
+    }
+
+    #[tokio::test]
+    async fn does_not_fire_after_tool_call_event_when_tool_callback_interrupts() {
+        assert_eq!(after_tool_call_events_of_an_interrupt(false).await, 0);
+    }
+
+    #[tokio::test]
+    async fn yields_one_interrupt_event_per_unanswered_interrupt_at_stop_tagged_with_source() {
         let model = mock(vec![vec![tool_use("add", "tool-1", json!({"a": 1, "b": 2}))]]);
         let mut agent = tool_agent(&model);
         for name in ["first", "second"] {
@@ -550,6 +661,33 @@ mod event_contract {
         assert_eq!(streamed.len(), 2);
         assert_eq!(streamed[0]["interrupt"]["source"], json!("hook"));
         assert_eq!(*hooked.lock().unwrap(), ["first", "second"]);
+    }
+
+    #[tokio::test]
+    async fn interrupt_event_is_available_on_the_stream() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let model = mock(vec![
+            vec![tool_use("approveMe", "tool-1", json!({}))],
+            vec![text("done")],
+        ]);
+        let mut agent = Agent::builder()
+            .model(model)
+            .tools([asking_tool("approveMe", "approve", &log)])
+            .build()
+            .unwrap();
+
+        let events = collect(agent.stream("go")).await;
+
+        let interrupts: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                AgentStreamEvent::Interrupt(data) => Some(serde_json::to_value(data).unwrap()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(interrupts.len(), 1);
+        assert_eq!(interrupts[0]["interrupt"]["name"], json!("approve"));
+        assert_eq!(interrupts[0]["interrupt"]["source"], json!("tool"));
     }
 }
 

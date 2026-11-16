@@ -264,6 +264,46 @@ mod invoke {
     }
 
     #[tokio::test]
+    async fn collects_local_traces_for_completed_cycles_when_error_occurs_mid_run() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn_with(
+            vec![tool_use("testTool", "tool-1", json!({}))],
+            MockTurnOptions::builder().usage(Usage::new(100, 50, 150)).build(),
+        );
+        model.add_turn_with(
+            vec![text("Partial")],
+            MockTurnOptions::builder()
+                .stop_reason(StopReason::MaxTokens)
+                .usage(Usage::new(80, 20, 100))
+                .build(),
+        );
+        let tool = FunctionTool::new("testTool", "A test tool.", |_input: JsonValue, _ctx| async {
+            Ok::<_, ToolError>("Done")
+        });
+        let mut agent = Agent::builder().model(model).tools([tool]).build().unwrap();
+
+        let error = agent.invoke("Test").await.unwrap_err();
+        assert!(matches!(error, Error::MaxTokens(_)), "{error}");
+
+        // Cycle 1 completed (tool use), cycle 2 errored (maxTokens).
+        let traces = agent.local.telemetry().lock().tracer.traces().to_vec();
+        let names: Vec<(&str, Vec<&str>)> = traces
+            .iter()
+            .map(|cycle| {
+                let children = cycle.children().iter().map(crate::telemetry::AgentTrace::name);
+                (cycle.name(), children.collect())
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("Cycle 1", vec!["stream_messages", "Tool: testTool"]),
+                ("Cycle 2", vec!["stream_messages"])
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn exposes_accumulated_metrics_on_the_agent_instance() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(
@@ -481,6 +521,56 @@ mod config {
         );
     }
 
+    #[cfg(feature = "bedrock")]
+    #[test]
+    fn creates_bedrock_model_from_a_string_model_id() {
+        let agent = Agent::builder()
+            .model(MockMessageModel::new())
+            .aux_model("us.anthropic.claude-haiku-4-5-20251001-v1:0")
+            .build()
+            .unwrap();
+        assert_eq!(
+            agent.aux_model().model_id().as_deref(),
+            Some("us.anthropic.claude-haiku-4-5-20251001-v1:0")
+        );
+        assert!(!Arc::ptr_eq(agent.aux_model(), agent.model()));
+    }
+
+    #[cfg(feature = "bedrock")]
+    fn bedrock_model(model_id: &str) -> Arc<crate::models::bedrock::BedrockModel> {
+        use crate::models::bedrock::{BedrockModel, BedrockModelConfig};
+
+        Arc::new(BedrockModel::new(BedrockModelConfig {
+            model_id: Some(model_id.to_owned()),
+            ..Default::default()
+        }))
+    }
+
+    #[cfg(feature = "bedrock")]
+    #[test]
+    fn uses_provided_bedrock_model_instance() {
+        let explicit_model = bedrock_model("explicit-model-id");
+        let agent = Agent::builder()
+            .model(Arc::clone(&explicit_model))
+            .build()
+            .unwrap();
+        assert!(std::ptr::addr_eq(
+            Arc::as_ptr(agent.model()),
+            Arc::as_ptr(&explicit_model)
+        ));
+        assert_eq!(agent.model().model_id().as_deref(), Some("explicit-model-id"));
+    }
+
+    #[cfg(feature = "bedrock")]
+    #[test]
+    fn string_model_behaves_identically_to_explicit_bedrock_model_with_same_model_id() {
+        let model_id = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+        let with_string = Agent::builder().model(model_id).build().unwrap();
+        let with_explicit = Agent::builder().model(bedrock_model(model_id)).build().unwrap();
+        assert_eq!(with_string.model().model_id(), with_explicit.model().model_id());
+        assert_eq!(with_string.model().model_id().as_deref(), Some(model_id));
+    }
+
     #[cfg(not(feature = "bedrock"))]
     #[test]
     fn a_model_id_string_fails_the_build_without_the_bedrock_feature() {
@@ -494,6 +584,46 @@ mod config {
                 .contains("model_id=<global.anthropic.claude-sonnet-4-6>"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn accepts_array_of_class_instances() {
+        use crate::types::messages::{CachePointBlock, SystemContentBlock};
+
+        let system_prompt = vec![
+            SystemContentBlock::text("System prompt"),
+            SystemContentBlock::CachePoint(CachePointBlock::new()),
+        ];
+        let agent = Agent::builder()
+            .model(MockMessageModel::new())
+            .system_prompt(system_prompt.clone())
+            .build()
+            .unwrap();
+        assert_eq!(agent.system_prompt(), Some(&SystemPrompt::Blocks(system_prompt)));
+    }
+
+    #[test]
+    fn returns_the_configured_model_instance() {
+        let model = Arc::new(MockMessageModel::new());
+        let agent = test_agent(model.clone());
+        assert!(std::ptr::addr_eq(Arc::as_ptr(agent.model()), Arc::as_ptr(&model)));
+    }
+
+    /// The TS case also assigns a model id string; `set_aux_model` takes a model, and the id form
+    /// is `AgentBuilder::aux_model`.
+    #[test]
+    fn is_reassignable_at_runtime() {
+        let mut agent = test_agent(mock(vec![]));
+        let aux_model = Arc::new(MockMessageModel::new());
+
+        agent.set_aux_model(Some(aux_model.clone()));
+        assert!(std::ptr::addr_eq(
+            Arc::as_ptr(agent.aux_model()),
+            Arc::as_ptr(&aux_model)
+        ));
+
+        agent.set_aux_model(None);
+        assert!(Arc::ptr_eq(agent.aux_model(), agent.model()));
     }
 
     #[tokio::test]
@@ -513,6 +643,13 @@ mod config {
             .map(|request| request.system_prompt)
             .collect();
         assert_eq!(prompts, [Some("first".into()), Some("second".into())]);
+    }
+
+    #[tokio::test]
+    async fn is_a_no_op_when_no_memory_manager_is_configured() {
+        let mut agent = test_agent(mock(vec![vec![text("Hello")]]));
+        agent.invoke("Test prompt").await.unwrap();
+        agent.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -545,6 +682,29 @@ mod input {
         agent.invoke(vec![text("a"), text("b")]).await.unwrap();
         assert_eq!(texts(&agent.messages()[0]), ["a", "b"]);
         assert_eq!(agent.messages().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn sends_an_injected_block_to_the_model_as_text_and_keeps_it_in_agent_messages() {
+        use crate::types::messages::InjectedBlock;
+
+        let model = mock(vec![vec![text("ok")]]);
+        let mut agent = test_agent(model.clone());
+        let injected: ContentBlock = InjectedBlock::new("reminder", "test").into();
+
+        agent
+            .invoke(vec![text("Refactor the tokenizer."), injected.clone()])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            model.requests()[0].messages[0].content(),
+            [text("Refactor the tokenizer."), text("\n\nreminder")]
+        );
+        assert_eq!(
+            agent.messages()[0].content(),
+            [text("Refactor the tokenizer."), injected]
+        );
     }
 
     #[tokio::test]
@@ -1504,6 +1664,7 @@ mod concurrent {
 }
 
 mod cancel;
+mod context_manager;
 mod continuation;
 mod copy_on_input;
 mod drop_guard;
