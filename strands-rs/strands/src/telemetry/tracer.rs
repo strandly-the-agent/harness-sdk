@@ -368,7 +368,7 @@ impl LocalTracer {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "otel"))]
     pub(crate) fn set_semconv(&mut self, semconv: Semconv) {
         self.semconv = semconv;
     }
