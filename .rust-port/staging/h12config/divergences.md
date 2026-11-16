@@ -4,3 +4,4 @@
 | `HarnessAgentOptions` passthrough | SDK `AgentConfig` keys sit beside the harness keys; the six harness-owned keys are absent from the type | SDK keys are in `agent_config`; setting one of the six there is `HarnessError::PassthroughOption` | Rust has no `Omit`; a typed error replaces the type error |
 | `mcp_servers` option | `Record<string, McpServerConfig>` | `McpServersOption::Servers` holds the JSON map (`From` a typed map with the `mcp` feature) | `McpServerConfig` exists only with the `mcp` feature |
 | `harness_agent_options_from_config` | Async; `~` from `os.homedir()` | Synchronous; `~` from `HOME`, then `USERPROFILE` | Nothing to await without module loading; no home-directory dependency |
+| Portable config: `subagent.maxDepth` | Any non-negative safe integer | A value above `u32::MAX` is `must be a non-negative integer.` | The depth is a `u32` |

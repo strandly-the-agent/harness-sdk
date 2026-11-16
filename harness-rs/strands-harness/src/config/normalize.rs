@@ -167,6 +167,12 @@ pub(crate) fn normalize_harness_agent_config(value: &JsonValue) -> Result<Harnes
     Ok(config)
 }
 
+/// The items of an array of strings, empty ones included. zod runs an array's own checks
+/// (duplicates, line breaks) after an empty item, but not after an item of another type.
+fn all_strings(value: &JsonValue) -> Option<Vec<&str>> {
+    value.as_array()?.iter().map(JsonValue::as_str).collect()
+}
+
 fn child(path: &str, key: &str) -> String {
     format!("{path}.{key}")
 }
@@ -225,11 +231,11 @@ impl Issues {
         }
     }
 
-    fn duplicates(&mut self, path: &str, entries: &[String]) {
+    fn duplicates(&mut self, path: &str, entries: &[&str]) {
         let mut repeated: Vec<&str> = Vec::new();
         for (index, entry) in entries.iter().enumerate() {
             let first = entries.iter().position(|other| other == entry);
-            if first != Some(index) && !repeated.contains(&entry.as_str()) {
+            if first != Some(index) && !repeated.contains(entry) {
                 repeated.push(entry);
             }
         }
@@ -646,9 +652,11 @@ impl Issues {
                 .non_empty_string(path, value)
                 .map(HarnessConfigSkills::Source),
             JsonValue::Array(_) => {
-                let sources = self.strings(path, value, NON_EMPTY_STRINGS)?;
-                self.duplicates(path, &sources);
-                Some(HarnessConfigSkills::Sources(sources))
+                let sources = self.strings(path, value, NON_EMPTY_STRINGS);
+                if let Some(entries) = all_strings(value) {
+                    self.duplicates(path, &entries);
+                }
+                sources.map(HarnessConfigSkills::Sources)
             }
             _ => {
                 self.push(
@@ -732,12 +740,14 @@ impl Issues {
             Some(versions)
         });
         let python = self.optional(object, path, "python", |issues, path, value| {
-            let entries = issues.strings(path, value, NON_EMPTY_STRINGS)?;
-            if entries.iter().any(|entry| entry.contains(['\r', '\n'])) {
-                issues.push(path, "entries must not contain line breaks.");
+            let python = issues.strings(path, value, NON_EMPTY_STRINGS);
+            if let Some(entries) = all_strings(value) {
+                if entries.iter().any(|entry| entry.contains(['\r', '\n'])) {
+                    issues.push(path, "entries must not contain line breaks.");
+                }
+                issues.duplicates(path, &entries);
             }
-            issues.duplicates(path, &entries);
-            Some(entries)
+            python
         });
         Some(HarnessDependencies {
             typescript: typescript.unwrap_or_default(),

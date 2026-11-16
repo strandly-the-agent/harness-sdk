@@ -830,6 +830,18 @@ fn reports_the_union_and_container_issues() {
             "skills[1] must be a non-empty string.",
         ),
         (
+            json!({ "skills": ["a", "", "a"] }),
+            "skills[1] must be a non-empty string.\nskills has duplicate entries: a.",
+        ),
+        (
+            json!({ "skills": [1, "a", "a"] }),
+            "skills[0] must be a non-empty string.",
+        ),
+        (
+            json!({ "dependencies": { "python": ["", "a\nb"] } }),
+            "dependencies.python[0] must be a non-empty string.\ndependencies.python entries must not contain line breaks.",
+        ),
+        (
             json!({ "builtinPlugins": "todos" }),
             "builtinPlugins must be an array.",
         ),
@@ -886,8 +898,10 @@ fn maps_the_remaining_config_values_into_options() {
         "skills": "~/skills",
         "memory": { "dir": "../memory" },
         "mcpServers": {
-            "local": { "command": "server", "args": ["${ARG}", "$HOME ${1} ${env:}"] },
+            "local": { "command": "server", "args": ["${ARG}", "$HOME ${1} ${env:}", "${ARG", "$${ARG}${env:ARG}", "${env:env:ARG}"] },
             "nested": { "command": "server", "cwd": "tools/./mcp" },
+            "home": { "command": "server", "cwd": "~/work" },
+            "outside": { "command": "server", "cwd": "/abs/../tools" },
             "remote": { "url": "https://example.com/mcp" },
         },
         "agentConfig": {
@@ -939,8 +953,10 @@ fn maps_the_remaining_config_values_into_options() {
     assert_eq!(
         mcp_servers(&options),
         json!({
-            "local": { "command": "server", "args": ["--verbose", "$HOME ${1} ${env:}"], "cwd": "/project" },
+            "local": { "command": "server", "args": ["--verbose", "$HOME ${1} ${env:}", "${ARG", "$--verbose--verbose", "${env:env:ARG}"], "cwd": "/project" },
             "nested": { "command": "server", "cwd": "/project/tools/mcp" },
+            "home": { "command": "server", "cwd": "/home/user/work" },
+            "outside": { "command": "server", "cwd": "/tools" },
             "remote": { "url": "https://example.com/mcp" },
         })
     );
