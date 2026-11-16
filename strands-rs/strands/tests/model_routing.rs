@@ -378,7 +378,7 @@ async fn forwards_the_agent_metadata_to_the_routed_alternate() {
     assert_eq!(primary.requests().len(), 0);
 }
 
-/// TS `resolveAuxModel`: `auxModel` rejects a router.
+// No TS case: TS `resolveAuxModel` throws this for a router passed as `auxModel`; no TS test covers it.
 #[test]
 fn aux_model_rejects_a_model_router() {
     let router = router(&[&response_model("default")], ModelRouterOptions::default());

@@ -304,8 +304,9 @@ mod constructor {
         ));
     }
 
+    // The `empty models` row; the other rows are type-enforced.
     #[test]
-    fn rejects_empty_models() {
+    fn rejects() {
         let error = error_text(ModelRouter::new(Vec::<RoutingCandidate>::new()));
 
         assert_eq!(error, "ModelRouter requires at least one candidate model");

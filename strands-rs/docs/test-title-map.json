@@ -535,6 +535,28 @@
       "gap": "a `JsonValue` can't be circular"
     }
   },
+  "strands-ts/src/models/routing/__tests__/classifier-strategy.test.ts": {
+    "routes a Model the same way as an LLMDecisionModel wrapping it": {
+      "gap": "no `DecisionModel` in v0.1"
+    },
+    "rejects a value that is neither a Model nor a DecisionModel": {
+      "gap": "no `DecisionModel` in v0.1 and the parameter is typed"
+    },
+    "rejects a timeoutMs larger than JavaScript timers accept": {
+      "gap": "`Duration` has no timer ceiling"
+    },
+    "rejects a non-positive or non-integer %s": {
+      "gap": "the limits are `NonZeroUsize`"
+    }
+  },
+  "strands-ts/src/models/routing/__tests__/router.test.ts": {
+    "allows subclasses to initialize strategy-specific metadata": {
+      "gap": "no subclassing"
+    },
+    "rejects null because only undefined declines selection": {
+      "gap": "`select` returns `Option`"
+    }
+  },
   "strands-ts/src/registry/__tests__/tool-registry.test.ts": {
     "throws ToolValidationError when a name differs only by '-' vs '_'": "throws_tool_validation_error_when_a_name_differs_only_by_dash_vs_underscore",
     "throws ToolValidationError for a non-string tool name": {

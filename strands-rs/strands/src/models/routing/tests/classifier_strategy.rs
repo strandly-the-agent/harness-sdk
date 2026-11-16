@@ -396,42 +396,46 @@ mod request_extraction {
     }
 
     #[tokio::test]
-    async fn uses_the_latest_audio_only_request_instead_of_stale_text() {
-        let block = AudioBlock::new(AudioFormat::Wav, vec![1]).into();
-        let messages = vec![
-            user_message("Stale earlier request"),
-            Message::new(Role::User, vec![block]),
+    async fn uses_the_latest_request_instead_of_stale_text() {
+        let cases: [(&str, ContentBlock, &str); 2] = [
+            (
+                "audio-only",
+                AudioBlock::new(AudioFormat::Wav, vec![1]).into(),
+                "[Audio]",
+            ),
+            (
+                "guarded image-only",
+                GuardContentBlock::from(GuardContentImage::new(GuardImageFormat::Png, vec![1])).into(),
+                "[Guarded content]",
+            ),
         ];
+        for (name, block, expected) in cases {
+            let messages = vec![
+                user_message("Stale earlier request"),
+                Message::new(Role::User, vec![block]),
+            ];
 
-        assert_eq!(latest_request(messages).await, "[Audio]");
+            assert_eq!(latest_request(messages).await, expected, "{name}");
+        }
     }
 
     #[tokio::test]
-    async fn uses_the_latest_guarded_image_only_request_instead_of_stale_text() {
-        let block = GuardContentBlock::from(GuardContentImage::new(GuardImageFormat::Png, vec![1])).into();
-        let messages = vec![
-            user_message("Stale earlier request"),
-            Message::new(Role::User, vec![block]),
-        ];
-
-        assert_eq!(latest_request(messages).await, "[Guarded content]");
-    }
-
-    #[tokio::test]
-    async fn uses_safe_synthetic_text_for_a_tool_result_only_history() {
+    async fn uses_safe_synthetic_text_for_a() {
         let result = ToolResultBlock::new(
             "tool-1",
             ToolResultStatus::Success,
             vec![ToolResultContent::Text(TextBlock::new("secret"))],
         );
-        let messages = vec![Message::new(Role::User, vec![result.into()])];
-
-        assert_eq!(latest_request(messages).await, NO_REQUEST_TEXT);
-    }
-
-    #[tokio::test]
-    async fn uses_safe_synthetic_text_for_a_empty_history() {
-        assert_eq!(latest_request(Vec::new()).await, NO_REQUEST_TEXT);
+        let cases = [
+            (
+                "tool-result-only history",
+                vec![Message::new(Role::User, vec![result.into()])],
+            ),
+            ("empty history", Vec::new()),
+        ];
+        for (name, messages) in cases {
+            assert_eq!(latest_request(messages).await, NO_REQUEST_TEXT, "{name}");
+        }
     }
 
     #[tokio::test]
@@ -668,54 +672,34 @@ mod failure_handling {
     const LONG: Duration = Duration::from_secs(30);
 
     #[test]
-    fn warns_safely_and_declines_on_a_unknown_key() {
+    fn warns_safely_and_declines_on_a() {
+        // unknown key
         assert_declines(&selection_model(2), LONG, "classifier_error");
-    }
-
-    #[test]
-    fn warns_safely_and_declines_on_a_uncertain_answer() {
+        // uncertain answer
         assert_declines(&raw_answer_model("uncertain"), LONG, "classifier_error");
-    }
-
-    #[test]
-    fn warns_safely_and_declines_on_a_legacy_index_answer() {
+        // legacy index answer
         let classifier = block_model(answer_block(json!({ "selectedCandidateIndex": 1 })));
         assert_declines(&classifier, LONG, "classifier_error");
-    }
-
-    #[test]
-    fn warns_safely_and_declines_on_a_wrong_tool_name() {
+        // wrong tool name
         let block = ToolUseBlock::new(
             "other_tool",
             "classification",
             json!({ QUESTION_ID: { "answer": "c0" } }),
         );
         assert_declines(&block_model(block.into()), LONG, "classifier_error");
-    }
-
-    #[test]
-    fn warns_safely_and_declines_on_a_invalid_structured_input() {
+        // invalid structured input
         assert_declines(&block_model(answer_block(json!({}))), LONG, "classifier_error");
-    }
-
-    #[test]
-    fn warns_safely_and_declines_on_a_plain_text_response() {
+        // plain text response
         assert_declines(
             &block_model(TextBlock::new("c0").into()),
             LONG,
             "classifier_error",
         );
-    }
-
-    #[test]
-    fn warns_safely_and_declines_on_a_provider_error() {
+        // provider error
         let classifier = Arc::new(MockMessageModel::new());
         classifier.add_error(|| Error::other("provider-secret"));
         assert_declines(&classifier, LONG, "classifier_error");
-    }
-
-    #[test]
-    fn warns_safely_and_declines_on_a_timeout() {
+        // timeout
         assert_declines(&slow_model(), Duration::from_millis(5), "classifier_timeout");
     }
 
@@ -782,8 +766,9 @@ mod request_limits {
 mod constructor {
     use super::*;
 
+    // The `0` row; a negative or non-finite `Duration` is unrepresentable.
     #[test]
-    fn rejects_timeout_ms_0() {
+    fn rejects_timeout_ms() {
         let error = ClassifierStrategy::with_options(
             selection_model(0),
             ClassifierStrategyOptions {
