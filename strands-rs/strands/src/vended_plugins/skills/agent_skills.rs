@@ -1,8 +1,7 @@
 //! The `AgentSkills` plugin (TS `vended-plugins/skills/agent-skills.ts`).
 
-use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -84,9 +83,25 @@ struct Resolved {
     pending_urls: Vec<String>,
     /// Bumped by `set_available_skills`, so a fetch started for a replaced set is dropped.
     generation: u64,
-    /// The skills of each initialized agent, by agent id: the shared ones and those loaded from
-    /// its sandbox.
-    agent_skills: HashMap<String, Skills>,
+    /// The skills of each initialized agent that is still alive (TS keeps a `WeakMap` keyed by
+    /// the agent).
+    agent_skills: Vec<AgentEntry>,
+}
+
+/// One agent's skills: the shared ones and those loaded from its sandbox.
+struct AgentEntry {
+    /// The agent's identity token, shared by every view of it.
+    owner: Weak<()>,
+    id: String,
+    skills: Skills,
+}
+
+impl Resolved {
+    fn agent_entry(&self, owner: &Arc<()>) -> Option<&AgentEntry> {
+        self.agent_skills
+            .iter()
+            .find(|entry| entry.owner.as_ptr() == Arc::as_ptr(owner))
+    }
 }
 
 fn insert_skill(skills: &mut Skills, skill: Skill) {
@@ -169,10 +184,23 @@ impl AgentSkills {
 
     /// The available skills, once URL sources are fetched: those of the agent with `agent_id`
     /// when it is initialized, otherwise the skills given directly or by URL (TS
-    /// `getAvailableSkills`).
+    /// `getAvailableSkills`). When several live agents share the id, the one whose skills were
+    /// loaded last is read.
     pub async fn get_available_skills(&self, agent_id: Option<&str>) -> Vec<Skill> {
         self.inner.ready().await;
-        self.inner.skills_for(agent_id).into_values().collect()
+        let resolved = self.inner.lock();
+        let entry = agent_id.and_then(|id| {
+            resolved
+                .agent_skills
+                .iter()
+                .rev()
+                .find(|entry| entry.id == id && entry.owner.strong_count() > 0)
+        });
+        entry
+            .map_or(&resolved.skills, |entry| &entry.skills)
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Replaces the skills; every agent loads its path sources again on its next invocation (TS
@@ -298,16 +326,17 @@ impl Inner {
         }
     }
 
-    fn skills_for(&self, agent_id: Option<&str>) -> Skills {
+    /// The skills of the agent identified by `owner`, or the shared ones before it is loaded.
+    fn skills_for(&self, owner: &Arc<()>) -> Skills {
         let resolved = self.lock();
-        agent_id
-            .and_then(|id| resolved.agent_skills.get(id))
-            .unwrap_or(&resolved.skills)
+        resolved
+            .agent_entry(owner)
+            .map_or(&resolved.skills, |entry| &entry.skills)
             .clone()
     }
 
-    fn has_agent(&self, agent_id: &str) -> bool {
-        self.lock().agent_skills.contains_key(agent_id)
+    fn has_agent(&self, owner: &Arc<()>) -> bool {
+        self.lock().agent_entry(owner).is_some()
     }
 
     /// Loads the path sources through the agent's sandbox and records the agent's skills (TS
@@ -324,7 +353,16 @@ impl Inner {
                     .await;
             }
         }
-        self.lock().agent_skills.insert(agent.id().to_owned(), skills);
+        let owner = agent.agent_sandbox().owner();
+        let mut resolved = self.lock();
+        resolved
+            .agent_skills
+            .retain(|entry| entry.owner.strong_count() > 0 && entry.owner.as_ptr() != Arc::as_ptr(owner));
+        resolved.agent_skills.push(AgentEntry {
+            owner: Arc::downgrade(owner),
+            id: agent.id().to_owned(),
+            skills,
+        });
         Ok(())
     }
 
@@ -385,7 +423,7 @@ impl Inner {
     /// refreshes the skills XML in its system prompt.
     async fn before_invocation(&self, agent: &mut LocalAgent) -> Result<()> {
         self.ready().await;
-        if !self.has_agent(agent.id()) {
+        if !self.has_agent(agent.agent_sandbox().owner()) {
             self.load_skill_paths(agent).await?;
         }
         self.inject_skills_xml(agent)
@@ -426,7 +464,7 @@ impl Inner {
     fn inject_skills_xml(&self, agent: &mut LocalAgent) -> Result<()> {
         const NOT_FOUND: &str =
             "unable to find previously injected skills XML in system prompt, re-appending";
-        let skills_xml = generate_skills_xml(&self.skills_for(Some(agent.id())));
+        let skills_xml = generate_skills_xml(&self.skills_for(agent.agent_sandbox().owner()));
         let last_injected = self.last_injected_xml(agent.app_state());
         let (new_prompt, injected) = match agent.system_prompt().cloned() {
             Some(SystemPrompt::Blocks(blocks)) => {
@@ -472,7 +510,7 @@ impl Inner {
     /// Activates a skill for the tool's agent and returns its instructions (TS `_activateSkill`).
     async fn activate_skill(&self, skill_name: &str, context: &ToolContext) -> Result<String> {
         let agent = context.agent();
-        let skills = self.skills_for(Some(agent.id()));
+        let skills = self.skills_for(agent.agent_sandbox().owner());
         let Some(skill) = skills.get(skill_name) else {
             let available: Vec<_> = skills.keys().map(String::as_str).collect();
             return Ok(format!(
@@ -636,7 +674,7 @@ impl Plugin for AgentSkills {
     async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {
         self.inner.ready().await;
         self.inner.load_skill_paths(agent).await?;
-        let skill_count = self.inner.skills_for(Some(agent.id())).len();
+        let skill_count = self.inner.skills_for(agent.agent_sandbox().owner()).len();
         if skill_count == 0 {
             tracing::warn!("no skills were loaded, the agent will have no skills available");
         }

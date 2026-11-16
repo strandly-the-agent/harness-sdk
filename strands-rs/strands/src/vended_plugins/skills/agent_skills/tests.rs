@@ -825,3 +825,55 @@ mod url_skill_resolution {
         assert!(agent.hooks().has_callbacks::<BeforeInvocationEvent<'static>>());
     }
 }
+
+/// Rust-only cases: the per-agent skills are keyed by the agent's identity, as the TS `WeakMap`.
+mod rust_only {
+    use super::*;
+
+    fn skill_md(name: &str) -> String {
+        format!("---\nname: {name}\ndescription: A skill\n---\nBody.")
+    }
+
+    #[tokio::test]
+    async fn agents_with_the_same_id_sharing_a_plugin_keep_their_own_skills() {
+        let root = TempDir::new().unwrap();
+        create_skill_dir(&root, "one", &skill_md("one"), &[]);
+        let plugin = plugin_of(vec![path_source(root.path())]);
+        let (mut first, mut second) = (mock_agent(), mock_agent());
+        assert_eq!(first.id(), second.id());
+        init(&plugin, &mut first).await;
+        create_skill_dir(&root, "two", &skill_md("two"), &[]);
+        init(&plugin, &mut second).await;
+
+        fire_before_invocation(&mut first).await;
+        fire_before_invocation(&mut second).await;
+
+        assert!(prompt_text(&first).contains("<name>one</name>"));
+        assert!(!prompt_text(&first).contains("<name>two</name>"));
+        assert!(prompt_text(&second).contains("<name>two</name>"));
+        let (_, text) = invoke_tool_result(&plugin, &first, "two").await;
+        assert_eq!(text, "Skill 'two' not found. Available skills: one");
+    }
+
+    #[tokio::test]
+    async fn the_skills_of_a_dropped_agent_are_pruned() {
+        let plugin = plugin_of(vec![make_skill("a").into()]);
+        let mut first = mock_agent();
+        init(&plugin, &mut first).await;
+        let id = first.id().to_owned();
+        drop(first);
+        plugin.set_available_skills(vec![make_skill("b").into()]);
+        assert_eq!(
+            names(&plugin.get_available_skills(Some(&id)).await),
+            ["b"],
+            "a dropped agent's entry is not read"
+        );
+
+        let (mut second, mut third) = (mock_agent(), mock_agent());
+        second.set_id("second".to_owned());
+        init(&plugin, &mut second).await;
+        drop(second);
+        init(&plugin, &mut third).await;
+        assert_eq!(plugin.inner.lock().agent_skills.len(), 1);
+    }
+}
