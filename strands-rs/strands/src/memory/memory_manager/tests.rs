@@ -953,6 +953,7 @@ async fn wires_the_registered_middleware_to_the_memory_provide_pipeline_folds_a_
     );
 }
 
+// No TS case: TS covers the trigger in the injection spec; this pins the memory manager wiring to the shared engine.
 /// The configured trigger reaches the shared injection engine: a predicate that declines skips
 /// the search and the fold.
 #[tokio::test]
@@ -1229,6 +1230,7 @@ fn sets_memory_manager_to_undefined_when_not_configured() {
     assert!(agent.memory_manager().is_none());
 }
 
+// No TS case: Rust-side wiring of the plugin order in the agent builder.
 /// Rust-side wiring: the memory plugin sits after delegation and before the context manager.
 #[test]
 fn registers_memory_between_delegation_and_the_session_manager() {

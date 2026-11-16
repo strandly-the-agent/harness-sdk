@@ -24,6 +24,7 @@ fn model(replies: &[&str]) -> Arc<MockMessageModel> {
     model
 }
 
+// No TS case: public-API check of the plugin on a running agent.
 #[tokio::test]
 async fn renders_from_app_state_and_keeps_the_block_in_the_conversation() {
     let model = model(&["ok"]);
@@ -56,6 +57,7 @@ async fn renders_from_app_state_and_keeps_the_block_in_the_conversation() {
     assert_eq!(request.dynamic_trailing_blocks, Some(1));
 }
 
+// No TS case: public-API check of the predicate trigger on a running agent.
 #[tokio::test]
 async fn a_predicate_trigger_gates_the_injection() {
     let model = model(&["one", "two"]);

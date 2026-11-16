@@ -746,6 +746,7 @@ async fn flush_does_not_re_extract_messages_already_processed_by_a_fired_trigger
     assert_eq!(store.add_messages_count(), 1);
 }
 
+// No TS case: Rust-side wiring: `Agent::shutdown` calls `MemoryManager::flush`.
 /// Rust-side wiring: `Agent::shutdown` saves what the periodic trigger has not.
 #[tokio::test]
 async fn agent_shutdown_flushes_memory() {

@@ -195,6 +195,7 @@ mod constructor {
         assert_eq!(plugin.get_available_skills(None).await.len(), 0);
     }
 
+    // No TS case: the TS spec has no case for the `skill source does not exist` warning.
     #[test]
     fn warns_about_a_non_existent_path_when_the_agent_initializes() {
         let plugin = plugin_of(vec!["/does/not/exist".into()]);
@@ -555,6 +556,7 @@ mod tool_callback {
         assert!(plugin.get_activated_skills(agent.app_state()).is_empty());
     }
 
+    // No TS case: the TS spec has no case for the `expected object for state key` error.
     #[tokio::test]
     async fn fails_when_the_state_key_holds_something_else() {
         let (plugin, agent) = setup().await;

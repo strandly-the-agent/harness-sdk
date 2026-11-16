@@ -558,7 +558,7 @@ mod writing_into_the_conversation {
 
     /// TS `it.each`: `returns empty text` and `throws`.
     #[test]
-    fn leaves_the_conversation_unchanged_when_render_content_returns_empty_text_or_throws() {
+    fn leaves_the_conversation_unchanged_when_render_content() {
         let blank = ContextInjectorConfig::new(|_context| async { Ok(Some("   ".to_owned())) });
         let throws = ContextInjectorConfig::new(|_context| async { Err(Error::other("boom")) });
         let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();

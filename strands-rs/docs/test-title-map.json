@@ -736,6 +736,28 @@
       "gap": "no Rust form: schemars output always converts"
     }
   },
+  "strands-ts/src/injection/__tests__/message-injection.test.ts": {
+    "fails open (returns false, logs) when a custom predicate throws": {
+      "gap": "a Rust predicate returns `bool` and cannot throw (P-381)"
+    }
+  },
+  "strands-ts/src/vended-memory-stores/file-memory-store/__tests__/file-memory-store.test.node.ts": {
+    "warns that the search option is deprecated and still delegates to it": {
+      "gap": "the deprecated `search` option is not ported (decision #24)"
+    },
+    "warns about the deprecated search option once per store name": {
+      "gap": "the deprecated `search` option is not ported (decision #24)"
+    },
+    "does not warn when search is not set": {
+      "gap": "the deprecated `search` option is not ported (decision #24)"
+    },
+    "logs which search path it resolved": {
+      "gap": "the unit-test log recorder captures warnings only"
+    },
+    "prefers the store-level search strategy over the storage backend": {
+      "gap": "the deprecated `search` option is not ported (decision #24)"
+    }
+  },
   "strands-ts/src/types/__tests__/agent.test.ts": {
     "returns the text content": "to_string_joins_text_blocks_with_newlines",
     "AgentResult > toString > when content has multiple TextBlocks > returns all text joined with newlines": "to_string_joins_text_blocks_with_newlines",

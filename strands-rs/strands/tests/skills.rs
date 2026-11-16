@@ -16,6 +16,7 @@ use strands::testing::MockMessageModel;
 use strands::types::messages::{ContentBlock, SystemPrompt, TextBlock, ToolResultContent, ToolUseBlock};
 use strands::vended_plugins::skills::{AgentSkills, AgentSkillsConfig, Skill, SkillConfig};
 
+// No TS case: public-API check of the plugin on a running agent.
 #[tokio::test]
 async fn lists_the_skills_in_the_system_prompt_and_loads_one_through_the_tool() {
     let root = tempfile::tempdir().unwrap();

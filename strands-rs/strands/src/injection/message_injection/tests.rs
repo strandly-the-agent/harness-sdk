@@ -407,6 +407,7 @@ mod create_injection_middleware {
         assert!(history.is_empty());
     }
 
+    // No TS case: TS has no middleware phases to assert; this pins the phase of the Rust handler.
     /// The handler `create_injection_middleware` builds is an Input-phase handler.
     #[test]
     fn builds_an_input_phase_handler() {

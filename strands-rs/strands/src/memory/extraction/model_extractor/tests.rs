@@ -90,7 +90,7 @@ async fn drops_entries_without_a_string_content_and_empty_strings() {
 }
 
 #[tokio::test]
-async fn returns_empty_for_an_empty_message_batch_without_calling_the_model() {
+async fn returns_for_an_empty_message_batch_without_calling_the_model() {
     let model = Arc::new(MockMessageModel::new());
     let entries = extractor_for(&model)
         .extract(&[], &ExtractorContext::default())
@@ -158,6 +158,7 @@ async fn extracts_without_a_tracer_in_context_standalone_use() {
     assert_eq!(extract(&model, "x").await, [ExtractionResult::new("fact")]);
 }
 
+// No TS case: the error half of a memory-tracing case, kept beside the extractor tests.
 /// The error half of TS "ends the model-invoke span with an error when the model throws"; the
 /// span half is `ends_the_model_invoke_span_with_an_error_when_the_model_throws`.
 #[tokio::test]
