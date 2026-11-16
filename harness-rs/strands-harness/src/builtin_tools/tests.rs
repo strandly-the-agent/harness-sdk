@@ -467,3 +467,36 @@ fn forwards_a_per_tool_web_fetch_config_to_the_delegate_as_a_pinned_mapping() {
     assert!(pinned.web_search.is_none());
     assert!(pinned.all.is_none());
 }
+
+/// `agent.test.ts` builds the child; here the child's options are resolved instead.
+#[test]
+fn narrows_the_built_child_to_the_requested_subset_dropping_the_rest() {
+    let parent = HarnessAgentOptions {
+        model: Some(mock_model()),
+        builtin_tools: Some(list(&[
+            BuiltinToolName::Read,
+            BuiltinToolName::Shell,
+            BuiltinToolName::Subagent,
+        ])),
+        memory: MemoryOption::Off,
+        ..Default::default()
+    };
+    let builtins = resolve_builtin_tools(parent.builtin_tools.as_ref());
+    let mut spec = AgentSpec::new("x", None);
+    spec.tools = Some(vec!["read".to_owned()]);
+
+    let child = child_options(
+        &parent,
+        &builtins,
+        None,
+        &IndexMap::new(),
+        &McpClients::new(),
+        spec,
+        &no_env(),
+    )
+    .unwrap();
+
+    let resolved = resolve_builtin_tools(child.builtin_tools.as_ref());
+    assert!(names(&resolved).contains(&"read"));
+    assert!(!names(&resolved).contains(&"shell"));
+}
