@@ -461,3 +461,78 @@ mod otel {
         let _tracer: opentelemetry::global::BoxedTracer = get_tracer();
     }
 }
+
+#[test]
+fn a_boxed_error_becomes_a_tool_error_and_reads_back_typed() {
+    fn helper(text: &str) -> Result<u32, strands::error::BoxError> {
+        Ok(text.parse::<u32>()?)
+    }
+    fn tool_body(text: &str) -> Result<u32, ToolError> {
+        let number = helper(text).map_err(ToolError::from_boxed)?;
+        Ok(number * 2)
+    }
+
+    assert_eq!(tool_body("7").ok(), Some(14));
+    let error = tool_body("x").unwrap_err();
+    assert!(error.downcast_ref::<std::num::ParseIntError>().is_some());
+    assert!(error.downcast_ref::<std::fmt::Error>().is_none());
+    assert_eq!(error.to_string(), "invalid digit found in string");
+}
+
+#[test]
+fn a_type_built_from_one_config_takes_it_in_new_and_has_a_default() {
+    use strands::interventions::InterventionHandler;
+    use strands::storage::InMemoryStorage;
+    use strands::vended_interventions::hitl::{HumanInTheLoop, HumanInTheLoopConfig};
+
+    let _bare = InMemoryStorage::default();
+    let _configured = InMemoryStorage::new(InMemoryStorageConfig::default());
+    assert_eq!(HumanInTheLoop::default().name(), HumanInTheLoop::NAME);
+    assert_eq!(
+        HumanInTheLoop::new(HumanInTheLoopConfig::default()).name(),
+        HumanInTheLoop::NAME
+    );
+}
+
+#[tokio::test]
+async fn a_tool_runs_on_its_own_with_a_testing_tool_context() {
+    use futures::StreamExt;
+    use strands::sandbox::NotASandboxLocalEnvironment;
+    use strands::testing::{tool_context, tool_context_with_sandbox};
+    use strands::tools::ToolStreamItem;
+    use strands::types::tools::ToolUse;
+    use strands::{Tool, ToolOutcome};
+
+    let tool = ping();
+    let tool_use = ToolUse::new("ping", "tool-1", serde_json::json!({}));
+    let value = tool
+        .invoke(serde_json::json!({}), tool_context(tool_use.clone()))
+        .await
+        .unwrap();
+    assert_eq!(value, serde_json::json!("pong"));
+
+    let context = tool_context_with_sandbox(tool_use, Arc::new(NotASandboxLocalEnvironment::new()));
+    assert_eq!(context.tool_use().name(), "ping");
+    let items: Vec<ToolStreamItem> = tool.stream(context).collect().await;
+    assert!(matches!(
+        items.last(),
+        Some(ToolStreamItem::Outcome(ToolOutcome::Result(_)))
+    ));
+}
+
+#[test]
+fn the_builder_takes_tools_of_different_types_one_at_a_time() -> strands::Result<()> {
+    /// Get the time.
+    #[strands::tool]
+    fn get_time() -> String {
+        "noon".to_owned()
+    }
+
+    let agent = Agent::builder()
+        .model(model(&[]))
+        .tool(ping())
+        .tool(GetTime)
+        .build()?;
+    assert_eq!(agent.tool_registry().len(), 2);
+    Ok(())
+}
