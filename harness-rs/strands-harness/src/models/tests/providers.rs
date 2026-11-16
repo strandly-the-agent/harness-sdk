@@ -9,6 +9,7 @@ use strands::models::openai::OpenAIModelConfig;
 use strands::types::json::JsonValue;
 
 use super::*;
+use crate::models::web_fetch::web_fetch_spec;
 use crate::test_support::WarnRecorder;
 
 fn env_of(vars: &'static [(&'static str, &'static str)]) -> EnvLookup {
