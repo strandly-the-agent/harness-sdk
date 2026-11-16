@@ -30,6 +30,7 @@ use crate::memory::MemoryManager;
 use crate::interventions::InterventionRegistry;
 use crate::middleware::{Middleware, MiddlewareCleanup, MiddlewareRegistry, MiddlewareStage};
 use crate::models::model::Model;
+use crate::models::routing::ModelRouter;
 use crate::plugins::{ModelLifecycle, Plugin, PluginRegistry};
 use crate::retry::model_retry_strategy::{
     RetryStrategyInstaller, Sleeper, tokio_sleeper, warn_on_duplicate_types,
@@ -84,6 +85,8 @@ pub struct Agent {
     plugins: Vec<Arc<dyn Plugin>>,
     conversation_manager: Arc<dyn ConversationManager>,
     plugin_registry: PluginRegistry,
+    /// The router configured as the model (TS `_modelRouter`).
+    pub(crate) model_router: Option<ModelRouter>,
     /// This agent's identity for the retry strategies' attach-once check.
     attach_token: Arc<()>,
     pub(crate) initialized: bool,
@@ -139,10 +142,17 @@ impl Agent {
     /// model id string that this build can't resolve, or a conversation manager is set for a
     /// stateful model.
     pub fn new(config: AgentConfig) -> Result<Self> {
-        let model = match config.model {
-            Some(source) => source.into_model()?,
-            None => default_model(),
+        let (model, model_router) = match config.model {
+            Some(ModelSource::Router(router)) => (router.default_model(), Some(router)),
+            Some(source) => (source.into_model()?, None),
+            None => (default_model(), None),
         };
+        let aux_model = config.aux_model.map(ModelSource::into_aux_model).transpose()?;
+        if config.plugins.iter().any(|plugin| plugin.name() == ModelRouter::NAME) {
+            return Err(Error::other(
+                "ModelRouter must be passed through Agent({ model }), not plugins",
+            ));
+        }
         let context_manager_set = !matches!(config.context_manager, None | Some(ContextManagerStrategy::Off));
         if model.stateful() && (config.conversation_manager.is_some() || context_manager_set) {
             return Err(Error::other(STATEFUL_MANAGER_UNSUPPORTED));
@@ -167,7 +177,7 @@ impl Agent {
             .map(MemoryManagerSource::into_manager)
             .transpose()?;
         let local = &mut agent.local;
-        local.set_aux_model(config.aux_model.map(ModelSource::into_model).transpose()?);
+        local.set_aux_model(aux_model);
         if let Some(id) = config.id {
             local.set_id(id);
         }
@@ -185,6 +195,9 @@ impl Agent {
         }
         local.set_sandbox(AgentSandbox::from_source(config.sandbox));
         local.set_storage(config.storage);
+        if let Some(router) = &model_router {
+            router.attach_to_agent(local);
+        }
         let tools = config.tools.into_iter().flat_map(ToolSource::into_tools);
         local.tool_registry_mut().add_all(tools)?;
         if agentic {
@@ -205,6 +218,7 @@ impl Agent {
         }
         InterventionRegistry::new(config.interventions, agent.local.hooks())?;
         agent.plugins = config.plugins;
+        agent.model_router = model_router;
         if let Some(manager) = &config.session_manager {
             agent.local.set_session_id(manager.session_id().to_owned());
             agent.local.set_agent_metadata(Some(AgentMetadata {
@@ -237,6 +251,7 @@ impl Agent {
             plugins: Vec::new(),
             conversation_manager,
             plugin_registry: PluginRegistry::default(),
+            model_router: None,
             attach_token: Arc::new(()),
             initialized: false,
             printer: None,
@@ -299,7 +314,6 @@ impl Agent {
     /// The plugins in TS registration order (`agent/agent.ts`): model router, conversation
     /// manager, retry strategies, user plugins, background tasks, delegation (unless a user
     /// plugin has its name), memory, context manager, session manager, then the model plugin.
-    /// The router, managers and background tasks join with their subsystems.
     pub(crate) fn registration_order(&self) -> Vec<Arc<dyn Plugin>> {
         let retry = self.retry_strategies.iter().map(|strategy| -> Arc<dyn Plugin> {
             Arc::new(RetryStrategyInstaller {
@@ -332,7 +346,13 @@ impl Agent {
         let model: Arc<dyn Plugin> = Arc::new(ModelLifecycle::new(Arc::clone(self.local.model())));
         let conversation_manager: Arc<dyn Plugin> =
             Arc::new(ConversationManagerPlugin(Arc::clone(&self.conversation_manager)));
-        std::iter::once(conversation_manager)
+        let router = self
+            .model_router
+            .clone()
+            .map(|router| Arc::new(router) as Arc<dyn Plugin>);
+        router
+            .into_iter()
+            .chain([conversation_manager])
             .chain(retry)
             .chain(self.plugins.iter().cloned())
             .chain(background)

@@ -772,7 +772,7 @@ impl Agent {
             if self.local.cancel_signal().is_cancelled() {
                 return Err(Stop::Cancelled);
             }
-            let model = Arc::clone(self.local.model());
+            let model = self.routed_model().unwrap_or_else(|| Arc::clone(self.local.model()));
             let projected = self.estimate_input_tokens(&tool_specs).await;
             let mut before =
                 BeforeModelCallEvent::new(&mut self.local, Arc::clone(&model), state.clone(), projected);
@@ -794,13 +794,17 @@ impl Agent {
                 }
                 let message = assistant_text(cancel.message().unwrap_or("model call denied by hook"));
                 let stop_data = ModelStopData::new(message.clone(), StopReason::EndTurn);
-                let mut after =
-                    AfterModelCallEvent::new(&mut self.local, model, state.clone(), attempt_count)
-                        .with_stop_data(stop_data);
+                let mut after = AfterModelCallEvent::new(
+                    &mut self.local,
+                    Arc::clone(&model),
+                    state.clone(),
+                    attempt_count,
+                )
+                .with_stop_data(stop_data);
                 hooks.invoke::<AfterModelCallEvent<'static>>(&mut after).await?;
                 out.emit(AgentStreamEvent::AfterModelCall((&after).into())).await;
                 if after.retry() {
-                    attempt_count = attempt_count.saturating_add(1);
+                    attempt_count = self.next_attempt_count(&model, attempt_count);
                     continue;
                 }
                 return Ok(StreamAggregatedResult::new(message, StopReason::EndTurn));
@@ -824,6 +828,7 @@ impl Agent {
                     out,
                 )
                 .await;
+            let routed = self.routed_model().unwrap_or_else(|| Arc::clone(&model));
             match outcome {
                 Ok((result, model)) => {
                     self.local
@@ -855,7 +860,7 @@ impl Agent {
                     hooks.invoke::<AfterModelCallEvent<'static>>(&mut after).await?;
                     out.emit(AgentStreamEvent::AfterModelCall((&after).into())).await;
                     if after.retry() {
-                        attempt_count = attempt_count.saturating_add(1);
+                        attempt_count = self.next_attempt_count(&routed, attempt_count);
                         continue;
                     }
                     return Ok(result);
@@ -880,7 +885,7 @@ impl Agent {
                         return Err(Stop::Cancelled);
                     }
                     if after.retry() {
-                        attempt_count = attempt_count.saturating_add(1);
+                        attempt_count = self.next_attempt_count(&routed, attempt_count);
                         continue;
                     }
                     return Err(stop.unwrap_or(Stop::Failed(error)));
@@ -956,16 +961,36 @@ impl Agent {
         if let Some(messages) = tool_agent.take_history_edit() {
             self.local.set_messages(messages);
         }
-        let invoked = lock(&invoked).take().unwrap_or_else(|| Arc::clone(model));
+        let invoked = lock(&invoked).take();
         match outcome {
             Ok(result) => {
                 // Committed after the whole chain, so no handler's write to the state persists.
                 if let Some(written) = lock(&written_state).take() {
                     self.local.model_state().load_json(written.to_json());
                 }
-                Ok((result, invoked))
+                Ok((result, invoked.unwrap_or_else(|| Arc::clone(model))))
             }
-            Err(stop) => Err((stop, invoked)),
+            // A failure before the terminal ran is attributed to the routed model.
+            Err(stop) => {
+                let failed = invoked
+                    .or_else(|| self.routed_model())
+                    .unwrap_or_else(|| Arc::clone(model));
+                Err((stop, failed))
+            }
+        }
+    }
+
+    /// The model the router chose for this invocation (TS `getRoutedModel`), once it has.
+    fn routed_model(&self) -> Option<Arc<dyn Model>> {
+        self.model_router.as_ref()?.routed_model(&self.local)
+    }
+
+    /// The next attempt number (TS `_nextAttemptCount`): `1` again when the router moved off
+    /// `model`.
+    fn next_attempt_count(&self, model: &Arc<dyn Model>, attempt_count: NonZeroU32) -> NonZeroU32 {
+        match self.routed_model() {
+            Some(next) if !Arc::ptr_eq(&next, model) => NonZeroU32::MIN,
+            _ => attempt_count.saturating_add(1),
         }
     }
 

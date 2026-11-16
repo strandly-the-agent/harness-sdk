@@ -15,6 +15,7 @@ use crate::interventions::InterventionHandler;
 #[cfg(feature = "bedrock")]
 use crate::models::bedrock::{BedrockModel, BedrockModelConfig};
 use crate::models::model::Model;
+use crate::models::routing::ModelRouter;
 #[cfg(not(feature = "bedrock"))]
 use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, ModelRequest};
 #[cfg(not(feature = "bedrock"))]
@@ -28,7 +29,8 @@ use crate::tools::{StructuredOutputSchema, ToolExecutor, ToolSource};
 use crate::types::json::JsonObject;
 use crate::types::messages::{Message, SystemPrompt};
 
-/// The model an agent runs with (TS `AgentConfig.model`: a model instance or a Bedrock model id).
+/// The model an agent runs with (TS `AgentConfig.model`: a model instance, a [`ModelRouter`] or
+/// a Bedrock model id). With a router, the agent's model stays the router's default model.
 ///
 /// ```
 /// use strands::agent::ModelSource;
@@ -42,6 +44,8 @@ use crate::types::messages::{Message, SystemPrompt};
 pub enum ModelSource {
     /// A model instance.
     Model(Arc<dyn Model>),
+    /// A router choosing among candidate models for each invocation.
+    Router(ModelRouter),
     /// A Bedrock model id; creates a `BedrockModel`.
     Id(String),
 }
@@ -95,6 +99,12 @@ impl<M: Model> From<Arc<M>> for ModelSource {
     }
 }
 
+impl From<ModelRouter> for ModelSource {
+    fn from(router: ModelRouter) -> Self {
+        Self::Router(router)
+    }
+}
+
 impl From<&str> for ModelSource {
     fn from(model_id: &str) -> Self {
         Self::Id(model_id.to_owned())
@@ -117,6 +127,7 @@ impl ModelSource {
     pub(crate) fn into_model(self) -> Result<Arc<dyn Model>> {
         match self {
             Self::Model(model) => Ok(model),
+            Self::Router(router) => Ok(router.default_model()),
             #[cfg(feature = "bedrock")]
             Self::Id(model_id) => Ok(Arc::new(BedrockModel::new(BedrockModelConfig {
                 model_id: Some(model_id),
@@ -126,6 +137,19 @@ impl ModelSource {
             Self::Id(model_id) => Err(Error::other(format!(
                 "model_id=<{model_id}> | a model id string needs the Bedrock model provider, {BEDROCK_UNAVAILABLE}"
             ))),
+        }
+    }
+}
+
+impl ModelSource {
+    /// Resolves `aux_model` like `model`, except that a router is rejected (TS
+    /// `resolveAuxModel`): auxiliary calls run outside the agent loop a router attaches to.
+    pub(crate) fn into_aux_model(self) -> Result<Arc<dyn Model>> {
+        match self {
+            Self::Router(_) => Err(crate::error::Error::other(
+                "auxModel must be a Model or a Bedrock model id, not a ModelRouter",
+            )),
+            source => source.into_model(),
         }
     }
 }
@@ -249,11 +273,12 @@ pub struct AgentConfig {
     /// [`NullConversationManager`](crate::conversation_manager::NullConversationManager).
     #[builder(field)]
     pub conversation_manager: Option<Arc<dyn ConversationManager>>,
-    /// The model (default: a `BedrockModel` with the default model id, resolved on first use).
+    /// The model or model router (default: a `BedrockModel` with the default model id, resolved
+    /// on first use).
     #[builder(into)]
     pub model: Option<ModelSource>,
     /// The model for auxiliary side calls (summarization, memory extraction, ...); defaults to
-    /// `model`.
+    /// `model`. A router is rejected.
     #[builder(into)]
     pub aux_model: Option<ModelSource>,
     /// Messages seeding the conversation history.
