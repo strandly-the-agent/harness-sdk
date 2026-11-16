@@ -184,7 +184,7 @@ mod end_turn {
     }
 
     #[tokio::test]
-    async fn honors_end_turn_over_structured_output() {
+    async fn honors_after_tools_event_end_turn_over_structured_output() {
         #[derive(serde::Deserialize, schemars::JsonSchema)]
         #[expect(dead_code, reason = "schema-only test type")]
         struct Name {
@@ -211,7 +211,7 @@ mod end_turn {
     }
 
     #[tokio::test]
-    async fn counts_a_failed_structured_output_attempt_when_a_hook_ends_the_turn() {
+    async fn counts_a_failed_attempt_when_a_hook_ends_the_turn() {
         #[derive(serde::Deserialize, schemars::JsonSchema)]
         #[expect(dead_code, reason = "schema-only test type")]
         struct Plan {

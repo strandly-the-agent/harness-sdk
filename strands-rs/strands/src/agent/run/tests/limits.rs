@@ -81,7 +81,7 @@ mod stop_reasons {
     use super::*;
 
     #[tokio::test]
-    async fn turns_runs_the_cycle_to_completion_and_bails_at_the_top_of_the_next() {
+    async fn runs_the_cycle_to_completion_and_bails_at_top_of_next_iteration() {
         let model = loop_model(&[(10, 5, 15), (20, 5, 25)]);
         let mut agent = loop_agent(&model);
         let result = agent
@@ -100,7 +100,7 @@ mod stop_reasons {
     }
 
     #[tokio::test]
-    async fn generous_limits_do_not_trip() {
+    async fn does_not_trip_and_the_model_ends_naturally() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(vec![text("done")], usage(5, 5, 10));
         let mut agent = test_agent(model);
@@ -114,7 +114,7 @@ mod stop_reasons {
     }
 
     #[tokio::test]
-    async fn output_tokens_returns_limit_output_tokens_once_the_cumulative_count_hits_it() {
+    async fn returns_limit_output_tokens_once_cumulative_output_tokens_hits_the_limit() {
         let model = loop_model(&[(10, 60, 70), (10, 60, 70), (10, 60, 70)]);
         let mut agent = loop_agent(&model);
         let result = agent
@@ -128,7 +128,7 @@ mod stop_reasons {
     }
 
     #[tokio::test]
-    async fn uses_at_most_semantics_and_stops_when_the_count_equals_the_limit() {
+    async fn uses_at_most_semantics_stops_when_count_exactly_equals_the_limit() {
         let model = loop_model(&[(10, 100, 110), (10, 100, 110)]);
         let mut agent = loop_agent(&model);
         let result = agent
@@ -140,7 +140,7 @@ mod stop_reasons {
     }
 
     #[tokio::test]
-    async fn total_tokens_returns_limit_total_tokens_once_the_cumulative_count_hits_it() {
+    async fn returns_limit_total_tokens_once_cumulative_total_tokens_hits_the_limit() {
         let model = loop_model(&[(50, 10, 60), (50, 10, 60), (50, 10, 60)]);
         let mut agent = loop_agent(&model);
         let result = agent
@@ -152,7 +152,7 @@ mod stop_reasons {
     }
 
     #[tokio::test]
-    async fn the_model_answer_wins_when_it_ends_on_the_turn_the_limit_would_trip() {
+    async fn returns_end_turn_the_model_answer_wins() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(vec![text("final answer")], usage(300, 300, 600));
         let mut agent = test_agent(model);
@@ -211,7 +211,7 @@ mod stop_reasons {
     }
 
     #[tokio::test]
-    async fn stream_ends_with_the_limit_result() {
+    async fn returns_limit_turns_as_the_generator_return_value() {
         let model = loop_model(&[(10, 5, 15), (10, 5, 15)]);
         let mut agent = loop_agent(&model);
         let events = collect(agent.stream_with("go", with_limits(limits(Some(1), None, None)))).await;

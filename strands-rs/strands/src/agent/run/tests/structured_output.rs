@@ -164,7 +164,7 @@ mod attempt_limit {
     }
 
     #[tokio::test]
-    async fn fails_without_an_attempt_limit_when_the_forced_retry_fails() {
+    async fn throws_without_an_attempt_limit_when_the_forced_retry_fails() {
         let model = mock(vec![vec![text(TEXT_REPLY)]]);
         let options = InvokeOptions {
             limits: Some(InvokeLimits {
@@ -235,7 +235,7 @@ mod attempt_limit {
     }
 
     #[tokio::test]
-    async fn continues_the_attempt_budget_when_passed_the_previous_call_context() {
+    async fn continues_the_attempt_budget_when_passed_the_previous_calls_invocation_context() {
         let model = Arc::new(MockMessageModel::new());
         for attempt in 0..3 {
             model.add_turn(vec![output_call(json!({}), &format!("output-{attempt}"))]);
@@ -572,7 +572,7 @@ async fn preserves_validated_structured_output_without_context_management() {
 }
 
 #[tokio::test]
-async fn returns_structured_output_when_the_tool_is_used() {
+async fn returns_structured_output_when_schema_provided_and_tool_used() {
     let model = mock(vec![
         vec![output_call(json!({"name": "John", "age": 30}), "tool-1")],
         vec![text("Done")],
@@ -606,7 +606,7 @@ async fn forces_the_tool_when_the_model_does_not_use_it_without_sending_an_assis
 }
 
 #[tokio::test]
-async fn fails_with_structured_output_error_when_the_model_refuses_the_forced_tool() {
+async fn throws_structured_output_error_when_model_refuses_to_use_tool_after_forcing() {
     let model = mock(vec![vec![text("Response")]]);
     let result = schema_agent::<Value>(&model).invoke("Test").await;
     assert_eq!(structured_error(result), NO_OUTPUT);
@@ -654,7 +654,7 @@ async fn passes_the_schema_on_the_retry_and_accepts_a_json_text_response() {
 }
 
 #[tokio::test]
-async fn fails_when_the_json_text_response_fails_validation() {
+async fn throws_structured_output_error_when_the_json_text_response_fails_validation() {
     let model = mock(vec![
         vec![text("Plain text, no tool call")],
         vec![text("{\"value\": \"not a number\"}")],
@@ -683,7 +683,7 @@ async fn fails_with_max_tokens_before_structured_output_and_cleans_up_the_tool()
 }
 
 #[tokio::test]
-async fn retries_with_validation_feedback_when_the_tool_returns_an_error() {
+async fn retries_with_validation_feedback_when_structured_output_tool_returns_error() {
     let model = mock(vec![
         vec![output_call(json!({"name": "John", "age": "invalid"}), "tool-1")],
         vec![output_call(json!({"name": "John", "age": 30}), "tool-2")],
@@ -706,7 +706,7 @@ async fn retries_with_validation_feedback_when_the_tool_returns_an_error() {
 }
 
 #[tokio::test]
-async fn works_without_a_schema() {
+async fn works_without_structured_output_schema() {
     let result = test_agent(mock(vec![vec![text("Hello")]]))
         .invoke("Test")
         .await
@@ -719,7 +719,7 @@ async fn works_without_a_schema() {
 }
 
 #[tokio::test]
-async fn cleans_up_the_tool_after_the_invocation() {
+async fn cleans_up_structured_output_tool_after_invocation() {
     let model = mock(vec![
         vec![output_call(json!({"value": 42}), "tool-1")],
         vec![text("Done")],
@@ -747,7 +747,7 @@ async fn validates_nested_objects_and_arrays() {
 }
 
 #[tokio::test]
-async fn uses_a_per_invocation_override_and_restores_the_agent_schema_next_call() {
+async fn uses_per_invocation_override_schema_and_restores_constructor_schema_on_next_call() {
     let model = mock(vec![
         vec![output_call(json!({"value": 99}), "tool-1")],
         vec![text("Done")],

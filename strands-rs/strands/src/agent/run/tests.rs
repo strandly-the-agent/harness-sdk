@@ -116,7 +116,7 @@ mod stream {
     use super::*;
 
     #[tokio::test]
-    async fn yields_agent_stream_events_in_ts_order() {
+    async fn yields_agent_stream_event_objects() {
         let mut agent = test_agent(mock(vec![vec![text("Hello")]]));
         let events = collect(agent.stream("Hi")).await;
         let types: Vec<String> = events.iter().map(type_of).collect();
@@ -139,7 +139,7 @@ mod stream {
     }
 
     #[tokio::test]
-    async fn ends_with_the_agent_result() {
+    async fn returns_agent_result_as_generator_return_value() {
         let mut agent = test_agent(mock(vec![vec![text("Hello")]]));
         let events = collect(agent.stream("Hi")).await;
         let Some(AgentStreamEvent::AgentResult(result)) = events.last() else {
@@ -166,7 +166,7 @@ mod stream {
     }
 
     #[tokio::test]
-    async fn a_max_tokens_stop_is_an_error() {
+    async fn throws_max_tokens_error_when_model_hits_token_limit() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(
             vec![text("partial")],
@@ -195,7 +195,7 @@ mod invoke {
     use super::*;
 
     #[tokio::test]
-    async fn returns_the_stop_reason_and_last_message() {
+    async fn returns_correct_stop_reason_and_last_message() {
         let mut agent = test_agent(mock(vec![vec![text("Hello")]]));
         let result = agent.invoke("Hi").await.unwrap();
         assert_eq!(result.stop_reason(), StopReason::EndTurn);
@@ -204,7 +204,7 @@ mod invoke {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn executes_tools_and_appends_the_tool_turn_after_the_tools_finish() {
+    async fn executes_tools_and_returns_final_result() {
         let model = tool_turns();
         let mut agent = tool_agent(&model);
         let result = agent.invoke("Add 1 and 2").await.unwrap();
@@ -264,7 +264,7 @@ mod invoke {
     }
 
     #[tokio::test]
-    async fn exposes_accumulated_metrics() {
+    async fn exposes_accumulated_metrics_on_the_agent_instance() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(
             vec![text("Hello")],
@@ -299,7 +299,7 @@ mod invoke {
     }
 
     #[tokio::test]
-    async fn tracks_the_cycle_count_when_a_max_tokens_error_occurs() {
+    async fn tracks_cycle_count_when_max_tokens_error_occurs() {
         let model = Arc::new(MockMessageModel::new());
         model.add_turn_with(
             vec![text("partial")],
@@ -313,7 +313,7 @@ mod invoke {
     }
 
     #[tokio::test]
-    async fn invoke_and_stream_produce_the_same_result() {
+    async fn invoke_and_stream_produce_same_final_result() {
         let mut first = tool_agent(&tool_turns());
         let mut second = tool_agent(&tool_turns());
         let invoked = first.invoke("Add").await.unwrap();
@@ -416,7 +416,7 @@ mod config {
     }
 
     #[test]
-    fn catches_duplicate_tool_names_across_nested_lists() {
+    fn catches_duplicate_tool_names_across_nested_arrays() {
         let error = Agent::builder()
             .model(MockMessageModel::new())
             .tools([
@@ -497,7 +497,7 @@ mod config {
     }
 
     #[tokio::test]
-    async fn the_system_prompt_can_change_between_turns() {
+    async fn allows_system_prompt_to_be_changed_between_turns() {
         let model = mock(vec![vec![text("one")], vec![text("two")]]);
         let mut agent = Agent::builder()
             .model(Arc::clone(&model))
@@ -516,7 +516,7 @@ mod config {
     }
 
     #[tokio::test]
-    async fn a_replaced_model_takes_over_from_the_next_invocation() {
+    async fn allows_model_change_to_persist_across_invocations() {
         let first = mock(vec![vec![text("one")]]);
         let second = mock(vec![vec![text("two")]]);
         let mut agent = test_agent(first.clone());
@@ -532,7 +532,7 @@ mod input {
     use super::*;
 
     #[tokio::test]
-    async fn a_string_becomes_one_user_text_message() {
+    async fn creates_user_message_with_single_text_block() {
         let mut agent = test_agent(mock(vec![vec![text("ok")]]));
         agent.invoke("Hello").await.unwrap();
         assert_eq!(agent.messages()[0].role(), Role::User);
@@ -572,7 +572,7 @@ mod input {
     }
 
     #[tokio::test]
-    async fn a_blank_prompt_is_rejected_with_the_ts_text() {
+    async fn rejects_a_blank_prompt_without_breaking_later_calls() {
         let mut agent = test_agent(mock(vec![vec![text("ok")]]));
         let error = agent.invoke("   ").await.unwrap_err();
         assert_eq!(
@@ -692,7 +692,7 @@ mod redaction {
     }
 
     #[test]
-    fn redacts_only_the_content_of_tool_results() {
+    fn preserves_tool_result_blocks_with_redacted_content() {
         let result = ToolResultBlock::new("t1", ToolResultStatus::Error, vec!["secret".into()]);
         let mut agent = agent_with(vec![Message::new(Role::User, vec![result.into(), text("drop")])]);
         agent.redact_last_message("[REDACTED]");
@@ -727,7 +727,7 @@ mod estimate_input_tokens {
     }
 
     #[tokio::test]
-    async fn counts_everything_on_a_cold_start() {
+    async fn uses_full_estimation_on_cold_start_no_prior_usage_metadata() {
         let mut agent = test_agent(mock(vec![vec![text("ok")]]));
         assert!(projected(&mut agent).await.unwrap() > 0);
     }
