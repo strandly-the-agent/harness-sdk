@@ -406,3 +406,64 @@ fn child_options_keep_the_parents_tools_and_turn_memory_off_when_the_spec_narrow
     assert!(matches!(&child.builtin_tools, Some(BuiltinToolsOption::Names(names)) if names.len() == 2));
     assert!(child.tools.is_empty());
 }
+
+/// `agent.test.ts` runs this through the `subagent` tool; the default subagent's schema offers no
+/// `tools` here, so the rule is checked on `child_options`.
+#[test]
+fn forwards_a_per_tool_web_fetch_config_to_the_delegate_as_a_pinned_mapping() {
+    let parent = HarnessAgentOptions {
+        model: Some(mock_model()),
+        builtin_tools: Some(
+            BuiltinToolsConfig {
+                web_fetch: Some(Setting::Config(WebFetchConfig {
+                    model: Some(ModelSource::Id("openai/gpt-5-mini".to_owned())),
+                    transport: None,
+                })),
+                shell: Some(Setting::Config(ShellConfig {
+                    description: Some("Run it.".to_owned()),
+                })),
+                ..Default::default()
+            }
+            .into(),
+        ),
+        memory: MemoryOption::Off,
+        ..Default::default()
+    };
+    let builtins = resolve_builtin_tools(parent.builtin_tools.as_ref());
+    let mut spec = AgentSpec::new("go", None);
+    spec.tools = Some(vec![
+        "web_fetch".to_owned(),
+        "read".to_owned(),
+        "shell".to_owned(),
+    ]);
+
+    let child = child_options(
+        &parent,
+        &builtins,
+        None,
+        &IndexMap::new(),
+        &McpClients::new(),
+        spec,
+        &no_env(),
+    )
+    .unwrap();
+
+    let Some(BuiltinToolsOption::Config(pinned)) = child.builtin_tools else {
+        panic!("the child's built-ins are a pinned mapping");
+    };
+    assert!(
+        matches!(&pinned.shell, Some(Setting::Config(shell)) if shell.description.as_deref() == Some("Run it."))
+    );
+    assert!(matches!(pinned.read, Some(Setting::On)));
+    assert_eq!(pinned.write, Some(false));
+    assert_eq!(pinned.edit, Some(false));
+    assert!(matches!(
+        &pinned.web_fetch,
+        Some(Setting::Config(WebFetchConfig { model: Some(ModelSource::Id(model)), .. })) if model == "openai/gpt-5-mini"
+    ));
+    assert!(matches!(pinned.programmatic_tool_caller, Some(Setting::Off)));
+    assert!(matches!(pinned.subagent, Some(Setting::Off)));
+    // Every name is pinned except web_search, which the parent left to the defaults.
+    assert!(pinned.web_search.is_none());
+    assert!(pinned.all.is_none());
+}
