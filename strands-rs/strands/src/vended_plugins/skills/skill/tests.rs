@@ -133,6 +133,29 @@ mod from_content {
         assert_eq!(tools(&skill), Some(vec!["bash", "notebook"]));
     }
 
+    // No TS case: TS delegates to the `yaml` package; the cases and expected values in
+    // `frontmatter_cases.json` are the output of TS `Skill.fromContent` for block scalars,
+    // nested mappings and double-quote escapes.
+    #[test]
+    fn block_scalars_nested_mappings_and_escapes_parse_as_the_ts_yaml_parser_does() {
+        let cases: JsonObject = serde_json::from_str(include_str!("frontmatter_cases.json")).unwrap();
+        for (name, case) in &cases {
+            let skill = parse(case["content"].as_str().unwrap());
+            assert_eq!(
+                json!(skill.description()),
+                case["description"],
+                "{name}: description"
+            );
+            assert_eq!(
+                json!(skill.allowed_tools()),
+                case["allowedTools"],
+                "{name}: allowedTools"
+            );
+            assert_eq!(json!(skill.metadata()), case["metadata"], "{name}: metadata");
+            assert_eq!(json!(skill.license()), case["license"], "{name}: license");
+        }
+    }
+
     #[test]
     fn parses_content_with_metadata() {
         let skill = parse(
@@ -154,7 +177,7 @@ mod from_content {
     }
 
     #[test]
-    fn throws_if_content_does_not_start_with_frontmatter_delimiter() {
+    fn throws_if_content_does_not_start_with() {
         assert_eq!(
             error_of(Skill::from_content("no frontmatter", &lenient())),
             "SKILL.md must start with --- frontmatter delimiter"
@@ -162,7 +185,7 @@ mod from_content {
     }
 
     #[test]
-    fn throws_if_closing_delimiter_is_missing() {
+    fn throws_if_closing_is_missing() {
         assert_eq!(
             error_of(Skill::from_content("---\nname: test\n", &lenient())),
             "SKILL.md frontmatter missing closing --- delimiter"
@@ -264,7 +287,7 @@ mod from_content {
     }
 
     #[test]
-    fn handles_frontmatter_value_containing_dashes_inline() {
+    fn handles_frontmatter_value_containing_inline() {
         let skill = parse("---\nname: my-skill\ndescription: Use this --- for special cases\n---\nBody.");
         assert_eq!(skill.name(), "my-skill");
         assert_eq!(skill.description(), "Use this --- for special cases");
@@ -297,6 +320,7 @@ mod from_content {
         assert_eq!(tools(&skill), Some(vec!["bash", "file-editor"]));
     }
 
+    // No TS case: TS reaches this through its colon-quoting retry, which the Rust parser does not need.
     /// The colon-quoting fallback of TS: a value holding a colon needs no quotes.
     #[test]
     fn keeps_a_value_holding_a_colon() {

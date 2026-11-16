@@ -1,0 +1,145 @@
+{
+ "folded_clip": {
+  "content": "---\nname: my-skill\ndescription: >\n  folded text\n  second line\n---\nBody",
+  "description": "folded text second line\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "folded_strip": {
+  "content": "---\nname: my-skill\ndescription: >-\n  folded strip\n  second\n---\nBody",
+  "description": "folded strip second",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "folded_keep_then_key": {
+  "content": "---\nname: my-skill\ndescription: >+\n  keep me\n\nlicense: MIT\n---\nBody",
+  "description": "keep me\n\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": "MIT"
+ },
+ "literal_clip": {
+  "content": "---\nname: my-skill\ndescription: |\n  literal\n  second\n---\nBody",
+  "description": "literal\nsecond\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "literal_strip": {
+  "content": "---\nname: my-skill\ndescription: |-\n  literal strip\n  second\n---\nBody",
+  "description": "literal strip\nsecond",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "literal_keep_then_key": {
+  "content": "---\nname: my-skill\ndescription: |+\n  keep\n\n\nlicense: MIT\n---\nBody",
+  "description": "keep\n\n\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": "MIT"
+ },
+ "folded_paragraphs_and_indented": {
+  "content": "---\nname: my-skill\ndescription: >\n  first\n  line\n\n  second para\n    indented one\n    indented two\n  back\n\n\n  last\n---\nBody",
+  "description": "first line\nsecond para\n  indented one\n  indented two\nback\n\nlast\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "folded_allowed_tools": {
+  "content": "---\nname: my-skill\ndescription: A skill\nallowed-tools: >\n  Read\n  Write\n---\nBody",
+  "description": "A skill",
+  "allowedTools": [
+   "Read",
+   "Write"
+  ],
+  "metadata": {},
+  "license": null
+ },
+ "nested_metadata": {
+  "content": "---\nname: my-skill\ndescription: A skill\nmetadata:\n  nested:\n    deep: 1\n    deeper:\n      leaf: x\n  other: y\n---\nBody",
+  "description": "A skill",
+  "allowedTools": null,
+  "metadata": {
+   "nested": {
+    "deep": 1,
+    "deeper": {
+     "leaf": "x"
+    }
+   },
+   "other": "y"
+  },
+  "license": null
+ },
+ "escapes": {
+  "content": "---\nname: my-skill\ndescription: \"cr\\r x41\\x41 u\\u00e9 slash\\/ nul\\0 U\\U0001F600 tab\\t q\\\" e\\e\"\n---\nBody",
+  "description": "cr\r x41A ué slash/ nul\u0000 U😀 tab\t q\" e\u001b",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "explicit_indent": {
+  "content": "---\nname: my-skill\ndescription: |2\n    two extra\n  base\n---\nBody",
+  "description": "  two extra\nbase\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "block_in_metadata": {
+  "content": "---\nname: my-skill\ndescription: A skill\nmetadata:\n  note: |\n    line1\n    line2\n  after: 1\n---\nBody",
+  "description": "A skill",
+  "allowedTools": null,
+  "metadata": {
+   "note": "line1\nline2\n",
+   "after": 1
+  },
+  "license": null
+ },
+ "block_then_key": {
+  "content": "---\nname: my-skill\ndescription: >\n  text here\n  more\nlicense: MIT\n---\nBody",
+  "description": "text here more\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": "MIT"
+ },
+ "sequence_at_key_indent": {
+  "content": "---\nname: my-skill\ndescription: A skill\nallowed-tools:\n- Read\n- Write\nlicense: MIT\n---\nBody",
+  "description": "A skill",
+  "allowedTools": [
+   "Read",
+   "Write"
+  ],
+  "metadata": {},
+  "license": "MIT"
+ },
+ "header_comment": {
+  "content": "---\nname: my-skill\ndescription: > # why\n  text\n---\nBody",
+  "description": "text\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "leading_blank": {
+  "content": "---\nname: my-skill\ndescription: >\n\n  after blank\n  more\n---\nBody",
+  "description": "\nafter blank more\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "literal_blank_inside": {
+  "content": "---\nname: my-skill\ndescription: |\n  a\n\n  b\n   c\n---\nBody",
+  "description": "a\n\nb\n c\n",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ },
+ "strip_indent_order": {
+  "content": "---\nname: my-skill\ndescription: >-2\n    x\n    y\n---\nBody",
+  "description": "  x\n  y",
+  "allowedTools": null,
+  "metadata": {},
+  "license": null
+ }
+}

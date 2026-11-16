@@ -317,7 +317,11 @@ where
 /// The fetch [`Skill::from_url`] uses: a GET with the SDK's user agent and a 30 second timeout.
 pub(crate) fn reqwest_fetch() -> SkillFetch {
     skill_fetch(|url| async move {
-        let response = reqwest::Client::new()
+        // `Client::new()` panics when the TLS backend or resolver can't be initialised.
+        let client = reqwest::Client::builder()
+            .build()
+            .map_err(|error| error.to_string())?;
+        let response = client
             .get(&url)
             .header(reqwest::header::USER_AGENT, "strands-agents-sdk")
             .timeout(SKILL_HTTPS_FETCH_TIMEOUT)
@@ -375,11 +379,6 @@ fn parse_frontmatter(content: &str) -> Result<(JsonObject, String)> {
     Ok((frontmatter, rest.get(end..).unwrap_or_default().trim().to_owned()))
 }
 
-/// Whether `line` is at the top level of the mapping: not indented, not blank, not a comment.
-fn is_top_level(line: &str) -> bool {
-    !line.trim().is_empty() && !line.starts_with(char::is_whitespace) && !line.starts_with('#')
-}
-
 /// Splits `key: value`; the colon must end the line or precede whitespace.
 fn split_entry(line: &str) -> Option<(&str, &str)> {
     let line = line.trim();
@@ -390,53 +389,200 @@ fn split_entry(line: &str) -> Option<(&str, &str)> {
     })
 }
 
-/// Parses the YAML subset a `SKILL.md` frontmatter uses: a mapping of scalars, flow sequences,
-/// block sequences and nested mappings of scalars. A scalar keeps everything after its key, so
-/// a value holding a colon needs no quoting.
+/// Parses the YAML subset a `SKILL.md` frontmatter uses: a mapping of scalars, block scalars
+/// (`|`, `>`), flow sequences, block sequences of scalars and nested mappings. A plain scalar
+/// keeps everything after its key, so a value holding a colon needs no quoting.
 fn parse_yaml_mapping(text: &str) -> JsonObject {
+    let lines: Vec<&str> = text.lines().collect();
+    parse_mapping(&lines, &mut 0, 0)
+}
+
+fn indent_of(line: &str) -> usize {
+    line.len().saturating_sub(line.trim_start().len())
+}
+
+fn is_blank_or_comment(line: &str) -> bool {
+    let line = line.trim();
+    line.is_empty() || line.starts_with('#')
+}
+
+/// A block sequence item (`- value`) without its dash.
+fn sequence_item(line: &str) -> Option<&str> {
+    line.trim()
+        .strip_prefix('-')
+        .filter(|rest| rest.is_empty() || rest.starts_with(' '))
+}
+
+/// Parses the entries indented by exactly `indent`, from `lines[*at]` up to the first line
+/// indented less. Lines indented more that no entry consumed are unsupported and skipped.
+fn parse_mapping(lines: &[&str], at: &mut usize, indent: usize) -> JsonObject {
     let mut mapping = JsonObject::new();
-    let mut lines = text.lines().peekable();
-    while let Some(line) = lines.next() {
-        if !is_top_level(line) {
+    while let Some(line) = lines.get(*at) {
+        if !is_blank_or_comment(line) && indent_of(line) < indent {
+            break;
+        }
+        *at = at.saturating_add(1);
+        if is_blank_or_comment(line) || indent_of(line) > indent {
             continue;
         }
         let Some((key, value)) = split_entry(line) else {
             continue;
         };
-        if !value.is_empty() {
-            mapping.insert(unquote_key(key), parse_scalar(value));
-            continue;
-        }
-        let mut items = Vec::new();
-        let mut nested = JsonObject::new();
-        while let Some(next) = lines.peek() {
-            let inner = next.trim();
-            let item = inner
-                .strip_prefix('-')
-                .filter(|rest| rest.is_empty() || rest.starts_with(' '));
-            if is_top_level(next) && item.is_none() {
-                break;
-            }
-            lines.next();
-            if inner.is_empty() || inner.starts_with('#') {
-                continue;
-            }
-            if let Some(item) = item {
-                items.push(parse_scalar(item));
-            } else if let Some((key, value)) = split_entry(inner) {
-                nested.insert(unquote_key(key), parse_scalar(value));
-            }
-        }
-        let value = if !items.is_empty() {
-            JsonValue::Array(items)
-        } else if !nested.is_empty() {
-            JsonValue::Object(nested)
+        let value = if let Some(header) = BlockScalar::parse(value) {
+            header.read(lines, at, indent)
+        } else if value.is_empty() {
+            parse_nested(lines, at, indent)
         } else {
-            JsonValue::Null
+            parse_scalar(value)
         };
         mapping.insert(unquote_key(key), value);
     }
     mapping
+}
+
+/// The value of a key with nothing after its colon: a block sequence, a nested mapping or null.
+fn parse_nested(lines: &[&str], at: &mut usize, parent_indent: usize) -> JsonValue {
+    let Some(first) = lines
+        .get(*at..)
+        .and_then(|rest| rest.iter().find(|line| !is_blank_or_comment(line)))
+    else {
+        return JsonValue::Null;
+    };
+    let indent = indent_of(first);
+    if sequence_item(first).is_some() && indent >= parent_indent {
+        let mut items = Vec::new();
+        while let Some(line) = lines.get(*at) {
+            let blank = is_blank_or_comment(line);
+            if !blank
+                && (indent_of(line) < indent || (indent_of(line) == indent && sequence_item(line).is_none()))
+            {
+                break;
+            }
+            *at = at.saturating_add(1);
+            if let Some(item) = sequence_item(line).filter(|_| !blank && indent_of(line) == indent) {
+                items.push(parse_scalar(item));
+            }
+        }
+        return JsonValue::Array(items);
+    }
+    if indent <= parent_indent {
+        return JsonValue::Null;
+    }
+    let nested = parse_mapping(lines, at, indent);
+    if nested.is_empty() {
+        JsonValue::Null
+    } else {
+        JsonValue::Object(nested)
+    }
+}
+
+/// The header of a YAML block scalar: `|` or `>`, with an optional chomping indicator (`-`
+/// strips the final line break, `+` keeps trailing blank lines) and indentation digit.
+struct BlockScalar {
+    folded: bool,
+    chomp: Option<char>,
+    explicit_indent: Option<usize>,
+}
+
+impl BlockScalar {
+    fn parse(value: &str) -> Option<Self> {
+        let value = value
+            .split_once(" #")
+            .map_or(value, |(header, _)| header)
+            .trim_end();
+        let mut chars = value.chars();
+        let folded = match chars.next()? {
+            '|' => false,
+            '>' => true,
+            _ => return None,
+        };
+        let mut header = Self {
+            folded,
+            chomp: None,
+            explicit_indent: None,
+        };
+        for indicator in chars {
+            match indicator {
+                '-' | '+' if header.chomp.is_none() => header.chomp = Some(indicator),
+                '1'..='9' if header.explicit_indent.is_none() => {
+                    header.explicit_indent = indicator
+                        .to_digit(10)
+                        .and_then(|digit| usize::try_from(digit).ok());
+                }
+                _ => return None,
+            }
+        }
+        Some(header)
+    }
+
+    /// Reads the scalar's lines: those indented more than the key, and the blank lines between.
+    fn read(&self, lines: &[&str], at: &mut usize, parent_indent: usize) -> JsonValue {
+        let rest = lines.get(*at..).unwrap_or_default();
+        let content_indent = self.explicit_indent.map_or_else(
+            || {
+                let first = rest.iter().find(|line| !line.trim().is_empty());
+                first.map_or(0, |line| indent_of(line))
+            },
+            |digit| parent_indent.saturating_add(digit),
+        );
+        let mut content: Vec<&str> = Vec::new();
+        if content_indent > parent_indent {
+            for line in rest {
+                if !line.trim().is_empty() && indent_of(line) < content_indent {
+                    break;
+                }
+                *at = at.saturating_add(1);
+                content.push(line.get(content_indent..).unwrap_or_default());
+            }
+        }
+        let trailing_blank = content
+            .iter()
+            .rev()
+            .take_while(|line| line.trim().is_empty())
+            .count();
+        content.truncate(content.len().saturating_sub(trailing_blank));
+        let mut text = if self.folded {
+            fold_lines(&content)
+        } else {
+            content.join("\n")
+        };
+        match self.chomp {
+            Some('-') => {}
+            Some(_) => {
+                text.push_str(&"\n".repeat(trailing_blank.saturating_add(usize::from(!content.is_empty()))))
+            }
+            None if content.is_empty() => {}
+            None => text.push('\n'),
+        }
+        JsonValue::String(text)
+    }
+}
+
+/// Folds the lines of a `>` block scalar: a single line break between two text lines becomes a
+/// space, blank lines become line breaks, and breaks around more-indented lines are kept.
+fn fold_lines(lines: &[&str]) -> String {
+    let mut text = String::new();
+    let mut previous: Option<&str> = None;
+    let mut blank = 0_usize;
+    for line in lines {
+        if line.trim().is_empty() {
+            blank = blank.saturating_add(1);
+            continue;
+        }
+        let indented = |line: &str| line.starts_with([' ', '\t']);
+        match previous {
+            None => text.push_str(&"\n".repeat(blank)),
+            Some(previous) if indented(previous) || indented(line) => {
+                text.push_str(&"\n".repeat(blank.saturating_add(1)));
+            }
+            Some(_) if blank == 0 => text.push(' '),
+            Some(_) => text.push_str(&"\n".repeat(blank)),
+        }
+        text.push_str(line);
+        previous = Some(line);
+        blank = 0;
+    }
+    text
 }
 
 fn unquote_key(key: &str) -> String {
@@ -457,12 +603,44 @@ fn parse_scalar(raw: &str) -> JsonValue {
                 text.push(char);
                 continue;
             }
-            match chars.next() {
-                Some('n') => text.push('\n'),
-                Some('t') => text.push('\t'),
-                Some(other) => text.push(other),
-                None => text.push('\\'),
-            }
+            let Some(escape) = chars.next() else {
+                text.push('\\');
+                break;
+            };
+            let digits = match escape {
+                'x' => 2,
+                'u' => 4,
+                'U' => 8,
+                _ => 0,
+            };
+            let decoded = match escape {
+                '0' => Some('\0'),
+                'a' => Some('\u{7}'),
+                'b' => Some('\u{8}'),
+                't' => Some('\t'),
+                'n' => Some('\n'),
+                'v' => Some('\u{b}'),
+                'f' => Some('\u{c}'),
+                'r' => Some('\r'),
+                'e' => Some('\u{1b}'),
+                'N' => Some('\u{85}'),
+                '_' => Some('\u{a0}'),
+                'L' => Some('\u{2028}'),
+                'P' => Some('\u{2029}'),
+                'x' | 'u' | 'U' => {
+                    let hex: String = chars.clone().take(digits).collect();
+                    let code = (hex.len() == digits)
+                        .then(|| u32::from_str_radix(&hex, 16).ok())
+                        .flatten()
+                        .and_then(char::from_u32);
+                    if code.is_some() {
+                        chars.nth(digits.saturating_sub(1));
+                    }
+                    code
+                }
+                _ => None,
+            };
+            text.push(decoded.unwrap_or(escape));
         }
         return JsonValue::String(text);
     }
