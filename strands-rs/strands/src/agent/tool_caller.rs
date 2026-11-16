@@ -107,6 +107,10 @@ impl<'a> ToolHandle<'a> {
     }
 
     /// [`stream`](Self::stream) with options.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "takes its options by value like every other options parameter"
+    )]
     pub fn stream_with(self, input: JsonValue, options: DirectToolCallOptions) -> ToolCallStream<'a> {
         let Self { agent, name } = self;
         ToolCallStream {
