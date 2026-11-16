@@ -1,0 +1,5 @@
+error: a #[tool] method can't be named `tools`: #[tools] generates a method of that name. Rename the method, or the generated one with #[tools(list = "..")]
+ --> tests/ui/fail/tool_named_tools.rs:9:8
+  |
+9 |     fn tools(&self) -> u8 {
+  |        ^^^^^

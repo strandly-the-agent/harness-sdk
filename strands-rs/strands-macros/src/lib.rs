@@ -76,6 +76,16 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// `<method>_tool(self: &Arc<Self>)`, returning that tool, and `tools(self: &Arc<Self>)`,
 /// returning all of them as a `Vec<ToolSource>` in declaration order.
 ///
+/// - `tools()` is public when any `#[tool]` method is, and otherwise has the visibility of the
+///   first one; each `<method>_tool` has its method's visibility.
+/// - Every block generates the list method, so a type has one `#[tools]` block, or each further
+///   block renames its list: `#[tools(list = "admin_tools")]`. A `#[tool]` method can't have
+///   the list method's name, and `<method>_tool` can't be the name of another method of the block.
+/// - A `#[tool]` method under `#[cfg(..)]` takes its tool, its constructor and its `tools()`
+///   entry with it.
+/// - `strands::tools` is both a module and this attribute. In a crate with its own `tools`
+///   module, write `#[strands::tools]` instead of importing it.
+///
 /// ```
 /// use std::sync::Arc;
 ///

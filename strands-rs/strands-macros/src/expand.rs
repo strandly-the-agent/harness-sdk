@@ -63,8 +63,25 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
         ));
     }
     let self_ty = item.self_ty.clone();
+    let list_ident = match &args.list {
+        Some(name) => syn::parse_str::<syn::Ident>(name).map_err(|_| {
+            syn::Error::new(
+                self_ty.span(),
+                format!("#[tools(list = \"{name}\")] needs a method name"),
+            )
+        })?,
+        None => format_ident!("tools"),
+    };
+    let method_idents: Vec<syn::Ident> = item
+        .items
+        .iter()
+        .filter_map(|impl_item| match impl_item {
+            ImplItem::Fn(method) => Some(method.sig.ident.clone()),
+            _ => None,
+        })
+        .collect();
     let mut generated = Vec::new();
-    let mut constructors: Vec<(syn::Ident, Visibility)> = Vec::new();
+    let mut constructors: Vec<(syn::Ident, Visibility, Vec<Attribute>)> = Vec::new();
     for impl_item in &mut item.items {
         let ImplItem::Fn(method) = impl_item else {
             continue;
@@ -78,7 +95,30 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
         let tool = signature::read(&method.attrs, &mut method.sig, tool_args, Receiver::Ref)?;
         method.attrs.extend(lint_allows(&tool));
         let method_ident = &tool.ident;
+        if *method_ident == list_ident {
+            return Err(syn::Error::new(
+                method_ident.span(),
+                format!(
+                    "a #[tool] method can't be named `{list_ident}`: #[tools] generates a method of that \
+                     name. Rename the method, or the generated one with #[tools(list = \"..\")]"
+                ),
+            ));
+        }
         let constructor = format_ident!("{}_tool", method_ident.unraw());
+        if let Some(clash) = method_idents.iter().find(|ident| **ident == constructor) {
+            return Err(syn::Error::new(
+                clash.span(),
+                format!("#[tools] generates `{constructor}` for the `{method_ident}` tool: rename this method"),
+            ));
+        }
+        // `#[tools]` expands before the compiler strips cfg'd methods, so the generated items
+        // carry the method's `#[cfg]`.
+        let cfgs: Vec<Attribute> = method
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("cfg"))
+            .cloned()
+            .collect();
         let vis = &method.vis;
         let docs = &tool.docs;
         let summary = format!("The `{}` tool, bound to this value.", tool.name);
@@ -91,6 +131,7 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
             &bind_this,
         );
         generated.push(quote! {
+            #(#cfgs)*
             const _: () = {
                 struct __StrandsTool(::std::sync::Arc<#self_ty>);
 
@@ -109,9 +150,9 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
                 }
             };
         });
-        constructors.push((constructor, vis.clone()));
+        constructors.push((constructor, vis.clone(), cfgs));
     }
-    let Some((_, first_vis)) = constructors.first() else {
+    let Some((_, first_vis, _)) = constructors.first() else {
         return Err(syn::Error::new(
             self_ty.span(),
             "#[tools] needs at least one #[tool] method",
@@ -119,10 +160,15 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
     };
     let vis = constructors
         .iter()
-        .map(|(_, vis)| vis)
+        .map(|(_, vis, _)| vis)
         .find(|vis| matches!(vis, Visibility::Public(_)))
         .unwrap_or(first_vis);
-    let idents = constructors.iter().map(|(ident, _)| ident);
+    let pushes = constructors.iter().map(|(ident, _, cfgs)| {
+        quote! {
+            #(#cfgs)*
+            tools.push(#krate::__private::ToolSource::from(self.#ident()));
+        }
+    });
     Ok(quote! {
         #item
 
@@ -132,8 +178,15 @@ pub(crate) fn tools_impl(args: &ToolsArgs, mut item: ItemImpl) -> syn::Result<To
             /// The tools of the `#[tool]` methods in this impl block, bound to this value, in
             /// declaration order.
             #[must_use]
-            #vis fn tools(self: &::std::sync::Arc<Self>) -> ::std::vec::Vec<#krate::__private::ToolSource> {
-                ::std::vec![#(#krate::__private::ToolSource::from(self.#idents())),*]
+            #vis fn #list_ident(self: &::std::sync::Arc<Self>) -> ::std::vec::Vec<#krate::__private::ToolSource> {
+                #[allow(
+                    unused_mut,
+                    clippy::vec_init_then_push,
+                    reason = "one push per tool, so each can carry the method's #[cfg]"
+                )]
+                let mut tools = ::std::vec::Vec::new();
+                #(#pushes)*
+                tools
             }
         }
     })
@@ -312,6 +365,7 @@ mod tests {
         };
         let args = ToolsArgs {
             krate: Some(parse_quote!(::my_strands)),
+            list: None,
         };
         let code = tools_impl(&args, tools).unwrap().to_string();
         assert!(!code.replace("my_strands", "").contains("strands ::"), "{code}");

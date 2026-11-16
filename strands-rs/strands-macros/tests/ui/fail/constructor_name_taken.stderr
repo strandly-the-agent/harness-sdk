@@ -1,0 +1,5 @@
+error: #[tools] generates `count_tool` for the `count` tool: rename this method
+  --> tests/ui/fail/constructor_name_taken.rs:13:8
+   |
+13 |     fn count_tool(&self) -> u32 {
+   |        ^^^^^^^^^^
