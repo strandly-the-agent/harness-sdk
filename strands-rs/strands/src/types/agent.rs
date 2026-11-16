@@ -25,7 +25,9 @@ use crate::state_store::StateStore;
 use crate::telemetry::{AgentMetrics, AgentTrace, LocalTelemetry};
 use crate::tools::{StructuredOutputSchema, ToolRegistry};
 use crate::types::json::{JsonValue, to_js_string};
-use crate::types::messages::{ContentBlock, Message, StopReason, SystemPrompt};
+use crate::types::messages::{
+    ContentBlock, Message, StopReason, SystemPrompt, ToolResultBlock, ToolUseBlock,
+};
 
 /// The caller's per-invocation values, passed to tools and hooks (TS `InvocationState`).
 ///
@@ -532,6 +534,8 @@ impl LocalAgent {
                 history_edit: Arc::default(),
                 child_defaults: Arc::clone(&self.child_defaults),
                 trace_attributes: self.telemetry.lock().tracer.trace_attributes().into(),
+                hooks: self.hooks.clone(),
+                telemetry: self.telemetry.clone(),
             }),
         }
     }
@@ -577,9 +581,49 @@ struct ToolAgentInner {
     history_edit: Arc<Mutex<Option<Vec<Message>>>>,
     child_defaults: Arc<ChildDefaults>,
     trace_attributes: Arc<[(String, crate::telemetry::AttributeValue)]>,
+    hooks: HookRegistry,
+    telemetry: LocalTelemetry,
+}
+
+/// What [`ToolAgent::call_tool`] came to.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum ToolCallOutcome {
+    /// The tool's result, after the `AfterToolCallEvent` hooks.
+    Result(ToolResultBlock),
+    /// A hook or the tool asked for input nobody has given (an approval request, for example).
+    /// It is not recorded in the agent's interrupt state; the caller decides what to do.
+    Interrupt(Interrupt),
+    /// The agent was cancelled before the call started; the tool did not run.
+    Cancelled,
 }
 
 impl ToolAgent {
+    /// Runs the registry tool `name` with `input` as the executor runs a model-issued call:
+    /// `BeforeToolCallEvent` hooks (so interventions gate it), the tool middleware, the tool, and
+    /// `AfterToolCallEvent` hooks.
+    ///
+    /// # Errors
+    ///
+    /// A hook or a middleware handler failed.
+    pub async fn call_tool(
+        &self,
+        name: &str,
+        input: JsonValue,
+        invocation_state: InvocationState,
+    ) -> Result<ToolCallOutcome> {
+        // A throwaway interrupt state, so an interrupt of the inner call never reaches the agent's.
+        let mut inner = (*self.inner).clone();
+        inner.interrupt_state = InterruptState::default();
+        let (hooks, telemetry) = (inner.hooks.clone(), inner.telemetry.clone());
+        let agent = Self {
+            inner: Arc::new(inner),
+        };
+        let tool_use = ToolUseBlock::new(name, format!("call_{}", uuid::Uuid::now_v7().simple()), input);
+        crate::tools::executors::executor::call_tool(agent, hooks, telemetry, invocation_state, tool_use)
+            .await
+    }
+
     /// The history as the batch's tools left it: the latest [`replace_messages`] or the snapshot.
     ///
     /// [`replace_messages`]: Self::replace_messages

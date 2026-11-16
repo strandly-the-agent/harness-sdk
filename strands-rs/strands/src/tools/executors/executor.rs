@@ -31,7 +31,9 @@ use crate::middleware::{
 };
 use crate::telemetry::{AttributeValue, LocalTelemetry};
 use crate::tools::{Tool, ToolContext, ToolOutcome, ToolStreamItem};
-use crate::types::agent::{AgentStreamEvent, InvocationState, ToolAgent, ToolStreamUpdateEventData};
+use crate::types::agent::{
+    AgentStreamEvent, InvocationState, ToolAgent, ToolCallOutcome, ToolStreamUpdateEventData,
+};
 use crate::types::messages::{Message, ToolResultBlock, ToolUseBlock};
 use crate::types::tools::{ToolResultStatus, ToolUse};
 
@@ -261,6 +263,75 @@ impl Batch {
             assistant_message_data: assistant_message.clone(),
             completed_tool_results,
         });
+    }
+}
+
+/// Runs one call of a registry tool through the per-tool pipeline, outside a batch
+/// ([`ToolAgent::call_tool`]): `BeforeToolCallEvent` hooks, the `ExecuteToolStage` middleware
+/// chain around the tool, `AfterToolCallEvent` hooks and their retry. Stream updates are dropped,
+/// and a hook's interrupt is returned without being recorded anywhere.
+pub(crate) async fn call_tool(
+    agent: ToolAgent,
+    hooks: HookRegistry,
+    telemetry: LocalTelemetry,
+    invocation_state: InvocationState,
+    tool_use: ToolUseBlock,
+) -> Result<ToolCallOutcome> {
+    if agent.cancel_signal().is_cancelled() {
+        return Ok(ToolCallOutcome::Cancelled);
+    }
+    let (sender, mut receiver) = mpsc::channel(CHANNEL_CAPACITY);
+    let task = ToolTask {
+        agent,
+        invocation_state,
+        telemetry,
+        sender,
+        background: None,
+    };
+    let execute = task.execute(&tool_use);
+    tokio::pin!(execute);
+    let mut interrupts = Vec::new();
+    loop {
+        let message = tokio::select! {
+            outcome = &mut execute => {
+                return match (outcome, interrupts.into_iter().next()) {
+                    (Some(ToolOutcome::Result(result)), _) => Ok(ToolCallOutcome::Result(result)),
+                    (Some(ToolOutcome::Interrupt(interrupt)), _) | (None, Some(interrupt)) => {
+                        Ok(ToolCallOutcome::Interrupt(interrupt))
+                    }
+                    (None, None) => Err(Error::other("the tool call ended without a result")),
+                };
+            }
+            Some(message) = receiver.recv() => message,
+        };
+        match message {
+            TaskMessage::Before(mut event, reply) => {
+                hooks.invoke::<BeforeToolCallEvent>(&mut event).await?;
+                let raised = event.take_interrupts();
+                if raised.is_empty() {
+                    let cancel = event
+                        .cancel()
+                        .filter(|cancel| cancel.cancels())
+                        .map(|cancel| cancel.message().unwrap_or("Tool cancelled by hook").to_owned());
+                    drop(reply.send(Some((
+                        event.tool_use().clone(),
+                        event.selected_tool().cloned(),
+                        cancel,
+                    ))));
+                } else {
+                    interrupts.extend(raised);
+                    drop(reply.send(None));
+                }
+            }
+            TaskMessage::Update(_, reply) => drop(reply.send(())),
+            TaskMessage::After(mut event, reply) => {
+                hooks.invoke::<AfterToolCallEvent>(&mut event).await?;
+                drop(reply.send((event.result().clone(), event.retry())));
+            }
+            TaskMessage::Interrupted(interrupt) => interrupts.push(interrupt),
+            TaskMessage::Failed(_, error) => return Err(error),
+            TaskMessage::Done(result) => return Ok(ToolCallOutcome::Result(result)),
+        }
     }
 }
 
