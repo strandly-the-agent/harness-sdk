@@ -10,8 +10,8 @@ use crate::error::Result;
 #[cfg(not(feature = "bedrock"))]
 use crate::error::{DefaultNotConfiguredError, Error};
 use crate::experimental::context_manager::ContextManagerStrategy;
-use crate::memory::{MemoryManager, MemoryManagerConfig};
 use crate::interventions::InterventionHandler;
+use crate::memory::{MemoryManager, MemoryManagerConfig};
 #[cfg(feature = "bedrock")]
 use crate::models::bedrock::{BedrockModel, BedrockModelConfig};
 use crate::models::model::Model;

@@ -26,8 +26,8 @@ use crate::hooks::{
     EventKind, Hook, HookCallbackOptions, HookCleanup, HookEvent, HookRegistry, InitializedEvent,
     IntoSyncHook,
 };
-use crate::memory::MemoryManager;
 use crate::interventions::InterventionRegistry;
+use crate::memory::MemoryManager;
 use crate::middleware::{Middleware, MiddlewareCleanup, MiddlewareRegistry, MiddlewareStage};
 use crate::models::model::Model;
 use crate::models::routing::ModelRouter;
