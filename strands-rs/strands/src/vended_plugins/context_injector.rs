@@ -54,7 +54,7 @@ pub struct ContextInjectorConfig {
     pub trigger: Option<InjectionCondition>,
     /// Returns the text to inject; `None` or blank text skips the call, and an error fails open
     /// (the model call proceeds without it). Box a closure with
-    /// [`render_content`](crate::injection::render_content).
+    /// [`render_content`].
     ///
     /// The text reaches the model verbatim, so escape any attacker-influenced fields. It is
     /// rendered at most once per user message: a retry or a resume sends the stored text.
