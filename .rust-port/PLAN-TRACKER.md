@@ -120,7 +120,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Model strings, effort, caching, provider tables
 - [x] `HARNESS_CONTRACT` and `build_system_prompt`
 - [ ] Harness file tools, `shell`, `web_fetch`, `web_search` (native and Exa)
-- [ ] `programmatic_tool_caller` on Monty
+- [x] `programmatic_tool_caller` on Monty
 - [ ] `subagent` with presets and axes
 - [ ] `Todos` and `EnvironmentContext` plugins
 - [ ] Interventions grammar and `mcp_servers`
