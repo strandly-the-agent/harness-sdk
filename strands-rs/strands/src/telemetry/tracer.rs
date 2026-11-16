@@ -883,3 +883,6 @@ fn stable_format(blocks: &[ContentBlock]) -> Vec<JsonValue> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod local_trace_tests;
