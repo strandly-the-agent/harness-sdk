@@ -455,7 +455,7 @@ mod message_trimming {
     }
 
     #[test]
-    fn calculates_correct_trim_index_messages_length_minus_window_size() {
+    fn calculates_correct_trim_index_messages_length_window_size() {
         let mut messages = vec![u("Message 1"), a("Response 1"), u("Message 2"), a("Response 2")];
         overflow(&window(2), &mut messages);
         assert_eq!(messages.len(), 2);
@@ -469,7 +469,7 @@ mod message_trimming {
     }
 
     #[test]
-    fn uses_default_trim_index_of_2_when_messages_le_window_size() {
+    fn uses_default_trim_index_of_2_when_messages_window_size() {
         let mut messages = vec![u("Message 1"), a("Response 1"), u("Message 2")];
         overflow(&window(5), &mut messages);
         assert_eq!(messages.len(), 1);

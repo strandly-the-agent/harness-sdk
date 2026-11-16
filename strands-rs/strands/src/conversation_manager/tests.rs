@@ -322,7 +322,7 @@ mod proactive_compression {
     }
 
     #[test]
-    fn throws_on_compression_threshold_le_0() {
+    fn throws_on_compression_threshold_0() {
         assert!(threshold_error(0.0).contains("must be between 0 (exclusive) and 1 (inclusive)"));
         assert_eq!(
             threshold_error(-1.0),
@@ -331,7 +331,7 @@ mod proactive_compression {
     }
 
     #[test]
-    fn throws_on_compression_threshold_gt_1() {
+    fn throws_on_compression_threshold_1() {
         assert!(threshold_error(1.5).contains("must be between 0 (exclusive) and 1 (inclusive)"));
     }
 

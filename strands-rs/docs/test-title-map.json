@@ -415,6 +415,14 @@
       "gap": "tests the TS `Proxy` behind `agent.tool` (same instance, `invoke`/`stream` present), which the compiler checks"
     }
   },
+  "strands-ts/src/conversation-manager/__tests__/agentic-context.test.ts": {
+    "truncateContextTool > respects messageType filter": "respects_message_type_filter_when_truncating"
+  },
+  "strands-ts/src/conversation-manager/__tests__/summarizing-conversation-manager.test.ts": {
+    "wraps non-Error throw values with the overflow error as cause": {
+      "gap": "TS-only: Rust has no non-`Error` throws"
+    }
+  },
   "strands-ts/src/hooks/__tests__/events.test.ts": {
     "allows mutating toolUse fields in-place": {
       "gap": "`ToolUse` fields are private and the event hands out no `&mut ToolUse`; a hook replaces the whole value with `set_tool_use` (`allows_reassigning_tool_use_to_a_new_object`)"
