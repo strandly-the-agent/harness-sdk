@@ -1,5 +1,11 @@
-//! The headline example (PROMPT.md section 13): a `#[tool]`, the default model, `invoke`, a
-//! scoped `stream` and `shutdown`. It needs a configured default model to run.
+//! A first agent: a `#[tool]`, the default model, `invoke`, a scoped `stream` and `shutdown`.
+//!
+//! The default model is Amazon Bedrock's; AWS credentials and the region come from the default
+//! chain (environment, profile, instance role).
+//!
+//! ```sh
+//! cargo run -p strands --example basic
+//! ```
 
 #![expect(clippy::print_stdout, reason = "examples print their results")]
 
@@ -20,6 +26,7 @@ async fn main() -> Result<(), strands::Error> {
     let mut agent = Agent::builder() // default model: Bedrock
         .system_prompt("You are a concise assistant.")
         .tools([GetWeather])
+        .printer(false) // this example prints the output itself
         .build()?;
 
     let result = agent.invoke("What's the weather in Seattle?").await?;
@@ -34,6 +41,7 @@ async fn main() -> Result<(), strands::Error> {
                 print!("{text}");
             }
         }
+        println!();
     }
     agent.shutdown().await
 }

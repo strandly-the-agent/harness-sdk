@@ -73,6 +73,10 @@ hyper.workspace = true
 http-body-util.workspace = true
 hyper-util.workspace = true
 
+[[example]]
+name = "basic"
+required-features = ["bedrock"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
