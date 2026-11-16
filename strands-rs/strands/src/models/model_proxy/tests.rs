@@ -304,7 +304,8 @@ mod injected_blocks {
     }
 
     #[tokio::test]
-    async fn keeps_the_cache_point_ahead_of_the_latest_injected_text_also_when_an_assistant_message_follows() {
+    async fn keeps_the_cache_point_ahead_of_the_latest_injected_text_also_when_an_assistant_message_follows()
+    {
         let model = MockMessageModel::new().tap_turn();
         let messages = vec![Message::new(
             Role::User,

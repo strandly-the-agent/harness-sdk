@@ -272,7 +272,8 @@ mod invocation_context {
     }
 
     #[tokio::test]
-    async fn leaves_the_parent_limit_intact_and_the_child_uncounted_when_a_hand_written_tool_forwards_invocation_state() {
+    async fn leaves_the_parent_limit_intact_and_the_child_uncounted_when_a_hand_written_tool_forwards_invocation_state()
+     {
         let parent_model = relay_model(3);
         let mut parent = Agent::builder()
             .model(Arc::clone(&parent_model))
