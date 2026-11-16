@@ -1,7 +1,7 @@
 From b93caa922d8cb8a44632ae7beb7fe3d33b1e059b Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:08:59 +0000
-Subject: [PATCH 08/14] fix(strands): import the otel span traits at the top of
+Subject: [PATCH 08/15] fix(strands): import the otel span traits at the top of
  tracer/memory.rs; stage the telemetry divergence rows
 
 ---

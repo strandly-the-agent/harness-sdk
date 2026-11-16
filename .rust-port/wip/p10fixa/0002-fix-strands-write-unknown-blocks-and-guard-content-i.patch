@@ -1,7 +1,7 @@
 From 906cb8f3c8a7463617971f6d178d83581d71509e Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 10:58:59 +0000
-Subject: [PATCH 02/14] fix(strands): write unknown blocks and guard content in
+Subject: [PATCH 02/15] fix(strands): write unknown blocks and guard content in
  span parts as TS does
 
 ---

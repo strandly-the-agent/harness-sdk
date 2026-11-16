@@ -1,7 +1,7 @@
 From 6c7067135dad6edadf44027d80e82b5223c6c2b3 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:28:16 +0000
-Subject: [PATCH 14/14] fix(strands): gate the meter test accessor on the otel
+Subject: [PATCH 14/15] fix(strands): gate the meter test accessor on the otel
  feature
 
 ---

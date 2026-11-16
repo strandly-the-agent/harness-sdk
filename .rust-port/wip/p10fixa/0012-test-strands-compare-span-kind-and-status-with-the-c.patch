@@ -1,7 +1,7 @@
 From 6f3beae051e2778f980ea5433d8e8eb4108a60fb Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:20:28 +0000
-Subject: [PATCH 12/14] test(strands): compare span kind and status with the
+Subject: [PATCH 12/15] test(strands): compare span kind and status with the
  conformance span fixtures
 
 ---

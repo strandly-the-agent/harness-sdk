@@ -1,7 +1,7 @@
 From 5682769140ea1c45ea2bcaddf98769d5d3f9d117 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:03:05 +0000
-Subject: [PATCH 03/14] fix(strands): spawn detached memory saves without the
+Subject: [PATCH 03/15] fix(strands): spawn detached memory saves without the
  caller's span
 
 ---

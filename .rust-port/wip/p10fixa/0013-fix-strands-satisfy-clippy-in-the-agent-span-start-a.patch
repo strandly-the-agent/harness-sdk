@@ -1,7 +1,7 @@
 From 7556f064bac2f619ca81c7091ec31011fce875f5 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:24:38 +0000
-Subject: [PATCH 13/14] fix(strands): satisfy clippy in the agent span start
+Subject: [PATCH 13/15] fix(strands): satisfy clippy in the agent span start
  and the guard content part
 
 ---

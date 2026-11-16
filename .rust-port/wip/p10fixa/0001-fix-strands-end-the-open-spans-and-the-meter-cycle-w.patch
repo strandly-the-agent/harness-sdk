@@ -1,7 +1,7 @@
 From bc69a8fdd9abc34bf1b4a3af6b0a4c256e0c43e4 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 10:58:47 +0000
-Subject: [PATCH 01/14] fix(strands): end the open spans and the meter cycle
+Subject: [PATCH 01/15] fix(strands): end the open spans and the meter cycle
  when the agent stream is dropped
 
 ---
