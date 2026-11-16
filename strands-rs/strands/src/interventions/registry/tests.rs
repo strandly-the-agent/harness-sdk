@@ -210,7 +210,10 @@ mod dispatch_ordering {
                 Ok(proceed().into())
             })
         };
-        fire_tool(vec![recording("first"), recording("second")], &local_agent()).await;
+        fire_tool(vec![recording("first"), recording("second")], &local_agent())
+            .await
+            .1
+            .unwrap();
         assert_eq!(*order.lock().unwrap(), ["first", "second"]);
     }
 
@@ -242,7 +245,10 @@ mod deny_action {
     #[tokio::test]
     async fn short_circuits_later_handlers_do_not_run() {
         let called = Arc::new(Mutex::new(Vec::new()));
-        fire_tool(vec![deny_handler(), later_handler(&called)], &local_agent()).await;
+        fire_tool(vec![deny_handler(), later_handler(&called)], &local_agent())
+            .await
+            .1
+            .unwrap();
         assert!(called.lock().unwrap().is_empty());
     }
 
@@ -551,7 +557,7 @@ mod transform_action {
             })
             .into())
         });
-        fire_tool(vec![handler], &local_agent()).await;
+        fire_tool(vec![handler], &local_agent()).await.1.unwrap();
         assert_eq!(*seen.lock().unwrap(), ["testTool"]);
     }
 
@@ -566,7 +572,10 @@ mod transform_action {
             log.lock().unwrap().push(cancel_message(event).map(str::to_owned));
             Ok(proceed().into())
         });
-        fire_tool(vec![transformer, observer], &local_agent()).await;
+        fire_tool(vec![transformer, observer], &local_agent())
+            .await
+            .1
+            .unwrap();
         assert_eq!(*observed.lock().unwrap(), [Some("transformed".to_owned())]);
     }
 
