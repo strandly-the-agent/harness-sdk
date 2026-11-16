@@ -104,7 +104,7 @@ mod default {
     }
 
     #[test]
-    fn treats_sandbox_off_as_not_configured() {
+    fn treats_sandbox_false_the_same_as_unconfigured() {
         let error = agent(Some(SandboxSource::Off)).sandbox().err().unwrap();
         assert!(matches!(error, Error::DefaultNotConfigured(_)));
         assert_eq!(
@@ -245,7 +245,7 @@ mod not_a_sandbox_local_environment {
     }
 
     #[tokio::test]
-    async fn applies_the_env_option_to_code() {
+    async fn execute_code_applies_the_env_option() {
         let dir = tempfile::tempdir().unwrap();
         let result = sandbox(dir.path())
             .execute_code("echo \"$GREETING\"", "sh", with_env(&[("GREETING", "hi")]))
@@ -787,7 +787,7 @@ mod stream_process {
     }
 
     #[test]
-    fn decodes_multibyte_utf8_sequences_split_across_chunk_boundaries() {
+    fn decodes_multibyte_utf_8_sequences_split_across_chunk_boundaries() {
         let bytes = "café☕".as_bytes();
         let mut decoder = Utf8Decoder::default();
         let first = decoder.decode(&bytes[..4]);
@@ -1450,7 +1450,7 @@ mod posix_shell {
     }
 
     #[tokio::test]
-    async fn maps_signal_termination_to_128_plus_signal_number() {
+    async fn maps_signal_termination_to_128_signal_number() {
         let (_dir, sandbox) = setup();
         let result = sandbox
             .execute("sh -c 'kill -9 $$'", ExecuteOptions::default())

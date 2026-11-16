@@ -570,6 +570,26 @@
       "gap": "ruled out by `max_attempts: NonZeroU32`"
     }
   },
+  "strands-ts/src/sandbox/__tests__/not-a-sandbox-local-environment.test.node.ts": {
+    "propagates a native command exit code": {
+      "gap": "Windows-only: the PowerShell runtime cases run only on Windows, which this port can't build or run; the command construction is unit-tested on every platform"
+    },
+    "does not treat stderr output from a successful native command as failure": {
+      "gap": "Windows-only: the PowerShell runtime cases run only on Windows, which this port can't build or run; the command construction is unit-tested on every platform"
+    },
+    "reports a failing cmdlet as exit 1 and keeps going after it": {
+      "gap": "Windows-only: the PowerShell runtime cases run only on Windows, which this port can't build or run; the command construction is unit-tested on every platform"
+    },
+    "runs an 8 KB command": {
+      "gap": "Windows-only: the PowerShell runtime cases run only on Windows, which this port can't build or run; the command construction is unit-tested on every platform"
+    },
+    "round-trips UTF-8 output": {
+      "gap": "Windows-only: the PowerShell runtime cases run only on Windows, which this port can't build or run; the command construction is unit-tested on every platform"
+    }
+  },
+  "strands-ts/src/sandbox/__tests__/posix-shell.test.node.ts": {
+    "excludes . and .. entries": "excludes_dot_and_dot_dot_entries"
+  },
   "strands-ts/src/tools/__tests__/structured-output-tool.test.ts": {
     "returns error result for non-ZodError exceptions": {
       "gap": "mocks zod's `parse` to throw; Rust validation can't throw"
