@@ -1,0 +1,9 @@
+| Model routing state | Stored in `invocationState` under a `strands:modelRouting:` key | Kept inside the router, per attached agent | `invocation_state` is user-only in Rust; behaviour is the same, including the cleanup at both ends of an invocation |
+| Routing log labels | `candidate=<...>` and `model=<...>` use the provider class name and model id (`BedrockModel/<id>`) | The model id alone, or `Model` when the model reports none | A `dyn Model` has no runtime class name. The same label appears in the `is stateful` and `repeats a model` construction errors |
+| `RoutingAttempt.exception` | The `Error` object | `RoutingException { name, message }` | `strands::Error` is not `Clone` and hooks only borrow it |
+| `RoutingCandidate` metadata validation | Throws for a non-object, a non-serializable value or a non-finite number | No error path | `JsonObject` can't hold those values |
+| `RoutingCandidate` subclasses | A subclass can add strategy-specific fields | Not available; use `metadata` | Rust has no subclassing; candidates compare by identity |
+| `ClassifierStrategy` classifier | A `Model` or a `DecisionModel` | A `Model` only | The decision-model layer is out of v0.1; a `Model` is asked exactly as TS's `LLMDecisionModel` asks it |
+| `ClassifierStrategy` budgets | Counted in UTF-16 code units; `timeoutMs` capped at 2147483647 | Counted in characters; `timeout` is a `Duration` with no ceiling | Section 7.3; ASCII input gives identical output |
+| `ClassifierStrategy` invalid answers | The classifier's validation error text comes from zod | `decision model returned an invalid answer set: expected candidate.answer to be one of c0|c1` | The text is never surfaced; only the error name is logged, and that matches |
+| A router in `plugins` | Detected with `instanceof ModelRouter` | Detected by the plugin name `strands:model-router` | `Arc<dyn Plugin>` has no downcast in the public API; the error text and timing (agent construction) match |
