@@ -19,7 +19,7 @@ bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-sigv4", "dep
 anthropic = ["dep:eventsource-stream"]
 openai = ["dep:eventsource-stream"]
 mcp = ["dep:rmcp", "dep:eventsource-stream"]
-otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry", "dep:opentelemetry-otlp"]
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry", "dep:tracing-subscriber", "dep:opentelemetry-otlp"]
 
 [dependencies]
 strands-macros.workspace = true
@@ -62,6 +62,7 @@ rmcp = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
 
 [dev-dependencies]
