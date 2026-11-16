@@ -327,9 +327,10 @@ mod select {
         );
     }
 
-    // No TS case: TS measures the evidence with `JSON.stringify(..).length` (UTF-16 code units).
+    // No TS case: TS gets `JSON.stringify` number formatting from the language. The budget counts
+    // characters, so each emoji is one.
     #[tokio::test]
-    async fn measures_candidate_evidence_as_json_stringify_length() {
+    async fn measures_candidate_evidence_as_json_stringify_writes_it() {
         let classifier = selection_model(0);
         let strategy = strategy_with(
             &classifier,
@@ -349,7 +350,7 @@ mod select {
 
         assert!(
             error.to_string().starts_with(
-                "candidate evidence serializes to 209 characters, exceeding maxCandidateChars=100;"
+                "candidate evidence serializes to 199 characters, exceeding maxCandidateChars=100;"
             ),
             "{error}"
         );

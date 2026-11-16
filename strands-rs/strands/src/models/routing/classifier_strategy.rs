@@ -361,8 +361,7 @@ fn build_candidate_profiles(
         .iter()
         .map(|candidate| profile(None, candidate))
         .collect();
-    // TS measures `JSON.stringify(evidence).length`, which counts UTF-16 code units.
-    let serialized_size = to_js_string(&evidence)?.encode_utf16().count();
+    let serialized_size = to_js_string(&evidence)?.chars().count();
     if serialized_size > character_limit {
         return Err(Error::other(format!(
             "candidate evidence serializes to {serialized_size} characters, exceeding maxCandidateChars={character_limit}; trim candidate names, descriptions, and metadata, or raise the limit"
