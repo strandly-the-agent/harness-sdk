@@ -454,6 +454,12 @@ impl Agent {
     ///
     /// Pending work failed.
     pub async fn shutdown(&mut self) -> Result<()> {
+        #[cfg(feature = "otel")]
+        let finished = {
+            let baggage = Arc::clone(&self.baggage_attributes);
+            crate::telemetry::with_baggage(&baggage, Box::pin(self.finish_abandoned_run())).await
+        };
+        #[cfg(not(feature = "otel"))]
         let finished = self.finish_abandoned_run().await;
         if let Some(memory_manager) = &self.memory_manager {
             memory_manager.flush().await;
