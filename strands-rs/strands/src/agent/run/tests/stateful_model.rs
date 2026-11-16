@@ -1,5 +1,4 @@
-//! Ported from strands-ts/src/agent/__tests__/agent.stateful-model.test.ts. The three
-//! `SessionManager` cases join with the session manager (Phase 6).
+//! Ported from strands-ts/src/agent/__tests__/agent.stateful-model.test.ts
 
 use super::*;
 use crate::conversation_manager::{
@@ -9,7 +8,10 @@ use crate::conversation_manager::{
 use crate::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest};
 use crate::models::model_info::{ModelCapabilities, ModelInfo};
 use crate::models::streaming::ModelStreamEvent;
+use crate::session::{SessionManager, SessionManagerConfig};
+use crate::storage::{InMemoryStorage, Storage};
 use crate::types::json::JsonObject;
+use crate::types::snapshot::SNAPSHOT_SCHEMA_VERSION;
 
 /// TS `StatefulMockModel`: advertises itself as stateful and stores the next response id in the
 /// request's model state, as a provider capturing it from the wire would.
@@ -65,6 +67,19 @@ fn stateful_agent(model: &Arc<StatefulMockModel>) -> Agent {
 
 fn object(value: JsonValue) -> JsonObject {
     serde_json::from_value(value).unwrap()
+}
+
+fn session_manager(storage: &InMemoryStorage, session_id: &str) -> SessionManager {
+    SessionManager::new(SessionManagerConfig {
+        storage: Some(Arc::new(storage.clone())),
+        session_id: Some(session_id.into()),
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+fn latest_key(session_id: &str, agent_id: &str) -> String {
+    format!("session/{session_id}/scopes/agent/{agent_id}/snapshots/snapshot_latest.json")
 }
 
 mod constructor {
@@ -144,6 +159,29 @@ mod invocation {
     }
 
     #[tokio::test]
+    async fn clears_messages_before_session_manager_snapshots_on_after_invocation_event() {
+        let storage = InMemoryStorage::new();
+        let model = StatefulMockModel::new(&["resp_1"], &["reply"]);
+        let mut agent = Agent::builder()
+            .id("agent-1")
+            .model(Arc::clone(&model) as Arc<dyn Model>)
+            .session_manager(session_manager(&storage, "test-session"))
+            .printer(false)
+            .build()
+            .unwrap();
+
+        agent.invoke("hi").await.unwrap();
+
+        let bytes = storage
+            .read(&latest_key("test-session", "agent-1"))
+            .await
+            .unwrap()
+            .expect("the latest snapshot is saved");
+        let snapshot: JsonValue = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(snapshot["data"]["messages"], json!([]));
+    }
+
+    #[tokio::test]
     async fn preserves_model_state_across_invocations_so_previous_response_id_chains() {
         let model = StatefulMockModel::new(&["resp_1", "resp_2"], &["one", "two"]);
         let mut agent = stateful_agent(&model);
@@ -200,5 +238,63 @@ mod stateless_model_default {
             .build()
             .unwrap();
         assert_eq!(agent.conversation_manager().name(), "test:caller-manager");
+    }
+}
+
+mod session_manager_restore_guard {
+    use super::*;
+
+    /// TS `setupStorageWithMessages`: a stored latest snapshot holding one user message.
+    async fn setup_storage_with_messages(agent_id: &str, session_id: &str) -> InMemoryStorage {
+        let storage = InMemoryStorage::new();
+        let snapshot = json!({
+            "scope": "agent",
+            "schemaVersion": SNAPSHOT_SCHEMA_VERSION,
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "data": {
+                "messages": [{"role": "user", "content": [{"text": "old turn"}]}],
+                "state": {},
+                "systemPrompt": null,
+                "modelState": {},
+            },
+            "appData": {},
+        });
+        storage
+            .write(
+                &latest_key(session_id, agent_id),
+                &serde_json::to_vec(&snapshot).unwrap(),
+            )
+            .await
+            .unwrap();
+        storage
+    }
+
+    #[tokio::test]
+    async fn discards_restored_messages_when_the_model_is_stateful() {
+        let storage = setup_storage_with_messages("agent-1", "session-stateful").await;
+        let mut agent = Agent::builder()
+            .id("agent-1")
+            .model(StatefulMockModel::new(&[], &[]) as Arc<dyn Model>)
+            .session_manager(session_manager(&storage, "session-stateful"))
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.initialize().await.unwrap();
+        assert!(agent.messages().is_empty());
+    }
+
+    #[tokio::test]
+    async fn restores_messages_when_the_model_is_stateless() {
+        let storage = setup_storage_with_messages("agent-2", "session-stateless").await;
+        let mut agent = Agent::builder()
+            .id("agent-2")
+            .model(mock(Vec::new()))
+            .session_manager(session_manager(&storage, "session-stateless"))
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.initialize().await.unwrap();
+        assert_eq!(agent.messages().len(), 1);
+        assert_eq!(agent.messages()[0].role(), Role::User);
     }
 }

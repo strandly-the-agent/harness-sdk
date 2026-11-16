@@ -258,17 +258,6 @@
       "gap": "no Rust form: `retry_strategies` takes a list, and the empty list disables retries (`disables_retries_when_retry_strategy_is_an_empty_array`)"
     }
   },
-  "strands-ts/src/agent/__tests__/agent.stateful-model.test.ts": {
-    "clears messages before SessionManager snapshots on AfterInvocationEvent": {
-      "gap": "joins with the session manager (the row: Phase 6)"
-    },
-    "discards restored messages when the model is stateful": {
-      "gap": "joins with the session manager (the row: Phase 6)"
-    },
-    "restores messages when the model is stateless": {
-      "gap": "joins with the session manager (the row: Phase 6)"
-    }
-  },
   "strands-ts/src/agent/__tests__/agent.test.ts": {
     "returns AsyncGenerator": {
       "gap": "compile-time: the `AsyncGenerator` type cases"
