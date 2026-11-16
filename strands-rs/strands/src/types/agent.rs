@@ -829,7 +829,7 @@ impl InvokeOptions {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
 pub struct InvokeLimits {
     /// Maximum turns (one model call plus the tool calls it requests) across the request.
     pub turns: Option<NonZeroU32>,
