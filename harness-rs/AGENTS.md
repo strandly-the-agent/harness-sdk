@@ -28,7 +28,7 @@ The workspace gates in [strands-rs/AGENTS.md](../strands-rs/AGENTS.md#gates) cov
 ## Harness rules
 
 - Byte-observable behaviour follows harness-ts: system prompt assembly, tool-name collision rules (`-` and `_` are equal), `read`, `edit` and `todos` text, `EnvironmentContext` discovery limits, programmatic tool caller limits, `web_fetch` caps and URL cache, session id sanitization.
-- Default sessions use `LocalFileStorage::new("./.agent").namespace("sessions")`, the same paths harness-ts writes.
+- Default sessions use `LocalFileStorage::new("./.agent").with_namespace("sessions")`, the same paths harness-ts writes.
 - Every built-in tool goes through the agent's sandbox, never the host filesystem directly.
 - Subagents are built from the parent's already-connected MCP clients, get recall-only memory, and follow harness-ts inheritance rules.
 - Tests never change the process working directory or environment; the crate has internal seams for the base directory and environment lookup.
