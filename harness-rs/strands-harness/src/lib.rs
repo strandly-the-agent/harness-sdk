@@ -28,4 +28,5 @@ mod types;
 pub use error::{HarnessError, Result};
 pub use models::{supports_thinking, supports_web_search};
 pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
+pub use tools::{MakeReadOptions, edit, make_read, read, write};
 pub use types::{Effort, WebFetchTransport};

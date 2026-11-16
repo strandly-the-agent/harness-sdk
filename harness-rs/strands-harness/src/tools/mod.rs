@@ -6,3 +6,5 @@ mod shell;
 mod subagent;
 mod web_fetch;
 mod web_search;
+
+pub use file_tools::{MakeReadOptions, edit, make_read, read, write};
