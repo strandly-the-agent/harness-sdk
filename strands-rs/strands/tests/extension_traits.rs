@@ -3,7 +3,7 @@
 //! crate-private type in a signature, or a root name that is dropped, fails this file.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use strands::experimental::context_manager::{ContextState, ContextStrategy};
@@ -70,24 +70,30 @@ impl Plugin for Mine {
 #[derive(Default)]
 struct Mem(Mutex<BTreeMap<String, Vec<u8>>>);
 
+impl Mem {
+    fn entries(&self) -> MutexGuard<'_, BTreeMap<String, Vec<u8>>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
 #[strands::async_trait]
 impl Storage for Mem {
     async fn write(&self, key: &str, data: &[u8]) -> strands::Result<()> {
-        self.0.lock().unwrap().insert(key.into(), data.into());
+        self.entries().insert(key.into(), data.into());
         Ok(())
     }
 
     async fn read(&self, key: &str) -> strands::Result<Option<Vec<u8>>> {
-        Ok(self.0.lock().unwrap().get(key).cloned())
+        Ok(self.entries().get(key).cloned())
     }
 
     async fn delete(&self, key: &str) -> strands::Result<()> {
-        self.0.lock().unwrap().remove(key);
+        self.entries().remove(key);
         Ok(())
     }
 
     async fn list(&self, prefix: &str) -> strands::Result<Vec<String>> {
-        let entries = self.0.lock().unwrap();
+        let entries = self.entries();
         Ok(entries
             .keys()
             .filter(|key| key.starts_with(prefix))
