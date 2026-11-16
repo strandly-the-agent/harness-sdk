@@ -1,2 +1,0 @@
-| `subagent` `last_messages` | `Number(raw.last_messages)` accepts a one-element array (`[5]` is 5) | An array or object is not a number, so no cap is applied | The schema declares an integer; only JSON numbers, numeric strings and booleans are coerced (P-897) |
-| `subagent` `context` choice | An option with no value whose name is not a context mode reaches the builder as that string and shares nothing | The same option resolves to `ContextMode::None` | `ContextMode` is an enum; the child sees the same prompt (P-892) |
