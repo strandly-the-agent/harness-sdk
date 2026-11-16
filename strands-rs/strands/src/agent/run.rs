@@ -222,7 +222,7 @@ impl Agent {
             telemetry.tracer.end_model(&ModelSpanEnd::default());
             telemetry.meter.end_open_cycle();
             telemetry.tracer.end_cycle(None);
-            let usage = *telemetry.meter.metrics().accumulated_usage();
+            let usage = telemetry.meter.metrics().accumulated_usage().clone();
             telemetry.tracer.end_agent(None, None, &usage, None);
         }
         let in_pass = std::mem::take(&mut self.in_pass);
@@ -1349,7 +1349,7 @@ impl Agent {
     /// TS `endAgentSpan` with the result or the error of the invocation.
     fn end_agent_span(&self, outcome: &Result<AgentResult>) {
         let mut telemetry = self.local.telemetry().lock();
-        let usage = *telemetry.meter.metrics().accumulated_usage();
+        let usage = telemetry.meter.metrics().accumulated_usage().clone();
         match outcome {
             Ok(result) => telemetry.tracer.end_agent(
                 Some(result.last_message()),
