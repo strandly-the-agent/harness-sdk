@@ -14,7 +14,7 @@ use crate::types::agent::LocalAgent;
 use crate::types::messages::{ContentBlock, Message, TextBlock, ToolResultBlock};
 
 /// The text a dropped block leaves (TS `DROPPED_MARKER`).
-pub const DROPPED_MARKER: &str = "[Dropped]";
+pub(crate) const DROPPED_MARKER: &str = "[Dropped]";
 
 /// Replaces matching blocks with [`DROPPED_MARKER`] (TS `DropStrategy`); with a `utilization`
 /// condition it removes whole messages instead.

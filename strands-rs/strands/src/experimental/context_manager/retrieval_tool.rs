@@ -13,7 +13,7 @@ use crate::types::messages::{ContentBlock, Message, Role};
 use crate::vended_tools::schema_tool;
 
 /// The retrieval tool's name (TS `RETRIEVAL_TOOL_NAME`).
-pub const RETRIEVAL_TOOL_NAME: &str = "retrieve_context";
+pub(crate) const RETRIEVAL_TOOL_NAME: &str = "retrieve_context";
 
 const DEFAULT_MAX_RESULT_TOKENS: usize = 10_000;
 const CHARS_PER_TOKEN: usize = 4;

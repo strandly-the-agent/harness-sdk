@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
+use super::retrieval_tool::RETRIEVAL_TOOL_NAME;
 use super::test_support::{agent_with, agent_with_model, assistant, tool_result, user};
 use super::*;
 use crate::conversation_manager::{ConversationManager, SlidingWindowConversationManager};

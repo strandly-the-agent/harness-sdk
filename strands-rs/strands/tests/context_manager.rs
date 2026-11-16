@@ -15,7 +15,7 @@ use std::sync::Arc;
 use serde_json::json;
 use strands::error::ContextWindowOverflowError;
 use strands::experimental::context_manager::{
-    ContextManagerConfig, ContextManagerPreset, RETRIEVAL_TOOL_NAME, StashConfig, StashOption,
+    ContextManagerConfig, ContextManagerPreset, StashConfig, StashOption,
 };
 use strands::session::{SessionManager, SessionManagerConfig};
 use strands::storage::{InMemoryStorage, LocalFileStorage, Storage};
@@ -272,7 +272,7 @@ async fn offloaded_tool_results_are_retrievable_through_retrieve_context() {
     model.add_turn(vec![tool_use("tu-1", "fetch", json!({}))]);
     model.add_turn(vec![tool_use(
         "tu-2",
-        RETRIEVAL_TOOL_NAME,
+        "retrieve_context",
         json!({"reference": "tu-1_0", "pattern": "row-1234$", "context_lines": 0}),
     )]);
     model.add_turn(vec![TextBlock::new("done").into()]);
@@ -309,7 +309,7 @@ async fn does_not_offload_retrieve_context_tool_results_when_stash_is_active() {
     model.add_turn(vec![tool_use("tu-1", "fetch", json!({}))]);
     model.add_turn(vec![tool_use(
         "tu-2",
-        RETRIEVAL_TOOL_NAME,
+        "retrieve_context",
         json!({"reference": "tu-1_0"}),
     )]);
     model.add_turn(vec![TextBlock::new("done").into()]);

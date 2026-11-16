@@ -25,7 +25,7 @@ use crate::types::messages::{
 use crate::types::tools::ToolResultStatus;
 
 /// The instructions for summarizing one block (TS `BLOCK_SUMMARY_INSTRUCTIONS`).
-pub const BLOCK_SUMMARY_INSTRUCTIONS: &str =
+pub(crate) const BLOCK_SUMMARY_INSTRUCTIONS: &str =
     "Summarize the content above. Produce a concise factual summary that preserves:
 - Key data, values, and identifiers
 - Important decisions and conclusions

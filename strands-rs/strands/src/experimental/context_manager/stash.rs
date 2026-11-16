@@ -71,7 +71,7 @@ impl Stash {
     /// # Errors
     ///
     /// The session or agent id is not a valid key segment.
-    pub fn new(
+    pub(crate) fn new(
         storage: Arc<dyn Storage>,
         session_id: &str,
         agent_id: &str,
@@ -226,7 +226,7 @@ impl Stash {
     /// # Errors
     ///
     /// A list or delete failed.
-    pub async fn clear_session(&self) -> Result<()> {
+    pub(crate) async fn clear_session(&self) -> Result<()> {
         if self.inner.caller_scoped {
             tracing::debug!(
                 "session_id=<{}> | skipping stash deletion, stash is caller-scoped",
@@ -246,7 +246,7 @@ impl Stash {
     /// # Errors
     ///
     /// A list or read failed.
-    pub async fn take_snapshot(&self) -> Result<JsonObject> {
+    pub(crate) async fn take_snapshot(&self) -> Result<JsonObject> {
         let mut entries = JsonObject::new();
         for key in self.list().await? {
             if let Some(data) = self.retrieve(&key).await? {
@@ -261,7 +261,7 @@ impl Stash {
     /// # Errors
     ///
     /// A write failed.
-    pub async fn load_snapshot(&self, entries: &JsonObject) -> Result<()> {
+    pub(crate) async fn load_snapshot(&self, entries: &JsonObject) -> Result<()> {
         for (key, data) in entries {
             self.inner.storage.write(key, &encode(data)?).await?;
         }

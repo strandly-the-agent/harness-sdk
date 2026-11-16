@@ -26,7 +26,7 @@ pub enum StrategyPresetName {
 }
 
 /// Every preset in TS order (TS `STRATEGY_PRESET_NAMES`).
-pub const STRATEGY_PRESET_NAMES: [StrategyPresetName; 4] = [
+pub(crate) const STRATEGY_PRESET_NAMES: [StrategyPresetName; 4] = [
     StrategyPresetName::ProactiveSummarization,
     StrategyPresetName::LargeToolOffloading,
     StrategyPresetName::OverflowProtection,

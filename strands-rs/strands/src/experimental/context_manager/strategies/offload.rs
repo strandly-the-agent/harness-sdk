@@ -7,9 +7,9 @@ mod summarize;
 mod truncate;
 
 pub use base::{OffloadConditions, OffloadTarget};
-pub use drop::{DROPPED_MARKER, DropStrategy};
-pub use emergency::EmergencyTruncateStrategy;
-pub use summarize::{BLOCK_SUMMARY_INSTRUCTIONS, SummarizeConfig, SummarizeStrategy};
+pub use drop::DropStrategy;
+pub(crate) use emergency::EmergencyTruncateStrategy;
+pub use summarize::{SummarizeConfig, SummarizeStrategy};
 pub use truncate::TruncateStrategy;
 
 use crate::error::Result;

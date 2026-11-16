@@ -22,16 +22,16 @@ const EMERGENCY_REMOVAL_RATIO: f64 = 0.2;
 /// Removes the oldest fifth of the history while the context window still overflows (TS
 /// `EmergencyTruncateStrategy`). The context manager always runs one last.
 #[derive(Debug)]
-pub struct EmergencyTruncateStrategy {
+pub(crate) struct EmergencyTruncateStrategy {
     base: OffloadBase,
 }
 
 impl EmergencyTruncateStrategy {
     /// The strategy name (TS `name`).
-    pub const NAME: &'static str = "offload:emergency-truncate";
+    pub(crate) const NAME: &'static str = "offload:emergency-truncate";
 
     /// A new emergency truncation.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             base: OffloadBase::unchecked(OffloadTarget::All, OffloadConditions::default()),
         }

@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::base::{OffloadBase, build_tool_name_map, collect_removable_with_pair, insert_marker};
+use super::drop::DROPPED_MARKER;
 use super::*;
 use crate::experimental::context_manager::test_support::*;
 use crate::experimental::context_manager::{ContextStrategy, PreviewMode, TruncateConfig};

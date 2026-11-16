@@ -34,16 +34,16 @@ pub mod strategies;
 mod test_support;
 
 pub use methods::truncate::{PreviewMode, TruncateConfig};
-pub use presets::{STRATEGY_PRESET_NAMES, StrategyPresetName};
-pub use retrieval_tool::RETRIEVAL_TOOL_NAME;
+pub use presets::StrategyPresetName;
 pub use stash::Stash;
 pub use strategies::offload::{
-    BLOCK_SUMMARY_INSTRUCTIONS, DROPPED_MARKER, DropStrategy, EmergencyTruncateStrategy, Offload,
-    OffloadConditions, OffloadTarget, SummarizeConfig, SummarizeStrategy, TruncateStrategy,
+    DropStrategy, Offload, OffloadConditions, OffloadTarget, SummarizeConfig, SummarizeStrategy,
+    TruncateStrategy,
 };
 
 use presets::resolve_strategies;
 use retrieval_tool::{create_retrieval_tool, track_retrieval_tool_use_ids};
+use strategies::offload::EmergencyTruncateStrategy;
 
 const AUTO_TRUNCATE_THRESHOLD: f64 = 1_500.0;
 const AGENTIC_TRUNCATE_THRESHOLD: f64 = 8_000.0;
@@ -285,7 +285,7 @@ enum StashStorage {
 /// plugin through the agent's `context_manager` key.
 ///
 /// Before each model call and on context overflow it runs its strategies in order, ending with
-/// an [`EmergencyTruncateStrategy`]. Overflow recovery retries the model call up to three times.
+/// an emergency truncation. Overflow recovery retries the model call up to three times.
 pub struct ContextManager {
     strategies: Vec<Arc<dyn ContextStrategy>>,
     stash_storage: StashStorage,
