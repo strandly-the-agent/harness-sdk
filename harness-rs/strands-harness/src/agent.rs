@@ -333,6 +333,9 @@ impl Seams {
 /// `AgentConfig` field goes through [`HarnessAgentOptions::agent_config`]; an explicit value takes
 /// precedence over the default it corresponds to.
 ///
+/// With `OTEL_TRACES_EXPORTER` set, the agent's spans are exported; call
+/// [`shutdown_telemetry`](crate::shutdown_telemetry) before the process exits to flush them.
+///
 /// # Errors
 ///
 /// An option is invalid (an unknown model provider, an empty `session.id`, a `web_search` asked for
