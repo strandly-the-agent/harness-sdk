@@ -299,6 +299,10 @@ pub struct AgentConfig {
     pub description: Option<String>,
     /// The agent id (default `agent`).
     pub id: Option<String>,
+    /// Attributes merged into every span of the agent (TS `traceAttributes`); exported with the
+    /// `otel` feature.
+    #[builder(default)]
+    pub trace_attributes: indexmap::IndexMap<String, crate::telemetry::AttributeValue>,
     /// How the tool calls of one model turn run (default concurrent).
     #[builder(into)]
     pub tool_executor: Option<ToolExecutor>,

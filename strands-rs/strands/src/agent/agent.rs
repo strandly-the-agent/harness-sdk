@@ -189,6 +189,11 @@ impl Agent {
             local.set_name(name);
         }
         local.set_description(config.description);
+        local
+            .telemetry()
+            .lock()
+            .tracer
+            .set_trace_attributes(config.trace_attributes.into_iter().collect());
         local.set_messages(config.messages);
         local.set_system_prompt(config.system_prompt);
         local.set_app_state(StateStore::from_map(config.app_state));
