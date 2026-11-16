@@ -12,6 +12,9 @@ use crate::error::Result;
 pub struct NullConversationManager;
 
 impl NullConversationManager {
+    /// The manager name (TS `name`).
+    pub const NAME: &'static str = "strands:null-conversation-manager";
+
     /// The manager.
     pub fn new() -> Self {
         Self
@@ -21,7 +24,7 @@ impl NullConversationManager {
 #[async_trait]
 impl ConversationManager for NullConversationManager {
     fn name(&self) -> &str {
-        "strands:null-conversation-manager"
+        Self::NAME
     }
 
     async fn reduce(&self, _options: ConversationManagerReduceOptions<'_>) -> Result<bool> {

@@ -77,6 +77,9 @@ impl Default for SummarizingConversationManager {
 }
 
 impl SummarizingConversationManager {
+    /// The manager name (TS `name`).
+    pub const NAME: &'static str = "strands:summarizing-conversation-manager";
+
     /// A manager from `config`.
     ///
     /// # Errors
@@ -141,7 +144,7 @@ impl SummarizingConversationManager {
 #[async_trait]
 impl ConversationManager for SummarizingConversationManager {
     fn name(&self) -> &str {
-        "strands:summarizing-conversation-manager"
+        Self::NAME
     }
 
     fn compression_threshold(&self) -> Option<f64> {

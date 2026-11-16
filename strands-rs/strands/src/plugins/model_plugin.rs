@@ -18,6 +18,9 @@ pub(crate) struct ModelLifecycle {
 }
 
 impl ModelLifecycle {
+    /// The plugin name (TS `name`).
+    pub(crate) const NAME: &'static str = "strands:model";
+
     pub(crate) fn new(model: Arc<dyn Model>) -> Self {
         Self { model }
     }
@@ -26,7 +29,7 @@ impl ModelLifecycle {
 #[async_trait]
 impl Plugin for ModelLifecycle {
     fn name(&self) -> &str {
-        "strands:model"
+        Self::NAME
     }
 
     async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {

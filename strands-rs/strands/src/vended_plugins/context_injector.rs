@@ -102,7 +102,8 @@ pub struct ContextInjector {
 }
 
 impl ContextInjector {
-    /// The plugin name of an injector whose config sets none (TS `DEFAULT_NAME`).
+    /// The plugin name of an injector whose config sets none (TS `DEFAULT_NAME`). It isn't
+    /// `NAME` as on other plugins because the config can replace it.
     pub const DEFAULT_NAME: &'static str = "strands:context-injector";
 
     /// An injector with `config`.

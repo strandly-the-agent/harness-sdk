@@ -6,7 +6,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 
-use crate::agent::agent_delegation::{AGENT_DELEGATION_NAME, AgentDelegation};
+use crate::agent::agent_delegation::AgentDelegation;
 use crate::agent::agent_metadata::AgentMetadata;
 use crate::agent::config::{AgentBuilder, AgentConfig, MemoryManagerSource, ModelSource, default_model};
 use crate::agent::continuation::ContinuationInput;
@@ -351,7 +351,7 @@ impl Agent {
         let has_delegation = self
             .plugins
             .iter()
-            .any(|plugin| plugin.name() == AGENT_DELEGATION_NAME);
+            .any(|plugin| plugin.name() == AgentDelegation::NAME);
         let delegation = (!has_delegation).then(|| Arc::new(AgentDelegation) as Arc<dyn Plugin>);
         let background = self
             .background_tasks

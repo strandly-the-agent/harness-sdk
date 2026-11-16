@@ -24,6 +24,9 @@ pub struct DropStrategy {
 }
 
 impl DropStrategy {
+    /// The strategy name (TS `name`).
+    pub const NAME: &'static str = "offload:drop";
+
     pub(crate) fn new(target: OffloadTarget, conditions: OffloadConditions) -> Result<Self> {
         Ok(Self {
             base: OffloadBase::new(target, conditions)?,
@@ -84,7 +87,7 @@ impl Offloader for DropStrategy {
 #[async_trait]
 impl ContextStrategy for DropStrategy {
     fn name(&self) -> &str {
-        "offload:drop"
+        Self::NAME
     }
 
     fn init(self: Arc<Self>, agent: &mut LocalAgent, stash: Option<Stash>) {

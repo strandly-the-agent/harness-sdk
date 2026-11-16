@@ -208,6 +208,9 @@ impl Default for SlidingWindowConversationManager {
 }
 
 impl SlidingWindowConversationManager {
+    /// The manager name (TS `name`).
+    pub const NAME: &'static str = "strands:sliding-window-conversation-manager";
+
     /// A manager from `config`.
     ///
     /// # Errors
@@ -396,7 +399,7 @@ fn find_tool_pair_user_anchor(messages: &[Message], tool_pair_index: usize) -> O
 #[async_trait]
 impl ConversationManager for SlidingWindowConversationManager {
     fn name(&self) -> &str {
-        "strands:sliding-window-conversation-manager"
+        Self::NAME
     }
 
     fn compression_threshold(&self) -> Option<f64> {

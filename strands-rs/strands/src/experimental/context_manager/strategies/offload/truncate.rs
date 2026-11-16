@@ -25,14 +25,18 @@ pub struct TruncateStrategy {
 }
 
 impl TruncateStrategy {
+    /// The strategy name (TS `name`).
+    pub const NAME: &'static str = "offload:truncate";
+
     pub(crate) fn new(
         target: OffloadTarget,
         config: TruncateConfig,
         conditions: OffloadConditions,
     ) -> Result<Self> {
+        let threshold = conditions.threshold;
         let base = OffloadBase::new(target, conditions)?;
         let preview_tokens = config.preview_tokens();
-        if let Some(threshold) = conditions.threshold
+        if let Some(threshold) = threshold
             && threshold <= preview_tokens
         {
             return Err(Error::other(format!(
@@ -127,7 +131,7 @@ impl Offloader for TruncateStrategy {
 #[async_trait]
 impl ContextStrategy for TruncateStrategy {
     fn name(&self) -> &str {
-        "offload:truncate"
+        Self::NAME
     }
 
     fn init(self: Arc<Self>, agent: &mut LocalAgent, stash: Option<Stash>) {

@@ -213,6 +213,9 @@ pub struct SummarizeStrategy {
 }
 
 impl SummarizeStrategy {
+    /// The strategy name (TS `name`).
+    pub const NAME: &'static str = "offload:summarize";
+
     pub(crate) fn new(
         target: OffloadTarget,
         config: SummarizeConfig,
@@ -573,7 +576,7 @@ fn offloaded(message: &Message, tokens: u64, refs: &str) -> ContentBlock {
 #[async_trait]
 impl ContextStrategy for SummarizeStrategy {
     fn name(&self) -> &str {
-        "offload:summarize"
+        Self::NAME
     }
 
     fn init(self: Arc<Self>, agent: &mut LocalAgent, stash: Option<Stash>) {

@@ -51,16 +51,18 @@ fn is_delegation_tool(registry: &ToolRegistry, name: &str) -> bool {
     registry.get(name).is_some_and(|tool| tool.is_delegate())
 }
 
-/// The name of the built-in delegation plugin (TS `AgentDelegation.name`).
-pub(crate) const AGENT_DELEGATION_NAME: &str = "strands:agent-delegation";
-
 /// The built-in delegation plugin (TS `AgentDelegation`).
 pub(crate) struct AgentDelegation;
+
+impl AgentDelegation {
+    /// The plugin name (TS `name`).
+    pub(crate) const NAME: &'static str = "strands:agent-delegation";
+}
 
 #[async_trait]
 impl Plugin for AgentDelegation {
     fn name(&self) -> &str {
-        AGENT_DELEGATION_NAME
+        Self::NAME
     }
 
     async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {
