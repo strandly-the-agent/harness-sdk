@@ -242,6 +242,161 @@ fn a_helper_can_name_the_storage_session_and_context_manager_config_builders() {
     let _: StashConfigBuilder<stash_config_builder::Empty> = StashConfig::builder();
 }
 
+fn in_invoke<S: strands::types::agent::invoke_options_builder::State>(
+    builder: strands::types::agent::InvokeOptionsBuilder<S>,
+) -> strands::types::agent::InvokeOptionsBuilder<S> {
+    builder
+}
+
+fn in_sleep<S: strands::vended_tools::sleep::make_sleep_options_builder::State>(
+    builder: strands::vended_tools::sleep::MakeSleepOptionsBuilder<S>,
+) -> strands::vended_tools::sleep::MakeSleepOptionsBuilder<S> {
+    builder
+}
+
+fn in_request<S: strands::models::model_request_builder::State>(
+    builder: strands::models::ModelRequestBuilder<S>,
+) -> strands::models::ModelRequestBuilder<S> {
+    builder
+}
+
+fn in_injector<S: strands::vended_plugins::context_injector::context_injector_config_builder::State>(
+    builder: strands::vended_plugins::context_injector::ContextInjectorConfigBuilder<S>,
+) -> strands::vended_plugins::context_injector::ContextInjectorConfigBuilder<S> {
+    builder
+}
+
+#[test]
+fn a_helper_can_name_any_config_builder() {
+    let _ = in_invoke(strands::InvokeOptions::builder()).build();
+    let _ = in_sleep(strands::vended_tools::MakeSleepOptions::builder()).build();
+    let _ = in_request(strands::models::ModelRequest::builder()).build();
+    let config = in_injector(strands::vended_plugins::ContextInjectorConfig::builder())
+        .render_content(|_context| async { Ok(None) })
+        .build();
+    assert_eq!((config.name, config.trigger.is_none()), (None, true));
+}
+
+#[cfg(feature = "bedrock")]
+#[test]
+fn the_bedrock_model_has_a_builder_with_a_nameable_state() {
+    use strands::models::bedrock::{
+        BedrockModelBuilder, BedrockModelConfigBuilder, bedrock_model_builder, bedrock_model_config_builder,
+    };
+
+    fn in_model<S: bedrock_model_builder::State>(builder: BedrockModelBuilder<S>) -> BedrockModelBuilder<S> {
+        builder
+    }
+    fn in_config<S: bedrock_model_config_builder::State>(
+        builder: BedrockModelConfigBuilder<S>,
+    ) -> BedrockModelConfigBuilder<S> {
+        builder
+    }
+
+    let model = in_model(strands::BedrockModel::builder())
+        .model_id("us.anthropic.claude-sonnet-4-6")
+        .build();
+    assert_eq!(
+        strands::models::Model::model_id(&model).as_deref(),
+        Some("us.anthropic.claude-sonnet-4-6")
+    );
+    let config = in_config(strands::BedrockModelConfig::builder()).build();
+    assert_eq!(config.model_id, None);
+}
+
+#[cfg(feature = "openai")]
+#[test]
+fn the_openai_model_has_a_builder() -> strands::Result<()> {
+    let model = strands::models::OpenAIModel::builder()
+        .api_key("test-key")
+        .model_id("gpt-5.4")
+        .build()?;
+    assert_eq!(
+        strands::models::Model::model_id(&model).as_deref(),
+        Some("gpt-5.4")
+    );
+    Ok(())
+}
+
+#[test]
+fn single_value_builder_setters_take_a_value_an_arc_or_a_trait_object() -> strands::Result<()> {
+    use strands::conversation_manager::{ConversationManager, NullConversationManager};
+    use strands::plugins::Plugin;
+    use strands::retry::DefaultModelRetryStrategy;
+    use strands::vended_interventions::hitl::{HumanInTheLoop, HumanInTheLoopConfig};
+    use strands::vended_plugins::{ContextInjector, ContextInjectorConfig};
+
+    let injector = || ContextInjector::new(ContextInjectorConfig::new(|_context| async { Ok(None) }));
+    let approval = Arc::new(HumanInTheLoop::new(HumanInTheLoopConfig::default()));
+    let manager: Arc<dyn ConversationManager> = Arc::new(NullConversationManager::new());
+    let shared_plugin: Arc<dyn Plugin> = Arc::new(injector());
+    let agent = Agent::builder()
+        .model(model(&[]))
+        .printer(false)
+        .plugin(injector())
+        .plugin(shared_plugin)
+        .intervention(Arc::clone(&approval))
+        .conversation_manager(manager)
+        .retry_strategy(Arc::new(DefaultModelRetryStrategy::default()))
+        .build()?;
+    drop(agent);
+    let _ = Agent::builder()
+        .model(model(&[]))
+        .intervention(approval)
+        .conversation_manager(Arc::new(NullConversationManager::new()))
+        .build()?;
+    Ok(())
+}
+
+#[test]
+fn types_with_a_fixed_name_expose_it_as_a_constant() {
+    use strands::conversation_manager::{
+        ConversationManager, NullConversationManager, SlidingWindowConversationManager,
+        SummarizingConversationManager,
+    };
+    use strands::experimental::context_manager::{DropStrategy, SummarizeStrategy, TruncateStrategy};
+
+    assert_eq!(
+        NullConversationManager::new().name(),
+        NullConversationManager::NAME
+    );
+    assert_eq!(
+        [
+            SlidingWindowConversationManager::NAME,
+            SummarizingConversationManager::NAME,
+            DropStrategy::NAME,
+            TruncateStrategy::NAME,
+            SummarizeStrategy::NAME,
+        ],
+        [
+            "strands:sliding-window-conversation-manager",
+            "strands:summarizing-conversation-manager",
+            "offload:drop",
+            "offload:truncate",
+            "offload:summarize",
+        ]
+    );
+}
+
+#[test]
+fn a_model_impl_and_ordered_maps_need_only_strands_paths() {
+    use strands::models::{BaseModelConfig, BoxStream, Model, ModelRequest, ModelStreamEvent};
+
+    fn stream_of(model: &dyn Model) -> BoxStream<'static, strands::Result<ModelStreamEvent>> {
+        model.stream(ModelRequest::default())
+    }
+    let _: fn(&dyn Model) -> BoxStream<'static, strands::Result<ModelStreamEvent>> = stream_of;
+    let _ = BaseModelConfig::default();
+
+    let mut baggage = strands::indexmap::IndexMap::new();
+    baggage.insert("tenant".to_owned(), "a".to_owned());
+    let config = strands::AgentConfig {
+        baggage_attributes: baggage,
+        ..Default::default()
+    };
+    assert_eq!(config.baggage_attributes.len(), 1);
+}
+
 #[test]
 fn trace_and_baggage_attributes_take_plain_pairs() {
     let agent = Agent::builder()
