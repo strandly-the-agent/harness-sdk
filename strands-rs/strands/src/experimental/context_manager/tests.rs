@@ -827,3 +827,37 @@ async fn offloads_retrieve_context_results_when_no_stash() {
         offload_with_stash(&strategy, retrieval_exchange(&test_support::large_text()), None).await;
     assert!(acted);
 }
+
+// No TS case: TS passes a strategy object by reference; Rust also accepts a shared `Arc<S>`.
+#[test]
+fn accepts_a_shared_concrete_strategy_as_an_entry() {
+    let strategy = Arc::new(Offload::drop(OffloadTarget::ToolResults).unwrap());
+    let manager = ContextManager::new(ContextManagerConfig {
+        strategies: Some(vec![Arc::clone(&strategy).into()]),
+        stash: None,
+    })
+    .unwrap();
+    assert_eq!(manager.strategy_names()[0], strategy.name());
+}
+
+// No TS case: the TS presets are string literals; Rust names them through `as_str` and `Display`.
+#[test]
+fn preset_names_round_trip_through_display_and_from_str() {
+    for (preset, name) in [
+        (ContextManagerPreset::Auto, "auto"),
+        (ContextManagerPreset::Agentic, "agentic"),
+    ] {
+        assert_eq!(preset.as_str(), name);
+        assert_eq!(preset.to_string(), name);
+        assert_eq!(name.parse::<ContextManagerPreset>().unwrap(), preset);
+    }
+}
+
+// No TS case: TS `stash` takes `StashConfig | boolean` directly; the Rust builder converts both.
+#[test]
+fn the_config_builder_takes_a_bool_or_a_stash_config_for_stash() {
+    let off = ContextManagerConfig::builder().stash(false).build();
+    assert!(matches!(off.stash, Some(StashOption::Disabled)));
+    let on = ContextManagerConfig::builder().stash(StashConfig::default()).build();
+    assert!(matches!(on.stash, Some(StashOption::Enabled(_))));
+}

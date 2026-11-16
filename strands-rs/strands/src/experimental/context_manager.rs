@@ -141,6 +141,12 @@ impl From<Arc<dyn ContextStrategy>> for ContextStrategyEntry {
     }
 }
 
+impl<S: ContextStrategy> From<Arc<S>> for ContextStrategyEntry {
+    fn from(strategy: Arc<S>) -> Self {
+        Self::Strategy(strategy)
+    }
+}
+
 impl<S: ContextStrategy> From<S> for ContextStrategyEntry {
     fn from(strategy: S) -> Self {
         Self::Strategy(Arc::new(strategy))
@@ -208,6 +214,7 @@ pub struct ContextManagerConfig {
     /// runs last.
     pub strategies: Option<Vec<ContextStrategyEntry>>,
     /// The stash; `None` stashes to the agent's storage or memory.
+    #[builder(into)]
     pub stash: Option<StashOption>,
 }
 
@@ -220,6 +227,22 @@ pub enum ContextManagerPreset {
     /// Model-driven management through the `summarize_context`, `truncate_context` and
     /// `pin_context` tools plus a context-status note (TS `'agentic'`).
     Agentic,
+}
+
+impl ContextManagerPreset {
+    /// The TS preset name (`"auto"` or `"agentic"`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Agentic => "agentic",
+        }
+    }
+}
+
+impl fmt::Display for ContextManagerPreset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl FromStr for ContextManagerPreset {
