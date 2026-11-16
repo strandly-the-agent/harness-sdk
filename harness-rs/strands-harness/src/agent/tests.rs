@@ -556,6 +556,35 @@ async fn does_not_name_check_non_tool_entries_in_tools() {
     assert!(has_tool(&agent, "sample_tool"));
 }
 
+/// `memory.test.ts`, `createHarness memory`.
+#[tokio::test]
+async fn attaches_a_memory_manager_by_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let agent = harness(HarnessAgentOptions {
+        memory: MemoryConfig {
+            dir: Some(dir.path().to_string_lossy().into_owned()),
+            stores: None,
+        }
+        .into(),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(agent.memory_manager().is_some());
+}
+
+/// `memory.test.ts`, `createHarness memory`.
+#[tokio::test]
+async fn attaches_no_memory_manager_when_memory_is_disabled() {
+    let agent = harness(HarnessAgentOptions {
+        memory: MemoryOption::Off,
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert!(agent.memory_manager().is_none());
+}
+
 /// The local environment, vending two tools as `DockerSandbox` does in TS.
 struct VendingSandbox(NotASandboxLocalEnvironment);
 

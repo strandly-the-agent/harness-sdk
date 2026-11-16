@@ -19,12 +19,6 @@
     }
   },
   "harness-ts/test/memory.test.ts": {
-    "attaches a memory manager by default": {
-      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
-    },
-    "attaches no memory manager when memory is disabled": {
-      "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
-    },
     "treats null as disabled": {
       "gap": "Not ported yet: needs `create_harness`, which lands separately; remove this entry when the case is ported"
     },
