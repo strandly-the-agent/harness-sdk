@@ -4,6 +4,7 @@
 pub mod extraction;
 mod injection;
 mod memory_manager;
+mod read_only;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod types;
@@ -15,6 +16,8 @@ pub use extraction::{
 };
 pub use injection::{InjectionContext, InjectionPredicate, InjectionTrigger};
 pub use memory_manager::{DEFAULT_MAX_SEARCH_RESULTS, MemoryManager};
+#[doc(hidden)]
+pub use read_only::read_only_view;
 pub use types::{
     AddMessagesContext, MemoryAddOptions, MemoryAddToolConfig, MemoryEntry, MemoryFormatFn,
     MemoryInjectionConfig, MemoryManagerConfig, MemoryMetadata, MemoryQueryFn, MemorySearchOptions,
