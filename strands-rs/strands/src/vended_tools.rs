@@ -23,8 +23,7 @@ pub mod write;
 pub use bash::{BashOutput, BashSessionError, BashTimeoutError, bash};
 pub use edit::{DEFAULT_EDIT_DESCRIPTION, MakeEditOptions, edit, make_edit};
 pub use handoff_to_user::{
-    DEFAULT_HANDOFF_TO_USER_DESCRIPTION, HANDOFF_INTERRUPT_NAME, MakeHandoffToUserOptions, handoff_to_user,
-    make_handoff_to_user,
+    HANDOFF_INTERRUPT_NAME, MakeHandoffToUserOptions, handoff_to_user, make_handoff_to_user,
 };
 pub use http_request::{HttpRequestOutput, http_request};
 #[cfg(feature = "mcp")]
@@ -39,19 +38,16 @@ pub use shell::{
     MakeShellOptions, SANDBOX_SHELL_DESCRIPTION, ShellExecutionError, ShellOutput, ShellTimeoutError,
     make_shell,
 };
-pub use sleep::{DEFAULT_MAX_DURATION, MakeSleepOptions, make_sleep, sleep, sleep_description};
+pub use sleep::{DEFAULT_MAX_DURATION, MakeSleepOptions, SLEEP_DESCRIPTION, make_sleep, sleep};
 pub use stop::{
     DEFAULT_MAX_STOP_MESSAGE_LENGTH, DEFAULT_STOP_DESCRIPTION, DEFAULT_STOP_MESSAGE, MakeStopOptions,
     make_stop, stop,
 };
 pub use subagent::{
-    DEFAULT_SUBAGENT_DESCRIPTION, DEFAULT_SUBAGENT_MAX_DEPTH, MakeSubagentOptions, SubagentTool,
-    make_subagent, subagent,
+    DEFAULT_SUBAGENT_DESCRIPTION, DEFAULT_SUBAGENT_MAX_DEPTH, GENERALIST_DESCRIPTION,
+    GENERALIST_INSTRUCTIONS, MakeSubagentOptions, SubagentTool, generalist, make_subagent, subagent,
 };
-pub use web_fetch::{
-    DEFAULT_MAX_BYTES, DEFAULT_MAX_CONTENT_CHARS, MakeWebFetchOptions, WEB_FETCH_DESCRIPTION_AGENTIC,
-    WEB_FETCH_DESCRIPTION_MARKDOWN, WebFetchMode, make_web_fetch, web_fetch,
-};
+pub use web_fetch::{MakeWebFetchOptions, WebFetchMode, make_web_fetch, web_fetch};
 pub use write::{DEFAULT_WRITE_DESCRIPTION, MakeWriteOptions, make_write, write};
 
 use std::future::Future;

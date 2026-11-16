@@ -16,8 +16,11 @@ use super::{js_number, schema_tool};
 /// The default maximum sleep (TS `DEFAULT_MAX_DURATION`, 60 seconds).
 pub const DEFAULT_MAX_DURATION: Duration = Duration::from_secs(60);
 
+/// The default description, for the 60-second maximum (TS `SLEEP_DESCRIPTION`).
+pub const SLEEP_DESCRIPTION: &str = "Pauses execution for a specified number of seconds (max 60). Cooperative and cancellable: the sleep aborts immediately when the agent invocation is cancelled. Rejects negative, NaN, infinite, or non-numeric durations, and durations above 60.";
+
 /// The model-facing description for a maximum (TS `sleepDescription`).
-pub fn sleep_description(max_duration: Duration) -> String {
+pub(crate) fn sleep_description(max_duration: Duration) -> String {
     let max = js_number(max_duration.as_secs_f64());
     format!(
         "Pauses execution for a specified number of seconds (max {max}). Cooperative and cancellable: the sleep \
@@ -38,7 +41,7 @@ pub struct MakeSleepOptions {
     pub max_duration: Option<Duration>,
     /// The tool name (default `sleep`).
     pub name: Option<String>,
-    /// The description (default [`sleep_description`] of the maximum).
+    /// The description (default [`SLEEP_DESCRIPTION`], with the configured maximum in place of 60).
     pub description: Option<String>,
 }
 

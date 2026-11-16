@@ -185,3 +185,8 @@ fn describes_the_maximum_and_exposes_the_zod_schema() {
         }))
     );
 }
+
+#[test]
+fn sleep_description_constant_matches_the_default_maximum() {
+    assert_eq!(SLEEP_DESCRIPTION, sleep_description(DEFAULT_MAX_DURATION));
+}

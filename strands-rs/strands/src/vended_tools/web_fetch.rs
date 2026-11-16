@@ -24,15 +24,15 @@ use super::{no_precheck, schema_tool};
 use extract::html_to_markdown;
 
 /// The default response body cap in bytes (TS `DEFAULT_MAX_BYTES`, 5 MiB).
-pub const DEFAULT_MAX_BYTES: usize = 5 * 1024 * 1024;
+pub(crate) const DEFAULT_MAX_BYTES: usize = 5 * 1024 * 1024;
 /// The default cap on extracted characters delivered to the model (TS
 /// `DEFAULT_MAX_CONTENT_CHARS`).
-pub const DEFAULT_MAX_CONTENT_CHARS: usize = 50_000;
+pub(crate) const DEFAULT_MAX_CONTENT_CHARS: usize = 50_000;
 
 /// The markdown mode description (TS `WEB_FETCH_DESCRIPTION_MARKDOWN`).
-pub const WEB_FETCH_DESCRIPTION_MARKDOWN: &str = "Fetches an HTTP(S) URL and returns its content as clean markdown. HTML pages are converted to markdown with scripts, styles, and noise stripped; other content types are returned as-is.";
+pub(crate) const WEB_FETCH_DESCRIPTION_MARKDOWN: &str = "Fetches an HTTP(S) URL and returns its content as clean markdown. HTML pages are converted to markdown with scripts, styles, and noise stripped; other content types are returned as-is.";
 /// The agentic mode description (TS `WEB_FETCH_DESCRIPTION_AGENTIC`).
-pub const WEB_FETCH_DESCRIPTION_AGENTIC: &str = "Fetches an HTTP(S) URL and answers a prompt about its content. The analyst processes the page directly so the full content never enters the main agent's context. The prompt parameter is required.";
+pub(crate) const WEB_FETCH_DESCRIPTION_AGENTIC: &str = "Fetches an HTTP(S) URL and answers a prompt about its content. The analyst processes the page directly so the full content never enters the main agent's context. The prompt parameter is required.";
 
 const USER_AGENT: &str = "strands-agents-web-fetch/1.0";
 const ACCEPT: &str = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8";
@@ -75,9 +75,9 @@ pub struct MakeWebFetchOptions {
     pub name: Option<String>,
     /// The description (default the mode's description).
     pub description: Option<String>,
-    /// The response body cap in bytes (default [`DEFAULT_MAX_BYTES`]).
+    /// The response body cap in bytes (default 5 MiB).
     pub max_bytes: Option<usize>,
-    /// The cap on extracted characters (default [`DEFAULT_MAX_CONTENT_CHARS`]).
+    /// The cap on extracted characters (default 50,000).
     pub max_content_chars: Option<usize>,
     /// The analyst's model in agentic mode. Resolution order: this model > `agent.aux_model` >
     /// `agent.model` of the calling agent.

@@ -2,11 +2,25 @@
 //!
 //! [`Sandbox`] is the abstraction; [`PosixShellSandbox`] derives it from a shell; and
 //! [`NotASandboxLocalEnvironment`], the default, runs on the host with no isolation.
+//!
+//! ```
+//! use strands::Agent;
+//! use strands::sandbox::{NotASandboxLocalEnvironment, SandboxSource};
+//! use strands::testing::MockMessageModel;
+//!
+//! let local = Agent::builder()
+//!     .model(MockMessageModel::new())
+//!     .sandbox(NotASandboxLocalEnvironment::new())
+//!     .build()?;
+//! let off = Agent::builder().model(MockMessageModel::new()).sandbox(SandboxSource::Off).build()?;
+//! # let _ = (local, off);
+//! # Ok::<(), strands::Error>(())
+//! ```
 
 mod base;
 mod constants;
 mod not_a_sandbox_local_environment;
-pub mod posix_shell;
+mod posix_shell;
 pub(crate) mod stream_process;
 mod types;
 
@@ -47,6 +61,18 @@ impl SandboxSource {
 
 impl From<Arc<dyn Sandbox>> for SandboxSource {
     fn from(sandbox: Arc<dyn Sandbox>) -> Self {
+        Self::Sandbox(sandbox)
+    }
+}
+
+impl<S: Sandbox> From<S> for SandboxSource {
+    fn from(sandbox: S) -> Self {
+        Self::Sandbox(Arc::new(sandbox))
+    }
+}
+
+impl<S: Sandbox> From<Arc<S>> for SandboxSource {
+    fn from(sandbox: Arc<S>) -> Self {
         Self::Sandbox(sandbox)
     }
 }

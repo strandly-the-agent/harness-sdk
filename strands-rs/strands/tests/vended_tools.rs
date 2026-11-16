@@ -91,7 +91,7 @@ async fn write_edit_and_read_go_through_the_agent_sandbox() {
     let sandbox = Arc::new(MemorySandbox::default());
     let mut agent = Agent::builder()
         .model(Arc::clone(&model) as Arc<dyn Model>)
-        .sandbox(SandboxSource::from(Arc::clone(&sandbox) as Arc<dyn Sandbox>))
+        .sandbox(Arc::clone(&sandbox))
         .tools(tool_list![write(), edit(), read()])
         .printer(false)
         .build()

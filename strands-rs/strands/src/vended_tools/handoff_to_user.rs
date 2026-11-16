@@ -12,7 +12,7 @@ use super::schema_tool;
 /// The interrupt name the tool raises, whatever the tool is called (TS `HANDOFF_INTERRUPT_NAME`).
 pub const HANDOFF_INTERRUPT_NAME: &str = "strands:handoff-to-user";
 /// The default description (TS `DEFAULT_HANDOFF_TO_USER_DESCRIPTION`).
-pub const DEFAULT_HANDOFF_TO_USER_DESCRIPTION: &str = "Ask the user a question and wait for their answer. Use it only when you cannot proceed without confirmation, approval, or information that only the user has. Do not call it to deliver a final answer or to report progress. The user's reply is returned as the tool result.";
+pub(crate) const DEFAULT_HANDOFF_TO_USER_DESCRIPTION: &str = "Ask the user a question and wait for their answer. Use it only when you cannot proceed without confirmation, approval, or information that only the user has. Do not call it to deliver a final answer or to report progress. The user's reply is returned as the tool result.";
 
 /// Options for [`make_handoff_to_user`] (TS `MakeHandoffToUserOptions`).
 #[expect(
@@ -24,7 +24,7 @@ pub const DEFAULT_HANDOFF_TO_USER_DESCRIPTION: &str = "Ask the user a question a
 pub struct MakeHandoffToUserOptions {
     /// The tool name (default `handoff_to_user`).
     pub name: Option<String>,
-    /// The description (default [`DEFAULT_HANDOFF_TO_USER_DESCRIPTION`]).
+    /// The description (default the TS `DEFAULT_HANDOFF_TO_USER_DESCRIPTION` text).
     pub description: Option<String>,
 }
 
