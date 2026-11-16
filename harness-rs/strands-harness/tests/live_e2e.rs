@@ -33,9 +33,11 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use strands::StopReason;
+use strands::testing::tool_context;
+use strands::types::tools::ToolUse;
 use strands_harness::{
     BuiltinPluginName, BuiltinToolName, Effort, HarnessAgentOptions, McpServersOption, SessionConfig,
-    SessionOption, create_harness,
+    SessionOption, create_harness, exa_web_search,
 };
 
 use live_support::{
@@ -450,6 +452,38 @@ fn holds_file(dir: &Path, name: &str) -> bool {
             }
         })
     })
+}
+
+/// harness-ts/test/integration/web-search.test.ts, `returns parsed results`: the default
+/// `web_search` backend against Exa's hosted MCP server, through the public tool. Keyless;
+/// `EXA_API_KEY` is picked up when present.
+#[tokio::test]
+#[ignore = "live exa"]
+async fn live_exa_web_search_returns_parsed_results() {
+    let input = json!({ "query": "Strands Agents SDK documentation", "max_results": 3 });
+    let context = tool_context(ToolUse::new("web_search", "tool-1", input.clone()));
+    let output = exa_web_search()
+        .invoke(input, context)
+        .await
+        .expect("the tool runs");
+    let text = output.as_str().expect("a text result");
+    if text.contains("rate limit") {
+        eprintln!("skipping: Exa's keyless rate limit was hit");
+        return;
+    }
+    let sources: Vec<&str> = text
+        .lines()
+        .filter(|line| line.starts_with(|c: char| c.is_ascii_digit()))
+        .collect();
+    assert!(text.starts_with("Sources:\n1. ") && !sources.is_empty(), "{text}");
+    for source in sources {
+        let (title, url) = source.rsplit_once(" — ").expect("a title and a URL");
+        assert!(
+            title.split_once(". ").is_some_and(|(_, title)| !title.is_empty()),
+            "{source}"
+        );
+        assert!(url.starts_with("http"), "{source}");
+    }
 }
 
 fn key_set(name: &str) -> bool {
