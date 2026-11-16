@@ -17,6 +17,10 @@ AWS credentials came from the default chain and were used for Bedrock and Bedroc
 |---|---|---|---|---|---|---|
 | 1 | `19461dc70` | 13 | 11 | 2 | 0 | 0 |
 | 2 | `19461dc70` | 13 | 11 | 2 | 0 | 0 |
+| 3 | `f1248467b` | 16 | 14 | 2 | 0 | 0 |
+| 4 | `f1248467b` | 16 | 14 | 2 | 0 | 0 |
+
+Runs 3 and 4 add the three pending-interrupt tests (`live_bedrock_approves_a_pending_interrupt_from_a_second_agent_on_the_session` and the two `live_cross_sdk_*_approves_an_interrupt_pending_*` tests); the other tests are unchanged from runs 1 and 2. The result columns below read "pass" when the test passed in every run that had it.
 
 A skipped test returns early and the test harness prints `ok` for it. The 2 skips are the `skipping:` lines (`--nocapture`): `skipping: ANTHROPIC_API_KEY is not set` and `skipping: OPENAI_API_KEY is not set`. No request was sent to Anthropic or OpenAI. Without the three variables above, the MCP flow and the cross-SDK tests skip with a message too.
 
@@ -28,12 +32,12 @@ TS spec: `harness-ts/test/integration/e2e.test.ts` (helpers and the testing syst
 
 One flow runs per provider. A first agent (`builtin_tools: [write]`, the MCP server `harness-ts/test/tools/echo-mcp-server.mjs` under the name `fixture`, `interventions: "ask"`, a session with a fixed id) is asked to write a file and then call `fixture_echo`. Checks: the first result stops with `interrupt`, its approval prompt starts with `Approve "write"` and carries the file path, the file does not exist yet and the tool use is not in the history; after answering every interrupt with `yes` the turn ends `endTurn` with at least two interrupts answered, input and output tokens above zero, `write` succeeded with the expected `path` input and the file on disk holds the marker, `fixture_echo` succeeded with input `text: pong-77` and result `echo:pong-77`, and the session folder exists. A second `create_harness` with the same session id (`builtin_tools: [read]`) restores a history equal to the first agent's, and a turn that does not repeat the file path ends `endTurn` with a `read` call on that path whose result holds the marker; the restored messages are an unchanged prefix of the new history.
 
-| Test | Model | Region | Run 1 | Run 2 |
-|---|---|---|---|---|
-| `live_bedrock_tool_call_mcp_tool_interrupt_resume_and_session_resume` | `bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`, effort `off` | `us-west-2` | pass | pass |
-| `live_bedrock_mantle_tool_call_mcp_tool_interrupt_resume_and_session_resume` | `bedrock-mantle/openai.gpt-oss-120b`, effort `low` | `us-west-2` | pass | pass |
-| `live_anthropic_tool_call_mcp_tool_interrupt_resume_and_session_resume` | `anthropic/claude-haiku-4-5`, effort `off` | - | skipped: `ANTHROPIC_API_KEY is not set` | skipped |
-| `live_openai_tool_call_mcp_tool_interrupt_resume_and_session_resume` | `openai/gpt-5.4-mini`, effort `off` | - | skipped: `OPENAI_API_KEY is not set` | skipped |
+| Test | Model | Region | Runs 1-4 |
+|---|---|---|---|
+| `live_bedrock_tool_call_mcp_tool_interrupt_resume_and_session_resume` | `bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`, effort `off` | `us-west-2` | pass |
+| `live_bedrock_mantle_tool_call_mcp_tool_interrupt_resume_and_session_resume` | `bedrock-mantle/openai.gpt-oss-120b`, effort `low` | `us-west-2` | pass |
+| `live_anthropic_tool_call_mcp_tool_interrupt_resume_and_session_resume` | `anthropic/claude-haiku-4-5`, effort `off` | - | skipped: `ANTHROPIC_API_KEY is not set` |
+| `live_openai_tool_call_mcp_tool_interrupt_resume_and_session_resume` | `openai/gpt-5.4-mini`, effort `off` | - | skipped: `OPENAI_API_KEY is not set` |
 
 The Bedrock Mantle test runs at effort `low`. With effort `off` the harness sends `reasoning.effort: "none"` on Bedrock Mantle, as the TypeScript harness does, and `openai.gpt-oss-120b` answered every such request (3 of 3 from Rust, 1 of 1 from the TypeScript harness, against 3 of 3 and 1 of 1 passing at `low`) with
 
@@ -51,15 +55,16 @@ The server had an error while processing your request. Sorry about that!
 
 Model `bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`, effort `off`, region `us-west-2`.
 
-| Test | TS case | Run 1 | Run 2 | Checks |
-|---|---|---|---|---|
-| `live_bedrock_uses_the_shell_tool` | `e2e.test.ts`: uses the shell tool | pass | pass | `shell` succeeded, its result holds the echoed marker, the file the command wrote in the temporary directory holds it |
-| `live_bedrock_uses_the_file_and_web_tools_the_todos_plugin_and_the_subagent_in_one_turn` | `e2e.test.ts`: uses the file/web tools, the todos plugin, and the subagent in one turn; uses the todo_write tool from the todos plugin | pass | pass | `read`, `write`, `edit`, `web_fetch`, `todo_write` and `subagent` each succeeded; the `read` result holds `4271`; the written file holds `4271` and the edited file `omega`; the subagent's sum `333` is in the conversation; `endTurn` |
-| `live_bedrock_blocks_a_denied_tool_call_via_interventions` | `e2e.test.ts`: blocks a denied tool call via interventions | pass | pass | the interrupt is answered `false`: `write` attempted, not succeeded, its result starts `CONFIRMATION_FAILED: Approve`, no file; `endTurn` |
-| `live_bedrock_persists_a_session_with_a_minted_id` | `e2e.test.ts`: persists a session with a minted id | pass | pass | one folder under the session directory, named by 8 hex digits, holding `snapshot_latest.json` |
-| `live_bedrock_persists_memory_across_agents` | `e2e.test.ts`: persists memory across agents (fresh conversation, no session) | pass | pass | after `flush`, a `.md` file in the memory directory holds the fact; a second agent sharing only that directory has the fact in its conversation; `endTurn` |
-| `live_bedrock_cache_reads_grow_across_turns` | `caching.test.ts`: reads grow across turns | pass | pass | cumulative `cache_read_input_tokens` is above zero after three turns and grows on every turn |
-| `live_exa_web_search_returns_parsed_results` | `web-search.test.ts`: returns parsed results | pass | pass | the public `exa_web_search` tool, keyless: a `Sources:` list whose entries each have a title and an `http` URL (skips when the keyless rate limit is hit) |
+| Test | TS case | Result | Checks |
+|---|---|---|---|
+| `live_bedrock_uses_the_shell_tool` | `e2e.test.ts`: uses the shell tool | pass | `shell` succeeded, its result holds the echoed marker, the file the command wrote in the temporary directory holds it |
+| `live_bedrock_uses_the_file_and_web_tools_the_todos_plugin_and_the_subagent_in_one_turn` | `e2e.test.ts`: uses the file/web tools, the todos plugin, and the subagent in one turn; uses the todo_write tool from the todos plugin | pass | `read`, `write`, `edit`, `web_fetch`, `todo_write` and `subagent` each succeeded; the `read` result holds `4271`; the written file holds `4271` and the edited file `omega`; the subagent's sum `333` is in the conversation; `endTurn` |
+| `live_bedrock_blocks_a_denied_tool_call_via_interventions` | `e2e.test.ts`: blocks a denied tool call via interventions | pass | the interrupt is answered `false`: `write` attempted, not succeeded, its result starts `CONFIRMATION_FAILED: Approve`, no file; `endTurn` |
+| `live_bedrock_approves_a_pending_interrupt_from_a_second_agent_on_the_session` | none (runs 3 and 4) | pass | a first agent pauses on the `write` approval and is shut down; a second `create_harness` on the same session id restores an equal history, is given the interrupt responses, and ends `endTurn` with exactly one `write` tool use, succeeded, and the file on disk |
+| `live_bedrock_persists_a_session_with_a_minted_id` | `e2e.test.ts`: persists a session with a minted id | pass | one folder under the session directory, named by 8 hex digits, holding `snapshot_latest.json` |
+| `live_bedrock_persists_memory_across_agents` | `e2e.test.ts`: persists memory across agents (fresh conversation, no session) | pass | after `flush`, a `.md` file in the memory directory holds the fact; a second agent sharing only that directory has the fact in its conversation; `endTurn` |
+| `live_bedrock_cache_reads_grow_across_turns` | `caching.test.ts`: reads grow across turns | pass | cumulative `cache_read_input_tokens` is above zero after three turns and grows on every turn |
+| `live_exa_web_search_returns_parsed_results` | `web-search.test.ts`: returns parsed results | pass | the public `exa_web_search` tool, keyless: a `Sources:` list whose entries each have a title and an `http` URL (skips when the keyless rate limit is hit) |
 
 The TS cases `allows an approved tool call via interventions` and `persists sessions across agents` are covered by the per-provider flow.
 
@@ -80,15 +85,19 @@ The TypeScript side is run by the tests as
 
 ```bash
 node <harness-ts>/node_modules/tsx/dist/cli.mjs tests/cross_sdk/session.mts <session id> \
-  [--expect <messages.json>] [--prompt <text>] [--dump <messages.json>]
+  [--expect <messages.json>] [--prompt <text>] [--dump <messages.json>] \
+  [--interventions ask] [--pause <interrupt-ids.json>] [--approve <interrupt-ids.json>]
 ```
 
-| Test | Direction | Run 1 | Run 2 | Checks |
-|---|---|---|---|---|
-| `live_cross_sdk_rust_resumes_a_session_written_by_typescript` | TypeScript writes, Rust resumes | pass | pass | TypeScript runs a turn with a `write` call and dumps its history; Rust restores a history equal to it, runs a turn that reads the file named only in the restored history (`read` result holds the marker, the restored messages are an unchanged prefix); TypeScript then restores a history equal to the one Rust ended with |
-| `live_cross_sdk_typescript_resumes_a_session_written_by_rust` | Rust writes, TypeScript resumes | pass | pass | the mirror image: Rust writes, TypeScript restores an equal history and runs the reading turn, Rust restores a history equal to the one TypeScript ended with |
+| Test | Direction | Result | Checks |
+|---|---|---|---|
+| `live_cross_sdk_rust_resumes_a_session_written_by_typescript` | TypeScript writes, Rust resumes | pass | TypeScript runs a turn with a `write` call and dumps its history; Rust restores a history equal to it, runs a turn that reads the file named only in the restored history (`read` result holds the marker, the restored messages are an unchanged prefix); TypeScript then restores a history equal to the one Rust ended with |
+| `live_cross_sdk_typescript_resumes_a_session_written_by_rust` | Rust writes, TypeScript resumes | pass | the mirror image: Rust writes, TypeScript restores an equal history and runs the reading turn, Rust restores a history equal to the one TypeScript ended with |
 
-Histories are compared as JSON values of the messages in their wire shape (`Message.toJSON()` in TypeScript, the `serde` form in Rust). No format difference was found in either direction.
+| `live_cross_sdk_rust_approves_an_interrupt_pending_in_a_typescript_session` | TypeScript pauses, Rust approves (runs 3 and 4) | pass | TypeScript (`interventions: "ask"`) stops on the `write` approval and records the interrupt ids, the file does not exist; Rust restores a history equal to TypeScript's, answers the ids with `yes`, ends `endTurn` with `write` succeeded and the file on disk; TypeScript restores a history equal to the one Rust ended with |
+| `live_cross_sdk_typescript_approves_an_interrupt_pending_in_a_rust_session` | Rust pauses, TypeScript approves (runs 3 and 4) | pass | the mirror image: Rust stops on the approval, TypeScript restores an equal history, answers the ids and ends `endTurn`, the file is on disk, and Rust restores a history equal to the one TypeScript ended with |
+
+Histories are compared as JSON values of the messages in their wire shape (`Message.toJSON()` in TypeScript, the `serde` form in Rust). No format difference was found in either direction, in the history or in the stored interrupt state.
 
 ## Test bugs fixed before the sweeps
 
@@ -104,4 +113,4 @@ No harness defect was found, and nothing under `src/` was changed.
 
 - `e2e.test.ts`, `injects the environment context (project AGENTS.md)`: the environment plugin reads the process's working directory, and the tests neither change it nor run inside the repository. The plugin is also left out of the six-tool and caching tests for that reason, where TS enables it.
 - Anthropic and OpenAI (keys missing): the two tests are kept and skip.
-- The cross-SDK check covers a completed turn with a tool call. It does not cover a session saved while an interrupt is pending, or the context manager's stash files.
+- The cross-SDK check covers a completed turn with a tool call and a pending tool-approval interrupt. It does not cover the context manager's stash files, memory files or multi-agent sessions.
