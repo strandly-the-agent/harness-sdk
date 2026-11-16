@@ -362,6 +362,37 @@ mod overflow_propagation {
     }
 }
 
+mod agent_loop {
+    use super::*;
+    use crate::conversation_manager::{
+        SlidingWindowConversationManager, SlidingWindowConversationManagerConfig,
+    };
+
+    #[tokio::test]
+    async fn the_default_manager_trims_the_history_and_retries_an_overflowing_call() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_error(|| ContextWindowOverflowError::new("context window exceeded").into());
+        model.add_turn(vec![TextBlock::new("recovered").into()]);
+        let config = SlidingWindowConversationManagerConfig::builder()
+            .window_size(2)
+            .should_truncate_results(false)
+            .build();
+        let mut history = two_messages();
+        history.extend(two_messages());
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .messages(history)
+            .conversation_manager(SlidingWindowConversationManager::new(config).unwrap())
+            .printer(false)
+            .build()
+            .unwrap();
+        let result = agent.invoke("hello").await.unwrap();
+        assert_eq!(result.to_string(), "recovered");
+        assert_eq!(model.call_count(), 2);
+        assert_eq!(model.requests()[1].messages.len(), 1, "trimmed to the new prompt");
+    }
+}
+
 mod null_conversation_manager {
     use super::*;
 
