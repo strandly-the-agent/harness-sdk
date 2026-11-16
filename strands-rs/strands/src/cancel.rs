@@ -102,6 +102,18 @@ impl CancelSignal {
         }
     }
 
+    /// A signal cancelled when this one is, without its message or deferral; what a sub-agent
+    /// joins (TS forwards only the `AbortSignal`).
+    pub(crate) fn abort_only(&self) -> Self {
+        Self {
+            shared: Arc::new(Shared {
+                token: self.shared.token.child_token(),
+                state: Mutex::default(),
+                parent: None,
+            }),
+        }
+    }
+
     /// Whether the signal has been cancelled.
     pub fn is_cancelled(&self) -> bool {
         self.shared.token.is_cancelled()
@@ -216,6 +228,20 @@ mod tests {
         assert!(signal.is_deferred());
         handle.cancel(CancelOptions::default());
         assert!(signal.is_cancelled());
+    }
+
+    #[test]
+    fn an_abort_only_view_follows_the_abort_but_not_the_message_or_deferral() {
+        let (parent, handle) = CancelSignal::new();
+        let view = parent.abort_only();
+        handle.cancel(CancelOptions {
+            message: Some("stop".to_owned()),
+            after_current_tools: true,
+        });
+        assert!(!view.is_deferred() && !view.is_cancelled());
+        handle.cancel(CancelOptions::default());
+        assert!(view.is_cancelled());
+        assert_eq!(view.reason(), None);
     }
 
     #[test]

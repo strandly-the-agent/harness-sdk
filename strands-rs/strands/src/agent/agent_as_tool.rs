@@ -222,7 +222,7 @@ impl Tool for AgentAsTool {
             let options = InvokeOptions {
                 invocation_state: context.invocation_state().clone(),
                 invocation_context: context.invocation_context().cloned(),
-                cancel_signal: Some(context.cancel_signal().clone()),
+                cancel_signal: Some(context.cancel_signal().abort_only()),
                 ..InvokeOptions::default()
             };
             let mut result = None;

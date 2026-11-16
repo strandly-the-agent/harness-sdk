@@ -362,7 +362,7 @@ impl Tool for SubagentTool {
             let options = InvokeOptions {
                 invocation_state: context.invocation_state().copy(),
                 invocation_context: context.invocation_context().cloned(),
-                cancel_signal: Some(context.cancel_signal().clone()),
+                cancel_signal: Some(context.cancel_signal().abort_only()),
                 ..InvokeOptions::default()
             };
             let child_cancel = child.cancel_handle();

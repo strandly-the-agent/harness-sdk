@@ -308,6 +308,39 @@ mod registry {
         assert_eq!(plugin.calls.load(Ordering::SeqCst), 1);
     }
 
+    // No TS case: a TS `initAgent` await can't be dropped.
+    #[tokio::test]
+    async fn a_dropped_initialize_resumes_at_the_interrupted_plugin() {
+        #[derive(Default)]
+        struct StallsOnce(AtomicUsize);
+
+        #[async_trait]
+        impl Plugin for StallsOnce {
+            fn name(&self) -> &str {
+                "stalls-once"
+            }
+
+            async fn init_agent(self: Arc<Self>, _agent: &mut LocalAgent) -> Result<()> {
+                if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                    std::future::pending::<()>().await;
+                }
+                Ok(())
+            }
+        }
+
+        let stalls = Arc::new(StallsOnce::default());
+        let later = Arc::new(InitializablePlugin::default());
+        let plugins: Vec<Arc<dyn Plugin>> = vec![stalls.clone(), later.clone()];
+        let mut registry = PluginRegistry::default();
+        let mut agent = local_agent();
+        let first = futures::FutureExt::now_or_never(registry.initialize(plugins.clone(), &mut agent));
+        assert!(first.is_none());
+        registry.initialize(plugins.clone(), &mut agent).await.unwrap();
+        registry.initialize(plugins, &mut agent).await.unwrap();
+        assert_eq!(stalls.0.load(Ordering::SeqCst), 2);
+        assert_eq!(later.calls.load(Ordering::SeqCst), 1);
+    }
+
     #[tokio::test]
     async fn is_idempotent_calling_initialize_twice_only_runs_plugins_once() {
         let plugin = Arc::new(InitializablePlugin::default());

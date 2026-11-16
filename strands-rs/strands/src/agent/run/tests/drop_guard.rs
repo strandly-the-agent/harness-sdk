@@ -2,12 +2,14 @@
 //! call, `shutdown()` and the drop warning. TS has no counterpart (a broken `for await` drains
 //! the generator); see strands-ts/src/agent/__tests__/agent.cancel.test.ts for the cancel shape.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use futures::FutureExt;
 use tokio::sync::Notify;
 
 use super::*;
+use crate::cancel::CancelOptions;
 use crate::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest};
 use crate::models::streaming::{ModelMessageStartEvent, ModelStreamEvent};
 use crate::test_support::WarnRecorder;
@@ -261,4 +263,110 @@ async fn dropping_the_stream_cancels_the_invocation_signal() {
     assert!(signal.is_cancelled());
     assert!(!agent.cancel_signal().is_cancelled());
     agent.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_dropped_call_retries_the_deferred_hooks_it_did_not_finish() {
+    let mut agent = Agent::builder()
+        .model(StalledModel)
+        .printer(false)
+        .build()
+        .unwrap();
+    let log = record_hooks(&agent);
+    let finished = Arc::new(AtomicUsize::new(0));
+    let (started, done) = (Arc::new(AtomicUsize::new(0)), Arc::clone(&finished));
+    agent.add_async_hook::<AfterInvocationEvent<'static>>(move |_event| {
+        let (started, done) = (Arc::clone(&started), Arc::clone(&done));
+        Box::pin(async move {
+            if started.fetch_add(1, Ordering::SeqCst) == 0 {
+                std::future::pending::<()>().await;
+            }
+            done.fetch_add(1, Ordering::SeqCst);
+        })
+    });
+    let second = Duration::from_secs(1);
+    assert!(tokio::time::timeout(second, agent.invoke("one")).await.is_err());
+    assert!(tokio::time::timeout(second, agent.invoke("two")).await.is_err());
+    assert!(agent.abandoned.is_some());
+
+    agent.set_model(mock(vec![vec![text("three")]]));
+    agent.invoke("three").await.unwrap();
+
+    assert_eq!(
+        finished.load(Ordering::SeqCst),
+        2,
+        "the deferred hook and call 3's own"
+    );
+    let added = log
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|entry| *entry == "added:Cancelled by user")
+        .count();
+    assert_eq!(added, 1);
+    assert!(agent.abandoned.is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_deferred_hooks_see_a_cancelled_signal_so_background_tasks_do_not_block_the_next_call() {
+    let gate = Arc::new(Notify::new());
+    let held = Arc::clone(&gate);
+    let slow = FunctionTool::new("slow", "Wait.", move |_input: JsonValue, _ctx| {
+        let held = Arc::clone(&held);
+        async move {
+            held.notified().await;
+            Ok::<_, ToolError>(json!("released"))
+        }
+    });
+    let model = MockMessageModel::new();
+    model
+        .add_turn(vec![tool_use("slow", "t1", json!({}))])
+        .add_turn_with(
+            vec![text("late")],
+            MockTurnOptions {
+                delay: Some(Duration::from_secs(60)),
+                ..Default::default()
+            },
+        )
+        .add_turn(vec![text("next answer")]);
+    let config = crate::background_tasks::BackgroundTasksConfig {
+        always: vec!["slow".to_owned()],
+        ..Default::default()
+    };
+    let mut agent = Agent::builder()
+        .model(model)
+        .tools([slow])
+        .background_tasks(config)
+        .printer(false)
+        .build()
+        .unwrap();
+    let cancelled = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&cancelled);
+    agent.add_hook(move |event: &mut AfterInvocationEvent<'_>| {
+        seen.lock()
+            .unwrap()
+            .push(event.agent().cancel_signal().is_cancelled());
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), agent.invoke("one"))
+            .await
+            .is_err()
+    );
+
+    let handle = agent.cancel_handle();
+    let next = async {
+        let canceller = async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            handle.cancel(CancelOptions::default());
+        };
+        tokio::join!(agent.invoke("two"), canceller).0
+    };
+    let result = tokio::time::timeout(Duration::from_secs(30), next).await;
+
+    assert!(
+        result.is_ok(),
+        "the abandoned run's hooks waited on the background task"
+    );
+    assert_eq!(cancelled.lock().unwrap().first(), Some(&true));
+    gate.notify_waiters();
 }

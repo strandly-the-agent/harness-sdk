@@ -78,6 +78,7 @@ impl From<Error> for Stop {
 type Step<T> = std::result::Result<T, Stop>;
 
 /// What a dropped invocation left for the next call.
+#[derive(Clone)]
 pub(crate) struct AbandonedRun {
     state: InvocationState,
     /// The cancel message the drop appended, for its `MessageAddedEvent` hooks.
@@ -162,18 +163,39 @@ impl Agent {
     }
 
     /// Runs the hooks a dropped invocation's stream skipped (#63): `MessageAddedEvent` for the
-    /// cancel message the drop appended, then `AfterInvocationEvent`.
+    /// cancel message the drop appended, then `AfterInvocationEvent`. They see a cancelled
+    /// signal, and a run stays pending until its hooks return, so a drop here retries them.
     pub(crate) async fn finish_abandoned_run(&mut self) -> Result<()> {
-        let Some(run) = self.abandoned.take() else {
+        if self.abandoned.is_none() {
+            return Ok(());
+        }
+        self.local.begin_cancel(None);
+        self.local.cancel(CancelOptions::default());
+        let outcome = self.abandoned_hooks().await;
+        self.local.end_cancel();
+        outcome
+    }
+
+    async fn abandoned_hooks(&mut self) -> Result<()> {
+        let hooks = self.local.hooks().clone();
+        let Some(AbandonedRun { state, repair }) = self.abandoned.clone() else {
             return Ok(());
         };
-        let hooks = self.local.hooks().clone();
-        if let Some(message) = run.repair {
-            let mut event = MessageAddedEvent::new(&mut self.local, message, run.state.clone());
-            hooks.invoke::<MessageAddedEvent<'static>>(&mut event).await?;
+        if let Some(message) = repair {
+            let mut event = MessageAddedEvent::new(&mut self.local, message, state.clone());
+            let added = hooks.invoke::<MessageAddedEvent<'static>>(&mut event).await;
+            if added.is_err() {
+                self.abandoned = None;
+                return added;
+            }
+            if let Some(run) = &mut self.abandoned {
+                run.repair = None;
+            }
         }
-        let mut event = AfterInvocationEvent::new(&mut self.local, run.state);
-        hooks.invoke::<AfterInvocationEvent<'static>>(&mut event).await
+        let mut event = AfterInvocationEvent::new(&mut self.local, state);
+        let after = hooks.invoke::<AfterInvocationEvent<'static>>(&mut event).await;
+        self.abandoned = None;
+        after
     }
 
     /// The synchronous half of a dropped invocation, in the TS cancel shape: the signal is

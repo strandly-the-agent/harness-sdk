@@ -615,6 +615,36 @@ mod cancel {
         assert_eq!(content_json(&result), cancelled_result());
     }
 
+    // No TS case: TS forwards only the `AbortSignal`, so a parent's deferral never reaches the child.
+    #[tokio::test]
+    async fn a_deferred_parent_cancel_lets_the_wrapped_agent_finish() {
+        let model = MockMessageModel::new();
+        model
+            .add_turn(vec![ToolUseBlock::new("step", "c1", json!({})).into()])
+            .add_turn(vec![text("child final answer")]);
+        let (context, handle) = cancellable_context("test-agent", "tool-1", json!({"input": "go"}));
+        let step = FunctionTool::new("step", "a step", move |_input: JsonValue, _ctx: ToolContext| {
+            handle.cancel(CancelOptions {
+                message: Some("parent stop".to_owned()),
+                after_current_tools: true,
+            });
+            async { Ok::<_, ToolError>("stepped") }
+        });
+        let agent = Agent::builder()
+            .model(model)
+            .name("test-agent")
+            .tools([step])
+            .printer(false)
+            .build()
+            .unwrap();
+        let tool = agent.as_tool(AgentAsToolOptions::default());
+
+        let (_, result) = collect(tool.stream(context)).await;
+
+        assert_eq!(*result.status(), ToolResultStatus::Success);
+        assert_eq!(content_json(&result), json!([{"text": "child final answer"}]));
+    }
+
     #[tokio::test]
     async fn returns_a_success_result_when_the_wrapped_agent_ends_via_a_deferred_cancel_stop_tool() {
         let options = CancelOptions {
