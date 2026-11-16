@@ -117,13 +117,13 @@ async fn rejects_empty_keys() {
 }
 
 #[tokio::test]
-async fn rejects_keys_with_dot_dot_segments() {
+async fn rejects_keys_with_segments() {
     let error = InMemoryStorage::new().write("a/../b", &[1]).await.unwrap_err();
     assert_eq!(error.name(), "StorageError");
 }
 
 #[tokio::test]
-async fn rejects_prefixes_with_dot_dot_segments() {
+async fn rejects_prefixes_with_segments() {
     let error = InMemoryStorage::new().list("../").await.unwrap_err();
     assert_eq!(error.name(), "StorageError");
 }

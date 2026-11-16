@@ -169,16 +169,6 @@
       "gap": "the row: interrupt telemetry lands with Phase 4 interrupts"
     }
   },
-  "strands-ts/src/agent/__tests__/agent.context-manager.test.ts": {
-    "Agent contextManager > when undefined (default) > does not set contextManager": "uses_sliding_window_conversation_manager",
-    "Agent contextManager > when \"auto\" > uses NullConversationManager": "uses_null_conversation_manager_with_auto",
-    "Agent contextManager > when \"auto\" > creates a ContextManager instance": "uses_null_conversation_manager_with_auto",
-    "Agent contextManager > when \"auto\" > registers ContextManager as a plugin": "uses_null_conversation_manager_with_auto",
-    "Agent contextManager > when \"agentic\" > uses NullConversationManager": "ignores_user_provided_conversation_manager",
-    "Agent contextManager > when false > does not set contextManager": "uses_null_conversation_manager_when_no_conversation_manager_provided",
-    "Agent contextManager > when ContextManagerConfig object > uses NullConversationManager": "uses_null_conversation_manager_with_a_config_object",
-    "Agent contextManager > when ContextManagerConfig object > registers ContextManager as a plugin": "uses_null_conversation_manager_with_a_config_object"
-  },
   "strands-ts/src/agent/__tests__/agent.hook.test.ts": {
     "fires hooks during invoke": "fire_in_ts_order_during_invoke_and_initialized_fires_once",
     "fires hooks during stream": "fire_in_ts_order_during_invoke_and_initialized_fires_once",
@@ -409,6 +399,32 @@
       "gap": "tests the TS `Proxy` behind `agent.tool` (same instance, `invoke`/`stream` present), which the compiler checks"
     }
   },
+  "strands-ts/src/context-manager/__tests__/context-manager.test.ts": {
+    "registers AfterModelCallEvent hook": {
+      "gap": "TS-only mechanism: inspects TS's tracked-hook list; the hook runs in `runs_strategies_on_context_window_overflow_error_and_sets_retry`"
+    }
+  },
+  "strands-ts/src/context-manager/__tests__/presets.test.ts": {
+    "returns undefined for undefined": {
+      "gap": "TS-only: Rust has no `ContextManager::from(None)`; an unset `context_manager` key is `None`"
+    }
+  },
+  "strands-ts/src/context-manager/__tests__/stash-integration.test.ts": {
+    "includes stash reference in the truncated preview": "offloaded_tool_results_are_retrievable_through_retrieve_context"
+  },
+  "strands-ts/src/context-manager/strategies/__tests__/offload-strategy.test.ts": {
+    "Offload.summarize(config) config-only creates untargeted strategy": {
+      "gap": "TS-only overload: the Rust `Offload::summarize` always takes a target"
+    },
+    "Offload.truncate(config) config-only creates untargeted strategy": {
+      "gap": "TS-only overload: the Rust `Offload::truncate` always takes a target"
+    }
+  },
+  "strands-ts/src/context-manager/strategies/__tests__/summarize-strategy.test.ts": {
+    "returns false when no model is available": {
+      "gap": "can't happen: a Rust `LocalAgent` always has a model and `aux_model()` falls back to it"
+    }
+  },
   "strands-ts/src/conversation-manager/__tests__/agentic-context.test.ts": {
     "truncateContextTool > respects messageType filter": "respects_message_type_filter_when_truncating"
   },
@@ -624,6 +640,40 @@
   },
   "strands-ts/src/sandbox/__tests__/posix-shell.test.node.ts": {
     "excludes . and .. entries": "excludes_dot_and_dot_dot_entries"
+  },
+  "strands-ts/src/storage/__tests__/in-memory-storage.test.ts": {
+    "accepts a positional search strategy": {
+      "gap": "TS-only constructor overload: Rust has `with_config`"
+    },
+    "keeps a subclass's overrides and fields on the scoped instance": {
+      "gap": "TS-only mechanism: class inheritance"
+    }
+  },
+  "strands-ts/src/storage/__tests__/local-file-storage.test.node.ts": {
+    "accepts a positional sandbox and search strategy": {
+      "gap": "TS-only constructor overload: Rust has `with_config` and `for_sandbox`"
+    },
+    "marks QmdSearchStrategy as requiring host filesystem access": {
+      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
+    },
+    "rejects a host filesystem strategy passed with a sandbox": {
+      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
+    },
+    "rejects a host filesystem strategy passed with a sandbox in config": {
+      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
+    },
+    "accepts a sandbox-safe strategy passed with a sandbox": {
+      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
+    },
+    "rejects at runtime a strategy typed as SearchStrategy that declares requiresHostFs": {
+      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
+    },
+    "drops a host filesystem strategy in forSandbox and falls back to keyword search": {
+      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
+    },
+    "keeps a sandbox-safe strategy in forSandbox": {
+      "gap": "out of scope: `QmdSearchStrategy` and `requiresHostFs` are out of v0.1 (P-10, P-300)"
+    }
   },
   "strands-ts/src/tools/__tests__/structured-output-tool.test.ts": {
     "returns error result for non-ZodError exceptions": {

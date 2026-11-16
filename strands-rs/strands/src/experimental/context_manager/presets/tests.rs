@@ -160,7 +160,7 @@ fn returns_undefined_for_false() {
 }
 
 #[test]
-fn throws_for_unknown_context_manager_preset_string() {
+fn context_manager_from_throws_for_unknown_preset_string() {
     let error = "atuo".parse::<ContextManagerPreset>().unwrap_err();
     assert_eq!(
         error.to_string(),

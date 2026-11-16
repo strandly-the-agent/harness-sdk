@@ -318,7 +318,7 @@ async fn does_not_run_strategies_on_non_overflow_errors() {
 }
 
 #[tokio::test]
-async fn truncates_when_utilization_remains_at_or_above_1_after_strategies() {
+async fn truncates_when_utilization_remains_1_0_after_strategies() {
     let strategy = Arc::new(Recorder::default());
     let mut agent = agent_with_model(conversation(5), model_with_window(1));
     manager_with(strategy).init_agent(&mut agent).await.unwrap();
@@ -427,7 +427,7 @@ async fn does_not_orphan_tool_use_tool_result_pairs_in_preserved_region() {
 }
 
 #[tokio::test]
-async fn does_not_truncate_when_messages_at_most_3() {
+async fn does_not_truncate_when_messages_3() {
     let mut agent = agent_with(conversation(1));
     manager_with(Arc::new(Recorder::default()))
         .init_agent(&mut agent)
@@ -542,17 +542,39 @@ fn uses_sliding_window_conversation_manager() {
         conversation_manager_name(&agent),
         SlidingWindowConversationManager::default().name()
     );
-    assert!(agent.context_manager().is_none());
 }
 
 #[test]
-fn uses_null_conversation_manager_with_auto() {
-    let agent = Agent::new(agent_config(Some(ContextManagerPreset::Auto.into()))).unwrap();
+fn when_undefined_default_does_not_set_context_manager() {
+    let agent = Agent::new(agent_config(None)).unwrap();
+    assert!(agent.context_manager().is_none());
+}
+
+fn agent_with_preset(preset: ContextManagerPreset) -> Agent {
+    Agent::new(agent_config(Some(preset.into()))).unwrap()
+}
+
+#[test]
+fn when_auto_uses_null_conversation_manager() {
+    let agent = agent_with_preset(ContextManagerPreset::Auto);
     assert_eq!(
         conversation_manager_name(&agent),
         "strands:null-conversation-manager"
     );
-    assert!(agent.context_manager().is_some());
+}
+
+#[test]
+fn when_auto_creates_a_context_manager_instance() {
+    assert!(
+        agent_with_preset(ContextManagerPreset::Auto)
+            .context_manager()
+            .is_some()
+    );
+}
+
+#[test]
+fn when_auto_registers_context_manager_as_a_plugin() {
+    let agent = agent_with_preset(ContextManagerPreset::Auto);
     assert!(plugin_names(&agent).contains(&ContextManager::NAME.to_owned()));
 }
 
@@ -575,7 +597,7 @@ fn registers_context_manager_before_the_session_manager() {
 
 #[test]
 fn ignores_user_provided_conversation_manager() {
-    let mut config = agent_config(Some(ContextManagerPreset::Agentic.into()));
+    let mut config = agent_config(Some(ContextManagerPreset::Auto.into()));
     config.conversation_manager = Some(Arc::new(SlidingWindowConversationManager::default()));
     let agent = Agent::new(config).unwrap();
     assert_eq!(
@@ -584,6 +606,16 @@ fn ignores_user_provided_conversation_manager() {
     );
 }
 
+#[test]
+fn when_agentic_uses_null_conversation_manager() {
+    let agent = agent_with_preset(ContextManagerPreset::Agentic);
+    assert_eq!(
+        conversation_manager_name(&agent),
+        "strands:null-conversation-manager"
+    );
+}
+
+// No TS case: checks that the tools of the `agentic` preset reach the agent's registry.
 #[test]
 fn agentic_adds_the_context_tools() {
     let agent = Agent::new(agent_config(Some(ContextManagerPreset::Agentic.into()))).unwrap();
@@ -615,12 +647,17 @@ fn throws_when_used_with_a_stateful_model() {
 }
 
 #[test]
-fn uses_null_conversation_manager_with_a_config_object() {
+fn when_context_manager_config_object_uses_null_conversation_manager() {
     let agent = Agent::new(agent_config(Some(ContextManagerConfig::default().into()))).unwrap();
     assert_eq!(
         conversation_manager_name(&agent),
         "strands:null-conversation-manager"
     );
+}
+
+#[test]
+fn when_context_manager_config_object_registers_context_manager_as_a_plugin() {
+    let agent = Agent::new(agent_config(Some(ContextManagerConfig::default().into()))).unwrap();
     assert!(plugin_names(&agent).contains(&ContextManager::NAME.to_owned()));
 }
 
@@ -631,6 +668,11 @@ fn uses_null_conversation_manager_when_no_conversation_manager_provided() {
         conversation_manager_name(&agent),
         "strands:null-conversation-manager"
     );
+}
+
+#[test]
+fn when_false_does_not_set_context_manager() {
+    let agent = Agent::new(agent_config(Some(ContextManagerStrategy::Off))).unwrap();
     assert!(agent.context_manager().is_none());
     assert!(!plugin_names(&agent).contains(&ContextManager::NAME.to_owned()));
 }
@@ -827,7 +869,7 @@ async fn does_not_offload_retrieve_context_tool_results_when_stash_is_active() {
 }
 
 #[tokio::test]
-async fn offloads_retrieve_context_results_when_no_stash() {
+async fn offloads_retrieve_context_results_when_no_stash_stash_not_configured() {
     let strategy = Offload::truncate(OffloadTarget::ToolResults, TruncateConfig::default()).unwrap();
     let (acted, _) =
         offload_with_stash(&strategy, retrieval_exchange(&test_support::large_text()), None).await;

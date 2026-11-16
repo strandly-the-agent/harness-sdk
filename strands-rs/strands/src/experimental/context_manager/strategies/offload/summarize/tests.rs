@@ -1001,7 +1001,7 @@ async fn passes_the_live_system_prompt_and_tools_to_the_server_side_summary() {
 }
 
 #[tokio::test]
-async fn places_a_server_side_summary_when_the_agent_model_is_different() {
+async fn places_a_server_side_summary_when_the_agent_model_is() {
     let different_model_id = || -> Arc<dyn Model> {
         let model = SpyModel::base(true);
         model.update_config(BaseModelConfig {
@@ -1364,7 +1364,7 @@ fn request_usage(invocation_context: &InvocationContext) -> (u32, Usage) {
 }
 
 #[tokio::test]
-async fn a_block_summary_adds_its_usage_to_the_request() {
+async fn a_block_summary_adds_its_usage_to_the_request_server_side_summary() {
     for server_side_summary in [false, true] {
         let options = AgentOptions {
             server_side_summary,
