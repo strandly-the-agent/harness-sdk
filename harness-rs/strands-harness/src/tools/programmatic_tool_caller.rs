@@ -104,7 +104,8 @@ pub(crate) type InnerCaller = Arc<
 fn gated_inner_caller() -> InnerCaller {
     Arc::new(|parent: ToolContext, name: String, input: JsonValue| {
         async move {
-            let state = parent.invocation_state().clone();
+            // A copy, so an inner call cannot change the parent's invocation state.
+            let state = parent.invocation_state().detached();
             match parent.agent().call_tool(&name, input, state).await {
                 Ok(ToolCallOutcome::Result(result)) => Ok(InnerCall::Result(result)),
                 Ok(ToolCallOutcome::Interrupt(interrupt)) => {

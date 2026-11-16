@@ -14,9 +14,10 @@ use strands::interventions::{
 };
 use strands::testing::MockMessageModel;
 use strands::tools::FunctionTool;
-use strands::types::messages::{TextBlock, ToolResultBlock, ToolResultContent};
+use strands::types::agent::{InvocationState, InvokeOptions};
+use strands::types::messages::{ContentBlock, TextBlock, ToolResultBlock, ToolResultContent, ToolUseBlock};
 use strands::types::tools::{ToolResultStatus, ToolUse};
-use strands::{CancelOptions, CancelSignal, JsonValue, ToolError, ToolSource};
+use strands::{CancelOptions, CancelSignal, JsonValue, ToolContext, ToolError, ToolSource};
 
 use super::output::Output;
 use super::run::{HostCall, LIMITS, Limits, MAX_CONCURRENT_TOOL_CALLS, RunEnd, run_code};
@@ -477,6 +478,65 @@ async fn enforces_the_timeout() {
         text(&result),
         "Error: start\n\nExecution error: timed out after 0.3 seconds."
     );
+}
+
+/// Through the agent loop: a direct call takes no invocation state of the test's own.
+#[tokio::test]
+async fn keeps_inner_calls_from_changing_the_parent_state() {
+    #[derive(Clone, Debug, PartialEq)]
+    struct WrittenByInnerCall;
+    #[derive(Clone, Debug, PartialEq)]
+    struct Principal(&'static str);
+
+    let ran = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&ran);
+    let whoami = FunctionTool::new(
+        "whoami",
+        "Writes to the invocation state the inner call ran with.",
+        move |_input, context: ToolContext| {
+            let log = Arc::clone(&log);
+            async move {
+                log.lock()
+                    .expect("no poisoned lock")
+                    .push(context.invocation_state().get::<Principal>());
+                context.invocation_state().insert(WrittenByInnerCall);
+                Ok("ok")
+            }
+        },
+    );
+    let model = MockMessageModel::new();
+    let code = json!({"code": "print(await whoami())"});
+    model.add_turn(vec![ContentBlock::ToolUse(ToolUseBlock::new(
+        "programmatic_tool_caller",
+        "x",
+        code,
+    ))]);
+    model.add_turn(vec![TextBlock::new("done").into()]);
+    let tools: Vec<ToolSource> = vec![programmatic_tool_caller().into(), whoami.into()];
+    let mut agent = Agent::builder()
+        .model(model)
+        .tools(tools)
+        .build()
+        .expect("the agent builds");
+    let parent_state = InvocationState::new();
+    parent_state.insert(Principal("alice"));
+    let options = InvokeOptions::builder()
+        .invocation_state(parent_state.clone())
+        .build();
+
+    agent.invoke_with("Run", options).await.expect("the agent runs");
+
+    assert_eq!(*ran.lock().expect("no poisoned lock"), [Some(Principal("alice"))]);
+    assert_eq!(parent_state.get::<Principal>(), Some(Principal("alice")));
+    assert_eq!(parent_state.get::<WrittenByInnerCall>(), None);
+}
+
+#[tokio::test]
+async fn enforces_the_memory_limit() {
+    let mut agent = agent_with(vec![calculator()]);
+    let result = run(&mut agent, "x = 'a' * 10**9\nprint(len(x))").await;
+    assert!(is_error(&result));
+    assert!(text(&result).contains("MemoryError"), "{}", text(&result));
 }
 
 fn functions(names: &[&str]) -> HashMap<String, String> {
