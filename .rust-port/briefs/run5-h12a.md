@@ -1,0 +1,16 @@
+Track `h12a`: close the open cases of `harness-ts/test/agent.test.ts`, `builtin-tools.test.ts` and `agent-generalist-memory.test.ts`. Read `.rust-port/briefs/run5-common.md` first and follow it.
+
+Worktree `/mnt/workspace/wt-h12a` (branch `wip/h12a`), `CARGO_TARGET_DIR=/tmp/ct-h12a`, gate output `/mnt/workspace/gates-h12a`, staging dir `.rust-port/staging/h12a/`, decisions P-1050 to P-1069.
+
+Read `.rust-port/handoff/h12core-handoff.md` whole (including the h12core3 notes at its end, which correct it: the default subagent schema does offer a `tools` enum) and `.rust-port/handoff/h12core-parity-cases.md` (ported and open cases by TS title; slightly stale, the title checker is the truth: at the start it reports `agent.test.ts 59/4/5/32`, `builtin-tools.test.ts 11/3/7/1`, `agent-generalist-memory.test.ts 2/0/0/1`). Get the missing titles with the title checker (run5-common.md) or by diffing `it(` titles in `/tmp/ts-spec/harness-ts/test/agent.test.ts` against `harness-rs/strands-harness/src/agent/tests.rs`.
+
+You own `harness-rs/strands-harness/src/agent/tests.rs` and `src/builtin_tools/tests.rs`. Another track (`h12b`) adds `mod` lines right after the `use` block at the top of `agent/tests.rs` and new files under `src/agent/tests/`; don't touch those, and append your tests rather than reordering the file. If `agent/tests.rs` grows past about 1800 lines, put new groups in `src/agent/tests/<group>.rs` child modules (names other than `memory`, `plugins`, `config_e2e`, `internal`, which `h12b` uses).
+
+Order, cheapest first, committing after each group:
+1. The two intervention cases (`registers no interventions by default`, `wires an interventions preset`): the smallest public accessor on the SDK `Agent` for its intervention handlers (names only, or handler list; check what TS exposes at `agent.ts` and mirror the narrowest shape), own `feat(strands)` commit with rustdoc and a unit test, pending decision.
+2. The caching (7) and effort (2) cases and the web_search cases that read the provider model's native tools or config: decide how tests observe the typed provider model that `create_harness` builds (a crate-internal capture in `Seams`, or asserting on the request the provider sends through its transport seam; no downcasting, no `Any`), log it, port the cases.
+3. The delegate cases (PROMPT.md section 11 items 43-48 through the real `subagent` tool or `builtin_tools::child_options`), including the narrowing cases through the `tools` enum of the real tool, and the last `agent-generalist-memory.test.ts` case.
+4. `builds %s from its factory ...` (both), `persists messages before the invocation finishes`, `returns an offloaded tool result to the model in full on retrieval`, the two multi-directory skills cases (an initialized agent holding the plugin), the remaining web_search cases, and the open `builtin-tools.test.ts` case `derives the %s keys from its config schema`.
+5. Anything else the title checker still lists as missing for your three specs.
+
+When a case truly cannot be expressed, declare the gap with its specific reason in `test-title-map.json` and the PARITY row. Finish with the title checker printing ok for your three specs, the staged PARITY rows, and a short `handoff.md` in your staging dir listing anything left, case by case.
