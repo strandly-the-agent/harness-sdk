@@ -189,6 +189,13 @@ pub struct HumanInTheLoop {
     classified_tool_use_ids: Mutex<HashSet<String>>,
 }
 
+impl Default for HumanInTheLoop {
+    /// The handler with the default config (TS `new HumanInTheLoop()`).
+    fn default() -> Self {
+        Self::new(HumanInTheLoopConfig::default())
+    }
+}
+
 impl HumanInTheLoop {
     /// The handler's name.
     pub const NAME: &'static str = "strands:human-in-the-loop";
