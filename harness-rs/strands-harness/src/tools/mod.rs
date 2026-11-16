@@ -15,10 +15,11 @@ pub use programmatic_tool_caller::{
 };
 pub(crate) use shell::make_shell;
 pub use subagent::{
-    AgentBuilder, AgentSpec, CONTEXT_MODES, Choice, ChoiceOption, ContextAxis, ContextMode, Fixed,
-    GENERALIST, GENERALIST_INSTRUCTIONS, Inherit, InstructionsMode, MakeSubagentOptions, McpServersMode,
-    ModelMode, Open, Preset, PresetOptions, ToolsMode, make_subagent,
+    AgentBuilder, AgentSpec, Choice, ChoiceOption, ContextAxis, ContextMode, Fixed, Inherit,
+    InstructionsMode, MakeSubagentOptions, McpServersMode, ModelMode, Open, Preset, PresetOptions, ToolsMode,
+    make_subagent,
 };
+pub(crate) use subagent::{CONTEXT_MODES, GENERALIST};
 pub use web_fetch::{MakeWebFetchOptions, make_web_fetch};
 #[cfg(feature = "mcp")]
 pub use web_search::{exa_web_search, make_exa_web_search};

@@ -45,11 +45,11 @@ pub use models::{supports_thinking, supports_web_search};
 pub use plugins::{EnvironmentContext, EnvironmentContextConfig, TodoItem, TodoStatus, Todos, TodosConfig};
 pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
 pub use tools::{
-    AgentBuilder, AgentSpec, CONTEXT_MODES, Choice, ChoiceOption, ContextAxis, ContextMode,
-    DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, Fixed, GENERALIST, GENERALIST_INSTRUCTIONS, Inherit,
-    InstructionsMode, MakeProgrammaticToolCallerOptions, MakeSubagentOptions, MakeWebFetchOptions,
-    McpServersMode, ModelMode, Open, Preset, PresetOptions, ToolsMode, edit, make_programmatic_tool_caller,
-    make_subagent, make_web_fetch, programmatic_tool_caller, read, write,
+    AgentBuilder, AgentSpec, Choice, ChoiceOption, ContextAxis, ContextMode,
+    DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, Fixed, Inherit, InstructionsMode,
+    MakeProgrammaticToolCallerOptions, MakeSubagentOptions, MakeWebFetchOptions, McpServersMode, ModelMode,
+    Open, Preset, PresetOptions, ToolsMode, edit, make_programmatic_tool_caller, make_subagent,
+    make_web_fetch, programmatic_tool_caller, read, write,
 };
 #[cfg(feature = "mcp")]
 pub use tools::{exa_web_search, make_exa_web_search};

@@ -73,7 +73,8 @@ impl ContextMode {
 }
 
 /// The context modes, in TS order.
-pub const CONTEXT_MODES: [ContextMode; 3] = [ContextMode::None, ContextMode::All, ContextMode::NoTools];
+pub(crate) const CONTEXT_MODES: [ContextMode; 3] =
+    [ContextMode::None, ContextMode::All, ContextMode::NoTools];
 
 /// An axis mode for the `instructions` parameter.
 #[derive(Debug, Clone, Default)]
@@ -179,10 +180,10 @@ pub struct Preset {
 pub type PresetOptions = Preset;
 
 /// The system prompt of the [`GENERALIST`] preset.
-pub const GENERALIST_INSTRUCTIONS: &str = "You are a general-purpose subagent handling a focused subtask on behalf of a parent agent. You run in your own fresh conversation and cannot ask follow-up questions, so work from the task as given, make reasonable assumptions where it is underspecified, and see it through to a verified result. Return a self-contained answer: state what you did, what you found, and anything the parent needs to act on. Your final message is the only thing that returns to the parent, so put the substance there rather than in intermediate steps.";
+pub(crate) const GENERALIST_INSTRUCTIONS: &str = "You are a general-purpose subagent handling a focused subtask on behalf of a parent agent. You run in your own fresh conversation and cannot ask follow-up questions, so work from the task as given, make reasonable assumptions where it is underspecified, and see it through to a verified result. Return a self-contained answer: state what you did, what you found, and anything the parent needs to act on. Your final message is the only thing that returns to the parent, so put the substance there rather than in intermediate steps.";
 
 /// A general-purpose role for a focused subtask.
-pub static GENERALIST: LazyLock<Preset> = LazyLock::new(|| Preset {
+pub(crate) static GENERALIST: LazyLock<Preset> = LazyLock::new(|| Preset {
     instructions: Some(GENERALIST_INSTRUCTIONS.to_owned()),
     description: "a general-purpose agent for a focused subtask that runs in its own context".to_owned(),
     ..Preset::default()
@@ -307,13 +308,18 @@ const BASE_DESCRIPTION: &str = "Delegate a self-contained task to a subagent tha
 ///
 /// use strands::Tool;
 /// use strands::testing::{MockMessageModel, test_agent};
-/// use strands_harness::{AgentBuilder, GENERALIST, MakeSubagentOptions, make_subagent};
+/// use strands_harness::{AgentBuilder, MakeSubagentOptions, Preset, make_subagent};
 ///
 /// let builder: AgentBuilder =
 ///     Arc::new(|_spec| Box::pin(async { Ok(test_agent(Arc::new(MockMessageModel::new()))) }));
+/// let researcher = Preset {
+///     description: "a read-only agent that gathers facts for a focused question".to_owned(),
+///     instructions: Some("You research one question and report what you found.".to_owned()),
+///     ..Preset::default()
+/// };
 /// let options = MakeSubagentOptions::builder()
 ///     .builder(builder)
-///     .presets([("generalist".to_owned(), GENERALIST.clone())].into())
+///     .presets([("researcher".to_owned(), researcher)].into())
 ///     .build();
 /// let tool = make_subagent(options)?;
 /// assert_eq!(tool.name(), "subagent");
