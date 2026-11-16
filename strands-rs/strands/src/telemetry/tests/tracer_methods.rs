@@ -1227,3 +1227,52 @@ fn a_trace_attribute_replaces_a_start_attribute_and_an_end_attribute_replaces_it
     assert_eq!(values("gen_ai.operation.name"), ["custom_op"]);
     assert_eq!(values("gen_ai.usage.total_tokens"), ["3"]);
 }
+
+/// TS mocks the active span; here a sampler or a subscriber without the OpenTelemetry layer
+/// produces each kind of span.
+mod current_span_context {
+    use opentelemetry_sdk::trace::Sampler;
+
+    use super::*;
+    use crate::telemetry::tracer::memory::current_span_context;
+
+    fn sampling(sampler: Sampler) -> tracing::subscriber::DefaultGuard {
+        let provider = SdkTracerProvider::builder().with_sampler(sampler).build();
+        let layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("strands-agents"));
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(layer))
+    }
+
+    #[test]
+    fn returns_undefined_when_no_span_is_active() {
+        let _guard = sampling(Sampler::AlwaysOn);
+        assert!(current_span_context().is_none());
+    }
+
+    #[test]
+    fn returns_undefined_for_a_non_recording_active_span() {
+        let _guard = sampling(Sampler::AlwaysOff);
+        let span = tracing::info_span!("sampled_out");
+        let _entered = span.enter();
+        assert!(!span.is_disabled());
+        assert!(current_span_context().is_none());
+    }
+
+    #[test]
+    fn returns_undefined_for_a_recording_span_with_an_invalid_all_zeros_context() {
+        let _guard = tracing::subscriber::set_default(tracing_subscriber::registry());
+        let span = tracing::info_span!("no_otel_layer");
+        let _entered = span.enter();
+        assert!(!span.is_disabled());
+        assert!(current_span_context().is_none());
+    }
+
+    #[test]
+    fn returns_the_context_for_a_recording_span_with_a_valid_context() {
+        let _guard = sampling(Sampler::AlwaysOn);
+        let span = tracing::info_span!("recorded");
+        let _entered = span.enter();
+        let context = current_span_context().expect("a span context");
+        assert!(context.is_valid());
+        assert!(context.is_sampled());
+    }
+}

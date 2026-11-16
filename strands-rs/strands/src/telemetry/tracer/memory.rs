@@ -61,7 +61,8 @@ pub(crate) type SpanLink = opentelemetry::trace::SpanContext;
 #[derive(Debug, Clone)]
 pub(crate) enum SpanLink {}
 
-/// TS `currentSpanContext`: the current span's context when it is valid.
+/// TS `currentSpanContext`: the current span's context when the span is recording and the
+/// context is valid. A span the sampler dropped is never exported, so nothing may link to it.
 pub(crate) fn current_span_context() -> Option<SpanLink> {
     #[cfg(feature = "otel")]
     {
@@ -70,6 +71,9 @@ pub(crate) fn current_span_context() -> Option<SpanLink> {
             return None;
         }
         let context = span.context();
+        if !context.span().is_recording() {
+            return None;
+        }
         let span_context = context.span().span_context().clone();
         span_context.is_valid().then_some(span_context)
     }
