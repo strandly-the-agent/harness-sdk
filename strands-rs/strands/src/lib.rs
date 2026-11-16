@@ -86,7 +86,7 @@
 //! | Module | Contents |
 //! |---|---|
 //! | [`agent`] | [`Agent`], its builder and [`AgentConfig`], [`AgentStream`], direct tool calls, snapshots, agents as tools |
-//! | [`models`] | The [`Model`](models::model::Model) trait, stream events, model info, and the providers: `BedrockModel`, `AnthropicModel`, `OpenAIModel` (each behind its feature) |
+//! | [`models`] | The [`Model`](models::model::Model) trait, stream events, model info, the providers `BedrockModel`, `AnthropicModel`, `OpenAIModel` (each behind its feature), and the model router in [`models::routing`] |
 //! | [`tools`](mod@tools) | The [`Tool`] trait, [`ToolContext`], [`FunctionTool`](tools::FunctionTool), the [`ToolRegistry`](tools::ToolRegistry), executors and structured output; [`tool`](macro@tool) and [`tools`](macro@tools) are the macros |
 //! | [`hooks`] | Typed callbacks on the agent's lifecycle events, with [`HookOrder`](hooks::HookOrder) and removal |
 //! | [`plugins`] | The [`Plugin`](plugins::Plugin) trait: named extensions that register hooks and tools |
@@ -96,23 +96,23 @@
 //! | [`conversation_manager`] | Keeping the history inside the context window: sliding window, summarizing, or none |
 //! | [`session`] | The [`SessionManager`](session::SessionManager): saving and restoring agents as snapshots |
 //! | [`storage`] | The [`Storage`](storage::Storage) trait with in-memory and local file backends |
+//! | [`memory`] | Long-term memory: the [`MemoryManager`](memory::MemoryManager), its tools and the [`MemoryStore`](memory::MemoryStore) trait |
+//! | [`vended_memory_stores`] | Memory stores that ship with the SDK, such as the file-backed store |
+//! | [`injection`] | Content injected into the model request on a user turn |
 //! | [`sandbox`] | Where an agent's commands, code and file operations run |
 //! | [`vended_tools`] | Tools that ship with the SDK: shell, file editing, HTTP, notebooks, subagents and more |
+//! | [`vended_plugins`] | Plugins that ship with the SDK: context injection and agent skills |
+//! | [`interventions`] | The [`InterventionHandler`](interventions::InterventionHandler) trait: handlers that proceed, deny, guide, confirm or transform at the agent's gates |
+//! | [`vended_interventions`] | Interventions that ship with the SDK: human-in-the-loop approval and Cedar authorization |
 //! | `mcp` | The Model Context Protocol client, `McpClient` (behind the `mcp` feature) |
 //! | [`retry`] | Model retry strategies and backoffs |
 //! | [`background_tasks`] | Tools that run as tasks while the agent continues |
 //! | [`state_store`] | [`StateStore`], the JSON key-value state of an agent |
-//! | [`telemetry`] | The metrics and traces every [`AgentResult`] carries |
+//! | [`telemetry`] | The metrics and traces every [`AgentResult`] carries, the `tracing` spans, and OpenTelemetry setup (behind the `otel` feature) |
 //! | [`types`] | Messages, content blocks, media, citations, tool types, snapshots, and JSON helpers |
 //! | [`error`] | [`Error`], [`Result`] and the error types behind each variant |
 //! | [`experimental`] | APIs that may change in any release, such as the context manager |
 //! | [`testing`] | Test doubles for code built on Strands, such as a scripted model |
-//!
-//! More modules are part of this release: `injection` (messages injected into a running
-//! conversation), `memory` (long-term memory stores and the memory manager), `interventions` and
-//! `vended_interventions` (human-in-the-loop approval, steering and Cedar authorization),
-//! `vended_plugins` (context injection, skills and other plugins that ship with the SDK) and
-//! `models::routing` (a model router with fallback and classifier strategies).
 //!
 //! The most used types are re-exported from the crate root.
 //!
