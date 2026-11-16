@@ -91,7 +91,10 @@ impl fmt::Debug for Trigger {
     }
 }
 
-/// When to inject, common to every injection consumer (TS `InjectionConfig`).
+/// When to inject, common to every injection consumer (TS `InjectionConfig`). It is the
+/// `trigger` of a [`MemoryInjectionConfig`](crate::memory::MemoryInjectionConfig);
+/// [`ContextInjectorConfig`](crate::vended_plugins::context_injector::ContextInjectorConfig)
+/// has the same two setters.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct InjectionConfig {

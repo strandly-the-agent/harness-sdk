@@ -234,6 +234,20 @@ pub type MemoryQueryFn = Arc<dyn Fn(&[Message]) -> Result<Option<String>> + Send
 pub type MemoryFormatFn = Arc<dyn Fn(&[MemoryEntry]) -> Result<String> + Send + Sync>;
 
 /// Memory context injection settings (TS `MemoryInjectionConfig`).
+///
+/// ```
+/// use strands::injection::{InjectionConfig, InjectionTrigger};
+/// use strands::memory::MemoryInjectionConfig;
+///
+/// let every_turn = MemoryInjectionConfig::builder()
+///     .trigger(InjectionTrigger::EveryTurn)
+///     .max_entries(3)
+///     .build();
+/// let long_chats = MemoryInjectionConfig::builder()
+///     .trigger(InjectionConfig::new().with_trigger_fn(|context| context.messages.len() > 4))
+///     .build();
+/// # let _ = (every_turn, long_chats);
+/// ```
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"

@@ -292,6 +292,8 @@ impl MemoryManager {
         }
     }
 
+    /// Registers the shared injection middleware, which folds the retrieved memory into the
+    /// model input of each call without touching the history (TS `_initInjection`).
     fn init_injection(&self, agent: &LocalAgent) {
         let Some(config) = self.inner.injection.clone() else {
             return;

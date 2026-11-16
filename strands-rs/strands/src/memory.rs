@@ -1,5 +1,8 @@
 //! Cross-session memory (TS `memory/`): the [`MemoryManager`] plugin, the [`MemoryStore`] trait
 //! and extraction.
+//!
+//! [`InjectionConfig`], [`InjectionTrigger`] and [`InjectionContext`] are the types of
+//! [`crate::injection`], re-exported here as TS `memory/index.ts` does.
 
 pub mod extraction;
 mod memory_manager;
