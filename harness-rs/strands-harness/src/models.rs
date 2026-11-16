@@ -17,7 +17,7 @@ use crate::logging::warn_once;
 use crate::types::Effort;
 
 #[cfg(any(feature = "bedrock", feature = "anthropic", feature = "openai"))]
-mod build;
+pub(crate) mod build;
 #[cfg(test)]
 mod tests;
 mod web_fetch;
@@ -61,8 +61,8 @@ static CLAUDE_ID: LazyLock<Option<Regex>> = LazyLock::new(|| {
     .ok()
 });
 
-struct Provider {
-    name: &'static str,
+pub(crate) struct Provider {
+    pub(crate) name: &'static str,
     recommended: Option<&'static str>,
     levels: &'static [&'static str],
     /// Whether the provider's SDK model takes a native web search tool; Bedrock Converse has none.
@@ -351,15 +351,15 @@ pub(crate) fn resolve_model(
 
 /// A model string, validated: its provider, the provider's model name, and what the model is
 /// built with.
-struct Plan<'a> {
-    provider: &'static Provider,
-    name: &'a str,
-    level: Option<&'static str>,
-    web_search: bool,
-    caching: bool,
+pub(crate) struct Plan<'a> {
+    pub(crate) provider: &'static Provider,
+    pub(crate) name: &'a str,
+    pub(crate) level: Option<&'static str>,
+    pub(crate) web_search: bool,
+    pub(crate) caching: bool,
 }
 
-fn plan(spec: &str, options: ResolveModelOptions) -> Result<Plan<'_>> {
+pub(crate) fn plan(spec: &str, options: ResolveModelOptions) -> Result<Plan<'_>> {
     let (provider_name, name) = split_provider(spec);
     let Some(provider) = provider(provider_name) else {
         if UNSUPPORTED_PROVIDERS.contains(&provider_name) {

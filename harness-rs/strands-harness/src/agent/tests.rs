@@ -14,6 +14,7 @@ use strands::testing::MockMessageModel;
 use strands::tools::FunctionTool;
 use strands::types::agent::LocalAgent;
 use strands::types::messages::SystemPrompt;
+use strands::vended_interventions::hitl::HumanInTheLoop;
 use strands::{JsonValue, ToolError};
 
 use super::*;
@@ -24,6 +25,7 @@ fn seams(dir: &tempfile::TempDir) -> Seams {
     Seams {
         base_dir: Some(dir.path().to_owned()),
         env: Arc::new(|_| None),
+        on_resolve_model: None,
     }
 }
 
@@ -696,11 +698,13 @@ async fn passes_an_intervention_handler_instance_through() {
     let observed = Arc::new(AtomicBool::new(false));
     let handler: Arc<dyn InterventionHandler> = Arc::new(Observed(Arc::clone(&observed)));
     let mut agent = harness(HarnessAgentOptions {
-        interventions: Some(handler.into()),
+        interventions: Some(Arc::clone(&handler).into()),
         ..mock_options()
     })
     .await
     .unwrap();
+    assert_eq!(agent.interventions().len(), 1);
+    assert!(Arc::ptr_eq(agent.interventions().next().unwrap(), &handler));
     agent.initialize().await.unwrap();
     assert!(observed.load(Ordering::SeqCst));
 }
@@ -935,6 +939,7 @@ async fn harness_with_keys(options: HarnessAgentOptions) -> Result<Agent> {
     let seams = Seams {
         base_dir: Some(dir.path().to_owned()),
         env: Arc::new(|name| name.ends_with("_API_KEY").then(|| "test-key".to_owned())),
+        on_resolve_model: None,
     };
     create_harness_with(options, seams).await
 }
@@ -1140,3 +1145,26 @@ async fn keeps_subagent_for_sub_delegation_and_drops_web_search_resolved_per_mod
     assert!(selectable.iter().any(|name| name == "subagent"));
     assert!(!selectable.iter().any(|name| name == "web_search"));
 }
+
+#[tokio::test]
+async fn registers_no_interventions_by_default() {
+    let agent = harness(mock_options()).await.unwrap();
+    assert_eq!(agent.interventions().len(), 0);
+}
+
+#[tokio::test]
+async fn wires_an_interventions_preset() {
+    let agent = harness(HarnessAgentOptions {
+        interventions: Some("ask".into()),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    let names: Vec<&str> = agent.interventions().map(|handler| handler.name()).collect();
+    assert_eq!(names, [HumanInTheLoop::NAME]);
+}
+
+#[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
+mod delegates;
+#[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
+mod provider_models;

@@ -99,7 +99,7 @@ fn bedrock_thinking(model_id: &str, effort: Option<&str>) -> Option<JsonValue> {
 }
 
 #[cfg(feature = "bedrock")]
-pub(super) fn bedrock_options(
+pub(crate) fn bedrock_options(
     model_id: &str,
     effort: Option<&str>,
     caching: bool,
@@ -120,7 +120,7 @@ pub(super) fn bedrock_options(
 }
 
 #[cfg(feature = "anthropic")]
-pub(super) fn anthropic_options(
+pub(crate) fn anthropic_options(
     model_id: &str,
     effort: Option<&str>,
     web_search: bool,
@@ -187,7 +187,7 @@ fn openai_config(
 }
 
 #[cfg(feature = "openai")]
-pub(super) fn openai_options(
+pub(crate) fn openai_options(
     model_id: &str,
     effort: Option<&str>,
     web_search: bool,
@@ -208,7 +208,7 @@ pub(super) fn openai_options(
 }
 
 #[cfg(all(feature = "openai", feature = "bedrock"))]
-pub(super) fn bedrock_mantle_options(
+pub(crate) fn bedrock_mantle_options(
     model_id: &str,
     effort: Option<&str>,
     web_search: bool,

@@ -319,6 +319,9 @@ pub(crate) struct Seams {
     /// `None` leaves relative paths to the process's working directory.
     pub(crate) base_dir: Option<PathBuf>,
     pub(crate) env: EnvLookup,
+    /// Called with what the `model` option is resolved with: tests derive the provider model's
+    /// config from it.
+    pub(crate) on_resolve_model: Option<Arc<dyn Fn(ResolveModelOptions) + Send + Sync>>,
 }
 
 impl Seams {
@@ -345,6 +348,7 @@ pub async fn create_harness(options: HarnessAgentOptions) -> Result<Agent> {
     let seams = Seams {
         base_dir: None,
         env: process_env(),
+        on_resolve_model: None,
     };
     create_harness_with(options, seams).await
 }
@@ -399,17 +403,16 @@ fn create_harness_from(
 
         // `Auto` is the default (on, warning on providers without caching); `On` is an explicit
         // request, which is an error there instead.
-        let resolved_model = resolve_model(
-            model.as_ref(),
-            DEFAULT_MODEL,
-            ResolveModelOptions {
-                effort,
-                web_search: web_search == Some(WebSearchMode::Native),
-                caching: caching != CachingOption::Off,
-                caching_explicit: caching != CachingOption::Auto,
-            },
-            env,
-        )?;
+        let model_options = ResolveModelOptions {
+            effort,
+            web_search: web_search == Some(WebSearchMode::Native),
+            caching: caching != CachingOption::Off,
+            caching_explicit: caching != CachingOption::Auto,
+        };
+        if let Some(observe) = &seams.on_resolve_model {
+            observe(model_options);
+        }
+        let resolved_model = resolve_model(model.as_ref(), DEFAULT_MODEL, model_options, env)?;
 
         if agent_config.system_prompt.is_none() {
             agent_config.system_prompt = Some(build_system_prompt(instructions.as_deref(), &[]).into());

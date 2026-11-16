@@ -15,3 +15,13 @@ pub(crate) fn warn_once(message: &str) {
         tracing::warn!("{message}");
     }
 }
+
+/// Whether [`warn_once`] has logged `message` in this process (tests can't tell which test's
+/// call logged a once-only warning).
+#[cfg(test)]
+pub(crate) fn warned(message: &str) -> bool {
+    WARNED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .contains(message)
+}
