@@ -157,7 +157,11 @@ impl MemoryTracer {
             if let Some(max_search_results) = max_search_results {
                 span.record("memory.max_search_results", count(max_search_results));
             }
-            self.add_content(&span, "memory.query", query.to_owned());
+            // As a span attribute the results replace the query in TS, so `end_search` writes the
+            // one `content` the span ends with.
+            if !self.semconv.span_attributes_only {
+                self.add_content(&span, "memory.query", query.to_owned());
+            }
         }
         span
     }
@@ -166,6 +170,7 @@ impl MemoryTracer {
     pub(crate) fn end_search(
         &self,
         span: &Span,
+        query: &str,
         entries: &[MemoryEntry],
         store_failure_count: usize,
         error: Option<&str>,
@@ -177,6 +182,8 @@ impl MemoryTracer {
         span.record("memory.store.failure_count", count(store_failure_count));
         if error.is_none() {
             self.add_content(span, "memory.results", to_json(&entries));
+        } else if self.semconv.span_attributes_only {
+            self.add_content(span, "memory.query", query.to_owned());
         }
         end_span(span, error);
     }

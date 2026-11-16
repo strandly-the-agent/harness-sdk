@@ -444,7 +444,7 @@ impl MemoryManager {
         let targets = match resolved {
             Ok(targets) => targets,
             Err(error) => {
-                tracer.end_search(&span, &[], 0, Some(&error.to_string()));
+                tracer.end_search(&span, query, &[], 0, Some(&error.to_string()));
                 return Err(error);
             }
         };
@@ -476,7 +476,7 @@ impl MemoryManager {
             }
         }
         tracing::debug!("results=<{}> | search complete", results.len());
-        tracer.end_search(&span, &results, store_failure_count, None);
+        tracer.end_search(&span, query, &results, store_failure_count, None);
         Ok(results)
     }
 

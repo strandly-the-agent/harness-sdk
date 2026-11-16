@@ -1000,7 +1000,7 @@ mod memory_spans {
             .with_metadata(metadata);
         let spans = traced("", |tracer| {
             let span = tracer.start_search("q", &stores(&["personal"]), None);
-            tracer.end_search(&span, &[entry], 1, None);
+            tracer.end_search(&span, "q", &[entry], 1, None);
         });
         assert_eq!(spans[0]["attributes"]["memory.result.count"], 1);
         assert_eq!(spans[0]["attributes"]["memory.store.failure_count"], 1);
@@ -1017,7 +1017,7 @@ mod memory_spans {
     fn end_memory_search_span_records_error_and_skips_the_results_event() {
         let spans = traced("", |tracer| {
             let span = tracer.start_search("q", &stores(&["personal"]), None);
-            tracer.end_search(&span, &[], 0, Some("store not found"));
+            tracer.end_search(&span, "q", &[], 0, Some("store not found"));
         });
         assert_eq!(spans[0]["status"], json!({ "error": "store not found" }));
         assert!(events(&spans[0], "memory.results").is_empty());
@@ -1146,7 +1146,7 @@ mod memory_spans {
     fn memory_span_methods_handle_a_null_span_gracefully() {
         let spans = traced("", |tracer| {
             let none = tracing::Span::none();
-            tracer.end_search(&none, &[], 0, None);
+            tracer.end_search(&none, "q", &[], 0, None);
             tracer.end_add(&none, 0, None);
             tracer.end_inject(&none, false, 0, false);
             tracer.end_extract(&none, None, None);
@@ -1157,10 +1157,31 @@ mod memory_spans {
     #[test]
     fn records_the_memory_search_query_as_a_span_attribute_and_skips_the_event_when_opted_in() {
         let spans = traced("gen_ai_span_attributes_only", |tracer| {
-            drop(tracer.start_search("dark mode preference", &stores(&["personal"]), None));
+            let span = tracer.start_search("dark mode preference", &stores(&["personal"]), None);
+            tracer.end_search(&span, "dark mode preference", &[], 0, Some("store not found"));
         });
         assert_eq!(spans[0]["attributes"]["content"], "dark mode preference");
         assert!(events(&spans[0], "memory.query").is_empty());
+    }
+
+    /// Rust-only: TS writes the query and then the results to the same `content` attribute, so the
+    /// span ends with the results alone.
+    #[test]
+    fn a_memory_search_span_ends_with_one_content_attribute_when_opted_in() {
+        let (recorder, _guard) = recording();
+        let tracer = MemoryTracer::new(semconv("gen_ai_span_attributes_only"));
+        let span = tracer.start_search("dark mode", &stores(&["personal"]), None);
+        tracer.end_search(&span, "dark mode", &[MemoryEntry::new("likes dark mode")], 0, None);
+        drop(span);
+        let spans = recorder.spans();
+        let contents: Vec<String> = spans[0]
+            .attributes
+            .iter()
+            .filter(|attribute| attribute.key.as_str() == "content")
+            .map(|attribute| attribute.value.to_string())
+            .collect();
+        assert_eq!(contents.len(), 1, "{contents:?}");
+        assert!(contents[0].contains("likes dark mode"));
     }
 
     #[test]
