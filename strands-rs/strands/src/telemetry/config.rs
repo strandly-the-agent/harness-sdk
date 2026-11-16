@@ -10,8 +10,6 @@ pub(crate) fn process_env(name: &str) -> Option<String> {
 
 /// The service name when `OTEL_SERVICE_NAME` is unset; also the tracer and meter scope name.
 pub const DEFAULT_SERVICE_NAME: &str = "strands-agents";
-const DEFAULT_SERVICE_NAMESPACE: &str = "strands";
-const DEFAULT_DEPLOYMENT_ENVIRONMENT: &str = "development";
 
 fn non_empty(env: EnvLookup<'_>, name: &str) -> Option<String> {
     env(name).filter(|value| !value.is_empty())
@@ -68,10 +66,12 @@ fn detect_langfuse(env: EnvLookup<'_>) -> bool {
 
 /// TS `getOtelResource`: the defaults, then `OTEL_RESOURCE_ATTRIBUTES` (`key=value,..`) over them.
 #[cfg_attr(
-    not(feature = "otel"),
-    expect(dead_code, reason = "used by the `otel` setup functions")
+    not(test),
+    expect(dead_code, reason = "for the `otel` setup functions, which aren't built yet")
 )]
 pub(crate) fn resource_attributes(env: EnvLookup<'_>) -> Vec<(String, String)> {
+    const DEFAULT_SERVICE_NAMESPACE: &str = "strands";
+    const DEFAULT_DEPLOYMENT_ENVIRONMENT: &str = "development";
     let mut attributes = vec![
         ("service.name".to_owned(), service_name(env)),
         (

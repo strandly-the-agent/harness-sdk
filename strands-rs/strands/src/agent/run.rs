@@ -1312,7 +1312,7 @@ impl Agent {
     /// TS `endAgentSpan` with the result or the error of the invocation.
     fn end_agent_span(&self, outcome: &Result<AgentResult>) {
         let mut telemetry = self.local.telemetry().lock();
-        let usage = telemetry.meter.metrics().accumulated_usage().clone();
+        let usage = *telemetry.meter.metrics().accumulated_usage();
         match outcome {
             Ok(result) => telemetry.tracer.end_agent(
                 Some(result.last_message()),

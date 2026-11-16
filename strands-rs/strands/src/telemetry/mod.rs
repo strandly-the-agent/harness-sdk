@@ -31,5 +31,5 @@ impl LocalTelemetry {
     }
 }
 
-#[cfg(all(test, feature = "otel"))]
+#[cfg(test)]
 mod tests;

@@ -5,6 +5,7 @@
 //!
 //! A scoped `set_default` subscriber is thread-local, so every test runs on a `current_thread`
 //! runtime.
+#![cfg(feature = "otel")]
 
 use std::sync::{Arc, Mutex, PoisonError};
 
