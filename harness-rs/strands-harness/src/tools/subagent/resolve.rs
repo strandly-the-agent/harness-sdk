@@ -9,7 +9,8 @@ use strands::JsonValue;
 use strands::agent::ModelSource;
 
 use super::{
-    AgentSpec, Choice, ContextAxis, ContextMode, InstructionsMode, McpServersMode, ModelMode, Preset, ToolsMode,
+    AgentSpec, Choice, ContextAxis, ContextMode, InstructionsMode, McpServersMode, ModelMode, Preset,
+    ToolsMode,
 };
 use crate::error::{HarnessError, Result};
 
@@ -136,7 +137,10 @@ impl Axes {
                 format!("- {name}: {description}")
             })
             .collect();
-        format!("{base}\n\nAvailable subagents (agent_type):\n{}", roles.join("\n"))
+        format!(
+            "{base}\n\nAvailable subagents (agent_type):\n{}",
+            roles.join("\n")
+        )
     }
 
     /// Derives the input schema from the axis modes: each axis adds zero or one parameter.
@@ -167,7 +171,10 @@ impl Axes {
                 );
             }
             InstructionsMode::Choice(choice) => {
-                props.insert("instructions".to_owned(), choice_prop(choice, INSTRUCTIONS_DESCRIPTION));
+                props.insert(
+                    "instructions".to_owned(),
+                    choice_prop(choice, INSTRUCTIONS_DESCRIPTION),
+                );
             }
             InstructionsMode::Fixed(_) => {}
         }
@@ -223,9 +230,7 @@ impl Axes {
     pub(super) fn resolve(&self, input: &JsonValue) -> Result<AgentSpec> {
         let empty = Map::new();
         let raw = input.as_object().unwrap_or(&empty);
-        let task = raw
-            .get("task")
-            .map_or_else(|| "undefined".to_owned(), js_string);
+        let task = raw.get("task").map_or_else(|| "undefined".to_owned(), js_string);
 
         // agent_type is a closed enum.
         let raw_agent_type = raw.get("agent_type").filter(|value| !value.is_null());
@@ -239,7 +244,8 @@ impl Axes {
             });
         }
         // Ad-hoc instructions (only possible when the axis exposes one) override the default preset.
-        let overriding = !matches!(self.instructions, InstructionsMode::Fixed(_)) && raw.contains_key("instructions");
+        let overriding =
+            !matches!(self.instructions, InstructionsMode::Fixed(_)) && raw.contains_key("instructions");
         let agent_type = match known {
             Some(name) => Some(name.to_owned()),
             None if overriding => None,
@@ -255,7 +261,9 @@ impl Axes {
         let raw_instructions = raw.get("instructions").map(js_string);
         spec.instructions = match (&self.instructions, raw_instructions) {
             (InstructionsMode::Open, Some(text)) => Some(text),
-            (InstructionsMode::Choice(choice), Some(name)) if has(choice, &name) => Some(value_for(choice, &name)),
+            (InstructionsMode::Choice(choice), Some(name)) if has(choice, &name) => {
+                Some(value_for(choice, &name))
+            }
             (axis, _) => match (preset, axis) {
                 (Some(preset), _) => preset.instructions.clone(),
                 (None, InstructionsMode::Fixed(value)) => value.clone(),
@@ -381,7 +389,13 @@ fn js_string(value: &JsonValue) -> String {
         JsonValue::Null => "null".to_owned(),
         JsonValue::Array(items) => items
             .iter()
-            .map(|item| if item.is_null() { String::new() } else { js_string(item) })
+            .map(|item| {
+                if item.is_null() {
+                    String::new()
+                } else {
+                    js_string(item)
+                }
+            })
             .collect::<Vec<_>>()
             .join(","),
         JsonValue::Object(_) => "[object Object]".to_owned(),

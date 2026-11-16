@@ -306,48 +306,56 @@ const BASE_DESCRIPTION: &str = "Delegate a self-contained task to a subagent tha
 ///
 /// Returns an error when a `tools` or `mcp_servers` [`Choice`] is empty or not multiple.
 pub fn make_subagent(options: MakeSubagentOptions) -> Result<Arc<dyn Tool>> {
-    let default_preset = options
-        .default_preset
-        .or_else(|| options.presets.keys().next().cloned());
-    let tools = match options.tools {
-        None => ToolsMode::Choice(Choice::multiple(options.inherited_tools)),
-        Some(ToolsMode::Choice(choice)) if choice.options.is_empty() => {
-            return Err(HarnessError::SubagentToolsChoiceEmpty);
-        }
-        Some(ToolsMode::Choice(choice)) if !choice.multiple => return Err(HarnessError::SubagentToolsChoiceSingle),
-        Some(tools) => tools,
-    };
-    let mcp_servers = match options.mcp_servers {
-        None if options.inherited_mcp_servers.is_empty() => McpServersMode::Inherit,
-        None => McpServersMode::Choice(Choice::multiple(options.inherited_mcp_servers)),
-        Some(McpServersMode::Choice(choice)) if choice.options.is_empty() => {
-            return Err(HarnessError::SubagentMcpServersChoiceEmpty);
-        }
-        Some(McpServersMode::Choice(choice)) if !choice.multiple => {
-            return Err(HarnessError::SubagentMcpServersChoiceSingle);
-        }
-        Some(mcp_servers) => mcp_servers,
-    };
-    let axes = Axes {
-        presets: options.presets,
-        default_preset,
-        instructions: options.instructions.unwrap_or_default(),
-        tools,
-        mcp_servers,
-        model: options.model.unwrap_or_default(),
-        context: options.context.unwrap_or_default(),
-    };
-    Ok(Arc::new(SubagentTool {
-        name: options.name.unwrap_or_else(|| "subagent".to_owned()),
-        description: axes.describe_roles(BASE_DESCRIPTION),
-        input_schema: axes.schema(),
-        shared: Arc::new(Shared {
-            axes,
-            builder: options.builder,
-            max_depth: options.max_depth.unwrap_or(DEFAULT_SUBAGENT_MAX_DEPTH),
-            pending: Mutex::new(HashMap::new()),
-        }),
-    }))
+    Ok(Arc::new(SubagentTool::new(options)?))
+}
+
+impl SubagentTool {
+    fn new(options: MakeSubagentOptions) -> Result<Self> {
+        let default_preset = options
+            .default_preset
+            .or_else(|| options.presets.keys().next().cloned());
+        let tools = match options.tools {
+            None => ToolsMode::Choice(Choice::multiple(options.inherited_tools)),
+            Some(ToolsMode::Choice(choice)) if choice.options.is_empty() => {
+                return Err(HarnessError::SubagentToolsChoiceEmpty);
+            }
+            Some(ToolsMode::Choice(choice)) if !choice.multiple => {
+                return Err(HarnessError::SubagentToolsChoiceSingle);
+            }
+            Some(tools) => tools,
+        };
+        let mcp_servers = match options.mcp_servers {
+            None if options.inherited_mcp_servers.is_empty() => McpServersMode::Inherit,
+            None => McpServersMode::Choice(Choice::multiple(options.inherited_mcp_servers)),
+            Some(McpServersMode::Choice(choice)) if choice.options.is_empty() => {
+                return Err(HarnessError::SubagentMcpServersChoiceEmpty);
+            }
+            Some(McpServersMode::Choice(choice)) if !choice.multiple => {
+                return Err(HarnessError::SubagentMcpServersChoiceSingle);
+            }
+            Some(mcp_servers) => mcp_servers,
+        };
+        let axes = Axes {
+            presets: options.presets,
+            default_preset,
+            instructions: options.instructions.unwrap_or_default(),
+            tools,
+            mcp_servers,
+            model: options.model.unwrap_or_default(),
+            context: options.context.unwrap_or_default(),
+        };
+        Ok(SubagentTool {
+            name: options.name.unwrap_or_else(|| "subagent".to_owned()),
+            description: axes.describe_roles(BASE_DESCRIPTION),
+            input_schema: axes.schema(),
+            shared: Arc::new(Shared {
+                axes,
+                builder: options.builder,
+                max_depth: options.max_depth.unwrap_or(DEFAULT_SUBAGENT_MAX_DEPTH),
+                pending: Mutex::new(HashMap::new()),
+            }),
+        })
+    }
 }
 
 /// A child that stopped on interrupts, kept until the parent's tool call is re-run with answers.
@@ -399,7 +407,8 @@ impl Tool for SubagentTool {
     }
 
     fn tool_spec(&self) -> ToolSpec {
-        ToolSpec::new(self.name.as_str(), self.description.as_str()).with_input_schema(self.input_schema.clone())
+        ToolSpec::new(self.name.as_str(), self.description.as_str())
+            .with_input_schema(self.input_schema.clone())
     }
 
     fn stream(&self, context: ToolContext) -> ToolStream {

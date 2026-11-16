@@ -15,9 +15,10 @@ pub(super) const CONTEXT_PREAMBLE: &str = "The conversation above is the parent 
 pub(super) fn child_prompt(spec: &AgentSpec, parent: &[Message]) -> InvokeArgs {
     match spec.context {
         ContextMode::All => with_history(&spec.task, fork_messages(parent, spec.last_messages)),
-        ContextMode::NoTools => {
-            InvokeArgs::Text(with_context(&spec.task, &render_context(parent, spec.last_messages)))
-        }
+        ContextMode::NoTools => InvokeArgs::Text(with_context(
+            &spec.task,
+            &render_context(parent, spec.last_messages),
+        )),
         ContextMode::None => InvokeArgs::Text(spec.task.clone()),
     }
 }

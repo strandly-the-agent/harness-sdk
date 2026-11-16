@@ -19,7 +19,7 @@ pub use programmatic_tool_caller::{
     DEFAULT_PROGRAMMATIC_TOOL_CALLER_DESCRIPTION, MakeProgrammaticToolCallerOptions,
     make_programmatic_tool_caller, programmatic_tool_caller,
 pub use subagent::{
-    AgentBuilder, AgentSpec, CONTEXT_MODES, Choice, ChoiceOption, ContextAxis, ContextMode, Fixed, GENERALIST,
-    GENERALIST_INSTRUCTIONS, Inherit, InstructionsMode, MakeSubagentOptions, McpServersMode, ModelMode, Open, Preset,
-    PresetOptions, ToolsMode, make_subagent,
+    AgentBuilder, AgentSpec, CONTEXT_MODES, Choice, ChoiceOption, ContextAxis, ContextMode, Fixed,
+    GENERALIST, GENERALIST_INSTRUCTIONS, Inherit, InstructionsMode, MakeSubagentOptions, McpServersMode,
+    ModelMode, Open, Preset, PresetOptions, ToolsMode, make_subagent,
 };
