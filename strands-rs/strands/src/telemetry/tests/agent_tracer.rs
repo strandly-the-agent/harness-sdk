@@ -9,6 +9,7 @@ use opentelemetry_sdk::trace::SpanData;
 use tokio::sync::Notify;
 
 use super::{Recorder, agent_of, recording, semconv, tool_use, usage_turn};
+use crate::telemetry::AttributeValue;
 use crate::test_support::{mock_tool, stream_tool, text_result};
 use crate::testing::{MockMessageModel, MockTurnOptions};
 use crate::tools::{ToolOutcome, ToolStream};
@@ -269,7 +270,7 @@ mod constructor {
         let (recorder, _guard) = recording();
         let mut agent = AgentConfig::builder()
             .model(Arc::new(text_model("Hello")) as Arc<dyn crate::models::model::Model>)
-            .trace_attributes([("custom.attr".to_owned(), "value".into())].into_iter().collect())
+            .trace_attributes([("custom.attr".to_owned(), AttributeValue::from("value"))])
             .build()
             .expect("a valid agent");
         agent.invoke("Hi").await.expect("the run succeeds");
