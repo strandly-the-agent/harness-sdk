@@ -858,6 +858,30 @@ mod rust_only {
         assert_eq!(ask_in_turn(&queue, show, || line("y\n")).await.unwrap(), "y\n");
     }
 
+    // No TS case: a TS prompt can't be dropped while it waits for stdin.
+    #[tokio::test]
+    async fn a_line_delivered_for_a_dropped_prompt_is_not_the_next_answer() {
+        let queue = tokio::sync::Mutex::new(None);
+        let (answer, read) = oneshot::channel();
+        let show = || Ok(());
+
+        // The first prompt is dropped while it waits, then the human answers it.
+        let first = ask_in_turn(&queue, show, move || read);
+        assert!(futures::poll!(Box::pin(first)).is_pending());
+        answer.send(Ok("y\n".to_owned())).unwrap();
+
+        // The next prompt reads its own line instead of taking that answer.
+        let second = ask_in_turn(&queue, show, || line("n\n"));
+        assert_eq!(second.await.unwrap(), "n\n");
+
+        // The same holds for a read whose thread ended without a line.
+        let (lost, read) = oneshot::channel::<io::Result<String>>();
+        let third = ask_in_turn(&queue, show, move || read);
+        assert!(futures::poll!(Box::pin(third)).is_pending());
+        drop(lost);
+        assert_eq!(ask_in_turn(&queue, show, || line("t\n")).await.unwrap(), "t\n");
+    }
+
     // No TS case: TS queues per handler on one event loop; here stdin is shared by threads.
     #[tokio::test]
     async fn a_prompt_waits_for_the_one_before_it() {

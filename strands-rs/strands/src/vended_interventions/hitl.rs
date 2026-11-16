@@ -382,13 +382,20 @@ fn stdio_ask(include_trust: bool) -> AskFn {
 }
 
 /// Waits for its turn, shows the prompt and returns the next line `read` delivers. Nothing
-/// but the queue is held while waiting for the line.
+/// but the queue is held while waiting for the line. A dropped prompt's read is adopted only
+/// while it still waits: a line it already delivered answered the dropped question.
 async fn ask_in_turn(
     queue: &tokio::sync::Mutex<Option<StdinRead>>,
     show: impl FnOnce() -> io::Result<()>,
     read: impl FnOnce() -> StdinRead,
 ) -> Result<String> {
     let mut pending = queue.lock().await;
+    if pending
+        .as_mut()
+        .is_some_and(|read| !matches!(read.try_recv(), Err(oneshot::error::TryRecvError::Empty)))
+    {
+        *pending = None;
+    }
     show().map_err(Error::other)?;
     let answer = pending.get_or_insert_with(read).await;
     *pending = None;
