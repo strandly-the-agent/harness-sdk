@@ -563,6 +563,11 @@ mod setup_tracer_subscriber {
     fn exports_info_spans_without_layer_attributes_debug_spans_or_log_lines() {
         let recorder = SpanRecorder::default();
         let provider = recorder.provider();
+        // Without a hint a bare registry enables every `TRACE` callsite of the process.
+        assert_eq!(
+            tracing::Subscriber::max_level_hint(&subscriber(&provider)),
+            Some(tracing::level_filters::LevelFilter::INFO)
+        );
         tracing::subscriber::with_default(subscriber(&provider), || {
             tracing::info_span!("agent_span", custom = 1).in_scope(|| {
                 tracing::error!("a log line");

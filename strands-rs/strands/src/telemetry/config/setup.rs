@@ -212,8 +212,10 @@ pub fn setup_tracer(config: TracerConfig) -> Result<SdkTracerProvider> {
 /// build their own subscriber.
 ///
 /// The layer adds none of its own attributes (source location, thread, target, busy and idle
-/// time). It exports every span and event the subscriber lets through; filter it
-/// (`tracing_subscriber::Layer::with_filter`) to export less.
+/// time). It exports every span the subscriber lets through, those of dependencies included,
+/// and turns log events inside a span into span events; to export what [`setup_tracer`] does,
+/// filter it: `.with_filter(filter_fn(|metadata| metadata.is_span() && *metadata.level() <=
+/// Level::INFO))`.
 ///
 /// ```no_run
 /// use strands::telemetry::opentelemetry::global;
@@ -243,7 +245,8 @@ where
 /// agent's are), so the debug spans of dependencies aren't exported and log lines don't become
 /// span events, as in TS.
 pub(super) fn subscriber(provider: &SdkTracerProvider) -> impl Subscriber + Send + Sync + 'static {
-    let spans = filter_fn(|metadata| metadata.is_span() && *metadata.level() <= Level::INFO);
+    let spans = filter_fn(|metadata| metadata.is_span() && *metadata.level() <= Level::INFO)
+        .with_max_level_hint(Level::INFO);
     tracing_subscriber::registry().with(tracing_layer(provider).with_filter(spans))
 }
 
