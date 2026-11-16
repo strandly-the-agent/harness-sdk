@@ -1,4 +1,5 @@
-//! Telemetry (TS `src/telemetry/`): the local metrics and traces every [`AgentResult`] carries.
+//! Telemetry (TS `src/telemetry/`): the local metrics and traces every [`AgentResult`] carries,
+//! and with the `otel` feature the OpenTelemetry setup functions.
 //!
 //! [`AgentResult`]: crate::AgentResult
 
@@ -10,6 +11,13 @@ pub mod tracer;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 pub use config::DEFAULT_SERVICE_NAME;
+#[cfg(feature = "otel")]
+pub(crate) use config::setup::with_baggage;
+#[cfg(feature = "otel")]
+pub use config::setup::{
+    BaggageKeyPredicate, BaggageKeys, BaggageSpanProcessor, Exporters, MeterConfig, TracerConfig,
+    setup_meter, setup_tracer, tracing_layer,
+};
 pub use meter::{AgentLoopMetricsData, AgentMetrics, InvocationMetricsData, ToolMetricsData};
 pub use tracer::{AgentTrace, AttributeValue};
 

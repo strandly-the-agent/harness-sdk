@@ -1,6 +1,9 @@
 //! Telemetry settings read from the environment (TS `telemetry/utils.ts`, the `Tracer` constructor
 //! and `getOtelResource` in `telemetry/config.ts`).
 
+#[cfg(feature = "otel")]
+pub(crate) mod setup;
+
 /// The crate's env-lookup seam for `OTEL_*` and `LANGFUSE_*`.
 pub(crate) type EnvLookup<'a> = &'a dyn Fn(&str) -> Option<String>;
 
@@ -66,8 +69,8 @@ fn detect_langfuse(env: EnvLookup<'_>) -> bool {
 
 /// TS `getOtelResource`: the defaults, then `OTEL_RESOURCE_ATTRIBUTES` (`key=value,..`) over them.
 #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "for the `otel` setup functions, which aren't built yet")
+    not(any(test, feature = "otel")),
+    expect(dead_code, reason = "used by the `otel` setup")
 )]
 pub(crate) fn resource_attributes(env: EnvLookup<'_>) -> Vec<(String, String)> {
     const DEFAULT_SERVICE_NAMESPACE: &str = "strands";
