@@ -214,7 +214,7 @@ mod init_agent {
         handed.record_usage(&Usage::new(1, 2, 3));
         assert!(handed.limits().is_none());
         let usage = request.usage();
-        assert_eq!((usage.turns_taken(), *usage.tokens()), (1, Usage::new(1, 2, 3)));
+        assert_eq!((usage.turns_taken(), usage.tokens()), (1, &Usage::new(1, 2, 3)));
     }
 }
 

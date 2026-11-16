@@ -22,7 +22,7 @@ fn as_ms<S: Serializer>(duration: &Duration, serializer: S) -> Result<S::Ok, S::
 }
 
 /// Call counts and time of one tool (TS `ToolMetricsData`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct ToolMetricsData {

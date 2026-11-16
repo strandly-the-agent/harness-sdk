@@ -38,7 +38,7 @@ struct RecordingBackoff {
 
 impl BackoffStrategy for RecordingBackoff {
     fn next_delay(&self, context: &BackoffContext) -> Duration {
-        self.contexts.lock().unwrap().push(*context);
+        self.contexts.lock().unwrap().push(context.clone());
         Duration::from_millis(5)
     }
 }

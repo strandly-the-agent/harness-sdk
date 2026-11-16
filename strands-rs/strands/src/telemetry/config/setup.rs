@@ -36,7 +36,7 @@ use crate::error::{Error, Result};
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
 #[builder(state_mod(vis = "pub"))]
 pub struct Exporters {
     /// Export over OTLP HTTP.

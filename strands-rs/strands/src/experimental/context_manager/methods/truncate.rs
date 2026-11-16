@@ -26,7 +26,7 @@ pub enum PreviewMode {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
 #[builder(state_mod(vis = "pub"))]
 pub struct TruncateConfig {
     /// Tokens of preview text to keep (default 1,000).

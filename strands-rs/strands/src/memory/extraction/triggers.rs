@@ -38,7 +38,7 @@ impl ExtractionTrigger for InvocationTrigger {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 #[builder(state_mod(vis = "pub"))]
 pub struct IntervalTriggerOptions {
     /// Fire every this many invocations; at least 1.

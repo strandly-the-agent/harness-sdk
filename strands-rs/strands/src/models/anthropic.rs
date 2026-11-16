@@ -446,11 +446,11 @@ fn translate_error(error: ApiError) -> Error {
 fn sum_usage(first: Option<&Usage>, second: Option<&Usage>) -> Option<Usage> {
     match (first, second) {
         (Some(first), Some(second)) => {
-            let mut total = *first;
+            let mut total = first.clone();
             total.accumulate(second);
             Some(total)
         }
-        (first, second) => first.or(second).copied(),
+        (first, second) => first.or(second).cloned(),
     }
 }
 

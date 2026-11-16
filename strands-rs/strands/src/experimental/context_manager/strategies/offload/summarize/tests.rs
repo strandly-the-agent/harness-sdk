@@ -1360,7 +1360,7 @@ async fn a_block_summary_sends_the_block_instructions_without_a_system_prompt() 
 
 fn request_usage(invocation_context: &InvocationContext) -> (u32, Usage) {
     let usage = invocation_context.usage();
-    (usage.turns_taken(), *usage.tokens())
+    (usage.turns_taken(), usage.tokens().clone())
 }
 
 #[tokio::test]
@@ -1396,7 +1396,7 @@ fn a_server_side_summary_adds_its_usage_to_the_request() {
         let (mut agent, model) = mock_agent(server_side_messages(), server_side());
         let usage = Usage::new(100, 20, 120);
         let placed = !content.is_empty();
-        model.resolves(SummarizeResult::new(content).with_usage(usage));
+        model.resolves(SummarizeResult::new(content).with_usage(usage.clone()));
         let invocation_context = InvocationContext::new(None, None, false);
 
         let (result, _) = capture_warnings(apply_with(

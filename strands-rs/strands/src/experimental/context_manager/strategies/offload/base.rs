@@ -43,7 +43,7 @@ pub enum OffloadTarget {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, bon::Builder)]
 #[builder(state_mod(vis = "pub"))]
 pub struct OffloadConditions {
     /// Offload only blocks above this many tokens.

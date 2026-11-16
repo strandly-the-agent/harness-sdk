@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// What a [`BackoffStrategy`] knows when it computes a delay (TS `BackoffContext`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct BackoffContext {
     /// The 1-based index of the attempt that just failed.
@@ -82,7 +82,7 @@ const DEFAULT_MAX: Duration = Duration::from_secs(30);
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 pub struct ConstantBackoffOptions {
     /// The delay for every retry (TS `delayMs`). Default 1 s.
     #[builder(default = DEFAULT_DELAY)]
@@ -136,7 +136,7 @@ impl BackoffStrategy for ConstantBackoff {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 pub struct LinearBackoffOptions {
     /// The delay grows as `base * attempt` (TS `baseMs`). Default 1 s.
     #[builder(default = DEFAULT_DELAY)]
@@ -209,7 +209,7 @@ impl BackoffStrategy for LinearBackoff {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, PartialEq, bon::Builder)]
+#[derive(Debug, Clone, PartialEq, bon::Builder)]
 pub struct ExponentialBackoffOptions {
     /// The delay grows as `base * multiplier^(attempt - 1)` (TS `baseMs`). Default 1 s.
     #[builder(default = DEFAULT_DELAY)]

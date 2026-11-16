@@ -296,7 +296,7 @@ fn resumes_a_paused_server_side_tool_turn_and_surfaces_it_as_one_stream() {
         result.message().content()[1],
         ContentBlock::Citations(_)
     ));
-    let usage = result.metadata().and_then(|metadata| metadata.usage()).copied();
+    let usage = result.metadata().and_then(|metadata| metadata.usage()).cloned();
     assert_eq!(
         serde_json::to_value(usage).unwrap(),
         json!({ "inputTokens": 20, "outputTokens": 10, "totalTokens": 30 })

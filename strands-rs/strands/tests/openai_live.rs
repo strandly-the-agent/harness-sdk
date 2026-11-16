@@ -53,7 +53,7 @@ fn usage_of(events: &[ModelStreamEvent]) -> strands::models::streaming::Usage {
     events
         .iter()
         .find_map(|event| match event {
-            ModelStreamEvent::Metadata(metadata) => metadata.usage().copied(),
+            ModelStreamEvent::Metadata(metadata) => metadata.usage().cloned(),
             _ => None,
         })
         .expect("usage is reported")

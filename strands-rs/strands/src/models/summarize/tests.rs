@@ -63,7 +63,7 @@ impl Model for RecordingModel {
             events.push(ModelContentBlockDeltaEvent::new(TextDelta::new(*text)).into());
             events.push(ModelContentBlockStopEvent::new().into());
         }
-        if let Some(usage) = self.usage {
+        if let Some(usage) = self.usage.clone() {
             events.push(ModelMetadataEvent::new().with_usage(usage).into());
         }
         events.push(ModelMessageStopEvent::new(self.stop_reason.clone()).into());
@@ -205,7 +205,7 @@ async fn returns_an_empty_summary_for_an_unfinished_reply() {
         StopReason::ContentFiltered,
     ] {
         let usage = Usage::new(10, 1, 11);
-        let model = RecordingModel::new(vec!["canned"], stop_reason).with_usage(usage);
+        let model = RecordingModel::new(vec!["canned"], stop_reason).with_usage(usage.clone());
         let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
         assert_eq!(result, empty(usage));
     }
@@ -268,7 +268,7 @@ async fn keeps_a_reply_that_stopped_at_a_limit() {
 #[tokio::test]
 async fn returns_an_empty_summary_when_the_reply_holds_no_text() {
     let usage = Usage::new(10, 1, 11);
-    let model = RecordingModel::new(vec![" "], StopReason::EndTurn).with_usage(usage);
+    let model = RecordingModel::new(vec![" "], StopReason::EndTurn).with_usage(usage.clone());
     let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
     assert_eq!(result, empty(usage));
 }
@@ -286,7 +286,7 @@ async fn trims_the_reply_like_js_trim() {
 #[tokio::test]
 async fn returns_its_usage() {
     let usage = Usage::new(10, 5, 15);
-    let model = RecordingModel::default_reply().with_usage(usage);
+    let model = RecordingModel::default_reply().with_usage(usage.clone());
     let result = model.summarize(hi(), SummarizeOptions::default()).await.unwrap();
     assert_eq!(result, summary("the summary", usage));
 }

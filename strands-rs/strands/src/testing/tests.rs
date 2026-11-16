@@ -87,7 +87,7 @@ async fn sends_the_explicit_stop_reason_and_usage() {
     let usage = Usage::new(10, 5, 15);
     let options = MockTurnOptions::builder()
         .stop_reason(StopReason::MaxTokens)
-        .usage(usage)
+        .usage(usage.clone())
         .build();
     model.add_turn_with(vec![text("cut")], options);
     let Err(Error::MaxTokens(error)) = aggregate(&model, ModelRequest::default()).await else {

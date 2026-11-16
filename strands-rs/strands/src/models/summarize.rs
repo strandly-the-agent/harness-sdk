@@ -164,7 +164,7 @@ async fn read_reply<M: Model + ?Sized>(
             Ok(AggregatedEvent::Done(result)) => {
                 reply.stop_reason = Some(result.stop_reason().clone());
                 if let Some(usage) = result.metadata().and_then(|metadata| metadata.usage()) {
-                    reply.usage = *usage;
+                    reply.usage = usage.clone();
                 }
                 reply.message = Some(result.into_message());
                 break;
@@ -175,7 +175,7 @@ async fn read_reply<M: Model + ?Sized>(
             }
             Ok(AggregatedEvent::ModelStreamEvent(ModelStreamEvent::Metadata(metadata))) => {
                 if let Some(usage) = metadata.usage() {
-                    reply.usage = *usage;
+                    reply.usage = usage.clone();
                 }
             }
             Ok(_) => {}
@@ -183,7 +183,7 @@ async fn read_reply<M: Model + ?Sized>(
             Err(Error::MaxTokens(error)) => {
                 let partial = error.partial_message().clone();
                 if let Some(usage) = partial.metadata().and_then(|metadata| metadata.usage()) {
-                    reply.usage = *usage;
+                    reply.usage = usage.clone();
                 }
                 reply.stop_reason = Some(StopReason::MaxTokens);
                 reply.message = Some(partial);

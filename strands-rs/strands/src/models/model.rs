@@ -695,10 +695,10 @@ impl Aggregator {
         if usage.is_some() || metrics.is_some() {
             let mut metadata = MessageMetadata::new();
             if let Some(usage) = usage {
-                metadata = metadata.with_usage(*usage);
+                metadata = metadata.with_usage(usage.clone());
             }
             if let Some(metrics) = metrics {
-                metadata = metadata.with_metrics(*metrics);
+                metadata = metadata.with_metrics(metrics.clone());
             }
             message.set_metadata(Some(metadata));
         }

@@ -59,7 +59,7 @@ impl MemoryEntry {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
 #[builder(state_mod(vis = "pub"))]
 pub struct SearchOptions {
     /// Maximum number of results to return from this store.

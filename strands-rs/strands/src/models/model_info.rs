@@ -50,7 +50,7 @@ pub struct ModelCapabilities {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelLimits {
     /// The context window in tokens.
@@ -90,12 +90,12 @@ pub struct ModelInfo {
 impl ModelInfo {
     /// The context window, when known.
     pub fn context_window(&self) -> Option<u64> {
-        self.limits.and_then(|limits| limits.context_window)
+        self.limits.as_ref().and_then(|limits| limits.context_window)
     }
 
     /// The largest output, when known.
     pub fn max_output_tokens(&self) -> Option<u64> {
-        self.limits.and_then(|limits| limits.max_output_tokens)
+        self.limits.as_ref().and_then(|limits| limits.max_output_tokens)
     }
 }
 

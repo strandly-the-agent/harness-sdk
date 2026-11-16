@@ -428,7 +428,7 @@ impl VideoBlock {
 }
 
 /// The citations setting of a [`DocumentBlock`] (TS `{ enabled: boolean }`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct DocumentCitations {
     enabled: bool,
@@ -506,7 +506,7 @@ impl DocumentBlock {
 
     /// The citations setting.
     pub fn citations(&self) -> Option<DocumentCitations> {
-        self.citations
+        self.citations.clone()
     }
 
     /// The context string.

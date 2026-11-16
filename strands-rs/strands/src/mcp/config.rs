@@ -85,7 +85,7 @@ pub struct McpServerConfig {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
 pub struct McpLoadServersOptions {
     /// Servers without an explicit `prefix` use their config key (characters outside
     /// `[A-Za-z0-9_-]` replaced with `_`) as the tool-name prefix, over a default prefix.
@@ -264,6 +264,7 @@ pub(crate) fn resolve_server_configs(
     options: McpLoadServersOptions,
     lookup: &EnvLookup,
 ) -> Result<Vec<ResolvedServer>> {
+    let options = &options;
     let mut resolved = Vec::new();
     for (name, entry) in servers {
         let kind = match &entry {
@@ -303,7 +304,7 @@ fn resolve_server(
     name: &str,
     entry: JsonValue,
     defaults: &McpClientOptions,
-    options: McpLoadServersOptions,
+    options: &McpLoadServersOptions,
     lookup: &EnvLookup,
 ) -> Result<ResolvedServer> {
     // MCP tasks are not supported yet, so a `tasksConfig` (TS `McpServerConfig.tasksConfig`) fails
@@ -447,7 +448,7 @@ fn base_options(
     name: &str,
     server: &McpServerConfig,
     defaults: &McpClientOptions,
-    options: McpLoadServersOptions,
+    options: &McpLoadServersOptions,
     interpolate: &Interpolate<'_>,
 ) -> Result<McpClientOptions> {
     let mut resolved = defaults.clone();

@@ -36,7 +36,7 @@ struct Counters {
 
 /// What the work in an [`InvocationContext`] has used (TS `InvocationContextUsage`): its turns
 /// and the token usage of every model call, including nested calls.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct InvocationContextUsage {
@@ -93,7 +93,7 @@ impl InvocationContext {
 
     /// What the work in this context has used so far; it keeps growing while that work runs.
     pub fn usage(&self) -> InvocationContextUsage {
-        self.counters().usage
+        self.counters().usage.clone()
     }
 
     /// The limits set on this context itself, not its parents'.
@@ -157,6 +157,7 @@ impl InvocationContext {
     pub(crate) fn has_structured_output_attempts_limit(&self) -> bool {
         self.inner
             .limits
+            .as_ref()
             .is_some_and(|limits| limits.structured_output_attempts.is_some())
             || self
                 .limiting_parent()
@@ -172,7 +173,7 @@ impl InvocationContext {
     }
 
     fn reached_own_limit(&self) -> Option<StopReason> {
-        let limits = self.inner.limits?;
+        let limits = self.inner.limits.as_ref()?;
         let counters = self.counters();
         let usage = &counters.usage;
         if limits.turns.is_some_and(|turns| usage.turns_taken >= turns.get()) {

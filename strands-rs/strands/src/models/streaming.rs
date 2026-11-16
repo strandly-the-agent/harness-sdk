@@ -103,7 +103,7 @@ into_stream_event! {
 }
 
 /// A new message starts in the stream (TS `ModelMessageStartEvent`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ModelMessageStartEvent {
     role: Role,
@@ -636,7 +636,7 @@ mod uint8array_opt {
 /// Token usage for a model call (TS `Usage`).
 ///
 /// Counters are `u64` (JSON integers never gain `.0`) and accumulate with saturating arithmetic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Usage {
@@ -729,7 +729,7 @@ impl Usage {
 }
 
 /// Performance metrics for a model call (TS `Metrics`), in whole milliseconds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Metrics {

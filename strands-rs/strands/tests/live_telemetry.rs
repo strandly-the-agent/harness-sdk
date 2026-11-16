@@ -143,7 +143,7 @@ async fn live_telemetry_records_the_span_hierarchy_attributes_and_usage_of_a_too
     let result = agent.invoke("What time is it?").await.unwrap();
     assert_eq!(result.stop_reason(), StopReason::EndTurn);
     assert!(tool_succeeded(&trace(&agent), "time_tool"));
-    let usage = *result.metrics().accumulated_usage();
+    let usage = result.metrics().accumulated_usage().clone();
     agent.shutdown().await.unwrap();
 
     let spans = sdk_spans(&recorder);

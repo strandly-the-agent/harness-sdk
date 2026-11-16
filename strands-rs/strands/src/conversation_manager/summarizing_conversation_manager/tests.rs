@@ -278,7 +278,7 @@ mod request_limits {
             [ContentBlock::from(TextBlock::new("Summary of conversation"))]
         );
         let usage = request.usage();
-        assert_eq!((usage.turns_taken(), *usage.tokens()), (5, Usage::new(4, 5, 9)));
+        assert_eq!((usage.turns_taken(), usage.tokens()), (5, &Usage::new(4, 5, 9)));
     }
 }
 

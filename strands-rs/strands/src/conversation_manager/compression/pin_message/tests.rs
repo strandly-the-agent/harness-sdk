@@ -79,7 +79,7 @@ mod pin_message {
         let usage = Usage::new(10, 5, 15);
         let mut messages = [make_message(
             "important",
-            Some(MessageMetadata::new().with_usage(usage)),
+            Some(MessageMetadata::new().with_usage(usage.clone())),
         )];
         pin_message(&mut messages, 0);
         assert_eq!(
@@ -129,7 +129,7 @@ mod unpin_message {
     fn preserves_non_custom_metadata_fields() {
         let usage = Usage::new(10, 5, 15);
         let metadata = MessageMetadata::new()
-            .with_usage(usage)
+            .with_usage(usage.clone())
             .with_custom(custom(json!({"pinned": true})));
         let mut messages = [make_message("important", Some(metadata))];
         unpin_message(&mut messages, 0);
