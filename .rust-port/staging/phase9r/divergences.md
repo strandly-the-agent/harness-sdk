@@ -1,1 +1,0 @@
-| `mcp_router` connections of an agent that is gone | Closed in the background when the agent is garbage collected (`FinalizationRegistry`, best effort) | Closed at the start of the router's next call, or when the router is dropped | Rust has no finalizer on the agent's identity (P-252) |

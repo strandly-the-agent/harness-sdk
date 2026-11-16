@@ -24,3 +24,5 @@ Three independent reviewers (correctness, API bar-raiser, parity validator) revi
 | parity-4 | Fixed: `live_mantle_stateful_conversation` and `live_stateful_responses` assert `EndTurn` and empty `agent.messages()` after each turn | a431d6802 |
 | parity-5 | Fixed: `live_mantle_cache_hit` runs on `openai.gpt-6.1-sol`, the Mantle id the model info gives `cachePoints`; it passed live (P-220) | a431d6802 |
 | parity-6 | Fixed: live results moved to `strands-rs/docs/reviews/live.md` | integration commit after `d946e3485` |
+
+A re-review of the fix diff found every fix in place and one lost `DIVERGENCES.md` row (the Bedrock region chain), restored after the Phase 4 item 8 integration.

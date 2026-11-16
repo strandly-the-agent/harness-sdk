@@ -54,19 +54,19 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Conversation managers (trait, Null, SlidingWindow, Summarizing)
 - [ ] Phase review gate and fixes
 
-## [ ] Phase 5: providers
+## [x] Phase 5: providers
 
 - [x] `BedrockModel` (ConverseStream, caching, guardrails, throttling)
 - [x] `AnthropicModel` (reqwest SSE, transport retry, error mapping, thinking, caching, compaction, server tools)
 - [x] `OpenAIModel` (Responses, Chat, stateful, params, caching, error mapping, transport retry)
 - [x] Bedrock Mantle (region, routing, SigV4 bearer token)
 - [x] Live tests for Bedrock, Mantle, Anthropic, OpenAI (Bedrock and Mantle run green; Anthropic and OpenAI skip without keys, see `strands-rs/docs/reviews/live.md`)
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [ ] Phase 6: storage, sessions, context and memory
 
-- [ ] `Storage`, `InMemoryStorage`, `LocalFileStorage`, namespaces, `KeywordSearchStrategy`
-- [ ] `SessionManager` with TS layout and cross-SDK fixtures
+- [x] `Storage`, `InMemoryStorage`, `LocalFileStorage`, namespaces, `KeywordSearchStrategy`
+- [x] `SessionManager` with TS layout and cross-SDK fixtures
 - [ ] Experimental `ContextManager` (presets, offload strategies, stash, `retrieve_context`, pinning, agentic tools)
 - [ ] `ContextInjector` and injection with `InjectedBlock`
 - [ ] `MemoryManager`, `MemoryStore`, `FileMemoryStore`, `ModelExtractor`
@@ -95,7 +95,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Custom legacy SSE transport
 - [x] Filters, prefixes, auth, elicitation, prompts, resources, list-changed, progress, logging, trace context
 - [x] `load_servers` config loading
-- [ ] `mcp_router` tool
+- [x] `mcp_router` tool
 - [ ] Phase review gate and fixes
 
 ## [ ] Phase 10: telemetry
