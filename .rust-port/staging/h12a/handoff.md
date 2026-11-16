@@ -15,3 +15,8 @@
 - The provider-model cases cover what `create_harness` asks `resolve_model` for and what that request builds; they don't read fields off the built model object.
 - The cases whose TS parent takes `mcpServers: { srv: { command } }` pass a named client in `tools`.
 - `keeps missing directories when multiple are given` shows the absent directory doesn't fail the load; the plugin's source list has no accessor.
+
+## Gates run (outputs in `/mnt/workspace/gates-h12a/`)
+- `cargo fmt --all --check`; `cargo clippy --locked -p strands-harness --all-targets` with `--all-features` and with `--no-default-features`, `-D warnings`; `cargo test --locked -p strands-harness` with `--all-features` (528 lib tests) and with `--no-default-features`; `RUSTDOCFLAGS="-D warnings" cargo doc --locked -p strands-harness --all-features --no-deps`. All pass.
+- For the SDK change: `cargo clippy --locked -p strands --all-targets --all-features -- -D warnings` and `cargo test --locked -p strands --all-features --test interventions --test api_surface` pass. The whole SDK test suite and `.rust-port/gates.sh` were not run.
+- `models/tests/providers.rs`: `warns_instead_of_throwing_when_caching_is_explicitly_requested_on_a_model_instance` asserted that its own call logged the once-per-process warning; the `create_harness` cases log the same message, so it now asserts `logging::warned` and that nothing else was logged (P-1052).
