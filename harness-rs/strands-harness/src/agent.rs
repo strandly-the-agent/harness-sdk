@@ -246,7 +246,10 @@ pub struct HarnessAgentOptions {
 
 impl HarnessAgentOptions {
     /// Fails when `agent_config` sets one of the six keys the harness owns.
-    #[expect(dead_code, reason = "called by create_harness, which lands separately")]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "called by create_harness, which lands separately")
+    )]
     pub(crate) fn check_passthrough(&self) -> Result<()> {
         let config = &self.agent_config;
         let set = [

