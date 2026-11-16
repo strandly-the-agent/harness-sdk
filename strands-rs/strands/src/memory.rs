@@ -4,6 +4,8 @@
 pub mod extraction;
 mod injection;
 mod memory_manager;
+#[cfg(test)]
+pub(crate) mod test_support;
 mod types;
 
 pub use extraction::{
