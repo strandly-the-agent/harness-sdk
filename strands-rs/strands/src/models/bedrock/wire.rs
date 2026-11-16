@@ -7,7 +7,7 @@ use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use aws_sdk_bedrockruntime::Client;
-use aws_sdk_bedrockruntime::error::{DisplayErrorContext, ProvideErrorMetadata, SdkError};
+use aws_sdk_bedrockruntime::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_bedrockruntime::types as bt;
 use aws_smithy_types::{Blob, Document};
 use serde_json::json;
@@ -738,7 +738,7 @@ where
     E: TypedError + ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
     R: Debug + Send + Sync + 'static,
 {
-    let context = DisplayErrorContext(&error).to_string();
+    let context = source_chain(&error);
     let (kind, name, message) = match &error {
         SdkError::ServiceError(service) => {
             let err = service.err();
@@ -768,6 +768,19 @@ where
         message,
         source: Some(Box::new(error)),
     }
+}
+
+/// The error and its sources joined with `: `. `DisplayErrorContext` prints the same chain and
+/// then the `Debug` dump of the `SdkError`, which holds the raw HTTP response.
+fn source_chain(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(error) = source {
+        text.push_str(": ");
+        text.push_str(&error.to_string());
+        source = error.source();
+    }
+    text
 }
 
 fn usage_json(usage: &bt::TokenUsage) -> JsonValue {
@@ -1315,6 +1328,26 @@ mod tests {
         let classified = classify(dispatch);
         assert_eq!(classified.kind, BedrockErrorKind::Network);
         assert!(matches!(classified.into_error(), crate::Error::ModelNetwork(_)));
+    }
+
+    // No TS case: the JS SDK error's `message` never holds the raw response.
+    #[test]
+    fn an_error_without_a_modeled_message_reads_as_its_source_chain() {
+        let reply = HttpResponse::new(500.try_into().unwrap(), SdkBody::from("<html>secret</html>"));
+        let unhandled = SdkError::service_error(ConverseStreamError::unhandled("unexpected token '<'"), reply);
+        let classified = classify(unhandled);
+        assert_eq!(
+            classified.message,
+            "service error: unhandled error: unexpected token '<'"
+        );
+        assert!(classified.source.is_some());
+
+        let dispatch: SdkError<ConverseStreamError, HttpResponse> =
+            SdkError::dispatch_failure(ConnectorError::io("connection refused".into()));
+        assert_eq!(
+            classify(dispatch).message,
+            "dispatch failure: io error: connection refused"
+        );
     }
 
     #[test]
