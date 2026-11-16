@@ -157,11 +157,6 @@ impl Batch {
 
     /// Starts `tool_use` on its own task, reporting to `sender`.
     pub(crate) fn spawn(&mut self, tool_use: ToolUseBlock, sender: mpsc::Sender<TaskMessage>) {
-        let span = tracing::debug_span!(
-            "tool_call",
-            tool_name = tool_use.name(),
-            tool_use_id = tool_use.tool_use_id()
-        );
         let task = ToolTask {
             agent: self.agent.clone(),
             invocation_state: self.invocation_state.clone(),
@@ -169,7 +164,7 @@ impl Batch {
             sender,
             background: self.background.clone(),
         };
-        self.tasks.spawn(task.run(tool_use).instrument(span));
+        self.tasks.spawn(task.run(tool_use).in_current_span());
     }
 
     /// Runs the hooks for a task message; returns the event to yield and the deferred answer.
@@ -585,7 +580,7 @@ impl ToolTerminal {
         Box::pin(async_stream::stream! {
             let ExecuteToolContext { tool, tool_use, invocation_state, .. } = context;
             let tool_use_id = tool_use.tool_use_id().to_owned();
-            telemetry.lock().tracer.start_tool(tool_use.name(), &tool_use_id);
+            let span = telemetry.lock().tracer.start_tool(&tool_use);
             let started = Instant::now();
             let mut outcome = None;
             match tool {
@@ -595,11 +590,11 @@ impl ToolTerminal {
                 }
                 Some(tool) => {
                     let context = ToolContext::new(tool_use.clone(), agent, invocation_state).with_interrupt_scope(scope);
-                    let built = std::panic::catch_unwind(AssertUnwindSafe(|| tool.stream(context)));
+                    let built = std::panic::catch_unwind(AssertUnwindSafe(|| span.in_scope(|| tool.stream(context))));
                     match built {
                         Err(panic) => outcome = Some(panic_result(panic.as_ref(), &tool_use).into()),
                         Ok(mut stream) => loop {
-                            match AssertUnwindSafe(stream.next()).catch_unwind().await {
+                            match AssertUnwindSafe(stream.next().instrument(span.clone())).catch_unwind().await {
                                 Ok(Some(ToolStreamItem::Event(event))) => {
                                     let record = ToolStreamUpdateEventData::new(event);
                                     yield Ok(MiddlewareItem::Event(AgentStreamEvent::ToolStreamUpdate(record)));
@@ -625,7 +620,11 @@ impl ToolTerminal {
             let success = matches!(&outcome, ToolOutcome::Result(result) if *result.status() == ToolResultStatus::Success);
             {
                 let mut telemetry = telemetry.lock();
-                telemetry.tracer.end_tool(&tool_use_id);
+                let result = match &outcome {
+                    ToolOutcome::Result(result) => Some(result),
+                    ToolOutcome::Interrupt(_) => None,
+                };
+                telemetry.tracer.end_tool(&tool_use_id, &span, result);
                 telemetry.meter.end_tool_call(tool_use.name(), started.elapsed(), success);
             }
             match outcome {

@@ -34,6 +34,7 @@ use crate::models::model::{
 use crate::models::model_proxy::ModelProxy;
 use crate::state_store::StateStore;
 use crate::telemetry::LocalTelemetry;
+use crate::telemetry::tracer::{AgentSpanStart, ModelSpanEnd};
 use crate::tools::executors::executor::{
     BackgroundRoute, ToolExecutionInput, ToolExecutorEvent, ToolExecutorItem, error_text_result,
 };
@@ -437,7 +438,9 @@ impl Agent {
             self.local.tool_registry_mut().add(Arc::new(tool.clone()))?;
             self.structured_output_registered = true;
         }
+        self.start_agent_span(&input.messages);
         let outcome = self.cycles(input, state, hooks, out, &mut structured).await;
+        self.end_agent_span(&outcome);
         if structured.tool.is_some() {
             self.local.tool_registry_mut().remove(STRUCTURED_OUTPUT_TOOL_NAME);
             self.structured_output_registered = false;
@@ -479,7 +482,7 @@ impl Agent {
             let started = {
                 let mut telemetry = self.local.telemetry().lock();
                 let (cycle_id, started) = telemetry.meter.start_cycle();
-                telemetry.tracer.start_cycle(&cycle_id);
+                telemetry.tracer.start_cycle(&cycle_id, self.local.messages());
                 started
             };
             let cycle = self
@@ -488,7 +491,11 @@ impl Agent {
             {
                 let mut telemetry = self.local.telemetry().lock();
                 telemetry.meter.end_cycle(started);
-                telemetry.tracer.end_cycle();
+                let error = match &cycle {
+                    Err(Stop::Failed(error)) => Some(error.to_string()),
+                    _ => None,
+                };
+                telemetry.tracer.end_cycle(error.as_deref());
             }
             match cycle {
                 Ok(Cycle::Continue) => {}
@@ -1283,6 +1290,42 @@ impl Agent {
         self.with_telemetry(AgentResult::new(stop_reason, last_message, state.clone()))
     }
 
+    /// TS `startAgentSpan` with the invocation's input messages.
+    fn start_agent_span(&self, input: &[Message]) {
+        let tool_names = self
+            .local
+            .tool_registry()
+            .list()
+            .map(|tool| tool.name().to_owned())
+            .collect();
+        self.local.telemetry().lock().tracer.start_agent(&AgentSpanStart {
+            messages: input,
+            agent_name: self.local.name(),
+            agent_id: self.local.id(),
+            model_id: self.local.model().model_id(),
+            tool_names,
+            tools_config: None,
+            system_prompt: self.local.system_prompt(),
+        });
+    }
+
+    /// TS `endAgentSpan` with the result or the error of the invocation.
+    fn end_agent_span(&self, outcome: &Result<AgentResult>) {
+        let mut telemetry = self.local.telemetry().lock();
+        let usage = telemetry.meter.metrics().accumulated_usage().clone();
+        match outcome {
+            Ok(result) => telemetry.tracer.end_agent(
+                Some(result.last_message()),
+                Some(result.stop_reason().as_str()),
+                &usage,
+                None,
+            ),
+            Err(error) => telemetry
+                .tracer
+                .end_agent(None, None, &usage, Some(&error.to_string())),
+        }
+    }
+
     fn with_telemetry(&self, result: AgentResult) -> AgentResult {
         let telemetry = self.local.telemetry().lock();
         let result = result.with_telemetry(
@@ -1426,6 +1469,11 @@ impl ModelTerminal {
         *lock(&self.invoked) = Some(Arc::clone(&context.model));
         let model_state = self.base_state.snapshot();
         *lock(&self.written_state) = Some(model_state.clone());
+        self.telemetry.lock().tracer.start_model(
+            &context.messages,
+            context.model.model_id().as_deref(),
+            context.system_prompt.as_ref(),
+        );
         let request = ModelRequest::builder()
             .messages(fill_empty_assistant_messages(normalize_tool_use_names(
                 &context.messages,
@@ -1441,7 +1489,6 @@ impl ModelTerminal {
             .build();
         let telemetry = self.telemetry.clone();
         let cancel = self.cancel.clone();
-        telemetry.lock().tracer.start_model();
         let mut stream = ModelProxy::new(context.model.as_ref())
             .stream_aggregated(request, self.invocation_context.clone());
         Box::pin(async_stream::stream! {
@@ -1452,12 +1499,12 @@ impl ModelTerminal {
                     Ok(AggregatedEvent::Done(done)) => result = Some(*done),
                     // Providers surface a cancel as a transport error; the cancel wins.
                     Ok(_) | Err(_) if cancelled => {
-                        telemetry.lock().tracer.end_model(None);
+                        telemetry.lock().tracer.end_model(&ModelSpanEnd::failed(&CancelledError));
                         yield Err(MiddlewareError::Failed(Error::other(CancelledError)));
                         return;
                     }
                     Err(error) => {
-                        telemetry.lock().tracer.end_model(None);
+                        telemetry.lock().tracer.end_model(&ModelSpanEnd::failed(&error));
                         yield Err(MiddlewareError::Failed(error));
                         return;
                     }
@@ -1472,11 +1519,17 @@ impl ModelTerminal {
                 }
             }
             let Some(result) = result else {
-                telemetry.lock().tracer.end_model(None);
+                telemetry.lock().tracer.end_model(&ModelSpanEnd::default());
                 yield Err(MiddlewareError::Failed(Error::other("the model stream ended without a result")));
                 return;
             };
-            telemetry.lock().tracer.end_model(Some(result.message()));
+            telemetry.lock().tracer.end_model(&ModelSpanEnd {
+                output: Some(result.message()),
+                stop_reason: Some(result.stop_reason().as_str()),
+                usage: result.metadata().and_then(|metadata| metadata.usage()),
+                metrics: result.metadata().and_then(|metadata| metadata.metrics()),
+                error: None,
+            });
             yield Ok(MiddlewareItem::Result(InvokeModelResult::new(result)));
         })
     }

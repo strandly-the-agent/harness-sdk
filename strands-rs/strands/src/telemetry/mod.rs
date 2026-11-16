@@ -2,13 +2,16 @@
 //!
 //! [`AgentResult`]: crate::AgentResult
 
+mod config;
+mod json;
 pub mod meter;
 pub mod tracer;
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+pub use config::DEFAULT_SERVICE_NAME;
 pub use meter::{AgentLoopMetricsData, AgentMetrics, InvocationMetricsData, ToolMetricsData};
-pub use tracer::AgentTrace;
+pub use tracer::{AgentTrace, AttributeValue};
 
 /// The agent's meter and local tracer, shared with the tool tasks of a batch.
 #[derive(Debug, Clone, Default)]
@@ -27,3 +30,6 @@ impl LocalTelemetry {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+#[cfg(all(test, feature = "otel"))]
+mod tests;
