@@ -3,7 +3,7 @@
 // Usage: node strands-rs/docs/check-test-titles.mjs [--root <repo>] [--ts <spec root>] [--report] [filter...]
 //   --root    repository root (default: two directories above this script)
 //   --ts      TS source root the PARITY.md spec paths point into (default: <root>/strands-ts/src)
-//   --report  also print each missing title with the Rust name it expects, and the Rust tests of the
+//   --report  also print each missing case (its map key and the Rust name it expects), and the Rust tests of the
 //             row's files that no case matched (Rust-only tests, or tests still to rename)
 //   --parity  the PARITY.md to check (default: <root>/strands-rs/docs/PARITY.md)
 //   filter    only check rows whose spec path contains one of these substrings
@@ -216,6 +216,8 @@ function check(row) {
   for (const { name } of tests) available.set(name, (available.get(name) ?? 0) + 1)
   const declared = new Set()
   const used = new Set()
+  const repeats = new Map()
+  for (const { title } of found) repeats.set(title, (repeats.get(title) ?? 0) + 1)
   for (const { title, describes, line } of found) {
     const names = snakeCase(title)
     const name = names.find((candidate) => available.get(candidate) > 0)
@@ -227,7 +229,7 @@ function check(row) {
         available.set(name, available.get(name) - 1)
         result.matched++
       } else {
-        result.missing.push({ title, name: names[0], line })
+        result.missing.push({ key: repeats.get(title) > 1 ? [...describes, title].join(' > ') : title, name: names[0], line })
       }
     } else if (typeof entry === 'string') {
       declared.add(entry.split('::').pop())
@@ -268,7 +270,7 @@ for (const row of rows()) {
   console.log(`${bad ? 'FAIL' : 'ok  '} ${row.spec} ${counts.join('/')} (row ${row.ported}/${row.total})`)
   for (const problem of result.problems) console.log(`       ${problem}`)
   if (report) {
-    for (const { title, name, line } of result.missing) console.log(`       :${line} ${JSON.stringify(title)} -> ${name}`)
+    for (const { key, name, line } of result.missing) console.log(`       :${line} ${JSON.stringify(key)} -> ${name}`)
     for (const { name, file, line } of result.rustOnly) console.log(`       rust-only: ${name} (${relative(root, file)}:${line})`)
   }
   const segments = row.spec.split('/')
