@@ -150,10 +150,9 @@ pub trait MiddlewareStage: Sized + Send + Sync + 'static {
     }
 }
 
-/// The phase of a handler (TS `MiddlewarePhaseKind`).
+/// The phase of a handler (TS `MiddlewarePhaseKind`, internal there too).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum MiddlewarePhaseKind {
+pub(crate) enum MiddlewarePhaseKind {
     /// Transforms the context (TS `'input'`).
     Input,
     /// Wraps the rest of the chain (TS `'wrap'`).
@@ -185,8 +184,9 @@ impl<S: MiddlewareStage> Middleware<S> {
         Self { phase, handler }
     }
 
-    /// The handler's phase.
-    pub fn phase(&self) -> MiddlewarePhaseKind {
+    /// The handler's phase (TS `_phase`).
+    #[cfg(test)]
+    pub(crate) fn phase(&self) -> MiddlewarePhaseKind {
         self.phase
     }
 

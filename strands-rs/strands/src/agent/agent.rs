@@ -576,9 +576,10 @@ impl Agent {
         self.local.session_id()
     }
 
-    /// What the agent tells its model about itself (TS `agentMetadata`): the session id, only
-    /// with a session manager attached.
-    pub fn agent_metadata(&self) -> Option<&AgentMetadata> {
+    /// What the agent tells its model about itself (TS `agentMetadata`, `@internal` there): the
+    /// session id, only with a session manager attached.
+    #[cfg(test)]
+    pub(crate) fn agent_metadata(&self) -> Option<&AgentMetadata> {
         self.local.agent_metadata()
     }
 
