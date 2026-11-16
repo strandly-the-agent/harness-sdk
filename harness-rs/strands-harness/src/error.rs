@@ -1,5 +1,7 @@
 //! The harness error type.
 
+use crate::config::HarnessModuleLanguage;
+
 /// An error of the harness: option and config resolution, and anything the SDK reports while the
 /// agent is built.
 #[derive(Debug, thiserror::Error)]
@@ -99,6 +101,56 @@ fn json_string(text: &str) -> String {
     InterventionNameCollision {
         /// The shared handler name.
         name: String,
+    /// A portable config that is not a JSON object.
+    #[error("agent config must be an object.")]
+    ConfigNotObject,
+    /// A portable config with invalid values: one line per issue, under its JSON path.
+    #[error("Invalid agent config:\n{}", issues.join("\n"))]
+    InvalidConfig {
+        /// The issues, each starting with the JSON path of the value.
+        issues: Vec<String>,
+    /// A portable config with a module reference, which Rust cannot load.
+        "module references are not supported in Rust yet{}",
+        language.map(|language| format!(" (language {})", json_quote(language.as_str()))).unwrap_or_default()
+    ModuleReferenceUnsupported {
+        /// The language the reference names, if any.
+        language: Option<HarnessModuleLanguage>,
+    /// An MCP config file that cannot be read or is not JSON.
+    #[error("MCP config {} must be valid JSON.", json_quote(path))]
+    McpConfigInvalidJson {
+        /// The path as written in the config.
+        path: String,
+        /// Why reading or parsing failed.
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    /// An MCP config file whose content is not an object.
+    #[error("MCP config {} must contain a server map.", json_quote(path))]
+    McpConfigNotServerMap {
+        /// The path as written in the config.
+        path: String,
+    /// An `mcpServers` key that is not an object.
+    #[error("mcpServers must contain a server map.")]
+    McpServersNotServerMap,
+    /// A `${VAR}` placeholder naming a variable that is not set.
+    #[error("Environment variable {} is not set.", json_quote(name))]
+    EnvVarNotSet {
+        /// The variable.
+    /// An `agentConfig` value of a portable config that the SDK key does not accept.
+    #[error("agentConfig.{key} is invalid: {message}")]
+    InvalidAgentConfigValue {
+        /// The `agentConfig` key.
+        key: String,
+        /// Why the value was rejected.
+        message: String,
+    /// `HarnessAgentOptions::agent_config` sets a key the harness owns.
+    #[error("agent_config.{key} is a harness option: set `{key}` on HarnessAgentOptions instead")]
+    PassthroughOption {
+        /// The `AgentConfig` field.
+        key: &'static str,
+
+/// `text` as a JSON string literal, as TS `JSON.stringify` writes it.
+pub(crate) fn json_quote(text: &str) -> String {
+    serde_json::Value::String(text.to_owned()).to_string()
 }
 
 /// The harness result type.
