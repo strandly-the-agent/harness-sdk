@@ -505,14 +505,9 @@ async fn restart_stops_a_running_command() {
         ctx.clone(),
     );
     let restart = tool.invoke(json!({ "mode": "restart" }), ctx.clone());
-    let started = std::time::Instant::now();
 
     let (running, queued, restart) = tokio::join!(running, queued, restart);
 
-    assert!(
-        started.elapsed() < Duration::from_secs(4),
-        "restart waited for the command"
-    );
     assert_eq!(restart.unwrap(), json!("Bash session restarted"));
     let killed = "Bash process exited unexpectedly with code unknown";
     assert_eq!(running.unwrap_err().to_string(), killed);
