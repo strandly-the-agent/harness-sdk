@@ -550,28 +550,19 @@ mod classifier_mode {
             "{request}"
         );
         assert!(request.contains("Tool: deleteFile"), "{request}");
-        // The structured-output tool is the TS one: no description from the Rust type.
+        // The structured-output tool and the interrupt are the TS ones (conformance fixtures).
+        let fixture = |text: &str| serde_json::from_str::<JsonValue>(text).unwrap();
         assert_eq!(
             serde_json::to_value(&classifier.requests()[0].tool_specs).unwrap(),
-            json!([{
-                "name": "strands_structured_output",
-                "description": "This tool MUST only be invoked as the last and final tool before returning the completed result to the caller.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "requiresApproval": {
-                            "type": "boolean",
-                            "description": "Whether this tool call requires human approval before executing",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "Brief reason (under 10 words) why approval is or is not required",
-                        },
-                    },
-                    "required": ["requiresApproval", "reason"],
-                    "additionalProperties": false,
-                },
-            }])
+            fixture(include_str!(
+                "../../../../conformance/fixtures/tools/hitl_classifier_specs.json"
+            ))
+        );
+        assert_eq!(
+            serde_json::to_value(result.interrupts()).unwrap(),
+            fixture(include_str!(
+                "../../../../conformance/fixtures/interrupts/hitl_approval.json"
+            ))
         );
     }
 

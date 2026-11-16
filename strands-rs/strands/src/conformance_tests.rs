@@ -232,6 +232,8 @@ fn uint8array_index_objects_in_stream_events_read_as_bytes() {
 fn interrupts_round_trip_byte_identically() {
     let interrupts: Vec<Interrupt> = assert_round_trip("interrupts/agent_result_interrupts.json");
     assert_eq!(interrupts[0].source().as_str(), "tool");
+    let approval: Vec<Interrupt> = assert_round_trip("interrupts/hitl_approval.json");
+    assert_eq!(approval[0].source().as_str(), "hook");
     let responses: Vec<InterruptResponseContent> = assert_round_trip("interrupts/response_content_null.json");
     assert_eq!(responses[0].interrupt_response().response(), &JsonValue::Null);
     for path in files_in("interrupts")
@@ -414,9 +416,13 @@ fn tool_specs_and_choices_round_trip_byte_identically() {
         "tools/function_tool_default_schema.json",
         "tools/function_tool_spec.json",
         "tools/zod_tool_spec.json",
+        "tools/skills_tool_spec.json",
+        "tools/mcp_router_spec.json",
+        "tools/retrieve_context_spec.json",
     ] {
         assert_round_trip::<ToolSpec>(path);
     }
+    assert_round_trip::<Vec<ToolSpec>>("tools/hitl_classifier_specs.json");
     assert_eq!(
         assert_round_trip::<ToolChoice>("tools/tool_choice_auto.json"),
         ToolChoice::Auto
