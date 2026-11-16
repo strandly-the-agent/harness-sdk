@@ -622,8 +622,7 @@ mod event_contract {
         agent.add_hook(move |_: &mut AfterToolCallEvent| *count.lock().unwrap() += 1);
         let result = agent.invoke("Go").await.unwrap();
         assert_eq!(result.stop_reason(), StopReason::Interrupt);
-        let fired = *fired.lock().unwrap();
-        fired
+        *fired.lock().unwrap()
     }
 
     #[tokio::test]
