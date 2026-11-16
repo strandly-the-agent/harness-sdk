@@ -166,7 +166,8 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
 /// [`tracing_layer`] becomes the global default; it exports spans at `INFO` and above (the
 /// agent's and the application's own) and no log lines. Where the application already has a
 /// global subscriber, add [`tracing_layer`] to it instead. Call `shutdown()` on the returned
-/// provider before the process exits to flush pending spans.
+/// provider before the process exits to flush pending spans; it blocks until the exporters
+/// flush or time out, so inside an async runtime run it with `tokio::task::spawn_blocking`.
 ///
 /// A process has one global `tracing` subscriber. An application with its own (for example
 /// `tracing_subscriber::fmt::init()`) installs it first, with [`tracing_layer`] added; installing
@@ -183,7 +184,8 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
 /// let mut agent = Agent::builder().build()?;
 /// agent.invoke("Hello").await?; // the agent's spans are printed
 ///
-/// provider.shutdown().map_err(Error::other)?;
+/// let flushed = tokio::task::spawn_blocking(move || provider.shutdown()).await;
+/// flushed.map_err(Error::other)?.map_err(Error::other)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -334,7 +336,9 @@ pub(super) fn setup_tracer_in(
 /// Registers the process's meter provider, which the agents built afterwards record their
 /// metrics to (TS `setupMeter`). Later calls return the first provider.
 ///
-/// Call `shutdown()` on the returned provider before the process exits to flush pending metrics.
+/// Call `shutdown()` on the returned provider before the process exits to flush pending metrics;
+/// it blocks until the exporters flush or time out, so inside an async runtime run it with
+/// `tokio::task::spawn_blocking`.
 ///
 /// ```no_run
 /// use strands::telemetry::{Exporters, MeterConfig, setup_meter};
@@ -347,7 +351,8 @@ pub(super) fn setup_tracer_in(
 /// let mut agent = Agent::builder().build()?; // records to the provider's instruments
 /// agent.invoke("Hello").await?;
 ///
-/// provider.shutdown().map_err(Error::other)?;
+/// let flushed = tokio::task::spawn_blocking(move || provider.shutdown()).await;
+/// flushed.map_err(Error::other)?.map_err(Error::other)?;
 /// # Ok(())
 /// # }
 /// ```

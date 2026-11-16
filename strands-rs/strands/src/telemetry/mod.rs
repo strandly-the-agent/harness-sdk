@@ -17,9 +17,13 @@
 //! let mut agent = Agent::builder().build()?;
 //! agent.invoke("Hello").await?;
 //!
-//! // Flush what is pending before the process exits.
-//! tracer_provider.shutdown().map_err(Error::other)?;
-//! meter_provider.shutdown().map_err(Error::other)?;
+//! // Flush what is pending before the process exits. `shutdown()` blocks, so keep it off the
+//! // runtime threads.
+//! let flushed = tokio::task::spawn_blocking(move || {
+//!     tracer_provider.shutdown()?;
+//!     meter_provider.shutdown()
+//! });
+//! flushed.await.map_err(Error::other)?.map_err(Error::other)?;
 //! # Ok(())
 //! # }
 //! ```
