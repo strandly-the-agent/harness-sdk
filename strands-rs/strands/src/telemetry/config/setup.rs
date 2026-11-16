@@ -18,8 +18,10 @@ use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
 use opentelemetry_sdk::trace::{
     BatchSpanProcessor, SdkTracer, SdkTracerProvider, SimpleSpanProcessor, Span, SpanData, SpanProcessor,
 };
-use tracing::Subscriber;
+use tracing::{Level, Subscriber};
 use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_subscriber::Layer as _;
+use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry::LookupSpan;
 
@@ -155,9 +157,10 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
 /// `OTEL_SERVICE_NAMESPACE`, `OTEL_DEPLOYMENT_ENVIRONMENT`, `OTEL_RESOURCE_ATTRIBUTES`). It
 /// becomes the global OpenTelemetry tracer provider, the W3C trace-context and baggage
 /// propagators become the global propagator, and a `tracing` subscriber with
-/// [`tracing_layer`] becomes the global default. Where the application already has a global
-/// subscriber, add [`tracing_layer`] to it instead. Call `shutdown()` on the returned provider
-/// before the process exits to flush pending spans.
+/// [`tracing_layer`] becomes the global default; it exports spans at `INFO` and above (the
+/// agent's and the application's own) and no log lines. Where the application already has a
+/// global subscriber, add [`tracing_layer`] to it instead. Call `shutdown()` on the returned
+/// provider before the process exits to flush pending spans.
 ///
 /// # Errors
 ///
@@ -169,8 +172,7 @@ pub fn setup_tracer(config: TracerConfig) -> Result<SdkTracerProvider> {
             Box::new(TraceContextPropagator::new()),
             Box::new(BaggagePropagator::new()),
         ]));
-        let subscriber = tracing_subscriber::registry().with(tracing_layer(provider));
-        if tracing::subscriber::set_global_default(subscriber).is_err() {
+        if tracing::subscriber::set_global_default(subscriber(provider)).is_err() {
             tracing::warn!(
                 "a global tracing subscriber is already set | add telemetry::tracing_layer to it to export agent spans"
             );
@@ -180,11 +182,28 @@ pub fn setup_tracer(config: TracerConfig) -> Result<SdkTracerProvider> {
 
 /// The `tracing` layer that exports the agent's spans through `provider`, for applications that
 /// build their own subscriber.
+///
+/// The layer adds none of its own attributes (source location, thread, target, busy and idle
+/// time). It exports every span and event the subscriber lets through; filter it
+/// (`tracing_subscriber::Layer::with_filter`) to export less.
 pub fn tracing_layer<S>(provider: &SdkTracerProvider) -> OpenTelemetryLayer<S, SdkTracer>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
-    tracing_opentelemetry::layer().with_tracer(provider.tracer(service_name(&process_env)))
+    tracing_opentelemetry::layer()
+        .with_tracer(provider.tracer(service_name(&process_env)))
+        .with_location(false)
+        .with_threads(false)
+        .with_tracked_inactivity(false)
+        .with_target(false)
+}
+
+/// The subscriber [`setup_tracer`] installs: [`tracing_layer`] for spans at `INFO` and above (the
+/// agent's are), so the debug spans of dependencies aren't exported and log lines don't become
+/// span events, as in TS.
+pub(super) fn subscriber(provider: &SdkTracerProvider) -> impl Subscriber + Send + Sync + 'static {
+    let spans = filter_fn(|metadata| metadata.is_span() && *metadata.level() <= Level::INFO);
+    tracing_subscriber::registry().with(tracing_layer(provider).with_filter(spans))
 }
 
 /// A tracer of the global tracer provider, named after the service (TS `getTracer`), for custom

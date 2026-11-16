@@ -1,0 +1,3 @@
+Replaces the row `Extra span attributes`:
+
+| Spans exported besides the agent's | Only spans started through the OpenTelemetry tracer; `logger` calls never reach a span | `tracing` spans at `INFO` and above that the application opens are exported too (they parent under the agent's); with an application-built subscriber, `tracing_layer` exports whatever that subscriber lets through, log lines as span events included, unless the application filters the layer. The layer adds no attributes of its own | `tracing` is the span API of the Rust crate; `setup_tracer` filters its own subscriber to spans at `INFO` and above (P-721) |

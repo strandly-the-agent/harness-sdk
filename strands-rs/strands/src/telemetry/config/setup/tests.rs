@@ -23,7 +23,7 @@ use opentelemetry_sdk::trace::{SdkTracerProvider, SpanData, SpanExporter};
 
 use super::{
     BaggageKeys, BaggageSpanProcessor, Exporters, MeterConfig, Slot, TracerConfig, resource, setup_meter_in,
-    setup_tracer_in,
+    setup_tracer_in, subscriber,
 };
 use crate::test_support::WarnRecorder;
 
@@ -530,5 +530,34 @@ mod get_tracer_and_get_meter {
     #[test]
     fn get_meter_returns_a_meter_of_the_global_provider() {
         get_meter().u64_counter("probe").build().add(1, &[]);
+    }
+}
+
+mod setup_tracer_subscriber {
+    use opentelemetry::trace::Status;
+
+    use super::*;
+
+    // No TS case: in TS only spans started through the OpenTelemetry tracer are exported and
+    // `logger` calls never reach a span; this pins the same for the subscriber `setup_tracer`
+    // installs.
+    #[test]
+    fn exports_info_spans_without_layer_attributes_debug_spans_or_log_lines() {
+        let recorder = SpanRecorder::default();
+        let provider = recorder.provider();
+        tracing::subscriber::with_default(subscriber(&provider), || {
+            tracing::info_span!("agent_span", custom = 1).in_scope(|| {
+                tracing::error!("a log line");
+                tracing::trace_span!("dependency_span").in_scope(|| tracing::trace!("a dependency log line"));
+            });
+        });
+
+        assert_eq!(recorder.names(), ["agent_span"]);
+        let spans = recorder.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let span = spans.first().expect("the agent span");
+        let keys: Vec<&str> = span.attributes.iter().map(|pair| pair.key.as_str()).collect();
+        assert_eq!(keys, ["custom"]);
+        assert_eq!(span.events.len(), 0);
+        assert_eq!(span.status, Status::Unset);
     }
 }
