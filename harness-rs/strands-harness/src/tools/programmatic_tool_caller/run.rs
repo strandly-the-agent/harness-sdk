@@ -54,6 +54,9 @@ pub(crate) enum RunEnd {
 
 type Step = Result<RunProgress, MontyException>;
 
+/// Monty bounds data recursion by depth, not stack, and debug frames overflow the default 2 MiB.
+const STEP_STACK_BYTES: usize = 64 * 1024 * 1024;
+
 /// The next interpreter step: resumes the suspended run with the host's answer.
 type Resume = Box<dyn FnOnce(PrintWriter<'_>) -> Step + Send>;
 
@@ -64,6 +67,7 @@ async fn step(mut output: Output, cancel: &CancelSignal, run: Resume) -> Option<
     let (sender, stepping) = tokio::sync::oneshot::channel();
     let spawned = std::thread::Builder::new()
         .name("programmatic-tool-caller-step".to_owned())
+        .stack_size(STEP_STACK_BYTES)
         .spawn(move || {
             let progress = run(PrintWriter::Callback(&mut output));
             let _ = sender.send((progress, output));

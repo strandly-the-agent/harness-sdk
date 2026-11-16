@@ -616,6 +616,17 @@ async fn a_huge_timeout_is_no_deadline() {
     assert!(matches!(end, RunEnd::Complete), "{end:?}");
 }
 
+/// Review finding correctness-a4: deeply nested guest data does not overflow the step's stack.
+#[tokio::test]
+async fn deeply_nested_guest_data_does_not_overflow_the_stack() {
+    let call: HostCall = Arc::new(|_name, _input| async { Ok(json!("1")) }.boxed());
+    let (signal, _handle) = CancelSignal::new();
+    let code = "a = []\nfor i in range(500):\n    a = [a]\nprint(len(str(a)))".to_owned();
+    let (output, end) = run_code(code, HashMap::new(), call, LIMITS, None, &signal).await;
+    assert!(matches!(end, RunEnd::Complete), "{end:?}");
+    assert_eq!(output.text().trim(), "1002");
+}
+
 const GATED_CODE: &str =
     "try:\n    print(await shell_like(command='rm -rf /'))\nexcept RuntimeError as e:\n    print('ERR', e)";
 
