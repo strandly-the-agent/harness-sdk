@@ -91,38 +91,40 @@ pub struct ListSnapshotIdsOptions {
 }
 
 /// An agent a [`SessionManager`] can snapshot: [`Agent`] or [`LocalAgent`]. Sealed.
-pub trait SnapshotTarget: sealed::Sealed {
-    /// The agent view.
-    fn local_agent(&self) -> &LocalAgent;
-    /// The agent view, mutably.
-    fn local_agent_mut(&mut self) -> &mut LocalAgent;
-}
+pub trait SnapshotTarget: sealed::Sealed {}
 
 mod sealed {
-    pub trait Sealed {}
-    impl Sealed for crate::agent::Agent {}
-    impl Sealed for crate::types::agent::LocalAgent {}
+    use crate::types::agent::LocalAgent;
+
+    pub trait Sealed {
+        fn local_agent(&self) -> &LocalAgent;
+        fn local_agent_mut(&mut self) -> &mut LocalAgent;
+    }
+
+    impl Sealed for crate::agent::Agent {
+        fn local_agent(&self) -> &LocalAgent {
+            &self.local
+        }
+
+        fn local_agent_mut(&mut self) -> &mut LocalAgent {
+            &mut self.local
+        }
+    }
+
+    impl Sealed for LocalAgent {
+        fn local_agent(&self) -> &LocalAgent {
+            self
+        }
+
+        fn local_agent_mut(&mut self) -> &mut LocalAgent {
+            self
+        }
+    }
 }
 
-impl SnapshotTarget for Agent {
-    fn local_agent(&self) -> &LocalAgent {
-        &self.local
-    }
+impl SnapshotTarget for Agent {}
 
-    fn local_agent_mut(&mut self) -> &mut LocalAgent {
-        &mut self.local
-    }
-}
-
-impl SnapshotTarget for LocalAgent {
-    fn local_agent(&self) -> &LocalAgent {
-        self
-    }
-
-    fn local_agent_mut(&mut self) -> &mut LocalAgent {
-        self
-    }
-}
+impl SnapshotTarget for LocalAgent {}
 
 /// Saves and restores agent sessions as snapshots (TS `SessionManager`), registered on the agent
 /// through `AgentConfig::session_manager`.
