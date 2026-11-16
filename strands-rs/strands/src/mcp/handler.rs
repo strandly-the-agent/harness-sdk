@@ -9,12 +9,12 @@ use std::sync::{Arc, Weak};
 
 use rmcp::model::{
     ClientCapabilities, ClientConfig, ElicitRequestParams, ElicitResult, Implementation, LoggingLevel,
-    LoggingMessageNotificationParam, ProgressNotificationParam,
+    LoggingMessageNotificationParam,
 };
 use rmcp::service::{NotificationContext, RequestContext};
 use rmcp::{ClientHandler, ErrorData, RoleClient};
 
-use super::client::{Inner, McpClient, McpProgress};
+use super::client::{Inner, McpClient};
 use super::elicitation::ElicitationContext;
 use crate::cancel::{CancelOptions, CancelSignal};
 
@@ -104,24 +104,6 @@ impl ClientHandler for McpHandler {
                 handle.cancel(CancelOptions::default());
                 Err(ErrorData::internal_error("elicitation request cancelled", None))
             }
-        }
-    }
-
-    async fn on_progress(
-        &self,
-        params: ProgressNotificationParam,
-        _context: NotificationContext<RoleClient>,
-    ) {
-        let Some(client) = self.client() else { return };
-        let progress = McpProgress::new(params.progress, params.total, params.message);
-        let callback = client
-            .inner
-            .progress
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .route(&params.progress_token, &progress);
-        if let Some(callback) = callback {
-            client.deliver_progress(&callback, progress);
         }
     }
 

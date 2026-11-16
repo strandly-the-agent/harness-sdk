@@ -15,10 +15,10 @@ use indexmap::IndexMap;
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientRequest, ElicitationCapability,
     FormElicitationCapability, GetPromptRequestParams, GetPromptResult, Implementation, InputRequest,
-    InputRequiredResult, InputResponses, ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult,
-    ListToolsRequest, LoggingMessageNotificationParam, PaginatedRequestParams, ProgressToken,
-    ProtocolVersion, ReadResourceRequestParams, ReadResourceResult, ServerCapabilities, ServerResult,
-    UrlElicitationCapability,
+    InputRequests, InputRequiredResult, InputResponses, ListPromptsResult, ListResourceTemplatesResult,
+    ListResourcesResult, ListToolsRequest, LoggingMessageNotificationParam, PaginatedRequestParams,
+    ProgressToken, ProtocolVersion, ReadResourceRequestParams, ReadResourceResult, ServerCapabilities,
+    ServerResult, UrlElicitationCapability,
 };
 use rmcp::service::{ClientLifecycleMode, PeerRequestOptions};
 use rmcp::transport::StreamableHttpClientTransport;
@@ -26,14 +26,15 @@ use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig
 use rmcp::{Peer, RoleClient};
 use tracing::Instrument;
 
+use super::auth::{ClientCredentialsClient, client_credentials};
 use super::elicitation::{ElicitationCallback, ElicitationContext};
 use super::error::McpError;
 use super::filters::McpToolFilters;
 use super::handler::McpHandler;
 use super::mcp_tool::McpTool;
 use super::trace::{current_trace_context, inject_trace_context};
-use super::transport::{McpTransport, Running, header_map};
-use crate::cancel::CancelSignal;
+use super::transport::{McpTransport, Running, header_map, serve};
+use crate::cancel::{CancelOptions, CancelSignal};
 use crate::error::{Error, Result, ToolValidationError};
 use crate::tools::Tool;
 use crate::types::json::{JsonObject, JsonValue};
@@ -45,7 +46,11 @@ const DEFAULT_LIST_MAX_PAGES: u32 = 64;
 /// TS `MAX_TIMER_DELAY_MS`.
 const MAX_TIMER_DELAY: Duration = Duration::from_millis(2_147_483_647);
 const MAX_TOOL_NAME_LENGTH: usize = 64;
-const MRTR_MAX_ROUNDS: usize = 10;
+/// The MCP SDK `DEFAULT_INPUT_REQUIRED_MAX_ROUNDS`: input-required rounds fulfilled per call.
+const MRTR_MAX_ROUNDS: u32 = 10;
+/// The MCP SDK `REQUEST_STATE_ONLY_LEG_PACING_MS`.
+const REQUEST_STATE_ONLY_LEG_PACING: Duration = Duration::from_millis(250);
+const INPUT_REQUIRED_WITHOUT_INPUT: &str = "Invalid result for tools/call: input_required carries neither inputRequests nor requestState (every input_required result must include at least one of the two)";
 /// The MCP SDK `listChanged.tools.debounceMs`.
 const TOOLS_CHANGED_DEBOUNCE: Duration = Duration::from_millis(300);
 const FAILED_TO_CONNECT: &str = "MCP server failed to connect. Call connect(true) to retry.";
@@ -309,8 +314,36 @@ struct Refresh {
     pending: bool,
 }
 
-/// Per-call progress callbacks by progress token. Notifications that arrive before their call
-/// registers are held briefly so none is lost to that race.
+/// Clears `running` when a refresh ends, including by a panic or a dropped future.
+struct RefreshRunning<'a>(Option<&'a Mutex<Refresh>>);
+
+impl RefreshRunning<'_> {
+    /// Ends the refresh unless a notification arrived during it, in one critical section so
+    /// no notification is lost between the check and the reset.
+    fn finish_unless_pending(&mut self) -> bool {
+        let Some(refresh) = self.0 else { return true };
+        let mut state = lock(refresh);
+        if state.pending {
+            state.pending = false;
+            return false;
+        }
+        state.running = false;
+        self.0 = None;
+        true
+    }
+}
+
+impl Drop for RefreshRunning<'_> {
+    fn drop(&mut self) {
+        if let Some(refresh) = self.0 {
+            lock(refresh).running = false;
+        }
+    }
+}
+
+/// Per-call progress callbacks by progress token. Notifications are routed in arrival order on
+/// the connection's receive path; ones that arrive before their call registers are held briefly
+/// and delivered on registration.
 #[derive(Default)]
 pub(crate) struct ProgressRoutes {
     routes: std::collections::HashMap<ProgressToken, McpProgressCallback>,
@@ -320,27 +353,17 @@ pub(crate) struct ProgressRoutes {
 const EARLY_PROGRESS_LIMIT: usize = 32;
 
 impl ProgressRoutes {
-    fn register(&mut self, token: ProgressToken, callback: McpProgressCallback) -> Vec<McpProgress> {
-        let (early, rest): (Vec<_>, Vec<_>) = self.early.drain(..).partition(|(held, _)| *held == token);
+    fn take_early(&mut self, token: &ProgressToken) -> Vec<McpProgress> {
+        let (early, rest): (Vec<_>, Vec<_>) = self.early.drain(..).partition(|(held, _)| held == token);
         self.early = rest.into_iter().collect();
-        self.routes.insert(token, callback);
         early.into_iter().map(|(_, progress)| progress).collect()
     }
 
-    /// The callback for `token`, or `None` after holding the notification.
-    pub(crate) fn route(
-        &mut self,
-        token: &ProgressToken,
-        progress: &McpProgress,
-    ) -> Option<McpProgressCallback> {
-        if let Some(callback) = self.routes.get(token) {
-            return Some(Arc::clone(callback));
-        }
+    fn hold(&mut self, token: ProgressToken, progress: McpProgress) {
         if self.early.len() >= EARLY_PROGRESS_LIMIT {
             self.early.pop_front();
         }
-        self.early.push_back((token.clone(), progress.clone()));
-        None
+        self.early.push_back((token, progress));
     }
 }
 
@@ -503,9 +526,13 @@ impl McpClient {
     ///
     /// Never fails today; the `Result` leaves room for transport close errors.
     pub async fn disconnect(&self) -> Result<()> {
-        self.inner.generation.fetch_add(1, Ordering::SeqCst);
+        let previous = {
+            let mut state = self.inner.state();
+            self.inner.generation.fetch_add(1, Ordering::SeqCst);
+            self.inner.tools_changed.fetch_add(1, Ordering::SeqCst);
+            std::mem::replace(&mut *state, Conn::Disconnected)
+        };
         *self.inner.connecting() = None;
-        let previous = std::mem::replace(&mut *self.inner.state(), Conn::Disconnected);
         if let Conn::Connected(running) = previous {
             let _closed = running.cancel().await;
         }
@@ -536,6 +563,14 @@ impl McpClient {
         let Some(peer) = self.connected_peer()? else {
             return Ok(Vec::new());
         };
+        self.list_tools_on(&peer, options).await
+    }
+
+    async fn list_tools_on(
+        &self,
+        peer: &Peer<RoleClient>,
+        options: McpListToolsOptions,
+    ) -> Result<Vec<McpTool>> {
         let defaults = options.prefix.is_none() && options.tool_filters.is_none();
         let prefix = options
             .prefix
@@ -545,7 +580,7 @@ impl McpClient {
             .tool_filters
             .or_else(|| self.inner.options.tool_filters.clone());
         let mut tools = Vec::new();
-        for server_tool in self.server_tools(&peer).await? {
+        for server_tool in self.server_tools(peer).await? {
             let name = if prefix.is_empty() {
                 server_tool.name.to_string()
             } else {
@@ -630,30 +665,31 @@ impl McpClient {
                 return;
             }
             refresh.running = true;
+            refresh.pending = false;
         }
+        let mut running = RefreshRunning(Some(&self.inner.refresh));
         loop {
-            lock(&self.inner.refresh).pending = false;
             let old = lock(&self.inner.registered).clone();
-            match self.list_tools().await {
-                Ok(tools) => {
-                    let callback = lock(&self.inner.on_tools_changed).clone();
-                    if let Some(callback) = callback {
-                        callback(old, tools);
-                    }
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        "client=<{}>, error=<{error}> | failed to refresh tools after toolsChanged notification",
-                        self.inner.name
-                    );
-                    break;
-                }
+            // Only the live connection: a refresh never reconnects a disconnected client.
+            let Some(peer) = self.inner.peer() else { return };
+            let outcome = match self.list_tools_on(&peer, McpListToolsOptions::default()).await {
+                Ok(tools) => match lock(&self.inner.on_tools_changed).clone() {
+                    Some(callback) => catch_panic(|| callback(old, tools)),
+                    None => Ok(()),
+                },
+                Err(error) => Err(error.to_string()),
+            };
+            if let Err(error) = outcome {
+                tracing::warn!(
+                    "client=<{}>, error=<{error}> | failed to refresh tools after toolsChanged notification",
+                    self.inner.name
+                );
+                return;
             }
-            if !lock(&self.inner.refresh).pending {
-                break;
+            if running.finish_unless_pending() {
+                return;
             }
         }
-        lock(&self.inner.refresh).running = false;
     }
 
     /// Debounces tools-list change notifications (the MCP SDK `listChanged.tools.debounceMs`).
@@ -684,9 +720,15 @@ impl McpClient {
     pub async fn list_prompts(&self, options: McpListOptions) -> Result<ListPromptsResult> {
         let peer = self.connected_or_throw().await?;
         Ok(self
-            .list_paged("prompts/list", &peer, options, |params| {
-                ClientRequest::ListPromptsRequest(rmcp::model::ListPromptsRequest::with_param(params))
-            })
+            .list_paged(
+                "prompts/list",
+                &peer,
+                options,
+                |capabilities| capabilities.prompts.is_some(),
+                |params| {
+                    ClientRequest::ListPromptsRequest(rmcp::model::ListPromptsRequest::with_param(params))
+                },
+            )
             .await?)
     }
 
@@ -723,9 +765,15 @@ impl McpClient {
     pub async fn list_resources(&self, options: McpListOptions) -> Result<ListResourcesResult> {
         let peer = self.connected_or_throw().await?;
         Ok(self
-            .list_paged("resources/list", &peer, options, |params| {
-                ClientRequest::ListResourcesRequest(rmcp::model::ListResourcesRequest::with_param(params))
-            })
+            .list_paged(
+                "resources/list",
+                &peer,
+                options,
+                |capabilities| capabilities.resources.is_some(),
+                |params| {
+                    ClientRequest::ListResourcesRequest(rmcp::model::ListResourcesRequest::with_param(params))
+                },
+            )
             .await?)
     }
 
@@ -740,11 +788,17 @@ impl McpClient {
     ) -> Result<ListResourceTemplatesResult> {
         let peer = self.connected_or_throw().await?;
         Ok(self
-            .list_paged("resources/templates/list", &peer, options, |params| {
-                ClientRequest::ListResourceTemplatesRequest(
-                    rmcp::model::ListResourceTemplatesRequest::with_param(params),
-                )
-            })
+            .list_paged(
+                "resources/templates/list",
+                &peer,
+                options,
+                |capabilities| capabilities.resources.is_some(),
+                |params| {
+                    ClientRequest::ListResourceTemplatesRequest(
+                        rmcp::model::ListResourceTemplatesRequest::with_param(params),
+                    )
+                },
+            )
             .await?)
     }
 
@@ -768,11 +822,20 @@ impl McpClient {
         method: &'static str,
         peer: &Peer<RoleClient>,
         options: McpListOptions,
+        supported: fn(&ServerCapabilities) -> bool,
         build: fn(PaginatedRequestParams) -> ClientRequest,
     ) -> Result<R, McpError>
     where
-        R: Paged + Send + 'static,
+        R: Paged + Default + Send + 'static,
     {
+        // The MCP SDK answers an empty list when the server lacks the capability.
+        if self
+            .inner
+            .server_info()
+            .is_some_and(|info| !supported(&info.capabilities))
+        {
+            return Ok(R::default());
+        }
         let fetch = |cursor: Option<String>| {
             let peer = peer.clone();
             async move {
@@ -835,24 +898,51 @@ impl McpClient {
             .progress_callback
             .clone()
             .or_else(|| self.inner.options.progress_callback.clone());
-        for _round in 0..MRTR_MAX_ROUNDS {
-            let request = ClientRequest::CallToolRequest(CallToolRequest::new(params.clone()));
-            match self
-                .call_once(&peer, request, &options, progress.as_ref())
-                .await?
+        let started = tokio::time::Instant::now();
+        let first = call_options(options.timeout, options.timeout);
+        let mut response = self
+            .call_once(&peer, call_request(&params), first, &options, progress.as_ref())
+            .await?;
+        let mut round: u32 = 0;
+        loop {
+            let ServerResult::InputRequiredResult(input) = response else {
+                return call_result(response);
+            };
+            if input.input_requests.as_ref().is_none_or(InputRequests::is_empty)
+                && input.request_state.is_none()
             {
-                ServerResult::InputRequiredResult(input) => {
-                    let (responses, state) = self.fulfill_inputs(input).await?;
-                    params.input_responses = responses;
-                    params.request_state = state;
-                }
-                response => return call_result(response),
+                return Err(McpError::sdk(INPUT_REQUIRED_WITHOUT_INPUT).into());
             }
+            round = round.saturating_add(1);
+            if round > MRTR_MAX_ROUNDS {
+                return Err(McpError::sdk(format!(
+                    "Multi-round-trip request 'tools/call' still required input after {MRTR_MAX_ROUNDS} rounds (inputRequired.maxRounds)"
+                ))
+                .into());
+            }
+            if let Some(callback) = &progress {
+                let message = format!("Fulfilling input required by 'tools/call' (round {round})");
+                self.inner
+                    .deliver_progress(callback, McpProgress::new(f64::from(round), None, Some(message)));
+            }
+            let (responses, state) = self.fulfill_inputs(input, options.cancel_signal.as_ref()).await?;
+            let remaining = match options.timeout {
+                None => None,
+                Some(timeout) => {
+                    let remaining = timeout.saturating_sub(started.elapsed());
+                    if remaining.is_zero() {
+                        return Err(McpError::sdk("Maximum total timeout exceeded").into());
+                    }
+                    Some(remaining)
+                }
+            };
+            params.input_responses = responses;
+            params.request_state = state;
+            let leg = call_options(options.timeout, remaining);
+            response = self
+                .call_once(&peer, call_request(&params), leg, &options, progress.as_ref())
+                .await?;
         }
-        Err(McpError::sdk(format!(
-            "input_required did not complete within {MRTR_MAX_ROUNDS} MRTR rounds"
-        ))
-        .into())
     }
 
     /// One `tools/call` round with its progress route and cancellation.
@@ -860,19 +950,22 @@ impl McpClient {
         &self,
         peer: &Peer<RoleClient>,
         request: ClientRequest,
+        request_options: PeerRequestOptions,
         options: &McpCallToolOptions,
         progress: Option<&McpProgressCallback>,
     ) -> Result<ServerResult> {
-        let handle = peer
-            .send_request_with_option(request, call_options(options.timeout))
-            .await?;
+        if let Some(signal) = options
+            .cancel_signal
+            .as_ref()
+            .filter(|signal| signal.is_cancelled())
+        {
+            return Err(abort_error(signal));
+        }
+        let handle = peer.send_request_with_option(request, request_options).await?;
         let id = handle.id.clone();
         let token = handle.progress_token.clone();
         if let Some(callback) = progress {
-            let early = lock(&self.inner.progress).register(token.clone(), Arc::clone(callback));
-            for update in early {
-                self.deliver_progress(callback, update);
-            }
+            self.inner.register_progress(token.clone(), Arc::clone(callback));
         }
         let response = match &options.cancel_signal {
             None => handle.await_response().await,
@@ -891,49 +984,52 @@ impl McpClient {
         Ok(response?)
     }
 
-    /// Answers a 2026-07-28 `input_required` result's elicitation requests through the
-    /// elicitation callback, for the next round.
+    /// Answers a 2026-07-28 `input_required` result's input requests for the next round (the MCP
+    /// SDK `runInputRequiredDriver` round): the elicitations run concurrently under a signal the
+    /// call's `cancel` cancels, and a `requestState`-only round is paced first.
     async fn fulfill_inputs(
         &self,
         input: InputRequiredResult,
+        cancel: Option<&CancelSignal>,
     ) -> Result<(Option<InputResponses>, Option<String>)> {
         let requests = input.input_requests.unwrap_or_default();
-        if requests.is_empty() && input.request_state.is_none() {
-            return Err(McpError::sdk("Unexpected response type").into());
+        if requests.is_empty() {
+            pause(REQUEST_STATE_ONLY_LEG_PACING, cancel).await?;
+            return Ok((None, input.request_state));
         }
-        let mut responses = InputResponses::new();
+        let mut pending = Vec::new();
         for (key, request) in requests {
-            let InputRequest::Elicitation(request) = request else {
-                return Err(McpError::sdk(format!("input request {key} is not supported")).into());
-            };
-            let Some(callback) = self.inner.options.elicitation_callback.clone() else {
-                return Err(
-                    McpError::sdk("elicitation requested but no elicitation callback is configured").into(),
-                );
-            };
-            let (signal, _handle) = CancelSignal::new();
-            let result = callback(ElicitationContext::new(signal), request.params)
-                .await
-                .map_err(Error::other)?;
-            responses.insert(key, serde_json::to_value(result)?);
+            let callback = self.inner.options.elicitation_callback.clone();
+            match (request, callback) {
+                (InputRequest::Elicitation(request), Some(callback)) => {
+                    pending.push((key, callback, request.params));
+                }
+                (request, _) => return Err(no_input_handler(&key, &request).into()),
+            }
         }
-        Ok(((!responses.is_empty()).then_some(responses), input.request_state))
-    }
-
-    pub(crate) fn deliver_progress(&self, callback: &McpProgressCallback, progress: McpProgress) {
-        let callback = Arc::clone(callback);
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || callback(progress)));
-        if let Err(panic) = outcome {
-            let error = panic
-                .downcast_ref::<&str>()
-                .map(|message| (*message).to_owned())
-                .or_else(|| panic.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "panic".to_owned());
-            tracing::warn!(
-                "client=<{}>, error=<{error}> | progress callback failed",
-                self.inner.name
-            );
-        }
+        let (signal, handle) = CancelSignal::new();
+        let answers = futures::future::try_join_all(pending.into_iter().map(|(key, callback, params)| {
+            let answer = callback(ElicitationContext::new(signal.clone()), params);
+            async move {
+                let result = answer.await.map_err(Error::other)?;
+                Ok::<_, Error>((key, serde_json::to_value(result)?))
+            }
+        }));
+        let answers = match cancel {
+            None => answers.await,
+            Some(cancel) => tokio::select! {
+                answers = answers => answers,
+                () = cancel.cancelled() => Err(abort_error(cancel)),
+            },
+        };
+        let reason = cancel.and_then(CancelSignal::reason);
+        let responses = answers.inspect_err(|_| {
+            handle.cancel(CancelOptions {
+                message: reason,
+                ..Default::default()
+            });
+        })?;
+        Ok((Some(responses.into_iter().collect()), input.request_state))
     }
 
     #[cfg(test)]
@@ -1008,10 +1104,11 @@ impl Inner {
     fn start_connect(inner: &Arc<Self>, reconnect: bool) -> SharedConnect {
         let mut connecting = inner.connecting();
         let id = inner.connect_ids.fetch_add(1, Ordering::SeqCst);
+        let generation = inner.generation();
         let task_inner = Arc::clone(inner);
         let task = tokio::spawn(
             async move {
-                let result = establish(&task_inner, reconnect).await;
+                let result = establish(&task_inner, reconnect, generation).await;
                 let mut connecting = task_inner.connecting();
                 if connecting.as_ref().is_some_and(|(current, _)| *current == id) {
                     *connecting = None;
@@ -1030,6 +1127,44 @@ impl Inner {
         pending
     }
 
+    /// Stores `conn` if no `disconnect` ran since `generation`, under the same lock `disconnect`
+    /// bumps the generation in; otherwise hands `conn` back.
+    fn settle(&self, generation: u64, conn: Conn) -> Option<Conn> {
+        let mut state = self.state();
+        if self.generation() != generation {
+            return Some(conn);
+        }
+        *state = conn;
+        None
+    }
+
+    /// Delivers one progress notification to its call's callback. Delivery happens under the
+    /// routes lock, so held and live notifications keep arrival order.
+    pub(crate) fn route_progress(&self, token: &ProgressToken, progress: McpProgress) {
+        let mut routes = lock(&self.progress);
+        match routes.routes.get(token).cloned() {
+            Some(callback) => self.deliver_progress(&callback, progress),
+            None => routes.hold(token.clone(), progress),
+        }
+    }
+
+    fn register_progress(&self, token: ProgressToken, callback: McpProgressCallback) {
+        let mut routes = lock(&self.progress);
+        for progress in routes.take_early(&token) {
+            self.deliver_progress(&callback, progress);
+        }
+        routes.routes.insert(token, callback);
+    }
+
+    fn deliver_progress(&self, callback: &McpProgressCallback, progress: McpProgress) {
+        if let Err(error) = catch_panic(|| callback(progress)) {
+            tracing::warn!(
+                "client=<{}>, error=<{error}> | progress callback failed",
+                self.name
+            );
+        }
+    }
+
     fn capabilities(&self) -> ClientCapabilities {
         let mut capabilities = ClientCapabilities::default();
         if self.options.elicitation_callback.is_some() {
@@ -1042,8 +1177,8 @@ impl Inner {
     }
 }
 
-async fn establish(inner: &Arc<Inner>, reconnect: bool) -> Result<(), McpError> {
-    let generation = inner.generation();
+/// Connects for the attempt started at `generation`; a `disconnect` since then wins.
+async fn establish(inner: &Arc<Inner>, reconnect: bool, generation: u64) -> Result<(), McpError> {
     if reconnect {
         let previous = {
             let mut state = inner.state();
@@ -1074,18 +1209,21 @@ async fn establish(inner: &Arc<Inner>, reconnect: bool) -> Result<(), McpError> 
     .unwrap_or_else(|_| Err(McpError::sdk("Request timed out")));
     match attempt {
         Ok(running) => {
-            if inner.generation() != generation {
+            let Some(stale) = inner.settle(generation, Conn::Connected(running)) else {
+                return Ok(());
+            };
+            if let Conn::Connected(running) = stale {
                 let _closed = running.cancel().await;
-                return Err(McpError::disconnected());
             }
-            *inner.state() = Conn::Connected(running);
-            Ok(())
+            Err(McpError::disconnected())
         }
         Err(error) => {
             if !inner.options.continue_on_error {
                 return Err(error);
             }
-            *inner.state() = Conn::Failed;
+            if inner.settle(generation, Conn::Failed).is_some() {
+                return Err(McpError::disconnected());
+            }
             tracing::warn!(
                 "client=<{}>, error=<{}> | MCP server failed to connect, continuing (continueOnError)",
                 inner.name,
@@ -1148,9 +1286,12 @@ fn streamable_http(
     headers: IndexMap<String, String>,
 ) -> Result<McpTransport> {
     reqwest::Url::parse(url).map_err(|_| Error::other("Invalid URL"))?;
+    let authorized = auth.is_some() || auth_provider.is_some();
+    // With auth, the token is the only `Authorization` header, as in the MCP SDK.
     let custom_headers = header_map(headers)?
         .into_iter()
         .filter_map(|(name, value)| Some((name?, value)))
+        .filter(|(name, _)| !(authorized && *name == http::header::AUTHORIZATION))
         .collect();
     let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(custom_headers);
     if let Some(provider) = auth_provider {
@@ -1169,42 +1310,15 @@ fn streamable_http(
         Arc::new(move |handler, lifecycle| {
             let (url, credentials, config) = (url.clone(), credentials.clone(), config.clone());
             async move {
-                let provider = client_credentials(&url, credentials).await?;
-                let transport = StreamableHttpClientTransport::with_client(provider, config);
-                Ok(rmcp::service::serve_client_with_lifecycle(handler, transport, lifecycle).await?)
+                let provider = client_credentials(&url, credentials.clone())
+                    .await
+                    .map_err(|error| McpError::sdk(error.to_string()))?;
+                let client = ClientCredentialsClient::new(&url, credentials, provider);
+                let transport = StreamableHttpClientTransport::with_client(client, config);
+                serve(handler, transport, lifecycle).await
             }
             .boxed()
         }),
-    ))
-}
-
-/// The OAuth client-credentials grant against the server's discovered authorization server
-/// (TS `ClientCredentialsProvider`); scopes are sent space-separated and the server url is the
-/// RFC 8707 `resource`, which `rmcp` requires.
-async fn client_credentials(
-    url: &str,
-    credentials: McpClientCredentials,
-) -> Result<McpAuthProvider, McpError> {
-    let auth_error = |error: rmcp::transport::AuthError| McpError::sdk(error.to_string());
-    let mut state = rmcp::transport::auth::OAuthState::new(url, None)
-        .await
-        .map_err(auth_error)?;
-    let config = rmcp::transport::ClientCredentialsConfig::ClientSecret {
-        client_id: credentials.client_id,
-        client_secret: credentials.client_secret,
-        scopes: credentials.scopes.unwrap_or_default(),
-        resource: Some(url.to_owned()),
-    };
-    state
-        .authenticate_client_credentials(config)
-        .await
-        .map_err(auth_error)?;
-    let manager = state
-        .into_authorization_manager()
-        .ok_or_else(|| McpError::sdk("OAuth client credentials did not authorize"))?;
-    Ok(rmcp::transport::AuthClient::new(
-        reqwest::Client::default(),
-        manager,
     ))
 }
 
@@ -1286,17 +1400,44 @@ pub(crate) fn default_options() -> PeerRequestOptions {
     options
 }
 
-/// The TS call options: a caller timeout bounds the whole call and resets on progress;
-/// otherwise the SDK default request timeout applies.
-fn call_options(timeout: Option<Duration>) -> PeerRequestOptions {
+/// The TS call options: a caller timeout bounds the whole call (`max_total`, shrinking across
+/// input-required rounds) and resets on progress; otherwise the SDK default request timeout applies.
+fn call_options(timeout: Option<Duration>, max_total: Option<Duration>) -> PeerRequestOptions {
     let Some(timeout) = timeout else {
         return default_options();
     };
     let mut options = PeerRequestOptions::no_options();
     options.timeout = Some(timeout);
-    options.max_total_timeout = Some(timeout);
+    options.max_total_timeout = max_total.or(Some(timeout));
     options.reset_timeout_on_progress = true;
     options
+}
+
+fn call_request(params: &CallToolRequestParams) -> ClientRequest {
+    ClientRequest::CallToolRequest(CallToolRequest::new(params.clone()))
+}
+
+/// The MCP SDK text for an input request this client has no handler for.
+fn no_input_handler(key: &str, request: &InputRequest) -> McpError {
+    let method = serde_json::to_value(request)
+        .ok()
+        .and_then(|request| request.get("method")?.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    McpError::sdk(format!(
+        "Cannot fulfil input request '{key}': no handler is registered for '{method}' on this client. Declare the corresponding capability and register a handler, or handle input_required results manually."
+    ))
+}
+
+/// Waits `delay`, or fails with the abort error when `cancel` fires first.
+async fn pause(delay: Duration, cancel: Option<&CancelSignal>) -> Result<()> {
+    let Some(cancel) = cancel else {
+        tokio::time::sleep(delay).await;
+        return Ok(());
+    };
+    tokio::select! {
+        () = tokio::time::sleep(delay) => Ok(()),
+        () = cancel.cancelled() => Err(abort_error(cancel)),
+    }
 }
 
 pub(crate) async fn request_with(
@@ -1367,6 +1508,17 @@ fn abort_error(signal: &CancelSignal) -> Error {
 async fn notify_cancelled(peer: &Peer<RoleClient>, id: rmcp::model::RequestId, signal: &CancelSignal) {
     let params = rmcp::model::CancelledNotificationParam::new(Some(id), signal.reason());
     let _sent = peer.notify_cancelled(params).await;
+}
+
+/// Runs a user callback; a panic becomes its message.
+fn catch_panic(callback: impl FnOnce()) -> Result<(), String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(callback)).map_err(|panic| {
+        panic
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_owned())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "panic".to_owned())
+    })
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

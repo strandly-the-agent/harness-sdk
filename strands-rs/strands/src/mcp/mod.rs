@@ -27,6 +27,7 @@
 //! re-exported as [`rmcp`], as the TS client exposes the MCP SDK types.
 
 pub(crate) mod agent_tools;
+mod auth;
 mod client;
 pub(crate) mod config;
 mod elicitation;

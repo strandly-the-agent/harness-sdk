@@ -34,6 +34,8 @@ pub(crate) struct TestServer {
     pub(crate) instructions: Option<String>,
     pub(crate) list_calls: Arc<AtomicUsize>,
     pub(crate) calls: Arc<Mutex<Vec<CallToolRequestParams>>>,
+    /// `expires_in` of the tokens the HTTP test server's `/token` endpoint grants.
+    pub(crate) token_lifetime_secs: u64,
 }
 
 pub(crate) fn tool(name: &str, description: Option<&str>) -> Tool {
@@ -75,6 +77,7 @@ impl Default for TestServer {
             instructions: Some("Use the echo tool.".to_owned()),
             list_calls: Arc::default(),
             calls: Arc::default(),
+            token_lifetime_secs: 3600,
         }
     }
 }
@@ -148,18 +151,22 @@ fn input_required(request: &CallToolRequestParams) -> CallToolResponse {
     {
         return text(answer.to_string()).into();
     }
+    rmcp::model::InputRequiredResult::new(Some(confirm_request()), Some("state-1".to_owned())).into()
+}
+
+/// One form elicitation under the key `confirm`.
+fn confirm_request() -> rmcp::model::InputRequests {
     let elicit: rmcp::model::ElicitRequest = serde_json::from_value(json!({
         "method": "elicitation/create",
         "params": {"mode": "form", "message": "Confirm?", "requestedSchema": {"type": "object", "properties": {}}}
     }))
     .expect("elicit request");
-    let requests = [(
+    [(
         "confirm".to_owned(),
         rmcp::model::InputRequest::Elicitation(elicit),
     )]
     .into_iter()
-    .collect();
-    rmcp::model::InputRequiredResult::new(Some(requests), Some("state-1".to_owned())).into()
+    .collect()
 }
 
 fn text(value: impl Into<String>) -> CallToolResult {
@@ -194,6 +201,16 @@ async fn run_tool(
         "slow" => {
             context.ct.cancelled().await;
             Ok(text("cancelled"))
+        }
+        "progress_many" => {
+            let token = context.meta.get_progress_token();
+            for step in 1..=50 {
+                if let Some(token) = &token {
+                    let params = ProgressNotificationParam::new(token.clone(), f64::from(step));
+                    let _sent = context.peer.notify_progress(params).await;
+                }
+            }
+            Ok(text("done"))
         }
         "progress" => {
             let token = context.meta.get_progress_token();
@@ -314,6 +331,19 @@ impl ServerHandler for TestServer {
         self.calls.lock().expect("calls").push(request.clone());
         if request.name == "elicit_mrtr" {
             return Ok(input_required(&request));
+        }
+        if request.name == "always_input_required" {
+            return Ok(rmcp::model::InputRequiredResult::new(
+                Some(confirm_request()),
+                Some("again".to_owned()),
+            )
+            .into());
+        }
+        if request.name == "state_only" && request.request_state.is_none() {
+            return Ok(rmcp::model::InputRequiredResult::new(None, Some("wait".to_owned())).into());
+        }
+        if request.name == "state_only" {
+            return Ok(text("resumed").into());
         }
         run_tool(&request, context).await.map(CallToolResponse::from)
     }
@@ -485,6 +515,7 @@ pub(crate) fn serve_http_on(
     use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
     use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 
+    let lifetime = server.token_lifetime_secs;
     let service = StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),
@@ -504,10 +535,12 @@ pub(crate) fn serve_http_on(
                         let body = request.into_body().collect().await.map(Collected::to_bytes);
                         let body = String::from_utf8_lossy(&body.unwrap_or_default()).into_owned();
                         tokens.lock().expect("tokens").push(body);
-                        let token = r#"{"access_token":"tok-123","token_type":"Bearer","expires_in":3600}"#;
+                        let token = format!(
+                            r#"{{"access_token":"tok-123","token_type":"Bearer","expires_in":{lifetime}}}"#
+                        );
                         return Ok(http::Response::builder()
                             .header(http::header::CONTENT_TYPE, "application/json")
-                            .body(Full::new(hyper::body::Bytes::from_static(token.as_bytes())).boxed())
+                            .body(Full::new(hyper::body::Bytes::from(token)).boxed())
                             .expect("response"));
                     }
                     if path.starts_with("/.well-known") {

@@ -1,18 +1,22 @@
 //! How an [`McpClient`](super::McpClient) reaches its server (TS `McpTransport` and the
 //! `@modelcontextprotocol/client` transports).
 
+use std::borrow::Cow;
 use std::fmt;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use indexmap::IndexMap;
 use process_wrap::tokio::{CommandWrap, KillOnDrop};
 use rmcp::RoleClient;
+use rmcp::model::{JsonRpcMessage, JsonRpcNotification, ServerNotification};
 use rmcp::service::{ClientLifecycleMode, RunningService, serve_client_with_lifecycle};
-use rmcp::transport::{IntoTransport, TokioChildProcess};
+use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
+use rmcp::transport::{IntoTransport, TokioChildProcess, Transport};
 
+use super::client::{Inner, McpProgress};
 use super::error::McpError;
 use super::handler::McpHandler;
 use super::sse::SseClientTransport;
@@ -149,11 +153,7 @@ impl McpTransport {
             kind,
             connect: Arc::new(move |handler, lifecycle| {
                 let transport = factory();
-                async move {
-                    let running = serve_client_with_lifecycle(handler, transport?, lifecycle).await?;
-                    Ok(running)
-                }
-                .boxed()
+                async move { serve(handler, transport?, lifecycle).await }.boxed()
             }),
         }
     }
@@ -197,6 +197,64 @@ fn spawn_child(
     command.wrap(process_wrap::tokio::JobObject);
     command.wrap(KillOnDrop);
     TokioChildProcess::new(command).map_err(|error| McpError::sdk(error.to_string()))
+}
+
+/// Serves `handler` over `transport`, routing progress notifications as they are received.
+pub(crate) async fn serve<T, E, A>(
+    handler: McpHandler,
+    transport: T,
+    lifecycle: ClientLifecycleMode,
+) -> Result<Running, McpError>
+where
+    T: IntoTransport<RoleClient, E, A>,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    let transport = ProgressTap {
+        client: handler.client.clone(),
+        inner: transport.into_transport(),
+    };
+    Ok(serve_client_with_lifecycle(handler, transport, lifecycle).await?)
+}
+
+/// Delivers `notifications/progress` inline, before `rmcp` hands each notification to its own
+/// task: progress then reaches the call's callback in order and before the call's response.
+struct ProgressTap<T> {
+    client: Weak<Inner>,
+    inner: T,
+}
+
+impl<T: Transport<RoleClient>> Transport<RoleClient> for ProgressTap<T> {
+    type Error = T::Error;
+
+    fn name() -> Cow<'static, str> {
+        T::name()
+    }
+
+    fn send(
+        &mut self,
+        item: TxJsonRpcMessage<RoleClient>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
+        self.inner.send(item)
+    }
+
+    async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleClient>> {
+        let message = self.inner.receive().await?;
+        if let JsonRpcMessage::Notification(JsonRpcNotification {
+            notification: ServerNotification::ProgressNotification(notification),
+            ..
+        }) = &message
+            && let Some(client) = self.client.upgrade()
+        {
+            let params = &notification.params;
+            let progress = McpProgress::new(params.progress, params.total, params.message.clone());
+            client.route_progress(&params.progress_token, progress);
+        }
+        Some(message)
+    }
+
+    fn close(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        self.inner.close()
+    }
 }
 
 /// Typed headers from a string map.

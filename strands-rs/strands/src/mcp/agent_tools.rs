@@ -32,12 +32,15 @@ pub(crate) async fn initialize(
     }
     let changes = Changes::default();
     for client in clients {
-        let changes = Arc::clone(&changes);
+        // Weak: the queued tools hold their client, so a strong queue here would be a cycle.
+        let queue = Arc::downgrade(&changes);
         client.set_on_tools_changed(Some(Arc::new(move |old, new| {
-            changes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push((old, new));
+            if let Some(queue) = queue.upgrade() {
+                queue
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push((old, new));
+            }
         })));
     }
     hooks.add_hook(move |event: &mut BeforeModelCallEvent<'_>| {
