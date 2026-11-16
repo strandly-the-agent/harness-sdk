@@ -402,7 +402,7 @@ fn read_stdin_line() -> StdinRead {
     let reader = move || {
         let mut line = String::new();
         let result = io::stdin().lock().read_line(&mut line).map(|_| line);
-        // The prompt may be gone; the next one starts its own read.
+        // The queue keeps the receiver, so the line reaches the prompt that waits or the next one.
         drop(answer.send(result));
     };
     // If the thread can't start, `answer` is dropped and the prompt fails with a receive error.
