@@ -6,7 +6,7 @@
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use futures::FutureExt;
@@ -101,6 +101,8 @@ pub type McpLogHandler = Arc<dyn Fn(LoggingMessageNotificationParam) + Send + Sy
 /// Receives the previously registered tool names and the freshly listed tools after a
 /// tools-list change (TS `onToolsChanged`).
 pub type McpToolsChangedCallback = Arc<dyn Fn(Vec<String>, Vec<McpTool>) + Send + Sync>;
+/// The tools-list changes an agent applies before its next model call.
+pub(crate) type ToolsChangedQueue = Mutex<Vec<(Vec<String>, Vec<McpTool>)>>;
 /// An OAuth-authorized HTTP client for the Streamable HTTP transport (TS `authProvider`).
 pub type McpAuthProvider = rmcp::transport::AuthClient<reqwest::Client>;
 
@@ -336,6 +338,8 @@ pub(crate) struct Inner {
     registered: Mutex<Vec<String>>,
     refresh: Mutex<Refresh>,
     on_tools_changed: Mutex<Option<McpToolsChangedCallback>>,
+    /// One queue per agent that lists this client's tools, dropped from here once its agent is.
+    pub(crate) agent_queues: Mutex<Vec<Weak<ToolsChangedQueue>>>,
     /// Bumped by every tools-list-changed notification; a refresh runs once it settles.
     tools_changed: AtomicU64,
     pub(crate) progress: Mutex<ProgressRoutes>,
@@ -498,6 +502,7 @@ impl McpClient {
                 registered: Mutex::default(),
                 refresh: Mutex::default(),
                 on_tools_changed: Mutex::default(),
+                agent_queues: Mutex::default(),
                 tools_changed: AtomicU64::new(0),
                 progress: Mutex::default(),
                 trace_context,
@@ -750,10 +755,33 @@ impl McpClient {
         Ok(())
     }
 
-    /// Sets the callback a tools-list change notification triggers (TS `onToolsChanged`). An
-    /// agent that takes this client as a tool source installs its own on `initialize`.
+    /// Sets the callback a tools-list change notification triggers (TS `onToolsChanged`). Agents
+    /// that take this client as a tool source are notified separately and leave it in place.
     pub fn set_on_tools_changed(&self, callback: Option<McpToolsChangedCallback>) {
         *lock(&self.inner.on_tools_changed) = callback;
+    }
+
+    /// Queues every later tools-list change for one agent. The queue is held weakly, so several
+    /// agents can share the client and a dropped agent stops being notified.
+    pub(crate) fn queue_tools_changed(&self, queue: &Arc<ToolsChangedQueue>) {
+        let mut queues = lock(&self.inner.agent_queues);
+        queues.retain(|queue| queue.strong_count() > 0);
+        queues.push(Arc::downgrade(queue));
+    }
+
+    fn notify_tools_changed(&self, old: Vec<String>, tools: Vec<McpTool>) -> Result<(), String> {
+        let queues: Vec<_> = {
+            let mut queues = lock(&self.inner.agent_queues);
+            queues.retain(|queue| queue.strong_count() > 0);
+            queues.iter().filter_map(Weak::upgrade).collect()
+        };
+        for queue in queues {
+            lock(&queue).push((old.clone(), tools.clone()));
+        }
+        match lock(&self.inner.on_tools_changed).clone() {
+            Some(callback) => catch_panic(|| callback(old, tools)),
+            None => Ok(()),
+        }
     }
 
     /// Re-lists the tools with the client's prefix and filters and reports the change;
@@ -774,10 +802,7 @@ impl McpClient {
             // Only the live connection: a refresh never reconnects a disconnected client.
             let Some(peer) = self.inner.peer() else { return };
             let outcome = match self.list_tools_on(&peer, McpListToolsOptions::default()).await {
-                Ok(tools) => match lock(&self.inner.on_tools_changed).clone() {
-                    Some(callback) => catch_panic(|| callback(old, tools)),
-                    None => Ok(()),
-                },
+                Ok(tools) => self.notify_tools_changed(old, tools),
                 Err(error) => Err(error.to_string()),
             };
             if let Err(error) = outcome {

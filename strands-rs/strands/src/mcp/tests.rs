@@ -1985,6 +1985,83 @@ mod tools_list_changed {
         assert!(agent.tool_registry().get("fresh").is_some());
         assert!(agent.tool_registry().get("echo").is_none());
     }
+
+    /// An agent on `client` whose first turn calls `change_tools` when `changes` is set.
+    async fn agent_on(client: &McpClient, changes: bool) -> crate::Agent {
+        use crate::testing::MockMessageModel;
+        use crate::types::messages::{ContentBlock, TextBlock, ToolUseBlock};
+
+        let model = MockMessageModel::new();
+        if changes {
+            model.add_turn(vec![ContentBlock::from(ToolUseBlock::new(
+                "change_tools",
+                "t1",
+                json!({}),
+            ))]);
+        }
+        model.add_turn(vec![TextBlock::new("done").into()]);
+        model.add_turn(vec![TextBlock::new("again").into()]);
+        let mut agent = crate::Agent::builder()
+            .model(model)
+            .tools(vec![ToolSource::from(client.clone())])
+            .printer(false)
+            .build()
+            .expect("agent");
+        agent.initialize().await.expect("initialize");
+        agent
+    }
+
+    async fn refreshed(server: &TestServer) {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        server::eventually(|| server.list_calls.load(std::sync::atomic::Ordering::SeqCst) >= 2).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    // Not in TS, where the second agent's `onToolsChanged` replaces the first's.
+    #[tokio::test(start_paused = true)]
+    async fn an_agent_still_replaces_its_mcp_tools_after_another_agent_used_the_same_client() {
+        let server = TestServer::default();
+        let client = server.client();
+        let mut parent = agent_on(&client, true).await;
+        drop(agent_on(&client, false).await);
+        set_tools(&server, &["fresh"]);
+        parent.invoke("go").await.expect("first turn");
+        refreshed(&server).await;
+        parent.invoke("again").await.expect("second turn");
+        assert!(parent.tool_registry().get("fresh").is_some());
+        assert!(parent.tool_registry().get("echo").is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_agent_on_a_client_and_its_on_tools_changed_callback_see_a_list_change() {
+        let server = TestServer::default();
+        let client = server.client();
+        let calls = record(&client);
+        let mut first = agent_on(&client, true).await;
+        let mut second = agent_on(&client, false).await;
+        set_tools(&server, &["fresh"]);
+        first.invoke("go").await.expect("first turn");
+        refreshed(&server).await;
+        first.invoke("again").await.expect("second turn");
+        second.invoke("go").await.expect("other agent");
+        for agent in [&first, &second] {
+            assert!(agent.tool_registry().get("fresh").is_some());
+            assert!(agent.tool_registry().get("echo").is_none());
+        }
+        assert_eq!(calls.lock().expect("calls").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_dropped_agent_is_no_longer_queued_for_tools_list_changes() {
+        let client = TestServer::default().client();
+        let queued = || client.inner.agent_queues.lock().expect("queues").len();
+        drop(agent_on(&client, false).await);
+        let agent = agent_on(&client, false).await;
+        assert_eq!(queued(), 1);
+        drop(agent);
+        client.refresh_tools().await;
+        assert_eq!(queued(), 0);
+    }
 }
 
 mod prompts_and_resources {

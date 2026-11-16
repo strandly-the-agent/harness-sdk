@@ -1,15 +1,14 @@
 //! The agent side of MCP tool sources (TS `Agent.initialize` MCP block).
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 
 use crate::error::Result;
 use crate::hooks::{BeforeModelCallEvent, HookRegistry};
 use crate::tools::Tool;
 use crate::types::agent::LocalAgent;
 
+use super::client::ToolsChangedQueue;
 use super::{McpClient, McpTool};
-
-type Changes = Arc<Mutex<Vec<(Vec<String>, Vec<McpTool>)>>>;
 
 /// Lists every client's tools concurrently and registers them in client order, then keeps them
 /// current: a tools-list change removes the old names and adds or replaces the new tools.
@@ -30,18 +29,10 @@ pub(crate) async fn initialize(
             .tool_registry_mut()
             .add_all(tools.into_iter().map(as_tool))?;
     }
-    let changes = Changes::default();
+    // The hook below owns the queue, so it lives as long as this agent; the clients hold it weakly.
+    let changes = Arc::<ToolsChangedQueue>::default();
     for client in clients {
-        // Weak: the queued tools hold their client, so a strong queue here would be a cycle.
-        let queue = Arc::downgrade(&changes);
-        client.set_on_tools_changed(Some(Arc::new(move |old, new| {
-            if let Some(queue) = queue.upgrade() {
-                queue
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .push((old, new));
-            }
-        })));
+        client.queue_tools_changed(&changes);
     }
     hooks.add_hook(move |event: &mut BeforeModelCallEvent<'_>| {
         let pending = std::mem::take(&mut *changes.lock().unwrap_or_else(PoisonError::into_inner));
