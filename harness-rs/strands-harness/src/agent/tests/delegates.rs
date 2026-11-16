@@ -19,13 +19,15 @@ use super::provider_models::{env, model, openai_config, params};
 use super::*;
 
 /// The delegate the `subagent` tool built, and what its model was resolved with.
-struct Child {
-    agent: Agent,
-    resolved: ResolveModelOptions,
+pub(super) struct Child {
+    pub(super) agent: Agent,
+    pub(super) resolved: ResolveModelOptions,
+    /// The delegation depth left to the delegate (the tool stores it on the agent it runs).
+    pub(super) depth: Option<JsonValue>,
 }
 
 /// Runs the `subagent` tool of a harness built from `options` once with `input`.
-async fn built_child(options: HarnessAgentOptions, input: JsonValue) -> Child {
+pub(super) async fn built_child(options: HarnessAgentOptions, input: JsonValue) -> Child {
     let dir = tempfile::tempdir().unwrap();
     let resolved = Arc::new(Mutex::new(None));
     let parent_seams = Seams {
@@ -48,7 +50,6 @@ async fn built_child(options: HarnessAgentOptions, input: JsonValue) -> Child {
                 (Arc::clone(&children), child_seams.clone(), stand_in_seams.clone());
             Box::pin(async move {
                 let agent = create_harness_with(child, child_seams).await?;
-                children.lock().unwrap().push(agent);
                 // The child may hold a provider model, so a mock-model agent runs in its place.
                 let stand_in = Arc::new(MockMessageModel::new());
                 stand_in.add_turn(vec![TextBlock::new("done").into()]);
@@ -60,7 +61,12 @@ async fn built_child(options: HarnessAgentOptions, input: JsonValue) -> Child {
                     builtin_tools: names(&[]),
                     ..Default::default()
                 };
-                create_harness_with(stand_in, stand_in_seams).await
+                let stand_in = create_harness_with(stand_in, stand_in_seams).await?;
+                children
+                    .lock()
+                    .unwrap()
+                    .push((agent, stand_in.app_state().clone()));
+                Ok(stand_in)
             })
         })
     };
@@ -77,9 +83,11 @@ async fn built_child(options: HarnessAgentOptions, input: JsonValue) -> Child {
         .unwrap()
         .take()
         .expect("the child's model was resolved");
+    let (agent, state) = children.remove(0);
     Child {
-        agent: children.remove(0),
+        agent,
         resolved,
+        depth: state.get_value("subagentDepth"),
     }
 }
 

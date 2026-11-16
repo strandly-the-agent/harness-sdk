@@ -13,3 +13,7 @@ TS reads `agent.model.getConfig()`. In Rust the built model is an `Arc<dyn Model
 ## P-1053 (pending): delegate cases build the real child and run a stand-in
 
 TS calls the `subagent` tool's private `builder` and inspects the child. Rust runs the real tool with a `BuildAgent` that builds the real child from the options the tool derived, keeps it for the assertions, and returns a mock-model harness agent for the tool to run, so a child holding a provider model never sends a request. Narrowing goes through the tool's own `tools` input.
+
+## P-1054 (pending): the `builds %s from its factory` cases assert effects, not factory arguments
+
+TS spies on `makeShell`, `makeProgrammaticToolCaller` and `makeSubagent` through module mocks. Rust cannot spy on a function, so each row checks where the argument shows: the shell tool's description; `builtin_tools::programmatic_tool_caller_options` (the config-to-options mapping, extracted from `build_builtin_tools` unchanged) for `allowedTools` and `timeout` (seconds to `Duration`, `null` to unbounded); and for `subagent.maxDepth` the `subagentDepth` the real tool stores on the agent it runs (`maxDepth: 1` leaves 0, no config leaves 1 of the default 2).

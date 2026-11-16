@@ -1167,4 +1167,6 @@ async fn wires_an_interventions_preset() {
 #[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
 mod delegates;
 #[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
+mod factories;
+#[cfg(all(feature = "bedrock", feature = "anthropic", feature = "openai"))]
 mod provider_models;

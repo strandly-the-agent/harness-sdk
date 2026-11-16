@@ -231,22 +231,31 @@ pub(crate) fn build_builtin_tools(
         BuiltinToolName::WebSearch,
         Arc::new(crate::tools::exa_web_search()),
     );
-    // The portable config spells the bound in seconds; the factory takes a `Duration`.
     add(
         BuiltinToolName::ProgrammaticToolCaller,
-        Arc::new(make_programmatic_tool_caller(MakeProgrammaticToolCallerOptions {
-            allowed_tools: caller.allowed_tools.flatten(),
-            timeout: caller.timeout.map(|timeout| {
-                timeout.map(|seconds| Duration::try_from_secs_f64(seconds).unwrap_or_default())
-            }),
-            ..Default::default()
-        })),
+        Arc::new(make_programmatic_tool_caller(programmatic_tool_caller_options(
+            caller,
+        ))),
     );
     add(
         BuiltinToolName::Subagent,
         build_default_subagent(build_agent, parent, &subagent, true, env)?,
     );
     Ok(built)
+}
+
+/// The factory options for a `programmatic_tool_caller` config. The portable config spells the
+/// bound in seconds; the factory takes a `Duration`.
+pub(crate) fn programmatic_tool_caller_options(
+    config: ProgrammaticToolCallerConfig,
+) -> MakeProgrammaticToolCallerOptions {
+    MakeProgrammaticToolCallerOptions {
+        allowed_tools: config.allowed_tools.flatten(),
+        timeout: config
+            .timeout
+            .map(|timeout| timeout.map(|seconds| Duration::try_from_secs_f64(seconds).unwrap_or_default())),
+        ..Default::default()
+    }
 }
 
 /// The tool objects for `names`, in that order.
