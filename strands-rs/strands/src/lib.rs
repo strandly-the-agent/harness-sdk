@@ -116,6 +116,10 @@
 //!
 //! The most used types are re-exported from the crate root.
 //!
+//! Third-party types in public signatures come with the crate: [`JsonValue`] is
+//! `serde_json::Value`, and [`indexmap`] is re-exported for the ordered maps
+//! (`strands::indexmap::IndexMap`) that MCP server configs, subagent presets and trace attributes take.
+//!
 //! # Cargo features
 //!
 //! | Feature | Default | Enables |
@@ -312,6 +316,7 @@ pub use agent::{Agent, AgentConfig, AgentStream};
 pub use async_trait::async_trait;
 pub use cancel::{CancelHandle, CancelOptions, CancelSignal};
 pub use error::{Error, Result};
+pub use indexmap;
 pub use interrupt::InterruptResponse;
 #[cfg(feature = "bedrock")]
 pub use models::bedrock::{
