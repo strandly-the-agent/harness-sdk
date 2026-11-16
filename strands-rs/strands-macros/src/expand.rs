@@ -15,11 +15,14 @@ pub(crate) fn tool_fn(args: ToolArgs, mut item: ItemFn) -> syn::Result<TokenStre
     let tool = signature::read(&item.attrs, &mut item.sig, args, Receiver::None)?;
     item.attrs.extend(lint_allows(&tool));
     let fn_ident = &tool.ident;
-    let struct_ident = format_ident!(
-        "{}",
-        pascal_case(&fn_ident.unraw().to_string()),
-        span = fn_ident.span()
-    );
+    let mut struct_ident =
+        syn::parse_str::<syn::Ident>(&pascal_case(&fn_ident.unraw().to_string())).map_err(|_| {
+            syn::Error::new(
+                fn_ident.span(),
+                format!("#[tool] can't derive a struct name from `{fn_ident}`: start the name with a letter"),
+            )
+        })?;
+    struct_ident.set_span(fn_ident.span());
     let vis = &item.vis;
     let docs = &tool.docs;
     let tool_impl = tool_impl(

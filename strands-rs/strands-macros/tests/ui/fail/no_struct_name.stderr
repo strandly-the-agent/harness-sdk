@@ -1,0 +1,11 @@
+error: #[tool] can't derive a struct name from `_1`: start the name with a letter
+ --> tests/ui/fail/no_struct_name.rs:5:4
+  |
+5 | fn _1(n: i32) -> i32 {
+  |    ^^
+
+error: #[tool] can't derive a struct name from `__`: start the name with a letter
+  --> tests/ui/fail/no_struct_name.rs:11:4
+   |
+11 | fn __() {}
+   |    ^^
