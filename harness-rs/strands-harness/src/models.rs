@@ -108,11 +108,7 @@ const PROVIDERS: [Provider; 4] = [
 /// Providers the TS harness has and Rust v0.1 doesn't.
 const UNSUPPORTED_PROVIDERS: [&str; 3] = ["google", "ollama", "litellm"];
 
-/// Every value the `effort` option accepts.
-#[expect(
-    dead_code,
-    reason = "used by the config normalization, which lands separately"
-)]
+/// Every value the `effort` option accepts, for validating untyped (JSON) input.
 pub(crate) const EFFORT_LEVELS: [Effort; 8] = [
     Effort::Auto,
     Effort::Off,
@@ -135,6 +131,24 @@ fn effort_name(effort: Effort) -> &'static str {
         Effort::Xhigh => "xhigh",
         Effort::Max => "max",
     }
+}
+
+/// The effort named `name`, or TS's error for a value outside [`EFFORT_LEVELS`].
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "used by the config normalization, which lands separately"
+    )
+)]
+pub(crate) fn parse_effort(name: &str) -> Result<Effort> {
+    EFFORT_LEVELS
+        .into_iter()
+        .find(|effort| effort_name(*effort) == name)
+        .ok_or_else(|| HarnessError::InvalidEffort {
+            effort: name.to_owned(),
+            supported: EFFORT_LEVELS.map(effort_name).join(", "),
+        })
 }
 
 fn provider(name: &str) -> Option<&'static Provider> {
@@ -570,6 +584,13 @@ fn router_supports_media(router: &strands::models::routing::ModelRouter) -> bool
 ///
 /// A model instance or router is configured by the caller, so this is `true` for one; `None` is
 /// the default model.
+///
+/// ```
+/// use strands_harness::supports_thinking;
+///
+/// assert!(supports_thinking(Some(&"anthropic/claude-opus-4-6".into())));
+/// assert!(!supports_thinking(Some(&"bedrock/amazon.nova-pro-v1:0".into())));
+/// ```
 pub fn supports_thinking(model: Option<&ModelSource>) -> bool {
     let Some(spec) = spec_of(model, DEFAULT_MODEL) else {
         return true;
@@ -586,6 +607,13 @@ pub fn supports_thinking(model: Option<&ModelSource>) -> bool {
 ///
 /// A model instance or router has an unknown provider, so this is `false` for one; the caller
 /// configures search on the instance. `None` is the default model.
+///
+/// ```
+/// use strands_harness::supports_web_search;
+///
+/// assert!(supports_web_search(Some(&"openai/gpt-5.6-sol".into())));
+/// assert!(!supports_web_search(None));
+/// ```
 pub fn supports_web_search(model: Option<&ModelSource>) -> bool {
     spec_of(model, DEFAULT_MODEL).is_some_and(|spec| {
         let (provider_name, name) = split_provider(spec);

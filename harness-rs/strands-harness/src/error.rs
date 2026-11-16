@@ -36,6 +36,14 @@ pub enum HarnessError {
         /// The supported provider names, comma separated.
         supported: String,
     },
+    /// An `effort` value that is none of the levels the harness knows.
+    #[error("Effort {} is not valid. Supported: {supported}.", json_string(.effort))]
+    InvalidEffort {
+        /// The value given.
+        effort: String,
+        /// Every effort level, comma separated.
+        supported: String,
+    },
     /// The resolved model doesn't take the requested reasoning effort.
     #[error("Effort {} is not supported by {subject}. {detail}", json_string(.effort))]
     UnsupportedEffort {

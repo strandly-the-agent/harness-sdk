@@ -25,6 +25,14 @@ When the conversation grows long, older turns may be summarized and large tool r
 
 /// Assembles the system prompt: the contract, then `instructions` (when non-empty), then each of
 /// `context_parts`, joined by blank lines.
+///
+/// ```
+/// use strands_harness::{HARNESS_CONTRACT, build_system_prompt};
+///
+/// let prompt = build_system_prompt(Some("You are a SQL assistant."), &["Current time: noon"]);
+/// assert!(prompt.starts_with(HARNESS_CONTRACT));
+/// assert!(prompt.ends_with("You are a SQL assistant.\n\nCurrent time: noon"));
+/// ```
 pub fn build_system_prompt(instructions: Option<&str>, context_parts: &[&str]) -> String {
     let mut parts = vec![HARNESS_CONTRACT];
     parts.extend(instructions.filter(|text| !text.is_empty()));

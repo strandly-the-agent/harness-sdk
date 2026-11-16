@@ -52,12 +52,15 @@ pub(crate) struct ResolveMemoryOptions {
     expect(dead_code, reason = "used by create_harness, which lands separately")
 )]
 pub(crate) fn resolve_memory(options: ResolveMemoryOptions, env: &EnvLookup) -> Result<MemoryManager> {
-    // No injection override: the SDK's user-turn default is the harness policy.
-    let config = MemoryManagerConfig {
+    Ok(MemoryManager::new(manager_config(options, env)?)?)
+}
+
+fn manager_config(options: ResolveMemoryOptions, env: &EnvLookup) -> Result<MemoryManagerConfig> {
+    // No injection or tool override: the SDK's defaults are the harness policy.
+    Ok(MemoryManagerConfig {
         stores: memory_stores(options, env)?,
         ..Default::default()
-    };
-    Ok(MemoryManager::new(config)?)
+    })
 }
 
 fn memory_stores(options: ResolveMemoryOptions, env: &EnvLookup) -> Result<Vec<Arc<dyn MemoryStore>>> {
@@ -291,6 +294,14 @@ mod tests {
         let web_fetch_model = "bedrock/us.amazon.nova-lite-v1:0".into();
         let model = extraction_model(Some(&DEFAULT.into()), Some(&web_fetch_model), &env()).unwrap();
         assert_eq!(model.model_id().as_deref(), Some("us.amazon.nova-lite-v1:0"));
+    }
+
+    #[test]
+    fn leaves_the_injection_trigger_at_the_sdk_default_fresh_user_asks() {
+        let (_guard, dir) = temp_dir();
+        let config = manager_config(default_options(&dir), &env()).unwrap();
+        assert!(config.injection.is_none());
+        assert!(config.search_tool_config.is_none() && config.add_tool_config.is_none());
     }
 
     #[tokio::test]
